@@ -2,7 +2,33 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { LightComposerCanvas } from './light-composer-canvas';
+import {
+  lightCanvasImageDrawArguments,
+  LightComposerCanvas,
+} from './light-composer-canvas';
+
+test('maps a normalized source crop to exact raster pixels while preserving the destination box', () => {
+  const element = {
+    assetId: 'asset-a',
+    crop: { height: 0.8, width: 0.8, x: 0.1, y: 0.1 },
+    height: 600,
+    id: 'hero',
+    kind: 'image' as const,
+    rotation: 0,
+    width: 900,
+    x: 90,
+    y: 300,
+  };
+
+  assert.deepEqual(
+    lightCanvasImageDrawArguments(element, 20, 10),
+    [2, 1, 16, 8, -450, -300, 900, 600]
+  );
+  assert.deepEqual(
+    lightCanvasImageDrawArguments({ ...element, crop: undefined }, 20, 10),
+    [0, 0, 20, 10, -450, -300, 900, 600]
+  );
+});
 
 test('renders the daily editing surface without free-node or layer controls', () => {
   const html = renderToStaticMarkup(

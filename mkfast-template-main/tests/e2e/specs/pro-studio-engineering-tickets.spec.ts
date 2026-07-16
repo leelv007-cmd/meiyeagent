@@ -4,6 +4,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { productCommand, productState } from '../fixtures/product';
 import { unlockProStudio } from '../fixtures/pro-studio';
 
 async function p1Command<T>(
@@ -77,6 +78,77 @@ async function softCleanupE2EUsers(
   } catch {
     // Best-effort: a flaky e2e cleanup endpoint must not block ticket evidence.
   }
+}
+
+async function seedTicket17CropAsset(page: Page) {
+  await productCommand(page, {
+    type: 'confirm_store',
+    store: {
+      accounts: [],
+      address: '湖墅南路 88 号',
+      booking: '提前一天预约',
+      brandVoice: '专业、克制、像熟客推荐',
+      city: '杭州',
+      district: '拱墅区',
+      name: 'Ticket17 E2E 门店',
+      prohibitions: ['不虚构价格'],
+      projects: [],
+      regulated: false,
+    },
+  });
+  const existingAssetIds = new Set(
+    (await productState(page)).assets.map((asset) => asset.id)
+  );
+  const dataUrl = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 20;
+    canvas.height = 20;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Ticket17 fixture canvas is unavailable');
+    context.fillStyle = '#ff0000';
+    context.fillRect(0, 0, 20, 20);
+    context.fillStyle = '#00ff00';
+    context.fillRect(2, 2, 16, 16);
+    return canvas.toDataURL('image/png');
+  });
+  const label = `ticket17-source-crop-${crypto.randomUUID()}.png`;
+  await page.goto('/dashboard/assets');
+  await page.locator('#canonical-asset-upload').setInputFiles({
+    buffer: Buffer.from(dataUrl.split(',', 2)[1]!, 'base64'),
+    mimeType: 'image/png',
+    name: label,
+  });
+  let assetId: string | undefined;
+  await expect
+    .poll(
+      async () => {
+        assetId = (await productState(page)).assets.find(
+          (asset) => !existingAssetIds.has(asset.id)
+        )?.id;
+        return assetId;
+      },
+      { timeout: 30_000 }
+    )
+    .toBeTruthy();
+  if (!assetId) throw new Error('Ticket17 replacement asset was not uploaded');
+  await productCommand(page, {
+    type: 'update_asset_metadata',
+    assetId,
+    category: 'other',
+    containsPerson: false,
+    containsSensitiveData: false,
+    minorStatus: 'none',
+    rightsOwner: 'Ticket17 E2E 门店',
+    tags: [label],
+  });
+  await productCommand(page, {
+    type: 'authorize_asset',
+    assetId,
+    consentScope: 'public_marketing',
+    rightsEvidence: 'ticket17-e2e-owner-confirmed',
+  });
+  await page.goto('/dashboard');
+  return { assetId, label };
 }
 
 test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
@@ -161,6 +233,7 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     });
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
+    const replacementAsset = await seedTicket17CropAsset(page);
     await page.getByLabel('描述这次想创作的内容').fill('Ticket17 模板闭环');
     await page.getByRole('button', { name: '建立创作记录' }).click();
     await page.getByRole('button', { name: '展开目录' }).click();
@@ -233,6 +306,11 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     await page.reload();
     await expect(page.getByLabel('修改文案').first()).toHaveValue('模板标题');
     await page.getByLabel('修改文案').first().fill('模板改写后的标题');
+    await page
+      .getByRole('button', {
+        name: `替换为${replacementAsset.label}`,
+      })
+      .click();
     await page.getByRole('button', { name: '裁剪 10%' }).click();
     await page.getByLabel('上移').last().click();
     const saveResponsePromise = page.waitForResponse(
@@ -247,7 +325,18 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
       currentRevisionId: string;
       revisions: Array<{
         document: {
-          pages: Array<{ elements: Array<{ id: string; text?: string }> }>;
+          pages: Array<{
+            elements: Array<{
+              assetId?: string;
+              crop?: { height: number; width: number; x: number; y: number };
+              height?: number;
+              id: string;
+              text?: string;
+              width?: number;
+              x?: number;
+              y?: number;
+            }>;
+          }>;
         };
         id: string;
       }>;
@@ -259,13 +348,51 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
       revision.document.pages[0]?.elements.find((el) => el.id === 'headline')
         ?.text
     ).toBe('模板改写后的标题');
+    expect(
+      revision.document.pages[0]?.elements.find((el) => el.id === 'hero')
+    ).toMatchObject({
+      assetId: replacementAsset.assetId,
+      crop: { height: 0.8, width: 0.8, x: 0.1, y: 0.1 },
+      height: 650,
+      width: 900,
+      x: 90,
+      y: 300,
+    });
+    await page.screenshot({
+      fullPage: true,
+      path: '../docs/evidence/pro-studio/ticket17-template-export.png',
+    });
+    const exportRequestPromise = page.waitForRequest(
+      (browserRequest) =>
+        browserRequest.url().includes('/api/core/p1/commands') &&
+        browserRequest.postData()?.includes('export_work') === true
+    );
     const exportResponsePromise = page.waitForResponse(
       (response) =>
         response.url().includes('/api/core/p1/commands') &&
         response.request().postData()?.includes('export_work') === true
     );
     await page.getByRole('button', { name: '导出', exact: true }).click();
+    const exportRequest = await exportRequestPromise;
+    const exportPayload = exportRequest.postDataJSON() as {
+      payload: { request: { renderedDataUrl: string } };
+    };
     expect((await exportResponsePromise).ok()).toBe(true);
+    const exportedCorner = await page.evaluate(async (renderedDataUrl) => {
+      const image = new Image();
+      image.src = renderedDataUrl;
+      await image.decode();
+      const canvas = window.document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Ticket17 pixel canvas is unavailable');
+      context.drawImage(image, 0, 0);
+      return [...context.getImageData(150, 350, 1, 1).data];
+    }, exportPayload.payload.request.renderedDataUrl);
+    expect(exportedCorner[0]).toBeLessThan(80);
+    expect(exportedCorner[1]).toBeGreaterThan(180);
+    expect(exportedCorner[2]).toBeLessThan(80);
     await expect(page).toHaveURL(/\/dashboard\/content\?packageId=/, {
       timeout: 30_000,
     });

@@ -77,14 +77,15 @@ test('light Composer edits copy, replaces/crops images, and reorders modules wit
   );
   assert.deepEqual(reordered.pages[0]?.elements[2], {
     assetId: 'asset-new',
-    height: 450,
+    crop: { height: 0.75, width: 0.8, x: 0.1, y: 0.2 },
+    height: 600,
     id: 'hero',
     kind: 'image',
     rotation: 0,
     src: '/api/storage/file?key=new.png',
-    width: 720,
-    x: 180,
-    y: 420,
+    width: 900,
+    x: 90,
+    y: 300,
   });
   assert.equal(document.pages[0]?.elements[0]?.kind, 'text');
   assert.equal(
@@ -93,6 +94,31 @@ test('light Composer edits copy, replaces/crops images, and reorders modules wit
       : undefined,
     '旧标题'
   );
+});
+
+test('light Composer clears an existing source crop when the image asset changes', () => {
+  const cropped = applyLightComposerEdit(document, {
+    assetId: 'asset-old',
+    crop: { height: 0.8, width: 0.8, x: 0.1, y: 0.1 },
+    elementId: 'hero',
+    type: 'replace_image',
+  });
+  const replaced = applyLightComposerEdit(cropped, {
+    assetId: 'asset-new',
+    elementId: 'hero',
+    type: 'replace_image',
+  });
+
+  assert.deepEqual(replaced.pages[0]?.elements[1], {
+    assetId: 'asset-new',
+    height: 600,
+    id: 'hero',
+    kind: 'image',
+    rotation: 0,
+    width: 900,
+    x: 90,
+    y: 300,
+  });
 });
 
 test('light Composer rejects free-node fields and invalid crop bounds', () => {
@@ -123,6 +149,26 @@ test('light Composer rejects free-node fields and invalid crop bounds', () => {
         crop: { height: 1, width: 1, x: 0.5, y: 0 },
         elementId: 'hero',
         type: 'replace_image',
+      }),
+    /crop must stay inside the source image/u
+  );
+  assert.throws(
+    () =>
+      parseLightCanvasDocument({
+        ...document,
+        pages: [
+          {
+            ...document.pages[0],
+            elements: document.pages[0]!.elements.map((element) =>
+              element.id === 'hero'
+                ? {
+                    ...element,
+                    crop: { height: 1, width: 1, x: 0.5, y: 0 },
+                  }
+                : element
+            ),
+          },
+        ],
       }),
     /crop must stay inside the source image/u
   );
@@ -193,4 +239,35 @@ test('opens historical text and image documents through the light contract', () 
       width: 1080,
     }
   );
+});
+
+test('parses a normalized source crop without changing historical image geometry', () => {
+  const cropped = parseLightCanvasDocument({
+    ...document,
+    pages: [
+      {
+        ...document.pages[0],
+        elements: document.pages[0]!.elements.map((element) =>
+          element.id === 'hero'
+            ? {
+                ...element,
+                crop: { height: 0.6, width: 0.7, x: 0.2, y: 0.3 },
+              }
+            : element
+        ),
+      },
+    ],
+  });
+
+  assert.deepEqual(cropped.pages[0]?.elements[1], {
+    assetId: 'asset-old',
+    crop: { height: 0.6, width: 0.7, x: 0.2, y: 0.3 },
+    height: 600,
+    id: 'hero',
+    kind: 'image',
+    rotation: 0,
+    width: 900,
+    x: 90,
+    y: 300,
+  });
 });
