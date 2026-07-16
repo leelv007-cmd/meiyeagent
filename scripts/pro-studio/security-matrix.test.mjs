@@ -56,6 +56,30 @@ function partialManifest() {
     'confirmation',
   ];
   controls[0].rejectionAuditStatus = 'passed';
+  controls[0].rejectionAuditEvidence = {
+    adapterMode: 'fixture',
+    command:
+      'pnpm --dir mkfast-template-main exec playwright test tests/e2e/specs/pro-studio-security-boundaries.spec.ts --project=chromium',
+    durableStore: 'pro_studio_audit_events',
+    environment: 'local',
+    grantMode: 'disabled_no_grant',
+    objectKinds: [
+      'project',
+      'revision',
+      'asset',
+      'job',
+      'package',
+      'grant',
+      'confirmation',
+    ],
+    opaqueNotFound: true,
+    path: 'security.test.mjs',
+    productionEquivalent: false,
+    rawTargetIdsPersisted: false,
+    status: 'passed',
+    type: 'fixture_real_service',
+    zeroBusinessSideEffects: true,
+  };
   controls[0].evidence.push(
     evidence('fixture_real_service', {
       adapterMode: 'fixture',
@@ -215,6 +239,54 @@ test('cross-workspace rejection evidence cannot pass without rejection audit cov
   assert.ok(
     verification.blockers.includes(
       'cross_workspace_idor: rejection audit evidence is missing'
+    )
+  );
+});
+
+test('cross-workspace rejection audit status cannot self-attest without complete durable per-kind evidence', () => {
+  const manifest = partialManifest();
+  delete manifest.controls[0].rejectionAuditEvidence;
+
+  const missing = verifySecurityManifest(manifest, {
+    evidenceExists: () => true,
+    readEvidenceJson: () => ({
+      grantDecision: 'no_grant_required_direct_upload',
+      grantEndpoint: null,
+      grantUrlsProduced: false,
+      releaseScope: 'verified_provider_model_operation_transport_tuple_only',
+    }),
+  });
+
+  assert.equal(missing.status, 'failed');
+  assert.ok(
+    missing.errors.includes(
+      'cross_workspace_idor: complete durable rejection audit evidence is required'
+    )
+  );
+
+  const incomplete = partialManifest();
+  incomplete.controls[0].rejectionAuditEvidence.objectKinds = [
+    'project',
+    'revision',
+    'asset',
+    'job',
+    'package',
+    'confirmation',
+  ];
+  const verification = verifySecurityManifest(incomplete, {
+    evidenceExists: () => true,
+    readEvidenceJson: () => ({
+      grantDecision: 'no_grant_required_direct_upload',
+      grantEndpoint: null,
+      grantUrlsProduced: false,
+      releaseScope: 'verified_provider_model_operation_transport_tuple_only',
+    }),
+  });
+
+  assert.equal(verification.status, 'failed');
+  assert.ok(
+    verification.errors.includes(
+      'cross_workspace_idor: rejection audit evidence must cover project, revision, asset, job, package, grant, confirmation'
     )
   );
 });

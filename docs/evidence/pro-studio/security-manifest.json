@@ -15,7 +15,30 @@
         "confirmation"
       ],
       "rejectionAuditStatus": "passed",
-      "rejectionAuditNote": "Unit coverage records project/revision/asset/job/package/grant/confirmation access_denied audits. Canvas runtime wires PostgresProStudioAccessAudit for asset and confirmation denials; project/revision denials continue through pro_studio_audit_events.",
+      "rejectionAuditNote": "Unit coverage records project/revision/asset/job/package/grant/confirmation access_denied audits. The local fixture real-service drill proves uniform opaque rejection, zero business-state mutation, and workspace-scoped PostgreSQL audit evidence with hashed targets. Playwright can read pro_studio_audit_events via DATABASE_URL for the stranger workspace after foreign denials. This is not production evidence.",
+      "rejectionAuditEvidence": {
+        "type": "fixture_real_service",
+        "status": "passed",
+        "path": "mkfast-template-main/tests/e2e/specs/pro-studio-security-boundaries.spec.ts",
+        "command": "pnpm --dir mkfast-template-main exec playwright test tests/e2e/specs/pro-studio-security-boundaries.spec.ts --project=chromium",
+        "environment": "local",
+        "adapterMode": "fixture",
+        "productionEquivalent": false,
+        "durableStore": "pro_studio_audit_events",
+        "objectKinds": [
+          "project",
+          "revision",
+          "asset",
+          "job",
+          "package",
+          "grant",
+          "confirmation"
+        ],
+        "opaqueNotFound": true,
+        "zeroBusinessSideEffects": true,
+        "rawTargetIdsPersisted": false,
+        "grantMode": "disabled_no_grant"
+      },
       "evidence": [
         {
           "id": "idor-rejection-audit-unit",

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import postgres from 'postgres';
 
 import {
   cleanupE2EUsers,
@@ -7,6 +8,25 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { unlockProStudio } from '../fixtures/pro-studio';
+
+const REJECTION_AUDIT_OBJECT_KINDS = [
+  'project',
+  'revision',
+  'asset',
+  'job',
+  'grant',
+  'confirmation',
+  'package',
+] as const;
+const REJECTION_AUDIT_ACTIONS = REJECTION_AUDIT_OBJECT_KINDS.map(
+  (objectKind) => `${objectKind}_access_denied`
+);
+
+function databaseUrl() {
+  return (
+    process.env.DATABASE_URL ?? 'postgres://meiye:meiye@127.0.0.1:54329/meiye'
+  );
+}
 
 type CanvasGraph = {
   edges: Array<Record<string, unknown>>;
@@ -56,6 +76,24 @@ type CanvasResponse<T> = {
 type AgentPlan = { baseRevision: number; id: string };
 type AgentConfirmation = { credentialId: string };
 type WorkspaceContext = { userId: string; workspaceId: string };
+type SecurityRejectionAuditEvent = {
+  actorId: string;
+  correlationId: string;
+  createdAt: string;
+  id: string;
+  objectKind:
+    | 'project'
+    | 'revision'
+    | 'asset'
+    | 'job'
+    | 'package'
+    | 'grant'
+    | 'confirmation';
+  outcome: 'opaque_not_found';
+  requestAction: string;
+  targetDigest: string;
+  workspaceId: string;
+};
 
 function canvasOrigin() {
   return `http://localhost:${process.env.PLAYWRIGHT_CANVAS_PORT ?? '4200'}`;
@@ -293,10 +331,12 @@ function expectForeignObjectRejected<T>(
   result: CanvasResponse<T>,
   foreignId: string
 ) {
-  expect([400, 403, 404, 409], 'foreign object must fail closed').toContain(
-    result.status
-  );
+  expect(result.status, 'foreign object must be opaque').toBe(404);
   expect(result.body.data).toBeUndefined();
+  expect(result.body.error).toEqual({
+    code: 'NOT_FOUND',
+    message: 'Canvas object was not found.',
+  });
   expect(result.body.error?.message ?? '').not.toContain(foreignId);
 }
 
@@ -339,6 +379,10 @@ test.describe('Ticket 25 security boundaries', () => {
       await unlockProStudio(pageB);
       await pageB.reload();
       await enterCanvas(pageB);
+      const attackerContext = await canvasData<WorkspaceContext>(
+        pageB,
+        'getSessionContext'
+      );
 
       const fixtureA = await createCanvasFixture(
         page,
@@ -358,6 +402,22 @@ test.describe('Ticket 25 security boundaries', () => {
       }
       const packageA = await adoptFixture(page, fixtureA);
       const agentA = await agentConfirmation(page, fixtureA.project.id);
+
+      const before = {
+        adoptions: await canvasData<unknown[]>(pageB, 'listAdoptions', {
+          projectId: fixtureB.project.id,
+        }),
+        assets: await canvasData<unknown[]>(pageB, 'listAssets'),
+        generations: await canvasData<unknown[]>(
+          pageB,
+          'listProjectGenerations',
+          { projectId: fixtureB.project.id }
+        ),
+        project: await canvasData<CanvasProject>(pageB, 'loadProject', {
+          projectId: fixtureB.project.id,
+        }),
+        projects: await canvasData<CanvasProject[]>(pageB, 'listProjects'),
+      };
 
       expectForeignObjectRejected(
         await canvasRequest(pageB, 'loadProject', {
@@ -392,6 +452,12 @@ test.describe('Ticket 25 security boundaries', () => {
       );
       expect(foreignAudit.status).toBe(200);
       expect(foreignAudit.body.data).toEqual([]);
+      expectForeignObjectRejected(
+        await canvasRequest(pageB, 'getProviderReferenceGrant', {
+          grantId: 'provider-reference-grant-foreign',
+        }),
+        'provider-reference-grant-foreign'
+      );
       expectForeignObjectRejected(
         await canvasRequest(
           pageB,
@@ -438,6 +504,112 @@ test.describe('Ticket 25 security boundaries', () => {
         ),
         packageA.packageId
       );
+
+      const after = {
+        adoptions: await canvasData<unknown[]>(pageB, 'listAdoptions', {
+          projectId: fixtureB.project.id,
+        }),
+        assets: await canvasData<unknown[]>(pageB, 'listAssets'),
+        generations: await canvasData<unknown[]>(
+          pageB,
+          'listProjectGenerations',
+          { projectId: fixtureB.project.id }
+        ),
+        project: await canvasData<CanvasProject>(pageB, 'loadProject', {
+          projectId: fixtureB.project.id,
+        }),
+        projects: await canvasData<CanvasProject[]>(pageB, 'listProjects'),
+      };
+      expect(after).toEqual(before);
+      const confirmationAudit = await canvasData<
+        Array<{ errorCode?: string; outcome: string }>
+      >(pageB, 'listAgentAudit', { projectId: fixtureB.project.id });
+      expect(confirmationAudit).toHaveLength(1);
+      expect(confirmationAudit[0]).toMatchObject({
+        errorCode: 'CONFIRMATION_NOT_FOUND',
+        outcome: 'error',
+      });
+
+      const rejectionAudit = await canvasData<SecurityRejectionAuditEvent[]>(
+        pageB,
+        'listSecurityRejectionAudit'
+      );
+      expect(rejectionAudit.map((event) => event.objectKind)).toEqual([
+        ...REJECTION_AUDIT_OBJECT_KINDS,
+      ]);
+      expect(
+        rejectionAudit.every(
+          (event) =>
+            event.actorId === attackerContext.userId &&
+            event.workspaceId === attackerContext.workspaceId &&
+            event.outcome === 'opaque_not_found' &&
+            /^[a-f0-9]{64}$/u.test(event.targetDigest)
+        )
+      ).toBeTruthy();
+      const foreignIds = [
+        fixtureA.project.id,
+        fixtureA.checkpoint.id,
+        assetAId,
+        jobAId,
+        packageA.packageId,
+        agentA.confirmation.credentialId,
+        'provider-reference-grant-foreign',
+      ];
+      const serializedAudit = JSON.stringify(rejectionAudit);
+      for (const foreignId of foreignIds) {
+        expect(serializedAudit).not.toContain(foreignId);
+      }
+      expect(
+        await canvasData<SecurityRejectionAuditEvent[]>(
+          pageB,
+          'listSecurityRejectionAudit'
+        )
+      ).toEqual(rejectionAudit);
+
+      // Durable store proof: read pro_studio_audit_events via DATABASE_URL so
+      // the fixture drill does not rely only on the Canvas list API surface.
+      const sql = postgres(databaseUrl(), { max: 1 });
+      try {
+        const durableRows = await sql<{
+          action: string;
+          actor_id: string;
+          detail: SecurityRejectionAuditEvent;
+          workspace_id: string;
+        }[]>`
+          SELECT action, actor_id, workspace_id, detail
+            FROM pro_studio_audit_events
+           WHERE workspace_id = ${attackerContext.workspaceId}
+             AND actor_id = ${attackerContext.userId}
+             AND action = ANY(${REJECTION_AUDIT_ACTIONS})
+             AND detail->>'outcome' = 'opaque_not_found'
+             AND detail ? 'targetDigest'
+           ORDER BY created_at, id
+        `;
+        expect(durableRows.map((row) => row.action)).toEqual(
+          REJECTION_AUDIT_ACTIONS
+        );
+        expect(durableRows.map((row) => row.detail.objectKind)).toEqual([
+          ...REJECTION_AUDIT_OBJECT_KINDS,
+        ]);
+        expect(
+          durableRows.every(
+            (row) =>
+              row.workspace_id === attackerContext.workspaceId &&
+              row.actor_id === attackerContext.userId &&
+              row.action === `${row.detail.objectKind}_access_denied` &&
+              row.detail.outcome === 'opaque_not_found' &&
+              row.detail.workspaceId === attackerContext.workspaceId &&
+              row.detail.actorId === attackerContext.userId &&
+              /^[a-f0-9]{64}$/u.test(row.detail.targetDigest)
+          )
+        ).toBeTruthy();
+        const serializedDurable = JSON.stringify(durableRows);
+        for (const foreignId of foreignIds) {
+          expect(serializedDurable).not.toContain(foreignId);
+        }
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
     } finally {
       await contextB.close();
     }

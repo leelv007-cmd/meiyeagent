@@ -7,4 +7,6 @@ export * from './postgres-advanced-canvas-project-repository.js';
 export * from './postgres-canvas-asset-repository.js';
 export * from './postgres-launch-code-repository.js';
 export * from './postgres-pro-studio-migration.js';
+export * from './postgres-security-rejection-audit-repository.js';
 export * from './security-access-audit.js';
+export * from './security-rejection-audit.js';

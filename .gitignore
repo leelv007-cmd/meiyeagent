@@ -37,3 +37,4 @@ references/repos/vozeb/
 # codex 复核过程 stdout 日志(保留 prompts/reports/STATE)
 .scratch/spec-codex-review-2026-07-16/logs/
 .scratch/vozeb-canvas-migration-2026-07-16/logs/
+.worktrees/
