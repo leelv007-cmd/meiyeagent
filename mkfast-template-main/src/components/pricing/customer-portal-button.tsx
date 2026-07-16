@@ -1,4 +1,7 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  pricing_customer_portal_failed,
+  pricing_customer_portal_loading,
+} from '@/locale/paraglide/messages';
 import { createCustomerPortalSession } from '@/api/payment';
 import { Button } from '@/components/ui/button';
 import { IconLoader2 } from '@tabler/icons-react';
@@ -38,11 +41,11 @@ export function CustomerPortalButton({
       if (result?.url) {
         window.location.href = result.url;
       } else {
-        toast.error(m.pricing_customer_portal_failed());
+        toast.error(pricing_customer_portal_failed());
       }
     } catch (err) {
       console.error('Customer portal error:', err);
-      toast.error(m.pricing_customer_portal_failed());
+      toast.error(pricing_customer_portal_failed());
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +61,7 @@ export function CustomerPortalButton({
       {isLoading ? (
         <>
           <IconLoader2 className="mr-2 size-4 animate-spin" />
-          {m.pricing_customer_portal_loading()}
+          {pricing_customer_portal_loading()}
         </>
       ) : (
         children

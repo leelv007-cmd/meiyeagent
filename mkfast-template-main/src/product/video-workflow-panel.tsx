@@ -13,7 +13,49 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  common_correlation_id,
+  copy_candidate_view_in_content,
+  video_workflow_aigc_disabled,
+  video_workflow_aigc_enabled,
+  video_workflow_cancel_task,
+  video_workflow_candidate_legend,
+  video_workflow_candidate_select,
+  video_workflow_candidate_select_aria,
+  video_workflow_candidate_video_aria,
+  video_workflow_composer_description,
+  video_workflow_confirm_and_generate,
+  video_workflow_create_version_from_this,
+  video_workflow_edit_on_desktop,
+  video_workflow_editor_description,
+  video_workflow_editor_title,
+  video_workflow_failure_desktop_recovery,
+  video_workflow_final_video_aria,
+  video_workflow_lock_storyboard,
+  video_workflow_locked_model,
+  video_workflow_locking,
+  video_workflow_mutation_failed,
+  video_workflow_panel_aria,
+  video_workflow_panel_title,
+  video_workflow_progress_description,
+  video_workflow_query_failed_description,
+  video_workflow_query_failed_title,
+  video_workflow_query_retry,
+  video_workflow_restoring,
+  video_workflow_return_and_create_version,
+  video_workflow_review_candidates_pending,
+  video_workflow_source_storyboard_version,
+  video_workflow_step_state_failed,
+  video_workflow_step_state_running,
+  video_workflow_step_state_success,
+  video_workflow_step_state_suspended,
+  video_workflow_step_state_waiting,
+  video_workflow_steps_aria,
+  video_workflow_storyboard_number,
+  video_workflow_storyboard_version,
+  video_workflow_submitting,
+  video_workflow_submitting_action,
+} from '@/locale/paraglide/messages';
 import { friendlyProductError } from '@/lib/correlated-api-error';
 import { cn } from '@/lib/utils';
 import { commandP1, queryP1 } from '@/p1/client';
@@ -40,7 +82,7 @@ import {
 const POLL_INTERVAL_MS = 5_000;
 
 export function videoWorkflowMutationFailure(error: unknown) {
-  return friendlyProductError(error, m.video_workflow_mutation_failed());
+  return friendlyProductError(error, video_workflow_mutation_failed());
 }
 
 type WorkflowAction =
@@ -210,11 +252,11 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
       Boolean(editingFromWorkflow));
   const lockedModelName = workflow
     ? (composer?.catalogModelNames[workflow.catalogModelId] ??
-      m.video_workflow_locked_model())
+      video_workflow_locked_model())
     : composer
       ? (composer.catalogModelNames[composer.catalogModelId] ??
         composer.catalogModelName ??
-        m.video_workflow_locked_model())
+        video_workflow_locked_model())
       : undefined;
 
   if (
@@ -228,27 +270,27 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
 
   return (
     <Card
-      aria-label={m.video_workflow_panel_aria()}
+      aria-label={video_workflow_panel_aria()}
       className={cn('border-primary/15', className)}
     >
       <CardHeader>
-        <CardTitle>{m.video_workflow_panel_title()}</CardTitle>
+        <CardTitle>{video_workflow_panel_title()}</CardTitle>
         <CardDescription>
           {composer
-            ? m.video_workflow_composer_description({
+            ? video_workflow_composer_description({
                 aigcState:
                   (workflow?.aigcLabelEnabled ?? composer.aigcLabelEnabled)
-                    ? m.video_workflow_aigc_enabled()
-                    : m.video_workflow_aigc_disabled(),
-                model: lockedModelName ?? m.video_workflow_locked_model(),
+                    ? video_workflow_aigc_enabled()
+                    : video_workflow_aigc_disabled(),
+                model: lockedModelName ?? video_workflow_locked_model(),
               })
-            : m.video_workflow_progress_description()}
+            : video_workflow_progress_description()}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {recoveryQuery.isPending && !workflow ? (
           <output className="text-sm text-muted-foreground">
-            {m.video_workflow_restoring()}
+            {video_workflow_restoring()}
           </output>
         ) : null}
 
@@ -305,7 +347,7 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
             {mutationFailure.correlationId ? (
               <>
                 <br />
-                {m.common_correlation_id({
+                {common_correlation_id({
                   id: mutationFailure.correlationId,
                 })}
               </>
@@ -333,10 +375,10 @@ function StoryboardEditor({
     <section className="space-y-3" aria-labelledby="video-storyboard-title">
       <div>
         <h3 className="font-medium" id="video-storyboard-title">
-          {m.video_workflow_editor_title()}
+          {video_workflow_editor_title()}
         </h3>
         <p className="text-xs text-muted-foreground">
-          {m.video_workflow_editor_description()}
+          {video_workflow_editor_description()}
         </p>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
@@ -362,9 +404,7 @@ function StoryboardEditor({
         ))}
       </div>
       <Button disabled={!canLock || pending} type="button" onClick={onLock}>
-        {pending
-          ? m.video_workflow_locking()
-          : m.video_workflow_lock_storyboard()}
+        {pending ? video_workflow_locking() : video_workflow_lock_storyboard()}
       </Button>
     </section>
   );
@@ -408,13 +448,13 @@ function WorkflowState({
       >
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Badge variant="outline">
-            {m.video_workflow_storyboard_version({
+            {video_workflow_storyboard_version({
               version: workflow.storyboardVersion,
             })}
           </Badge>
           {sourceWorkflowId ? (
             <span className="text-xs text-muted-foreground">
-              {m.video_workflow_source_storyboard_version({
+              {video_workflow_source_storyboard_version({
                 version: Math.max(1, workflow.storyboardVersion - 1),
               })}
             </span>
@@ -429,7 +469,7 @@ function WorkflowState({
       </div>
 
       <ol
-        aria-label={m.video_workflow_steps_aria()}
+        aria-label={video_workflow_steps_aria()}
         className="overflow-hidden rounded-xl border bg-card xl:grid xl:grid-cols-5"
       >
         {steps.map((step, index) => (
@@ -511,8 +551,8 @@ function WorkflowState({
             }
           >
             {pending
-              ? m.video_workflow_submitting()
-              : m.video_workflow_confirm_and_generate()}
+              ? video_workflow_submitting()
+              : video_workflow_confirm_and_generate()}
           </Button>
           {onEditDraft ? (
             <Button
@@ -521,11 +561,11 @@ function WorkflowState({
               variant="outline"
               onClick={onEditDraft}
             >
-              {m.video_workflow_create_version_from_this()}
+              {video_workflow_create_version_from_this()}
             </Button>
           ) : (
             <p className="self-center text-xs text-muted-foreground">
-              {m.video_workflow_edit_on_desktop()}
+              {video_workflow_edit_on_desktop()}
             </p>
           )}
         </div>
@@ -540,18 +580,18 @@ function WorkflowState({
               variant="outline"
               onClick={onEditDraft}
             >
-              {m.video_workflow_return_and_create_version()}
+              {video_workflow_return_and_create_version()}
             </Button>
           ) : recoveryHref ? (
             <a
               className={buttonVariants({ variant: 'outline' })}
               href={recoveryHref}
             >
-              {m.video_workflow_return_and_create_version()}
+              {video_workflow_return_and_create_version()}
             </a>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {m.video_workflow_failure_desktop_recovery()}
+              {video_workflow_failure_desktop_recovery()}
             </p>
           )}
         </div>
@@ -577,7 +617,7 @@ function WorkflowState({
       {effectiveStatus === 'awaiting_quality_review' &&
       reviewShots.length === 0 ? (
         <output className="text-sm text-muted-foreground">
-          {m.video_workflow_review_candidates_pending()}
+          {video_workflow_review_candidates_pending()}
         </output>
       ) : null}
 
@@ -585,7 +625,7 @@ function WorkflowState({
         <div className="space-y-3">
           {/* biome-ignore lint/a11y/useMediaCaption: Generated media has no caption artifact to attach. */}
           <video
-            aria-label={m.video_workflow_final_video_aria()}
+            aria-label={video_workflow_final_video_aria()}
             className="max-h-[70vh] w-full rounded-xl bg-black object-contain"
             controls
             playsInline
@@ -597,7 +637,7 @@ function WorkflowState({
             className={buttonVariants({ variant: 'outline' })}
             href="/dashboard/content"
           >
-            {m.copy_candidate_view_in_content()}
+            {copy_candidate_view_in_content()}
           </a>
         </div>
       ) : null}
@@ -610,8 +650,8 @@ function WorkflowState({
           onClick={() => onAction({ kind: 'cancel', workflowId: workflow.id })}
         >
           {pending
-            ? m.video_workflow_submitting_action()
-            : m.video_workflow_cancel_task()}
+            ? video_workflow_submitting_action()
+            : video_workflow_cancel_task()}
         </Button>
       ) : null}
     </section>
@@ -624,7 +664,7 @@ function ReadOnlyStoryboard({ shots }: { shots: VideoWorkflow['shots'] }) {
       {shots.map((shot, index) => (
         <article className="rounded-lg border p-3" key={shot.id}>
           <p className="text-xs font-medium text-muted-foreground">
-            {m.video_workflow_storyboard_number({ number: index + 1 })}
+            {video_workflow_storyboard_number({ number: index + 1 })}
           </p>
           <p className="mt-1 whitespace-pre-wrap text-sm">{shot.prompt}</p>
         </article>
@@ -648,7 +688,7 @@ function CandidateReview({
   return (
     <fieldset className="space-y-3 rounded-xl border p-3">
       <legend className="px-1 font-medium">
-        {m.video_workflow_candidate_legend({ number: shotNumber })}
+        {video_workflow_candidate_legend({ number: shotNumber })}
       </legend>
       <div className="grid gap-3 lg:grid-cols-2">
         {candidates.map((candidate) => (
@@ -658,7 +698,7 @@ function CandidateReview({
           >
             {/* biome-ignore lint/a11y/useMediaCaption: Generated candidates have no caption artifact to attach. */}
             <video
-              aria-label={m.video_workflow_candidate_video_aria({
+              aria-label={video_workflow_candidate_video_aria({
                 candidate: candidate.index + 1,
                 shot: shotNumber,
               })}
@@ -673,7 +713,7 @@ function CandidateReview({
               {videoCandidateQualityText(candidate)}
             </p>
             <Button
-              aria-label={m.video_workflow_candidate_select_aria({
+              aria-label={video_workflow_candidate_select_aria({
                 candidate: candidate.index + 1,
                 shot: shotNumber,
               })}
@@ -683,7 +723,7 @@ function CandidateReview({
               variant="outline"
               onClick={() => onSelect(candidate.index)}
             >
-              {m.video_workflow_candidate_select()}
+              {video_workflow_candidate_select()}
             </Button>
           </article>
         ))}
@@ -696,14 +736,14 @@ function QueryFailure({ onRetry }: { onRetry: () => void }) {
   return (
     <Card size="sm" role="alert">
       <CardHeader>
-        <CardTitle>{m.video_workflow_query_failed_title()}</CardTitle>
+        <CardTitle>{video_workflow_query_failed_title()}</CardTitle>
         <CardDescription>
-          {m.video_workflow_query_failed_description()}
+          {video_workflow_query_failed_description()}
         </CardDescription>
       </CardHeader>
       <CardFooter>
         <Button size="sm" type="button" variant="outline" onClick={onRetry}>
-          {m.video_workflow_query_retry()}
+          {video_workflow_query_retry()}
         </Button>
       </CardFooter>
     </Card>
@@ -713,11 +753,11 @@ function QueryFailure({ onRetry }: { onRetry: () => void }) {
 function videoWorkflowStepStateLabel(
   state: ReturnType<typeof videoWorkflowSteps>[number]['state']
 ) {
-  if (state === 'success') return m.video_workflow_step_state_success();
-  if (state === 'running') return m.video_workflow_step_state_running();
-  if (state === 'suspended') return m.video_workflow_step_state_suspended();
-  if (state === 'failed') return m.video_workflow_step_state_failed();
-  return m.video_workflow_step_state_waiting();
+  if (state === 'success') return video_workflow_step_state_success();
+  if (state === 'running') return video_workflow_step_state_running();
+  if (state === 'suspended') return video_workflow_step_state_suspended();
+  if (state === 'failed') return video_workflow_step_state_failed();
+  return video_workflow_step_state_waiting();
 }
 
 function isPlayableCandidate(

@@ -11,7 +11,26 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_task_blocked_fallback,
+  p1_week_batch_action_apply_template,
+  p1_week_batch_action_create,
+  p1_week_batch_action_prepare_draft,
+  p1_week_batch_action_revise,
+  p1_week_batch_eyebrow,
+  p1_week_batch_footnote,
+  p1_week_batch_open_aria,
+  p1_week_batch_publish_confirmation,
+  p1_week_batch_select_aria,
+  p1_week_candidate_confirm,
+  p1_week_candidate_confirmed,
+  p1_week_candidate_dismiss,
+  p1_week_candidate_dismissed,
+  p1_week_candidates_description,
+  p1_week_candidates_empty,
+  p1_week_candidates_title,
+  p1_week_review_description,
+} from '@/locale/paraglide/messages';
 
 import type {
   NextWeekCandidateView,
@@ -21,10 +40,10 @@ import type {
 } from './types';
 
 const BATCH_ACTION_LABEL: Record<WeeklyBatchAction, () => string> = {
-  apply_template: m.p1_week_batch_action_apply_template,
-  create: m.p1_week_batch_action_create,
-  prepare_draft: m.p1_week_batch_action_prepare_draft,
-  revise: m.p1_week_batch_action_revise,
+  apply_template: p1_week_batch_action_apply_template,
+  create: p1_week_batch_action_create,
+  prepare_draft: p1_week_batch_action_prepare_draft,
+  revise: p1_week_batch_action_revise,
 };
 
 export interface WeeklyBatchProps {
@@ -55,7 +74,7 @@ export function WeeklyBatch({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium tracking-wide text-primary uppercase">
-            {m.p1_week_batch_eyebrow()}
+            {p1_week_batch_eyebrow()}
           </p>
           <h2 id="p1-weekly-batch-title" className="text-lg font-semibold">
             {label}
@@ -95,7 +114,7 @@ export function WeeklyBatch({
               onCheckedChange={(checked) =>
                 onSelectionChange(item.task.id, checked === true)
               }
-              aria-label={m.p1_week_batch_select_aria({
+              aria-label={p1_week_batch_select_aria({
                 title: item.task.title,
               })}
               className="mt-1"
@@ -109,7 +128,7 @@ export function WeeklyBatch({
                     variant="outline"
                     className="border-amber-300 text-amber-700 dark:text-amber-300"
                   >
-                    {m.p1_week_batch_publish_confirmation()}
+                    {p1_week_batch_publish_confirmation()}
                   </Badge>
                 )}
               </div>
@@ -121,7 +140,7 @@ export function WeeklyBatch({
               {!item.executable && (
                 <p className="mt-2 flex items-center gap-1.5 text-sm text-destructive">
                   <IconAlertCircle className="size-4" aria-hidden="true" />
-                  {item.exclusionReason ?? m.p1_task_blocked_fallback()}
+                  {item.exclusionReason ?? p1_task_blocked_fallback()}
                 </p>
               )}
             </div>
@@ -130,7 +149,7 @@ export function WeeklyBatch({
               size="icon-sm"
               variant="ghost"
               onClick={() => onOpenTask(item.task.id)}
-              aria-label={m.p1_week_batch_open_aria({ title: item.task.title })}
+              aria-label={p1_week_batch_open_aria({ title: item.task.title })}
             >
               <IconArrowRight aria-hidden="true" />
             </Button>
@@ -138,7 +157,7 @@ export function WeeklyBatch({
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        {m.p1_week_batch_footnote()}
+        {p1_week_batch_footnote()}
       </p>
     </section>
   );
@@ -169,7 +188,7 @@ export function ThinWeeklyReview({
           <CardTitle>{label}</CardTitle>
         </div>
         <p className="text-sm text-muted-foreground">
-          {m.p1_week_review_description()}
+          {p1_week_review_description()}
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -209,14 +228,14 @@ export function ThinWeeklyReview({
 
         <div className="space-y-2">
           <div>
-            <h3 className="font-medium">{m.p1_week_candidates_title()}</h3>
+            <h3 className="font-medium">{p1_week_candidates_title()}</h3>
             <p className="text-xs text-muted-foreground">
-              {m.p1_week_candidates_description()}
+              {p1_week_candidates_description()}
             </p>
           </div>
           {candidates.length === 0 ? (
             <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              {m.p1_week_candidates_empty()}
+              {p1_week_candidates_empty()}
             </p>
           ) : (
             <ul className="space-y-2">
@@ -234,8 +253,8 @@ export function ThinWeeklyReview({
                           {candidate.status !== 'pending' && (
                             <Badge variant="outline">
                               {candidate.status === 'confirmed'
-                                ? m.p1_week_candidate_confirmed()
-                                : m.p1_week_candidate_dismissed()}
+                                ? p1_week_candidate_confirmed()
+                                : p1_week_candidate_dismissed()}
                             </Badge>
                           )}
                         </div>
@@ -252,7 +271,7 @@ export function ThinWeeklyReview({
                             disabled={pending}
                             onClick={() => onDismissCandidate(candidate.id)}
                           >
-                            {m.p1_week_candidate_dismiss()}
+                            {p1_week_candidate_dismiss()}
                           </Button>
                           <Button
                             type="button"
@@ -261,7 +280,7 @@ export function ThinWeeklyReview({
                             onClick={() => onConfirmCandidate(candidate.id)}
                           >
                             <IconCheck aria-hidden="true" />
-                            {m.p1_week_candidate_confirm()}
+                            {p1_week_candidate_confirm()}
                           </Button>
                         </div>
                       )}

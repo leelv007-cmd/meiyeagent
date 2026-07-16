@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_admin_template_validation_document,
+  p1_admin_template_validation_document_json,
+  p1_admin_template_validation_family,
+  p1_admin_template_validation_name,
+  p1_admin_template_validation_rollout,
+  p1_admin_template_validation_tags,
+  p1_admin_template_validation_template,
+  p1_admin_template_validation_version,
+} from '@/locale/paraglide/messages';
 import {
   parseCanvasDocument,
   parseRolloutPercent,
@@ -27,39 +36,35 @@ function acceptsRolloutPercent(value: string) {
 const templateId = z
   .string()
   .trim()
-  .min(1, m.p1_admin_template_validation_template());
+  .min(1, p1_admin_template_validation_template());
 const versionId = z
   .string()
   .trim()
-  .min(1, m.p1_admin_template_validation_version());
+  .min(1, p1_admin_template_validation_version());
 
 export const createAdminTemplateSchema = z.object({
   family: z
     .string()
     .trim()
-    .min(1, m.p1_admin_template_validation_family())
+    .min(1, p1_admin_template_validation_family())
     .max(128),
-  name: z
-    .string()
-    .trim()
-    .min(1, m.p1_admin_template_validation_name())
-    .max(256),
-  tags: z.string().max(1_024, m.p1_admin_template_validation_tags()),
+  name: z.string().trim().min(1, p1_admin_template_validation_name()).max(256),
+  tags: z.string().max(1_024, p1_admin_template_validation_tags()),
 });
 
 export const adminTemplateVersionFormSchema = z.object({
   document: z
     .string()
     .trim()
-    .min(1, m.p1_admin_template_validation_document())
+    .min(1, p1_admin_template_validation_document())
     .refine(
       acceptsCanvasDocument,
-      m.p1_admin_template_validation_document_json()
+      p1_admin_template_validation_document_json()
     ),
   rollout: z
     .string()
     .trim()
-    .refine(acceptsRolloutPercent, m.p1_admin_template_validation_rollout()),
+    .refine(acceptsRolloutPercent, p1_admin_template_validation_rollout()),
   templateId,
   versionId: z.string().trim().max(256),
 });

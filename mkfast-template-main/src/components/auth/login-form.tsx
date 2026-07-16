@@ -1,5 +1,18 @@
 import { getAuthErrorMessage } from '@/lib/locale';
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_login_email,
+  auth_login_email_required,
+  auth_login_forgot_password,
+  auth_login_hide_password,
+  auth_login_password,
+  auth_login_password_required,
+  auth_login_placeholder_email,
+  auth_login_placeholder_password,
+  auth_login_show_password,
+  auth_login_sign_in,
+  auth_login_sign_up_hint,
+  auth_login_welcome_back,
+} from '@/locale/paraglide/messages';
 import { Link } from '@tanstack/react-router';
 import { AuthCard } from '@/components/auth/auth-card';
 import { FormError } from '@/components/shared/form-error';
@@ -50,8 +63,8 @@ export function LoginForm({
   const credentialLoginEnabled =
     websiteConfig.auth?.enableCredentialLogin ?? false;
   const LoginSchema = z.object({
-    email: z.email({ message: m.auth_login_email_required() }),
-    password: z.string().min(1, { message: m.auth_login_password_required() }),
+    email: z.email({ message: auth_login_email_required() }),
+    password: z.string().min(1, { message: auth_login_password_required() }),
   });
   const form = useForm<z.infer<typeof LoginSchema>>({
     resolver: zodResolver(LoginSchema),
@@ -89,8 +102,8 @@ export function LoginForm({
   };
   return (
     <AuthCard
-      headerLabel={m.auth_login_welcome_back()}
-      bottomButtonLabel={m.auth_login_sign_up_hint()}
+      headerLabel={auth_login_welcome_back()}
+      bottomButtonLabel={auth_login_sign_up_hint()}
       bottomButtonHref={Routes.Register}
       className={cn('', className)}
     >
@@ -103,12 +116,12 @@ export function LoginForm({
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{m.auth_login_email()}</FormLabel>
+                    <FormLabel>{auth_login_email()}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
                         disabled={isPending}
-                        placeholder={m.auth_login_placeholder_email()}
+                        placeholder={auth_login_placeholder_email()}
                         type="email"
                       />
                     </FormControl>
@@ -122,12 +135,12 @@ export function LoginForm({
                 render={({ field }) => (
                   <FormItem>
                     <div className="flex justify-between items-center">
-                      <FormLabel>{m.auth_login_password()}</FormLabel>
+                      <FormLabel>{auth_login_password()}</FormLabel>
                       <Link
                         to={Routes.ForgotPassword}
                         className="text-xs font-normal text-muted-foreground hover:underline hover:underline-offset-4 hover:text-primary"
                       >
-                        {m.auth_login_forgot_password()}
+                        {auth_login_forgot_password()}
                       </Link>
                     </div>
                     <div className="relative">
@@ -135,7 +148,7 @@ export function LoginForm({
                         <Input
                           {...field}
                           disabled={isPending}
-                          placeholder={m.auth_login_placeholder_password()}
+                          placeholder={auth_login_placeholder_password()}
                           type={showPassword ? 'text' : 'password'}
                           className="pr-10"
                         />
@@ -155,8 +168,8 @@ export function LoginForm({
                         )}
                         <span className="sr-only">
                           {showPassword
-                            ? m.auth_login_hide_password()
-                            : m.auth_login_show_password()}
+                            ? auth_login_hide_password()
+                            : auth_login_show_password()}
                         </span>
                       </Button>
                     </div>
@@ -174,7 +187,7 @@ export function LoginForm({
               className="w-full flex items-center justify-center gap-2"
             >
               {isPending && <IconLoader2 className="size-4 animate-spin" />}
-              <span>{m.auth_login_sign_in()}</span>
+              <span>{auth_login_sign_in()}</span>
             </Button>
           </form>
         </Form>

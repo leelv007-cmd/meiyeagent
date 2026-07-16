@@ -1,15 +1,21 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  contact_email_invalid,
+  contact_message_max,
+  contact_message_min,
+  contact_name_max,
+  contact_name_min,
+} from '@/locale/paraglide/messages';
 import { createServerFn } from '@tanstack/react-start';
 import { websiteConfig } from '@/config/website';
 import { sendEmail } from '@/mail';
 import { z } from 'zod';
 const schema = z.object({
-  name: z.string().min(3, m.contact_name_min()).max(30, m.contact_name_max()),
-  email: z.email(m.contact_email_invalid()),
+  name: z.string().min(3, contact_name_min()).max(30, contact_name_max()),
+  email: z.email(contact_email_invalid()),
   message: z
     .string()
-    .min(10, m.contact_message_min())
-    .max(500, m.contact_message_max()),
+    .min(10, contact_message_min())
+    .max(500, contact_message_max()),
 });
 export const sendContactMessage = createServerFn({ method: 'POST' })
   .inputValidator(schema)

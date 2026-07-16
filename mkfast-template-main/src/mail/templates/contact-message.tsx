@@ -1,6 +1,10 @@
 import EmailLayout from '../components/email-layout';
 import { Text } from '@react-email/components';
-import { m } from '@/locale/paraglide/messages';
+import {
+  mail_contact_message_email,
+  mail_contact_message_message,
+  mail_contact_message_name,
+} from '@/locale/paraglide/messages';
 
 const en = { locale: 'en' as const };
 
@@ -18,13 +22,13 @@ export default function ContactMessage({
   return (
     <EmailLayout>
       <Text>
-        {m.mail_contact_message_name(undefined, en)} {name}
+        {mail_contact_message_name(undefined, en)} {name}
       </Text>
       <Text>
-        {m.mail_contact_message_email(undefined, en)} {email}
+        {mail_contact_message_email(undefined, en)} {email}
       </Text>
       <Text>
-        {m.mail_contact_message_message(undefined, en)} {message}
+        {mail_contact_message_message(undefined, en)} {message}
       </Text>
     </EmailLayout>
   );

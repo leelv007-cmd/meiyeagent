@@ -1,7 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
-import { m } from '@/locale/paraglide/messages';
+import {
+  creative_tool_availability_empty,
+  creative_tool_availability_error,
+  creative_tool_availability_pending,
+  creative_tool_availability_quote_missing,
+} from '@/locale/paraglide/messages';
 import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
@@ -26,13 +31,13 @@ export function toolAvailabilityForCatalog(
   if (status === 'pending') {
     return {
       available: false,
-      unavailableReason: m.creative_tool_availability_pending(),
+      unavailableReason: creative_tool_availability_pending(),
     };
   }
   if (status === 'error') {
     return {
       available: false,
-      unavailableReason: m.creative_tool_availability_error(),
+      unavailableReason: creative_tool_availability_error(),
     };
   }
   const models = normalizeCatalog(catalog ?? {}, operation).models;
@@ -42,14 +47,14 @@ export function toolAvailabilityForCatalog(
   if (models.some((model) => model.available)) {
     return {
       available: false,
-      unavailableReason: m.creative_tool_availability_quote_missing(),
+      unavailableReason: creative_tool_availability_quote_missing(),
     };
   }
   return {
     available: false,
     unavailableReason:
       models.find((model) => model.unavailableReason)?.unavailableReason ??
-      m.creative_tool_availability_empty(),
+      creative_tool_availability_empty(),
   };
 }
 

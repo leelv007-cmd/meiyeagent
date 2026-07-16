@@ -13,7 +13,38 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_image_cancel_job,
+  p1_image_catalog_model_missing,
+  p1_image_catalog_unpublished,
+  p1_image_description,
+  p1_image_estimated_usage,
+  p1_image_fixed_model_note,
+  p1_image_insert_canvas,
+  p1_image_job_actual_model,
+  p1_image_job_error_description,
+  p1_image_job_id,
+  p1_image_manufacturer_bytedance,
+  p1_image_mode_edit,
+  p1_image_mode_generate,
+  p1_image_mode_legend,
+  p1_image_model_aria,
+  p1_image_not_active,
+  p1_image_pricing_pending,
+  p1_image_prompt_edit,
+  p1_image_prompt_edit_placeholder,
+  p1_image_prompt_generate,
+  p1_image_prompt_generate_placeholder,
+  p1_image_refresh_status,
+  p1_image_result_alt,
+  p1_image_retry_same_model,
+  p1_image_source_label,
+  p1_image_source_required_description,
+  p1_image_source_required_title,
+  p1_image_submit_edit,
+  p1_image_submit_generate,
+  p1_image_title,
+} from '@/locale/paraglide/messages';
 
 import type {
   ImageGenerationJobView,
@@ -40,7 +71,7 @@ const REQUIRED_IMAGE_MODELS: {
   {
     id: 'seedream-5-pro',
     label: 'Seedream 5.0 Pro',
-    manufacturer: m.p1_image_manufacturer_bytedance(),
+    manufacturer: p1_image_manufacturer_bytedance(),
   },
 ];
 
@@ -84,10 +115,10 @@ export function AiImageSelector({
     return (
       catalogModel ?? {
         ...requiredModel,
-        capabilityLabel: m.p1_image_catalog_unpublished(),
-        estimatedUsageLabel: m.p1_image_pricing_pending(),
+        capabilityLabel: p1_image_catalog_unpublished(),
+        estimatedUsageLabel: p1_image_pricing_pending(),
         available: false,
-        unavailableReason: m.p1_image_catalog_model_missing(),
+        unavailableReason: p1_image_catalog_model_missing(),
       }
     );
   });
@@ -111,16 +142,16 @@ export function AiImageSelector({
         <div className="flex items-center gap-2">
           <IconSparkles className="size-5 text-primary" aria-hidden="true" />
           <h2 id="p1-ai-image-title" className="font-semibold">
-            {m.p1_image_title()}
+            {p1_image_title()}
           </h2>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          {m.p1_image_description()}
+          {p1_image_description()}
         </p>
       </header>
 
       <fieldset className="flex gap-2 border-0 p-0">
-        <legend className="sr-only">{m.p1_image_mode_legend()}</legend>
+        <legend className="sr-only">{p1_image_mode_legend()}</legend>
         <Button
           type="button"
           size="sm"
@@ -128,7 +159,7 @@ export function AiImageSelector({
           onClick={() => onModeChange('generate')}
         >
           <IconPhotoPlus aria-hidden="true" />
-          {m.p1_image_mode_generate()}
+          {p1_image_mode_generate()}
         </Button>
         <Button
           type="button"
@@ -137,7 +168,7 @@ export function AiImageSelector({
           onClick={() => onModeChange('edit')}
         >
           <IconPhoto aria-hidden="true" />
-          {m.p1_image_mode_edit()}
+          {p1_image_mode_edit()}
         </Button>
       </fieldset>
 
@@ -145,7 +176,7 @@ export function AiImageSelector({
         value={selectedModelId}
         onValueChange={(value) => onModelChange(value as ImageModelId)}
         className="grid gap-2 sm:grid-cols-2"
-        aria-label={m.p1_image_model_aria()}
+        aria-label={p1_image_model_aria()}
       >
         {completeCatalog.map((model) => (
           <label
@@ -168,14 +199,14 @@ export function AiImageSelector({
               <span className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{model.label}</span>
                 {!model.available && (
-                  <Badge variant="outline">{m.p1_image_not_active()}</Badge>
+                  <Badge variant="outline">{p1_image_not_active()}</Badge>
                 )}
               </span>
               <span className="mt-0.5 block text-xs text-muted-foreground">
                 {model.manufacturer} · {model.capabilityLabel}
               </span>
               <span className="mt-1 block text-xs">
-                {m.p1_image_estimated_usage({
+                {p1_image_estimated_usage({
                   usage: model.estimatedUsageLabel,
                 })}
               </span>
@@ -192,9 +223,9 @@ export function AiImageSelector({
       {mode === 'edit' && !sourceAssetLabel && (
         <Alert variant="destructive">
           <IconAlertCircle aria-hidden="true" />
-          <AlertTitle>{m.p1_image_source_required_title()}</AlertTitle>
+          <AlertTitle>{p1_image_source_required_title()}</AlertTitle>
           <AlertDescription>
-            {m.p1_image_source_required_description()}
+            {p1_image_source_required_description()}
           </AlertDescription>
         </Alert>
       )}
@@ -202,12 +233,12 @@ export function AiImageSelector({
       <div className="space-y-2">
         <label htmlFor="p1-ai-image-prompt" className="text-sm font-medium">
           {mode === 'generate'
-            ? m.p1_image_prompt_generate()
-            : m.p1_image_prompt_edit()}
+            ? p1_image_prompt_generate()
+            : p1_image_prompt_edit()}
         </label>
         {sourceAssetLabel && mode === 'edit' && (
           <p className="text-xs text-muted-foreground">
-            {m.p1_image_source_label({ source: sourceAssetLabel })}
+            {p1_image_source_label({ source: sourceAssetLabel })}
           </p>
         )}
         <Textarea
@@ -216,8 +247,8 @@ export function AiImageSelector({
           onChange={(event) => onPromptChange(event.target.value)}
           placeholder={
             mode === 'generate'
-              ? m.p1_image_prompt_generate_placeholder()
-              : m.p1_image_prompt_edit_placeholder()
+              ? p1_image_prompt_generate_placeholder()
+              : p1_image_prompt_edit_placeholder()
           }
           disabled={jobRunning}
         />
@@ -225,7 +256,7 @@ export function AiImageSelector({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          {m.p1_image_fixed_model_note()}
+          {p1_image_fixed_model_note()}
         </p>
         <Button
           type="button"
@@ -234,8 +265,8 @@ export function AiImageSelector({
         >
           <IconSparkles aria-hidden="true" />
           {mode === 'generate'
-            ? m.p1_image_submit_generate()
-            : m.p1_image_submit_edit()}
+            ? p1_image_submit_generate()
+            : p1_image_submit_edit()}
         </Button>
       </div>
 
@@ -245,9 +276,9 @@ export function AiImageSelector({
             <div>
               <p className="text-sm font-medium">{job.statusLabel}</p>
               <p className="text-xs text-muted-foreground">
-                {m.p1_image_job_id({ id: job.id })}
+                {p1_image_job_id({ id: job.id })}
                 {job.actualModelLabel
-                  ? m.p1_image_job_actual_model({
+                  ? p1_image_job_actual_model({
                       model: job.actualModelLabel,
                     })
                   : ''}
@@ -257,13 +288,13 @@ export function AiImageSelector({
           </div>
           {job.errorMessage && (
             <p className="mt-2 text-sm text-destructive">
-              {m.p1_image_job_error_description()}
+              {p1_image_job_error_description()}
             </p>
           )}
           {job.assetUrl && (
             <img
               src={job.assetUrl}
-              alt={m.p1_image_result_alt()}
+              alt={p1_image_result_alt()}
               className="mt-3 max-h-72 w-full rounded-lg bg-background object-contain"
             />
           )}
@@ -276,7 +307,7 @@ export function AiImageSelector({
                 onClick={() => onRefreshJob(job.id)}
               >
                 <IconRefresh aria-hidden="true" />
-                {m.p1_image_refresh_status()}
+                {p1_image_refresh_status()}
               </Button>
             )}
             {jobRunning && onCancelJob && (
@@ -287,7 +318,7 @@ export function AiImageSelector({
                 onClick={() => onCancelJob(job.id)}
               >
                 <IconBan aria-hidden="true" />
-                {m.p1_image_cancel_job()}
+                {p1_image_cancel_job()}
               </Button>
             )}
             {job.status === 'failed' && onRetryJob && (
@@ -298,7 +329,7 @@ export function AiImageSelector({
                 onClick={() => onRetryJob(job.id)}
               >
                 <IconRefresh aria-hidden="true" />
-                {m.p1_image_retry_same_model()}
+                {p1_image_retry_same_model()}
               </Button>
             )}
             {job.status === 'completed' && job.assetUrl && onInsertAsset && (
@@ -308,7 +339,7 @@ export function AiImageSelector({
                 onClick={() => onInsertAsset(job.id)}
               >
                 <IconPhotoPlus aria-hidden="true" />
-                {m.p1_image_insert_canvas()}
+                {p1_image_insert_canvas()}
               </Button>
             )}
           </div>

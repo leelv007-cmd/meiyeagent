@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_security_reset_password_button,
+  settings_security_reset_password_description,
+  settings_security_reset_password_info,
+  settings_security_reset_password_title,
+} from '@/locale/paraglide/messages';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -37,20 +42,20 @@ export function ResetPasswordCard({ className }: ResetPasswordCardProps) {
     >
       <CardHeader>
         <CardTitle className="text-lg font-semibold">
-          {m.settings_security_reset_password_title()}
+          {settings_security_reset_password_title()}
         </CardTitle>
         <CardDescription>
-          {m.settings_security_reset_password_description()}
+          {settings_security_reset_password_description()}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 flex-1">
         <p className="text-sm text-muted-foreground">
-          {m.settings_security_reset_password_info()}
+          {settings_security_reset_password_info()}
         </p>
       </CardContent>
       <CardFooter className="mt-auto px-6 py-4 flex justify-end items-center bg-muted rounded-none">
         <Button onClick={handleSetupPassword}>
-          {m.settings_security_reset_password_button()}
+          {settings_security_reset_password_button()}
         </Button>
       </CardFooter>
     </Card>

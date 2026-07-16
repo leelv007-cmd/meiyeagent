@@ -1,4 +1,11 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  home_stats_description,
+  home_stats_items_item_1_title,
+  home_stats_items_item_2_title,
+  home_stats_items_item_3_title,
+  home_stats_subtitle,
+  home_stats_title,
+} from '@/locale/paraglide/messages';
 import { HeaderSection } from '@/components/shared/header-section';
 import { ScrollReveal } from '@/components/shared/scroll-reveal';
 export default function StatsSection() {
@@ -7,9 +14,9 @@ export default function StatsSection() {
       <div className="mx-auto max-w-5xl px-6 space-y-8 md:space-y-16">
         <ScrollReveal>
           <HeaderSection
-            title={m.home_stats_title()}
-            subtitle={m.home_stats_subtitle()}
-            description={m.home_stats_description()}
+            title={home_stats_title()}
+            subtitle={home_stats_subtitle()}
+            description={home_stats_description()}
           />
         </ScrollReveal>
 
@@ -19,7 +26,7 @@ export default function StatsSection() {
               +1200
             </div>
             <p className="text-muted-foreground font-medium">
-              {m.home_stats_items_item_1_title()}
+              {home_stats_items_item_1_title()}
             </p>
           </ScrollReveal>
           <ScrollReveal delay={120} className="space-y-4 py-4 md:py-0">
@@ -27,7 +34,7 @@ export default function StatsSection() {
               22 Million
             </div>
             <p className="text-muted-foreground font-medium">
-              {m.home_stats_items_item_2_title()}
+              {home_stats_items_item_2_title()}
             </p>
           </ScrollReveal>
           <ScrollReveal delay={240} className="space-y-4 py-4 md:py-0">
@@ -35,7 +42,7 @@ export default function StatsSection() {
               +500
             </div>
             <p className="text-muted-foreground font-medium">
-              {m.home_stats_items_item_3_title()}
+              {home_stats_items_item_3_title()}
             </p>
           </ScrollReveal>
         </div>

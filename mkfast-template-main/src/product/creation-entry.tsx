@@ -8,7 +8,35 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_entry_agent_ready,
+  creation_entry_all_scenes,
+  creation_entry_change_pending,
+  creation_entry_create,
+  creation_entry_description,
+  creation_entry_guidance_description,
+  creation_entry_guidance_title,
+  creation_entry_input_guide,
+  creation_entry_intent_aria,
+  creation_entry_intent_placeholder,
+  creation_entry_method_describe,
+  creation_entry_method_describe_hint,
+  creation_entry_method_legend,
+  creation_entry_mode_agent,
+  creation_entry_mode_direct,
+  creation_entry_mode_label,
+  creation_entry_pending,
+  creation_entry_pending_source_description,
+  creation_entry_pending_tool_description,
+  creation_entry_preset_input_hidden,
+  creation_entry_preset_preview_alt,
+  creation_entry_scene_legend,
+  creation_entry_selected_preset,
+  creation_entry_skip,
+  creation_entry_source_legend,
+  creation_entry_title,
+  creation_entry_uploads_pending,
+} from '@/locale/paraglide/messages';
 import { getLocale } from '@/lib/locale';
 import type { TemplateCatalogItemView } from '@/p1/types';
 import type { ProductState } from '@meiye/contracts';
@@ -149,10 +177,10 @@ export function CreationEntry({
     <Card>
       <CardHeader>
         <Badge className="w-fit" variant="secondary">
-          {m.creation_entry_agent_ready()}
+          {creation_entry_agent_ready()}
         </Badge>
-        <CardTitle>{m.creation_entry_title()}</CardTitle>
-        <CardDescription>{m.creation_entry_description()}</CardDescription>
+        <CardTitle>{creation_entry_title()}</CardTitle>
+        <CardDescription>{creation_entry_description()}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {pendingAction ? (
@@ -162,12 +190,12 @@ export function CreationEntry({
           >
             <div>
               <p className="font-medium">
-                {m.creation_entry_pending({ label: pendingAction.label })}
+                {creation_entry_pending({ label: pendingAction.label })}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {pendingAction.kind === 'tool'
-                  ? m.creation_entry_pending_tool_description()
-                  : m.creation_entry_pending_source_description()}
+                  ? creation_entry_pending_tool_description()
+                  : creation_entry_pending_source_description()}
               </p>
             </div>
             <Button
@@ -176,7 +204,7 @@ export function CreationEntry({
               type="button"
               variant="outline"
             >
-              {m.creation_entry_change_pending()}
+              {creation_entry_change_pending()}
             </Button>
           </div>
         ) : null}
@@ -190,33 +218,33 @@ export function CreationEntry({
           {selectedPreset ? (
             <div aria-live="polite" className="rounded-md bg-surface-2 p-4">
               <p className="font-semibold">
-                {m.creation_entry_selected_preset({
+                {creation_entry_selected_preset({
                   name: selectedPreset.name,
                 })}
               </p>
               <p className="mt-2 text-sm">
-                {m.creation_entry_input_guide({
+                {creation_entry_input_guide({
                   guide: selectedPreset.inputGuide ?? '',
                 })}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
-                {m.creation_entry_preset_input_hidden()}
+                {creation_entry_preset_input_hidden()}
               </p>
             </div>
           ) : (
             <div className="space-y-4">
               <Textarea
-                aria-label={m.creation_entry_intent_aria()}
+                aria-label={creation_entry_intent_aria()}
                 className="resize-none text-base"
                 onChange={(event) => onIntentChange(event.target.value)}
-                placeholder={m.creation_entry_intent_placeholder()}
+                placeholder={creation_entry_intent_placeholder()}
                 ref={intentRef}
                 rows={4}
                 value={intent}
               />
               <fieldset className="space-y-2">
                 <legend className="sr-only">
-                  {m.creation_entry_scene_legend()}
+                  {creation_entry_scene_legend()}
                 </legend>
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {sceneChips.primary.map((scene) => (
@@ -240,7 +268,7 @@ export function CreationEntry({
                     type="button"
                     variant="ghost"
                   >
-                    {m.creation_entry_all_scenes()}
+                    {creation_entry_all_scenes()}
                     {expandedScenes ? (
                       <IconChevronUp aria-hidden="true" />
                     ) : (
@@ -273,10 +301,10 @@ export function CreationEntry({
         <section aria-labelledby="today-guidance-title" className="space-y-2">
           <div>
             <h3 className="text-sm font-semibold" id="today-guidance-title">
-              {m.creation_entry_guidance_title()}
+              {creation_entry_guidance_title()}
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              {m.creation_entry_guidance_description()}
+              {creation_entry_guidance_description()}
             </p>
           </div>
           <div className="grid gap-px overflow-hidden rounded-lg bg-divider sm:grid-cols-3">
@@ -308,7 +336,7 @@ export function CreationEntry({
 
         <fieldset className="space-y-3">
           <legend className="meiye-type-body font-semibold">
-            {m.creation_entry_method_legend()}
+            {creation_entry_method_legend()}
           </legend>
           <Button
             aria-pressed={!selectedPresetId}
@@ -322,10 +350,10 @@ export function CreationEntry({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block font-semibold">
-                {m.creation_entry_method_describe()}
+                {creation_entry_method_describe()}
               </span>
               <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                {m.creation_entry_method_describe_hint()}
+                {creation_entry_method_describe_hint()}
               </span>
             </span>
             {!selectedPresetId ? (
@@ -354,7 +382,7 @@ export function CreationEntry({
                 >
                   {previewUrl ? (
                     <img
-                      alt={m.creation_entry_preset_preview_alt({
+                      alt={creation_entry_preset_preview_alt({
                         name: preset.name,
                       })}
                       className="aspect-[16/10] w-full object-cover"
@@ -377,7 +405,7 @@ export function CreationEntry({
                       <span className="min-w-0">{preset.name}</span>
                     </span>
                     <span className="text-xs font-normal text-muted-foreground">
-                      {m.creation_entry_input_guide({
+                      {creation_entry_input_guide({
                         guide: preset.inputGuide ?? '',
                       })}
                     </span>
@@ -391,7 +419,7 @@ export function CreationEntry({
         {sourceOptions.length > 0 ? (
           <fieldset className="space-y-2">
             <legend className="meiye-type-body font-semibold">
-              {m.creation_entry_source_legend()}
+              {creation_entry_source_legend()}
             </legend>
             <div className="flex flex-wrap gap-2">
               {sourceOptions.map((source) => {
@@ -417,7 +445,7 @@ export function CreationEntry({
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">
-            {m.creation_entry_mode_label()}
+            {creation_entry_mode_label()}
           </span>
           <div className="flex rounded-md bg-surface-2 p-1">
             {(['agent', 'direct'] as const).map((item) => (
@@ -430,8 +458,8 @@ export function CreationEntry({
                 variant={mode === item ? 'secondary' : 'ghost'}
               >
                 {item === 'agent'
-                  ? m.creation_entry_mode_agent()
-                  : m.creation_entry_mode_direct()}
+                  ? creation_entry_mode_agent()
+                  : creation_entry_mode_direct()}
               </Button>
             ))}
           </div>
@@ -444,16 +472,16 @@ export function CreationEntry({
             type="button"
             variant="ghost"
           >
-            {m.creation_entry_skip()}
+            {creation_entry_skip()}
           </Button>
           <div className="text-right">
             {!uploadsReady ? (
               <p className="mb-2 text-xs text-destructive">
-                {m.creation_entry_uploads_pending()}
+                {creation_entry_uploads_pending()}
               </p>
             ) : null}
             <Button disabled={createDisabled} onClick={onCreate} type="button">
-              {m.creation_entry_create()}
+              {creation_entry_create()}
               <IconArrowRight aria-hidden="true" />
             </Button>
           </div>

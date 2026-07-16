@@ -2,7 +2,13 @@ import type {
   CreativeInheritanceFieldId,
   CreativeSourceReference,
 } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_shelf_field_content_structure,
+  creation_shelf_field_copy_skeleton,
+  creation_shelf_field_layout_slots,
+  creation_shelf_field_output_specification,
+  creation_shelf_field_visual_style,
+} from '@/locale/paraglide/messages';
 
 export const INHERITANCE_FIELD_OPTIONS: Array<{
   id: CreativeInheritanceFieldId;
@@ -11,31 +17,31 @@ export const INHERITANCE_FIELD_OPTIONS: Array<{
   {
     id: 'content_structure',
     get label() {
-      return m.creation_shelf_field_content_structure();
+      return creation_shelf_field_content_structure();
     },
   },
   {
     id: 'layout_slots',
     get label() {
-      return m.creation_shelf_field_layout_slots();
+      return creation_shelf_field_layout_slots();
     },
   },
   {
     id: 'copy_skeleton',
     get label() {
-      return m.creation_shelf_field_copy_skeleton();
+      return creation_shelf_field_copy_skeleton();
     },
   },
   {
     id: 'output_specification',
     get label() {
-      return m.creation_shelf_field_output_specification();
+      return creation_shelf_field_output_specification();
     },
   },
   {
     id: 'visual_style',
     get label() {
-      return m.creation_shelf_field_visual_style();
+      return creation_shelf_field_visual_style();
     },
   },
 ];

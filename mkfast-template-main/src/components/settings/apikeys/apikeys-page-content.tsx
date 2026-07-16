@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_api_keys_create_error,
+  settings_api_keys_create_success,
+  settings_api_keys_delete_error,
+  settings_api_keys_delete_success,
+} from '@/locale/paraglide/messages';
 import { ApiKeysTable } from '@/components/settings/apikeys/apikeys-table';
 import {
   useApiKeys,
@@ -24,11 +29,11 @@ export function ApiKeysPageContent() {
         { name },
         {
           onSuccess: (data) => {
-            toast.success(m.settings_api_keys_create_success());
+            toast.success(settings_api_keys_create_success());
             resolve(data?.key ? { key: data.key } : undefined);
           },
           onError: () => {
-            toast.error(m.settings_api_keys_create_error());
+            toast.error(settings_api_keys_create_error());
             resolve(undefined);
           },
         }
@@ -38,8 +43,8 @@ export function ApiKeysPageContent() {
     deleteMutation.mutate(
       { keyId },
       {
-        onSuccess: () => toast.success(m.settings_api_keys_delete_success()),
-        onError: () => toast.error(m.settings_api_keys_delete_error()),
+        onSuccess: () => toast.success(settings_api_keys_delete_success()),
+        onError: () => toast.error(settings_api_keys_delete_error()),
       }
     );
   };

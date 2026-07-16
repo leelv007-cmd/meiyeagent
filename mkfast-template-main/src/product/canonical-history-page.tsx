@@ -8,7 +8,85 @@ import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_asset_detail_description,
+  canonical_asset_detail_title,
+  canonical_asset_generation_relation,
+  canonical_asset_loading_description,
+  canonical_asset_loading_title,
+  canonical_asset_not_found_description,
+  canonical_asset_not_found_title,
+  canonical_asset_persisted_relation,
+  canonical_asset_persisted_title,
+  canonical_asset_source_generation,
+  canonical_asset_source_upload,
+  canonical_asset_type,
+  canonical_canvas_image_generation,
+  canonical_canvas_job_asset_relation,
+  canonical_canvas_job_description,
+  canonical_canvas_job_loading_description,
+  canonical_canvas_job_loading_title,
+  canonical_canvas_job_model_fixed,
+  canonical_canvas_job_not_found_description,
+  canonical_canvas_job_not_found_title,
+  canonical_canvas_job_source,
+  canonical_canvas_job_title,
+  canonical_canvas_job_work_relation,
+  canonical_content_asset_count,
+  canonical_content_body_empty,
+  canonical_content_detail_description,
+  canonical_content_detail_title,
+  canonical_content_loading_description,
+  canonical_content_loading_title,
+  canonical_content_not_found_description,
+  canonical_content_not_found_title,
+  canonical_content_source_accepted_asset,
+  canonical_content_source_product,
+  canonical_history_assets_description,
+  canonical_history_assets_empty_description,
+  canonical_history_assets_empty_store_action,
+  canonical_history_assets_empty_title,
+  canonical_history_assets_empty_upload_action,
+  canonical_history_empty_description,
+  canonical_history_empty_title,
+  canonical_history_error_description,
+  canonical_history_error_title,
+  canonical_history_jobs_description,
+  canonical_history_jobs_title,
+  canonical_history_kind_asset,
+  canonical_history_kind_content,
+  canonical_history_kind_job,
+  canonical_history_kind_session,
+  canonical_history_kind_task,
+  canonical_history_kind_work,
+  canonical_history_loading_description,
+  canonical_history_loading_title,
+  canonical_history_navigation_aria,
+  canonical_history_navigation_jobs,
+  canonical_history_navigation_recent,
+  canonical_history_navigation_search,
+  canonical_history_navigation_works,
+  canonical_history_open_object,
+  canonical_history_recent_description,
+  canonical_history_recent_title,
+  canonical_history_retry,
+  canonical_history_search_description,
+  canonical_history_search_label,
+  canonical_history_search_placeholder,
+  canonical_history_search_title,
+  canonical_history_session_title,
+  canonical_history_sessions_description,
+  canonical_history_untitled_asset,
+  canonical_history_untitled_material,
+  canonical_history_works_description,
+  canonical_history_works_title,
+  canonical_media_kind_image,
+  canonical_media_kind_video,
+  content_package_legacy_read_only,
+  product_navigation_assets,
+  product_navigation_content,
+  product_navigation_workbench,
+} from '@/locale/paraglide/messages';
 import { getLocale, localeConfig } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
@@ -57,42 +135,42 @@ const copy: Record<
   }
 > = {
   assets: {
-    description: m.canonical_history_assets_description,
+    description: canonical_history_assets_description,
     kind: 'asset',
-    title: m.product_navigation_assets,
+    title: product_navigation_assets,
   },
   jobs: {
-    description: m.canonical_history_jobs_description,
+    description: canonical_history_jobs_description,
     kind: 'job',
-    title: m.canonical_history_jobs_title,
+    title: canonical_history_jobs_title,
   },
   recent: {
-    description: m.canonical_history_recent_description,
-    title: m.canonical_history_recent_title,
+    description: canonical_history_recent_description,
+    title: canonical_history_recent_title,
   },
   search: {
-    description: m.canonical_history_search_description,
-    title: m.canonical_history_search_title,
+    description: canonical_history_search_description,
+    title: canonical_history_search_title,
   },
   sessions: {
-    description: m.canonical_history_sessions_description,
+    description: canonical_history_sessions_description,
     kind: 'session',
-    title: m.canonical_history_session_title,
+    title: canonical_history_session_title,
   },
   works: {
-    description: m.canonical_history_works_description,
+    description: canonical_history_works_description,
     kind: 'work',
-    title: m.canonical_history_works_title,
+    title: canonical_history_works_title,
   },
 };
 
 const HISTORY_KIND_LABELS: Record<CanonicalHistoryKind, () => string> = {
-  asset: m.canonical_history_kind_asset,
-  content: m.canonical_history_kind_content,
-  job: m.canonical_history_kind_job,
-  session: m.canonical_history_kind_session,
-  task: m.canonical_history_kind_task,
-  work: m.canonical_history_kind_work,
+  asset: canonical_history_kind_asset,
+  content: canonical_history_kind_content,
+  job: canonical_history_kind_job,
+  session: canonical_history_kind_session,
+  task: canonical_history_kind_task,
+  work: canonical_history_kind_work,
 };
 
 const HISTORY_NAVIGATION_CLASS = buttonVariants({
@@ -105,11 +183,11 @@ function historyItemTitle(item: CanonicalHistoryItem) {
   if (item.kind !== 'asset') return item.title;
 
   for (const kind of [
-    m.canonical_media_kind_image(),
-    m.canonical_media_kind_video(),
+    canonical_media_kind_image(),
+    canonical_media_kind_video(),
   ]) {
-    if (item.title === m.canonical_history_untitled_asset({ kind })) {
-      return m.canonical_history_untitled_material({ kind });
+    if (item.title === canonical_history_untitled_asset({ kind })) {
+      return canonical_history_untitled_material({ kind });
     }
   }
 
@@ -138,20 +216,20 @@ function CanonicalHistoryList({
                   document.getElementById('canonical-asset-upload')?.click()
                 }
               >
-                {m.canonical_history_assets_empty_upload_action()}
+                {canonical_history_assets_empty_upload_action()}
               </Button>
             ) : (
               <a
                 className={buttonVariants()}
                 href={getPathWithLocale(Routes.StoreProfile)}
               >
-                {m.canonical_history_assets_empty_store_action()}
+                {canonical_history_assets_empty_store_action()}
               </a>
             )
           }
-          description={m.canonical_history_assets_empty_description()}
+          description={canonical_history_assets_empty_description()}
           media={<IconPhoto />}
-          title={m.canonical_history_assets_empty_title()}
+          title={canonical_history_assets_empty_title()}
         />
       );
     }
@@ -159,8 +237,8 @@ function CanonicalHistoryList({
     return (
       <StatePanel
         kind="empty"
-        title={m.canonical_history_empty_title()}
-        description={m.canonical_history_empty_description()}
+        title={canonical_history_empty_title()}
+        description={canonical_history_empty_description()}
       />
     );
   }
@@ -195,7 +273,7 @@ function CanonicalHistoryList({
                 className="inline-flex min-h-touch-target items-center font-medium text-primary underline-offset-4 hover:underline"
                 href={getPathWithLocale(item.href)}
               >
-                {m.canonical_history_open_object()}
+                {canonical_history_open_object()}
               </a>
             </CardContent>
           </Card>
@@ -272,7 +350,7 @@ export function CanonicalHistoryPage({
     <>
       <DashboardHeader
         breadcrumbs={[
-          { label: m.product_navigation_workbench(), isCurrentPage: false },
+          { label: product_navigation_workbench(), isCurrentPage: false },
           { label: page.title(), isCurrentPage: true },
         ]}
       />
@@ -285,7 +363,7 @@ export function CanonicalHistoryPage({
             <p className="meiye-type-aux mt-1">{page.description()}</p>
           </div>
           <nav
-            aria-label={m.canonical_history_navigation_aria()}
+            aria-label={canonical_history_navigation_aria()}
             className="flex flex-wrap gap-2"
           >
             <a
@@ -293,28 +371,28 @@ export function CanonicalHistoryPage({
               className={HISTORY_NAVIGATION_CLASS}
               href={getPathWithLocale('/dashboard/recent')}
             >
-              {m.canonical_history_navigation_recent()}
+              {canonical_history_navigation_recent()}
             </a>
             <a
               aria-current={mode === 'search' ? 'page' : undefined}
               className={HISTORY_NAVIGATION_CLASS}
               href={getPathWithLocale('/dashboard/search')}
             >
-              {m.canonical_history_navigation_search()}
+              {canonical_history_navigation_search()}
             </a>
             <a
               aria-current={mode === 'works' ? 'page' : undefined}
               className={HISTORY_NAVIGATION_CLASS}
               href={getPathWithLocale('/dashboard/works')}
             >
-              {m.canonical_history_navigation_works()}
+              {canonical_history_navigation_works()}
             </a>
             <a
               aria-current={mode === 'jobs' ? 'page' : undefined}
               className={HISTORY_NAVIGATION_CLASS}
               href={getPathWithLocale('/dashboard/jobs')}
             >
-              {m.canonical_history_navigation_jobs()}
+              {canonical_history_navigation_jobs()}
             </a>
           </nav>
           {mode === 'assets' ? (
@@ -325,12 +403,12 @@ export function CanonicalHistoryPage({
               className="grid max-w-xl gap-1.5 text-sm font-medium"
               htmlFor="canonical-history-search"
             >
-              {m.canonical_history_search_label()}
+              {canonical_history_search_label()}
               <Input
                 id="canonical-history-search"
-                aria-label={m.canonical_history_search_label()}
+                aria-label={canonical_history_search_label()}
                 autoFocus
-                placeholder={m.canonical_history_search_placeholder()}
+                placeholder={canonical_history_search_placeholder()}
                 value={searchQuery}
                 onChange={(event) => onSearchQueryChange?.(event.target.value)}
               />
@@ -342,16 +420,16 @@ export function CanonicalHistoryPage({
           (mode === 'assets' && product.loading) ? (
             <StatePanel
               kind="loading"
-              title={m.canonical_history_loading_title()}
-              description={m.canonical_history_loading_description()}
+              title={canonical_history_loading_title()}
+              description={canonical_history_loading_description()}
             />
           ) : null}
           {historyQuery.isError || videoWorkflowsQuery.isError ? (
             <StatePanel
               kind="error"
-              title={m.canonical_history_error_title()}
-              description={m.canonical_history_error_description()}
-              actionLabel={m.canonical_history_retry()}
+              title={canonical_history_error_title()}
+              description={canonical_history_error_description()}
+              actionLabel={canonical_history_retry()}
               onAction={() => {
                 void historyQuery.refetch();
                 void creationCatalogQuery.refetch();
@@ -404,27 +482,27 @@ export function CanonicalAssetDetailPage({ assetId }: { assetId: string }) {
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.product_navigation_assets(), isCurrentPage: false },
-        { label: m.canonical_asset_detail_title(), isCurrentPage: true },
+        { label: product_navigation_assets(), isCurrentPage: false },
+        { label: canonical_asset_detail_title(), isCurrentPage: true },
       ]}
-      description={m.canonical_asset_detail_description()}
-      title={m.canonical_asset_detail_title()}
+      description={canonical_asset_detail_description()}
+      title={canonical_asset_detail_title()}
     >
       {historyQuery.isLoading ||
       videoWorkflowsQuery.isLoading ||
       product.loading ? (
         <StatePanel
           kind="loading"
-          title={m.canonical_asset_loading_title()}
-          description={m.canonical_asset_loading_description()}
+          title={canonical_asset_loading_title()}
+          description={canonical_asset_loading_description()}
         />
       ) : null}
       {historyQuery.isError || videoWorkflowsQuery.isError ? (
         <StatePanel
           kind="error"
-          title={m.canonical_history_error_title()}
-          description={m.canonical_history_error_description()}
-          actionLabel={m.canonical_history_retry()}
+          title={canonical_history_error_title()}
+          description={canonical_history_error_description()}
+          actionLabel={canonical_history_retry()}
           onAction={() => {
             void historyQuery.refetch();
             void videoWorkflowsQuery.refetch();
@@ -439,8 +517,8 @@ export function CanonicalAssetDetailPage({ assetId }: { assetId: string }) {
       !product.loading ? (
         <StatePanel
           kind="empty"
-          title={m.canonical_asset_not_found_title()}
-          description={m.canonical_asset_not_found_description()}
+          title={canonical_asset_not_found_title()}
+          description={canonical_asset_not_found_description()}
         />
       ) : null}
       {item ? (
@@ -451,14 +529,14 @@ export function CanonicalAssetDetailPage({ assetId }: { assetId: string }) {
               kind="Asset"
               source={
                 creative
-                  ? m.canonical_asset_source_generation()
-                  : m.canonical_asset_source_upload()
+                  ? canonical_asset_source_generation()
+                  : canonical_asset_source_upload()
               }
             />
             <CardTitle className="mt-3">
               {creative?.title ??
                 persisted?.tags[0] ??
-                m.canonical_asset_persisted_title()}
+                canonical_asset_persisted_title()}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -468,15 +546,15 @@ export function CanonicalAssetDetailPage({ assetId }: { assetId: string }) {
               presentation="hero"
             />
             <p>
-              {m.canonical_asset_type({
+              {canonical_asset_type({
                 type: creative?.kind ?? persisted?.mediaType ?? '',
               })}
             </p>
             {creative?.jobId ? (
-              <p>{m.canonical_asset_generation_relation()}</p>
+              <p>{canonical_asset_generation_relation()}</p>
             ) : null}
             {creative?.ownedAssetId ? (
-              <p>{m.canonical_asset_persisted_relation()}</p>
+              <p>{canonical_asset_persisted_relation()}</p>
             ) : null}
             {persisted ? (
               <div className="border-t border-divider pt-4">
@@ -506,24 +584,22 @@ export function CanonicalLegacyContentCard({
             kind="Content"
             source={
               detail.source === 'creative_content'
-                ? m.canonical_content_source_accepted_asset()
-                : m.canonical_content_source_product()
+                ? canonical_content_source_accepted_asset()
+                : canonical_content_source_product()
             }
           />
-          <Badge variant="outline">
-            {m.content_package_legacy_read_only()}
-          </Badge>
+          <Badge variant="outline">{content_package_legacy_read_only()}</Badge>
         </div>
         <CardTitle className="mt-3">{detail.title}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <CanonicalMediaGallery media={media} />
         <p className="whitespace-pre-wrap leading-6">
-          {detail.body || m.canonical_content_body_empty()}
+          {detail.body || canonical_content_body_empty()}
         </p>
         {detail.source === 'creative_content' ? (
           <p className="text-muted-foreground">
-            {m.canonical_content_asset_count({
+            {canonical_content_asset_count({
               count: detail.assetIds.length,
             })}
           </p>
@@ -552,38 +628,41 @@ export function CanonicalContentDetailPage({
     product.state?.contents ?? [],
     contentId
   );
-  const media = historyQuery.data && detail
-    ? canonicalMediaForAssetIds(
-        historyQuery.data.assets,
-        product.state?.assets ?? [],
-        detail.assetIds
-      )
-    : [];
+  const media =
+    historyQuery.data && detail
+      ? canonicalMediaForAssetIds(
+          historyQuery.data.assets,
+          product.state?.assets ?? [],
+          detail.assetIds
+        )
+      : [];
 
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.product_navigation_content(), isCurrentPage: false },
-        { label: m.canonical_content_detail_title(), isCurrentPage: true },
+        { label: product_navigation_content(), isCurrentPage: false },
+        { label: canonical_content_detail_title(), isCurrentPage: true },
       ]}
-      description={m.canonical_content_detail_description()}
-      title={m.canonical_content_detail_title()}
+      description={canonical_content_detail_description()}
+      title={canonical_content_detail_title()}
     >
       {historyQuery.isLoading || product.loading ? (
         <StatePanel
           kind="loading"
-          title={m.canonical_content_loading_title()}
-          description={m.canonical_content_loading_description()}
+          title={canonical_content_loading_title()}
+          description={canonical_content_loading_description()}
         />
       ) : null}
       {!detail && !historyQuery.isLoading && !product.loading ? (
         <StatePanel
           kind="empty"
-          title={m.canonical_content_not_found_title()}
-          description={m.canonical_content_not_found_description()}
+          title={canonical_content_not_found_title()}
+          description={canonical_content_not_found_description()}
         />
       ) : null}
-      {detail ? <CanonicalLegacyContentCard detail={detail} media={media} /> : null}
+      {detail ? (
+        <CanonicalLegacyContentCard detail={detail} media={media} />
+      ) : null}
     </DashboardLayout>
   );
 }
@@ -608,24 +687,24 @@ export function CanvasImageJobDetailPage({ jobId }: { jobId: string }) {
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.canonical_history_jobs_title(), isCurrentPage: false },
-        { label: m.canonical_canvas_job_title(), isCurrentPage: true },
+        { label: canonical_history_jobs_title(), isCurrentPage: false },
+        { label: canonical_canvas_job_title(), isCurrentPage: true },
       ]}
-      description={m.canonical_canvas_job_description()}
-      title={m.canonical_canvas_job_title()}
+      description={canonical_canvas_job_description()}
+      title={canonical_canvas_job_title()}
     >
       {historyQuery.isLoading || product.loading ? (
         <StatePanel
           kind="loading"
-          title={m.canonical_canvas_job_loading_title()}
-          description={m.canonical_canvas_job_loading_description()}
+          title={canonical_canvas_job_loading_title()}
+          description={canonical_canvas_job_loading_description()}
         />
       ) : null}
       {!job && historyQuery.data ? (
         <StatePanel
           kind="empty"
-          title={m.canonical_canvas_job_not_found_title()}
-          description={m.canonical_canvas_job_not_found_description()}
+          title={canonical_canvas_job_not_found_title()}
+          description={canonical_canvas_job_not_found_description()}
         />
       ) : null}
       {job ? (
@@ -634,19 +713,19 @@ export function CanvasImageJobDetailPage({ jobId }: { jobId: string }) {
             <ObjectEvidence
               id={job.id}
               kind="Job"
-              source={m.canonical_canvas_job_source()}
+              source={canonical_canvas_job_source()}
             />
             <CardTitle className="mt-3">
-              {m.canonical_canvas_image_generation()}
+              {canonical_canvas_image_generation()}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <CanonicalMediaGallery media={media} />
             <ProductStatus status={job.status} />
-            <p>{m.canonical_canvas_job_model_fixed()}</p>
-            <p>{m.canonical_canvas_job_work_relation()}</p>
+            <p>{canonical_canvas_job_model_fixed()}</p>
+            <p>{canonical_canvas_job_work_relation()}</p>
             {job.outputAssetId ? (
-              <p>{m.canonical_canvas_job_asset_relation()}</p>
+              <p>{canonical_canvas_job_asset_relation()}</p>
             ) : null}
           </CardContent>
         </Card>

@@ -2,14 +2,21 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { m } from "@/locale/paraglide/messages"
+import {
+  common_more_pages,
+  common_next,
+  common_pagination,
+  common_previous,
+  common_table_next_page,
+  common_table_previous_page,
+} from "@/locale/paraglide/messages";
 import { IconChevronLeft, IconChevronRight, IconDots } from "@tabler/icons-react"
 
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   return (
     <nav
       role="navigation"
-      aria-label={m.common_pagination()}
+      aria-label={common_pagination()}
       data-slot="pagination"
       className={cn("mx-auto flex w-full justify-center", className)}
       {...props}
@@ -65,12 +72,12 @@ function PaginationLink({
 
 function PaginationPrevious({
   className,
-  text = m.common_previous(),
+  text = common_previous(),
   ...props
 }: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
   return (
     <PaginationLink
-      aria-label={m.common_table_previous_page()}
+      aria-label={common_table_previous_page()}
       size="default"
       className={cn("pl-1.5!", className)}
       {...props}
@@ -83,12 +90,12 @@ function PaginationPrevious({
 
 function PaginationNext({
   className,
-  text = m.common_next(),
+  text = common_next(),
   ...props
 }: React.ComponentProps<typeof PaginationLink> & { text?: string }) {
   return (
     <PaginationLink
-      aria-label={m.common_table_next_page()}
+      aria-label={common_table_next_page()}
       size="default"
       className={cn("pr-1.5!", className)}
       {...props}
@@ -115,7 +122,7 @@ function PaginationEllipsis({
     >
       <IconDots
       />
-      <span className="sr-only">{m.common_more_pages()}</span>
+      <span className="sr-only">{common_more_pages()}</span>
     </span>
   )
 }

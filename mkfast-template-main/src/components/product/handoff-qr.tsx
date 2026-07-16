@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { getPathWithLocale } from '@/lib/urls';
-import { m } from '@/locale/paraglide/messages';
+import { handoff_qr_alt } from '@/locale/paraglide/messages';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
@@ -24,7 +24,7 @@ export function HandoffQr({ token }: { token: string }) {
   return (
     <img
       src={src}
-      alt={m.handoff_qr_alt()}
+      alt={handoff_qr_alt()}
       className="aspect-square w-full bg-white object-contain p-2"
     />
   );

@@ -73,7 +73,8 @@ test('shared accessibility names follow the active Chinese or English locale', (
 test('dialog and sheet close controls use the shared localized close label', () => {
   for (const file of ['dialog.tsx', 'sheet.tsx']) {
     const source = readFileSync(resolve(process.cwd(), 'src/components/ui', file), 'utf8');
-    assert.match(source, /m\.common_close\(\)/u, file);
+    assert.match(source, /\bcommon_close\b[\s\S]*from ["']@\/locale\/paraglide\/messages["']/u, file);
+    assert.match(source, /\bcommon_close\(\)/u, file);
     assert.doesNotMatch(source, />Close<|>\s*Close\s*</u, file);
   }
 });

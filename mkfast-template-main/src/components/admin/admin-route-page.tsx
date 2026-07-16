@@ -1,5 +1,5 @@
 import { CanonicalPage } from '@/components/uiux/canonical-page';
-import { m } from '@/locale/paraglide/messages';
+import { shell_admin_brand } from '@/locale/paraglide/messages';
 import type { ReactNode } from 'react';
 
 export function AdminRoutePage({
@@ -13,7 +13,7 @@ export function AdminRoutePage({
 }) {
   return (
     <CanonicalPage
-      section={m.shell_admin_brand()}
+      section={shell_admin_brand()}
       title={title}
       description={description}
     >

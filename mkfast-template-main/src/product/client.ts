@@ -10,16 +10,26 @@ import {
   parseApiErrorEnvelope,
 } from '@/lib/correlated-api-error';
 import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
-import { m } from '@/locale/paraglide/messages';
+import {
+  product_client_command_failed,
+  product_client_conflict,
+  product_client_forbidden,
+  product_client_not_found,
+  product_client_rate_limited,
+  product_client_request_failed,
+  product_client_state_failed,
+  product_client_unauthorized,
+  product_client_unavailable,
+} from '@/locale/paraglide/messages';
 
 function productFailureMessage(status: number) {
-  if (status === 401) return m.product_client_unauthorized();
-  if (status === 403) return m.product_client_forbidden();
-  if (status === 404) return m.product_client_not_found();
-  if (status === 409) return m.product_client_conflict();
-  if (status === 429) return m.product_client_rate_limited();
-  if (status >= 500) return m.product_client_unavailable();
-  return m.product_client_request_failed();
+  if (status === 401) return product_client_unauthorized();
+  if (status === 403) return product_client_forbidden();
+  if (status === 404) return product_client_not_found();
+  if (status === 409) return product_client_conflict();
+  if (status === 429) return product_client_rate_limited();
+  if (status >= 500) return product_client_unavailable();
+  return product_client_request_failed();
 }
 
 export async function readProductEnvelope<T>(response: Response) {
@@ -103,7 +113,7 @@ export function useProductState() {
       }
       setState(await readProductEnvelope<ProductState>(response));
     } catch {
-      setError(m.product_client_state_failed());
+      setError(product_client_state_failed());
     } finally {
       setLoading(false);
     }
@@ -139,7 +149,7 @@ export function useProductState() {
         setState(result.state);
         return result;
       } catch {
-        const error = new Error(m.product_client_command_failed());
+        const error = new Error(product_client_command_failed());
         setError(error.message);
         throw error;
       } finally {

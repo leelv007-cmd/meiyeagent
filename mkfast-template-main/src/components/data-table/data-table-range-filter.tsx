@@ -1,4 +1,8 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_maximum_value,
+  common_table_minimum_value,
+  common_table_to,
+} from "@/locale/paraglide/messages";
 import type { Column } from "@tanstack/react-table";
 import * as React from "react";
 import { Input } from "@/components/ui/input";
@@ -55,8 +59,8 @@ export function DataTableRangeFilter<TData>({ filter, column, inputId, onFilterU
         }
     }, [filter.filterId, filter.value, min, max, onFilterUpdate]);
     return (<div data-slot="range" className={cn("flex w-full items-center gap-2", className)} {...props}>
-      <Input id={`${inputId}-min`} type="number" aria-label={`${meta?.label} ${m.common_table_minimum_value()}`} aria-valuemin={min} aria-valuemax={max} data-slot="range-min" inputMode="numeric" placeholder={min.toString()} min={min} max={max} className="h-8 w-full rounded" defaultValue={value[0]} onChange={(event) => onRangeValueChange(event.target.value, true)}/>
-      <span className="sr-only shrink-0 text-muted-foreground">{m.common_table_to()}</span>
-      <Input id={`${inputId}-max`} type="number" aria-label={`${meta?.label} ${m.common_table_maximum_value()}`} aria-valuemin={min} aria-valuemax={max} data-slot="range-max" inputMode="numeric" placeholder={max.toString()} min={min} max={max} className="h-8 w-full rounded" defaultValue={value[1]} onChange={(event) => onRangeValueChange(event.target.value)}/>
+      <Input id={`${inputId}-min`} type="number" aria-label={`${meta?.label} ${common_table_minimum_value()}`} aria-valuemin={min} aria-valuemax={max} data-slot="range-min" inputMode="numeric" placeholder={min.toString()} min={min} max={max} className="h-8 w-full rounded" defaultValue={value[0]} onChange={(event) => onRangeValueChange(event.target.value, true)}/>
+      <span className="sr-only shrink-0 text-muted-foreground">{common_table_to()}</span>
+      <Input id={`${inputId}-max`} type="number" aria-label={`${meta?.label} ${common_table_maximum_value()}`} aria-valuemin={min} aria-valuemax={max} data-slot="range-max" inputMode="numeric" placeholder={max.toString()} min={min} max={max} className="h-8 w-full rounded" defaultValue={value[1]} onChange={(event) => onRangeValueChange(event.target.value)}/>
     </div>);
 }

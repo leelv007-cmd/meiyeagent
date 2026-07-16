@@ -8,7 +8,126 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  composer_image_confirm_facts,
+  composer_image_confirm_upload,
+  composer_image_contains_minor,
+  composer_image_contains_person,
+  composer_image_contains_sensitive_data,
+  composer_image_facts_confirmed,
+  composer_image_no,
+  composer_image_preview_alt,
+  composer_image_yes,
+  content_package_download_export,
+  creation_entry_all_scenes,
+  creation_entry_guidance_title,
+  creation_entry_intent_aria,
+  creation_entry_intent_placeholder_short,
+  creation_entry_platform_douyin,
+  creation_entry_scene_legend,
+  integration_douyin_not_integrated_badge,
+  integration_douyin_not_integrated_description,
+  mobile_action_accept_content,
+  mobile_action_acceptance_accepted,
+  mobile_action_acceptance_pending,
+  mobile_action_acceptance_rejected,
+  mobile_action_acceptance_unknown,
+  mobile_action_accepted_content,
+  mobile_action_camera_denied_description,
+  mobile_action_camera_denied_title,
+  mobile_action_capture_camera,
+  mobile_action_capture_library,
+  mobile_action_capture_material,
+  mobile_action_capture_title,
+  mobile_action_confirm_asset,
+  mobile_action_confirm_content,
+  mobile_action_content_body,
+  mobile_action_content_title,
+  mobile_action_desktop_continue,
+  mobile_action_desktop_relay_description,
+  mobile_action_desktop_relay_title,
+  mobile_action_example_remix_saved,
+  mobile_action_generation_task,
+  mobile_action_handoff_description,
+  mobile_action_handoff_pending,
+  mobile_action_handoff_published,
+  mobile_action_job_action_failed,
+  mobile_action_job_output,
+  mobile_action_job_output_audio,
+  mobile_action_job_output_copy,
+  mobile_action_job_output_image,
+  mobile_action_job_output_video,
+  mobile_action_l1_acceptance,
+  mobile_action_l1_confirm_submit,
+  mobile_action_l1_status_title,
+  mobile_action_l3_create_handoff,
+  mobile_action_l3_created,
+  mobile_action_l3_handoff_title,
+  mobile_action_legacy_read_only,
+  mobile_action_next_eyebrow,
+  mobile_action_no_accepted_content_description,
+  mobile_action_no_accepted_content_title,
+  mobile_action_no_job_description,
+  mobile_action_no_job_title,
+  mobile_action_one_action_at_a_time,
+  mobile_action_open_handoff,
+  mobile_action_open_job,
+  mobile_action_open_task,
+  mobile_action_precise_layout_desktop,
+  mobile_action_prepare_publish,
+  mobile_action_processing,
+  mobile_action_publish_confirmed_manual,
+  mobile_action_publish_confirmed_platform,
+  mobile_action_publish_failed,
+  mobile_action_publish_l3_description,
+  mobile_action_regenerate,
+  mobile_action_resume_generation,
+  mobile_action_resume_job,
+  mobile_action_retry_updates,
+  mobile_action_return_description,
+  mobile_action_returned_from_feishu,
+  mobile_action_returned_from_notification,
+  mobile_action_save_text_edit,
+  mobile_action_stage_action,
+  mobile_action_stage_handoff,
+  mobile_action_stage_progress,
+  mobile_action_stages_aria,
+  mobile_action_status_failed,
+  mobile_action_status_manual_required,
+  mobile_action_status_published,
+  mobile_action_status_reviewing,
+  mobile_action_status_submitted,
+  mobile_action_status_submitting,
+  mobile_action_status_unknown,
+  mobile_action_surface_badge,
+  mobile_action_sync_error_description,
+  mobile_action_sync_error_title,
+  mobile_action_task_open_description,
+  mobile_action_task_title,
+  mobile_action_technical_failure_usage,
+  mobile_action_title,
+  mobile_action_update_failed,
+  mobile_action_upload_failed,
+  mobile_action_upload_interrupted_status,
+  mobile_action_upload_local_status,
+  mobile_action_upload_not_saved,
+  mobile_action_upload_persisted_status,
+  mobile_action_upload_resume_description,
+  mobile_action_upload_same_file,
+  mobile_action_upload_saved,
+  mobile_action_upload_stored_status,
+  mobile_action_upload_success,
+  mobile_action_upload_video_preview,
+  mobile_action_uploading_status,
+  mobile_action_verify_job,
+  mobile_action_verify_only,
+  workbench_no_references,
+  workbench_record_intent,
+  workbench_record_references,
+  workbench_section_intent,
+  workbench_source_insert_failed,
+  workbench_uploaded_image,
+} from '@/locale/paraglide/messages';
 import { operationsCommand, operationsQuery } from '@/p1/client';
 import { emitTelemetry } from '@/lib/product-telemetry';
 import { getLocale } from '@/lib/locale';
@@ -109,45 +228,45 @@ const emptyProjection: CreativeWorkbenchProjection = {
 };
 
 const STAGE_LABELS: Record<MobileStage, () => string> = {
-  action: m.mobile_action_stage_action,
-  progress: m.mobile_action_stage_progress,
-  handoff: m.mobile_action_stage_handoff,
+  action: mobile_action_stage_action,
+  progress: mobile_action_stage_progress,
+  handoff: mobile_action_stage_handoff,
 };
 
 const UPLOAD_PHASE_LABELS: Record<MobileUploadSession['phase'], () => string> =
   {
-    interrupted: m.mobile_action_upload_interrupted_status,
-    local: m.mobile_action_upload_local_status,
-    persisted: m.mobile_action_upload_persisted_status,
-    stored: m.mobile_action_upload_stored_status,
-    uploading: m.mobile_action_uploading_status,
+    interrupted: mobile_action_upload_interrupted_status,
+    local: mobile_action_upload_local_status,
+    persisted: mobile_action_upload_persisted_status,
+    stored: mobile_action_upload_stored_status,
+    uploading: mobile_action_uploading_status,
   };
 
 const L1_STATUS_LABELS: Record<string, () => string> = {
-  failed: m.mobile_action_status_failed,
-  manual_required: m.mobile_action_status_manual_required,
-  published: m.mobile_action_status_published,
-  reviewing: m.mobile_action_status_reviewing,
-  submitted: m.mobile_action_status_submitted,
-  submitting: m.mobile_action_status_submitting,
-  unknown: m.mobile_action_status_unknown,
+  failed: mobile_action_status_failed,
+  manual_required: mobile_action_status_manual_required,
+  published: mobile_action_status_published,
+  reviewing: mobile_action_status_reviewing,
+  submitted: mobile_action_status_submitted,
+  submitting: mobile_action_status_submitting,
+  unknown: mobile_action_status_unknown,
 };
 
 const L1_ACCEPTANCE_LABELS: Record<string, () => string> = {
-  acceptance_unknown: m.mobile_action_acceptance_unknown,
-  accepted: m.mobile_action_acceptance_accepted,
-  rejected_before_accept: m.mobile_action_acceptance_rejected,
+  acceptance_unknown: mobile_action_acceptance_unknown,
+  accepted: mobile_action_acceptance_accepted,
+  rejected_before_accept: mobile_action_acceptance_rejected,
 };
 
 function l1StatusLabel(status: string) {
-  return L1_STATUS_LABELS[status]?.() ?? m.mobile_action_status_unknown();
+  return L1_STATUS_LABELS[status]?.() ?? mobile_action_status_unknown();
 }
 
 function l1AcceptanceLabel(acceptance?: string) {
   return acceptance
     ? (L1_ACCEPTANCE_LABELS[acceptance]?.() ??
-        m.mobile_action_acceptance_unknown())
-    : m.mobile_action_acceptance_pending();
+        mobile_action_acceptance_unknown())
+    : mobile_action_acceptance_pending();
 }
 
 function MobileFactChoice({
@@ -165,8 +284,8 @@ function MobileFactChoice({
       <div className="grid grid-cols-2 gap-2">
         {(
           [
-            [false, m.composer_image_no()],
-            [true, m.composer_image_yes()],
+            [false, composer_image_no()],
+            [true, composer_image_yes()],
           ] as const
         ).map(([next, text]) => (
           <Button
@@ -197,15 +316,15 @@ function jobOutputLabel(
   count: number
 ) {
   if (operation.startsWith('copy.')) {
-    return m.mobile_action_job_output_copy({ count });
+    return mobile_action_job_output_copy({ count });
   }
   if (operation === 'video.generate') {
-    return m.mobile_action_job_output_video({ count });
+    return mobile_action_job_output_video({ count });
   }
   if (operation.startsWith('audio.')) {
-    return m.mobile_action_job_output_audio({ count });
+    return mobile_action_job_output_audio({ count });
   }
-  return m.mobile_action_job_output_image({ count });
+  return mobile_action_job_output_image({ count });
 }
 
 function currentVersion(
@@ -268,34 +387,34 @@ export function MobilePublishRoutes({
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          {m.mobile_action_prepare_publish()}
+          {mobile_action_prepare_publish()}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <div className="space-y-2 rounded-lg border border-divider p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-medium">
-              {m.creation_entry_platform_douyin()} · L1
+              {creation_entry_platform_douyin()} · L1
             </span>
             {!douyinIntegrated ? (
               <Badge variant="outline">
-                {m.integration_douyin_not_integrated_badge()}
+                {integration_douyin_not_integrated_badge()}
               </Badge>
             ) : null}
           </div>
           {!douyinIntegrated ? (
             <p className="text-muted-foreground">
-              {m.integration_douyin_not_integrated_description()}
+              {integration_douyin_not_integrated_description()}
             </p>
           ) : null}
           <Button className="min-h-touch-target" disabled type="button">
-            {m.mobile_action_l1_confirm_submit()}
+            {mobile_action_l1_confirm_submit()}
           </Button>
         </div>
         <div className="space-y-2 rounded-lg border border-divider p-3">
           <p className="font-medium">L3</p>
           <p className="text-muted-foreground">
-            {m.mobile_action_publish_l3_description()}
+            {mobile_action_publish_l3_description()}
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -306,8 +425,8 @@ export function MobilePublishRoutes({
               variant="outline"
             >
               {creatingL3
-                ? m.mobile_action_processing()
-                : m.mobile_action_l3_create_handoff()}
+                ? mobile_action_processing()
+                : mobile_action_l3_create_handoff()}
             </Button>
             {downloadHref ? (
               <a
@@ -317,7 +436,7 @@ export function MobilePublishRoutes({
                 })}
                 href={downloadHref}
               >
-                {m.content_package_download_export()}
+                {content_package_download_export()}
               </a>
             ) : null}
           </div>
@@ -662,7 +781,7 @@ export function MobileActionBook({
         objectKind: 'creative_job',
         outcome: 'failed',
       });
-      toast.error(m.mobile_action_job_action_failed());
+      toast.error(mobile_action_job_action_failed());
     },
   });
   const packageEdit = useMutation({
@@ -694,7 +813,7 @@ export function MobileActionBook({
       );
     },
     onSuccess: () => void refreshCreative(),
-    onError: () => toast.error(m.mobile_action_job_action_failed()),
+    onError: () => toast.error(mobile_action_job_action_failed()),
   });
   const douyinVariant = currentPackage?.variants.find(
     (variant) => variant.platform === 'douyin'
@@ -720,9 +839,9 @@ export function MobileActionBook({
     },
     onSuccess: () => {
       void refreshCreative();
-      toast.success(m.mobile_action_l3_created());
+      toast.success(mobile_action_l3_created());
     },
-    onError: () => toast.error(m.mobile_action_publish_failed()),
+    onError: () => toast.error(mobile_action_publish_failed()),
   });
 
   const updateUploadSession = (session: MobileUploadSession) => {
@@ -746,7 +865,7 @@ export function MobileActionBook({
   const upload = async (file: File, facts: ConfirmedAssetFacts) => {
     if (!product.state) return;
     if (workId && !currentWork) {
-      toast.error(m.workbench_source_insert_failed());
+      toast.error(workbench_source_insert_failed());
       return;
     }
     let session: MobileUploadSession;
@@ -757,7 +876,7 @@ export function MobileActionBook({
         ? resumeMobileUploadSession(uploadSession, identity)
         : { ...createMobileUploadSession(identity), phase: 'uploading' };
     } catch {
-      toast.error(m.mobile_action_upload_same_file());
+      toast.error(mobile_action_upload_same_file());
       return;
     }
     updateUploadSession(session);
@@ -814,13 +933,13 @@ export function MobileActionBook({
         await refreshCreative();
       }
       updateUploadSession(markMobileUploadPersisted(session, receipt.key));
-      toast.success(m.mobile_action_upload_success());
+      toast.success(mobile_action_upload_success());
     } catch {
       updateUploadSession({ ...session, phase: 'interrupted' });
       toast.error(
         assetPersisted
-          ? m.workbench_source_insert_failed()
-          : m.mobile_action_upload_failed()
+          ? workbench_source_insert_failed()
+          : mobile_action_upload_failed()
       );
     }
   };
@@ -876,9 +995,9 @@ export function MobileActionBook({
   return (
     <>
       <DashboardHeader
-        breadcrumbs={[{ label: m.mobile_action_title(), isCurrentPage: true }]}
+        breadcrumbs={[{ label: mobile_action_title(), isCurrentPage: true }]}
         actions={
-          <Badge variant="outline">{m.mobile_action_surface_badge()}</Badge>
+          <Badge variant="outline">{mobile_action_surface_badge()}</Badge>
         }
       />
       <main className="mx-auto w-full max-w-xl space-y-4 p-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
@@ -887,11 +1006,11 @@ export function MobileActionBook({
             {entry === 'feishu' ? <IconCloudUpload /> : <IconBell />}
             <AlertTitle>
               {entry === 'feishu'
-                ? m.mobile_action_returned_from_feishu()
-                : m.mobile_action_returned_from_notification()}
+                ? mobile_action_returned_from_feishu()
+                : mobile_action_returned_from_notification()}
             </AlertTitle>
             <AlertDescription>
-              {m.mobile_action_return_description()}
+              {mobile_action_return_description()}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -902,9 +1021,9 @@ export function MobileActionBook({
           integrations.error) && (
           <Alert variant="destructive">
             <IconAlertTriangle />
-            <AlertTitle>{m.mobile_action_sync_error_title()}</AlertTitle>
+            <AlertTitle>{mobile_action_sync_error_title()}</AlertTitle>
             <AlertDescription>
-              {m.mobile_action_sync_error_description()}
+              {mobile_action_sync_error_description()}
             </AlertDescription>
           </Alert>
         )}
@@ -913,49 +1032,49 @@ export function MobileActionBook({
             <PublishCelebration
               label={
                 celebratedPublishId.startsWith('l1:')
-                  ? m.mobile_action_publish_confirmed_platform()
-                  : m.mobile_action_publish_confirmed_manual()
+                  ? mobile_action_publish_confirmed_platform()
+                  : mobile_action_publish_confirmed_manual()
               }
             />
           </Card>
         ) : null}
 
         <section>
-          <h1 className="meiye-type-title">{m.mobile_action_title()}</h1>
+          <h1 className="meiye-type-title">{mobile_action_title()}</h1>
           <p className="meiye-type-aux font-mono tracking-[0.12em] uppercase">
-            {m.mobile_action_next_eyebrow()}
+            {mobile_action_next_eyebrow()}
           </p>
           <h2 className="meiye-type-body mt-1 font-semibold">
             {hasPendingCopyDecision
-              ? m.mobile_action_accept_content()
+              ? mobile_action_accept_content()
               : (nextTask?.title ??
                 (currentJob?.status === 'recoverable'
-                  ? m.mobile_action_resume_generation()
+                  ? mobile_action_resume_generation()
                   : hasAcceptedCopyDecision || currentContent?.selected
-                    ? m.mobile_action_prepare_publish()
-                    : m.mobile_action_capture_material()))}
+                    ? mobile_action_prepare_publish()
+                    : mobile_action_capture_material()))}
           </h2>
           <p className="meiye-type-aux mt-1">
             {hasPendingCopyDecision
-              ? m.mobile_action_one_action_at_a_time()
-              : (nextTask?.nextStep ?? m.mobile_action_one_action_at_a_time())}
+              ? mobile_action_one_action_at_a_time()
+              : (nextTask?.nextStep ?? mobile_action_one_action_at_a_time())}
           </p>
         </section>
 
         {currentWork ? (
           <section
-            aria-label={m.workbench_section_intent()}
+            aria-label={workbench_section_intent()}
             className="rounded-lg bg-surface-1 p-4"
             data-testid="mobile-work-context"
             data-work-id={currentWork.id}
           >
             <p className="meiye-type-aux font-mono tracking-[0.12em] uppercase">
-              {m.workbench_record_intent()}
+              {workbench_record_intent()}
             </p>
             <p className="mt-2 text-sm leading-6">{currentWork.intent}</p>
             <div className="mt-4 border-t border-divider pt-3">
               <p className="meiye-type-aux font-mono tracking-[0.12em] uppercase">
-                {m.workbench_record_references()}
+                {workbench_record_references()}
               </p>
               {currentSourceReferences.length > 0 ? (
                 <ul className="mt-2 flex flex-wrap gap-2">
@@ -970,7 +1089,7 @@ export function MobileActionBook({
                 </ul>
               ) : (
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {m.workbench_no_references()}
+                  {workbench_no_references()}
                 </p>
               )}
             </div>
@@ -982,7 +1101,7 @@ export function MobileActionBook({
           onValueChange={(value) => setStage(value as MobileStage)}
         >
           <TabsList
-            aria-label={m.mobile_action_stages_aria()}
+            aria-label={mobile_action_stages_aria()}
             className="grid h-12 w-full grid-cols-3"
             variant="line"
           >
@@ -1004,17 +1123,17 @@ export function MobileActionBook({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <IconCamera className="size-5" />
-                  {m.mobile_action_capture_title()}
+                  {mobile_action_capture_title()}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {cameraDenied ? (
                   <Alert variant="destructive">
                     <AlertTitle>
-                      {m.mobile_action_camera_denied_title()}
+                      {mobile_action_camera_denied_title()}
                     </AlertTitle>
                     <AlertDescription>
-                      {m.mobile_action_camera_denied_description()}
+                      {mobile_action_camera_denied_description()}
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -1028,7 +1147,7 @@ export function MobileActionBook({
                     htmlFor="mobile-camera-input"
                   >
                     <IconCamera />
-                    {m.mobile_action_capture_camera()}
+                    {mobile_action_capture_camera()}
                   </label>
                   <input
                     accept="image/*,video/*"
@@ -1050,7 +1169,7 @@ export function MobileActionBook({
                     htmlFor="mobile-library-input"
                   >
                     <IconPhoto />
-                    {m.mobile_action_capture_library()}
+                    {mobile_action_capture_library()}
                   </label>
                   <input
                     accept="image/*,video/*"
@@ -1069,7 +1188,7 @@ export function MobileActionBook({
                     <div className="flex items-center gap-3">
                       {pendingUpload.file.type.startsWith('video/') ? (
                         <video
-                          aria-label={m.mobile_action_upload_video_preview({
+                          aria-label={mobile_action_upload_video_preview({
                             name: pendingUpload.file.name,
                           })}
                           className="size-24 rounded-lg object-cover"
@@ -1080,7 +1199,7 @@ export function MobileActionBook({
                         />
                       ) : (
                         <img
-                          alt={m.composer_image_preview_alt({
+                          alt={composer_image_preview_alt({
                             name: pendingUpload.file.name,
                           })}
                           className="size-24 rounded-lg object-cover"
@@ -1094,11 +1213,11 @@ export function MobileActionBook({
                         {pendingUpload.confirmed ? (
                           <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                             <IconCheck aria-hidden="true" className="size-4" />
-                            {m.composer_image_facts_confirmed()}
+                            {composer_image_facts_confirmed()}
                           </p>
                         ) : (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {m.composer_image_confirm_facts()}
+                            {composer_image_confirm_facts()}
                           </p>
                         )}
                       </div>
@@ -1107,7 +1226,7 @@ export function MobileActionBook({
                       <div className="space-y-3">
                         <div className="grid gap-px overflow-hidden rounded-lg bg-divider">
                           <MobileFactChoice
-                            label={m.composer_image_contains_person()}
+                            label={composer_image_contains_person()}
                             onChange={(value) =>
                               setPendingUpload((current) =>
                                 current
@@ -1124,7 +1243,7 @@ export function MobileActionBook({
                             value={pendingUpload.answers.containsPerson}
                           />
                           <MobileFactChoice
-                            label={m.composer_image_contains_sensitive_data()}
+                            label={composer_image_contains_sensitive_data()}
                             onChange={(value) =>
                               setPendingUpload((current) =>
                                 current
@@ -1141,7 +1260,7 @@ export function MobileActionBook({
                             value={pendingUpload.answers.containsSensitiveData}
                           />
                           <MobileFactChoice
-                            label={m.composer_image_contains_minor()}
+                            label={composer_image_contains_minor()}
                             onChange={(value) =>
                               setPendingUpload((current) =>
                                 current
@@ -1185,7 +1304,7 @@ export function MobileActionBook({
                           }
                         >
                           <IconUpload />
-                          {m.composer_image_confirm_upload()}
+                          {composer_image_confirm_upload()}
                         </Button>
                       </div>
                     ) : null}
@@ -1212,16 +1331,16 @@ export function MobileActionBook({
                     </div>
                     {uploadSession.phase === 'interrupted' ? (
                       <p className="mt-2 text-muted-foreground">
-                        {m.mobile_action_upload_resume_description()}
+                        {mobile_action_upload_resume_description()}
                       </p>
                     ) : null}
                     {persistedUploadAsset ? (
                       <p className="mt-2 text-xs">
-                        {m.mobile_action_upload_saved()}
+                        {mobile_action_upload_saved()}
                       </p>
                     ) : (
                       <p className="mt-2 text-muted-foreground">
-                        {m.mobile_action_upload_not_saved()}
+                        {mobile_action_upload_not_saved()}
                       </p>
                     )}
                   </div>
@@ -1233,7 +1352,7 @@ export function MobileActionBook({
                       `/dashboard/assets/${encodeURIComponent(persistedUploadAsset.id)}`
                     )}
                   >
-                    {m.mobile_action_confirm_asset()}
+                    {mobile_action_confirm_asset()}
                     <IconArrowRight className="size-4" />
                   </a>
                 ) : null}
@@ -1245,7 +1364,7 @@ export function MobileActionBook({
                 <CardContent className="space-y-4">
                   <fieldset className="min-w-0 space-y-2">
                     <legend className="text-sm font-medium">
-                      {m.creation_entry_scene_legend()}
+                      {creation_entry_scene_legend()}
                     </legend>
                     <div className="flex gap-2 overflow-x-auto pb-1">
                       {sceneChips.primary.map((scene) => (
@@ -1269,7 +1388,7 @@ export function MobileActionBook({
                         type="button"
                         variant="ghost"
                       >
-                        {m.creation_entry_all_scenes()}
+                        {creation_entry_all_scenes()}
                         {expandedScenes ? (
                           <IconChevronUp aria-hidden="true" />
                         ) : (
@@ -1297,7 +1416,7 @@ export function MobileActionBook({
                   </fieldset>
                   <div className="min-w-0 space-y-2">
                     <h3 className="text-sm font-medium">
-                      {m.creation_entry_guidance_title()}
+                      {creation_entry_guidance_title()}
                     </h3>
                     <div className="flex gap-2 overflow-x-auto pb-1">
                       {suggestions.map((suggestion) => (
@@ -1324,10 +1443,10 @@ export function MobileActionBook({
                     </div>
                   </div>
                   <Textarea
-                    aria-label={m.creation_entry_intent_aria()}
+                    aria-label={creation_entry_intent_aria()}
                     className="resize-none text-base"
                     onChange={(event) => updateDraftIntent(event.target.value)}
-                    placeholder={m.creation_entry_intent_placeholder_short()}
+                    placeholder={creation_entry_intent_placeholder_short()}
                     ref={draftIntentRef}
                     rows={4}
                     value={draftIntent}
@@ -1340,14 +1459,14 @@ export function MobileActionBook({
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
-                    {m.mobile_action_task_title({ title: nextTask.title })}
+                    {mobile_action_task_title({ title: nextTask.title })}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <p className="text-muted-foreground">
                     {nextTask.blockedReason ??
                       nextTask.nextStep ??
-                      m.mobile_action_task_open_description()}
+                      mobile_action_task_open_description()}
                   </p>
                   <a
                     className={buttonVariants({
@@ -1359,7 +1478,7 @@ export function MobileActionBook({
                       `/dashboard/tasks/${encodeURIComponent(nextTask.id)}`
                     )}
                   >
-                    {m.mobile_action_open_task()}
+                    {mobile_action_open_task()}
                     <IconArrowRight />
                   </a>
                 </CardContent>
@@ -1370,7 +1489,7 @@ export function MobileActionBook({
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
-                    {m.mobile_action_confirm_content({
+                    {mobile_action_confirm_content({
                       title:
                         currentVersion(latestCandidateContent)?.title ?? '',
                     })}
@@ -1381,7 +1500,7 @@ export function MobileActionBook({
                     {currentVersion(latestCandidateContent)?.body}
                   </p>
                   <Badge variant="outline">
-                    {m.mobile_action_legacy_read_only()}
+                    {mobile_action_legacy_read_only()}
                   </Badge>
                 </CardContent>
               </Card>
@@ -1397,7 +1516,7 @@ export function MobileActionBook({
                 }
                 onRemix={(nextIntent) => {
                   writeCreationDraftIntent(window.sessionStorage, nextIntent);
-                  toast.success(m.mobile_action_example_remix_saved());
+                  toast.success(mobile_action_example_remix_saved());
                 }}
               />
             ) : null}
@@ -1411,7 +1530,7 @@ export function MobileActionBook({
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
                     <CardTitle className="text-base">
-                      {m.mobile_action_generation_task()}
+                      {mobile_action_generation_task()}
                     </CardTitle>
                     <ProductStatus
                       announce
@@ -1422,7 +1541,7 @@ export function MobileActionBook({
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <p className="text-muted-foreground">
-                    {m.mobile_action_job_output({
+                    {mobile_action_job_output({
                       output: jobOutputLabel(
                         currentJob.contract.operation,
                         currentJob.contract.outputCount
@@ -1442,7 +1561,7 @@ export function MobileActionBook({
                         }
                       >
                         <IconPlayerPlay />
-                        {m.mobile_action_resume_job()}
+                        {mobile_action_resume_job()}
                       </Button>
                     ) : null}
                     {(currentJob.status === 'running' ||
@@ -1461,8 +1580,8 @@ export function MobileActionBook({
                       >
                         <IconRefresh />
                         {currentJob.status === 'unknown'
-                          ? m.mobile_action_verify_only()
-                          : m.mobile_action_verify_job()}
+                          ? mobile_action_verify_only()
+                          : mobile_action_verify_job()}
                       </Button>
                     ) : null}
                     {currentJobObserver.error ? (
@@ -1475,13 +1594,13 @@ export function MobileActionBook({
                         variant="outline"
                       >
                         <IconRefresh />
-                        {m.mobile_action_retry_updates()}
+                        {mobile_action_retry_updates()}
                       </Button>
                     ) : null}
                     {currentJob.status === 'failed' ? (
                       <div className="space-y-2">
                         <p className="text-muted-foreground">
-                          {m.mobile_action_technical_failure_usage()}
+                          {mobile_action_technical_failure_usage()}
                         </p>
                         <Button
                           className="min-h-touch-target"
@@ -1493,14 +1612,14 @@ export function MobileActionBook({
                             })
                           }
                         >
-                          {m.mobile_action_regenerate()}
+                          {mobile_action_regenerate()}
                         </Button>
                       </div>
                     ) : null}
                   </div>
                   {currentJobObserver.error ? (
                     <p className="text-destructive">
-                      {m.mobile_action_update_failed()}
+                      {mobile_action_update_failed()}
                     </p>
                   ) : null}
                   <a
@@ -1509,15 +1628,15 @@ export function MobileActionBook({
                       `/dashboard/jobs/${encodeURIComponent(currentJob.id)}`
                     )}
                   >
-                    {m.mobile_action_open_job()}
+                    {mobile_action_open_job()}
                   </a>
                 </CardContent>
               </Card>
             ) : !currentWork ? (
               <Alert>
-                <AlertTitle>{m.mobile_action_no_job_title()}</AlertTitle>
+                <AlertTitle>{mobile_action_no_job_title()}</AlertTitle>
                 <AlertDescription>
-                  {m.mobile_action_no_job_description()}
+                  {mobile_action_no_job_description()}
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -1545,7 +1664,7 @@ export function MobileActionBook({
                     )
                     .map((asset) => ({
                       id: asset.id,
-                      title: asset.tags.at(-1) ?? m.workbench_uploaded_image(),
+                      title: asset.tags.at(-1) ?? workbench_uploaded_image(),
                     }))}
                 />
               </div>
@@ -1564,7 +1683,7 @@ export function MobileActionBook({
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
                     <CardTitle className="text-base">
-                      {m.mobile_action_l1_status_title()}
+                      {mobile_action_l1_status_title()}
                     </CardTitle>
                     <Badge
                       variant={
@@ -1578,7 +1697,7 @@ export function MobileActionBook({
                   </div>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground">
-                  {m.mobile_action_l1_acceptance({
+                  {mobile_action_l1_acceptance({
                     status: l1AcceptanceLabel(currentL1Job.acceptance),
                   })}
                 </CardContent>
@@ -1594,7 +1713,7 @@ export function MobileActionBook({
                 <CardHeader>
                   <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                     <span>
-                      {m.mobile_action_accepted_content({
+                      {mobile_action_accepted_content({
                         title: currentPackageVersionValue.title,
                       })}
                     </span>
@@ -1609,14 +1728,14 @@ export function MobileActionBook({
                   ) ? (
                     <div className="space-y-3">
                       <Input
-                        aria-label={m.mobile_action_content_title()}
+                        aria-label={mobile_action_content_title()}
                         onChange={(event) =>
                           setPackageTitle(event.target.value)
                         }
                         value={packageTitle}
                       />
                       <Textarea
-                        aria-label={m.mobile_action_content_body()}
+                        aria-label={mobile_action_content_body()}
                         onChange={(event) => setPackageBody(event.target.value)}
                         value={packageBody}
                       />
@@ -1625,7 +1744,7 @@ export function MobileActionBook({
                         disabled={packageEdit.isPending}
                         onClick={() => packageEdit.mutate()}
                       >
-                        {m.mobile_action_save_text_edit()}
+                        {mobile_action_save_text_edit()}
                       </Button>
                     </div>
                   ) : (
@@ -1643,20 +1762,20 @@ export function MobileActionBook({
                     )}
                   >
                     <IconDeviceDesktop />
-                    {m.mobile_action_desktop_continue()}
+                    {mobile_action_desktop_continue()}
                   </a>
                   <p className="text-xs text-muted-foreground">
-                    {m.mobile_action_precise_layout_desktop()}
+                    {mobile_action_precise_layout_desktop()}
                   </p>
                 </CardContent>
               </Card>
             ) : (
               <Alert>
                 <AlertTitle>
-                  {m.mobile_action_no_accepted_content_title()}
+                  {mobile_action_no_accepted_content_title()}
                 </AlertTitle>
                 <AlertDescription>
-                  {m.mobile_action_no_accepted_content_description()}
+                  {mobile_action_no_accepted_content_description()}
                 </AlertDescription>
               </Alert>
             )}
@@ -1693,7 +1812,7 @@ export function MobileActionBook({
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
                     <CardTitle className="text-base">
-                      {m.mobile_action_l3_handoff_title()}
+                      {mobile_action_l3_handoff_title()}
                     </CardTitle>
                     <Badge
                       variant={
@@ -1703,14 +1822,14 @@ export function MobileActionBook({
                       }
                     >
                       {currentHandoff.status === 'published'
-                        ? m.mobile_action_handoff_published()
-                        : m.mobile_action_handoff_pending()}
+                        ? mobile_action_handoff_published()
+                        : mobile_action_handoff_pending()}
                     </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <p className="text-muted-foreground">
-                    {m.mobile_action_handoff_description()}
+                    {mobile_action_handoff_description()}
                   </p>
                   <a
                     className={buttonVariants({
@@ -1721,7 +1840,7 @@ export function MobileActionBook({
                       `/dashboard/handoff/${encodeURIComponent(currentHandoff.token)}`
                     )}
                   >
-                    {m.mobile_action_open_handoff()}
+                    {mobile_action_open_handoff()}
                     <IconArrowRight />
                   </a>
                 </CardContent>
@@ -1732,11 +1851,11 @@ export function MobileActionBook({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <IconDeviceDesktop className="size-5" />
-                  {m.mobile_action_desktop_relay_title()}
+                  {mobile_action_desktop_relay_title()}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <p>{m.mobile_action_desktop_relay_description()}</p>
+                <p>{mobile_action_desktop_relay_description()}</p>
                 <a
                   className={buttonVariants({
                     className: 'min-h-touch-target',
@@ -1748,7 +1867,7 @@ export function MobileActionBook({
                       : '/dashboard'
                   )}
                 >
-                  {m.mobile_action_desktop_continue()}
+                  {mobile_action_desktop_continue()}
                 </a>
               </CardContent>
             </Card>

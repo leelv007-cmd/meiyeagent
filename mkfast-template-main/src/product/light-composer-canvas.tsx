@@ -12,7 +12,24 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  light_composer_copy_label,
+  light_composer_crop,
+  light_composer_description,
+  light_composer_move_down,
+  light_composer_move_up,
+  light_composer_no_modules,
+  light_composer_preview,
+  light_composer_replace_asset,
+  light_composer_title,
+  p1_canvas_aigc_label,
+  p1_canvas_brand_watermark,
+  p1_canvas_export,
+  p1_canvas_export_aigc_text,
+  p1_canvas_export_brand_fallback,
+  p1_canvas_save,
+  p1_canvas_save_as_template,
+} from '@/locale/paraglide/messages';
 
 import type { CanvasLibraryAsset } from '@/p1/canvas-library';
 import {
@@ -143,8 +160,8 @@ export async function renderLightCanvasDocument(
     image.close();
   }
   const labelLines = buildLightComposerComplianceLabels(labels, {
-    aigc: m.p1_canvas_export_aigc_text(),
-    watermark: m.p1_canvas_export_brand_fallback(),
+    aigc: p1_canvas_export_aigc_text(),
+    watermark: p1_canvas_export_brand_fallback(),
   }).map((label) => label.text);
   if (labelLines.length > 0) {
     const padding = Math.max(16, Math.round(document.width * 0.018));
@@ -176,12 +193,12 @@ function Preview({
   const sources = new Map(assets.map((asset) => [asset.id, asset.src]));
   return (
     <svg
-      aria-label={m.light_composer_preview()}
+      aria-label={light_composer_preview()}
       className="max-h-[680px] w-full rounded-lg bg-white shadow-sm"
       role="img"
       viewBox={`0 0 ${document.width} ${document.height}`}
     >
-      <title>{m.light_composer_preview()}</title>
+      <title>{light_composer_preview()}</title>
       <rect fill="#fff" height={document.height} width={document.width} />
       {(document.pages[0]?.elements ?? []).map((element) => {
         const transform = `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`;
@@ -255,9 +272,9 @@ export function LightComposerCanvas({
     <section className="space-y-4 rounded-xl border p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-semibold">{m.light_composer_title()}</h2>
+          <h2 className="font-semibold">{light_composer_title()}</h2>
           <p className="text-sm text-muted-foreground">
-            {m.light_composer_description()}
+            {light_composer_description()}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -270,7 +287,7 @@ export function LightComposerCanvas({
               id="light-composer-watermark"
               onCheckedChange={onWatermarkChange}
             />
-            {m.p1_canvas_brand_watermark()}
+            {p1_canvas_brand_watermark()}
           </label>
           <label
             className="flex items-center gap-2 text-xs"
@@ -281,7 +298,7 @@ export function LightComposerCanvas({
               id="light-composer-aigc-label"
               onCheckedChange={onAigcLabelChange}
             />
-            {m.p1_canvas_aigc_label()}
+            {p1_canvas_aigc_label()}
           </label>
           <Button
             disabled={saving}
@@ -291,7 +308,7 @@ export function LightComposerCanvas({
             variant="outline"
           >
             <IconDeviceFloppy />
-            {m.p1_canvas_save()}
+            {p1_canvas_save()}
           </Button>
           {onSaveAsTemplate ? (
             <Button
@@ -302,7 +319,7 @@ export function LightComposerCanvas({
               variant="outline"
             >
               <IconDeviceFloppy />
-              {m.p1_canvas_save_as_template()}
+              {p1_canvas_save_as_template()}
             </Button>
           ) : null}
           <Button
@@ -320,7 +337,7 @@ export function LightComposerCanvas({
             type="button"
           >
             <IconDownload />
-            {m.p1_canvas_export()}
+            {p1_canvas_export()}
           </Button>
         </div>
       </div>
@@ -328,7 +345,7 @@ export function LightComposerCanvas({
         <div className="space-y-3">
           {modules.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {m.light_composer_no_modules()}
+              {light_composer_no_modules()}
             </p>
           ) : null}
           {modules.map((element, index) => (
@@ -340,7 +357,7 @@ export function LightComposerCanvas({
                 <code className="text-xs">{element.id}</code>
                 <div className="flex gap-1">
                   <Button
-                    aria-label={m.light_composer_move_up()}
+                    aria-label={light_composer_move_up()}
                     disabled={index === 0}
                     onClick={() =>
                       setDocument((current) =>
@@ -358,7 +375,7 @@ export function LightComposerCanvas({
                     <IconArrowUp />
                   </Button>
                   <Button
-                    aria-label={m.light_composer_move_down()}
+                    aria-label={light_composer_move_down()}
                     disabled={index === modules.length - 1}
                     onClick={() =>
                       setDocument((current) =>
@@ -382,7 +399,7 @@ export function LightComposerCanvas({
                   className="grid gap-1 text-xs"
                   htmlFor={`light-composer-copy-${element.id}`}
                 >
-                  {m.light_composer_copy_label()}
+                  {light_composer_copy_label()}
                   <Textarea
                     id={`light-composer-copy-${element.id}`}
                     onChange={(event) =>
@@ -415,7 +432,7 @@ export function LightComposerCanvas({
                     variant="outline"
                   >
                     <IconCrop />
-                    {m.light_composer_crop()}
+                    {light_composer_crop()}
                   </Button>
                   <div className="flex flex-wrap gap-2">
                     {assets.map((asset) => (
@@ -435,7 +452,7 @@ export function LightComposerCanvas({
                         type="button"
                         variant="outline"
                       >
-                        {m.light_composer_replace_asset({ name: asset.label })}
+                        {light_composer_replace_asset({ name: asset.label })}
                       </Button>
                     ))}
                   </div>
@@ -445,9 +462,7 @@ export function LightComposerCanvas({
           ))}
         </div>
         <div className="rounded-xl bg-muted/30 p-3">
-          <p className="mb-2 text-sm font-medium">
-            {m.light_composer_preview()}
-          </p>
+          <p className="mb-2 text-sm font-medium">{light_composer_preview()}</p>
           <Preview assets={assets} document={document} />
         </div>
       </div>

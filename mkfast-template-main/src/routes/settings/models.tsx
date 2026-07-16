@@ -4,7 +4,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_models_byok_description,
+  settings_models_byok_heading,
+  settings_models_description,
+  settings_models_preferences_heading,
+  settings_navigation_models,
+  settings_title,
+} from '@/locale/paraglide/messages';
 import { ModelSettings } from '@/p1/model-settings';
 import { ModelByokSettings } from '@/p1/integration-settings';
 import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
@@ -33,15 +40,15 @@ function ModelsPage() {
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.settings_title(), isCurrentPage: false },
-        { label: m.settings_navigation_models(), isCurrentPage: true },
+        { label: settings_title(), isCurrentPage: false },
+        { label: settings_navigation_models(), isCurrentPage: true },
       ]}
-      title={m.settings_navigation_models()}
-      description={m.settings_models_description()}
+      title={settings_navigation_models()}
+      description={settings_models_description()}
     >
       <section className="space-y-4">
         <h2 className="meiye-type-body font-semibold">
-          {m.settings_models_preferences_heading()}
+          {settings_models_preferences_heading()}
         </h2>
         <ModelSettings />
       </section>
@@ -54,10 +61,10 @@ function ModelsPage() {
         <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-4 rounded-lg bg-surface-1 p-4 text-left">
           <span>
             <span className="meiye-type-body block font-semibold">
-              {m.settings_models_byok_heading()}
+              {settings_models_byok_heading()}
             </span>
             <span className="meiye-type-aux mt-1 block">
-              {m.settings_models_byok_description()}
+              {settings_models_byok_description()}
             </span>
           </span>
           {advancedOpen ? (

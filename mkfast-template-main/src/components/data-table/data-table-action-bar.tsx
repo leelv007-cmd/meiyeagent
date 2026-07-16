@@ -1,4 +1,7 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_clear_selection,
+  common_table_selected,
+} from "@/locale/paraglide/messages";
 import type { Table } from "@tanstack/react-table";
 import { IconLoader2, IconX } from "@tabler/icons-react";
 import * as React from "react";
@@ -64,7 +67,7 @@ function DataTableActionBarSelection<TData>({ table, }: DataTableActionBarSelect
     }, [table]);
     return (<div className="flex h-7 items-center rounded-md border pr-1 pl-2.5">
       <span className="whitespace-nowrap text-xs">
-        {table.getFilteredSelectedRowModel().rows.length} {m.common_table_selected()}
+        {table.getFilteredSelectedRowModel().rows.length} {common_table_selected()}
       </span>
       <Separator orientation="vertical" className="mr-1 ml-2 h-4 self-auto!"/>
       <Tooltip>
@@ -72,7 +75,7 @@ function DataTableActionBarSelection<TData>({ table, }: DataTableActionBarSelect
               <IconX className="size-3.5"/>
             </Button>)}/>
         <TooltipContent sideOffset={10} className="flex items-center gap-2 border bg-accent px-2 py-1 font-semibold text-foreground dark:bg-zinc-900 [&>span]:hidden">
-          <p>{m.common_table_clear_selection()}</p>
+          <p>{common_table_clear_selection()}</p>
           <kbd className="select-none rounded border bg-background px-1.5 py-px font-mono font-normal text-[0.7rem] text-foreground shadow-xs">
             <abbr title="Escape" className="no-underline">
               Esc

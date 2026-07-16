@@ -1,5 +1,22 @@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { m } from '@/locale/paraglide/messages';
+import {
+  model_card_capability_missing,
+  model_card_group_aria,
+  model_card_output_copy,
+  model_card_output_image,
+  model_card_output_video,
+  model_card_preview_alt,
+  model_card_preview_label,
+  model_card_preview_unavailable,
+  model_card_price_version_missing,
+  model_card_quote,
+  model_card_quote_missing,
+  model_card_status_quote_missing,
+  model_card_status_ready,
+  model_card_status_unavailable,
+  model_card_usage,
+  model_card_usage_unknown,
+} from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
 import { modelPreviewUrl } from '@/p1/model-preview';
 import type { CatalogModelView } from '@/p1/settings-view-model';
@@ -15,22 +32,22 @@ export function modelCardView(model: CatalogModelView, usage?: ModelCardUsage) {
   const outputCount = model.modality === 'llm' ? 3 : 1;
   const outputLabel =
     model.modality === 'llm'
-      ? m.model_card_output_copy()
+      ? model_card_output_copy()
       : model.modality === 'image'
-        ? m.model_card_output_image()
-        : m.model_card_output_video();
+        ? model_card_output_image()
+        : model_card_output_video();
   const selectable = model.available && Boolean(model.unitPrice);
   return {
     capabilityLabel:
       model.capabilityLabels.length > 0
         ? model.capabilityLabels.join(' · ')
-        : m.model_card_capability_missing(),
+        : model_card_capability_missing(),
     metaLabel: [model.manufacturer, model.version].filter(Boolean).join(' · '),
-    previewAlt: m.model_card_preview_alt({ name: model.displayName }),
-    previewLabel: m.model_card_preview_label(),
+    previewAlt: model_card_preview_alt({ name: model.displayName }),
+    previewLabel: model_card_preview_label(),
     previewUrl: modelPreviewUrl(model.modality),
     quoteLabel: model.unitPrice
-      ? m.model_card_quote({
+      ? model_card_quote({
           amount: (
             (model.unitPrice.amountMicros * outputCount) /
             1_000_000
@@ -39,21 +56,21 @@ export function modelCardView(model: CatalogModelView, usage?: ModelCardUsage) {
           output: outputLabel,
           revision: model.unitPrice.revision,
         })
-      : m.model_card_quote_missing(),
+      : model_card_quote_missing(),
     selectable,
     statusLabel: selectable
-      ? m.model_card_status_ready()
+      ? model_card_status_ready()
       : model.available
-        ? m.model_card_status_quote_missing()
-        : m.model_card_status_unavailable(),
+        ? model_card_status_quote_missing()
+        : model_card_status_unavailable(),
     unavailableReason:
       model.unavailableReason ??
       (model.available && !model.unitPrice
-        ? m.model_card_price_version_missing()
+        ? model_card_price_version_missing()
         : undefined),
     usageLabel: usage
-      ? m.model_card_usage({ available: usage.available, label: usage.label })
-      : m.model_card_usage_unknown(),
+      ? model_card_usage({ available: usage.available, label: usage.label })
+      : model_card_usage_unknown(),
   };
 }
 
@@ -98,7 +115,7 @@ function ModelIllustration({
       )}
       <span className="absolute inset-x-1 bottom-1 truncate rounded-sm bg-background/90 px-1.5 py-0.5 text-center text-[9px] leading-3 text-muted-foreground shadow-sm">
         {previewFailed
-          ? m.model_card_preview_unavailable()
+          ? model_card_preview_unavailable()
           : preview.previewLabel}
       </span>
     </div>
@@ -124,7 +141,7 @@ export function ModelCardPicker({
   return (
     <RadioGroup
       aria-busy={busy}
-      aria-label={m.model_card_group_aria()}
+      aria-label={model_card_group_aria()}
       className="grid gap-3 md:grid-cols-2"
       data-busy={busy ? 'true' : undefined}
       disabled={locked}

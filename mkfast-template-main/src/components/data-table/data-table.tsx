@@ -1,4 +1,4 @@
-import { m } from "@/locale/paraglide/messages";
+import { common_table_no_results } from "@/locale/paraglide/messages";
 import { flexRender, type Table as TanstackTable } from "@tanstack/react-table";
 import type * as React from "react";
 import { DataTablePagination } from "@/components/data-table/data-table-pagination";
@@ -34,7 +34,7 @@ export function DataTable<TData>({ table, actionBar, children, className, ...pro
                     </TableCell>))}
                 </TableRow>))) : (<TableRow>
                 <TableCell colSpan={table.getAllColumns().length} className="h-24 text-center">
-                  {m.common_table_no_results()}
+                  {common_table_no_results()}
                 </TableCell>
               </TableRow>)}
           </TableBody>

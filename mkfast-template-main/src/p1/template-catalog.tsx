@@ -29,7 +29,46 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_template_blank_canvas,
+  p1_template_canvas_preview_aria,
+  p1_template_copy_fixed_aria,
+  p1_template_copy_user_aria,
+  p1_template_count,
+  p1_template_create,
+  p1_template_delete_aria,
+  p1_template_description,
+  p1_template_empty_description,
+  p1_template_empty_title,
+  p1_template_eyebrow,
+  p1_template_family_before_after,
+  p1_template_family_filter_legend,
+  p1_template_family_package_explainer,
+  p1_template_family_price_card,
+  p1_template_family_review_card,
+  p1_template_family_shooting_checklist,
+  p1_template_family_social_cover,
+  p1_template_family_store_intro,
+  p1_template_hide_shortcut_aria,
+  p1_template_image_asset,
+  p1_template_move_backward_aria,
+  p1_template_move_forward_aria,
+  p1_template_owner_all,
+  p1_template_owner_official,
+  p1_template_owner_user,
+  p1_template_pin_shortcut_aria,
+  p1_template_preview,
+  p1_template_preview_alt,
+  p1_template_preview_description,
+  p1_template_rename_aria,
+  p1_template_retired,
+  p1_template_shortcuts_description,
+  p1_template_shortcuts_empty,
+  p1_template_shortcuts_title,
+  p1_template_title,
+  p1_template_update_available,
+  p1_template_upgrade_aria,
+} from '@/locale/paraglide/messages';
 
 import type {
   FilterOption,
@@ -39,13 +78,13 @@ import type {
 } from './types';
 
 export const P1_TEMPLATE_FAMILIES = [
-  m.p1_template_family_social_cover(),
-  m.p1_template_family_before_after(),
-  m.p1_template_family_price_card(),
-  m.p1_template_family_package_explainer(),
-  m.p1_template_family_review_card(),
-  m.p1_template_family_store_intro(),
-  m.p1_template_family_shooting_checklist(),
+  p1_template_family_social_cover(),
+  p1_template_family_before_after(),
+  p1_template_family_price_card(),
+  p1_template_family_package_explainer(),
+  p1_template_family_review_card(),
+  p1_template_family_store_intro(),
+  p1_template_family_shooting_checklist(),
 ] as const;
 
 const SEED_TEMPLATE_PREVIEW_BY_FAMILY: Record<string, string | undefined> = {
@@ -93,14 +132,14 @@ export function TemplateDocumentPreview({
 
   return (
     <svg
-      aria-label={m.p1_template_canvas_preview_aria({ name: preview.name })}
+      aria-label={p1_template_canvas_preview_aria({ name: preview.name })}
       className="max-h-[65vh] w-full rounded-lg bg-white shadow-sm"
       preserveAspectRatio="xMidYMid meet"
       role="img"
       style={{ aspectRatio: `${width} / ${height}` }}
       viewBox={`0 0 ${width} ${height}`}
     >
-      <title>{m.p1_template_canvas_preview_aria({ name: preview.name })}</title>
+      <title>{p1_template_canvas_preview_aria({ name: preview.name })}</title>
       <rect fill="#ffffff" height={height} width={width} x={0} y={0} />
       {elements.map((value, index) => {
         const element = record(value);
@@ -176,7 +215,7 @@ export function TemplateDocumentPreview({
               y={y}
             />
             <text fill="#64748b" fontSize={28} x={x + 24} y={y + 48}>
-              {m.p1_template_image_asset()}
+              {p1_template_image_asset()}
             </text>
           </g>
         );
@@ -205,19 +244,19 @@ export function TemplateShortcutBar({ items, onAction }: ShortcutBarProps) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 id="p1-template-shortcuts-title" className="font-medium">
-            {m.p1_template_shortcuts_title()}
+            {p1_template_shortcuts_title()}
           </h3>
           <p className="text-xs text-muted-foreground">
-            {m.p1_template_shortcuts_description()}
+            {p1_template_shortcuts_description()}
           </p>
         </div>
         <Badge variant="outline" className="tabular-nums">
-          {m.p1_template_count({ count: sortedItems.length })}
+          {p1_template_count({ count: sortedItems.length })}
         </Badge>
       </div>
       {sortedItems.length === 0 ? (
         <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-          {m.p1_template_shortcuts_empty()}
+          {p1_template_shortcuts_empty()}
         </div>
       ) : (
         <ScrollArea className="w-full whitespace-nowrap">
@@ -234,7 +273,7 @@ export function TemplateShortcutBar({ items, onAction }: ShortcutBarProps) {
                     {previewUrl ? (
                       <img
                         src={previewUrl}
-                        alt={m.p1_template_preview_alt({ name: item.name })}
+                        alt={p1_template_preview_alt({ name: item.name })}
                         className="size-full object-cover"
                         loading="lazy"
                       />
@@ -258,7 +297,7 @@ export function TemplateShortcutBar({ items, onAction }: ShortcutBarProps) {
                       variant="ghost"
                       disabled={index === 0}
                       onClick={() => onAction(item.id, 'move_up')}
-                      aria-label={m.p1_template_move_forward_aria({
+                      aria-label={p1_template_move_forward_aria({
                         name: item.name,
                       })}
                     >
@@ -270,7 +309,7 @@ export function TemplateShortcutBar({ items, onAction }: ShortcutBarProps) {
                       variant="ghost"
                       disabled={index === sortedItems.length - 1}
                       onClick={() => onAction(item.id, 'move_down')}
-                      aria-label={m.p1_template_move_backward_aria({
+                      aria-label={p1_template_move_backward_aria({
                         name: item.name,
                       })}
                     >
@@ -322,18 +361,18 @@ export function TemplateCatalog({
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-medium tracking-wide text-primary uppercase">
-            {m.p1_template_eyebrow()}
+            {p1_template_eyebrow()}
           </p>
           <h2 id="p1-template-catalog-title" className="text-xl font-semibold">
-            {m.p1_template_title()}
+            {p1_template_title()}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {m.p1_template_description()}
+            {p1_template_description()}
           </p>
         </div>
         <Button type="button" variant="outline" onClick={onStartBlank}>
           <IconPlus aria-hidden="true" />
-          {m.p1_template_blank_canvas()}
+          {p1_template_blank_canvas()}
         </Button>
       </header>
 
@@ -343,9 +382,9 @@ export function TemplateCatalog({
         <div className="flex flex-wrap items-center gap-2">
           {(
             [
-              ['all', m.p1_template_owner_all()],
-              ['official', m.p1_template_owner_official()],
-              ['user', m.p1_template_owner_user()],
+              ['all', p1_template_owner_all()],
+              ['official', p1_template_owner_official()],
+              ['user', p1_template_owner_user()],
             ] as const
           ).map(([value, label]) => (
             <Button
@@ -361,7 +400,7 @@ export function TemplateCatalog({
         </div>
         <fieldset className="flex flex-wrap gap-2 border-0 p-0">
           <legend className="sr-only">
-            {m.p1_template_family_filter_legend()}
+            {p1_template_family_filter_legend()}
           </legend>
           {familyOptions.map((option) => (
             <Button
@@ -389,9 +428,9 @@ export function TemplateCatalog({
               className="mx-auto size-8 text-muted-foreground"
               aria-hidden="true"
             />
-            <p className="mt-3 font-medium">{m.p1_template_empty_title()}</p>
+            <p className="mt-3 font-medium">{p1_template_empty_title()}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {m.p1_template_empty_description()}
+              {p1_template_empty_description()}
             </p>
           </div>
         </div>
@@ -403,15 +442,15 @@ export function TemplateCatalog({
               item.thumbnailUrl ?? seedTemplatePreviewUrl(item.family);
             const copyLabel =
               item.ownerKind === 'user'
-                ? m.p1_template_copy_user_aria({ name: item.name })
-                : m.p1_template_copy_fixed_aria({ name: item.name });
+                ? p1_template_copy_user_aria({ name: item.name })
+                : p1_template_copy_fixed_aria({ name: item.name });
             return (
               <Card key={item.id} className="py-0">
                 <div className="aspect-[4/3] overflow-hidden bg-muted">
                   {previewUrl ? (
                     <img
                       src={previewUrl}
-                      alt={m.p1_template_preview_alt({ name: item.name })}
+                      alt={p1_template_preview_alt({ name: item.name })}
                       className="size-full object-cover transition-transform duration-300 hover:scale-[1.02]"
                       loading="lazy"
                     />
@@ -436,11 +475,11 @@ export function TemplateCatalog({
                       )}
                     >
                       {item.ownerKind === 'official'
-                        ? m.p1_template_owner_official()
-                        : m.p1_template_owner_user()}
+                        ? p1_template_owner_official()
+                        : p1_template_owner_user()}
                     </Badge>
                     {item.retired && (
-                      <Badge variant="outline">{m.p1_template_retired()}</Badge>
+                      <Badge variant="outline">{p1_template_retired()}</Badge>
                     )}
                   </div>
                   <h3 className="mt-2 font-medium">{item.name}</h3>
@@ -456,7 +495,7 @@ export function TemplateCatalog({
                   )}
                   {item.updateAvailable && (
                     <p className="mt-2 text-xs font-medium text-primary">
-                      {m.p1_template_update_available()}
+                      {p1_template_update_available()}
                     </p>
                   )}
                 </CardContent>
@@ -469,7 +508,7 @@ export function TemplateCatalog({
                     onClick={() => onAction(item.id, 'preview')}
                   >
                     <IconEye aria-hidden="true" />
-                    {m.p1_template_preview()}
+                    {p1_template_preview()}
                   </Button>
                   {item.canCreate && (
                     <Button
@@ -479,7 +518,7 @@ export function TemplateCatalog({
                       onClick={() => onAction(item.id, 'create')}
                     >
                       <IconPlus aria-hidden="true" />
-                      {m.p1_template_create()}
+                      {p1_template_create()}
                     </Button>
                   )}
                   <Button
@@ -492,8 +531,8 @@ export function TemplateCatalog({
                     }
                     aria-label={
                       item.isShortcut
-                        ? m.p1_template_hide_shortcut_aria({ name: item.name })
-                        : m.p1_template_pin_shortcut_aria({ name: item.name })
+                        ? p1_template_hide_shortcut_aria({ name: item.name })
+                        : p1_template_pin_shortcut_aria({ name: item.name })
                     }
                   >
                     {item.isShortcut ? (
@@ -509,7 +548,7 @@ export function TemplateCatalog({
                       variant="ghost"
                       disabled={pending}
                       onClick={() => onAction(item.id, 'upgrade')}
-                      aria-label={m.p1_template_upgrade_aria({
+                      aria-label={p1_template_upgrade_aria({
                         name: item.name,
                       })}
                     >
@@ -535,7 +574,7 @@ export function TemplateCatalog({
                         variant="ghost"
                         disabled={pending}
                         onClick={() => onAction(item.id, 'rename')}
-                        aria-label={m.p1_template_rename_aria({
+                        aria-label={p1_template_rename_aria({
                           name: item.name,
                         })}
                       >
@@ -547,7 +586,7 @@ export function TemplateCatalog({
                         variant="destructive"
                         disabled={pending}
                         onClick={() => onAction(item.id, 'delete')}
-                        aria-label={m.p1_template_delete_aria({
+                        aria-label={p1_template_delete_aria({
                           name: item.name,
                         })}
                       >
@@ -573,7 +612,7 @@ export function TemplateCatalog({
             <DialogHeader>
               <DialogTitle>{preview.name}</DialogTitle>
               <DialogDescription>
-                {m.p1_template_preview_description({
+                {p1_template_preview_description({
                   revision: preview.versionId,
                 })}
               </DialogDescription>

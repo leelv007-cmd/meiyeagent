@@ -1,5 +1,12 @@
 import { Routes } from '@/lib/routes';
-import { m } from '@/locale/paraglide/messages';
+import {
+  common_mobile_navigation,
+  product_mobile_nav_create,
+  product_navigation_assets,
+  product_navigation_content,
+  product_navigation_store,
+  product_navigation_workbench,
+} from '@/locale/paraglide/messages';
 import {
   IconBuildingStore,
   IconFileText,
@@ -12,22 +19,22 @@ import { Link, useNavigate } from '@tanstack/react-router';
 const items = [
   {
     href: Routes.Dashboard,
-    label: m.product_navigation_workbench,
+    label: product_navigation_workbench,
     icon: IconSparkles,
   },
   {
     href: Routes.ContentLibrary,
-    label: m.product_navigation_content,
+    label: product_navigation_content,
     icon: IconFileText,
   },
   {
     href: Routes.AssetLibrary,
-    label: m.product_navigation_assets,
+    label: product_navigation_assets,
     icon: IconFolders,
   },
   {
     href: Routes.StoreProfile,
-    label: m.product_navigation_store,
+    label: product_navigation_store,
     icon: IconBuildingStore,
   },
 ] as const;
@@ -42,7 +49,7 @@ export function ProductMobileNav() {
 
   return (
     <nav
-      aria-label={m.common_mobile_navigation()}
+      aria-label={common_mobile_navigation()}
       className="fixed inset-x-0 bottom-0 z-50 grid h-[calc(4.5rem+env(safe-area-inset-bottom))] grid-cols-5 border-t border-divider bg-surface-2/96 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur"
     >
       {items.slice(0, 2).map((item) => {
@@ -67,7 +74,7 @@ export function ProductMobileNav() {
         <span className="grid size-11 place-items-center rounded-full bg-surface-1 text-foreground">
           <IconPlus className="size-5" aria-hidden="true" />
         </span>
-        <span>{m.product_mobile_nav_create()}</span>
+        <span>{product_mobile_nav_create()}</span>
       </button>
       {items.slice(2).map((item) => {
         const Icon = item.icon;

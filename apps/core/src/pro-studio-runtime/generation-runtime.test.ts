@@ -230,11 +230,16 @@ test('submit persists job, reservation, attempt and outbox before provider dispa
   assert.equal(job.status, 'queued');
   assert.deepEqual(job.origin, {
     kind: 'advanced_canvas',
-    id: 'project-1',
+    projectId: 'project-1',
     revisionId: 'revision-1',
   });
   const state = repository.snapshot(owner.workspaceId);
   assert.equal(state.jobs.length, 1);
+  assert.deepEqual(state.jobs[0]?.origin, {
+    kind: 'advanced_canvas',
+    projectId: 'project-1',
+    revisionId: 'revision-1',
+  });
   assert.equal(state.reservations[0]?.status, 'reserved');
   assert.equal(state.attempts.length, 1);
   assert.equal(state.outbox.length, 1);
@@ -251,6 +256,59 @@ test('submit persists job, reservation, attempt and outbox before provider dispa
     (await service.getUsageProjection(owner)).reserved.image,
     1,
   );
+});
+
+test('legacy advanced-canvas origins are normalized only when read', async () => {
+  const { service, repository } = runtime();
+  await repository.transact(owner.workspaceId, (state) => {
+    state.jobs.push({
+      id: 'legacy-generation-1',
+      workspaceId: owner.workspaceId,
+      origin: {
+        kind: 'advanced_canvas',
+        id: 'legacy-project-1',
+        revisionId: 'legacy-revision-1',
+      },
+      operation: 'image.generate',
+      modelId: 'image-model-1',
+      prompt: 'legacy',
+      parameters: {},
+      inputAssetIds: [],
+      idempotencyKey: 'legacy-generation-key',
+      quoteId: 'legacy-quote-1',
+      status: 'completed',
+      outputAssetId: 'legacy-asset-1',
+      createdAt: '2026-07-16T10:00:00.000Z',
+      updatedAt: '2026-07-16T10:00:00.000Z',
+    });
+  });
+
+  assert.deepEqual(await service.getJob(owner, 'legacy-generation-1'), {
+    id: 'legacy-generation-1',
+    workspaceId: owner.workspaceId,
+    origin: {
+      kind: 'advanced_canvas',
+      projectId: 'legacy-project-1',
+      revisionId: 'legacy-revision-1',
+    },
+    operation: 'image.generate',
+    modelId: 'image-model-1',
+    prompt: 'legacy',
+    parameters: {},
+    inputAssetIds: [],
+    idempotencyKey: 'legacy-generation-key',
+    quoteId: 'legacy-quote-1',
+    status: 'completed',
+    outputAssetId: 'legacy-asset-1',
+    createdAt: '2026-07-16T10:00:00.000Z',
+    updatedAt: '2026-07-16T10:00:00.000Z',
+  });
+  assert.equal((await service.listProjectGenerations(owner, 'legacy-project-1')).length, 1);
+  assert.deepEqual(repository.snapshot(owner.workspaceId).jobs[0]?.origin, {
+    kind: 'advanced_canvas',
+    id: 'legacy-project-1',
+    revisionId: 'legacy-revision-1',
+  });
 });
 
 test('submit rejects when the workspace concurrency slot is full', async () => {

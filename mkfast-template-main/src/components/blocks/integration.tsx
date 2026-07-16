@@ -1,4 +1,21 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  home_integration_description,
+  home_integration_items_item_1_description,
+  home_integration_items_item_1_title,
+  home_integration_items_item_2_description,
+  home_integration_items_item_2_title,
+  home_integration_items_item_3_description,
+  home_integration_items_item_3_title,
+  home_integration_items_item_4_description,
+  home_integration_items_item_4_title,
+  home_integration_items_item_5_description,
+  home_integration_items_item_5_title,
+  home_integration_items_item_6_description,
+  home_integration_items_item_6_title,
+  home_integration_learn_more,
+  home_integration_subtitle,
+  home_integration_title,
+} from '@/locale/paraglide/messages';
 import { HeaderSection } from '@/components/shared/header-section';
 import { ScrollReveal } from '@/components/shared/scroll-reveal';
 import { buttonVariants } from '@/components/ui/button';
@@ -32,38 +49,38 @@ function getItems(): Array<{
 }> {
   return [
     {
-      title: m.home_integration_items_item_1_title(),
-      description: m.home_integration_items_item_1_description(),
+      title: home_integration_items_item_1_title(),
+      description: home_integration_items_item_1_description(),
       icon: IconBrandOpenai,
       color: BRAND_COLORS.openai,
     },
     {
-      title: m.home_integration_items_item_2_title(),
-      description: m.home_integration_items_item_2_description(),
+      title: home_integration_items_item_2_title(),
+      description: home_integration_items_item_2_description(),
       icon: IconBrandCodesandbox,
       color: BRAND_COLORS.codesandbox,
     },
     {
-      title: m.home_integration_items_item_3_title(),
-      description: m.home_integration_items_item_3_description(),
+      title: home_integration_items_item_3_title(),
+      description: home_integration_items_item_3_description(),
       icon: IconBrandReact,
       color: BRAND_COLORS.react,
     },
     {
-      title: m.home_integration_items_item_4_title(),
-      description: m.home_integration_items_item_4_description(),
+      title: home_integration_items_item_4_title(),
+      description: home_integration_items_item_4_description(),
       icon: IconBrandVisualStudio,
       color: BRAND_COLORS.vs,
     },
     {
-      title: m.home_integration_items_item_5_title(),
-      description: m.home_integration_items_item_5_description(),
+      title: home_integration_items_item_5_title(),
+      description: home_integration_items_item_5_description(),
       icon: IconBrandWikipedia,
       color: BRAND_COLORS.wikipedia,
     },
     {
-      title: m.home_integration_items_item_6_title(),
-      description: m.home_integration_items_item_6_description(),
+      title: home_integration_items_item_6_title(),
+      description: home_integration_items_item_6_description(),
       icon: IconBrandGoogleFilled,
       color: BRAND_COLORS.google,
     },
@@ -117,9 +134,9 @@ export default function IntegrationSection() {
       <div className="mx-auto max-w-6xl">
         <ScrollReveal>
           <HeaderSection
-            title={m.home_integration_title()}
-            subtitle={m.home_integration_subtitle()}
-            description={m.home_integration_description()}
+            title={home_integration_title()}
+            subtitle={home_integration_subtitle()}
+            description={home_integration_description()}
           />
         </ScrollReveal>
 
@@ -131,7 +148,7 @@ export default function IntegrationSection() {
                 description={item.description}
                 icon={item.icon}
                 color={item.color}
-                learnMore={m.home_integration_learn_more()}
+                learnMore={home_integration_learn_more()}
               />
             </ScrollReveal>
           ))}

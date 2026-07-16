@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_error_codes,
+  auth_error_try_again,
+} from '@/locale/paraglide/messages';
 
 import { getAuthErrorMessage } from './locale';
 
@@ -11,7 +14,7 @@ test('unknown authentication errors use a localized stable fallback', () => {
 
   assert.equal(
     getAuthErrorMessage({ message: privateProviderMessage }),
-    m.auth_error_try_again()
+    auth_error_try_again()
   );
   assert.notEqual(
     getAuthErrorMessage({ message: privateProviderMessage }),
@@ -22,7 +25,6 @@ test('unknown authentication errors use a localized stable fallback', () => {
 test('allowlisted authentication aliases stay readable', () => {
   assert.equal(
     getAuthErrorMessage({ message: 'Invalid email or password' }),
-    Object.fromEntries(JSON.parse(m.auth_error_codes()))
-      .invalid_email_or_password
+    Object.fromEntries(JSON.parse(auth_error_codes())).invalid_email_or_password
   );
 });

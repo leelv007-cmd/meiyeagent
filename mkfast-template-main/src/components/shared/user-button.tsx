@@ -1,4 +1,8 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_common_logout,
+  auth_common_logout_failed,
+  common_user_menu,
+} from '@/locale/paraglide/messages';
 import { getAvatarLinks } from '@/config/avatar-config';
 import { authClient } from '@/auth/client';
 import { IconLogout } from '@tabler/icons-react';
@@ -28,7 +32,7 @@ export function UserButton({ user }: UserButtonProps) {
           router.navigate({ to: '/' });
         },
         onError: (err) => {
-          toast.error(m.auth_common_logout_failed());
+          toast.error(auth_common_logout_failed());
           console.error('sign out error:', err);
         },
       },
@@ -36,7 +40,7 @@ export function UserButton({ user }: UserButtonProps) {
   };
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger aria-label={m.common_user_menu()}>
+      <DropdownMenuTrigger aria-label={common_user_menu()}>
         <UserAvatar
           name={user.name ?? null}
           image={user.image ?? null}
@@ -72,7 +76,7 @@ export function UserButton({ user }: UserButtonProps) {
           }}
         >
           <IconLogout className="mr-2 size-4" />
-          {m.auth_common_logout()}
+          {auth_common_logout()}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

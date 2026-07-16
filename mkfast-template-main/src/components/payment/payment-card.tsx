@@ -1,4 +1,13 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_payment_failed_description,
+  settings_payment_failed_title,
+  settings_payment_processing_description,
+  settings_payment_processing_title,
+  settings_payment_success_description,
+  settings_payment_success_title,
+  settings_payment_timeout_description,
+  settings_payment_timeout_title,
+} from '@/locale/paraglide/messages';
 import { checkPaymentCompletion } from '@/api/payment';
 import {
   Card,
@@ -27,23 +36,23 @@ function getStatusContent(status: PaymentStatus): {
   switch (status) {
     case 'processing':
       return {
-        title: m.settings_payment_processing_title(),
-        description: m.settings_payment_processing_description(),
+        title: settings_payment_processing_title(),
+        description: settings_payment_processing_description(),
       };
     case 'success':
       return {
-        title: m.settings_payment_success_title(),
-        description: m.settings_payment_success_description(),
+        title: settings_payment_success_title(),
+        description: settings_payment_success_description(),
       };
     case 'failed':
       return {
-        title: m.settings_payment_failed_title(),
-        description: m.settings_payment_failed_description(),
+        title: settings_payment_failed_title(),
+        description: settings_payment_failed_description(),
       };
     case 'timeout':
       return {
-        title: m.settings_payment_timeout_title(),
-        description: m.settings_payment_timeout_description(),
+        title: settings_payment_timeout_title(),
+        description: settings_payment_timeout_description(),
       };
     default:
       return { title: '', description: '' };

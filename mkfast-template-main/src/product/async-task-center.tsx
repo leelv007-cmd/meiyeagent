@@ -1,7 +1,24 @@
 import { ProductStatus } from '@/components/uiux/product-status';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  async_task_active_count,
+  async_task_button,
+  async_task_center_aria,
+  async_task_center_description,
+  async_task_center_title,
+  async_task_empty,
+  async_task_kind_image,
+  async_task_kind_video,
+  async_task_load_error,
+  async_task_loading,
+  async_task_open,
+  async_task_retry,
+  async_task_row_hint,
+  async_task_unread_count,
+  async_task_view_all,
+  common_close,
+} from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
 import { getPathWithLocale } from '@/lib/urls';
 import { operationsQuery } from '@/p1/client';
@@ -76,9 +93,9 @@ function AsyncTaskRow({ task }: { task: AsyncTaskSummary }) {
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {task.kind === 'video'
-              ? m.async_task_kind_video()
-              : m.async_task_kind_image()}{' '}
-            · {m.async_task_row_hint()}
+              ? async_task_kind_video()
+              : async_task_kind_image()}{' '}
+            · {async_task_row_hint()}
             {elapsed ? ` · ${elapsed}` : null}
           </p>
         </div>
@@ -86,7 +103,7 @@ function AsyncTaskRow({ task }: { task: AsyncTaskSummary }) {
           className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-md text-sm font-medium text-primary outline-none hover:text-primary/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           href={getPathWithLocale(task.href)}
         >
-          {m.async_task_open()}
+          {async_task_open()}
           <IconChevronRight aria-hidden="true" className="size-4" />
         </a>
       </div>
@@ -127,9 +144,9 @@ function AsyncTaskNotification({
           </div>
           <p className="mt-1 text-sm leading-5 text-muted-foreground">
             {task.kind === 'video'
-              ? m.async_task_kind_video()
-              : m.async_task_kind_image()}{' '}
-            · {m.async_task_row_hint()}
+              ? async_task_kind_video()
+              : async_task_kind_image()}{' '}
+            · {async_task_row_hint()}
             {elapsed ? ` · ${elapsed}` : null}
           </p>
           <div className="mt-3 flex items-center gap-6">
@@ -137,7 +154,7 @@ function AsyncTaskNotification({
               className="inline-flex min-h-10 items-center gap-1 rounded-md text-sm font-medium text-primary outline-none hover:text-primary/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               href={getPathWithLocale(task.href)}
             >
-              {m.async_task_open()}
+              {async_task_open()}
               <IconChevronRight aria-hidden="true" className="size-4" />
             </a>
             <Button
@@ -147,7 +164,7 @@ function AsyncTaskNotification({
               variant="ghost"
               onClick={onClose}
             >
-              {m.common_close()}
+              {common_close()}
             </Button>
           </div>
         </div>
@@ -262,7 +279,7 @@ export function AsyncTaskCenter({
 
   return (
     <aside
-      aria-label={m.async_task_center_aria()}
+      aria-label={async_task_center_aria()}
       className={cn(
         isMobile
           ? 'fixed right-3 z-[60] flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-2 sm:right-5'
@@ -286,22 +303,22 @@ export function AsyncTaskCenter({
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="font-semibold">{m.async_task_center_title()}</h2>
+              <h2 className="font-semibold">{async_task_center_title()}</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                {m.async_task_center_description()}
+                {async_task_center_description()}
               </p>
             </div>
             <a
               className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-primary"
               href={getPathWithLocale('/dashboard/jobs')}
             >
-              {m.async_task_view_all()}
+              {async_task_view_all()}
               <IconExternalLink aria-hidden="true" className="size-4" />
             </a>
           </div>
           {historyQuery.isError || videoWorkflowQuery.isError ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
-              <p>{m.async_task_load_error()}</p>
+              <p>{async_task_load_error()}</p>
               <Button
                 className="mt-2"
                 type="button"
@@ -314,20 +331,20 @@ export function AsyncTaskCenter({
                   ])
                 }
               >
-                {m.async_task_retry()}
+                {async_task_retry()}
               </Button>
             </div>
           ) : null}
           {historyQuery.isLoading || videoWorkflowQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">
-              {m.async_task_loading()}
+              {async_task_loading()}
             </p>
           ) : null}
           {!historyQuery.isLoading &&
           !videoWorkflowQuery.isLoading &&
           visiblePanelTasks.length === 0 ? (
             <p className="py-3 text-sm text-muted-foreground">
-              {m.async_task_empty()}
+              {async_task_empty()}
             </p>
           ) : null}
           {visiblePanelTasks.length > 0 ? (
@@ -349,7 +366,7 @@ export function AsyncTaskCenter({
       ) : null}
       <div aria-live="polite" className="sr-only">
         {unreadKeys.size > 0
-          ? m.async_task_unread_count({ count: unreadKeys.size })
+          ? async_task_unread_count({ count: unreadKeys.size })
           : ''}
       </div>
       {showTrigger ? (
@@ -359,8 +376,8 @@ export function AsyncTaskCenter({
           aria-expanded={open}
           aria-label={
             plan.activeTasks.length > 0
-              ? m.async_task_active_count({ count: plan.activeTasks.length })
-              : m.async_task_button()
+              ? async_task_active_count({ count: plan.activeTasks.length })
+              : async_task_button()
           }
           className={cn(
             isMobile
@@ -375,10 +392,10 @@ export function AsyncTaskCenter({
           {!isMobile ? (
             <span className="truncate group-data-[collapsible=icon]:hidden">
               {plan.activeTasks.length > 0
-                ? m.async_task_active_count({
+                ? async_task_active_count({
                     count: plan.activeTasks.length,
                   })
-                : m.async_task_button()}
+                : async_task_button()}
             </span>
           ) : null}
           {unreadKeys.size > 0 ? (

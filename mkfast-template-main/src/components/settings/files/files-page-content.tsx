@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_files_delete_error,
+  settings_files_delete_success,
+  settings_files_upload_error,
+  settings_files_upload_success,
+} from '@/locale/paraglide/messages';
 import { FilesTable } from '@/components/settings/files/files-table';
 import {
   useDeleteUserFile,
@@ -21,19 +26,19 @@ export function FilesPageContent() {
     new Promise<void>((resolve, reject) => {
       uploadMutation.mutate(params, {
         onSuccess: () => {
-          toast.success(m.settings_files_upload_success());
+          toast.success(settings_files_upload_success());
           resolve();
         },
         onError: (error) => {
-          toast.error(m.settings_files_upload_error());
+          toast.error(settings_files_upload_error());
           reject(error);
         },
       });
     });
   const handleDelete = (id: string) => {
     deleteMutation.mutate(id, {
-      onSuccess: () => toast.success(m.settings_files_delete_success()),
-      onError: () => toast.error(m.settings_files_delete_error()),
+      onSuccess: () => toast.success(settings_files_delete_success()),
+      onError: () => toast.error(settings_files_delete_error()),
     });
   };
   return (

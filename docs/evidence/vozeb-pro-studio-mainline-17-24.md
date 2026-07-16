@@ -80,11 +80,13 @@ Evidence screenshot: `docs/evidence/pro-studio/ticket20-layout-adopted-package.p
 
 ```bash
 node --test scripts/polotno-retirement-gate.test.mjs scripts/uiux/evidence-tools.test.mjs
+pnpm uiux:bundle-check
 pnpm --filter @meiye/core exec tsx --test src/p1/model-supply/activation-probe-executor.test.ts src/p1/operations/media-custody.test.ts src/p1/operations/polotno-retirement-inventory.test.ts
 pnpm --filter @meiye/core exec tsx --test src/p1/operations/canvas-export-adoption.test.ts src/p1/operations/content-package-export-adapter.test.ts src/p1/operations/content-package.test.ts
 pnpm --filter @meiye/web exec tsx --test src/product/light-composer-document.test.ts src/product/light-composer-compliance.test.ts src/p1/merchant-support-diagnostic.test.ts src/auth/offline-password-reset.test.ts src/auth/last-admin-migration.test.ts
 TEST_DATABASE_URL='<isolated-db-url>' DATABASE_URL='<isolated-db-url>' PORT=3124 PLAYWRIGHT_CORE_PORT=4124 PLAYWRIGHT_BASE_URL=http://127.0.0.1:3124 PLAYWRIGHT_AUTH_BASE_URL=http://127.0.0.1:3124 pnpm --filter @meiye/web exec playwright test tests/e2e/specs/uiux-operations-reuse.spec.ts --grep 'edits, saves, and exports'
 pnpm --filter @meiye/web exec playwright test tests/e2e/specs/pro-studio-engineering-tickets.spec.ts --grep 'ticket 17/20 gate 1'
+pnpm --filter @meiye/web exec playwright test tests/e2e/specs/pro-studio-engineering-tickets.spec.ts --grep 'ticket 20 gate 4'
 ```
 
 The production historical-data counts remain environment evidence: run the inventory command against the production snapshot and retain its JSON before declaring the data gate complete.
@@ -94,7 +96,7 @@ The production historical-data counts remain environment evidence: run the inven
 - Ticket 17: the real browser edit/save/export journey and the template-to-ContentPackage daily-layout handoff pass.
 - Ticket 18: no production snapshot was supplied, so historical coverage, counts, and every-work open/export behavior remain unverified.
 - Ticket 19: the new renderer's real PNG bytes and persisted receipt now pass. No old-renderer comparison is claimed because the retired runtime is absent and no approved historical comparison artifact was supplied.
-- Ticket 20: gate ① passes. Production historical fallback (gate ②), the approved old/new renderer comparison (gate ③), the exact full entry matrix (gate ④), and the complete bundle/conformance gate (gate ⑤) remain open. SDK removal must not be treated as release approval while those prerequisites are open.
+- Ticket 20: gates ①/④/⑤ pass. The complete named-entry Playwright matrix reaches Light Composer with zero Polotno traffic, and the production bundle passes at 345436 JS gzip / 36548 CSS gzip bytes. Production historical fallback (gate ②) and the approved old/new renderer comparison (gate ③) remain open. SDK removal must not be treated as release approval while those prerequisites are open.
 - Ticket 21: `docs/evidence/pro-studio/copy-manifest.json` remains `blocked_pending_a2_a3_authorization`; no upstream-derived fixture may be added or claimed complete. A real provider canary was not run.
 - Ticket 22: reconciliation and repair planning are tested, but no live storage repair was executed.
 - Ticket 23: the diagnostic projection is tested, but the authorized-support browser drill was not run.

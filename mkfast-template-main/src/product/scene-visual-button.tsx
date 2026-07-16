@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { m } from '@/locale/paraglide/messages';
+import { creation_entry_scene_preview_alt } from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
 
 import type { SceneChip } from './creation-entry-model';
@@ -28,7 +28,7 @@ export function SceneVisualButton({
     >
       <span className="relative block w-full">
         <img
-          alt={m.creation_entry_scene_preview_alt({ name: scene.label })}
+          alt={creation_entry_scene_preview_alt({ name: scene.label })}
           className="aspect-[16/10] w-full object-cover"
           loading="lazy"
           src={scene.imageUrl}

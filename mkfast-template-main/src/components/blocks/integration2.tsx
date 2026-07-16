@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  home_integration2_description,
+  home_integration2_primary_button,
+  home_integration2_secondary_button,
+  home_integration2_title,
+} from '@/locale/paraglide/messages';
 import { Logo } from '@/components/shared/logo';
 import { ScrollReveal } from '@/components/shared/scroll-reveal';
 import { buttonVariants } from '@/components/ui/button';
@@ -93,10 +98,10 @@ export default function Integration2Section() {
               className="mx-auto max-w-lg space-y-6 text-center sm:text-left"
             >
               <h2 className="text-balance text-3xl font-semibold md:text-4xl">
-                {m.home_integration2_title()}
+                {home_integration2_title()}
               </h2>
               <p className="text-muted-foreground">
-                {m.home_integration2_description()}
+                {home_integration2_description()}
               </p>
 
               <div className="mt-12 flex flex-wrap justify-center gap-4 md:justify-start">
@@ -104,7 +109,7 @@ export default function Integration2Section() {
                   to="/auth/login"
                   className={cn(buttonVariants({ size: 'lg' }))}
                 >
-                  <span>{m.home_integration2_primary_button()}</span>
+                  <span>{home_integration2_primary_button()}</span>
                 </Link>
                 <Link
                   to={Routes.Pricing}
@@ -112,7 +117,7 @@ export default function Integration2Section() {
                     buttonVariants({ size: 'lg', variant: 'outline' })
                   )}
                 >
-                  <span>{m.home_integration2_secondary_button()}</span>
+                  <span>{home_integration2_secondary_button()}</span>
                 </Link>
               </div>
             </ScrollReveal>

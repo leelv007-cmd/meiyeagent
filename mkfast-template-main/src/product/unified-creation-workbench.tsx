@@ -22,7 +22,201 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Switch } from '@/components/ui/switch';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_canvas_job_actual_model,
+  common_correlation_id,
+  creation_assistant_title,
+  creation_catalog_copy_label,
+  creation_catalog_image_detail,
+  creation_catalog_image_label,
+  creation_catalog_mode_direct,
+  creation_entry_input_guide,
+  creative_brief_safe_audience_draft,
+  creative_brief_safe_scene_with_asset_draft,
+  creative_brief_safe_scene_without_asset_draft,
+  creative_brief_safe_tone_draft,
+  creative_brief_submit_blocked,
+  creative_brief_title,
+  creative_grounding_description,
+  creative_grounding_missing_asset,
+  creative_grounding_missing_project,
+  creative_grounding_missing_qualification,
+  creative_grounding_missing_store,
+  creative_grounding_open_assets,
+  creative_grounding_open_store,
+  creative_grounding_ready,
+  creative_grounding_server_blocked,
+  creative_grounding_submit_blocked,
+  creative_grounding_title,
+  model_settings_production_available,
+  operations_rail_aria,
+  p1_canvas_export_brand_fallback,
+  p1_common_unknown_error,
+  product_navigation_workbench,
+  workbench_accept_contract_aria,
+  workbench_accept_contract_hint,
+  workbench_accept_contract_label,
+  workbench_aigc_label,
+  workbench_aspect_portrait_post,
+  workbench_aspect_ratio,
+  workbench_aspect_square,
+  workbench_aspect_vertical_video,
+  workbench_catalog_failure_description,
+  workbench_catalog_failure_title,
+  workbench_catalog_loading_description,
+  workbench_catalog_loading_title,
+  workbench_compliance_summary,
+  workbench_contract_check_required,
+  workbench_contract_incomplete,
+  workbench_copy_stream_validation_failed,
+  workbench_create_image_text,
+  workbench_create_image_text_description,
+  workbench_create_video,
+  workbench_create_video_description,
+  workbench_current_work,
+  workbench_derive_new_work,
+  workbench_derived_work,
+  workbench_description,
+  workbench_empty_description,
+  workbench_empty_title,
+  workbench_expected_output,
+  workbench_explicit_model,
+  workbench_eyebrow,
+  workbench_generating_content,
+  workbench_generating_video,
+  workbench_header_badge,
+  workbench_image_result,
+  workbench_inbox_description,
+  workbench_inbox_failure_description,
+  workbench_inbox_failure_title,
+  workbench_inbox_loading_title,
+  workbench_inherited_fields,
+  workbench_job_recovered,
+  workbench_job_retry_description,
+  workbench_list_separator,
+  workbench_loading_description,
+  workbench_loading_title,
+  workbench_local_fixture_description,
+  workbench_local_fixture_title,
+  workbench_mode_agent,
+  workbench_model_guardrail,
+  workbench_model_not_selected,
+  workbench_model_unavailable_description,
+  workbench_model_unavailable_title,
+  workbench_module_count,
+  workbench_modules_save_failed,
+  workbench_new_creation,
+  workbench_no_references,
+  workbench_open_job,
+  workbench_open_session,
+  workbench_open_work,
+  workbench_operation_failed,
+  workbench_organization_label,
+  workbench_organization_label_aria,
+  workbench_preset_identity_description,
+  workbench_preset_loading_description,
+  workbench_preset_loading_title,
+  workbench_professional_settings,
+  workbench_projection_failure_description,
+  workbench_projection_failure_title,
+  workbench_quick_start,
+  workbench_quick_start_description,
+  workbench_quick_start_legend,
+  workbench_quote_missing_description,
+  workbench_quote_missing_short,
+  workbench_quote_missing_title,
+  workbench_record_aria,
+  workbench_record_assistant,
+  workbench_record_composer,
+  workbench_record_direct_aria,
+  workbench_record_intent,
+  workbench_record_job,
+  workbench_record_next,
+  workbench_record_references,
+  workbench_record_results,
+  workbench_record_reuse,
+  workbench_record_streaming,
+  workbench_reference_assets_need_attention,
+  workbench_reference_assets_will_be_used,
+  workbench_reference_failure_action,
+  workbench_reference_failure_authorization,
+  workbench_reference_failure_deleted,
+  workbench_reference_failure_description,
+  workbench_reference_failure_fallback_photo,
+  workbench_reference_failure_title,
+  workbench_reference_failure_unreadable,
+  workbench_regenerate,
+  workbench_reload,
+  workbench_reload_catalog,
+  workbench_reload_inbox,
+  workbench_reload_sources,
+  workbench_reload_tasks,
+  workbench_resubmit_stream,
+  workbench_result_saved_as_asset,
+  workbench_result_saved_description,
+  workbench_resume_job,
+  workbench_retry_updates,
+  workbench_section_composer,
+  workbench_section_intent,
+  workbench_section_job,
+  workbench_section_next,
+  workbench_section_references,
+  workbench_section_results,
+  workbench_section_reuse,
+  workbench_selected_model,
+  workbench_selected_preset,
+  workbench_selected_source,
+  workbench_settings_summary,
+  workbench_show_example,
+  workbench_source_already_present,
+  workbench_source_asset,
+  workbench_source_failure_description,
+  workbench_source_insert_failed,
+  workbench_source_inserted,
+  workbench_source_task,
+  workbench_sources_failure_title,
+  workbench_sources_loading_description,
+  workbench_sources_loading_title,
+  workbench_start_first_creation,
+  workbench_stop_stream,
+  workbench_store_asset,
+  workbench_stream_guardrail,
+  workbench_stream_interrupted,
+  workbench_stream_stopped,
+  workbench_stream_title,
+  workbench_submit_failed,
+  workbench_submit_job,
+  workbench_submitting_accent,
+  workbench_submitting_description,
+  workbench_submitting_title,
+  workbench_summary_model_spec,
+  workbench_summary_output_duration,
+  workbench_summary_quote_labels,
+  workbench_summary_starting_card,
+  workbench_switch_off,
+  workbench_switch_on,
+  workbench_tag_local,
+  workbench_tag_project,
+  workbench_tag_review,
+  workbench_tasks_failure_title,
+  workbench_technical_failure_usage,
+  workbench_title,
+  workbench_updates_failed,
+  workbench_uploaded_image,
+  workbench_usage_copy,
+  workbench_usage_image,
+  workbench_usage_video,
+  workbench_verify_job,
+  workbench_verify_only,
+  workbench_video_contract_required,
+  workbench_video_result,
+  workbench_view_model_details,
+  workbench_view_settings,
+  workbench_watermark,
+  workbench_work_create_failed,
+  workbench_work_created,
+  workbench_work_required,
+} from '@/locale/paraglide/messages';
 import { runWithStableSubmissionAttempt } from '@/lib/stable-submission-attempt';
 import { friendlyProductError } from '@/lib/correlated-api-error';
 import { getLocale, localeConfig } from '@/lib/locale';
@@ -166,31 +360,14 @@ const referenceAssetFailureCodes = new Set([
 ]);
 
 function localizedCreativeJobFailureMessages(): CreativeJobFailureMessages {
-  const messages = m as typeof m & {
-    workbench_reference_failure_action: () => string;
-    workbench_reference_failure_authorization: (input: {
-      photo: string;
-    }) => string;
-    workbench_reference_failure_deleted: (input: {
-      photo: string;
-    }) => string;
-    workbench_reference_failure_description: () => string;
-    workbench_reference_failure_fallback_photo: (input: {
-      index: number;
-    }) => string;
-    workbench_reference_failure_title: () => string;
-    workbench_reference_failure_unreadable: (input: {
-      photo: string;
-    }) => string;
-  };
   return {
-    action: messages.workbench_reference_failure_action,
-    authorization: messages.workbench_reference_failure_authorization,
-    deleted: messages.workbench_reference_failure_deleted,
-    description: messages.workbench_reference_failure_description,
-    fallbackPhoto: messages.workbench_reference_failure_fallback_photo,
-    title: messages.workbench_reference_failure_title,
-    unreadable: messages.workbench_reference_failure_unreadable,
+    action: workbench_reference_failure_action,
+    authorization: workbench_reference_failure_authorization,
+    deleted: workbench_reference_failure_deleted,
+    description: workbench_reference_failure_description,
+    fallbackPhoto: workbench_reference_failure_fallback_photo,
+    title: workbench_reference_failure_title,
+    unreadable: workbench_reference_failure_unreadable,
   };
 }
 
@@ -263,21 +440,21 @@ const operationOptions: Array<{
   operation: ModelOperation;
 }> = [
   {
-    description: m.workbench_create_image_text_description,
+    description: workbench_create_image_text_description,
     icon: IconSparkles,
-    label: m.workbench_create_image_text,
+    label: workbench_create_image_text,
     operation: 'copy.generate',
   },
   {
-    description: m.creation_catalog_image_detail,
+    description: creation_catalog_image_detail,
     icon: IconPhoto,
-    label: m.creation_catalog_image_label,
+    label: creation_catalog_image_label,
     operation: 'image.generate',
   },
   {
-    description: m.workbench_create_video_description,
+    description: workbench_create_video_description,
     icon: IconVideo,
-    label: m.workbench_create_video,
+    label: workbench_create_video,
     operation: 'video.generate',
   },
 ];
@@ -411,7 +588,7 @@ function ResultProvenance({ job }: { job: CreativeJob }) {
     >
       <div className="flex flex-wrap gap-2">
         <Badge variant="secondary">
-          {m.canonical_canvas_job_actual_model({
+          {canonical_canvas_job_actual_model({
             model:
               frozen?.modelDisplayName ??
               frozen?.actualCatalogModelId ??
@@ -425,12 +602,12 @@ function ResultProvenance({ job }: { job: CreativeJob }) {
           <Badge variant="outline">RouteSnapshot · {job.routeSnapshotId}</Badge>
         ) : null}
         {localFixture ? (
-          <Badge variant="outline">{m.workbench_local_fixture_title()}</Badge>
+          <Badge variant="outline">{workbench_local_fixture_title()}</Badge>
         ) : null}
       </div>
       {localFixture ? (
         <p className="text-xs text-muted-foreground">
-          {m.workbench_local_fixture_description()}
+          {workbench_local_fixture_description()}
         </p>
       ) : null}
     </div>
@@ -751,18 +928,18 @@ export function UnifiedCreationWorkbench({
   );
   const briefDrafts = useMemo<CreativeBriefDrafts>(
     () => ({
-      audience: m.creative_brief_safe_audience_draft(),
+      audience: creative_brief_safe_audience_draft(),
       intent: currentWork?.intent ?? '',
       scene: currentWork?.sourceReferences.some(
         (reference) => reference.kind === 'asset'
       )
-        ? m.creative_brief_safe_scene_with_asset_draft()
-        : m.creative_brief_safe_scene_without_asset_draft(),
+        ? creative_brief_safe_scene_with_asset_draft()
+        : creative_brief_safe_scene_without_asset_draft(),
       tone:
         productQuery.data?.store?.confirmedAt &&
         productQuery.data.store.brandVoice.trim()
           ? productQuery.data.store.brandVoice
-          : m.creative_brief_safe_tone_draft(),
+          : creative_brief_safe_tone_draft(),
     }),
     [
       currentWork?.intent,
@@ -779,10 +956,10 @@ export function UnifiedCreationWorkbench({
         )
       : [];
   const groundingLabels: Record<CreativeGroundingRequirement, () => string> = {
-    confirmed_project: m.creative_grounding_missing_project,
-    confirmed_qualification: m.creative_grounding_missing_qualification,
-    confirmed_store: m.creative_grounding_missing_store,
-    real_authorized_asset: m.creative_grounding_missing_asset,
+    confirmed_project: creative_grounding_missing_project,
+    confirmed_qualification: creative_grounding_missing_qualification,
+    confirmed_store: creative_grounding_missing_store,
+    real_authorized_asset: creative_grounding_missing_asset,
   };
   const modelSelection = resolveCreationModelSelection({
     catalog: catalog.models,
@@ -800,7 +977,7 @@ export function UnifiedCreationWorkbench({
       ...(inboxQuery.data?.tasks ?? []).slice(0, 3).map((task) => ({
         id: task.id,
         kind: 'task' as const,
-        label: m.workbench_source_task({
+        label: workbench_source_task({
           title: taskSystemText(task.title) ?? task.title,
         }),
       })),
@@ -810,7 +987,7 @@ export function UnifiedCreationWorkbench({
         .map((asset) => ({
           id: asset.id,
           kind: 'asset' as const,
-          label: m.workbench_source_asset({
+          label: workbench_source_asset({
             title: asset.tags[0] ?? asset.mediaType,
           }),
         })),
@@ -827,9 +1004,9 @@ export function UnifiedCreationWorkbench({
     ? {
         available: usageQuery.data.usage[usageResource].available,
         label: {
-          copy: m.workbench_usage_copy(),
-          image: m.workbench_usage_image(),
-          video: m.workbench_usage_video(),
+          copy: workbench_usage_copy(),
+          image: workbench_usage_image(),
+          video: workbench_usage_video(),
         }[usageResource],
       }
     : undefined;
@@ -918,8 +1095,8 @@ export function UnifiedCreationWorkbench({
       setCopyStreamInterruption((current) => current ?? 'error');
       setSubmissionBlocker(
         error.message.includes('Confirmed Product grounding is incomplete')
-          ? m.creative_grounding_server_blocked()
-          : m.workbench_submit_failed()
+          ? creative_grounding_server_blocked()
+          : workbench_submit_failed()
       );
       void refreshProjection();
     },
@@ -927,7 +1104,7 @@ export function UnifiedCreationWorkbench({
       copySubmissionKeyRef.current = undefined;
       if (!result) {
         setCopyStreamInterruption((current) => current ?? 'error');
-        toast.error(m.workbench_copy_stream_validation_failed());
+        toast.error(workbench_copy_stream_validation_failed());
         return;
       }
       setCopyStreamInterruption(undefined);
@@ -946,7 +1123,7 @@ export function UnifiedCreationWorkbench({
       !quote.priceRevision ||
       !quoteAcceptedAt
     ) {
-      throw new Error(m.workbench_contract_incomplete());
+      throw new Error(workbench_contract_incomplete());
     }
     const contract: CreativeExecutionContract = {
       aigcLabelEnabled,
@@ -1044,9 +1221,9 @@ export function UnifiedCreationWorkbench({
           : ['social_cover']
       );
       setShowOnboarding(false);
-      toast.success(m.workbench_work_created());
+      toast.success(workbench_work_created());
     },
-    onError: () => toast.error(m.workbench_work_create_failed()),
+    onError: () => toast.error(workbench_work_create_failed()),
   });
 
   const submitWork = useMutation({
@@ -1084,14 +1261,14 @@ export function UnifiedCreationWorkbench({
         errorCode === 'CREATIVE_GROUNDING_INCOMPLETE' ||
         (error instanceof Error &&
           error.message.includes('Confirmed Product grounding is incomplete'))
-          ? m.creative_grounding_server_blocked()
+          ? creative_grounding_server_blocked()
           : errorCode === 'REFERENCE_ASSET_UNRESOLVED' ||
               (error instanceof Error &&
                 error.message.includes('Reference assets need attention'))
-            ? m.workbench_reference_assets_need_attention({
-                details: referenceDetails ?? m.p1_common_unknown_error(),
+            ? workbench_reference_assets_need_attention({
+                details: referenceDetails ?? p1_common_unknown_error(),
               })
-            : m.workbench_submit_failed();
+            : workbench_submit_failed();
       setSubmissionBlocker(description);
       toast.error(description);
     },
@@ -1113,13 +1290,13 @@ export function UnifiedCreationWorkbench({
       });
       emitTelemetry('quote_state', { operation, state: 'submitted' });
     } catch {
-      toast.error(m.workbench_contract_check_required());
+      toast.error(workbench_contract_check_required());
     }
   };
 
   const insertReference = useMutation({
     mutationFn: async (reference: CreativeSourceReference) => {
-      if (!currentWork) throw new Error(m.workbench_work_required());
+      if (!currentWork) throw new Error(workbench_work_required());
       if (
         currentWork.sourceReferences.some(
           (item) => item.id === reference.id && item.kind === reference.kind
@@ -1144,19 +1321,19 @@ export function UnifiedCreationWorkbench({
     },
     onSuccess: async (result) => {
       if (result.outcome === 'already_present') {
-        toast.info(m.workbench_source_already_present());
+        toast.info(workbench_source_already_present());
         return;
       }
       await onWorkIdChange?.(result.work.id);
       await refreshProjection();
-      toast.success(m.workbench_source_inserted());
+      toast.success(workbench_source_inserted());
     },
-    onError: () => toast.error(m.workbench_source_insert_failed()),
+    onError: () => toast.error(workbench_source_insert_failed()),
   });
 
   const updateDraft = useMutation({
     mutationFn: (nextModules: CreativeContentModuleId[]) => {
-      if (!currentWork) throw new Error(m.workbench_work_required());
+      if (!currentWork) throw new Error(workbench_work_required());
       return operationsCommand(
         'update_creative_work_draft',
         {
@@ -1175,7 +1352,7 @@ export function UnifiedCreationWorkbench({
           ? [...currentWork.contentModules]
           : ['social_cover']
       );
-      toast.error(m.workbench_modules_save_failed());
+      toast.error(workbench_modules_save_failed());
     },
   });
 
@@ -1185,7 +1362,7 @@ export function UnifiedCreationWorkbench({
         | { kind: 'confirm' }
         | { kind: 'update'; update: CreativeBriefUpdate }
     ) => {
-      if (!currentWork) throw new Error(m.workbench_work_required());
+      if (!currentWork) throw new Error(workbench_work_required());
       if (input.kind === 'confirm') {
         return operationsCommand(
           'confirm_creative_work_brief',
@@ -1200,7 +1377,7 @@ export function UnifiedCreationWorkbench({
       );
     },
     onSuccess: refreshProjection,
-    onError: () => toast.error(m.workbench_operation_failed()),
+    onError: () => toast.error(workbench_operation_failed()),
   });
 
   const executionControlsBusy =
@@ -1264,7 +1441,7 @@ export function UnifiedCreationWorkbench({
           outcome: 'failed',
         });
       }
-      toast.error(m.workbench_operation_failed());
+      toast.error(workbench_operation_failed());
     },
   });
 
@@ -1331,25 +1508,25 @@ export function UnifiedCreationWorkbench({
   const projectionFailure = projectionQuery.isError
     ? friendlyProductError(
         projectionQuery.error,
-        m.workbench_projection_failure_description()
+        workbench_projection_failure_description()
       )
     : undefined;
   const catalogFailure = catalogQuery.isError
     ? friendlyProductError(
         catalogQuery.error,
-        m.workbench_catalog_failure_description()
+        workbench_catalog_failure_description()
       )
     : undefined;
   const sourceFailure = productQuery.isError
     ? friendlyProductError(
         productQuery.error,
-        m.workbench_source_failure_description()
+        workbench_source_failure_description()
       )
     : undefined;
   const inboxFailure = inboxQuery.isError
     ? friendlyProductError(
         inboxQuery.error,
-        m.workbench_inbox_failure_description()
+        workbench_inbox_failure_description()
       )
     : undefined;
   const availableContentModules = currentPreset?.availableContentModules ?? [
@@ -1359,18 +1536,18 @@ export function UnifiedCreationWorkbench({
     inboxQuery.data && !inboxQuery.isError ? (
       <OperationsRail inbox={inboxQuery.data} />
     ) : (
-      <aside aria-label={m.operations_rail_aria()}>
+      <aside aria-label={operations_rail_aria()}>
         <StatePanel
           kind={inboxQuery.isError ? 'error' : 'loading'}
           title={
             inboxQuery.isError
-              ? m.workbench_inbox_failure_title()
-              : m.workbench_inbox_loading_title()
+              ? workbench_inbox_failure_title()
+              : workbench_inbox_loading_title()
           }
           description={
-            inboxFailure?.description ?? m.workbench_inbox_description()
+            inboxFailure?.description ?? workbench_inbox_description()
           }
-          actionLabel={inboxFailure ? m.workbench_reload_inbox() : undefined}
+          actionLabel={inboxFailure ? workbench_reload_inbox() : undefined}
           onAction={inboxFailure ? () => void inboxQuery.refetch() : undefined}
         />
       </aside>
@@ -1386,19 +1563,19 @@ export function UnifiedCreationWorkbench({
     <>
       <DashboardHeader
         breadcrumbs={[
-          { label: m.product_navigation_workbench(), isCurrentPage: true },
+          { label: product_navigation_workbench(), isCurrentPage: true },
         ]}
-        actions={<Badge variant="outline">{m.workbench_header_badge()}</Badge>}
+        actions={<Badge variant="outline">{workbench_header_badge()}</Badge>}
       />
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 lg:px-8 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex flex-wrap items-start justify-between gap-4 xl:col-span-2">
           <div>
             <p className="text-sm font-medium text-primary">
-              {m.workbench_eyebrow()}
+              {workbench_eyebrow()}
             </p>
-            <h1 className="meiye-type-title mt-1">{m.workbench_title()}</h1>
+            <h1 className="meiye-type-title mt-1">{workbench_title()}</h1>
             <p className="meiye-type-aux mt-2 max-w-2xl">
-              {m.workbench_description()}
+              {workbench_description()}
             </p>
           </div>
           {currentWork ? (
@@ -1407,7 +1584,7 @@ export function UnifiedCreationWorkbench({
               variant="outline"
               onClick={resetNewCreationState}
             >
-              {m.workbench_new_creation()}
+              {workbench_new_creation()}
             </Button>
           ) : null}
         </div>
@@ -1415,14 +1592,14 @@ export function UnifiedCreationWorkbench({
         {projectionFailure ? (
           <StatePanel
             kind="error"
-            title={m.workbench_projection_failure_title()}
+            title={workbench_projection_failure_title()}
             description={projectionFailure.description}
-            actionLabel={m.workbench_reload()}
+            actionLabel={workbench_reload()}
             onAction={() => void projectionQuery.refetch()}
           >
             {projectionFailure.correlationId ? (
               <p className="text-xs text-muted-foreground">
-                {m.common_correlation_id({
+                {common_correlation_id({
                   id: projectionFailure.correlationId,
                 })}
               </p>
@@ -1432,39 +1609,39 @@ export function UnifiedCreationWorkbench({
         {!projectionFailure && projectionQuery.isLoading ? (
           <StatePanel
             kind="loading"
-            title={m.workbench_loading_title()}
-            description={m.workbench_loading_description()}
+            title={workbench_loading_title()}
+            description={workbench_loading_description()}
           />
         ) : projectionFailure || onboardingVisible ? (
           <div className="space-y-4">
             {productQuery.isLoading ? (
               <StatePanel
                 kind="loading"
-                title={m.workbench_sources_loading_title()}
-                description={m.workbench_sources_loading_description()}
+                title={workbench_sources_loading_title()}
+                description={workbench_sources_loading_description()}
               />
             ) : sourceFailure ? (
               <StatePanel
-                actionLabel={m.workbench_reload_sources()}
+                actionLabel={workbench_reload_sources()}
                 description={sourceFailure.description}
                 kind="error"
                 onAction={() => void productQuery.refetch()}
-                title={m.workbench_sources_failure_title()}
+                title={workbench_sources_failure_title()}
               />
             ) : null}
             {inboxFailure ? (
               <StatePanel
-                actionLabel={m.workbench_reload_tasks()}
+                actionLabel={workbench_reload_tasks()}
                 description={inboxFailure.description}
                 kind="error"
                 onAction={() => void inboxQuery.refetch()}
-                title={m.workbench_tasks_failure_title()}
+                title={workbench_tasks_failure_title()}
               />
             ) : null}
             <CreationEntry
               assetSignals={(productQuery.data?.assets ?? []).map((asset) => ({
                 id: asset.id,
-                label: asset.tags[0] ?? m.workbench_store_asset(),
+                label: asset.tags[0] ?? workbench_store_asset(),
               }))}
               createPending={createWork.isPending || Boolean(projectionFailure)}
               example={
@@ -1548,7 +1725,7 @@ export function UnifiedCreationWorkbench({
                   type="button"
                   variant="ghost"
                 >
-                  {m.workbench_show_example()}
+                  {workbench_show_example()}
                 </Button>
               </div>
             ) : null}
@@ -1557,51 +1734,51 @@ export function UnifiedCreationWorkbench({
           <WarmEmptyState
             action={
               <Button type="button" onClick={() => setShowOnboarding(true)}>
-                {m.workbench_start_first_creation()}
+                {workbench_start_first_creation()}
               </Button>
             }
-            description={m.workbench_empty_description()}
+            description={workbench_empty_description()}
             media={<IconSparkles />}
-            title={m.workbench_empty_title()}
+            title={workbench_empty_title()}
           />
         ) : (
           <WorkbenchStageShell
             articleLabel={
               currentWork.mode === 'agent'
-                ? m.workbench_record_aria()
-                : m.workbench_record_direct_aria()
+                ? workbench_record_aria()
+                : workbench_record_direct_aria()
             }
             jobCount={projection.jobs.length}
             rail={operationsRail}
             stage={workbenchStage}
           >
             <RecordSection
-              eyebrow={m.workbench_record_intent()}
-              title={m.workbench_section_intent()}
+              eyebrow={workbench_record_intent()}
+              title={workbench_section_intent()}
             >
               {currentPreset ? (
                 <div className="rounded-md bg-surface-2 p-4">
                   <p className="font-semibold">
-                    {m.workbench_selected_preset({
+                    {workbench_selected_preset({
                       name: currentPreset.name,
                     })}
                   </p>
                   <p className="mt-2 text-sm">
-                    {m.creation_entry_input_guide({
+                    {creation_entry_input_guide({
                       guide: currentPreset.inputGuide,
                     })}
                   </p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {m.workbench_preset_identity_description()}
+                    {workbench_preset_identity_description()}
                   </p>
                 </div>
               ) : currentDisplay?.kind === 'unresolved' ? (
                 <div className="rounded-md bg-surface-2 p-4">
                   <p className="font-semibold">
-                    {m.workbench_preset_loading_title()}
+                    {workbench_preset_loading_title()}
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    {m.workbench_preset_loading_description()}
+                    {workbench_preset_loading_description()}
                   </p>
                 </div>
               ) : (
@@ -1612,12 +1789,12 @@ export function UnifiedCreationWorkbench({
               <div className="mt-3 flex flex-wrap gap-2">
                 <Badge variant="outline">
                   {currentWork.mode === 'agent'
-                    ? m.workbench_mode_agent()
-                    : m.creation_catalog_mode_direct()}
+                    ? workbench_mode_agent()
+                    : creation_catalog_mode_direct()}
                 </Badge>
-                <Badge variant="outline">{m.workbench_current_work()}</Badge>
+                <Badge variant="outline">{workbench_current_work()}</Badge>
                 {currentWork.derivedFrom ? (
-                  <Badge variant="outline">{m.workbench_derived_work()}</Badge>
+                  <Badge variant="outline">{workbench_derived_work()}</Badge>
                 ) : null}
               </div>
               <div className="mt-3 flex flex-wrap gap-4 text-sm">
@@ -1626,29 +1803,29 @@ export function UnifiedCreationWorkbench({
                   to="/dashboard/sessions/$sessionId"
                   params={{ sessionId: currentWork.sessionId }}
                 >
-                  {m.workbench_open_session()}
+                  {workbench_open_session()}
                 </Link>
                 <Link
                   className="font-medium text-primary underline-offset-4 hover:underline"
                   to="/dashboard/works/$workId"
                   params={{ workId: currentWork.id }}
                 >
-                  {m.workbench_open_work()}
+                  {workbench_open_work()}
                 </Link>
               </div>
             </RecordSection>
 
             <RecordSection
               className={workbenchStage === 'empty' ? undefined : 'hidden'}
-              eyebrow={m.workbench_record_composer()}
-              title={m.workbench_quick_start()}
+              eyebrow={workbench_record_composer()}
+              title={workbench_quick_start()}
             >
               <p className="text-xs text-muted-foreground">
-                {m.workbench_quick_start_description()}
+                {workbench_quick_start_description()}
               </p>
               <fieldset className="mt-4 grid gap-2 sm:grid-cols-2">
                 <legend className="sr-only">
-                  {m.workbench_quick_start_legend()}
+                  {workbench_quick_start_legend()}
                 </legend>
                 {operationOptions
                   .filter((option) =>
@@ -1686,15 +1863,15 @@ export function UnifiedCreationWorkbench({
             </RecordSection>
 
             <RecordSection
-              eyebrow={m.workbench_record_references()}
-              title={m.workbench_section_references()}
+              eyebrow={workbench_record_references()}
+              title={workbench_section_references()}
             >
               {operation === 'image.generate' &&
               currentWork.sourceReferences.some(
                 (source) => source.kind === 'asset'
               ) ? (
                 <p className="mb-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-foreground">
-                  {m.workbench_reference_assets_will_be_used()}
+                  {workbench_reference_assets_will_be_used()}
                 </p>
               ) : null}
               {currentWork.sourceReferences.length > 0 ? (
@@ -1711,7 +1888,7 @@ export function UnifiedCreationWorkbench({
                         <div className="rounded-md bg-surface-2 p-2 text-sm">
                           <Badge variant="secondary">
                             {currentSourceSummaries[index] ??
-                              m.workbench_selected_source()}
+                              workbench_selected_source()}
                           </Badge>
                           {sourceAsset ? (
                             <>
@@ -1725,13 +1902,13 @@ export function UnifiedCreationWorkbench({
                               />
                               <p className="mt-2 max-w-40 truncate text-xs text-muted-foreground">
                                 {sourceAsset.tags.at(-1) ??
-                                  m.workbench_uploaded_image()}
+                                  workbench_uploaded_image()}
                               </p>
                             </>
                           ) : null}
                           {source.inheritanceFields?.length ? (
                             <p className="mt-2 text-xs text-muted-foreground">
-                              {m.workbench_inherited_fields()}
+                              {workbench_inherited_fields()}
                               {source.inheritanceFields
                                 .map(
                                   (fieldId) =>
@@ -1739,7 +1916,7 @@ export function UnifiedCreationWorkbench({
                                       (field) => field.id === fieldId
                                     )?.label ?? fieldId
                                 )
-                                .join(m.workbench_list_separator())}
+                                .join(workbench_list_separator())}
                             </p>
                           ) : null}
                         </div>
@@ -1749,14 +1926,14 @@ export function UnifiedCreationWorkbench({
                 </ul>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {m.workbench_no_references()}
+                  {workbench_no_references()}
                 </p>
               )}
             </RecordSection>
 
             <RecordSection
-              eyebrow={m.workbench_record_assistant()}
-              title={m.creative_brief_title()}
+              eyebrow={workbench_record_assistant()}
+              title={creative_brief_title()}
             >
               <CreativeBriefEditor
                 brief={currentWork.brief}
@@ -1775,10 +1952,8 @@ export function UnifiedCreationWorkbench({
                   data-testid="creative-grounding-readiness"
                   aria-live="polite"
                 >
-                  <p className="font-semibold">
-                    {m.creative_grounding_title()}
-                  </p>
-                  <p className="mt-1">{m.creative_grounding_description()}</p>
+                  <p className="font-semibold">{creative_grounding_title()}</p>
+                  <p className="mt-1">{creative_grounding_description()}</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5">
                     {groundingMissing.map((requirement) => (
                       <li key={requirement}>
@@ -1798,7 +1973,7 @@ export function UnifiedCreationWorkbench({
                         className="font-medium underline underline-offset-4"
                         to="/dashboard/store"
                       >
-                        {m.creative_grounding_open_store()}
+                        {creative_grounding_open_store()}
                       </Link>
                     ) : null}
                     {groundingMissing.includes('real_authorized_asset') ? (
@@ -1806,7 +1981,7 @@ export function UnifiedCreationWorkbench({
                         className="font-medium underline underline-offset-4"
                         to="/dashboard/assets"
                       >
-                        {m.creative_grounding_open_assets()}
+                        {creative_grounding_open_assets()}
                       </Link>
                     ) : null}
                   </div>
@@ -1816,7 +1991,7 @@ export function UnifiedCreationWorkbench({
                   className="mt-4 text-sm text-muted-foreground"
                   data-testid="creative-grounding-ready"
                 >
-                  {m.creative_grounding_ready()}
+                  {creative_grounding_ready()}
                 </p>
               ) : null}
             </RecordSection>
@@ -1825,8 +2000,8 @@ export function UnifiedCreationWorkbench({
             operation === 'copy.generate' &&
             selectedModel ? (
               <RecordSection
-                eyebrow={m.workbench_record_assistant()}
-                title={m.creation_assistant_title()}
+                eyebrow={workbench_record_assistant()}
+                title={creation_assistant_title()}
               >
                 <CreationAssistant
                   catalogModelId={selectedModel.id}
@@ -1840,8 +2015,8 @@ export function UnifiedCreationWorkbench({
             ) : null}
 
             <RecordSection
-              eyebrow={m.workbench_record_reuse()}
-              title={m.workbench_section_reuse()}
+              eyebrow={workbench_record_reuse()}
+              title={workbench_section_reuse()}
             >
               <CreationShelf
                 onInsertReference={async (reference) => {
@@ -1855,8 +2030,8 @@ export function UnifiedCreationWorkbench({
 
             <RecordSection
               className={workbenchStage === 'empty' ? undefined : 'hidden'}
-              eyebrow={m.workbench_record_composer()}
-              title={m.workbench_section_composer()}
+              eyebrow={workbench_record_composer()}
+              title={workbench_section_composer()}
             >
               <div className="space-y-5">
                 <ContentModuleBuilder
@@ -1875,15 +2050,15 @@ export function UnifiedCreationWorkbench({
                 {catalogQuery.isLoading ? (
                   <StatePanel
                     kind="loading"
-                    title={m.workbench_catalog_loading_title()}
-                    description={m.workbench_catalog_loading_description()}
+                    title={workbench_catalog_loading_title()}
+                    description={workbench_catalog_loading_description()}
                   />
                 ) : catalogFailure ? (
                   <StatePanel
                     kind="error"
-                    title={m.workbench_catalog_failure_title()}
+                    title={workbench_catalog_failure_title()}
                     description={catalogFailure.description}
-                    actionLabel={m.workbench_reload_catalog()}
+                    actionLabel={workbench_reload_catalog()}
                     onAction={() => void catalogQuery.refetch()}
                   />
                 ) : null}
@@ -1893,7 +2068,7 @@ export function UnifiedCreationWorkbench({
                   open={professionalOpen}
                 >
                   <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-3 rounded-md bg-surface-2 px-4 text-left text-sm font-medium">
-                    <span>{m.workbench_professional_settings()}</span>
+                    <span>{workbench_professional_settings()}</span>
                     {professionalOpen ? (
                       <IconChevronUp aria-hidden="true" className="size-4" />
                     ) : (
@@ -1910,7 +2085,7 @@ export function UnifiedCreationWorkbench({
                         className="mb-2 text-sm font-medium"
                         id="workbench-model-picker-title"
                       >
-                        {m.workbench_explicit_model()}
+                        {workbench_explicit_model()}
                       </p>
                       <ModelCardPicker
                         busy={executionControlsBusy}
@@ -1920,16 +2095,16 @@ export function UnifiedCreationWorkbench({
                         usage={modelUsage}
                       />
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {m.workbench_model_guardrail()}
+                        {workbench_model_guardrail()}
                       </p>
                     </section>
 
                     <div className="grid gap-4 md:grid-cols-2">
                       {operation !== 'copy.generate' ? (
                         <label className="grid gap-1.5 text-sm font-medium">
-                          {m.workbench_aspect_ratio()}
+                          {workbench_aspect_ratio()}
                           <select
-                            aria-label={m.workbench_aspect_ratio()}
+                            aria-label={workbench_aspect_ratio()}
                             className="h-touch-target rounded-md border border-divider bg-surface-0 px-3 text-sm"
                             disabled={executionControlsBusy}
                             onChange={(event) =>
@@ -1940,27 +2115,27 @@ export function UnifiedCreationWorkbench({
                             value={aspectRatio}
                           >
                             <option value="1:1">
-                              {m.workbench_aspect_square()}
+                              {workbench_aspect_square()}
                             </option>
                             <option value="3:4">
-                              {m.workbench_aspect_portrait_post()}
+                              {workbench_aspect_portrait_post()}
                             </option>
                             <option value="9:16">
-                              {m.workbench_aspect_vertical_video()}
+                              {workbench_aspect_vertical_video()}
                             </option>
                           </select>
                         </label>
                       ) : (
                         <label className="grid gap-1.5 text-sm font-medium">
-                          {m.workbench_organization_label()}
+                          {workbench_organization_label()}
                           <select
-                            aria-label={m.workbench_organization_label_aria()}
+                            aria-label={workbench_organization_label_aria()}
                             className="h-touch-target rounded-md border border-divider bg-surface-0 px-3 text-sm"
                             disabled={executionControlsBusy}
                           >
-                            <option>{m.workbench_tag_project()}</option>
-                            <option>{m.workbench_tag_review()}</option>
-                            <option>{m.workbench_tag_local()}</option>
+                            <option>{workbench_tag_project()}</option>
+                            <option>{workbench_tag_review()}</option>
+                            <option>{workbench_tag_local()}</option>
                           </select>
                         </label>
                       )}
@@ -1968,9 +2143,9 @@ export function UnifiedCreationWorkbench({
 
                     <div className="grid divide-y divide-divider overflow-hidden rounded-md bg-surface-1 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                       <div className="flex min-h-touch-target items-center justify-between gap-3 px-3 text-sm">
-                        <span>{m.workbench_watermark()}</span>
+                        <span>{workbench_watermark()}</span>
                         <Switch
-                          aria-label={m.workbench_watermark()}
+                          aria-label={workbench_watermark()}
                           checked={watermarkEnabled}
                           disabled={
                             executionControlsBusy ||
@@ -1983,9 +2158,9 @@ export function UnifiedCreationWorkbench({
                         />
                       </div>
                       <div className="flex min-h-touch-target items-center justify-between gap-3 px-3 text-sm">
-                        <span>{m.workbench_aigc_label()}</span>
+                        <span>{workbench_aigc_label()}</span>
                         <Switch
-                          aria-label={m.workbench_aigc_label()}
+                          aria-label={workbench_aigc_label()}
                           checked={aigcLabelEnabled}
                           disabled={
                             executionControlsBusy ||
@@ -2006,7 +2181,7 @@ export function UnifiedCreationWorkbench({
                 !selectedModel ? (
                   <div className="rounded-md border border-amber-700/25 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">
                     <p className="font-semibold">
-                      {m.workbench_model_not_selected()}
+                      {workbench_model_not_selected()}
                     </p>
                     <Button
                       className="mt-2"
@@ -2015,31 +2190,31 @@ export function UnifiedCreationWorkbench({
                       type="button"
                       variant="outline"
                     >
-                      {m.workbench_view_model_details()}
+                      {workbench_view_model_details()}
                     </Button>
                   </div>
                 ) : selectedModel?.availabilityKind === 'local_fixture' ? (
                   <div className="rounded-md bg-surface-2 p-3 text-sm">
                     <p className="font-semibold">
-                      {m.workbench_local_fixture_title()}
+                      {workbench_local_fixture_title()}
                     </p>
                     <p className="mt-1 text-muted-foreground">
-                      {m.workbench_local_fixture_description()}
+                      {workbench_local_fixture_description()}
                     </p>
                   </div>
                 ) : selectedModel?.availabilityKind === 'production' ? (
                   <Badge variant="secondary">
-                    {m.model_settings_production_available()}
+                    {model_settings_production_available()}
                   </Badge>
                 ) : null}
 
                 {selectedModel && !selectedModel.available ? (
                   <div className="rounded-md border border-amber-700/25 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">
                     <p className="font-semibold">
-                      {m.workbench_model_unavailable_title()}
+                      {workbench_model_unavailable_title()}
                     </p>
                     <p className="mt-1">
-                      {m.workbench_model_unavailable_description()}
+                      {workbench_model_unavailable_description()}
                     </p>
                     <Button
                       className="mt-2"
@@ -2048,7 +2223,7 @@ export function UnifiedCreationWorkbench({
                       type="button"
                       variant="outline"
                     >
-                      {m.workbench_view_model_details()}
+                      {workbench_view_model_details()}
                     </Button>
                   </div>
                 ) : null}
@@ -2056,10 +2231,10 @@ export function UnifiedCreationWorkbench({
                 {selectedModel?.available && !selectedModel.unitPrice ? (
                   <div className="rounded-md border border-amber-700/25 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">
                     <p className="font-semibold">
-                      {m.workbench_quote_missing_title()}
+                      {workbench_quote_missing_title()}
                     </p>
                     <p className="mt-1">
-                      {m.workbench_quote_missing_description()}
+                      {workbench_quote_missing_description()}
                     </p>
                     <Button
                       className="mt-2"
@@ -2068,32 +2243,32 @@ export function UnifiedCreationWorkbench({
                       type="button"
                       variant="outline"
                     >
-                      {m.workbench_view_model_details()}
+                      {workbench_view_model_details()}
                     </Button>
                   </div>
                 ) : null}
 
                 <p className="rounded-md bg-surface-2 p-3 text-sm">
-                  {m.workbench_settings_summary({
+                  {workbench_settings_summary({
                     model:
                       selectedModel?.displayName ??
-                      m.workbench_model_not_selected(),
+                      workbench_model_not_selected(),
                     output: quote.outputLabel,
                     price:
                       quote.estimatedAmount !== undefined && quote.currency
                         ? formatQuote(quote.estimatedAmount, quote.currency)
-                        : m.workbench_quote_missing_short(),
+                        : workbench_quote_missing_short(),
                   })}
                 </p>
                 <Collapsible>
                   <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-3 rounded-md bg-surface-1 px-4 text-left text-sm font-medium">
-                    <span>{m.workbench_view_settings()}</span>
+                    <span>{workbench_view_settings()}</span>
                     <IconChevronDown aria-hidden="true" className="size-4" />
                   </CollapsibleTrigger>
                   <CollapsibleContent className="grid gap-3 rounded-b-md bg-surface-1 p-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
                       <p className="text-xs text-muted-foreground">
-                        {m.workbench_summary_starting_card()}
+                        {workbench_summary_starting_card()}
                       </p>
                       <p className="mt-1 font-semibold">
                         {operationOptions
@@ -2101,28 +2276,28 @@ export function UnifiedCreationWorkbench({
                           ?.label() ?? operation}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {m.workbench_module_count({
+                        {workbench_module_count({
                           count: contentModules.length,
                         })}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">
-                        {m.workbench_summary_model_spec()}
+                        {workbench_summary_model_spec()}
                       </p>
                       <p className="mt-1 font-semibold">
                         {selectedModel?.displayName ??
-                          m.workbench_model_not_selected()}
+                          workbench_model_not_selected()}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {operation === 'copy.generate'
-                          ? m.creation_catalog_copy_label()
+                          ? creation_catalog_copy_label()
                           : aspectRatio}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">
-                        {m.workbench_summary_output_duration()}
+                        {workbench_summary_output_duration()}
                       </p>
                       <p className="mt-1 font-semibold">{quote.outputLabel}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -2132,21 +2307,21 @@ export function UnifiedCreationWorkbench({
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">
-                        {m.workbench_summary_quote_labels()}
+                        {workbench_summary_quote_labels()}
                       </p>
                       <p className="mt-1 font-semibold">
                         {quote.estimatedAmount !== undefined && quote.currency
                           ? formatQuote(quote.estimatedAmount, quote.currency)
-                          : m.workbench_quote_missing_short()}
+                          : workbench_quote_missing_short()}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {m.workbench_compliance_summary({
+                        {workbench_compliance_summary({
                           aigc: aigcLabelEnabled
-                            ? m.workbench_switch_on()
-                            : m.workbench_switch_off(),
+                            ? workbench_switch_on()
+                            : workbench_switch_off(),
                           watermark: watermarkEnabled
-                            ? m.workbench_switch_on()
-                            : m.workbench_switch_off(),
+                            ? workbench_switch_on()
+                            : workbench_switch_off(),
                         })}
                       </p>
                     </div>
@@ -2155,7 +2330,7 @@ export function UnifiedCreationWorkbench({
 
                 <div className="flex min-h-touch-target items-start gap-3 rounded-md border border-divider bg-surface-0 p-3 text-sm leading-6">
                   <Checkbox
-                    aria-label={m.workbench_accept_contract_aria()}
+                    aria-label={workbench_accept_contract_aria()}
                     checked={quoteAccepted}
                     disabled={executionControlsBusy}
                     id="creative-contract-acceptance"
@@ -2171,12 +2346,12 @@ export function UnifiedCreationWorkbench({
                     }}
                   />
                   <label htmlFor="creative-contract-acceptance">
-                    {m.workbench_accept_contract_label()}
+                    {workbench_accept_contract_label()}
                   </label>
                 </div>
                 {!quoteAccepted ? (
                   <p className="text-xs text-muted-foreground">
-                    {m.workbench_accept_contract_hint()}
+                    {workbench_accept_contract_hint()}
                   </p>
                 ) : null}
                 {operation === 'video.generate' ? (
@@ -2190,7 +2365,7 @@ export function UnifiedCreationWorkbench({
                       brandWatermarkText={
                         watermarkEnabled
                           ? productQuery.data?.store?.name.trim() ||
-                            m.p1_canvas_export_brand_fallback()
+                            p1_canvas_export_brand_fallback()
                           : undefined
                       }
                       catalogModelId={selectedModel.id}
@@ -2209,7 +2384,7 @@ export function UnifiedCreationWorkbench({
                     />
                   ) : (
                     <p className="rounded-md border border-dashed border-divider p-3 text-sm text-muted-foreground">
-                      {m.workbench_video_contract_required()}
+                      {workbench_video_contract_required()}
                     </p>
                   )
                 ) : (
@@ -2235,7 +2410,7 @@ export function UnifiedCreationWorkbench({
                     type="button"
                   >
                     <ProductIcon icon={IconBolt} size={18} />
-                    {m.workbench_submit_job()}
+                    {workbench_submit_job()}
                   </Button>
                 )}
                 {submissionBlocker ? (
@@ -2248,11 +2423,11 @@ export function UnifiedCreationWorkbench({
                   </p>
                 ) : !currentWork.brief?.confirmedAt ? (
                   <p className="text-sm text-muted-foreground">
-                    {m.creative_brief_submit_blocked()}
+                    {creative_brief_submit_blocked()}
                   </p>
                 ) : groundingMissing.length > 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    {m.creative_grounding_submit_blocked()}
+                    {creative_grounding_submit_blocked()}
                   </p>
                 ) : null}
               </div>
@@ -2270,8 +2445,8 @@ export function UnifiedCreationWorkbench({
                 className={
                   workbenchStage === 'running' ? 'order-first' : undefined
                 }
-                eyebrow={m.workbench_record_streaming()}
-                title={m.workbench_stream_title()}
+                eyebrow={workbench_record_streaming()}
+                title={workbench_stream_title()}
               >
                 <div className="space-y-3">
                   <CopyCandidateStream
@@ -2290,16 +2465,16 @@ export function UnifiedCreationWorkbench({
                       type="button"
                       variant="outline"
                     >
-                      {m.workbench_stop_stream()}
+                      {workbench_stop_stream()}
                     </Button>
                   ) : null}
                   {copyStream.error || copyStreamInterruption ? (
                     <div className="space-y-2" role="alert">
                       <p className="text-sm text-destructive">
                         {copyStreamInterruption === 'stopped'
-                          ? m.workbench_stream_stopped()
-                          : m.workbench_stream_interrupted()}{' '}
-                        {m.workbench_stream_guardrail()}
+                          ? workbench_stream_stopped()
+                          : workbench_stream_interrupted()}{' '}
+                        {workbench_stream_guardrail()}
                       </p>
                       {!copyStream.isLoading ? (
                         <Button
@@ -2307,7 +2482,7 @@ export function UnifiedCreationWorkbench({
                           type="button"
                           variant="outline"
                         >
-                          {m.workbench_resubmit_stream()}
+                          {workbench_resubmit_stream()}
                         </Button>
                       ) : null}
                     </div>
@@ -2319,23 +2494,22 @@ export function UnifiedCreationWorkbench({
             {submitWork.isPending && operation === 'image.generate' ? (
               <RecordSection
                 className="order-first"
-                eyebrow={m.workbench_record_job()}
-                title={m.workbench_section_job()}
+                eyebrow={workbench_record_job()}
+                title={workbench_section_job()}
               >
                 <div className="space-y-3 rounded-md bg-surface-2 p-4">
                   <ProductStatus announce showExplanation status="submitting" />
-                  <GenerationAccent label={m.workbench_submitting_accent()} />
+                  <GenerationAccent label={workbench_submitting_accent()} />
                   <div>
                     <p className="font-medium">
-                      {m.workbench_submitting_title()}
+                      {workbench_submitting_title()}
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {selectedModel?.displayName ??
-                        m.workbench_selected_model()}{' '}
+                      {selectedModel?.displayName ?? workbench_selected_model()}{' '}
                       · {quote.outputLabel}
                     </p>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {m.workbench_submitting_description()}
+                      {workbench_submitting_description()}
                     </p>
                   </div>
                 </div>
@@ -2345,14 +2519,14 @@ export function UnifiedCreationWorkbench({
                 className={
                   workbenchStage === 'running' ? 'order-first' : undefined
                 }
-                eyebrow={m.workbench_record_job()}
-                title={m.workbench_section_job()}
+                eyebrow={workbench_record_job()}
+                title={workbench_section_job()}
               >
                 <div className="space-y-3 rounded-md bg-surface-2 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="mt-1 text-sm">
-                        {m.workbench_expected_output({
+                        {workbench_expected_output({
                           output: creativeOutputLabel(
                             currentJob.contract.operation,
                             currentJob.contract.outputCount,
@@ -2365,7 +2539,7 @@ export function UnifiedCreationWorkbench({
                         to="/dashboard/jobs/$jobId"
                         params={{ jobId: currentJob.id }}
                       >
-                        {m.workbench_open_job()}
+                        {workbench_open_job()}
                       </Link>
                     </div>
                     <ProductStatus
@@ -2380,19 +2554,19 @@ export function UnifiedCreationWorkbench({
                     <GenerationAccent
                       label={
                         currentJob.contract.operation === 'video.generate'
-                          ? m.workbench_generating_video()
-                          : m.workbench_generating_content()
+                          ? workbench_generating_video()
+                          : workbench_generating_content()
                       }
                     />
                   ) : null}
                   {currentJob.retryOf ? (
                     <p className="text-xs text-muted-foreground">
-                      {m.workbench_job_retry_description()}
+                      {workbench_job_retry_description()}
                     </p>
                   ) : null}
                   {currentJob.recoveredAt ? (
                     <p className="text-xs text-muted-foreground">
-                      {m.workbench_job_recovered({
+                      {workbench_job_recovered({
                         time: currentJob.recoveredAt,
                       })}
                     </p>
@@ -2411,7 +2585,7 @@ export function UnifiedCreationWorkbench({
                           })
                         }
                       >
-                        {m.workbench_resume_job()}
+                        {workbench_resume_job()}
                       </Button>
                     ) : null}
                     {(currentJob.status === 'unknown' ||
@@ -2431,8 +2605,8 @@ export function UnifiedCreationWorkbench({
                       >
                         <ProductIcon icon={IconRefresh} size={16} />
                         {currentJob.status === 'unknown'
-                          ? m.workbench_verify_only()
-                          : m.workbench_verify_job()}
+                          ? workbench_verify_only()
+                          : workbench_verify_job()}
                       </Button>
                     ) : null}
                     {currentJobObserver.error ? (
@@ -2446,7 +2620,7 @@ export function UnifiedCreationWorkbench({
                         }}
                       >
                         <ProductIcon icon={IconRefresh} size={16} />
-                        {m.workbench_retry_updates()}
+                        {workbench_retry_updates()}
                       </Button>
                     ) : null}
                     {currentJob.status === 'failed' ? (
@@ -2459,7 +2633,7 @@ export function UnifiedCreationWorkbench({
                             .map((source) => source.id)}
                         />
                         <p className="text-xs text-muted-foreground">
-                          {m.workbench_technical_failure_usage()}
+                          {workbench_technical_failure_usage()}
                         </p>
                         <Button
                           type="button"
@@ -2476,14 +2650,14 @@ export function UnifiedCreationWorkbench({
                             })
                           }
                         >
-                          {m.workbench_regenerate()}
+                          {workbench_regenerate()}
                         </Button>
                       </div>
                     ) : null}
                   </div>
                   {currentJobObserver.error ? (
                     <p className="text-sm text-destructive">
-                      {m.workbench_updates_failed()}
+                      {workbench_updates_failed()}
                     </p>
                   ) : null}
                 </div>
@@ -2493,10 +2667,10 @@ export function UnifiedCreationWorkbench({
             {hasPersistedResult &&
             currentJob?.contract.operation === 'copy.generate' ? (
               <RecordSection
-                eyebrow={m.workbench_record_results()}
+                eyebrow={workbench_record_results()}
                 hero
                 testId="workbench-result-hero"
-                title={m.workbench_section_results()}
+                title={workbench_section_results()}
               >
                 <ResultProvenance job={currentJob} />
                 <CopyCandidateSelector
@@ -2518,16 +2692,16 @@ export function UnifiedCreationWorkbench({
                     )
                     .map((asset) => ({
                       id: asset.id,
-                      title: asset.tags.at(-1) ?? m.workbench_uploaded_image(),
+                      title: asset.tags.at(-1) ?? workbench_uploaded_image(),
                     }))}
                 />
               </RecordSection>
             ) : hasPersistedResult && currentAssets.length > 0 ? (
               <RecordSection
-                eyebrow={m.workbench_record_results()}
+                eyebrow={workbench_record_results()}
                 hero
                 testId="workbench-result-hero"
-                title={m.workbench_section_results()}
+                title={workbench_section_results()}
               >
                 <ResultProvenance job={currentJob} />
                 <div className="grid gap-3 md:grid-cols-2">
@@ -2540,8 +2714,8 @@ export function UnifiedCreationWorkbench({
                           </CardTitle>
                           <CardDescription>
                             {asset.kind === 'video'
-                              ? m.workbench_video_result()
-                              : m.workbench_image_result()}
+                              ? workbench_video_result()
+                              : workbench_image_result()}
                           </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-3">
@@ -2560,11 +2734,11 @@ export function UnifiedCreationWorkbench({
                             />
                           ) : (
                             <p className="text-sm text-muted-foreground">
-                              {m.workbench_result_saved_description()}
+                              {workbench_result_saved_description()}
                             </p>
                           )}
                           <Badge variant="secondary">
-                            {m.workbench_result_saved_as_asset()}
+                            {workbench_result_saved_as_asset()}
                           </Badge>
                         </CardContent>
                       </Card>
@@ -2577,8 +2751,8 @@ export function UnifiedCreationWorkbench({
             {currentWork.status === 'completed' ||
             currentWork.status === 'accepted' ? (
               <RecordSection
-                eyebrow={m.workbench_record_next()}
-                title={m.workbench_section_next()}
+                eyebrow={workbench_record_next()}
+                title={workbench_section_next()}
               >
                 <Button
                   type="button"
@@ -2596,7 +2770,7 @@ export function UnifiedCreationWorkbench({
                     })
                   }
                 >
-                  {m.workbench_derive_new_work()}
+                  {workbench_derive_new_work()}
                 </Button>
               </RecordSection>
             ) : null}

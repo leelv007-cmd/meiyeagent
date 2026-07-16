@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_common_login,
+  auth_common_signup,
+  common_mobile_navigation,
+  common_toggle_menu,
+} from '@/locale/paraglide/messages';
 import { getNavbarLinks } from '@/config/navbar-config';
 import { authClient } from '@/auth/client';
 import { isLinkActive } from '@/lib/urls';
@@ -65,7 +70,7 @@ export function NavbarMobile({ className, ...props }: NavbarMobileProps) {
             variant="ghost"
             size="icon"
             aria-expanded={open}
-            aria-label={m.common_toggle_menu()}
+            aria-label={common_toggle_menu()}
             onClick={() => setOpen((o) => !o)}
             className="size-8 rounded-md border"
           >
@@ -82,7 +87,7 @@ export function NavbarMobile({ className, ...props }: NavbarMobileProps) {
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={m.common_mobile_navigation()}
+          aria-label={common_mobile_navigation()}
           className="fixed inset-0 top-14.25 z-50 flex flex-col overflow-y-auto bg-background animate-in fade-in-0 duration-200"
         >
           <div className="flex flex-1 flex-col items-start gap-4 p-4">
@@ -96,7 +101,7 @@ export function NavbarMobile({ className, ...props }: NavbarMobileProps) {
                     className="w-full"
                     onClick={() => setOpen(false)}
                   >
-                    {m.auth_common_login()}
+                    {auth_common_login()}
                   </Button>
                 </LoginWrapper>
                 <Link
@@ -104,7 +109,7 @@ export function NavbarMobile({ className, ...props }: NavbarMobileProps) {
                   onClick={() => setOpen(false)}
                   className={cn(buttonVariants({ size: 'lg' }), 'w-full')}
                 >
-                  {m.auth_common_signup()}
+                  {auth_common_signup()}
                 </Link>
               </div>
             )}

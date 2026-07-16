@@ -9,14 +9,25 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_impact_action_failed,
+  admin_impact_cancel,
+  admin_impact_changes,
+  admin_impact_confirm,
+  admin_impact_pending,
+  admin_impact_reason_label,
+  admin_impact_reason_min,
+  admin_impact_reason_placeholder,
+  admin_impact_review_title,
+  admin_impact_scope,
+} from '@/locale/paraglide/messages';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 
 export const impactReasonSchema = z
   .string()
   .trim()
-  .min(8, m.admin_impact_reason_min());
+  .min(8, admin_impact_reason_min());
 
 export interface ImpactReviewRequest {
   changes: string[];
@@ -77,7 +88,7 @@ export function ImpactReviewDialog({
       setError(undefined);
       onOpenChange(false);
     } catch {
-      setError(m.admin_impact_action_failed());
+      setError(admin_impact_action_failed());
     } finally {
       setPending(false);
     }
@@ -88,20 +99,20 @@ export function ImpactReviewDialog({
       <DialogContent className="sm:max-w-lg" finalFocus={returnFocus}>
         <DialogHeader>
           <DialogTitle>
-            {request?.title ?? m.admin_impact_review_title()}
+            {request?.title ?? admin_impact_review_title()}
           </DialogTitle>
           <DialogDescription>{request?.description}</DialogDescription>
         </DialogHeader>
         <dl className="grid gap-3 rounded-lg border p-3">
           <div>
             <dt className="text-xs font-medium text-muted-foreground">
-              {m.admin_impact_scope()}
+              {admin_impact_scope()}
             </dt>
             <dd className="mt-1 text-sm">{request?.scope}</dd>
           </div>
           <div>
             <dt className="text-xs font-medium text-muted-foreground">
-              {m.admin_impact_changes()}
+              {admin_impact_changes()}
             </dt>
             <dd className="mt-1">
               <ul className="list-disc space-y-1 pl-5 text-sm">
@@ -114,7 +125,7 @@ export function ImpactReviewDialog({
         </dl>
         <div className="space-y-2">
           <Label htmlFor="impact-review-reason">
-            {m.admin_impact_reason_label()}
+            {admin_impact_reason_label()}
           </Label>
           <Textarea
             autoFocus
@@ -124,7 +135,7 @@ export function ImpactReviewDialog({
               setReason(event.target.value);
               setError(undefined);
             }}
-            placeholder={m.admin_impact_reason_placeholder()}
+            placeholder={admin_impact_reason_placeholder()}
           />
           {error ? (
             <p className="text-xs text-destructive" role="alert">
@@ -139,7 +150,7 @@ export function ImpactReviewDialog({
             type="button"
             variant="outline"
           >
-            {m.admin_impact_cancel()}
+            {admin_impact_cancel()}
           </Button>
           <Button
             disabled={pending}
@@ -147,8 +158,8 @@ export function ImpactReviewDialog({
             type="button"
           >
             {pending
-              ? m.admin_impact_pending()
-              : (request?.confirmLabel ?? m.admin_impact_confirm())}
+              ? admin_impact_pending()
+              : (request?.confirmLabel ?? admin_impact_confirm())}
           </Button>
         </DialogFooter>
       </DialogContent>

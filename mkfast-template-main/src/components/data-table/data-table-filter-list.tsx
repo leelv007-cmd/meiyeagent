@@ -1,4 +1,26 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_add_filter,
+  common_table_add_filters_hint,
+  common_table_bool_false,
+  common_table_bool_true,
+  common_table_enter_value,
+  common_table_filter,
+  common_table_filters,
+  common_table_modify_filters_hint,
+  common_table_no_fields_found,
+  common_table_no_filters_applied,
+  common_table_no_options_found,
+  common_table_pick_date,
+  common_table_reset_filters,
+  common_table_search_fields,
+  common_table_search_options,
+  common_table_select_field,
+  common_table_select_join_operator,
+  common_table_select_option,
+  common_table_select_options,
+  common_table_selected,
+  common_table_where,
+} from "@/locale/paraglide/messages";
 import type { Column, ColumnMeta, Table } from "@tanstack/react-table";
 import { IconCalendar, IconCheck, IconSelector, IconFilter, IconTrash, } from "@tabler/icons-react";
 import { parseAsStringEnum, useQueryState } from "nuqs";
@@ -117,7 +139,7 @@ export function DataTableFilterList<TData>({ table, debounceMs = DEBOUNCE_MS, th
     return (<Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} variant="outline" size="sm" className="font-normal" onKeyDown={onTriggerKeyDown}>
             <IconFilter className="text-muted-foreground"/>
-            {m.common_table_filter()}
+            {common_table_filter()}
             {filters.length > 0 && (<Badge variant="secondary" className="h-[18.24px] rounded-[3.2px] px-[5.12px] font-mono font-normal text-[10.4px]">
                 {filters.length}
               </Badge>)}
@@ -125,11 +147,11 @@ export function DataTableFilterList<TData>({ table, debounceMs = DEBOUNCE_MS, th
       <PopoverContent aria-describedby={descriptionId} aria-labelledby={labelId} className="flex w-full flex-col gap-3.5 p-4 sm:min-w-[380px]" {...props}>
         <div className="flex flex-col gap-1">
           <h4 id={labelId} className="font-medium leading-none">
-            {filters.length > 0 ? m.common_table_filters() : m.common_table_no_filters_applied()}
+            {filters.length > 0 ? common_table_filters() : common_table_no_filters_applied()}
           </h4>
           <p id={descriptionId} className={cn("text-muted-foreground text-sm", filters.length > 0 && "sr-only")}>
             {filters.length > 0
-            ? m.common_table_modify_filters_hint() : m.common_table_add_filters_hint()}
+            ? common_table_modify_filters_hint() : common_table_add_filters_hint()}
           </p>
         </div>
         {filters.length > 0 ? (<ul className="flex max-h-[300px] flex-col gap-2 overflow-y-auto p-1">
@@ -137,10 +159,10 @@ export function DataTableFilterList<TData>({ table, debounceMs = DEBOUNCE_MS, th
           </ul>) : null}
         <div className="flex w-full items-center gap-2">
           <Button size="sm" className="rounded" ref={addButtonRef} onClick={onFilterAdd}>
-            {m.common_table_add_filter()}
+            {common_table_add_filter()}
           </Button>
           {filters.length > 0 ? (<Button variant="outline" size="sm" className="rounded" onClick={onFiltersReset}>
-              {m.common_table_reset_filters()}
+              {common_table_reset_filters()}
             </Button>) : null}
         </div>
       </PopoverContent>
@@ -190,12 +212,12 @@ function DataTableFilterItem<TData>({ filter, index, filterItemId, joinOperator,
         return null;
     return (<li id={filterItemId} tabIndex={-1} className="flex items-center gap-2" onKeyDown={onItemKeyDown}>
       <div className="min-w-[72px] text-center">
-        {index === 0 ? (<span className="text-muted-foreground text-sm">{m.common_table_where()}</span>) : index === 1 ? (<Select value={joinOperator} onValueChange={(value: string | null) => {
+        {index === 0 ? (<span className="text-muted-foreground text-sm">{common_table_where()}</span>) : index === 1 ? (<Select value={joinOperator} onValueChange={(value: string | null) => {
                 if (value === "and" || value === "or") {
                     setJoinOperator(value);
                 }
             }}>
-            <SelectTrigger aria-label={m.common_table_select_join_operator()} aria-controls={joinOperatorListboxId} className="h-8 rounded lowercase data-size:h-8">
+            <SelectTrigger aria-label={common_table_select_join_operator()} aria-controls={joinOperatorListboxId} className="h-8 rounded lowercase data-size:h-8">
               <SelectValue placeholder={joinOperator}/>
             </SelectTrigger>
             <SelectContent id={joinOperatorListboxId} className="lowercase">
@@ -211,15 +233,15 @@ function DataTableFilterItem<TData>({ filter, index, filterItemId, joinOperator,
         <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} aria-controls={fieldListboxId} variant="outline" size="sm" className="w-32 justify-between rounded font-normal">
               <span className="truncate">
                 {columns.find((c) => c.id === filter.id)?.columnDef
-                .meta?.label ?? m.common_table_select_field()}
+                .meta?.label ?? common_table_select_field()}
               </span>
               <IconSelector className="opacity-50"/>
             </Button>)}/>
         <PopoverContent id={fieldListboxId} align="start" className="w-40 p-0">
           <Command>
-            <CommandInput placeholder={m.common_table_search_fields()}/>
+            <CommandInput placeholder={common_table_search_fields()}/>
             <CommandList>
-              <CommandEmpty>{m.common_table_no_fields_found()}</CommandEmpty>
+              <CommandEmpty>{common_table_no_fields_found()}</CommandEmpty>
               <CommandGroup>
                 {columns.map((col) => (<CommandItem key={col.id} value={col.id} onSelect={(value) => {
                 onFilterUpdate(filter.filterId, {
@@ -299,7 +321,7 @@ function onFilterInputRender<TData>({ filter, inputId, column, columnMeta, onFil
                 return (<DataTableRangeFilter filter={filter} column={column} inputId={inputId} onFilterUpdate={onFilterUpdate}/>);
             }
             const isNumber = filter.variant === "number" || filter.variant === "range";
-            return (<Input id={inputId} type={isNumber ? "number" : filter.variant} aria-label={`${columnMeta?.label} filter value`} aria-describedby={`${inputId}-description`} inputMode={isNumber ? "numeric" : undefined} placeholder={columnMeta?.placeholder ?? m.common_table_enter_value()} className="h-8 w-full rounded" defaultValue={typeof filter.value === "string" ? filter.value : undefined} onChange={(event) => onFilterUpdate(filter.filterId, {
+            return (<Input id={inputId} type={isNumber ? "number" : filter.variant} aria-label={`${columnMeta?.label} filter value`} aria-describedby={`${inputId}-description`} inputMode={isNumber ? "numeric" : undefined} placeholder={columnMeta?.placeholder ?? common_table_enter_value()} className="h-8 w-full rounded" defaultValue={typeof filter.value === "string" ? filter.value : undefined} onChange={(event) => onFilterUpdate(filter.filterId, {
                     value: event.target.value,
                 })}/>);
         }
@@ -313,11 +335,11 @@ function onFilterInputRender<TData>({ filter, inputId, column, columnMeta, onFil
                     }
                 }}>
           <SelectTrigger id={inputId} aria-controls={inputListboxId} aria-label={`${columnMeta?.label} boolean filter`} className="h-8 w-full rounded data-size:h-8">
-            <SelectValue placeholder={filter.value ? m.common_table_bool_true() : m.common_table_bool_false()}/>
+            <SelectValue placeholder={filter.value ? common_table_bool_true() : common_table_bool_false()}/>
           </SelectTrigger>
           <SelectContent id={inputListboxId}>
-            <SelectItem value="true">{m.common_table_bool_true()}</SelectItem>
-            <SelectItem value="false">{m.common_table_bool_false()}</SelectItem>
+            <SelectItem value="true">{common_table_bool_true()}</SelectItem>
+            <SelectItem value="false">{common_table_bool_false()}</SelectItem>
           </SelectContent>
         </Select>);
         }
@@ -337,17 +359,17 @@ function onFilterInputRender<TData>({ filter, inputId, column, columnMeta, onFil
             return (<Popover open={showValueSelector} onOpenChange={setShowValueSelector}>
           <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} id={inputId} aria-controls={inputListboxId} aria-label={`${columnMeta?.label} filter value${multiple ? "s" : ""}`} variant="outline" size="sm" className="w-full rounded font-normal">
                 {selectedOptions.length === 0 ? (columnMeta?.placeholder ??
-                        (multiple ? m.common_table_select_options() : m.common_table_select_option())) : (<span className="truncate">
+                        (multiple ? common_table_select_options() : common_table_select_option())) : (<span className="truncate">
                     {selectedOptions.length > 1
-                            ? `${selectedOptions.length} ${m.common_table_selected()}`
+                            ? `${selectedOptions.length} ${common_table_selected()}`
                             : selectedOptions[0]?.label}
                   </span>)}
               </Button>)}/>
           <PopoverContent id={inputListboxId} className="w-[200px] p-0">
             <Command>
-              <CommandInput aria-label={`Search ${columnMeta?.label} options`} placeholder={columnMeta?.placeholder ?? m.common_table_search_options()}/>
+              <CommandInput aria-label={`Search ${columnMeta?.label} options`} placeholder={columnMeta?.placeholder ?? common_table_search_options()}/>
               <CommandList>
-                <CommandEmpty>{m.common_table_no_options_found()}</CommandEmpty>
+                <CommandEmpty>{common_table_no_options_found()}</CommandEmpty>
                 <CommandGroup>
                   {options.map((option) => {
                     const isSelected = selectedValues.includes(option.value);
@@ -383,7 +405,7 @@ function onFilterInputRender<TData>({ filter, inputId, column, columnMeta, onFil
                 ? `${formatDate(new Date(Number(dateValue[0])))} - ${formatDate(new Date(Number(dateValue[1])))}`
                 : dateValue[0]
                     ? formatDate(new Date(Number(dateValue[0])))
-                    : m.common_table_pick_date();
+                    : common_table_pick_date();
             return (<Popover open={showValueSelector} onOpenChange={setShowValueSelector}>
           <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} id={inputId} aria-controls={inputListboxId} aria-label={`${columnMeta?.label} date filter`} variant="outline" size="sm" className={cn("w-full justify-start rounded text-left font-normal", !filter.value && "text-muted-foreground")}>
                 <IconCalendar />

@@ -1,7 +1,12 @@
 import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-react';
 
 import { cn } from '@/lib/utils';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_week_content_count,
+  p1_week_strip_aria,
+  p1_week_strip_empty,
+  p1_week_strip_readonly,
+} from '@/locale/paraglide/messages';
 
 import type { WeekPointStatus, WeekPointView } from './types';
 
@@ -39,12 +44,12 @@ export function CompactWeekStrip({
 
   return (
     <section
-      aria-label={m.p1_week_strip_aria({ label })}
+      aria-label={p1_week_strip_aria({ label })}
       className={cn('space-y-2', className)}
     >
       <div className="flex items-center justify-between gap-3">
         <p className="meiye-type-body font-medium">{label}</p>
-        <p className="meiye-type-aux">{m.p1_week_strip_readonly()}</p>
+        <p className="meiye-type-aux">{p1_week_strip_readonly()}</p>
       </div>
       {hasData ? (
         <ol className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-divider sm:grid-cols-5">
@@ -78,7 +83,7 @@ export function CompactWeekStrip({
                 <span className="truncate">{point.statusLabel}</span>
                 {typeof point.contentCount === 'number' && (
                   <span className="ml-auto text-muted-foreground tabular-nums">
-                    {m.p1_week_content_count({ count: point.contentCount })}
+                    {p1_week_content_count({ count: point.contentCount })}
                   </span>
                 )}
               </div>
@@ -92,7 +97,7 @@ export function CompactWeekStrip({
         </ol>
       ) : (
         <p className="rounded-xl bg-surface-1 px-4 py-3 text-sm text-muted-foreground">
-          {m.p1_week_strip_empty()}
+          {p1_week_strip_empty()}
         </p>
       )}
     </section>

@@ -1,7 +1,28 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_entry_platform_douyin,
+  creation_entry_platform_xiaohongshu,
+  example_store_asset_preview_alt,
+  example_store_asset_summary,
+  example_store_assets_title,
+  example_store_browsing_no_allowance,
+  example_store_content_aria,
+  example_store_content_preview_alt,
+  example_store_content_title,
+  example_store_eyebrow,
+  example_store_handoff_readonly,
+  example_store_handoff_title,
+  example_store_hide,
+  example_store_hide_error,
+  example_store_hide_retry,
+  example_store_hiding,
+  example_store_preview_badge,
+  example_store_profile,
+  example_store_remix,
+  example_store_remix_description,
+} from '@/locale/paraglide/messages';
 import type { ProductState } from '@meiye/contracts';
 import {
   IconBuildingStore,
@@ -72,24 +93,22 @@ export function ExampleStorePreview({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-xs font-medium tracking-wide text-primary uppercase">
-                {m.example_store_eyebrow()}
+                {example_store_eyebrow()}
               </p>
-              <Badge variant="secondary">
-                {m.example_store_preview_badge()}
-              </Badge>
+              <Badge variant="secondary">{example_store_preview_badge()}</Badge>
             </div>
             <h3 className="mt-2 text-lg font-semibold" id="example-store-title">
               {example.name}
             </h3>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {m.example_store_profile({
+              {example_store_profile({
                 city: example.profile.city,
                 price: example.profile.confirmedPrice,
                 project: example.profile.project,
               })}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {m.example_store_browsing_no_allowance()}
+              {example_store_browsing_no_allowance()}
             </p>
           </div>
         </div>
@@ -102,13 +121,13 @@ export function ExampleStorePreview({
           variant="ghost"
         >
           <IconEyeOff aria-hidden="true" />
-          {hiding ? m.example_store_hiding() : m.example_store_hide()}
+          {hiding ? example_store_hiding() : example_store_hide()}
         </Button>
       </div>
 
       {hideError ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          <p>{m.example_store_hide_error()}</p>
+          <p>{example_store_hide_error()}</p>
           <Button
             className="mt-2"
             onClick={onHide}
@@ -116,14 +135,14 @@ export function ExampleStorePreview({
             type="button"
             variant="outline"
           >
-            {m.example_store_hide_retry()}
+            {example_store_hide_retry()}
           </Button>
         </div>
       ) : null}
 
       <div>
         <h4 className="text-sm font-semibold">
-          {m.example_store_assets_title()}
+          {example_store_assets_title()}
         </h4>
         <ul className="mt-4 grid grid-cols-1 gap-4 border-y border-divider py-5 sm:grid-cols-2">
           {example.assetPreviews.map((asset) => (
@@ -132,7 +151,7 @@ export function ExampleStorePreview({
                 <div className="flex aspect-square size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-1">
                   {EXAMPLE_ASSET_PREVIEW_BY_ID[asset.id] ? (
                     <img
-                      alt={m.example_store_asset_preview_alt({
+                      alt={example_store_asset_preview_alt({
                         name: asset.label,
                       })}
                       className="size-full object-cover"
@@ -149,7 +168,7 @@ export function ExampleStorePreview({
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{asset.label}</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {m.example_store_asset_summary()}
+                    {example_store_asset_summary()}
                   </p>
                 </div>
                 <IconChevronRight
@@ -165,12 +184,12 @@ export function ExampleStorePreview({
       <Card className="gap-4 overflow-visible rounded-none bg-transparent py-0">
         <CardHeader className="rounded-none border-b border-divider px-0 pb-3">
           <CardTitle className="text-sm">
-            {m.example_store_content_title()}
+            {example_store_content_title()}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5 px-0">
           <div
-            aria-label={m.example_store_content_aria()}
+            aria-label={example_store_content_aria()}
             className="grid gap-px overflow-hidden rounded-lg bg-divider sm:grid-cols-2 xl:grid-cols-3"
             role="radiogroup"
           >
@@ -190,7 +209,7 @@ export function ExampleStorePreview({
                 >
                   {previewUrl ? (
                     <img
-                      alt={m.example_store_content_preview_alt({
+                      alt={example_store_content_preview_alt({
                         name: content.title,
                       })}
                       className="aspect-[3/4] w-full object-cover"
@@ -209,8 +228,8 @@ export function ExampleStorePreview({
                       </span>
                       <span className="mt-1 block text-xs font-normal text-muted-foreground">
                         {content.platform === 'xiaohongshu'
-                          ? m.creation_entry_platform_xiaohongshu()
-                          : m.creation_entry_platform_douyin()}
+                          ? creation_entry_platform_xiaohongshu()
+                          : creation_entry_platform_douyin()}
                       </span>
                     </span>
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors group-hover:text-foreground">
@@ -234,14 +253,14 @@ export function ExampleStorePreview({
             </span>
             <div className="min-w-0">
               <p className="text-xs text-muted-foreground">
-                {m.example_store_handoff_title()}
+                {example_store_handoff_title()}
               </p>
               <p className="mt-1 font-medium">{example.handoffPreview.title}</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {example.handoffPreview.platform === 'xiaohongshu'
-                  ? m.creation_entry_platform_xiaohongshu()
-                  : m.creation_entry_platform_douyin()}{' '}
-                · {m.example_store_handoff_readonly()}
+                  ? creation_entry_platform_xiaohongshu()
+                  : creation_entry_platform_douyin()}{' '}
+                · {example_store_handoff_readonly()}
               </p>
             </div>
           </div>
@@ -255,10 +274,10 @@ export function ExampleStorePreview({
               variant="outline"
             >
               <IconSparkles aria-hidden="true" />
-              {m.example_store_remix()}
+              {example_store_remix()}
             </Button>
             <p className="text-xs text-muted-foreground">
-              {m.example_store_remix_description()}
+              {example_store_remix_description()}
             </p>
           </div>
         </CardContent>

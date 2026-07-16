@@ -4,7 +4,50 @@ import { ProductStatus } from '@/components/uiux/product-status';
 import { StatePanel } from '@/components/uiux/state-panel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_history_retry,
+  canonical_history_session_title,
+  canonical_media_kind_image,
+  canonical_media_kind_text,
+  canonical_media_kind_video,
+  creative_object_derived_version,
+  creative_object_error_description,
+  creative_object_error_title,
+  creative_object_job_description,
+  creative_object_job_title,
+  creative_object_loading_description,
+  creative_object_loading_title,
+  creative_object_mode_agent,
+  creative_object_mode_direct,
+  creative_object_model,
+  creative_object_model_fixed,
+  creative_object_not_found_description,
+  creative_object_not_found_title,
+  creative_object_open_job,
+  creative_object_open_session,
+  creative_object_open_work,
+  creative_object_operation,
+  creative_object_persisted_result_count,
+  creative_object_persisted_results,
+  creative_object_quote,
+  creative_object_quote_confirmed,
+  creative_object_result_count,
+  creative_object_results,
+  creative_object_results_empty,
+  creative_object_session_description,
+  creative_object_source_count,
+  creative_object_work_description,
+  creative_object_work_title,
+  object_evidence_kind_job,
+  object_evidence_kind_work,
+  p1_admin_model_operation_audio_sfx,
+  p1_admin_model_operation_audio_speech,
+  p1_admin_model_operation_copy,
+  p1_admin_model_operation_image_edit,
+  p1_admin_model_operation_image_generate,
+  p1_admin_model_operation_video,
+  product_navigation_workbench,
+} from '@/locale/paraglide/messages';
 import { operationsQuery } from '@/p1/client';
 import { templateViews } from '@/p1/operations-view-model';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -32,27 +75,27 @@ const pageCopy: Record<
   { description: () => string; title: () => string }
 > = {
   Session: {
-    description: m.creative_object_session_description,
-    title: m.canonical_history_session_title,
+    description: creative_object_session_description,
+    title: canonical_history_session_title,
   },
   Work: {
-    description: m.creative_object_work_description,
-    title: m.creative_object_work_title,
+    description: creative_object_work_description,
+    title: creative_object_work_title,
   },
   Job: {
-    description: m.creative_object_job_description,
-    title: m.creative_object_job_title,
+    description: creative_object_job_description,
+    title: creative_object_job_title,
   },
 };
 
 const OPERATION_LABELS = {
-  'copy.adapt': m.p1_admin_model_operation_copy,
-  'copy.generate': m.p1_admin_model_operation_copy,
-  'image.edit': m.p1_admin_model_operation_image_edit,
-  'image.generate': m.p1_admin_model_operation_image_generate,
-  'video.generate': m.p1_admin_model_operation_video,
-  'audio.speech': m.p1_admin_model_operation_audio_speech,
-  'audio.sfx': m.p1_admin_model_operation_audio_sfx,
+  'copy.adapt': p1_admin_model_operation_copy,
+  'copy.generate': p1_admin_model_operation_copy,
+  'image.edit': p1_admin_model_operation_image_edit,
+  'image.generate': p1_admin_model_operation_image_generate,
+  'video.generate': p1_admin_model_operation_video,
+  'audio.speech': p1_admin_model_operation_audio_speech,
+  'audio.sfx': p1_admin_model_operation_audio_sfx,
 } as const;
 
 export function CreativeObjectPage({
@@ -87,7 +130,7 @@ export function CreativeObjectPage({
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.product_navigation_workbench(), isCurrentPage: false },
+        { label: product_navigation_workbench(), isCurrentPage: false },
         { label: copy.title(), isCurrentPage: true },
       ]}
       description={copy.description()}
@@ -98,16 +141,16 @@ export function CreativeObjectPage({
       videoWorkflowsQuery.isLoading ? (
         <StatePanel
           kind="loading"
-          title={m.creative_object_loading_title()}
-          description={m.creative_object_loading_description()}
+          title={creative_object_loading_title()}
+          description={creative_object_loading_description()}
         />
       ) : null}
       {query.isError || videoWorkflowsQuery.isError ? (
         <StatePanel
           kind="error"
-          title={m.creative_object_error_title()}
-          description={m.creative_object_error_description()}
-          actionLabel={m.canonical_history_retry()}
+          title={creative_object_error_title()}
+          description={creative_object_error_description()}
+          actionLabel={canonical_history_retry()}
           onAction={() => {
             void query.refetch();
             void videoWorkflowsQuery.refetch();
@@ -185,8 +228,8 @@ function CreativeObjectProjection({
     return (
       <StatePanel
         kind="empty"
-        title={m.creative_object_not_found_title()}
-        description={m.creative_object_not_found_description()}
+        title={creative_object_not_found_title()}
+        description={creative_object_not_found_description()}
       />
     );
   }
@@ -204,7 +247,7 @@ function CreativeObjectProjection({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs text-muted-foreground">
-                      {m.object_evidence_kind_work()}
+                      {object_evidence_kind_work()}
                     </p>
                     <CardTitle className="mt-1 text-base">
                       {display.title}
@@ -217,17 +260,17 @@ function CreativeObjectProjection({
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">
                     {work.mode === 'agent'
-                      ? m.creative_object_mode_agent()
-                      : m.creative_object_mode_direct()}
+                      ? creative_object_mode_agent()
+                      : creative_object_mode_direct()}
                   </Badge>
                   <Badge variant="outline">
-                    {m.creative_object_source_count({
+                    {creative_object_source_count({
                       count: work.sourceReferences.length,
                     })}
                   </Badge>
                   {work.derivedFrom ? (
                     <Badge variant="outline">
-                      {m.creative_object_derived_version()}
+                      {creative_object_derived_version()}
                     </Badge>
                   ) : null}
                 </div>
@@ -237,14 +280,14 @@ function CreativeObjectProjection({
                     to="/dashboard/sessions/$sessionId"
                     params={{ sessionId: work.sessionId }}
                   >
-                    {m.creative_object_open_session()}
+                    {creative_object_open_session()}
                   </Link>
                   <Link
                     className="font-medium text-primary underline-offset-4 hover:underline"
                     to="/dashboard/works/$workId"
                     params={{ workId: work.id }}
                   >
-                    {m.creative_object_open_work()}
+                    {creative_object_open_work()}
                   </Link>
                 </div>
               </CardContent>
@@ -257,7 +300,7 @@ function CreativeObjectProjection({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs text-muted-foreground">
-                    {m.object_evidence_kind_job()}
+                    {object_evidence_kind_job()}
                   </p>
                   <CardTitle className="mt-1 text-base">
                     {creativeOutputLabel(
@@ -273,22 +316,22 @@ function CreativeObjectProjection({
             <CardContent className="space-y-3 text-sm">
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                 <dt className="text-muted-foreground">
-                  {m.creative_object_model()}
+                  {creative_object_model()}
                 </dt>
-                <dd>{m.creative_object_model_fixed()}</dd>
+                <dd>{creative_object_model_fixed()}</dd>
                 <dt className="text-muted-foreground">
-                  {m.creative_object_operation()}
+                  {creative_object_operation()}
                 </dt>
                 <dd>{OPERATION_LABELS[job.contract.operation]()}</dd>
                 <dt className="text-muted-foreground">
-                  {m.creative_object_quote()}
+                  {creative_object_quote()}
                 </dt>
-                <dd>{m.creative_object_quote_confirmed()}</dd>
+                <dd>{creative_object_quote_confirmed()}</dd>
                 <dt className="text-muted-foreground">
-                  {m.creative_object_results()}
+                  {creative_object_results()}
                 </dt>
                 <dd>
-                  {m.creative_object_result_count({
+                  {creative_object_result_count({
                     assets: job.outputAssetIds.length,
                     contents: job.outputContentIds.length,
                   })}
@@ -299,7 +342,7 @@ function CreativeObjectProjection({
                 to="/dashboard/jobs/$jobId"
                 params={{ jobId: job.id }}
               >
-                {m.creative_object_open_job()}
+                {creative_object_open_job()}
               </Link>
             </CardContent>
           </Card>
@@ -308,10 +351,10 @@ function CreativeObjectProjection({
       <section aria-labelledby="creative-object-results" className="space-y-3">
         <div>
           <h2 id="creative-object-results" className="text-base font-semibold">
-            {m.creative_object_persisted_results()}
+            {creative_object_persisted_results()}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {m.creative_object_persisted_result_count({
+            {creative_object_persisted_result_count({
               assets: assets.length,
               contents: contents.length,
             })}
@@ -325,17 +368,17 @@ function CreativeObjectProjection({
                 <p className="font-medium">{asset.title}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {asset.kind === 'video'
-                    ? m.canonical_media_kind_video()
+                    ? canonical_media_kind_video()
                     : asset.kind === 'image'
-                      ? m.canonical_media_kind_image()
-                      : m.canonical_media_kind_text()}
+                      ? canonical_media_kind_image()
+                      : canonical_media_kind_text()}
                 </p>
               </li>
             ))}
           </ul>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {m.creative_object_results_empty()}
+            {creative_object_results_empty()}
           </p>
         )}
       </section>

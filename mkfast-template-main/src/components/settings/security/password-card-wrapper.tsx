@@ -1,4 +1,7 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_security_update_password_description,
+  settings_security_update_password_title,
+} from '@/locale/paraglide/messages';
 import {
   Card,
   CardContent,
@@ -27,10 +30,10 @@ export function PasswordCardWrapper() {
       <Card className={cn('w-full overflow-hidden pt-6 pb-0 flex flex-col')}>
         <CardHeader>
           <CardTitle className="text-lg font-semibold">
-            {m.settings_security_update_password_title()}
+            {settings_security_update_password_title()}
           </CardTitle>
           <CardDescription>
-            {m.settings_security_update_password_description()}
+            {settings_security_update_password_description()}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col space-y-3 flex-1">

@@ -1,4 +1,20 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  block_hero_image_alt,
+  home_features_items_item_1_title,
+  home_features_items_item_2_title,
+  home_features_items_item_3_title,
+  home_hero_description,
+  home_hero_introduction,
+  home_hero_preview_intent,
+  home_hero_preview_intent_label,
+  home_hero_preview_result_label,
+  home_hero_preview_status,
+  home_hero_preview_subtitle,
+  home_hero_preview_title,
+  home_hero_primary,
+  home_hero_secondary,
+  home_hero_title,
+} from '@/locale/paraglide/messages';
 import Container from '@/components/layout/container';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -24,7 +40,7 @@ export default function HeroSection() {
             {/* introduction */}
             <div className="animate-fade-up delay-0 mx-auto flex w-fit items-center gap-2 rounded-full border border-border bg-card p-1 pl-4">
               <span className="text-foreground text-sm font-medium">
-                {m.home_hero_introduction()}
+                {home_hero_introduction()}
               </span>
               <div className="size-6 overflow-hidden rounded-full bg-muted duration-500">
                 <div className="flex w-12 -translate-x-1/2 duration-500 ease-in-out group-hover:translate-x-0">
@@ -40,12 +56,12 @@ export default function HeroSection() {
 
             {/* title */}
             <h1 className="animate-fade-up delay-1 mt-8 text-balance text-3xl font-bold sm:text-4xl md:text-5xl lg:mt-16 xl:text-[4rem]">
-              {m.home_hero_title()}
+              {home_hero_title()}
             </h1>
 
             {/* description */}
             <p className="animate-fade-up delay-2 mx-auto mt-6 max-w-5xl text-balance text-base text-muted-foreground sm:mt-8 sm:text-lg">
-              {m.home_hero_description()}
+              {home_hero_description()}
             </p>
 
             {/* action buttons */}
@@ -58,7 +74,7 @@ export default function HeroSection() {
                     'h-10.5 rounded-xl px-5 text-base'
                   )}
                 >
-                  <span className="text-nowrap">{m.home_hero_primary()}</span>
+                  <span className="text-nowrap">{home_hero_primary()}</span>
                 </Link>
               </div>
               <Link
@@ -68,7 +84,7 @@ export default function HeroSection() {
                   'h-10.5 rounded-xl px-5'
                 )}
               >
-                <span className="text-nowrap">{m.home_hero_secondary()}</span>
+                <span className="text-nowrap">{home_hero_secondary()}</span>
               </Link>
             </div>
           </div>
@@ -76,36 +92,36 @@ export default function HeroSection() {
           {/* product-native preview */}
           <div className="animate-fade-up delay-4 relative overflow-hidden px-2 my-8 sm:my-12 md:my-16">
             <div
-              aria-label={m.block_hero_image_alt({ mode: 'product' })}
+              aria-label={block_hero_image_alt({ mode: 'product' })}
               className="inset-shadow-2xs ring-muted/50 bg-card relative mx-auto max-w-6xl overflow-hidden rounded-2xl border p-4 shadow-lg shadow-zinc-950/10 ring-1 sm:p-6"
               role="img"
             >
               <div className="flex items-center justify-between border-b pb-4">
                 <div>
                   <p className="text-sm font-semibold">
-                    {m.home_hero_preview_title()}
+                    {home_hero_preview_title()}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {m.home_hero_preview_subtitle()}
+                    {home_hero_preview_subtitle()}
                   </p>
                 </div>
                 <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                  {m.home_hero_preview_status()}
+                  {home_hero_preview_status()}
                 </span>
               </div>
               <div className="grid gap-4 py-5 md:grid-cols-[minmax(0,1fr)_240px]">
                 <div className="space-y-4 rounded-xl border bg-background p-4 text-left">
                   <p className="text-xs font-medium text-muted-foreground">
-                    {m.home_hero_preview_intent_label()}
+                    {home_hero_preview_intent_label()}
                   </p>
                   <p className="text-sm leading-6">
-                    {m.home_hero_preview_intent()}
+                    {home_hero_preview_intent()}
                   </p>
                   <div className="grid gap-3 sm:grid-cols-3">
                     {[
-                      m.home_features_items_item_1_title(),
-                      m.home_features_items_item_2_title(),
-                      m.home_features_items_item_3_title(),
+                      home_features_items_item_1_title(),
+                      home_features_items_item_2_title(),
+                      home_features_items_item_3_title(),
                     ].map((label) => (
                       <span
                         className="rounded-lg border bg-card px-3 py-2 text-xs font-medium"
@@ -118,7 +134,7 @@ export default function HeroSection() {
                 </div>
                 <div className="space-y-3 rounded-xl border bg-muted/35 p-4 text-left">
                   <p className="text-xs font-medium text-muted-foreground">
-                    {m.home_hero_preview_result_label()}
+                    {home_hero_preview_result_label()}
                   </p>
                   <div className="h-2 w-full rounded-full bg-primary/25" />
                   <div className="h-2 w-4/5 rounded-full bg-primary/15" />

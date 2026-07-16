@@ -15,7 +15,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_media_close,
+  canonical_media_dialog_description,
+  canonical_media_image_preview,
+  canonical_media_kind_image,
+  canonical_media_kind_video,
+  canonical_media_load_error_description,
+  canonical_media_load_error_title,
+  canonical_media_open_detail,
+  canonical_media_preview_aria,
+  canonical_media_retry,
+  canonical_media_video_preview,
+} from '@/locale/paraglide/messages';
 import { getPathWithLocale } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 import type { CanonicalMediaProjection } from './canonical-history-model';
@@ -26,7 +38,7 @@ function MediaDetailLink({ href }: { href: string }) {
       className="text-sm font-medium text-primary underline-offset-4 hover:underline"
       href={getPathWithLocale(href)}
     >
-      {m.canonical_media_open_detail()}
+      {canonical_media_open_detail()}
     </a>
   );
 }
@@ -42,16 +54,16 @@ function MediaFailure({
     <output className="flex min-h-44 flex-col items-center justify-center gap-3 rounded-md bg-muted p-4 text-center">
       <span>
         <span className="block font-medium">
-          {m.canonical_media_load_error_title()}
+          {canonical_media_load_error_title()}
         </span>
         <span className="mt-1 block text-xs text-muted-foreground">
-          {m.canonical_media_load_error_description()}
+          {canonical_media_load_error_description()}
         </span>
       </span>
       <span className="flex flex-wrap justify-center gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onRetry}>
           <IconRefresh aria-hidden="true" />
-          {m.canonical_media_retry()}
+          {canonical_media_retry()}
         </Button>
         <MediaDetailLink href={href} />
       </span>
@@ -102,7 +114,7 @@ export function CanonicalMediaPreview({
         <button
           type="button"
           aria-haspopup="dialog"
-          aria-label={m.canonical_media_preview_aria({ title: media.title })}
+          aria-label={canonical_media_preview_aria({ title: media.title })}
           className={cn(
             'relative block size-full w-full overflow-hidden text-left outline -outline-offset-1 outline-foreground/10 focus-visible:outline-none',
             presentation === 'hero' ? 'min-h-44 max-h-[70vh]' : 'aspect-10/7'
@@ -147,8 +159,8 @@ export function CanonicalMediaPreview({
               <IconMaximize className="size-3.5" aria-hidden="true" />
             )}
             {media.kind === 'video'
-              ? m.canonical_media_video_preview()
-              : m.canonical_media_image_preview()}
+              ? canonical_media_video_preview()
+              : canonical_media_image_preview()}
           </span>
         </button>
       </div>
@@ -163,8 +175,8 @@ export function CanonicalMediaPreview({
         )}
         <span className="truncate">
           {media.kind === 'video'
-            ? m.canonical_media_kind_video()
-            : m.canonical_media_kind_image()}
+            ? canonical_media_kind_video()
+            : canonical_media_kind_image()}
         </span>
       </p>
       <div className="mt-0.5 flex min-w-0 items-center justify-between gap-2 text-sm text-muted-foreground">
@@ -216,7 +228,7 @@ function CanonicalMediaLightbox({
           }
         >
           <IconX aria-hidden="true" />
-          {m.canonical_media_close()}
+          {canonical_media_close()}
         </DialogClose>
         <div className="grid w-full grid-cols-1 items-stretch sm:grid-cols-12">
           <div className="flex min-h-64 items-center bg-muted p-4 sm:col-span-7 sm:p-6 lg:col-span-8 lg:p-8">
@@ -257,7 +269,7 @@ function CanonicalMediaLightbox({
             <DialogHeader className="pr-20">
               <DialogTitle>{media.title}</DialogTitle>
               <DialogDescription>
-                {m.canonical_media_dialog_description()}
+                {canonical_media_dialog_description()}
               </DialogDescription>
             </DialogHeader>
             <div className="mt-6 space-y-2 border-y py-4 text-sm text-muted-foreground">
@@ -268,8 +280,8 @@ function CanonicalMediaLightbox({
                   <IconPhoto className="size-4 shrink-0" aria-hidden="true" />
                 )}
                 {media.kind === 'video'
-                  ? m.canonical_media_kind_video()
-                  : m.canonical_media_kind_image()}
+                  ? canonical_media_kind_video()
+                  : canonical_media_kind_image()}
               </p>
               <p className="truncate">{media.assetId}</p>
             </div>

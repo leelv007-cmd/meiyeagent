@@ -1,4 +1,23 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_bool_false,
+  common_table_bool_true,
+  common_table_empty,
+  common_table_enter_value,
+  common_table_filter,
+  common_table_filter_by_value,
+  common_table_no_fields_found,
+  common_table_no_options_found,
+  common_table_not_empty,
+  common_table_open_filter_menu,
+  common_table_pick_date_ellipsis,
+  common_table_reset_all_filters,
+  common_table_search_fields,
+  common_table_search_options,
+  common_table_select_option,
+  common_table_select_options,
+  common_table_selected,
+  common_table_type_to_add_filter,
+} from "@/locale/paraglide/messages";
 import type { Column, Table } from "@tanstack/react-table";
 import { IconCalendar, IconCheck, IconFilter, IconLetterCase, IconCircleCheck, IconX, } from "@tabler/icons-react";
 import { useQueryState } from "nuqs";
@@ -131,25 +150,25 @@ export function DataTableFilterMenu<TData>({ table, debounceMs = DEBOUNCE_MS, th
     }, [filters, onFilterRemove]);
     return (<div className="flex flex-wrap items-center gap-2">
       {filters.map((filter) => (<DataTableFilterItem key={filter.filterId} filter={filter} filterItemId={`${id}-filter-${filter.filterId}`} columns={columns} onFilterUpdate={onFilterUpdate} onFilterRemove={onFilterRemove}/>))}
-      {filters.length > 0 && (<Button aria-label={m.common_table_reset_all_filters()} variant="outline" size="icon" className="size-8" onClick={onFiltersReset}>
+      {filters.length > 0 && (<Button aria-label={common_table_reset_all_filters()} variant="outline" size="icon" className="size-8" onClick={onFiltersReset}>
           <IconX />
         </Button>)}
       <Popover open={open} onOpenChange={onOpenChange}>
-        <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} aria-label={m.common_table_open_filter_menu()} variant="outline" size={filters.length > 0 ? "icon" : "sm"} className={cn(filters.length > 0 && "size-8", "h-8 font-normal")} ref={triggerRef} onKeyDown={onTriggerKeyDown}>
+        <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} aria-label={common_table_open_filter_menu()} variant="outline" size={filters.length > 0 ? "icon" : "sm"} className={cn(filters.length > 0 && "size-8", "h-8 font-normal")} ref={triggerRef} onKeyDown={onTriggerKeyDown}>
               <IconFilter className="text-muted-foreground"/>
-              {filters.length > 0 ? null : m.common_table_filter()}
+              {filters.length > 0 ? null : common_table_filter()}
             </Button>)}/>
         <PopoverContent align={align} className="w-full max-w-(--radix-popover-content-available-width) p-0" {...props}>
           <Command loop className="[&_[cmdk-input-wrapper]_svg]:hidden">
             <CommandInput ref={inputRef} placeholder={selectedColumn
             ? (selectedColumn.columnDef.meta?.label ?? selectedColumn.id)
-            : m.common_table_search_fields()} value={inputValue} onValueChange={setInputValue} onKeyDown={onInputKeyDown}/>
+            : common_table_search_fields()} value={inputValue} onValueChange={setInputValue} onKeyDown={onInputKeyDown}/>
             <CommandList>
               {selectedColumn ? (<>
-                  {selectedColumn.columnDef.meta?.options && (<CommandEmpty>{m.common_table_no_options_found()}</CommandEmpty>)}
+                  {selectedColumn.columnDef.meta?.options && (<CommandEmpty>{common_table_no_options_found()}</CommandEmpty>)}
                   <FilterValueSelector column={selectedColumn} value={inputValue} onSelect={(value) => onFilterAdd(selectedColumn, value)}/>
                 </>) : (<>
-                  <CommandEmpty>{m.common_table_no_fields_found()}</CommandEmpty>
+                  <CommandEmpty>{common_table_no_fields_found()}</CommandEmpty>
                   <CommandGroup>
                     {columns.map((column) => (<CommandItem key={column.id} value={column.id} onSelect={() => {
                     setSelectedColumn(column);
@@ -217,9 +236,9 @@ function DataTableFilterItem<TData>({ filter, filterItemId, columns, onFilterUpd
               </Button>)}/>
           <PopoverContent align="start" className="w-48 p-0">
             <Command loop>
-              <CommandInput placeholder={m.common_table_search_fields()}/>
+              <CommandInput placeholder={common_table_search_fields()}/>
               <CommandList>
-                <CommandEmpty>{m.common_table_no_fields_found()}</CommandEmpty>
+                <CommandEmpty>{common_table_no_fields_found()}</CommandEmpty>
                 <CommandGroup>
                   {columns.map((column) => (<CommandItem key={column.id} value={column.id} onSelect={() => {
                     onFilterUpdate(filter.filterId, {
@@ -286,10 +305,10 @@ function FilterValueSelector<TData>({ column, value, onSelect, }: FilterValueSel
         case "boolean":
             return (<CommandGroup>
           <CommandItem value="true" onSelect={() => onSelect("true")}>
-            {m.common_table_bool_true()}
+            {common_table_bool_true()}
           </CommandItem>
           <CommandItem value="false" onSelect={() => onSelect("false")}>
-            {m.common_table_bool_false()}
+            {common_table_bool_false()}
           </CommandItem>
         </CommandGroup>);
         case "select":
@@ -312,10 +331,10 @@ function FilterValueSelector<TData>({ column, value, onSelect, }: FilterValueSel
           <CommandItem value={value} onSelect={() => onSelect(value)} disabled={isEmpty}>
             {isEmpty ? (<>
                 <IconLetterCase />
-                <span>{m.common_table_type_to_add_filter()}</span>
+                <span>{common_table_type_to_add_filter()}</span>
               </>) : (<>
                 <IconCircleCheck />
-                <span className="truncate">{m.common_table_filter_by_value()} &quot;{value}&quot;</span>
+                <span className="truncate">{common_table_filter_by_value()} &quot;{value}&quot;</span>
               </>)}
           </CommandItem>
         </CommandGroup>);
@@ -331,7 +350,7 @@ function onFilterInputRender<TData>({ filter, column, inputId, onFilterUpdate, s
     setShowValueSelector: (value: boolean) => void;
 }) {
     if (filter.operator === "isEmpty" || filter.operator === "isNotEmpty") {
-        return (<div id={inputId} role="status" aria-label={`${column.columnDef.meta?.label} ${m.common_table_filter()} ${filter.operator === "isEmpty" ? m.common_table_empty() : m.common_table_not_empty()}`} aria-live="polite" className="h-full w-16 rounded-none border bg-transparent px-1.5 py-0.5 text-muted-foreground dark:bg-input/30"/>);
+        return (<div id={inputId} role="status" aria-label={`${column.columnDef.meta?.label} ${common_table_filter()} ${filter.operator === "isEmpty" ? common_table_empty() : common_table_not_empty()}`} aria-live="polite" className="h-full w-16 rounded-none border bg-transparent px-1.5 py-0.5 text-muted-foreground dark:bg-input/30"/>);
     }
     switch (filter.variant) {
         case "text":
@@ -342,7 +361,7 @@ function onFilterInputRender<TData>({ filter, column, inputId, onFilterUpdate, s
                 return (<DataTableRangeFilter filter={filter} column={column} inputId={inputId} onFilterUpdate={onFilterUpdate} className="size-full max-w-28 gap-0 **:data-[slot='range-min']:border-r-0 [&_input]:rounded-none [&_input]:px-1.5"/>);
             }
             const isNumber = filter.variant === "number" || filter.variant === "range";
-            return (<Input id={inputId} type={isNumber ? "number" : "text"} inputMode={isNumber ? "numeric" : undefined} placeholder={column.columnDef.meta?.placeholder ?? m.common_table_enter_value()} className="h-full w-24 rounded-none px-1.5" defaultValue={typeof filter.value === "string" ? filter.value : ""} onChange={(event) => onFilterUpdate(filter.filterId, { value: event.target.value })}/>);
+            return (<Input id={inputId} type={isNumber ? "number" : "text"} inputMode={isNumber ? "numeric" : undefined} placeholder={column.columnDef.meta?.placeholder ?? common_table_enter_value()} className="h-full w-24 rounded-none px-1.5" defaultValue={typeof filter.value === "string" ? filter.value : ""} onChange={(event) => onFilterUpdate(filter.filterId, { value: event.target.value })}/>);
         }
         case "boolean": {
             const inputListboxId = `${inputId}-listbox`;
@@ -351,11 +370,11 @@ function onFilterInputRender<TData>({ filter, column, inputId, onFilterUpdate, s
                         onFilterUpdate(filter.filterId, { value });
                 }}>
           <SelectTrigger id={inputId} aria-controls={inputListboxId} className="rounded-none bg-transparent px-1.5 py-0.5 [&_svg]:hidden">
-            <SelectValue placeholder={filter.value ? m.common_table_bool_true() : m.common_table_bool_false()}/>
+            <SelectValue placeholder={filter.value ? common_table_bool_true() : common_table_bool_false()}/>
           </SelectTrigger>
           <SelectContent id={inputListboxId}>
-            <SelectItem value="true">{m.common_table_bool_true()}</SelectItem>
-            <SelectItem value="false">{m.common_table_bool_false()}</SelectItem>
+            <SelectItem value="true">{common_table_bool_true()}</SelectItem>
+            <SelectItem value="false">{common_table_bool_false()}</SelectItem>
           </SelectContent>
         </Select>);
         }
@@ -369,7 +388,7 @@ function onFilterInputRender<TData>({ filter, column, inputId, onFilterUpdate, s
             const selectedOptions = options.filter((option) => selectedValues.includes(option.value));
             return (<Popover open={showValueSelector} onOpenChange={setShowValueSelector}>
           <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} id={inputId} aria-controls={inputListboxId} variant="ghost" size="sm" className="h-full min-w-16 rounded-none border px-1.5 font-normal dark:bg-input/30">
-                {selectedOptions.length === 0 ? (filter.variant === "multiSelect" ? (m.common_table_select_options()) : (m.common_table_select_option())) : (<>
+                {selectedOptions.length === 0 ? (filter.variant === "multiSelect" ? (common_table_select_options()) : (common_table_select_option())) : (<>
                     <div className="-space-x-2 flex items-center rtl:space-x-reverse">
                       {selectedOptions.map((selectedOption) => selectedOption.icon ? (<div key={selectedOption.value} className="rounded-full border bg-background p-0.5">
                             <selectedOption.icon className="size-3.5"/>
@@ -377,16 +396,16 @@ function onFilterInputRender<TData>({ filter, column, inputId, onFilterUpdate, s
                     </div>
                     <span className="truncate">
                       {selectedOptions.length > 1
-                            ? `${selectedOptions.length} ${m.common_table_selected()}`
+                            ? `${selectedOptions.length} ${common_table_selected()}`
                             : selectedOptions[0]?.label}
                     </span>
                   </>)}
               </Button>)}/>
           <PopoverContent id={inputListboxId} align="start" className="w-48 p-0">
             <Command>
-              <CommandInput placeholder={m.common_table_search_options()}/>
+              <CommandInput placeholder={common_table_search_options()}/>
               <CommandList>
-                <CommandEmpty>{m.common_table_no_options_found()}</CommandEmpty>
+                <CommandEmpty>{common_table_no_options_found()}</CommandEmpty>
                 <CommandGroup>
                   {options.map((option) => (<CommandItem key={option.value} value={option.value} onSelect={() => {
                         const value = filter.variant === "multiSelect"
@@ -418,7 +437,7 @@ function onFilterInputRender<TData>({ filter, column, inputId, onFilterUpdate, s
                 ? `${formatDate(new Date(Number(dateValue[0])))} - ${formatDate(new Date(Number(dateValue[1])))}`
                 : dateValue[0]
                     ? formatDate(new Date(Number(dateValue[0])))
-                    : m.common_table_pick_date_ellipsis();
+                    : common_table_pick_date_ellipsis();
             return (<Popover open={showValueSelector} onOpenChange={setShowValueSelector}>
           <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} id={inputId} aria-controls={inputListboxId} variant="ghost" size="sm" className={cn("h-full rounded-none border px-1.5 font-normal dark:bg-input/30", !filter.value && "text-muted-foreground")}>
                 <IconCalendar className="size-3.5"/>

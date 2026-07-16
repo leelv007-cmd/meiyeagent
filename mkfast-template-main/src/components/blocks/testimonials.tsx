@@ -1,4 +1,25 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  home_testimonials_items_item_1_name,
+  home_testimonials_items_item_1_quote,
+  home_testimonials_items_item_1_role,
+  home_testimonials_items_item_2_name,
+  home_testimonials_items_item_2_quote,
+  home_testimonials_items_item_2_role,
+  home_testimonials_items_item_3_name,
+  home_testimonials_items_item_3_quote,
+  home_testimonials_items_item_3_role,
+  home_testimonials_items_item_4_name,
+  home_testimonials_items_item_4_quote,
+  home_testimonials_items_item_4_role,
+  home_testimonials_items_item_5_name,
+  home_testimonials_items_item_5_quote,
+  home_testimonials_items_item_5_role,
+  home_testimonials_items_item_6_name,
+  home_testimonials_items_item_6_quote,
+  home_testimonials_items_item_6_role,
+  home_testimonials_subtitle,
+  home_testimonials_title,
+} from '@/locale/paraglide/messages';
 import { HeaderSection } from '@/components/shared/header-section';
 import { ScrollReveal } from '@/components/shared/scroll-reveal';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -19,40 +40,40 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
 export default function TestimonialsSection() {
   const testimonials: Testimonial[] = [
     {
-      name: m.home_testimonials_items_item_1_name(),
-      role: m.home_testimonials_items_item_1_role(),
+      name: home_testimonials_items_item_1_name(),
+      role: home_testimonials_items_item_1_role(),
       image: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jane',
-      quote: m.home_testimonials_items_item_1_quote(),
+      quote: home_testimonials_items_item_1_quote(),
     },
     {
-      name: m.home_testimonials_items_item_2_name(),
-      role: m.home_testimonials_items_item_2_role(),
+      name: home_testimonials_items_item_2_name(),
+      role: home_testimonials_items_item_2_role(),
       image: 'https://api.dicebear.com/7.x/avataaars/svg?seed=John',
-      quote: m.home_testimonials_items_item_2_quote(),
+      quote: home_testimonials_items_item_2_quote(),
     },
     {
-      name: m.home_testimonials_items_item_3_name(),
-      role: m.home_testimonials_items_item_3_role(),
+      name: home_testimonials_items_item_3_name(),
+      role: home_testimonials_items_item_3_role(),
       image: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex',
-      quote: m.home_testimonials_items_item_3_quote(),
+      quote: home_testimonials_items_item_3_quote(),
     },
     {
-      name: m.home_testimonials_items_item_4_name(),
-      role: m.home_testimonials_items_item_4_role(),
+      name: home_testimonials_items_item_4_name(),
+      role: home_testimonials_items_item_4_role(),
       image: 'https://api.dicebear.com/7.x/lorelei/svg?seed=Maria',
-      quote: m.home_testimonials_items_item_4_quote(),
+      quote: home_testimonials_items_item_4_quote(),
     },
     {
-      name: m.home_testimonials_items_item_5_name(),
-      role: m.home_testimonials_items_item_5_role(),
+      name: home_testimonials_items_item_5_name(),
+      role: home_testimonials_items_item_5_role(),
       image: 'https://api.dicebear.com/7.x/notionists/svg?seed=Sam',
-      quote: m.home_testimonials_items_item_5_quote(),
+      quote: home_testimonials_items_item_5_quote(),
     },
     {
-      name: m.home_testimonials_items_item_6_name(),
-      role: m.home_testimonials_items_item_6_role(),
+      name: home_testimonials_items_item_6_name(),
+      role: home_testimonials_items_item_6_role(),
       image: 'https://api.dicebear.com/7.x/open-peeps/svg?seed=Jordan',
-      quote: m.home_testimonials_items_item_6_quote(),
+      quote: home_testimonials_items_item_6_quote(),
     },
   ];
   const testimonialChunks = chunkArray(
@@ -64,8 +85,8 @@ export default function TestimonialsSection() {
       <div className="mx-auto max-w-6xl">
         <ScrollReveal>
           <HeaderSection
-            title={m.home_testimonials_title()}
-            subtitle={m.home_testimonials_subtitle()}
+            title={home_testimonials_title()}
+            subtitle={home_testimonials_subtitle()}
           />
         </ScrollReveal>
 

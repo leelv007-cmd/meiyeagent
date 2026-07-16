@@ -1,4 +1,4 @@
-import { m } from '@/locale/paraglide/messages';
+import { common_go_back } from '@/locale/paraglide/messages';
 import { Link, useRouter } from '@tanstack/react-router';
 import { IconArrowLeft } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,7 @@ export default function BackButtonSmall({
       size="sm"
       variant="outline"
       className={cn('size-8 px-0', className)}
-      aria-label={m.common_go_back()}
+      aria-label={common_go_back()}
     >
       <IconArrowLeft className="size-4" />
     </Button>
@@ -28,7 +28,7 @@ export default function BackButtonSmall({
 
   if (href != null) {
     return (
-      <Link to={href} aria-label={m.common_go_back()}>
+      <Link to={href} aria-label={common_go_back()}>
         {button}
       </Link>
     );
@@ -39,7 +39,7 @@ export default function BackButtonSmall({
       variant="outline"
       className={cn('size-8 px-0', className)}
       onClick={() => router.history.back()}
-      aria-label={m.common_go_back()}
+      aria-label={common_go_back()}
     >
       <IconArrowLeft className="size-4" />
     </Button>

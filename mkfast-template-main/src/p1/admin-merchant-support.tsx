@@ -16,7 +16,23 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { m } from '@/locale/paraglide/messages';
+import {
+  merchant_support_actual,
+  merchant_support_description,
+  merchant_support_empty,
+  merchant_support_estimated,
+  merchant_support_job,
+  merchant_support_ledger_consistent,
+  merchant_support_ledger_mismatch,
+  merchant_support_load_error,
+  merchant_support_loading,
+  merchant_support_quota,
+  merchant_support_quota_line,
+  merchant_support_reason,
+  merchant_support_refunded,
+  merchant_support_title,
+  merchant_support_unknown,
+} from '@/locale/paraglide/messages';
 import { operationsQuery, queryP1 } from '@/p1/client';
 import {
   buildMerchantSupportDiagnostic,
@@ -29,7 +45,7 @@ type Diagnostic = ReturnType<typeof buildMerchantSupportDiagnostic>;
 function amount(value: { amount: number; currency: string } | null) {
   return value
     ? `${value.amount.toFixed(4)} ${value.currency}`
-    : m.merchant_support_unknown();
+    : merchant_support_unknown();
 }
 
 export function MerchantSupportDiagnosticTable({
@@ -43,15 +59,15 @@ export function MerchantSupportDiagnosticTable({
         variant={diagnostic.ledgerConsistent ? 'secondary' : 'destructive'}
       >
         {diagnostic.ledgerConsistent
-          ? m.merchant_support_ledger_consistent()
-          : m.merchant_support_ledger_mismatch()}
+          ? merchant_support_ledger_consistent()
+          : merchant_support_ledger_mismatch()}
       </Badge>
       <section className="space-y-2">
-        <h3 className="font-medium">{m.merchant_support_quota()}</h3>
+        <h3 className="font-medium">{merchant_support_quota()}</h3>
         <ul className="space-y-1 text-sm text-muted-foreground">
           {Object.entries(diagnostic.quota).map(([resource, usage]) => (
             <li key={resource}>
-              {m.merchant_support_quota_line({ resource, ...usage })}
+              {merchant_support_quota_line({ resource, ...usage })}
             </li>
           ))}
         </ul>
@@ -60,17 +76,17 @@ export function MerchantSupportDiagnosticTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{m.merchant_support_job()}</TableHead>
-              <TableHead>{m.merchant_support_estimated()}</TableHead>
-              <TableHead>{m.merchant_support_actual()}</TableHead>
-              <TableHead>{m.merchant_support_reason()}</TableHead>
-              <TableHead>{m.merchant_support_refunded()}</TableHead>
+              <TableHead>{merchant_support_job()}</TableHead>
+              <TableHead>{merchant_support_estimated()}</TableHead>
+              <TableHead>{merchant_support_actual()}</TableHead>
+              <TableHead>{merchant_support_reason()}</TableHead>
+              <TableHead>{merchant_support_refunded()}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {diagnostic.jobs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5}>{m.merchant_support_empty()}</TableCell>
+                <TableCell colSpan={5}>{merchant_support_empty()}</TableCell>
               </TableRow>
             ) : (
               diagnostic.jobs.slice(0, 20).map((job) => (
@@ -126,17 +142,17 @@ export function AdminMerchantSupport() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{m.merchant_support_title()}</CardTitle>
-        <CardDescription>{m.merchant_support_description()}</CardDescription>
+        <CardTitle>{merchant_support_title()}</CardTitle>
+        <CardDescription>{merchant_support_description()}</CardDescription>
       </CardHeader>
       <CardContent>
         {query.isPending ? (
           <p className="text-sm text-muted-foreground">
-            {m.merchant_support_loading()}
+            {merchant_support_loading()}
           </p>
         ) : query.isError || !query.data ? (
           <p className="text-sm text-destructive">
-            {m.merchant_support_load_error()}
+            {merchant_support_load_error()}
           </p>
         ) : (
           <MerchantSupportDiagnosticTable diagnostic={query.data} />

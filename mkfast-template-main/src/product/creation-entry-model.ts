@@ -1,4 +1,36 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_entry_asset_intent,
+  creation_entry_example_remix_intent,
+  creation_entry_platform_douyin,
+  creation_entry_platform_xiaohongshu,
+  creation_entry_scene_lead_gen_hair_chip,
+  creation_entry_scene_lead_gen_hair_intent,
+  creation_entry_scene_lead_gen_nail_chip,
+  creation_entry_scene_lead_gen_nail_intent,
+  creation_entry_scene_lead_gen_skin_chip,
+  creation_entry_scene_lead_gen_skin_intent,
+  creation_entry_scene_promotion_nail_chip,
+  creation_entry_scene_promotion_nail_intent,
+  creation_entry_scene_retention_nail_chip,
+  creation_entry_scene_retention_nail_intent,
+  creation_entry_scene_seeding_hair_chip,
+  creation_entry_scene_seeding_hair_intent,
+  creation_entry_scene_seeding_nail_chip,
+  creation_entry_scene_seeding_nail_intent,
+  creation_entry_scene_seeding_skin_chip,
+  creation_entry_scene_seeding_skin_intent,
+  creation_entry_suggestion_asset_source,
+  creation_entry_suggestion_common_source,
+  creation_entry_suggestion_local_intent,
+  creation_entry_suggestion_local_label,
+  creation_entry_suggestion_project_intent,
+  creation_entry_suggestion_project_label,
+  creation_entry_suggestion_repeat_intent,
+  creation_entry_suggestion_repeat_label,
+  creation_entry_suggestion_task_source,
+  creation_entry_task_intent,
+  example_store_browsing_no_allowance,
+} from '@/locale/paraglide/messages';
 import type { Locale } from '@/lib/locale';
 
 export type OpeningSuggestion = {
@@ -36,21 +68,21 @@ function commonSuggestions(): OpeningSuggestion[] {
   return [
     {
       id: 'common-local-discovery',
-      intent: m.creation_entry_suggestion_local_intent(),
-      label: m.creation_entry_suggestion_local_label(),
-      sourceLabel: m.creation_entry_suggestion_common_source(),
+      intent: creation_entry_suggestion_local_intent(),
+      label: creation_entry_suggestion_local_label(),
+      sourceLabel: creation_entry_suggestion_common_source(),
     },
     {
       id: 'common-project-seeding',
-      intent: m.creation_entry_suggestion_project_intent(),
-      label: m.creation_entry_suggestion_project_label(),
-      sourceLabel: m.creation_entry_suggestion_common_source(),
+      intent: creation_entry_suggestion_project_intent(),
+      label: creation_entry_suggestion_project_label(),
+      sourceLabel: creation_entry_suggestion_common_source(),
     },
     {
       id: 'common-repeat',
-      intent: m.creation_entry_suggestion_repeat_intent(),
-      label: m.creation_entry_suggestion_repeat_label(),
-      sourceLabel: m.creation_entry_suggestion_common_source(),
+      intent: creation_entry_suggestion_repeat_intent(),
+      label: creation_entry_suggestion_repeat_label(),
+      sourceLabel: creation_entry_suggestion_common_source(),
     },
   ];
 }
@@ -67,17 +99,17 @@ export function openingSuggestions(input: {
   const candidates: OpeningSuggestion[] = [
     ...input.tasks.map((task) => ({
       id: `task:${task.id}`,
-      intent: m.creation_entry_task_intent({ title: shortLabel(task.title) }),
+      intent: creation_entry_task_intent({ title: shortLabel(task.title) }),
       label: shortLabel(task.title),
-      sourceLabel: m.creation_entry_suggestion_task_source(),
+      sourceLabel: creation_entry_suggestion_task_source(),
     })),
     ...input.assets.map((asset) => ({
       id: `asset:${asset.id}`,
-      intent: m.creation_entry_asset_intent({
+      intent: creation_entry_asset_intent({
         label: shortLabel(asset.label),
       }),
       label: shortLabel(asset.label),
-      sourceLabel: m.creation_entry_suggestion_asset_source(),
+      sourceLabel: creation_entry_suggestion_asset_source(),
     })),
     ...commonSuggestions(),
   ];
@@ -114,46 +146,46 @@ export function sceneChipGroups(locale: Locale) {
       {
         id: 'lead-gen-hair',
         imageUrl: '/seed/scene/scene-lead-gen-hair.webp',
-        label: m.creation_entry_scene_lead_gen_hair_chip(undefined, { locale }),
+        label: creation_entry_scene_lead_gen_hair_chip(undefined, { locale }),
       },
       {
         id: 'seeding-hair',
         imageUrl: '/seed/scene/scene-seeding-hair.webp',
-        label: m.creation_entry_scene_seeding_hair_chip(undefined, { locale }),
+        label: creation_entry_scene_seeding_hair_chip(undefined, { locale }),
       },
       {
         id: 'lead-gen-skin',
         imageUrl: '/seed/scene/scene-lead-gen-skin.webp',
-        label: m.creation_entry_scene_lead_gen_skin_chip(undefined, { locale }),
+        label: creation_entry_scene_lead_gen_skin_chip(undefined, { locale }),
       },
       {
         id: 'seeding-skin',
         imageUrl: '/seed/scene/scene-seeding-skin.webp',
-        label: m.creation_entry_scene_seeding_skin_chip(undefined, { locale }),
+        label: creation_entry_scene_seeding_skin_chip(undefined, { locale }),
       },
     ] satisfies SceneChip[],
     primary: [
       {
         id: 'lead-gen-nail',
         imageUrl: '/seed/scene/scene-lead-gen-nail.webp',
-        label: m.creation_entry_scene_lead_gen_nail_chip(undefined, { locale }),
+        label: creation_entry_scene_lead_gen_nail_chip(undefined, { locale }),
       },
       {
         id: 'seeding-nail',
         imageUrl: '/seed/scene/scene-seeding-nail.webp',
-        label: m.creation_entry_scene_seeding_nail_chip(undefined, { locale }),
+        label: creation_entry_scene_seeding_nail_chip(undefined, { locale }),
       },
       {
         id: 'promotion-nail',
         imageUrl: '/seed/scene/scene-promo-nail.webp',
-        label: m.creation_entry_scene_promotion_nail_chip(undefined, {
+        label: creation_entry_scene_promotion_nail_chip(undefined, {
           locale,
         }),
       },
       {
         id: 'retention-nail',
         imageUrl: '/seed/scene/scene-retention-nail.webp',
-        label: m.creation_entry_scene_retention_nail_chip(undefined, {
+        label: creation_entry_scene_retention_nail_chip(undefined, {
           locale,
         }),
       },
@@ -162,14 +194,14 @@ export function sceneChipGroups(locale: Locale) {
 }
 
 const SCENE_INTENTS: Record<SceneId, () => string> = {
-  'lead-gen-hair': m.creation_entry_scene_lead_gen_hair_intent,
-  'lead-gen-nail': m.creation_entry_scene_lead_gen_nail_intent,
-  'lead-gen-skin': m.creation_entry_scene_lead_gen_skin_intent,
-  'promotion-nail': m.creation_entry_scene_promotion_nail_intent,
-  'retention-nail': m.creation_entry_scene_retention_nail_intent,
-  'seeding-hair': m.creation_entry_scene_seeding_hair_intent,
-  'seeding-nail': m.creation_entry_scene_seeding_nail_intent,
-  'seeding-skin': m.creation_entry_scene_seeding_skin_intent,
+  'lead-gen-hair': creation_entry_scene_lead_gen_hair_intent,
+  'lead-gen-nail': creation_entry_scene_lead_gen_nail_intent,
+  'lead-gen-skin': creation_entry_scene_lead_gen_skin_intent,
+  'promotion-nail': creation_entry_scene_promotion_nail_intent,
+  'retention-nail': creation_entry_scene_retention_nail_intent,
+  'seeding-hair': creation_entry_scene_seeding_hair_intent,
+  'seeding-nail': creation_entry_scene_seeding_nail_intent,
+  'seeding-skin': creation_entry_scene_seeding_skin_intent,
 };
 
 export function sceneIntent(scene: SceneId) {
@@ -177,7 +209,7 @@ export function sceneIntent(scene: SceneId) {
 }
 
 export function exampleStoreBrowsingMessage(locale: Locale) {
-  return m.example_store_browsing_no_allowance(undefined, { locale });
+  return example_store_browsing_no_allowance(undefined, { locale });
 }
 
 export function exampleStoreVisibility(input: {
@@ -207,9 +239,9 @@ export function exampleRemixIntent(example: {
 }) {
   const platform =
     example.platform === 'xiaohongshu'
-      ? m.creation_entry_platform_xiaohongshu()
-      : m.creation_entry_platform_douyin();
-  return m.creation_entry_example_remix_intent({
+      ? creation_entry_platform_xiaohongshu()
+      : creation_entry_platform_douyin();
+  return creation_entry_example_remix_intent({
     platform,
     title: shortLabel(example.title),
   });

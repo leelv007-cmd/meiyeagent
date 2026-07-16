@@ -1,52 +1,84 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_filter_content_abandoned,
+  p1_filter_content_candidate,
+  p1_filter_content_draft,
+  p1_filter_content_published,
+  p1_filter_platform_all,
+  p1_filter_platform_douyin,
+  p1_filter_platform_xiaohongshu,
+  p1_filter_related_all,
+  p1_filter_related_asset,
+  p1_filter_related_content,
+  p1_filter_related_integration,
+  p1_filter_related_publication,
+  p1_filter_related_review,
+  p1_filter_related_template,
+  p1_filter_related_work,
+  p1_filter_source_all,
+  p1_filter_status_all,
+  p1_filter_status_blocked,
+  p1_task_source_asset_gap,
+  p1_task_source_manual,
+  p1_task_source_publish_ready,
+  p1_task_source_stale_draft,
+  p1_task_source_weekly_batch,
+  p1_task_source_weekly_review,
+  p1_task_status_archived,
+  p1_task_status_done,
+  p1_task_status_in_progress,
+  p1_task_status_needs_asset,
+  p1_task_status_needs_review,
+  p1_task_status_ready,
+  p1_task_status_todo,
+} from '@/locale/paraglide/messages';
 
 import type { FilterOption, SearchScope } from './types';
 
 export const TASK_STATUS_FILTER_OPTIONS = [
-  { label: m.p1_filter_status_all(), value: 'all' },
-  { label: m.p1_task_status_todo(), value: 'todo' },
-  { label: m.p1_task_status_in_progress(), value: 'in_progress' },
-  { label: m.p1_task_status_needs_review(), value: 'needs_review' },
-  { label: m.p1_task_status_needs_asset(), value: 'needs_asset' },
-  { label: m.p1_filter_status_blocked(), value: 'blocked' },
-  { label: m.p1_task_status_ready(), value: 'ready' },
-  { label: m.p1_task_status_done(), value: 'done' },
-  { label: m.p1_task_status_archived(), value: 'archived' },
+  { label: p1_filter_status_all(), value: 'all' },
+  { label: p1_task_status_todo(), value: 'todo' },
+  { label: p1_task_status_in_progress(), value: 'in_progress' },
+  { label: p1_task_status_needs_review(), value: 'needs_review' },
+  { label: p1_task_status_needs_asset(), value: 'needs_asset' },
+  { label: p1_filter_status_blocked(), value: 'blocked' },
+  { label: p1_task_status_ready(), value: 'ready' },
+  { label: p1_task_status_done(), value: 'done' },
+  { label: p1_task_status_archived(), value: 'archived' },
 ] satisfies FilterOption[];
 
 export const TASK_SOURCE_FILTER_OPTIONS = [
-  { label: m.p1_filter_source_all(), value: 'all' },
-  { label: m.p1_task_source_weekly_batch(), value: 'weekly_batch' },
-  { label: m.p1_task_source_asset_gap(), value: 'asset_gap' },
-  { label: m.p1_task_source_stale_draft(), value: 'stale_draft' },
-  { label: m.p1_task_source_weekly_review(), value: 'weekly_review' },
-  { label: m.p1_task_source_publish_ready(), value: 'publish_ready' },
-  { label: m.p1_task_source_manual(), value: 'manual' },
+  { label: p1_filter_source_all(), value: 'all' },
+  { label: p1_task_source_weekly_batch(), value: 'weekly_batch' },
+  { label: p1_task_source_asset_gap(), value: 'asset_gap' },
+  { label: p1_task_source_stale_draft(), value: 'stale_draft' },
+  { label: p1_task_source_weekly_review(), value: 'weekly_review' },
+  { label: p1_task_source_publish_ready(), value: 'publish_ready' },
+  { label: p1_task_source_manual(), value: 'manual' },
 ] satisfies FilterOption[];
 
 export const TASK_RELATED_KIND_FILTER_OPTIONS = [
-  { label: m.p1_filter_related_all(), value: 'all' },
-  { label: m.p1_filter_related_asset(), value: 'asset' },
-  { label: m.p1_filter_related_content(), value: 'content' },
-  { label: m.p1_filter_related_integration(), value: 'integration' },
-  { label: m.p1_filter_related_publication(), value: 'publication' },
-  { label: m.p1_filter_related_review(), value: 'review' },
-  { label: m.p1_filter_related_template(), value: 'template' },
-  { label: m.p1_filter_related_work(), value: 'work' },
+  { label: p1_filter_related_all(), value: 'all' },
+  { label: p1_filter_related_asset(), value: 'asset' },
+  { label: p1_filter_related_content(), value: 'content' },
+  { label: p1_filter_related_integration(), value: 'integration' },
+  { label: p1_filter_related_publication(), value: 'publication' },
+  { label: p1_filter_related_review(), value: 'review' },
+  { label: p1_filter_related_template(), value: 'template' },
+  { label: p1_filter_related_work(), value: 'work' },
 ] satisfies FilterOption[];
 
 export const CONTENT_PLATFORM_FILTER_OPTIONS = [
-  { label: m.p1_filter_platform_all(), value: 'all' },
-  { label: m.p1_filter_platform_xiaohongshu(), value: 'xiaohongshu' },
-  { label: m.p1_filter_platform_douyin(), value: 'douyin' },
+  { label: p1_filter_platform_all(), value: 'all' },
+  { label: p1_filter_platform_xiaohongshu(), value: 'xiaohongshu' },
+  { label: p1_filter_platform_douyin(), value: 'douyin' },
 ] satisfies FilterOption[];
 
 export const CONTENT_STATUS_FILTER_OPTIONS = [
-  { label: m.p1_filter_status_all(), value: 'all' },
-  { label: m.p1_filter_content_candidate(), value: 'candidate' },
-  { label: m.p1_filter_content_draft(), value: 'draft' },
-  { label: m.p1_filter_content_abandoned(), value: 'abandoned' },
-  { label: m.p1_filter_content_published(), value: 'published' },
+  { label: p1_filter_status_all(), value: 'all' },
+  { label: p1_filter_content_candidate(), value: 'candidate' },
+  { label: p1_filter_content_draft(), value: 'draft' },
+  { label: p1_filter_content_abandoned(), value: 'abandoned' },
+  { label: p1_filter_content_published(), value: 'published' },
 ] satisfies FilterOption[];
 
 export function buildRetrievalQuery(input: {

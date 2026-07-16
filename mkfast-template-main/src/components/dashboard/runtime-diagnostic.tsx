@@ -1,7 +1,14 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ApiSuccess } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  runtime_diagnostic_check,
+  runtime_diagnostic_description,
+  runtime_diagnostic_failed,
+  runtime_diagnostic_healthy,
+  runtime_diagnostic_pending,
+  runtime_diagnostic_title,
+} from '@/locale/paraglide/messages';
 import { useState } from 'react';
 
 interface CoreHealth {
@@ -26,7 +33,7 @@ export function RuntimeDiagnostic() {
       setHealth(payload.data);
     } catch {
       setHealth(undefined);
-      setError(m.runtime_diagnostic_failed());
+      setError(runtime_diagnostic_failed());
     } finally {
       setPending(false);
     }
@@ -36,12 +43,12 @@ export function RuntimeDiagnostic() {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          {m.runtime_diagnostic_title()}
+          {runtime_diagnostic_title()}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          {m.runtime_diagnostic_description()}
+          {runtime_diagnostic_description()}
         </p>
         <Button
           type="button"
@@ -49,13 +56,11 @@ export function RuntimeDiagnostic() {
           onClick={checkHealth}
           disabled={pending}
         >
-          {pending
-            ? m.runtime_diagnostic_pending()
-            : m.runtime_diagnostic_check()}
+          {pending ? runtime_diagnostic_pending() : runtime_diagnostic_check()}
         </Button>
         {health && (
           <p className="text-sm text-emerald-700">
-            {m.runtime_diagnostic_healthy({ service: health.service })}
+            {runtime_diagnostic_healthy({ service: health.service })}
           </p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}

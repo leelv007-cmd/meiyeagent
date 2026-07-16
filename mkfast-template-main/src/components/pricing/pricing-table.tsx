@@ -1,4 +1,4 @@
-import { m } from '@/locale/paraglide/messages';
+import { pricing_monthly, pricing_yearly } from '@/locale/paraglide/messages';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { getPricePlans } from '@/lib/price-plan';
 import { cn } from '@/lib/utils';
@@ -69,7 +69,7 @@ export function PricingTable({
                 value="month"
                 className="rounded-md px-3 py-0 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
               >
-                {m.pricing_monthly()}
+                {pricing_monthly()}
               </ToggleGroupItem>
             )}
             {hasYearly && (
@@ -77,7 +77,7 @@ export function PricingTable({
                 value="year"
                 className="rounded-md px-3 py-0 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
               >
-                {m.pricing_yearly()}
+                {pricing_yearly()}
               </ToggleGroupItem>
             )}
           </ToggleGroup>

@@ -29,7 +29,43 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_activation_probe_action,
+  admin_activation_probe_cancel,
+  admin_activation_probe_configuration,
+  admin_activation_probe_configuration_missing,
+  admin_activation_probe_configuration_ready,
+  admin_activation_probe_confirm,
+  admin_activation_probe_confirm_description,
+  admin_activation_probe_confirm_title,
+  admin_activation_probe_cost_unavailable,
+  admin_activation_probe_created,
+  admin_activation_probe_deployment,
+  admin_activation_probe_description,
+  admin_activation_probe_empty,
+  admin_activation_probe_estimated_cost,
+  admin_activation_probe_evidence,
+  admin_activation_probe_evidence_live,
+  admin_activation_probe_evidence_stale,
+  admin_activation_probe_evidence_unverified,
+  admin_activation_probe_history,
+  admin_activation_probe_history_empty,
+  admin_activation_probe_latency,
+  admin_activation_probe_latest,
+  admin_activation_probe_never_run,
+  admin_activation_probe_observed_cost,
+  admin_activation_probe_onboarding_flow,
+  admin_activation_probe_outcome,
+  admin_activation_probe_refresh,
+  admin_activation_probe_run,
+  admin_activation_probe_run_action,
+  admin_activation_probe_running,
+  admin_activation_probe_status_failed,
+  admin_activation_probe_status_passed,
+  admin_activation_probe_title,
+  admin_activation_probe_toast_failed,
+  admin_activation_probe_toast_passed,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { commandP1, queryP1 } from './client';
 import { p1QueryKeys } from './query-keys';
@@ -78,14 +114,14 @@ function costLabel(
     | ActivationStatus['estimatedUnitPrice']
     | ActivationProbeRun['providerCost']
 ) {
-  if (!cost) return m.admin_activation_probe_cost_unavailable();
+  if (!cost) return admin_activation_probe_cost_unavailable();
   return `${cost.amount} ${cost.currency}${'unit' in cost ? `/${cost.unit}` : ''}`;
 }
 
 function outcomeLabel(outcome: ActivationProbeRun['outcome']) {
   return outcome === 'passed'
-    ? m.admin_activation_probe_status_passed()
-    : m.admin_activation_probe_status_failed();
+    ? admin_activation_probe_status_passed()
+    : admin_activation_probe_status_failed();
 }
 
 export function AdminActivationProbeControl() {
@@ -120,9 +156,9 @@ export function AdminActivationProbeControl() {
         queryKey: p1QueryKeys.module('model-supply'),
       });
       if (run.outcome === 'passed') {
-        toast.success(m.admin_activation_probe_toast_passed());
+        toast.success(admin_activation_probe_toast_passed());
       } else {
-        toast.error(m.admin_activation_probe_toast_failed());
+        toast.error(admin_activation_probe_toast_failed());
       }
     },
   });
@@ -142,9 +178,9 @@ export function AdminActivationProbeControl() {
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-4">
         <div>
-          <CardTitle>{m.admin_activation_probe_title()}</CardTitle>
+          <CardTitle>{admin_activation_probe_title()}</CardTitle>
           <CardDescription>
-            {m.admin_activation_probe_description()}
+            {admin_activation_probe_description()}
           </CardDescription>
         </div>
         <Button
@@ -154,28 +190,24 @@ export function AdminActivationProbeControl() {
           variant="outline"
         >
           <IconRefresh />
-          {m.admin_activation_probe_refresh()}
+          {admin_activation_probe_refresh()}
         </Button>
       </CardHeader>
       <CardContent className="space-y-6">
         <p className="text-sm text-muted-foreground">
-          {m.admin_activation_probe_onboarding_flow()}
+          {admin_activation_probe_onboarding_flow()}
         </p>
         <div className="overflow-x-auto rounded-lg border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{m.admin_activation_probe_deployment()}</TableHead>
-                <TableHead>
-                  {m.admin_activation_probe_configuration()}
-                </TableHead>
-                <TableHead>{m.admin_activation_probe_evidence()}</TableHead>
-                <TableHead>{m.admin_activation_probe_latest()}</TableHead>
-                <TableHead>
-                  {m.admin_activation_probe_estimated_cost()}
-                </TableHead>
+                <TableHead>{admin_activation_probe_deployment()}</TableHead>
+                <TableHead>{admin_activation_probe_configuration()}</TableHead>
+                <TableHead>{admin_activation_probe_evidence()}</TableHead>
+                <TableHead>{admin_activation_probe_latest()}</TableHead>
+                <TableHead>{admin_activation_probe_estimated_cost()}</TableHead>
                 <TableHead className="text-right">
-                  {m.admin_activation_probe_action()}
+                  {admin_activation_probe_action()}
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -195,8 +227,8 @@ export function AdminActivationProbeControl() {
                       }
                     >
                       {status.configurationRevision
-                        ? m.admin_activation_probe_configuration_ready()
-                        : m.admin_activation_probe_configuration_missing()}
+                        ? admin_activation_probe_configuration_ready()
+                        : admin_activation_probe_configuration_missing()}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -210,10 +242,10 @@ export function AdminActivationProbeControl() {
                       }
                     >
                       {status.stale
-                        ? m.admin_activation_probe_evidence_stale()
+                        ? admin_activation_probe_evidence_stale()
                         : status.evidence
-                          ? m.admin_activation_probe_evidence_live()
-                          : m.admin_activation_probe_evidence_unverified()}
+                          ? admin_activation_probe_evidence_live()
+                          : admin_activation_probe_evidence_unverified()}
                     </Badge>
                     {status.evidence ? (
                       <p className="mt-1 max-w-52 truncate font-mono text-xs text-muted-foreground">
@@ -238,7 +270,7 @@ export function AdminActivationProbeControl() {
                         </p>
                       </>
                     ) : (
-                      m.admin_activation_probe_never_run()
+                      admin_activation_probe_never_run()
                     )}
                   </TableCell>
                   <TableCell>{costLabel(status.estimatedUnitPrice)}</TableCell>
@@ -252,7 +284,7 @@ export function AdminActivationProbeControl() {
                       type="button"
                     >
                       <IconPlayerPlay />
-                      {m.admin_activation_probe_run_action()}
+                      {admin_activation_probe_run_action()}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -260,7 +292,7 @@ export function AdminActivationProbeControl() {
               {statuses.length === 0 ? (
                 <TableRow>
                   <TableCell className="text-center" colSpan={6}>
-                    {m.admin_activation_probe_empty()}
+                    {admin_activation_probe_empty()}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -269,19 +301,19 @@ export function AdminActivationProbeControl() {
         </div>
 
         <section className="space-y-3">
-          <h3 className="font-medium">{m.admin_activation_probe_history()}</h3>
+          <h3 className="font-medium">{admin_activation_probe_history()}</h3>
           <div className="overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{m.admin_activation_probe_run()}</TableHead>
-                  <TableHead>{m.admin_activation_probe_deployment()}</TableHead>
-                  <TableHead>{m.admin_activation_probe_outcome()}</TableHead>
+                  <TableHead>{admin_activation_probe_run()}</TableHead>
+                  <TableHead>{admin_activation_probe_deployment()}</TableHead>
+                  <TableHead>{admin_activation_probe_outcome()}</TableHead>
                   <TableHead>
-                    {m.admin_activation_probe_observed_cost()}
+                    {admin_activation_probe_observed_cost()}
                   </TableHead>
-                  <TableHead>{m.admin_activation_probe_latency()}</TableHead>
-                  <TableHead>{m.admin_activation_probe_created()}</TableHead>
+                  <TableHead>{admin_activation_probe_latency()}</TableHead>
+                  <TableHead>{admin_activation_probe_created()}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -308,7 +340,7 @@ export function AdminActivationProbeControl() {
                 {runs.length === 0 ? (
                   <TableRow>
                     <TableCell className="text-center" colSpan={6}>
-                      {m.admin_activation_probe_history_empty()}
+                      {admin_activation_probe_history_empty()}
                     </TableCell>
                   </TableRow>
                 ) : null}
@@ -325,10 +357,10 @@ export function AdminActivationProbeControl() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {m.admin_activation_probe_confirm_title()}
+              {admin_activation_probe_confirm_title()}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {m.admin_activation_probe_confirm_description({
+              {admin_activation_probe_confirm_description({
                 deployment: selected?.deploymentId ?? '—',
                 estimate: costLabel(selected?.estimatedUnitPrice),
               })}
@@ -336,15 +368,15 @@ export function AdminActivationProbeControl() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={runMutation.isPending}>
-              {m.admin_activation_probe_cancel()}
+              {admin_activation_probe_cancel()}
             </AlertDialogCancel>
             <AlertDialogAction
               disabled={runMutation.isPending}
               onClick={() => void confirmRun()}
             >
               {runMutation.isPending
-                ? m.admin_activation_probe_running()
-                : m.admin_activation_probe_confirm()}
+                ? admin_activation_probe_running()
+                : admin_activation_probe_confirm()}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

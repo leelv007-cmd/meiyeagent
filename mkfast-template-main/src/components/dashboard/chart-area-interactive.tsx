@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts';
-import { m } from '@/locale/paraglide/messages';
+import { common_select_value } from '@/locale/paraglide/messages';
 
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -195,7 +195,7 @@ export function ChartAreaInteractive() {
             <SelectTrigger
               className="flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden"
               size="sm"
-              aria-label={m.common_select_value()}
+              aria-label={common_select_value()}
             >
               <SelectValue placeholder="Last 3 months" />
             </SelectTrigger>

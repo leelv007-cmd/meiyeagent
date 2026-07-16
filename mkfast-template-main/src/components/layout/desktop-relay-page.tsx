@@ -4,7 +4,18 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import type { ShellMode } from '@/config/sidebar-config';
 import { getPathWithLocale } from '@/lib/urls';
-import { m } from '@/locale/paraglide/messages';
+import {
+  desktop_relay_admin_description,
+  desktop_relay_admin_title,
+  desktop_relay_copied,
+  desktop_relay_copy,
+  desktop_relay_return_mobile,
+  desktop_relay_safe_link_description,
+  desktop_relay_safe_link_title,
+  desktop_relay_settings_description,
+  desktop_relay_settings_title,
+  site_name,
+} from '@/locale/paraglide/messages';
 import { IconCheck, IconCopy, IconDeviceDesktop } from '@tabler/icons-react';
 import { useState } from 'react';
 
@@ -16,18 +27,18 @@ export function DesktopRelayPage({
   const [copied, setCopied] = useState(false);
   const title =
     mode === 'admin'
-      ? m.desktop_relay_admin_title()
-      : m.desktop_relay_settings_title();
+      ? desktop_relay_admin_title()
+      : desktop_relay_settings_title();
   const description =
     mode === 'admin'
-      ? m.desktop_relay_admin_description()
-      : m.desktop_relay_settings_description();
+      ? desktop_relay_admin_description()
+      : desktop_relay_settings_description();
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-lg flex-col justify-center gap-5 p-5">
       <div className="flex items-center gap-2">
         <Logo className="size-6" />
-        <span className="font-semibold">{m.site_name()}</span>
+        <span className="font-semibold">{site_name()}</span>
       </div>
       <Card>
         <CardHeader>
@@ -39,9 +50,9 @@ export function DesktopRelayPage({
             {description}
           </p>
           <Alert>
-            <AlertTitle>{m.desktop_relay_safe_link_title()}</AlertTitle>
+            <AlertTitle>{desktop_relay_safe_link_title()}</AlertTitle>
             <AlertDescription>
-              {m.desktop_relay_safe_link_description()}
+              {desktop_relay_safe_link_description()}
             </AlertDescription>
           </Alert>
           <div className="grid gap-2">
@@ -53,7 +64,7 @@ export function DesktopRelayPage({
               }}
             >
               {copied ? <IconCheck /> : <IconCopy />}
-              {copied ? m.desktop_relay_copied() : m.desktop_relay_copy()}
+              {copied ? desktop_relay_copied() : desktop_relay_copy()}
             </Button>
             <a
               className={buttonVariants({
@@ -62,7 +73,7 @@ export function DesktopRelayPage({
               })}
               href={getPathWithLocale('/dashboard')}
             >
-              {m.desktop_relay_return_mobile()}
+              {desktop_relay_return_mobile()}
             </a>
           </div>
         </CardContent>

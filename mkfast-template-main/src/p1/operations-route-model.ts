@@ -1,4 +1,19 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_week_candidate_rationale,
+  p1_week_fact_asset_gaps,
+  p1_week_fact_confirmed,
+  p1_week_fact_drafted,
+  p1_week_fact_evidence_asset_gaps,
+  p1_week_fact_evidence_confirmed,
+  p1_week_fact_evidence_drafted,
+  p1_week_fact_evidence_human_leads,
+  p1_week_fact_evidence_planned,
+  p1_week_fact_evidence_published,
+  p1_week_fact_human_leads,
+  p1_week_fact_planned,
+  p1_week_fact_published,
+  p1_week_fact_unknown,
+} from '@/locale/paraglide/messages';
 
 import type { RawTask } from './operations-view-model';
 import type {
@@ -90,20 +105,12 @@ export function weeklyReviewView(review: RawWeeklyReview | null): {
   const definitions: Array<
     [keyof RawWeeklyReview['metrics'], () => string, () => string]
   > = [
-    ['planned', m.p1_week_fact_planned, m.p1_week_fact_evidence_planned],
-    ['drafted', m.p1_week_fact_drafted, m.p1_week_fact_evidence_drafted],
-    ['confirmed', m.p1_week_fact_confirmed, m.p1_week_fact_evidence_confirmed],
-    ['published', m.p1_week_fact_published, m.p1_week_fact_evidence_published],
-    [
-      'assetGaps',
-      m.p1_week_fact_asset_gaps,
-      m.p1_week_fact_evidence_asset_gaps,
-    ],
-    [
-      'humanLeads',
-      m.p1_week_fact_human_leads,
-      m.p1_week_fact_evidence_human_leads,
-    ],
+    ['planned', p1_week_fact_planned, p1_week_fact_evidence_planned],
+    ['drafted', p1_week_fact_drafted, p1_week_fact_evidence_drafted],
+    ['confirmed', p1_week_fact_confirmed, p1_week_fact_evidence_confirmed],
+    ['published', p1_week_fact_published, p1_week_fact_evidence_published],
+    ['assetGaps', p1_week_fact_asset_gaps, p1_week_fact_evidence_asset_gaps],
+    ['humanLeads', p1_week_fact_human_leads, p1_week_fact_evidence_human_leads],
   ];
   return {
     facts: definitions.map(([id, label, evidenceLabel]) => {
@@ -112,13 +119,13 @@ export function weeklyReviewView(review: RawWeeklyReview | null): {
         evidenceLabel: evidenceLabel(),
         id,
         label: label(),
-        unknownReason: m.p1_week_fact_unknown(),
+        unknownReason: p1_week_fact_unknown(),
         value: metric.status === 'known' ? (metric.value ?? 0) : null,
       };
     }),
     candidates: review.nextWeekCandidates.map((candidate) => ({
       id: candidate.id,
-      rationale: m.p1_week_candidate_rationale(),
+      rationale: p1_week_candidate_rationale(),
       status:
         candidate.status === 'pending_confirmation'
           ? 'pending'

@@ -1,4 +1,15 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  async_task_elapsed_running_hours,
+  async_task_elapsed_running_hours_minutes,
+  async_task_elapsed_running_less_than_minute,
+  async_task_elapsed_running_minutes,
+  async_task_elapsed_total_hours,
+  async_task_elapsed_total_hours_minutes,
+  async_task_elapsed_total_less_than_minute,
+  async_task_elapsed_total_minutes,
+  async_task_kind_video,
+  canonical_canvas_image_generation,
+} from '@/locale/paraglide/messages';
 import { creativeOutputLabel } from './creative-quote';
 
 import type { RawCanonicalHistory } from './canonical-history-model';
@@ -94,30 +105,30 @@ export function asyncTaskElapsedLabel(
   const terminal = TERMINAL_STATUSES.has(task.status);
   if (minutes < 1) {
     return terminal
-      ? m.async_task_elapsed_total_less_than_minute()
-      : m.async_task_elapsed_running_less_than_minute();
+      ? async_task_elapsed_total_less_than_minute()
+      : async_task_elapsed_running_less_than_minute();
   }
   if (minutes < 60) {
     return terminal
-      ? m.async_task_elapsed_total_minutes({ minutes })
-      : m.async_task_elapsed_running_minutes({ minutes });
+      ? async_task_elapsed_total_minutes({ minutes })
+      : async_task_elapsed_running_minutes({ minutes });
   }
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   if (remainingMinutes > 0) {
     return terminal
-      ? m.async_task_elapsed_total_hours_minutes({
+      ? async_task_elapsed_total_hours_minutes({
           hours,
           minutes: remainingMinutes,
         })
-      : m.async_task_elapsed_running_hours_minutes({
+      : async_task_elapsed_running_hours_minutes({
           hours,
           minutes: remainingMinutes,
         });
   }
   return terminal
-    ? m.async_task_elapsed_total_hours({ hours })
-    : m.async_task_elapsed_running_hours({ hours });
+    ? async_task_elapsed_total_hours({ hours })
+    : async_task_elapsed_running_hours({ hours });
 }
 
 export function canonicalAsyncTaskSummaries(
@@ -158,7 +169,7 @@ export function canonicalAsyncTaskSummaries(
         href: `/dashboard/jobs/${job.id}`,
         id: job.id,
         kind: 'image',
-        label: m.canonical_canvas_image_generation(),
+        label: canonical_canvas_image_generation(),
         operation: 'image.generate',
         providerJobId: job.id,
         source: 'canvas',
@@ -183,7 +194,7 @@ export function composedVideoAsyncTaskSummaries(
           href: `/dashboard/works/${encodeURIComponent(workflow.workId)}`,
           id: `video-workflow:${workflow.id}`,
           kind: 'video',
-          label: m.async_task_kind_video(),
+          label: async_task_kind_video(),
           operation: 'video.generate',
           providerJobId: job.jobId,
           source: 'video_workflow',

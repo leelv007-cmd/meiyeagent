@@ -8,7 +8,42 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_assistant_accept,
+  creation_assistant_aria,
+  creation_assistant_context_aria,
+  creation_assistant_context_loading,
+  creation_assistant_context_ready,
+  creation_assistant_context_unavailable,
+  creation_assistant_conversation_aria,
+  creation_assistant_decision_accepted,
+  creation_assistant_decision_editing,
+  creation_assistant_decision_ignored,
+  creation_assistant_decision_pending,
+  creation_assistant_edit,
+  creation_assistant_empty,
+  creation_assistant_field_audience,
+  creation_assistant_field_intent,
+  creation_assistant_field_scene,
+  creation_assistant_field_tone,
+  creation_assistant_ignore,
+  creation_assistant_input_aria,
+  creation_assistant_input_placeholder,
+  creation_assistant_interrupted,
+  creation_assistant_local_only,
+  creation_assistant_patch_aria,
+  creation_assistant_patch_edit_aria,
+  creation_assistant_patch_loading,
+  creation_assistant_patch_title,
+  creation_assistant_patch_unavailable,
+  creation_assistant_save_edit,
+  creation_assistant_send,
+  creation_assistant_source_count,
+  creation_assistant_speaker_assistant,
+  creation_assistant_speaker_user,
+  creation_assistant_stop,
+  creation_assistant_title,
+} from '@/locale/paraglide/messages';
 
 import {
   initialAssistantPatchDecision,
@@ -33,10 +68,10 @@ function messageText(message: UIMessage) {
 }
 
 const FIELD_LABELS = {
-  audience: m.creation_assistant_field_audience,
-  intent: m.creation_assistant_field_intent,
-  scene: m.creation_assistant_field_scene,
-  tone: m.creation_assistant_field_tone,
+  audience: creation_assistant_field_audience,
+  intent: creation_assistant_field_intent,
+  scene: creation_assistant_field_scene,
+  tone: creation_assistant_field_tone,
 } as const;
 
 export function AssistantMessageParts({
@@ -77,35 +112,35 @@ function AssistantContextPart({
   if (part.state === 'loading') {
     return (
       <p className="rounded-md border bg-background/70 p-3 text-sm text-muted-foreground">
-        {m.creation_assistant_context_loading()}
+        {creation_assistant_context_loading()}
       </p>
     );
   }
   if (part.state === 'unavailable' || !part.summary) {
     return (
       <p className="rounded-md border bg-background/70 p-3 text-sm text-muted-foreground">
-        {m.creation_assistant_context_unavailable()}
+        {creation_assistant_context_unavailable()}
       </p>
     );
   }
   return (
     <section
-      aria-label={m.creation_assistant_context_aria()}
+      aria-label={creation_assistant_context_aria()}
       className="space-y-2 rounded-md border bg-background/70 p-3 text-sm"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <p className="font-medium">{m.creation_assistant_context_ready()}</p>
+        <p className="font-medium">{creation_assistant_context_ready()}</p>
         <Badge variant="outline">
-          {m.creation_assistant_source_count({
+          {creation_assistant_source_count({
             count: part.summary.sourceCount,
           })}
         </Badge>
       </div>
       <p>{part.summary.intent}</p>
       {[
-        [m.creation_assistant_field_scene(), part.summary.scene],
-        [m.creation_assistant_field_tone(), part.summary.tone],
-        [m.creation_assistant_field_audience(), part.summary.audience],
+        [creation_assistant_field_scene(), part.summary.scene],
+        [creation_assistant_field_tone(), part.summary.tone],
+        [creation_assistant_field_audience(), part.summary.audience],
       ].map(([label, value]) =>
         value ? (
           <p className="text-xs text-muted-foreground" key={label}>
@@ -125,14 +160,14 @@ function AssistantFieldPatchPart({
   if (part.state === 'loading') {
     return (
       <p className="rounded-md border bg-background/70 p-3 text-sm text-muted-foreground">
-        {m.creation_assistant_patch_loading()}
+        {creation_assistant_patch_loading()}
       </p>
     );
   }
   if (part.state === 'unavailable' || !part.patch) {
     return (
       <p className="rounded-md border bg-background/70 p-3 text-sm text-muted-foreground">
-        {m.creation_assistant_patch_unavailable()}
+        {creation_assistant_patch_unavailable()}
       </p>
     );
   }
@@ -159,19 +194,19 @@ function EditableAssistantFieldPatch({
 
   return (
     <section
-      aria-label={m.creation_assistant_patch_aria({ field: fieldLabel })}
+      aria-label={creation_assistant_patch_aria({ field: fieldLabel })}
       className="space-y-3 rounded-md border border-primary/20 bg-primary/5 p-3"
     >
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium">
-          {m.creation_assistant_patch_title({ field: fieldLabel })}
+          {creation_assistant_patch_title({ field: fieldLabel })}
         </p>
-        <Badge variant="outline">{m.creation_assistant_local_only()}</Badge>
+        <Badge variant="outline">{creation_assistant_local_only()}</Badge>
       </div>
       <p className="text-sm text-muted-foreground">{patch.reason}</p>
       {decision.state === 'editing' ? (
         <Textarea
-          aria-label={m.creation_assistant_patch_edit_aria({
+          aria-label={creation_assistant_patch_edit_aria({
             field: fieldLabel,
           })}
           onChange={(event) =>
@@ -186,12 +221,12 @@ function EditableAssistantFieldPatch({
       )}
       <p aria-live="polite" className="text-xs text-muted-foreground">
         {decision.state === 'accepted'
-          ? m.creation_assistant_decision_accepted()
+          ? creation_assistant_decision_accepted()
           : decision.state === 'editing'
-            ? m.creation_assistant_decision_editing()
+            ? creation_assistant_decision_editing()
             : decision.state === 'ignored'
-              ? m.creation_assistant_decision_ignored()
-              : m.creation_assistant_decision_pending()}
+              ? creation_assistant_decision_ignored()
+              : creation_assistant_decision_pending()}
       </p>
       {decision.state === 'pending' ? (
         <div className="flex flex-wrap gap-2">
@@ -200,7 +235,7 @@ function EditableAssistantFieldPatch({
             size="sm"
             type="button"
           >
-            {m.creation_assistant_accept()}
+            {creation_assistant_accept()}
           </Button>
           <Button
             onClick={() => dispatch({ type: 'edit' })}
@@ -208,7 +243,7 @@ function EditableAssistantFieldPatch({
             type="button"
             variant="outline"
           >
-            {m.creation_assistant_edit()}
+            {creation_assistant_edit()}
           </Button>
           <Button
             onClick={() => dispatch({ type: 'ignore' })}
@@ -216,7 +251,7 @@ function EditableAssistantFieldPatch({
             type="button"
             variant="ghost"
           >
-            {m.creation_assistant_ignore()}
+            {creation_assistant_ignore()}
           </Button>
         </div>
       ) : decision.state === 'editing' ? (
@@ -227,7 +262,7 @@ function EditableAssistantFieldPatch({
             size="sm"
             type="button"
           >
-            {m.creation_assistant_save_edit()}
+            {creation_assistant_save_edit()}
           </Button>
           <Button
             onClick={() => dispatch({ type: 'ignore' })}
@@ -235,7 +270,7 @@ function EditableAssistantFieldPatch({
             type="button"
             variant="ghost"
           >
-            {m.creation_assistant_ignore()}
+            {creation_assistant_ignore()}
           </Button>
         </div>
       ) : null}
@@ -265,8 +300,8 @@ export function AssistantConversationEntry({
     >
       <span className="sr-only">
         {isUser
-          ? m.creation_assistant_speaker_user()
-          : m.creation_assistant_speaker_assistant()}
+          ? creation_assistant_speaker_user()
+          : creation_assistant_speaker_assistant()}
       </span>
       {message.role === 'assistant' ? (
         <AssistantMessageParts parts={message.parts} streaming={streaming} />
@@ -329,19 +364,16 @@ export function CreationAssistant({
   };
 
   return (
-    <Card
-      aria-label={m.creation_assistant_aria()}
-      className="border-primary/20"
-    >
+    <Card aria-label={creation_assistant_aria()} className="border-primary/20">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">
-          {m.creation_assistant_title()}
+          {creation_assistant_title()}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {messages.length > 0 ? (
           <div
-            aria-label={m.creation_assistant_conversation_aria()}
+            aria-label={creation_assistant_conversation_aria()}
             aria-live="polite"
             aria-relevant="additions text"
             className="max-h-96 space-y-3 overflow-y-auto pr-1"
@@ -367,17 +399,17 @@ export function CreationAssistant({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {m.creation_assistant_empty()}
+            {creation_assistant_empty()}
           </p>
         )}
         {error ? (
           <p className="text-sm text-destructive" role="alert">
-            {m.creation_assistant_interrupted()}
+            {creation_assistant_interrupted()}
           </p>
         ) : null}
         <div className="flex flex-col gap-2 sm:flex-row">
           <Textarea
-            aria-label={m.creation_assistant_input_aria()}
+            aria-label={creation_assistant_input_aria()}
             className="min-h-24 flex-1"
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
@@ -386,12 +418,12 @@ export function CreationAssistant({
                 void submit();
               }
             }}
-            placeholder={m.creation_assistant_input_placeholder()}
+            placeholder={creation_assistant_input_placeholder()}
             value={input}
           />
           {streaming ? (
             <Button onClick={() => void stop()} type="button" variant="outline">
-              {m.creation_assistant_stop()}
+              {creation_assistant_stop()}
             </Button>
           ) : (
             <Button
@@ -399,7 +431,7 @@ export function CreationAssistant({
               onClick={() => void submit()}
               type="button"
             >
-              {m.creation_assistant_send()}
+              {creation_assistant_send()}
             </Button>
           )}
         </div>

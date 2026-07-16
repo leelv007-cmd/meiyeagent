@@ -6,7 +6,10 @@ import {
   localizeHref,
   type Locale,
 } from '@/locale/paraglide/runtime';
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_error_codes,
+  auth_error_try_again,
+} from '@/locale/paraglide/messages';
 
 export {
   baseLocale,
@@ -57,7 +60,7 @@ export function getMessageList(value: string) {
 
 export function getAuthErrorMessages() {
   return Object.fromEntries(
-    parseMessageJson<Array<[string, string]>>(m.auth_error_codes(), [])
+    parseMessageJson<Array<[string, string]>>(auth_error_codes(), [])
   );
 }
 
@@ -82,7 +85,7 @@ export function getAuthErrorMessage(error: AuthErrorInput) {
     (code ? messages[code] : undefined) ??
     (normalizedCode ? messages[normalizedCode] : undefined) ??
     (aliasedCode ? messages[aliasedCode] : undefined) ??
-    m.auth_error_try_again()
+    auth_error_try_again()
   );
 }
 

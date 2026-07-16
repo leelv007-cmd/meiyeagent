@@ -68,7 +68,7 @@ export function resumeMobileUploadSession(
   file: FileIdentity
 ): MobileUploadSession {
   if (session.fingerprint !== fingerprint(file)) {
-    throw new Error(m.mobile_upload_same_file_required());
+    throw new Error(mobile_upload_same_file_required());
   }
   return { ...session, file: { ...file }, phase: 'uploading' };
 }
@@ -118,4 +118,4 @@ export function writeMobileUploadSession(
   }
   storage.setItem(STORAGE_KEY, JSON.stringify(session));
 }
-import { m } from '@/locale/paraglide/messages';
+import { mobile_upload_same_file_required } from '@/locale/paraglide/messages';

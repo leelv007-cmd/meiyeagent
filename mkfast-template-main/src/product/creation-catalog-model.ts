@@ -1,5 +1,25 @@
 import type { CreativeSourceReference } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_media_kind_image,
+  canonical_media_kind_video,
+  creation_catalog_asset_reference,
+  creation_catalog_copy_detail,
+  creation_catalog_copy_label,
+  creation_catalog_current_work_unavailable,
+  creation_catalog_historical_work,
+  creation_catalog_image_detail,
+  creation_catalog_image_label,
+  creation_catalog_mode_agent,
+  creation_catalog_mode_direct,
+  creation_catalog_tag_content,
+  creation_catalog_tag_copy,
+  creation_catalog_tag_visual,
+  creation_catalog_template_retired,
+  creation_catalog_template_unpublished,
+  creation_catalog_video_detail,
+  creation_catalog_video_label,
+  workbench_source_already_present,
+} from '@/locale/paraglide/messages';
 import { productStatusView } from '@/lib/uiux/status';
 import {
   templateViews,
@@ -45,43 +65,43 @@ function toolEntries(): CreationCatalogEntry[] {
   return [
     {
       available: true,
-      detail: m.creation_catalog_copy_detail(),
+      detail: creation_catalog_copy_detail(),
       id: 'copy.generate',
       key: 'tool:copy.generate',
       kind: 'tool',
-      label: m.creation_catalog_copy_label(),
+      label: creation_catalog_copy_label(),
       operation: 'copy.generate',
       owner: 'official',
-      tags: [m.creation_catalog_tag_copy(), m.creation_catalog_tag_content()],
+      tags: [creation_catalog_tag_copy(), creation_catalog_tag_content()],
     },
     {
       available: true,
-      detail: m.creation_catalog_image_detail(),
+      detail: creation_catalog_image_detail(),
       id: 'image.generate',
       key: 'tool:image.generate',
       kind: 'tool',
-      label: m.creation_catalog_image_label(),
+      label: creation_catalog_image_label(),
       operation: 'image.generate',
       owner: 'official',
-      tags: [m.canonical_media_kind_image(), m.creation_catalog_tag_visual()],
+      tags: [canonical_media_kind_image(), creation_catalog_tag_visual()],
     },
     {
       available: true,
-      detail: m.creation_catalog_video_detail(),
+      detail: creation_catalog_video_detail(),
       id: 'video.generate',
       key: 'tool:video.generate',
       kind: 'tool',
-      label: m.creation_catalog_video_label(),
+      label: creation_catalog_video_label(),
       operation: 'video.generate',
       owner: 'official',
-      tags: [m.canonical_media_kind_video()],
+      tags: [canonical_media_kind_video()],
     },
   ];
 }
 
 function unavailableReason(template: TemplateCatalogItemView) {
-  if (template.retired) return m.creation_catalog_template_retired();
-  if (!template.canCreate) return m.creation_catalog_template_unpublished();
+  if (template.retired) return creation_catalog_template_retired();
+  if (!template.canCreate) return creation_catalog_template_unpublished();
   return undefined;
 }
 
@@ -98,10 +118,10 @@ export function projectCreationCatalog(
   );
   const referenceReason = (reference: CreativeSourceReference) => {
     if (reference.kind === 'work' && reference.id === context.currentWorkId) {
-      return m.creation_catalog_current_work_unavailable();
+      return creation_catalog_current_work_unavailable();
     }
     if (sourceKeys.has(`${reference.kind}:${reference.id}`)) {
-      return m.workbench_source_already_present();
+      return workbench_source_already_present();
     }
     return undefined;
   };
@@ -138,7 +158,7 @@ export function projectCreationCatalog(
     const reason = referenceReason(reference);
     return {
       available: !reason,
-      detail: m.creation_catalog_asset_reference(),
+      detail: creation_catalog_asset_reference(),
       id: asset.id,
       key: `asset:${asset.id}`,
       kind: 'reference',
@@ -147,8 +167,8 @@ export function projectCreationCatalog(
       reference,
       tags: [
         asset.kind === 'video'
-          ? m.canonical_media_kind_video()
-          : m.canonical_media_kind_image(),
+          ? canonical_media_kind_video()
+          : canonical_media_kind_image(),
       ],
       ...(reason ? { unavailableReason: reason } : {}),
     };
@@ -164,7 +184,7 @@ export function projectCreationCatalog(
       const reason = referenceReason(reference);
       return {
         available: !reason,
-        detail: m.creation_catalog_historical_work(),
+        detail: creation_catalog_historical_work(),
         id: work.id,
         key: `work:${work.id}`,
         kind: 'reference',
@@ -173,8 +193,8 @@ export function projectCreationCatalog(
         reference,
         tags: [
           work.mode === 'agent'
-            ? m.creation_catalog_mode_agent()
-            : m.creation_catalog_mode_direct(),
+            ? creation_catalog_mode_agent()
+            : creation_catalog_mode_direct(),
           productStatusView(work.status).label,
         ],
         ...(reason ? { unavailableReason: reason } : {}),

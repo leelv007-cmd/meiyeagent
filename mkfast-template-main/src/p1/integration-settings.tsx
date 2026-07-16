@@ -46,7 +46,223 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  integration_anchor_authorized_id,
+  integration_anchor_id_placeholder,
+  integration_anchor_kind_mini_program,
+  integration_anchor_none,
+  integration_anchor_optional,
+  integration_audit_action_connection_created,
+  integration_audit_action_connection_disconnected,
+  integration_audit_action_credential_rotated,
+  integration_audit_action_unknown,
+  integration_audit_connection_name,
+  integration_audit_description,
+  integration_audit_empty,
+  integration_audit_title,
+  integration_available,
+  integration_capabilities,
+  integration_capability_active,
+  integration_capability_aria,
+  integration_capability_degraded,
+  integration_capability_disabled_success,
+  integration_capability_enabled_success,
+  integration_capability_granted,
+  integration_capability_not_granted,
+  integration_capability_not_granted_description,
+  integration_capability_pending_owner,
+  integration_configured_connections,
+  integration_configured_description,
+  integration_connection_count,
+  integration_connection_created,
+  integration_connection_description,
+  integration_connection_disconnected,
+  integration_connection_empty,
+  integration_connection_last_used,
+  integration_connection_status,
+  integration_connection_type_aria,
+  integration_create_connection,
+  integration_create_description,
+  integration_disconnect_aria,
+  integration_douyin_account_missing,
+  integration_douyin_anchor_stale,
+  integration_douyin_confirm_failed,
+  integration_douyin_confirm_success,
+  integration_douyin_confirmation,
+  integration_douyin_description,
+  integration_douyin_job_empty,
+  integration_douyin_job_item_missing,
+  integration_douyin_job_polling,
+  integration_douyin_job_polling_next,
+  integration_douyin_job_query,
+  integration_douyin_job_summary,
+  integration_douyin_jobs,
+  integration_douyin_not_integrated_badge,
+  integration_douyin_not_integrated_description,
+  integration_douyin_not_integrated_title,
+  integration_douyin_observe_empty,
+  integration_douyin_observe_last_attempt,
+  integration_douyin_observe_next_sync,
+  integration_douyin_observe_record,
+  integration_douyin_observe_snapshots,
+  integration_douyin_publish_description,
+  integration_douyin_publish_job_submitted,
+  integration_douyin_publish_snapshot_confirm,
+  integration_douyin_publish_snapshot_submit,
+  integration_douyin_publish_title,
+  integration_douyin_publishable_empty,
+  integration_douyin_publishable_label,
+  integration_douyin_publishable_placeholder,
+  integration_douyin_scheduled_at,
+  integration_douyin_snapshot_stale,
+  integration_douyin_sync,
+  integration_douyin_sync_success,
+  integration_douyin_sync_updated,
+  integration_douyin_title,
+  integration_error_action_failed,
+  integration_feishu_activity_empty,
+  integration_feishu_activity_open,
+  integration_feishu_activity_summary,
+  integration_feishu_catalog_empty,
+  integration_feishu_catalog_title,
+  integration_feishu_confirm_error,
+  integration_feishu_confirm_failed,
+  integration_feishu_confirm_pending,
+  integration_feishu_confirm_reconciliation,
+  integration_feishu_confirm_success,
+  integration_feishu_example_query,
+  integration_feishu_execute,
+  integration_feishu_execute_failed,
+  integration_feishu_execute_reconciliation,
+  integration_feishu_execute_retry,
+  integration_feishu_execute_success,
+  integration_feishu_intent_aria,
+  integration_feishu_intent_description,
+  integration_feishu_intent_placeholder,
+  integration_feishu_intent_submit,
+  integration_feishu_intent_summary,
+  integration_feishu_json_invalid,
+  integration_feishu_panel_description,
+  integration_feishu_panel_title,
+  integration_feishu_pending_title,
+  integration_feishu_recent_activity,
+  integration_feishu_reconcile,
+  integration_feishu_reconcile_attempts,
+  integration_feishu_reconcile_error,
+  integration_feishu_reconcile_failed,
+  integration_feishu_reconcile_last_error,
+  integration_feishu_reconcile_next,
+  integration_feishu_reconcile_success,
+  integration_feishu_reconcile_unknown,
+  integration_feishu_recovery_status,
+  integration_feishu_recovery_summary,
+  integration_feishu_shortcut_add,
+  integration_feishu_shortcut_added,
+  integration_feishu_shortcut_remove,
+  integration_feishu_shortcut_removed,
+  integration_feishu_tool_arguments,
+  integration_feishu_tool_arguments_placeholder,
+  integration_feishu_tool_aria,
+  integration_feishu_tool_meta,
+  integration_feishu_tool_result,
+  integration_feishu_verify,
+  integration_feishu_verify_success,
+  integration_load_error_title,
+  integration_new_connection,
+  integration_not_connected,
+  integration_not_marked,
+  integration_not_yet_created,
+  integration_observe_status_available,
+  integration_observe_status_empty,
+  integration_observe_status_unavailable,
+  integration_observe_status_unknown,
+  integration_pending_configuration,
+  integration_provider_douyin_capability_mini_program,
+  integration_provider_douyin_capability_observe,
+  integration_provider_douyin_capability_poi,
+  integration_provider_douyin_capability_publish,
+  integration_provider_douyin_oauth_credential,
+  integration_provider_douyin_oauth_placeholder,
+  integration_provider_douyin_subject,
+  integration_provider_feishu_capability_tools,
+  integration_provider_feishu_description,
+  integration_provider_feishu_secret,
+  integration_provider_feishu_secret_placeholder,
+  integration_provider_feishu_subject,
+  integration_provider_feishu_title,
+  integration_provider_model_capability_invoke,
+  integration_provider_model_description,
+  integration_provider_model_secret,
+  integration_provider_model_secret_placeholder,
+  integration_provider_model_subject,
+  integration_provider_model_title,
+  integration_read_only_description_external,
+  integration_read_only_description_model,
+  integration_read_only_title,
+  integration_reauthorize_description,
+  integration_reauthorize_title,
+  integration_refresh,
+  integration_request_capabilities,
+  integration_request_capability_aria,
+  integration_rotate_cancel,
+  integration_rotate_confirm,
+  integration_rotate_credential,
+  integration_rotate_new_credential,
+  integration_rotate_placeholder,
+  integration_rotate_success,
+  integration_scopes,
+  integration_scopes_placeholder,
+  integration_secret_write_only,
+  integration_source_external,
+  integration_source_product,
+  integration_status_active,
+  integration_status_authorized,
+  integration_status_available,
+  integration_status_claimed,
+  integration_status_completed,
+  integration_status_confirmation_pending,
+  integration_status_degraded,
+  integration_status_disabled,
+  integration_status_draft,
+  integration_status_empty,
+  integration_status_executed,
+  integration_status_exhausted,
+  integration_status_expired,
+  integration_status_failed,
+  integration_status_manual_required,
+  integration_status_pending_review,
+  integration_status_permission_missing,
+  integration_status_published,
+  integration_status_rate_limited,
+  integration_status_reauthorize_required,
+  integration_status_reconciliation_required,
+  integration_status_retired,
+  integration_status_reviewing,
+  integration_status_revoked,
+  integration_status_scheduled,
+  integration_status_settled,
+  integration_status_submitted,
+  integration_status_submitting,
+  integration_status_unavailable,
+  integration_status_unknown,
+  integration_status_unverified,
+  integration_subject_placeholder,
+  integration_tool_risk_destructive,
+  integration_tool_risk_open_world,
+  integration_tool_risk_read,
+  integration_tool_risk_write,
+  integration_tool_side_effect_create,
+  integration_tool_side_effect_delete,
+  integration_tool_side_effect_edit,
+  integration_tool_side_effect_overwrite,
+  integration_tool_side_effect_read,
+  integration_tool_side_effect_send,
+  integration_unknown,
+  integration_write_only_notice_description,
+  p1_admin_audit_byok_action_completed,
+  p1_admin_audit_byok_action_failed,
+  p1_admin_audit_byok_action_unknown,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { StrictByokExecutionPanel } from '@/p1/entitlement-byok-panels';
 import {
@@ -98,60 +314,60 @@ interface ProviderDefinition {
 const PROVIDERS: ProviderDefinition[] = [
   {
     provider: 'model',
-    title: m.integration_provider_model_title,
-    description: m.integration_provider_model_description,
+    title: integration_provider_model_title,
+    description: integration_provider_model_description,
     identityMode: 'byok',
-    subjectLabel: m.integration_provider_model_subject,
-    secretLabel: m.integration_provider_model_secret,
-    secretPlaceholder: m.integration_provider_model_secret_placeholder,
+    subjectLabel: integration_provider_model_subject,
+    secretLabel: integration_provider_model_secret,
+    secretPlaceholder: integration_provider_model_secret_placeholder,
     capabilities: [
       {
         id: 'model.invoke',
-        label: m.integration_provider_model_capability_invoke,
+        label: integration_provider_model_capability_invoke,
       },
     ],
     icon: IconCloudLock,
   },
   {
     provider: 'douyin',
-    title: m.integration_douyin_title,
-    description: m.integration_douyin_description,
+    title: integration_douyin_title,
+    description: integration_douyin_description,
     identityMode: 'oauth_user',
-    subjectLabel: m.integration_provider_douyin_subject,
-    secretLabel: m.integration_provider_douyin_oauth_credential,
-    secretPlaceholder: m.integration_provider_douyin_oauth_placeholder,
+    subjectLabel: integration_provider_douyin_subject,
+    secretLabel: integration_provider_douyin_oauth_credential,
+    secretPlaceholder: integration_provider_douyin_oauth_placeholder,
     capabilities: [
       {
         id: 'publish',
-        label: m.integration_provider_douyin_capability_publish,
+        label: integration_provider_douyin_capability_publish,
       },
       {
         id: 'observe',
-        label: m.integration_provider_douyin_capability_observe,
+        label: integration_provider_douyin_capability_observe,
       },
       {
         id: 'publish.poi',
-        label: m.integration_provider_douyin_capability_poi,
+        label: integration_provider_douyin_capability_poi,
       },
       {
         id: 'publish.mini_program',
-        label: m.integration_provider_douyin_capability_mini_program,
+        label: integration_provider_douyin_capability_mini_program,
       },
     ],
     icon: IconBrandTiktok,
   },
   {
     provider: 'feishu',
-    title: m.integration_provider_feishu_title,
-    description: m.integration_provider_feishu_description,
+    title: integration_provider_feishu_title,
+    description: integration_provider_feishu_description,
     identityMode: 'oauth_user',
-    subjectLabel: m.integration_provider_feishu_subject,
-    secretLabel: m.integration_provider_feishu_secret,
-    secretPlaceholder: m.integration_provider_feishu_secret_placeholder,
+    subjectLabel: integration_provider_feishu_subject,
+    secretLabel: integration_provider_feishu_secret,
+    secretPlaceholder: integration_provider_feishu_secret_placeholder,
     capabilities: [
       {
         id: 'mcp.tools',
-        label: m.integration_provider_feishu_capability_tools,
+        label: integration_provider_feishu_capability_tools,
       },
     ],
     icon: IconBuilding,
@@ -159,45 +375,45 @@ const PROVIDERS: ProviderDefinition[] = [
 ];
 
 const STATUS_LABELS: Record<string, () => string> = {
-  active: m.integration_status_active,
-  available: m.integration_status_available,
-  authorized: m.integration_status_authorized,
-  claimed: m.integration_status_claimed,
-  completed: m.integration_status_completed,
-  confirmation_pending: m.integration_status_confirmation_pending,
-  degraded: m.integration_status_degraded,
-  disabled: m.integration_status_disabled,
-  draft: m.integration_status_draft,
-  empty: m.integration_status_empty,
-  executed: m.integration_status_executed,
-  exhausted: m.integration_status_exhausted,
-  expired: m.integration_status_expired,
-  failed: m.integration_status_failed,
-  manual_required: m.integration_status_manual_required,
-  pending_review: m.integration_status_pending_review,
-  permission_missing: m.integration_status_permission_missing,
-  published: m.integration_status_published,
-  rate_limited: m.integration_status_rate_limited,
-  reauthorize_required: m.integration_status_reauthorize_required,
-  reconciliation_required: m.integration_status_reconciliation_required,
-  retired: m.integration_status_retired,
-  reviewing: m.integration_status_reviewing,
-  revoked: m.integration_status_revoked,
-  scheduled: m.integration_status_scheduled,
-  settled: m.integration_status_settled,
-  submitted: m.integration_status_submitted,
-  submitting: m.integration_status_submitting,
-  unavailable: m.integration_status_unavailable,
-  unverified: m.integration_status_unverified,
+  active: integration_status_active,
+  available: integration_status_available,
+  authorized: integration_status_authorized,
+  claimed: integration_status_claimed,
+  completed: integration_status_completed,
+  confirmation_pending: integration_status_confirmation_pending,
+  degraded: integration_status_degraded,
+  disabled: integration_status_disabled,
+  draft: integration_status_draft,
+  empty: integration_status_empty,
+  executed: integration_status_executed,
+  exhausted: integration_status_exhausted,
+  expired: integration_status_expired,
+  failed: integration_status_failed,
+  manual_required: integration_status_manual_required,
+  pending_review: integration_status_pending_review,
+  permission_missing: integration_status_permission_missing,
+  published: integration_status_published,
+  rate_limited: integration_status_rate_limited,
+  reauthorize_required: integration_status_reauthorize_required,
+  reconciliation_required: integration_status_reconciliation_required,
+  retired: integration_status_retired,
+  reviewing: integration_status_reviewing,
+  revoked: integration_status_revoked,
+  scheduled: integration_status_scheduled,
+  settled: integration_status_settled,
+  submitted: integration_status_submitted,
+  submitting: integration_status_submitting,
+  unavailable: integration_status_unavailable,
+  unverified: integration_status_unverified,
 };
 
 const AUDIT_LABELS: Record<string, () => string> = {
-  'connection.created': m.integration_audit_action_connection_created,
-  'connection.disconnected': m.integration_audit_action_connection_disconnected,
-  'credential.rotated': m.integration_audit_action_credential_rotated,
-  'byok.completed': m.p1_admin_audit_byok_action_completed,
-  'byok.failed': m.p1_admin_audit_byok_action_failed,
-  'byok.unknown': m.p1_admin_audit_byok_action_unknown,
+  'connection.created': integration_audit_action_connection_created,
+  'connection.disconnected': integration_audit_action_connection_disconnected,
+  'credential.rotated': integration_audit_action_credential_rotated,
+  'byok.completed': p1_admin_audit_byok_action_completed,
+  'byok.failed': p1_admin_audit_byok_action_failed,
+  'byok.unknown': p1_admin_audit_byok_action_unknown,
 };
 
 function providerDefinition(provider: IntegrationProvider) {
@@ -227,36 +443,36 @@ function statusBadge(status: string) {
 }
 
 function dateTimeLabel(value?: string) {
-  if (!value) return m.integration_unknown();
+  if (!value) return integration_unknown();
   const timestamp = Date.parse(value);
   return Number.isNaN(timestamp)
-    ? m.integration_unknown()
+    ? integration_unknown()
     : formatLocaleDateTime(timestamp);
 }
 
 function statusLabel(status?: string) {
   const label = status ? STATUS_LABELS[status] : undefined;
-  return label?.() ?? m.integration_status_unknown();
+  return label?.() ?? integration_status_unknown();
 }
 
 function toolRiskLabel(risk: FeishuToolView['risk']) {
-  if (risk === 'read') return m.integration_tool_risk_read();
-  if (risk === 'write') return m.integration_tool_risk_write();
-  if (risk === 'destructive') return m.integration_tool_risk_destructive();
-  return m.integration_tool_risk_open_world();
+  if (risk === 'read') return integration_tool_risk_read();
+  if (risk === 'write') return integration_tool_risk_write();
+  if (risk === 'destructive') return integration_tool_risk_destructive();
+  return integration_tool_risk_open_world();
 }
 
 function sideEffectLabel(sideEffect: FeishuPendingIntentView['sideEffect']) {
-  if (sideEffect === 'read') return m.integration_tool_side_effect_read();
-  if (sideEffect === 'create') return m.integration_tool_side_effect_create();
-  if (sideEffect === 'edit') return m.integration_tool_side_effect_edit();
-  if (sideEffect === 'send') return m.integration_tool_side_effect_send();
-  if (sideEffect === 'delete') return m.integration_tool_side_effect_delete();
-  return m.integration_tool_side_effect_overwrite();
+  if (sideEffect === 'read') return integration_tool_side_effect_read();
+  if (sideEffect === 'create') return integration_tool_side_effect_create();
+  if (sideEffect === 'edit') return integration_tool_side_effect_edit();
+  if (sideEffect === 'send') return integration_tool_side_effect_send();
+  if (sideEffect === 'delete') return integration_tool_side_effect_delete();
+  return integration_tool_side_effect_overwrite();
 }
 
 function auditLabel(action: string) {
-  return AUDIT_LABELS[action]?.() ?? m.integration_audit_action_unknown();
+  return AUDIT_LABELS[action]?.() ?? integration_audit_action_unknown();
 }
 
 function toolSideEffect(tool: FeishuToolView) {
@@ -402,7 +618,7 @@ function ConnectionCard({
           {statusBadge(connection.status)}
         </CardTitle>
         <CardDescription>
-          {m.integration_connection_description({
+          {integration_connection_description({
             mask: connection.credential.mask,
             provider: definition.title(),
             version: connection.credential.version,
@@ -411,7 +627,7 @@ function ConnectionCard({
         {canManage ? (
           <CardAction>
             <Button
-              aria-label={m.integration_disconnect_aria()}
+              aria-label={integration_disconnect_aria()}
               disabled={busy || connection.status === 'revoked'}
               onClick={() => void onDisconnect(connection)}
               size="icon-sm"
@@ -425,18 +641,16 @@ function ConnectionCard({
       <CardContent className="space-y-4">
         {connection.provider === 'douyin' && douyinIntegrated === false ? (
           <Alert>
-            <AlertTitle>
-              {m.integration_douyin_not_integrated_title()}
-            </AlertTitle>
+            <AlertTitle>{integration_douyin_not_integrated_title()}</AlertTitle>
             <AlertDescription>
-              {m.integration_douyin_not_integrated_description()}
+              {integration_douyin_not_integrated_description()}
             </AlertDescription>
           </Alert>
         ) : null}
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-muted-foreground">
-              {m.integration_connection_status()}
+              {integration_connection_status()}
             </dt>
             <dd className="mt-1 font-medium">
               {statusLabel(connection.credential.status)}
@@ -444,7 +658,7 @@ function ConnectionCard({
           </div>
           <div>
             <dt className="text-muted-foreground">
-              {m.integration_connection_last_used()}
+              {integration_connection_last_used()}
             </dt>
             <dd className="mt-1 font-medium">
               {dateTimeLabel(connection.credential.lastUsedAt)}
@@ -455,9 +669,9 @@ function ConnectionCard({
         {connection.provider === 'douyin' &&
         connection.refreshReauthorizationReminder ? (
           <Alert>
-            <AlertTitle>{m.integration_reauthorize_title()}</AlertTitle>
+            <AlertTitle>{integration_reauthorize_title()}</AlertTitle>
             <AlertDescription>
-              {m.integration_reauthorize_description()}
+              {integration_reauthorize_description()}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -465,7 +679,7 @@ function ConnectionCard({
         <Separator />
 
         <div className="space-y-3">
-          <h3 className="font-medium">{m.integration_capabilities()}</h3>
+          <h3 className="font-medium">{integration_capabilities()}</h3>
           {definition.capabilities.map((capability) => {
             const granted = connection.grantedCapabilities.includes(
               capability.id
@@ -484,17 +698,17 @@ function ConnectionCard({
                   <p className="font-medium">{capability.label()}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {!granted
-                      ? m.integration_capability_not_granted_description()
+                      ? integration_capability_not_granted_description()
                       : degraded
-                        ? m.integration_capability_degraded()
+                        ? integration_capability_degraded()
                         : active
-                          ? m.integration_capability_active()
-                          : m.integration_capability_pending_owner()}
+                          ? integration_capability_active()
+                          : integration_capability_pending_owner()}
                   </p>
                 </div>
                 {controllable && canManage ? (
                   <Switch
-                    aria-label={m.integration_capability_aria({
+                    aria-label={integration_capability_aria({
                       capability: capability.label(),
                     })}
                     checked={active}
@@ -510,8 +724,8 @@ function ConnectionCard({
                 ) : (
                   <Badge variant={granted ? 'secondary' : 'outline'}>
                     {granted
-                      ? m.integration_capability_granted()
-                      : m.integration_capability_not_granted()}
+                      ? integration_capability_granted()
+                      : integration_capability_not_granted()}
                   </Badge>
                 )}
               </div>
@@ -528,8 +742,8 @@ function ConnectionCard({
             >
               <IconRefresh />
               {connection.provider === 'feishu'
-                ? m.integration_feishu_verify()
-                : m.integration_douyin_sync()}
+                ? integration_feishu_verify()
+                : integration_douyin_sync()}
             </Button>
           ) : null}
           {canManage ? (
@@ -539,7 +753,7 @@ function ConnectionCard({
               variant="outline"
             >
               <IconKey />
-              {m.integration_rotate_credential()}
+              {integration_rotate_credential()}
             </Button>
           ) : null}
         </div>
@@ -550,12 +764,12 @@ function ConnectionCard({
             onSubmit={submitRotation}
           >
             <Label htmlFor={`rotate-${connection.id}`}>
-              {m.integration_rotate_new_credential()}
+              {integration_rotate_new_credential()}
             </Label>
             <Input
               autoComplete="new-password"
               id={`rotate-${connection.id}`}
-              placeholder={m.integration_rotate_placeholder()}
+              placeholder={integration_rotate_placeholder()}
               type="password"
               {...rotateForm.register('secret')}
             />
@@ -570,7 +784,7 @@ function ConnectionCard({
                 type="submit"
                 variant="outline"
               >
-                {m.integration_rotate_confirm()}
+                {integration_rotate_confirm()}
               </Button>
               <Button
                 disabled={busy}
@@ -578,7 +792,7 @@ function ConnectionCard({
                 type="button"
                 variant="ghost"
               >
-                {m.integration_rotate_cancel()}
+                {integration_rotate_cancel()}
               </Button>
             </div>
           </form>
@@ -633,7 +847,7 @@ function DouyinOperationsPanel({
   const eligibleAnchors = eligibleDouyinPublishAnchorKinds(connection).map(
     (kind) => ({
       kind,
-      label: kind === 'poi' ? 'POI' : m.integration_anchor_kind_mini_program(),
+      label: kind === 'poi' ? 'POI' : integration_anchor_kind_mini_program(),
     })
   );
   const selectedSnapshot = snapshot.contentSnapshots.find(
@@ -675,7 +889,7 @@ function DouyinOperationsPanel({
       (candidate) => candidate.id === values.contentSnapshotId
     );
     if (!currentSnapshot) {
-      toast.error(m.integration_douyin_snapshot_stale());
+      toast.error(integration_douyin_snapshot_stale());
       return;
     }
     const id = await onConfirm(
@@ -700,7 +914,7 @@ function DouyinOperationsPanel({
       !confirmationId ||
       confirmedSnapshotRevision !== currentSnapshot.revision
     ) {
-      toast.error(m.integration_douyin_anchor_stale());
+      toast.error(integration_douyin_anchor_stale());
       return;
     }
     await onSubmit(confirmationId, currentSnapshot.id, values.scheduledAt);
@@ -709,9 +923,9 @@ function DouyinOperationsPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{m.integration_douyin_publish_title()}</CardTitle>
+        <CardTitle>{integration_douyin_publish_title()}</CardTitle>
         <CardDescription>
-          {m.integration_douyin_publish_description({
+          {integration_douyin_publish_description({
             identity: connectionPublicName(connection),
           })}
         </CardDescription>
@@ -719,11 +933,9 @@ function DouyinOperationsPanel({
       <CardContent className="space-y-5">
         {integrated === false ? (
           <Alert>
-            <AlertTitle>
-              {m.integration_douyin_not_integrated_title()}
-            </AlertTitle>
+            <AlertTitle>{integration_douyin_not_integrated_title()}</AlertTitle>
             <AlertDescription>
-              {m.integration_douyin_not_integrated_description()}
+              {integration_douyin_not_integrated_description()}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -731,7 +943,7 @@ function DouyinOperationsPanel({
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor={`douyin-snapshot-${connection.id}`}>
-                {m.integration_douyin_publishable_label()}
+                {integration_douyin_publishable_label()}
               </Label>
               <Controller
                 control={publishForm.control}
@@ -750,7 +962,7 @@ function DouyinOperationsPanel({
                       id={`douyin-snapshot-${connection.id}`}
                     >
                       <SelectValue
-                        placeholder={m.integration_douyin_publishable_placeholder()}
+                        placeholder={integration_douyin_publishable_placeholder()}
                       />
                     </SelectTrigger>
                     <SelectContent>
@@ -771,13 +983,13 @@ function DouyinOperationsPanel({
               ) : null}
               {snapshot.contentSnapshots.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  {m.integration_douyin_publishable_empty()}
+                  {integration_douyin_publishable_empty()}
                 </p>
               ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor={`douyin-schedule-${connection.id}`}>
-                {m.integration_douyin_scheduled_at()}
+                {integration_douyin_scheduled_at()}
               </Label>
               <Controller
                 control={publishForm.control}
@@ -807,7 +1019,7 @@ function DouyinOperationsPanel({
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor={`douyin-anchor-kind-${connection.id}`}>
-                  {m.integration_anchor_optional()}
+                  {integration_anchor_optional()}
                 </Label>
                 <Controller
                   control={publishForm.control}
@@ -829,7 +1041,7 @@ function DouyinOperationsPanel({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">
-                          {m.integration_anchor_none()}
+                          {integration_anchor_none()}
                         </SelectItem>
                         {eligibleAnchors.map((anchor) => (
                           <SelectItem key={anchor.kind} value={anchor.kind}>
@@ -844,7 +1056,7 @@ function DouyinOperationsPanel({
               {anchorKind !== 'none' ? (
                 <div className="space-y-2">
                   <Label htmlFor={`douyin-anchor-id-${connection.id}`}>
-                    {m.integration_anchor_authorized_id()}
+                    {integration_anchor_authorized_id()}
                   </Label>
                   <Controller
                     control={publishForm.control}
@@ -857,7 +1069,7 @@ function DouyinOperationsPanel({
                           field.onChange(event);
                           clearConfirmation();
                         }}
-                        placeholder={m.integration_anchor_id_placeholder()}
+                        placeholder={integration_anchor_id_placeholder()}
                         ref={field.ref}
                         value={field.value}
                       />
@@ -878,7 +1090,7 @@ function DouyinOperationsPanel({
               type="submit"
               variant="outline"
             >
-              {m.integration_douyin_publish_snapshot_confirm()}
+              {integration_douyin_publish_snapshot_confirm()}
             </Button>
             <Button
               disabled={busy || !confirmationIsCurrent || !selectedSnapshot}
@@ -887,7 +1099,7 @@ function DouyinOperationsPanel({
               variant="outline"
             >
               <IconPlayerPlay />
-              {m.integration_douyin_publish_snapshot_submit()}
+              {integration_douyin_publish_snapshot_submit()}
             </Button>
             <Button
               disabled={
@@ -898,27 +1110,27 @@ function DouyinOperationsPanel({
               variant="outline"
             >
               <IconRefresh />
-              {m.integration_douyin_sync()}
+              {integration_douyin_sync()}
             </Button>
           </div>
         </form>
         {confirmationIsCurrent ? (
           <p className="text-xs text-muted-foreground">
-            {m.integration_douyin_confirmation({ confirmationId })}
+            {integration_douyin_confirmation({ confirmationId })}
           </p>
         ) : confirmationId ? (
           <p className="text-xs text-destructive">
-            {m.integration_douyin_anchor_stale()}
+            {integration_douyin_anchor_stale()}
           </p>
         ) : null}
 
         <Separator />
 
         <div className="space-y-3">
-          <h3 className="font-medium">{m.integration_douyin_jobs()}</h3>
+          <h3 className="font-medium">{integration_douyin_jobs()}</h3>
           {snapshot.publishJobs.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {m.integration_douyin_job_empty()}
+              {integration_douyin_job_empty()}
             </p>
           ) : (
             snapshot.publishJobs.map((job) => (
@@ -929,27 +1141,26 @@ function DouyinOperationsPanel({
                 <div>
                   <p className="font-medium">{statusLabel(job.status)}</p>
                   <p className="text-xs text-muted-foreground">
-                    {m.integration_douyin_job_summary({
+                    {integration_douyin_job_summary({
                       effect: job.effectState
                         ? statusLabel(job.effectState)
-                        : m.integration_not_marked(),
-                      item:
-                        job.itemId ?? m.integration_douyin_job_item_missing(),
+                        : integration_not_marked(),
+                      item: job.itemId ?? integration_douyin_job_item_missing(),
                       updatedAt: dateTimeLabel(job.updatedAt),
                     })}
                   </p>
                   {job.pollingState ? (
                     <p className="text-xs text-muted-foreground">
                       {job.nextPollAt
-                        ? m.integration_douyin_job_polling_next({
+                        ? integration_douyin_job_polling_next({
                             nextAt: dateTimeLabel(job.nextPollAt),
-                            summary: m.integration_douyin_job_polling({
+                            summary: integration_douyin_job_polling({
                               attempts: job.pollAttempts ?? 0,
                               limit: job.pollLimit ?? '-',
                               polling: statusLabel(job.pollingState),
                             }),
                           })
-                        : m.integration_douyin_job_polling({
+                        : integration_douyin_job_polling({
                             attempts: job.pollAttempts ?? 0,
                             limit: job.pollLimit ?? '-',
                             polling: statusLabel(job.pollingState),
@@ -958,7 +1169,7 @@ function DouyinOperationsPanel({
                   ) : null}
                   {job.lastErrorCode ? (
                     <p className="text-xs text-destructive">
-                      {m.integration_error_action_failed()}
+                      {integration_error_action_failed()}
                     </p>
                   ) : null}
                 </div>
@@ -971,7 +1182,7 @@ function DouyinOperationsPanel({
                     size="sm"
                     variant="outline"
                   >
-                    {m.integration_douyin_job_query()}
+                    {integration_douyin_job_query()}
                   </Button>
                 ) : null}
               </div>
@@ -981,30 +1192,30 @@ function DouyinOperationsPanel({
 
         <div className="space-y-3">
           <h3 className="font-medium">
-            {m.integration_douyin_observe_snapshots()}
+            {integration_douyin_observe_snapshots()}
           </h3>
           {snapshot.observeState ? (
             <div className="rounded-lg border p-3 text-sm">
               <p className="font-medium">
                 {snapshot.observeState.status === 'available'
-                  ? m.integration_observe_status_available()
+                  ? integration_observe_status_available()
                   : snapshot.observeState.status === 'empty'
-                    ? m.integration_observe_status_empty()
+                    ? integration_observe_status_empty()
                     : snapshot.observeState.status === 'unavailable'
-                      ? m.integration_observe_status_unavailable()
-                      : m.integration_observe_status_unknown()}
+                      ? integration_observe_status_unavailable()
+                      : integration_observe_status_unknown()}
               </p>
               <p className="text-xs text-muted-foreground">
                 {snapshot.observeState.nextSyncAt
-                  ? m.integration_douyin_observe_next_sync({
+                  ? integration_douyin_observe_next_sync({
                       nextSync: dateTimeLabel(snapshot.observeState.nextSyncAt),
-                      summary: m.integration_douyin_observe_last_attempt({
+                      summary: integration_douyin_observe_last_attempt({
                         lastAttempt: dateTimeLabel(
                           snapshot.observeState.lastAttemptAt
                         ),
                       }),
                     })
-                  : m.integration_douyin_observe_last_attempt({
+                  : integration_douyin_observe_last_attempt({
                       lastAttempt: dateTimeLabel(
                         snapshot.observeState.lastAttemptAt
                       ),
@@ -1014,7 +1225,7 @@ function DouyinOperationsPanel({
           ) : null}
           {snapshot.observeSnapshots.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {m.integration_douyin_observe_empty()}
+              {integration_douyin_observe_empty()}
             </p>
           ) : (
             snapshot.observeSnapshots.slice(0, 10).map((item) => (
@@ -1024,13 +1235,13 @@ function DouyinOperationsPanel({
               >
                 <p className="font-medium">{item.externalId}</p>
                 <p className="text-xs text-muted-foreground">
-                  {m.integration_douyin_observe_record({
+                  {integration_douyin_observe_record({
                     missingCount: item.missingFieldCount,
                     observedAt: dateTimeLabel(item.observedAt),
                     source:
                       item.source === 'product'
-                        ? m.integration_source_product()
-                        : m.integration_source_external(),
+                        ? integration_source_product()
+                        : integration_source_external(),
                   })}
                 </p>
               </div>
@@ -1076,30 +1287,30 @@ function FeishuToolInvocationForm({
   return (
     <form className="space-y-2" onSubmit={submit}>
       <Label htmlFor={`feishu-tool-${connectionId}-${tool.id}`}>
-        {m.integration_feishu_tool_arguments()}
+        {integration_feishu_tool_arguments()}
       </Label>
       <Textarea
         id={`feishu-tool-${connectionId}-${tool.id}`}
-        placeholder={m.integration_feishu_tool_arguments_placeholder({
+        placeholder={integration_feishu_tool_arguments_placeholder({
           example: JSON.stringify({
-            query: m.integration_feishu_example_query(),
+            query: integration_feishu_example_query(),
           }),
         })}
         {...form.register('rawArguments')}
       />
       {form.formState.errors.rawArguments ? (
         <p className="text-xs text-destructive">
-          {m.integration_feishu_json_invalid()}
+          {integration_feishu_json_invalid()}
         </p>
       ) : null}
       <Button disabled={busy} size="sm" type="submit" variant="outline">
         <IconPlayerPlay />
-        {m.integration_feishu_execute()}
+        {integration_feishu_execute()}
       </Button>
       {result ? (
         <div className="space-y-2 rounded-md bg-muted/40 p-3 text-sm">
           <p className="font-medium">
-            {m.integration_feishu_tool_result({
+            {integration_feishu_tool_result({
               status: statusLabel(result.status),
             })}
           </p>
@@ -1143,25 +1354,25 @@ function FeishuIntentConfirmationForm({
     <form className="space-y-2" onSubmit={submit}>
       <p className="font-medium">{intent.toolId}</p>
       <p className="text-xs text-muted-foreground">
-        {m.integration_feishu_intent_summary({
+        {integration_feishu_intent_summary({
           sideEffect: sideEffectLabel(intent.sideEffect),
-          taskId: intent.confirmationTaskId ?? m.integration_not_yet_created(),
+          taskId: intent.confirmationTaskId ?? integration_not_yet_created(),
         })}
       </p>
       <Textarea
-        aria-label={m.integration_feishu_intent_aria({
+        aria-label={integration_feishu_intent_aria({
           toolId: intent.toolId,
         })}
-        placeholder={m.integration_feishu_intent_placeholder()}
+        placeholder={integration_feishu_intent_placeholder()}
         {...form.register('rawArguments')}
       />
       {form.formState.errors.rawArguments ? (
         <p className="text-xs text-destructive">
-          {m.integration_feishu_json_invalid()}
+          {integration_feishu_json_invalid()}
         </p>
       ) : null}
       <Button disabled={busy} size="sm" type="submit" variant="outline">
-        {m.integration_feishu_intent_submit()}
+        {integration_feishu_intent_submit()}
       </Button>
     </form>
   );
@@ -1211,28 +1422,26 @@ function FeishuProductPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{m.integration_feishu_panel_title()}</CardTitle>
+        <CardTitle>{integration_feishu_panel_title()}</CardTitle>
         <CardDescription>
-          {m.integration_feishu_panel_description({
+          {integration_feishu_panel_description({
             identity: connectionPublicName(connection),
           })}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-3">
-          <h3 className="font-medium">
-            {m.integration_feishu_catalog_title()}
-          </h3>
+          <h3 className="font-medium">{integration_feishu_catalog_title()}</h3>
           {latestTools.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {m.integration_feishu_catalog_empty()}
+              {integration_feishu_catalog_empty()}
             </p>
           ) : (
             latestTools.map((tool) => {
               const shortcut = shortcutIds.has(tool.id);
               return (
                 <section
-                  aria-label={m.integration_feishu_tool_aria({
+                  aria-label={integration_feishu_tool_aria({
                     toolId: tool.id,
                   })}
                   className="space-y-3 rounded-lg border p-3"
@@ -1242,7 +1451,7 @@ function FeishuProductPanel({
                     <div>
                       <p className="font-medium">{tool.id}</p>
                       <p className="text-xs text-muted-foreground">
-                        {m.integration_feishu_tool_meta({
+                        {integration_feishu_tool_meta({
                           revision: tool.revision,
                           risk: toolRiskLabel(tool.risk),
                           status: statusLabel(tool.status),
@@ -1264,8 +1473,8 @@ function FeishuProductPanel({
                           variant={shortcut ? 'secondary' : 'outline'}
                         >
                           {shortcut
-                            ? m.integration_feishu_shortcut_remove()
-                            : m.integration_feishu_shortcut_add()}
+                            ? integration_feishu_shortcut_remove()
+                            : integration_feishu_shortcut_add()}
                         </Button>
                       ) : null}
                     </div>
@@ -1289,10 +1498,10 @@ function FeishuProductPanel({
             <Separator />
             <div className="space-y-3">
               <h3 className="font-medium">
-                {m.integration_feishu_pending_title()}
+                {integration_feishu_pending_title()}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {m.integration_feishu_intent_description()}
+                {integration_feishu_intent_description()}
               </p>
               {state.pendingIntents.map((intent) => (
                 <div
@@ -1315,7 +1524,7 @@ function FeishuProductPanel({
             <Separator />
             <div className="space-y-3">
               <h3 className="font-medium">
-                {m.integration_feishu_recovery_status()}
+                {integration_feishu_recovery_status()}
               </h3>
               {state.recoveryIntents.slice(0, 10).map((intent) => (
                 <div
@@ -1325,33 +1534,33 @@ function FeishuProductPanel({
                   <div>
                     <p className="font-medium">{intent.toolId}</p>
                     <p className="text-xs text-muted-foreground">
-                      {m.integration_feishu_recovery_summary({
+                      {integration_feishu_recovery_summary({
                         effect: intent.effectState
                           ? statusLabel(intent.effectState)
-                          : m.integration_not_marked(),
+                          : integration_not_marked(),
                         outcome: intent.outcomeStatus
                           ? statusLabel(intent.outcomeStatus)
-                          : m.integration_status_reconciliation_required(),
+                          : integration_status_reconciliation_required(),
                         status: statusLabel(intent.status),
                       })}
                     </p>
                     {intent.reconciliationAttempts !== undefined ? (
                       <p className="text-xs text-muted-foreground">
                         {intent.nextReconcileAt
-                          ? m.integration_feishu_reconcile_next({
+                          ? integration_feishu_reconcile_next({
                               nextAt: dateTimeLabel(intent.nextReconcileAt),
-                              summary: m.integration_feishu_reconcile_attempts({
+                              summary: integration_feishu_reconcile_attempts({
                                 count: intent.reconciliationAttempts,
                               }),
                             })
-                          : m.integration_feishu_reconcile_attempts({
+                          : integration_feishu_reconcile_attempts({
                               count: intent.reconciliationAttempts,
                             })}
                       </p>
                     ) : null}
                     {intent.lastErrorCode ? (
                       <p className="text-xs text-destructive">
-                        {m.integration_feishu_reconcile_last_error()}
+                        {integration_feishu_reconcile_last_error()}
                       </p>
                     ) : null}
                   </div>
@@ -1362,7 +1571,7 @@ function FeishuProductPanel({
                       size="sm"
                       variant="outline"
                     >
-                      {m.integration_feishu_reconcile()}
+                      {integration_feishu_reconcile()}
                     </Button>
                   ) : null}
                 </div>
@@ -1375,11 +1584,11 @@ function FeishuProductPanel({
 
         <div className="space-y-3">
           <h3 className="font-medium">
-            {m.integration_feishu_recent_activity()}
+            {integration_feishu_recent_activity()}
           </h3>
           {state.activities.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {m.integration_feishu_activity_empty()}
+              {integration_feishu_activity_empty()}
             </p>
           ) : (
             <ol className="space-y-2">
@@ -1396,7 +1605,7 @@ function FeishuProductPanel({
                     <div>
                       <p className="font-medium">{activity.toolId}</p>
                       <p className="text-xs text-muted-foreground">
-                        {m.integration_feishu_activity_summary({
+                        {integration_feishu_activity_summary({
                           executedAt: dateTimeLabel(activity.executedAt),
                           status: statusLabel(activity.status),
                         })}
@@ -1411,7 +1620,7 @@ function FeishuProductPanel({
                             target="_blank"
                           >
                             <span className="sr-only">
-                              {m.integration_feishu_activity_open()}
+                              {integration_feishu_activity_open()}
                             </span>
                           </a>
                         }
@@ -1525,7 +1734,7 @@ export function IntegrationSettings({
       toast.success(successMessage);
       return true;
     } catch {
-      toast.error(m.integration_error_action_failed());
+      toast.error(integration_error_action_failed());
       return false;
     }
   };
@@ -1575,7 +1784,7 @@ export function IntegrationSettings({
         execute(
           'create_connection',
           { id: attempt.connectionId, ...submission },
-          m.integration_connection_created(),
+          integration_connection_created(),
           attempt.idempotencyKey
         ),
     });
@@ -1603,7 +1812,7 @@ export function IntegrationSettings({
           status: 'unverified',
         },
       },
-      m.integration_rotate_success(),
+      integration_rotate_success(),
       idempotencyKey
     );
     if (rotated) setRotateConnectionId(undefined);
@@ -1624,8 +1833,8 @@ export function IntegrationSettings({
           }
         : { connectionId: connection.id, capability },
       active
-        ? m.integration_capability_enabled_success()
-        : m.integration_capability_disabled_success()
+        ? integration_capability_enabled_success()
+        : integration_capability_disabled_success()
     );
   };
 
@@ -1636,8 +1845,8 @@ export function IntegrationSettings({
         : 'sync_douyin_observe',
       { connectionId: connection.id },
       connection.provider === 'feishu'
-        ? m.integration_feishu_verify_success()
-        : m.integration_douyin_sync_success()
+        ? integration_feishu_verify_success()
+        : integration_douyin_sync_success()
     );
   };
 
@@ -1648,7 +1857,7 @@ export function IntegrationSettings({
     anchor?: { id: string; kind: 'poi' | 'mini_program' }
   ) => {
     if (!connection.subject) {
-      toast.error(m.integration_douyin_account_missing());
+      toast.error(integration_douyin_account_missing());
       return undefined;
     }
     try {
@@ -1662,10 +1871,10 @@ export function IntegrationSettings({
           scheduledAt: douyinScheduledAt(localScheduledAt),
         },
       });
-      toast.success(m.integration_douyin_confirm_success());
+      toast.success(integration_douyin_confirm_success());
       return result.id;
     } catch {
-      toast.error(m.integration_douyin_confirm_failed());
+      toast.error(integration_douyin_confirm_failed());
       return undefined;
     }
   };
@@ -1682,7 +1891,7 @@ export function IntegrationSettings({
         contentSnapshotId: contentSnapshotId.trim(),
         scheduledAt: douyinScheduledAt(localScheduledAt),
       },
-      m.integration_douyin_publish_job_submitted()
+      integration_douyin_publish_job_submitted()
     );
   };
 
@@ -1690,7 +1899,7 @@ export function IntegrationSettings({
     await execute(
       'refresh_douyin_publish',
       { jobId: job.id },
-      m.integration_douyin_sync_updated()
+      integration_douyin_sync_updated()
     );
   };
 
@@ -1716,8 +1925,8 @@ export function IntegrationSettings({
         })),
       },
       enabled
-        ? m.integration_feishu_shortcut_added()
-        : m.integration_feishu_shortcut_removed()
+        ? integration_feishu_shortcut_added()
+        : integration_feishu_shortcut_removed()
     );
   };
 
@@ -1730,7 +1939,7 @@ export function IntegrationSettings({
     try {
       args = feishuArguments(rawArguments);
     } catch {
-      toast.error(m.integration_feishu_json_invalid());
+      toast.error(integration_feishu_json_invalid());
       return;
     }
     const retryIdentity = JSON.stringify({
@@ -1773,20 +1982,20 @@ export function IntegrationSettings({
         );
       }
       if (result.status === 'confirmation_pending') {
-        toast.success(m.integration_feishu_confirm_pending());
+        toast.success(integration_feishu_confirm_pending());
       } else if (
         result.status === 'unknown' ||
         result.status === 'reconciliation_required'
       ) {
-        toast.warning(m.integration_feishu_execute_reconciliation());
+        toast.warning(integration_feishu_execute_reconciliation());
       } else if (result.status === 'completed') {
-        toast.success(m.integration_feishu_execute_success());
+        toast.success(integration_feishu_execute_success());
       } else {
-        toast.error(m.integration_feishu_execute_failed());
+        toast.error(integration_feishu_execute_failed());
       }
       return result;
     } catch {
-      toast.error(m.integration_feishu_execute_retry());
+      toast.error(integration_feishu_execute_retry());
     }
     return undefined;
   };
@@ -1799,7 +2008,7 @@ export function IntegrationSettings({
     try {
       args = feishuArguments(rawArguments);
     } catch {
-      toast.error(m.integration_feishu_json_invalid());
+      toast.error(integration_feishu_json_invalid());
       return;
     }
     try {
@@ -1818,14 +2027,14 @@ export function IntegrationSettings({
         result.status === 'unknown' ||
         result.status === 'reconciliation_required'
       ) {
-        toast.warning(m.integration_feishu_confirm_reconciliation());
+        toast.warning(integration_feishu_confirm_reconciliation());
       } else if (result.status === 'completed') {
-        toast.success(m.integration_feishu_confirm_success());
+        toast.success(integration_feishu_confirm_success());
       } else {
-        toast.error(m.integration_feishu_confirm_failed());
+        toast.error(integration_feishu_confirm_failed());
       }
     } catch {
-      toast.error(m.integration_feishu_confirm_error());
+      toast.error(integration_feishu_confirm_error());
     }
   };
 
@@ -1836,14 +2045,14 @@ export function IntegrationSettings({
         payload: { intentId: intent.id },
       });
       if (result.status === 'completed') {
-        toast.success(m.integration_feishu_reconcile_success());
+        toast.success(integration_feishu_reconcile_success());
       } else if (result.status === 'failed') {
-        toast.warning(m.integration_feishu_reconcile_failed());
+        toast.warning(integration_feishu_reconcile_failed());
       } else {
-        toast.warning(m.integration_feishu_reconcile_unknown());
+        toast.warning(integration_feishu_reconcile_unknown());
       }
     } catch {
-      toast.error(m.integration_feishu_reconcile_error());
+      toast.error(integration_feishu_reconcile_error());
     }
   };
 
@@ -1868,7 +2077,7 @@ export function IntegrationSettings({
                   {item.provider === 'douyin' &&
                   douyinIntegrationStatus?.integrated === false ? (
                     <Badge variant="outline">
-                      {m.integration_douyin_not_integrated_badge()}
+                      {integration_douyin_not_integrated_badge()}
                     </Badge>
                   ) : null}
                 </CardTitle>
@@ -1877,18 +2086,18 @@ export function IntegrationSettings({
               <CardContent className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">
                   {activeConnections.length > 0
-                    ? m.integration_connection_count({
+                    ? integration_connection_count({
                         count: activeConnections.length,
                       })
-                    : m.integration_not_connected()}
+                    : integration_not_connected()}
                 </span>
                 {activeConnections.some(
                   (connection) => connection.status === 'available'
                 ) ? (
-                  <Badge variant="secondary">{m.integration_available()}</Badge>
+                  <Badge variant="secondary">{integration_available()}</Badge>
                 ) : (
                   <Badge variant="outline">
-                    {m.integration_pending_configuration()}
+                    {integration_pending_configuration()}
                   </Badge>
                 )}
               </CardContent>
@@ -1900,9 +2109,9 @@ export function IntegrationSettings({
       {canManage ? (
         <Card className="bg-surface-1">
           <CardHeader>
-            <CardTitle>{m.integration_new_connection()}</CardTitle>
+            <CardTitle>{integration_new_connection()}</CardTitle>
             <CardDescription>
-              {m.integration_create_description()}
+              {integration_create_description()}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1913,7 +2122,7 @@ export function IntegrationSettings({
                 }
                 value={provider}
               >
-                <TabsList aria-label={m.integration_connection_type_aria()}>
+                <TabsList aria-label={integration_connection_type_aria()}>
                   {visibleProviders.map((item) => (
                     <TabsTrigger key={item.provider} value={item.provider}>
                       {item.title()}
@@ -1924,10 +2133,10 @@ export function IntegrationSettings({
                 douyinIntegrationStatus?.integrated === false ? (
                   <Alert className="my-4">
                     <AlertTitle>
-                      {m.integration_douyin_not_integrated_title()}
+                      {integration_douyin_not_integrated_title()}
                     </AlertTitle>
                     <AlertDescription>
-                      {m.integration_douyin_not_integrated_description()}
+                      {integration_douyin_not_integrated_description()}
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -1945,7 +2154,7 @@ export function IntegrationSettings({
                     </Label>
                     <Input
                       id="integration-subject"
-                      placeholder={m.integration_subject_placeholder()}
+                      placeholder={integration_subject_placeholder()}
                       {...createForm.register('subject')}
                     />
                     {createForm.formState.errors.subject ? (
@@ -1956,7 +2165,7 @@ export function IntegrationSettings({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="integration-secret">
-                      {m.integration_secret_write_only({
+                      {integration_secret_write_only({
                         secretLabel: definition.secretLabel(),
                       })}
                     </Label>
@@ -1968,7 +2177,7 @@ export function IntegrationSettings({
                       {...createForm.register('secret')}
                     />
                     <p className="text-xs text-muted-foreground">
-                      {m.integration_write_only_notice_description()}
+                      {integration_write_only_notice_description()}
                     </p>
                     {createForm.formState.errors.secret ? (
                       <p className="text-xs text-destructive">
@@ -1978,11 +2187,11 @@ export function IntegrationSettings({
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="integration-scopes">
-                      {m.integration_scopes()}
+                      {integration_scopes()}
                     </Label>
                     <Input
                       id="integration-scopes"
-                      placeholder={m.integration_scopes_placeholder()}
+                      placeholder={integration_scopes_placeholder()}
                       {...createForm.register('scopes')}
                     />
                     {createForm.formState.errors.scopes ? (
@@ -1993,7 +2202,7 @@ export function IntegrationSettings({
                   </div>
                 </div>
                 <div className="mt-4 space-y-3">
-                  <Label>{m.integration_request_capabilities()}</Label>
+                  <Label>{integration_request_capabilities()}</Label>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {definition.capabilities.map((capability) => (
                       <div
@@ -2004,7 +2213,7 @@ export function IntegrationSettings({
                           {capability.label()}
                         </span>
                         <Switch
-                          aria-label={m.integration_request_capability_aria({
+                          aria-label={integration_request_capability_aria({
                             capability: capability.label(),
                           })}
                           checked={capabilities.includes(capability.id)}
@@ -2018,7 +2227,7 @@ export function IntegrationSettings({
                 </div>
                 <Button className="mt-4" disabled={busy} type="submit">
                   <IconPlugConnected />
-                  {m.integration_create_connection()}
+                  {integration_create_connection()}
                 </Button>
               </Tabs>
             </form>
@@ -2027,11 +2236,11 @@ export function IntegrationSettings({
       ) : (
         <Alert>
           <IconShieldLock />
-          <AlertTitle>{m.integration_read_only_title()}</AlertTitle>
+          <AlertTitle>{integration_read_only_title()}</AlertTitle>
           <AlertDescription>
             {scope === 'model'
-              ? m.integration_read_only_description_model()
-              : m.integration_read_only_description_external()}
+              ? integration_read_only_description_model()
+              : integration_read_only_description_external()}
           </AlertDescription>
         </Alert>
       )}
@@ -2040,10 +2249,10 @@ export function IntegrationSettings({
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold">
-              {m.integration_configured_connections()}
+              {integration_configured_connections()}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {m.integration_configured_description()}
+              {integration_configured_description()}
             </p>
           </div>
           <Button
@@ -2052,13 +2261,13 @@ export function IntegrationSettings({
             variant="outline"
           >
             <IconRefresh />
-            {m.integration_refresh()}
+            {integration_refresh()}
           </Button>
         </div>
 
         {error ? (
           <Alert variant="destructive">
-            <AlertTitle>{m.integration_load_error_title()}</AlertTitle>
+            <AlertTitle>{integration_load_error_title()}</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : loading ? (
@@ -2069,7 +2278,7 @@ export function IntegrationSettings({
         ) : visibleConnections.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
-              {m.integration_connection_empty()}
+              {integration_connection_empty()}
             </CardContent>
           </Card>
         ) : (
@@ -2086,7 +2295,7 @@ export function IntegrationSettings({
                   await execute(
                     'disconnect',
                     { connectionId: candidate.id },
-                    m.integration_connection_disconnected()
+                    integration_connection_disconnected()
                   );
                 }}
                 onRotate={rotateCredential}
@@ -2162,10 +2371,10 @@ export function IntegrationSettings({
         <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-4 rounded-lg bg-surface-1 p-4 text-left">
           <span>
             <span className="block font-semibold">
-              {m.integration_audit_title()}
+              {integration_audit_title()}
             </span>
             <span className="mt-1 block text-sm font-normal text-muted-foreground">
-              {m.integration_audit_description()}
+              {integration_audit_description()}
             </span>
           </span>
           <IconChevronDown aria-hidden="true" className="size-5 shrink-0" />
@@ -2173,7 +2382,7 @@ export function IntegrationSettings({
         <CollapsibleContent className="rounded-b-lg bg-surface-1 px-4 pb-4">
           {visibleAudit.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {m.integration_audit_empty()}
+              {integration_audit_empty()}
             </p>
           ) : (
             <ol className="divide-y divide-divider">
@@ -2189,10 +2398,10 @@ export function IntegrationSettings({
                     <div>
                       <p className="font-medium">{auditLabel(event.action)}</p>
                       <p className="text-xs text-muted-foreground">
-                        {m.integration_audit_connection_name({
+                        {integration_audit_connection_name({
                           name: connection
                             ? connectionPublicName(connection)
-                            : m.integration_unknown(),
+                            : integration_unknown(),
                         })}
                       </p>
                     </div>

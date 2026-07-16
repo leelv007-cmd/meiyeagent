@@ -1,33 +1,45 @@
 import { z } from 'zod';
 
-import { m } from '@/locale/paraglide/messages';
+import {
+  integration_form_anchor_id_required,
+  integration_form_anchor_id_too_long,
+  integration_form_content_snapshot_required,
+  integration_form_json_object_required,
+  integration_form_json_required,
+  integration_form_publish_time_invalid,
+  integration_form_publish_time_required,
+  integration_form_scopes_required,
+  integration_form_secret_required,
+  integration_form_secret_too_long,
+  integration_form_subject_too_long,
+} from '@/locale/paraglide/messages';
 
 const nonEmptySecret = z
   .string()
   .trim()
-  .min(1, m.integration_form_secret_required())
-  .max(65_536, m.integration_form_secret_too_long());
+  .min(1, integration_form_secret_required())
+  .max(65_536, integration_form_secret_too_long());
 
 const scopeList = z
   .string()
   .trim()
-  .min(1, m.integration_form_scopes_required())
+  .min(1, integration_form_scopes_required())
   .refine(
     (value) =>
       value
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean).length > 0,
-    m.integration_form_scopes_required()
+    integration_form_scopes_required()
   );
 
 const douyinScheduledAtSchema = z
   .string()
   .trim()
-  .min(1, m.integration_form_publish_time_required())
+  .min(1, integration_form_publish_time_required())
   .refine(
     (value) => !Number.isNaN(new Date(value).getTime()),
-    m.integration_form_publish_time_invalid()
+    integration_form_publish_time_invalid()
   );
 
 function isJsonObject(value: string) {
@@ -46,7 +58,7 @@ export const createIntegrationConnectionSchema = z.object({
   provider: z.enum(['model', 'douyin', 'feishu']),
   scopes: scopeList,
   secret: nonEmptySecret,
-  subject: z.string().trim().max(256, m.integration_form_subject_too_long()),
+  subject: z.string().trim().max(256, integration_form_subject_too_long()),
 });
 
 export const rotateIntegrationCredentialSchema = z.object({
@@ -55,22 +67,19 @@ export const rotateIntegrationCredentialSchema = z.object({
 
 export const douyinPublishFormSchema = z
   .object({
-    anchorId: z
-      .string()
-      .trim()
-      .max(256, m.integration_form_anchor_id_too_long()),
+    anchorId: z.string().trim().max(256, integration_form_anchor_id_too_long()),
     anchorKind: z.enum(['none', 'poi', 'mini_program']),
     contentSnapshotId: z
       .string()
       .trim()
-      .min(1, m.integration_form_content_snapshot_required()),
+      .min(1, integration_form_content_snapshot_required()),
     scheduledAt: douyinScheduledAtSchema,
   })
   .superRefine((value, context) => {
     if (value.anchorKind !== 'none' && !value.anchorId) {
       context.addIssue({
         code: 'custom',
-        message: m.integration_form_anchor_id_required(),
+        message: integration_form_anchor_id_required(),
         path: ['anchorId'],
       });
     }
@@ -80,8 +89,8 @@ export const feishuArgumentsFormSchema = z.object({
   rawArguments: z
     .string()
     .trim()
-    .min(1, m.integration_form_json_required())
-    .refine(isJsonObject, m.integration_form_json_object_required()),
+    .min(1, integration_form_json_required())
+    .refine(isJsonObject, integration_form_json_object_required()),
 });
 
 export type CreateIntegrationConnectionInput = z.infer<

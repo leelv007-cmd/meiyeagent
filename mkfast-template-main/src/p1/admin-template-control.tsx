@@ -34,7 +34,85 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_admin_template_catalog_description,
+  p1_admin_template_catalog_empty,
+  p1_admin_template_catalog_error_description,
+  p1_admin_template_catalog_error_title,
+  p1_admin_template_catalog_title,
+  p1_admin_template_column_current,
+  p1_admin_template_column_family,
+  p1_admin_template_column_rollout,
+  p1_admin_template_column_status,
+  p1_admin_template_column_summary,
+  p1_admin_template_column_template,
+  p1_admin_template_column_template_id,
+  p1_admin_template_column_version_id,
+  p1_admin_template_create_button,
+  p1_admin_template_create_description,
+  p1_admin_template_create_draft,
+  p1_admin_template_create_error,
+  p1_admin_template_create_success,
+  p1_admin_template_create_title,
+  p1_admin_template_creating,
+  p1_admin_template_document,
+  p1_admin_template_document_summary,
+  p1_admin_template_draft_created,
+  p1_admin_template_draft_error,
+  p1_admin_template_enable_error,
+  p1_admin_template_enable_success,
+  p1_admin_template_enable_version,
+  p1_admin_template_enabling,
+  p1_admin_template_family,
+  p1_admin_template_family_all,
+  p1_admin_template_family_filter,
+  p1_admin_template_fix_document,
+  p1_admin_template_history_description,
+  p1_admin_template_history_empty,
+  p1_admin_template_history_title,
+  p1_admin_template_id,
+  p1_admin_template_loading,
+  p1_admin_template_name,
+  p1_admin_template_name_placeholder,
+  p1_admin_template_notice_description,
+  p1_admin_template_notice_title,
+  p1_admin_template_preview_error,
+  p1_admin_template_preview_success,
+  p1_admin_template_preview_version,
+  p1_admin_template_publish_change_history,
+  p1_admin_template_publish_change_new_work,
+  p1_admin_template_publish_change_rollout,
+  p1_admin_template_publish_confirm,
+  p1_admin_template_publish_review_description,
+  p1_admin_template_publish_review_scope,
+  p1_admin_template_publish_review_title,
+  p1_admin_template_publish_success,
+  p1_admin_template_publish_version,
+  p1_admin_template_publishing,
+  p1_admin_template_refresh,
+  p1_admin_template_retire_change_catalog,
+  p1_admin_template_retire_change_shortcuts,
+  p1_admin_template_retire_change_work,
+  p1_admin_template_retire_confirm,
+  p1_admin_template_retire_review_description,
+  p1_admin_template_retire_review_scope,
+  p1_admin_template_retire_review_title,
+  p1_admin_template_retire_success,
+  p1_admin_template_retire_template,
+  p1_admin_template_retiring,
+  p1_admin_template_rollout,
+  p1_admin_template_select_template,
+  p1_admin_template_select_template_version,
+  p1_admin_template_tags,
+  p1_admin_template_tags_placeholder,
+  p1_admin_template_validation_template,
+  p1_admin_template_validation_version,
+  p1_admin_template_version_actions_description,
+  p1_admin_template_version_actions_title,
+  p1_admin_template_version_id,
+  p1_admin_template_version_placeholder,
+  p1_template_version_unpublished,
+} from '@/locale/paraglide/messages';
 import type {
   AdminTemplateView,
   AdminTemplateVersionView,
@@ -133,7 +211,7 @@ export function AdminTemplateControl() {
     : undefined;
   const loading = catalogQuery.isPending;
   const error = catalogQuery.error
-    ? m.p1_admin_template_catalog_error_description()
+    ? p1_admin_template_catalog_error_description()
     : undefined;
   const refresh = () => catalogQuery.refetch();
   const executeCommand = <T,>(request: AdminTemplateCommand) =>
@@ -151,9 +229,9 @@ export function AdminTemplateControl() {
     versionForm.setError('versionId', {
       message:
         result.error.issues[0]?.message ??
-        m.p1_admin_template_validation_version(),
+        p1_admin_template_validation_version(),
     });
-    toast.error(m.p1_admin_template_select_template_version());
+    toast.error(p1_admin_template_select_template_version());
     return undefined;
   };
 
@@ -169,16 +247,16 @@ export function AdminTemplateControl() {
         pendingKey: 'draft',
       });
       versionForm.setValue('versionId', result.id);
-      toast.success(m.p1_admin_template_draft_created({ revision: result.id }));
+      toast.success(p1_admin_template_draft_created({ revision: result.id }));
     } catch {
-      toast.error(m.p1_admin_template_draft_error());
+      toast.error(p1_admin_template_draft_error());
     }
   });
 
   const createTemplate = createForm.handleSubmit(async (values) => {
     const documentValid = await versionForm.trigger('document');
     if (!documentValid) {
-      toast.error(m.p1_admin_template_fix_document());
+      toast.error(p1_admin_template_fix_document());
       return;
     }
     try {
@@ -198,9 +276,9 @@ export function AdminTemplateControl() {
       versionForm.setValue('templateId', result.template.id);
       versionForm.setValue('versionId', result.version?.id ?? '');
       createForm.reset({ ...values, name: '' });
-      toast.success(m.p1_admin_template_create_success());
+      toast.success(p1_admin_template_create_success());
     } catch {
-      toast.error(m.p1_admin_template_create_error());
+      toast.error(p1_admin_template_create_error());
     }
   });
 
@@ -216,9 +294,9 @@ export function AdminTemplateControl() {
         },
         pendingKey: 'enable',
       });
-      toast.success(m.p1_admin_template_enable_success());
+      toast.success(p1_admin_template_enable_success());
     } catch {
-      toast.error(m.p1_admin_template_enable_error());
+      toast.error(p1_admin_template_enable_error());
     }
   });
 
@@ -235,9 +313,9 @@ export function AdminTemplateControl() {
         'document',
         JSON.stringify(result.document, null, 2)
       );
-      toast.success(m.p1_admin_template_preview_success());
+      toast.success(p1_admin_template_preview_success());
     } catch {
-      toast.error(m.p1_admin_template_preview_error());
+      toast.error(p1_admin_template_preview_error());
     }
   });
 
@@ -245,18 +323,18 @@ export function AdminTemplateControl() {
     const target = versionTarget(values);
     if (!target) return;
     setImpactReview({
-      title: m.p1_admin_template_publish_review_title(),
-      description: m.p1_admin_template_publish_review_description(),
-      scope: m.p1_admin_template_publish_review_scope({
+      title: p1_admin_template_publish_review_title(),
+      description: p1_admin_template_publish_review_description(),
+      scope: p1_admin_template_publish_review_scope({
         revision: target.versionId,
         template: target.templateId,
       }),
       changes: [
-        m.p1_admin_template_publish_change_rollout(),
-        m.p1_admin_template_publish_change_new_work(),
-        m.p1_admin_template_publish_change_history(),
+        p1_admin_template_publish_change_rollout(),
+        p1_admin_template_publish_change_new_work(),
+        p1_admin_template_publish_change_history(),
       ],
-      confirmLabel: m.p1_admin_template_publish_confirm(),
+      confirmLabel: p1_admin_template_publish_confirm(),
       onConfirm: async (reason) => {
         await executeCommand<AdminTemplateVersionView>({
           action: 'admin_publish_template_version',
@@ -267,7 +345,7 @@ export function AdminTemplateControl() {
           },
           pendingKey: 'publish',
         });
-        toast.success(m.p1_admin_template_publish_success());
+        toast.success(p1_admin_template_publish_success());
       },
     });
   });
@@ -278,30 +356,30 @@ export function AdminTemplateControl() {
       versionForm.setError('templateId', {
         message:
           target.error.issues[0]?.message ??
-          m.p1_admin_template_validation_template(),
+          p1_admin_template_validation_template(),
       });
-      toast.error(m.p1_admin_template_select_template());
+      toast.error(p1_admin_template_select_template());
       return;
     }
     setImpactReview({
-      title: m.p1_admin_template_retire_review_title(),
-      description: m.p1_admin_template_retire_review_description(),
-      scope: m.p1_admin_template_retire_review_scope({
+      title: p1_admin_template_retire_review_title(),
+      description: p1_admin_template_retire_review_description(),
+      scope: p1_admin_template_retire_review_scope({
         template: target.data.templateId,
       }),
       changes: [
-        m.p1_admin_template_retire_change_catalog(),
-        m.p1_admin_template_retire_change_work(),
-        m.p1_admin_template_retire_change_shortcuts(),
+        p1_admin_template_retire_change_catalog(),
+        p1_admin_template_retire_change_work(),
+        p1_admin_template_retire_change_shortcuts(),
       ],
-      confirmLabel: m.p1_admin_template_retire_confirm(),
+      confirmLabel: p1_admin_template_retire_confirm(),
       onConfirm: async (reason) => {
         await executeCommand({
           action: 'admin_retire_template',
           payload: { ...target.data, reason },
           pendingKey: 'retire',
         });
-        toast.success(m.p1_admin_template_retire_success());
+        toast.success(p1_admin_template_retire_success());
       },
     });
   };
@@ -329,28 +407,28 @@ export function AdminTemplateControl() {
     <div className="space-y-6">
       <Alert>
         <IconAlertTriangle />
-        <AlertTitle>{m.p1_admin_template_notice_title()}</AlertTitle>
+        <AlertTitle>{p1_admin_template_notice_title()}</AlertTitle>
         <AlertDescription>
-          {m.p1_admin_template_notice_description()}
+          {p1_admin_template_notice_description()}
         </AlertDescription>
       </Alert>
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_template_create_title()}</CardTitle>
+          <CardTitle>{p1_admin_template_create_title()}</CardTitle>
           <CardDescription>
-            {m.p1_admin_template_create_description()}
+            {p1_admin_template_create_description()}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 md:grid-cols-3" onSubmit={createTemplate}>
             <div className="space-y-2">
               <Label htmlFor="admin-new-template-name">
-                {m.p1_admin_template_name()}
+                {p1_admin_template_name()}
               </Label>
               <Input
                 id="admin-new-template-name"
-                placeholder={m.p1_admin_template_name_placeholder()}
+                placeholder={p1_admin_template_name_placeholder()}
                 {...createForm.register('name')}
               />
               {createForm.formState.errors.name ? (
@@ -361,7 +439,7 @@ export function AdminTemplateControl() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="admin-new-template-family">
-                {m.p1_admin_template_family()}
+                {p1_admin_template_family()}
               </Label>
               <Input
                 id="admin-new-template-family"
@@ -376,11 +454,11 @@ export function AdminTemplateControl() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="admin-new-template-tags">
-                {m.p1_admin_template_tags()}
+                {p1_admin_template_tags()}
               </Label>
               <Input
                 id="admin-new-template-tags"
-                placeholder={m.p1_admin_template_tags_placeholder()}
+                placeholder={p1_admin_template_tags_placeholder()}
                 {...createForm.register('tags')}
               />
               {createForm.formState.errors.tags ? (
@@ -393,8 +471,8 @@ export function AdminTemplateControl() {
               <Button disabled={Boolean(busy)} type="submit">
                 <IconFilePlus />
                 {busy === 'create-template'
-                  ? m.p1_admin_template_creating()
-                  : m.p1_admin_template_create_button()}
+                  ? p1_admin_template_creating()
+                  : p1_admin_template_create_button()}
               </Button>
             </div>
           </form>
@@ -404,16 +482,16 @@ export function AdminTemplateControl() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,1fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>{m.p1_admin_template_catalog_title()}</CardTitle>
+            <CardTitle>{p1_admin_template_catalog_title()}</CardTitle>
             <CardDescription>
-              {m.p1_admin_template_catalog_description()}
+              {p1_admin_template_catalog_description()}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {error ? (
               <Alert variant="destructive">
                 <AlertTitle>
-                  {m.p1_admin_template_catalog_error_title()}
+                  {p1_admin_template_catalog_error_title()}
                 </AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
@@ -421,7 +499,7 @@ export function AdminTemplateControl() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Label htmlFor="admin-template-family-filter">
-                  {m.p1_admin_template_family_filter()}
+                  {p1_admin_template_family_filter()}
                 </Label>
                 <select
                   className="h-9 rounded-md border bg-background px-3 text-sm"
@@ -429,9 +507,7 @@ export function AdminTemplateControl() {
                   onChange={(event) => setFamilyFilter(event.target.value)}
                   value={familyFilter}
                 >
-                  <option value="all">
-                    {m.p1_admin_template_family_all()}
-                  </option>
+                  <option value="all">{p1_admin_template_family_all()}</option>
                   {families.map((family) => (
                     <option key={family} value={family}>
                       {family}
@@ -445,16 +521,16 @@ export function AdminTemplateControl() {
                 variant="outline"
               >
                 <IconRefresh />
-                {m.p1_admin_template_refresh()}
+                {p1_admin_template_refresh()}
               </Button>
             </div>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{m.p1_admin_template_column_template()}</TableHead>
-                  <TableHead>{m.p1_admin_template_column_family()}</TableHead>
-                  <TableHead>{m.p1_admin_template_column_status()}</TableHead>
-                  <TableHead>{m.p1_admin_template_column_current()}</TableHead>
+                  <TableHead>{p1_admin_template_column_template()}</TableHead>
+                  <TableHead>{p1_admin_template_column_family()}</TableHead>
+                  <TableHead>{p1_admin_template_column_status()}</TableHead>
+                  <TableHead>{p1_admin_template_column_current()}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -492,7 +568,7 @@ export function AdminTemplateControl() {
                     <TableCell>
                       {template.enabledVersionId ??
                         template.publishedVersionId ??
-                        m.p1_template_version_unpublished()}
+                        p1_template_version_unpublished()}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -500,7 +576,7 @@ export function AdminTemplateControl() {
             </Table>
             {!loading && templates.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                {m.p1_admin_template_catalog_empty()}
+                {p1_admin_template_catalog_empty()}
               </p>
             ) : null}
           </CardContent>
@@ -508,16 +584,16 @@ export function AdminTemplateControl() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{m.p1_admin_template_version_actions_title()}</CardTitle>
+            <CardTitle>{p1_admin_template_version_actions_title()}</CardTitle>
             <CardDescription>
-              {m.p1_admin_template_version_actions_description()}
+              {p1_admin_template_version_actions_description()}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={createDraft}>
               <div className="space-y-2">
                 <Label htmlFor="admin-template-id">
-                  {m.p1_admin_template_id()}
+                  {p1_admin_template_id()}
                 </Label>
                 <Input
                   id="admin-template-id"
@@ -532,11 +608,11 @@ export function AdminTemplateControl() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="admin-template-version-id">
-                  {m.p1_admin_template_version_id()}
+                  {p1_admin_template_version_id()}
                 </Label>
                 <Input
                   id="admin-template-version-id"
-                  placeholder={m.p1_admin_template_version_placeholder()}
+                  placeholder={p1_admin_template_version_placeholder()}
                   {...versionForm.register('versionId')}
                 />
                 {versionForm.formState.errors.versionId ? (
@@ -547,7 +623,7 @@ export function AdminTemplateControl() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="admin-template-rollout">
-                  {m.p1_admin_template_rollout()}
+                  {p1_admin_template_rollout()}
                 </Label>
                 <Input
                   id="admin-template-rollout"
@@ -565,7 +641,7 @@ export function AdminTemplateControl() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="admin-template-document">
-                  {m.p1_admin_template_document()}
+                  {p1_admin_template_document()}
                 </Label>
                 <Textarea
                   className="min-h-72 font-mono text-xs"
@@ -583,8 +659,8 @@ export function AdminTemplateControl() {
                 <Button disabled={Boolean(busy)} type="submit">
                   <IconFilePlus />
                   {busy === 'draft'
-                    ? m.p1_admin_template_creating()
-                    : m.p1_admin_template_create_draft()}
+                    ? p1_admin_template_creating()
+                    : p1_admin_template_create_draft()}
                 </Button>
                 <Button
                   disabled={Boolean(busy)}
@@ -594,8 +670,8 @@ export function AdminTemplateControl() {
                 >
                   <IconEye />
                   {busy === 'preview'
-                    ? m.p1_admin_template_loading()
-                    : m.p1_admin_template_preview_version()}
+                    ? p1_admin_template_loading()
+                    : p1_admin_template_preview_version()}
                 </Button>
                 <Button
                   disabled={Boolean(busy)}
@@ -605,8 +681,8 @@ export function AdminTemplateControl() {
                 >
                   <IconPlayerPlay />
                   {busy === 'enable'
-                    ? m.p1_admin_template_enabling()
-                    : m.p1_admin_template_enable_version()}
+                    ? p1_admin_template_enabling()
+                    : p1_admin_template_enable_version()}
                 </Button>
                 <Button
                   disabled={Boolean(busy)}
@@ -616,8 +692,8 @@ export function AdminTemplateControl() {
                 >
                   <IconRocket />
                   {busy === 'publish'
-                    ? m.p1_admin_template_publishing()
-                    : m.p1_admin_template_publish_version()}
+                    ? p1_admin_template_publishing()
+                    : p1_admin_template_publish_version()}
                 </Button>
                 <Button
                   disabled={Boolean(busy)}
@@ -627,8 +703,8 @@ export function AdminTemplateControl() {
                 >
                   <IconTrash />
                   {busy === 'retire'
-                    ? m.p1_admin_template_retiring()
-                    : m.p1_admin_template_retire_template()}
+                    ? p1_admin_template_retiring()
+                    : p1_admin_template_retire_template()}
                 </Button>
               </div>
             </form>
@@ -638,22 +714,20 @@ export function AdminTemplateControl() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_template_history_title()}</CardTitle>
+          <CardTitle>{p1_admin_template_history_title()}</CardTitle>
           <CardDescription>
-            {m.p1_admin_template_history_description()}
+            {p1_admin_template_history_description()}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{m.p1_admin_template_column_version_id()}</TableHead>
-                <TableHead>
-                  {m.p1_admin_template_column_template_id()}
-                </TableHead>
-                <TableHead>{m.p1_admin_template_column_status()}</TableHead>
-                <TableHead>{m.p1_admin_template_column_rollout()}</TableHead>
-                <TableHead>{m.p1_admin_template_column_summary()}</TableHead>
+                <TableHead>{p1_admin_template_column_version_id()}</TableHead>
+                <TableHead>{p1_admin_template_column_template_id()}</TableHead>
+                <TableHead>{p1_admin_template_column_status()}</TableHead>
+                <TableHead>{p1_admin_template_column_rollout()}</TableHead>
+                <TableHead>{p1_admin_template_column_summary()}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -671,7 +745,7 @@ export function AdminTemplateControl() {
                   <TableCell>
                     {version.documentSummary.width}×
                     {version.documentSummary.height} ·{' '}
-                    {m.p1_admin_template_document_summary({
+                    {p1_admin_template_document_summary({
                       elements: version.documentSummary.elementCount,
                       pages: version.documentSummary.pageCount,
                     })}
@@ -682,7 +756,7 @@ export function AdminTemplateControl() {
           </Table>
           {visibleVersions.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {m.p1_admin_template_history_empty()}
+              {p1_admin_template_history_empty()}
             </p>
           ) : null}
         </CardContent>

@@ -1,7 +1,19 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_audit_action,
+  admin_audit_actor_correlation,
+  admin_audit_catalog_lifecycle_reason,
+  admin_audit_empty,
+  admin_audit_reason,
+  admin_audit_refresh,
+  admin_audit_scope_diff,
+  admin_audit_template_lifecycle_reason,
+  admin_audit_time,
+  admin_audit_title,
+  admin_audit_unknown,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import {
   Table,
@@ -95,7 +107,7 @@ export function AdminAuditControl() {
             actor: event.actorId!,
             correlationId: event.correlationId!,
             createdAt: event.occurredAt!,
-            reason: event.reason ?? m.admin_audit_template_lifecycle_reason(),
+            reason: event.reason ?? admin_audit_template_lifecycle_reason(),
             scope: version.templateId ?? 'official-template',
           }))
     );
@@ -123,7 +135,7 @@ export function AdminAuditControl() {
         actor: revision.actorId!,
         correlationId: revision.correlationId!,
         createdAt: revision.createdAt ?? '',
-        reason: revision.reason ?? m.admin_audit_catalog_lifecycle_reason(),
+        reason: revision.reason ?? admin_audit_catalog_lifecycle_reason(),
         scope: revision.previousRevisionId
           ? `${revision.previousRevisionId} → ${revision.id}`
           : revision.id,
@@ -144,7 +156,7 @@ export function AdminAuditControl() {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
-          <CardTitle>{m.admin_audit_title()}</CardTitle>
+          <CardTitle>{admin_audit_title()}</CardTitle>
           <Button
             disabled={
               templateQuery.isFetching ||
@@ -155,7 +167,7 @@ export function AdminAuditControl() {
             variant="outline"
           >
             <IconRefresh />
-            {m.admin_audit_refresh()}
+            {admin_audit_refresh()}
           </Button>
         </div>
       </CardHeader>
@@ -163,18 +175,18 @@ export function AdminAuditControl() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{m.admin_audit_action()}</TableHead>
-              <TableHead>{m.admin_audit_scope_diff()}</TableHead>
-              <TableHead>{m.admin_audit_reason()}</TableHead>
-              <TableHead>{m.admin_audit_actor_correlation()}</TableHead>
-              <TableHead>{m.admin_audit_time()}</TableHead>
+              <TableHead>{admin_audit_action()}</TableHead>
+              <TableHead>{admin_audit_scope_diff()}</TableHead>
+              <TableHead>{admin_audit_reason()}</TableHead>
+              <TableHead>{admin_audit_actor_correlation()}</TableHead>
+              <TableHead>{admin_audit_time()}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {events.length === 0 ? (
               <TableRow>
                 <TableCell className="text-muted-foreground" colSpan={5}>
-                  {m.admin_audit_empty()}
+                  {admin_audit_empty()}
                 </TableCell>
               </TableRow>
             ) : (
@@ -198,7 +210,7 @@ export function AdminAuditControl() {
                   <TableCell className="text-xs">
                     {event.createdAt
                       ? formatLocaleDateTime(event.createdAt)
-                      : m.admin_audit_unknown()}
+                      : admin_audit_unknown()}
                   </TableCell>
                 </TableRow>
               ))

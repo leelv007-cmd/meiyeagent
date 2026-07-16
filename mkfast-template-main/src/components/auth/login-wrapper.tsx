@@ -1,4 +1,4 @@
-import { m } from '@/locale/paraglide/messages';
+import { auth_login_sign_in } from '@/locale/paraglide/messages';
 import { LoginForm } from '@/components/auth/login-form';
 import {
   Dialog,
@@ -62,7 +62,7 @@ export function LoginWrapper({
         />
         <DialogContent className="sm:max-w-100 p-0 border-0 overflow-hidden">
           <DialogHeader className="sr-only">
-            <DialogTitle>{m.auth_login_sign_in()}</DialogTitle>
+            <DialogTitle>{auth_login_sign_in()}</DialogTitle>
           </DialogHeader>
           <LoginForm
             callbackUrl={callbackUrl}

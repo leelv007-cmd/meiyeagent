@@ -1,4 +1,8 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_clear_filters,
+  common_table_no_results_found,
+  common_table_selected,
+} from "@/locale/paraglide/messages";
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, } from '@/components/ui/command';
@@ -61,7 +65,7 @@ export function DataTableFacetedFilter<TData, TValue>({ column, title, options, 
                 </Badge>
                 <div className="hidden items-center gap-1 lg:flex">
                   {selectedValues.size > 2 ? (<Badge variant="secondary" className="rounded-sm px-1 font-normal">
-                      {selectedValues.size} {m.common_table_selected()}
+                      {selectedValues.size} {common_table_selected()}
                     </Badge>) : (options
                     .filter((option) => selectedValues.has(option.value))
                     .map((option) => (<Badge variant="secondary" key={option.value} className="rounded-sm px-1 font-normal">
@@ -74,7 +78,7 @@ export function DataTableFacetedFilter<TData, TValue>({ column, title, options, 
         <Command>
           <CommandInput placeholder={title}/>
           <CommandList className="max-h-full">
-            <CommandEmpty>{m.common_table_no_results_found()}</CommandEmpty>
+            <CommandEmpty>{common_table_no_results_found()}</CommandEmpty>
             <CommandGroup className="max-h-[300px] scroll-py-1 overflow-y-auto overflow-x-hidden">
               {options.map((option) => {
             const isSelected = selectedValues.has(option.value);
@@ -96,7 +100,7 @@ export function DataTableFacetedFilter<TData, TValue>({ column, title, options, 
                 <CommandSeparator />
                 <CommandGroup>
                   <CommandItem onSelect={() => onReset()} className="justify-center text-center">
-                    {m.common_table_clear_filters()}
+                    {common_table_clear_filters()}
                   </CommandItem>
                 </CommandGroup>
               </>)}

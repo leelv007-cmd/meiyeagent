@@ -4,7 +4,18 @@ import {
   OFFICIAL_CANVAS_TEMPLATE_NAME_PREFIX,
   OFFICIAL_CANVAS_WORK_NAME_PREFIX,
 } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canvas_work_template_name,
+  creation_shelf_blank_canvas_name,
+  creation_shelf_canvas_name,
+  p1_template_family_before_after,
+  p1_template_family_package_explainer,
+  p1_template_family_price_card,
+  p1_template_family_review_card,
+  p1_template_family_shooting_checklist,
+  p1_template_family_social_cover,
+  p1_template_family_store_intro,
+} from '@/locale/paraglide/messages';
 
 const LEGACY_BLANK_WORK_NAMES = new Set(['Blank visual post', '空白图文作品']);
 const LEGACY_BLANK_TEMPLATE_NAMES = new Set([
@@ -13,13 +24,13 @@ const LEGACY_BLANK_TEMPLATE_NAMES = new Set([
 ]);
 
 const OFFICIAL_TEMPLATE_FAMILY_LABEL: Record<string, () => string> = {
-  before_after: m.p1_template_family_before_after,
-  package_explainer: m.p1_template_family_package_explainer,
-  price_card: m.p1_template_family_price_card,
-  review_card: m.p1_template_family_review_card,
-  shooting_checklist: m.p1_template_family_shooting_checklist,
-  social_cover: m.p1_template_family_social_cover,
-  store_intro: m.p1_template_family_store_intro,
+  before_after: p1_template_family_before_after,
+  package_explainer: p1_template_family_package_explainer,
+  price_card: p1_template_family_price_card,
+  review_card: p1_template_family_review_card,
+  shooting_checklist: p1_template_family_shooting_checklist,
+  social_cover: p1_template_family_social_cover,
+  store_intro: p1_template_family_store_intro,
 };
 
 export function officialTemplateFamilyName(family: string): string | undefined {
@@ -28,14 +39,14 @@ export function officialTemplateFamilyName(family: string): string | undefined {
 
 export function canvasName(name: string): string {
   if (name === DEFAULT_CANVAS_WORK_NAME || LEGACY_BLANK_WORK_NAMES.has(name)) {
-    return m.creation_shelf_blank_canvas_name();
+    return creation_shelf_blank_canvas_name();
   }
   if (
     name === DEFAULT_CANVAS_TEMPLATE_NAME ||
     LEGACY_BLANK_TEMPLATE_NAMES.has(name)
   ) {
-    return m.canvas_work_template_name({
-      name: m.creation_shelf_blank_canvas_name(),
+    return canvas_work_template_name({
+      name: creation_shelf_blank_canvas_name(),
     });
   }
   if (name.startsWith(OFFICIAL_CANVAS_WORK_NAME_PREFIX)) {
@@ -43,7 +54,7 @@ export function canvasName(name: string): string {
       name.slice(OFFICIAL_CANVAS_WORK_NAME_PREFIX.length)
     );
     if (familyName) {
-      return m.creation_shelf_canvas_name({ name: familyName });
+      return creation_shelf_canvas_name({ name: familyName });
     }
   }
   if (name.startsWith(OFFICIAL_CANVAS_TEMPLATE_NAME_PREFIX)) {
@@ -51,8 +62,8 @@ export function canvasName(name: string): string {
       name.slice(OFFICIAL_CANVAS_TEMPLATE_NAME_PREFIX.length)
     );
     if (familyName) {
-      return m.canvas_work_template_name({
-        name: m.creation_shelf_canvas_name({ name: familyName }),
+      return canvas_work_template_name({
+        name: creation_shelf_canvas_name({ name: familyName }),
       });
     }
   }

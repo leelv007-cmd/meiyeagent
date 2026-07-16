@@ -1,5 +1,15 @@
 import { getAuthErrorMessage } from '@/lib/locale';
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_reset_password_back_to_login,
+  auth_reset_password_hide_password,
+  auth_reset_password_invalid_token,
+  auth_reset_password_min_length,
+  auth_reset_password_password,
+  auth_reset_password_placeholder_password,
+  auth_reset_password_reset,
+  auth_reset_password_show_password,
+  auth_reset_password_title,
+} from '@/locale/paraglide/messages';
 import { useState } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { AuthCard } from '@/components/auth/auth-card';
@@ -22,7 +32,7 @@ import { IconEye, IconEyeOff, IconLoader2 } from '@tabler/icons-react';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 const ResetPasswordSchema = z.object({
-  password: z.string().min(8, { message: m.auth_reset_password_min_length() }),
+  password: z.string().min(8, { message: auth_reset_password_min_length() }),
 });
 export function ResetPasswordForm() {
   const router = useRouter();
@@ -45,12 +55,12 @@ export function ResetPasswordForm() {
   if (!token || errorParam === 'invalid_token') {
     return (
       <AuthCard
-        headerLabel={m.auth_reset_password_title()}
-        bottomButtonLabel={m.auth_reset_password_back_to_login()}
+        headerLabel={auth_reset_password_title()}
+        bottomButtonLabel={auth_reset_password_back_to_login()}
         bottomButtonHref={Routes.Login}
       >
         <p className="text-sm text-destructive py-4">
-          {m.auth_reset_password_invalid_token()}
+          {auth_reset_password_invalid_token()}
         </p>
       </AuthCard>
     );
@@ -82,8 +92,8 @@ export function ResetPasswordForm() {
   };
   return (
     <AuthCard
-      headerLabel={m.auth_reset_password_title()}
-      bottomButtonLabel={m.auth_reset_password_back_to_login()}
+      headerLabel={auth_reset_password_title()}
+      bottomButtonLabel={auth_reset_password_back_to_login()}
       bottomButtonHref={Routes.Login}
     >
       <Form {...form}>
@@ -94,13 +104,13 @@ export function ResetPasswordForm() {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{m.auth_reset_password_password()}</FormLabel>
+                  <FormLabel>{auth_reset_password_password()}</FormLabel>
                   <div className="relative">
                     <FormControl>
                       <Input
                         {...field}
                         disabled={isPending}
-                        placeholder={m.auth_reset_password_placeholder_password()}
+                        placeholder={auth_reset_password_placeholder_password()}
                         type={showPassword ? 'text' : 'password'}
                         className="pr-10"
                       />
@@ -120,8 +130,8 @@ export function ResetPasswordForm() {
                       )}
                       <span className="sr-only">
                         {showPassword
-                          ? m.auth_reset_password_hide_password()
-                          : m.auth_reset_password_show_password()}
+                          ? auth_reset_password_hide_password()
+                          : auth_reset_password_show_password()}
                       </span>
                     </Button>
                   </div>
@@ -139,7 +149,7 @@ export function ResetPasswordForm() {
             className="w-full flex items-center justify-center gap-2"
           >
             {isPending && <IconLoader2 className="mr-2 size-4 animate-spin" />}
-            <span>{m.auth_reset_password_reset()}</span>
+            <span>{auth_reset_password_reset()}</span>
           </Button>
         </form>
       </Form>

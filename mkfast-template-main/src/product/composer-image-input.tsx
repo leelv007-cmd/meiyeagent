@@ -1,5 +1,35 @@
 import { Button } from '@/components/ui/button';
-import { m } from '@/locale/paraglide/messages';
+import {
+  composer_image_camera,
+  composer_image_camera_aria,
+  composer_image_confirm_facts,
+  composer_image_confirm_upload,
+  composer_image_contains_minor,
+  composer_image_contains_person,
+  composer_image_contains_sensitive_data,
+  composer_image_description,
+  composer_image_drop_paste,
+  composer_image_duplicate,
+  composer_image_empty,
+  composer_image_facts_confirmed,
+  composer_image_no,
+  composer_image_only_images,
+  composer_image_preview_alt,
+  composer_image_received,
+  composer_image_received_with_rejected,
+  composer_image_remove,
+  composer_image_remove_aria,
+  composer_image_remove_keeps_asset,
+  composer_image_retry,
+  composer_image_status_ready,
+  composer_image_status_uploading,
+  composer_image_title,
+  composer_image_upload,
+  composer_image_upload_aria,
+  composer_image_upload_failed,
+  composer_image_upload_list_aria,
+  composer_image_yes,
+} from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
 import {
   IconCamera,
@@ -70,8 +100,8 @@ function FactChoice({
       <div className="flex gap-2">
         {(
           [
-            [false, m.composer_image_no()],
-            [true, m.composer_image_yes()],
+            [false, composer_image_no()],
+            [true, composer_image_yes()],
           ] as const
         ).map(([next, text]) => (
           <Button
@@ -139,7 +169,7 @@ export function ComposerImageInput({
         setUploads((current) => current.filter(({ id }) => id !== item.id));
         URL.revokeObjectURL(item.previewUrl);
         previewUrlsRef.current.delete(item.previewUrl);
-        setNotice(m.composer_image_duplicate());
+        setNotice(composer_image_duplicate());
         return;
       }
       seenHashesRef.current.add(identity.contentHash);
@@ -165,7 +195,7 @@ export function ComposerImageInput({
           candidate.id === item.id
             ? {
                 ...candidate,
-                error: m.composer_image_upload_failed(),
+                error: composer_image_upload_failed(),
                 status: 'failed',
               }
             : candidate
@@ -178,16 +208,16 @@ export function ComposerImageInput({
     const images = files.filter((file) => file.type.startsWith('image/'));
     const rejected = files.length - images.length;
     if (images.length === 0) {
-      setNotice(m.composer_image_only_images());
+      setNotice(composer_image_only_images());
       return;
     }
     setNotice(
       rejected > 0
-        ? m.composer_image_received_with_rejected({
+        ? composer_image_received_with_rejected({
             images: images.length,
             rejected,
           })
-        : m.composer_image_received({ count: images.length })
+        : composer_image_received({ count: images.length })
     );
     for (const file of images) {
       const previewUrl = URL.createObjectURL(file);
@@ -234,10 +264,10 @@ export function ComposerImageInput({
     >
       <div>
         <h3 className="text-sm font-semibold" id="composer-input-title">
-          {m.composer_image_title()}
+          {composer_image_title()}
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          {m.composer_image_description()}
+          {composer_image_description()}
         </p>
       </div>
       <div
@@ -269,11 +299,11 @@ export function ComposerImageInput({
             variant="outline"
           >
             <IconCamera aria-hidden="true" />
-            {m.composer_image_camera()}
+            {composer_image_camera()}
           </Button>
           <input
             accept="image/*"
-            aria-label={m.composer_image_camera_aria()}
+            aria-label={composer_image_camera_aria()}
             capture="environment"
             className="sr-only"
             id="composer-camera-input"
@@ -292,11 +322,11 @@ export function ComposerImageInput({
             variant="outline"
           >
             <IconUpload aria-hidden="true" />
-            {m.composer_image_upload()}
+            {composer_image_upload()}
           </Button>
           <input
             accept="image/*"
-            aria-label={m.composer_image_upload_aria()}
+            aria-label={composer_image_upload_aria()}
             className="sr-only"
             id="composer-gallery-input"
             multiple
@@ -307,7 +337,7 @@ export function ComposerImageInput({
             type="file"
           />
           <span className="text-xs text-muted-foreground">
-            {m.composer_image_drop_paste()}
+            {composer_image_drop_paste()}
           </span>
         </div>
       </div>
@@ -319,7 +349,7 @@ export function ComposerImageInput({
       {uploads.length > 0 ? (
         <ul
           className="grid gap-px overflow-hidden rounded-lg bg-divider sm:grid-cols-2"
-          aria-label={m.composer_image_upload_list_aria()}
+          aria-label={composer_image_upload_list_aria()}
         >
           {uploads.map((item) => {
             const itemFacts = confirmedAssetFacts(item.answers);
@@ -335,7 +365,7 @@ export function ComposerImageInput({
               <li className="space-y-3 bg-surface-1 p-3" key={item.id}>
                 <div className="flex gap-3">
                   <img
-                    alt={m.composer_image_preview_alt({ name: item.file.name })}
+                    alt={composer_image_preview_alt({ name: item.file.name })}
                     className="size-20 rounded object-cover"
                     src={item.previewUrl}
                   />
@@ -345,7 +375,7 @@ export function ComposerImageInput({
                     </p>
                     {item.status !== 'confirming' ? (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {m.composer_image_facts_confirmed()}
+                        {composer_image_facts_confirmed()}
                       </p>
                     ) : null}
                     <p
@@ -358,16 +388,16 @@ export function ComposerImageInput({
                       )}
                     >
                       {item.status === 'confirming'
-                        ? m.composer_image_confirm_facts()
+                        ? composer_image_confirm_facts()
                         : item.status === 'uploading'
-                          ? m.composer_image_status_uploading()
+                          ? composer_image_status_uploading()
                           : item.status === 'ready'
-                            ? m.composer_image_status_ready()
-                            : (item.error ?? m.composer_image_upload_failed())}
+                            ? composer_image_status_ready()
+                            : (item.error ?? composer_image_upload_failed())}
                     </p>
                     {item.status === 'ready' ? (
                       <p className="mt-1 text-[11px] text-muted-foreground">
-                        {m.composer_image_remove_keeps_asset()}
+                        {composer_image_remove_keeps_asset()}
                       </p>
                     ) : null}
                   </div>
@@ -376,7 +406,7 @@ export function ComposerImageInput({
                   <div className="space-y-3">
                     <div className="grid gap-px overflow-hidden rounded-lg bg-divider">
                       <FactChoice
-                        label={m.composer_image_contains_person()}
+                        label={composer_image_contains_person()}
                         onChange={(value) =>
                           updateAnswers({
                             ...item.answers,
@@ -386,7 +416,7 @@ export function ComposerImageInput({
                         value={item.answers.containsPerson}
                       />
                       <FactChoice
-                        label={m.composer_image_contains_sensitive_data()}
+                        label={composer_image_contains_sensitive_data()}
                         onChange={(value) =>
                           updateAnswers({
                             ...item.answers,
@@ -396,7 +426,7 @@ export function ComposerImageInput({
                         value={item.answers.containsSensitiveData}
                       />
                       <FactChoice
-                        label={m.composer_image_contains_minor()}
+                        label={composer_image_contains_minor()}
                         onChange={(value) =>
                           updateAnswers({
                             ...item.answers,
@@ -427,7 +457,7 @@ export function ComposerImageInput({
                       type="button"
                     >
                       <IconUpload aria-hidden="true" />
-                      {m.composer_image_confirm_upload()}
+                      {composer_image_confirm_upload()}
                     </Button>
                   </div>
                 ) : null}
@@ -453,12 +483,12 @@ export function ComposerImageInput({
                       variant="outline"
                     >
                       <IconRefresh aria-hidden="true" />
-                      {m.composer_image_retry()}
+                      {composer_image_retry()}
                     </Button>
                   ) : null}
                   {item.status !== 'uploading' ? (
                     <Button
-                      aria-label={m.composer_image_remove_aria({
+                      aria-label={composer_image_remove_aria({
                         name: item.file.name,
                       })}
                       onClick={() => {
@@ -479,7 +509,7 @@ export function ComposerImageInput({
                       variant="ghost"
                     >
                       <IconTrash aria-hidden="true" />
-                      {m.composer_image_remove()}
+                      {composer_image_remove()}
                     </Button>
                   ) : null}
                 </div>
@@ -490,7 +520,7 @@ export function ComposerImageInput({
       ) : (
         <div className="flex items-center gap-2 rounded-md bg-surface-1 p-3 text-xs text-muted-foreground">
           <IconPhoto aria-hidden="true" className="size-4" />
-          {m.composer_image_empty()}
+          {composer_image_empty()}
         </div>
       )}
     </section>

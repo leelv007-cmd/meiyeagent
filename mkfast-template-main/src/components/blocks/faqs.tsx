@@ -1,4 +1,17 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  home_faqs_items_item_1_answer,
+  home_faqs_items_item_1_question,
+  home_faqs_items_item_2_answer,
+  home_faqs_items_item_2_question,
+  home_faqs_items_item_3_answer,
+  home_faqs_items_item_3_question,
+  home_faqs_items_item_4_answer,
+  home_faqs_items_item_4_question,
+  home_faqs_items_item_5_answer,
+  home_faqs_items_item_5_question,
+  home_faqs_subtitle,
+  home_faqs_title,
+} from '@/locale/paraglide/messages';
 import { HeaderSection } from '@/components/shared/header-section';
 import { ScrollReveal } from '@/components/shared/scroll-reveal';
 import {
@@ -11,28 +24,28 @@ export default function FaqSection() {
   const faqItems = [
     {
       id: 'item-1',
-      question: m.home_faqs_items_item_1_question(),
-      answer: m.home_faqs_items_item_1_answer(),
+      question: home_faqs_items_item_1_question(),
+      answer: home_faqs_items_item_1_answer(),
     },
     {
       id: 'item-2',
-      question: m.home_faqs_items_item_2_question(),
-      answer: m.home_faqs_items_item_2_answer(),
+      question: home_faqs_items_item_2_question(),
+      answer: home_faqs_items_item_2_answer(),
     },
     {
       id: 'item-3',
-      question: m.home_faqs_items_item_3_question(),
-      answer: m.home_faqs_items_item_3_answer(),
+      question: home_faqs_items_item_3_question(),
+      answer: home_faqs_items_item_3_answer(),
     },
     {
       id: 'item-4',
-      question: m.home_faqs_items_item_4_question(),
-      answer: m.home_faqs_items_item_4_answer(),
+      question: home_faqs_items_item_4_question(),
+      answer: home_faqs_items_item_4_answer(),
     },
     {
       id: 'item-5',
-      question: m.home_faqs_items_item_5_question(),
-      answer: m.home_faqs_items_item_5_answer(),
+      question: home_faqs_items_item_5_question(),
+      answer: home_faqs_items_item_5_answer(),
     },
   ];
   return (
@@ -40,8 +53,8 @@ export default function FaqSection() {
       <div className="mx-auto max-w-4xl">
         <ScrollReveal>
           <HeaderSection
-            title={m.home_faqs_title()}
-            subtitle={m.home_faqs_subtitle()}
+            title={home_faqs_title()}
+            subtitle={home_faqs_subtitle()}
           />
         </ScrollReveal>
 

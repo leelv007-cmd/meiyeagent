@@ -7,7 +7,12 @@ import useEmblaCarousel, {
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { m } from "@/locale/paraglide/messages"
+import {
+  common_carousel,
+  common_next_slide,
+  common_previous_slide,
+  common_slide,
+} from "@/locale/paraglide/messages";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
 
 type CarouselApi = UseEmblaCarouselType[1]
@@ -123,7 +128,7 @@ function Carousel({
         onKeyDownCapture={handleKeyDown}
         className={cn("relative", className)}
         role="region"
-        aria-roledescription={m.common_carousel()}
+        aria-roledescription={common_carousel()}
         data-slot="carousel"
         {...props}
       >
@@ -160,7 +165,7 @@ function CarouselItem({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       role="group"
-      aria-roledescription={m.common_slide()}
+      aria-roledescription={common_slide()}
       data-slot="carousel-item"
       className={cn(
         "min-w-0 shrink-0 grow-0 basis-full",
@@ -197,7 +202,7 @@ function CarouselPrevious({
       {...props}
     >
       <IconChevronLeft />
-      <span className="sr-only">{m.common_previous_slide()}</span>
+      <span className="sr-only">{common_previous_slide()}</span>
     </Button>
   )
 }
@@ -227,7 +232,7 @@ function CarouselNext({
       {...props}
     >
       <IconChevronRight />
-      <span className="sr-only">{m.common_next_slide()}</span>
+      <span className="sr-only">{common_next_slide()}</span>
     </Button>
   )
 }

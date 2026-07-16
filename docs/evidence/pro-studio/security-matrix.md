@@ -15,7 +15,7 @@ external credentials before the release gate can pass.
 | Idempotency conflict (same key + different payload) | unit | `IDEMPOTENCY_CONFLICT` paths in generation + adoption |
 | Async failure releases product usage | unit | `generation-runtime.test.ts` failure → `released` |
 | 2xx / SSE connect does not settle | unit | submit persists before dispatch; commit only after OwnedAsset / text deliverable |
-| Grant expiry / recycle | n/a (undetermined) | Ticket 09 probe inconclusive; grant path not built while undetermined |
+| Grant expiry / recycle | n/a (direct upload) | Ticket 09 production probe passed HTTP 200; no grant endpoint or grant URL is produced |
 | DNS / redirect SSRF on provider fetch | unit | `provider-safe-fetch.test.ts` |
 | Agent allowlist only (no free-form tools) | unit | `canvas-agent-production.test.ts`, `canvas-agent.test.ts` |
 | Agent dual-session zero-write CAS | unit | `canvas-agent.test.ts` stale confirmation / revision conflict |
@@ -46,16 +46,15 @@ pnpm --dir mkfast-template-main exec playwright test \
 
 The drill is real-service and database evidence, but its model/media adapter is
 `MODEL_EXECUTION_MODE=fixture`; keep that qualifier when reporting the result.
-It does not establish Ticket 09 provider-reference grants, Ticket 11/12 live
-audio activation, N2 recovery, pricing approval, or upsell sign-off.
+It does not establish Ticket 11/12 live audio activation, N2 recovery, pricing
+approval, or upsell sign-off. Ticket 09 has separate live provider evidence.
 
 ## Remaining before status = passed
 
 1. Preserve the local fixture drill above as partial evidence; repeat the same
    boundary flow in the production deployment/configuration before release.
-2. Ticket 09 conclusive provider reference decision (or explicit no-grant with live 200-class probe).
-3. Ticket 11/12 live audio activation evidence (operations stay closed until then).
-4. N2 recovery, pricing approval, and upsell product sign-off (commercial gates).
+2. Ticket 11/12 live audio activation evidence (operations stay closed until then).
+3. N2 recovery, pricing approval, and upsell product sign-off (commercial gates).
 
 Until those land, `release-evidence.json` must keep `securityMatrix` out of
 `passed` for the public release gate, even though the unit matrix above is green.

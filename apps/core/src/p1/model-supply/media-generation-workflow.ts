@@ -730,11 +730,34 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
               })),
       };
     }
+    const providerRequest = this.providerRequest(
+      submission,
+      request,
+      resolved,
+      resolved.map((asset, index) => ({
+        ...asset,
+        role: declaredInputAssets[index]!.role,
+      })),
+    );
     try {
       (
         this.dependencies.referencePolicy ??
         CURRENT_PROVIDER_REFERENCE_POLICY
       ).assertCanDispatch({
+        deploymentId: providerRequest.deployment.id,
+        ...(providerRequest.deployment.executionChannelId
+          ? {
+              executionChannelId:
+                providerRequest.deployment.executionChannelId,
+            }
+          : {}),
+        operation: providerRequest.submission.operation,
+        ...(providerRequest.deployment.providerModel
+          ? { providerModel: providerRequest.deployment.providerModel }
+          : {}),
+        ...(providerRequest.deployment.providerProfileId
+          ? { providerProfileId: providerRequest.deployment.providerProfileId }
+          : {}),
         referenceAssetCount: resolved.length,
       });
     } catch (error) {
@@ -745,15 +768,7 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
     }
     return {
       kind: 'request',
-      request: this.providerRequest(
-        submission,
-        request,
-        resolved,
-        resolved.map((asset, index) => ({
-          ...asset,
-          role: declaredInputAssets[index]!.role,
-        })),
-      ),
+      request: providerRequest,
     };
   }
 

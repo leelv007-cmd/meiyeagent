@@ -1,4 +1,8 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  dashboard_avatar_billing,
+  dashboard_avatar_dashboard,
+  dashboard_avatar_settings,
+} from '@/locale/paraglide/messages';
 import {
   IconCreditCard,
   IconLayoutDashboard,
@@ -13,21 +17,21 @@ import { websiteConfig } from './website';
 export function getAvatarLinks(): MenuItemConfig[] {
   return [
     {
-      title: m.dashboard_avatar_dashboard(),
+      title: dashboard_avatar_dashboard(),
       href: Routes.Dashboard,
       icon: IconLayoutDashboard,
     },
     ...(websiteConfig.payment?.enable
       ? [
           {
-            title: m.dashboard_avatar_billing(),
+            title: dashboard_avatar_billing(),
             href: Routes.SettingsBilling,
             icon: IconCreditCard,
           },
         ]
       : []),
     {
-      title: m.dashboard_avatar_settings(),
+      title: dashboard_avatar_settings(),
       href: Routes.SettingsProfile,
       icon: IconSettings2,
     },

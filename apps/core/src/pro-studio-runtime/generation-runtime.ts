@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import {
+  editingContextSchema,
+  type AdvancedCanvasEditingContext,
+} from '@meiye/contracts';
+import {
   parseAudioSfxContract,
   parseAudioSpeechContract,
 } from './audio-contracts.js';
@@ -92,14 +96,16 @@ export interface CanvasGenerationQuote {
   createdAt: string;
 }
 
+type LegacyCanvasGenerationOrigin = {
+  kind: 'advanced_canvas';
+  id: string;
+  revisionId: string;
+};
+
 export interface CanvasGenerationJob {
   id: string;
   workspaceId: string;
-  origin: {
-    kind: 'advanced_canvas';
-    id: string;
-    revisionId: string;
-  };
+  origin: AdvancedCanvasEditingContext;
   operation: CanvasGenerationOperation;
   modelId: string;
   prompt: string;
@@ -125,6 +131,10 @@ export interface CanvasGenerationJob {
   createdAt: string;
   updatedAt: string;
 }
+
+type PersistedCanvasGenerationJob = Omit<CanvasGenerationJob, 'origin'> & {
+  origin: AdvancedCanvasEditingContext | LegacyCanvasGenerationOrigin;
+};
 
 export interface CanvasGeneratedAsset {
   id: string;
@@ -199,7 +209,7 @@ interface CanvasGenerationReceipt {
 
 export interface CanvasGenerationWorkspaceState {
   quotes: CanvasGenerationQuote[];
-  jobs: CanvasGenerationJob[];
+  jobs: PersistedCanvasGenerationJob[];
   reservations: CanvasUsageReservation[];
   attempts: CanvasProviderAttempt[];
   providerCosts: CanvasProviderCost[];
@@ -467,7 +477,7 @@ export class CanvasGenerationApplicationService {
             'Generation key was reused with another request.',
           );
         }
-        return requireJob(state, existing.jobId);
+        return generationJobProjection(state, requireJob(state, existing.jobId));
       }
       const quote = state.quotes.find((candidate) => candidate.id === input.quoteId);
       if (!quote || quote.payloadHash !== payloadHash) {
@@ -496,7 +506,7 @@ export class CanvasGenerationApplicationService {
         workspaceId: context.workspaceId,
         origin: {
           kind: 'advanced_canvas',
-          id: input.projectId,
+          projectId: input.projectId,
           revisionId: input.revisionId,
         },
         operation: input.operation,
@@ -540,14 +550,14 @@ export class CanvasGenerationApplicationService {
         payloadHash,
         jobId,
       });
-      return job;
+      return generationJobProjection(state, job);
     });
   }
 
   async dispatch(context: CanvasGenerationContext, jobId: string) {
     const state = await this.repository.read(context.workspaceId);
     const job = requireJob(state, jobId);
-    if (job.status !== 'queued') return structuredClone(job);
+    if (job.status !== 'queued') return generationJobProjection(state, job);
     const result = await this.dependencies.provider.submit({
       jobId: job.id,
       operation: job.operation,
@@ -559,7 +569,9 @@ export class CanvasGenerationApplicationService {
     });
     return this.repository.transact(context.workspaceId, (current) => {
       const projection = requireJob(current, jobId);
-      if (projection.status !== 'queued') return projection;
+      if (projection.status !== 'queued') {
+        return generationJobProjection(current, projection);
+      }
       const attempt = requireAttempt(current, jobId);
       const outbox = requireOutbox(current, jobId);
       outbox.status = 'dispatched';
@@ -575,7 +587,7 @@ export class CanvasGenerationApplicationService {
         attempt.status = 'accepted';
         attempt.providerTaskId = result.providerTaskId;
       }
-      return projection;
+      return generationJobProjection(current, projection);
     });
   }
 
@@ -590,7 +602,7 @@ export class CanvasGenerationApplicationService {
   ) {
     const state = await this.repository.read(context.workspaceId);
     return state.jobs
-      .filter((job) => job.origin.id === projectId)
+      .filter((job) => readCanvasGenerationOrigin(job.origin)?.projectId === projectId)
       .map((job) => generationJobProjection(state, job));
   }
 
@@ -608,9 +620,10 @@ export class CanvasGenerationApplicationService {
         'Text jobs cannot deliver media assets.',
       );
     }
+    const origin = requireCanvasGenerationOrigin(job.origin);
     const delivery: CanvasMediaDeliveryInput = {
       workspaceId: context.workspaceId,
-      projectId: job.origin.id,
+      projectId: origin.projectId,
       jobId,
       mediaType: entry.output,
       bytes: input.bytes,
@@ -620,7 +633,7 @@ export class CanvasGenerationApplicationService {
     if (entry.output === 'audio') validateAudioDelivery(delivery);
     if (job.status === 'cancelled') {
       await this.dependencies.assets.persistQuarantined(delivery);
-      return structuredClone(job);
+      return generationJobProjection(state, job);
     }
     if (job.status !== 'accepted' && job.status !== 'delivery_pending') {
       throw new CanvasGenerationError(
@@ -636,12 +649,14 @@ export class CanvasGenerationApplicationService {
         const projection = requireJob(current, jobId);
         projection.status = 'delivery_pending';
         projection.updatedAt = this.now().toISOString();
-        return projection;
+        return generationJobProjection(current, projection);
       });
     }
     const projection = await this.repository.transact(context.workspaceId, (current) => {
       const projection = requireJob(current, jobId);
-      if (projection.status === 'cancelled') return projection;
+      if (projection.status === 'cancelled') {
+        return generationJobProjection(current, projection);
+      }
       if (!current.assets.some((candidate) => candidate.id === asset.id)) {
         current.assets.push(structuredClone(asset));
       }
@@ -649,7 +664,7 @@ export class CanvasGenerationApplicationService {
       projection.status = 'completed';
       projection.updatedAt = this.now().toISOString();
       commitReservation(current, jobId, this.now());
-      return projection;
+      return generationJobProjection(current, projection);
     });
     if (projection.status === 'cancelled') {
       await this.dependencies.assets.persistQuarantined(delivery);
@@ -683,7 +698,7 @@ export class CanvasGenerationApplicationService {
       const deliverable: CanvasTextDeliverable = {
         id: `canvas-text-${job.id}`,
         workspaceId: context.workspaceId,
-        projectId: job.origin.id,
+        projectId: requireCanvasGenerationOrigin(job.origin).projectId,
         jobId: job.id,
         text,
         createdAt: this.now().toISOString(),
@@ -695,7 +710,7 @@ export class CanvasGenerationApplicationService {
       job.status = 'completed';
       job.updatedAt = this.now().toISOString();
       commitReservation(state, jobId, this.now());
-      return job;
+      return generationJobProjection(state, job);
     });
   }
 
@@ -707,7 +722,9 @@ export class CanvasGenerationApplicationService {
     requireText(input.code, 'code');
     return this.repository.transact(context.workspaceId, (state) => {
       const job = requireJob(state, jobId);
-      if (job.status === 'completed' || job.status === 'cancelled') return job;
+      if (job.status === 'completed' || job.status === 'cancelled') {
+        return generationJobProjection(state, job);
+      }
       job.status = 'failed';
       job.failureCode = input.code;
       job.updatedAt = this.now().toISOString();
@@ -729,7 +746,7 @@ export class CanvasGenerationApplicationService {
           createdAt: this.now().toISOString(),
         });
       }
-      return job;
+      return generationJobProjection(state, job);
     });
   }
 
@@ -737,11 +754,11 @@ export class CanvasGenerationApplicationService {
     return this.repository.transact(context.workspaceId, (state) => {
       const job = requireJob(state, jobId);
       if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
-        return job;
+        return generationJobProjection(state, job);
       }
       job.status = 'cancel_requested';
       job.updatedAt = this.now().toISOString();
-      return job;
+      return generationJobProjection(state, job);
     });
   }
 
@@ -755,11 +772,13 @@ export class CanvasGenerationApplicationService {
     if (result.status === 'pending') return job;
     return this.repository.transact(context.workspaceId, (state) => {
       const projection = requireJob(state, jobId);
-      if (projection.status !== 'cancel_requested') return projection;
+      if (projection.status !== 'cancel_requested') {
+        return generationJobProjection(state, projection);
+      }
       projection.status = 'cancelled';
       projection.updatedAt = this.now().toISOString();
       releaseReservation(state, jobId, this.now());
-      return projection;
+      return generationJobProjection(state, projection);
     });
   }
 
@@ -960,9 +979,56 @@ function validateAudioDelivery(input: CanvasMediaDeliveryInput) {
   }
 }
 
+/**
+ * Read boundary for generation state persisted before EditingContext used
+ * projectId. The legacy id key is accepted only when projectId is absent;
+ * callers receive the canonical shape and no legacy value is written back.
+ */
+export function readCanvasGenerationOrigin(
+  value: unknown,
+): AdvancedCanvasEditingContext | null {
+  const canonical = editingContextSchema.safeParse(value);
+  if (canonical.success) {
+    return canonical.data.kind === 'advanced_canvas' ? canonical.data : null;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const origin = value as Record<string, unknown>;
+  const hasProjectId = Object.prototype.hasOwnProperty.call(origin, 'projectId');
+  const hasLegacyId = Object.prototype.hasOwnProperty.call(origin, 'id');
+  if (hasProjectId || !hasLegacyId) return null;
+  if (
+    Object.keys(origin).some(
+      (key) => key !== 'kind' && key !== 'id' && key !== 'revisionId',
+    )
+  ) {
+    return null;
+  }
+  const legacy = editingContextSchema.safeParse({
+    kind: 'advanced_canvas',
+    projectId: origin.id,
+    revisionId: origin.revisionId,
+  });
+  return legacy.success && legacy.data.kind === 'advanced_canvas'
+    ? legacy.data
+    : null;
+}
+
+function requireCanvasGenerationOrigin(
+  value: unknown,
+): AdvancedCanvasEditingContext {
+  const origin = readCanvasGenerationOrigin(value);
+  if (!origin) {
+    throw new CanvasGenerationError(
+      'GENERATION_ORIGIN_INVALID',
+      'Generation job origin is not a supported advanced-canvas EditingContext.',
+    );
+  }
+  return origin;
+}
+
 function generationJobProjection(
   state: CanvasGenerationWorkspaceState,
-  job: CanvasGenerationJob,
+  job: PersistedCanvasGenerationJob,
 ) {
   const deliverable = job.textDeliverableId
     ? state.textDeliverables.find(
@@ -971,6 +1037,7 @@ function generationJobProjection(
     : undefined;
   return structuredClone({
     ...job,
+    origin: requireCanvasGenerationOrigin(job.origin),
     ...(deliverable ? { text: deliverable.text } : {}),
   });
 }

@@ -3,7 +3,24 @@ import {
   type DurationEstimate,
 } from '@meiye/contracts';
 
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_admin_model_operation_audio_sfx,
+  p1_admin_model_operation_audio_speech,
+  p1_admin_model_operation_copy,
+  p1_admin_model_operation_image_edit,
+  p1_admin_model_operation_image_generate,
+  p1_admin_model_operation_video,
+  p1_model_manufacturer_domestic,
+  p1_model_name_domestic_llm,
+  p1_model_name_grok_latest,
+  p1_model_name_kling_latest,
+  p1_model_name_veo_latest,
+  p1_model_unavailable_activation_evidence_missing,
+  p1_model_unavailable_credential,
+  p1_model_unavailable_not_open,
+  p1_model_unavailable_region,
+  p1_model_unavailable_retired,
+} from '@/locale/paraglide/messages';
 
 export type ModelOperation =
   | 'copy.generate'
@@ -232,35 +249,34 @@ export interface DouyinOperationsSnapshotView {
 
 const MODEL_NAMES: Record<string, () => string> = {
   'gpt-image-2': () => 'GPT Image 2',
-  'grok-latest-video': m.p1_model_name_grok_latest,
-  'kling-latest': m.p1_model_name_kling_latest,
+  'grok-latest-video': p1_model_name_grok_latest,
+  'kling-latest': p1_model_name_kling_latest,
   'llm-anthropic': () => 'Anthropic Claude',
-  'llm-domestic': m.p1_model_name_domestic_llm,
+  'llm-domestic': p1_model_name_domestic_llm,
   'llm-gemini': () => 'Google Gemini',
   'llm-openai': () => 'OpenAI',
   'nano-banana-2': () => 'Nano Banana 2',
   'nano-banana-pro': () => 'Nano Banana Pro',
   'seedance-2': () => 'Seedance 2.0',
   'seedream-5-pro': () => 'Seedream 5.0 Pro',
-  'veo-latest': m.p1_model_name_veo_latest,
+  'veo-latest': p1_model_name_veo_latest,
 };
 
 const CAPABILITY_LABELS: Record<ModelOperation, () => string> = {
-  'copy.adapt': m.p1_admin_model_operation_copy,
-  'copy.generate': m.p1_admin_model_operation_copy,
-  'image.edit': m.p1_admin_model_operation_image_edit,
-  'image.generate': m.p1_admin_model_operation_image_generate,
-  'video.generate': m.p1_admin_model_operation_video,
-  'audio.speech': m.p1_admin_model_operation_audio_speech,
-  'audio.sfx': m.p1_admin_model_operation_audio_sfx,
+  'copy.adapt': p1_admin_model_operation_copy,
+  'copy.generate': p1_admin_model_operation_copy,
+  'image.edit': p1_admin_model_operation_image_edit,
+  'image.generate': p1_admin_model_operation_image_generate,
+  'video.generate': p1_admin_model_operation_video,
+  'audio.speech': p1_admin_model_operation_audio_speech,
+  'audio.sfx': p1_admin_model_operation_audio_sfx,
 };
 
 const UNAVAILABLE_REASON_LABELS: Record<string, () => string> = {
-  activation_evidence_missing:
-    m.p1_model_unavailable_activation_evidence_missing,
-  credential_unavailable: m.p1_model_unavailable_credential,
-  region_unavailable: m.p1_model_unavailable_region,
-  retired: m.p1_model_unavailable_retired,
+  activation_evidence_missing: p1_model_unavailable_activation_evidence_missing,
+  credential_unavailable: p1_model_unavailable_credential,
+  region_unavailable: p1_model_unavailable_region,
+  retired: p1_model_unavailable_retired,
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -331,15 +347,13 @@ function publicCatalogIdentifier(value: unknown, hiddenValues: string[] = []) {
 function publicManufacturer(value: unknown) {
   const candidate = publicCatalogIdentifier(value, ['Unknown manufacturer']);
   return candidate === 'Domestic provider'
-    ? m.p1_model_manufacturer_domestic()
+    ? p1_model_manufacturer_domestic()
     : candidate;
 }
 
 function publicUnavailableReason(reason: unknown) {
   const raw = string(reason);
-  return (
-    UNAVAILABLE_REASON_LABELS[raw]?.() ?? m.p1_model_unavailable_not_open()
-  );
+  return UNAVAILABLE_REASON_LABELS[raw]?.() ?? p1_model_unavailable_not_open();
 }
 
 function catalogPayload(value: unknown) {

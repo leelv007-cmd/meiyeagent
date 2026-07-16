@@ -1,4 +1,8 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  common_mode_dark,
+  common_mode_light,
+  common_mode_system,
+} from '@/locale/paraglide/messages';
 import { Button } from '@/components/ui/button';
 import { websiteConfig } from '@/config/website';
 import { cn } from '@/lib/utils';
@@ -36,7 +40,7 @@ export function ModeSwitcherHorizontal() {
           theme === 'light' && 'bg-muted text-foreground'
         )}
         onClick={() => setTheme('light')}
-        aria-label={m.common_mode_light()}
+        aria-label={common_mode_light()}
       >
         <IconSun className="size-4" />
       </Button>
@@ -48,7 +52,7 @@ export function ModeSwitcherHorizontal() {
           theme === 'dark' && 'bg-muted text-foreground'
         )}
         onClick={() => setTheme('dark')}
-        aria-label={m.common_mode_dark()}
+        aria-label={common_mode_dark()}
       >
         <IconMoon className="size-4" />
       </Button>
@@ -60,7 +64,7 @@ export function ModeSwitcherHorizontal() {
           theme === 'system' && 'bg-muted text-foreground'
         )}
         onClick={() => setTheme('system')}
-        aria-label={m.common_mode_system()}
+        aria-label={common_mode_system()}
       >
         <IconDeviceDesktop className="size-4" />
       </Button>

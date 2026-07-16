@@ -1,5 +1,8 @@
 import type { CreativeWork } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creative_work_preset_loading,
+  creative_work_preset_unavailable,
+} from '@/locale/paraglide/messages';
 
 export interface CreativeWorkTemplateDisplay {
   id: string;
@@ -30,7 +33,7 @@ export function creativeWorkDisplay(
     return { kind: 'manual', title: work.intent };
   }
   if (!catalogLoaded) {
-    return { kind: 'unresolved', title: m.creative_work_preset_loading() };
+    return { kind: 'unresolved', title: creative_work_preset_loading() };
   }
 
   const templatesById = new Map(
@@ -38,7 +41,7 @@ export function creativeWorkDisplay(
   );
   const resolved = templateIds.map((id) => templatesById.get(id));
   if (resolved.some((template) => !template)) {
-    return { kind: 'unresolved', title: m.creative_work_preset_unavailable() };
+    return { kind: 'unresolved', title: creative_work_preset_unavailable() };
   }
 
   const preset = resolved

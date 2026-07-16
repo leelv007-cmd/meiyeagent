@@ -1,4 +1,4 @@
-import { m } from "@/locale/paraglide/messages";
+import { common_table_clear_filters } from "@/locale/paraglide/messages";
 import type { Column, Table } from "@tanstack/react-table";
 import { IconX } from "@tabler/icons-react";
 import * as React from "react";
@@ -21,9 +21,9 @@ export function DataTableToolbar<TData>({ table, children, className, ...props }
     return (<div role="toolbar" aria-orientation="horizontal" className={cn("flex w-full items-start justify-between gap-2 p-1", className)} {...props}>
       <div className="flex flex-1 flex-wrap items-center gap-2">
         {columns.map((column) => (<DataTableToolbarFilter key={column.id} column={column}/>))}
-        {isFiltered && (<Button aria-label={m.common_table_clear_filters()} variant="outline" size="sm" className="border-dashed" onClick={onReset}>
+        {isFiltered && (<Button aria-label={common_table_clear_filters()} variant="outline" size="sm" className="border-dashed" onClick={onReset}>
             <IconX />
-            {m.common_table_clear_filters()}
+            {common_table_clear_filters()}
           </Button>)}
       </div>
       <div className="flex items-center gap-2">

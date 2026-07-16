@@ -1,4 +1,7 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_reset_password_description,
+  auth_reset_password_title,
+} from '@/locale/paraglide/messages';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 import { websiteConfig } from '@/config/website';
@@ -13,8 +16,8 @@ export const Route = createFileRoute('/auth/reset-password')({
   component: ResetPasswordPage,
   head: () => ({
     meta: [
-      { title: m.auth_reset_password_title() },
-      { name: 'description', content: m.auth_reset_password_description() },
+      { title: auth_reset_password_title() },
+      { name: 'description', content: auth_reset_password_description() },
     ],
   }),
 });

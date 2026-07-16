@@ -4,7 +4,66 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  content_package_asset_rights_withdrawn,
+  content_package_base_version,
+  content_package_compare_current,
+  content_package_current_version,
+  content_package_detail_title,
+  content_package_download_export,
+  content_package_edit_body,
+  content_package_edit_hook,
+  content_package_edit_title,
+  content_package_edit_topics,
+  content_package_export_failed,
+  content_package_export_compliance_summary,
+  content_package_export_failure_unknown,
+  content_package_export_platform,
+  content_package_export_receipts,
+  content_package_export_receipts_empty,
+  content_package_export_service_unavailable,
+  content_package_export_succeeded,
+  content_package_field_changed,
+  content_package_generate_variants,
+  content_package_history_version,
+  content_package_ledger_committed,
+  content_package_ledger_product_usage,
+  content_package_ledger_refunded,
+  content_package_ledger_reserved,
+  content_package_ledger_title,
+  content_package_lineage_children,
+  content_package_lineage_children_empty,
+  content_package_lineage_source,
+  content_package_lineage_source_empty,
+  content_package_lineage_title,
+  content_package_platform_video_account,
+  content_package_recreate_with_assets,
+  content_package_replacement_required,
+  content_package_retry_export,
+  content_package_rights_revoked,
+  content_package_rollback_new_version,
+  content_package_save_new_version,
+  content_package_source_ai,
+  content_package_source_merchant,
+  content_package_source_rollback,
+  content_package_untitled,
+  content_package_variants_loading,
+  content_package_variants_retry,
+  content_package_variants_unavailable,
+  content_package_version_history,
+  content_package_visual_order,
+  content_package_visual_position,
+  creation_entry_platform_douyin,
+  creation_entry_platform_xiaohongshu,
+  dashboard_content_remix,
+  dashboard_handoff_aigc_label_off,
+  dashboard_handoff_aigc_label_on,
+  p1_canvas_aigc_label,
+  p1_canvas_export_aigc_text,
+  workbench_switch_off,
+  workbench_switch_on,
+  workbench_watermark,
+} from '@/locale/paraglide/messages';
 import { getPathWithLocale } from '@/lib/urls';
 import type { CanonicalMediaProjection } from '@/product/canonical-history-model';
 import { VideoWorkflowPanel } from '@/product/video-workflow-panel';
@@ -59,11 +118,11 @@ type VersionTarget = 'package' | ContentPackagePlatform;
 function platformLabel(platform: ContentPackagePlatform) {
   switch (platform) {
     case 'xiaohongshu':
-      return m.creation_entry_platform_xiaohongshu();
+      return creation_entry_platform_xiaohongshu();
     case 'douyin':
-      return m.creation_entry_platform_douyin();
+      return creation_entry_platform_douyin();
     case 'video_account':
-      return m.content_package_platform_video_account();
+      return content_package_platform_video_account();
   }
 }
 
@@ -71,34 +130,34 @@ function packageTitle(contentPackage: ContentPackageProjection) {
   return (
     contentPackage.versions.find(
       (version) => version.id === contentPackage.currentVersionId
-    )?.title || m.content_package_untitled()
+    )?.title || content_package_untitled()
   );
 }
 
 function versionSourceLabel(source: ContentPackageVersion['source']) {
   switch (source) {
     case 'ai_generated':
-      return m.content_package_source_ai();
+      return content_package_source_ai();
     case 'merchant_edited':
-      return m.content_package_source_merchant();
+      return content_package_source_merchant();
     case 'rollback_restored':
-      return m.content_package_source_rollback();
+      return content_package_source_rollback();
     default:
       return undefined;
   }
 }
 
 function usageStatusLabel(status: 'committed' | 'refunded' | 'reserved') {
-  if (status === 'committed') return m.content_package_ledger_committed();
-  if (status === 'refunded') return m.content_package_ledger_refunded();
-  return m.content_package_ledger_reserved();
+  if (status === 'committed') return content_package_ledger_committed();
+  if (status === 'refunded') return content_package_ledger_refunded();
+  return content_package_ledger_reserved();
 }
 
 function exportFailureLabel(category: string | undefined) {
   return category === 'export_adapter_failed' ||
     category === 'archive_unavailable'
-    ? m.content_package_export_service_unavailable()
-    : m.content_package_export_failure_unknown();
+    ? content_package_export_service_unavailable()
+    : content_package_export_failure_unknown();
 }
 
 type ExportComplianceSummaryMessage = (input: {
@@ -110,28 +169,25 @@ function exportComplianceSummary(
   compliance: ContentPackageProjection['compliance']
 ) {
   const enabledWatermarkLabel = compliance.watermarkEnabled
-    ? m.dashboard_handoff_aigc_label_on()
-    : m.dashboard_handoff_aigc_label_off();
+    ? dashboard_handoff_aigc_label_on()
+    : dashboard_handoff_aigc_label_off();
   const enabledAigcLabel = compliance.aigcLabelEnabled
-    ? m.dashboard_handoff_aigc_label_on()
-    : m.dashboard_handoff_aigc_label_off();
+    ? dashboard_handoff_aigc_label_on()
+    : dashboard_handoff_aigc_label_off();
   const watermark = compliance.watermarkEnabled
-    ? m.workbench_switch_on()
-    : m.workbench_switch_off();
+    ? workbench_switch_on()
+    : workbench_switch_off();
   const aigc = compliance.aigcLabelEnabled
-    ? m.workbench_switch_on()
-    : m.workbench_switch_off();
-  const localizedMessage = (
-    m as typeof m & {
-      content_package_export_compliance_summary?: ExportComplianceSummaryMessage;
-    }
-  ).content_package_export_compliance_summary;
+    ? workbench_switch_on()
+    : workbench_switch_off();
+  const localizedMessage: ExportComplianceSummaryMessage | undefined =
+    content_package_export_compliance_summary;
   if (localizedMessage) return localizedMessage({ aigc, watermark });
   const brandWatermarkLabel = enabledWatermarkLabel.replace(
-    m.p1_canvas_aigc_label(),
-    m.workbench_watermark()
+    p1_canvas_aigc_label(),
+    workbench_watermark()
   );
-  const aiGeneratedText = m.p1_canvas_export_aigc_text();
+  const aiGeneratedText = p1_canvas_export_aigc_text();
   const aiGeneratedLabel = `${aiGeneratedText}${
     /\p{Script=Han}/u.test(aiGeneratedText) ? '' : ' '
   }${enabledAigcLabel.replace(/^AIGC\s*/u, '')}`;
@@ -183,10 +239,10 @@ export function ContentPackageDetail({
   const exportBlockedLabel = contentPackage.rights.reason?.startsWith(
     'asset_withdrawn'
   )
-    ? m.content_package_asset_rights_withdrawn()
+    ? content_package_asset_rights_withdrawn()
     : contentPackage.rights.state === 'revoked'
-      ? m.content_package_rights_revoked()
-      : m.content_package_replacement_required();
+      ? content_package_rights_revoked()
+      : content_package_replacement_required();
   const { workflowId, workId } = contentPackage.source;
   const videoWorkflow =
     contentPackage.kind === 'video' && workId ? (
@@ -230,7 +286,7 @@ export function ContentPackageDetail({
     <Card className="rounded-md border-primary/20 bg-surface-1 shadow-none">
       <CardHeader className="gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <CardTitle>{m.content_package_detail_title()}</CardTitle>
+          <CardTitle>{content_package_detail_title()}</CardTitle>
           <Badge className="ml-auto" variant="outline">
             {contentPackage.statusLabel}
           </Badge>
@@ -242,7 +298,7 @@ export function ContentPackageDetail({
             type="button"
             variant={target === 'package' ? 'default' : 'outline'}
           >
-            {m.content_package_base_version()}
+            {content_package_base_version()}
           </Button>
           {contentPackage.variants.map((item) => (
             <Button
@@ -264,7 +320,7 @@ export function ContentPackageDetail({
               variant="outline"
             >
               <IconSparkles />
-              {m.content_package_generate_variants({
+              {content_package_generate_variants({
                 price: variantQuoteLabel,
               })}
             </Button>
@@ -273,14 +329,14 @@ export function ContentPackageDetail({
           !variantQuoteLabel &&
           variantCatalogState === 'loading' ? (
             <Button disabled size="sm" type="button" variant="outline">
-              {m.content_package_variants_loading()}
+              {content_package_variants_loading()}
             </Button>
           ) : null}
           {contentPackage.variants.length === 0 &&
           !variantQuoteLabel &&
           variantCatalogState === 'unavailable' ? (
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span>{m.content_package_variants_unavailable()}</span>
+              <span>{content_package_variants_unavailable()}</span>
               <Button
                 disabled={pending}
                 onClick={onRetryVariantCatalog}
@@ -288,7 +344,7 @@ export function ContentPackageDetail({
                 type="button"
                 variant="outline"
               >
-                {m.content_package_variants_retry()}
+                {content_package_variants_retry()}
               </Button>
             </div>
           ) : null}
@@ -305,7 +361,7 @@ export function ContentPackageDetail({
         >
           <div className="space-y-2">
             <Label htmlFor="content-package-title">
-              {m.content_package_edit_title()}
+              {content_package_edit_title()}
             </Label>
             <Input
               defaultValue={currentVersion.title}
@@ -315,7 +371,7 @@ export function ContentPackageDetail({
           </div>
           <div className="space-y-2">
             <Label htmlFor="content-package-body">
-              {m.content_package_edit_body()}
+              {content_package_edit_body()}
             </Label>
             <Textarea
               className="min-h-40"
@@ -327,7 +383,7 @@ export function ContentPackageDetail({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="content-package-hook">
-                {m.content_package_edit_hook()}
+                {content_package_edit_hook()}
               </Label>
               <Input
                 defaultValue={currentVersion.conversionHook ?? ''}
@@ -337,7 +393,7 @@ export function ContentPackageDetail({
             </div>
             <div className="space-y-2">
               <Label htmlFor="content-package-topics">
-                {m.content_package_edit_topics()}
+                {content_package_edit_topics()}
               </Label>
               <Input
                 defaultValue={currentVersion.topics.join('，')}
@@ -353,7 +409,7 @@ export function ContentPackageDetail({
           />
           <div className="flex flex-wrap gap-2">
             <Button disabled={pending} type="submit">
-              {m.content_package_save_new_version()}
+              {content_package_save_new_version()}
             </Button>
             {variant ? (
               <div className="flex flex-col items-start gap-1">
@@ -364,7 +420,7 @@ export function ContentPackageDetail({
                   variant="outline"
                 >
                   <IconDownload />
-                  {m.content_package_export_platform({
+                  {content_package_export_platform({
                     platform: platformLabel(variant.platform),
                   })}
                 </Button>
@@ -387,7 +443,7 @@ export function ContentPackageDetail({
                     : '/dashboard'
                 )}
               >
-                {m.content_package_recreate_with_assets()}
+                {content_package_recreate_with_assets()}
               </a>
             ) : null}
             <Button
@@ -397,7 +453,7 @@ export function ContentPackageDetail({
               variant="outline"
             >
               <IconRepeat />
-              {m.dashboard_content_remix()}
+              {dashboard_content_remix()}
             </Button>
           </div>
         </form>
@@ -412,7 +468,7 @@ export function ContentPackageDetail({
               id="version-history-title"
             >
               <IconHistory />
-              {m.content_package_version_history()}
+              {content_package_version_history()}
             </h3>
             <div className="space-y-2">
               {[...versions].reverse().map((version, reverseIndex) => {
@@ -434,7 +490,7 @@ export function ContentPackageDetail({
                       </span>
                       {version.id === currentVersionId ? (
                         <Badge variant="secondary">
-                          {m.content_package_current_version()}
+                          {content_package_current_version()}
                         </Badge>
                       ) : (
                         <>
@@ -446,7 +502,7 @@ export function ContentPackageDetail({
                             variant="ghost"
                           >
                             <IconArrowBackUp />
-                            {m.content_package_rollback_new_version()}
+                            {content_package_rollback_new_version()}
                           </Button>
                           <Button
                             onClick={() => setComparisonVersionId(version.id)}
@@ -454,7 +510,7 @@ export function ContentPackageDetail({
                             type="button"
                             variant="ghost"
                           >
-                            {m.content_package_compare_current()}
+                            {content_package_compare_current()}
                           </Button>
                         </>
                       )}
@@ -470,13 +526,13 @@ export function ContentPackageDetail({
               <div className="grid gap-2 rounded-md bg-surface-2 p-3 sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted-foreground">
-                    {m.content_package_history_version()}
+                    {content_package_history_version()}
                   </p>
                   <p className="flex items-center gap-2 font-medium">
                     {comparisonVersion.title}
                     {comparisonVersion.title !== currentVersion.title ? (
                       <Badge variant="outline">
-                        {m.content_package_field_changed()}
+                        {content_package_field_changed()}
                       </Badge>
                     ) : null}
                   </p>
@@ -484,7 +540,7 @@ export function ContentPackageDetail({
                     {comparisonVersion.body}
                     {comparisonVersion.body !== currentVersion.body ? (
                       <Badge className="ml-2" variant="outline">
-                        {m.content_package_field_changed()}
+                        {content_package_field_changed()}
                       </Badge>
                     ) : null}
                   </p>
@@ -493,7 +549,7 @@ export function ContentPackageDetail({
                     {comparisonVersion.conversionHook !==
                     currentVersion.conversionHook ? (
                       <Badge className="ml-2" variant="outline">
-                        {m.content_package_field_changed()}
+                        {content_package_field_changed()}
                       </Badge>
                     ) : null}
                   </p>
@@ -502,7 +558,7 @@ export function ContentPackageDetail({
                     {comparisonVersion.topics.join('\0') !==
                     currentVersion.topics.join('\0') ? (
                       <Badge className="ml-2" variant="outline">
-                        {m.content_package_field_changed()}
+                        {content_package_field_changed()}
                       </Badge>
                     ) : null}
                   </p>
@@ -515,14 +571,14 @@ export function ContentPackageDetail({
                     {comparisonVersion.orderedAssetIds.join('\0') !==
                     currentVersion.orderedAssetIds.join('\0') ? (
                       <Badge className="ml-2" variant="outline">
-                        {m.content_package_field_changed()}
+                        {content_package_field_changed()}
                       </Badge>
                     ) : null}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">
-                    {m.content_package_current_version()}
+                    {content_package_current_version()}
                   </p>
                   <p className="font-medium">{currentVersion.title}</p>
                   <p className="mt-1 whitespace-pre-wrap text-sm">
@@ -549,11 +605,11 @@ export function ContentPackageDetail({
             aria-labelledby="export-receipts-title"
           >
             <h3 className="font-medium" id="export-receipts-title">
-              {m.content_package_export_receipts()}
+              {content_package_export_receipts()}
             </h3>
             {receipts.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                {m.content_package_export_receipts_empty()}
+                {content_package_export_receipts_empty()}
               </p>
             ) : (
               receipts.map((receipt) => (
@@ -567,8 +623,8 @@ export function ContentPackageDetail({
                     }
                   >
                     {receipt.status === 'succeeded'
-                      ? m.content_package_export_succeeded()
-                      : m.content_package_export_failed()}
+                      ? content_package_export_succeeded()
+                      : content_package_export_failed()}
                   </Badge>
                   <span>{platformLabel(receipt.platform)}</span>
                   <span>
@@ -589,7 +645,7 @@ export function ContentPackageDetail({
                       className="font-medium text-primary underline-offset-4 hover:underline"
                       href={`/api/core/p1/assets?objectKey=${encodeURIComponent(receipt.artifactObjectKey)}`}
                     >
-                      {m.content_package_download_export()}
+                      {content_package_download_export()}
                     </a>
                   ) : null}
                   {receipt.status === 'failed' ? (
@@ -602,7 +658,7 @@ export function ContentPackageDetail({
                         type="button"
                         variant="outline"
                       >
-                        {m.content_package_retry_export()}
+                        {content_package_retry_export()}
                       </Button>
                     </>
                   ) : null}
@@ -616,7 +672,7 @@ export function ContentPackageDetail({
           ) ? (
             <section className="space-y-3" aria-labelledby="ledger-title">
               <h3 className="font-medium" id="ledger-title">
-                {m.content_package_ledger_title()}
+                {content_package_ledger_title()}
               </h3>
               {contentPackage.generated.childRuns.map((run) =>
                 run.productUsage ? (
@@ -629,7 +685,7 @@ export function ContentPackageDetail({
                     </p>
                     {run.productUsage ? (
                       <p>
-                        {m.content_package_ledger_product_usage()} ·{' '}
+                        {content_package_ledger_product_usage()} ·{' '}
                         {usageStatusLabel(run.productUsage.status)} ·{' '}
                         {run.productUsage.quantity}
                       </p>
@@ -646,18 +702,18 @@ export function ContentPackageDetail({
               id="lineage-title"
             >
               <IconGitBranch />
-              {m.content_package_lineage_title()}
+              {content_package_lineage_title()}
             </h3>
             <LineageList
-              emptyLabel={m.content_package_lineage_source_empty()}
+              emptyLabel={content_package_lineage_source_empty()}
               items={lineage?.ancestors ?? []}
-              label={m.content_package_lineage_source()}
+              label={content_package_lineage_source()}
               onOpenPackage={onOpenPackage}
             />
             <LineageList
-              emptyLabel={m.content_package_lineage_children_empty()}
+              emptyLabel={content_package_lineage_children_empty()}
               items={lineage?.children ?? []}
-              label={m.content_package_lineage_children()}
+              label={content_package_lineage_children()}
               onOpenPackage={onOpenPackage}
             />
           </section>
@@ -679,7 +735,7 @@ function VisualOrder({
   return (
     <div className="mt-2 space-y-1">
       <p className="text-sm">
-        {m.content_package_visual_order({
+        {content_package_visual_order({
           count: version.orderedAssetIds.length,
         })}
       </p>
@@ -703,7 +759,7 @@ function VisualOrder({
             kind === 'video' ? (
               // biome-ignore lint/a11y/useMediaCaption: Generated media has no caption artifact to attach.
               <video
-                aria-label={m.content_package_visual_position({
+                aria-label={content_package_visual_position({
                   position: index + 1,
                 })}
                 className="size-12 rounded bg-black object-cover"
@@ -715,7 +771,7 @@ function VisualOrder({
               />
             ) : (
               <img
-                alt={m.content_package_visual_position({ position: index + 1 })}
+                alt={content_package_visual_position({ position: index + 1 })}
                 className="size-12 rounded object-cover"
                 key={assetId}
                 src={src}
@@ -723,7 +779,7 @@ function VisualOrder({
             )
           ) : (
             <Badge key={assetId} variant="outline">
-              {m.content_package_visual_position({ position: index + 1 })}
+              {content_package_visual_position({ position: index + 1 })}
             </Badge>
           );
         })}

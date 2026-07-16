@@ -1,17 +1,23 @@
 import type { Asset } from '@meiye/contracts';
 
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_canvas_category_before_after,
+  p1_canvas_category_customer_case,
+  p1_canvas_category_other,
+  p1_canvas_category_price_list,
+  p1_canvas_category_store,
+} from '@/locale/paraglide/messages';
 
 import type { CanvasLibraryAsset } from './canvas-library';
 
 type CanvasDocumentLike = Record<string, unknown>;
 
 const CATEGORY_LABELS: Record<NonNullable<Asset['category']>, () => string> = {
-  before_after: m.p1_canvas_category_before_after,
-  customer_case: m.p1_canvas_category_customer_case,
-  other: m.p1_canvas_category_other,
-  price_list: m.p1_canvas_category_price_list,
-  store: m.p1_canvas_category_store,
+  before_after: p1_canvas_category_before_after,
+  customer_case: p1_canvas_category_customer_case,
+  other: p1_canvas_category_other,
+  price_list: p1_canvas_category_price_list,
+  store: p1_canvas_category_store,
 };
 
 export function productAssetsToCanvasLibrary(

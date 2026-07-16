@@ -1,4 +1,15 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  pricing_card_days_free_trial,
+  pricing_card_free,
+  pricing_card_get_lifetime_access,
+  pricing_card_get_started,
+  pricing_card_get_started_for_free,
+  pricing_card_not_available,
+  pricing_card_per_month,
+  pricing_card_per_year,
+  pricing_card_popular,
+  pricing_card_your_current_plan,
+} from '@/locale/paraglide/messages';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Card,
@@ -64,15 +75,14 @@ export function PricingCard({
   let formattedPrice = '';
   let priceLabel = '';
   if (plan.isFree) {
-    formattedPrice = m.pricing_card_free();
+    formattedPrice = pricing_card_free();
   } else if (price && price.amount > 0) {
     formattedPrice = formatPrice(price.amount, price.currency);
-    if (interval === PlanIntervals.MONTH)
-      priceLabel = m.pricing_card_per_month();
+    if (interval === PlanIntervals.MONTH) priceLabel = pricing_card_per_month();
     else if (interval === PlanIntervals.YEAR)
-      priceLabel = m.pricing_card_per_year();
+      priceLabel = pricing_card_per_year();
   } else {
-    formattedPrice = m.pricing_card_not_available();
+    formattedPrice = pricing_card_not_available();
   }
   const isPaidPlan = !plan.isFree && !!price;
   const hasValidPriceId = !!price?.priceId?.trim();
@@ -92,7 +102,7 @@ export function PricingCard({
             variant="default"
             className="bg-primary text-primary-foreground"
           >
-            {m.pricing_card_popular()}
+            {pricing_card_popular()}
           </Badge>
         </div>
       )}
@@ -114,7 +124,7 @@ export function PricingCard({
         {plan.isFree ? (
           isAuthenticated ? (
             <Button variant="outline" className="mt-4 w-full" disabled>
-              {m.pricing_card_get_started_for_free()}
+              {pricing_card_get_started_for_free()}
             </Button>
           ) : (
             <Link
@@ -124,7 +134,7 @@ export function PricingCard({
                 'mt-4 w-full'
               )}
             >
-              {m.pricing_card_get_started_for_free()}
+              {pricing_card_get_started_for_free()}
             </Link>
           )
         ) : isCurrentPlan ? (
@@ -132,7 +142,7 @@ export function PricingCard({
             disabled
             className="mt-4 w-full border border-primary/20 bg-primary/10 text-primary hover:bg-primary/10 dark:border-primary/30 dark:bg-primary/15 dark:text-primary dark:hover:bg-primary/15"
           >
-            {m.pricing_card_your_current_plan()}
+            {pricing_card_your_current_plan()}
           </Button>
         ) : isPaidPlan && price ? (
           isAuthenticated && hasValidPriceId ? (
@@ -143,12 +153,12 @@ export function PricingCard({
               className="mt-4 w-full"
             >
               {plan.isLifetime
-                ? m.pricing_card_get_lifetime_access()
-                : m.pricing_card_get_started()}
+                ? pricing_card_get_lifetime_access()
+                : pricing_card_get_started()}
             </CheckoutButton>
           ) : isAuthenticated && !hasValidPriceId ? (
             <Button disabled className="mt-4 w-full">
-              {m.pricing_card_not_available()}
+              {pricing_card_not_available()}
             </Button>
           ) : (
             <Link
@@ -158,12 +168,12 @@ export function PricingCard({
                 'mt-4 w-full'
               )}
             >
-              {m.pricing_card_get_started()}
+              {pricing_card_get_started()}
             </Link>
           )
         ) : (
           <Button disabled className="mt-4 w-full">
-            {m.pricing_card_not_available()}
+            {pricing_card_not_available()}
           </Button>
         )}
       </CardHeader>
@@ -191,7 +201,7 @@ export function PricingCard({
         {hasTrialPeriod && price && (
           <div className="my-4">
             <span className="inline-block rounded-md border border-chart-2/20 bg-chart-2/10 px-2.5 py-1.5 text-xs font-medium text-chart-2 shadow-sm dark:border-chart-2/30 dark:bg-chart-2/15 dark:text-chart-2">
-              {price.trialPeriodDays} {m.pricing_card_days_free_trial()}
+              {price.trialPeriodDays} {pricing_card_days_free_trial()}
             </span>
           </div>
         )}

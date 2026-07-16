@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_common_login,
+  auth_common_signup,
+  common_home,
+  common_main_navigation,
+} from '@/locale/paraglide/messages';
 import { getNavbarLinks } from '@/config/navbar-config';
 import { useScroll } from '@/hooks/use-scroll';
 import { authClient } from '@/auth/client';
@@ -60,12 +65,12 @@ export function Navbar({ scroll = true }: NavbarProps) {
       <div className="relative z-10">
         <Container className="px-4">
           <nav
-            aria-label={m.common_main_navigation()}
+            aria-label={common_main_navigation()}
             className="hidden lg:flex lg:items-center lg:justify-between lg:gap-4"
           >
             <Link
               to="/"
-              aria-label={m.common_home()}
+              aria-label={common_home()}
               className="flex items-center gap-2 shrink-0"
             >
               <Logo />
@@ -181,14 +186,14 @@ export function Navbar({ scroll = true }: NavbarProps) {
                           'cursor-pointer'
                         )}
                       >
-                        {m.auth_common_login()}
+                        {auth_common_login()}
                       </button>
                     </LoginWrapper>
                     <Link
                       to={Routes.Register}
                       className={buttonVariants({ size: 'sm' })}
                     >
-                      {m.auth_common_signup()}
+                      {auth_common_signup()}
                     </Link>
                   </>
                 ))}

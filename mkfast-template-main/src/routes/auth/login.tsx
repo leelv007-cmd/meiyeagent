@@ -1,4 +1,11 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_common_and,
+  auth_common_by_clicking_continue,
+  auth_common_privacy_policy,
+  auth_common_terms_of_service,
+  auth_login_description,
+  auth_login_title,
+} from '@/locale/paraglide/messages';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { LoginForm } from '@/components/auth/login-form';
 import { authClient } from '@/auth/client';
@@ -26,8 +33,8 @@ export const Route = createFileRoute('/auth/login')({
   },
   head: () => ({
     meta: [
-      { title: m.auth_login_title() },
-      { name: 'description', content: m.auth_login_description() },
+      { title: auth_login_title() },
+      { name: 'description', content: auth_login_description() },
     ],
   }),
 });
@@ -37,19 +44,19 @@ function LoginPage() {
     <div className="flex flex-col gap-4">
       <LoginForm />
       <div className="text-balance text-center text-xs text-muted-foreground">
-        {m.auth_common_by_clicking_continue()}
+        {auth_common_by_clicking_continue()}
         <Link
           to={Routes.TermsOfService}
           className="underline underline-offset-4 hover:text-primary"
         >
-          {m.auth_common_terms_of_service()}
+          {auth_common_terms_of_service()}
         </Link>
-        {m.auth_common_and()}
+        {auth_common_and()}
         <Link
           to={Routes.PrivacyPolicy}
           className="underline underline-offset-4 hover:text-primary"
         >
-          {m.auth_common_privacy_policy()}
+          {auth_common_privacy_policy()}
         </Link>
       </div>
     </div>

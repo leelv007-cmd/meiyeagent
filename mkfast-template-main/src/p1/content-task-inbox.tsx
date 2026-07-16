@@ -21,7 +21,42 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_task_action_add_asset,
+  p1_task_action_archive,
+  p1_task_action_complete,
+  p1_task_action_retry_notification,
+  p1_task_action_start,
+  p1_task_blocked_fallback,
+  p1_task_count,
+  p1_task_default_description,
+  p1_task_default_title,
+  p1_task_empty_default_action,
+  p1_task_empty_default_description,
+  p1_task_empty_default_title,
+  p1_task_empty_description,
+  p1_task_empty_filtered_action,
+  p1_task_empty_media_alt,
+  p1_task_empty_title,
+  p1_task_filters_clear,
+  p1_task_filters_date,
+  p1_task_filters_legend,
+  p1_task_filters_related,
+  p1_task_filters_risk,
+  p1_task_filters_source,
+  p1_task_filters_status,
+  p1_task_next_step,
+  p1_task_notification_failed,
+  p1_task_select_aria,
+  p1_task_status_archived,
+  p1_task_status_blocked,
+  p1_task_status_done,
+  p1_task_status_in_progress,
+  p1_task_status_needs_asset,
+  p1_task_status_needs_review,
+  p1_task_status_ready,
+  p1_task_status_todo,
+} from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 
@@ -38,14 +73,14 @@ import type {
 } from './types';
 
 const STATUS_LABEL: Record<ContentTaskStatus, () => string> = {
-  archived: m.p1_task_status_archived,
-  blocked: m.p1_task_status_blocked,
-  done: m.p1_task_status_done,
-  in_progress: m.p1_task_status_in_progress,
-  needs_asset: m.p1_task_status_needs_asset,
-  needs_review: m.p1_task_status_needs_review,
-  ready: m.p1_task_status_ready,
-  todo: m.p1_task_status_todo,
+  archived: p1_task_status_archived,
+  blocked: p1_task_status_blocked,
+  done: p1_task_status_done,
+  in_progress: p1_task_status_in_progress,
+  needs_asset: p1_task_status_needs_asset,
+  needs_review: p1_task_status_needs_review,
+  ready: p1_task_status_ready,
+  todo: p1_task_status_todo,
 };
 
 const STATUS_CLASS: Record<ContentTaskStatus, string> = {
@@ -64,27 +99,27 @@ const STATUS_CLASS: Record<ContentTaskStatus, string> = {
 
 const ACTION_CONFIG = {
   start: {
-    label: m.p1_task_action_start,
+    label: p1_task_action_start,
     icon: IconPlayerPlay,
     variant: 'outline',
   },
   complete: {
-    label: m.p1_task_action_complete,
+    label: p1_task_action_complete,
     icon: IconCheck,
     variant: 'outline',
   },
   archive: {
-    label: m.p1_task_action_archive,
+    label: p1_task_action_archive,
     icon: IconArchive,
     variant: 'ghost',
   },
   add_asset: {
-    label: m.p1_task_action_add_asset,
+    label: p1_task_action_add_asset,
     icon: IconPhotoPlus,
     variant: 'outline',
   },
   retry_notification: {
-    label: m.p1_task_action_retry_notification,
+    label: p1_task_action_retry_notification,
     icon: IconRefresh,
     variant: 'outline',
   },
@@ -155,40 +190,40 @@ export function TaskInboxFilters({
 
   return (
     <fieldset className="flex flex-wrap items-center gap-2 border-0 p-0">
-      <legend className="sr-only">{m.p1_task_filters_legend()}</legend>
+      <legend className="sr-only">{p1_task_filters_legend()}</legend>
       <FilterSelect
-        label={m.p1_task_filters_status()}
+        label={p1_task_filters_status()}
         value={value.status}
         options={options.statuses}
         onChange={(nextValue) => update('status', nextValue)}
       />
       <FilterSelect
-        label={m.p1_task_filters_source()}
+        label={p1_task_filters_source()}
         value={value.source}
         options={options.sources}
         onChange={(nextValue) => update('source', nextValue)}
       />
       <FilterSelect
-        label={m.p1_task_filters_date()}
+        label={p1_task_filters_date()}
         value={value.date}
         options={options.dates}
         onChange={(nextValue) => update('date', nextValue)}
       />
       <FilterSelect
-        label={m.p1_task_filters_related()}
+        label={p1_task_filters_related()}
         value={value.relatedKind}
         options={options.relatedKinds}
         onChange={(nextValue) => update('relatedKind', nextValue)}
       />
       <FilterSelect
-        label={m.p1_task_filters_risk()}
+        label={p1_task_filters_risk()}
         value={value.risk}
         options={options.risks}
         onChange={(nextValue) => update('risk', nextValue)}
       />
       {hasActiveFilter && onClear && (
         <Button type="button" size="sm" variant="ghost" onClick={onClear}>
-          {m.p1_task_filters_clear()}
+          {p1_task_filters_clear()}
         </Button>
       )}
     </fieldset>
@@ -257,7 +292,7 @@ function TaskFeedItem({
           <Checkbox
             checked={selected}
             onCheckedChange={(checked) => onSelect(task.id, checked === true)}
-            aria-label={m.p1_task_select_aria({ title: task.title })}
+            aria-label={p1_task_select_aria({ title: task.title })}
             className="mt-1"
           />
         )}
@@ -298,11 +333,11 @@ function TaskFeedItem({
               />
               <div>
                 <p className="font-medium">
-                  {task.blockedReason ?? m.p1_task_blocked_fallback()}
+                  {task.blockedReason ?? p1_task_blocked_fallback()}
                 </p>
                 {task.nextStep && (
                   <p className="mt-0.5 text-muted-foreground">
-                    {m.p1_task_next_step({ nextStep: task.nextStep })}
+                    {p1_task_next_step({ nextStep: task.nextStep })}
                   </p>
                 )}
               </div>
@@ -310,7 +345,7 @@ function TaskFeedItem({
           )}
           {task.notificationFailed && (
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-              {m.p1_task_notification_failed()}
+              {p1_task_notification_failed()}
             </p>
           )}
           {renderInline?.({ task, placement: 'before_actions' })}
@@ -388,10 +423,10 @@ export function ContentTaskInbox({
   const hideEmptyScaffolding = totalCount === 0 && !hasActiveFilters;
 
   return (
-    <section aria-label={m.p1_task_default_title()} className="space-y-4">
+    <section aria-label={p1_task_default_title()} className="space-y-4">
       <header>
         <p className="meiye-type-aux">
-          {description ?? m.p1_task_default_description()}
+          {description ?? p1_task_default_description()}
         </p>
       </header>
 
@@ -406,7 +441,7 @@ export function ContentTaskInbox({
             onClear={onClearFilters}
           />
           <p className="meiye-type-aux tabular-nums">
-            {m.p1_task_count({ total: totalCount, visible: tasks.length })}
+            {p1_task_count({ total: totalCount, visible: tasks.length })}
           </p>
         </div>
       ) : null}
@@ -416,26 +451,26 @@ export function ContentTaskInbox({
           action={
             hasActiveFilters ? (
               <Button type="button" variant="outline" onClick={onClearFilters}>
-                {m.p1_task_empty_filtered_action()}
+                {p1_task_empty_filtered_action()}
               </Button>
             ) : (
               <a
                 className={buttonVariants()}
                 href={getPathWithLocale(Routes.Dashboard)}
               >
-                {m.p1_task_empty_default_action()}
+                {p1_task_empty_default_action()}
               </a>
             )
           }
           description={
             hasActiveFilters
-              ? m.p1_task_empty_description()
-              : m.p1_task_empty_default_description()
+              ? p1_task_empty_description()
+              : p1_task_empty_default_description()
           }
           media={
             <span className="block h-16 w-24 overflow-hidden rounded-lg">
               <img
-                alt={m.p1_task_empty_media_alt()}
+                alt={p1_task_empty_media_alt()}
                 className="size-full object-cover"
                 loading="lazy"
                 src="/seed/scene/scene-seeding-nail.webp"
@@ -444,8 +479,8 @@ export function ContentTaskInbox({
           }
           title={
             hasActiveFilters
-              ? m.p1_task_empty_title()
-              : m.p1_task_empty_default_title()
+              ? p1_task_empty_title()
+              : p1_task_empty_default_title()
           }
         />
       ) : (

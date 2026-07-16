@@ -27,7 +27,37 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  copy_candidate_accept,
+  copy_candidate_accept_limit,
+  copy_candidate_accepted_badge,
+  copy_candidate_accepting,
+  copy_candidate_conversion_hook_label,
+  copy_candidate_conversion_hook_missing,
+  copy_candidate_group_aria,
+  copy_candidate_incomplete_description,
+  copy_candidate_option_aria,
+  copy_candidate_paid_confirm_action,
+  copy_candidate_paid_confirm_cancel,
+  copy_candidate_paid_confirm_description,
+  copy_candidate_paid_confirm_title,
+  copy_candidate_paid_reroll,
+  copy_candidate_quality_retries_used,
+  copy_candidate_quality_retry,
+  copy_candidate_quality_retrying,
+  copy_candidate_rerolling,
+  copy_candidate_selector_aria,
+  copy_candidate_status_accepted,
+  copy_candidate_status_incomplete,
+  copy_candidate_status_ready,
+  copy_candidate_title,
+  copy_candidate_view_in_content,
+  copy_candidate_visual_asset_move_down,
+  copy_candidate_visual_asset_move_up,
+  copy_candidate_visual_asset_toggle,
+  copy_candidate_visual_assets,
+  copy_candidate_visual_assets_description,
+} from '@/locale/paraglide/messages';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import { getPathWithLocale } from '@/lib/urls';
@@ -145,17 +175,17 @@ export function CopyCandidateSelector({
   return (
     <section
       aria-busy={Boolean(pendingAction)}
-      aria-label={m.copy_candidate_selector_aria()}
+      aria-label={copy_candidate_selector_aria()}
       className="space-y-4"
       data-compact={compact ? 'true' : 'false'}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold">{m.copy_candidate_title()}</h3>
+            <h3 className="font-semibold">{copy_candidate_title()}</h3>
             <Badge variant="outline">{model.batchLabel}</Badge>
             <Badge variant="outline">
-              {m.copy_candidate_quality_retries_used({
+              {copy_candidate_quality_retries_used({
                 maximum: 2,
                 used: model.usedQualityRetries,
               })}
@@ -167,20 +197,20 @@ export function CopyCandidateSelector({
         </div>
         <p aria-live="polite" className="text-sm text-muted-foreground">
           {model.status === 'accepted'
-            ? m.copy_candidate_status_accepted()
+            ? copy_candidate_status_accepted()
             : model.status === 'ready'
-              ? m.copy_candidate_status_ready()
-              : m.copy_candidate_status_incomplete()}
+              ? copy_candidate_status_ready()
+              : copy_candidate_status_incomplete()}
         </p>
       </div>
 
       {model.status === 'invalid' ? (
         <output className="block rounded-lg border border-dashed bg-muted/30 p-4 text-sm">
-          {m.copy_candidate_incomplete_description()}
+          {copy_candidate_incomplete_description()}
         </output>
       ) : (
         <RadioGroup
-          aria-label={m.copy_candidate_group_aria()}
+          aria-label={copy_candidate_group_aria()}
           className="grid items-stretch gap-4"
           disabled={locked}
           onValueChange={(value) => {
@@ -203,7 +233,7 @@ export function CopyCandidateSelector({
               >
                 <RadioGroupItem
                   aria-describedby={bodyId}
-                  aria-label={m.copy_candidate_option_aria({
+                  aria-label={copy_candidate_option_aria({
                     label: candidate.label,
                     title: candidate.asset.title,
                   })}
@@ -227,14 +257,14 @@ export function CopyCandidateSelector({
                       {candidate.accepted ? (
                         <Badge variant="outline">
                           <IconCheck aria-hidden="true" />
-                          {m.copy_candidate_accepted_badge()}
+                          {copy_candidate_accepted_badge()}
                         </Badge>
                       ) : null}
                     </span>
                     <span className="mt-2 block text-xs text-muted-foreground">
-                      {m.copy_candidate_conversion_hook_label()}
+                      {copy_candidate_conversion_hook_label()}
                       {candidate.asset.conversionHook ??
-                        m.copy_candidate_conversion_hook_missing()}
+                        copy_candidate_conversion_hook_missing()}
                     </span>
                   </span>
                 </CardHeader>
@@ -256,9 +286,9 @@ export function CopyCandidateSelector({
       {model.status === 'ready' && availableVisualAssets.length > 0 ? (
         <section className="space-y-3 rounded-lg border p-4">
           <div>
-            <h4 className="font-medium">{m.copy_candidate_visual_assets()}</h4>
+            <h4 className="font-medium">{copy_candidate_visual_assets()}</h4>
             <p className="text-xs text-muted-foreground">
-              {m.copy_candidate_visual_assets_description()}
+              {copy_candidate_visual_assets_description()}
             </p>
           </div>
           <ol className="space-y-2">
@@ -281,7 +311,7 @@ export function CopyCandidateSelector({
                   key={asset.id}
                 >
                   <input
-                    aria-label={m.copy_candidate_visual_asset_toggle({
+                    aria-label={copy_candidate_visual_asset_toggle({
                       title: asset.title,
                     })}
                     checked={selected}
@@ -303,7 +333,7 @@ export function CopyCandidateSelector({
                   {selected ? (
                     <span className="flex gap-1">
                       <Button
-                        aria-label={m.copy_candidate_visual_asset_move_up({
+                        aria-label={copy_candidate_visual_asset_move_up({
                           title: asset.title,
                         })}
                         disabled={selectedIndex === 0 || Boolean(pendingAction)}
@@ -319,7 +349,7 @@ export function CopyCandidateSelector({
                         <IconArrowUp aria-hidden="true" />
                       </Button>
                       <Button
-                        aria-label={m.copy_candidate_visual_asset_move_down({
+                        aria-label={copy_candidate_visual_asset_move_down({
                           title: asset.title,
                         })}
                         disabled={
@@ -362,7 +392,7 @@ export function CopyCandidateSelector({
             `/dashboard/content?packageId=${encodeURIComponent(model.acceptedPackageId)}`
           )}
         >
-          {m.copy_candidate_view_in_content()}
+          {copy_candidate_view_in_content()}
         </a>
       ) : null}
 
@@ -386,11 +416,11 @@ export function CopyCandidateSelector({
             type="button"
           >
             {pendingAction === 'accept'
-              ? m.copy_candidate_accepting()
-              : m.copy_candidate_accept()}
+              ? copy_candidate_accepting()
+              : copy_candidate_accept()}
           </Button>
           <p className="text-xs text-muted-foreground">
-            {m.copy_candidate_accept_limit()}
+            {copy_candidate_accept_limit()}
           </p>
         </div>
 
@@ -405,8 +435,8 @@ export function CopyCandidateSelector({
           >
             <IconRefresh aria-hidden="true" />
             {pendingAction === 'paid-reroll'
-              ? m.copy_candidate_rerolling()
-              : m.copy_candidate_paid_reroll()}
+              ? copy_candidate_rerolling()
+              : copy_candidate_paid_reroll()}
           </Button>
           <p className="text-xs text-muted-foreground">
             {model.paidUsageLabel}
@@ -423,8 +453,8 @@ export function CopyCandidateSelector({
           >
             <IconSparkles aria-hidden="true" />
             {pendingAction === 'quality-retry'
-              ? m.copy_candidate_quality_retrying()
-              : m.copy_candidate_quality_retry()}
+              ? copy_candidate_quality_retrying()
+              : copy_candidate_quality_retry()}
           </Button>
           <p className="text-xs text-muted-foreground">
             {model.qualityUsageLabel}
@@ -439,15 +469,15 @@ export function CopyCandidateSelector({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {m.copy_candidate_paid_confirm_title()}
+              {copy_candidate_paid_confirm_title()}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {m.copy_candidate_paid_confirm_description()}
+              {copy_candidate_paid_confirm_description()}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>
-              {m.copy_candidate_paid_confirm_cancel()}
+              {copy_candidate_paid_confirm_cancel()}
             </AlertDialogCancel>
             <AlertDialogAction
               disabled={Boolean(pendingAction)}
@@ -456,7 +486,7 @@ export function CopyCandidateSelector({
                 void executeAction('paid-reroll');
               }}
             >
-              {m.copy_candidate_paid_confirm_action()}
+              {copy_candidate_paid_confirm_action()}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

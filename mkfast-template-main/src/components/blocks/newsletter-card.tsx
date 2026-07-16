@@ -1,4 +1,14 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  newsletter_description,
+  newsletter_email,
+  newsletter_email_invalid,
+  newsletter_error,
+  newsletter_placeholder_email,
+  newsletter_subscribe,
+  newsletter_subtitle,
+  newsletter_thanks,
+  newsletter_title,
+} from '@/locale/paraglide/messages';
 import { FormError } from '@/components/shared/form-error';
 import { HeaderSection } from '@/components/shared/header-section';
 import { Button } from '@/components/ui/button';
@@ -20,7 +30,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 const schema = z.object({
-  email: z.email(m.newsletter_email_invalid()),
+  email: z.email(newsletter_email_invalid()),
 });
 type FormData = z.infer<typeof schema>;
 export default function NewsletterCard() {
@@ -36,10 +46,10 @@ export default function NewsletterCard() {
     setError(undefined);
     try {
       await subscribeMutation.mutateAsync(data.email);
-      toast.success(m.newsletter_thanks());
+      toast.success(newsletter_thanks());
       form.reset();
     } catch (err) {
-      const errMsg = m.newsletter_error();
+      const errMsg = newsletter_error();
       console.error('newsletter subscription error:', err);
       setError(errMsg);
       toast.error(errMsg);
@@ -49,9 +59,9 @@ export default function NewsletterCard() {
     <div className="w-full rounded-lg bg-linear-to-br from-primary/5 via-muted/80 to-chart-1/8 dark:from-primary/8 dark:via-muted/50 dark:to-chart-1/5 px-4 py-12 sm:px-8 md:p-16">
       <div className="flex flex-col items-center justify-center gap-8">
         <HeaderSection
-          title={m.newsletter_title()}
-          subtitle={m.newsletter_subtitle()}
-          description={m.newsletter_description()}
+          title={newsletter_title()}
+          subtitle={newsletter_subtitle()}
+          description={newsletter_description()}
         />
 
         <Form {...form}>
@@ -66,12 +76,12 @@ export default function NewsletterCard() {
                 render={({ field }) => (
                   <FormItem className="relative w-full space-y-0">
                     <FormLabel className="sr-only">
-                      {m.newsletter_email()}
+                      {newsletter_email()}
                     </FormLabel>
                     <FormControl>
                       <Input
                         type="email"
-                        placeholder={m.newsletter_placeholder_email()}
+                        placeholder={newsletter_placeholder_email()}
                         className="h-12 rounded-r-none border-r-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-primary focus:border-0.5 focus:border-r-0"
                         {...field}
                       />
@@ -95,7 +105,7 @@ export default function NewsletterCard() {
                 ) : (
                   <IconSend2 className="size-6" aria-hidden="true" />
                 )}
-                <span className="sr-only">{m.newsletter_subscribe()}</span>
+                <span className="sr-only">{newsletter_subscribe()}</span>
               </Button>
             </div>
             {error && (

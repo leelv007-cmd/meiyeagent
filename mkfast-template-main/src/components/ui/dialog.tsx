@@ -3,7 +3,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { m } from "@/locale/paraglide/messages"
+import { common_close } from "@/locale/paraglide/messages";
 import { IconX } from "@tabler/icons-react"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
@@ -71,7 +71,7 @@ function DialogContent({
           >
             <IconX
             />
-            <span className="sr-only">{m.common_close()}</span>
+            <span className="sr-only">{common_close()}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>
@@ -109,7 +109,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close render={<Button variant="outline" />}>
-          {m.common_close()}
+          {common_close()}
         </DialogPrimitive.Close>
       )}
     </div>

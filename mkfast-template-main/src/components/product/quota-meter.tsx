@@ -1,11 +1,16 @@
 import type { Entitlement } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  quota_meter_content,
+  quota_meter_package,
+  quota_meter_storage,
+  quota_meter_video,
+} from '@/locale/paraglide/messages';
 
 const quotaItems = [
-  { key: 'content', label: m.quota_meter_content },
-  { key: 'video', label: m.quota_meter_video },
-  { key: 'package', label: m.quota_meter_package },
-  { key: 'storageMb', label: m.quota_meter_storage },
+  { key: 'content', label: quota_meter_content },
+  { key: 'video', label: quota_meter_video },
+  { key: 'package', label: quota_meter_package },
+  { key: 'storageMb', label: quota_meter_storage },
 ] as const;
 
 export function QuotaMeter({ entitlement }: { entitlement: Entitlement }) {

@@ -10,7 +10,32 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_history_works_title,
+  canvas_work_action_failed,
+  canvas_work_description,
+  canvas_work_download_latest,
+  canvas_work_export_data_missing,
+  canvas_work_exports_empty,
+  canvas_work_loading_description,
+  canvas_work_loading_title,
+  canvas_work_not_found_description,
+  canvas_work_not_found_title,
+  canvas_work_revision,
+  canvas_work_revision_count,
+  canvas_work_revision_saved,
+  canvas_work_template_blank,
+  canvas_work_template_fixed,
+  canvas_work_template_label,
+  canvas_work_template_name,
+  canvas_work_template_saved,
+  canvas_work_templates_exports_title,
+  canvas_work_update_copy,
+  canvas_work_update_current,
+  canvas_work_update_description,
+  canvas_work_update_title,
+  object_evidence_source_canvas,
+} from '@/locale/paraglide/messages';
 import { formatBytes } from '@/lib/formatter';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { productAssetsToCanvasLibrary } from '@/p1/canvas-product-assets';
@@ -37,7 +62,7 @@ async function canvasRenderEvidenceMarker(
   document: Record<string, unknown>
 ) {
   const encoded = dataUrl.split(',', 2)[1];
-  if (!encoded) throw new Error(m.canvas_work_export_data_missing());
+  if (!encoded) throw new Error(canvas_work_export_data_missing());
   const binary = atob(encoded);
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
   const rasterSha256 = [
@@ -138,7 +163,7 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
     mutationFn: (input: { action: string; payload: Record<string, unknown> }) =>
       operationsCommand(input.action, input.payload),
     onSuccess: refreshWork,
-    onError: () => toast.error(m.canvas_work_action_failed()),
+    onError: () => toast.error(canvas_work_action_failed()),
   });
 
   const save = async (snapshot: LightCanvasSnapshot) => {
@@ -149,15 +174,15 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
       workId: work.id,
     });
     await refreshWork();
-    toast.success(m.canvas_work_revision_saved());
+    toast.success(canvas_work_revision_saved());
   };
 
   if (workQuery.isLoading) {
     return (
       <StatePanel
         kind="loading"
-        title={m.canvas_work_loading_title()}
-        description={m.canvas_work_loading_description()}
+        title={canvas_work_loading_title()}
+        description={canvas_work_loading_description()}
       />
     );
   }
@@ -165,8 +190,8 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
     return (
       <StatePanel
         kind="empty"
-        title={m.canvas_work_not_found_title()}
-        description={m.canvas_work_not_found_description()}
+        title={canvas_work_not_found_title()}
+        description={canvas_work_not_found_description()}
       />
     );
   }
@@ -176,36 +201,36 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.canonical_history_works_title(), isCurrentPage: false },
+        { label: canonical_history_works_title(), isCurrentPage: false },
         { label: displayName, isCurrentPage: true },
       ]}
-      description={m.canvas_work_description()}
+      description={canvas_work_description()}
       title={displayName}
     >
       <ObjectEvidence
         id={work.id}
         kind="Work"
-        source={m.object_evidence_source_canvas()}
+        source={object_evidence_source_canvas()}
       />
       <div className="flex flex-wrap gap-2">
         <Badge variant="outline">
-          {m.canvas_work_revision({ revision: revision.revision })}
+          {canvas_work_revision({ revision: revision.revision })}
         </Badge>
         <Badge variant="outline">
-          {m.canvas_work_revision_count({ count: work.revisions.length })}
+          {canvas_work_revision_count({ count: work.revisions.length })}
         </Badge>
         <Badge variant="outline">
           {work.templateVersionId
-            ? m.canvas_work_template_fixed()
-            : m.canvas_work_template_blank()}
+            ? canvas_work_template_fixed()
+            : canvas_work_template_blank()}
         </Badge>
       </div>
 
       {updateAvailable && template?.publishedVersionId ? (
         <Alert>
-          <AlertTitle>{m.canvas_work_update_title()}</AlertTitle>
+          <AlertTitle>{canvas_work_update_title()}</AlertTitle>
           <AlertDescription className="mt-2 space-y-3">
-            <p>{m.canvas_work_update_description()}</p>
+            <p>{canvas_work_update_description()}</p>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -220,7 +245,7 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
                   })
                 }
               >
-                {m.canvas_work_update_current()}
+                {canvas_work_update_current()}
               </Button>
               <Button
                 type="button"
@@ -237,7 +262,7 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
                   })
                 }
               >
-                {m.canvas_work_update_copy()}
+                {canvas_work_update_copy()}
               </Button>
             </div>
           </AlertDescription>
@@ -285,7 +310,7 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
             workId: work.id,
           });
           await refreshWork();
-          toast.success(m.canvas_work_template_saved());
+          toast.success(canvas_work_template_saved());
         }}
         onExport={async (result) => {
           const document = result.snapshot.document;
@@ -337,7 +362,7 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {m.canvas_work_templates_exports_title()}
+            {canvas_work_templates_exports_title()}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -345,12 +370,12 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
             className="grid max-w-md gap-1.5 text-sm font-medium"
             htmlFor="canvas-template-name"
           >
-            {m.canvas_work_template_label()}
+            {canvas_work_template_label()}
             <Input
               id="canvas-template-name"
               value={templateName}
               onChange={(event) => setTemplateName(event.target.value)}
-              placeholder={m.canvas_work_template_name({ name: displayName })}
+              placeholder={canvas_work_template_name({ name: displayName })}
             />
           </label>
           {exportUrl ? (
@@ -359,7 +384,7 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
               href={exportUrl}
               download={`${displayName}.png`}
             >
-              {m.canvas_work_download_latest()}
+              {canvas_work_download_latest()}
             </a>
           ) : null}
           {(receiptsQuery.data ?? []).length > 0 ? (
@@ -373,7 +398,7 @@ export function CanvasWorkPage({ workId }: { workId: string }) {
             </ol>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {m.canvas_work_exports_empty()}
+              {canvas_work_exports_empty()}
             </p>
           )}
         </CardContent>

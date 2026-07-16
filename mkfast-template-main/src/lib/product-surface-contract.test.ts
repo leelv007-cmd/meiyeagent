@@ -177,7 +177,7 @@ test('dashboard message handoff records every new localized key in both language
     sources.flatMap((source) =>
       Array.from(
         source.matchAll(
-          /m\.(dashboard_(?:content|store|lead|handoff)_[a-z0-9_]+)/g
+          /(?:\bm\.)?\b(dashboard_(?:content|store|lead|handoff)_[a-z0-9_]*)\b/g
         ),
         (match) => match[1]
       )

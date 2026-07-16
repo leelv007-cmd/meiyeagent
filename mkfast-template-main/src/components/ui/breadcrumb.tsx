@@ -3,13 +3,16 @@ import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 
 import { cn } from "@/lib/utils"
-import { m } from "@/locale/paraglide/messages"
+import {
+  common_breadcrumb,
+  common_more,
+} from "@/locale/paraglide/messages";
 import { IconChevronRight, IconDots } from "@tabler/icons-react"
 
 function Breadcrumb({ className, ...props }: React.ComponentProps<"nav">) {
   return (
     <nav
-      aria-label={m.common_breadcrumb()}
+      aria-label={common_breadcrumb()}
       data-slot="breadcrumb"
       className={cn(className)}
       {...props}
@@ -110,7 +113,7 @@ function BreadcrumbEllipsis({
     >
       <IconDots
       />
-      <span className="sr-only">{m.common_more()}</span>
+      <span className="sr-only">{common_more()}</span>
     </span>
   )
 }

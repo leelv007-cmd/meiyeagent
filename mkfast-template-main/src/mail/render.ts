@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  mail_contact_message_subject,
+  mail_forgot_password_subject,
+  mail_subscribe_newsletter_subject,
+  mail_verify_email_subject,
+} from '@/locale/paraglide/messages';
 import React, { type ReactElement } from 'react';
 import type { EmailTemplate } from './types';
 import ContactMessage from './templates/contact-message';
@@ -15,10 +20,10 @@ const EmailTemplates = {
 
 const en = { locale: 'en' as const };
 const EmailSubjects: Record<EmailTemplate, string> = {
-  forgotPassword: m.mail_forgot_password_subject(undefined, en),
-  verifyEmail: m.mail_verify_email_subject(undefined, en),
-  subscribeNewsletter: m.mail_subscribe_newsletter_subject(undefined, en),
-  contactMessage: m.mail_contact_message_subject(undefined, en),
+  forgotPassword: mail_forgot_password_subject(undefined, en),
+  verifyEmail: mail_verify_email_subject(undefined, en),
+  subscribeNewsletter: mail_subscribe_newsletter_subject(undefined, en),
+  contactMessage: mail_contact_message_subject(undefined, en),
 };
 
 export async function renderEmailHtml(email: ReactElement): Promise<string> {

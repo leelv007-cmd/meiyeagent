@@ -7,7 +7,53 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_entry_platform_douyin,
+  creation_entry_platform_xiaohongshu,
+  dashboard_handoff_aigc_explicit_implicit,
+  dashboard_handoff_aigc_label_off,
+  dashboard_handoff_aigc_label_on,
+  dashboard_handoff_aigc_missing,
+  dashboard_handoff_asset_alt,
+  dashboard_handoff_authorized_image,
+  dashboard_handoff_checklist_title,
+  dashboard_handoff_copied,
+  dashboard_handoff_copy,
+  dashboard_handoff_description,
+  dashboard_handoff_download_file,
+  dashboard_handoff_download_image,
+  dashboard_handoff_download_labeled_video_aria,
+  dashboard_handoff_download_video_aria,
+  dashboard_handoff_field_body,
+  dashboard_handoff_field_conversion,
+  dashboard_handoff_field_title,
+  dashboard_handoff_field_topics,
+  dashboard_handoff_mobile_package,
+  dashboard_handoff_outcome_failed,
+  dashboard_handoff_outcome_not_published,
+  dashboard_handoff_platform_title,
+  dashboard_handoff_platform_url_label,
+  dashboard_handoff_report_description,
+  dashboard_handoff_report_failed_success,
+  dashboard_handoff_report_log,
+  dashboard_handoff_report_log_with_note,
+  dashboard_handoff_report_not_published_success,
+  dashboard_handoff_report_note_label,
+  dashboard_handoff_report_note_placeholder,
+  dashboard_handoff_report_published_success,
+  dashboard_handoff_report_title,
+  dashboard_handoff_reported,
+  dashboard_handoff_save_or_share,
+  dashboard_handoff_share_failed,
+  dashboard_handoff_share_opened,
+  dashboard_handoff_share_unsupported,
+  dashboard_handoff_status_title,
+  dashboard_handoff_unavailable_description,
+  dashboard_handoff_unavailable_title,
+  dashboard_handoff_video_summary,
+  dashboard_handoff_waiting_report,
+  p1_filter_content_published,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { useProductState } from '@/product/client';
 import {
@@ -28,18 +74,18 @@ export const Route = createFileRoute('/dashboard/handoff/$token')({
 
 function platformLabel(platform: 'xiaohongshu' | 'douyin') {
   return platform === 'xiaohongshu'
-    ? m.creation_entry_platform_xiaohongshu()
-    : m.creation_entry_platform_douyin();
+    ? creation_entry_platform_xiaohongshu()
+    : creation_entry_platform_douyin();
 }
 
 function reportOutcomeLabel(outcome: 'published' | 'not_published' | 'failed') {
   switch (outcome) {
     case 'published':
-      return m.p1_filter_content_published();
+      return p1_filter_content_published();
     case 'not_published':
-      return m.dashboard_handoff_outcome_not_published();
+      return dashboard_handoff_outcome_not_published();
     case 'failed':
-      return m.dashboard_handoff_outcome_failed();
+      return dashboard_handoff_outcome_failed();
   }
 }
 
@@ -79,9 +125,9 @@ function MobileHandoffPage() {
       <div className="mx-auto max-w-lg p-5">
         <Alert variant="destructive">
           <IconAlertTriangle />
-          <AlertTitle>{m.dashboard_handoff_unavailable_title()}</AlertTitle>
+          <AlertTitle>{dashboard_handoff_unavailable_title()}</AlertTitle>
           <AlertDescription>
-            {m.dashboard_handoff_unavailable_description()}
+            {dashboard_handoff_unavailable_description()}
           </AlertDescription>
         </Alert>
       </div>
@@ -101,7 +147,7 @@ function MobileHandoffPage() {
 
   async function sharePackage() {
     if (!navigator.share) {
-      setMessage(m.dashboard_handoff_share_unsupported());
+      setMessage(dashboard_handoff_share_unsupported());
       return;
     }
     try {
@@ -134,10 +180,10 @@ function MobileHandoffPage() {
         packageId: activeHandoff.id,
         event: 'shared',
       });
-      setMessage(m.dashboard_handoff_share_opened());
+      setMessage(dashboard_handoff_share_opened());
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      setMessage(m.dashboard_handoff_share_failed());
+      setMessage(dashboard_handoff_share_failed());
     }
   }
 
@@ -148,7 +194,7 @@ function MobileHandoffPage() {
       packageId: activeHandoff.id,
       event: 'copied',
     });
-    setMessage(m.dashboard_handoff_copied());
+    setMessage(dashboard_handoff_copied());
   }
 
   async function reportResult(
@@ -166,10 +212,10 @@ function MobileHandoffPage() {
       });
       setMessage(
         outcome === 'published'
-          ? m.dashboard_handoff_report_published_success()
+          ? dashboard_handoff_report_published_success()
           : outcome === 'failed'
-            ? m.dashboard_handoff_report_failed_success()
-            : m.dashboard_handoff_report_not_published_success()
+            ? dashboard_handoff_report_failed_success()
+            : dashboard_handoff_report_not_published_success()
       );
       setReportNote('');
     } catch {
@@ -182,7 +228,7 @@ function MobileHandoffPage() {
       <DashboardHeader
         breadcrumbs={[
           {
-            label: m.dashboard_handoff_mobile_package(),
+            label: dashboard_handoff_mobile_package(),
             isCurrentPage: true,
           },
         ]}
@@ -190,8 +236,8 @@ function MobileHandoffPage() {
           artifact ? (
             <Badge variant="outline">
               {artifact.visibleLabel
-                ? m.dashboard_handoff_aigc_label_on()
-                : m.dashboard_handoff_aigc_label_off()}
+                ? dashboard_handoff_aigc_label_on()
+                : dashboard_handoff_aigc_label_off()}
             </Badge>
           ) : undefined
         }
@@ -199,18 +245,18 @@ function MobileHandoffPage() {
       <main className="mx-auto w-full max-w-xl space-y-4 p-4 pb-24">
         <div>
           <h1 className="text-xl font-semibold tracking-normal">
-            {m.dashboard_handoff_platform_title({
+            {dashboard_handoff_platform_title({
               platform: platformLabel(handoff.platform),
             })}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {m.dashboard_handoff_description()}
+            {dashboard_handoff_description()}
           </p>
         </div>
         {message && (
           <Alert>
             <IconCheck />
-            <AlertTitle>{m.dashboard_handoff_status_title()}</AlertTitle>
+            <AlertTitle>{dashboard_handoff_status_title()}</AlertTitle>
             <AlertDescription>{message}</AlertDescription>
           </Alert>
         )}
@@ -221,21 +267,21 @@ function MobileHandoffPage() {
               <div className="flex items-center justify-between gap-2">
                 <CardTitle className="flex items-center gap-2 text-sm">
                   <IconVideo className="size-4" />
-                  {m.dashboard_handoff_video_summary({
+                  {dashboard_handoff_video_summary({
                     seconds: artifact.durationSeconds.toFixed(1),
                   })}
                 </CardTitle>
                 <Badge variant="outline">
                   {artifact.visibleLabel
-                    ? m.dashboard_handoff_aigc_explicit_implicit()
-                    : m.dashboard_handoff_aigc_missing()}
+                    ? dashboard_handoff_aigc_explicit_implicit()
+                    : dashboard_handoff_aigc_missing()}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="grid gap-2 sm:grid-cols-2">
               <Button onClick={() => void sharePackage()}>
                 <IconShare />
-                {m.dashboard_handoff_save_or_share()}
+                {dashboard_handoff_save_or_share()}
               </Button>
               {mediaUrl && (
                 <a
@@ -244,8 +290,8 @@ function MobileHandoffPage() {
                   download
                   aria-label={
                     artifact.visibleLabel
-                      ? m.dashboard_handoff_download_labeled_video_aria()
-                      : m.dashboard_handoff_download_video_aria()
+                      ? dashboard_handoff_download_labeled_video_aria()
+                      : dashboard_handoff_download_video_aria()
                   }
                   onClick={() =>
                     void execute({
@@ -256,7 +302,7 @@ function MobileHandoffPage() {
                   }
                 >
                   <IconDownload />
-                  {m.dashboard_handoff_download_file()}
+                  {dashboard_handoff_download_file()}
                 </a>
               )}
             </CardContent>
@@ -267,12 +313,12 @@ function MobileHandoffPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <IconPhoto className="size-4" />
-                {m.dashboard_handoff_authorized_image()}
+                {dashboard_handoff_authorized_image()}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <img
-                alt={m.dashboard_handoff_asset_alt()}
+                alt={dashboard_handoff_asset_alt()}
                 className="max-h-96 w-full object-contain"
                 src={mediaUrl}
               />
@@ -289,20 +335,20 @@ function MobileHandoffPage() {
                 }
               >
                 <IconDownload />
-                {m.dashboard_handoff_download_image()}
+                {dashboard_handoff_download_image()}
               </a>
             </CardContent>
           </Card>
         )}
 
         {[
-          [m.dashboard_handoff_field_title(), handoff.title],
-          [m.dashboard_handoff_field_body(), handoff.body],
+          [dashboard_handoff_field_title(), handoff.title],
+          [dashboard_handoff_field_body(), handoff.body],
           [
-            m.dashboard_handoff_field_topics(),
+            dashboard_handoff_field_topics(),
             handoff.topics.map((topic) => `#${topic}`).join(' '),
           ],
-          [m.dashboard_handoff_field_conversion(), handoff.conversionText],
+          [dashboard_handoff_field_conversion(), handoff.conversionText],
         ].map(([label, value]) => (
           <section key={label} className="border-y py-3">
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -313,7 +359,7 @@ function MobileHandoffPage() {
                 onClick={() => void copy(value)}
               >
                 <IconCopy />
-                {m.dashboard_handoff_copy()}
+                {dashboard_handoff_copy()}
               </Button>
             </div>
             <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
@@ -325,7 +371,7 @@ function MobileHandoffPage() {
         <Card className="rounded-md shadow-none">
           <CardHeader>
             <CardTitle className="text-sm">
-              {m.dashboard_handoff_checklist_title()}
+              {dashboard_handoff_checklist_title()}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -342,7 +388,7 @@ function MobileHandoffPage() {
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="text-sm">
-                {m.dashboard_handoff_report_title()}
+                {dashboard_handoff_report_title()}
               </CardTitle>
               <Badge
                 variant={
@@ -350,20 +396,20 @@ function MobileHandoffPage() {
                 }
               >
                 {handoff.status === 'published'
-                  ? m.dashboard_handoff_reported()
-                  : m.dashboard_handoff_waiting_report()}
+                  ? dashboard_handoff_reported()
+                  : dashboard_handoff_waiting_report()}
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              {m.dashboard_handoff_report_description()}
+              {dashboard_handoff_report_description()}
             </p>
             {handoff.status === 'ready' ? (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="handoff-platform-url">
-                    {m.dashboard_handoff_platform_url_label()}
+                    {dashboard_handoff_platform_url_label()}
                   </Label>
                   <Input
                     id="handoff-platform-url"
@@ -375,30 +421,30 @@ function MobileHandoffPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="handoff-report-note">
-                    {m.dashboard_handoff_report_note_label()}
+                    {dashboard_handoff_report_note_label()}
                   </Label>
                   <Textarea
                     id="handoff-report-note"
                     onChange={(event) => setReportNote(event.target.value)}
-                    placeholder={m.dashboard_handoff_report_note_placeholder()}
+                    placeholder={dashboard_handoff_report_note_placeholder()}
                     value={reportNote}
                   />
                 </div>
                 <div className="grid gap-2 sm:grid-cols-3">
                   <Button onClick={() => void reportResult('published')}>
-                    {m.p1_filter_content_published()}
+                    {p1_filter_content_published()}
                   </Button>
                   <Button
                     onClick={() => void reportResult('not_published')}
                     variant="outline"
                   >
-                    {m.dashboard_handoff_outcome_not_published()}
+                    {dashboard_handoff_outcome_not_published()}
                   </Button>
                   <Button
                     onClick={() => void reportResult('failed')}
                     variant="destructive"
                   >
-                    {m.dashboard_handoff_outcome_failed()}
+                    {dashboard_handoff_outcome_failed()}
                   </Button>
                 </div>
               </>
@@ -408,12 +454,12 @@ function MobileHandoffPage() {
                 {handoff.manualReports.map((report) => (
                   <li key={report.id}>
                     {report.note
-                      ? m.dashboard_handoff_report_log_with_note({
+                      ? dashboard_handoff_report_log_with_note({
                           date: formatLocaleDateTime(report.createdAt),
                           note: report.note,
                           outcome: reportOutcomeLabel(report.outcome),
                         })
-                      : m.dashboard_handoff_report_log({
+                      : dashboard_handoff_report_log({
                           date: formatLocaleDateTime(report.createdAt),
                           outcome: reportOutcomeLabel(report.outcome),
                         })}

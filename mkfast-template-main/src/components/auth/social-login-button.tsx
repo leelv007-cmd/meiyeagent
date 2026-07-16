@@ -1,4 +1,7 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_social_or,
+  auth_social_sign_in_with_google,
+} from '@/locale/paraglide/messages';
 import { useState } from 'react';
 import { DividerWithText } from '@/components/auth/divider-with-text';
 import { Button } from '@/components/ui/button';
@@ -44,7 +47,7 @@ export function SocialLoginButton({
   };
   return (
     <div className="w-full flex flex-col gap-4">
-      {showDivider && <DividerWithText text={m.auth_social_or()} />}
+      {showDivider && <DividerWithText text={auth_social_or()} />}
       <Button
         size="lg"
         className="w-full"
@@ -57,7 +60,7 @@ export function SocialLoginButton({
         ) : (
           <IconBrandGoogleFilled className="size-4 mr-2" />
         )}
-        <span>{m.auth_social_sign_in_with_google()}</span>
+        <span>{auth_social_sign_in_with_google()}</span>
       </Button>
     </div>
   );

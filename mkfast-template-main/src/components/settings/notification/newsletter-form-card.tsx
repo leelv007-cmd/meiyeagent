@@ -1,4 +1,13 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_notification_newsletter_description,
+  settings_notification_newsletter_email_required,
+  settings_notification_newsletter_error,
+  settings_notification_newsletter_hint,
+  settings_notification_newsletter_label,
+  settings_notification_newsletter_subscribe_success,
+  settings_notification_newsletter_title,
+  settings_notification_newsletter_unsubscribe_success,
+} from '@/locale/paraglide/messages';
 import { FormError } from '@/components/shared/form-error';
 import {
   Card,
@@ -56,20 +65,20 @@ export function NewsletterFormCard({ className }: NewsletterFormCardProps) {
   if (!currentUser) return null;
   const handleSubscriptionChange = async (value: boolean) => {
     if (!currentUser.email) {
-      toast.error(m.settings_notification_newsletter_email_required());
+      toast.error(settings_notification_newsletter_email_required());
       return;
     }
     try {
       if (value) {
         await subscribeMutation.mutateAsync(currentUser.email);
-        toast.success(m.settings_notification_newsletter_subscribe_success());
+        toast.success(settings_notification_newsletter_subscribe_success());
       } else {
         await unsubscribeMutation.mutateAsync(currentUser.email);
-        toast.success(m.settings_notification_newsletter_unsubscribe_success());
+        toast.success(settings_notification_newsletter_unsubscribe_success());
       }
     } catch (err) {
       console.error('newsletter subscription error:', err);
-      const msg = m.settings_notification_newsletter_error();
+      const msg = settings_notification_newsletter_error();
       toast.error(msg);
       form.setValue('subscribed', newsletterStatus?.subscribed ?? false);
     }
@@ -78,10 +87,10 @@ export function NewsletterFormCard({ className }: NewsletterFormCardProps) {
     <Card className={cn('w-full overflow-hidden pt-6 pb-0', className)}>
       <CardHeader>
         <CardTitle className="text-lg font-semibold">
-          {m.settings_notification_newsletter_title()}
+          {settings_notification_newsletter_title()}
         </CardTitle>
         <CardDescription>
-          {m.settings_notification_newsletter_description()}
+          {settings_notification_newsletter_description()}
         </CardDescription>
       </CardHeader>
       <Form {...form}>
@@ -93,7 +102,7 @@ export function NewsletterFormCard({ className }: NewsletterFormCardProps) {
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between">
                   <FormLabel className="text-base">
-                    {m.settings_notification_newsletter_label()}
+                    {settings_notification_newsletter_label()}
                   </FormLabel>
                   <div className="relative flex items-center">
                     {(isStatusLoading ||
@@ -124,14 +133,14 @@ export function NewsletterFormCard({ className }: NewsletterFormCardProps) {
                 statusError ||
                 subscribeMutation.error ||
                 unsubscribeMutation.error
-                  ? m.settings_notification_newsletter_error()
+                  ? settings_notification_newsletter_error()
                   : undefined
               }
             />
           </CardContent>
           <CardFooter className="mt-6 px-6 py-4 bg-muted rounded-none">
             <p className="text-sm text-muted-foreground">
-              {m.settings_notification_newsletter_hint()}
+              {settings_notification_newsletter_hint()}
             </p>
           </CardFooter>
         </form>

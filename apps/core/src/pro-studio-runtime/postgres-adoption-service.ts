@@ -11,7 +11,10 @@ import type {
   AdvancedCanvasAdoptionResult,
 } from './adoption.js';
 import { AdvancedCanvasAdoptionError } from './adoption.js';
-import type { CanvasGenerationWorkspaceState } from './generation-runtime.js';
+import {
+  readCanvasGenerationOrigin,
+  type CanvasGenerationWorkspaceState,
+} from './generation-runtime.js';
 
 interface ProjectGraph {
   schemaVersion: 1;
@@ -570,7 +573,9 @@ export class PostgresAdvancedCanvasAdoptionService {
       ...canonicalJobs.rows
         .map((row) => canonicalOriginRevisionId(row))
         .filter((value): value is string => value !== null),
-      ...[...fallbackJobById.values()].map((job) => job.origin.revisionId),
+      ...[...fallbackJobById.values()]
+        .map((job) => readCanvasGenerationOrigin(job.origin)?.revisionId)
+        .filter((value): value is string => value !== undefined),
       revision.id,
     ]);
     const validOriginRevisions = await client.query<{ id: string }>(
@@ -601,13 +606,14 @@ export class PostgresAdvancedCanvasAdoptionService {
         }
       } else {
         const job = fallbackJobById.get(jobId);
+        const origin = readCanvasGenerationOrigin(job?.origin);
         if (
           !job ||
           job.status !== 'completed' ||
           job.outputAssetId !== orderedAssetIds[index] ||
-          job.origin.kind !== 'advanced_canvas' ||
-          job.origin.id !== command.projectId ||
-          !allowedOriginRevisionIds.has(job.origin.revisionId)
+          origin?.projectId !== command.projectId ||
+          !origin ||
+          !allowedOriginRevisionIds.has(origin.revisionId)
         ) {
           throw new AdvancedCanvasAdoptionError(
             'JOB_NOT_DELIVERED',

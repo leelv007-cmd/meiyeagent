@@ -8,7 +8,41 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  account_usage_retry,
+  dashboard_lead_amount_label,
+  dashboard_lead_content_label,
+  dashboard_lead_description,
+  dashboard_lead_empty,
+  dashboard_lead_insight_placeholder,
+  dashboard_lead_insights_title,
+  dashboard_lead_intent_amount,
+  dashboard_lead_linked_content,
+  dashboard_lead_manual_record,
+  dashboard_lead_new_title,
+  dashboard_lead_no_note,
+  dashboard_lead_note_label,
+  dashboard_lead_progress_title,
+  dashboard_lead_record,
+  dashboard_lead_save_insight,
+  dashboard_lead_source_summary,
+  dashboard_lead_status_booked,
+  dashboard_lead_status_contacted,
+  dashboard_lead_status_invalid,
+  dashboard_lead_status_lost,
+  dashboard_lead_status_new,
+  dashboard_lead_status_redeemed,
+  dashboard_lead_untitled_content,
+  dashboard_lead_update_status_aria,
+  dashboard_lead_view_details,
+  lead_ledger_attribution_notice,
+  lead_ledger_empty_create_action,
+  lead_ledger_empty_description,
+  lead_ledger_empty_record_action,
+  leads_operation_failed_description,
+  product_client_command_failed,
+  product_navigation_leads,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
@@ -41,17 +75,17 @@ const statusOrder: LeadStatus[] = [
 function leadStatusLabel(status: LeadStatus) {
   switch (status) {
     case 'new':
-      return m.dashboard_lead_status_new();
+      return dashboard_lead_status_new();
     case 'contacted':
-      return m.dashboard_lead_status_contacted();
+      return dashboard_lead_status_contacted();
     case 'booked':
-      return m.dashboard_lead_status_booked();
+      return dashboard_lead_status_booked();
     case 'redeemed':
-      return m.dashboard_lead_status_redeemed();
+      return dashboard_lead_status_redeemed();
     case 'lost':
-      return m.dashboard_lead_status_lost();
+      return dashboard_lead_status_lost();
     case 'invalid':
-      return m.dashboard_lead_status_invalid();
+      return dashboard_lead_status_invalid();
   }
 }
 
@@ -112,33 +146,31 @@ function LeadLedgerPage() {
     <>
       <DashboardHeader
         breadcrumbs={[
-          { label: m.product_navigation_leads(), isCurrentPage: true },
+          { label: product_navigation_leads(), isCurrentPage: true },
         ]}
         actions={
-          <Badge variant="outline">{m.dashboard_lead_manual_record()}</Badge>
+          <Badge variant="outline">{dashboard_lead_manual_record()}</Badge>
         }
       />
       <main className="mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
         <div className="mb-6">
-          <h1 className="meiye-type-title">{m.product_navigation_leads()}</h1>
-          <p className="meiye-type-aux mt-1">
-            {m.dashboard_lead_description()}
-          </p>
+          <h1 className="meiye-type-title">{product_navigation_leads()}</h1>
+          <p className="meiye-type-aux mt-1">{dashboard_lead_description()}</p>
         </div>
 
         {error && (
           <Alert variant="destructive" className="mb-4">
             <IconAlertTriangle />
-            <AlertTitle>{m.product_client_command_failed()}</AlertTitle>
+            <AlertTitle>{product_client_command_failed()}</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-3">
-              {m.leads_operation_failed_description()}
+              {leads_operation_failed_description()}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void refresh()}
               >
                 <IconRefresh />
-                {m.account_usage_retry()}
+                {account_usage_retry()}
               </Button>
             </AlertDescription>
           </Alert>
@@ -148,7 +180,7 @@ function LeadLedgerPage() {
           <section className="min-w-0">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="meiye-type-body font-semibold">
-                {m.dashboard_lead_progress_title()}
+                {dashboard_lead_progress_title()}
               </h2>
               <Badge variant="secondary">{state.leads.length}</Badge>
             </div>
@@ -163,7 +195,7 @@ function LeadLedgerPage() {
                         document.getElementById('lead-content')?.focus()
                       }
                     >
-                      {m.lead_ledger_empty_record_action()}
+                      {lead_ledger_empty_record_action()}
                     </Button>
                   ) : (
                     <a
@@ -172,13 +204,13 @@ function LeadLedgerPage() {
                       })}
                       href={getPathWithLocale(Routes.Dashboard)}
                     >
-                      {m.lead_ledger_empty_create_action()}
+                      {lead_ledger_empty_create_action()}
                     </a>
                   )
                 }
-                description={m.lead_ledger_empty_description()}
+                description={lead_ledger_empty_description()}
                 media={<IconMessages />}
-                title={m.dashboard_lead_empty()}
+                title={dashboard_lead_empty()}
               />
             ) : (
               <div className="divide-y divide-divider overflow-hidden rounded-xl bg-surface-1">
@@ -198,11 +230,10 @@ function LeadLedgerPage() {
                       <CardHeader className="gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <CardTitle className="truncate text-base">
-                            {version?.title ??
-                              m.dashboard_lead_linked_content()}
+                            {version?.title ?? dashboard_lead_linked_content()}
                           </CardTitle>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {m.dashboard_lead_source_summary({
+                            {dashboard_lead_source_summary({
                               date: formatLocaleDateTime(lead.createdAt),
                             })}
                           </p>
@@ -211,10 +242,10 @@ function LeadLedgerPage() {
                       </CardHeader>
                       <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
                         <div className="meiye-type-body min-w-0 flex-1">
-                          <p>{lead.note || m.dashboard_lead_no_note()}</p>
+                          <p>{lead.note || dashboard_lead_no_note()}</p>
                           {lead.amountCents ? (
                             <p className="mt-1 text-muted-foreground">
-                              {m.dashboard_lead_intent_amount({
+                              {dashboard_lead_intent_amount({
                                 amount: (lead.amountCents / 100).toFixed(0),
                               })}
                             </p>
@@ -228,10 +259,10 @@ function LeadLedgerPage() {
                           to="/dashboard/leads/$leadId"
                           params={{ leadId: lead.id }}
                         >
-                          {m.dashboard_lead_view_details()}
+                          {dashboard_lead_view_details()}
                         </Link>
                         <select
-                          aria-label={m.dashboard_lead_update_status_aria()}
+                          aria-label={dashboard_lead_update_status_aria()}
                           className="h-touch-target rounded-md border border-divider bg-surface-1 px-3 text-sm outline-none transition-colors enabled:hover:bg-surface-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
                           disabled={pending}
                           value={lead.status}
@@ -260,11 +291,11 @@ function LeadLedgerPage() {
           <aside className="space-y-6">
             <section className="space-y-4 rounded-xl bg-surface-1 p-4">
               <h2 className="meiye-type-body font-semibold">
-                {m.dashboard_lead_new_title()}
+                {dashboard_lead_new_title()}
               </h2>
               <div>
                 <Label htmlFor="lead-content">
-                  {m.dashboard_lead_content_label()}
+                  {dashboard_lead_content_label()}
                 </Label>
                 <select
                   id="lead-content"
@@ -277,17 +308,17 @@ function LeadLedgerPage() {
                     .map((content) => (
                       <option key={content.id} value={content.id}>
                         {content.variants[0]?.versions[0]?.title ??
-                          m.dashboard_lead_untitled_content()}
+                          dashboard_lead_untitled_content()}
                       </option>
                     ))}
                 </select>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  {m.lead_ledger_attribution_notice()}
+                  {lead_ledger_attribution_notice()}
                 </p>
               </div>
               <div>
                 <Label htmlFor="lead-amount">
-                  {m.dashboard_lead_amount_label()}
+                  {dashboard_lead_amount_label()}
                 </Label>
                 <Input
                   id="lead-amount"
@@ -298,9 +329,7 @@ function LeadLedgerPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="lead-note">
-                  {m.dashboard_lead_note_label()}
-                </Label>
+                <Label htmlFor="lead-note">{dashboard_lead_note_label()}</Label>
                 <Textarea
                   id="lead-note"
                   className="mt-2"
@@ -316,20 +345,20 @@ function LeadLedgerPage() {
                 variant={!contentId ? 'outline' : 'default'}
               >
                 <IconPlus />
-                {m.dashboard_lead_record()}
+                {dashboard_lead_record()}
               </Button>
             </section>
 
             <section className="space-y-4 rounded-xl bg-surface-1 p-4">
               <h2 className="meiye-type-body flex items-center gap-2 font-semibold">
                 <IconBulb className="size-4" />
-                {m.dashboard_lead_insights_title()}
+                {dashboard_lead_insights_title()}
               </h2>
               <Textarea
                 rows={3}
                 value={insight}
                 onChange={(event) => setInsight(event.target.value)}
-                placeholder={m.dashboard_lead_insight_placeholder()}
+                placeholder={dashboard_lead_insight_placeholder()}
               />
               <Button
                 className="w-full"
@@ -346,7 +375,7 @@ function LeadLedgerPage() {
                 }}
               >
                 <IconCheck />
-                {m.dashboard_lead_save_insight()}
+                {dashboard_lead_save_insight()}
               </Button>
               {state.insights
                 .slice(-3)

@@ -1,4 +1,4 @@
-import { m } from '@/locale/paraglide/messages';
+import { common_loading } from '@/locale/paraglide/messages';
 import parse, {
   type DOMNode,
   type HTMLReactParserOptions,
@@ -22,7 +22,7 @@ export function Markdown({ content, className }: MarkdownProps) {
     renderMarkdown(content).then(setResult);
   }, [content]);
   if (!result) {
-    return <div className={className}>{m.common_loading()}</div>;
+    return <div className={className}>{common_loading()}</div>;
   }
   const options: HTMLReactParserOptions = {
     replace: (domNode) => {

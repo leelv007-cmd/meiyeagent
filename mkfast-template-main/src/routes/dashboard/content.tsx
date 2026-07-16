@@ -8,7 +8,59 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { m } from '@/locale/paraglide/messages';
+import {
+  account_usage_retry,
+  content_library_empty_action,
+  content_library_empty_description,
+  content_library_empty_title,
+  content_operation_failed_description,
+  content_package_action_failed,
+  content_package_action_failed_description,
+  content_package_legacy_history,
+  content_package_legacy_read_only,
+  content_package_legacy_view_migrated,
+  content_package_variant_output_label,
+  content_package_version_conflict_description,
+  creation_entry_platform_douyin,
+  creation_entry_platform_xiaohongshu,
+  dashboard_content_checklist_title,
+  dashboard_content_copied,
+  dashboard_content_count,
+  dashboard_content_create_weekly_set,
+  dashboard_content_description,
+  dashboard_content_duration_version,
+  dashboard_content_empty_description,
+  dashboard_content_empty_title,
+  dashboard_content_handoff_ready,
+  dashboard_content_handoff_status_pending,
+  dashboard_content_handoff_summary,
+  dashboard_content_handoff_title,
+  dashboard_content_mobile_handoff,
+  dashboard_content_platform_duration,
+  dashboard_content_quick_edit_conversational,
+  dashboard_content_quick_edit_local_positioning,
+  dashboard_content_quick_edit_professional,
+  dashboard_content_quick_edit_weaker_advertising,
+  dashboard_content_remix,
+  dashboard_content_revert_to_ai,
+  dashboard_content_scan_qr,
+  dashboard_content_source_content_missing_description,
+  dashboard_content_source_content_missing_title,
+  dashboard_content_source_handoff_missing_description,
+  dashboard_content_source_handoff_missing_title,
+  dashboard_content_undo,
+  dashboard_handoff_copy,
+  dashboard_handoff_field_body,
+  dashboard_handoff_field_conversion,
+  dashboard_handoff_field_title,
+  dashboard_handoff_field_topics,
+  dashboard_handoff_reported,
+  p1_filter_content_draft,
+  p1_filter_content_published,
+  product_client_command_failed,
+  product_client_state_failed,
+  product_navigation_content,
+} from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 import {
@@ -93,20 +145,20 @@ const quickEdits = [
 function quickEditLabel(instruction: (typeof quickEdits)[number]) {
   switch (instruction) {
     case 'conversational':
-      return m.dashboard_content_quick_edit_conversational();
+      return dashboard_content_quick_edit_conversational();
     case 'professional':
-      return m.dashboard_content_quick_edit_professional();
+      return dashboard_content_quick_edit_professional();
     case 'weaker_advertising':
-      return m.dashboard_content_quick_edit_weaker_advertising();
+      return dashboard_content_quick_edit_weaker_advertising();
     case 'local_positioning':
-      return m.dashboard_content_quick_edit_local_positioning();
+      return dashboard_content_quick_edit_local_positioning();
   }
 }
 
 function platformLabel(platform: 'xiaohongshu' | 'douyin') {
   return platform === 'xiaohongshu'
-    ? m.creation_entry_platform_xiaohongshu()
-    : m.creation_entry_platform_douyin();
+    ? creation_entry_platform_xiaohongshu()
+    : creation_entry_platform_douyin();
 }
 
 function ContentLibraryPage() {
@@ -303,11 +355,11 @@ function ContentLibraryPage() {
     <>
       <DashboardHeader
         breadcrumbs={[
-          { label: m.product_navigation_content(), isCurrentPage: true },
+          { label: product_navigation_content(), isCurrentPage: true },
         ]}
         actions={
           <Badge variant="outline">
-            {m.dashboard_content_count({
+            {dashboard_content_count({
               count: contentPackages.length,
             })}
           </Badge>
@@ -316,10 +368,10 @@ function ContentLibraryPage() {
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 bg-surface-0 p-4 lg:p-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-normal">
-            {m.product_navigation_content()}
+            {product_navigation_content()}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {m.dashboard_content_description()}
+            {dashboard_content_description()}
           </p>
           <div className="mt-3">
             <QuotaMeter entitlement={state.entitlement} />
@@ -329,16 +381,16 @@ function ContentLibraryPage() {
         {error && (
           <Alert variant="destructive">
             <IconAlertTriangle />
-            <AlertTitle>{m.product_client_command_failed()}</AlertTitle>
+            <AlertTitle>{product_client_command_failed()}</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-3">
-              {m.content_operation_failed_description()}
+              {content_operation_failed_description()}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void refresh()}
               >
                 <IconRefresh />
-                {m.account_usage_retry()}
+                {account_usage_retry()}
               </Button>
             </AlertDescription>
           </Alert>
@@ -348,10 +400,10 @@ function ContentLibraryPage() {
           <Alert variant="destructive">
             <IconAlertTriangle />
             <AlertTitle>
-              {m.dashboard_content_source_content_missing_title()}
+              {dashboard_content_source_content_missing_title()}
             </AlertTitle>
             <AlertDescription>
-              {m.dashboard_content_source_content_missing_description()}
+              {dashboard_content_source_content_missing_description()}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -360,10 +412,10 @@ function ContentLibraryPage() {
           <Alert variant="destructive">
             <IconAlertTriangle />
             <AlertTitle>
-              {m.dashboard_content_source_handoff_missing_title()}
+              {dashboard_content_source_handoff_missing_title()}
             </AlertTitle>
             <AlertDescription>
-              {m.dashboard_content_source_handoff_missing_description()}
+              {dashboard_content_source_handoff_missing_description()}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -372,10 +424,10 @@ function ContentLibraryPage() {
           <Alert variant="destructive">
             <IconAlertTriangle />
             <AlertTitle>
-              {m.dashboard_content_source_content_missing_title()}
+              {dashboard_content_source_content_missing_title()}
             </AlertTitle>
             <AlertDescription>
-              {m.dashboard_content_source_content_missing_description()}
+              {dashboard_content_source_content_missing_description()}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -383,7 +435,7 @@ function ContentLibraryPage() {
         {contentPackagesQuery.isError ? (
           <Alert variant="destructive">
             <IconAlertTriangle />
-            <AlertTitle>{m.product_client_state_failed()}</AlertTitle>
+            <AlertTitle>{product_client_state_failed()}</AlertTitle>
             <AlertDescription>
               {contentPackagesQuery.error.message}
             </AlertDescription>
@@ -395,12 +447,12 @@ function ContentLibraryPage() {
             <IconAlertTriangle />
             <AlertTitle>
               {packageActionError === 'version_conflict'
-                ? m.content_package_version_conflict_description()
-                : m.content_package_action_failed()}
+                ? content_package_version_conflict_description()
+                : content_package_action_failed()}
             </AlertTitle>
             {packageActionError === 'generic' ? (
               <AlertDescription>
-                {m.content_package_action_failed_description()}
+                {content_package_action_failed_description()}
               </AlertDescription>
             ) : null}
           </Alert>
@@ -454,7 +506,7 @@ function ContentLibraryPage() {
                   estimatedAmount: variantQuote.estimatedAmount,
                   operation: 'copy.adapt',
                   outputCount: 3,
-                  outputLabel: m.content_package_variant_output_label(),
+                  outputLabel: content_package_variant_output_label(),
                   quoteAcceptedAt,
                   quoteRevision: creativeQuoteRevision({
                     aspectRatio: '3:4',
@@ -507,12 +559,12 @@ function ContentLibraryPage() {
                 className={buttonVariants()}
                 href={getPathWithLocale(Routes.Dashboard)}
               >
-                {m.content_library_empty_action()}
+                {content_library_empty_action()}
               </a>
             }
-            description={m.content_library_empty_description()}
+            description={content_library_empty_description()}
             media={<IconFileText />}
-            title={m.content_library_empty_title()}
+            title={content_library_empty_title()}
           />
         ) : (
           <ContentPackageLibrary
@@ -527,7 +579,7 @@ function ContentLibraryPage() {
         {state.contents.length > 0 ? (
           <details className="border-t border-divider pt-5">
             <summary className="cursor-pointer text-sm font-medium">
-              {m.content_package_legacy_history({
+              {content_package_legacy_history({
                 count: state.contents.length,
               })}
             </summary>
@@ -573,15 +625,15 @@ function ContentLibraryPage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 id="handoff-heading" className="text-lg font-semibold">
-                  {m.dashboard_content_handoff_title()}
+                  {dashboard_content_handoff_title()}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {m.dashboard_content_handoff_summary({
+                  {dashboard_content_handoff_summary({
                     platform: platformLabel(latestPackage.platform),
                     status:
                       latestPackage.status === 'ready'
-                        ? m.dashboard_content_handoff_status_pending()
-                        : m.dashboard_handoff_reported(),
+                        ? dashboard_content_handoff_status_pending()
+                        : dashboard_handoff_reported(),
                   })}
                 </p>
               </div>
@@ -591,21 +643,21 @@ function ContentLibraryPage() {
                 }
               >
                 {latestPackage.status === 'published'
-                  ? m.p1_filter_content_published()
-                  : m.dashboard_content_handoff_ready()}
+                  ? p1_filter_content_published()
+                  : dashboard_content_handoff_ready()}
               </Badge>
             </div>
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
               <div className="divide-y divide-divider">
                 {[
-                  [m.dashboard_handoff_field_title(), latestPackage.title],
-                  [m.dashboard_handoff_field_body(), latestPackage.body],
+                  [dashboard_handoff_field_title(), latestPackage.title],
+                  [dashboard_handoff_field_body(), latestPackage.body],
                   [
-                    m.dashboard_handoff_field_topics(),
+                    dashboard_handoff_field_topics(),
                     latestPackage.topics.map((topic) => `#${topic}`).join(' '),
                   ],
                   [
-                    m.dashboard_handoff_field_conversion(),
+                    dashboard_handoff_field_conversion(),
                     latestPackage.conversionText,
                   ],
                 ].map(([label, value]) => (
@@ -624,8 +676,8 @@ function ContentLibraryPage() {
                     >
                       {copied === label ? <IconCheck /> : <IconCopy />}
                       {copied === label
-                        ? m.dashboard_content_copied()
-                        : m.dashboard_handoff_copy()}
+                        ? dashboard_content_copied()
+                        : dashboard_handoff_copy()}
                     </Button>
                   </div>
                 ))}
@@ -634,13 +686,13 @@ function ContentLibraryPage() {
                 <div className="mx-auto w-44 bg-white p-2">
                   <HandoffQr token={latestPackage.token} />
                   <p className="mt-1 text-center text-xs text-neutral-600">
-                    {m.dashboard_content_scan_qr()}
+                    {dashboard_content_scan_qr()}
                   </p>
                 </div>
                 <Card className="rounded-md bg-surface-1 shadow-none">
                   <CardHeader>
                     <CardTitle className="text-sm">
-                      {m.dashboard_content_checklist_title()}
+                      {dashboard_content_checklist_title()}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
@@ -658,11 +710,11 @@ function ContentLibraryPage() {
                   )}
                   className="flex h-9 items-center justify-center gap-2 rounded-md bg-surface-2 text-sm font-medium hover:bg-surface-1"
                 >
-                  {m.dashboard_content_mobile_handoff()}
+                  {dashboard_content_mobile_handoff()}
                   <IconExternalLink className="size-4" />
                 </a>
                 <Badge className="w-full justify-center" variant="outline">
-                  {m.content_package_legacy_read_only()}
+                  {content_package_legacy_read_only()}
                 </Badge>
               </aside>
             </div>
@@ -693,10 +745,10 @@ function ContentGrid({
       <div className="rounded-md bg-surface-1 py-14 text-center">
         <IconFileText className="mx-auto size-6 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">
-          {m.dashboard_content_empty_title()}
+          {dashboard_content_empty_title()}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          {m.dashboard_content_empty_description()}
+          {dashboard_content_empty_description()}
         </p>
       </div>
     );
@@ -732,25 +784,25 @@ function ContentGrid({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">
                   <IconBrandX className="size-3" />
-                  {m.creation_entry_platform_xiaohongshu()}
+                  {creation_entry_platform_xiaohongshu()}
                 </Badge>
                 {douyin && (
                   <Badge variant="secondary">
                     <IconBrandTiktok className="size-3" />
                     {douyin.durationSeconds === undefined
-                      ? m.creation_entry_platform_douyin()
-                      : m.dashboard_content_platform_duration({
-                          platform: m.creation_entry_platform_douyin(),
+                      ? creation_entry_platform_douyin()
+                      : dashboard_content_platform_duration({
+                          platform: creation_entry_platform_douyin(),
                           seconds: douyin.durationSeconds,
                         })}
                   </Badge>
                 )}
                 <Badge variant="outline" className="ml-auto">
                   {readOnly
-                    ? m.content_package_legacy_read_only()
+                    ? content_package_legacy_read_only()
                     : content.status === 'published'
-                      ? m.p1_filter_content_published()
-                      : m.p1_filter_content_draft()}
+                      ? p1_filter_content_published()
+                      : p1_filter_content_draft()}
                 </Badge>
               </div>
               <CardTitle className="text-base leading-6">
@@ -769,7 +821,7 @@ function ContentGrid({
                   )}
                 >
                   <IconExternalLink />
-                  {m.content_package_legacy_view_migrated()}
+                  {content_package_legacy_view_migrated()}
                 </a>
               ) : null}
               {!readOnly ? (
@@ -791,7 +843,7 @@ function ContentGrid({
                           }
                         >
                           <IconBrandTiktok />
-                          {m.dashboard_content_duration_version({
+                          {dashboard_content_duration_version({
                             seconds: durationSeconds,
                           })}
                         </Button>
@@ -825,7 +877,7 @@ function ContentGrid({
                     }
                   >
                     <IconRepeat />
-                    {m.dashboard_content_remix()}
+                    {dashboard_content_remix()}
                   </Button>
                 </div>
               ) : null}
@@ -844,7 +896,7 @@ function ContentGrid({
                     }
                   >
                     <IconArrowBackUp />
-                    {m.dashboard_content_undo()}
+                    {dashboard_content_undo()}
                   </Button>
                   <Button
                     size="sm"
@@ -859,7 +911,7 @@ function ContentGrid({
                     }
                   >
                     <IconRefresh />
-                    {m.dashboard_content_revert_to_ai()}
+                    {dashboard_content_revert_to_ai()}
                   </Button>
                   <Button
                     size="sm"
@@ -873,7 +925,7 @@ function ContentGrid({
                     }
                   >
                     <IconPackage />
-                    {m.dashboard_content_create_weekly_set()}
+                    {dashboard_content_create_weekly_set()}
                   </Button>
                 </div>
               ) : null}

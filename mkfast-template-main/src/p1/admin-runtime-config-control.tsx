@@ -28,7 +28,85 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_runtime_assembly_byok_live_description,
+  admin_runtime_assembly_byok_recorded_description,
+  admin_runtime_assembly_byok_title,
+  admin_runtime_assembly_douyin_live_unavailable,
+  admin_runtime_assembly_douyin_recorded_description,
+  admin_runtime_assembly_douyin_title,
+  admin_runtime_assembly_live_label,
+  admin_runtime_assembly_recorded_label,
+  admin_runtime_config_activation,
+  admin_runtime_config_activation_configured,
+  admin_runtime_config_activation_disabled,
+  admin_runtime_config_activation_fixture,
+  admin_runtime_config_activation_live,
+  admin_runtime_config_activation_recorded,
+  admin_runtime_config_activation_unknown,
+  admin_runtime_config_actor,
+  admin_runtime_config_apply_change,
+  admin_runtime_config_apply_confirm,
+  admin_runtime_config_apply_description,
+  admin_runtime_config_apply_scope,
+  admin_runtime_config_apply_success,
+  admin_runtime_config_apply_title,
+  admin_runtime_config_correlation,
+  admin_runtime_config_current_effective,
+  admin_runtime_config_edit_description,
+  admin_runtime_config_edit_title,
+  admin_runtime_config_effective,
+  admin_runtime_config_history,
+  admin_runtime_config_history_empty,
+  admin_runtime_config_hot_read_description,
+  admin_runtime_config_hot_read_effective,
+  admin_runtime_config_key,
+  admin_runtime_config_legacy_fallback_notice,
+  admin_runtime_config_load_error,
+  admin_runtime_config_not_set,
+  admin_runtime_config_notice_description,
+  admin_runtime_config_notice_title,
+  admin_runtime_config_process_http,
+  admin_runtime_config_process_worker,
+  admin_runtime_config_reason,
+  admin_runtime_config_refresh,
+  admin_runtime_config_restart_pending,
+  admin_runtime_config_revision,
+  admin_runtime_config_rollback_change,
+  admin_runtime_config_rollback_confirm,
+  admin_runtime_config_rollback_description,
+  admin_runtime_config_rollback_scope,
+  admin_runtime_config_rollback_source,
+  admin_runtime_config_rollback_success,
+  admin_runtime_config_rollback_title,
+  admin_runtime_config_save,
+  admin_runtime_config_status_applied,
+  admin_runtime_config_status_rolled_back,
+  admin_runtime_config_stored,
+  admin_runtime_config_time,
+  admin_runtime_config_unwired,
+  admin_runtime_config_validation_error,
+  admin_runtime_config_value,
+  admin_runtime_mode_ark_description,
+  admin_runtime_mode_ark_label,
+  admin_runtime_mode_ark_tuzi_description,
+  admin_runtime_mode_ark_tuzi_label,
+  admin_runtime_mode_direct_description,
+  admin_runtime_mode_direct_label,
+  admin_runtime_mode_disabled_description,
+  admin_runtime_mode_disabled_label,
+  admin_runtime_mode_fixture_description,
+  admin_runtime_mode_fixture_label,
+  admin_runtime_mode_gateway_description,
+  admin_runtime_mode_gateway_label,
+  admin_runtime_mode_media_title,
+  admin_runtime_mode_missing_requirements,
+  admin_runtime_mode_model_title,
+  admin_runtime_mode_recorded_description,
+  admin_runtime_mode_recorded_label,
+  admin_runtime_mode_tuzi_description,
+  admin_runtime_mode_tuzi_label,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import {
   formatAdminConfigValue,
@@ -106,7 +184,16 @@ interface AssemblyMessages {
   admin_runtime_assembly_recorded_label?: () => string;
 }
 
-const assemblyMessages = m as typeof m & AssemblyMessages;
+const assemblyMessages = {
+  admin_runtime_assembly_byok_live_description,
+  admin_runtime_assembly_byok_recorded_description,
+  admin_runtime_assembly_byok_title,
+  admin_runtime_assembly_douyin_live_unavailable,
+  admin_runtime_assembly_douyin_recorded_description,
+  admin_runtime_assembly_douyin_title,
+  admin_runtime_assembly_live_label,
+  admin_runtime_assembly_recorded_label,
+} satisfies AssemblyMessages;
 
 function assemblyMessage(key: keyof AssemblyMessages, fallback: string) {
   return assemblyMessages[key]?.() ?? fallback;
@@ -114,26 +201,26 @@ function assemblyMessage(key: keyof AssemblyMessages, fallback: string) {
 
 function modeOptions(key: string): ConfigOption[] {
   const disabled = {
-    description: m.admin_runtime_mode_disabled_description(),
-    label: m.admin_runtime_mode_disabled_label(),
+    description: admin_runtime_mode_disabled_description(),
+    label: admin_runtime_mode_disabled_label(),
     value: 'disabled',
   };
   if (key === 'model.media.execution.mode') {
     return [
       disabled,
       {
-        description: m.admin_runtime_mode_ark_description(),
-        label: m.admin_runtime_mode_ark_label(),
+        description: admin_runtime_mode_ark_description(),
+        label: admin_runtime_mode_ark_label(),
         value: 'ark',
       },
       {
-        description: m.admin_runtime_mode_tuzi_description(),
-        label: m.admin_runtime_mode_tuzi_label(),
+        description: admin_runtime_mode_tuzi_description(),
+        label: admin_runtime_mode_tuzi_label(),
         value: 'tuzi',
       },
       {
-        description: m.admin_runtime_mode_ark_tuzi_description(),
-        label: m.admin_runtime_mode_ark_tuzi_label(),
+        description: admin_runtime_mode_ark_tuzi_description(),
+        label: admin_runtime_mode_ark_tuzi_label(),
         value: 'ark,tuzi',
       },
     ];
@@ -141,23 +228,23 @@ function modeOptions(key: string): ConfigOption[] {
   return [
     disabled,
     {
-      description: m.admin_runtime_mode_recorded_description(),
-      label: m.admin_runtime_mode_recorded_label(),
+      description: admin_runtime_mode_recorded_description(),
+      label: admin_runtime_mode_recorded_label(),
       value: 'recorded',
     },
     {
-      description: m.admin_runtime_mode_fixture_description(),
-      label: m.admin_runtime_mode_fixture_label(),
+      description: admin_runtime_mode_fixture_description(),
+      label: admin_runtime_mode_fixture_label(),
       value: 'fixture',
     },
     {
-      description: m.admin_runtime_mode_gateway_description(),
-      label: m.admin_runtime_mode_gateway_label(),
+      description: admin_runtime_mode_gateway_description(),
+      label: admin_runtime_mode_gateway_label(),
       value: 'gateway',
     },
     {
-      description: m.admin_runtime_mode_direct_description(),
-      label: m.admin_runtime_mode_direct_label(),
+      description: admin_runtime_mode_direct_description(),
+      label: admin_runtime_mode_direct_label(),
       value: 'direct',
     },
   ];
@@ -165,8 +252,8 @@ function modeOptions(key: string): ConfigOption[] {
 
 function modeTitle(key: string) {
   return key === 'model.media.execution.mode'
-    ? m.admin_runtime_mode_media_title()
-    : m.admin_runtime_mode_model_title();
+    ? admin_runtime_mode_media_title()
+    : admin_runtime_mode_model_title();
 }
 
 function assemblyOptions(key: string): ConfigOption[] {
@@ -181,10 +268,7 @@ function assemblyOptions(key: string): ConfigOption[] {
             'admin_runtime_assembly_douyin_recorded_description',
             '仅提供录制契约，不代表已接入抖音官方能力。'
           ),
-    label: assemblyMessage(
-      'admin_runtime_assembly_recorded_label',
-      'Recorded'
-    ),
+    label: assemblyMessage('admin_runtime_assembly_recorded_label', 'Recorded'),
     value: 'recorded',
   };
   if (key === 'douyin.adapter.assembly') {
@@ -221,14 +305,8 @@ function configOptions(key: string) {
 function configTitle(key: string) {
   if (MODE_CONFIG_KEYS.has(key)) return modeTitle(key);
   return key === 'byok.adapter.assembly'
-    ? assemblyMessage(
-        'admin_runtime_assembly_byok_title',
-        'BYOK 适配器装配'
-      )
-    : assemblyMessage(
-        'admin_runtime_assembly_douyin_title',
-        '抖音适配器装配'
-      );
+    ? assemblyMessage('admin_runtime_assembly_byok_title', 'BYOK 适配器装配')
+    : assemblyMessage('admin_runtime_assembly_douyin_title', '抖音适配器装配');
 }
 
 export function adminConfigApplyRequest(
@@ -253,7 +331,7 @@ function isCommerceKey(key: string) {
 
 function displayValue(value: unknown) {
   if (value === null || value === undefined) {
-    return m.admin_runtime_config_not_set();
+    return admin_runtime_config_not_set();
   }
   return formatAdminConfigValue(value).replace(/\s+/g, ' ');
 }
@@ -266,19 +344,19 @@ function displayTime(value: string | null) {
 
 function statusLabel(status: AdminConfigItem['status']) {
   if (status === 'rolled_back') {
-    return m.admin_runtime_config_status_rolled_back();
+    return admin_runtime_config_status_rolled_back();
   }
-  if (status === 'applied') return m.admin_runtime_config_status_applied();
-  return m.admin_runtime_config_not_set();
+  if (status === 'applied') return admin_runtime_config_status_applied();
+  return admin_runtime_config_not_set();
 }
 
 function wiringLabel(item: AdminConfigItem) {
-  if (!item.wired) return m.admin_runtime_config_unwired();
+  if (!item.wired) return admin_runtime_config_unwired();
   if (
     HOT_READ_KEYS.has(item.key) &&
     JSON.stringify(item.storedValue) === JSON.stringify(item.effectiveValue)
   ) {
-    return m.admin_runtime_config_hot_read_effective();
+    return admin_runtime_config_hot_read_effective();
   }
   if (item.effectiveSnapshots?.length) {
     return item.effectiveSnapshots.every(
@@ -286,38 +364,38 @@ function wiringLabel(item: AdminConfigItem) {
         runtimeSnapshotStatus(item.storedValue, snapshot.effectiveValue) ===
         'current'
     )
-      ? m.admin_runtime_config_current_effective()
-      : m.admin_runtime_config_restart_pending();
+      ? admin_runtime_config_current_effective()
+      : admin_runtime_config_restart_pending();
   }
   return JSON.stringify(item.storedValue) ===
     JSON.stringify(item.effectiveValue)
-    ? m.admin_runtime_config_current_effective()
-    : m.admin_runtime_config_restart_pending();
+    ? admin_runtime_config_current_effective()
+    : admin_runtime_config_restart_pending();
 }
 
 function processLabel(processKind: 'http' | 'job-worker') {
   return processKind === 'http'
-    ? m.admin_runtime_config_process_http()
-    : m.admin_runtime_config_process_worker();
+    ? admin_runtime_config_process_http()
+    : admin_runtime_config_process_worker();
 }
 
 function activationEvidenceLabel(status: string | null | undefined) {
   if (status === 'disabled') {
-    return m.admin_runtime_config_activation_disabled();
+    return admin_runtime_config_activation_disabled();
   }
   if (status === 'recorded_only') {
-    return m.admin_runtime_config_activation_recorded();
+    return admin_runtime_config_activation_recorded();
   }
   if (status === 'local_fixture_verified') {
-    return m.admin_runtime_config_activation_fixture();
+    return admin_runtime_config_activation_fixture();
   }
   if (status === 'configured_unverified') {
-    return m.admin_runtime_config_activation_configured();
+    return admin_runtime_config_activation_configured();
   }
   if (status === 'live_verified') {
-    return m.admin_runtime_config_activation_live();
+    return admin_runtime_config_activation_live();
   }
-  return m.admin_runtime_config_activation_unknown();
+  return admin_runtime_config_activation_unknown();
 }
 
 export function AdminRuntimeConfigControl({
@@ -343,7 +421,8 @@ export function AdminRuntimeConfigControl({
     (item) => !keys || keys.includes(item.key)
   );
   const selectableItems = items.filter(
-    (item) => MODE_CONFIG_KEYS.has(item.key) || ASSEMBLY_CONFIG_KEYS.has(item.key)
+    (item) =>
+      MODE_CONFIG_KEYS.has(item.key) || ASSEMBLY_CONFIG_KEYS.has(item.key)
   );
   const genericItems = items.filter(
     (item) =>
@@ -412,19 +491,19 @@ export function AdminRuntimeConfigControl({
       const value = parseAdminConfigDraft(activeItem.key, sourceDraft);
       setValidationError(undefined);
       setImpactReview({
-        title: m.admin_runtime_config_apply_title(),
+        title: admin_runtime_config_apply_title(),
         description: HOT_READ_KEYS.has(activeItem.key)
-          ? m.admin_runtime_config_hot_read_description()
-          : m.admin_runtime_config_apply_description(),
-        scope: m.admin_runtime_config_apply_scope({ key: activeItem.key }),
+          ? admin_runtime_config_hot_read_description()
+          : admin_runtime_config_apply_description(),
+        scope: admin_runtime_config_apply_scope({ key: activeItem.key }),
         changes: [
-          m.admin_runtime_config_apply_change({
+          admin_runtime_config_apply_change({
             before: displayValue(activeItem.storedValue),
             after: displayValue(value),
           }),
           wiringLabel(activeItem),
         ],
-        confirmLabel: m.admin_runtime_config_apply_confirm(),
+        confirmLabel: admin_runtime_config_apply_confirm(),
         onConfirm: async (reason) => {
           const result = await commandP1<AdminConfigItem>(
             'admin-config',
@@ -432,30 +511,30 @@ export function AdminRuntimeConfigControl({
           );
           setDraft(formatAdminConfigValue(result.storedValue));
           await refresh();
-          toast.success(m.admin_runtime_config_apply_success());
+          toast.success(admin_runtime_config_apply_success());
         },
       });
     } catch {
-      setValidationError(m.admin_runtime_config_validation_error());
+      setValidationError(admin_runtime_config_validation_error());
     }
   };
 
   const reviewRollback = (target: AdminConfigItem) => {
     if (!selectedItem?.revision || !target.revision) return;
     setImpactReview({
-      title: m.admin_runtime_config_rollback_title(),
-      description: m.admin_runtime_config_rollback_description(),
-      scope: m.admin_runtime_config_rollback_scope({
+      title: admin_runtime_config_rollback_title(),
+      description: admin_runtime_config_rollback_description(),
+      scope: admin_runtime_config_rollback_scope({
         key: selectedItem.key,
         revision: target.revision,
       }),
       changes: [
-        m.admin_runtime_config_rollback_change({
+        admin_runtime_config_rollback_change({
           revision: target.revision,
         }),
         wiringLabel(selectedItem),
       ],
-      confirmLabel: m.admin_runtime_config_rollback_confirm(),
+      confirmLabel: admin_runtime_config_rollback_confirm(),
       onConfirm: async (reason) => {
         const result = await commandP1<AdminConfigItem>('admin-config', {
           action: 'config_rollback',
@@ -468,7 +547,7 @@ export function AdminRuntimeConfigControl({
         });
         setDraft(formatAdminConfigValue(result.storedValue));
         await refresh();
-        toast.success(m.admin_runtime_config_rollback_success());
+        toast.success(admin_runtime_config_rollback_success());
       },
     });
   };
@@ -477,18 +556,18 @@ export function AdminRuntimeConfigControl({
     <div className="space-y-6">
       <Alert>
         <IconSettings />
-        <AlertTitle>{m.admin_runtime_config_notice_title()}</AlertTitle>
+        <AlertTitle>{admin_runtime_config_notice_title()}</AlertTitle>
         <AlertDescription>
           <div className="space-y-2">
-            <p>{m.admin_runtime_config_notice_description()}</p>
+            <p>{admin_runtime_config_notice_description()}</p>
             {hasHotReadConfig ? (
-              <p>{m.admin_runtime_config_hot_read_description()}</p>
+              <p>{admin_runtime_config_hot_read_description()}</p>
             ) : null}
             {hasCommerceConfig ? (
-              <p>{m.admin_runtime_config_legacy_fallback_notice()}</p>
+              <p>{admin_runtime_config_legacy_fallback_notice()}</p>
             ) : null}
             <Badge variant="outline">
-              {m.admin_runtime_config_activation({
+              {admin_runtime_config_activation({
                 status: activationEvidenceLabel(
                   items[0]?.activationEvidenceStatus
                 ),
@@ -499,7 +578,7 @@ export function AdminRuntimeConfigControl({
       </Alert>
       {listQuery.error ? (
         <Alert variant="destructive">
-          <AlertTitle>{m.admin_runtime_config_load_error()}</AlertTitle>
+          <AlertTitle>{admin_runtime_config_load_error()}</AlertTitle>
         </Alert>
       ) : null}
       <div className="flex justify-end">
@@ -509,7 +588,7 @@ export function AdminRuntimeConfigControl({
           variant="outline"
         >
           <IconRefresh />
-          {m.admin_runtime_config_refresh()}
+          {admin_runtime_config_refresh()}
         </Button>
       </div>
       <Card>
@@ -517,12 +596,12 @@ export function AdminRuntimeConfigControl({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{m.admin_runtime_config_key()}</TableHead>
-                <TableHead>{m.admin_runtime_config_stored()}</TableHead>
-                <TableHead>{m.admin_runtime_config_effective()}</TableHead>
-                <TableHead>{m.admin_runtime_config_revision()}</TableHead>
-                <TableHead>{m.admin_runtime_config_actor()}</TableHead>
-                <TableHead>{m.admin_runtime_config_time()}</TableHead>
+                <TableHead>{admin_runtime_config_key()}</TableHead>
+                <TableHead>{admin_runtime_config_stored()}</TableHead>
+                <TableHead>{admin_runtime_config_effective()}</TableHead>
+                <TableHead>{admin_runtime_config_revision()}</TableHead>
+                <TableHead>{admin_runtime_config_actor()}</TableHead>
+                <TableHead>{admin_runtime_config_time()}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -553,8 +632,8 @@ export function AdminRuntimeConfigControl({
                                 item.storedValue,
                                 snapshot.effectiveValue
                               ) === 'current'
-                                ? m.admin_runtime_config_current_effective()
-                                : m.admin_runtime_config_restart_pending()}
+                                ? admin_runtime_config_current_effective()
+                                : admin_runtime_config_restart_pending()}
                             </Badge>
                             {snapshot.fallbackReason ? (
                               <span className="whitespace-normal text-destructive">
@@ -587,9 +666,9 @@ export function AdminRuntimeConfigControl({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>{m.admin_runtime_config_edit_title()}</CardTitle>
+          <CardTitle>{admin_runtime_config_edit_title()}</CardTitle>
           <CardDescription>
-            {m.admin_runtime_config_edit_description()}
+            {admin_runtime_config_edit_description()}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -657,7 +736,7 @@ export function AdminRuntimeConfigControl({
                                 {option.label}
                                 {isEffective ? (
                                   <Badge variant="secondary">
-                                    {m.admin_runtime_config_current_effective()}
+                                    {admin_runtime_config_current_effective()}
                                   </Badge>
                                 ) : null}
                                 {effectiveProcesses.map((snapshot) => (
@@ -666,7 +745,7 @@ export function AdminRuntimeConfigControl({
                                     variant="secondary"
                                   >
                                     {processLabel(snapshot.processKind)} ·{' '}
-                                    {m.admin_runtime_config_current_effective()}
+                                    {admin_runtime_config_current_effective()}
                                   </Badge>
                                 ))}
                               </span>
@@ -675,7 +754,7 @@ export function AdminRuntimeConfigControl({
                               </span>
                               {availability?.assemblable === false ? (
                                 <span className="mt-1 block text-xs text-destructive">
-                                  {m.admin_runtime_mode_missing_requirements({
+                                  {admin_runtime_mode_missing_requirements({
                                     requirements:
                                       availability.missingRequirements.join(
                                         ', '
@@ -697,7 +776,7 @@ export function AdminRuntimeConfigControl({
             <>
               <div className="space-y-2">
                 <Label htmlFor="admin-runtime-config-key">
-                  {m.admin_runtime_config_key()}
+                  {admin_runtime_config_key()}
                 </Label>
                 <select
                   className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
@@ -716,7 +795,7 @@ export function AdminRuntimeConfigControl({
               {activeGenericKey ? (
                 <div className="space-y-2">
                   <Label htmlFor="admin-runtime-config-value">
-                    {m.admin_runtime_config_value()}
+                    {admin_runtime_config_value()}
                   </Label>
                   <Textarea
                     aria-invalid={Boolean(validationError)}
@@ -738,29 +817,29 @@ export function AdminRuntimeConfigControl({
             </p>
           ) : null}
           <Button disabled={!activeItem} onClick={reviewApply}>
-            {m.admin_runtime_config_save()}
+            {admin_runtime_config_save()}
           </Button>
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>{m.admin_runtime_config_history()}</CardTitle>
+          <CardTitle>{admin_runtime_config_history()}</CardTitle>
         </CardHeader>
         <CardContent>
           {(historyQuery.data?.length ?? 0) === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {m.admin_runtime_config_history_empty()}
+              {admin_runtime_config_history_empty()}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{m.admin_runtime_config_revision()}</TableHead>
-                  <TableHead>{m.admin_runtime_config_stored()}</TableHead>
-                  <TableHead>{m.admin_runtime_config_actor()}</TableHead>
-                  <TableHead>{m.admin_runtime_config_reason()}</TableHead>
-                  <TableHead>{m.admin_runtime_config_correlation()}</TableHead>
-                  <TableHead>{m.admin_runtime_config_time()}</TableHead>
+                  <TableHead>{admin_runtime_config_revision()}</TableHead>
+                  <TableHead>{admin_runtime_config_stored()}</TableHead>
+                  <TableHead>{admin_runtime_config_actor()}</TableHead>
+                  <TableHead>{admin_runtime_config_reason()}</TableHead>
+                  <TableHead>{admin_runtime_config_correlation()}</TableHead>
+                  <TableHead>{admin_runtime_config_time()}</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -775,7 +854,7 @@ export function AdminRuntimeConfigControl({
                         </Badge>
                         {item.rolledBackToRevision ? (
                           <span className="text-xs text-muted-foreground">
-                            {m.admin_runtime_config_rollback_source({
+                            {admin_runtime_config_rollback_source({
                               revision: item.rolledBackToRevision,
                             })}
                           </span>
@@ -801,7 +880,7 @@ export function AdminRuntimeConfigControl({
                           variant="outline"
                         >
                           <IconRestore />
-                          {m.admin_runtime_config_rollback_title()}
+                          {admin_runtime_config_rollback_title()}
                         </Button>
                       ) : null}
                     </TableCell>

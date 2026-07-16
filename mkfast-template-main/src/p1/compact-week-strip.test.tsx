@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { m } from '@/locale/paraglide/messages';
+import { p1_week_strip_empty } from '@/locale/paraglide/messages';
 
 import { CompactWeekStrip } from './compact-week-strip';
 import type { WeekPointView } from './types';
@@ -25,7 +25,7 @@ test('compact week strip degrades when all five points have no data', () => {
     })
   );
 
-  assert.ok(html.includes(m.p1_week_strip_empty()));
+  assert.ok(html.includes(p1_week_strip_empty()));
   assert.doesNotMatch(html, /<ol/);
 });
 
@@ -46,5 +46,5 @@ test('compact week strip restores the five points when real data exists', () => 
 
   assert.match(html, /<ol/);
   assert.match(html, /Planned/);
-  assert.ok(!html.includes(m.p1_week_strip_empty()));
+  assert.ok(!html.includes(p1_week_strip_empty()));
 });

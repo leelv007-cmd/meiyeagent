@@ -3,7 +3,20 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { getPathWithLocale } from '@/lib/urls';
-import { m } from '@/locale/paraglide/messages';
+import {
+  operations_rail_anomaly_summary,
+  operations_rail_aria,
+  operations_rail_empty,
+  operations_rail_next_action,
+  operations_rail_next_eyebrow,
+  operations_rail_no_anomalies,
+  operations_rail_open_context,
+  operations_rail_open_inbox,
+  operations_rail_open_task,
+  operations_rail_single_item,
+  operations_rail_week_label,
+  p1_week_strip_empty,
+} from '@/locale/paraglide/messages';
 import { CompactWeekStrip, hasWeekData } from '@/p1/compact-week-strip';
 import { nextActionTask } from '@/p1/operations-route-model';
 import {
@@ -27,11 +40,11 @@ export function OperationsRail({ inbox }: { inbox: RawInbox }) {
   if (!nextView && anomalies.length === 0 && !hasWeekData(weekPoints)) {
     return (
       <aside
-        aria-label={m.operations_rail_aria()}
+        aria-label={operations_rail_aria()}
         className="xl:sticky xl:top-4 xl:self-start"
       >
         <p className="rounded-xl bg-surface-1 px-4 py-3 text-sm text-muted-foreground">
-          {m.p1_week_strip_empty()}
+          {p1_week_strip_empty()}
         </p>
       </aside>
     );
@@ -39,7 +52,7 @@ export function OperationsRail({ inbox }: { inbox: RawInbox }) {
 
   return (
     <aside
-      aria-label={m.operations_rail_aria()}
+      aria-label={operations_rail_aria()}
       className="space-y-4 xl:sticky xl:top-4 xl:self-start"
     >
       <Card>
@@ -51,13 +64,13 @@ export function OperationsRail({ inbox }: { inbox: RawInbox }) {
                 className="text-[10px] font-semibold tracking-[0.18em] text-[var(--product-guide)]"
                 data-testid="next-action-guide"
               >
-                {m.operations_rail_next_eyebrow()}
+                {operations_rail_next_eyebrow()}
               </p>
               <h2 className="meiye-type-body font-semibold">
-                {m.operations_rail_next_action()}
+                {operations_rail_next_action()}
               </h2>
             </div>
-            <Badge variant="outline">{m.operations_rail_single_item()}</Badge>
+            <Badge variant="outline">{operations_rail_single_item()}</Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -68,19 +81,19 @@ export function OperationsRail({ inbox }: { inbox: RawInbox }) {
               <p className="meiye-type-aux">
                 {nextView.nextStep ??
                   nextView.summary ??
-                  m.operations_rail_open_context()}
+                  operations_rail_open_context()}
               </p>
               <a
                 className={buttonVariants({ size: 'sm', variant: 'outline' })}
                 href={getPathWithLocale(`/dashboard/tasks/${nextView.id}`)}
               >
-                {m.operations_rail_open_task()}
+                {operations_rail_open_task()}
                 <IconArrowRight aria-hidden="true" />
               </a>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {m.operations_rail_empty()}
+              {operations_rail_empty()}
             </p>
           )}
         </CardContent>
@@ -88,7 +101,7 @@ export function OperationsRail({ inbox }: { inbox: RawInbox }) {
 
       <CompactWeekStrip
         className="rounded-xl bg-surface-1 p-4"
-        label={m.operations_rail_week_label()}
+        label={operations_rail_week_label()}
         points={weekPoints}
       />
 
@@ -97,7 +110,7 @@ export function OperationsRail({ inbox }: { inbox: RawInbox }) {
           <div className="flex items-center justify-between gap-3">
             <h2 className="meiye-type-body flex items-center gap-2 font-semibold">
               <IconAlertTriangle className="size-4" aria-hidden="true" />
-              {m.operations_rail_anomaly_summary()}
+              {operations_rail_anomaly_summary()}
             </h2>
             <Badge variant={anomalies.length > 0 ? 'destructive' : 'outline'}>
               {anomalies.length}
@@ -124,14 +137,14 @@ export function OperationsRail({ inbox }: { inbox: RawInbox }) {
             </ul>
           ) : (
             <p className="text-muted-foreground">
-              {m.operations_rail_no_anomalies()}
+              {operations_rail_no_anomalies()}
             </p>
           )}
           <a
             className={buttonVariants({ size: 'sm', variant: 'link' })}
             href={getPathWithLocale('/dashboard/tasks')}
           >
-            {m.operations_rail_open_inbox()}
+            {operations_rail_open_inbox()}
           </a>
         </CardContent>
       </Card>

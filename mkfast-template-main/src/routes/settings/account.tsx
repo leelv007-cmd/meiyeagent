@@ -6,7 +6,14 @@ import { BillingCard } from '@/components/settings/billing/billing-card';
 import { AccountUsagePanel } from '@/product/account-usage-panel';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_account_description,
+  settings_account_profile_heading,
+  settings_account_security_heading,
+  settings_account_usage_heading,
+  settings_navigation_account,
+  settings_title,
+} from '@/locale/paraglide/messages';
 
 interface AccountSearch {
   section?: 'profile' | 'security' | 'usage';
@@ -32,15 +39,15 @@ function AccountPage() {
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.settings_title(), isCurrentPage: false },
-        { label: m.settings_navigation_account(), isCurrentPage: true },
+        { label: settings_title(), isCurrentPage: false },
+        { label: settings_navigation_account(), isCurrentPage: true },
       ]}
-      title={m.settings_navigation_account()}
-      description={m.settings_account_description()}
+      title={settings_navigation_account()}
+      description={settings_account_description()}
     >
       <section className="scroll-mt-16 space-y-4" id="profile">
         <h2 className="text-lg font-semibold">
-          {m.settings_account_profile_heading()}
+          {settings_account_profile_heading()}
         </h2>
         <div className="grid gap-4 xl:grid-cols-2">
           <UpdateNameCard />
@@ -49,13 +56,13 @@ function AccountPage() {
       </section>
       <section className="scroll-mt-16 space-y-4" id="security">
         <h2 className="text-lg font-semibold">
-          {m.settings_account_security_heading()}
+          {settings_account_security_heading()}
         </h2>
         <PasswordCardWrapper />
       </section>
       <section className="scroll-mt-16 space-y-4" id="usage">
         <h2 className="text-lg font-semibold">
-          {m.settings_account_usage_heading()}
+          {settings_account_usage_heading()}
         </h2>
         <AccountUsagePanel />
         <BillingCard />

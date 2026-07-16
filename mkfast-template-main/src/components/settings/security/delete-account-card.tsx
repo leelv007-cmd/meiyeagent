@@ -1,4 +1,16 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_security_delete_account_button,
+  settings_security_delete_account_cancel,
+  settings_security_delete_account_confirm,
+  settings_security_delete_account_confirm_description,
+  settings_security_delete_account_confirm_title,
+  settings_security_delete_account_deleting,
+  settings_security_delete_account_description,
+  settings_security_delete_account_fail,
+  settings_security_delete_account_success,
+  settings_security_delete_account_title,
+  settings_security_delete_account_warning,
+} from '@/locale/paraglide/messages';
 import { FormError } from '@/components/shared/form-error';
 import {
   AlertDialog,
@@ -43,13 +55,13 @@ export function DeleteAccountCard() {
           setShowConfirmation(false);
         },
         onSuccess: () => {
-          toast.success(m.settings_security_delete_account_success());
+          toast.success(settings_security_delete_account_success());
           refetch();
           navigate({ to: '/' });
         },
         onError: () => {
-          setError(m.settings_security_delete_account_fail());
-          toast.error(m.settings_security_delete_account_fail());
+          setError(settings_security_delete_account_fail());
+          toast.error(settings_security_delete_account_fail());
         },
       }
     );
@@ -62,15 +74,15 @@ export function DeleteAccountCard() {
     >
       <CardHeader>
         <CardTitle className="text-lg font-bold text-destructive">
-          {m.settings_security_delete_account_title()}
+          {settings_security_delete_account_title()}
         </CardTitle>
         <CardDescription>
-          {m.settings_security_delete_account_description()}
+          {settings_security_delete_account_description()}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-1">
         <p className="text-sm text-muted-foreground">
-          {m.settings_security_delete_account_warning()}
+          {settings_security_delete_account_warning()}
         </p>
         {error && (
           <div className="mt-4">
@@ -80,7 +92,7 @@ export function DeleteAccountCard() {
       </CardContent>
       <CardFooter className="mt-2 px-6 py-4 flex justify-end items-center bg-muted rounded-none">
         <Button variant="destructive" onClick={() => setShowConfirmation(true)}>
-          {m.settings_security_delete_account_button()}
+          {settings_security_delete_account_button()}
         </Button>
       </CardFooter>
 
@@ -88,10 +100,10 @@ export function DeleteAccountCard() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-destructive">
-              {m.settings_security_delete_account_confirm_title()}
+              {settings_security_delete_account_confirm_title()}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {m.settings_security_delete_account_confirm_description()}
+              {settings_security_delete_account_confirm_description()}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex justify-end gap-3">
@@ -99,7 +111,7 @@ export function DeleteAccountCard() {
               variant="outline"
               onClick={() => setShowConfirmation(false)}
             >
-              {m.settings_security_delete_account_cancel()}
+              {settings_security_delete_account_cancel()}
             </Button>
             <Button
               variant="destructive"
@@ -107,8 +119,8 @@ export function DeleteAccountCard() {
               disabled={isDeleting}
             >
               {isDeleting
-                ? m.settings_security_delete_account_deleting()
-                : m.settings_security_delete_account_confirm()}
+                ? settings_security_delete_account_deleting()
+                : settings_security_delete_account_confirm()}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

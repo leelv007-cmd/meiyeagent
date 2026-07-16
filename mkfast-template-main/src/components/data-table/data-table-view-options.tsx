@@ -1,4 +1,4 @@
-import { m } from "@/locale/paraglide/messages";
+import { common_table_view_options } from "@/locale/paraglide/messages";
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, } from '@/components/ui/dropdown-menu';
 import type { Table } from '@tanstack/react-table';
@@ -12,13 +12,13 @@ export function DataTableViewOptions<TData>({ table, ...props }: DataTableViewOp
         .getAllColumns()
         .filter((column) => typeof column.accessorFn !== 'undefined' && column.getCanHide()), [table]);
     return (<DropdownMenu>
-      <DropdownMenuTrigger render={(props) => (<Button {...props} type="button" aria-label={m.common_table_view_options()} variant="outline" size="sm" className="ml-auto hidden h-8 font-normal lg:flex">
+      <DropdownMenuTrigger render={(props) => (<Button {...props} type="button" aria-label={common_table_view_options()} variant="outline" size="sm" className="ml-auto hidden h-8 font-normal lg:flex">
             <IconSettings2 className="text-muted-foreground"/>
-            {m.common_table_view_options()}
+            {common_table_view_options()}
           </Button>)}/>
       <DropdownMenuContent className="w-44" align="end" {...props}>
         <DropdownMenuGroup>
-          <DropdownMenuLabel>{m.common_table_view_options()}</DropdownMenuLabel>
+          <DropdownMenuLabel>{common_table_view_options()}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {columns.map((column) => (<DropdownMenuCheckboxItem key={column.id} checked={column.getIsVisible()} onCheckedChange={(checked) => column.toggleVisibility(checked)}>
               <span className="truncate">

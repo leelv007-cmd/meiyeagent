@@ -6,8 +6,8 @@
     "path": "docs/evidence/pro-studio/provider-safe-fetch.md"
   },
   "providerReferenceProbe": {
-    "status": "blocked",
-    "path": "docs/evidence/pro-studio/ticket-09/2026-07-16-tuzi-inline-data-url-probe.md"
+    "status": "passed",
+    "path": "docs/evidence/pro-studio/ticket-09/2026-07-16-tuzi-production-multipart-probe.md"
   },
   "audioSpeechActivation": {
     "status": "blocked",

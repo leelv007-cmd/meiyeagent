@@ -33,7 +33,25 @@ import {
 } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
 import { Kbd } from '@/components/ui/kbd';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_shelf_owner_mine,
+  creation_shelf_owner_official,
+  global_command_add,
+  global_command_catalog_error,
+  global_command_catalog_error_value,
+  global_command_creation_heading,
+  global_command_creation_value,
+  global_command_description,
+  global_command_dialog_description,
+  global_command_dialog_title,
+  global_command_empty,
+  global_command_navigation_heading,
+  global_command_navigation_value,
+  global_command_search_placeholder,
+  global_command_shortcut,
+  global_command_title,
+  global_command_unavailable,
+} from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 import { operationsQuery } from '@/p1/client';
@@ -153,23 +171,23 @@ function GlobalCommandPalette() {
 
   return (
     <CommandDialog
-      description={m.global_command_dialog_description()}
+      description={global_command_dialog_description()}
       onOpenChange={(nextOpen) => (nextOpen ? openPalette() : closePalette())}
       open={open}
-      title={m.global_command_dialog_title()}
+      title={global_command_dialog_title()}
     >
       <Command className="p-0">
         <div className="border-b px-4 py-3">
-          <p className="font-medium">{m.global_command_title()}</p>
+          <p className="font-medium">{global_command_title()}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {m.global_command_description()}
+            {global_command_description()}
           </p>
         </div>
         <div className="relative border-b px-2 py-2">
           <CommandInput
             autoFocus
             className="pr-12"
-            placeholder={m.global_command_search_placeholder()}
+            placeholder={global_command_search_placeholder()}
           />
           <Kbd className="absolute top-1/2 right-4 -translate-y-1/2 border border-border bg-background px-1.5 text-[11px] shadow-xs">
             ⌘K
@@ -177,18 +195,18 @@ function GlobalCommandPalette() {
         </div>
         <CommandList className="max-h-80 scroll-py-2 py-2">
           <CommandEmpty className="py-10 text-muted-foreground">
-            {m.global_command_empty()}
+            {global_command_empty()}
           </CommandEmpty>
           <CommandGroup
             className="p-0 pb-2 **:[[cmdk-group-heading]]:mb-2 **:[[cmdk-group-heading]]:bg-muted/60 **:[[cmdk-group-heading]]:px-4 **:[[cmdk-group-heading]]:py-2.5 **:[[cmdk-group-heading]]:font-semibold **:[[cmdk-group-heading]]:text-foreground [&_[cmdk-group-items]]:space-y-1 [&_[cmdk-group-items]]:px-2"
-            heading={m.global_command_navigation_heading()}
+            heading={global_command_navigation_heading()}
           >
             {navigationEntries.map((entry) => {
               const Icon = iconForNavigation(entry);
               return (
                 <CommandItem
                   key={`${entry.kind}:${entry.id}`}
-                  value={m.global_command_navigation_value({
+                  value={global_command_navigation_value({
                     detail: entry.detail,
                     kind: entry.kind,
                     label: entry.label,
@@ -219,7 +237,7 @@ function GlobalCommandPalette() {
           </CommandGroup>
           <CommandGroup
             className="border-t border-border p-0 pt-2 **:[[cmdk-group-heading]]:mb-2 **:[[cmdk-group-heading]]:bg-muted/60 **:[[cmdk-group-heading]]:px-4 **:[[cmdk-group-heading]]:py-2.5 **:[[cmdk-group-heading]]:font-semibold **:[[cmdk-group-heading]]:text-foreground [&_[cmdk-group-items]]:space-y-1 [&_[cmdk-group-items]]:px-2"
-            heading={m.global_command_creation_heading()}
+            heading={global_command_creation_heading()}
           >
             {creationEntries.map((entry) => {
               const Icon = iconForCreation(entry);
@@ -227,7 +245,7 @@ function GlobalCommandPalette() {
                 <CommandItem
                   key={entry.key}
                   disabled={!entry.available}
-                  value={m.global_command_creation_value({
+                  value={global_command_creation_value({
                     detail: entry.detail,
                     label: entry.label,
                     tags: entry.tags.join(' '),
@@ -249,12 +267,12 @@ function GlobalCommandPalette() {
                     <span className="mt-1 flex flex-wrap gap-1">
                       <Badge variant="outline">
                         {entry.owner === 'official'
-                          ? m.creation_shelf_owner_official()
-                          : m.creation_shelf_owner_mine()}
+                          ? creation_shelf_owner_official()
+                          : creation_shelf_owner_mine()}
                       </Badge>
                       {entry.shortcut ? (
                         <Badge variant="secondary">
-                          {m.global_command_shortcut()}
+                          {global_command_shortcut()}
                         </Badge>
                       ) : null}
                       {entry.tags.slice(0, 2).map((tag) => (
@@ -267,8 +285,8 @@ function GlobalCommandPalette() {
                   <CommandShortcut className="self-center tracking-normal">
                     <Kbd className="border border-border bg-background shadow-xs group-data-selected/command-item:border-foreground/20">
                       {entry.available
-                        ? m.global_command_add()
-                        : m.global_command_unavailable()}
+                        ? global_command_add()
+                        : global_command_unavailable()}
                     </Kbd>
                   </CommandShortcut>
                 </CommandItem>
@@ -277,10 +295,10 @@ function GlobalCommandPalette() {
             {catalog.isError || history.isError ? (
               <CommandItem
                 disabled
-                value={m.global_command_catalog_error_value()}
+                value={global_command_catalog_error_value()}
               >
                 <IconFile aria-hidden="true" />
-                <span>{m.global_command_catalog_error()}</span>
+                <span>{global_command_catalog_error()}</span>
               </CommandItem>
             ) : null}
           </CommandGroup>

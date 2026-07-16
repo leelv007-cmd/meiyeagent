@@ -1,4 +1,7 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_forgot_password_description,
+  auth_forgot_password_title,
+} from '@/locale/paraglide/messages';
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { ForgotPasswordForm } from '@/components/auth/forgot-password-form';
 import { websiteConfig } from '@/config/website';
@@ -13,8 +16,8 @@ export const Route = createFileRoute('/auth/forgot-password')({
   component: ForgotPasswordPage,
   head: () => ({
     meta: [
-      { title: m.auth_forgot_password_title() },
-      { name: 'description', content: m.auth_forgot_password_description() },
+      { title: auth_forgot_password_title() },
+      { name: 'description', content: auth_forgot_password_description() },
     ],
   }),
 });

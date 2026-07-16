@@ -13,7 +13,7 @@ import {
   type Locale,
 } from '@/lib/locale';
 import { cn } from '@/lib/utils';
-import { m } from '@/locale/paraglide/messages';
+import { common_switch_language } from '@/locale/paraglide/messages';
 import { setLocale } from '@/locale/paraglide/runtime';
 import { IconLanguage } from '@tabler/icons-react';
 import { useLocation } from '@tanstack/react-router';
@@ -81,7 +81,7 @@ export function LocaleSwitcher({
           'flex size-touch-target shrink-0 items-center justify-center rounded-full bg-transparent p-0 outline-none hover:bg-surface-1 focus-visible:ring-3 focus-visible:ring-ring/50 aria-expanded:bg-surface-2',
           className
         )}
-        aria-label={m.common_switch_language()}
+        aria-label={common_switch_language()}
       >
         <IconLanguage className="size-4" />
       </DropdownMenuTrigger>

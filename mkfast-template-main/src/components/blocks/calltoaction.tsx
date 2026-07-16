@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  home_call_to_action_description,
+  home_call_to_action_primary_button,
+  home_call_to_action_secondary_button,
+  home_call_to_action_title,
+} from '@/locale/paraglide/messages';
 import { ScrollReveal } from '@/components/shared/scroll-reveal';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -15,10 +20,10 @@ export default function CallToActionSection() {
       <div className="relative mx-auto max-w-5xl px-6">
         <ScrollReveal className="text-center">
           <h2 className="text-balance text-4xl font-semibold lg:text-5xl">
-            {m.home_call_to_action_title()}
+            {home_call_to_action_title()}
           </h2>
           <p className="mt-4 text-muted-foreground text-lg">
-            {m.home_call_to_action_description()}
+            {home_call_to_action_description()}
           </p>
 
           <div className="mt-12 flex flex-wrap justify-center gap-4">
@@ -26,13 +31,13 @@ export default function CallToActionSection() {
               to={Routes.Login}
               className={cn(buttonVariants({ size: 'lg' }))}
             >
-              <span>{m.home_call_to_action_primary_button()}</span>
+              <span>{home_call_to_action_primary_button()}</span>
             </Link>
             <Link
               to={Routes.Pricing}
               className={cn(buttonVariants({ size: 'lg', variant: 'outline' }))}
             >
-              <span>{m.home_call_to_action_secondary_button()}</span>
+              <span>{home_call_to_action_secondary_button()}</span>
             </Link>
           </div>
         </ScrollReveal>

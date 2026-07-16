@@ -6,7 +6,39 @@ import type {
   CreativeJob,
   CreativeWork,
 } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_canvas_image_generation,
+  canonical_history_canvas_work_detail,
+  canonical_history_content_detail,
+  canonical_history_generated_asset_detail,
+  canonical_history_session_detail,
+  canonical_history_session_title,
+  canonical_history_untitled_asset,
+  canonical_media_kind_audio,
+  canonical_media_kind_image,
+  canonical_media_kind_text,
+  canonical_media_kind_video,
+  creative_object_mode_agent,
+  creative_object_mode_direct,
+  p1_admin_model_operation_copy,
+  p1_admin_model_operation_image_edit,
+  p1_admin_model_operation_image_generate,
+  p1_admin_model_operation_video,
+  p1_canvas_asset_source_ai,
+  p1_canvas_asset_source_real,
+  p1_canvas_authorization_authorized,
+  p1_canvas_authorization_blocked,
+  p1_canvas_authorization_pending,
+  p1_canvas_authorization_withdrawn,
+  p1_task_status_archived,
+  p1_task_status_blocked,
+  p1_task_status_done,
+  p1_task_status_in_progress,
+  p1_task_status_needs_asset,
+  p1_task_status_needs_review,
+  p1_task_status_ready,
+  p1_task_status_todo,
+} from '@/locale/paraglide/messages';
 import { taskView, type RawTask } from '@/p1/operations-view-model';
 import { productStatusView } from '@/lib/uiux/status';
 import type { ComposedVideoTaskEnvelope } from './async-task-center-model';
@@ -123,45 +155,44 @@ function byRecent(left: CanonicalHistoryItem, right: CanonicalHistoryItem) {
 }
 
 function operationLabel(operation: CreativeJob['contract']['operation']) {
-  if (operation.startsWith('copy.')) return m.p1_admin_model_operation_copy();
-  if (operation === 'image.edit')
-    return m.p1_admin_model_operation_image_edit();
+  if (operation.startsWith('copy.')) return p1_admin_model_operation_copy();
+  if (operation === 'image.edit') return p1_admin_model_operation_image_edit();
   if (operation === 'image.generate') {
-    return m.p1_admin_model_operation_image_generate();
+    return p1_admin_model_operation_image_generate();
   }
-  return m.p1_admin_model_operation_video();
+  return p1_admin_model_operation_video();
 }
 
 function taskStatusLabel(status: RawTask['status']) {
-  if (status === 'archived') return m.p1_task_status_archived();
-  if (status === 'blocked') return m.p1_task_status_blocked();
-  if (status === 'done') return m.p1_task_status_done();
-  if (status === 'in_progress') return m.p1_task_status_in_progress();
-  if (status === 'needs_asset') return m.p1_task_status_needs_asset();
-  if (status === 'needs_review') return m.p1_task_status_needs_review();
-  if (status === 'ready') return m.p1_task_status_ready();
-  return m.p1_task_status_todo();
+  if (status === 'archived') return p1_task_status_archived();
+  if (status === 'blocked') return p1_task_status_blocked();
+  if (status === 'done') return p1_task_status_done();
+  if (status === 'in_progress') return p1_task_status_in_progress();
+  if (status === 'needs_asset') return p1_task_status_needs_asset();
+  if (status === 'needs_review') return p1_task_status_needs_review();
+  if (status === 'ready') return p1_task_status_ready();
+  return p1_task_status_todo();
 }
 
 function productAssetMediaLabel(mediaType: Asset['mediaType']) {
-  if (mediaType === 'audio') return m.canonical_media_kind_audio();
+  if (mediaType === 'audio') return canonical_media_kind_audio();
   return mediaType === 'video'
-    ? m.canonical_media_kind_video()
-    : m.canonical_media_kind_image();
+    ? canonical_media_kind_video()
+    : canonical_media_kind_image();
 }
 
 function productAssetSourceLabel(sourceType: Asset['sourceType']) {
   return sourceType === 'ai_generated'
-    ? m.p1_canvas_asset_source_ai()
-    : m.p1_canvas_asset_source_real();
+    ? p1_canvas_asset_source_ai()
+    : p1_canvas_asset_source_real();
 }
 
 function productAssetAuthorizationLabel(asset: Asset) {
   return {
-    authorized: m.p1_canvas_authorization_authorized,
-    blocked: m.p1_canvas_authorization_blocked,
-    pending: m.p1_canvas_authorization_pending,
-    withdrawn: m.p1_canvas_authorization_withdrawn,
+    authorized: p1_canvas_authorization_authorized,
+    blocked: p1_canvas_authorization_blocked,
+    pending: p1_canvas_authorization_pending,
+    withdrawn: p1_canvas_authorization_withdrawn,
   }[assetAuthorizationPresentation(asset).status]();
 }
 
@@ -195,7 +226,7 @@ function uploadedMedia(asset: Asset): CanonicalMediaProjection {
     src: `/api/storage/file?key=${encodeURIComponent(asset.objectKey)}`,
     title:
       asset.tags[0] ??
-      m.canonical_history_untitled_asset({
+      canonical_history_untitled_asset({
         kind: productAssetMediaLabel(asset.mediaType),
       }),
   };
@@ -310,7 +341,7 @@ export function composedVideoCanonicalAssets(
           objectKey: asset.objectKey,
           ownedAssetId: asset.id,
           sha256: asset.sha256,
-          title: `${m.p1_admin_model_operation_video()} · V${workflow.storyboardVersion}`,
+          title: `${p1_admin_model_operation_video()} · V${workflow.storyboardVersion}`,
           workId: workflow.workId,
           workspaceId: workflow.workspaceId,
         },
@@ -350,13 +381,13 @@ export function canonicalHistoryItems(
   return [
     ...history.sessions.map(
       (session): CanonicalHistoryItem => ({
-        detail: m.canonical_history_session_detail({
+        detail: canonical_history_session_detail({
           count: session.workIds.length,
         }),
         href: `/dashboard/sessions/${session.id}`,
         id: session.id,
         kind: 'session',
-        title: m.canonical_history_session_title(),
+        title: canonical_history_session_title(),
         updatedAt: session.updatedAt,
       })
     ),
@@ -372,8 +403,8 @@ export function canonicalHistoryItems(
       return {
         detail: `${
           work.mode === 'agent'
-            ? m.creative_object_mode_agent()
-            : m.creative_object_mode_direct()
+            ? creative_object_mode_agent()
+            : creative_object_mode_direct()
         } · ${productStatusView(work.status).label}`,
         href: `/dashboard/works/${work.id}`,
         id: work.id,
@@ -385,7 +416,7 @@ export function canonicalHistoryItems(
     }),
     ...history.canvasWorks.map(
       (work): CanonicalHistoryItem => ({
-        detail: m.canonical_history_canvas_work_detail({
+        detail: canonical_history_canvas_work_detail({
           count: work.revisions.length,
         }),
         href: `/dashboard/works/${work.id}`,
@@ -422,19 +453,19 @@ export function canonicalHistoryItems(
         ...(job.outputAssetId && media.get(job.outputAssetId)
           ? { media: [media.get(job.outputAssetId)!] }
           : {}),
-        title: m.canonical_canvas_image_generation(),
+        title: canonical_canvas_image_generation(),
         updatedAt: job.updatedAt,
       })
     ),
     ...history.assets.map(
       (asset): CanonicalHistoryItem => ({
-        detail: m.canonical_history_generated_asset_detail({
+        detail: canonical_history_generated_asset_detail({
           kind:
             asset.kind === 'video'
-              ? m.canonical_media_kind_video()
+              ? canonical_media_kind_video()
               : asset.kind === 'image'
-                ? m.canonical_media_kind_image()
-                : m.canonical_media_kind_text(),
+                ? canonical_media_kind_image()
+                : canonical_media_kind_text(),
         }),
         href: `/dashboard/assets/${asset.id}`,
         id: asset.id,
@@ -447,7 +478,7 @@ export function canonicalHistoryItems(
     ...history.contents.map((content): CanonicalHistoryItem => {
       const contentMedia = mediaForIds(media, content.assetIds);
       return {
-        detail: m.canonical_history_content_detail({
+        detail: canonical_history_content_detail({
           count: content.assetIds.length,
         }),
         href: `/dashboard/content/${content.id}`,
@@ -497,7 +528,7 @@ export function canonicalAssetItems(
             : { media: [uploadedMedia(asset)] }),
           title:
             asset.tags[0] ??
-            m.canonical_history_untitled_asset({
+            canonical_history_untitled_asset({
               kind: productAssetMediaLabel(asset.mediaType),
             }),
           updatedAt: asset.createdAt,

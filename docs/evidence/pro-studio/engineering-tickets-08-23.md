@@ -29,10 +29,12 @@ pnpm --filter @meiye/web exec playwright test \
 | 14 | unpurchased intro + fixture unlock | `ticket14-unpurchased-intro.png`, `ticket14-unlocked-entry.png` |
 | 16 | canvas seed select fills prompt | `ticket16-prompt-seeds.png` |
 | 17 / 20 gate 1 | 存为自建模板 → 改文案/裁剪/排序 → 保存 → workspace-owned raster → accepted ContentPackage | `ticket20-layout-adopted-package.png` |
-| 20 gate 4 (partial) | blank canvas / deep link / works list never hit polotno | (assertion only; exact full entry matrix remains open) |
+| 20 gate 4 | CreationShelf → template card → blank canvas → deep link → historical detail; every entry reaches Light Composer with zero Polotno requests | Playwright assertion in `pro-studio-engineering-tickets.spec.ts` |
+| 20 gate 5 | production build + static retirement gate + bundle budget | JS gzip 345436 / CSS gzip 36548, both within budget |
 | 23 | `/admin/audit` merchant diagnostic | `ticket23-merchant-support.png` |
 
 ## Release note
 
 These tickets no longer block on product-external credentials. Remaining Pro Studio
-release blockers stay on 09 / 11 / 12 / 18 / 21 / 25 only.
+release blockers stay on 11 / 12 / 18 / 19 / 21 / 25 only. Ticket 09's live
+production reference probe passed HTTP 200 and conclusively requires no grant.

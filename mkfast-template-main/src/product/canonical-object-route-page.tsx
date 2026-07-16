@@ -1,6 +1,13 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { StatePanel } from '@/components/uiux/state-panel';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_object_breadcrumb,
+  canonical_object_description,
+  canonical_object_loading_description,
+  canonical_object_loading_title,
+  canonical_object_title,
+  product_navigation_workbench,
+} from '@/locale/paraglide/messages';
 import { operationsQuery } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { useQuery } from '@tanstack/react-query';
@@ -13,16 +20,16 @@ function LoadingObject() {
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.product_navigation_workbench(), isCurrentPage: false },
-        { label: m.canonical_object_breadcrumb(), isCurrentPage: true },
+        { label: product_navigation_workbench(), isCurrentPage: false },
+        { label: canonical_object_breadcrumb(), isCurrentPage: true },
       ]}
-      description={m.canonical_object_description()}
-      title={m.canonical_object_title()}
+      description={canonical_object_description()}
+      title={canonical_object_title()}
     >
       <StatePanel
         kind="loading"
-        title={m.canonical_object_loading_title()}
-        description={m.canonical_object_loading_description()}
+        title={canonical_object_loading_title()}
+        description={canonical_object_loading_description()}
       />
     </DashboardLayout>
   );

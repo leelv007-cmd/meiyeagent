@@ -15,7 +15,31 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_audit_action,
+  admin_audit_actor_correlation,
+  admin_audit_description,
+  admin_audit_time,
+  admin_audit_title,
+  admin_audit_unknown,
+  admin_health_evidence_title,
+  common_loading,
+  integration_load_error,
+  p1_admin_audit_byok_action_completed,
+  p1_admin_audit_byok_action_failed,
+  p1_admin_audit_byok_action_unknown,
+  p1_admin_audit_byok_catalog_model_label,
+  p1_admin_audit_byok_credential_version_label,
+  p1_admin_audit_byok_description,
+  p1_admin_audit_byok_empty,
+  p1_admin_audit_byok_endpoint_profile_label,
+  p1_admin_audit_byok_execution_details,
+  p1_admin_audit_byok_title,
+  p1_admin_audit_byok_usage_committed,
+  p1_admin_audit_byok_usage_refunded,
+  p1_admin_audit_byok_usage_reserved,
+  p1_admin_audit_byok_usage_status_label,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { AdminAuditControl } from '@/p1/admin-audit-control';
 import { AdminOperationsHealth } from '@/p1/admin-operations-health';
@@ -34,8 +58,8 @@ export const Route = createFileRoute('/admin/audit')({ component: AuditPage });
 function AuditPage() {
   return (
     <AdminRoutePage
-      title={m.admin_audit_title()}
-      description={m.admin_audit_description()}
+      title={admin_audit_title()}
+      description={admin_audit_description()}
     >
       <div className="space-y-8">
         <AdminMerchantSupport />
@@ -43,7 +67,7 @@ function AuditPage() {
         <AdminAuditControl />
         <section className="space-y-4 border-t pt-6">
           <h2 className="text-lg font-semibold">
-            {m.admin_health_evidence_title()}
+            {admin_health_evidence_title()}
           </h2>
           <AdminOperationsHealth />
         </section>
@@ -54,25 +78,25 @@ function AuditPage() {
 
 function byokActionLabel(action: string) {
   if (action === 'byok.completed') {
-    return m.p1_admin_audit_byok_action_completed();
+    return p1_admin_audit_byok_action_completed();
   }
   if (action === 'byok.failed') {
-    return m.p1_admin_audit_byok_action_failed();
+    return p1_admin_audit_byok_action_failed();
   }
-  return m.p1_admin_audit_byok_action_unknown();
+  return p1_admin_audit_byok_action_unknown();
 }
 
 function byokUsageStatusLabel(status?: string) {
   if (status === 'committed') {
-    return m.p1_admin_audit_byok_usage_committed();
+    return p1_admin_audit_byok_usage_committed();
   }
   if (status === 'refunded') {
-    return m.p1_admin_audit_byok_usage_refunded();
+    return p1_admin_audit_byok_usage_refunded();
   }
   if (status === 'reserved') {
-    return m.p1_admin_audit_byok_usage_reserved();
+    return p1_admin_audit_byok_usage_reserved();
   }
-  return m.admin_audit_unknown();
+  return admin_audit_unknown();
 }
 
 function AdminByokAuditProjection() {
@@ -93,16 +117,14 @@ function AdminByokAuditProjection() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{m.p1_admin_audit_byok_title()}</CardTitle>
-        <CardDescription>{m.p1_admin_audit_byok_description()}</CardDescription>
+        <CardTitle>{p1_admin_audit_byok_title()}</CardTitle>
+        <CardDescription>{p1_admin_audit_byok_description()}</CardDescription>
       </CardHeader>
       <CardContent>
         {auditQuery.isPending ? (
-          <p className="text-sm text-muted-foreground">{m.common_loading()}</p>
+          <p className="text-sm text-muted-foreground">{common_loading()}</p>
         ) : auditQuery.isError ? (
-          <p className="text-sm text-destructive">
-            {m.integration_load_error()}
-          </p>
+          <p className="text-sm text-destructive">{integration_load_error()}</p>
         ) : (
           <ByokAuditTable events={auditQuery.data ?? []} />
         )}
@@ -116,17 +138,17 @@ export function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>{m.admin_audit_action()}</TableHead>
-          <TableHead>{m.p1_admin_audit_byok_execution_details()}</TableHead>
-          <TableHead>{m.admin_audit_actor_correlation()}</TableHead>
-          <TableHead>{m.admin_audit_time()}</TableHead>
+          <TableHead>{admin_audit_action()}</TableHead>
+          <TableHead>{p1_admin_audit_byok_execution_details()}</TableHead>
+          <TableHead>{admin_audit_actor_correlation()}</TableHead>
+          <TableHead>{admin_audit_time()}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {events.length === 0 ? (
           <TableRow>
             <TableCell className="text-muted-foreground" colSpan={4}>
-              {m.p1_admin_audit_byok_empty()}
+              {p1_admin_audit_byok_empty()}
             </TableCell>
           </TableRow>
         ) : (
@@ -149,24 +171,24 @@ export function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
                 <dl className="grid gap-1">
                   <div>
                     <dt className="inline text-muted-foreground">
-                      {m.p1_admin_audit_byok_endpoint_profile_label()}
+                      {p1_admin_audit_byok_endpoint_profile_label()}
                     </dt>{' '}
                     <dd className="inline font-mono">
                       {event.details?.endpointProfileId ??
-                        m.admin_audit_unknown()}
+                        admin_audit_unknown()}
                     </dd>
                   </div>
                   <div>
                     <dt className="inline text-muted-foreground">
-                      {m.p1_admin_audit_byok_catalog_model_label()}
+                      {p1_admin_audit_byok_catalog_model_label()}
                     </dt>{' '}
                     <dd className="inline font-mono">
-                      {event.details?.catalogModelId ?? m.admin_audit_unknown()}
+                      {event.details?.catalogModelId ?? admin_audit_unknown()}
                     </dd>
                   </div>
                   <div>
                     <dt className="inline text-muted-foreground">
-                      {m.p1_admin_audit_byok_usage_status_label()}
+                      {p1_admin_audit_byok_usage_status_label()}
                     </dt>{' '}
                     <dd className="inline">
                       {byokUsageStatusLabel(event.details?.usageStatus)}
@@ -174,26 +196,26 @@ export function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
                   </div>
                   <div>
                     <dt className="inline text-muted-foreground">
-                      {m.p1_admin_audit_byok_credential_version_label()}
+                      {p1_admin_audit_byok_credential_version_label()}
                     </dt>{' '}
                     <dd className="inline font-mono">
                       {event.details?.credentialVersion ??
-                        m.admin_audit_unknown()}
+                        admin_audit_unknown()}
                     </dd>
                   </div>
                 </dl>
               </TableCell>
               <TableCell className="font-mono text-xs">
-                <p>{event.actorId ?? m.admin_audit_unknown()}</p>
+                <p>{event.actorId ?? admin_audit_unknown()}</p>
                 <p className="text-muted-foreground">
-                  {event.correlationId ?? m.admin_audit_unknown()}
+                  {event.correlationId ?? admin_audit_unknown()}
                 </p>
                 <p className="text-muted-foreground">{event.connectionId}</p>
               </TableCell>
               <TableCell className="text-xs">
                 {event.createdAt
                   ? formatLocaleDateTime(event.createdAt)
-                  : m.admin_audit_unknown()}
+                  : admin_audit_unknown()}
               </TableCell>
             </TableRow>
           ))

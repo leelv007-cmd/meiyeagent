@@ -8,7 +8,58 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  account_usage_retry,
+  dashboard_store_account_label,
+  dashboard_store_account_notes_label,
+  dashboard_store_add_project,
+  dashboard_store_address_label,
+  dashboard_store_advertising_certificate_label,
+  dashboard_store_booking_label,
+  dashboard_store_brand_voice_label,
+  dashboard_store_city_label,
+  dashboard_store_confirm_facts,
+  dashboard_store_confirm_qualification,
+  dashboard_store_confirmed,
+  dashboard_store_delete_project,
+  dashboard_store_description,
+  dashboard_store_district_label,
+  dashboard_store_douyin_account_label,
+  dashboard_store_draft_source,
+  dashboard_store_duration_minutes_label,
+  dashboard_store_generate_draft,
+  dashboard_store_group_account,
+  dashboard_store_group_profile,
+  dashboard_store_group_projects,
+  dashboard_store_group_voice,
+  dashboard_store_institution_license_label,
+  dashboard_store_intake_at_label,
+  dashboard_store_manual_confirmation_required,
+  dashboard_store_name_label,
+  dashboard_store_pasted_facts_label,
+  dashboard_store_pasted_facts_placeholder,
+  dashboard_store_platform_certification_label,
+  dashboard_store_price_label,
+  dashboard_store_profile_tab,
+  dashboard_store_project_name_label,
+  dashboard_store_project_number,
+  dashboard_store_project_price_label,
+  dashboard_store_qualification_tab,
+  dashboard_store_regulated_description,
+  dashboard_store_regulated_label,
+  dashboard_store_save_failed,
+  dashboard_store_treatment_scope_label,
+  dashboard_store_unconfirmed_draft,
+  dashboard_store_valid_until_label,
+  dashboard_store_verification_label,
+  dashboard_store_verification_restricted,
+  dashboard_store_verification_unverified,
+  dashboard_store_verification_verified,
+  dashboard_store_xiaohongshu_homepage_label,
+  product_navigation_leads,
+  product_navigation_store,
+  store_save_failed_description,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { optionalSourceId } from '@/p1/source-object-navigation';
@@ -229,14 +280,14 @@ function StoreProfilePage() {
     <>
       <DashboardHeader
         breadcrumbs={[
-          { label: m.product_navigation_store(), isCurrentPage: true },
+          { label: product_navigation_store(), isCurrentPage: true },
         ]}
         actions={
           <div className="flex items-center gap-2">
             {state.store?.confirmedAt ? (
               <Badge variant="outline">
                 <IconCheck className="size-3" />
-                {m.dashboard_store_confirmed()}
+                {dashboard_store_confirmed()}
               </Badge>
             ) : null}
             <Link
@@ -244,32 +295,30 @@ function StoreProfilePage() {
               to={Routes.LeadLedger}
             >
               <IconArchive />
-              {m.product_navigation_leads()}
+              {product_navigation_leads()}
             </Link>
           </div>
         }
       />
       <main className="mx-auto w-full max-w-6xl flex-1 p-4 lg:p-6">
         <div className="mb-6">
-          <h1 className="meiye-type-title">{m.product_navigation_store()}</h1>
-          <p className="meiye-type-aux mt-1">
-            {m.dashboard_store_description()}
-          </p>
+          <h1 className="meiye-type-title">{product_navigation_store()}</h1>
+          <p className="meiye-type-aux mt-1">{dashboard_store_description()}</p>
         </div>
 
         {error && (
           <Alert variant="destructive" className="mb-4">
             <IconAlertTriangle />
-            <AlertTitle>{m.dashboard_store_save_failed()}</AlertTitle>
+            <AlertTitle>{dashboard_store_save_failed()}</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-3">
-              {m.store_save_failed_description()}
+              {store_save_failed_description()}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void refresh()}
               >
                 <IconRefresh />
-                {m.account_usage_retry()}
+                {account_usage_retry()}
               </Button>
             </AlertDescription>
           </Alert>
@@ -278,10 +327,10 @@ function StoreProfilePage() {
         <Tabs defaultValue={sourceTab}>
           <TabsList>
             <TabsTrigger value="profile">
-              {m.dashboard_store_profile_tab()}
+              {dashboard_store_profile_tab()}
             </TabsTrigger>
             <TabsTrigger value="qualification">
-              {m.dashboard_store_qualification_tab()}
+              {dashboard_store_qualification_tab()}
             </TabsTrigger>
           </TabsList>
 
@@ -289,14 +338,14 @@ function StoreProfilePage() {
             <section className="grid gap-4 rounded-xl bg-surface-1 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
               <div>
                 <Label htmlFor="pasted-facts">
-                  {m.dashboard_store_pasted_facts_label()}
+                  {dashboard_store_pasted_facts_label()}
                 </Label>
                 <Textarea
                   id="pasted-facts"
                   className="mt-2 min-h-24"
                   value={pastedFacts}
                   onChange={(event) => setPastedFacts(event.target.value)}
-                  placeholder={m.dashboard_store_pasted_facts_placeholder()}
+                  placeholder={dashboard_store_pasted_facts_placeholder()}
                 />
               </div>
               <Button
@@ -305,15 +354,15 @@ function StoreProfilePage() {
                 onClick={() => void deriveDraft()}
               >
                 <IconFileText />
-                {m.dashboard_store_generate_draft()}
+                {dashboard_store_generate_draft()}
               </Button>
             </section>
             {state.storeDraft && (
               <p className="text-sm text-muted-foreground">
                 <Badge variant="outline">
-                  {m.dashboard_store_unconfirmed_draft()}
+                  {dashboard_store_unconfirmed_draft()}
                 </Badge>{' '}
-                {m.dashboard_store_draft_source({
+                {dashboard_store_draft_source({
                   date: formatLocaleDateTime(state.storeDraft.createdAt),
                 })}
               </p>
@@ -328,36 +377,36 @@ function StoreProfilePage() {
                   className="meiye-type-body font-semibold"
                   id="store-profile-group"
                 >
-                  {m.dashboard_store_group_profile()}
+                  {dashboard_store_group_profile()}
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field
                     id="store-name"
-                    label={m.dashboard_store_name_label()}
+                    label={dashboard_store_name_label()}
                     value={form.name}
                     onChange={(name) => setForm({ ...form, name })}
                   />
                   <Field
                     id="store-city"
-                    label={m.dashboard_store_city_label()}
+                    label={dashboard_store_city_label()}
                     value={form.city}
                     onChange={(city) => setForm({ ...form, city })}
                   />
                   <Field
                     id="store-district"
-                    label={m.dashboard_store_district_label()}
+                    label={dashboard_store_district_label()}
                     value={form.district}
                     onChange={(district) => setForm({ ...form, district })}
                   />
                   <Field
                     id="store-address"
-                    label={m.dashboard_store_address_label()}
+                    label={dashboard_store_address_label()}
                     value={form.address}
                     onChange={(address) => setForm({ ...form, address })}
                   />
                   <Field
                     id="store-booking"
-                    label={m.dashboard_store_booking_label()}
+                    label={dashboard_store_booking_label()}
                     value={form.booking}
                     onChange={(booking) => setForm({ ...form, booking })}
                   />
@@ -372,18 +421,18 @@ function StoreProfilePage() {
                   className="meiye-type-body font-semibold"
                   id="store-account-group"
                 >
-                  {m.dashboard_store_group_account()}
+                  {dashboard_store_group_account()}
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field
                     id="store-xiaohongshu-account"
-                    label={m.dashboard_store_account_label()}
+                    label={dashboard_store_account_label()}
                     value={form.account}
                     onChange={(account) => setForm({ ...form, account })}
                   />
                   <Field
                     id="store-douyin-account"
-                    label={m.dashboard_store_douyin_account_label()}
+                    label={dashboard_store_douyin_account_label()}
                     value={form.douyinAccount}
                     onChange={(douyinAccount) =>
                       setForm({ ...form, douyinAccount })
@@ -391,7 +440,7 @@ function StoreProfilePage() {
                   />
                   <Field
                     id="store-xiaohongshu-homepage"
-                    label={m.dashboard_store_xiaohongshu_homepage_label()}
+                    label={dashboard_store_xiaohongshu_homepage_label()}
                     value={form.accountHomepage}
                     onChange={(accountHomepage) =>
                       setForm({ ...form, accountHomepage })
@@ -399,7 +448,7 @@ function StoreProfilePage() {
                   />
                   <div>
                     <Label htmlFor="account-verification">
-                      {m.dashboard_store_verification_label()}
+                      {dashboard_store_verification_label()}
                     </Label>
                     <select
                       id="account-verification"
@@ -416,19 +465,19 @@ function StoreProfilePage() {
                       }
                     >
                       <option value="unverified">
-                        {m.dashboard_store_verification_unverified()}
+                        {dashboard_store_verification_unverified()}
                       </option>
                       <option value="verified">
-                        {m.dashboard_store_verification_verified()}
+                        {dashboard_store_verification_verified()}
                       </option>
                       <option value="restricted">
-                        {m.dashboard_store_verification_restricted()}
+                        {dashboard_store_verification_restricted()}
                       </option>
                     </select>
                   </div>
                   <Field
                     id="store-account-notes"
-                    label={m.dashboard_store_account_notes_label()}
+                    label={dashboard_store_account_notes_label()}
                     value={form.accountNotes}
                     onChange={(accountNotes) =>
                       setForm({ ...form, accountNotes })
@@ -445,12 +494,12 @@ function StoreProfilePage() {
                   className="meiye-type-body font-semibold"
                   id="store-project-group"
                 >
-                  {m.dashboard_store_group_projects()}
+                  {dashboard_store_group_projects()}
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field
                     id="store-project-name"
-                    label={m.dashboard_store_project_name_label()}
+                    label={dashboard_store_project_name_label()}
                     value={form.projectName}
                     onChange={(projectName) =>
                       setForm({ ...form, projectName })
@@ -459,10 +508,10 @@ function StoreProfilePage() {
                   <div>
                     <div className="flex items-center justify-between gap-2">
                       <Label htmlFor="project-price">
-                        {m.dashboard_store_project_price_label()}
+                        {dashboard_store_project_price_label()}
                       </Label>
                       <Badge variant="outline">
-                        {m.dashboard_store_manual_confirmation_required()}
+                        {dashboard_store_manual_confirmation_required()}
                       </Badge>
                     </div>
                     <Input
@@ -482,7 +531,7 @@ function StoreProfilePage() {
                     >
                       <Field
                         id={`${project.id}-name`}
-                        label={m.dashboard_store_project_number({
+                        label={dashboard_store_project_number({
                           number: index + 2,
                         })}
                         value={project.name}
@@ -496,7 +545,7 @@ function StoreProfilePage() {
                       />
                       <Field
                         id={`${project.id}-price`}
-                        label={m.dashboard_store_price_label()}
+                        label={dashboard_store_price_label()}
                         value={project.price}
                         onChange={(price) =>
                           setExtraProjects((current) =>
@@ -508,7 +557,7 @@ function StoreProfilePage() {
                       />
                       <Field
                         id={`${project.id}-duration`}
-                        label={m.dashboard_store_duration_minutes_label()}
+                        label={dashboard_store_duration_minutes_label()}
                         value={project.durationMinutes}
                         onChange={(durationMinutes) =>
                           setExtraProjects((current) =>
@@ -524,7 +573,7 @@ function StoreProfilePage() {
                         className="self-end"
                         size="icon"
                         variant="ghost"
-                        title={m.dashboard_store_delete_project()}
+                        title={dashboard_store_delete_project()}
                         onClick={() =>
                           setExtraProjects((current) =>
                             current.filter((item) => item.id !== project.id)
@@ -550,7 +599,7 @@ function StoreProfilePage() {
                         ])
                       }
                     >
-                      {m.dashboard_store_add_project()}
+                      {dashboard_store_add_project()}
                     </Button>
                   </div>
                 </div>
@@ -564,11 +613,11 @@ function StoreProfilePage() {
                   className="meiye-type-body font-semibold"
                   id="store-voice-group"
                 >
-                  {m.dashboard_store_group_voice()}
+                  {dashboard_store_group_voice()}
                 </h2>
                 <div>
                   <Label htmlFor="brand-voice">
-                    {m.dashboard_store_brand_voice_label()}
+                    {dashboard_store_brand_voice_label()}
                   </Label>
                   <Textarea
                     id="brand-voice"
@@ -592,7 +641,7 @@ function StoreProfilePage() {
                 onClick={() => void confirmStore()}
               >
                 <IconShieldCheck />
-                {m.dashboard_store_confirm_facts()}
+                {dashboard_store_confirm_facts()}
               </Button>
             </div>
           </TabsContent>
@@ -610,10 +659,10 @@ function StoreProfilePage() {
               />
               <div>
                 <Label htmlFor="regulated">
-                  {m.dashboard_store_regulated_label()}
+                  {dashboard_store_regulated_label()}
                 </Label>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {m.dashboard_store_regulated_description()}
+                  {dashboard_store_regulated_description()}
                 </p>
               </div>
             </div>
@@ -691,13 +740,12 @@ function QualificationForm({
   return (
     <div className="grid gap-4 rounded-xl bg-surface-1 p-4 md:grid-cols-2">
       {Object.entries({
-        institutionLicense: m.dashboard_store_institution_license_label(),
-        treatmentScope: m.dashboard_store_treatment_scope_label(),
-        platformCertification: m.dashboard_store_platform_certification_label(),
-        advertisingCertificate:
-          m.dashboard_store_advertising_certificate_label(),
-        validUntil: m.dashboard_store_valid_until_label(),
-        intakeAt: m.dashboard_store_intake_at_label(),
+        institutionLicense: dashboard_store_institution_license_label(),
+        treatmentScope: dashboard_store_treatment_scope_label(),
+        platformCertification: dashboard_store_platform_certification_label(),
+        advertisingCertificate: dashboard_store_advertising_certificate_label(),
+        validUntil: dashboard_store_valid_until_label(),
+        intakeAt: dashboard_store_intake_at_label(),
       }).map(([key, label]) => (
         <Field
           id={`qualification-${key}`}
@@ -719,7 +767,7 @@ function QualificationForm({
           onClick={() => onConfirm({ ...qualification, admitted: true })}
         >
           <IconShieldCheck />
-          {m.dashboard_store_confirm_qualification()}
+          {dashboard_store_confirm_qualification()}
         </Button>
       </div>
     </div>

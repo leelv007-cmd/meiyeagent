@@ -4,7 +4,50 @@ import { IconRefresh } from '@tabler/icons-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_admin_health_captured_at,
+  p1_admin_health_database_active_connections,
+  p1_admin_health_database_active_transactions,
+  p1_admin_health_database_index_growth,
+  p1_admin_health_database_index_size,
+  p1_admin_health_database_lock_waiters,
+  p1_admin_health_database_oldest_lock_wait,
+  p1_admin_health_database_oldest_transaction,
+  p1_admin_health_database_pool_idle,
+  p1_admin_health_database_pool_total,
+  p1_admin_health_database_pool_waiting,
+  p1_admin_health_database_slow_sql,
+  p1_admin_health_invalid_description,
+  p1_admin_health_invalid_title,
+  p1_admin_health_load_error_description,
+  p1_admin_health_load_error_title,
+  p1_admin_health_loading,
+  p1_admin_health_no_active_sample,
+  p1_admin_health_no_failures,
+  p1_admin_health_outcomes,
+  p1_admin_health_queue_average_claim,
+  p1_admin_health_queue_depth,
+  p1_admin_health_queue_lease_expiry,
+  p1_admin_health_queue_oldest_job,
+  p1_admin_health_queue_recovery,
+  p1_admin_health_queue_title,
+  p1_admin_health_refresh,
+  p1_admin_health_revision_published,
+  p1_admin_health_revision_retired,
+  p1_admin_health_revision_rolled_back,
+  p1_admin_health_revision_title,
+  p1_admin_health_runner_deferred,
+  p1_admin_health_runner_failure_kinds,
+  p1_admin_health_runner_recovered_failure,
+  p1_admin_health_runner_title,
+  p1_admin_health_scope,
+  p1_admin_health_worker_active_jobs,
+  p1_admin_health_worker_cpu,
+  p1_admin_health_worker_event_loop,
+  p1_admin_health_worker_heartbeat,
+  p1_admin_health_worker_media_duration,
+  p1_admin_health_worker_title,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -257,7 +300,7 @@ function metricText<T>(
 
 function duration(value: number | null) {
   return value === null
-    ? m.p1_admin_health_no_active_sample()
+    ? p1_admin_health_no_active_sample()
     : `${Math.round(value)} ms`;
 }
 
@@ -283,7 +326,7 @@ function Metric<T>({
       </dd>
       {metric.scope ? (
         <p className="mt-1 break-words text-[11px] text-muted-foreground">
-          {m.p1_admin_health_scope({ scope: metric.scope })}
+          {p1_admin_health_scope({ scope: metric.scope })}
         </p>
       ) : null}
     </div>
@@ -291,7 +334,7 @@ function Metric<T>({
 }
 
 function formatOutcomes(value: RunnerOutcomeCounts) {
-  return m.p1_admin_health_outcomes({
+  return p1_admin_health_outcomes({
     completed: value.completed,
     deadLetter: value.dead_letter,
     deferred: value.deferred,
@@ -303,7 +346,7 @@ function formatOutcomes(value: RunnerOutcomeCounts) {
 function formatFailures(value: Record<string, number>) {
   const entries = Object.entries(value);
   return entries.length === 0
-    ? m.p1_admin_health_no_failures()
+    ? p1_admin_health_no_failures()
     : entries.map(([kind, count]) => `${kind}: ${count}`).join(' · ');
 }
 
@@ -323,9 +366,9 @@ export function AdminOperationsHealth() {
   if (query.error) {
     return (
       <Alert variant="destructive">
-        <AlertTitle>{m.p1_admin_health_load_error_title()}</AlertTitle>
+        <AlertTitle>{p1_admin_health_load_error_title()}</AlertTitle>
         <AlertDescription>
-          {m.p1_admin_health_load_error_description()}
+          {p1_admin_health_load_error_description()}
         </AlertDescription>
       </Alert>
     );
@@ -333,16 +376,16 @@ export function AdminOperationsHealth() {
   if (query.isPending) {
     return (
       <p className="text-sm text-muted-foreground">
-        {m.p1_admin_health_loading()}
+        {p1_admin_health_loading()}
       </p>
     );
   }
   if (!snapshot) {
     return (
       <Alert variant="destructive">
-        <AlertTitle>{m.p1_admin_health_invalid_title()}</AlertTitle>
+        <AlertTitle>{p1_admin_health_invalid_title()}</AlertTitle>
         <AlertDescription>
-          {m.p1_admin_health_invalid_description()}
+          {p1_admin_health_invalid_description()}
         </AlertDescription>
       </Alert>
     );
@@ -352,7 +395,7 @@ export function AdminOperationsHealth() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {m.p1_admin_health_captured_at({
+          {p1_admin_health_captured_at({
             time: formatLocaleDateTime(snapshot.capturedAt),
           })}
         </p>
@@ -363,36 +406,36 @@ export function AdminOperationsHealth() {
           onClick={() => void query.refetch()}
         >
           <IconRefresh />
-          {m.p1_admin_health_refresh()}
+          {p1_admin_health_refresh()}
         </Button>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_health_queue_title()}</CardTitle>
+          <CardTitle>{p1_admin_health_queue_title()}</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Metric
-              label={m.p1_admin_health_queue_depth()}
+              label={p1_admin_health_queue_depth()}
               metric={snapshot.queue.queueDepth}
             />
             <Metric
-              label={m.p1_admin_health_queue_oldest_job()}
+              label={p1_admin_health_queue_oldest_job()}
               metric={snapshot.queue.oldestRunnableAgeMs}
               format={duration}
             />
             <Metric
-              label={m.p1_admin_health_queue_average_claim()}
+              label={p1_admin_health_queue_average_claim()}
               metric={snapshot.queue.averageClaimLatencyMs}
               format={duration}
             />
             <Metric
-              label={m.p1_admin_health_queue_lease_expiry()}
+              label={p1_admin_health_queue_lease_expiry()}
               metric={snapshot.queue.leaseExpiryCount}
             />
             <Metric
-              label={m.p1_admin_health_queue_recovery()}
+              label={p1_admin_health_queue_recovery()}
               metric={snapshot.queue.recoveryCount}
             />
           </dl>
@@ -406,50 +449,50 @@ export function AdminOperationsHealth() {
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Metric
-              label={m.p1_admin_health_database_active_connections()}
+              label={p1_admin_health_database_active_connections()}
               metric={snapshot.database.activeConnections}
             />
             <Metric
-              label={m.p1_admin_health_database_active_transactions()}
+              label={p1_admin_health_database_active_transactions()}
               metric={snapshot.database.activeTransactions}
             />
             <Metric
-              label={m.p1_admin_health_database_oldest_transaction()}
+              label={p1_admin_health_database_oldest_transaction()}
               metric={snapshot.database.oldestTransactionMs}
               format={duration}
             />
             <Metric
-              label={m.p1_admin_health_database_lock_waiters()}
+              label={p1_admin_health_database_lock_waiters()}
               metric={snapshot.database.workspaceLockWaiters}
             />
             <Metric
-              label={m.p1_admin_health_database_oldest_lock_wait()}
+              label={p1_admin_health_database_oldest_lock_wait()}
               metric={snapshot.database.workspaceLockOldestWaitMs}
               format={duration}
             />
             <Metric
-              label={m.p1_admin_health_database_pool_waiting()}
+              label={p1_admin_health_database_pool_waiting()}
               metric={snapshot.database.poolWaiting}
             />
             <Metric
-              label={m.p1_admin_health_database_pool_idle()}
+              label={p1_admin_health_database_pool_idle()}
               metric={snapshot.database.poolIdle}
             />
             <Metric
-              label={m.p1_admin_health_database_pool_total()}
+              label={p1_admin_health_database_pool_total()}
               metric={snapshot.database.poolTotal}
             />
             <Metric
-              label={m.p1_admin_health_database_slow_sql()}
+              label={p1_admin_health_database_slow_sql()}
               metric={snapshot.database.slowQueries}
             />
             <Metric
-              label={m.p1_admin_health_database_index_size()}
+              label={p1_admin_health_database_index_size()}
               metric={snapshot.database.indexSizeBytes}
               format={bytes}
             />
             <Metric
-              label={m.p1_admin_health_database_index_growth()}
+              label={p1_admin_health_database_index_growth()}
               metric={snapshot.database.indexGrowthBytes24h}
               format={bytes}
             />
@@ -459,17 +502,17 @@ export function AdminOperationsHealth() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_health_worker_title()}</CardTitle>
+          <CardTitle>{p1_admin_health_worker_title()}</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
             <Metric
-              label={m.p1_admin_health_worker_heartbeat()}
+              label={p1_admin_health_worker_heartbeat()}
               metric={snapshot.worker.heartbeatAt}
               format={formatLocaleDateTime}
             />
             <Metric
-              label={m.p1_admin_health_worker_cpu()}
+              label={p1_admin_health_worker_cpu()}
               metric={snapshot.worker.cpuUtilizationPercent}
               format={(value) => `${value.toFixed(1)}%`}
             />
@@ -484,16 +527,16 @@ export function AdminOperationsHealth() {
               format={bytes}
             />
             <Metric
-              label={m.p1_admin_health_worker_event_loop()}
+              label={p1_admin_health_worker_event_loop()}
               metric={snapshot.worker.eventLoopLagMs}
               format={(value) => duration(value)}
             />
             <Metric
-              label={m.p1_admin_health_worker_active_jobs()}
+              label={p1_admin_health_worker_active_jobs()}
               metric={snapshot.worker.activeJobs}
             />
             <Metric
-              label={m.p1_admin_health_worker_media_duration()}
+              label={p1_admin_health_worker_media_duration()}
               metric={snapshot.worker.mediaAverageDurationMs}
               format={(value) => duration(value)}
             />
@@ -504,7 +547,7 @@ export function AdminOperationsHealth() {
       <Card>
         <CardHeader>
           <CardTitle>
-            {m.p1_admin_health_runner_title({
+            {p1_admin_health_runner_title({
               minutes: snapshot.runner.windowMinutes ?? 'unknown',
             })}
           </CardTitle>
@@ -517,15 +560,15 @@ export function AdminOperationsHealth() {
               format={formatOutcomes}
             />
             <Metric
-              label={m.p1_admin_health_runner_deferred()}
+              label={p1_admin_health_runner_deferred()}
               metric={snapshot.runner.deferredCount}
             />
             <Metric
-              label={m.p1_admin_health_runner_recovered_failure()}
+              label={p1_admin_health_runner_recovered_failure()}
               metric={snapshot.runner.recoveredFailureCount}
             />
             <Metric
-              label={m.p1_admin_health_runner_failure_kinds()}
+              label={p1_admin_health_runner_failure_kinds()}
               metric={snapshot.runner.failuresByKind}
               format={formatFailures}
             />
@@ -535,20 +578,20 @@ export function AdminOperationsHealth() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_health_revision_title()}</CardTitle>
+          <CardTitle>{p1_admin_health_revision_title()}</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-3">
             <Metric
-              label={m.p1_admin_health_revision_published()}
+              label={p1_admin_health_revision_published()}
               metric={snapshot.moduleRevisions.publishedLast30Days}
             />
             <Metric
-              label={m.p1_admin_health_revision_retired()}
+              label={p1_admin_health_revision_retired()}
               metric={snapshot.moduleRevisions.retiredLast30Days}
             />
             <Metric
-              label={m.p1_admin_health_revision_rolled_back()}
+              label={p1_admin_health_revision_rolled_back()}
               metric={snapshot.moduleRevisions.rolledBackLast30Days}
             />
           </dl>

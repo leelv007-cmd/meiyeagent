@@ -1,7 +1,10 @@
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { AdminTemplateControl } from '@/p1/admin-template-control';
 import { createFileRoute } from '@tanstack/react-router';
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_templates_description,
+  admin_templates_title,
+} from '@/locale/paraglide/messages';
 
 export const Route = createFileRoute('/admin/templates')({
   component: TemplatesPage,
@@ -10,8 +13,8 @@ export const Route = createFileRoute('/admin/templates')({
 function TemplatesPage() {
   return (
     <AdminRoutePage
-      title={m.admin_templates_title()}
-      description={m.admin_templates_description()}
+      title={admin_templates_title()}
+      description={admin_templates_description()}
     >
       <AdminTemplateControl />
     </AdminRoutePage>

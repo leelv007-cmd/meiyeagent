@@ -11,7 +11,10 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopRelayPage } from '@/components/layout/desktop-relay-page';
 import { AsyncTaskCenter } from '@/product/async-task-center';
 import { GlobalCommandProvider } from '@/product/global-command-palette';
-import { m } from '@/locale/paraglide/messages';
+import {
+  common_loading,
+  sidebar_skip_to_content,
+} from '@/locale/paraglide/messages';
 
 /**
  * Shared layout for /dashboard /settings and /admin routes
@@ -40,7 +43,7 @@ export function SidebarLayout({
     return (
       <div className="flex min-h-svh items-center justify-center">
         <Spinner className="size-6" />
-        <span className="sr-only">{m.common_loading()}</span>
+        <span className="sr-only">{common_loading()}</span>
       </div>
     );
   }
@@ -74,7 +77,7 @@ export function SidebarLayout({
         }}
         className="fixed top-2 left-2 z-[100] -translate-y-20 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow focus:translate-y-0"
       >
-        {m.sidebar_skip_to_content()}
+        {sidebar_skip_to_content()}
       </a>
       {!isMobile ? (
         <DashboardSidebar mode={mode} user={session.user} variant="inset" />

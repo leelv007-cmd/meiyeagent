@@ -1,4 +1,9 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_clear,
+  common_table_filter,
+  common_table_select_date,
+  common_table_select_date_range,
+} from "@/locale/paraglide/messages";
 import type { Column } from "@tanstack/react-table";
 import { IconCalendar, IconCircleX } from "@tabler/icons-react";
 import * as React from "react";
@@ -101,7 +106,7 @@ export function DataTableDateFilter<TData>({ column, title, multiple, }: DataTab
             const hasSelectedDates = selectedDates.from || selectedDates.to;
             const dateText = hasSelectedDates
                 ? formatDateRange(selectedDates)
-                : m.common_table_select_date_range();
+                : common_table_select_date_range();
             return (<span className="flex items-center gap-2">
           <span>{title}</span>
           {hasSelectedDates && (<>
@@ -115,7 +120,7 @@ export function DataTableDateFilter<TData>({ column, title, multiple, }: DataTab
         const hasSelectedDate = selectedDates.length > 0;
         const dateText = hasSelectedDate
             ? formatDate(selectedDates[0])
-            : m.common_table_select_date();
+            : common_table_select_date();
         return (<span className="flex items-center gap-2">
         <span>{title}</span>
         {hasSelectedDate && (<>
@@ -126,7 +131,7 @@ export function DataTableDateFilter<TData>({ column, title, multiple, }: DataTab
     }, [selectedDates, multiple, formatDateRange, title]);
     return (<Popover>
       <PopoverTrigger render={(props) => (<Button {...props} variant="outline" size="sm" className="border-dashed font-normal">
-            {hasValue ? (<div role="button" aria-label={`${m.common_table_clear()} ${title} ${m.common_table_filter()}`} tabIndex={0} onClick={onReset} className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+            {hasValue ? (<div role="button" aria-label={`${common_table_clear()} ${title} ${common_table_filter()}`} tabIndex={0} onClick={onReset} className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                 <IconCircleX />
               </div>) : (<IconCalendar />)}
             {label}

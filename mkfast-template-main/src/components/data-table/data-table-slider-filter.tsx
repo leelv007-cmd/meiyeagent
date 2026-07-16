@@ -1,4 +1,10 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_clear,
+  common_table_filter,
+  common_table_from,
+  common_table_slider,
+  common_table_to,
+} from "@/locale/paraglide/messages";
 import type { Column } from "@tanstack/react-table";
 import { IconCirclePlus, IconCircleX } from "@tabler/icons-react";
 import * as React from "react";
@@ -98,7 +104,7 @@ export function DataTableSliderFilter<TData>({ column, title, }: DataTableSlider
     }, [column]);
     return (<Popover>
       <PopoverTrigger render={(props) => (<Button {...props} variant="outline" size="sm" className="border-dashed font-normal">
-            {columnFilterValue ? (<div role="button" aria-label={`${m.common_table_clear()} ${title} ${m.common_table_filter()}`} tabIndex={0} className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={onReset}>
+            {columnFilterValue ? (<div role="button" aria-label={`${common_table_clear()} ${title} ${common_table_filter()}`} tabIndex={0} className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={onReset}>
                 <IconCircleX />
               </div>) : (<IconCirclePlus />)}
             <span>{title}</span>
@@ -116,7 +122,7 @@ export function DataTableSliderFilter<TData>({ column, title, }: DataTableSlider
           </p>
           <div className="flex items-center gap-4">
             <Label htmlFor={`${id}-from`} className="sr-only">
-              {m.common_table_from()}
+              {common_table_from()}
             </Label>
             <div className="relative">
               <Input id={`${id}-from`} type="number" aria-valuemin={min} aria-valuemax={max} inputMode="numeric" pattern="[0-9]*" placeholder={min.toString()} min={min} max={max} value={range[0]?.toString()} onChange={onFromInputChange} className={cn("h-8 w-24", unit && "pr-8")}/>
@@ -125,7 +131,7 @@ export function DataTableSliderFilter<TData>({ column, title, }: DataTableSlider
                 </span>)}
             </div>
             <Label htmlFor={`${id}-to`} className="sr-only">
-              {m.common_table_to()}
+              {common_table_to()}
             </Label>
             <div className="relative">
               <Input id={`${id}-to`} type="number" aria-valuemin={min} aria-valuemax={max} inputMode="numeric" pattern="[0-9]*" placeholder={max.toString()} min={min} max={max} value={range[1]?.toString()} onChange={onToInputChange} className={cn("h-8 w-24", unit && "pr-8")}/>
@@ -135,12 +141,12 @@ export function DataTableSliderFilter<TData>({ column, title, }: DataTableSlider
             </div>
           </div>
           <Label htmlFor={`${id}-slider`} className="sr-only">
-            {title} {m.common_table_slider()}
+            {title} {common_table_slider()}
           </Label>
           <Slider id={`${id}-slider`} min={min} max={max} step={step} value={range} onValueChange={onSliderValueChange}/>
         </div>
-        <Button aria-label={`${m.common_table_clear()} ${title} ${m.common_table_filter()}`} variant="outline" size="sm" onClick={onReset}>
-          {m.common_table_clear()}
+        <Button aria-label={`${common_table_clear()} ${title} ${common_table_filter()}`} variant="outline" size="sm" onClick={onReset}>
+          {common_table_clear()}
         </Button>
       </PopoverContent>
     </Popover>);

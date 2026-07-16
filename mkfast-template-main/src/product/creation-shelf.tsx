@@ -9,7 +9,54 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_shelf_add_to_creation,
+  creation_shelf_bring_into_work,
+  creation_shelf_canvas_create_failed,
+  creation_shelf_catalog_error,
+  creation_shelf_collapse_catalog,
+  creation_shelf_confirm_decomposition,
+  creation_shelf_confirm_inheritance,
+  creation_shelf_continue_inheritance,
+  creation_shelf_create_canvas,
+  creation_shelf_decompose,
+  creation_shelf_decomposition_description,
+  creation_shelf_decomposition_guardrail,
+  creation_shelf_decomposition_legend,
+  creation_shelf_decomposition_title,
+  creation_shelf_description,
+  creation_shelf_expand_catalog,
+  creation_shelf_filter_all,
+  creation_shelf_inheritance_description,
+  creation_shelf_inheritance_guardrail,
+  creation_shelf_inheritance_legend,
+  creation_shelf_inheritance_title,
+  creation_shelf_input_guide_label,
+  creation_shelf_insert_action,
+  creation_shelf_inserting,
+  creation_shelf_my_content,
+  creation_shelf_new_blank_canvas,
+  creation_shelf_no_decomposition_sources,
+  creation_shelf_no_quick_templates,
+  creation_shelf_official_library,
+  creation_shelf_owner_mine,
+  creation_shelf_owner_official,
+  creation_shelf_pending_label,
+  creation_shelf_pending_rechecking,
+  creation_shelf_pending_unavailable,
+  creation_shelf_pending_verifying,
+  creation_shelf_pin_aria,
+  creation_shelf_preview_unavailable,
+  creation_shelf_recheck,
+  creation_shelf_shortcut_update_failed,
+  creation_shelf_template_preview_alt,
+  creation_shelf_template_unavailable,
+  creation_shelf_title,
+  creation_shelf_tool_inserted,
+  creation_shelf_tool_placed,
+  creation_shelf_tool_verification_missing,
+  creation_shelf_unpin_aria,
+} from '@/locale/paraglide/messages';
 import { emitTelemetry } from '@/lib/product-telemetry';
 import { getPathWithLocale } from '@/lib/urls';
 import { operationsCommand, operationsQuery } from '@/p1/client';
@@ -83,7 +130,7 @@ function TemplatePreview({ entry }: { entry: CreationCatalogEntry }) {
     return (
       <div className="aspect-[3/4] overflow-hidden bg-muted">
         <img
-          alt={m.creation_shelf_template_preview_alt({ name: entry.label })}
+          alt={creation_shelf_template_preview_alt({ name: entry.label })}
           className="size-full object-cover"
           loading="lazy"
           onError={() => setFailedThumbnail(template.thumbnailUrl)}
@@ -99,7 +146,7 @@ function TemplatePreview({ entry }: { entry: CreationCatalogEntry }) {
     return (
       <div className="aspect-[3/4] overflow-hidden bg-surface-1">
         <img
-          alt={m.creation_shelf_template_preview_alt({ name: entry.label })}
+          alt={creation_shelf_template_preview_alt({ name: entry.label })}
           className="size-full object-cover"
           loading="lazy"
           src={seedPreviewUrl}
@@ -115,7 +162,7 @@ function TemplatePreview({ entry }: { entry: CreationCatalogEntry }) {
           className="mx-auto size-8 text-muted-foreground"
         />
         <span className="mt-2 block text-xs text-muted-foreground">
-          {m.creation_shelf_preview_unavailable()}
+          {creation_shelf_preview_unavailable()}
         </span>
       </span>
     </div>
@@ -152,8 +199,8 @@ function TemplateCard({
               variant="outline"
             >
               {entry.owner === 'official'
-                ? m.creation_shelf_owner_official()
-                : m.creation_shelf_owner_mine()}
+                ? creation_shelf_owner_official()
+                : creation_shelf_owner_mine()}
             </Badge>
           </div>
           <p className="line-clamp-2 text-xs text-white/80">{entry.detail}</p>
@@ -173,14 +220,14 @@ function TemplateCard({
         {template?.inputGuide ? (
           <p className="text-xs leading-5 text-muted-foreground">
             <span className="font-medium text-foreground">
-              {m.creation_shelf_input_guide_label()}
+              {creation_shelf_input_guide_label()}
             </span>
             {template.inputGuide}
           </p>
         ) : null}
         {!entry.available ? (
           <p className="text-xs text-destructive">
-            {entry.unavailableReason ?? m.creation_shelf_template_unavailable()}
+            {entry.unavailableReason ?? creation_shelf_template_unavailable()}
           </p>
         ) : null}
         <div className="flex flex-wrap gap-2">
@@ -190,7 +237,7 @@ function TemplateCard({
             size="xs"
             type="button"
           >
-            {m.creation_shelf_bring_into_work()}
+            {creation_shelf_bring_into_work()}
           </Button>
           <Button
             disabled={!entry.available}
@@ -199,13 +246,13 @@ function TemplateCard({
             type="button"
             variant="outline"
           >
-            {m.creation_shelf_create_canvas()}
+            {creation_shelf_create_canvas()}
           </Button>
           <Button
             aria-label={
               entry.shortcut
-                ? m.creation_shelf_unpin_aria({ name: entry.label })
-                : m.creation_shelf_pin_aria({ name: entry.label })
+                ? creation_shelf_unpin_aria({ name: entry.label })
+                : creation_shelf_pin_aria({ name: entry.label })
             }
             onClick={() => onToggleShortcut(entry)}
             size="icon-xs"
@@ -275,7 +322,7 @@ export function CreationShelf({
         queryKey: p1QueryKeys.request('operations', 'creation_catalog'),
       });
     },
-    onError: () => toast.error(m.creation_shelf_shortcut_update_failed()),
+    onError: () => toast.error(creation_shelf_shortcut_update_failed()),
   });
   const canvasMutation = useMutation({
     mutationFn: (entry?: CreationCatalogEntry) => {
@@ -297,7 +344,7 @@ export function CreationShelf({
       window.location.assign(
         getPathWithLocale(`/dashboard/works/${encodeURIComponent(work.id)}`)
       ),
-    onError: () => toast.error(m.creation_shelf_canvas_create_failed()),
+    onError: () => toast.error(creation_shelf_canvas_create_failed()),
   });
 
   useEffect(() => {
@@ -354,15 +401,14 @@ export function CreationShelf({
       );
       if (!entry?.available) {
         setPendingUnavailableMessage(
-          entry?.unavailableReason ??
-            m.creation_shelf_tool_verification_missing()
+          entry?.unavailableReason ?? creation_shelf_tool_verification_missing()
         );
         return;
       }
       setPendingUnavailableMessage(undefined);
       onSelectTool(entry.operation ?? pendingAction.operation);
       consumePendingAction(pendingAction.key);
-      toast.success(m.creation_shelf_tool_placed());
+      toast.success(creation_shelf_tool_placed());
       return;
     }
     if (!pendingAction.reference || promptedPendingKey === pendingAction.key) {
@@ -370,7 +416,7 @@ export function CreationShelf({
     }
     const needsHistory = pendingAction.reference.kind !== 'template';
     if (!catalogQuery.isSuccess || (needsHistory && !historyQuery.isSuccess)) {
-      setPendingUnavailableMessage(m.creation_shelf_pending_verifying());
+      setPendingUnavailableMessage(creation_shelf_pending_verifying());
       return;
     }
     const entry = catalogEntries.find(
@@ -378,7 +424,7 @@ export function CreationShelf({
     );
     if (!entry?.available) {
       setPendingUnavailableMessage(
-        entry?.unavailableReason ?? m.creation_shelf_pending_unavailable()
+        entry?.unavailableReason ?? creation_shelf_pending_unavailable()
       );
       return;
     }
@@ -403,7 +449,7 @@ export function CreationShelf({
         tool: entry.operation,
       });
       onSelectTool(entry.operation);
-      toast.success(m.creation_shelf_tool_inserted());
+      toast.success(creation_shelf_tool_inserted());
       return;
     }
     beginInheritance(entry, 'shelf');
@@ -446,7 +492,7 @@ export function CreationShelf({
   };
 
   const retryPendingAction = async () => {
-    setPendingUnavailableMessage(m.creation_shelf_pending_rechecking());
+    setPendingUnavailableMessage(creation_shelf_pending_rechecking());
     await Promise.all([
       catalogQuery.refetch(),
       historyQuery.refetch(),
@@ -463,10 +509,10 @@ export function CreationShelf({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold" id="creation-shelf-title">
-            {m.creation_shelf_title()}
+            {creation_shelf_title()}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            {m.creation_shelf_description()}
+            {creation_shelf_description()}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -477,7 +523,7 @@ export function CreationShelf({
             variant="outline"
           >
             <IconCommand aria-hidden="true" />
-            {m.creation_shelf_add_to_creation()}
+            {creation_shelf_add_to_creation()}
             <kbd className="ml-1 text-[10px]">⌘K</kbd>
           </Button>
           <Button
@@ -486,7 +532,7 @@ export function CreationShelf({
             type="button"
             variant="outline"
           >
-            {m.creation_shelf_decompose()}
+            {creation_shelf_decompose()}
           </Button>
           <Button
             onClick={() => setExpanded((value) => !value)}
@@ -495,15 +541,15 @@ export function CreationShelf({
             variant="ghost"
           >
             {expanded
-              ? m.creation_shelf_collapse_catalog()
-              : m.creation_shelf_expand_catalog()}
+              ? creation_shelf_collapse_catalog()
+              : creation_shelf_expand_catalog()}
           </Button>
         </div>
       </div>
 
       {catalogQuery.isError ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          {m.creation_shelf_catalog_error()}
+          {creation_shelf_catalog_error()}
         </div>
       ) : null}
 
@@ -511,7 +557,7 @@ export function CreationShelf({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/25 bg-primary/5 p-3 text-sm">
           <span className="space-y-1">
             <span className="block">
-              {m.creation_shelf_pending_label()}
+              {creation_shelf_pending_label()}
               <span className="font-medium">{pendingAction.label}</span>
             </span>
             {pendingUnavailableMessage ? (
@@ -533,8 +579,8 @@ export function CreationShelf({
             variant="outline"
           >
             {pendingUnavailableMessage
-              ? m.creation_shelf_recheck()
-              : m.creation_shelf_continue_inheritance()}
+              ? creation_shelf_recheck()
+              : creation_shelf_continue_inheritance()}
           </Button>
         </div>
       ) : null}
@@ -556,7 +602,7 @@ export function CreationShelf({
         </div>
       ) : (
         <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          {m.creation_shelf_no_quick_templates()}
+          {creation_shelf_no_quick_templates()}
         </p>
       )}
 
@@ -597,10 +643,10 @@ export function CreationShelf({
                 variant={owner === value ? 'secondary' : 'ghost'}
               >
                 {value === 'all'
-                  ? m.creation_shelf_filter_all()
+                  ? creation_shelf_filter_all()
                   : value === 'official'
-                    ? m.creation_shelf_owner_official()
-                    : m.creation_shelf_owner_mine()}
+                    ? creation_shelf_owner_official()
+                    : creation_shelf_owner_mine()}
               </Button>
             ))}
             <Button
@@ -610,7 +656,7 @@ export function CreationShelf({
               type="button"
               variant="outline"
             >
-              {m.creation_shelf_new_blank_canvas()}
+              {creation_shelf_new_blank_canvas()}
             </Button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -652,8 +698,8 @@ export function CreationShelf({
                       type="button"
                     >
                       {entry.kind === 'tool'
-                        ? m.creation_shelf_insert_action()
-                        : m.creation_shelf_bring_into_work()}
+                        ? creation_shelf_insert_action()
+                        : creation_shelf_bring_into_work()}
                     </Button>
                   </CardContent>
                 </Card>
@@ -666,9 +712,9 @@ export function CreationShelf({
       <Dialog open={inheritanceOpen} onOpenChange={setInheritanceOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{m.creation_shelf_inheritance_title()}</DialogTitle>
+            <DialogTitle>{creation_shelf_inheritance_title()}</DialogTitle>
             <DialogDescription>
-              {m.creation_shelf_inheritance_description()}
+              {creation_shelf_inheritance_description()}
             </DialogDescription>
           </DialogHeader>
           {inheritanceEntry ? (
@@ -681,7 +727,7 @@ export function CreationShelf({
               </div>
               <fieldset className="space-y-2">
                 <legend className="sr-only">
-                  {m.creation_shelf_inheritance_legend()}
+                  {creation_shelf_inheritance_legend()}
                 </legend>
                 {INHERITANCE_FIELD_OPTIONS.map((field) => (
                   <div
@@ -709,7 +755,7 @@ export function CreationShelf({
                 ))}
               </fieldset>
               <p className="text-xs text-muted-foreground">
-                {m.creation_shelf_inheritance_guardrail()}
+                {creation_shelf_inheritance_guardrail()}
               </p>
               <Button
                 disabled={selectedFields.length === 0 || inserting}
@@ -717,8 +763,8 @@ export function CreationShelf({
                 type="button"
               >
                 {inserting
-                  ? m.creation_shelf_inserting()
-                  : m.creation_shelf_confirm_inheritance({
+                  ? creation_shelf_inserting()
+                  : creation_shelf_confirm_inheritance({
                       count: selectedFields.length,
                     })}
               </Button>
@@ -730,9 +776,9 @@ export function CreationShelf({
       <Dialog open={decompositionOpen} onOpenChange={setDecompositionOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{m.creation_shelf_decomposition_title()}</DialogTitle>
+            <DialogTitle>{creation_shelf_decomposition_title()}</DialogTitle>
             <DialogDescription>
-              {m.creation_shelf_decomposition_description()}
+              {creation_shelf_decomposition_description()}
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2">
@@ -744,8 +790,8 @@ export function CreationShelf({
                 variant={sourceScope === value ? 'secondary' : 'outline'}
               >
                 {value === 'official'
-                  ? m.creation_shelf_official_library()
-                  : m.creation_shelf_my_content()}
+                  ? creation_shelf_official_library()
+                  : creation_shelf_my_content()}
               </Button>
             ))}
           </div>
@@ -774,13 +820,13 @@ export function CreationShelf({
           </div>
           {decompositionEntries.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              {m.creation_shelf_no_decomposition_sources()}
+              {creation_shelf_no_decomposition_sources()}
             </p>
           ) : null}
           {selectedSource ? (
             <fieldset className="space-y-2 rounded-md border p-4">
               <legend className="px-1 text-sm font-medium">
-                {m.creation_shelf_decomposition_legend()}
+                {creation_shelf_decomposition_legend()}
               </legend>
               {INHERITANCE_FIELD_OPTIONS.map((field) => (
                 <div
@@ -806,7 +852,7 @@ export function CreationShelf({
                 </div>
               ))}
               <p className="text-xs text-muted-foreground">
-                {m.creation_shelf_decomposition_guardrail()}
+                {creation_shelf_decomposition_guardrail()}
               </p>
               <Button
                 disabled={
@@ -828,7 +874,7 @@ export function CreationShelf({
                 }}
                 type="button"
               >
-                {m.creation_shelf_confirm_decomposition({
+                {creation_shelf_confirm_decomposition({
                   count: selectedFields.length,
                 })}
               </Button>

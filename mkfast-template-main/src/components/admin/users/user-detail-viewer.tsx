@@ -1,4 +1,26 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_users_active,
+  admin_users_admin,
+  admin_users_ban_button,
+  admin_users_ban_default_reason,
+  admin_users_ban_error,
+  admin_users_ban_expires,
+  admin_users_ban_never,
+  admin_users_ban_reason,
+  admin_users_ban_reason_placeholder,
+  admin_users_ban_select_date,
+  admin_users_ban_success,
+  admin_users_banned,
+  admin_users_close,
+  admin_users_columns_email,
+  admin_users_email_copied,
+  admin_users_joined,
+  admin_users_unban_button,
+  admin_users_unban_error,
+  admin_users_unban_success,
+  admin_users_updated,
+  admin_users_user,
+} from '@/locale/paraglide/messages';
 import type { User } from '@/db/types';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +59,7 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
   const isMobile = useIsMobile();
   const [error, setError] = useState<string | undefined>();
   const [banReason, setBanReason] = useState<string>(
-    m.admin_users_ban_default_reason()
+    admin_users_ban_default_reason()
   );
   const [banExpiresAt, setBanExpiresAt] = useState<Date | undefined>();
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -47,11 +69,11 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
     v ? new Date(v) : null;
   const handleBan = async () => {
     if (!banReason?.trim()) {
-      setError(m.admin_users_ban_error());
+      setError(admin_users_ban_error());
       return;
     }
     if (!user.id) {
-      setError(m.admin_users_ban_error());
+      setError(admin_users_ban_error());
       return;
     }
     setError(undefined);
@@ -63,26 +85,26 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
           ? Math.floor((banExpiresAt.getTime() - Date.now()) / 1000)
           : undefined,
       });
-      toast.success(m.admin_users_ban_success());
-      setBanReason(m.admin_users_ban_default_reason());
+      toast.success(admin_users_ban_success());
+      setBanReason(admin_users_ban_default_reason());
       setBanExpiresAt(undefined);
     } catch {
-      const msg = m.admin_users_ban_error();
+      const msg = admin_users_ban_error();
       setError(msg);
       toast.error(msg);
     }
   };
   const handleUnban = async () => {
     if (!user.id) {
-      setError(m.admin_users_unban_error());
+      setError(admin_users_unban_error());
       return;
     }
     setError(undefined);
     try {
       await unbanUserMutation.mutateAsync({ userId: user.id });
-      toast.success(m.admin_users_unban_success());
+      toast.success(admin_users_unban_success());
     } catch {
-      const msg = m.admin_users_unban_error();
+      const msg = admin_users_unban_error();
       setError(msg);
       toast.error(msg);
     }
@@ -130,8 +152,8 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
                 )}
               >
                 {user.role === 'admin'
-                  ? m.admin_users_admin()
-                  : m.admin_users_user()}
+                  ? admin_users_admin()
+                  : admin_users_user()}
               </Badge>
               <Badge
                 variant="outline"
@@ -145,12 +167,12 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
                 {user.banned ? (
                   <>
                     <IconUserX />
-                    {m.admin_users_banned()}
+                    {admin_users_banned()}
                   </>
                 ) : (
                   <>
                     <IconUserCheck />
-                    {m.admin_users_active()}
+                    {admin_users_active()}
                   </>
                 )}
               </Badge>
@@ -158,14 +180,14 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
             {user.email && (
               <div className="grid gap-3">
                 <span className="text-xs text-muted-foreground">
-                  {m.admin_users_columns_email()}:
+                  {admin_users_columns_email()}:
                 </span>
                 <Badge
                   variant="outline"
                   className="w-fit px-1.5 py-2 text-sm border-transparent hover:cursor-pointer hover:underline hover:underline-offset-4"
                   onClick={() => {
                     navigator.clipboard.writeText(user.email);
-                    toast.success(m.admin_users_email_copied());
+                    toast.success(admin_users_email_copied());
                   }}
                 >
                   {user.emailVerified ? (
@@ -181,7 +203,7 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
           <div className="grid gap-3">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">
-                {m.admin_users_joined()}:
+                {admin_users_joined()}:
               </span>
               <span>
                 {toDate(user.createdAt)
@@ -191,7 +213,7 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">
-                {m.admin_users_updated()}:
+                {admin_users_updated()}:
               </span>
               <span>
                 {toDate(user.updatedAt)
@@ -206,30 +228,30 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
             <div className="grid gap-4">
               {user.banReason && (
                 <div>
-                  {m.admin_users_ban_reason()}: {user.banReason}
+                  {admin_users_ban_reason()}: {user.banReason}
                 </div>
               )}
               <div>
-                {m.admin_users_ban_expires()}:{' '}
+                {admin_users_ban_expires()}:{' '}
                 {user.banExpires && toDate(user.banExpires)
                   ? formatDate(toDate(user.banExpires)!)
-                  : m.admin_users_ban_never()}
+                  : admin_users_ban_never()}
               </div>
             </div>
           ) : (
             <div className="grid gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="ban-reason">{m.admin_users_ban_reason()}</Label>
+                <Label htmlFor="ban-reason">{admin_users_ban_reason()}</Label>
                 <Textarea
                   id="ban-reason"
                   value={banReason}
                   onChange={(e) => setBanReason(e.target.value)}
-                  placeholder={m.admin_users_ban_reason_placeholder()}
+                  placeholder={admin_users_ban_reason_placeholder()}
                   required
                 />
               </div>
               <div className="grid w-fit max-w-full gap-2">
-                <Label>{m.admin_users_ban_expires()}</Label>
+                <Label>{admin_users_ban_expires()}</Label>
                 <div className="w-fit rounded-lg border border-input bg-background">
                   <button
                     type="button"
@@ -243,7 +265,7 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
                     {banExpiresAt ? (
                       formatDate(banExpiresAt)
                     ) : (
-                      <span>{m.admin_users_ban_select_date()}</span>
+                      <span>{admin_users_ban_select_date()}</span>
                     )}
                   </button>
                   {calendarOpen && (
@@ -273,7 +295,7 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
               {unbanUserMutation.isPending && (
                 <IconLoader2 className="mr-2 size-4 animate-spin" />
               )}
-              {m.admin_users_unban_button()}
+              {admin_users_unban_button()}
             </Button>
           ) : (
             <Button
@@ -284,11 +306,11 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
               {banUserMutation.isPending && (
                 <IconLoader2 className="mr-2 size-4 animate-spin" />
               )}
-              {m.admin_users_ban_button()}
+              {admin_users_ban_button()}
             </Button>
           )}
           <DrawerClose asChild>
-            <Button variant="outline">{m.admin_users_close()}</Button>
+            <Button variant="outline">{admin_users_close()}</Button>
           </DrawerClose>
         </DrawerFooter>
       </DrawerContent>

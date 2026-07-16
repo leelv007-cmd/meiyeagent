@@ -7,7 +7,17 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_douyin_status_integrated,
+  admin_douyin_status_live_description,
+  admin_douyin_status_mode,
+  admin_douyin_status_not_integrated,
+  admin_douyin_status_recorded_description,
+  admin_douyin_status_title,
+  admin_douyin_status_unavailable,
+  admin_integrations_description,
+  admin_integrations_title,
+} from '@/locale/paraglide/messages';
 import { AdminFeishuToolControl } from '@/p1/admin-feishu-tool-control';
 import { AdminProviderCredentialControl } from '@/p1/admin-provider-credential-control';
 import { queryP1 } from '@/p1/client';
@@ -23,8 +33,8 @@ export const Route = createFileRoute('/admin/integrations')({
 function IntegrationsPage() {
   return (
     <AdminRoutePage
-      title={m.admin_integrations_title()}
-      description={m.admin_integrations_description()}
+      title={admin_integrations_title()}
+      description={admin_integrations_description()}
     >
       <div className="space-y-6">
         <DouyinIntegrationEvidence />
@@ -51,26 +61,26 @@ function DouyinIntegrationEvidence() {
     <Card>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
-          {m.admin_douyin_status_title()}
+          {admin_douyin_status_title()}
           {status.data ? (
             <Badge variant={status.data.integrated ? 'secondary' : 'outline'}>
               {status.data.integrated
-                ? m.admin_douyin_status_integrated()
-                : m.admin_douyin_status_not_integrated()}
+                ? admin_douyin_status_integrated()
+                : admin_douyin_status_not_integrated()}
             </Badge>
           ) : null}
         </CardTitle>
         <CardDescription>
           {status.data?.integrated
-            ? m.admin_douyin_status_live_description()
+            ? admin_douyin_status_live_description()
             : status.data
-              ? m.admin_douyin_status_recorded_description()
-              : m.admin_douyin_status_unavailable()}
+              ? admin_douyin_status_recorded_description()
+              : admin_douyin_status_unavailable()}
         </CardDescription>
       </CardHeader>
       {status.data ? (
         <CardContent className="text-sm text-muted-foreground">
-          {m.admin_douyin_status_mode({ mode: status.data.executionMode })}
+          {admin_douyin_status_mode({ mode: status.data.executionMode })}
         </CardContent>
       ) : null}
     </Card>

@@ -305,11 +305,19 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     });
   });
 
-  test('ticket 20: daily creation entry routes never load Polotno', async ({
+  test('ticket 20 gate 4: every named daily entry reaches Light Composer without Polotno', async ({
     page,
     request,
   }) => {
     test.setTimeout(120_000);
+    const expectedEntries = [
+      'CreationShelf',
+      'template card',
+      'blank canvas',
+      'deep link',
+      'history detail',
+    ] as const;
+    const traversedEntries: Array<(typeof expectedEntries)[number]> = [];
     const polotnoHits: string[] = [];
     page.on('request', (browserRequest) => {
       if (/polotno/iu.test(browserRequest.url())) {
@@ -319,28 +327,76 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
 
-    // Blank canvas entry
-    await page.getByLabel('描述这次想创作的内容').fill('Ticket20 入口矩阵');
-    await page.getByRole('button', { name: '建立创作记录' }).click();
-    await page.getByRole('button', { name: '展开目录' }).click();
-    await page.getByRole('button', { name: '新建空白画布' }).click();
-    await expect(
-      page.getByRole('heading', { level: 2, name: '日常轻编辑' })
-    ).toBeVisible({ timeout: 30_000 });
-    const workUrl = page.url();
-    expect(workUrl).toMatch(/\/dashboard\/works\//);
+    await test.step('CreationShelf is the owning daily creation entry', async () => {
+      await page
+        .getByLabel('描述这次想创作的内容')
+        .fill('Ticket20 完整入口矩阵');
+      await page.getByRole('button', { name: '建立创作记录' }).click();
+      const shelf = page.getByRole('region', { name: '发现与复用' });
+      await expect(shelf).toBeVisible({ timeout: 30_000 });
+      await expect(
+        shelf.getByRole('button', { name: '用此创建画布' }).first()
+      ).toBeVisible();
+      traversedEntries.push('CreationShelf');
+    });
 
-    // Deep link / history detail re-entry
-    await page.goto('/dashboard/recent');
-    await page.goto(workUrl);
-    await expect(
-      page.getByRole('heading', { level: 2, name: '日常轻编辑' })
-    ).toBeVisible({ timeout: 30_000 });
+    let templateWorkUrl = '';
+    await test.step('template card creates a Light Composer work', async () => {
+      const shelf = page.getByRole('region', { name: '发现与复用' });
+      await shelf.getByRole('button', { name: '用此创建画布' }).first().click();
+      await expect(page).toHaveURL(/\/dashboard\/works\//);
+      await expect(
+        page.getByRole('heading', { level: 2, name: '日常轻编辑' })
+      ).toBeVisible({ timeout: 30_000 });
+      templateWorkUrl = page.url();
+      traversedEntries.push('template card');
+    });
 
-    // Works list entry
-    await page.goto('/dashboard/works');
-    await expect(page).toHaveURL(/\/dashboard\/works/);
+    let blankWorkUrl = '';
+    let blankWorkId = '';
+    await test.step('blank canvas creates a Light Composer work', async () => {
+      await page.goto('/dashboard');
+      const shelf = page.getByRole('region', { name: '发现与复用' });
+      await expect(shelf).toBeVisible({ timeout: 30_000 });
+      await shelf.getByRole('button', { name: '展开目录' }).click();
+      await shelf.getByRole('button', { name: '新建空白画布' }).click();
+      await expect(page).toHaveURL(/\/dashboard\/works\//);
+      await expect(
+        page.getByRole('heading', { level: 2, name: '日常轻编辑' })
+      ).toBeVisible({ timeout: 30_000 });
+      blankWorkUrl = page.url();
+      blankWorkId = decodeURIComponent(
+        new URL(blankWorkUrl).pathname.split('/').at(-1)!
+      );
+      expect(blankWorkUrl).not.toBe(templateWorkUrl);
+      traversedEntries.push('blank canvas');
+    });
 
+    await test.step('direct deep link resolves to Light Composer', async () => {
+      await page.goto('/dashboard/recent');
+      await page.goto(blankWorkUrl);
+      await expect(page).toHaveURL(blankWorkUrl);
+      await expect(
+        page.getByRole('heading', { level: 2, name: '日常轻编辑' })
+      ).toBeVisible({ timeout: 30_000 });
+      traversedEntries.push('deep link');
+    });
+
+    await test.step('history detail link resolves to Light Composer', async () => {
+      await page.goto('/dashboard/recent');
+      const detailLink = page.locator(
+        `a[href$="/dashboard/works/${encodeURIComponent(blankWorkId)}"]`
+      );
+      await expect(detailLink).toHaveText('查看详情', { timeout: 30_000 });
+      await detailLink.click();
+      await expect(page).toHaveURL(blankWorkUrl);
+      await expect(
+        page.getByRole('heading', { level: 2, name: '日常轻编辑' })
+      ).toBeVisible({ timeout: 30_000 });
+      traversedEntries.push('history detail');
+    });
+
+    expect(traversedEntries).toEqual(expectedEntries);
     expect(polotnoHits).toEqual([]);
   });
 

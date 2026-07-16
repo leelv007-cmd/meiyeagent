@@ -1,4 +1,16 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  home_features_description,
+  home_features_items_item_1_description,
+  home_features_items_item_1_title,
+  home_features_items_item_2_description,
+  home_features_items_item_2_title,
+  home_features_items_item_3_description,
+  home_features_items_item_3_title,
+  home_features_items_item_4_description,
+  home_features_items_item_4_title,
+  home_features_subtitle,
+  home_features_title,
+} from '@/locale/paraglide/messages';
 import { HeaderSection } from '@/components/shared/header-section';
 import { ScrollReveal } from '@/components/shared/scroll-reveal';
 import type { Icon } from '@tabler/icons-react';
@@ -19,23 +31,23 @@ export default function FeaturesSection() {
   const featureItems = [
     {
       key: 'item-1' as const,
-      title: m.home_features_items_item_1_title(),
-      description: m.home_features_items_item_1_description(),
+      title: home_features_items_item_1_title(),
+      description: home_features_items_item_1_description(),
     },
     {
       key: 'item-2' as const,
-      title: m.home_features_items_item_2_title(),
-      description: m.home_features_items_item_2_description(),
+      title: home_features_items_item_2_title(),
+      description: home_features_items_item_2_description(),
     },
     {
       key: 'item-3' as const,
-      title: m.home_features_items_item_3_title(),
-      description: m.home_features_items_item_3_description(),
+      title: home_features_items_item_3_title(),
+      description: home_features_items_item_3_description(),
     },
     {
       key: 'item-4' as const,
-      title: m.home_features_items_item_4_title(),
-      description: m.home_features_items_item_4_description(),
+      title: home_features_items_item_4_title(),
+      description: home_features_items_item_4_description(),
     },
   ];
   return (
@@ -43,9 +55,9 @@ export default function FeaturesSection() {
       <div className="mx-auto max-w-6xl px-2 lg:px-0 space-y-8 lg:space-y-20 dark:[--color-border:color-mix(in_oklab,var(--color-white)_10%,transparent)]">
         <ScrollReveal>
           <HeaderSection
-            title={m.home_features_title()}
-            subtitle={m.home_features_subtitle()}
-            description={m.home_features_description()}
+            title={home_features_title()}
+            subtitle={home_features_subtitle()}
+            description={home_features_description()}
           />
         </ScrollReveal>
 

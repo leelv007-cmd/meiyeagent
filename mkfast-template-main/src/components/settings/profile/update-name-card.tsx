@@ -1,4 +1,15 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_profile_name_description,
+  settings_profile_name_fail,
+  settings_profile_name_hint,
+  settings_profile_name_max_length,
+  settings_profile_name_min_length,
+  settings_profile_name_placeholder,
+  settings_profile_name_save,
+  settings_profile_name_saving,
+  settings_profile_name_success,
+  settings_profile_name_title,
+} from '@/locale/paraglide/messages';
 import { FormError } from '@/components/shared/form-error';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,8 +42,8 @@ interface UpdateNameCardProps {
 const nameSchema = z.object({
   name: z
     .string()
-    .min(3, { message: m.settings_profile_name_min_length() })
-    .max(30, { message: m.settings_profile_name_max_length() }),
+    .min(3, { message: settings_profile_name_min_length() })
+    .max(30, { message: settings_profile_name_max_length() }),
 });
 export function UpdateNameCard({ className }: UpdateNameCardProps) {
   const [isSaving, setIsSaving] = useState(false);
@@ -60,13 +71,13 @@ export function UpdateNameCard({ className }: UpdateNameCardProps) {
           setIsSaving(false);
         },
         onSuccess: () => {
-          toast.success(m.settings_profile_name_success());
+          toast.success(settings_profile_name_success());
           refetch();
           form.reset({ name: values.name });
         },
         onError: () => {
-          setError(m.settings_profile_name_fail());
-          toast.error(m.settings_profile_name_fail());
+          setError(settings_profile_name_fail());
+          toast.error(settings_profile_name_fail());
         },
       }
     );
@@ -80,11 +91,9 @@ export function UpdateNameCard({ className }: UpdateNameCardProps) {
     >
       <CardHeader>
         <CardTitle className="text-lg font-semibold">
-          {m.settings_profile_name_title()}
+          {settings_profile_name_title()}
         </CardTitle>
-        <CardDescription>
-          {m.settings_profile_name_description()}
-        </CardDescription>
+        <CardDescription>{settings_profile_name_description()}</CardDescription>
       </CardHeader>
       <Form {...form}>
         <form
@@ -97,10 +106,10 @@ export function UpdateNameCard({ className }: UpdateNameCardProps) {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{m.settings_profile_name_title()}</FormLabel>
+                  <FormLabel>{settings_profile_name_title()}</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder={m.settings_profile_name_placeholder()}
+                      placeholder={settings_profile_name_placeholder()}
                       {...field}
                     />
                   </FormControl>
@@ -112,12 +121,12 @@ export function UpdateNameCard({ className }: UpdateNameCardProps) {
           </CardContent>
           <CardFooter className="mt-6 px-6 py-4 flex justify-between items-center bg-muted rounded-none">
             <p className="text-sm text-muted-foreground">
-              {m.settings_profile_name_hint()}
+              {settings_profile_name_hint()}
             </p>
             <Button type="submit" disabled={isSaving}>
               {isSaving
-                ? m.settings_profile_name_saving()
-                : m.settings_profile_name_save()}
+                ? settings_profile_name_saving()
+                : settings_profile_name_save()}
             </Button>
           </CardFooter>
         </form>

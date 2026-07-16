@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  product_navigation_assets,
+  product_navigation_content,
+  product_navigation_store,
+  product_navigation_workbench,
+} from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 import { emitTelemetry } from '@/lib/product-telemetry';
 
@@ -6,28 +11,28 @@ export const BUSINESS_NAVIGATION = [
   {
     id: 'workbench',
     get label() {
-      return m.product_navigation_workbench();
+      return product_navigation_workbench();
     },
     href: Routes.Dashboard,
   },
   {
     id: 'content',
     get label() {
-      return m.product_navigation_content();
+      return product_navigation_content();
     },
     href: Routes.ContentLibrary,
   },
   {
     id: 'assets',
     get label() {
-      return m.product_navigation_assets();
+      return product_navigation_assets();
     },
     href: Routes.AssetLibrary,
   },
   {
     id: 'store',
     get label() {
-      return m.product_navigation_store();
+      return product_navigation_store();
     },
     href: Routes.StoreProfile,
   },

@@ -1,4 +1,7 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  pricing_checkout_failed,
+  pricing_checkout_loading,
+} from '@/locale/paraglide/messages';
 import { createCheckoutSession } from '@/api/payment';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -47,11 +50,11 @@ export function CheckoutButton({
       if (result?.url) {
         window.location.href = result.url;
       } else {
-        toast.error(m.pricing_checkout_failed());
+        toast.error(pricing_checkout_failed());
       }
     } catch (err) {
       console.error('Checkout error:', err);
-      toast.error(m.pricing_checkout_failed());
+      toast.error(pricing_checkout_failed());
     } finally {
       setIsLoading(false);
     }
@@ -67,7 +70,7 @@ export function CheckoutButton({
       {isLoading ? (
         <>
           <IconLoader2 className="mr-2 size-4 animate-spin" />
-          {m.pricing_checkout_loading()}
+          {pricing_checkout_loading()}
         </>
       ) : (
         children

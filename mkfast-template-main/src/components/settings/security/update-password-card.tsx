@@ -1,4 +1,20 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_security_update_password_current_password,
+  settings_security_update_password_current_required,
+  settings_security_update_password_description,
+  settings_security_update_password_fail,
+  settings_security_update_password_hide_password,
+  settings_security_update_password_hint,
+  settings_security_update_password_new_min_length,
+  settings_security_update_password_new_password,
+  settings_security_update_password_placeholder_current,
+  settings_security_update_password_placeholder_new,
+  settings_security_update_password_save,
+  settings_security_update_password_saving,
+  settings_security_update_password_show_password,
+  settings_security_update_password_success,
+  settings_security_update_password_title,
+} from '@/locale/paraglide/messages';
 import { FormError } from '@/components/shared/form-error';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,11 +44,11 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 const passwordSchema = z.object({
   currentPassword: z.string().min(1, {
-    message: m.settings_security_update_password_current_required(),
+    message: settings_security_update_password_current_required(),
   }),
   newPassword: z
     .string()
-    .min(8, { message: m.settings_security_update_password_new_min_length() }),
+    .min(8, { message: settings_security_update_password_new_min_length() }),
 });
 interface UpdatePasswordCardProps {
   className?: string;
@@ -65,12 +81,12 @@ export function UpdatePasswordCard({ className }: UpdatePasswordCardProps) {
           setIsSaving(false);
         },
         onSuccess: () => {
-          toast.success(m.settings_security_update_password_success());
+          toast.success(settings_security_update_password_success());
           form.reset();
         },
         onError: () => {
-          setError(m.settings_security_update_password_fail());
-          toast.error(m.settings_security_update_password_fail());
+          setError(settings_security_update_password_fail());
+          toast.error(settings_security_update_password_fail());
         },
       }
     );
@@ -84,10 +100,10 @@ export function UpdatePasswordCard({ className }: UpdatePasswordCardProps) {
     >
       <CardHeader>
         <CardTitle className="text-lg font-semibold">
-          {m.settings_security_update_password_title()}
+          {settings_security_update_password_title()}
         </CardTitle>
         <CardDescription>
-          {m.settings_security_update_password_description()}
+          {settings_security_update_password_description()}
         </CardDescription>
       </CardHeader>
       <Form {...form}>
@@ -102,13 +118,13 @@ export function UpdatePasswordCard({ className }: UpdatePasswordCardProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    {m.settings_security_update_password_current_password()}
+                    {settings_security_update_password_current_password()}
                   </FormLabel>
                   <div className="relative">
                     <FormControl>
                       <Input
                         type={showCurrent ? 'text' : 'password'}
-                        placeholder={m.settings_security_update_password_placeholder_current()}
+                        placeholder={settings_security_update_password_placeholder_current()}
                         {...field}
                       />
                     </FormControl>
@@ -126,8 +142,8 @@ export function UpdatePasswordCard({ className }: UpdatePasswordCardProps) {
                       )}
                       <span className="sr-only">
                         {showCurrent
-                          ? m.settings_security_update_password_hide_password()
-                          : m.settings_security_update_password_show_password()}
+                          ? settings_security_update_password_hide_password()
+                          : settings_security_update_password_show_password()}
                       </span>
                     </Button>
                   </div>
@@ -141,13 +157,13 @@ export function UpdatePasswordCard({ className }: UpdatePasswordCardProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    {m.settings_security_update_password_new_password()}
+                    {settings_security_update_password_new_password()}
                   </FormLabel>
                   <div className="relative">
                     <FormControl>
                       <Input
                         type={showNew ? 'text' : 'password'}
-                        placeholder={m.settings_security_update_password_placeholder_new()}
+                        placeholder={settings_security_update_password_placeholder_new()}
                         {...field}
                       />
                     </FormControl>
@@ -165,8 +181,8 @@ export function UpdatePasswordCard({ className }: UpdatePasswordCardProps) {
                       )}
                       <span className="sr-only">
                         {showNew
-                          ? m.settings_security_update_password_hide_password()
-                          : m.settings_security_update_password_show_password()}
+                          ? settings_security_update_password_hide_password()
+                          : settings_security_update_password_show_password()}
                       </span>
                     </Button>
                   </div>
@@ -178,12 +194,12 @@ export function UpdatePasswordCard({ className }: UpdatePasswordCardProps) {
           </CardContent>
           <CardFooter className="mt-6 px-6 py-4 flex justify-between items-center bg-muted rounded-none">
             <p className="text-sm text-muted-foreground">
-              {m.settings_security_update_password_hint()}
+              {settings_security_update_password_hint()}
             </p>
             <Button type="submit" disabled={isSaving}>
               {isSaving
-                ? m.settings_security_update_password_saving()
-                : m.settings_security_update_password_save()}
+                ? settings_security_update_password_saving()
+                : settings_security_update_password_save()}
             </Button>
           </CardFooter>
         </form>

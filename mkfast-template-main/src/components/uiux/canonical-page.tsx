@@ -1,7 +1,10 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { ObjectEvidence } from './object-evidence';
 import { StatePanel } from './state-panel';
-import { m } from '@/locale/paraglide/messages';
+import {
+  canonical_page_empty_description,
+  canonical_page_empty_title,
+} from '@/locale/paraglide/messages';
 import type { ReactNode } from 'react';
 
 interface CanonicalPageProps {
@@ -36,8 +39,8 @@ export function CanonicalPage({
       {children ?? (
         <StatePanel
           kind="empty"
-          title={m.canonical_page_empty_title()}
-          description={m.canonical_page_empty_description()}
+          title={canonical_page_empty_title()}
+          description={canonical_page_empty_description()}
         />
       )}
     </DashboardLayout>

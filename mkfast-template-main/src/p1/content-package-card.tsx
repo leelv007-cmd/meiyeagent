@@ -1,7 +1,19 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  content_package_asset_count,
+  content_package_kind_image_text,
+  content_package_kind_video,
+  content_package_legacy_migrated_badge,
+  content_package_legacy_source_partial,
+  content_package_legacy_source_summary,
+  content_package_platform_video_account,
+  content_package_untitled,
+  content_package_view_details,
+  creation_entry_platform_douyin,
+  creation_entry_platform_xiaohongshu,
+} from '@/locale/paraglide/messages';
 import type { CanonicalMediaProjection } from '@/product/canonical-history-model';
 import type {
   ContentPackage,
@@ -38,7 +50,7 @@ export function ContentPackageCard({
       href: `/dashboard/assets/${encodeURIComponent(asset.id)}`,
       kind: asset.contentType.startsWith('video/') ? 'video' : 'image',
       src: `/api/core/p1/assets?objectKey=${encodeURIComponent(asset.objectKey)}`,
-      title: currentVersion?.title || m.content_package_untitled(),
+      title: currentVersion?.title || content_package_untitled(),
     });
   }
 
@@ -53,20 +65,20 @@ export function ContentPackageCard({
           <Badge variant="secondary">
             {isVideo ? <IconVideo /> : <IconFileText />}
             {isVideo
-              ? m.content_package_kind_video()
-              : m.content_package_kind_image_text()}
+              ? content_package_kind_video()
+              : content_package_kind_image_text()}
           </Badge>
           <Badge className="ml-auto" variant="outline">
             {contentPackage.statusLabel}
           </Badge>
           {contentPackage.legacySource ? (
             <Badge variant="outline">
-              {m.content_package_legacy_migrated_badge()}
+              {content_package_legacy_migrated_badge()}
             </Badge>
           ) : null}
         </div>
         <CardTitle className="text-base leading-6">
-          {currentVersion?.title || m.content_package_untitled()}
+          {currentVersion?.title || content_package_untitled()}
         </CardTitle>
         {currentVersion?.body ? (
           <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">
@@ -101,24 +113,24 @@ export function ContentPackageCard({
             )}
           </div>
         ) : null}
-        <span>{m.content_package_asset_count({ count: assetCount })}</span>
+        <span>{content_package_asset_count({ count: assetCount })}</span>
         {contentPackage.variants.map((variant) => (
           <Badge key={variant.platform} variant="outline">
             {variant.platform === 'xiaohongshu'
-              ? m.creation_entry_platform_xiaohongshu()
+              ? creation_entry_platform_xiaohongshu()
               : variant.platform === 'douyin'
-                ? m.creation_entry_platform_douyin()
-                : m.content_package_platform_video_account()}
+                ? creation_entry_platform_douyin()
+                : content_package_platform_video_account()}
           </Badge>
         ))}
         {contentPackage.legacySource ? (
           <p className="basis-full text-xs">
-            {m.content_package_legacy_source_summary({
+            {content_package_legacy_source_summary({
               sourceId: contentPackage.legacySource.sourceId,
             })}
             {contentPackage.legacySource.mappingConfidence === 'exact'
               ? ''
-              : ` · ${m.content_package_legacy_source_partial()}`}
+              : ` · ${content_package_legacy_source_partial()}`}
           </p>
         ) : null}
         {onOpen ? (
@@ -128,7 +140,7 @@ export function ContentPackageCard({
             size="sm"
             variant="outline"
           >
-            {m.content_package_view_details()}
+            {content_package_view_details()}
           </Button>
         ) : null}
       </CardContent>

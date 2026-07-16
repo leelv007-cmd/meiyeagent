@@ -13,7 +13,12 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { SETTINGS_UTILITY_ITEM, type ShellMode } from '@/config/sidebar-config';
-import { m } from '@/locale/paraglide/messages';
+import {
+  shell_admin_brand,
+  shell_product_brand,
+  shell_return_workbench,
+  shell_settings,
+} from '@/locale/paraglide/messages';
 import { Link } from '@tanstack/react-router';
 import { Routes } from '@/lib/routes';
 import type { SessionUser } from '@/auth/types';
@@ -53,8 +58,8 @@ export function DashboardSidebar({
                   <Logo className="size-5" />
                   <span className="truncate font-semibold text-base">
                     {mode === 'admin'
-                      ? m.shell_admin_brand()
-                      : m.shell_product_brand()}
+                      ? shell_admin_brand()
+                      : shell_product_brand()}
                   </span>
                 </Link>
               }
@@ -91,8 +96,8 @@ export function DashboardSidebar({
                   <ProductIcon icon={SETTINGS_UTILITY_ITEM.icon} />
                   <span>
                     {mode === 'admin'
-                      ? m.shell_return_workbench()
-                      : m.shell_settings()}
+                      ? shell_return_workbench()
+                      : shell_settings()}
                   </span>
                 </Link>
               }

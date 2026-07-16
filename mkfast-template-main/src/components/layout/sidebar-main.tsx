@@ -16,7 +16,12 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { m } from '@/locale/paraglide/messages';
+import {
+  shell_admin_navigation_aria,
+  shell_business_navigation_aria,
+  shell_settings,
+  shell_settings_navigation_aria,
+} from '@/locale/paraglide/messages';
 
 interface SidebarMainProps {
   mode: ShellMode;
@@ -75,23 +80,20 @@ export function SidebarMain({ mode }: SidebarMainProps) {
   );
 
   if (mode === 'admin') {
-    return renderNavigation(
-      ADMIN_SIDEBAR_ITEMS,
-      m.shell_admin_navigation_aria()
-    );
+    return renderNavigation(ADMIN_SIDEBAR_ITEMS, shell_admin_navigation_aria());
   }
 
   return (
     <>
       {renderNavigation(
         BUSINESS_SIDEBAR_ITEMS,
-        m.shell_business_navigation_aria()
+        shell_business_navigation_aria()
       )}
       {mode === 'settings'
         ? renderNavigation(
             SETTINGS_SIDEBAR_ITEMS,
-            m.shell_settings_navigation_aria(),
-            m.shell_settings()
+            shell_settings_navigation_aria(),
+            shell_settings()
           )
         : null}
     </>

@@ -7,7 +7,15 @@ import {
 
 import { StreamingAiMarkdown } from '@/components/markdown/ai-markdown';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { m } from '@/locale/paraglide/messages';
+import {
+  copy_stream_body_empty,
+  copy_stream_body_streaming,
+  copy_stream_candidate,
+  copy_stream_hook_empty,
+  copy_stream_hook_streaming,
+  copy_stream_title_pending,
+  copy_stream_title_streaming,
+} from '@/locale/paraglide/messages';
 
 export type PartialCopyCandidate = {
   body?: string;
@@ -77,13 +85,13 @@ export function CopyCandidateStream({
         <Card className="min-w-0" key={index}>
           <CardHeader className="pb-3">
             <p className="text-xs font-medium text-muted-foreground">
-              {m.copy_stream_candidate({ number: index + 1 })}
+              {copy_stream_candidate({ number: index + 1 })}
             </p>
             <CardTitle className="min-h-6 text-base">
               {candidate.title ||
                 (streaming
-                  ? m.copy_stream_title_streaming()
-                  : m.copy_stream_title_pending())}
+                  ? copy_stream_title_streaming()
+                  : copy_stream_title_pending())}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -96,15 +104,15 @@ export function CopyCandidateStream({
             ) : (
               <p className="min-h-20 text-sm text-muted-foreground">
                 {streaming
-                  ? m.copy_stream_body_streaming()
-                  : m.copy_stream_body_empty()}
+                  ? copy_stream_body_streaming()
+                  : copy_stream_body_empty()}
               </p>
             )}
             <p className="rounded-md bg-muted px-3 py-2 text-sm">
               {candidate.conversionHook ||
                 (streaming
-                  ? m.copy_stream_hook_streaming()
-                  : m.copy_stream_hook_empty())}
+                  ? copy_stream_hook_streaming()
+                  : copy_stream_hook_empty())}
             </p>
           </CardContent>
         </Card>

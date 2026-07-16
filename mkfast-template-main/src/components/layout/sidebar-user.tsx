@@ -1,4 +1,15 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_common_logout,
+  auth_common_logout_failed,
+  common_mode_dark,
+  common_mode_light,
+  common_mode_system,
+  common_mode_theme,
+  common_switch_language,
+  sidebar_user_account_settings,
+  sidebar_user_enter_admin,
+  sidebar_user_menu_aria,
+} from '@/locale/paraglide/messages';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -65,7 +76,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
           router.navigate({ to: '/' });
         },
         onError: (err) => {
-          toast.error(m.auth_common_logout_failed());
+          toast.error(auth_common_logout_failed());
           console.error('sign out error:', err);
         },
       },
@@ -78,7 +89,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
           <DropdownMenuTrigger
             render={
               <SidebarMenuButton
-                aria-label={m.sidebar_user_menu_aria({
+                aria-label={sidebar_user_menu_aria({
                   identity: user.name ?? user.email,
                 })}
                 size="lg"
@@ -130,20 +141,20 @@ export function SidebarUser({ user }: SidebarUserProps) {
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
                       <ThemeIcon className="mr-2 size-4" />
-                      {m.common_mode_theme()}
+                      {common_mode_theme()}
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
                       <DropdownMenuItem onClick={() => setTheme('light')}>
                         <IconSun className="mr-2 size-4" />
-                        {m.common_mode_light()}
+                        {common_mode_light()}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setTheme('dark')}>
                         <IconMoon className="mr-2 size-4" />
-                        {m.common_mode_dark()}
+                        {common_mode_dark()}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setTheme('system')}>
                         <IconDeviceDesktop className="mr-2 size-4" />
-                        {m.common_mode_system()}
+                        {common_mode_system()}
                       </DropdownMenuItem>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
@@ -155,7 +166,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
                       <IconLanguage className="mr-2 size-4" />
-                      {m.common_switch_language()}
+                      {common_switch_language()}
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
                       {locales.map((locale: Locale) => (
@@ -185,7 +196,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
                 }}
               >
                 <IconSettings className="mr-2 size-4" />
-                {m.sidebar_user_account_settings()}
+                {sidebar_user_account_settings()}
               </DropdownMenuItem>
               {user.role === 'admin' ? (
                 <DropdownMenuItem
@@ -195,7 +206,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
                   }}
                 >
                   <IconShieldCheck className="mr-2 size-4" />
-                  {m.sidebar_user_enter_admin()}
+                  {sidebar_user_enter_admin()}
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuSeparator />
@@ -207,7 +218,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
                 }}
               >
                 <IconLogout className="mr-2 size-4" />
-                {m.auth_common_logout()}
+                {auth_common_logout()}
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>

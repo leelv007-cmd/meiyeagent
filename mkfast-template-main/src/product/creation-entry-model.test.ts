@@ -28,16 +28,21 @@ test('puts the two result choices before materials, Brief, and reuse', () => {
     new URL('./unified-creation-workbench.tsx', import.meta.url),
     'utf8'
   );
-  const quickStart = source.indexOf('title={m.workbench_quick_start()}');
+  const messageTitle = (key: string) =>
+    new RegExp(`title=\\{(?:m\\.)?${key}\\(\\)\\}`, 'u');
+  const quickStartPattern = messageTitle('workbench_quick_start');
+  const quickStart = source.search(quickStartPattern);
 
   assert.ok(quickStart > -1);
   assert.ok(
-    quickStart < source.indexOf('title={m.workbench_section_references()}')
+    quickStart < source.search(messageTitle('workbench_section_references'))
   );
-  assert.ok(quickStart < source.indexOf('title={m.creative_brief_title()}'));
-  assert.ok(quickStart < source.indexOf('title={m.workbench_section_reuse()}'));
+  assert.ok(quickStart < source.search(messageTitle('creative_brief_title')));
+  assert.ok(
+    quickStart < source.search(messageTitle('workbench_section_reuse'))
+  );
   assert.equal(
-    source.match(/title=\{m\.workbench_quick_start\(\)\}/gu)?.length,
+    source.match(new RegExp(quickStartPattern.source, 'gu'))?.length,
     1
   );
 });

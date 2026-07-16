@@ -10,14 +10,36 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_assistant_field_audience,
+  creation_assistant_field_intent,
+  creation_assistant_field_scene,
+  creation_assistant_field_tone,
+  creative_brief_adopt_ai,
+  creative_brief_ai_draft,
+  creative_brief_aria,
+  creative_brief_confirm,
+  creative_brief_confirm_hint,
+  creative_brief_confirmed,
+  creative_brief_confirmed_hint,
+  creative_brief_current,
+  creative_brief_description,
+  creative_brief_edit,
+  creative_brief_edit_aria,
+  creative_brief_owner_ai,
+  creative_brief_owner_merchant,
+  creative_brief_owner_pending,
+  creative_brief_revert_ai,
+  creative_brief_save_edit,
+  creative_brief_unconfirmed,
+} from '@/locale/paraglide/messages';
 import { isContentPackageEligibleAsset } from './canonical-asset-governance-model';
 
 const BRIEF_FIELDS = [
-  ['intent', m.creation_assistant_field_intent],
-  ['scene', m.creation_assistant_field_scene],
-  ['tone', m.creation_assistant_field_tone],
-  ['audience', m.creation_assistant_field_audience],
+  ['intent', creation_assistant_field_intent],
+  ['scene', creation_assistant_field_scene],
+  ['tone', creation_assistant_field_tone],
+  ['audience', creation_assistant_field_audience],
 ] as const;
 
 export type CreativeBriefDrafts = Record<CreativeBriefFieldId, string>;
@@ -82,7 +104,7 @@ export function CreativeBriefEditor({
 
   return (
     <section
-      aria-label={m.creative_brief_aria()}
+      aria-label={creative_brief_aria()}
       className="space-y-4"
       data-testid="creative-brief-editor"
     >
@@ -90,12 +112,12 @@ export function CreativeBriefEditor({
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={brief?.confirmedAt ? 'secondary' : 'outline'}>
             {brief?.confirmedAt
-              ? m.creative_brief_confirmed()
-              : m.creative_brief_unconfirmed()}
+              ? creative_brief_confirmed()
+              : creative_brief_unconfirmed()}
           </Badge>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          {m.creative_brief_description()}
+          {creative_brief_description()}
         </p>
       </div>
 
@@ -114,21 +136,21 @@ export function CreativeBriefEditor({
                 <p className="text-sm font-semibold">{label()}</p>
                 <Badge variant="outline">
                   {saved?.owner === 'merchant'
-                    ? m.creative_brief_owner_merchant()
+                    ? creative_brief_owner_merchant()
                     : saved?.owner === 'ai'
-                      ? m.creative_brief_owner_ai()
-                      : m.creative_brief_owner_pending()}
+                      ? creative_brief_owner_ai()
+                      : creative_brief_owner_pending()}
                 </Badge>
               </div>
               <div className="space-y-1 text-xs text-muted-foreground">
-                <p>{m.creative_brief_ai_draft()}</p>
+                <p>{creative_brief_ai_draft()}</p>
                 <p className="whitespace-pre-wrap text-foreground">
                   {saved?.aiDraft ?? drafts[field]}
                 </p>
               </div>
               {isEditing ? (
                 <Textarea
-                  aria-label={m.creative_brief_edit_aria({ field: label() })}
+                  aria-label={creative_brief_edit_aria({ field: label() })}
                   disabled={busy}
                   onChange={(event) =>
                     setEditingValue(event.currentTarget.value)
@@ -137,7 +159,7 @@ export function CreativeBriefEditor({
                 />
               ) : (
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  <p>{m.creative_brief_current()}</p>
+                  <p>{creative_brief_current()}</p>
                   <p className="whitespace-pre-wrap text-sm text-foreground">
                     {current}
                   </p>
@@ -157,7 +179,7 @@ export function CreativeBriefEditor({
                     size="sm"
                     type="button"
                   >
-                    {m.creative_brief_adopt_ai()}
+                    {creative_brief_adopt_ai()}
                   </Button>
                 ) : null}
                 {isEditing ? (
@@ -173,7 +195,7 @@ export function CreativeBriefEditor({
                     size="sm"
                     type="button"
                   >
-                    {m.creative_brief_save_edit()}
+                    {creative_brief_save_edit()}
                   </Button>
                 ) : (
                   <Button
@@ -186,7 +208,7 @@ export function CreativeBriefEditor({
                     type="button"
                     variant="outline"
                   >
-                    {m.creative_brief_edit()}
+                    {creative_brief_edit()}
                   </Button>
                 )}
                 {saved?.aiDraft && saved.owner === 'merchant' ? (
@@ -197,7 +219,7 @@ export function CreativeBriefEditor({
                     type="button"
                     variant="ghost"
                   >
-                    {m.creative_brief_revert_ai()}
+                    {creative_brief_revert_ai()}
                   </Button>
                 ) : null}
               </div>
@@ -208,19 +230,19 @@ export function CreativeBriefEditor({
 
       {brief?.confirmedAt ? (
         <p aria-live="polite" className="text-sm font-medium text-primary">
-          {m.creative_brief_confirmed_hint()}
+          {creative_brief_confirmed_hint()}
         </p>
       ) : (
         <div className="rounded-md border border-primary/20 bg-primary/5 p-3">
           <p className="mb-3 text-sm text-muted-foreground">
-            {m.creative_brief_confirm_hint()}
+            {creative_brief_confirm_hint()}
           </p>
           <Button
             disabled={busy}
             onClick={() => void confirmBrief()}
             type="button"
           >
-            {m.creative_brief_confirm()}
+            {creative_brief_confirm()}
           </Button>
         </div>
       )}

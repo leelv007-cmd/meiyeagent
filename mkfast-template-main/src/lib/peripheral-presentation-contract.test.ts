@@ -75,7 +75,8 @@ test('pricing comparison and shared accessibility copy use Paraglide', () => {
   const files = readSource('src/components/settings/files/files-table.tsx');
 
   assert.doesNotMatch(pricing, /[\u3400-\u9fff]/);
-  assert.match(pricing, /m\.pricing_output_/);
+  assert.match(pricing, /\bpricing_output_[a-z0-9_]+\b/);
+  assert.match(pricing, /from ['"]@\/locale\/paraglide\/messages['"]/);
   assert.doesNotMatch(sidebarLayout, />Loading\.\.\.</);
   assert.doesNotMatch(sidebar, />Sidebar</);
   assert.doesNotMatch(sidebar, /Displays the mobile sidebar\./);
@@ -148,7 +149,7 @@ test('peripheral Paraglide handoff records every new key in both languages', () 
     sourceFiles.flatMap((file) =>
       Array.from(
         readSource(file).matchAll(
-          /m\.((?:integration_byok_option_(?:connection|model|profile)|integration_audit_connection_name|p1_model_manufacturer|sidebar_(?:mobile|toggle)|settings_files_access|pricing_output)[a-z0-9_]*)/g
+          /(?:\bm\.)?\b((?:integration_byok_option_(?:connection|model|profile)|integration_audit_connection_name|p1_model_manufacturer|sidebar_(?:mobile|toggle)|settings_files_access|pricing_output)[a-z0-9_]*)\b/g
         ),
         (match) => match[1]
       )

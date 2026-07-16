@@ -2,7 +2,11 @@ import type {
   CatalogModelView,
   ModelOperation,
 } from '@/p1/settings-view-model';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creative_output_copy,
+  creative_output_image,
+  creative_output_video,
+} from '@/locale/paraglide/messages';
 
 export function creativeOutputLabel(
   operation: ModelOperation,
@@ -10,12 +14,12 @@ export function creativeOutputLabel(
   aspectRatio?: string
 ) {
   if (operation.startsWith('copy.')) {
-    return m.creative_output_copy({ count });
+    return creative_output_copy({ count });
   }
   if (operation === 'video.generate') {
-    return m.creative_output_video({ count });
+    return creative_output_video({ count });
   }
-  return m.creative_output_image({
+  return creative_output_image({
     aspectRatio: aspectRatio ?? '',
     count,
   });

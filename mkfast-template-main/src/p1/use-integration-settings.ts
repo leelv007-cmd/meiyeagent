@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import { m } from '@/locale/paraglide/messages';
+import { integration_load_error } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
@@ -241,7 +241,7 @@ export function useIntegrationSettings(enabled = true) {
     connections,
     douyinProducts,
     douyinIntegrationStatus: douyinIntegrationStatusQuery.data,
-    error: errorCause ? m.integration_load_error() : undefined,
+    error: errorCause ? integration_load_error() : undefined,
     executeCommand: <T>(request: IntegrationCommandRequest) =>
       commandMutation.mutateAsync(request) as Promise<T>,
     feishuProducts: feishuProductsQuery.data ?? {},

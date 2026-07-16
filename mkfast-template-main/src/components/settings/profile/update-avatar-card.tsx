@@ -1,4 +1,13 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  settings_profile_avatar_description,
+  settings_profile_avatar_fail,
+  settings_profile_avatar_hint,
+  settings_profile_avatar_success,
+  settings_profile_avatar_title,
+  settings_profile_avatar_too_large,
+  settings_profile_avatar_upload_avatar,
+  settings_profile_avatar_uploading,
+} from '@/locale/paraglide/messages';
 import { FormError } from '@/components/shared/form-error';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { buttonVariants } from '@/components/ui/button';
@@ -44,8 +53,8 @@ export function UpdateAvatarCard({ className }: UpdateAvatarCardProps) {
   const handleFileUpload = (file: File) => {
     const maxSize = websiteConfig.storage?.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
     if (file.size > maxSize) {
-      setError(m.settings_profile_avatar_too_large());
-      toast.error(m.settings_profile_avatar_too_large());
+      setError(settings_profile_avatar_too_large());
+      toast.error(settings_profile_avatar_too_large());
       return;
     }
     setError('');
@@ -59,20 +68,20 @@ export function UpdateAvatarCard({ className }: UpdateAvatarCardProps) {
             onSuccess: () => {
               setAvatarUrl(result.url);
               URL.revokeObjectURL(tempUrl);
-              toast.success(m.settings_profile_avatar_success());
+              toast.success(settings_profile_avatar_success());
               refetch();
             },
             onError: () => {
-              setError(m.settings_profile_avatar_fail());
+              setError(settings_profile_avatar_fail());
               if (session?.user?.image) setAvatarUrl(session.user.image);
               URL.revokeObjectURL(tempUrl);
-              toast.error(m.settings_profile_avatar_fail());
+              toast.error(settings_profile_avatar_fail());
             },
           }
         );
       },
       onError: () => {
-        const msg = m.settings_profile_avatar_fail();
+        const msg = settings_profile_avatar_fail();
         setError(msg);
         if (session?.user?.image) setAvatarUrl(session.user.image);
         URL.revokeObjectURL(tempUrl);
@@ -89,10 +98,10 @@ export function UpdateAvatarCard({ className }: UpdateAvatarCardProps) {
     >
       <CardHeader>
         <CardTitle className="text-lg font-semibold">
-          {m.settings_profile_avatar_title()}
+          {settings_profile_avatar_title()}
         </CardTitle>
         <CardDescription>
-          {m.settings_profile_avatar_description()}
+          {settings_profile_avatar_description()}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 flex-1">
@@ -118,15 +127,15 @@ export function UpdateAvatarCard({ className }: UpdateAvatarCardProps) {
               disabled={uploadMutation.isPending}
             />
             {uploadMutation.isPending
-              ? m.settings_profile_avatar_uploading()
-              : m.settings_profile_avatar_upload_avatar()}
+              ? settings_profile_avatar_uploading()
+              : settings_profile_avatar_upload_avatar()}
           </label>
         </div>
         <FormError message={error} />
       </CardContent>
       <CardFooter className="mt-auto px-6 py-4 flex justify-between items-center bg-muted rounded-none">
         <p className="text-sm text-muted-foreground">
-          {m.settings_profile_avatar_hint()}
+          {settings_profile_avatar_hint()}
         </p>
       </CardFooter>
     </Card>

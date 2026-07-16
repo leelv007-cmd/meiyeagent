@@ -35,7 +35,194 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_admin_model_activity_column_previous,
+  p1_admin_model_activity_column_stage,
+  p1_admin_model_activity_description,
+  p1_admin_model_activity_empty,
+  p1_admin_model_activity_title,
+  p1_admin_model_allowed_data_classes,
+  p1_admin_model_catalog_create_draft,
+  p1_admin_model_catalog_current,
+  p1_admin_model_catalog_draft_created,
+  p1_admin_model_catalog_draft_error,
+  p1_admin_model_catalog_editor_description,
+  p1_admin_model_catalog_editor_title,
+  p1_admin_model_catalog_enable_draft,
+  p1_admin_model_catalog_enable_success,
+  p1_admin_model_catalog_enabling,
+  p1_admin_model_catalog_json_aria,
+  p1_admin_model_catalog_json_invalid,
+  p1_admin_model_catalog_load_current,
+  p1_admin_model_catalog_load_error_description,
+  p1_admin_model_catalog_load_error_title,
+  p1_admin_model_catalog_operation_empty,
+  p1_admin_model_catalog_operation_error,
+  p1_admin_model_catalog_publish_change_head,
+  p1_admin_model_catalog_publish_change_history,
+  p1_admin_model_catalog_publish_change_new_execution,
+  p1_admin_model_catalog_publish_confirm,
+  p1_admin_model_catalog_publish_enabled,
+  p1_admin_model_catalog_publish_review_description,
+  p1_admin_model_catalog_publish_review_title,
+  p1_admin_model_catalog_publish_success,
+  p1_admin_model_catalog_publishing,
+  p1_admin_model_catalog_refresh_before_publish,
+  p1_admin_model_catalog_retire_change_history,
+  p1_admin_model_catalog_retire_change_selection,
+  p1_admin_model_catalog_retire_change_stage,
+  p1_admin_model_catalog_retire_confirm,
+  p1_admin_model_catalog_retire_published,
+  p1_admin_model_catalog_retire_review_description,
+  p1_admin_model_catalog_retire_review_title,
+  p1_admin_model_catalog_retire_success,
+  p1_admin_model_catalog_retiring,
+  p1_admin_model_catalog_review_scope,
+  p1_admin_model_catalog_safe_description,
+  p1_admin_model_catalog_safe_title,
+  p1_admin_model_catalog_validating,
+  p1_admin_model_current_revision,
+  p1_admin_model_denied_data_classes,
+  p1_admin_model_evidence_historical_description,
+  p1_admin_model_evidence_historical_label,
+  p1_admin_model_evidence_historical_result,
+  p1_admin_model_evidence_live_description,
+  p1_admin_model_evidence_live_label,
+  p1_admin_model_evidence_live_passed,
+  p1_admin_model_evidence_recorded_description,
+  p1_admin_model_evidence_recorded_label,
+  p1_admin_model_evidence_recorded_passed,
+  p1_admin_model_evidence_reference,
+  p1_admin_model_evidence_time,
+  p1_admin_model_filter_catalog_missing,
+  p1_admin_model_filter_custom_requires_fixed,
+  p1_admin_model_filter_data_class,
+  p1_admin_model_filter_deployment_inactive,
+  p1_admin_model_filter_fixed_mismatch,
+  p1_admin_model_filter_operation_unsupported,
+  p1_admin_model_filter_simulated_unavailable,
+  p1_admin_model_lifecycle_description,
+  p1_admin_model_lifecycle_title,
+  p1_admin_model_notice_description,
+  p1_admin_model_notice_title,
+  p1_admin_model_operation_copy,
+  p1_admin_model_operation_image_edit,
+  p1_admin_model_operation_image_generate,
+  p1_admin_model_operation_video,
+  p1_admin_model_preflight_description,
+  p1_admin_model_preflight_title,
+  p1_admin_model_quality_column_dimension,
+  p1_admin_model_quality_column_fixture,
+  p1_admin_model_quality_column_group,
+  p1_admin_model_quality_column_rate,
+  p1_admin_model_quality_column_result,
+  p1_admin_model_quality_column_sample,
+  p1_admin_model_quality_column_scenario,
+  p1_admin_model_quality_column_score,
+  p1_admin_model_quality_current_prompt,
+  p1_admin_model_quality_description,
+  p1_admin_model_quality_dimension_model,
+  p1_admin_model_quality_dimension_scenario,
+  p1_admin_model_quality_error,
+  p1_admin_model_quality_failed,
+  p1_admin_model_quality_funnel_abandoned,
+  p1_admin_model_quality_funnel_direct,
+  p1_admin_model_quality_funnel_published,
+  p1_admin_model_quality_funnel_reroll,
+  p1_admin_model_quality_funnel_small_edit,
+  p1_admin_model_quality_funnel_title,
+  p1_admin_model_quality_history_empty,
+  p1_admin_model_quality_history_title,
+  p1_admin_model_quality_latest_offline,
+  p1_admin_model_quality_model,
+  p1_admin_model_quality_no_model,
+  p1_admin_model_quality_no_revision,
+  p1_admin_model_quality_north_star,
+  p1_admin_model_quality_not_run,
+  p1_admin_model_quality_reading,
+  p1_admin_model_quality_run,
+  p1_admin_model_quality_running,
+  p1_admin_model_quality_sample_empty,
+  p1_admin_model_quality_select_run,
+  p1_admin_model_quality_success,
+  p1_admin_model_quality_target_sample,
+  p1_admin_model_quality_title,
+  p1_admin_model_reason_separator,
+  p1_admin_model_refresh_catalog_channels,
+  p1_admin_model_revision_placeholder,
+  p1_admin_model_rollback_audit_empty,
+  p1_admin_model_rollback_card_description,
+  p1_admin_model_rollback_catalog_button,
+  p1_admin_model_rollback_catalog_title,
+  p1_admin_model_rollback_change_audit,
+  p1_admin_model_rollback_change_history,
+  p1_admin_model_rollback_change_new_execution,
+  p1_admin_model_rollback_column_from,
+  p1_admin_model_rollback_column_reason,
+  p1_admin_model_rollback_column_time,
+  p1_admin_model_rollback_column_to,
+  p1_admin_model_rollback_column_type,
+  p1_admin_model_rollback_confirm,
+  p1_admin_model_rollback_description,
+  p1_admin_model_rollback_prompt_button,
+  p1_admin_model_rollback_prompt_title,
+  p1_admin_model_rollback_reason,
+  p1_admin_model_rollback_reason_placeholder,
+  p1_admin_model_rollback_select_catalog,
+  p1_admin_model_rollback_select_prompt,
+  p1_admin_model_rollback_success,
+  p1_admin_model_rollback_title,
+  p1_admin_model_rollback_validation_error,
+  p1_admin_model_route_column_cost,
+  p1_admin_model_route_column_decision,
+  p1_admin_model_route_column_filter_reason,
+  p1_admin_model_route_column_model,
+  p1_admin_model_route_column_rank,
+  p1_admin_model_route_column_region,
+  p1_admin_model_route_cost_no_candidate,
+  p1_admin_model_route_cost_unavailable,
+  p1_admin_model_route_description,
+  p1_admin_model_route_eligible,
+  p1_admin_model_route_empty_description,
+  p1_admin_model_route_error_description,
+  p1_admin_model_route_error_title,
+  p1_admin_model_route_estimated_cost,
+  p1_admin_model_route_expected_action,
+  p1_admin_model_route_expected_attempts,
+  p1_admin_model_route_failure_accepted,
+  p1_admin_model_route_failure_rejected_before_accept,
+  p1_admin_model_route_failure_scenario,
+  p1_admin_model_route_failure_success,
+  p1_admin_model_route_failure_unknown,
+  p1_admin_model_route_fallback_consent,
+  p1_admin_model_route_filtered,
+  p1_admin_model_route_fixed_model,
+  p1_admin_model_route_no_ranked_candidates,
+  p1_admin_model_route_not_ready,
+  p1_admin_model_route_reason_acceptance_unknown,
+  p1_admin_model_route_reason_already_accepted,
+  p1_admin_model_route_reason_completed,
+  p1_admin_model_route_reason_fallback_unauthorized,
+  p1_admin_model_route_reason_no_candidate,
+  p1_admin_model_route_reason_no_safe_fallback,
+  p1_admin_model_route_reason_safe_fallback,
+  p1_admin_model_route_run,
+  p1_admin_model_route_running,
+  p1_admin_model_route_select_model,
+  p1_admin_model_route_selection_fixed,
+  p1_admin_model_route_selection_mode,
+  p1_admin_model_route_unavailable_deployments,
+  p1_admin_model_route_unavailable_description,
+  p1_admin_model_route_validation_error,
+  p1_admin_model_unavailable_reason,
+  p1_admin_model_validation_catalog_json,
+  p1_admin_model_validation_evaluation_model,
+  p1_admin_model_validation_revision_id,
+  p1_admin_model_validation_rollback_reason,
+  p1_admin_model_validation_rollback_revision,
+  p1_common_none_short,
+  p1_common_not_provided,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import {
   createAdminCatalogDraftJson,
@@ -63,10 +250,10 @@ const OPERATIONS: Array<{
   id: ModelOperation;
   label: () => string;
 }> = [
-  { id: 'copy.generate', label: m.p1_admin_model_operation_copy },
-  { id: 'image.generate', label: m.p1_admin_model_operation_image_generate },
-  { id: 'image.edit', label: m.p1_admin_model_operation_image_edit },
-  { id: 'video.generate', label: m.p1_admin_model_operation_video },
+  { id: 'copy.generate', label: p1_admin_model_operation_copy },
+  { id: 'image.generate', label: p1_admin_model_operation_image_generate },
+  { id: 'image.edit', label: p1_admin_model_operation_image_edit },
+  { id: 'video.generate', label: p1_admin_model_operation_video },
 ];
 
 const EMPTY_CATALOG_MODELS: AdminCatalogModelView[] = [];
@@ -75,27 +262,26 @@ const ROUTE_REASON_LABELS: Record<
   AdminRouteSimulation['expectedOutcome']['reason'],
   () => string
 > = {
-  fallback_not_authorized: m.p1_admin_model_route_reason_fallback_unauthorized,
-  no_eligible_candidate: m.p1_admin_model_route_reason_no_candidate,
-  no_safe_fallback_candidate: m.p1_admin_model_route_reason_no_safe_fallback,
-  provider_acceptance_unknown: m.p1_admin_model_route_reason_acceptance_unknown,
-  provider_already_accepted: m.p1_admin_model_route_reason_already_accepted,
-  provider_completed: m.p1_admin_model_route_reason_completed,
-  safe_auto_fallback: m.p1_admin_model_route_reason_safe_fallback,
+  fallback_not_authorized: p1_admin_model_route_reason_fallback_unauthorized,
+  no_eligible_candidate: p1_admin_model_route_reason_no_candidate,
+  no_safe_fallback_candidate: p1_admin_model_route_reason_no_safe_fallback,
+  provider_acceptance_unknown: p1_admin_model_route_reason_acceptance_unknown,
+  provider_already_accepted: p1_admin_model_route_reason_already_accepted,
+  provider_completed: p1_admin_model_route_reason_completed,
+  safe_auto_fallback: p1_admin_model_route_reason_safe_fallback,
 };
 
 const FILTER_REASON_LABELS: Record<
   AdminRouteSimulation['candidateEvaluations'][number]['exclusionReasons'][number],
   () => string
 > = {
-  catalog_model_missing: m.p1_admin_model_filter_catalog_missing,
-  custom_requires_fixed_selection:
-    m.p1_admin_model_filter_custom_requires_fixed,
-  data_class_disallowed: m.p1_admin_model_filter_data_class,
-  deployment_inactive: m.p1_admin_model_filter_deployment_inactive,
-  fixed_model_mismatch: m.p1_admin_model_filter_fixed_mismatch,
-  operation_unsupported: m.p1_admin_model_filter_operation_unsupported,
-  simulated_unavailable: m.p1_admin_model_filter_simulated_unavailable,
+  catalog_model_missing: p1_admin_model_filter_catalog_missing,
+  custom_requires_fixed_selection: p1_admin_model_filter_custom_requires_fixed,
+  data_class_disallowed: p1_admin_model_filter_data_class,
+  deployment_inactive: p1_admin_model_filter_deployment_inactive,
+  fixed_model_mismatch: p1_admin_model_filter_fixed_mismatch,
+  operation_unsupported: p1_admin_model_filter_operation_unsupported,
+  simulated_unavailable: p1_admin_model_filter_simulated_unavailable,
 };
 
 function formatRouteCost(
@@ -108,7 +294,7 @@ const evaluationFormSchema = z.object({
   catalogModelId: z
     .string()
     .trim()
-    .min(1, m.p1_admin_model_validation_evaluation_model()),
+    .min(1, p1_admin_model_validation_evaluation_model()),
 });
 
 const rollbackFormSchema = z
@@ -119,7 +305,7 @@ const rollbackFormSchema = z
     reason: z
       .string()
       .trim()
-      .min(1, m.p1_admin_model_validation_rollback_reason()),
+      .min(1, p1_admin_model_validation_rollback_reason()),
   })
   .superRefine((value, context) => {
     const targetRevisionId =
@@ -129,7 +315,7 @@ const rollbackFormSchema = z
     if (!targetRevisionId.trim()) {
       context.addIssue({
         code: 'custom',
-        message: m.p1_admin_model_validation_rollback_revision(),
+        message: p1_admin_model_validation_rollback_revision(),
         path: [
           value.kind === 'prompt' ? 'promptRevisionId' : 'catalogRevisionId',
         ],
@@ -138,14 +324,11 @@ const rollbackFormSchema = z
   });
 
 const catalogDraftFormSchema = z.object({
-  editor: z.string().trim().min(1, m.p1_admin_model_validation_catalog_json()),
+  editor: z.string().trim().min(1, p1_admin_model_validation_catalog_json()),
 });
 
 const revisionFormSchema = z.object({
-  revisionId: z
-    .string()
-    .trim()
-    .min(1, m.p1_admin_model_validation_revision_id()),
+  revisionId: z.string().trim().min(1, p1_admin_model_validation_revision_id()),
 });
 
 type EvaluationFormValues = z.infer<typeof evaluationFormSchema>;
@@ -205,22 +388,22 @@ const QUALITY_EVIDENCE_PRESENTATION: Record<
   }
 > = {
   historical_unknown: {
-    casePassLabel: m.p1_admin_model_evidence_historical_result,
-    description: m.p1_admin_model_evidence_historical_description,
-    label: m.p1_admin_model_evidence_historical_label,
-    runPassLabel: m.p1_admin_model_evidence_historical_result,
+    casePassLabel: p1_admin_model_evidence_historical_result,
+    description: p1_admin_model_evidence_historical_description,
+    label: p1_admin_model_evidence_historical_label,
+    runPassLabel: p1_admin_model_evidence_historical_result,
   },
   live_provider: {
-    casePassLabel: m.p1_admin_model_evidence_live_passed,
-    description: m.p1_admin_model_evidence_live_description,
-    label: m.p1_admin_model_evidence_live_label,
-    runPassLabel: m.p1_admin_model_evidence_live_passed,
+    casePassLabel: p1_admin_model_evidence_live_passed,
+    description: p1_admin_model_evidence_live_description,
+    label: p1_admin_model_evidence_live_label,
+    runPassLabel: p1_admin_model_evidence_live_passed,
   },
   recorded_contract: {
-    casePassLabel: m.p1_admin_model_evidence_recorded_passed,
-    description: m.p1_admin_model_evidence_recorded_description,
-    label: m.p1_admin_model_evidence_recorded_label,
-    runPassLabel: m.p1_admin_model_evidence_recorded_passed,
+    casePassLabel: p1_admin_model_evidence_recorded_passed,
+    description: p1_admin_model_evidence_recorded_description,
+    label: p1_admin_model_evidence_recorded_label,
+    runPassLabel: p1_admin_model_evidence_recorded_passed,
   },
 };
 
@@ -328,40 +511,40 @@ function ModelEvidence({ model }: { model: AdminCatalogModelView }) {
         </div>
         <div>
           <dt className="text-muted-foreground">
-            {m.p1_admin_model_evidence_time()}
+            {p1_admin_model_evidence_time()}
           </dt>
           <dd>
-            {model.activationEvidence.verifiedAt ?? m.p1_common_not_provided()}
+            {model.activationEvidence.verifiedAt ?? p1_common_not_provided()}
           </dd>
         </div>
         <div>
           <dt className="text-muted-foreground">
-            {m.p1_admin_model_evidence_reference()}
+            {p1_admin_model_evidence_reference()}
           </dt>
           <dd>
-            {model.activationEvidence.evidenceRef ?? m.p1_common_not_provided()}
+            {model.activationEvidence.evidenceRef ?? p1_common_not_provided()}
           </dd>
         </div>
         <div>
           <dt className="text-muted-foreground">
-            {m.p1_admin_model_allowed_data_classes()}
+            {p1_admin_model_allowed_data_classes()}
           </dt>
           <dd>
-            {model.allowedDataClasses.join(', ') || m.p1_common_none_short()}
+            {model.allowedDataClasses.join(', ') || p1_common_none_short()}
           </dd>
         </div>
         <div>
           <dt className="text-muted-foreground">
-            {m.p1_admin_model_denied_data_classes()}
+            {p1_admin_model_denied_data_classes()}
           </dt>
           <dd>
-            {model.deniedDataClasses.join(', ') || m.p1_common_none_short()}
+            {model.deniedDataClasses.join(', ') || p1_common_none_short()}
           </dd>
         </div>
       </dl>
       {model.unavailableReason ? (
         <p className="mt-3 text-xs text-destructive">
-          {m.p1_admin_model_unavailable_reason({
+          {p1_admin_model_unavailable_reason({
             reason: model.unavailableReason,
           })}
         </p>
@@ -494,7 +677,7 @@ export function AdminModelControl() {
     }),
     queryFn: async ({ signal }) => {
       if (!routeSimulationRequest) {
-        throw new Error(m.p1_admin_model_route_not_ready());
+        throw new Error(p1_admin_model_route_not_ready());
       }
       return queryP1<unknown>(
         'model-supply',
@@ -541,7 +724,7 @@ export function AdminModelControl() {
   const fetching = queries.some((query) => query.isFetching);
   const errorCause = queries.find((query) => query.error)?.error;
   const error = errorCause
-    ? m.p1_admin_model_catalog_load_error_description()
+    ? p1_admin_model_catalog_load_error_description()
     : undefined;
   const busy = commandMutation.isPending
     ? commandMutation.variables?.action
@@ -663,10 +846,10 @@ export function AdminModelControl() {
       });
       remember(revision);
       toast.success(
-        m.p1_admin_model_catalog_draft_created({ revision: revision.id })
+        p1_admin_model_catalog_draft_created({ revision: revision.id })
       );
     } catch {
-      toast.error(m.p1_admin_model_catalog_draft_error());
+      toast.error(p1_admin_model_catalog_draft_error());
     }
   };
 
@@ -677,7 +860,7 @@ export function AdminModelControl() {
     reason?: string
   ) => {
     if (action === 'catalog_publish' && !catalogRevisions) {
-      throw new Error(m.p1_admin_model_catalog_refresh_before_publish());
+      throw new Error(p1_admin_model_catalog_refresh_before_publish());
     }
     const revision = await executeCommand<CatalogRevisionActivity>({
       action,
@@ -705,9 +888,9 @@ export function AdminModelControl() {
         payload: { catalogModelId },
       });
       setSelectedRunId(run.id);
-      toast.success(m.p1_admin_model_quality_success());
+      toast.success(p1_admin_model_quality_success());
     } catch {
-      toast.error(m.p1_admin_model_quality_error());
+      toast.error(p1_admin_model_quality_error());
     }
   };
 
@@ -740,7 +923,7 @@ export function AdminModelControl() {
       promptRevisionId: '',
       reason: '',
     });
-    toast.success(m.p1_admin_model_rollback_success());
+    toast.success(p1_admin_model_rollback_success());
   };
 
   const submitRollback = (kind: RollbackFormValues['kind']) => {
@@ -754,21 +937,21 @@ export function AdminModelControl() {
         setImpactReview({
           title:
             values.kind === 'prompt'
-              ? m.p1_admin_model_rollback_prompt_title()
-              : m.p1_admin_model_rollback_catalog_title(),
-          description: m.p1_admin_model_rollback_description(),
+              ? p1_admin_model_rollback_prompt_title()
+              : p1_admin_model_rollback_catalog_title(),
+          description: p1_admin_model_rollback_description(),
           scope: `${values.kind} → ${targetRevisionId}`,
           changes: [
-            m.p1_admin_model_rollback_change_new_execution(),
-            m.p1_admin_model_rollback_change_history(),
-            m.p1_admin_model_rollback_change_audit(),
+            p1_admin_model_rollback_change_new_execution(),
+            p1_admin_model_rollback_change_history(),
+            p1_admin_model_rollback_change_audit(),
           ],
-          confirmLabel: m.p1_admin_model_rollback_confirm(),
+          confirmLabel: p1_admin_model_rollback_confirm(),
           initialReason: values.reason,
           onConfirm: (reason) => rollback(values, reason),
         });
       },
-      () => toast.error(m.p1_admin_model_rollback_validation_error())
+      () => toast.error(p1_admin_model_rollback_validation_error())
     )();
   };
 
@@ -780,53 +963,53 @@ export function AdminModelControl() {
       (values) => {
         if (action === 'catalog_enable') {
           void transition(action, label, values).catch(() =>
-            toast.error(m.p1_admin_model_catalog_operation_error())
+            toast.error(p1_admin_model_catalog_operation_error())
           );
           return;
         }
         if (action === 'catalog_publish' && !catalogRevisions) {
-          toast.error(m.p1_admin_model_catalog_refresh_before_publish());
+          toast.error(p1_admin_model_catalog_refresh_before_publish());
           return;
         }
         setImpactReview({
           title:
             action === 'catalog_publish'
-              ? m.p1_admin_model_catalog_publish_review_title()
-              : m.p1_admin_model_catalog_retire_review_title(),
+              ? p1_admin_model_catalog_publish_review_title()
+              : p1_admin_model_catalog_retire_review_title(),
           description:
             action === 'catalog_publish'
-              ? m.p1_admin_model_catalog_publish_review_description()
-              : m.p1_admin_model_catalog_retire_review_description(),
-          scope: m.p1_admin_model_catalog_review_scope({
+              ? p1_admin_model_catalog_publish_review_description()
+              : p1_admin_model_catalog_retire_review_description(),
+          scope: p1_admin_model_catalog_review_scope({
             revision: values.revisionId,
           }),
           changes:
             action === 'catalog_publish'
               ? [
-                  m.p1_admin_model_catalog_publish_change_head({
+                  p1_admin_model_catalog_publish_change_head({
                     from:
                       catalogRevisions?.expectedHeadRevisionId ??
                       'recorded baseline',
                     to: values.revisionId,
                   }),
-                  m.p1_admin_model_catalog_publish_change_new_execution(),
-                  m.p1_admin_model_catalog_publish_change_history(),
+                  p1_admin_model_catalog_publish_change_new_execution(),
+                  p1_admin_model_catalog_publish_change_history(),
                 ]
               : [
-                  m.p1_admin_model_catalog_retire_change_stage({
+                  p1_admin_model_catalog_retire_change_stage({
                     revision: values.revisionId,
                   }),
-                  m.p1_admin_model_catalog_retire_change_selection(),
-                  m.p1_admin_model_catalog_retire_change_history(),
+                  p1_admin_model_catalog_retire_change_selection(),
+                  p1_admin_model_catalog_retire_change_history(),
                 ],
           confirmLabel:
             action === 'catalog_publish'
-              ? m.p1_admin_model_catalog_publish_confirm()
-              : m.p1_admin_model_catalog_retire_confirm(),
+              ? p1_admin_model_catalog_publish_confirm()
+              : p1_admin_model_catalog_retire_confirm(),
           onConfirm: (reason) => transition(action, label, values, reason),
         });
       },
-      () => toast.error(m.p1_admin_model_validation_revision_id())
+      () => toast.error(p1_admin_model_validation_revision_id())
     )();
   };
 
@@ -834,7 +1017,7 @@ export function AdminModelControl() {
   const qualityBreakdowns = qualityDashboard
     ? [
         {
-          dimension: m.p1_admin_model_quality_dimension_model(),
+          dimension: p1_admin_model_quality_dimension_model(),
           rows: qualityDashboard.byModel,
         },
         {
@@ -846,7 +1029,7 @@ export function AdminModelControl() {
           rows: qualityDashboard.byTemplateRevision,
         },
         {
-          dimension: m.p1_admin_model_quality_dimension_scenario(),
+          dimension: p1_admin_model_quality_dimension_scenario(),
           rows: qualityDashboard.byScenario,
         },
       ]
@@ -859,9 +1042,9 @@ export function AdminModelControl() {
     <div className="space-y-6">
       <Alert>
         <IconAlertTriangle />
-        <AlertTitle>{m.p1_admin_model_notice_title()}</AlertTitle>
+        <AlertTitle>{p1_admin_model_notice_title()}</AlertTitle>
         <AlertDescription>
-          {m.p1_admin_model_notice_description()}
+          {p1_admin_model_notice_description()}
         </AlertDescription>
       </Alert>
 
@@ -869,16 +1052,16 @@ export function AdminModelControl() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_model_catalog_safe_title()}</CardTitle>
+          <CardTitle>{p1_admin_model_catalog_safe_title()}</CardTitle>
           <CardDescription>
-            {m.p1_admin_model_catalog_safe_description()}
+            {p1_admin_model_catalog_safe_description()}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {error ? (
             <Alert variant="destructive">
               <AlertTitle>
-                {m.p1_admin_model_catalog_load_error_title()}
+                {p1_admin_model_catalog_load_error_title()}
               </AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
@@ -890,7 +1073,7 @@ export function AdminModelControl() {
               variant="outline"
             >
               <IconRefresh />
-              {m.p1_admin_model_refresh_catalog_channels()}
+              {p1_admin_model_refresh_catalog_channels()}
             </Button>
           </div>
           {snapshots.map((snapshot) => (
@@ -913,7 +1096,7 @@ export function AdminModelControl() {
               </div>
               {snapshot.models.length === 0 ? (
                 <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  {m.p1_admin_model_catalog_operation_empty()}
+                  {p1_admin_model_catalog_operation_empty()}
                 </p>
               ) : null}
             </section>
@@ -925,14 +1108,14 @@ export function AdminModelControl() {
         <CardHeader>
           <CardTitle>Route simulator</CardTitle>
           <CardDescription>
-            {m.p1_admin_model_route_description()}
+            {p1_admin_model_route_description()}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <form
             className="grid gap-4 lg:grid-cols-3"
             onSubmit={routeSimulatorForm.handleSubmit(runRouteSimulation, () =>
-              toast.error(m.p1_admin_model_route_validation_error())
+              toast.error(p1_admin_model_route_validation_error())
             )}
           >
             <div className="space-y-2">
@@ -951,7 +1134,7 @@ export function AdminModelControl() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-selection">
-                {m.p1_admin_model_route_selection_mode()}
+                {p1_admin_model_route_selection_mode()}
               </Label>
               <select
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm"
@@ -959,7 +1142,7 @@ export function AdminModelControl() {
                 {...routeSimulatorForm.register('selectionMode')}
               >
                 <option value="fixed">
-                  {m.p1_admin_model_route_selection_fixed()}
+                  {p1_admin_model_route_selection_fixed()}
                 </option>
                 <option
                   disabled={simulatorOperation !== 'copy.generate'}
@@ -976,7 +1159,7 @@ export function AdminModelControl() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-model">
-                {m.p1_admin_model_route_fixed_model()}
+                {p1_admin_model_route_fixed_model()}
               </Label>
               <select
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm"
@@ -984,9 +1167,7 @@ export function AdminModelControl() {
                 id="route-simulator-model"
                 {...routeSimulatorForm.register('catalogModelId')}
               >
-                <option value="">
-                  {m.p1_admin_model_route_select_model()}
-                </option>
+                <option value="">{p1_admin_model_route_select_model()}</option>
                 {simulatorModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.displayName} · {model.availability}
@@ -1014,7 +1195,7 @@ export function AdminModelControl() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-failure">
-                {m.p1_admin_model_route_failure_scenario()}
+                {p1_admin_model_route_failure_scenario()}
               </Label>
               <select
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm"
@@ -1022,22 +1203,22 @@ export function AdminModelControl() {
                 {...routeSimulatorForm.register('failureScenario')}
               >
                 <option value="success">
-                  {m.p1_admin_model_route_failure_success()}
+                  {p1_admin_model_route_failure_success()}
                 </option>
                 <option value="rejected_before_accept">
-                  {m.p1_admin_model_route_failure_rejected_before_accept()}
+                  {p1_admin_model_route_failure_rejected_before_accept()}
                 </option>
                 <option value="accepted_failure">
-                  {m.p1_admin_model_route_failure_accepted()}
+                  {p1_admin_model_route_failure_accepted()}
                 </option>
                 <option value="acceptance_unknown">
-                  {m.p1_admin_model_route_failure_unknown()}
+                  {p1_admin_model_route_failure_unknown()}
                 </option>
               </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-unavailable">
-                {m.p1_admin_model_route_unavailable_deployments()}
+                {p1_admin_model_route_unavailable_deployments()}
               </Label>
               <Input
                 id="route-simulator-unavailable"
@@ -1045,7 +1226,7 @@ export function AdminModelControl() {
                 {...routeSimulatorForm.register('unavailableDeploymentIds')}
               />
               <p className="text-xs text-muted-foreground">
-                {m.p1_admin_model_route_unavailable_description()}
+                {p1_admin_model_route_unavailable_description()}
               </p>
             </div>
             <label className="flex items-center gap-2 text-sm lg:col-span-2">
@@ -1055,23 +1236,23 @@ export function AdminModelControl() {
                 type="checkbox"
                 {...routeSimulatorForm.register('fallbackConsent')}
               />
-              {m.p1_admin_model_route_fallback_consent()}
+              {p1_admin_model_route_fallback_consent()}
             </label>
             <div className="flex justify-end">
               <Button disabled={routeSimulationQuery.isFetching} type="submit">
                 <IconPlayerPlay />
                 {routeSimulationQuery.isFetching
-                  ? m.p1_admin_model_route_running()
-                  : m.p1_admin_model_route_run()}
+                  ? p1_admin_model_route_running()
+                  : p1_admin_model_route_run()}
               </Button>
             </div>
           </form>
 
           {routeSimulationQuery.error ? (
             <Alert variant="destructive">
-              <AlertTitle>{m.p1_admin_model_route_error_title()}</AlertTitle>
+              <AlertTitle>{p1_admin_model_route_error_title()}</AlertTitle>
               <AlertDescription>
-                {m.p1_admin_model_route_error_description()}
+                {p1_admin_model_route_error_description()}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -1081,7 +1262,7 @@ export function AdminModelControl() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">
-                    {m.p1_admin_model_route_expected_action()}
+                    {p1_admin_model_route_expected_action()}
                   </p>
                   <p className="mt-1 font-medium">
                     {routeSimulation.expectedOutcome.action}
@@ -1094,7 +1275,7 @@ export function AdminModelControl() {
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">
-                    {m.p1_admin_model_route_expected_attempts()}
+                    {p1_admin_model_route_expected_attempts()}
                   </p>
                   <p className="mt-1 font-medium">
                     {routeSimulation.expectedOutcome.expectedAttempts} /{' '}
@@ -1106,16 +1287,16 @@ export function AdminModelControl() {
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">
-                    {m.p1_admin_model_route_estimated_cost()}
+                    {p1_admin_model_route_estimated_cost()}
                   </p>
                   <p className="mt-1 font-medium">
                     {routeSimulation.estimatedMaximumCost
                       ? formatRouteCost(routeSimulation.estimatedMaximumCost)
-                      : m.p1_admin_model_route_cost_unavailable()}
+                      : p1_admin_model_route_cost_unavailable()}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {routeSimulation.estimatedMaximumCost?.source ??
-                      m.p1_admin_model_route_cost_no_candidate()}
+                      p1_admin_model_route_cost_no_candidate()}
                   </p>
                 </div>
               </div>
@@ -1125,16 +1306,16 @@ export function AdminModelControl() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>
-                        {m.p1_admin_model_route_column_rank()}
+                        {p1_admin_model_route_column_rank()}
                       </TableHead>
                       <TableHead>
-                        {m.p1_admin_model_route_column_model()}
+                        {p1_admin_model_route_column_model()}
                       </TableHead>
                       <TableHead>
-                        {m.p1_admin_model_route_column_region()}
+                        {p1_admin_model_route_column_region()}
                       </TableHead>
                       <TableHead>
-                        {m.p1_admin_model_route_column_cost()}
+                        {p1_admin_model_route_column_cost()}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1165,7 +1346,7 @@ export function AdminModelControl() {
                 </Table>
                 {routeSimulation.rankedCandidates.length === 0 ? (
                   <p className="p-5 text-center text-sm text-muted-foreground">
-                    {m.p1_admin_model_route_no_ranked_candidates()}
+                    {p1_admin_model_route_no_ranked_candidates()}
                   </p>
                 ) : null}
               </div>
@@ -1176,10 +1357,10 @@ export function AdminModelControl() {
                     <TableRow>
                       <TableHead>Deployment</TableHead>
                       <TableHead>
-                        {m.p1_admin_model_route_column_decision()}
+                        {p1_admin_model_route_column_decision()}
                       </TableHead>
                       <TableHead>
-                        {m.p1_admin_model_route_column_filter_reason()}
+                        {p1_admin_model_route_column_filter_reason()}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1201,16 +1382,16 @@ export function AdminModelControl() {
                             }
                           >
                             {candidate.eligible
-                              ? m.p1_admin_model_route_eligible()
-                              : m.p1_admin_model_route_filtered()}
+                              ? p1_admin_model_route_eligible()
+                              : p1_admin_model_route_filtered()}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           {candidate.exclusionReasons.length > 0
                             ? candidate.exclusionReasons
                                 .map((reason) => FILTER_REASON_LABELS[reason]())
-                                .join(m.p1_admin_model_reason_separator())
-                            : m.p1_common_none_short()}
+                                .join(p1_admin_model_reason_separator())
+                            : p1_common_none_short()}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1220,7 +1401,7 @@ export function AdminModelControl() {
             </div>
           ) : (
             <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
-              {m.p1_admin_model_route_empty_description()}
+              {p1_admin_model_route_empty_description()}
             </p>
           )}
         </CardContent>
@@ -1228,16 +1409,16 @@ export function AdminModelControl() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_model_quality_title()}</CardTitle>
+          <CardTitle>{p1_admin_model_quality_title()}</CardTitle>
           <CardDescription>
-            {m.p1_admin_model_quality_description()}
+            {p1_admin_model_quality_description()}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">
-                {m.p1_admin_model_quality_north_star()}
+                {p1_admin_model_quality_north_star()}
               </p>
               <p className="mt-1 text-xl font-semibold">
                 {qualityDashboard?.northStar.status === 'known'
@@ -1245,7 +1426,7 @@ export function AdminModelControl() {
                   : 'unknown'}
               </p>
               <p className="text-xs text-muted-foreground">
-                {m.p1_admin_model_quality_target_sample({
+                {p1_admin_model_quality_target_sample({
                   minimum: qualityDashboard?.northStar.minimumSampleSize ?? 20,
                   sample: qualityDashboard?.northStar.sampleSize ?? 0,
                 })}
@@ -1253,26 +1434,26 @@ export function AdminModelControl() {
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">
-                {m.p1_admin_model_quality_latest_offline()}
+                {p1_admin_model_quality_latest_offline()}
               </p>
               <p className="mt-1 text-xl font-semibold">
                 {qualityRuns[0]
                   ? qualityRunResultLabel(qualityRuns[0])
-                  : m.p1_admin_model_quality_not_run()}
+                  : p1_admin_model_quality_not_run()}
               </p>
               <p className="text-xs text-muted-foreground">
                 {qualityRuns[0]
                   ? `${qualityRuns[0].datasetRevision} · ${QUALITY_EVIDENCE_PRESENTATION[qualityRuns[0].evidenceKind].label()}`
-                  : m.p1_admin_model_quality_no_revision()}
+                  : p1_admin_model_quality_no_revision()}
               </p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">
-                {m.p1_admin_model_quality_current_prompt()}
+                {p1_admin_model_quality_current_prompt()}
               </p>
               <p className="mt-1 text-sm font-medium">
                 {promptRevisions?.currentPromptRevision ??
-                  m.p1_admin_model_quality_reading()}
+                  p1_admin_model_quality_reading()}
               </p>
               <p className="text-xs text-muted-foreground">
                 {promptRevisions?.currentExampleSetRevision ?? '—'}
@@ -1287,16 +1468,16 @@ export function AdminModelControl() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>
-                        {m.p1_admin_model_quality_column_dimension()}
+                        {p1_admin_model_quality_column_dimension()}
                       </TableHead>
                       <TableHead>
-                        {m.p1_admin_model_quality_column_group()}
+                        {p1_admin_model_quality_column_group()}
                       </TableHead>
                       <TableHead>
-                        {m.p1_admin_model_quality_column_rate()}
+                        {p1_admin_model_quality_column_rate()}
                       </TableHead>
                       <TableHead>
-                        {m.p1_admin_model_quality_column_sample()}
+                        {p1_admin_model_quality_column_sample()}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1321,7 +1502,7 @@ export function AdminModelControl() {
                           className="text-muted-foreground"
                           colSpan={4}
                         >
-                          {m.p1_admin_model_quality_sample_empty()}
+                          {p1_admin_model_quality_sample_empty()}
                         </TableCell>
                       </TableRow>
                     ) : null}
@@ -1330,28 +1511,28 @@ export function AdminModelControl() {
               </div>
               <div className="rounded-lg border p-4">
                 <p className="text-sm font-medium">
-                  {m.p1_admin_model_quality_funnel_title()}
+                  {p1_admin_model_quality_funnel_title()}
                 </p>
                 <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
                   {[
                     [
-                      m.p1_admin_model_quality_funnel_direct(),
+                      p1_admin_model_quality_funnel_direct(),
                       qualityDashboard.funnel.adoptedDirectly,
                     ],
                     [
-                      m.p1_admin_model_quality_funnel_small_edit(),
+                      p1_admin_model_quality_funnel_small_edit(),
                       qualityDashboard.funnel.adoptedWithSmallEdit,
                     ],
                     [
-                      m.p1_admin_model_quality_funnel_reroll(),
+                      p1_admin_model_quality_funnel_reroll(),
                       qualityDashboard.funnel.rerolled,
                     ],
                     [
-                      m.p1_admin_model_quality_funnel_abandoned(),
+                      p1_admin_model_quality_funnel_abandoned(),
                       qualityDashboard.funnel.abandoned,
                     ],
                     [
-                      m.p1_admin_model_quality_funnel_published(),
+                      p1_admin_model_quality_funnel_published(),
                       qualityDashboard.funnel.published,
                     ],
                   ].map(([label, value]) => (
@@ -1368,12 +1549,12 @@ export function AdminModelControl() {
           <form
             className="flex flex-wrap items-end gap-3"
             onSubmit={evaluationForm.handleSubmit(runQualityEvaluation, () =>
-              toast.error(m.p1_admin_model_quality_no_model())
+              toast.error(p1_admin_model_quality_no_model())
             )}
           >
             <div className="min-w-64 space-y-2">
               <Label htmlFor="quality-evaluation-model">
-                {m.p1_admin_model_quality_model()}
+                {p1_admin_model_quality_model()}
               </Label>
               <select
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm"
@@ -1393,15 +1574,15 @@ export function AdminModelControl() {
             >
               <IconPlayerPlay />
               {busy === 'quality_evaluation_run'
-                ? m.p1_admin_model_quality_running()
-                : m.p1_admin_model_quality_run()}
+                ? p1_admin_model_quality_running()
+                : p1_admin_model_quality_run()}
             </Button>
           </form>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.5fr)]">
             <div className="space-y-2">
               <p className="text-sm font-medium">
-                {m.p1_admin_model_quality_history_title()}
+                {p1_admin_model_quality_history_title()}
               </p>
               {qualityRuns.map((run) => (
                 <button
@@ -1443,7 +1624,7 @@ export function AdminModelControl() {
               ))}
               {qualityRuns.length === 0 ? (
                 <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  {m.p1_admin_model_quality_history_empty()}
+                  {p1_admin_model_quality_history_empty()}
                 </p>
               ) : null}
             </div>
@@ -1467,16 +1648,16 @@ export function AdminModelControl() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>
-                      {m.p1_admin_model_quality_column_fixture()}
+                      {p1_admin_model_quality_column_fixture()}
                     </TableHead>
                     <TableHead>
-                      {m.p1_admin_model_quality_column_scenario()}
+                      {p1_admin_model_quality_column_scenario()}
                     </TableHead>
                     <TableHead>
-                      {m.p1_admin_model_quality_column_score()}
+                      {p1_admin_model_quality_column_score()}
                     </TableHead>
                     <TableHead>
-                      {m.p1_admin_model_quality_column_result()}
+                      {p1_admin_model_quality_column_result()}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1505,7 +1686,7 @@ export function AdminModelControl() {
                             ? QUALITY_EVIDENCE_PRESENTATION[
                                 testCase.evidenceKind
                               ].casePassLabel()
-                            : m.p1_admin_model_quality_failed()}
+                            : p1_admin_model_quality_failed()}
                         </Badge>
                         {testCase.evaluation.warnings.length > 0 ? (
                           <p className="mt-1 text-xs text-destructive">
@@ -1519,7 +1700,7 @@ export function AdminModelControl() {
               </Table>
               {!selectedRun ? (
                 <p className="p-6 text-center text-sm text-muted-foreground">
-                  {m.p1_admin_model_quality_select_run()}
+                  {p1_admin_model_quality_select_run()}
                 </p>
               ) : null}
             </div>
@@ -1529,20 +1710,20 @@ export function AdminModelControl() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_model_rollback_title()}</CardTitle>
+          <CardTitle>{p1_admin_model_rollback_title()}</CardTitle>
           <CardDescription>
-            {m.p1_admin_model_rollback_card_description()}
+            {p1_admin_model_rollback_card_description()}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="revision-rollback-reason">
-                {m.p1_admin_model_rollback_reason()}
+                {p1_admin_model_rollback_reason()}
               </Label>
               <Input
                 id="revision-rollback-reason"
-                placeholder={m.p1_admin_model_rollback_reason_placeholder()}
+                placeholder={p1_admin_model_rollback_reason_placeholder()}
                 {...rollbackForm.register('reason')}
               />
             </div>
@@ -1551,7 +1732,7 @@ export function AdminModelControl() {
                 <div>
                   <p className="font-medium">Prompt revision</p>
                   <p className="text-xs text-muted-foreground">
-                    {m.p1_admin_model_current_revision({
+                    {p1_admin_model_current_revision({
                       revision: promptRevisions?.currentPromptRevision ?? '—',
                     })}
                   </p>
@@ -1561,7 +1742,7 @@ export function AdminModelControl() {
                   {...rollbackForm.register('promptRevisionId')}
                 >
                   <option value="">
-                    {m.p1_admin_model_rollback_select_prompt()}
+                    {p1_admin_model_rollback_select_prompt()}
                   </option>
                   {promptRevisions?.revisions
                     .filter((revision) => !revision.current)
@@ -1581,7 +1762,7 @@ export function AdminModelControl() {
                   type="button"
                   variant="outline"
                 >
-                  {m.p1_admin_model_rollback_prompt_button()}
+                  {p1_admin_model_rollback_prompt_button()}
                 </Button>
               </div>
 
@@ -1589,7 +1770,7 @@ export function AdminModelControl() {
                 <div>
                   <p className="font-medium">Catalog revision</p>
                   <p className="text-xs text-muted-foreground">
-                    {m.p1_admin_model_current_revision({
+                    {p1_admin_model_current_revision({
                       revision: catalogRevisions?.currentRevisionId ?? '—',
                     })}
                   </p>
@@ -1599,7 +1780,7 @@ export function AdminModelControl() {
                   {...rollbackForm.register('catalogRevisionId')}
                 >
                   <option value="">
-                    {m.p1_admin_model_rollback_select_catalog()}
+                    {p1_admin_model_rollback_select_catalog()}
                   </option>
                   {catalogRevisions?.revisions
                     .filter(
@@ -1620,7 +1801,7 @@ export function AdminModelControl() {
                   type="button"
                   variant="outline"
                 >
-                  {m.p1_admin_model_rollback_catalog_button()}
+                  {p1_admin_model_rollback_catalog_button()}
                 </Button>
               </div>
             </div>
@@ -1630,19 +1811,17 @@ export function AdminModelControl() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>
-                      {m.p1_admin_model_rollback_column_time()}
+                      {p1_admin_model_rollback_column_time()}
                     </TableHead>
                     <TableHead>
-                      {m.p1_admin_model_rollback_column_type()}
+                      {p1_admin_model_rollback_column_type()}
                     </TableHead>
                     <TableHead>
-                      {m.p1_admin_model_rollback_column_from()}
+                      {p1_admin_model_rollback_column_from()}
                     </TableHead>
+                    <TableHead>{p1_admin_model_rollback_column_to()}</TableHead>
                     <TableHead>
-                      {m.p1_admin_model_rollback_column_to()}
-                    </TableHead>
-                    <TableHead>
-                      {m.p1_admin_model_rollback_column_reason()}
+                      {p1_admin_model_rollback_column_reason()}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1666,7 +1845,7 @@ export function AdminModelControl() {
               </Table>
               {rollbackAudits.length === 0 ? (
                 <p className="p-6 text-center text-sm text-muted-foreground">
-                  {m.p1_admin_model_rollback_audit_empty()}
+                  {p1_admin_model_rollback_audit_empty()}
                 </p>
               ) : null}
             </div>
@@ -1677,16 +1856,16 @@ export function AdminModelControl() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,1fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>{m.p1_admin_model_catalog_editor_title()}</CardTitle>
+            <CardTitle>{p1_admin_model_catalog_editor_title()}</CardTitle>
             <CardDescription>
-              {m.p1_admin_model_catalog_editor_description()}
+              {p1_admin_model_catalog_editor_description()}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {catalogControl ? (
               <div className="rounded-lg border bg-muted/20 p-3 text-sm">
                 <p className="font-medium">
-                  {m.p1_admin_model_catalog_current({
+                  {p1_admin_model_catalog_current({
                     revision: catalogControl.revisionId,
                     stage: catalogControl.stage,
                   })}
@@ -1716,11 +1895,11 @@ export function AdminModelControl() {
             <form
               className="space-y-4"
               onSubmit={catalogDraftForm.handleSubmit(createDraft, () =>
-                toast.error(m.p1_admin_model_catalog_json_invalid())
+                toast.error(p1_admin_model_catalog_json_invalid())
               )}
             >
               <Textarea
-                aria-label={m.p1_admin_model_catalog_json_aria()}
+                aria-label={p1_admin_model_catalog_json_aria()}
                 className="min-h-[32rem] font-mono text-xs"
                 spellCheck={false}
                 {...catalogDraftForm.register('editor')}
@@ -1729,8 +1908,8 @@ export function AdminModelControl() {
                 <Button disabled={Boolean(busy)} type="submit">
                   <IconFilePlus />
                   {busy === 'catalog_create_draft'
-                    ? m.p1_admin_model_catalog_validating()
-                    : m.p1_admin_model_catalog_create_draft()}
+                    ? p1_admin_model_catalog_validating()
+                    : p1_admin_model_catalog_create_draft()}
                 </Button>
                 <Button
                   disabled={Boolean(busy) || !catalogControl}
@@ -1745,7 +1924,7 @@ export function AdminModelControl() {
                   variant="outline"
                 >
                   <IconRefresh />
-                  {m.p1_admin_model_catalog_load_current()}
+                  {p1_admin_model_catalog_load_current()}
                 </Button>
               </div>
             </form>
@@ -1754,9 +1933,9 @@ export function AdminModelControl() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{m.p1_admin_model_lifecycle_title()}</CardTitle>
+            <CardTitle>{p1_admin_model_lifecycle_title()}</CardTitle>
             <CardDescription>
-              {m.p1_admin_model_lifecycle_description()}
+              {p1_admin_model_lifecycle_description()}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1765,7 +1944,7 @@ export function AdminModelControl() {
                 <Label htmlFor="admin-model-revision-id">Revision ID</Label>
                 <Input
                   id="admin-model-revision-id"
-                  placeholder={m.p1_admin_model_revision_placeholder()}
+                  placeholder={p1_admin_model_revision_placeholder()}
                   {...revisionForm.register('revisionId')}
                 />
               </div>
@@ -1775,7 +1954,7 @@ export function AdminModelControl() {
                   onClick={() =>
                     submitTransition(
                       'catalog_enable',
-                      m.p1_admin_model_catalog_enable_success()
+                      p1_admin_model_catalog_enable_success()
                     )
                   }
                   type="button"
@@ -1783,30 +1962,30 @@ export function AdminModelControl() {
                 >
                   <IconPlayerPlay />
                   {busy === 'catalog_enable'
-                    ? m.p1_admin_model_catalog_enabling()
-                    : m.p1_admin_model_catalog_enable_draft()}
+                    ? p1_admin_model_catalog_enabling()
+                    : p1_admin_model_catalog_enable_draft()}
                 </Button>
                 <Button
                   disabled={Boolean(busy)}
                   onClick={() =>
                     submitTransition(
                       'catalog_publish',
-                      m.p1_admin_model_catalog_publish_success()
+                      p1_admin_model_catalog_publish_success()
                     )
                   }
                   type="button"
                 >
                   <IconRocket />
                   {busy === 'catalog_publish'
-                    ? m.p1_admin_model_catalog_publishing()
-                    : m.p1_admin_model_catalog_publish_enabled()}
+                    ? p1_admin_model_catalog_publishing()
+                    : p1_admin_model_catalog_publish_enabled()}
                 </Button>
                 <Button
                   disabled={Boolean(busy)}
                   onClick={() =>
                     submitTransition(
                       'catalog_retire',
-                      m.p1_admin_model_catalog_retire_success()
+                      p1_admin_model_catalog_retire_success()
                     )
                   }
                   type="button"
@@ -1814,15 +1993,15 @@ export function AdminModelControl() {
                 >
                   <IconTrash />
                   {busy === 'catalog_retire'
-                    ? m.p1_admin_model_catalog_retiring()
-                    : m.p1_admin_model_catalog_retire_published()}
+                    ? p1_admin_model_catalog_retiring()
+                    : p1_admin_model_catalog_retire_published()}
                 </Button>
               </div>
               <Alert>
                 <IconCircleCheck />
-                <AlertTitle>{m.p1_admin_model_preflight_title()}</AlertTitle>
+                <AlertTitle>{p1_admin_model_preflight_title()}</AlertTitle>
                 <AlertDescription>
-                  {m.p1_admin_model_preflight_description()}
+                  {p1_admin_model_preflight_description()}
                 </AlertDescription>
               </Alert>
             </form>
@@ -1832,9 +2011,9 @@ export function AdminModelControl() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_model_activity_title()}</CardTitle>
+          <CardTitle>{p1_admin_model_activity_title()}</CardTitle>
           <CardDescription>
-            {m.p1_admin_model_activity_description()}
+            {p1_admin_model_activity_description()}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1843,11 +2022,9 @@ export function AdminModelControl() {
               <TableRow>
                 <TableHead>#</TableHead>
                 <TableHead>Revision ID</TableHead>
+                <TableHead>{p1_admin_model_activity_column_stage()}</TableHead>
                 <TableHead>
-                  {m.p1_admin_model_activity_column_stage()}
-                </TableHead>
-                <TableHead>
-                  {m.p1_admin_model_activity_column_previous()}
+                  {p1_admin_model_activity_column_previous()}
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -1866,7 +2043,7 @@ export function AdminModelControl() {
           </Table>
           {activities.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {m.p1_admin_model_activity_empty()}
+              {p1_admin_model_activity_empty()}
             </p>
           ) : null}
         </CardContent>

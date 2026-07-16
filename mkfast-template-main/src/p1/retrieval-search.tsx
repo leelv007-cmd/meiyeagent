@@ -19,7 +19,40 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_retrieval_count,
+  p1_retrieval_description,
+  p1_retrieval_empty_description,
+  p1_retrieval_empty_title,
+  p1_retrieval_error_description,
+  p1_retrieval_error_title,
+  p1_retrieval_form_aria,
+  p1_retrieval_loading,
+  p1_retrieval_metric_document_count,
+  p1_retrieval_metric_engine,
+  p1_retrieval_metric_engine_memory,
+  p1_retrieval_metric_engine_postgres_bigram,
+  p1_retrieval_metric_engine_postgres_trigram,
+  p1_retrieval_metric_index_size,
+  p1_retrieval_metric_no_result_rate,
+  p1_retrieval_metric_query_set,
+  p1_retrieval_metric_recall,
+  p1_retrieval_metric_reformulation_rate,
+  p1_retrieval_metric_revision,
+  p1_retrieval_metric_unknown,
+  p1_retrieval_placeholder,
+  p1_retrieval_query_aria,
+  p1_retrieval_query_too_long,
+  p1_retrieval_retry,
+  p1_retrieval_scope_all,
+  p1_retrieval_scope_aria,
+  p1_retrieval_scope_asset,
+  p1_retrieval_scope_content,
+  p1_retrieval_scope_task,
+  p1_retrieval_scope_template,
+  p1_retrieval_search,
+  p1_retrieval_title,
+} from '@/locale/paraglide/messages';
 
 import type {
   RetrievalFilterView,
@@ -29,23 +62,23 @@ import type {
 } from './types';
 
 const SCOPE_OPTIONS: { value: SearchScope; label: () => string }[] = [
-  { value: 'all', label: m.p1_retrieval_scope_all },
-  { value: 'task', label: m.p1_retrieval_scope_task },
-  { value: 'asset', label: m.p1_retrieval_scope_asset },
-  { value: 'content', label: m.p1_retrieval_scope_content },
-  { value: 'template', label: m.p1_retrieval_scope_template },
+  { value: 'all', label: p1_retrieval_scope_all },
+  { value: 'task', label: p1_retrieval_scope_task },
+  { value: 'asset', label: p1_retrieval_scope_asset },
+  { value: 'content', label: p1_retrieval_scope_content },
+  { value: 'template', label: p1_retrieval_scope_template },
 ];
 
 const SCOPE_LABEL: Record<Exclude<SearchScope, 'all'>, () => string> = {
-  asset: m.p1_retrieval_scope_asset,
-  content: m.p1_retrieval_scope_content,
-  task: m.p1_retrieval_scope_task,
-  template: m.p1_retrieval_scope_template,
+  asset: p1_retrieval_scope_asset,
+  content: p1_retrieval_scope_content,
+  task: p1_retrieval_scope_task,
+  template: p1_retrieval_scope_template,
 };
 
 const retrievalFormSchema = z.object({
   filters: z.record(z.string(), z.string().max(200)),
-  query: z.string().trim().max(200, m.p1_retrieval_query_too_long()),
+  query: z.string().trim().max(200, p1_retrieval_query_too_long()),
   scope: z.enum(['all', 'task', 'asset', 'content', 'template']),
 });
 
@@ -72,7 +105,7 @@ function PercentMetric({ value }: { value: number | null }) {
   return (
     <span className="font-medium tabular-nums">
       {value === null
-        ? m.p1_retrieval_metric_unknown()
+        ? p1_retrieval_metric_unknown()
         : `${Math.round(value * 100)}%`}
     </span>
   );
@@ -80,15 +113,15 @@ function PercentMetric({ value }: { value: number | null }) {
 
 function retrievalEngineLabel(value: string) {
   if (value === 'memory-bigram-trigram') {
-    return m.p1_retrieval_metric_engine_memory();
+    return p1_retrieval_metric_engine_memory();
   }
   if (value === 'postgres-fts-bigram') {
-    return m.p1_retrieval_metric_engine_postgres_bigram();
+    return p1_retrieval_metric_engine_postgres_bigram();
   }
   if (value === 'postgres-fts-trigram-bigram') {
-    return m.p1_retrieval_metric_engine_postgres_trigram();
+    return p1_retrieval_metric_engine_postgres_trigram();
   }
-  return m.p1_retrieval_metric_unknown();
+  return p1_retrieval_metric_unknown();
 }
 
 export function RetrievalSearch({
@@ -127,17 +160,17 @@ export function RetrievalSearch({
             aria-hidden="true"
           />
           <h2 id="p1-search-title" className="text-lg font-semibold">
-            {m.p1_retrieval_title()}
+            {p1_retrieval_title()}
           </h2>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          {m.p1_retrieval_description()}
+          {p1_retrieval_description()}
         </p>
       </header>
 
       <form
         onSubmit={form.handleSubmit(() => onSearch())}
-        aria-label={m.p1_retrieval_form_aria()}
+        aria-label={p1_retrieval_form_aria()}
         className="space-y-3"
       >
         <div className="flex gap-2">
@@ -156,16 +189,16 @@ export function RetrievalSearch({
                     field.onChange(event);
                     onQueryChange(event.target.value);
                   }}
-                  placeholder={m.p1_retrieval_placeholder()}
+                  placeholder={p1_retrieval_placeholder()}
                   className="pl-9"
-                  aria-label={m.p1_retrieval_query_aria()}
+                  aria-label={p1_retrieval_query_aria()}
                 />
               )}
             />
           </div>
           <Button type="submit" disabled={loading}>
             <IconSearch aria-hidden="true" />
-            {m.p1_retrieval_search()}
+            {p1_retrieval_search()}
           </Button>
         </div>
 
@@ -182,10 +215,7 @@ export function RetrievalSearch({
                   onScopeChange(value as SearchScope);
                 }}
               >
-                <SelectTrigger
-                  size="sm"
-                  aria-label={m.p1_retrieval_scope_aria()}
-                >
+                <SelectTrigger size="sm" aria-label={p1_retrieval_scope_aria()}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -259,40 +289,40 @@ export function RetrievalSearch({
       {metrics && (
         <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           <span>
-            {m.p1_retrieval_metric_revision()}{' '}
+            {p1_retrieval_metric_revision()}{' '}
             <span className="font-mono text-foreground">
               {metrics.revision}
             </span>
           </span>
           <span>
-            {m.p1_retrieval_metric_recall()}{' '}
+            {p1_retrieval_metric_recall()}{' '}
             <PercentMetric value={metrics.recallAtK} />
           </span>
           <span>
-            {m.p1_retrieval_metric_no_result_rate()}{' '}
+            {p1_retrieval_metric_no_result_rate()}{' '}
             <PercentMetric value={metrics.noResultRate} />
           </span>
           <span>
-            {m.p1_retrieval_metric_reformulation_rate()}{' '}
+            {p1_retrieval_metric_reformulation_rate()}{' '}
             <PercentMetric value={metrics.reformulationRate} />
           </span>
           <span>
-            {m.p1_retrieval_metric_document_count({
+            {p1_retrieval_metric_document_count({
               count: metrics.indexDocumentCount,
             })}
           </span>
           <span>
-            {m.p1_retrieval_metric_index_size({
+            {p1_retrieval_metric_index_size({
               size: (metrics.indexSizeBytes / 1024).toFixed(1),
             })}
           </span>
           <span>
-            {m.p1_retrieval_metric_engine({
+            {p1_retrieval_metric_engine({
               engine: retrievalEngineLabel(metrics.indexMode),
             })}
           </span>
           <span>
-            {m.p1_retrieval_metric_query_set()}{' '}
+            {p1_retrieval_metric_query_set()}{' '}
             <span className="font-mono text-foreground">
               {metrics.querySetHash.slice(0, 12)}…
             </span>
@@ -301,10 +331,7 @@ export function RetrievalSearch({
       )}
 
       {loading ? (
-        <output
-          className="block space-y-2"
-          aria-label={m.p1_retrieval_loading()}
-        >
+        <output className="block space-y-2" aria-label={p1_retrieval_loading()}>
           {[0, 1, 2].map((index) => (
             <Skeleton key={index} className="h-24 w-full rounded-xl" />
           ))}
@@ -312,10 +339,10 @@ export function RetrievalSearch({
       ) : error ? (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
           <p className="text-sm font-medium text-destructive">
-            {m.p1_retrieval_error_title()}
+            {p1_retrieval_error_title()}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {m.p1_retrieval_error_description()}
+            {p1_retrieval_error_description()}
           </p>
           {onRetry && (
             <Button
@@ -326,7 +353,7 @@ export function RetrievalSearch({
               onClick={onRetry}
             >
               <IconRefresh aria-hidden="true" />
-              {m.p1_retrieval_retry()}
+              {p1_retrieval_retry()}
             </Button>
           )}
         </div>
@@ -337,16 +364,16 @@ export function RetrievalSearch({
               className="mx-auto size-8 text-muted-foreground"
               aria-hidden="true"
             />
-            <p className="mt-3 font-medium">{m.p1_retrieval_empty_title()}</p>
+            <p className="mt-3 font-medium">{p1_retrieval_empty_title()}</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {m.p1_retrieval_empty_description()}
+              {p1_retrieval_empty_description()}
             </p>
           </div>
         </div>
       ) : (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground tabular-nums">
-            {m.p1_retrieval_count({
+            {p1_retrieval_count({
               total: totalCount,
               visible: results.length,
             })}

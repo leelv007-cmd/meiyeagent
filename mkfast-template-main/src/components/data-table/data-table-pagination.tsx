@@ -1,4 +1,11 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_first_page,
+  common_table_last_page,
+  common_table_next_page,
+  common_table_page,
+  common_table_previous_page,
+  common_table_rows_per_page,
+} from "@/locale/paraglide/messages";
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -16,7 +23,7 @@ export function DataTablePagination<TData>({ table, pageSizeOptions = [10, 20, 3
       <div className="flex flex-col-reverse items-center gap-4 sm:flex-row sm:gap-6 lg:gap-8">
         <div className="flex items-center space-x-2">
           <p className="whitespace-nowrap font-medium text-sm">
-            {m.common_table_rows_per_page()}
+            {common_table_rows_per_page()}
           </p>
           <Select value={`${table.getState().pagination.pageSize}`} onValueChange={(value: string | null) => {
             if (value)
@@ -33,19 +40,19 @@ export function DataTablePagination<TData>({ table, pageSizeOptions = [10, 20, 3
           </Select>
         </div>
         <div className="flex items-center justify-center font-medium text-sm">
-          {m.common_table_page()} {currentPage} / {totalPages}
+          {common_table_page()} {currentPage} / {totalPages}
         </div>
         <div className="flex items-center space-x-2">
-          <Button aria-label={m.common_table_first_page()} variant="outline" size="icon" className="hidden size-8 lg:flex" onClick={() => table.setPageIndex(0)} disabled={!table.getCanPreviousPage()}>
+          <Button aria-label={common_table_first_page()} variant="outline" size="icon" className="hidden size-8 lg:flex" onClick={() => table.setPageIndex(0)} disabled={!table.getCanPreviousPage()}>
             <IconChevronsLeft />
           </Button>
-          <Button aria-label={m.common_table_previous_page()} variant="outline" size="icon" className="size-8" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+          <Button aria-label={common_table_previous_page()} variant="outline" size="icon" className="size-8" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
             <IconChevronLeft />
           </Button>
-          <Button aria-label={m.common_table_next_page()} variant="outline" size="icon" className="size-8" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+          <Button aria-label={common_table_next_page()} variant="outline" size="icon" className="size-8" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
             <IconChevronRight />
           </Button>
-          <Button aria-label={m.common_table_last_page()} variant="outline" size="icon" className="hidden size-8 lg:flex" onClick={() => table.setPageIndex(table.getPageCount() - 1)} disabled={!table.getCanNextPage()}>
+          <Button aria-label={common_table_last_page()} variant="outline" size="icon" className="hidden size-8 lg:flex" onClick={() => table.setPageIndex(table.getPageCount() - 1)} disabled={!table.getCanNextPage()}>
             <IconChevronsRight />
           </Button>
         </div>

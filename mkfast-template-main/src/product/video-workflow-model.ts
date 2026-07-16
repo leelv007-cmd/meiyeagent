@@ -1,4 +1,37 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  video_workflow_aida_action_direction,
+  video_workflow_aida_action_label,
+  video_workflow_aida_attention_direction,
+  video_workflow_aida_attention_label,
+  video_workflow_aida_desire_direction,
+  video_workflow_aida_desire_label,
+  video_workflow_aida_interest_direction,
+  video_workflow_aida_interest_label,
+  video_workflow_quality_review_warning,
+  video_workflow_quality_score,
+  video_workflow_quality_subtitle_warning,
+  video_workflow_quality_unavailable,
+  video_workflow_shot_prompt,
+  video_workflow_status_awaiting_quality_review_description,
+  video_workflow_status_awaiting_quality_review_label,
+  video_workflow_status_cancel_requested_description,
+  video_workflow_status_cancel_requested_label,
+  video_workflow_status_cancelled_description,
+  video_workflow_status_cancelled_label,
+  video_workflow_status_completed_description,
+  video_workflow_status_completed_label,
+  video_workflow_status_draft_description,
+  video_workflow_status_draft_label,
+  video_workflow_status_failed_description,
+  video_workflow_status_failed_label,
+  video_workflow_status_running_description,
+  video_workflow_status_running_label,
+  video_workflow_step_composition,
+  video_workflow_step_confirmation,
+  video_workflow_step_generation,
+  video_workflow_step_review,
+  video_workflow_step_storyboard,
+} from '@/locale/paraglide/messages';
 
 export type VideoDataClass = 'contains_face' | 'pii' | 'medical';
 
@@ -106,26 +139,26 @@ const AIDA_BLUEPRINT: Array<{
 }> = [
   {
     id: 'aida-attention',
-    label: m.video_workflow_aida_attention_label,
-    direction: m.video_workflow_aida_attention_direction,
+    label: video_workflow_aida_attention_label,
+    direction: video_workflow_aida_attention_direction,
     stage: 'attention',
   },
   {
     id: 'aida-interest',
-    label: m.video_workflow_aida_interest_label,
-    direction: m.video_workflow_aida_interest_direction,
+    label: video_workflow_aida_interest_label,
+    direction: video_workflow_aida_interest_direction,
     stage: 'interest',
   },
   {
     id: 'aida-desire',
-    label: m.video_workflow_aida_desire_label,
-    direction: m.video_workflow_aida_desire_direction,
+    label: video_workflow_aida_desire_label,
+    direction: video_workflow_aida_desire_direction,
     stage: 'desire',
   },
   {
     id: 'aida-action',
-    label: m.video_workflow_aida_action_label,
-    direction: m.video_workflow_aida_action_direction,
+    label: video_workflow_aida_action_label,
+    direction: video_workflow_aida_action_direction,
     stage: 'action',
   },
 ];
@@ -140,44 +173,44 @@ const STATUS_VIEWS: Record<
   }
 > = {
   draft: {
-    label: m.video_workflow_status_draft_label,
-    description: m.video_workflow_status_draft_description,
+    label: video_workflow_status_draft_label,
+    description: video_workflow_status_draft_description,
     poll: true,
     terminal: false,
   },
   running: {
-    label: m.video_workflow_status_running_label,
-    description: m.video_workflow_status_running_description,
+    label: video_workflow_status_running_label,
+    description: video_workflow_status_running_description,
     poll: true,
     terminal: false,
   },
   awaiting_quality_review: {
-    label: m.video_workflow_status_awaiting_quality_review_label,
-    description: m.video_workflow_status_awaiting_quality_review_description,
+    label: video_workflow_status_awaiting_quality_review_label,
+    description: video_workflow_status_awaiting_quality_review_description,
     poll: true,
     terminal: false,
   },
   cancel_requested: {
-    label: m.video_workflow_status_cancel_requested_label,
-    description: m.video_workflow_status_cancel_requested_description,
+    label: video_workflow_status_cancel_requested_label,
+    description: video_workflow_status_cancel_requested_description,
     poll: true,
     terminal: false,
   },
   completed: {
-    label: m.video_workflow_status_completed_label,
-    description: m.video_workflow_status_completed_description,
+    label: video_workflow_status_completed_label,
+    description: video_workflow_status_completed_description,
     poll: false,
     terminal: true,
   },
   cancelled: {
-    label: m.video_workflow_status_cancelled_label,
-    description: m.video_workflow_status_cancelled_description,
+    label: video_workflow_status_cancelled_label,
+    description: video_workflow_status_cancelled_description,
     poll: false,
     terminal: true,
   },
   failed: {
-    label: m.video_workflow_status_failed_label,
-    description: m.video_workflow_status_failed_description,
+    label: video_workflow_status_failed_label,
+    description: video_workflow_status_failed_description,
     poll: false,
     terminal: true,
   },
@@ -189,7 +222,7 @@ export function createAidaStoryboard(intent: string): AidaStoryboardShot[] {
     id: item.id,
     stage: item.stage,
     label: item.label(),
-    prompt: m.video_workflow_shot_prompt({
+    prompt: video_workflow_shot_prompt({
       direction: item.direction(),
       intent: normalizedIntent,
     }),
@@ -283,27 +316,27 @@ export function videoWorkflowSteps(
   const steps: VideoWorkflowStep[] = [
     {
       id: 'storyboard',
-      label: m.video_workflow_step_storyboard(),
+      label: video_workflow_step_storyboard(),
       state: 'waiting',
     },
     {
       id: 'confirmation',
-      label: m.video_workflow_step_confirmation(),
+      label: video_workflow_step_confirmation(),
       state: 'waiting',
     },
     {
       id: 'generation',
-      label: m.video_workflow_step_generation(),
+      label: video_workflow_step_generation(),
       state: 'waiting',
     },
     {
       id: 'review',
-      label: m.video_workflow_step_review(),
+      label: video_workflow_step_review(),
       state: 'waiting',
     },
     {
       id: 'composition',
-      label: m.video_workflow_step_composition(),
+      label: video_workflow_step_composition(),
       state: 'waiting',
     },
   ];
@@ -410,15 +443,15 @@ export function videoAssetUrl(objectKey: string) {
 export function videoCandidateQualityText(candidate: VideoWorkflowCandidate) {
   const score = candidate.quality?.score;
   const scoreText = Number.isFinite(score)
-    ? m.video_workflow_quality_score({ score: score!.toFixed(2) })
-    : m.video_workflow_quality_unavailable();
+    ? video_workflow_quality_score({ score: score!.toFixed(2) })
+    : video_workflow_quality_unavailable();
   const warnings = candidate.quality?.publishWarnings ?? [];
   const warningText = warnings.includes(
     'review_subtitle_safe_area_before_publish'
   )
-    ? m.video_workflow_quality_subtitle_warning()
+    ? video_workflow_quality_subtitle_warning()
     : warnings.length > 0
-      ? m.video_workflow_quality_review_warning()
+      ? video_workflow_quality_review_warning()
       : '';
   return `${scoreText}${warningText}`;
 }

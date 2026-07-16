@@ -7,7 +7,75 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ContentTaskInbox } from '@/p1/content-task-inbox';
-import { m } from '@/locale/paraglide/messages';
+import {
+  common_correlation_id,
+  operations_rail_week_label,
+  operations_task_back_to_inbox,
+  operations_task_command_error_title,
+  operations_task_command_failed_description,
+  operations_task_command_failed_toast,
+  operations_task_create_weekly_review,
+  operations_task_date_all,
+  operations_task_date_week,
+  operations_task_detail_description,
+  operations_task_detail_loading_description,
+  operations_task_detail_title,
+  operations_task_due,
+  operations_task_error_title,
+  operations_task_event_created,
+  operations_task_event_execution_claimed,
+  operations_task_event_execution_completed,
+  operations_task_event_execution_failed,
+  operations_task_event_notification_failed,
+  operations_task_event_notification_sent,
+  operations_task_event_status_changed,
+  operations_task_events_title,
+  operations_task_executable,
+  operations_task_inbox_description,
+  operations_task_inbox_failed_description,
+  operations_task_inbox_tab,
+  operations_task_loading_description,
+  operations_task_loading_title,
+  operations_task_needs_conditions,
+  operations_task_not_found_description,
+  operations_task_not_found_title,
+  operations_task_page_description,
+  operations_task_retry,
+  operations_task_risk_all,
+  operations_task_risk_attention,
+  operations_task_risk_external_permission,
+  operations_task_risk_normal,
+  operations_task_status_transition,
+  operations_task_view_aria,
+  operations_task_week_batch_error_description,
+  operations_task_week_batch_error_title,
+  operations_task_week_batch_label,
+  operations_task_week_batch_retry,
+  operations_task_week_loading_description,
+  operations_task_week_loading_title,
+  operations_task_week_review_error_description,
+  operations_task_week_review_error_title,
+  operations_task_week_review_label,
+  operations_task_week_review_retry,
+  operations_task_week_tab,
+  p1_task_next_step,
+  p1_task_source_asset_gap,
+  p1_task_source_manual,
+  p1_task_source_publish_ready,
+  p1_task_source_stale_draft,
+  p1_task_source_weekly_batch,
+  p1_task_source_weekly_review,
+  p1_task_status_archived,
+  p1_task_status_blocked,
+  p1_task_status_done,
+  p1_task_status_in_progress,
+  p1_task_status_needs_asset,
+  p1_task_status_needs_review,
+  p1_task_status_ready,
+  p1_task_status_todo,
+  product_navigation_tasks,
+  product_navigation_workbench,
+} from '@/locale/paraglide/messages';
 import { friendlyProductError } from '@/lib/correlated-api-error';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { getPathWithLocale } from '@/lib/urls';
@@ -87,7 +155,7 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
       payload: Record<string, unknown>;
       key?: string;
     }) => operationsCommand(input.action, input.payload, input.key),
-    onError: () => toast.error(m.operations_task_command_failed_toast()),
+    onError: () => toast.error(operations_task_command_failed_toast()),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: p1QueryKeys.module('operations'),
@@ -99,13 +167,13 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
   const inboxFailure = inboxQuery.isError
     ? friendlyProductError(
         inboxQuery.error,
-        m.operations_task_inbox_failed_description()
+        operations_task_inbox_failed_description()
       )
     : undefined;
   const commandFailure = command.isError
     ? friendlyProductError(
         command.error,
-        m.operations_task_command_failed_description()
+        operations_task_command_failed_description()
       )
     : undefined;
 
@@ -149,15 +217,15 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.product_navigation_workbench(), isCurrentPage: false },
-        { label: m.product_navigation_tasks(), isCurrentPage: true },
+        { label: product_navigation_workbench(), isCurrentPage: false },
+        { label: product_navigation_tasks(), isCurrentPage: true },
       ]}
-      description={m.operations_task_page_description()}
-      title={m.product_navigation_tasks()}
+      description={operations_task_page_description()}
+      title={product_navigation_tasks()}
     >
       <nav
         className="flex flex-wrap gap-2"
-        aria-label={m.operations_task_view_aria()}
+        aria-label={operations_task_view_aria()}
       >
         <Button
           aria-pressed={search.mode === 'inbox'}
@@ -170,7 +238,7 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
           }
           onClick={() => setMode('inbox')}
         >
-          {m.operations_task_inbox_tab()}
+          {operations_task_inbox_tab()}
         </Button>
         <Button
           aria-pressed={search.mode === 'week'}
@@ -183,54 +251,54 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
           }
           onClick={() => setMode('week')}
         >
-          {m.operations_task_week_tab()}
+          {operations_task_week_tab()}
         </Button>
       </nav>
       {inboxQuery.isLoading ? (
         <StatePanel
           kind="loading"
-          title={m.operations_task_loading_title()}
-          description={m.operations_task_loading_description()}
+          title={operations_task_loading_title()}
+          description={operations_task_loading_description()}
         />
       ) : null}
       {inboxFailure ? (
         <StatePanel
           kind="error"
-          title={m.operations_task_error_title()}
+          title={operations_task_error_title()}
           description={inboxFailure.description}
-          actionLabel={m.operations_task_retry()}
+          actionLabel={operations_task_retry()}
           onAction={() => void inboxQuery.refetch()}
         />
       ) : null}
       {commandFailure ? (
         <Alert variant="destructive">
-          <AlertTitle>{m.operations_task_command_error_title()}</AlertTitle>
+          <AlertTitle>{operations_task_command_error_title()}</AlertTitle>
           <AlertDescription>
             {commandFailure.description}
             {commandFailure.correlationId
-              ? ` ${m.common_correlation_id({ id: commandFailure.correlationId })}`
+              ? ` ${common_correlation_id({ id: commandFailure.correlationId })}`
               : ''}
           </AlertDescription>
         </Alert>
       ) : null}
       {inbox && search.mode === 'inbox' ? (
         <ContentTaskInbox
-          description={m.operations_task_inbox_description()}
+          description={operations_task_inbox_description()}
           filterOptions={{
             dates: [
-              { label: m.operations_task_date_all(), value: 'all' },
-              { label: m.operations_task_date_week(), value: 'week' },
+              { label: operations_task_date_all(), value: 'all' },
+              { label: operations_task_date_week(), value: 'week' },
             ],
             relatedKinds: [...TASK_RELATED_KIND_FILTER_OPTIONS],
             risks: [
-              { label: m.operations_task_risk_all(), value: 'all' },
-              { label: m.operations_task_risk_normal(), value: 'normal' },
+              { label: operations_task_risk_all(), value: 'all' },
+              { label: operations_task_risk_normal(), value: 'normal' },
               {
-                label: m.operations_task_risk_attention(),
+                label: operations_task_risk_attention(),
                 value: 'attention',
               },
               {
-                label: m.operations_task_risk_external_permission(),
+                label: operations_task_risk_external_permission(),
                 value: 'external_permission',
               },
             ],
@@ -263,7 +331,7 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
             (sum, count) => sum + (count ?? 0),
             0
           )}
-          weekLabel={m.operations_rail_week_label()}
+          weekLabel={operations_rail_week_label()}
           weekPoints={inbox.weekStrip.map(weekPointView)}
         />
       ) : null}
@@ -272,25 +340,25 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
           {weeklyBatchQuery.isLoading || weeklyReviewQuery.isLoading ? (
             <StatePanel
               kind="loading"
-              title={m.operations_task_week_loading_title()}
-              description={m.operations_task_week_loading_description()}
+              title={operations_task_week_loading_title()}
+              description={operations_task_week_loading_description()}
             />
           ) : null}
           {weeklyBatchQuery.isError ? (
             <StatePanel
               kind="error"
-              title={m.operations_task_week_batch_error_title()}
-              description={m.operations_task_week_batch_error_description()}
-              actionLabel={m.operations_task_week_batch_retry()}
+              title={operations_task_week_batch_error_title()}
+              description={operations_task_week_batch_error_description()}
+              actionLabel={operations_task_week_batch_retry()}
               onAction={() => void weeklyBatchQuery.refetch()}
             />
           ) : null}
           {weeklyReviewQuery.isError ? (
             <StatePanel
               kind="error"
-              title={m.operations_task_week_review_error_title()}
-              description={m.operations_task_week_review_error_description()}
-              actionLabel={m.operations_task_week_review_retry()}
+              title={operations_task_week_review_error_title()}
+              description={operations_task_week_review_error_description()}
+              actionLabel={operations_task_week_review_retry()}
               onAction={() => void weeklyReviewQuery.refetch()}
             />
           ) : null}
@@ -316,7 +384,7 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
                   task: taskView(task),
                 })),
               ]}
-              label={m.operations_task_week_batch_label()}
+              label={operations_task_week_batch_label()}
               onBulkAction={runBatch}
               onOpenTask={(taskId) =>
                 void navigate({
@@ -339,7 +407,7 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
             <ThinWeeklyReview
               candidates={review.candidates}
               facts={review.facts}
-              label={m.operations_task_week_review_label()}
+              label={operations_task_week_review_label()}
               onConfirmCandidate={(candidateId) =>
                 command.mutate({
                   action: 'confirm_weekly_candidates',
@@ -371,7 +439,7 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
                 })
               }
             >
-              {m.operations_task_create_weekly_review()}
+              {operations_task_create_weekly_review()}
             </Button>
           )}
         </div>
@@ -390,55 +458,55 @@ interface RawTaskEvent {
 }
 
 function taskSourceLabel(source: string) {
-  if (source === 'asset_gap') return m.p1_task_source_asset_gap();
-  if (source === 'manual') return m.p1_task_source_manual();
-  if (source === 'publish_ready') return m.p1_task_source_publish_ready();
-  if (source === 'stale_draft') return m.p1_task_source_stale_draft();
-  if (source === 'weekly_batch') return m.p1_task_source_weekly_batch();
-  if (source === 'weekly_review') return m.p1_task_source_weekly_review();
+  if (source === 'asset_gap') return p1_task_source_asset_gap();
+  if (source === 'manual') return p1_task_source_manual();
+  if (source === 'publish_ready') return p1_task_source_publish_ready();
+  if (source === 'stale_draft') return p1_task_source_stale_draft();
+  if (source === 'weekly_batch') return p1_task_source_weekly_batch();
+  if (source === 'weekly_review') return p1_task_source_weekly_review();
   return source;
 }
 
 function taskRiskLabel(risk: string) {
-  if (risk === 'normal') return m.operations_task_risk_normal();
-  if (risk === 'attention') return m.operations_task_risk_attention();
+  if (risk === 'normal') return operations_task_risk_normal();
+  if (risk === 'attention') return operations_task_risk_attention();
   if (risk === 'external_permission') {
-    return m.operations_task_risk_external_permission();
+    return operations_task_risk_external_permission();
   }
   return risk;
 }
 
 function taskStatusLabel(status?: string) {
-  if (status === 'archived') return m.p1_task_status_archived();
-  if (status === 'blocked') return m.p1_task_status_blocked();
-  if (status === 'done') return m.p1_task_status_done();
-  if (status === 'in_progress') return m.p1_task_status_in_progress();
-  if (status === 'needs_asset') return m.p1_task_status_needs_asset();
-  if (status === 'needs_review') return m.p1_task_status_needs_review();
-  if (status === 'ready') return m.p1_task_status_ready();
-  if (status === 'todo') return m.p1_task_status_todo();
+  if (status === 'archived') return p1_task_status_archived();
+  if (status === 'blocked') return p1_task_status_blocked();
+  if (status === 'done') return p1_task_status_done();
+  if (status === 'in_progress') return p1_task_status_in_progress();
+  if (status === 'needs_asset') return p1_task_status_needs_asset();
+  if (status === 'needs_review') return p1_task_status_needs_review();
+  if (status === 'ready') return p1_task_status_ready();
+  if (status === 'todo') return p1_task_status_todo();
   return status ?? '';
 }
 
 function taskEventLabel(event: string) {
-  if (event === 'created') return m.operations_task_event_created();
+  if (event === 'created') return operations_task_event_created();
   if (event === 'status_changed') {
-    return m.operations_task_event_status_changed();
+    return operations_task_event_status_changed();
   }
   if (event === 'notification_sent') {
-    return m.operations_task_event_notification_sent();
+    return operations_task_event_notification_sent();
   }
   if (event === 'notification_failed') {
-    return m.operations_task_event_notification_failed();
+    return operations_task_event_notification_failed();
   }
   if (event === 'execution_claimed') {
-    return m.operations_task_event_execution_claimed();
+    return operations_task_event_execution_claimed();
   }
   if (event === 'execution_completed') {
-    return m.operations_task_event_execution_completed();
+    return operations_task_event_execution_completed();
   }
   if (event === 'execution_failed') {
-    return m.operations_task_event_execution_failed();
+    return operations_task_event_execution_failed();
   }
   return event;
 }
@@ -447,7 +515,7 @@ function taskEventStatusText(event: RawTaskEvent) {
   const fromStatus = taskStatusLabel(event.fromStatus);
   const toStatus = taskStatusLabel(event.toStatus);
   if (fromStatus && toStatus) {
-    return m.operations_task_status_transition({
+    return operations_task_status_transition({
       from: fromStatus,
       to: toStatus,
     });
@@ -472,24 +540,24 @@ export function OperationsTaskDetailPage({ taskId }: { taskId: string }) {
   return (
     <DashboardLayout
       breadcrumbs={[
-        { label: m.product_navigation_tasks(), isCurrentPage: false },
-        { label: m.operations_task_detail_title(), isCurrentPage: true },
+        { label: product_navigation_tasks(), isCurrentPage: false },
+        { label: operations_task_detail_title(), isCurrentPage: true },
       ]}
-      description={m.operations_task_detail_description()}
-      title={m.operations_task_detail_title()}
+      description={operations_task_detail_description()}
+      title={operations_task_detail_title()}
     >
       {taskQueryResult.isLoading ? (
         <StatePanel
           kind="loading"
-          title={m.operations_task_loading_title()}
-          description={m.operations_task_detail_loading_description()}
+          title={operations_task_loading_title()}
+          description={operations_task_detail_loading_description()}
         />
       ) : null}
       {taskQueryResult.isError ? (
         <StatePanel
           kind="empty"
-          title={m.operations_task_not_found_title()}
-          description={m.operations_task_not_found_description()}
+          title={operations_task_not_found_title()}
+          description={operations_task_not_found_description()}
         />
       ) : null}
       {task ? (
@@ -508,12 +576,12 @@ export function OperationsTaskDetailPage({ taskId }: { taskId: string }) {
                 <Badge variant="outline">{taskRiskLabel(task.risk)}</Badge>
                 <Badge variant="outline">
                   {task.executable
-                    ? m.operations_task_executable()
-                    : m.operations_task_needs_conditions()}
+                    ? operations_task_executable()
+                    : operations_task_needs_conditions()}
                 </Badge>
               </div>
               <p>
-                {m.operations_task_due({
+                {operations_task_due({
                   date: formatLocaleDateTime(task.dueAt),
                 })}
               </p>
@@ -521,13 +589,13 @@ export function OperationsTaskDetailPage({ taskId }: { taskId: string }) {
                 <p>{taskDisplay.blockedReason}</p>
               ) : null}
               {taskDisplay?.nextStep ? (
-                <p>{m.p1_task_next_step({ nextStep: taskDisplay.nextStep })}</p>
+                <p>{p1_task_next_step({ nextStep: taskDisplay.nextStep })}</p>
               ) : null}
             </CardContent>
           </Card>
           <section className="space-y-3" aria-labelledby="task-events-title">
             <h2 id="task-events-title" className="text-base font-semibold">
-              {m.operations_task_events_title()}
+              {operations_task_events_title()}
             </h2>
             <ol className="divide-y divide-divider overflow-hidden rounded-xl bg-surface-1">
               {(eventsQuery.data ?? []).map((event) => (
@@ -553,7 +621,7 @@ export function OperationsTaskDetailPage({ taskId }: { taskId: string }) {
             }}
             to="/dashboard/tasks"
           >
-            {m.operations_task_back_to_inbox()}
+            {operations_task_back_to_inbox()}
           </Link>
         </div>
       ) : null}

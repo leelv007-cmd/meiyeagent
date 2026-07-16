@@ -210,7 +210,7 @@ test('ticket 10: video submit → list recovery → OwnedAsset delivery', async 
   const job = await service.submit(owner, { ...input, quoteId: quote.id });
   assert.deepEqual(job.origin, {
     kind: 'advanced_canvas',
-    id: 'project-video',
+    projectId: 'project-video',
     revisionId: 'revision-video',
   });
 

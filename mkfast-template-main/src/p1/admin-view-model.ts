@@ -1,6 +1,19 @@
 import { z } from 'zod';
 
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_admin_model_catalog_json_label,
+  p1_admin_model_catalog_short_label,
+  p1_admin_model_catalog_short_validation_error,
+  p1_admin_model_catalog_validation_error,
+  p1_admin_model_validation_auto_operation,
+  p1_admin_model_validation_fixed_model,
+  p1_admin_template_document_json_label,
+  p1_admin_template_document_validation_error,
+  p1_admin_template_validation_rollout,
+  p1_common_invalid_json,
+  p1_common_unknown_error,
+  p1_common_unlabeled,
+} from '@/locale/paraglide/messages';
 
 const modelOperationSchema = z.enum([
   'copy.generate',
@@ -39,14 +52,14 @@ export const routeSimulatorFormSchema = z
     if (value.selectionMode === 'fixed' && !value.catalogModelId.trim()) {
       context.addIssue({
         code: 'custom',
-        message: m.p1_admin_model_validation_fixed_model(),
+        message: p1_admin_model_validation_fixed_model(),
         path: ['catalogModelId'],
       });
     }
     if (value.selectionMode === 'auto' && value.operation !== 'copy.generate') {
       context.addIssue({
         code: 'custom',
-        message: m.p1_admin_model_validation_auto_operation(),
+        message: p1_admin_model_validation_auto_operation(),
         path: ['selectionMode'],
       });
     }
@@ -413,12 +426,12 @@ export function createAdminCatalogDraftJson(control: AdminCatalogControl) {
 
 export function parseAdminCatalogDraft(value: string) {
   const result = adminCatalogDraftSchema.safeParse(
-    parseJson(value, m.p1_admin_model_catalog_json_label())
+    parseJson(value, p1_admin_model_catalog_json_label())
   );
   if (!result.success) {
     throw new Error(
-      m.p1_admin_model_catalog_validation_error({
-        reason: result.error.issues[0]?.message ?? m.p1_common_unknown_error(),
+      p1_admin_model_catalog_validation_error({
+        reason: result.error.issues[0]?.message ?? p1_common_unknown_error(),
       })
     );
   }
@@ -511,26 +524,26 @@ function parseJson(value: string, label: string) {
   try {
     return JSON.parse(value) as unknown;
   } catch {
-    throw new Error(m.p1_common_invalid_json({ label }));
+    throw new Error(p1_common_invalid_json({ label }));
   }
 }
 
 export function parseRolloutPercent(value: string) {
   const percent = Number(value);
   if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
-    throw new Error(m.p1_admin_template_validation_rollout());
+    throw new Error(p1_admin_template_validation_rollout());
   }
   return percent;
 }
 
 export function parseCanvasDocument(value: string) {
   const result = canvasDocumentSchema.safeParse(
-    parseJson(value, m.p1_admin_template_document_json_label())
+    parseJson(value, p1_admin_template_document_json_label())
   );
   if (!result.success) {
     throw new Error(
-      m.p1_admin_template_document_validation_error({
-        reason: result.error.issues[0]?.message ?? m.p1_common_unknown_error(),
+      p1_admin_template_document_validation_error({
+        reason: result.error.issues[0]?.message ?? p1_common_unknown_error(),
       })
     );
   }
@@ -672,14 +685,14 @@ export function normalizeAdminCatalog(
           deniedDataClasses: stringArray(dataClasses.denied),
           displayName: string(model.displayName, id),
           id,
-          manufacturer: string(model.manufacturer, m.p1_common_unlabeled()),
+          manufacturer: string(model.manufacturer, p1_common_unlabeled()),
           modality,
           operations: modelOperations,
           qualityRank:
             typeof model.qualityRank === 'number' ? model.qualityRank : 0,
           stableModelName: string(model.stableModelName, id),
           ...(unavailableReason ? { unavailableReason } : {}),
-          version: string(model.version, m.p1_common_unlabeled()),
+          version: string(model.version, p1_common_unlabeled()),
         },
       ];
     });
@@ -720,12 +733,12 @@ export function createSafeModelDraftJson(snapshots: AdminCatalogSnapshot[]) {
  */
 export function parseSafeModelDraft(value: string) {
   const result = safeModelDraftSchema.safeParse(
-    parseJson(value, m.p1_admin_model_catalog_short_label())
+    parseJson(value, p1_admin_model_catalog_short_label())
   );
   if (!result.success) {
     throw new Error(
-      m.p1_admin_model_catalog_short_validation_error({
-        reason: result.error.issues[0]?.message ?? m.p1_common_unknown_error(),
+      p1_admin_model_catalog_short_validation_error({
+        reason: result.error.issues[0]?.message ?? p1_common_unknown_error(),
       })
     );
   }

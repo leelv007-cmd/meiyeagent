@@ -1,5 +1,13 @@
 import { getAuthErrorMessage } from '@/lib/locale';
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_forgot_password_back_to_login,
+  auth_forgot_password_check_email,
+  auth_forgot_password_email,
+  auth_forgot_password_email_required,
+  auth_forgot_password_placeholder_email,
+  auth_forgot_password_send,
+  auth_forgot_password_title,
+} from '@/locale/paraglide/messages';
 import { useEffect, useState } from 'react';
 import { AuthCard } from '@/components/auth/auth-card';
 import { FormError } from '@/components/shared/form-error';
@@ -27,9 +35,7 @@ export function ForgotPasswordForm({ className }: { className?: string }) {
   const [success, setSuccess] = useState<string | undefined>('');
   const [isPending, setIsPending] = useState(false);
   const ForgotPasswordSchema = z.object({
-    email: z
-      .string()
-      .email({ message: m.auth_forgot_password_email_required() }),
+    email: z.string().email({ message: auth_forgot_password_email_required() }),
   });
   const form = useForm<z.infer<typeof ForgotPasswordSchema>>({
     resolver: zodResolver(ForgotPasswordSchema),
@@ -55,7 +61,7 @@ export function ForgotPasswordForm({ className }: { className?: string }) {
           setSuccess('');
         },
         onResponse: () => setIsPending(false),
-        onSuccess: () => setSuccess(m.auth_forgot_password_check_email()),
+        onSuccess: () => setSuccess(auth_forgot_password_check_email()),
         onError: (ctx) => {
           setError(getAuthErrorMessage(ctx.error));
         },
@@ -64,8 +70,8 @@ export function ForgotPasswordForm({ className }: { className?: string }) {
   };
   return (
     <AuthCard
-      headerLabel={m.auth_forgot_password_title()}
-      bottomButtonLabel={m.auth_forgot_password_back_to_login()}
+      headerLabel={auth_forgot_password_title()}
+      bottomButtonLabel={auth_forgot_password_back_to_login()}
       bottomButtonHref={Routes.Login}
       className={cn('', className)}
     >
@@ -77,12 +83,12 @@ export function ForgotPasswordForm({ className }: { className?: string }) {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{m.auth_forgot_password_email()}</FormLabel>
+                  <FormLabel>{auth_forgot_password_email()}</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
                       disabled={isPending}
-                      placeholder={m.auth_forgot_password_placeholder_email()}
+                      placeholder={auth_forgot_password_placeholder_email()}
                       type="email"
                     />
                   </FormControl>
@@ -100,7 +106,7 @@ export function ForgotPasswordForm({ className }: { className?: string }) {
             className="w-full flex items-center justify-center gap-2"
           >
             {isPending && <IconLoader2 className="mr-2 size-4 animate-spin" />}
-            <span>{m.auth_forgot_password_send()}</span>
+            <span>{auth_forgot_password_send()}</span>
           </Button>
         </form>
       </Form>

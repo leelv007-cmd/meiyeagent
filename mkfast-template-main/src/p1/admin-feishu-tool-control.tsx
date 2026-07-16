@@ -22,7 +22,32 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { m } from '@/locale/paraglide/messages';
+import {
+  p1_admin_feishu_column_compatibility,
+  p1_admin_feishu_column_risk,
+  p1_admin_feishu_column_status,
+  p1_admin_feishu_column_time,
+  p1_admin_feishu_column_tool,
+  p1_admin_feishu_connection,
+  p1_admin_feishu_connection_empty,
+  p1_admin_feishu_discovered_at,
+  p1_admin_feishu_empty,
+  p1_admin_feishu_load_error_description,
+  p1_admin_feishu_load_error_title,
+  p1_admin_feishu_loading,
+  p1_admin_feishu_manual_description,
+  p1_admin_feishu_manual_title,
+  p1_admin_feishu_notice_description,
+  p1_admin_feishu_notice_title,
+  p1_admin_feishu_published_at,
+  p1_admin_feishu_refresh,
+  p1_admin_feishu_revisions_description,
+  p1_admin_feishu_revisions_title,
+  p1_admin_feishu_sync_error,
+  p1_admin_feishu_sync_publish,
+  p1_admin_feishu_sync_success,
+  p1_admin_feishu_syncing,
+} from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import {
   normalizeAdminFeishuToolRevisions,
@@ -109,13 +134,13 @@ export function AdminFeishuToolControl() {
         queryKey: p1QueryKeys.module('integrations'),
       });
       toast.success(
-        m.p1_admin_feishu_sync_success({
+        p1_admin_feishu_sync_success({
           incompatible: result.incompatibleToolCount,
           published: result.publishedRevisionCount,
         })
       );
     },
-    onError: () => toast.error(m.p1_admin_feishu_sync_error()),
+    onError: () => toast.error(p1_admin_feishu_sync_error()),
   });
   const error = connectionsQuery.error ?? catalogQuery.error;
   const revisions = catalogQuery.data ?? [];
@@ -124,32 +149,32 @@ export function AdminFeishuToolControl() {
     <div className="space-y-6">
       <Alert>
         <IconCloudUpload />
-        <AlertTitle>{m.p1_admin_feishu_notice_title()}</AlertTitle>
+        <AlertTitle>{p1_admin_feishu_notice_title()}</AlertTitle>
         <AlertDescription>
-          {m.p1_admin_feishu_notice_description()}
+          {p1_admin_feishu_notice_description()}
         </AlertDescription>
       </Alert>
 
       {error ? (
         <Alert variant="destructive">
-          <AlertTitle>{m.p1_admin_feishu_load_error_title()}</AlertTitle>
+          <AlertTitle>{p1_admin_feishu_load_error_title()}</AlertTitle>
           <AlertDescription>
-            {m.p1_admin_feishu_load_error_description()}
+            {p1_admin_feishu_load_error_description()}
           </AlertDescription>
         </Alert>
       ) : null}
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_feishu_manual_title()}</CardTitle>
+          <CardTitle>{p1_admin_feishu_manual_title()}</CardTitle>
           <CardDescription>
-            {m.p1_admin_feishu_manual_description()}
+            {p1_admin_feishu_manual_description()}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="min-w-64 space-y-2">
             <Label htmlFor="admin-feishu-connection">
-              {m.p1_admin_feishu_connection()}
+              {p1_admin_feishu_connection()}
             </Label>
             <select
               className="h-9 w-full rounded-md border bg-background px-3 text-sm"
@@ -158,7 +183,7 @@ export function AdminFeishuToolControl() {
               value={connectionId}
             >
               {feishuConnections.length === 0 ? (
-                <option value="">{m.p1_admin_feishu_connection_empty()}</option>
+                <option value="">{p1_admin_feishu_connection_empty()}</option>
               ) : null}
               {feishuConnections.map((connection) => (
                 <option key={connection.id} value={connection.id}>
@@ -174,8 +199,8 @@ export function AdminFeishuToolControl() {
           >
             <IconCloudUpload />
             {syncMutation.isPending
-              ? m.p1_admin_feishu_syncing()
-              : m.p1_admin_feishu_sync_publish()}
+              ? p1_admin_feishu_syncing()
+              : p1_admin_feishu_sync_publish()}
           </Button>
           <Button
             disabled={catalogQuery.isFetching}
@@ -184,16 +209,16 @@ export function AdminFeishuToolControl() {
             variant="outline"
           >
             <IconRefresh />
-            {m.p1_admin_feishu_refresh()}
+            {p1_admin_feishu_refresh()}
           </Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>{m.p1_admin_feishu_revisions_title()}</CardTitle>
+          <CardTitle>{p1_admin_feishu_revisions_title()}</CardTitle>
           <CardDescription>
-            {m.p1_admin_feishu_revisions_description({
+            {p1_admin_feishu_revisions_description({
               count: revisions.length,
             })}
           </CardDescription>
@@ -202,14 +227,12 @@ export function AdminFeishuToolControl() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{m.p1_admin_feishu_column_tool()}</TableHead>
-                <TableHead>{m.p1_admin_feishu_column_risk()}</TableHead>
-                <TableHead>
-                  {m.p1_admin_feishu_column_compatibility()}
-                </TableHead>
-                <TableHead>{m.p1_admin_feishu_column_status()}</TableHead>
+                <TableHead>{p1_admin_feishu_column_tool()}</TableHead>
+                <TableHead>{p1_admin_feishu_column_risk()}</TableHead>
+                <TableHead>{p1_admin_feishu_column_compatibility()}</TableHead>
+                <TableHead>{p1_admin_feishu_column_status()}</TableHead>
                 <TableHead>Schema hash</TableHead>
-                <TableHead>{m.p1_admin_feishu_column_time()}</TableHead>
+                <TableHead>{p1_admin_feishu_column_time()}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -217,8 +240,8 @@ export function AdminFeishuToolControl() {
                 <TableRow>
                   <TableCell className="text-muted-foreground" colSpan={6}>
                     {catalogQuery.isPending
-                      ? m.p1_admin_feishu_loading()
-                      : m.p1_admin_feishu_empty()}
+                      ? p1_admin_feishu_loading()
+                      : p1_admin_feishu_empty()}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -255,12 +278,12 @@ export function AdminFeishuToolControl() {
                     </TableCell>
                     <TableCell className="text-xs">
                       <p>
-                        {m.p1_admin_feishu_discovered_at({
+                        {p1_admin_feishu_discovered_at({
                           time: timestamp(revision.discoveredAt),
                         })}
                       </p>
                       <p>
-                        {m.p1_admin_feishu_published_at({
+                        {p1_admin_feishu_published_at({
                           time: timestamp(revision.publishedAt),
                         })}
                       </p>

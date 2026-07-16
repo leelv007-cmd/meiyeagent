@@ -1,4 +1,9 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_ascending,
+  common_table_descending,
+  common_table_hide_column,
+  common_table_reset_sorting,
+} from "@/locale/paraglide/messages";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { IconChevronDown, IconChevronUp, IconEyeOff, IconSelector, IconX } from '@tabler/icons-react';
@@ -21,20 +26,20 @@ export function DataTableColumnHeader<TData, TValue>({ column, label, className,
         {column.getCanSort() && (<>
             <DropdownMenuCheckboxItem className="relative pl-2 pr-10 [&>span:first-child]:right-3 [&>span:first-child]:left-auto [&_svg]:text-muted-foreground" checked={column.getIsSorted() === 'asc'} onClick={() => column.toggleSorting(false)}>
               <IconChevronUp />
-              {m.common_table_ascending()}
+              {common_table_ascending()}
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem className="relative pl-2 pr-10 [&>span:first-child]:right-3 [&>span:first-child]:left-auto [&_svg]:text-muted-foreground" checked={column.getIsSorted() === 'desc'} onClick={() => column.toggleSorting(true)}>
               <IconChevronDown />
-              {m.common_table_descending()}
+              {common_table_descending()}
             </DropdownMenuCheckboxItem>
             {column.getIsSorted() && (<DropdownMenuItem className="pl-2 [&_svg]:text-muted-foreground" onClick={() => column.clearSorting()}>
                 <IconX />
-                {m.common_table_reset_sorting()}
+                {common_table_reset_sorting()}
               </DropdownMenuItem>)}
           </>)}
         {column.getCanHide() && (<DropdownMenuCheckboxItem className="relative pr-8 pl-2 [&>span:first-child]:right-2 [&>span:first-child]:left-auto [&_svg]:text-muted-foreground" checked={!column.getIsVisible()} onClick={() => column.toggleVisibility(false)}>
             <IconEyeOff />
-            {m.common_table_hide_column()}
+            {common_table_hide_column()}
           </DropdownMenuCheckboxItem>)}
       </DropdownMenuContent>
     </DropdownMenu>);

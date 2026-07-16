@@ -5,7 +5,19 @@ import type {
   CreativeJob,
   CreativeWork,
 } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  copy_candidate_accept_failed,
+  copy_candidate_batch,
+  copy_candidate_historical_batch,
+  copy_candidate_paid_reroll_failed,
+  copy_candidate_paid_usage,
+  copy_candidate_quality_retry_failed,
+  copy_candidate_quality_usage_exhausted,
+  copy_candidate_quality_usage_remaining,
+  copy_candidate_usage_paid_batch,
+  copy_candidate_usage_quality_retry,
+  copy_candidate_usage_unavailable,
+} from '@/locale/paraglide/messages';
 
 const CANDIDATE_LABELS = ['A', 'B', 'C'] as const;
 const MAX_QUALITY_RETRIES = 2;
@@ -115,25 +127,25 @@ export function buildCopyCandidateSelectorModel(input: {
   const remainingQualityRetries = MAX_QUALITY_RETRIES - usedQualityRetries;
   const currentUsageLabel =
     input.job.productUsageQuantity === 1
-      ? m.copy_candidate_usage_paid_batch()
+      ? copy_candidate_usage_paid_batch()
       : input.job.productUsageQuantity === 0
-        ? m.copy_candidate_usage_quality_retry()
-        : m.copy_candidate_usage_unavailable();
+        ? copy_candidate_usage_quality_retry()
+        : copy_candidate_usage_unavailable();
   const qualityUsageLabel =
     remainingQualityRetries > 0
-      ? m.copy_candidate_quality_usage_remaining({
+      ? copy_candidate_quality_usage_remaining({
           maximum: MAX_QUALITY_RETRIES,
           remaining: remainingQualityRetries,
         })
-      : m.copy_candidate_quality_usage_exhausted({
+      : copy_candidate_quality_usage_exhausted({
           maximum: MAX_QUALITY_RETRIES,
         });
   const base = {
     batchLabel: batchNumber
-      ? m.copy_candidate_batch({ number: batchNumber })
-      : m.copy_candidate_historical_batch(),
+      ? copy_candidate_batch({ number: batchNumber })
+      : copy_candidate_historical_batch(),
     currentUsageLabel,
-    paidUsageLabel: m.copy_candidate_paid_usage(),
+    paidUsageLabel: copy_candidate_paid_usage(),
     qualityUsageLabel,
     remainingQualityRetries,
     usedQualityRetries,
@@ -210,12 +222,12 @@ export function copyCandidateActionErrorMessage(
   action: CopyCandidateCommandInput['action']
 ) {
   if (action === 'accept') {
-    return m.copy_candidate_accept_failed();
+    return copy_candidate_accept_failed();
   }
   if (action === 'paid-reroll') {
-    return m.copy_candidate_paid_reroll_failed();
+    return copy_candidate_paid_reroll_failed();
   }
-  return m.copy_candidate_quality_retry_failed();
+  return copy_candidate_quality_retry_failed();
 }
 
 export interface CopyCandidateCommand {

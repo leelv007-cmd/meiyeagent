@@ -11,7 +11,31 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_provider_credential_activation_note,
+  admin_provider_credential_douyin_recorded,
+  admin_provider_credential_empty,
+  admin_provider_credential_restart_effective,
+  admin_provider_credential_revoke,
+  admin_provider_credential_rotate,
+  admin_provider_credential_saved,
+  admin_provider_credential_scope,
+  admin_provider_credential_secret_input,
+  admin_provider_credential_source_env,
+  admin_provider_credential_source_env_fallback,
+  admin_provider_credential_source_vault,
+  admin_provider_credential_store,
+  admin_provider_credential_test,
+  admin_provider_credential_test_network_failed,
+  admin_provider_credential_test_passed,
+  admin_provider_credential_test_pending,
+  admin_provider_credential_test_unauthorized,
+  admin_provider_credential_test_unknown,
+  admin_provider_credential_tested_at,
+  admin_provider_credential_testing,
+  admin_provider_credentials_description,
+  admin_provider_credentials_title,
+} from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from './client';
 import { p1QueryKeys } from './query-keys';
 
@@ -75,7 +99,7 @@ export function AdminProviderCredentialControl() {
     });
     setValues((current) => ({ ...current, [slot]: '' }));
     await refresh();
-    toast.success(m.admin_provider_credential_saved());
+    toast.success(admin_provider_credential_saved());
   };
 
   const revoke = async (slot: ProviderSlot) => {
@@ -102,9 +126,9 @@ export function AdminProviderCredentialControl() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{m.admin_provider_credentials_title()}</CardTitle>
+        <CardTitle>{admin_provider_credentials_title()}</CardTitle>
         <CardDescription>
-          {m.admin_provider_credentials_description()}
+          {admin_provider_credentials_description()}
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 lg:grid-cols-3">
@@ -118,7 +142,7 @@ export function AdminProviderCredentialControl() {
                 <span className="font-medium">{slot}</span>
                 <Badge variant="outline">
                   {credential?.credential.status ??
-                    m.admin_provider_credential_empty()}
+                    admin_provider_credential_empty()}
                 </Badge>
               </div>
               <p className="font-mono text-sm">
@@ -139,13 +163,13 @@ export function AdminProviderCredentialControl() {
               ) : null}
               {credential ? (
                 <p className="text-xs text-muted-foreground">
-                  {m.admin_provider_credential_scope({
+                  {admin_provider_credential_scope({
                     scope: credential.credential.scope.join(', ') || '—',
                   })}
                 </p>
               ) : null}
               <Input
-                aria-label={m.admin_provider_credential_secret_input({ slot })}
+                aria-label={admin_provider_credential_secret_input({ slot })}
                 autoComplete="new-password"
                 onChange={(event) =>
                   setValues((current) => ({
@@ -162,8 +186,8 @@ export function AdminProviderCredentialControl() {
                   size="sm"
                 >
                   {credential
-                    ? m.admin_provider_credential_rotate()
-                    : m.admin_provider_credential_store()}
+                    ? admin_provider_credential_rotate()
+                    : admin_provider_credential_store()}
                 </Button>
                 {credential ? (
                   <>
@@ -174,15 +198,15 @@ export function AdminProviderCredentialControl() {
                       variant="outline"
                     >
                       {testingSlot === slot
-                        ? m.admin_provider_credential_testing()
-                        : m.admin_provider_credential_test()}
+                        ? admin_provider_credential_testing()
+                        : admin_provider_credential_test()}
                     </Button>
                     <Button
                       onClick={() => void revoke(slot)}
                       size="sm"
                       variant="outline"
                     >
-                      {m.admin_provider_credential_revoke()}
+                      {admin_provider_credential_revoke()}
                     </Button>
                   </>
                 ) : null}
@@ -192,7 +216,7 @@ export function AdminProviderCredentialControl() {
               </p>
               {credential?.credential.testedAt ? (
                 <p className="text-xs text-muted-foreground">
-                  {m.admin_provider_credential_tested_at({
+                  {admin_provider_credential_tested_at({
                     testedAt: new Date(
                       credential.credential.testedAt
                     ).toLocaleString(),
@@ -200,10 +224,10 @@ export function AdminProviderCredentialControl() {
                 </p>
               ) : null}
               <p className="text-xs text-muted-foreground">
-                {m.admin_provider_credential_activation_note()}
+                {admin_provider_credential_activation_note()}
               </p>
               <p className="text-xs text-muted-foreground">
-                {m.admin_provider_credential_restart_effective()}
+                {admin_provider_credential_restart_effective()}
               </p>
             </div>
           );
@@ -218,17 +242,17 @@ function providerTestStatus(
 ) {
   switch (status) {
     case 'passed':
-      return m.admin_provider_credential_test_passed();
+      return admin_provider_credential_test_passed();
     case 'unauthorized':
-      return m.admin_provider_credential_test_unauthorized();
+      return admin_provider_credential_test_unauthorized();
     case 'network_failed':
-      return m.admin_provider_credential_test_network_failed();
+      return admin_provider_credential_test_network_failed();
     case 'unknown':
-      return m.admin_provider_credential_test_unknown();
+      return admin_provider_credential_test_unknown();
     case 'not_wired':
-      return m.admin_provider_credential_douyin_recorded();
+      return admin_provider_credential_douyin_recorded();
     default:
-      return m.admin_provider_credential_test_pending();
+      return admin_provider_credential_test_pending();
   }
 }
 
@@ -237,10 +261,10 @@ function providerCredentialSource(
 ) {
   switch (source) {
     case 'vault':
-      return m.admin_provider_credential_source_vault();
+      return admin_provider_credential_source_vault();
     case 'env_fallback':
-      return m.admin_provider_credential_source_env_fallback();
+      return admin_provider_credential_source_env_fallback();
     case 'env':
-      return m.admin_provider_credential_source_env();
+      return admin_provider_credential_source_env();
   }
 }

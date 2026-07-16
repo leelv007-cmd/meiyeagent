@@ -5,7 +5,7 @@ import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { m } from "@/locale/paraglide/messages"
+import { common_close } from "@/locale/paraglide/messages";
 import { IconX } from "@tabler/icons-react"
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
@@ -73,7 +73,7 @@ function SheetContent({
           >
             <IconX
             />
-            <span className="sr-only">{m.common_close()}</span>
+            <span className="sr-only">{common_close()}</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Popup>

@@ -1,4 +1,4 @@
-import { m } from '@/locale/paraglide/messages';
+import { common_correlation_id } from '@/locale/paraglide/messages';
 
 export function correlatedApiErrorMessage(
   message: string,
@@ -6,7 +6,7 @@ export function correlatedApiErrorMessage(
 ) {
   const normalizedCorrelationId = correlationId?.trim();
   return normalizedCorrelationId
-    ? `${message}\n${m.common_correlation_id({ id: normalizedCorrelationId })}`
+    ? `${message}\n${common_correlation_id({ id: normalizedCorrelationId })}`
     : message;
 }
 

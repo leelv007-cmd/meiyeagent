@@ -1,5 +1,21 @@
 import { getAuthErrorMessage } from '@/lib/locale';
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_register_check_email,
+  auth_register_create_account,
+  auth_register_email,
+  auth_register_email_required,
+  auth_register_hide_password,
+  auth_register_name,
+  auth_register_name_required,
+  auth_register_password,
+  auth_register_password_required,
+  auth_register_placeholder_email,
+  auth_register_placeholder_name,
+  auth_register_placeholder_password,
+  auth_register_show_password,
+  auth_register_sign_in_hint,
+  auth_register_sign_up,
+} from '@/locale/paraglide/messages';
 import { AuthCard } from '@/components/auth/auth-card';
 import { FormError } from '@/components/shared/form-error';
 import { FormSuccess } from '@/components/shared/form-success';
@@ -44,11 +60,9 @@ export function RegisterForm({
   const credentialLoginEnabled =
     websiteConfig.auth?.enableCredentialLogin ?? true;
   const RegisterSchema = z.object({
-    email: z.email({ message: m.auth_register_email_required() }),
-    password: z
-      .string()
-      .min(1, { message: m.auth_register_password_required() }),
-    name: z.string().min(1, { message: m.auth_register_name_required() }),
+    email: z.email({ message: auth_register_email_required() }),
+    password: z.string().min(1, { message: auth_register_password_required() }),
+    name: z.string().min(1, { message: auth_register_name_required() }),
   });
   const form = useForm<z.infer<typeof RegisterSchema>>({
     resolver: zodResolver(RegisterSchema),
@@ -69,7 +83,7 @@ export function RegisterForm({
           setSuccess('');
         },
         onResponse: () => setIsPending(false),
-        onSuccess: () => setSuccess(m.auth_register_check_email()),
+        onSuccess: () => setSuccess(auth_register_check_email()),
         onError: (ctx) => {
           setError(getAuthErrorMessage(ctx.error));
         },
@@ -81,8 +95,8 @@ export function RegisterForm({
   };
   return (
     <AuthCard
-      headerLabel={m.auth_register_create_account()}
-      bottomButtonLabel={m.auth_register_sign_in_hint()}
+      headerLabel={auth_register_create_account()}
+      bottomButtonLabel={auth_register_sign_in_hint()}
       bottomButtonHref={Routes.Login}
     >
       {credentialLoginEnabled && (
@@ -94,12 +108,12 @@ export function RegisterForm({
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{m.auth_register_name()}</FormLabel>
+                    <FormLabel>{auth_register_name()}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
                         disabled={isPending}
-                        placeholder={m.auth_register_placeholder_name()}
+                        placeholder={auth_register_placeholder_name()}
                       />
                     </FormControl>
                     <FormMessage />
@@ -111,12 +125,12 @@ export function RegisterForm({
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{m.auth_register_email()}</FormLabel>
+                    <FormLabel>{auth_register_email()}</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
                         disabled={isPending}
-                        placeholder={m.auth_register_placeholder_email()}
+                        placeholder={auth_register_placeholder_email()}
                         type="email"
                       />
                     </FormControl>
@@ -129,13 +143,13 @@ export function RegisterForm({
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{m.auth_register_password()}</FormLabel>
+                    <FormLabel>{auth_register_password()}</FormLabel>
                     <div className="relative">
                       <FormControl>
                         <Input
                           {...field}
                           disabled={isPending}
-                          placeholder={m.auth_register_placeholder_password()}
+                          placeholder={auth_register_placeholder_password()}
                           type={showPassword ? 'text' : 'password'}
                           className="pr-10"
                         />
@@ -155,8 +169,8 @@ export function RegisterForm({
                         )}
                         <span className="sr-only">
                           {showPassword
-                            ? m.auth_register_hide_password()
-                            : m.auth_register_show_password()}
+                            ? auth_register_hide_password()
+                            : auth_register_show_password()}
                         </span>
                       </Button>
                     </div>
@@ -174,7 +188,7 @@ export function RegisterForm({
               className="w-full flex items-center justify-center gap-2"
             >
               {isPending && <IconLoader2 className="size-4 animate-spin" />}
-              <span>{m.auth_register_sign_up()}</span>
+              <span>{auth_register_sign_up()}</span>
             </Button>
           </form>
         </Form>

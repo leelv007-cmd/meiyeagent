@@ -1,5 +1,17 @@
 import type { CreativeSourceReference } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  creation_assistant_labeled_source,
+  creation_assistant_prefix_asset,
+  creation_assistant_prefix_content,
+  creation_assistant_prefix_task,
+  creation_assistant_prefix_template,
+  creation_assistant_prefix_work,
+  creation_assistant_source_asset,
+  creation_assistant_source_content,
+  creation_assistant_source_task,
+  creation_assistant_source_template,
+  creation_assistant_source_work,
+} from '@/locale/paraglide/messages';
 
 type LabeledSource = { id: string; label: string };
 
@@ -7,19 +19,19 @@ const genericSourceLabels: Record<
   CreativeSourceReference['kind'],
   () => string
 > = {
-  asset: m.creation_assistant_source_asset,
-  content: m.creation_assistant_source_content,
-  task: m.creation_assistant_source_task,
-  template: m.creation_assistant_source_template,
-  work: m.creation_assistant_source_work,
+  asset: creation_assistant_source_asset,
+  content: creation_assistant_source_content,
+  task: creation_assistant_source_task,
+  template: creation_assistant_source_template,
+  work: creation_assistant_source_work,
 };
 
 const sourcePrefixes: Record<CreativeSourceReference['kind'], () => string> = {
-  asset: m.creation_assistant_prefix_asset,
-  content: m.creation_assistant_prefix_content,
-  task: m.creation_assistant_prefix_task,
-  template: m.creation_assistant_prefix_template,
-  work: m.creation_assistant_prefix_work,
+  asset: creation_assistant_prefix_asset,
+  content: creation_assistant_prefix_content,
+  task: creation_assistant_prefix_task,
+  template: creation_assistant_prefix_template,
+  work: creation_assistant_prefix_work,
 };
 
 export function assistantSourceSummaries(input: {
@@ -46,7 +58,7 @@ export function assistantSourceSummaries(input: {
       (candidate) => candidate.id === reference.id
     );
     return source?.label
-      ? m.creation_assistant_labeled_source({
+      ? creation_assistant_labeled_source({
           kind: sourcePrefixes[reference.kind](),
           label: source.label,
         })

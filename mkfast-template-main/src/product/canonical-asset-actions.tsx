@@ -5,7 +5,44 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { m } from '@/locale/paraglide/messages';
+import {
+  asset_capture_camera,
+  asset_capture_continue,
+  asset_capture_description,
+  asset_capture_error_description,
+  asset_capture_error_title,
+  asset_capture_store_required,
+  asset_capture_title,
+  asset_capture_upload,
+  asset_capture_upload_failed,
+  asset_capture_uploading,
+  asset_governance_action_failed,
+  asset_governance_authorize,
+  asset_governance_category,
+  asset_governance_category_before_after,
+  asset_governance_category_customer_case,
+  asset_governance_category_other,
+  asset_governance_category_price_list,
+  asset_governance_category_store,
+  asset_governance_contains_minor,
+  asset_governance_contains_person,
+  asset_governance_contains_sensitive_data,
+  asset_governance_error_description,
+  asset_governance_error_title,
+  asset_governance_minor_blocked,
+  asset_governance_retry_withdrawal,
+  asset_governance_rights_evidence,
+  asset_governance_rights_owner,
+  asset_governance_save,
+  asset_governance_status_authorized,
+  asset_governance_status_blocked,
+  asset_governance_status_pending,
+  asset_governance_status_withdrawn,
+  asset_governance_tags,
+  asset_governance_title,
+  asset_governance_update_evidence,
+  asset_governance_withdraw,
+} from '@/locale/paraglide/messages';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { getPathWithLocale } from '@/lib/urls';
@@ -33,10 +70,10 @@ const AUTHORIZATION_STATUS_LABELS: Record<
   Asset['authorizationStatus'],
   () => string
 > = {
-  authorized: m.asset_governance_status_authorized,
-  blocked: m.asset_governance_status_blocked,
-  pending: m.asset_governance_status_pending,
-  withdrawn: m.asset_governance_status_withdrawn,
+  authorized: asset_governance_status_authorized,
+  blocked: asset_governance_status_blocked,
+  pending: asset_governance_status_pending,
+  withdrawn: asset_governance_status_withdrawn,
 };
 
 export function CanonicalAssetCapture({
@@ -52,7 +89,7 @@ export function CanonicalAssetCapture({
   async function upload(file: File) {
     if (!product.state) return;
     if (!product.state.store) {
-      setFailure(m.asset_capture_store_required());
+      setFailure(asset_capture_store_required());
       return;
     }
     setUploading(true);
@@ -80,7 +117,7 @@ export function CanonicalAssetCapture({
       });
       setCreatedAssetId(assetId);
     } catch {
-      setFailure(m.asset_capture_upload_failed());
+      setFailure(asset_capture_upload_failed());
     } finally {
       setUploading(false);
     }
@@ -92,16 +129,16 @@ export function CanonicalAssetCapture({
     <section aria-labelledby="asset-capture-title" className="space-y-4">
       <div>
         <h2 className="meiye-type-body font-semibold" id="asset-capture-title">
-          {m.asset_capture_title()}
+          {asset_capture_title()}
         </h2>
-        <p className="meiye-type-aux mt-1">{m.asset_capture_description()}</p>
+        <p className="meiye-type-aux mt-1">{asset_capture_description()}</p>
       </div>
       {failure || product.error ? (
         <Alert variant="destructive">
           <IconAlertTriangle />
-          <AlertTitle>{m.asset_capture_error_title()}</AlertTitle>
+          <AlertTitle>{asset_capture_error_title()}</AlertTitle>
           <AlertDescription>
-            {failure ?? m.asset_capture_error_description()}
+            {failure ?? asset_capture_error_description()}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -111,7 +148,7 @@ export function CanonicalAssetCapture({
           disabled={uploading || !product.state}
           icon={IconCamera}
           id="canonical-asset-camera"
-          label={m.asset_capture_camera()}
+          label={asset_capture_camera()}
           onFile={upload}
           variant={canCapture && isMobile ? 'secondary' : 'ghost'}
         />
@@ -119,7 +156,7 @@ export function CanonicalAssetCapture({
           disabled={uploading || !product.state}
           icon={IconUpload}
           id="canonical-asset-upload"
-          label={m.asset_capture_upload()}
+          label={asset_capture_upload()}
           onFile={upload}
           variant={canCapture && !isMobile ? 'secondary' : 'ghost'}
         />
@@ -132,7 +169,7 @@ export function CanonicalAssetCapture({
           )}
         >
           <IconPhoto />
-          {m.asset_capture_continue()}
+          {asset_capture_continue()}
         </a>
       ) : null}
     </section>
@@ -169,7 +206,7 @@ function AssetInput({
       htmlFor={id}
     >
       <Icon />
-      {disabled ? m.asset_capture_uploading() : label}
+      {disabled ? asset_capture_uploading() : label}
       <input
         accept="image/*,video/mp4,video/webm"
         capture={capture ? 'environment' : undefined}
@@ -217,7 +254,7 @@ export function CanonicalAssetGovernance({
     try {
       await product.execute(command);
     } catch {
-      setFailure(m.asset_governance_action_failed());
+      setFailure(asset_governance_action_failed());
     }
   }
 
@@ -225,7 +262,7 @@ export function CanonicalAssetGovernance({
     <section aria-labelledby="asset-governance-title" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold" id="asset-governance-title">
-          {m.asset_governance_title()}
+          {asset_governance_title()}
         </h2>
         <Badge aria-live="polite" variant="outline">
           {AUTHORIZATION_STATUS_LABELS[authorization.status]()}
@@ -234,16 +271,16 @@ export function CanonicalAssetGovernance({
       {failure || product.error ? (
         <Alert variant="destructive">
           <IconAlertTriangle />
-          <AlertTitle>{m.asset_governance_error_title()}</AlertTitle>
+          <AlertTitle>{asset_governance_error_title()}</AlertTitle>
           <AlertDescription>
-            {failure ?? m.asset_governance_error_description()}
+            {failure ?? asset_governance_error_description()}
           </AlertDescription>
         </Alert>
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <Label htmlFor={`${asset.id}-category`}>
-            {m.asset_governance_category()}
+            {asset_governance_category()}
           </Label>
           <select
             className="mt-2 h-touch-target w-full rounded-md border border-divider bg-surface-1 px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -253,34 +290,34 @@ export function CanonicalAssetGovernance({
             }
             value={category}
           >
-            <option value="store">{m.asset_governance_category_store()}</option>
+            <option value="store">{asset_governance_category_store()}</option>
             <option value="before_after">
-              {m.asset_governance_category_before_after()}
+              {asset_governance_category_before_after()}
             </option>
             <option value="customer_case">
-              {m.asset_governance_category_customer_case()}
+              {asset_governance_category_customer_case()}
             </option>
             <option value="price_list">
-              {m.asset_governance_category_price_list()}
+              {asset_governance_category_price_list()}
             </option>
-            <option value="other">{m.asset_governance_category_other()}</option>
+            <option value="other">{asset_governance_category_other()}</option>
           </select>
         </div>
         <AssetField
           id={`${asset.id}-tags`}
-          label={m.asset_governance_tags()}
+          label={asset_governance_tags()}
           onChange={setTags}
           value={tags}
         />
         <AssetField
           id={`${asset.id}-rights-owner`}
-          label={m.asset_governance_rights_owner()}
+          label={asset_governance_rights_owner()}
           onChange={setRightsOwner}
           value={rightsOwner}
         />
         <AssetField
           id={`${asset.id}-rights-evidence`}
-          label={m.asset_governance_rights_evidence()}
+          label={asset_governance_rights_evidence()}
           onChange={setRightsEvidence}
           value={rightsEvidence}
         />
@@ -289,19 +326,19 @@ export function CanonicalAssetGovernance({
         <AssetCheck
           checked={containsPerson}
           id={`${asset.id}-contains-person`}
-          label={m.asset_governance_contains_person()}
+          label={asset_governance_contains_person()}
           onChange={setContainsPerson}
         />
         <AssetCheck
           checked={containsSensitiveData}
           id={`${asset.id}-contains-sensitive-data`}
-          label={m.asset_governance_contains_sensitive_data()}
+          label={asset_governance_contains_sensitive_data()}
           onChange={setContainsSensitiveData}
         />
         <AssetCheck
           checked={minorStatus === 'minor'}
           id={`${asset.id}-minor-status`}
-          label={m.asset_governance_contains_minor()}
+          label={asset_governance_contains_minor()}
           onChange={(checked) => setMinorStatus(checked ? 'minor' : 'none')}
         />
       </div>
@@ -326,7 +363,7 @@ export function CanonicalAssetGovernance({
           variant="outline"
         >
           <IconCheck />
-          {m.asset_governance_save()}
+          {asset_governance_save()}
         </Button>
         {authorization.action !== 'none' ? (
           <Button
@@ -345,8 +382,8 @@ export function CanonicalAssetGovernance({
           >
             <IconShieldCheck />
             {authorization.action === 'update_evidence'
-              ? m.asset_governance_update_evidence()
-              : m.asset_governance_authorize()}
+              ? asset_governance_update_evidence()
+              : asset_governance_authorize()}
           </Button>
         ) : null}
         {asset.authorizationStatus === 'authorized' ? (
@@ -358,7 +395,7 @@ export function CanonicalAssetGovernance({
             variant="ghost"
           >
             <IconTrash />
-            {m.asset_governance_withdraw()}
+            {asset_governance_withdraw()}
           </Button>
         ) : null}
         {asset.authorizationStatus === 'withdrawn' ? (
@@ -370,13 +407,13 @@ export function CanonicalAssetGovernance({
             variant="outline"
           >
             <IconRefresh />
-            {m.asset_governance_retry_withdrawal()}
+            {asset_governance_retry_withdrawal()}
           </Button>
         ) : null}
       </div>
       {asset.authorizationStatus === 'blocked' ? (
         <p className="text-sm text-destructive">
-          {m.asset_governance_minor_blocked()}
+          {asset_governance_minor_blocked()}
         </p>
       ) : null}
     </section>

@@ -16,7 +16,40 @@ import {
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { m } from '@/locale/paraglide/messages';
+import {
+  integration_byok_billing_notice,
+  integration_byok_controlled_profile,
+  integration_byok_description,
+  integration_byok_execute,
+  integration_byok_execute_attention,
+  integration_byok_execute_completed,
+  integration_byok_execute_failed,
+  integration_byok_option_connection,
+  integration_byok_option_model,
+  integration_byok_option_profile,
+  integration_byok_options_unavailable,
+  integration_byok_options_unavailable_title,
+  integration_byok_prompt_error,
+  integration_byok_prompt_label,
+  integration_byok_prompt_placeholder,
+  integration_byok_provider_cost_external,
+  integration_byok_provider_cost_label,
+  integration_byok_provider_cost_unknown,
+  integration_byok_published_model,
+  integration_byok_recorded_description,
+  integration_byok_recorded_title,
+  integration_byok_refresh_usage,
+  integration_byok_result,
+  integration_byok_title,
+  integration_byok_usage,
+  integration_byok_workspace_credential,
+  integration_status_completed,
+  integration_status_failed,
+  integration_status_unknown,
+  integration_usage_committed,
+  integration_usage_refunded,
+  integration_usage_reserved,
+} from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import {
   strictByokExecutionFormSchema,
@@ -97,7 +130,7 @@ export function StrictByokExecutionPanel({
           prompt: values.prompt,
         },
       }),
-    onError: () => toast.error(m.integration_byok_execute_failed()),
+    onError: () => toast.error(integration_byok_execute_failed()),
     onSuccess: async (next) => {
       setResult(next);
       await queryClient.invalidateQueries({
@@ -105,8 +138,8 @@ export function StrictByokExecutionPanel({
       });
       toast[next.status === 'completed' ? 'success' : 'warning'](
         next.status === 'completed'
-          ? m.integration_byok_execute_completed()
-          : m.integration_byok_execute_attention()
+          ? integration_byok_execute_completed()
+          : integration_byok_execute_attention()
       );
     },
   });
@@ -117,9 +150,7 @@ export function StrictByokExecutionPanel({
     (candidate) => candidate.id === profileId
   );
   const errorCause = optionsQuery.error;
-  const error = errorCause
-    ? m.integration_byok_options_unavailable()
-    : undefined;
+  const error = errorCause ? integration_byok_options_unavailable() : undefined;
   const busy = executeMutation.isPending;
   const { getValues, setValue } = form;
 
@@ -159,16 +190,16 @@ export function StrictByokExecutionPanel({
         <CardHeader className="gap-4 border-b px-4 py-5 sm:flex sm:flex-row sm:items-start sm:justify-between sm:px-6">
           <div className="max-w-xl space-y-1.5">
             <CardTitle className="text-base">
-              {m.integration_byok_title()}
+              {integration_byok_title()}
             </CardTitle>
             <CardDescription className="text-sm leading-6">
-              {m.integration_byok_description()}
+              {integration_byok_description()}
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 sm:ml-6">
             <Button disabled={busy || optionsQuery.isPending} type="submit">
               <IconPlayerPlay />
-              {m.integration_byok_execute()}
+              {integration_byok_execute()}
             </Button>
             <Button
               disabled={busy || optionsQuery.isFetching}
@@ -177,7 +208,7 @@ export function StrictByokExecutionPanel({
               variant="outline"
             >
               <IconRefresh />
-              {m.integration_byok_refresh_usage()}
+              {integration_byok_refresh_usage()}
             </Button>
           </div>
         </CardHeader>
@@ -185,7 +216,7 @@ export function StrictByokExecutionPanel({
           {error ? (
             <Alert variant="destructive">
               <AlertTitle>
-                {m.integration_byok_options_unavailable_title()}
+                {integration_byok_options_unavailable_title()}
               </AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
@@ -194,21 +225,21 @@ export function StrictByokExecutionPanel({
             <>
               {options.executionMode === 'recorded' ? (
                 <Alert>
-                  <AlertTitle>{m.integration_byok_recorded_title()}</AlertTitle>
+                  <AlertTitle>{integration_byok_recorded_title()}</AlertTitle>
                   <AlertDescription>
-                    {m.integration_byok_recorded_description()}
+                    {integration_byok_recorded_description()}
                   </AlertDescription>
                 </Alert>
               ) : null}
               <Alert>
                 <AlertTitle>
-                  {m.integration_byok_usage({
+                  {integration_byok_usage({
                     allowance: options.usage.allowance,
                     available: options.usage.available,
                   })}
                 </AlertTitle>
                 <AlertDescription>
-                  {m.integration_byok_billing_notice()}
+                  {integration_byok_billing_notice()}
                 </AlertDescription>
               </Alert>
             </>
@@ -217,7 +248,7 @@ export function StrictByokExecutionPanel({
             <div className="grid gap-3 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="byok-connection">
-                  {m.integration_byok_workspace_credential()}
+                  {integration_byok_workspace_credential()}
                 </Label>
                 <select
                   aria-invalid={Boolean(form.formState.errors.connectionId)}
@@ -228,7 +259,7 @@ export function StrictByokExecutionPanel({
                   {activeConnections.map((connection, index) => (
                     <option key={connection.id} value={connection.id}>
                       {connection.subject?.trim() ||
-                        m.integration_byok_option_connection({
+                        integration_byok_option_connection({
                           index: index + 1,
                           version: connection.credential.version,
                         })}
@@ -238,7 +269,7 @@ export function StrictByokExecutionPanel({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="byok-profile">
-                  {m.integration_byok_controlled_profile()}
+                  {integration_byok_controlled_profile()}
                 </Label>
                 <select
                   aria-invalid={Boolean(form.formState.errors.profileId)}
@@ -257,14 +288,14 @@ export function StrictByokExecutionPanel({
                 >
                   {(options?.profiles ?? []).map((candidate, index) => (
                     <option key={candidate.id} value={candidate.id}>
-                      {m.integration_byok_option_profile({ index: index + 1 })}
+                      {integration_byok_option_profile({ index: index + 1 })}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="byok-model">
-                  {m.integration_byok_published_model()}
+                  {integration_byok_published_model()}
                 </Label>
                 <select
                   aria-invalid={Boolean(form.formState.errors.modelId)}
@@ -274,7 +305,7 @@ export function StrictByokExecutionPanel({
                 >
                   {(profile?.permittedModels ?? []).map((modelId, index) => (
                     <option key={modelId} value={modelId}>
-                      {m.integration_byok_option_model({ index: index + 1 })}
+                      {integration_byok_option_model({ index: index + 1 })}
                     </option>
                   ))}
                 </select>
@@ -282,17 +313,17 @@ export function StrictByokExecutionPanel({
             </div>
             <div className="space-y-2">
               <Label htmlFor="byok-prompt">
-                {m.integration_byok_prompt_label()}
+                {integration_byok_prompt_label()}
               </Label>
               <Textarea
                 aria-invalid={Boolean(form.formState.errors.prompt)}
                 id="byok-prompt"
-                placeholder={m.integration_byok_prompt_placeholder()}
+                placeholder={integration_byok_prompt_placeholder()}
                 {...form.register('prompt')}
               />
               {form.formState.errors.prompt ? (
                 <p className="text-xs text-destructive" role="alert">
-                  {m.integration_byok_prompt_error()}
+                  {integration_byok_prompt_error()}
                 </p>
               ) : null}
             </div>
@@ -300,17 +331,17 @@ export function StrictByokExecutionPanel({
           {result ? (
             <div className="rounded-lg border p-3 text-sm">
               <p className="font-medium">
-                {m.integration_byok_result({
+                {integration_byok_result({
                   available: result.usage.available,
                   result: byokResultStatus(result.status),
                   usage: byokUsageStatus(result.usage.status),
                 })}
               </p>
               <p className="mt-1 text-muted-foreground">
-                {m.integration_byok_provider_cost_label()}
+                {integration_byok_provider_cost_label()}
                 {result.providerCost.status === 'externally_billed'
-                  ? m.integration_byok_provider_cost_external()
-                  : m.integration_byok_provider_cost_unknown()}
+                  ? integration_byok_provider_cost_external()
+                  : integration_byok_provider_cost_unknown()}
               </p>
               {result.output ? (
                 <p className="mt-3 whitespace-pre-wrap">{result.output}</p>
@@ -324,13 +355,13 @@ export function StrictByokExecutionPanel({
 }
 
 function byokResultStatus(status: StrictByokResult['status']) {
-  if (status === 'completed') return m.integration_status_completed();
-  if (status === 'failed') return m.integration_status_failed();
-  return m.integration_status_unknown();
+  if (status === 'completed') return integration_status_completed();
+  if (status === 'failed') return integration_status_failed();
+  return integration_status_unknown();
 }
 
 function byokUsageStatus(status: StrictByokResult['usage']['status']) {
-  if (status === 'committed') return m.integration_usage_committed();
-  if (status === 'refunded') return m.integration_usage_refunded();
-  return m.integration_usage_reserved();
+  if (status === 'committed') return integration_usage_committed();
+  if (status === 'refunded') return integration_usage_refunded();
+  return integration_usage_reserved();
 }

@@ -20,6 +20,7 @@ import {
   DurableMediaGenerationApplicationService,
   ModelMediaGenerationEffect,
 } from './media-generation-workflow.js';
+import { ProviderReferencePolicyError } from '../../pro-studio-runtime/provider-reference-policy.js';
 
 const png = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zp3sAAAAASUVORK5CYII=',
@@ -1156,7 +1157,7 @@ describe('durable media generation', () => {
     assert.equal(providerReferenceRole, 'reference_image');
   });
 
-  it('fails closed and refunds before provider dispatch when the reference decision is undetermined', async () => {
+  it('fails closed and refunds before provider dispatch when an injected reference policy rejects it', async () => {
     let providerCalls = 0;
     const provider: MediaProviderLifecyclePort = {
       async submit() {
@@ -1199,6 +1200,14 @@ describe('durable media generation', () => {
       new ModelMediaGenerationEffect({
         models,
         provider,
+        referencePolicy: {
+          assertCanDispatch() {
+            throw new ProviderReferencePolicyError(
+              'PROVIDER_REFERENCE_PROBE_REQUIRED',
+              'Provider reference transport is unavailable.',
+            );
+          },
+        },
         referenceAssets: {
           async inspect() {
             throw new Error('submission inspection belongs to operations');

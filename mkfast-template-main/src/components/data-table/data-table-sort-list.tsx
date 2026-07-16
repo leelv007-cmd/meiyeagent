@@ -1,4 +1,14 @@
-import { m } from "@/locale/paraglide/messages";
+import {
+  common_table_add_sort,
+  common_table_add_sorting_hint,
+  common_table_modify_sorting_hint,
+  common_table_no_fields_found,
+  common_table_no_sorting_applied,
+  common_table_reset_sorting,
+  common_table_search_fields,
+  common_table_sort,
+  common_table_sort_by,
+} from "@/locale/paraglide/messages";
 import type { ColumnSort, Table } from "@tanstack/react-table";
 import { IconArrowsDownUp, IconSelector, IconTrash, } from "@tabler/icons-react";
 import * as React from "react";
@@ -91,7 +101,7 @@ export function DataTableSortList<TData>({ table, ...props }: DataTableSortListP
     return (<Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger render={(triggerProps) => (<Button {...triggerProps} variant="outline" size="sm" className="font-normal" onKeyDown={onTriggerKeyDown}>
             <IconArrowsDownUp className="text-muted-foreground"/>
-            {m.common_table_sort()}
+            {common_table_sort()}
             {sorting.length > 0 && (<Badge variant="secondary" className="h-[18.24px] rounded-[3.2px] px-[5.12px] font-mono font-normal text-[10.4px]">
                 {sorting.length}
               </Badge>)}
@@ -99,11 +109,11 @@ export function DataTableSortList<TData>({ table, ...props }: DataTableSortListP
       <PopoverContent aria-labelledby={labelId} aria-describedby={descriptionId} className="flex w-full flex-col gap-3.5 p-4 sm:min-w-[380px]" {...props}>
         <div className="flex flex-col gap-1">
           <h4 id={labelId} className="font-medium leading-none">
-            {sorting.length > 0 ? m.common_table_sort_by() : m.common_table_no_sorting_applied()}
+            {sorting.length > 0 ? common_table_sort_by() : common_table_no_sorting_applied()}
           </h4>
           <p id={descriptionId} className={cn("text-muted-foreground text-sm", sorting.length > 0 && "sr-only")}>
             {sorting.length > 0
-            ? m.common_table_modify_sorting_hint() : m.common_table_add_sorting_hint()}
+            ? common_table_modify_sorting_hint() : common_table_add_sorting_hint()}
           </p>
         </div>
         {sorting.length > 0 && (<ul className="flex max-h-[300px] flex-col gap-2 overflow-y-auto p-1">
@@ -111,10 +121,10 @@ export function DataTableSortList<TData>({ table, ...props }: DataTableSortListP
           </ul>)}
         <div className="flex w-full items-center gap-2">
           <Button size="sm" className="rounded" ref={addButtonRef} onClick={onSortAdd} disabled={columns.length === 0}>
-            {m.common_table_add_sort()}
+            {common_table_add_sort()}
           </Button>
           {sorting.length > 0 && (<Button variant="outline" size="sm" className="rounded" onClick={onSortingReset}>
-              {m.common_table_reset_sorting()}
+              {common_table_reset_sorting()}
             </Button>)}
         </div>
       </PopoverContent>
@@ -158,9 +168,9 @@ function DataTableSortItem({ sort, sortItemId, columns, columnLabels, onSortUpda
             </Button>)}/>
         <PopoverContent id={fieldListboxId} className="w-48 p-0">
           <Command>
-            <CommandInput placeholder={m.common_table_search_fields()}/>
+            <CommandInput placeholder={common_table_search_fields()}/>
             <CommandList>
-              <CommandEmpty>{m.common_table_no_fields_found()}</CommandEmpty>
+              <CommandEmpty>{common_table_no_fields_found()}</CommandEmpty>
               <CommandGroup>
                 {columns.map((column) => (<CommandItem key={column.id} value={column.id} onSelect={(value) => onSortUpdate(sort.id, { id: value })}>
                     <span className="truncate">{column.label}</span>

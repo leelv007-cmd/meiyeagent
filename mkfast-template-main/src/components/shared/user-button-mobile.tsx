@@ -1,4 +1,9 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  auth_common_logout,
+  auth_common_logout_failed,
+  common_open_user_menu,
+  common_user_menu,
+} from '@/locale/paraglide/messages';
 import { authClient } from '@/auth/client';
 import { getAvatarLinks } from '@/config/avatar-config';
 import type { SessionUser } from '@/auth/types';
@@ -33,7 +38,7 @@ export function UserButtonMobile({ user }: UserButtonMobileProps) {
           router.navigate({ to: '/' });
         },
         onError: (err) => {
-          toast.error(m.auth_common_logout_failed());
+          toast.error(auth_common_logout_failed());
           console.error(err);
         },
       },
@@ -42,7 +47,7 @@ export function UserButtonMobile({ user }: UserButtonMobileProps) {
   return (
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>
-        <button type="button" aria-label={m.common_open_user_menu()}>
+        <button type="button" aria-label={common_open_user_menu()}>
           <UserAvatar
             name={user.name ?? null}
             image={user.image ?? null}
@@ -52,7 +57,7 @@ export function UserButtonMobile({ user }: UserButtonMobileProps) {
       </DrawerTrigger>
       <DrawerContent className="rounded-t-[10px] border-t px-3 pb-12 text-sm">
         <DrawerHeader className="p-2 text-left">
-          <DrawerTitle className="sr-only">{m.common_user_menu()}</DrawerTitle>
+          <DrawerTitle className="sr-only">{common_user_menu()}</DrawerTitle>
         </DrawerHeader>
         <div className="flex items-center gap-4 p-2">
           <UserAvatar
@@ -96,7 +101,7 @@ export function UserButtonMobile({ user }: UserButtonMobileProps) {
               className="flex w-full items-center gap-3 px-2.5 py-2 text-left"
             >
               <IconLogout className="size-4 shrink-0" />
-              <span className="text-sm">{m.auth_common_logout()}</span>
+              <span className="text-sm">{auth_common_logout()}</span>
             </button>
           </li>
         </ul>

@@ -1,5 +1,8 @@
 import type { CreativeSourceReference } from '@meiye/contracts';
-import { m } from '@/locale/paraglide/messages';
+import {
+  global_command_business_page,
+  global_command_open,
+} from '@/locale/paraglide/messages';
 import { BUSINESS_NAVIGATION } from '@/lib/uiux/navigation';
 import type { ModelOperation } from '@/p1/settings-view-model';
 import {
@@ -49,8 +52,8 @@ export function projectGlobalNavigation(
 ): GlobalNavigationEntry[] {
   const pages = BUSINESS_NAVIGATION.map(
     (entry): GlobalNavigationEntry => ({
-      actionLabel: m.global_command_open(),
-      detail: m.global_command_business_page(),
+      actionLabel: global_command_open(),
+      detail: global_command_business_page(),
       href: entry.href,
       id: entry.id,
       kind: 'page',
@@ -72,7 +75,7 @@ export function projectGlobalNavigation(
         .slice(0, 18)
         .map(
           (item): GlobalNavigationEntry => ({
-            actionLabel: m.global_command_open(),
+            actionLabel: global_command_open(),
             detail: item.detail,
             href: item.href,
             id: item.id,

@@ -1,4 +1,16 @@
-import { m } from '@/locale/paraglide/messages';
+import {
+  admin_navigation_audit,
+  admin_navigation_integrations,
+  admin_navigation_models,
+  admin_navigation_plans,
+  admin_navigation_templates,
+  admin_navigation_users,
+  product_navigation_admin,
+  product_navigation_settings,
+  settings_navigation_account,
+  settings_navigation_connections,
+  settings_navigation_models,
+} from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 import { BUSINESS_NAVIGATION } from '@/lib/uiux/navigation';
 import {
@@ -51,7 +63,7 @@ export const SETTINGS_SIDEBAR_ITEMS = [
   {
     id: 'account',
     get label() {
-      return m.settings_navigation_account();
+      return settings_navigation_account();
     },
     href: Routes.SettingsAccount,
     icon: IconUserCircle,
@@ -59,7 +71,7 @@ export const SETTINGS_SIDEBAR_ITEMS = [
   {
     id: 'models',
     get label() {
-      return m.settings_navigation_models();
+      return settings_navigation_models();
     },
     href: Routes.SettingsModels,
     icon: IconCpu,
@@ -67,7 +79,7 @@ export const SETTINGS_SIDEBAR_ITEMS = [
   {
     id: 'connections',
     get label() {
-      return m.settings_navigation_connections();
+      return settings_navigation_connections();
     },
     href: Routes.SettingsConnections,
     icon: IconPlugConnected,
@@ -78,7 +90,7 @@ export const ADMIN_SIDEBAR_ITEMS = [
   {
     id: 'models',
     get label() {
-      return m.admin_navigation_models();
+      return admin_navigation_models();
     },
     href: Routes.AdminModels,
     icon: IconCpu,
@@ -86,7 +98,7 @@ export const ADMIN_SIDEBAR_ITEMS = [
   {
     id: 'templates',
     get label() {
-      return m.admin_navigation_templates();
+      return admin_navigation_templates();
     },
     href: Routes.AdminTemplates,
     icon: IconTemplate,
@@ -94,7 +106,7 @@ export const ADMIN_SIDEBAR_ITEMS = [
   {
     id: 'integrations',
     get label() {
-      return m.admin_navigation_integrations();
+      return admin_navigation_integrations();
     },
     href: Routes.AdminIntegrations,
     icon: IconPlugConnected,
@@ -102,7 +114,7 @@ export const ADMIN_SIDEBAR_ITEMS = [
   {
     id: 'plans',
     get label() {
-      return m.admin_navigation_plans();
+      return admin_navigation_plans();
     },
     href: Routes.AdminPlans,
     icon: IconReceipt,
@@ -110,7 +122,7 @@ export const ADMIN_SIDEBAR_ITEMS = [
   {
     id: 'users',
     get label() {
-      return m.admin_navigation_users();
+      return admin_navigation_users();
     },
     href: Routes.AdminUsers,
     icon: IconUsers,
@@ -118,7 +130,7 @@ export const ADMIN_SIDEBAR_ITEMS = [
   {
     id: 'audit',
     get label() {
-      return m.admin_navigation_audit();
+      return admin_navigation_audit();
     },
     href: Routes.AdminAudit,
     icon: IconHistory,
@@ -128,7 +140,7 @@ export const ADMIN_SIDEBAR_ITEMS = [
 export const SETTINGS_UTILITY_ITEM: ShellNavigationItem = {
   id: 'settings',
   get label() {
-    return m.product_navigation_settings();
+    return product_navigation_settings();
   },
   href: Routes.SettingsAccount,
   icon: IconSettings,
@@ -137,7 +149,7 @@ export const SETTINGS_UTILITY_ITEM: ShellNavigationItem = {
 export const ADMIN_UTILITY_ITEM: ShellNavigationItem = {
   id: 'admin',
   get label() {
-    return m.product_navigation_admin();
+    return product_navigation_admin();
   },
   href: Routes.AdminModels,
   icon: IconShieldCheck,
