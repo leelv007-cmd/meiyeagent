@@ -347,7 +347,7 @@ evidence.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Cross-workspace objects remain opaque | Create independent workspaces and reject foreign projects, revisions, assets, generation jobs, Agent credentials, and ContentPackage adoption targets without leaking IDs or changing the caller's draft. |
+| 1 | Cross-workspace objects remain opaque and auditable | Create independent workspaces and reject foreign projects, revisions, assets, generation jobs, ContentPackages, the disabled Grant branch, and Agent confirmations with one opaque response; prove projects/assets/jobs/adoptions remain unchanged and reread seven workspace-scoped PostgreSQL rejection audits containing target hashes rather than raw IDs. |
 | 2 | Dual Canvas sessions preserve CAS zero-write | Plan and confirm the same revision in two sessions, require the stale apply to return `REVISION_CONFLICT` with no write, then re-read, re-plan, confirm, and apply successfully. |
 | 3 | Identity switch clears caches and fences late responses | Hold a stale `listProjects` response across sign-out and identity switch, then verify workspace-scoped storage/cache cleanup, the new cache namespace, and no stale project rendering. |
 

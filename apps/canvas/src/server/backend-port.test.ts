@@ -9,6 +9,8 @@ import {
 	MemoryCanvasAssetRepository,
 	MemoryCanvasObjectStorage,
 	MemoryLaunchCodeRepository,
+	MemorySecurityRejectionAuditRepository,
+	SecurityRejectionAuditService,
 } from "@meiye/core/pro-studio";
 import {
 	CanvasAgentError,
@@ -101,6 +103,10 @@ async function fixture(
 }
 
 function runtimePorts(): CanvasBackendRuntimePorts {
+	const securityAudit = new SecurityRejectionAuditService(
+		new MemorySecurityRejectionAuditRepository(),
+		{ clock: () => new Date("2026-07-16T12:00:00.000Z") },
+	);
 	return {
 		adoption: {
 			async adopt() {
@@ -184,6 +190,7 @@ function runtimePorts(): CanvasBackendRuntimePorts {
 				},
 			},
 		},
+		securityAudit,
 	};
 }
 
@@ -225,6 +232,11 @@ test("freezes the M1 action paths, methods and idempotency location", () => {
 			],
 			listProjects: ["POST", "/api/canvas/listProjects", "none"],
 			listRevisions: ["POST", "/api/canvas/listRevisions", "none"],
+			listSecurityRejectionAudit: [
+				"POST",
+				"/api/canvas/listSecurityRejectionAudit",
+				"none",
+			],
 			loadProject: ["POST", "/api/canvas/loadProject", "none"],
 			planAgent: ["POST", "/api/canvas/planAgent", "header"],
 			persistLocalCanvasArtifact: [
@@ -459,6 +471,108 @@ test("generation actions reject unknown projects and mismatched revisions before
 		assert.equal((await response.json()).error.code, "NOT_FOUND", action);
 	}
 	assert.equal(coreCalls, 0);
+});
+
+test("records every foreign object rejection as one opaque audit-only side effect", async () => {
+	const ports = runtimePorts();
+	ports.generation.core.getJob = async () => {
+		throw new CoreGenerationProviderError(
+			"GENERATION_JOB_NOT_FOUND",
+			"Foreign job detail must stay private.",
+			{ retryable: false, status: 404 },
+		);
+	};
+	ports.adoption.adopt = async () => {
+		throw new CoreAdvancedCanvasAdoptionError(
+			"CONTENT_PACKAGE_NOT_FOUND",
+			"Foreign package detail must stay private.",
+			404,
+		);
+	};
+	ports.agent.service.apply = async () => {
+		throw new CanvasAgentError(
+			"CONFIRMATION_NOT_FOUND",
+			"Foreign confirmation detail must stay private.",
+		);
+	};
+	const { port, sessionToken } = await fixture(ports);
+	const attempts = [
+		["loadProject", { projectId: "foreign-project" }],
+		[
+			"getRevision",
+			{ projectId: "project-1", revisionId: "foreign-revision" },
+		],
+		["getAsset", { assetId: "foreign-asset" }],
+		[
+			"getGenerationJob",
+			{ jobId: "foreign-job", projectId: "project-1" },
+		],
+		[
+			"adoptAdvancedCanvasOutput",
+			{
+				projectId: "project-1",
+				revisionRef: { kind: "frozen", revisionId: "revision-1" },
+				selection: { orderedMediaNodeIds: ["image-1"] },
+				target: {
+					baseVersionId: "foreign-version",
+					kind: "existing_package",
+					packageId: "foreign-package",
+				},
+			},
+		],
+		[
+			"getProviderReferenceGrant",
+			{ grantId: "foreign-grant" },
+		],
+		[
+			"applyAgentOps",
+			{
+				credentialId: "foreign-confirmation",
+				expectedRevision: 1,
+				projectId: "project-1",
+			},
+		],
+	] as const;
+
+	for (const [action, body] of attempts) {
+		const response = await port.handle(action, request(body), sessionToken);
+		const envelope = await response.json();
+		assert.equal(response.status, 404, action);
+		assert.equal(envelope.error.code, "NOT_FOUND", action);
+		assert.equal(envelope.error.message, "Canvas object was not found.", action);
+		assert.equal(JSON.stringify(envelope).includes(Object.values(body)[0]), false);
+	}
+
+	const listed = await port.handle(
+		"listSecurityRejectionAudit",
+		request({}),
+		sessionToken,
+	);
+	assert.equal(listed.status, 200);
+	const events = (await listed.json()).data;
+	assert.deepEqual(
+		events.map((event: { objectKind: string }) => event.objectKind),
+		["project", "revision", "asset", "job", "package", "grant", "confirmation"],
+	);
+	assert.equal(JSON.stringify(events).includes("foreign-"), false);
+});
+
+test("keeps disabled Grant access rejected when durable rejection audit is unavailable", async () => {
+	const ports = runtimePorts();
+	ports.securityAudit.record = async () => {
+		throw new Error("audit database unavailable");
+	};
+	const { port, sessionToken } = await fixture(ports);
+
+	const response = await port.handle(
+		"getProviderReferenceGrant",
+		request({ grantId: "foreign-grant" }),
+		sessionToken,
+	);
+	const envelope = await response.json();
+	assert.equal(response.status, 503);
+	assert.equal(envelope.error.code, "SECURITY_AUDIT_UNAVAILABLE");
+	assert.equal(JSON.stringify(envelope).includes("foreign-grant"), false);
 });
 
 test("preserves authoritative Core generation status and retry semantics", async () => {

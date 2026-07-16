@@ -56,6 +56,24 @@ type CanvasResponse<T> = {
 type AgentPlan = { baseRevision: number; id: string };
 type AgentConfirmation = { credentialId: string };
 type WorkspaceContext = { userId: string; workspaceId: string };
+type SecurityRejectionAuditEvent = {
+  actorId: string;
+  correlationId: string;
+  createdAt: string;
+  id: string;
+  objectKind:
+    | 'project'
+    | 'revision'
+    | 'asset'
+    | 'job'
+    | 'package'
+    | 'grant'
+    | 'confirmation';
+  outcome: 'opaque_not_found';
+  requestAction: string;
+  targetDigest: string;
+  workspaceId: string;
+};
 
 function canvasOrigin() {
   return `http://localhost:${process.env.PLAYWRIGHT_CANVAS_PORT ?? '4200'}`;
@@ -293,10 +311,12 @@ function expectForeignObjectRejected<T>(
   result: CanvasResponse<T>,
   foreignId: string
 ) {
-  expect([400, 403, 404, 409], 'foreign object must fail closed').toContain(
-    result.status
-  );
+  expect(result.status, 'foreign object must be opaque').toBe(404);
   expect(result.body.data).toBeUndefined();
+  expect(result.body.error).toEqual({
+    code: 'NOT_FOUND',
+    message: 'Canvas object was not found.',
+  });
   expect(result.body.error?.message ?? '').not.toContain(foreignId);
 }
 
@@ -339,6 +359,10 @@ test.describe('Ticket 25 security boundaries', () => {
       await unlockProStudio(pageB);
       await pageB.reload();
       await enterCanvas(pageB);
+      const attackerContext = await canvasData<WorkspaceContext>(
+        pageB,
+        'getSessionContext'
+      );
 
       const fixtureA = await createCanvasFixture(
         page,
@@ -358,6 +382,22 @@ test.describe('Ticket 25 security boundaries', () => {
       }
       const packageA = await adoptFixture(page, fixtureA);
       const agentA = await agentConfirmation(page, fixtureA.project.id);
+
+      const before = {
+        adoptions: await canvasData<unknown[]>(pageB, 'listAdoptions', {
+          projectId: fixtureB.project.id,
+        }),
+        assets: await canvasData<unknown[]>(pageB, 'listAssets'),
+        generations: await canvasData<unknown[]>(
+          pageB,
+          'listProjectGenerations',
+          { projectId: fixtureB.project.id }
+        ),
+        project: await canvasData<CanvasProject>(pageB, 'loadProject', {
+          projectId: fixtureB.project.id,
+        }),
+        projects: await canvasData<CanvasProject[]>(pageB, 'listProjects'),
+      };
 
       expectForeignObjectRejected(
         await canvasRequest(pageB, 'loadProject', {
@@ -392,6 +432,12 @@ test.describe('Ticket 25 security boundaries', () => {
       );
       expect(foreignAudit.status).toBe(200);
       expect(foreignAudit.body.data).toEqual([]);
+      expectForeignObjectRejected(
+        await canvasRequest(pageB, 'getProviderReferenceGrant', {
+          grantId: 'provider-reference-grant-foreign',
+        }),
+        'provider-reference-grant-foreign'
+      );
       expectForeignObjectRejected(
         await canvasRequest(
           pageB,
@@ -438,6 +484,72 @@ test.describe('Ticket 25 security boundaries', () => {
         ),
         packageA.packageId
       );
+
+      const after = {
+        adoptions: await canvasData<unknown[]>(pageB, 'listAdoptions', {
+          projectId: fixtureB.project.id,
+        }),
+        assets: await canvasData<unknown[]>(pageB, 'listAssets'),
+        generations: await canvasData<unknown[]>(
+          pageB,
+          'listProjectGenerations',
+          { projectId: fixtureB.project.id }
+        ),
+        project: await canvasData<CanvasProject>(pageB, 'loadProject', {
+          projectId: fixtureB.project.id,
+        }),
+        projects: await canvasData<CanvasProject[]>(pageB, 'listProjects'),
+      };
+      expect(after).toEqual(before);
+      const confirmationAudit = await canvasData<
+        Array<{ errorCode?: string; outcome: string }>
+      >(pageB, 'listAgentAudit', { projectId: fixtureB.project.id });
+      expect(confirmationAudit).toHaveLength(1);
+      expect(confirmationAudit[0]).toMatchObject({
+        errorCode: 'CONFIRMATION_NOT_FOUND',
+        outcome: 'error',
+      });
+
+      const rejectionAudit = await canvasData<SecurityRejectionAuditEvent[]>(
+        pageB,
+        'listSecurityRejectionAudit'
+      );
+      expect(rejectionAudit.map((event) => event.objectKind)).toEqual([
+        'project',
+        'revision',
+        'asset',
+        'job',
+        'grant',
+        'confirmation',
+        'package',
+      ]);
+      expect(
+        rejectionAudit.every(
+          (event) =>
+            event.actorId === attackerContext.userId &&
+            event.workspaceId === attackerContext.workspaceId &&
+            event.outcome === 'opaque_not_found' &&
+            /^[a-f0-9]{64}$/u.test(event.targetDigest)
+        )
+      ).toBeTruthy();
+      const serializedAudit = JSON.stringify(rejectionAudit);
+      for (const foreignId of [
+        fixtureA.project.id,
+        fixtureA.checkpoint.id,
+        assetAId,
+        jobAId,
+        packageA.packageId,
+        agentA.confirmation.credentialId,
+        'provider-reference-grant-foreign',
+      ]) {
+        expect(serializedAudit).not.toContain(foreignId);
+      }
+      expect(
+        await canvasData<SecurityRejectionAuditEvent[]>(
+          pageB,
+          'listSecurityRejectionAudit'
+        )
+      ).toEqual(rejectionAudit);
     } finally {
       await contextB.close();
     }

@@ -12,6 +12,8 @@ import {
 	PostgresAdvancedCanvasProjectRepository,
 	PostgresCanvasAssetRepository,
 	PostgresLaunchCodeRepository,
+	PostgresSecurityRejectionAuditRepository,
+	SecurityRejectionAuditService,
 } from "@meiye/core/pro-studio";
 import {
 	type AgentAuditEvent,
@@ -92,6 +94,9 @@ async function createRuntime(): Promise<CanvasRuntime> {
 	const launchRepository = new PostgresLaunchCodeRepository(pool);
 	const projectRepository = new PostgresAdvancedCanvasProjectRepository(pool);
 	const assetRepository = new PostgresCanvasAssetRepository(pool);
+	const securityAudit = new SecurityRejectionAuditService(
+		new PostgresSecurityRejectionAuditRepository(pool),
+	);
 	const projects = new AdvancedCanvasProjectService({
 		repository: projectRepository,
 	});
@@ -246,6 +251,7 @@ async function createRuntime(): Promise<CanvasRuntime> {
 				core: generation,
 			},
 			projects,
+			securityAudit,
 			sessions,
 		}),
 		entry: {
