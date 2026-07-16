@@ -45,7 +45,11 @@ test('persists and reads rejection audit evidence through the existing workspace
   assert.equal(JSON.stringify(queries[0]?.values).includes('foreign-'), false);
   assert.match(
     queries[1]?.sql ?? '',
-    /workspace_id = \$1[\s\S]*actor_id = \$2[\s\S]*action = 'security\.object_access_rejected'/u
+    /workspace_id = \$1[\s\S]*actor_id = \$2[\s\S]*action = \$3/u
   );
-  assert.deepEqual(queries[1]?.values, ['attacker-workspace', 'attacker-user']);
+  assert.deepEqual(queries[1]?.values, [
+    'attacker-workspace',
+    'attacker-user',
+    'security.object_access_rejected',
+  ]);
 });

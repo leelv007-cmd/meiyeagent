@@ -35,9 +35,9 @@ export class PostgresSecurityRejectionAuditRepository
          FROM pro_studio_audit_events
         WHERE workspace_id = $1
           AND actor_id = $2
-          AND action = 'security.object_access_rejected'
+          AND action = $3
         ORDER BY created_at, id`,
-      [input.workspaceId, input.actorId]
+      [input.workspaceId, input.actorId, REJECTION_ACTION]
     );
     return structuredClone(result.rows.map((row) => row.detail));
   }
