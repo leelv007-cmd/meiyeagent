@@ -1,0 +1,11 @@
+import { SettingsShellPage } from '@/components/layout/sidebar-layout';
+import { authRouteMiddleware } from '@/middlewares/auth-middleware';
+import { createFileRoute } from '@tanstack/react-router';
+
+export const Route = createFileRoute('/settings')({
+  ssr: false,
+  component: SettingsShellPage,
+  server: {
+    middleware: [authRouteMiddleware],
+  },
+});

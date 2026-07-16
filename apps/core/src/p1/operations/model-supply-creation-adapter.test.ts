@@ -1,0 +1,616 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { ModelSupplyControlPlaneService } from '../model-supply/foundation-module.js';
+import {
+  ModelSupplyCreationExecutor,
+  type CreativeBrief,
+  type CreativeExecutionContract,
+  type CreativeGroundingSnapshot,
+} from './index.js';
+
+const contract: CreativeExecutionContract = {
+  aigcLabelEnabled: true,
+  catalogModelId: 'llm-live',
+  catalogRevision: 'catalog-live-v1',
+  currency: 'CNY',
+  dataClass: [],
+  estimatedAmount: 3,
+  operation: 'copy.generate',
+  outputCount: 3,
+  outputLabel: '3 条内容候选',
+  quoteAcceptedAt: '2026-07-12T08:00:00.000Z',
+  quoteRevision:
+    'catalog-live-v1:price-live-v1:llm-live:copy.generate:text',
+  watermarkEnabled: false,
+};
+
+function executor() {
+  return new ModelSupplyCreationExecutor({
+    async getCatalog() {
+      return {
+        models: [
+          {
+            activationEvidence: { status: 'live_verified' as const },
+            availability: 'available' as const,
+            capabilities: ['copy.generate' as const],
+            dataClasses: {
+              allowed: ['public' as const],
+              denied: [],
+            },
+            displayName: 'Live copy',
+            id: 'llm-live',
+            manufacturer: 'Recorded',
+            modality: 'llm' as const,
+            operations: ['copy.generate' as const],
+            qualityRank: 1,
+            stableModelName: 'llm-live',
+            unitPrice: {
+              amountMicros: 1_000_000,
+              currency: 'CNY' as const,
+              revision: 'price-live-v1',
+              unit: 'candidate',
+            },
+            version: '1',
+          },
+        ],
+        operation: 'copy.generate' as const,
+        revisionId: 'catalog-live-v1',
+        stage: 'published' as const,
+      };
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+}
+
+test('accepts only the server-derived current creative quote', async () => {
+  const creation = executor();
+  await creation.inspect('workspace-a', contract);
+  for (const altered of [
+    { ...contract, estimatedAmount: 0 },
+    { ...contract, currency: 'USD' },
+    { ...contract, outputCount: 1 },
+    { ...contract, quoteRevision: 'forged' },
+  ]) {
+    await assert.rejects(
+      creation.inspect('workspace-a', altered),
+      /execution quote changed/i
+    );
+  }
+});
+
+test('accepts an explicit local-fixture execution flag without live evidence', async () => {
+  const creation = new ModelSupplyCreationExecutor({
+    async getCatalog() {
+      return {
+        models: [
+          {
+            activationEvidence: { status: 'recorded' as const },
+            available: true,
+            availability: 'recorded' as const,
+            capabilities: ['copy.generate' as const],
+            dataClasses: {
+              allowed: ['public' as const],
+              denied: [],
+            },
+            displayName: 'Fixture copy',
+            id: 'llm-live',
+            manufacturer: 'Recorded',
+            modality: 'llm' as const,
+            operations: ['copy.generate' as const],
+            qualityRank: 1,
+            stableModelName: 'llm-live',
+            unitPrice: {
+              amountMicros: 1_000_000,
+              currency: 'CNY' as const,
+              revision: 'price-live-v1',
+              unit: 'candidate',
+            },
+            version: '1',
+          },
+        ],
+        operation: 'copy.generate' as const,
+        revisionId: 'catalog-live-v1',
+        stage: 'recorded' as const,
+      };
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  await creation.inspect('workspace-a', contract);
+});
+
+test('passes the selected content suite to the formal generation prompt', async () => {
+  let prompt = '';
+  const expectedError = new Error('stop after request capture');
+  const creation = new ModelSupplyCreationExecutor({
+    async submitGeneration(
+      _context: unknown,
+      request: { prompt: string }
+    ) {
+      prompt = request.prompt;
+      throw expectedError;
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  await assert.rejects(
+    creation.submit({
+      context: {
+        actor: 'owner',
+        correlationId: 'corr-content-suite',
+        userId: 'owner-a',
+        workspaceId: 'workspace-a',
+      },
+      contract: {
+        ...contract,
+        contentModules: ['store_intro', 'review_card'],
+      },
+      idempotencyKey: 'content-suite-request',
+      intent: '写一组门店内容',
+      productUsageQuantity: 1,
+    }),
+    expectedError
+  );
+  assert.match(prompt, /门店介绍/);
+  assert.match(prompt, /好评卡/);
+  assert.ok(prompt.indexOf('门店介绍') < prompt.indexOf('好评卡'));
+});
+
+test('passes only resolved inheritance facts to the formal generation prompt', async () => {
+  let prompt = '';
+  const expectedError = new Error('stop after request capture');
+  const creation = new ModelSupplyCreationExecutor({
+    async submitGeneration(_context: unknown, request: { prompt: string }) {
+      prompt = request.prompt;
+      throw expectedError;
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  await assert.rejects(
+    creation.submit({
+      context: {
+        actor: 'owner',
+        correlationId: 'corr-inheritance-context',
+        userId: 'owner-a',
+        workspaceId: 'workspace-a',
+      },
+      contract,
+      idempotencyKey: 'inheritance-context-request',
+      inheritanceContext: {
+        sources: [
+          {
+            facts: [
+              {
+                field: 'layout_slots',
+                mediaSlotCount: 1,
+                pageCount: 2,
+                textSlotCount: 3,
+              },
+            ],
+            internalMetadata: 'private-route-snapshot',
+            kind: 'template',
+            rawCopy: 'Private Store 18888888888 price 99',
+            rawMediaUrl: 'https://private.example/source.png',
+          },
+        ],
+      },
+      intent: '沿用已选结构生成新内容',
+      productUsageQuantity: 1,
+    } as unknown as Parameters<typeof creation.submit>[0]),
+    expectedError
+  );
+
+  assert.match(prompt, /2 页/);
+  assert.match(prompt, /3 个文字槽/);
+  assert.match(prompt, /1 个媒体槽/);
+  assert.doesNotMatch(prompt, /private-route-snapshot/);
+  assert.doesNotMatch(prompt, /private\.example/);
+  assert.doesNotMatch(prompt, /Private Store|18888888888|price 99/);
+});
+
+test('passes frozen Brief and confirmed Product grounding to copy, image and video execution contracts', async () => {
+  const briefSnapshot: CreativeBrief = {
+    confirmedAt: '2026-07-14T08:00:00.000Z',
+    fields: {
+      audience: {
+        aiDraft: '第一次到店的新客',
+        current: '第一次到店的新客',
+        owner: 'ai',
+      },
+      intent: {
+        aiDraft: '介绍真实门店项目',
+        current: '介绍真实门店项目',
+        owner: 'ai',
+      },
+      tone: { current: '真诚、不夸张', owner: 'merchant' },
+    },
+    updatedAt: '2026-07-14T08:00:00.000Z',
+  };
+  const groundingSnapshot: CreativeGroundingSnapshot = {
+    assets: [
+      {
+        authorizationStatus: 'authorized',
+        category: 'store',
+        consentScope: 'public_marketing',
+        containsPerson: false,
+        containsSensitiveData: false,
+        id: 'asset-real-a',
+        minorStatus: 'none',
+        rightsEvidenceRecorded: true,
+        sourceType: 'real',
+        tags: ['门头'],
+      },
+    ],
+    capturedAt: '2026-07-14T08:00:00.000Z',
+    store: {
+      address: '88 号',
+      booking: '提前预约',
+      brandVoice: '真诚、不夸张',
+      city: '成都',
+      confirmedAt: '2026-07-14T07:00:00.000Z',
+      district: '锦江区',
+      name: '春日美甲',
+      prohibitions: ['不虚构折扣'],
+      projects: [
+        {
+          durationMinutes: 90,
+          id: 'project-a',
+          name: '纯色美甲',
+          price: 168,
+        },
+      ],
+      regulated: false,
+    },
+  };
+  const requests: Array<{
+    input?: { referenceAssetIds?: string[] };
+    operation: string;
+    prompt: string;
+  }> = [];
+  const expectedError = new Error('stop after request capture');
+  const creation = new ModelSupplyCreationExecutor(
+    {
+      async submitGeneration(_context: unknown, request: typeof requests[number]) {
+        requests.push(structuredClone(request));
+        throw expectedError;
+      },
+    } as unknown as ModelSupplyControlPlaneService,
+    undefined,
+    {
+      async inspect(_workspaceId, assetIds) {
+        return assetIds.map((assetId) => ({
+          assetId,
+          contentType: 'image/png',
+          kind: 'resolved' as const,
+        }));
+      },
+      async resolve() {
+        throw new Error('execution resolution is not part of submission');
+      },
+    }
+  );
+
+  for (const operation of [
+    'copy.generate',
+    'image.generate',
+    'video.generate',
+  ] as const) {
+    await assert.rejects(
+      creation.submit({
+        briefSnapshot,
+        context: {
+          actor: 'owner',
+          correlationId: `corr-${operation}`,
+          userId: 'owner-a',
+          workspaceId: 'workspace-a',
+        },
+        contract: { ...contract, operation },
+        groundingSnapshot,
+        idempotencyKey: `grounding-${operation}`,
+        intent: '这个原始意图不得覆盖已确认 Brief',
+        productUsageQuantity: 1,
+      }),
+      expectedError
+    );
+  }
+
+  assert.deepEqual(
+    requests.map((request) => request.operation),
+    ['copy.generate', 'image.generate', 'video.generate']
+  );
+  for (const request of requests) {
+    assert.deepEqual(request.input?.referenceAssetIds, ['asset-real-a']);
+    assert.match(request.prompt, /第一次到店的新客/);
+    assert.match(request.prompt, /春日美甲/);
+    assert.match(request.prompt, /纯色美甲/);
+    assert.match(request.prompt, /168/);
+    assert.match(request.prompt, /asset-real-a/);
+    assert.match(request.prompt, /不得编造价格、折扣或授权/);
+  }
+
+  let streamRequest: (typeof requests)[number] | undefined;
+  const streamingCreation = new ModelSupplyCreationExecutor(
+    {
+      async startCopyStream(
+        _context: unknown,
+        request: (typeof requests)[number]
+      ) {
+        streamRequest = structuredClone(request);
+        return {
+          completion: Promise.resolve({
+            attempt: { acceptance: 'accepted' as const },
+            copyCandidates: [
+              { body: 'A', title: 'A' },
+              { body: 'B', title: 'B' },
+              { body: 'C', title: 'C' },
+            ],
+            jobId: 'stream-grounding-job',
+            providerCost: {
+              amount: 0.002,
+              currency: 'USD' as const,
+              id: 'provider-cost-stream-grounding',
+              status: 'observed' as const,
+              usage: { outputTokens: 300 },
+            },
+            snapshot: { id: 'stream-grounding-route' },
+            status: 'completed' as const,
+            usage: {
+              id: 'usage-stream-grounding',
+              quantity: 1,
+              status: 'committed' as const,
+            },
+          }),
+          response: new Response('stream'),
+        };
+      },
+    } as unknown as ModelSupplyControlPlaneService,
+    {} as ConstructorParameters<typeof ModelSupplyCreationExecutor>[1]
+  );
+  streamingCreation.inspect = async () => {};
+  const streamed = await streamingCreation.startCopyStream?.({
+    briefSnapshot,
+    context: {
+      actor: 'owner',
+      correlationId: 'corr-stream-grounding',
+      userId: 'owner-a',
+      workspaceId: 'workspace-a',
+    },
+    contract,
+    groundingSnapshot,
+    idempotencyKey: 'stream-grounding',
+    intent: '原始意图',
+    productUsageQuantity: 1,
+  });
+  await streamed?.completion;
+  assert.deepEqual(streamRequest?.input?.referenceAssetIds, ['asset-real-a']);
+  assert.match(streamRequest?.prompt ?? '', /春日美甲/);
+});
+
+test('preserves every copy candidate conversion hook from Model Supply', async () => {
+  const creation = new ModelSupplyCreationExecutor({
+    async submitGeneration() {
+      return {
+        attempt: { acceptance: 'accepted' },
+        copyCandidates: [
+          { title: 'A', body: 'Alpha', conversionHook: '立即留言' },
+          { title: 'B', body: 'Beta', conversionHook: '先收藏' },
+          { title: 'C', body: 'Gamma', conversionHook: '再预约' },
+        ],
+        jobId: 'model-job-copy-hooks',
+        providerCost: {
+          amount: 0.003,
+          currency: 'USD',
+          status: 'observed',
+        },
+        routeSnapshotId: 'route-copy-hooks',
+        snapshot: {
+          actualCatalogModelId: 'llm-live',
+          allowedCandidates: [
+            {
+              activationStatus: 'recorded',
+              catalogModelId: 'llm-live',
+              modelDisplayName: 'Recorded copy',
+              stableModelName: 'recorded-copy-v1',
+            },
+          ],
+          apiCounterparty: 'recorded-fixture',
+          id: 'route-copy-hooks',
+        },
+        status: 'completed',
+        usage: { quantity: 1, status: 'committed' },
+      };
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  const result = await creation.submit({
+    context: {
+      actor: 'owner',
+      correlationId: 'corr-copy-hooks',
+      userId: 'owner-a',
+      workspaceId: 'workspace-a',
+    },
+    contract,
+    idempotencyKey: 'copy-hooks',
+    intent: '保留转化钩子',
+    productUsageQuantity: 1,
+  });
+
+  assert.deepEqual(
+    result.copyCandidates?.map((candidate) => candidate.conversionHook),
+    ['立即留言', '先收藏', '再预约'],
+  );
+  assert.deepEqual(result.productUsage, {
+    quantity: 1,
+    status: 'committed',
+  });
+  assert.deepEqual(result.providerCost, {
+    amount: 0.003,
+    currency: 'USD',
+    status: 'observed',
+  });
+  assert.deepEqual(result.executionProvenance, {
+    activationStatus: 'recorded',
+    actualCatalogModelId: 'llm-live',
+    apiCounterparty: 'recorded-fixture',
+    modelDisplayName: 'Recorded copy',
+    providerModel: 'recorded-copy-v1',
+  });
+});
+
+test('rejects unresolved media references before creating a generation job', async () => {
+  let submitCalls = 0;
+  const creation = new ModelSupplyCreationExecutor(
+    {
+      async submitGeneration() {
+        submitCalls += 1;
+        throw new Error('must not submit');
+      },
+    } as unknown as ModelSupplyControlPlaneService,
+    undefined,
+    {
+      async inspect() {
+        return [
+          {
+            assetId: 'asset-missing',
+            kind: 'failure' as const,
+            reason: 'not_found' as const,
+          },
+        ];
+      },
+      async resolve() {
+        throw new Error('execution resolution is not part of submission');
+      },
+    }
+  );
+
+  await assert.rejects(
+    creation.submit({
+      context: {
+        actor: 'owner',
+        correlationId: 'corr-reference-fail-fast',
+        userId: 'owner-a',
+        workspaceId: 'workspace-a',
+      },
+      contract: {
+        ...contract,
+        aspectRatio: '1:1',
+        operation: 'image.generate',
+        outputCount: 1,
+        outputLabel: '1 张 1:1 图片',
+      },
+      groundingSnapshot: {
+        assets: [
+          {
+            authorizationStatus: 'authorized',
+            containsPerson: false,
+            containsSensitiveData: false,
+            consentScope: 'public_marketing',
+            id: 'asset-missing',
+            minorStatus: 'none',
+            rightsEvidenceRecorded: true,
+            sourceType: 'real',
+            tags: ['门店'],
+          },
+        ],
+        capturedAt: '2026-07-15T02:00:00.000Z',
+        store: {
+          address: '88 号',
+          booking: '提前预约',
+          brandVoice: '真诚',
+          city: '成都',
+          confirmedAt: '2026-07-15T01:00:00.000Z',
+          district: '锦江区',
+          name: '春日美甲',
+          prohibitions: [],
+          projects: [],
+          regulated: false,
+        },
+      },
+      idempotencyKey: 'reference-fail-fast',
+      intent: '基于门店照片生成封面',
+      productUsageQuantity: 1,
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'REFERENCE_ASSET_UNRESOLVED' &&
+      'status' in error &&
+      error.status === 409
+  );
+  assert.equal(submitCalls, 0);
+});
+
+test('forwards zero product usage and records rerolls without changing the fixed model', async () => {
+  let productUsageQuantity: 0 | 1 | undefined;
+  let promptRevision: string | undefined;
+  let exampleSetRevision: string | undefined;
+  const qualityEvents: Array<Record<string, unknown>> = [];
+  const expectedError = new Error('stop after request capture');
+  const creation = new ModelSupplyCreationExecutor({
+    async submitGeneration(
+      _context: unknown,
+      request: {
+        productUsageQuantity?: 0 | 1;
+        promptRevision?: string;
+        exampleSetRevision?: string;
+      },
+    ) {
+      productUsageQuantity = request.productUsageQuantity;
+      promptRevision = request.promptRevision;
+      exampleSetRevision = request.exampleSetRevision;
+      throw expectedError;
+    },
+    async recordQuality(_workspaceId: string, event: Record<string, unknown>) {
+      qualityEvents.push(structuredClone(event));
+      return event;
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  await assert.rejects(
+    creation.submit({
+      context: {
+        actor: 'owner',
+        correlationId: 'corr-quality-retry',
+        userId: 'owner-a',
+        workspaceId: 'workspace-a',
+      },
+      contract,
+      idempotencyKey: 'quality-retry-request',
+      intent: '原创作意图',
+      productUsageQuantity: 0,
+    }),
+    expectedError,
+  );
+  assert.equal(productUsageQuantity, 0);
+  assert.equal(promptRevision, 'creative-brief-grounding-v3');
+  assert.equal(exampleSetRevision, 'none');
+
+  const rerollEvent = {
+    context: {
+      actor: 'owner',
+      correlationId: 'corr-quality-reroll',
+      userId: 'owner-a',
+      workspaceId: 'workspace-a',
+    },
+    contract,
+    rerollKind: 'quality',
+    targetJobId: 'creative-job-quality-1',
+  } as const;
+  await creation.recordReroll?.(rerollEvent);
+  await creation.recordReroll?.(rerollEvent);
+  assert.equal(qualityEvents.length, 2);
+  assert.equal(qualityEvents[0]?.id, qualityEvents[1]?.id);
+  assert.deepEqual(
+    {
+      catalogModelId: qualityEvents[0]?.catalogModelId,
+      exampleSetRevision: qualityEvents[0]?.exampleSetRevision,
+      outcome: qualityEvents[0]?.outcome,
+      promptRevision: qualityEvents[0]?.promptRevision,
+      scenario: qualityEvents[0]?.scenario,
+    },
+    {
+      catalogModelId: contract.catalogModelId,
+      exampleSetRevision: 'none',
+      outcome: 'rerolled',
+      promptRevision: 'creative-brief-grounding-v3',
+      scenario: 'creative_copy_quality_reroll',
+    },
+  );
+});

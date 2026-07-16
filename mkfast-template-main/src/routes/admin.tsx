@@ -1,0 +1,11 @@
+import { AdminShellPage } from '@/components/layout/sidebar-layout';
+import { adminRouteMiddleware } from '@/middlewares/admin-middleware';
+import { createFileRoute } from '@tanstack/react-router';
+
+export const Route = createFileRoute('/admin')({
+  ssr: false,
+  component: AdminShellPage,
+  server: {
+    middleware: [adminRouteMiddleware],
+  },
+});

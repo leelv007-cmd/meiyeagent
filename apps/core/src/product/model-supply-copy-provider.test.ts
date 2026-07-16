@@ -1,0 +1,95 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  createDefaultCatalogModels,
+  createDefaultDeployments,
+} from '../p1/model-supply/catalog.js';
+import {
+  MemoryModelSupplyControlPlaneRepository,
+  ModelSupplyControlPlaneService,
+} from '../p1/model-supply/foundation-module.js';
+import {
+  ModelSupplyApplicationService,
+  ProductCopyProviderBridge,
+  RecordedProviderExecutionPort,
+} from '../p1/model-supply/index.js';
+import type { CopyProviderRequest } from './copy-provider.js';
+import { ModelSupplyProductCopyProvider } from './model-supply-copy-provider.js';
+
+test('prompt-head rollback changes only future copy generation evidence', async () => {
+  const repository = new MemoryModelSupplyControlPlaneRepository();
+  const models = new ModelSupplyApplicationService({
+    models: createDefaultCatalogModels(),
+    deployments: createDefaultDeployments({
+      activatedDeploymentIds: ['openai-direct-recorded'],
+    }),
+    execution: new RecordedProviderExecutionPort(),
+  });
+  const controlPlane = new ModelSupplyControlPlaneService({
+    application: models,
+    repository,
+  });
+  const provider = new ModelSupplyProductCopyProvider(
+    new ProductCopyProviderBridge(models, async (workspaceId) => {
+      await controlPlane.initialize(workspaceId);
+    }),
+    { catalogModelId: 'llm-openai', mode: 'fixed' },
+    'overseas',
+    undefined,
+    (request) => controlPlane.getPromptRevision(request.workspaceId),
+  );
+  const request: CopyProviderRequest = {
+    workspaceId: 'workspace-a',
+    userId: 'owner-a',
+    idempotencyKey: 'copy-before-rollback',
+    correlationId: 'corr-before-rollback',
+    dataClasses: [],
+    brief: {
+      assetIds: ['asset-a'],
+      conversionGoal: '预约到店',
+      hook: '真实到店记录',
+      platform: 'xiaohongshu',
+      projectId: 'project-a',
+      scenario: '项目种草',
+      tone: '克制',
+    },
+    store: {
+      name: '测试门店',
+      city: '杭州',
+      brandVoice: '专业、克制',
+      project: { id: 'project-a', name: '护理项目', price: 299 },
+    },
+    assets: [
+      {
+        id: 'asset-a',
+        tags: ['门店'],
+        aigcStatus: 'not_ai',
+      },
+    ],
+  };
+
+  const before = await provider.generate(request);
+  assert.equal(before.evidence.promptRevision, 'beauty-copy-prompt-v1');
+  assert.equal(before.evidence.templateRevision, 'beauty-copy-template-v1');
+  assert.equal(before.evidence.exampleSetRevision, 'beauty-copy-examples-v1');
+
+  await controlPlane.rollbackPromptRevision(
+    {
+      workspaceId: request.workspaceId,
+      userId: 'admin-a',
+      correlationId: 'prompt-rollback',
+      actor: 'admin',
+    },
+    'beauty-copy-prompt-v0',
+    'restore stable prompt',
+  );
+  const after = await provider.generate({
+    ...request,
+    idempotencyKey: 'copy-after-rollback',
+    correlationId: 'corr-after-rollback',
+  });
+  assert.equal(after.evidence.promptRevision, 'beauty-copy-prompt-v0');
+  assert.equal(after.evidence.templateRevision, 'beauty-copy-template-v0');
+  assert.equal(after.evidence.exampleSetRevision, 'beauty-copy-examples-v0');
+  assert.equal(before.evidence.promptRevision, 'beauty-copy-prompt-v1');
+});
