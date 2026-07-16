@@ -1,0 +1,101 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "d2f766b6-d7c6-49e4-9bc6-54ca051cc278"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "65a58953-8bdd-442c-ace6-ef3ac9c2d5d0"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N",
+  "works": [
+    {
+      "currentRevisionId": "d2f766b6-d7c6-49e4-9bc6-54ca051cc278",
+      "id": "65a58953-8bdd-442c-ace6-ef3ac9c2d5d0",
+      "revisions": [
+        {
+          "id": "d2f766b6-d7c6-49e4-9bc6-54ca051cc278",
+          "workId": "65a58953-8bdd-442c-ace6-ef3ac9c2d5d0",
+          "document": {
+            "pages": [
+              {
+                "id": "official-before_after-v2-seeded-preview-page",
+                "elements": [
+                  {
+                    "x": 120,
+                    "y": 160,
+                    "id": "official-before_after-v2-seeded-preview-headline",
+                    "fill": "#4B3130",
+                    "kind": "text",
+                    "text": "Before / After",
+                    "width": 840,
+                    "height": 180,
+                    "fontSize": 64,
+                    "rotation": 0,
+                    "fontFamily": "Noto Sans SC"
+                  },
+                  {
+                    "x": 120,
+                    "y": 380,
+                    "id": "official-before_after-v2-seeded-preview-subtitle",
+                    "fill": "#7A5D58",
+                    "kind": "text",
+                    "text": "前后对比｜真实素材",
+                    "width": 840,
+                    "height": 240,
+                    "fontSize": 36,
+                    "rotation": 0,
+                    "fontFamily": "Noto Sans SC"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-13T16:43:32.360Z",
+          "createdBy": "36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N",
+          "templateVersionId": "official-before_after-v2-seeded-preview"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.624Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "acb0d3d6ad87e69069a2c058d502f07dc26bf6121b95ed1f2cd434e6fb9e9387",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "805fceef8c7914a0fa58c0fbfcae581e20b79b18b51288153c30b0abbf3e8461"
+  }
+}

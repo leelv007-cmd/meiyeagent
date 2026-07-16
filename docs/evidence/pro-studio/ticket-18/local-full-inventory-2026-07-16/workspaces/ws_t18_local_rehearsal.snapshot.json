@@ -1,0 +1,247 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [
+      "export-convertible"
+    ],
+    "revisionIds": [
+      "rev-convertible",
+      "rev-raster-fallback",
+      "rev-read-only"
+    ],
+    "templateIds": [
+      "template-convertible"
+    ],
+    "templateVersionIds": [
+      "template:template-convertible:revision:rev-convertible"
+    ],
+    "workIds": [
+      "work-convertible",
+      "work-raster-fallback",
+      "work-read-only"
+    ]
+  },
+  "exportReceipts": [
+    {
+      "id": "export-convertible",
+      "bytes": 128,
+      "width": 1080,
+      "format": "png",
+      "height": 1350,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "workId": "work-convertible",
+      "createdAt": "2026-07-16T10:40:00.000Z",
+      "objectKey": "ws_t18_local_rehearsal/owned/t18-rehearsal-export.png",
+      "contentType": "image/png",
+      "workspaceId": "ws_t18_local_rehearsal",
+      "workRevisionId": "rev-convertible"
+    }
+  ],
+  "managedRasters": [
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_t18_local_rehearsal/owned/t18-rehearsal-export.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 128,
+      "target": {
+        "kind": "work_revision",
+        "revisionId": "rev-convertible",
+        "workId": "work-convertible"
+      }
+    },
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_t18_local_rehearsal/owned/t18-rehearsal-export.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 128,
+      "target": {
+        "kind": "template_version",
+        "templateId": "template-convertible",
+        "versionId": "template:template-convertible:revision:rev-convertible"
+      }
+    }
+  ],
+  "templates": [
+    {
+      "currentVersionId": "template:template-convertible:revision:rev-convertible",
+      "id": "template-convertible",
+      "versions": [
+        {
+          "document": {
+            "pages": [
+              {
+                "id": "page-convertible",
+                "elements": [
+                  {
+                    "x": 100,
+                    "y": 100,
+                    "id": "headline",
+                    "kind": "text",
+                    "text": "夏日美甲",
+                    "width": 800,
+                    "height": 120,
+                    "rotation": 0
+                  },
+                  {
+                    "x": 40,
+                    "y": 280,
+                    "id": "hero",
+                    "kind": "image",
+                    "width": 1000,
+                    "height": 900,
+                    "assetId": "asset-hero",
+                    "rotation": 0
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "id": "template:template-convertible:revision:rev-convertible"
+        }
+      ]
+    }
+  ],
+  "workspaceId": "ws_t18_local_rehearsal",
+  "works": [
+    {
+      "currentRevisionId": "rev-convertible",
+      "id": "work-convertible",
+      "revisions": [
+        {
+          "id": "rev-convertible",
+          "workId": "work-convertible",
+          "document": {
+            "pages": [
+              {
+                "id": "page-convertible",
+                "elements": [
+                  {
+                    "x": 100,
+                    "y": 100,
+                    "id": "headline",
+                    "kind": "text",
+                    "text": "夏日美甲",
+                    "width": 800,
+                    "height": 120,
+                    "rotation": 0
+                  },
+                  {
+                    "x": 40,
+                    "y": 280,
+                    "id": "hero",
+                    "kind": "image",
+                    "width": 1000,
+                    "height": 900,
+                    "assetId": "asset-hero",
+                    "rotation": 0
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-16T10:00:00.000Z",
+          "createdBy": "t18-rehearsal"
+        }
+      ]
+    },
+    {
+      "currentRevisionId": "rev-raster-fallback",
+      "id": "work-raster-fallback",
+      "revisions": [
+        {
+          "id": "rev-raster-fallback",
+          "workId": "work-raster-fallback",
+          "document": {
+            "pages": [
+              {
+                "id": "page-raster",
+                "elements": [
+                  {
+                    "x": 0,
+                    "y": 0,
+                    "id": "edge",
+                    "kind": "edge",
+                    "width": 10,
+                    "height": 10,
+                    "rotation": 0,
+                    "toNodeId": "b",
+                    "fromNodeId": "a"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-16T10:20:00.000Z",
+          "createdBy": "t18-rehearsal"
+        }
+      ]
+    },
+    {
+      "currentRevisionId": "rev-read-only",
+      "id": "work-read-only",
+      "revisions": [
+        {
+          "id": "rev-read-only",
+          "workId": "work-read-only",
+          "document": {
+            "dpi": 72,
+            "unit": "px",
+            "fonts": [],
+            "pages": [
+              {
+                "id": "page-read-only",
+                "elements": [],
+                "background": "#ffffff"
+              }
+            ],
+            "width": 1080,
+            "audios": [],
+            "height": 1350,
+            "schemaVersion": 2
+          },
+          "revision": 1,
+          "createdAt": "2026-07-16T10:10:00.000Z",
+          "createdBy": "t18-rehearsal"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.788Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "6f647ec36d9bc3776ce40791b1002bae44d63b2a61b7f00bd2a784ffed303ed6",
+      "totalObjects": 1
+    },
+    "snapshotCounts": {
+      "exportReceipts": 1,
+      "revisions": 3,
+      "templates": 1,
+      "templateVersions": 1,
+      "works": 3,
+      "managedRasters": 2,
+      "objectInventoryEntries": 1
+    },
+    "sourceCounts": {
+      "exportReceipts": 1,
+      "revisions": 3,
+      "templates": 1,
+      "templateVersions": 1,
+      "works": 3
+    },
+    "snapshotSha256": "46619181bcdf68eaee04946edf560ea8f5db4905c820169611f6a36bf81d8864"
+  }
+}

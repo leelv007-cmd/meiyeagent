@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "39682f39-3c36-4c74-aad9-35a84b3e9f95"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "f6c01d99-91ba-465c-af1a-75400ef39614"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_JrizNBry4F0X1XaTVjVhZgnm1vARkLOA",
+  "works": [
+    {
+      "currentRevisionId": "39682f39-3c36-4c74-aad9-35a84b3e9f95",
+      "id": "f6c01d99-91ba-465c-af1a-75400ef39614",
+      "revisions": [
+        {
+          "id": "39682f39-3c36-4c74-aad9-35a84b3e9f95",
+          "workId": "f6c01d99-91ba-465c-af1a-75400ef39614",
+          "document": {
+            "pages": [
+              {
+                "id": "2be867a1-1ab6-423b-8da4-ac8d0a9e36e8",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T09:03:31.485Z",
+          "createdBy": "JrizNBry4F0X1XaTVjVhZgnm1vARkLOA"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.711Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "f408f1b5989e31f366ff42a87372147eb5d66f283634f27ec3824d4b53116d79",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "efb4eeea94bf7a5bfe832e412a792800e39c421cb5a3b47cc514bd67559a58ac"
+  }
+}

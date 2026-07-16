@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "d8c58c16-da87-440f-a762-6950223afe8b"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "34b864fe-78cd-4715-b48e-8da88b68e861"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_l29wpqEn8qOUXPJXAUXc1Nx527ooeddB",
+  "works": [
+    {
+      "currentRevisionId": "d8c58c16-da87-440f-a762-6950223afe8b",
+      "id": "34b864fe-78cd-4715-b48e-8da88b68e861",
+      "revisions": [
+        {
+          "id": "d8c58c16-da87-440f-a762-6950223afe8b",
+          "workId": "34b864fe-78cd-4715-b48e-8da88b68e861",
+          "document": {
+            "pages": [
+              {
+                "id": "da41162b-0b45-4d3a-a5c2-589f2092df73",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-11T02:22:31.861Z",
+          "createdBy": "l29wpqEn8qOUXPJXAUXc1Nx527ooeddB"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.764Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "99be3c6207f54bb39649b77a5d5ebc26a77ff40ec77ca493ab163c9b5acf00cb",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "fbcbb6e6cbc62ae410ea274e4f8b78299cb68367c98d9e9740cc8a102523a7cb"
+  }
+}

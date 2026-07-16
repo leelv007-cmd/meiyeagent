@@ -1,0 +1,126 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "8858f28f-3d90-4d08-bb4e-36cf512f332c",
+      "836dd6dd-a091-46c0-bfaa-ca3028bb3f61"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "561f9347-eae4-4dcd-846b-157f8af20270",
+      "b9bdb636-f51c-41fb-86fc-5b8c41950529"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb",
+  "works": [
+    {
+      "currentRevisionId": "8858f28f-3d90-4d08-bb4e-36cf512f332c",
+      "id": "561f9347-eae4-4dcd-846b-157f8af20270",
+      "revisions": [
+        {
+          "id": "8858f28f-3d90-4d08-bb4e-36cf512f332c",
+          "workId": "561f9347-eae4-4dcd-846b-157f8af20270",
+          "document": {
+            "pages": [
+              {
+                "id": "official-before_after-v2-seeded-preview-page",
+                "elements": [
+                  {
+                    "x": 120,
+                    "y": 160,
+                    "id": "official-before_after-v2-seeded-preview-headline",
+                    "fill": "#4B3130",
+                    "kind": "text",
+                    "text": "Before / After",
+                    "width": 840,
+                    "height": 180,
+                    "fontSize": 64,
+                    "rotation": 0,
+                    "fontFamily": "Noto Sans SC"
+                  },
+                  {
+                    "x": 120,
+                    "y": 380,
+                    "id": "official-before_after-v2-seeded-preview-subtitle",
+                    "fill": "#7A5D58",
+                    "kind": "text",
+                    "text": "前后对比｜真实素材",
+                    "width": 840,
+                    "height": 240,
+                    "fontSize": 36,
+                    "rotation": 0,
+                    "fontFamily": "Noto Sans SC"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-16T06:41:32.123Z",
+          "createdBy": "ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb",
+          "templateVersionId": "official-before_after-v2-seeded-preview"
+        }
+      ]
+    },
+    {
+      "currentRevisionId": "836dd6dd-a091-46c0-bfaa-ca3028bb3f61",
+      "id": "b9bdb636-f51c-41fb-86fc-5b8c41950529",
+      "revisions": [
+        {
+          "id": "836dd6dd-a091-46c0-bfaa-ca3028bb3f61",
+          "workId": "b9bdb636-f51c-41fb-86fc-5b8c41950529",
+          "document": {
+            "pages": [
+              {
+                "id": "de557f05-6c78-48ae-8e55-772fe05590b1",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-16T06:41:34.991Z",
+          "createdBy": "ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.722Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "f22c4147a7a96e31fedd50d401483e1b945f20d3f2c600f5bb46f558493d8287",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 2,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 2,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 2,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 2
+    },
+    "snapshotSha256": "8c313ec651cbbfa2d4c7d47d2c6ee91578bdbf5a2f4eee80ec9d787126e212f3"
+  }
+}

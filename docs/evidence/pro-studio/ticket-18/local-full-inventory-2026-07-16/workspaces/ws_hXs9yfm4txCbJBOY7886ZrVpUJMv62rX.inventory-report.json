@@ -1,0 +1,96 @@
+{
+  "coverage": {
+    "revisionPercent": 100,
+    "templatePercent": 100,
+    "templateVersionPercent": 100,
+    "workPercent": 100
+  },
+  "elementKinds": {
+    "image": 1
+  },
+  "generatedAt": "2026-07-16T10:01:11.756Z",
+  "totals": {
+    "exportRecords": 0,
+    "pages": 2,
+    "revisions": 2,
+    "templateVersions": 0,
+    "templates": 0,
+    "works": 1
+  },
+  "templates": [],
+  "unknownFields": {
+    "document.dpi": 1,
+    "document.unit": 1,
+    "document.fonts": 1,
+    "document.audios": 1,
+    "document.schemaVersion": 1,
+    "page.bleed": 1,
+    "page.width": 1,
+    "page.height": 1,
+    "page.children": 1,
+    "page.duration": 1,
+    "page.background": 1,
+    "element.image.name": 1,
+    "element.image.type": 1,
+    "element.image.cropX": 1,
+    "element.image.cropY": 1,
+    "element.image.flipX": 1,
+    "element.image.flipY": 1,
+    "element.image.custom": 1,
+    "element.image.clipSrc": 1,
+    "element.image.filters": 1,
+    "element.image.visible": 1,
+    "element.image.cropWidth": 1,
+    "element.image.draggable": 1,
+    "element.image.keepRatio": 1,
+    "element.image.removable": 1,
+    "element.image.resizable": 1,
+    "element.image.animations": 1,
+    "element.image.blurRadius": 1,
+    "element.image.borderSize": 1,
+    "element.image.brightness": 1,
+    "element.image.cropHeight": 1,
+    "element.image.selectable": 1,
+    "element.image.shadowBlur": 1,
+    "element.image.alwaysOnTop": 1,
+    "element.image.blurEnabled": 1,
+    "element.image.borderColor": 1,
+    "element.image.shadowColor": 1,
+    "element.image.cornerRadius": 1,
+    "element.image.sepiaEnabled": 1,
+    "element.image.showInExport": 1,
+    "element.image.shadowEnabled": 1,
+    "element.image.shadowOffsetX": 1,
+    "element.image.shadowOffsetY": 1,
+    "element.image.shadowOpacity": 1,
+    "element.image.styleEditable": 1,
+    "element.image.stretchEnabled": 1,
+    "element.image.contentEditable": 1,
+    "element.image.grayscaleEnabled": 1,
+    "element.image.brightnessEnabled": 1
+  },
+  "works": [
+    {
+      "disposition": "read_only",
+      "exportRecordCount": 0,
+      "id": "8682e9e6-da21-41bf-b85a-cf3d6dc91cd1",
+      "lastEditedAt": "2026-07-11T03:46:29.687Z",
+      "currentRevisionId": "2bb1f003-ad38-4f65-9bad-093e6eadf4a7",
+      "revisionCount": 2,
+      "revisions": [
+        {
+          "disposition": "convertible",
+          "id": "f17ad964-b158-4675-a074-f8925cf677f4",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-11T03:46:28.281Z"
+        },
+        {
+          "disposition": "read_only",
+          "id": "2bb1f003-ad38-4f65-9bad-093e6eadf4a7",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-11T03:46:29.687Z"
+        }
+      ]
+    }
+  ]
+}

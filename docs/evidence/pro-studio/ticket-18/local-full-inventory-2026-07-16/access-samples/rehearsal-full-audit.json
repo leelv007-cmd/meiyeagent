@@ -1,0 +1,88 @@
+{
+  "label": "LOCAL_ACCESS_AUDIT_NOT_PRODUCTION",
+  "workspaceId": "ws_t18_local_rehearsal",
+  "passed": true,
+  "exportStrategy": "existing_managed_raster_only",
+  "targetCount": 8,
+  "openedCount": 8,
+  "exportedCount": 8,
+  "targets": [
+    {
+      "exportSource": "existing_managed_raster",
+      "exported": true,
+      "opened": true,
+      "target": {
+        "id": "work-convertible",
+        "kind": "work"
+      }
+    },
+    {
+      "exportSource": "existing_managed_raster",
+      "exported": true,
+      "opened": true,
+      "target": {
+        "id": "rev-convertible",
+        "kind": "revision",
+        "workId": "work-convertible"
+      }
+    },
+    {
+      "exportSource": "existing_managed_raster",
+      "exported": true,
+      "opened": true,
+      "target": {
+        "id": "work-raster-fallback",
+        "kind": "work"
+      }
+    },
+    {
+      "exportSource": "existing_managed_raster",
+      "exported": true,
+      "opened": true,
+      "target": {
+        "id": "rev-raster-fallback",
+        "kind": "revision",
+        "workId": "work-raster-fallback"
+      }
+    },
+    {
+      "exportSource": "existing_managed_raster",
+      "exported": true,
+      "opened": true,
+      "target": {
+        "id": "work-read-only",
+        "kind": "work"
+      }
+    },
+    {
+      "exportSource": "existing_managed_raster",
+      "exported": true,
+      "opened": true,
+      "target": {
+        "id": "rev-read-only",
+        "kind": "revision",
+        "workId": "work-read-only"
+      }
+    },
+    {
+      "exportSource": "existing_managed_raster",
+      "exported": true,
+      "opened": true,
+      "target": {
+        "id": "template-convertible",
+        "kind": "template"
+      }
+    },
+    {
+      "exportSource": "existing_managed_raster",
+      "exported": true,
+      "opened": true,
+      "target": {
+        "id": "template:template-convertible:revision:rev-convertible",
+        "kind": "template_version",
+        "templateId": "template-convertible"
+      }
+    }
+  ],
+  "note": "Patched local rehearsal fixture with synthetic managed raster on every revision/template version."
+}
