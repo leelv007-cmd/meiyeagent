@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/csyqlz/vozeb",
+    "commit": "a2c52c7aacf68d825563b7455efa9c34f3db0123"
+  },
+  "copies": [],
+  "status": "blocked_pending_a2_a3_authorization",
+  "note": "No upstream file is copied until written A2 and A3 authorization exists for every manifest entry."
+}

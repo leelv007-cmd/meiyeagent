@@ -1,0 +1,166 @@
+{
+  "session": "creatok",
+  "captured_at": "2026-07-07T08:33:22.911Z",
+  "count": 9,
+  "filtered_out": 414,
+  "entries": [
+    {
+      "key": "GET www.creatok.ai/api/auth/get-session",
+      "method": "GET",
+      "timestamp": "2026-07-07T08:33:13.189Z",
+      "status": 200,
+      "url": "https://www.creatok.ai/api/auth/get-session",
+      "ct": "application/json",
+      "size": 833,
+      "shape": {
+        "$": "object",
+        "$.session": "object",
+        "$.session.expiresAt": "string",
+        "$.session.token": "string",
+        "$.session.createdAt": "string",
+        "$.session.updatedAt": "string",
+        "$.session.ipAddress": "string",
+        "$.session.userAgent": "string(len=117)",
+        "$.session.userId": "string",
+        "$.session.activeOrganizationId": "null",
+        "$.session.impersonatedBy": "null",
+        "$.session.id": "string",
+        "$.user": "object",
+        "$.user.name": "string",
+        "$.user.email": "string",
+        "$.user.emailVerified": "boolean",
+        "$.user.image": "string(len=96)",
+        "$.user.createdAt": "string",
+        "$.user.updatedAt": "string",
+        "$.user.role": "string",
+        "$.user.banned": "boolean",
+        "$.user.banReason": "null",
+        "$.user.banExpires": "null",
+        "$.user.id": "string"
+      }
+    },
+    {
+      "key": "GET www.creatok.ai/app/api/plan",
+      "method": "GET",
+      "timestamp": "2026-07-07T08:33:13.281Z",
+      "status": 200,
+      "url": "https://www.creatok.ai/app/api/plan",
+      "ct": "application/json",
+      "size": 224,
+      "shape": {
+        "$": "object",
+        "$.code": "number",
+        "$.msg": "string",
+        "$.data": "object",
+        "$.data.ledger": "string",
+        "$.data.plan": "string",
+        "$.data.limit": "number",
+        "$.data.remaining": "number",
+        "$.data.used": "number",
+        "$.data.canGenerate": "boolean",
+        "$.data.resetInterval": "string",
+        "$.data.nextResetAt": "string",
+        "$.data.cycleEndAt": "string"
+      }
+    },
+    {
+      "key": "POST www.creatok.ai/_vercel/insights/view",
+      "method": "POST",
+      "timestamp": "2026-07-07T08:33:13.282Z",
+      "status": 200,
+      "url": "https://www.creatok.ai/_vercel/insights/view",
+      "ct": "text/plain",
+      "size": 2,
+      "shape": {
+        "$": "string"
+      }
+    },
+    {
+      "key": "GET connect.facebook.net/signals/config/1186225440163613",
+      "method": "GET",
+      "timestamp": "2026-07-07T08:33:13.486Z",
+      "status": 200,
+      "url": "https://connect.facebook.net/signals/config/1186225440163613?v=2.9.349&r=stable&domain=www.creatok.ai&hme=f29d86973612db0f0627890a64bdc8c47b471189050b33f2680b7d76997afc9a&ex_m=107%2C208%2C158%2C22%2C73%2C74%2C149%2C69%2C68%2C11%2C167%2C93%2C16%2C141%2C130%2C39%2C76%2C81%2C137%2C163%2C169%2C8%2C4%2C5%2C7%2C6%2C3%2C94%2C104%2C170%2C175%2C222%2C30%2C75%2C234%2C233%2C232%2C23%2C33%2C55%2C106%2C61%2C10%2C64%2C100%2C101%2C102%2C108%2C133%2C31%2C29%2C135%2C136%2C132%2C131%2C159%2C77%2C162%2C160%2C161%2C50%2C60%2C126%2C15%2C166%2C45%2C279%2C280%2C278%2C26%2C27%2C28%2C48%2C150%2C78%2C115%2C18%2C20%2C44%2C40%2C42%2C41%2C86%2C95%2C99%2C113%2C148%2C151%2C46%2C114%2C24%2C21%2C122%2C70%2C36%2C153%2C152%2C154%2C145%2C143%2C25%2C35%2C59%2C112%2C165%2C71%2C17%2C156%2C117%2C84%2C67%2C19%2C88%2C89%2C119%2C87%2C139%2C138%2C142%2C164%2C34%2C293%2C309%2C215%2C204%2C62%2C205%2C203%2C312%2C303%2C52%2C216%2C110%2C134%2C83%2C124%2C54%2C47%2C49%2C116%2C123%2C129%2C128%2C58%2C65%2C63%2C155%2C79%2C80%2C118%2C37%2C32%2C53%2C56%2C103%2C168%2C1%2C127%2C14%2C125%2C12%2C2%2C57%2C96%2C66%2C121%2C92%2C91%2C171%2C172%2C97%2C98%2C9%2C105%2C51%2C146%2C90%2C82%2C72%2C120%2C109%2C43%2C147%2C0%2C85%2C140%2C144%2C157%2C38%2C111%2C13%2C173",
+      "ct": "application/x-javascript",
+      "size": 510784,
+      "shape": {
+        "$": "string(len=510784)"
+      }
+    },
+    {
+      "key": "POST mpc2-prod-21-is5qnl632q-uc.a.run.app/events",
+      "method": "POST",
+      "timestamp": "2026-07-07T08:33:13.517Z",
+      "status": 200,
+      "url": "https://mpc2-prod-21-is5qnl632q-uc.a.run.app/events?cee=no",
+      "ct": "application/json",
+      "size": 0,
+      "shape": {
+        "$": "null"
+      }
+    },
+    {
+      "key": "GET www.facebook.com/tr/",
+      "method": "GET",
+      "timestamp": "2026-07-07T08:33:13.517Z",
+      "status": 200,
+      "url": "https://www.facebook.com/tr/?id=1186225440163613&ev=PageView&dl=https%3A%2F%2Fwww.creatok.ai%2Fapp%2Fimage%2Fproduct-listing&rl=&if=false&ts=1783413193514&iw=false&sw=1800&sh=1169&v=2.9.349&r=stable&ec=0&o=12318&aems=0%3B0&fbp=fb.1.1783408713654.16397718196396442&hmd=5415806b568775e7b88f8154&eid=ob3_plugin-set_d9db32f1c9cd1dc15453d0cd0f9570d3e66e3044a3eb652dce7d993f0a6e85b4&ler=empty&cdl=API_unavailable&pmd[title]=AI%20%E5%95%86%E5%93%81%E5%A5%97%E5%9B%BE%20-%20%E4%B8%80%E9%94%AE%E7%94%9F%E6%88%90%E7%94%B5%E5%95%86%E4%BA%A7%E5%93%81%E5%9B%BE%E7%89%87%20%7C%20CreatOK&pmd[locale]=en&pmd[description]=AI%20%E9%A9%B1%E5%8A%A8%E7%9A%84%E7%94%B5%E5%95%86%E5%95%86%E5%93%81%E5%A5%97%E5%9B%BE%E7%94%9F%E6%88%90%E5%B7%A5%E5%85%B7%EF%BC%8C%E4%B8%8A%E4%BC%A0%E4%BA%A7%E5%93%81%E5%9B%BE%E7%89%87%E5%8D%B3%E5%8F%AF%E4%B8%80%E9%94%AE%E7%94%9F%E6%88%90%E7%AC%A6%E5%90%88%20TikTok%20Shop%E3%80%81Amazon%E3%80%81Temu%20%E7%AD%89%E5%B9%B3%E5%8F%B0%E8%A7%84%E8%8C%83%E7%9A%84%E9%AB%98%E8%BD%AC%E5%8C%96%E5%95%86%E5%93%81%E5%A5%97%E5%9B%BE%E3%80%82%E6%94%AF%E6%8C%81%E7%88%86%E6%AC%BE%E9%A3%8E%E6%A0%BC%20AI%20%E6%8E%A8%E8%8D%90%E3%80%81%E5%A4%9A%E5%B9%B3%E5%8F%B0%E9%80%82%E9%85%8D%E3%80%81%E6%96%87%E6%A1%88%E8%87%AA%E5%8A%A8%E7%94%9F%E6%88%90%E3%80%82&plt=633.8000000715256&iss=1&imft=1&tz=480&it=1783413193485&coo=false&cf=1&expv2[0]=pl1&expv2[1]=el3&expv2[2]=bc1&expv2[3]=ra2&expv2[4]=rp2&expv2[5]=ct2&expv2[6]=hf1&rqm=GET",
+      "ct": "text/plain",
+      "size": 0,
+      "shape": {
+        "$": "string"
+      }
+    },
+    {
+      "key": "GET www.creatok.ai/app/api/organizations/plans",
+      "method": "GET",
+      "timestamp": "2026-07-07T08:33:13.562Z",
+      "status": 200,
+      "url": "https://www.creatok.ai/app/api/organizations/plans",
+      "ct": "application/json",
+      "size": 111,
+      "shape": {
+        "$": "object",
+        "$.code": "number",
+        "$.msg": "string",
+        "$.data": "object",
+        "$.data.personal": "object",
+        "$.data.personal.planCode": "string",
+        "$.data.personal.hasPersonalCredits": "boolean",
+        "$.data.organizations": "object(empty)"
+      }
+    },
+    {
+      "key": "GET www.creatok.ai/app/api/ai-tasks",
+      "method": "GET",
+      "timestamp": "2026-07-07T08:33:13.563Z",
+      "status": 200,
+      "url": "https://www.creatok.ai/app/api/ai-tasks?taskType=image_product_set&limit=10&offset=0",
+      "ct": "application/json",
+      "size": 78,
+      "shape": {
+        "$": "object",
+        "$.code": "number",
+        "$.msg": "string",
+        "$.data": "object",
+        "$.data.tasks": "array(0)",
+        "$.data.total": "number",
+        "$.data.limit": "number",
+        "$.data.offset": "number"
+      }
+    },
+    {
+      "key": "GET www.creatok.ai/api/auth/organization/list",
+      "method": "GET",
+      "timestamp": "2026-07-07T08:33:13.563Z",
+      "status": 200,
+      "url": "https://www.creatok.ai/api/auth/organization/list",
+      "ct": "application/json",
+      "size": 2,
+      "shape": {
+        "$": "array(0)"
+      }
+    }
+  ],
+  "detail_hint": "Run \"browser network --detail <key>\" for full body."
+}

@@ -1,0 +1,28 @@
+{
+  "name": "meiyeweb-agent",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "check": "pnpm -r --if-present check && node scripts/uiux/secret-scan.mjs && node scripts/uiux/decision-ticket-guard.mjs",
+    "contentpackage:cutover": "pnpm --filter @meiye/core contentpackage:cutover",
+    "dev": "node --env-file-if-exists=.env.example --env-file-if-exists=.env --run=dev:all",
+    "dev:all": "pnpm -r --parallel --filter @meiye/web --filter @meiye/core --filter @meiye/canvas run \"/^dev(:worker)?$/\"",
+    "dev:live": "DATABASE_URL=postgres://meiye:meiye@127.0.0.1:54329/meiye CORE_SERVICE_TOKEN=dev-token DOUYIN_CALLBACK_TOKEN=dev-douyin-callback CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://meiye:meiye@127.0.0.1:54329/meiye CANVAS_SERVICE_TOKEN=dev-canvas-service-token CANVAS_ORIGIN=http://127.0.0.1:4200 CANVAS_SERVICE_URL=http://127.0.0.1:4200 MAIN_APP_ORIGIN=http://127.0.0.1:3000 node --env-file-if-exists=.env.example --env-file-if-exists=.env --run=dev:all",
+    "dev:recorded": "APP_ENV=development MODEL_EXECUTION_MODE=recorded node --env-file-if-exists=.env --run=dev:all",
+    "dev:worker": "pnpm --filter @meiye/core dev:worker",
+    "e2e": "pnpm --filter @meiye/web e2e",
+    "pro-studio:conformance": "node scripts/pro-studio/conformance-gate.mjs",
+    "pro-studio:security": "node scripts/pro-studio/security-matrix.mjs",
+    "test": "pnpm -r --if-present test && node --test scripts/uiux/*.test.mjs scripts/pro-studio/*.test.mjs scripts/polotno-retirement-gate.test.mjs",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "uiux:baseline": "node scripts/uiux/baseline-manifest.mjs --pre-cutover 0cba260",
+    "uiux:bundle-check": "node scripts/uiux/bundle-budget.mjs",
+    "uiux:cutover": "pnpm --filter @meiye/core cutover",
+    "uiux:quality": "PLAYWRIGHT_PRODUCTION_CANDIDATE=true PLAYWRIGHT_AUTH_BASE_URL=http://localhost:3000 pnpm --filter @meiye/web exec playwright test tests/e2e/specs/uiux-precutover-baseline.spec.ts",
+    "uiux:secret-scan": "node scripts/uiux/secret-scan.mjs"
+  }
+}

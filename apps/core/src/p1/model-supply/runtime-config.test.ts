@@ -1,0 +1,602 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { RecordedAdapterRouter, recordedRequest } from './adapters.js';
+import { ModelSupplyApplicationService } from './index.js';
+import {
+  arkMediaConfigurationRevisionsFromEnv,
+  directModelConfigurationRevisionFromEnv,
+  modelMediaExecutionMode,
+  modelRuntimeAssemblyFromEnv,
+  tuziMediaConfigurationRevisionsFromEnv,
+} from './runtime-config.js';
+
+test('runtime env assembly exposes honest disabled, recorded, and gateway modes', async () => {
+  const disabled = modelRuntimeAssemblyFromEnv({
+    MODEL_EXECUTION_MODE: 'disabled',
+  });
+  assert.equal(disabled.runtime.activation, 'disabled');
+  assert.equal(
+    disabled.deployments.filter((deployment) => deployment.status === 'active')
+      .length,
+    0
+  );
+
+  const recorded = modelRuntimeAssemblyFromEnv({
+    MODEL_EXECUTION_MODE: 'recorded',
+  });
+  assert.equal(recorded.runtime.activation, 'recorded_only');
+  assert.ok(
+    recorded.deployments.every((deployment) => deployment.status === 'inactive')
+  );
+  assert.ok(
+    recorded.deployments.every(
+      (deployment) => deployment.activationEvidence.status === 'recorded'
+    )
+  );
+  const recordedService = new ModelSupplyApplicationService({
+    models: recorded.models,
+    deployments: recorded.deployments,
+    execution: recorded.runtime.execution,
+    runtimeCapabilities: recorded.runtimeCapabilities,
+  });
+  assert.throws(
+    () =>
+      recordedService.freezeFixedRoute({
+        workspaceId: 'workspace-recorded-contract',
+        operation: 'copy.generate',
+        catalogModelId: 'llm-openai',
+        dataClass: [],
+      }),
+    /not active/i
+  );
+  const recordedProbe = await recordedService.executeCopyQualityProbe({
+    workspaceId: 'workspace-recorded-contract',
+    actorId: 'admin-a',
+    idempotencyKey: 'recorded-contract-probe',
+    operation: 'copy.generate',
+    selection: { mode: 'fixed', catalogModelId: 'llm-openai' },
+    dataClass: [],
+    prompt: JSON.stringify({ grounding: { name: '测试门店' } }),
+  });
+  assert.equal(recordedProbe.copyCandidates.length, 3);
+  assert.equal(
+    recordedProbe.snapshot.allowedCandidates?.[0]?.deploymentStatus,
+    'inactive'
+  );
+  assert.throws(
+    () =>
+      modelRuntimeAssemblyFromEnv({
+        MODEL_EXECUTION_MODE: 'fixture',
+      }),
+    /restricted to APP_ENV=e2e/
+  );
+  const fixture = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'e2e',
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  assert.equal(fixture.runtime.activation, 'local_fixture_verified');
+  assert.equal(modelMediaExecutionMode(fixture.runtime), 'fixture');
+  assert.ok(
+    fixture.deployments.every(
+      (deployment) =>
+        deployment.status === 'active' &&
+        deployment.activationEvidence.status === 'recorded' &&
+        deployment.activationEvidence.evidenceRef === undefined
+    )
+  );
+  const fixtureService = new ModelSupplyApplicationService({
+    models: fixture.models,
+    deployments: fixture.deployments,
+    execution: fixture.runtime.execution,
+    runtimeCapabilities: fixture.runtimeCapabilities,
+  });
+  const customProbe = await fixtureService.executeCopyQualityProbe({
+    workspaceId: 'workspace-custom-fixture',
+    actorId: 'admin-a',
+    idempotencyKey: 'custom-fixture-probe',
+    operation: 'copy.generate',
+    selection: { mode: 'fixed', catalogModelId: 'llm-custom' },
+    dataClass: [],
+    prompt: JSON.stringify({ grounding: { name: '测试门店' } }),
+  });
+  assert.equal(
+    customProbe.snapshot.allowedCandidates?.[0]?.apiFamily,
+    'custom'
+  );
+  assert.equal(customProbe.copyCandidates.length, 3);
+  assert.ok(customProbe.providerCost.amount > 0);
+  const gateway = modelRuntimeAssemblyFromEnv({
+    MODEL_EXECUTION_MODE: 'gateway',
+    MODEL_GATEWAY_POC: 'litellm',
+  });
+  assert.equal(gateway.runtime.gateway, 'litellm');
+  const veo = gateway.deployments.find(
+    (deployment) => deployment.catalogModelId === 'veo-latest'
+  );
+  assert.equal(veo?.executionChannelId, 'channel-fal-shared-queue');
+  assert.equal(veo?.apiCounterparty, 'fal');
+  assert.equal(veo?.lifecycleRevision, 'fal-queue-poc-v1');
+  assert.equal(
+    gateway.deployments.find(
+      (deployment) => deployment.catalogModelId === 'seedance-2'
+    )?.executionChannelId,
+    'channel-seedance-ark-direct'
+  );
+  assert.ok(
+    gateway.deployments
+      .filter((deployment) =>
+        ['llm-openai', 'llm-anthropic', 'llm-gemini'].includes(
+          deployment.catalogModelId
+        )
+      )
+      .every((deployment) => deployment.channel === 'litellm')
+  );
+  assert.ok(
+    gateway.deployments
+      .filter((deployment) => deployment.catalogModelId === 'gpt-image-2')
+      .every((deployment) => deployment.channel !== 'litellm')
+  );
+});
+
+test('gateway mode routes only LLM through the gateway and keeps recorded media functional', async () => {
+  const gateway = modelRuntimeAssemblyFromEnv({
+    MODEL_EXECUTION_MODE: 'gateway',
+    MODEL_GATEWAY_POC: 'bifrost',
+  });
+
+  const image = await gateway.runtime.execution.execute(
+    recordedRequest('gpt-image-2', 'image.generate')
+  );
+  assert.equal(image.kind, 'completed');
+  if (image.kind !== 'completed') throw new Error('Expected recorded image.');
+  assert.equal(image.contentType, 'image/png');
+  assert.ok(image.assetBytes?.byteLength);
+});
+
+test('direct runtime activates only one explicitly configured LLM catalog model', () => {
+  const configured = {
+    MODEL_DIRECT_API_KEY: 'configured-secret',
+    MODEL_DIRECT_BASE_URL: 'https://provider.example.test/v1',
+    MODEL_DIRECT_CATALOG_MODEL_ID: 'llm-openai',
+    MODEL_DIRECT_CREDENTIAL_VERSION: 'staging-key-v3',
+    MODEL_DIRECT_ENDPOINT_REVISION: 'openai-compatible-v2',
+    MODEL_DIRECT_INPUT_COST_PER_MILLION: '1.25',
+    MODEL_DIRECT_MODEL: 'provider-copy-model',
+    MODEL_DIRECT_OUTPUT_COST_PER_MILLION: '3.5',
+    MODEL_EXECUTION_MODE: 'direct',
+  };
+  const direct = modelRuntimeAssemblyFromEnv(configured);
+
+  assert.equal(direct.runtime.activation, 'configured_unverified');
+  assert.equal(
+    direct.deployments.filter((deployment) => deployment.status === 'active')
+      .length,
+    0
+  );
+  assert.equal(direct.runtimeCapabilities.length, 0);
+  const unverifiedService = new ModelSupplyApplicationService({
+    models: direct.models,
+    deployments: direct.deployments,
+    execution: new RecordedAdapterRouter(),
+    runtimeCapabilities: direct.runtimeCapabilities,
+  });
+  assert.throws(
+    () =>
+      unverifiedService.freezeFixedRoute({
+        workspaceId: 'workspace-direct-unverified',
+        operation: 'copy.generate',
+        catalogModelId: 'llm-openai',
+        dataClass: [],
+      }),
+    /not active|No active deployment/i
+  );
+
+  const verifiedAt = '2026-07-12T12:00:00.000Z';
+  const configurationRevision =
+    directModelConfigurationRevisionFromEnv(configured);
+  const envClaim = modelRuntimeAssemblyFromEnv({
+    ...configured,
+    MODEL_DIRECT_ACTIVATION_EVIDENCE_REF:
+      'staging://model-activation/llm-openai/2026-07-12',
+    MODEL_DIRECT_ACTIVATION_CONFIGURATION_REVISION: configurationRevision,
+    MODEL_DIRECT_ACTIVATION_VERIFIED_AT: verifiedAt,
+  });
+  assert.equal(envClaim.runtime.activation, 'configured_unverified');
+  const probeRunId = `activation-probe-${'a'.repeat(24)}`;
+  const verified = modelRuntimeAssemblyFromEnv(configured, {
+    'openai-direct-recorded': {
+      configurationRevision,
+      evidenceRef: probeRunId,
+      status: 'live_verified',
+      verifiedAt,
+    },
+  });
+  const active = verified.deployments.find(
+    (deployment) => deployment.status === 'active'
+  );
+  assert.equal(verified.runtime.activation, 'live_verified');
+  assert.equal(active?.activationEvidence.status, 'live_verified');
+  assert.equal(
+    active?.activationEvidence.evidenceRef,
+    probeRunId
+  );
+  assert.equal(active?.activationEvidence.verifiedAt, verifiedAt);
+  assert.equal(
+    active?.activationEvidence.configurationRevision,
+    configurationRevision
+  );
+  assert.equal(active?.providerModel, 'provider-copy-model');
+  assert.equal(active?.endpointRevision, 'openai-compatible-v2');
+  assert.equal(active?.credentialVersion, 'staging-key-v3');
+  const activeModel = verified.models.find(
+    (model) => model.id === 'llm-openai'
+  );
+  assert.equal(activeModel?.stableModelName, 'provider-copy-model');
+  assert.equal(activeModel?.version, 'openai-compatible-v2');
+  const verifiedService = new ModelSupplyApplicationService({
+    models: verified.models,
+    deployments: verified.deployments,
+    execution: new RecordedAdapterRouter(),
+    runtimeCapabilities: verified.runtimeCapabilities,
+  });
+  const snapshot = verifiedService.freezeFixedRoute({
+    workspaceId: 'workspace-direct-verified',
+    operation: 'copy.generate',
+    catalogModelId: 'llm-openai',
+    dataClass: [],
+  });
+  assert.equal(snapshot.providerModel, 'provider-copy-model');
+  assert.equal(snapshot.endpointRevision, 'openai-compatible-v2');
+  assert.equal(snapshot.credentialVersion, 'staging-key-v3');
+  assert.equal(
+    snapshot.allowedCandidates?.[0]?.providerModel,
+    'provider-copy-model'
+  );
+  assert.equal(
+    snapshot.allowedCandidates?.[0]?.stableModelName,
+    'provider-copy-model'
+  );
+  assert.equal(
+    snapshot.allowedCandidates?.[0]?.modelVersion,
+    'openai-compatible-v2'
+  );
+  assert.equal(
+    verifiedService.constrainRuntimeDeployments([
+      { ...active!, credentialVersion: 'different-key-version' },
+    ])[0]?.status,
+    'inactive'
+  );
+
+  assert.equal(
+    modelRuntimeAssemblyFromEnv(
+      { ...configured, MODEL_DIRECT_MODEL: 'provider-copy-model-v2' },
+      {
+        'openai-direct-recorded': {
+          configurationRevision,
+          evidenceRef: probeRunId,
+          status: 'live_verified',
+          verifiedAt,
+        },
+      }
+    ).runtime.activation,
+    'configured_unverified'
+  );
+  assert.doesNotThrow(
+    () =>
+      modelRuntimeAssemblyFromEnv({
+        ...configured,
+        MODEL_DIRECT_CATALOG_MODEL_ID: 'llm-anthropic',
+      }),
+    'llm-anthropic is a native API family and must be accepted'
+  );
+  assert.throws(
+    () =>
+      modelRuntimeAssemblyFromEnv({
+        MODEL_DIRECT_API_KEY: 'configured-secret',
+        MODEL_DIRECT_BASE_URL: 'https://provider.example.test/v1',
+        MODEL_DIRECT_CATALOG_MODEL_ID: 'gpt-image-2',
+        MODEL_DIRECT_INPUT_COST_PER_MILLION: '1',
+        MODEL_DIRECT_MODEL: 'provider-image-model',
+        MODEL_DIRECT_OUTPUT_COST_PER_MILLION: '1',
+        MODEL_EXECUTION_MODE: 'direct',
+      }),
+    /API family/
+  );
+});
+
+test('direct runtime accepts the custom LLM deployment with an explicit protocol', () => {
+  const configured = {
+    MODEL_DIRECT_API_KEY: 'configured-secret',
+    MODEL_DIRECT_BASE_URL: 'https://custom.example.test/v1',
+    MODEL_DIRECT_CATALOG_MODEL_ID: 'llm-custom',
+    MODEL_DIRECT_CREDENTIAL_VERSION: 'custom-key-v1',
+    MODEL_DIRECT_CUSTOM_PROTOCOL: 'openai_chat',
+    MODEL_DIRECT_ENDPOINT_REVISION: 'custom-openai-v1',
+    MODEL_DIRECT_INPUT_COST_PER_MILLION: '1',
+    MODEL_DIRECT_MODEL: 'custom-copy-model',
+    MODEL_DIRECT_OUTPUT_COST_PER_MILLION: '2',
+    MODEL_EXECUTION_MODE: 'direct',
+  };
+  const runtime = modelRuntimeAssemblyFromEnv(configured);
+
+  assert.equal(runtime.runtime.activation, 'configured_unverified');
+  const deployment = runtime.deployments.find(
+    (candidate) => candidate.catalogModelId === 'llm-custom'
+  );
+  assert.equal(deployment?.apiFamily, 'custom');
+  assert.equal(deployment?.providerModel, 'custom-copy-model');
+  assert.notEqual(
+    directModelConfigurationRevisionFromEnv(configured),
+    directModelConfigurationRevisionFromEnv({
+      ...configured,
+      MODEL_DIRECT_CUSTOM_PROTOCOL: 'anthropic_messages',
+    })
+  );
+});
+
+test('direct runtime rejects missing or misplaced custom protocol configuration', () => {
+  const configured = {
+    MODEL_DIRECT_API_KEY: 'configured-secret',
+    MODEL_DIRECT_BASE_URL: 'https://custom.example.test/v1',
+    MODEL_DIRECT_CATALOG_MODEL_ID: 'llm-custom',
+    MODEL_DIRECT_CREDENTIAL_VERSION: 'custom-key-v1',
+    MODEL_DIRECT_ENDPOINT_REVISION: 'custom-v1',
+    MODEL_DIRECT_INPUT_COST_PER_MILLION: '1',
+    MODEL_DIRECT_MODEL: 'custom-copy-model',
+    MODEL_DIRECT_OUTPUT_COST_PER_MILLION: '2',
+    MODEL_EXECUTION_MODE: 'direct',
+  };
+
+  assert.throws(
+    () => modelRuntimeAssemblyFromEnv(configured),
+    /MODEL_DIRECT_CUSTOM_PROTOCOL must be/
+  );
+  assert.throws(
+    () =>
+      modelRuntimeAssemblyFromEnv({
+        ...configured,
+        MODEL_DIRECT_CATALOG_MODEL_ID: 'llm-openai',
+        MODEL_DIRECT_CUSTOM_PROTOCOL: 'openai_chat',
+      }),
+    /only supported by the custom API family/
+  );
+});
+
+test('Ark media runtime activates Seedream and Seedance independently only with matching live evidence', () => {
+  const configured = {
+    ARK_MEDIA_API_KEY: 'configured-ark-secret',
+    ARK_MEDIA_BASE_URL: 'https://ark.example.test/api/v3',
+    ARK_MEDIA_CREDENTIAL_VERSION: 'ark-key-v3',
+    ARK_MEDIA_ENDPOINT_REVISION: 'ark-media-v1',
+    ARK_MEDIA_SOURCE_URL_TTL_SECONDS: '3600',
+    ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: '28',
+    ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: '10000',
+    ARK_SEEDANCE_MODEL: 'doubao-seedance-2-0-test',
+    ARK_SEEDREAM_COST_PER_IMAGE_CNY: '0.22',
+    ARK_SEEDREAM_MODEL: 'doubao-seedream-5-0-test',
+    MODEL_EXECUTION_MODE: 'recorded',
+    MODEL_MEDIA_EXECUTION_MODE: 'ark',
+  };
+  const unverified = modelRuntimeAssemblyFromEnv(configured);
+  assert.equal(unverified.runtime.activation, 'configured_unverified');
+  assert.ok(unverified.runtime.media);
+  assert.equal(unverified.runtimeCapabilities.length, 0);
+  assert.ok(
+    unverified.deployments
+      .filter((deployment) =>
+        ['seedream-5-pro', 'seedance-2'].includes(deployment.catalogModelId)
+      )
+      .every((deployment) => deployment.status === 'inactive')
+  );
+
+  const revisions = arkMediaConfigurationRevisionsFromEnv(configured);
+  const revisionsWithAssetHosts = arkMediaConfigurationRevisionsFromEnv({
+    ...configured,
+    ARK_MEDIA_ASSET_SOURCE_HOSTS:
+      'images.provider-cdn.test, videos.provider-cdn.test',
+  });
+  const revisionsWithReorderedAssetHosts = arkMediaConfigurationRevisionsFromEnv({
+    ...configured,
+    ARK_MEDIA_ASSET_SOURCE_HOSTS:
+      'videos.provider-cdn.test,images.provider-cdn.test',
+  });
+  assert.notEqual(revisions.image, revisionsWithAssetHosts.image);
+  assert.notEqual(revisions.video, revisionsWithAssetHosts.video);
+  assert.deepEqual(
+    revisionsWithAssetHosts,
+    revisionsWithReorderedAssetHosts,
+  );
+  for (const invalidHosts of [
+    '*.provider-cdn.test',
+    'https://provider-cdn.test',
+    'provider-cdn.test/path',
+    'provider-cdn.test:8443',
+  ]) {
+    assert.throws(
+      () =>
+        arkMediaConfigurationRevisionsFromEnv({
+          ...configured,
+          ARK_MEDIA_ASSET_SOURCE_HOSTS: invalidHosts,
+        }),
+      /must contain exact comma-separated hostnames/,
+    );
+  }
+  const verifiedAt = '2026-07-14T12:00:00.000Z';
+  const verified = modelRuntimeAssemblyFromEnv(configured, {
+    'seedance-2-direct': {
+      configurationRevision: revisions.video,
+      evidenceRef: `activation-probe-${'b'.repeat(24)}`,
+      status: 'live_verified',
+      verifiedAt,
+    },
+    'seedream-5-pro-direct': {
+      configurationRevision: revisions.image,
+      evidenceRef: `activation-probe-${'c'.repeat(24)}`,
+      status: 'live_verified',
+      verifiedAt,
+    },
+  });
+
+  assert.equal(verified.runtime.activation, 'live_verified');
+  assert.deepEqual(
+    verified.runtimeCapabilities
+      .map((capability) => capability.catalogModelId)
+      .sort(),
+    ['seedance-2', 'seedream-5-pro']
+  );
+  const seedream = verified.deployments.find(
+    (deployment) => deployment.catalogModelId === 'seedream-5-pro'
+  );
+  const seedance = verified.deployments.find(
+    (deployment) => deployment.catalogModelId === 'seedance-2'
+  );
+  assert.equal(seedream?.status, 'active');
+  assert.equal(seedream?.providerModel, 'doubao-seedream-5-0-test');
+  assert.equal(seedream?.credentialVersion, 'ark-key-v3');
+  assert.equal(seedream?.endpointRevision, 'ark-media-v1');
+  assert.equal(
+    seedream?.activationEvidence.configurationRevision,
+    revisions.image
+  );
+  assert.equal(
+    seedream?.activationEvidence.evidenceRef,
+    `activation-probe-${'c'.repeat(24)}`
+  );
+  assert.equal(seedance?.status, 'active');
+  assert.equal(seedance?.providerModel, 'doubao-seedance-2-0-test');
+  assert.equal(
+    seedance?.activationEvidence.configurationRevision,
+    revisions.video
+  );
+
+  const service = new ModelSupplyApplicationService({
+    models: verified.models,
+    deployments: verified.deployments,
+    execution: verified.runtime.execution,
+    runtimeCapabilities: verified.runtimeCapabilities,
+  });
+  const imageSnapshot = service.freezeFixedRoute({
+    workspaceId: 'workspace-ark-verified',
+    operation: 'image.generate',
+    catalogModelId: 'seedream-5-pro',
+    dataClass: [],
+  });
+  assert.equal(imageSnapshot.providerModel, 'doubao-seedream-5-0-test');
+  assert.equal(imageSnapshot.endpointRevision, 'ark-media-v1');
+  assert.equal(imageSnapshot.credentialVersion, 'ark-key-v3');
+  assert.equal(
+    imageSnapshot.deploymentLifecycleRevision,
+    'ark-media:ark-media-v1:doubao-seedream-5-0-test'
+  );
+  assert.equal(
+    imageSnapshot.allowedCandidates?.[0]?.activationStatus,
+    'live_verified'
+  );
+
+  assert.throws(
+    () =>
+      modelRuntimeAssemblyFromEnv({
+        MODEL_EXECUTION_MODE: 'recorded',
+        MODEL_MEDIA_EXECUTION_MODE: 'unknown',
+      }),
+    /MODEL_MEDIA_EXECUTION_MODE must be disabled, ark, tuzi, or ark,tuzi/
+  );
+});
+
+test('Tuzi media runtime supports independent evidence and Ark coexistence', () => {
+  const configured = {
+    MODEL_EXECUTION_MODE: 'recorded',
+    MODEL_MEDIA_EXECUTION_MODE: 'ark,tuzi',
+    ARK_MEDIA_API_KEY: 'configured-ark-secret',
+    ARK_MEDIA_BASE_URL: 'https://ark.example.test/api/v3',
+    ARK_MEDIA_CREDENTIAL_VERSION: 'ark-key-v1',
+    ARK_MEDIA_ENDPOINT_REVISION: 'ark-media-v1',
+    ARK_MEDIA_SOURCE_URL_TTL_SECONDS: '3600',
+    ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: '28',
+    ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: '10000',
+    ARK_SEEDANCE_MODEL: 'ark-video-model',
+    ARK_SEEDREAM_COST_PER_IMAGE_CNY: '0.22',
+    ARK_SEEDREAM_MODEL: 'ark-image-model',
+    TUZI_MEDIA_API_KEY: 'configured-tuzi-secret',
+    TUZI_MEDIA_BASE_URL: 'https://api.tu-zi.example/v1',
+    TUZI_MEDIA_CREDENTIAL_VERSION: 'tuzi-key-v2',
+    TUZI_MEDIA_ENDPOINT_REVISION: 'tuzi-media-v1',
+    TUZI_MEDIA_SOURCE_URL_TTL_SECONDS: '3600',
+    TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: '30',
+    TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: '12000',
+    TUZI_SEEDANCE_MODEL: 'tuzi-video-model',
+    TUZI_GPT_IMAGE_2_COST_PER_IMAGE_CNY: '0.25',
+    TUZI_GPT_IMAGE_2_MODEL: 'gpt-image-2',
+  };
+  const revisions = tuziMediaConfigurationRevisionsFromEnv(configured);
+  const verifiedAt = '2026-07-15T12:00:00.000Z';
+  const tuziOnly = modelRuntimeAssemblyFromEnv({
+    ...configured,
+    MODEL_MEDIA_EXECUTION_MODE: 'tuzi',
+  });
+  assert.equal(
+    tuziOnly.models.find((model) => model.id === 'gpt-image-2')?.displayName,
+    'tu-zi · gpt-image-2'
+  );
+  assert.equal(tuziOnly.runtimeCapabilities.length, 0);
+  assert.equal(
+    tuziOnly.deployments.find(
+      (deployment) => deployment.id === 'gpt-image-2-tuzi-relay'
+    )?.status,
+    'inactive'
+  );
+  const assembly = modelRuntimeAssemblyFromEnv(configured, {
+    'seedance-2-tuzi-relay': {
+      configurationRevision: revisions.video,
+      evidenceRef: `activation-probe-${'d'.repeat(24)}`,
+      status: 'live_verified',
+      verifiedAt,
+    },
+    'gpt-image-2-tuzi-relay': {
+      configurationRevision: revisions.image,
+      evidenceRef: `activation-probe-${'e'.repeat(24)}`,
+      status: 'live_verified',
+      verifiedAt,
+    },
+  });
+
+  assert.ok(assembly.runtime.arkMedia);
+  assert.ok(assembly.runtime.tuziMedia);
+  assert.deepEqual(
+    assembly.runtimeCapabilities.map((capability) => capability.id).sort(),
+    ['gpt-image-2-tuzi-relay', 'seedance-2-tuzi-relay']
+  );
+  const image = assembly.deployments.find(
+    (deployment) => deployment.id === 'gpt-image-2-tuzi-relay'
+  );
+  assert.equal(image?.status, 'active');
+  assert.equal(image?.providerModel, 'gpt-image-2');
+  assert.equal(image?.credentialVersion, 'tuzi-key-v2');
+  assert.equal(
+    image?.activationEvidence.configurationRevision,
+    revisions.image
+  );
+  assert.equal(
+    assembly.deployments.find(
+      (deployment) => deployment.id === 'seedream-5-pro-direct'
+    )?.status,
+    'inactive'
+  );
+
+  assert.equal(
+    modelRuntimeAssemblyFromEnv(
+      { ...configured, TUZI_GPT_IMAGE_2_MODEL: 'changed-image-model' },
+      {
+        'gpt-image-2-tuzi-relay': {
+          configurationRevision: revisions.image,
+          evidenceRef: `activation-probe-${'e'.repeat(24)}`,
+          status: 'live_verified',
+          verifiedAt,
+        },
+      }
+    ).deployments.find(
+      (deployment) => deployment.id === 'gpt-image-2-tuzi-relay'
+    )?.status,
+    'inactive'
+  );
+});
