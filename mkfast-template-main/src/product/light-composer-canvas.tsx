@@ -110,6 +110,27 @@ function drawText(
   context.restore();
 }
 
+export function lightCanvasImageDrawArguments(
+  element: Extract<
+    LightCanvasDocument['pages'][number]['elements'][number],
+    { kind: 'image' }
+  >,
+  sourceWidth: number,
+  sourceHeight: number
+): [number, number, number, number, number, number, number, number] {
+  const crop = element.crop ?? { height: 1, width: 1, x: 0, y: 0 };
+  return [
+    crop.x * sourceWidth,
+    crop.y * sourceHeight,
+    crop.width * sourceWidth,
+    crop.height * sourceHeight,
+    -element.width / 2,
+    -element.height / 2,
+    element.width,
+    element.height,
+  ];
+}
+
 async function loadImage(src: string) {
   const response = await fetch(src, { credentials: 'same-origin' });
   if (!response.ok) throw new Error('light Composer image could not be read.');
@@ -151,10 +172,7 @@ export async function renderLightCanvasDocument(
     context.rotate((element.rotation * Math.PI) / 180);
     context.drawImage(
       image,
-      -element.width / 2,
-      -element.height / 2,
-      element.width,
-      element.height
+      ...lightCanvasImageDrawArguments(element, image.width, image.height)
     );
     context.restore();
     image.close();
@@ -204,18 +222,29 @@ function Preview({
         const transform = `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`;
         if (element.kind === 'image') {
           const src = element.src ?? sources.get(element.assetId);
+          const crop = element.crop ?? { height: 1, width: 1, x: 0, y: 0 };
           return src ? (
-            <image
+            <svg
               height={element.height}
-              href={src}
               key={element.id}
-              opacity={element.opacity ?? 1}
-              preserveAspectRatio="xMidYMid slice"
+              overflow="hidden"
+              preserveAspectRatio="none"
               transform={transform}
+              viewBox={`${crop.x} ${crop.y} ${crop.width} ${crop.height}`}
               width={element.width}
               x={element.x}
               y={element.y}
-            />
+            >
+              <image
+                height="1"
+                href={src}
+                opacity={element.opacity ?? 1}
+                preserveAspectRatio="none"
+                width="1"
+                x="0"
+                y="0"
+              />
+            </svg>
           ) : null;
         }
         return (
