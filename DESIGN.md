@@ -1,0 +1,235 @@
+---
+name: 美业内容副驾
+description: 门店橱窗——内容永远是主角，界面是一层玻璃
+colors:
+  ink: "oklch(0.22 0 0)"
+  ink-90: "oklch(0 0 0 / 0.9)"
+  ink-60: "oklch(0 0 0 / 0.6)"
+  ink-40: "oklch(0 0 0 / 0.4)"
+  paper: "oklch(1 0 0)"
+  canvas: "oklch(0.965 0 0)"
+  glass-80: "oklch(1 0 0 / 0.8)"
+  glass-50: "oklch(1 0 0 / 0.5)"
+  glass-35: "oklch(1 0 0 / 0.35)"
+  tint-active: "oklch(0.42 0 0 / 0.08)"
+  tint-hover: "oklch(0.42 0 0 / 0.04)"
+  hairline: "oklch(0 0 0 / 0.04)"
+  rose-gold: "oklch(0.63 0.13 18)"
+  rose-wash: "oklch(0.95 0.025 18)"
+  rose-deep: "oklch(0.45 0.1 18)"
+  mask-scrim: "oklch(0 0 0 / 0.4)"
+  status-success: "oklch(0.53 0.14 150)"
+  status-progress: "oklch(0.5 0.19 262)"
+  status-warning: "oklch(0.55 0.13 85)"
+  status-danger: "oklch(0.55 0.2 27)"
+typography:
+  display:
+    fontFamily: "Inter, 'HarmonyOS Sans', MiSans, 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "clamp(1.75rem, 3.5vw, 2.75rem)"
+    fontWeight: 200
+    lineHeight: 1.2
+  headline:
+    fontFamily: "Inter, 'HarmonyOS Sans', MiSans, 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.5rem"
+    fontWeight: 600
+    lineHeight: 1.25
+  title:
+    fontFamily: "Inter, 'HarmonyOS Sans', MiSans, 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1rem"
+    fontWeight: 500
+    lineHeight: 1.4
+  body:
+    fontFamily: "Inter, 'HarmonyOS Sans', MiSans, 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 400
+    lineHeight: 1.55
+  label:
+    fontFamily: "Inter, 'HarmonyOS Sans', MiSans, 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 500
+    lineHeight: 1.4
+rounded:
+  sm: "8px"
+  md: "12px"
+  lg: "16px"
+  xl: "20px"
+  2xl: "24px"
+  3xl: "32px"
+  pill: "999px"
+spacing:
+  xs: "4px"
+  sm: "8px"
+  md: "12px"
+  lg: "16px"
+  xl: "24px"
+  2xl: "32px"
+  3xl: "48px"
+components:
+  button-primary:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.paper}"
+    rounded: "{rounded.pill}"
+    padding: "0 20px"
+    height: "44px"
+  button-primary-hover:
+    backgroundColor: "oklch(0.32 0 0)"
+  button-glass:
+    backgroundColor: "{colors.glass-50}"
+    textColor: "{colors.ink-90}"
+    rounded: "{rounded.pill}"
+    padding: "0 14px"
+    height: "38px"
+  nav-item-active:
+    backgroundColor: "{colors.tint-active}"
+    textColor: "{colors.ink-90}"
+    rounded: "{rounded.pill}"
+    height: "44px"
+  chip-scenario:
+    backgroundColor: "{colors.glass-50}"
+    textColor: "{colors.ink-90}"
+    rounded: "{rounded.pill}"
+    padding: "0 16px"
+    height: "36px"
+  badge-spark:
+    backgroundColor: "{colors.rose-wash}"
+    textColor: "{colors.rose-deep}"
+    rounded: "{rounded.sm}"
+    padding: "2px 8px"
+  composer:
+    backgroundColor: "{colors.paper}"
+    rounded: "{rounded.3xl}"
+    padding: "12px"
+  card-media:
+    rounded: "{rounded.2xl}"
+---
+
+# Design System: 美业内容副驾
+
+## 1. Overview: 门店橱窗
+
+**Creative North Star: "门店橱窗（The Shop Window）"**
+
+美业门店最好的作品摆在橱窗里，玻璃是透明的——路人隔着玻璃看见的是作品本身，不是玻璃。这套系统把同一个道理搬进产品：**商家的内容影像是界面的氛围底色，一切控件都是浮在上面的玻璃或白瓷**。生成工作台首屏是全出血的媒体氛围层（商家自己的作品、门店影像、或当季美业主题影像），悬浮其上的是磨砂玻璃侧栏、玻璃胶囊、白瓷 Composer 大卡，和一句压在氛围上的超细问候语（「嗨，XX 店主，今天想发点什么？」）。界面永远不和作品抢色——控件是黑 alpha 墨色梯度的全中性系统，颜色由内容供给，唯一的品牌色「玫瑰金」只在 AI 时刻做火花。
+
+这套系统显式拒绝（引自 PRODUCT.md 反面参照）：CreatOK 像素级克隆与通用 AI 工具市场、聊天气泡 copilot、SaaS 待办卡片后台感、后台代码与技术术语暴露给商家。同时它不是小云雀的换皮——玫瑰金取代紫罗兰、美业影像取代梦幻风景、拟人化中文问候取代泛化 greeting，身份是独立美业品牌。
+
+**Key Characteristics:**
+- 内容影像做氛围层，界面是玻璃和白瓷，绝不抢戏
+- 控件全中性（墨色 alpha 梯度），玫瑰金只做 AI 火花（一屏 ≤5%）
+- 大圆角谱系（12→32px）+ 药丸导航，柔和无棱角
+- 阴影近乎为零，深度靠磨砂玻璃层次表达
+- 桌面优先浅色系统；Pro Studio 保持独立深色影棚密度
+- 动效克制：ease-out 位移淡入，全部提供 reduced-motion 替代
+
+## 2. Colors: 玻璃与胭脂
+
+全中性玻璃基底之上，唯一的胭脂色只为 AI 时刻点亮。
+
+### Primary
+- **玫瑰金 rose-gold** (oklch(0.63 0.13 18)): 品牌火花色。只出现在 AI 时刻——生成中微光、AI 建议火花图标、升单/会员标记、「新」徽标。绝不做按钮底色、绝不做正文色。
+- **玫瑰晕 rose-wash** (oklch(0.95 0.025 18)): 火花的浅底，AI 徽标与提示条的背景。
+- **玫瑰深 rose-deep** (oklch(0.45 0.1 18)): 玫瑰晕上的文字色，保证 ≥4.5:1。
+
+### Neutral
+- **墨 ink** (oklch(0.22 0 0)): 主按钮底色、实心图标。
+- **墨-90 / 60 / 40** (oklch(0 0 0 / .9/.6/.4)): 三档文字梯度——正文与标题用 90，辅助说明用 60，占位与禁用用 40。60 是最低正文档位。
+- **白瓷 paper** (oklch(1 0 0)): Composer、功能卡、实体面板的底。
+- **画布 canvas** (oklch(0.965 0 0)): 无媒体氛围层时的页面底色。
+- **玻璃三档 glass-80 / 50 / 35**: 白 alpha 磨砂底——80 给侧栏壳，50 给顶部胶囊与场景 chips，35 给最轻的悬浮痕迹。玻璃必须配 blur 与 1px 白描边，见 Elevation。
+- **灰痕 tint-active / tint-hover** (oklch(0.42 0 0 / .08/.04)): 导航激活/悬停的中性药丸底。
+- **发丝线 hairline** (oklch(0 0 0 / 0.04)): 分隔线唯一色。
+- **压字遮罩 mask-scrim** (oklch(0 0 0 / 0.4)): 媒体卡底部渐变遮罩的起始色。
+
+### Tertiary（语义状态，只在规范化状态标签内出现）
+- **status-success / progress / warning / danger**: 中文语义标签 + 圆点 + 下一步动作的配色，浅色 wash 底 + 深色文字，沿用现有 ProductStatus 五 tone 体系。
+
+### Named Rules
+**橱窗法则（The Shop Window Rule）。** 内容永远是主角。任何界面元素只允许两种材质：玻璃（白 alpha + blur + 白描边）或白瓷（纯白实心）。禁止给控件上彩色底——颜色由商家的内容影像供给。
+
+**一点胭脂法则（The Single Rouge Rule）。** 玫瑰金在任何一屏的覆盖面积 ≤5%，且只系于 AI 语义（生成、建议、升单）。如果一个元素不是 AI 时刻还想用玫瑰金，答案是不用。
+
+**遮罩托字法则（The Mask Rule）。** 文字压在媒体上必须垫渐变遮罩（linear-gradient(0deg, mask-scrim, transparent 30%)）或问候语级别的加粗白字 + 氛围层压暗，实测对比度 ≥4.5:1 才准上线。
+
+## 3. Typography
+
+**Display Font:** Inter + HarmonyOS Sans / MiSans / PingFang SC（同一栈，超细 200 号）
+**Body Font:** 同一家族，400/500/600 三档
+**Label/Mono Font:** 无独立 mono；技术标识不面向商家展示
+
+**Character:** 单家族多字重。中文界面的personality全靠字重反差——问候语用 200 超细大字营造轻盈亲切，正文 400 保证可读，操作 500 干脆利落。绝不引入第二家族。
+
+### Hierarchy
+- **Display** (200, clamp(1.75rem, 3.5vw, 2.75rem), 1.2): 工作台问候语专用，白字压氛围层。一屏最多一处。
+- **Headline** (600, 1.5rem, 1.25): 页面标题、面板主标题。
+- **Title** (500, 1rem, 1.4): 卡片标题、区块标题。
+- **Body** (400, 0.875rem, 1.55): 正文，墨-90；行长 ≤72ch。
+- **Label** (500, 0.75rem, 1.4): chips、徽标、状态标签。中文标签禁用 letter-spacing 拉宽与全大写英文 eyebrow。
+
+### Named Rules
+**问候语法则（The Greeting Rule）。** Display 层只承载拟人化问候（PRODUCT.md：「拟人化一句话提醒 > SaaS 待办卡片」），格式是「称呼 + 一句话行动邀请」。禁止用 Display 层放指标数字或功能标题。
+
+## 4. Elevation: 玻璃的三档 blur
+
+本系统**不用阴影表达层级，用磨砂玻璃的透明度×模糊度表达**。浮在氛围层上的元素分三档：壳级玻璃（glass-80 + blur(64px)，侧栏）、件级玻璃（glass-50 + blur(24px)，胶囊/chips/浮动条）、痕级玻璃（glass-35 + blur(20px)，最轻的悬浮标记）。每片玻璃必须带 1px 白描边（rgba(255,255,255,1) 或 0.5）勾出边缘。白瓷件（Composer、功能卡）落在玻璃之上，是最高实体层。
+
+### Shadow Vocabulary
+- **环境影 ambient** (`box-shadow: 0 2px 20px oklch(0 0 0 / 0.03)`): 白瓷卡与画布之间的唯一常规影，几乎不可见。
+- **悬浮影 overlay** (`box-shadow: 0 4px 20px oklch(0 0 0 / 0.12)`): 仅 popover、dropdown、dialog 三类真悬浮层。
+- **玫瑰辉光 rose-glow** (`box-shadow: 0 6px 16px oklch(0.63 0.13 18 / 0.24)`): 仅生成中状态的呼吸微光，且随 prefers-reduced-motion 退化为静态 1px 玫瑰描边。
+
+### Named Rules
+**玻璃有边法则（The Edged Glass Rule）。** 没有 blur、没有描边的半透明白不是玻璃，是没上完色，禁止出现。玻璃只用于浮在氛围层/媒体上的悬浮元素；实体内容区（表格、表单、正文面板）一律白瓷，禁止装饰性 glassmorphism。
+
+## 5. Components
+
+### Buttons
+- **Shape:** 药丸（999px），高度 44px（主）/38px（玻璃）/36px（紧凑），触屏最小命中 44px
+- **Primary（墨丸）:** 墨黑底 + 白字（ink / paper），一屏可见状态内只允许一个；hover 提亮至 oklch(0.32 0 0)
+- **Glass（玻璃丸）:** glass-50 + blur(24px) + 1px 白描边 + 墨-90 文字，次级动作
+- **Ghost:** 透明底 + tint-hover 悬停痕，行内三级动作
+- **Destructive:** status-danger 10% wash 底 + danger 文字，沿用现有 shadcn destructive 语法
+- **Focus:** 2px 墨色 outline + 2px offset（氛围层上改为 2px 白 outline）
+
+### Chips
+- **参数 chips（Composer 内）:** ghost 底 + 图标 + 12px/500 文字 + 下拉箭头，激活态 tint-active 药丸
+- **场景 chips（Composer 下）:** 玻璃丸样式，点击即预填 Composer
+
+### Cards / Containers
+- **功能卡:** 白瓷底、圆角 20px、环境影、缩略图 + Title + 墨-60 描述一行
+- **媒体卡（内容库/精选作品）:** 圆角 24px，媒体全出血，底部 mask-scrim 渐变遮罩托白字标题与状态标签；hover 时遮罩加深 + 操作浮现
+- **禁止嵌套卡片，禁止同尺寸 icon+标题+描述卡无限重复的瀑布**
+
+### Inputs / Fields
+- **Composer（签名组件）:** 白瓷大卡、圆角 32px、内衬 12px、blur(24px) 承接氛围层边缘、1px 白描边；上半是多行输入（占位文案用拟人化口吻：「说说想发什么，可以 @ 引用门店素材」，墨-60 保证对比），下半是参数 chips 行 + 右侧圆形墨丸发送钮。它是工作台唯一主轴，宽度 ~780px 居中。
+- **普通表单:** 白瓷底、圆角 12px、1px 发丝线描边、focus 换 2px 墨色 outline；错误态 danger 描边 + 中文语义错误说明
+
+### Navigation
+- **侧栏壳:** 壳级玻璃悬浮板（圆角 24px、距屏缘 12px 悬浮、glass-80 + blur(64px)），内含 logo、一级导航（创作/内容/素材/门店，药丸项，激活 = tint-active + 墨-90/500）、近期记录列表、底部设置工具区
+- **顶部右侧:** 玻璃胶囊组（帮助、通知、账户），会员/升单入口带玫瑰金火花图标
+- **移动端:** 侧栏收为底部任务面导航，遵循移动任务面边界，不镜像桌面四目的地
+
+### 规范化状态标签（签名组件）
+中文语义标签 + tone 圆点 + 可选说明与下一步动作，五 tone（neutral/progress/success/warning/danger）浅 wash 底。这是全站唯一的状态表达组件——原始状态码永不直出。
+
+### 生成中微光（签名组件）
+Generation Job 运行时，Result Card 边缘出现玫瑰辉光呼吸（4s ease-in-out 循环）+ 墨-60 拟人化进度文案（「正在为你排版第 2 张图…」）。reduced-motion 下退化为静态玫瑰描边 + 文案。
+
+## 6. Do's and Don'ts
+
+### Do:
+- **Do** 让商家的内容影像做氛围层：工作台首屏优先取商家最近的成品/素材，冷启动用美业主题默认影像（发丝光泽、妆容特写、门店暖光，非风景）。
+- **Do** 全部动效用 ease-out（cubic-bezier(0.22, 1, 0.36, 1)），150–600ms，只动 transform/opacity，且每个动效写 prefers-reduced-motion 替代。
+- **Do** 用字重反差（200 问候 vs 500 操作）制造气质，玫瑰金只做火花。
+- **Do** 状态一律走规范化状态标签；失败说明翻译成商家的下一步动作。
+- **Do** 玻璃三要素齐全：白 alpha 底 + blur + 1px 白描边，且只用于悬浮层。
+
+### Don't:
+- **Don't** 做 CreatOK/小云雀像素级克隆或通用 AI 工具市场首页（PRODUCT.md 反面参照原文）。
+- **Don't** 做聊天气泡 copilot / floating copilot——Agent 是文档式创作记录（PRODUCT.md 反面参照原文）。
+- **Don't** 做 SaaS 待办卡片后台感——运营上下文是拟人化提醒与紧凑周条（PRODUCT.md 反面参照原文）。
+- **Don't** 把 recorded/trialing 等状态码、Work/Job/Asset 术语、模型路由细节暴露给商家（PRODUCT.md 反面参照原文）。
+- **Don't** 给控件上彩色底、用玫瑰金做按钮/链接/正文——违反一点胭脂法则。
+- **Don't** 用渐变文字（background-clip: text）、侧边彩条（border-left >1px 强调）、大写字距 eyebrow、hero 大数字指标卡、同构卡片无限网格。
+- **Don't** 在实体内容区（表格/表单/正文）用玻璃材质；没有 blur 和描边的半透明白禁止出现。
+- **Don't** 文字直接压媒体不垫遮罩；墨-40 当正文色；玻璃上放低于 4.5:1 的灰字。
+- **Don't** 给 Pro Studio 强套浅色氛围范式——它保持独立深色影棚密度，只共享圆角谱、字体栈、状态语义与玫瑰金火花语义。
