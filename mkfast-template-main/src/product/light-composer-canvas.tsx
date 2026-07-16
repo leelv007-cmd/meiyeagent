@@ -38,6 +38,8 @@ import {
 } from './light-composer-document';
 import { buildLightComposerComplianceLabels } from './light-composer-compliance';
 
+const FULL_SOURCE_CROP = { height: 1, width: 1, x: 0, y: 0 } as const;
+
 export interface LightCanvasSnapshot {
   aigcLabelEnabled: boolean;
   document: LightCanvasDocument;
@@ -118,7 +120,7 @@ export function lightCanvasImageDrawArguments(
   sourceWidth: number,
   sourceHeight: number
 ): [number, number, number, number, number, number, number, number] {
-  const crop = element.crop ?? { height: 1, width: 1, x: 0, y: 0 };
+  const crop = element.crop ?? FULL_SOURCE_CROP;
   return [
     crop.x * sourceWidth,
     crop.y * sourceHeight,
@@ -222,7 +224,7 @@ function Preview({
         const transform = `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`;
         if (element.kind === 'image') {
           const src = element.src ?? sources.get(element.assetId);
-          const crop = element.crop ?? { height: 1, width: 1, x: 0, y: 0 };
+          const crop = element.crop ?? FULL_SOURCE_CROP;
           return src ? (
             <svg
               height={element.height}
