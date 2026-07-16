@@ -165,3 +165,128 @@ test('rejects a legacy raster that no longer matches its approved SHA-256', asyn
     /approved legacy SHA-256/u
   );
 });
+
+test('refuses empty or unapproved comparison manifests fail-closed', async () => {
+  const legacy = await png([...WHITE, ...WHITE, ...WHITE, ...WHITE]);
+  const candidate = await sharp(legacy).png({ compressionLevel: 0 }).toBuffer();
+  const load = async (path: string) => {
+    if (path === 'legacy.png') return legacy;
+    if (path === 'candidate.png') return candidate;
+    throw new Error(`Missing fixture ${path}.`);
+  };
+  const approved = {
+    approval: {
+      approvedAt: '2026-07-16T00:00:00.000Z',
+      reference: 'approval://renderer-baseline-a',
+      reviewer: 'product-reviewer-a',
+    },
+    samples: [
+      {
+        approvedLegacySha256: sha256(legacy),
+        candidatePath: 'candidate.png',
+        id: 'sample-a',
+        legacyPath: 'legacy.png',
+      },
+    ],
+    schemaVersion: 1 as const,
+    thresholds: { maxDifferentPixelRatio: 0, minSsim: 1 },
+  } satisfies RendererComparisonManifest;
+
+  await assert.rejects(
+    compareRendererManifest({ ...approved, samples: [] }, load),
+    /must contain samples/u
+  );
+  await assert.rejects(
+    compareRendererManifest(
+      { ...approved, schemaVersion: 2 as unknown as 1 },
+      load
+    ),
+    /must contain samples/u
+  );
+  await assert.rejects(
+    compareRendererManifest(
+      {
+        ...approved,
+        approval: {
+          approvedAt: 'not-an-iso-timestamp',
+          reference: 'approval://renderer-baseline-a',
+          reviewer: 'product-reviewer-a',
+        },
+      },
+      load
+    ),
+    /approval is required/u
+  );
+  await assert.rejects(
+    compareRendererManifest(
+      {
+        ...approved,
+        approval: {
+          approvedAt: '2026-07-16T00:00:00.000Z',
+          reference: '   ',
+          reviewer: 'product-reviewer-a',
+        },
+      },
+      load
+    ),
+    /approval is required/u
+  );
+  await assert.rejects(
+    compareRendererManifest(
+      {
+        ...approved,
+        approval: {
+          approvedAt: '2026-07-16T00:00:00.000Z',
+          reference: 'approval://renderer-baseline-a',
+          reviewer: '',
+        },
+      },
+      load
+    ),
+    /approval is required/u
+  );
+  await assert.rejects(
+    compareRendererManifest(
+      {
+        ...approved,
+        samples: [
+          {
+            approvedLegacySha256: sha256(legacy),
+            candidatePath: 'candidate.png',
+            id: '   ',
+            legacyPath: 'legacy.png',
+          },
+        ],
+      },
+      load
+    ),
+    /sample id is required/u
+  );
+  await assert.rejects(
+    compareRendererManifest(
+      {
+        ...approved,
+        samples: [
+          {
+            approvedLegacySha256: 'not-a-digest',
+            candidatePath: 'candidate.png',
+            id: 'sample-a',
+            legacyPath: 'legacy.png',
+          },
+        ],
+      },
+      load
+    ),
+    /64-character hexadecimal digest/u
+  );
+  await assert.rejects(
+    compareRendererOutputs({
+      approval: approved.approval,
+      candidate,
+      legacy: new Uint8Array(),
+      sampleId: 'sample-a',
+      thresholds: approved.thresholds,
+    }),
+    /raster is empty/u
+  );
+});

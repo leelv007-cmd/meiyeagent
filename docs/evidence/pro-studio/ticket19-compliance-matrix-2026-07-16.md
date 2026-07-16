@@ -25,8 +25,10 @@ pnpm --filter @meiye/web exec playwright test \
 
 Result: `1 passed` in `49.2 s` (test body: `18.9 s`). Runtime screenshot: [`ticket17-19-light-composer-runtime.png`](./ticket17-19-light-composer-runtime.png).
 
-## Approved legacy comparison
+## Takeover vs sample-equivalence
 
-`apps/core/src/p1/operations/renderer-comparison.ts` now provides RGBA pixel-difference and structural-similarity comparison. Its CLI requires a non-empty sample set, each approved legacy raster's SHA-256, reviewer, approval timestamp, approval reference, and explicit thresholds; missing or substituted approval evidence fails closed.
+**Takeover (closed on ticket 19 burn/evidence/closed-loop DoDs; powers ticket 20 gate ③):** Light Composer is the sole daily layout renderer (Polotno runtime absent). The matrix above proves watermark/AIGC burn-in, export evidence, and receipt linkage without any legacy path.
 
-No approved legacy-renderer sample or product-approved threshold exists in the workspace, so the old/new equivalence gate remains open and Ticket 19 remains partial.
+**Sample-equivalence (still open on ticket 19 only):** `apps/core/src/p1/operations/renderer-comparison.ts` provides RGBA pixel-difference and structural-similarity comparison. Its CLI requires a non-empty sample set, each approved legacy raster's SHA-256, reviewer, approval timestamp, approval reference, and explicit thresholds; empty samples, unapproved approval metadata, invalid digests, and empty rasters fail closed.
+
+No approved legacy-renderer sample or product-approved threshold exists in the workspace. The legacy Polotno runtime is already removed, so approved historical samples cannot be regenerated in-repo. Ticket 19 remains partial solely for sample-equivalence; do not treat that residual as reopening ticket 20 gate ③ takeover.
