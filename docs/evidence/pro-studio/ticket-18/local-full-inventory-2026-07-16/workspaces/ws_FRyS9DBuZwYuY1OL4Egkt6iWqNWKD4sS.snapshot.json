@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "82054dd1-4005-46ad-b1cd-308cbc08c965"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "197514fe-2c8e-412e-92b2-0b7aef2c12c3"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS",
+  "works": [
+    {
+      "currentRevisionId": "82054dd1-4005-46ad-b1cd-308cbc08c965",
+      "id": "197514fe-2c8e-412e-92b2-0b7aef2c12c3",
+      "revisions": [
+        {
+          "id": "82054dd1-4005-46ad-b1cd-308cbc08c965",
+          "workId": "197514fe-2c8e-412e-92b2-0b7aef2c12c3",
+          "document": {
+            "pages": [
+              {
+                "id": "d48b82a6-8624-4fb0-89b2-de6e6bb14db8",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T09:02:15.548Z",
+          "createdBy": "FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.693Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "8cf60a0aaafc331dd040b8f369990ad1b523354721306f3ed4b5866d1217d5c3",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "522ba34f2b309daa2a8293ddb8e9f04775375324024cdb7775ecbca19d10da99"
+  }
+}

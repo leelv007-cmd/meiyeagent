@@ -1,0 +1,78 @@
+{
+  "coverage": {
+    "revisionPercent": 100,
+    "templatePercent": 100,
+    "templateVersionPercent": 100,
+    "workPercent": 100
+  },
+  "elementKinds": {
+    "text": 12,
+    "image": 6
+  },
+  "generatedAt": "2026-07-16T10:01:11.705Z",
+  "totals": {
+    "exportRecords": 4,
+    "pages": 7,
+    "revisions": 7,
+    "templateVersions": 0,
+    "templates": 0,
+    "works": 1
+  },
+  "templates": [],
+  "unknownFields": {},
+  "works": [
+    {
+      "disposition": "convertible",
+      "exportRecordCount": 4,
+      "id": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+      "lastEditedAt": "2026-07-16T07:24:59.857Z",
+      "lastExportedAt": "2026-07-16T07:25:00.009Z",
+      "currentRevisionId": "c9a09f0f-29f9-46b1-b631-ea800eab035e",
+      "revisionCount": 7,
+      "revisions": [
+        {
+          "disposition": "convertible",
+          "id": "86d7bf87-f0f4-467e-a8e6-76a697a19866",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T07:24:49.891Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "c74c46c6-cbf7-4e06-9f49-0bb0d4b38212",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T07:24:51.333Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "694f1f81-2b89-4f48-a317-b99bc02bc81c",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T07:24:53.284Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "021be314-ed5f-4b78-ac72-e922fded45af",
+          "managedRasterAvailable": true,
+          "createdAt": "2026-07-16T07:24:53.773Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "524fd01b-c25a-4728-9a69-01c0b24b6af6",
+          "managedRasterAvailable": true,
+          "createdAt": "2026-07-16T07:24:55.731Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "bdba79ab-6827-4b6d-af3a-5848c9eae5f0",
+          "managedRasterAvailable": true,
+          "createdAt": "2026-07-16T07:24:57.823Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "c9a09f0f-29f9-46b1-b631-ea800eab035e",
+          "managedRasterAvailable": true,
+          "createdAt": "2026-07-16T07:24:59.857Z"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,644 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [
+      "0c0f3ea3-1306-4aaa-a62a-16ea959a39b2",
+      "4faa986a-6edf-48c3-bb5c-a2d3f3ae6627",
+      "7138764c-1e7d-4d50-a43b-bbf7b20bcff1",
+      "9b4c9460-af41-4863-b566-b79e22f1c7e9"
+    ],
+    "revisionIds": [
+      "86d7bf87-f0f4-467e-a8e6-76a697a19866",
+      "c74c46c6-cbf7-4e06-9f49-0bb0d4b38212",
+      "694f1f81-2b89-4f48-a317-b99bc02bc81c",
+      "021be314-ed5f-4b78-ac72-e922fded45af",
+      "524fd01b-c25a-4728-9a69-01c0b24b6af6",
+      "bdba79ab-6827-4b6d-af3a-5848c9eae5f0",
+      "c9a09f0f-29f9-46b1-b631-ea800eab035e"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "6de547f5-e6c1-42be-a10c-2598ac6e115f"
+    ]
+  },
+  "exportReceipts": [
+    {
+      "id": "0c0f3ea3-1306-4aaa-a62a-16ea959a39b2",
+      "bytes": 87133,
+      "width": 1080,
+      "format": "png",
+      "height": 1350,
+      "sha256": "9d862c6596ca515cf17767aeae05ecb20987f226a6c0b1d47c64ef3f84ad6661",
+      "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+      "assetId": "owned-9d862c6596ca515cf17767aeae05ecb2",
+      "createdAt": "2026-07-16T07:25:00.009Z",
+      "objectKey": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e/owned/9d862c6596ca515cf17767aeae05ecb20987f226a6c0b1d47c64ef3f84ad6661.png",
+      "validation": {
+        "raster": {
+          "width": 1080,
+          "format": "png",
+          "height": 1350,
+          "hasAlphaChannel": true,
+          "hasTransparentPixels": false
+        },
+        "document": {
+          "fontFamilies": [
+            "sans-serif"
+          ],
+          "imageAssetIds": [
+            "fixture-beauty-preview"
+          ],
+          "imageElementIds": [
+            "hero"
+          ],
+          "cjkTextElementIds": [
+            "footer",
+            "headline"
+          ],
+          "cjkLineBreakElementIds": [
+            "headline"
+          ]
+        },
+        "markerVersion": "canvas-raster-v1"
+      },
+      "contentType": "image/png",
+      "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+      "workRevisionId": "c9a09f0f-29f9-46b1-b631-ea800eab035e",
+      "aigcLabelEnabled": true,
+      "brandWatermarkText": "空白图文作品",
+      "brandWatermarkEnabled": true
+    },
+    {
+      "id": "4faa986a-6edf-48c3-bb5c-a2d3f3ae6627",
+      "bytes": 81442,
+      "width": 1080,
+      "format": "png",
+      "height": 1350,
+      "sha256": "5b6e32a83de0ab411e6e21b9afb125563d6326c2dfe35e1f82eaa7212c9dab6e",
+      "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+      "assetId": "owned-5b6e32a83de0ab411e6e21b9afb12556",
+      "createdAt": "2026-07-16T07:24:53.897Z",
+      "objectKey": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e/owned/5b6e32a83de0ab411e6e21b9afb125563d6326c2dfe35e1f82eaa7212c9dab6e.png",
+      "validation": {
+        "raster": {
+          "width": 1080,
+          "format": "png",
+          "height": 1350,
+          "hasAlphaChannel": true,
+          "hasTransparentPixels": false
+        },
+        "document": {
+          "fontFamilies": [
+            "sans-serif"
+          ],
+          "imageAssetIds": [
+            "fixture-beauty-preview"
+          ],
+          "imageElementIds": [
+            "hero"
+          ],
+          "cjkTextElementIds": [
+            "footer",
+            "headline"
+          ],
+          "cjkLineBreakElementIds": [
+            "headline"
+          ]
+        },
+        "markerVersion": "canvas-raster-v1"
+      },
+      "contentType": "image/png",
+      "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+      "workRevisionId": "021be314-ed5f-4b78-ac72-e922fded45af",
+      "aigcLabelEnabled": false,
+      "brandWatermarkText": "空白图文作品",
+      "brandWatermarkEnabled": false
+    },
+    {
+      "id": "7138764c-1e7d-4d50-a43b-bbf7b20bcff1",
+      "bytes": 84811,
+      "width": 1080,
+      "format": "png",
+      "height": 1350,
+      "sha256": "fbd3164f130080f2a0faa1e10b5b4c3267be0e1c67c27b7d7fa34a0eb9f12445",
+      "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+      "assetId": "owned-fbd3164f130080f2a0faa1e10b5b4c32",
+      "createdAt": "2026-07-16T07:24:57.967Z",
+      "objectKey": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e/owned/fbd3164f130080f2a0faa1e10b5b4c3267be0e1c67c27b7d7fa34a0eb9f12445.png",
+      "validation": {
+        "raster": {
+          "width": 1080,
+          "format": "png",
+          "height": 1350,
+          "hasAlphaChannel": true,
+          "hasTransparentPixels": false
+        },
+        "document": {
+          "fontFamilies": [
+            "sans-serif"
+          ],
+          "imageAssetIds": [
+            "fixture-beauty-preview"
+          ],
+          "imageElementIds": [
+            "hero"
+          ],
+          "cjkTextElementIds": [
+            "footer",
+            "headline"
+          ],
+          "cjkLineBreakElementIds": [
+            "headline"
+          ]
+        },
+        "markerVersion": "canvas-raster-v1"
+      },
+      "contentType": "image/png",
+      "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+      "workRevisionId": "bdba79ab-6827-4b6d-af3a-5848c9eae5f0",
+      "aigcLabelEnabled": false,
+      "brandWatermarkText": "空白图文作品",
+      "brandWatermarkEnabled": true
+    },
+    {
+      "id": "9b4c9460-af41-4863-b566-b79e22f1c7e9",
+      "bytes": 83478,
+      "width": 1080,
+      "format": "png",
+      "height": 1350,
+      "sha256": "448376e7efbe524405d854cba02b05ad6865daec90cfa84d5df85e7c945852f7",
+      "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+      "assetId": "owned-448376e7efbe524405d854cba02b05ad",
+      "createdAt": "2026-07-16T07:24:55.857Z",
+      "objectKey": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e/owned/448376e7efbe524405d854cba02b05ad6865daec90cfa84d5df85e7c945852f7.png",
+      "validation": {
+        "raster": {
+          "width": 1080,
+          "format": "png",
+          "height": 1350,
+          "hasAlphaChannel": true,
+          "hasTransparentPixels": false
+        },
+        "document": {
+          "fontFamilies": [
+            "sans-serif"
+          ],
+          "imageAssetIds": [
+            "fixture-beauty-preview"
+          ],
+          "imageElementIds": [
+            "hero"
+          ],
+          "cjkTextElementIds": [
+            "footer",
+            "headline"
+          ],
+          "cjkLineBreakElementIds": [
+            "headline"
+          ]
+        },
+        "markerVersion": "canvas-raster-v1"
+      },
+      "contentType": "image/png",
+      "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+      "workRevisionId": "524fd01b-c25a-4728-9a69-01c0b24b6af6",
+      "aigcLabelEnabled": true,
+      "brandWatermarkText": "空白图文作品",
+      "brandWatermarkEnabled": false
+    }
+  ],
+  "managedRasters": [
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e/owned/5b6e32a83de0ab411e6e21b9afb125563d6326c2dfe35e1f82eaa7212c9dab6e.png",
+      "sha256": "5b6e32a83de0ab411e6e21b9afb125563d6326c2dfe35e1f82eaa7212c9dab6e",
+      "sizeBytes": 81442,
+      "target": {
+        "kind": "work_revision",
+        "revisionId": "021be314-ed5f-4b78-ac72-e922fded45af",
+        "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f"
+      }
+    },
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e/owned/448376e7efbe524405d854cba02b05ad6865daec90cfa84d5df85e7c945852f7.png",
+      "sha256": "448376e7efbe524405d854cba02b05ad6865daec90cfa84d5df85e7c945852f7",
+      "sizeBytes": 83478,
+      "target": {
+        "kind": "work_revision",
+        "revisionId": "524fd01b-c25a-4728-9a69-01c0b24b6af6",
+        "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f"
+      }
+    },
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e/owned/fbd3164f130080f2a0faa1e10b5b4c3267be0e1c67c27b7d7fa34a0eb9f12445.png",
+      "sha256": "fbd3164f130080f2a0faa1e10b5b4c3267be0e1c67c27b7d7fa34a0eb9f12445",
+      "sizeBytes": 84811,
+      "target": {
+        "kind": "work_revision",
+        "revisionId": "bdba79ab-6827-4b6d-af3a-5848c9eae5f0",
+        "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f"
+      }
+    },
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e/owned/9d862c6596ca515cf17767aeae05ecb20987f226a6c0b1d47c64ef3f84ad6661.png",
+      "sha256": "9d862c6596ca515cf17767aeae05ecb20987f226a6c0b1d47c64ef3f84ad6661",
+      "sizeBytes": 87133,
+      "target": {
+        "kind": "work_revision",
+        "revisionId": "c9a09f0f-29f9-46b1-b631-ea800eab035e",
+        "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f"
+      }
+    }
+  ],
+  "templates": [],
+  "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+  "works": [
+    {
+      "currentRevisionId": "c9a09f0f-29f9-46b1-b631-ea800eab035e",
+      "id": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+      "revisions": [
+        {
+          "id": "86d7bf87-f0f4-467e-a8e6-76a697a19866",
+          "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+          "document": {
+            "pages": [
+              {
+                "id": "b0ddaea7-67d5-4d9a-a754-913ad76e194a",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-16T07:24:49.891Z",
+          "createdBy": "HxXdspfquNoP2EGaecGGuRpSJQBtF31e"
+        },
+        {
+          "id": "c74c46c6-cbf7-4e06-9f49-0bb0d4b38212",
+          "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+          "document": {
+            "pages": [
+              {
+                "id": "page-runtime-evidence",
+                "elements": [
+                  {
+                    "x": 100,
+                    "y": 80,
+                    "id": "headline",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "初始中文标题",
+                    "width": 800,
+                    "height": 180,
+                    "fontSize": 56,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  },
+                  {
+                    "x": 90,
+                    "y": 300,
+                    "id": "hero",
+                    "src": "/model-previews/image-beauty-preview.png",
+                    "kind": "image",
+                    "width": 900,
+                    "height": 650,
+                    "assetId": "fixture-beauty-preview",
+                    "rotation": 0
+                  },
+                  {
+                    "x": 100,
+                    "y": 1100,
+                    "id": "footer",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "预约到店",
+                    "width": 800,
+                    "height": 150,
+                    "fontSize": 40,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 2,
+          "createdAt": "2026-07-16T07:24:51.333Z",
+          "createdBy": "HxXdspfquNoP2EGaecGGuRpSJQBtF31e"
+        },
+        {
+          "id": "694f1f81-2b89-4f48-a317-b99bc02bc81c",
+          "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+          "document": {
+            "pages": [
+              {
+                "id": "page-runtime-evidence",
+                "elements": [
+                  {
+                    "x": 180,
+                    "y": 365,
+                    "id": "hero",
+                    "src": "/model-previews/image-beauty-preview.png",
+                    "kind": "image",
+                    "width": 720,
+                    "height": 520,
+                    "assetId": "fixture-beauty-preview",
+                    "rotation": 0
+                  },
+                  {
+                    "x": 100,
+                    "y": 80,
+                    "id": "headline",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "运行时闭环\n第二行中文",
+                    "width": 800,
+                    "height": 180,
+                    "fontSize": 56,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  },
+                  {
+                    "x": 100,
+                    "y": 1100,
+                    "id": "footer",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "预约到店",
+                    "width": 800,
+                    "height": 150,
+                    "fontSize": 40,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 3,
+          "createdAt": "2026-07-16T07:24:53.284Z",
+          "createdBy": "HxXdspfquNoP2EGaecGGuRpSJQBtF31e"
+        },
+        {
+          "id": "021be314-ed5f-4b78-ac72-e922fded45af",
+          "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+          "document": {
+            "pages": [
+              {
+                "id": "page-runtime-evidence",
+                "elements": [
+                  {
+                    "x": 180,
+                    "y": 365,
+                    "id": "hero",
+                    "src": "/model-previews/image-beauty-preview.png",
+                    "kind": "image",
+                    "width": 720,
+                    "height": 520,
+                    "assetId": "fixture-beauty-preview",
+                    "rotation": 0
+                  },
+                  {
+                    "x": 100,
+                    "y": 80,
+                    "id": "headline",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "运行时闭环\n第二行中文",
+                    "width": 800,
+                    "height": 180,
+                    "fontSize": 56,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  },
+                  {
+                    "x": 100,
+                    "y": 1100,
+                    "id": "footer",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "预约到店",
+                    "width": 800,
+                    "height": 150,
+                    "fontSize": 40,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 4,
+          "createdAt": "2026-07-16T07:24:53.773Z",
+          "createdBy": "HxXdspfquNoP2EGaecGGuRpSJQBtF31e"
+        },
+        {
+          "id": "524fd01b-c25a-4728-9a69-01c0b24b6af6",
+          "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+          "document": {
+            "pages": [
+              {
+                "id": "page-runtime-evidence",
+                "elements": [
+                  {
+                    "x": 180,
+                    "y": 365,
+                    "id": "hero",
+                    "src": "/model-previews/image-beauty-preview.png",
+                    "kind": "image",
+                    "width": 720,
+                    "height": 520,
+                    "assetId": "fixture-beauty-preview",
+                    "rotation": 0
+                  },
+                  {
+                    "x": 100,
+                    "y": 80,
+                    "id": "headline",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "运行时闭环\n第二行中文",
+                    "width": 800,
+                    "height": 180,
+                    "fontSize": 56,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  },
+                  {
+                    "x": 100,
+                    "y": 1100,
+                    "id": "footer",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "预约到店",
+                    "width": 800,
+                    "height": 150,
+                    "fontSize": 40,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 5,
+          "createdAt": "2026-07-16T07:24:55.731Z",
+          "createdBy": "HxXdspfquNoP2EGaecGGuRpSJQBtF31e"
+        },
+        {
+          "id": "bdba79ab-6827-4b6d-af3a-5848c9eae5f0",
+          "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+          "document": {
+            "pages": [
+              {
+                "id": "page-runtime-evidence",
+                "elements": [
+                  {
+                    "x": 180,
+                    "y": 365,
+                    "id": "hero",
+                    "src": "/model-previews/image-beauty-preview.png",
+                    "kind": "image",
+                    "width": 720,
+                    "height": 520,
+                    "assetId": "fixture-beauty-preview",
+                    "rotation": 0
+                  },
+                  {
+                    "x": 100,
+                    "y": 80,
+                    "id": "headline",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "运行时闭环\n第二行中文",
+                    "width": 800,
+                    "height": 180,
+                    "fontSize": 56,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  },
+                  {
+                    "x": 100,
+                    "y": 1100,
+                    "id": "footer",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "预约到店",
+                    "width": 800,
+                    "height": 150,
+                    "fontSize": 40,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 6,
+          "createdAt": "2026-07-16T07:24:57.823Z",
+          "createdBy": "HxXdspfquNoP2EGaecGGuRpSJQBtF31e"
+        },
+        {
+          "id": "c9a09f0f-29f9-46b1-b631-ea800eab035e",
+          "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+          "document": {
+            "pages": [
+              {
+                "id": "page-runtime-evidence",
+                "elements": [
+                  {
+                    "x": 180,
+                    "y": 365,
+                    "id": "hero",
+                    "src": "/model-previews/image-beauty-preview.png",
+                    "kind": "image",
+                    "width": 720,
+                    "height": 520,
+                    "assetId": "fixture-beauty-preview",
+                    "rotation": 0
+                  },
+                  {
+                    "x": 100,
+                    "y": 80,
+                    "id": "headline",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "运行时闭环\n第二行中文",
+                    "width": 800,
+                    "height": 180,
+                    "fontSize": 56,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  },
+                  {
+                    "x": 100,
+                    "y": 1100,
+                    "id": "footer",
+                    "fill": "#171717",
+                    "kind": "text",
+                    "text": "预约到店",
+                    "width": 800,
+                    "height": 150,
+                    "fontSize": 40,
+                    "rotation": 0,
+                    "fontFamily": "sans-serif"
+                  }
+                ]
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 7,
+          "createdAt": "2026-07-16T07:24:59.857Z",
+          "createdBy": "HxXdspfquNoP2EGaecGGuRpSJQBtF31e"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.702Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "e842f5ff39e7dcab49fee4e8ac4e30ca538c44516c0d54cf983f94483daa9caf",
+      "totalObjects": 4
+    },
+    "snapshotCounts": {
+      "exportReceipts": 4,
+      "revisions": 7,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 4,
+      "objectInventoryEntries": 4
+    },
+    "sourceCounts": {
+      "exportReceipts": 4,
+      "revisions": 7,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "1abe275bae34bd27ae062ba24e1646ad4cf38a277e2f6513249f7cd89b9b6938"
+  }
+}

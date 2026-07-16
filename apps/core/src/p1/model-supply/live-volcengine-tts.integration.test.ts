@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { VolcengineBidirectionalTtsAdapter } from './volcengine-tts-adapter.js';
 import { NodeVolcengineTtsSocketFactory } from './volcengine-tts-node-socket.js';
+import { volcengineTtsConfigurationRevisionFromEnv } from './runtime-config.js';
 
 const live = process.env.RUN_LIVE_VOLCENGINE_TTS_TEST === '1';
 
@@ -15,15 +16,16 @@ test(
     const resourceId = required('VOLCENGINE_TTS_RESOURCE_ID');
     const defaultSpeaker = required('VOLCENGINE_TTS_SPEAKER');
     assert.ok(resourceId === 'seed-tts-2.0' || resourceId === 'seed-icl-2.0');
+    const endpoint =
+      process.env.VOLCENGINE_TTS_ENDPOINT?.trim() ||
+      'wss://openspeech.bytedance.com/api/v3/tts/bidirection';
+    const model =
+      process.env.VOLCENGINE_TTS_MODEL?.trim() || 'seed-tts-2.0-standard';
     const adapter = new VolcengineBidirectionalTtsAdapter({
       auth: { accessToken, appId, kind: 'legacy' },
       defaultSpeaker,
-      ...(process.env.VOLCENGINE_TTS_ENDPOINT
-        ? { endpoint: process.env.VOLCENGINE_TTS_ENDPOINT }
-        : {}),
-      ...(process.env.VOLCENGINE_TTS_MODEL
-        ? { model: process.env.VOLCENGINE_TTS_MODEL }
-        : {}),
+      endpoint,
+      model,
       resourceId,
       socketFactory: new NodeVolcengineTtsSocketFactory(),
     });
@@ -39,15 +41,57 @@ test(
     assert.ok(result.bytes.byteLength > 0);
     assert.equal(result.contentType, 'audio/mpeg');
     assert.ok((result.billedTextWords ?? 0) > 0);
-    console.info(
-      JSON.stringify({
-        billedTextWords: result.billedTextWords,
-        contentType: result.contentType,
-        outputBytes: result.bytes.byteLength,
-        outputSha256: createHash('sha256').update(result.bytes).digest('hex'),
-        status: 'completed',
-      }),
-    );
+    const outputSha256 = createHash('sha256')
+      .update(result.bytes)
+      .digest('hex');
+    const nonSecretFingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          authKind: 'legacy',
+          endpoint,
+          model,
+          resourceId,
+          speaker: defaultSpeaker,
+        }),
+      )
+      .digest('hex');
+    const evidence = {
+      authKind: 'legacy',
+      billedTextWords: result.billedTextWords,
+      contentType: result.contentType,
+      deploymentId: 'seed-tts-2-volcengine-direct',
+      endpoint,
+      model,
+      nonSecretConfigFingerprint: nonSecretFingerprint,
+      outputBytes: result.bytes.byteLength,
+      outputSha256,
+      resourceId,
+      speaker: defaultSpeaker,
+      status: 'completed',
+    };
+    console.info(JSON.stringify(evidence));
+
+    // Full production configuration revision requires approved price env vars.
+    // Without them the catalog must stay inactive even after a live probe pass.
+    const pricingPresent =
+      Boolean(process.env.VOLCENGINE_TTS_APPROVED_PRICE_PER_TEXT_WORD_CNY?.trim()) &&
+      Boolean(process.env.VOLCENGINE_TTS_PRICE_REVISION?.trim()) &&
+      Boolean(process.env.VOLCENGINE_TTS_CREDENTIAL_VERSION?.trim()) &&
+      Boolean(process.env.VOLCENGINE_TTS_ENDPOINT_REVISION?.trim());
+    if (pricingPresent) {
+      console.info(
+        `VOLCENGINE_TTS_CONFIGURATION_REVISION=${volcengineTtsConfigurationRevisionFromEnv(process.env)}`,
+      );
+    } else {
+      console.info(
+        JSON.stringify({
+          activationBlocked: true,
+          reason:
+            'approved_price_or_price_revision_or_credential_metadata_missing',
+          status: 'live_probe_passed_catalog_inactive',
+        }),
+      );
+    }
   },
 );
 

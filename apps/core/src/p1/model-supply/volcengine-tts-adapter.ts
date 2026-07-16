@@ -160,7 +160,7 @@ export class VolcengineBidirectionalTtsAdapter {
       await sendJson(
         socket,
         VOLCENGINE_TTS_EVENT.TaskRequest,
-        { text: normalized.text },
+        { req_params: { text: normalized.text } },
         sessionId,
       );
       await sendJson(

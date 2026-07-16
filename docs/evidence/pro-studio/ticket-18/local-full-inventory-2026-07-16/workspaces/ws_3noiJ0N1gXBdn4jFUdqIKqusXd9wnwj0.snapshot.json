@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "f435a5e6-2baf-487b-a5ea-428be4825097"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "e7689f2d-8961-4584-9cbd-39a16edb17f4"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0",
+  "works": [
+    {
+      "currentRevisionId": "f435a5e6-2baf-487b-a5ea-428be4825097",
+      "id": "e7689f2d-8961-4584-9cbd-39a16edb17f4",
+      "revisions": [
+        {
+          "id": "f435a5e6-2baf-487b-a5ea-428be4825097",
+          "workId": "e7689f2d-8961-4584-9cbd-39a16edb17f4",
+          "document": {
+            "pages": [
+              {
+                "id": "3c9b4810-c892-4075-b242-215b3287b3ab",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T09:57:11.662Z",
+          "createdBy": "3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.632Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "ec8547ce9e0b0de824b3e7fcd340acd871d103ea76e6c66e27a42468692a37c1",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "72d30b877988370c7bd26f80c13e6180ee2f222c0687cddc9a449142a79efe42"
+  }
+}

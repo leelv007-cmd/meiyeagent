@@ -101,6 +101,14 @@ real `convertible` and `read_only` shapes (legacy Polotno-ish unknown fields).
 `pnpm canvas:retirement-inventory -- --input ...` matches the snapshot CLI
 contract.
 
+## Follow-up: local full inventory (still not production)
+
+See `local-full-inventory-2026-07-16.md` and directory
+`local-full-inventory-2026-07-16/` for object inventory + snapshot + inventory
+report on every local workspace with canvas works (82 workspaces / 86 works),
+disposition counts for all local works, and open/export access samples for each
+disposition class. Still labeled **LOCAL NOT PRODUCTION**.
+
 ## Explicitly still open (production gate ②)
 
 - [ ] Production credentials / deployment identity exercised

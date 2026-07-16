@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "1ef38d6d-860b-4e33-a05d-f4f6d47fd215"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "be665aca-6834-43ca-9b60-3bcf50a7f103"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX",
+  "works": [
+    {
+      "currentRevisionId": "1ef38d6d-860b-4e33-a05d-f4f6d47fd215",
+      "id": "be665aca-6834-43ca-9b60-3bcf50a7f103",
+      "revisions": [
+        {
+          "id": "1ef38d6d-860b-4e33-a05d-f4f6d47fd215",
+          "workId": "be665aca-6834-43ca-9b60-3bcf50a7f103",
+          "document": {
+            "pages": [
+              {
+                "id": "7358bbb1-166b-4142-a536-aed33395ec1f",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T11:54:31.878Z",
+          "createdBy": "HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.700Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "bd1bdbe052036f6235ef7c9daf332f75951107189a4f337752240986ce147f11",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "6cc683ea59c34d78fe9ed5af8a0f34ab5d71710da085d309526211035283c4da"
+  }
+}

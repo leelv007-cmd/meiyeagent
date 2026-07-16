@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "067cfbfd-4961-4080-a3e2-7140a8346043"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "a0eb76f1-d47b-49a7-9d4c-459845d83550"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd",
+  "works": [
+    {
+      "currentRevisionId": "067cfbfd-4961-4080-a3e2-7140a8346043",
+      "id": "a0eb76f1-d47b-49a7-9d4c-459845d83550",
+      "revisions": [
+        {
+          "id": "067cfbfd-4961-4080-a3e2-7140a8346043",
+          "workId": "a0eb76f1-d47b-49a7-9d4c-459845d83550",
+          "document": {
+            "pages": [
+              {
+                "id": "1c3df5f7-c5a2-4775-9d3c-123bf8db2a8f",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T10:32:44.393Z",
+          "createdBy": "oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.778Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "7a81a9807b0a01e6cd1949d42779add320b04c08b9857936164dbf4c5a84bb38",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "145f4b69ce40af044adec79e91567a07efe7b991a3feded757fa7a5635958fdf"
+  }
+}

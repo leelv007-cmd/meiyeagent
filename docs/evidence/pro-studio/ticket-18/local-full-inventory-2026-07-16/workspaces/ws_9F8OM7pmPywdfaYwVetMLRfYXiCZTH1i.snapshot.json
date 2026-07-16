@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "696e48e4-23f2-4b1a-bd23-8530dab99f25"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "7761295b-d0db-4cf4-97ef-5417476cc6c1"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i",
+  "works": [
+    {
+      "currentRevisionId": "696e48e4-23f2-4b1a-bd23-8530dab99f25",
+      "id": "7761295b-d0db-4cf4-97ef-5417476cc6c1",
+      "revisions": [
+        {
+          "id": "696e48e4-23f2-4b1a-bd23-8530dab99f25",
+          "workId": "7761295b-d0db-4cf4-97ef-5417476cc6c1",
+          "document": {
+            "pages": [
+              {
+                "id": "73bf5e29-bfaf-49fb-95bc-30dc8c8bc2f6",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-13T13:29:13.982Z",
+          "createdBy": "9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.658Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "999fd2ec622bcaca660a0480d8e2a8250d1cd3e761e5876e357fceabacf50ec5",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "f63894cabd334c41ed6257f94a7febb1c7cd004f3a5fbe85c64b7c804147aa88"
+  }
+}

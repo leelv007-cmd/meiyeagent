@@ -1,0 +1,82 @@
+{
+  "coverage": {
+    "revisionPercent": 100,
+    "templatePercent": 100,
+    "templateVersionPercent": 100,
+    "workPercent": 100
+  },
+  "elementKinds": {
+    "text": 5,
+    "image": 5
+  },
+  "generatedAt": "2026-07-16T10:01:11.655Z",
+  "totals": {
+    "exportRecords": 1,
+    "pages": 6,
+    "revisions": 5,
+    "templateVersions": 1,
+    "templates": 1,
+    "works": 1
+  },
+  "templates": [
+    {
+      "currentVersionId": "template:ee517353-3cce-4302-9ee6-17c0563d03a2:revision:c5d9da5d-430f-43e9-887b-94594f61e1da",
+      "disposition": "convertible",
+      "id": "ee517353-3cce-4302-9ee6-17c0563d03a2",
+      "versionCount": 1,
+      "versions": [
+        {
+          "disposition": "convertible",
+          "id": "template:ee517353-3cce-4302-9ee6-17c0563d03a2:revision:c5d9da5d-430f-43e9-887b-94594f61e1da",
+          "managedRasterAvailable": false
+        }
+      ]
+    }
+  ],
+  "unknownFields": {
+    "element.image.crop": 2
+  },
+  "works": [
+    {
+      "disposition": "read_only",
+      "exportRecordCount": 1,
+      "id": "5fc93865-9ba6-41f7-92e3-6d69541e57d7",
+      "lastEditedAt": "2026-07-16T09:18:07.993Z",
+      "lastExportedAt": "2026-07-16T09:18:08.128Z",
+      "currentRevisionId": "4d813a86-fbec-46be-8585-475905bf3ed5",
+      "revisionCount": 5,
+      "revisions": [
+        {
+          "disposition": "convertible",
+          "id": "afed4ff1-f28b-4d00-a4b1-8f5d7c6b18f2",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T09:18:05.112Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "8d937257-1905-47c6-939d-e3552438c3d4",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T09:18:06.572Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "c5d9da5d-430f-43e9-887b-94594f61e1da",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T09:18:06.665Z"
+        },
+        {
+          "disposition": "read_only",
+          "id": "a34277b8-d9e2-4932-9d13-3ee5ece88957",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T09:18:07.738Z"
+        },
+        {
+          "disposition": "read_only",
+          "id": "4d813a86-fbec-46be-8585-475905bf3ed5",
+          "managedRasterAvailable": true,
+          "createdAt": "2026-07-16T09:18:07.993Z"
+        }
+      ]
+    }
+  ]
+}

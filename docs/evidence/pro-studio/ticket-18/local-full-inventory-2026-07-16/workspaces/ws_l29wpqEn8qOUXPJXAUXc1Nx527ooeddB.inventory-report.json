@@ -1,0 +1,38 @@
+{
+  "coverage": {
+    "revisionPercent": 100,
+    "templatePercent": 100,
+    "templateVersionPercent": 100,
+    "workPercent": 100
+  },
+  "elementKinds": {},
+  "generatedAt": "2026-07-16T10:01:11.768Z",
+  "totals": {
+    "exportRecords": 0,
+    "pages": 1,
+    "revisions": 1,
+    "templateVersions": 0,
+    "templates": 0,
+    "works": 1
+  },
+  "templates": [],
+  "unknownFields": {},
+  "works": [
+    {
+      "disposition": "convertible",
+      "exportRecordCount": 0,
+      "id": "34b864fe-78cd-4715-b48e-8da88b68e861",
+      "lastEditedAt": "2026-07-11T02:22:31.861Z",
+      "currentRevisionId": "d8c58c16-da87-440f-a762-6950223afe8b",
+      "revisionCount": 1,
+      "revisions": [
+        {
+          "disposition": "convertible",
+          "id": "d8c58c16-da87-440f-a762-6950223afe8b",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-11T02:22:31.861Z"
+        }
+      ]
+    }
+  ]
+}
