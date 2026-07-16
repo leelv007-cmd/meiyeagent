@@ -109,6 +109,17 @@ test('exports one provenance-bound snapshot accepted by inventory and access aud
   assert.equal(snapshot.provenance.sourceCounts.works, 1);
   assert.equal(snapshot.provenance.snapshotCounts.managedRasters, 2);
   assert.match(snapshot.provenance.snapshotSha256, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(snapshot.exportReceipts[0], {
+    bytes: rasterBytes.byteLength,
+    contentType: 'image/png',
+    createdAt: '2026-07-16T15:59:30.000Z',
+    id: 'export-1',
+    objectKey,
+    sha256: rasterSha256,
+    workId: 'work-1',
+    workRevisionId: 'revision-1',
+    workspaceId,
+  });
   assert.deepEqual(inventoryLegacyCanvasData(snapshot).totals, {
     exportRecords: 1,
     pages: 2,
@@ -131,6 +142,11 @@ test('exports one provenance-bound snapshot accepted by inventory and access aud
   const tampered = structuredClone(snapshot);
   tampered.works[0]!.id = 'work-tampered';
   assert.equal(verifyLegacyCanvasProductionSnapshot(tampered), false);
+
+  const tamperedReceipt = structuredClone(snapshot);
+  tamperedReceipt.exportReceipts[0]!.objectKey =
+    `${workspaceId}/owned/other.png`;
+  assert.equal(verifyLegacyCanvasProductionSnapshot(tamperedReceipt), false);
 });
 
 test('rejects an object inventory from another capture', async () => {
@@ -150,6 +166,41 @@ test('rejects an object inventory from another capture', async () => {
       workspaceId,
     }),
     /capture identity does not match/u
+  );
+});
+
+test('rejects invalid historical timestamps instead of emitting misleading evidence', async () => {
+  const invalidSource: LegacyCanvasSnapshotSource = {
+    async capture(requestedWorkspaceId) {
+      const capture = await source().capture(requestedWorkspaceId);
+      capture.exportReceipts[0]!.createdAt = 'not-a-timestamp';
+      return capture;
+    },
+  };
+
+  await assert.rejects(
+    exportLegacyCanvasProductionSnapshot({
+      captureId,
+      deployment: 'production-cn',
+      objectInventory: {
+        captureId,
+        capturedAt: '2026-07-16T16:00:01.000Z',
+        deployment: 'production-cn',
+        objects: [
+          {
+            contentType: 'image/png',
+            objectKey,
+            sha256: rasterSha256,
+            sizeBytes: rasterBytes.byteLength,
+          },
+        ],
+        schemaVersion: 1,
+        workspaceId,
+      },
+      source: invalidSource,
+      workspaceId,
+    }),
+    /failed consistency checks/u
   );
 });
 
@@ -184,17 +235,23 @@ test('captures PostgreSQL rows and independent counts in one read-only repeatabl
         };
       }
       if (text.includes('p1_canvas_works')) {
-        return { rows: [{ payload: (await source().capture(workspaceId)).works[0] }] };
+        return {
+          rows: [{ payload: (await source().capture(workspaceId)).works[0] }],
+        };
       }
       if (text.includes('p1_user_templates')) {
         return {
-          rows: [{ payload: (await source().capture(workspaceId)).templates[0] }],
+          rows: [
+            { payload: (await source().capture(workspaceId)).templates[0] },
+          ],
         };
       }
       if (text.includes('p1_export_receipts')) {
         return {
           rows: [
-            { payload: (await source().capture(workspaceId)).exportReceipts[0] },
+            {
+              payload: (await source().capture(workspaceId)).exportReceipts[0],
+            },
           ],
         };
       }
@@ -214,7 +271,10 @@ test('captures PostgreSQL rows and independent counts in one read-only repeatabl
     pool as never
   ).capture(workspaceId);
 
-  assert.equal(queries[0]?.text, 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  assert.equal(
+    queries[0]?.text,
+    'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY'
+  );
   assert.deepEqual(queries.at(-1), { text: 'COMMIT' });
   assert.equal(released, true);
   assert.equal(capture.databaseLsn, '0/16B6C50');

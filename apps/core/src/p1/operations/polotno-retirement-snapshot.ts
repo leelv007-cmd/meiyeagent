@@ -112,7 +112,9 @@ export class PostgresLegacyCanvasSnapshotSource
         `,
         [workspaceId]
       );
-      const worksResult = await client.query<{ payload: LegacyCanvasSnapshotWork }>(
+      const worksResult = await client.query<{
+        payload: LegacyCanvasSnapshotWork;
+      }>(
         `SELECT payload FROM p1_canvas_works WHERE workspace_id = $1 ORDER BY id`,
         [workspaceId]
       );
@@ -175,6 +177,7 @@ export interface LegacyCanvasObjectInventory {
 
 export interface LegacyCanvasProductionSnapshot
   extends LegacyCanvasInventoryInput {
+  exportReceipts: LegacyCanvasSnapshotExportReceipt[];
   provenance: {
     captureId: string;
     capturedAt: string;
@@ -211,7 +214,10 @@ export async function exportLegacyCanvasProductionSnapshot(
   const objectByKey = new Map(
     input.objectInventory.objects.map((object) => [object.objectKey, object])
   );
-  const receiptByRevision = new Map<string, LegacyCanvasSnapshotExportReceipt>();
+  const receiptByRevision = new Map<
+    string,
+    LegacyCanvasSnapshotExportReceipt
+  >();
   for (const receipt of capture.exportReceipts) {
     const object = objectByKey.get(receipt.objectKey);
     if (
@@ -234,7 +240,9 @@ export async function exportLegacyCanvasProductionSnapshot(
   }
 
   const templates = capture.templates.map((template) => {
-    const work = capture.works.find((candidate) => candidate.id === template.sourceWorkId);
+    const work = capture.works.find(
+      (candidate) => candidate.id === template.sourceWorkId
+    );
     const revision = work?.revisions.find(
       (candidate) => candidate.id === template.canvasRevisionId
     );
@@ -258,7 +266,11 @@ export async function exportLegacyCanvasProductionSnapshot(
           objectKey: receipt.objectKey,
           sha256: receipt.sha256,
           sizeBytes: receipt.bytes,
-          target: { kind: 'work_revision', revisionId: revision.id, workId: work.id },
+          target: {
+            kind: 'work_revision',
+            revisionId: revision.id,
+            workId: work.id,
+          },
         });
       }
     }
@@ -289,7 +301,9 @@ export async function exportLegacyCanvasProductionSnapshot(
   }));
   const expectedInventory = {
     exportReceiptIds: capture.exportReceipts.map((receipt) => receipt.id),
-    revisionIds: works.flatMap((work) => work.revisions.map((revision) => revision.id)),
+    revisionIds: works.flatMap((work) =>
+      work.revisions.map((revision) => revision.id)
+    ),
     templateIds: templates.map((template) => template.id),
     templateVersionIds: templates.flatMap((template) =>
       template.versions.map((version) => version.id)
@@ -301,13 +315,9 @@ export async function exportLegacyCanvasProductionSnapshot(
     managedRasters: managedRasters.length,
     objectInventoryEntries: input.objectInventory.objects.length,
   };
-  const base: LegacyCanvasInventoryInput = {
+  const base: Omit<LegacyCanvasProductionSnapshot, 'provenance'> = {
     expectedInventory,
-    exportReceipts: capture.exportReceipts.map(({ createdAt, id, workId }) => ({
-      createdAt,
-      id,
-      workId,
-    })),
+    exportReceipts: capture.exportReceipts,
     managedRasters,
     templates,
     workspaceId: input.workspaceId,
@@ -375,7 +385,9 @@ function assertCaptureIdentity(input: ExportSnapshotInput) {
         object.sizeBytes <= 0
     )
   ) {
-    throw new Error('Legacy Canvas object inventory capture identity does not match.');
+    throw new Error(
+      'Legacy Canvas object inventory capture identity does not match.'
+    );
   }
 }
 
@@ -385,7 +397,10 @@ function assertSourceCapture(
 ) {
   const counts: LegacyCanvasSnapshotCounts = {
     exportReceipts: capture.exportReceipts.length,
-    revisions: capture.works.reduce((total, work) => total + work.revisions.length, 0),
+    revisions: capture.works.reduce(
+      (total, work) => total + work.revisions.length,
+      0
+    ),
     templates: capture.templates.length,
     templateVersions: capture.templates.length,
     works: capture.works.length,
@@ -399,26 +414,51 @@ function assertSourceCapture(
     !validTimestamp(capture.capturedAt) ||
     !capture.databaseLsn.trim() ||
     !capture.transactionSnapshot.trim() ||
-    capture.works.some((work) => work.workspaceId !== workspaceId) ||
-    capture.templates.some((template) => template.workspaceId !== workspaceId) ||
-    capture.exportReceipts.some((receipt) => receipt.workspaceId !== workspaceId)
+    capture.works.some(
+      (work) =>
+        work.workspaceId !== workspaceId ||
+        work.revisions.some(
+          (revision) =>
+            revision.createdAt !== undefined &&
+            !validTimestamp(revision.createdAt)
+        )
+    ) ||
+    capture.templates.some(
+      (template) => template.workspaceId !== workspaceId
+    ) ||
+    capture.exportReceipts.some(
+      (receipt) =>
+        receipt.workspaceId !== workspaceId ||
+        !validTimestamp(receipt.createdAt)
+    )
   ) {
-    throw new Error('Legacy Canvas database snapshot failed consistency checks.');
+    throw new Error(
+      'Legacy Canvas database snapshot failed consistency checks.'
+    );
   }
   const revisions = new Map(
     capture.works.flatMap((work) =>
-      work.revisions.map((revision) => [revisionKey(work.id, revision.id), revision])
+      work.revisions.map((revision) => [
+        revisionKey(work.id, revision.id),
+        revision,
+      ])
     )
   );
   if (
     capture.works.some(
-      (work) => !work.revisions.some((revision) => revision.id === work.currentRevisionId)
+      (work) =>
+        !work.revisions.some(
+          (revision) => revision.id === work.currentRevisionId
+        )
     ) ||
     capture.exportReceipts.some(
-      (receipt) => !revisions.has(revisionKey(receipt.workId, receipt.workRevisionId))
+      (receipt) =>
+        !revisions.has(revisionKey(receipt.workId, receipt.workRevisionId))
     )
   ) {
-    throw new Error('Legacy Canvas database snapshot contains orphaned references.');
+    throw new Error(
+      'Legacy Canvas database snapshot contains orphaned references.'
+    );
   }
 }
 
@@ -444,7 +484,9 @@ function validTimestamp(value: string) {
 }
 
 function sha256(value: unknown) {
-  return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(value)))
+    .digest('hex');
 }
 
 function canonicalize(value: unknown): unknown {
@@ -461,14 +503,17 @@ function canonicalize(value: unknown): unknown {
 }
 
 function requiredRow<T>(row: T | undefined, label: string): T {
-  if (!row) throw new Error(`Legacy Canvas PostgreSQL ${label} was not returned.`);
+  if (!row)
+    throw new Error(`Legacy Canvas PostgreSQL ${label} was not returned.`);
   return row;
 }
 
 function integer(value: string) {
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new Error('Legacy Canvas PostgreSQL returned an invalid source count.');
+    throw new Error(
+      'Legacy Canvas PostgreSQL returned an invalid source count.'
+    );
   }
   return parsed;
 }
