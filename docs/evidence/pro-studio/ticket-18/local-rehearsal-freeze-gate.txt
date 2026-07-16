@@ -1,0 +1,10 @@
+✔ retired canvas SDK is absent from runtime, dependencies, env, locale, and lockfile (4.305125ms)
+✔ ticket 20 gate ④: owning canvas entry routes use Light Composer, not Polotno (1.084167ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7.617791

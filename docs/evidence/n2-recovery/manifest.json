@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "status": "partial",
+  "drill": {
+    "id": "n2-contract-only-2026-07-16",
+    "kind": "production-recovery",
+    "sourceEnvironment": "unavailable",
+    "isolatedEnvironment": "unavailable",
+    "startedAt": null,
+    "verifiedAt": null,
+    "incidentReferenceTime": null,
+    "recoveryPoint": null,
+    "targetsDeclaredAt": null,
+    "declaredRpoMinutes": null,
+    "declaredRtoMinutes": null,
+    "evidence": null
+  },
+  "postgres": {
+    "method": "postgresql-pitr",
+    "recoveryPoint": null,
+    "evidence": null
+  },
+  "objects": {
+    "format": "object-hash-version-inventory/v1",
+    "versioningEnabled": false,
+    "recoveryPoint": null,
+    "sourceCount": null,
+    "restoredCount": null,
+    "sourceDigest": null,
+    "restoredDigest": null,
+    "sourceInventory": null,
+    "restoredInventory": null
+  },
+  "schema": {
+    "revision": null,
+    "artifact": null
+  },
+  "configuration": {
+    "revision": null,
+    "artifact": null
+  },
+  "secrets": {
+    "mode": "secretref-kms",
+    "kmsKeyRef": null,
+    "secretRefs": [],
+    "valuesIncluded": false,
+    "restorationEvidence": null
+  },
+  "isolation": {
+    "sourceWriteAccess": "unverified",
+    "productionTraffic": "unverified",
+    "restoreEvidence": null
+  },
+  "invariants": {
+    "content-package": {
+      "status": "partial",
+      "sourceCount": null,
+      "restoredCount": null,
+      "sourceDigest": null,
+      "restoredDigest": null,
+      "evidence": null
+    },
+    "generation-job": {
+      "status": "partial",
+      "sourceCount": null,
+      "restoredCount": null,
+      "sourceDigest": null,
+      "restoredDigest": null,
+      "evidence": null
+    },
+    "asset": {
+      "status": "partial",
+      "sourceCount": null,
+      "restoredCount": null,
+      "sourceDigest": null,
+      "restoredDigest": null,
+      "evidence": null
+    },
+    "product-usage-ledger": {
+      "status": "partial",
+      "sourceCount": null,
+      "restoredCount": null,
+      "sourceDigest": null,
+      "restoredDigest": null,
+      "evidence": null
+    },
+    "provider-cost-ledger": {
+      "status": "partial",
+      "sourceCount": null,
+      "restoredCount": null,
+      "sourceDigest": null,
+      "restoredDigest": null,
+      "evidence": null
+    },
+    "configuration": {
+      "status": "partial",
+      "sourceCount": null,
+      "restoredCount": null,
+      "sourceDigest": null,
+      "restoredDigest": null,
+      "evidence": null
+    }
+  },
+  "baseline": {
+    "snapshotId": null,
+    "immutable": false,
+    "capturedAt": null,
+    "postgresSnapshotRef": null,
+    "schemaRevision": null,
+    "objectInventoryDigest": null,
+    "evidence": null
+  },
+  "operations": {
+    "owner": null,
+    "onCall": null,
+    "cadence": "quarterly",
+    "regionFailureIncluded": false,
+    "lastDrillAt": null,
+    "nextDrillDueAt": null,
+    "evidenceRetentionDays": null,
+    "failedInstanceDeletionHours": null,
+    "evidence": null
+  },
+  "credentialInvalidation": {
+    "oldCredentialsRejected": false,
+    "evidence": null
+  },
+  "failureScenarios": {
+    "scenarios": [],
+    "evidence": null
+  },
+  "failureDisposal": {
+    "injectedFailureInstanceDestroyed": false,
+    "evidence": null
+  },
+  "blockers": [
+    "No production PostgreSQL PITR source or provider receipt is available in this workspace.",
+    "No production object-version inventory or isolated restored inventory is available.",
+    "No production schema, configuration revision, KMS, or SecretRef restoration receipt is available.",
+    "No isolated production restore has measured RPO/RTO or reconciled domain invariants.",
+    "No previous immutable production baseline or hashed schema/object-version receipt is available.",
+    "No production recovery owner, on-call reference, evidence retention policy, or current quarterly regional-failure drill is available.",
+    "No typed negative drill covers time-point skew, missing/orphan objects, unavailable KMS keys, schema incompatibility, and regional failure.",
+    "No old-credential rejection or failed-instance destruction drill has been executed."
+  ]
+}
