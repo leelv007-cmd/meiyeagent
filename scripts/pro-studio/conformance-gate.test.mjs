@@ -373,13 +373,56 @@ test('release evidence cannot outrank the computed security manifest status', ()
   );
 
   assert.deepEqual(
-    validateReleaseEvidence(evidence, () => true, {
-      blockers: ['production security drill missing'],
-      errors: [],
-      status: 'partial',
-    }),
+    validateReleaseEvidence(
+      evidence,
+      () => true,
+      {
+        blockers: ['production security drill missing'],
+        errors: [],
+        status: 'partial',
+      },
+      () => true
+    ),
     [
       'securityMatrix: release evidence status passed does not match computed partial',
     ]
+  );
+});
+
+test('passed N2 release evidence still requires the recovery verifier', () => {
+  const passed = (path) => ({ status: 'passed', path });
+  const evidence = {
+    n2Recovery: passed('docs/evidence/n2-recovery/manifest.json'),
+    providerSafeFetch: passed('safe-fetch.md'),
+    providerReferenceProbe: passed('provider-reference.md'),
+    audioSpeechActivation: passed('audio-speech.md'),
+    audioSfxActivation: passed('audio-sfx.md'),
+    securityMatrix: passed('security.md'),
+    crossServiceSmoke: passed('smoke.md'),
+    pricingApproval: passed('pricing.md'),
+    upsellValidation: passed('upsell.md'),
+  };
+
+  assert.deepEqual(
+    validateReleaseEvidence(evidence, () => true, undefined),
+    ['n2Recovery: production recovery manifest verifier is required']
+  );
+  assert.deepEqual(
+    validateReleaseEvidence(
+      evidence,
+      () => true,
+      undefined,
+      () => false
+    ),
+    ['n2Recovery: production recovery manifest did not pass verifier']
+  );
+  assert.deepEqual(
+    validateReleaseEvidence(
+      evidence,
+      () => true,
+      undefined,
+      () => true
+    ),
+    []
   );
 });

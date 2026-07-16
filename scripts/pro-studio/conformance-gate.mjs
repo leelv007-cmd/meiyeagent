@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { runProductionRecoveryCli } from '../recovery/production-recovery-cli.mjs';
 import {
   validateSecurityMatrixReleaseStatus,
   verifySecurityManifestFile,
@@ -259,7 +260,8 @@ export function findFrontendFetchViolations(
 export function validateReleaseEvidence(
   evidence,
   evidenceExists = existsSync,
-  securityVerification
+  securityVerification,
+  verifyN2Evidence
 ) {
   const issues = [];
   for (const key of RELEASE_EVIDENCE_KEYS) {
@@ -276,6 +278,17 @@ export function validateReleaseEvidence(
     issues.push(
       ...validateSecurityMatrixReleaseStatus(evidence, securityVerification)
     );
+  }
+  if (evidence?.n2Recovery?.status === 'passed') {
+    if (typeof verifyN2Evidence !== 'function') {
+      issues.push(
+        'n2Recovery: production recovery manifest verifier is required'
+      );
+    } else if (!verifyN2Evidence(evidence.n2Recovery.path)) {
+      issues.push(
+        'n2Recovery: production recovery manifest did not pass verifier'
+      );
+    }
   }
   return issues;
 }
@@ -454,7 +467,9 @@ function run(root) {
       ...validateReleaseEvidence(
         JSON.parse(readFileSync(releasePath, 'utf8')),
         (path) => existsSync(resolve(root, path)),
-        securityVerification
+        securityVerification,
+        (path) =>
+          runProductionRecoveryCli(['verify', path], { root }).exitCode === 0
       )
     );
   }
