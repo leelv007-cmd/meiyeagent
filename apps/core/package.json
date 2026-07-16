@@ -13,6 +13,7 @@
     "check": "tsc --noEmit",
     "canvas:retirement-access": "tsx src/p1/operations/polotno-retirement-access-cli.ts",
     "canvas:retirement-inventory": "tsx src/p1/operations/polotno-retirement-inventory-cli.ts",
+    "canvas:retirement-snapshot": "tsx src/p1/operations/polotno-retirement-snapshot-cli-entry.ts",
     "contentpackage:cutover": "tsx src/p1/operations/content-package-migration-cli-entry.ts",
     "cutover": "tsx src/p1/cutover/cli-entry.ts",
     "dev": "tsx watch src/main.ts",
