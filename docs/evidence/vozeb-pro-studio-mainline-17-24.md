@@ -5,7 +5,7 @@ Date: 2026-07-16
 ## Implemented seams
 
 - Ticket 17: the Canvas Work route uses the daily light Composer for copy edits, image replacement/crop, module ordering, preview, immutable revision save, template save, and export.
-- Ticket 18: `inventoryLegacyCanvasData` inspects every supplied Work revision and template version, reports pages/element kinds/unknown fields/last edit/last export, and classifies `convertible`, `read_only`, or `raster_fallback`. Run the production snapshot with `pnpm --filter @meiye/core canvas:retirement-inventory --input <snapshot.json>`; the command emits a JSON report to stdout.
+- Ticket 18: `canvas:retirement-snapshot` captures Work/Revision/Template/ExportReceipt rows inside one PostgreSQL `REPEATABLE READ READ ONLY` transaction, records the transaction snapshot and WAL LSN, verifies independently queried counts and an externally captured managed-object manifest, and emits a provenance-bound snapshot SHA. Its stdout JSON is accepted directly by the existing inventory and access CLIs. `inventoryLegacyCanvasData` then reports pages/element kinds/unknown fields/last edit/last export and classifies `convertible`, `read_only`, or `raster_fallback`.
 - Ticket 19: `renderLightCanvasDocument` burns watermark/AIGC labels into the raster. Tests cover all four label combinations and the returned PNG data URL. Existing Canvas export validation continues to assert image/font/CJK line-break evidence and raster SHA.
 - Ticket 20: Canvas export now persists validated raster bytes through `PersistentCanvasExportAdapter` into workspace-owned Asset storage. The strict `adopt_canvas_work_export` command validates workspace, Work, revision, receipt, and durable Asset custody; it idempotently creates an accepted image-text ContentPackage whose source records the exact Work/revision/receipt lineage. `CanvasWorkPage` opens that package in the content library after export. The page-editor SDK, runtime, license gate, dependency, lock entries, env variables, and locale copy remain absent, with `scripts/polotno-retirement-gate.test.mjs` as the repeatable static gate.
 - Ticket 21: activation probes use sanitized fixed image/video probe inputs, `productUsageQuantity: 0`, the production submit/poll/download lifecycle, classified errors, cancellation conformance, observed provider cost, and configuration-revision-bound evidence. The [real Tuzi adapter baseline](./pro-studio/ticket-21/live-adapter-canary-2026-07-16.md) passed for image and video. No Vozeb-derived fixture was copied because the A2/A3 authorization manifest is still blocked.
@@ -81,7 +81,7 @@ Evidence screenshot: `docs/evidence/pro-studio/ticket20-layout-adopted-package.p
 ```bash
 node --test scripts/polotno-retirement-gate.test.mjs scripts/uiux/evidence-tools.test.mjs
 pnpm uiux:bundle-check
-pnpm --filter @meiye/core exec tsx --test src/p1/model-supply/activation-probe-executor.test.ts src/p1/operations/media-custody.test.ts src/p1/operations/polotno-retirement-inventory.test.ts
+pnpm --filter @meiye/core exec tsx --test src/p1/model-supply/activation-probe-executor.test.ts src/p1/operations/media-custody.test.ts src/p1/operations/polotno-retirement-inventory.test.ts src/p1/operations/polotno-retirement-snapshot.test.ts src/p1/operations/polotno-retirement-snapshot-cli.test.ts
 pnpm --filter @meiye/core exec tsx --test src/p1/operations/canvas-export-adoption.test.ts src/p1/operations/content-package-export-adapter.test.ts src/p1/operations/content-package.test.ts
 pnpm --filter @meiye/web exec tsx --test src/product/light-composer-document.test.ts src/product/light-composer-compliance.test.ts src/p1/merchant-support-diagnostic.test.ts src/auth/offline-password-reset.test.ts src/auth/last-admin-migration.test.ts
 TEST_DATABASE_URL='<isolated-db-url>' DATABASE_URL='<isolated-db-url>' PORT=3124 PLAYWRIGHT_CORE_PORT=4124 PLAYWRIGHT_BASE_URL=http://127.0.0.1:3124 PLAYWRIGHT_AUTH_BASE_URL=http://127.0.0.1:3124 pnpm --filter @meiye/web exec playwright test tests/e2e/specs/uiux-operations-reuse.spec.ts --grep 'edits, saves, and exports'
@@ -89,12 +89,12 @@ pnpm --filter @meiye/web exec playwright test tests/e2e/specs/pro-studio-enginee
 pnpm --filter @meiye/web exec playwright test tests/e2e/specs/pro-studio-engineering-tickets.spec.ts --grep 'ticket 20 gate 4'
 ```
 
-The production historical-data counts remain environment evidence: run the inventory command against the production snapshot and retain its JSON before declaring the data gate complete.
+The production historical-data counts remain environment evidence. First export an object manifest with the same deployment/workspace/capture identity, then run `DATABASE_URL='<production-readonly-url>' pnpm --filter @meiye/core canvas:retirement-snapshot -- --workspace-id <workspace-id> --deployment <deployment> --capture-id <capture-id> --object-inventory <objects.json> > snapshot.json`. Retain the snapshot, run the inventory and access CLIs against it, and retain both reports before declaring the data gate complete.
 
 ## Unmet runtime and authorization evidence
 
 - Ticket 17: the real browser edit/save/export journey and the template-to-ContentPackage daily-layout handoff pass.
-- Ticket 18: no production snapshot was supplied, so historical coverage, counts, and every-work open/export behavior remain unverified.
+- Ticket 18: the fixture-backed production snapshot contract and read-only PostgreSQL capture path pass, but no production snapshot was supplied or executed, so historical coverage, counts, and every-work open/export behavior remain unverified.
 - Ticket 19: the new renderer's real PNG bytes and persisted receipt now pass. No old-renderer comparison is claimed because the retired runtime is absent and no approved historical comparison artifact was supplied.
 - Ticket 20: gates ①/④/⑤ pass. The complete named-entry Playwright matrix reaches Light Composer with zero Polotno traffic, and the production bundle passes at 345436 JS gzip / 36548 CSS gzip bytes. Production historical fallback (gate ②) and the approved old/new renderer comparison (gate ③) remain open. SDK removal must not be treated as release approval while those prerequisites are open.
 - Ticket 21: `docs/evidence/pro-studio/copy-manifest.json` remains `blocked_pending_a2_a3_authorization`; no upstream-derived fixture may be added or claimed complete. The real adapter baseline passed, but the administrator activation-evidence drill and real cancel/failure proof have not run.
