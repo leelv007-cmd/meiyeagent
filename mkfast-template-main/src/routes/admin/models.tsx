@@ -17,7 +17,7 @@ export function ModelsPage() {
       title={admin_models_title()}
       description={admin_models_description()}
     >
-      <div className="space-y-8">
+      <div className="space-y-4 text-sm [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm">
         <AdminRuntimeConfigControl
           keys={[
             'model.execution.mode',

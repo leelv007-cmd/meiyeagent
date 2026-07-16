@@ -111,14 +111,14 @@ function AssistantContextPart({
 }) {
   if (part.state === 'loading') {
     return (
-      <p className="rounded-md border bg-background/70 p-3 text-sm text-muted-foreground">
+      <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
         {creation_assistant_context_loading()}
       </p>
     );
   }
   if (part.state === 'unavailable' || !part.summary) {
     return (
-      <p className="rounded-md border bg-background/70 p-3 text-sm text-muted-foreground">
+      <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
         {creation_assistant_context_unavailable()}
       </p>
     );
@@ -126,7 +126,7 @@ function AssistantContextPart({
   return (
     <section
       aria-label={creation_assistant_context_aria()}
-      className="space-y-2 rounded-md border bg-background/70 p-3 text-sm"
+      className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm"
     >
       <div className="flex flex-wrap items-center gap-2">
         <p className="font-medium">{creation_assistant_context_ready()}</p>
@@ -159,14 +159,14 @@ function AssistantFieldPatchPart({
 }) {
   if (part.state === 'loading') {
     return (
-      <p className="rounded-md border bg-background/70 p-3 text-sm text-muted-foreground">
+      <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
         {creation_assistant_patch_loading()}
       </p>
     );
   }
   if (part.state === 'unavailable' || !part.patch) {
     return (
-      <p className="rounded-md border bg-background/70 p-3 text-sm text-muted-foreground">
+      <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
         {creation_assistant_patch_unavailable()}
       </p>
     );
@@ -195,7 +195,8 @@ function EditableAssistantFieldPatch({
   return (
     <section
       aria-label={creation_assistant_patch_aria({ field: fieldLabel })}
-      className="space-y-3 rounded-md border border-primary/20 bg-primary/5 p-3"
+      className="space-y-3 rounded-md border bg-card p-4"
+      data-proposal-card="field-patch"
     >
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium">
@@ -215,7 +216,7 @@ function EditableAssistantFieldPatch({
           value={decision.value}
         />
       ) : (
-        <p className="whitespace-pre-wrap rounded-md bg-background px-3 py-2 text-sm">
+        <p className="whitespace-pre-wrap rounded-md bg-muted/40 px-3 py-2 text-sm leading-6">
           {decision.value}
         </p>
       )}
@@ -291,24 +292,18 @@ export function AssistantConversationEntry({
   const isUser = message.role === 'user';
 
   return (
-    <div
-      className={
-        isUser
-          ? 'ml-auto max-w-[88%] rounded-2xl bg-primary px-4 py-3 text-sm text-primary-foreground'
-          : 'rounded-xl border bg-muted/35 px-4 py-3'
-      }
-    >
-      <span className="sr-only">
+    <article className="space-y-2 py-4 first:pt-0 last:pb-0">
+      <header className="text-xs font-medium text-muted-foreground">
         {isUser
           ? creation_assistant_speaker_user()
           : creation_assistant_speaker_assistant()}
-      </span>
+      </header>
       {message.role === 'assistant' ? (
         <AssistantMessageParts parts={message.parts} streaming={streaming} />
       ) : (
-        <p className="whitespace-pre-wrap">{content}</p>
+        <p className="whitespace-pre-wrap text-sm leading-6">{content}</p>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -364,19 +359,19 @@ export function CreationAssistant({
   };
 
   return (
-    <Card aria-label={creation_assistant_aria()} className="border-primary/20">
+    <Card aria-label={creation_assistant_aria()}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">
           {creation_assistant_title()}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         {messages.length > 0 ? (
           <div
             aria-label={creation_assistant_conversation_aria()}
             aria-live="polite"
             aria-relevant="additions text"
-            className="max-h-96 space-y-3 overflow-y-auto pr-1"
+            className="max-h-96 divide-y overflow-y-auto pr-1"
             onScroll={(event) => {
               stickToBottomRef.current = isConversationNearBottom(
                 event.currentTarget
@@ -398,7 +393,7 @@ export function CreationAssistant({
             })}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm leading-6 text-muted-foreground">
             {creation_assistant_empty()}
           </p>
         )}
@@ -407,7 +402,7 @@ export function CreationAssistant({
             {creation_assistant_interrupted()}
           </p>
         ) : null}
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row">
           <Textarea
             aria-label={creation_assistant_input_aria()}
             className="min-h-24 flex-1"

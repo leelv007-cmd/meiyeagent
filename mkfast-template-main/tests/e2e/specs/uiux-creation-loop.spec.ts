@@ -407,6 +407,7 @@ test.describe('S2 cold start and unified creation loop', () => {
     await expect(
       page.getByRole('button', { name: '任务 · E2E 已有来源任务' })
     ).toBeVisible();
+    await page.getByRole('button', { exact: true, name: '更多' }).click();
     await page.getByRole('button', { name: /^前后对比/ }).click();
     await page.getByRole('button', { name: '建立创作记录' }).click();
     await expect(page.getByLabel('创作助理整理的记录')).toBeVisible();

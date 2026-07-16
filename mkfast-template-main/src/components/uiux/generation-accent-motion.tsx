@@ -6,15 +6,13 @@ export default function GenerationAccentMotion({
   return (
     <output
       aria-live="polite"
-      className="inline-flex min-h-6 items-center gap-2 text-sm font-medium"
+      className="meiye-rose-glow inline-flex min-h-8 items-center gap-2 rounded-full bg-spark-wash px-3 py-1 text-sm font-medium text-spark-deep"
     >
       <span
         aria-hidden="true"
-        className="size-1.5 animate-pulse rounded-full bg-primary motion-reduce:animate-none"
+        className="size-1.5 shrink-0 rounded-full bg-spark motion-safe:animate-pulse"
       />
-      <span className="bg-linear-to-r from-muted-foreground via-primary to-muted-foreground bg-clip-text text-transparent motion-reduce:bg-none motion-reduce:text-muted-foreground">
-        {label}
-      </span>
+      <span>{label}</span>
     </output>
   );
 }

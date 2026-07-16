@@ -3,20 +3,24 @@ import { productStatusView, type ProductStatusTone } from '@/lib/uiux/status';
 import { cn } from '@/lib/utils';
 
 const toneStyle: Record<ProductStatusTone, string> = {
-  neutral: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
-  progress: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200',
-  success: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-200',
+  neutral:
+    'bg-[oklch(0.42_0_0/0.06)] text-[oklch(0_0_0/0.7)] dark:bg-[oklch(1_0_0/0.08)] dark:text-[oklch(1_0_0/0.78)]',
+  progress:
+    'bg-[oklch(0.5_0.19_262/0.1)] text-[oklch(0.4_0.16_262)] dark:bg-[oklch(0.5_0.19_262/0.18)] dark:text-[oklch(0.82_0.08_262)]',
+  success:
+    'bg-[oklch(0.53_0.14_150/0.1)] text-[oklch(0.4_0.12_150)] dark:bg-[oklch(0.53_0.14_150/0.18)] dark:text-[oklch(0.82_0.08_150)]',
   warning:
-    'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200',
-  danger: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200',
+    'bg-[oklch(0.55_0.13_85/0.12)] text-[oklch(0.42_0.11_85)] dark:bg-[oklch(0.55_0.13_85/0.18)] dark:text-[oklch(0.88_0.08_85)]',
+  danger:
+    'bg-[oklch(0.55_0.2_27/0.1)] text-[oklch(0.45_0.16_27)] dark:bg-[oklch(0.55_0.2_27/0.18)] dark:text-[oklch(0.84_0.1_27)]',
 };
 
 const toneDotStyle: Record<ProductStatusTone, string> = {
-  neutral: 'bg-gray-400',
-  progress: 'bg-blue-500',
-  success: 'bg-green-500',
-  warning: 'bg-yellow-500',
-  danger: 'bg-red-500',
+  neutral: 'bg-[oklch(0.55_0_0)]',
+  progress: 'bg-[oklch(0.5_0.19_262)]',
+  success: 'bg-[oklch(0.53_0.14_150)]',
+  warning: 'bg-[oklch(0.55_0.13_85)]',
+  danger: 'bg-[oklch(0.55_0.2_27)]',
 };
 
 interface ProductStatusProps {

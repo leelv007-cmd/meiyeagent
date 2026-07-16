@@ -26,8 +26,10 @@ function PrivacyPage() {
   const { page } = Route.useLoaderData();
   if (!page) throw notFound();
   return (
-    <Container className="py-16 px-4">
-      <MarkdownPage page={page} />
-    </Container>
+    <div className="meiye-auth-shell">
+      <Container className="px-4 py-12 md:py-16">
+        <MarkdownPage page={page} />
+      </Container>
+    </div>
   );
 }

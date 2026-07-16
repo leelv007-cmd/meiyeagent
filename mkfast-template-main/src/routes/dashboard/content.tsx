@@ -978,12 +978,12 @@ function ContentPackageLibrary({
         const groupedItems = items.filter((item) => item.statusGroup === group);
         return (
           <TabsContent className="mt-4" key={group} value={group}>
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {groupedItems.map((contentPackage) => (
                 <div
                   className={
                     contentPackage.id === highlightedId
-                      ? 'rounded-md bg-surface-2 ring-2 ring-primary/30'
+                      ? 'rounded-2xl ring-2 ring-primary/30 ring-offset-2 ring-offset-background'
                       : undefined
                   }
                   key={contentPackage.id}

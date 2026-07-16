@@ -41,20 +41,20 @@ export const Route = createFileRoute('/auth/login')({
 
 function LoginPage() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <LoginForm />
-      <div className="text-balance text-center text-xs text-muted-foreground">
+      <div className="text-balance text-center text-xs leading-5 text-muted-foreground">
         {auth_common_by_clicking_continue()}
         <Link
           to={Routes.TermsOfService}
-          className="underline underline-offset-4 hover:text-primary"
+          className="underline underline-offset-4 hover:text-foreground"
         >
           {auth_common_terms_of_service()}
         </Link>
         {auth_common_and()}
         <Link
           to={Routes.PrivacyPolicy}
-          className="underline underline-offset-4 hover:text-primary"
+          className="underline underline-offset-4 hover:text-foreground"
         >
           {auth_common_privacy_policy()}
         </Link>

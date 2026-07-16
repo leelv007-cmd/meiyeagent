@@ -196,118 +196,358 @@
     --product-brand-ink: oklch(0.98 0.008 18);
     --product-guide: oklch(0 0 0 / 0.6);
     --product-focus: oklch(0.22 0 0);
+    --ink: oklch(0.22 0 0);
+    --ink-90: oklch(0 0 0 / 0.9);
+    --ink-60: oklch(0 0 0 / 0.6);
+    --ink-40: oklch(0 0 0 / 0.4);
+    --paper: oklch(1 0 0);
+    --canvas: oklch(0.965 0 0);
+    --glass-80: oklch(1 0 0 / 0.8);
+    --glass-50: oklch(1 0 0 / 0.5);
+    --glass-35: oklch(1 0 0 / 0.35);
+    --tint-active: oklch(0.42 0 0 / 0.08);
+    --tint-hover: oklch(0.42 0 0 / 0.04);
+    --hairline: oklch(0 0 0 / 0.04);
+    --mask-scrim: oklch(0 0 0 / 0.4);
     --spark: oklch(0.63 0.13 18);
     --spark-wash: oklch(0.95 0.025 18);
     --spark-deep: oklch(0.45 0.1 18);
-    --surface-0: oklch(0.965 0 0);
+    --status-success: oklch(0.53 0.14 150);
+    --status-progress: oklch(0.5 0.19 262);
+    --status-warning: oklch(0.55 0.13 85);
+    --status-danger: oklch(0.55 0.2 27);
+    --shadow-ambient: 0 2px 20px oklch(0 0 0 / 0.03);
+    --shadow-overlay: 0 4px 20px oklch(0 0 0 / 0.12);
+    --shadow-rose-glow: 0 6px 16px oklch(0.63 0.13 18 / 0.24);
+    --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+    --surface-0: var(--canvas);
     --surface-1: oklch(0.985 0 0);
-    --surface-2: oklch(1 0 0);
-    --surface-divider: oklch(0 0 0 / 0.06);
-    --background: oklch(0.965 0 0);
-    --foreground: oklch(0.22 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.22 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.22 0 0);
-    --primary: oklch(0.22 0 0);
-    --primary-foreground: oklch(1 0 0);
-    --secondary: oklch(0.42 0 0 / 0.08);
-    --secondary-foreground: oklch(0 0 0 / 0.9);
-    --muted: oklch(0.42 0 0 / 0.05);
-    --muted-foreground: oklch(0 0 0 / 0.6);
-    --accent: oklch(0.42 0 0 / 0.06);
-    --accent-foreground: oklch(0 0 0 / 0.9);
+    --surface-2: var(--paper);
+    --surface-divider: var(--hairline);
+    --background: var(--canvas);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
+    --popover: var(--paper);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--paper);
+    --secondary: var(--tint-active);
+    --secondary-foreground: var(--ink-90);
+    --muted: var(--tint-hover);
+    --muted-foreground: var(--ink-60);
+    --accent: var(--tint-hover);
+    --accent-foreground: var(--ink-90);
     --border: oklch(0 0 0 / 0.08);
     --input: oklch(0 0 0 / 0.12);
     --ring: var(--product-focus);
     --radius: 0.75rem;
-    --sidebar: oklch(1 0 0 / 0.8);
-    --sidebar-foreground: oklch(0 0 0 / 0.9);
-    --sidebar-primary: var(--product-brand);
-    --sidebar-primary-foreground: var(--product-brand-ink);
-    --sidebar-accent: oklch(0.42 0 0 / 0.08);
-    --sidebar-accent-foreground: oklch(0 0 0 / 0.9);
-    --sidebar-border: oklch(0 0 0 / 0.06);
-    --sidebar-ring: oklch(0.22 0 0);
-    background: var(--surface-0);
-    color: var(--foreground);
+    --sidebar: var(--glass-80);
+    --sidebar-foreground: var(--ink-90);
+    --sidebar-primary: var(--ink);
+    --sidebar-primary-foreground: var(--paper);
+    --sidebar-accent: var(--tint-active);
+    --sidebar-accent-foreground: var(--ink-90);
+    --sidebar-border: var(--hairline);
+    --sidebar-ring: var(--ink);
+    background: var(--canvas);
+    color: var(--ink);
     font-family:
       Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
       ui-sans-serif, system-ui, sans-serif;
   }
 
-  /* 玻璃侧栏：wrapper/sidebar 透明，inner 是浮空玻璃面板 */
+  /* 玻璃三档 + 白瓷 */
+  .meiye-glass-shell {
+    background: var(--glass-80);
+    -webkit-backdrop-filter: blur(64px);
+    backdrop-filter: blur(64px);
+    border: 1px solid oklch(1 0 0 / 0.55);
+  }
+  .meiye-glass-piece {
+    background: var(--glass-50);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid oklch(1 0 0 / 0.5);
+  }
+  .meiye-glass-trace {
+    background: var(--glass-35);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border: 1px solid oklch(1 0 0 / 0.45);
+  }
+  .meiye-porcelain {
+    background: var(--paper);
+    border: 1px solid oklch(1 0 0 / 0.9);
+    box-shadow: var(--shadow-ambient);
+  }
+
+  /* 玻璃侧栏：wrapper/sidebar 透明，inner 是浮空壳级玻璃 */
   .meiye-product-shell [data-slot="sidebar-wrapper"] {
     background: transparent;
-    padding: 8px;
+    padding: 12px;
   }
   .meiye-product-shell [data-slot="sidebar"] {
     background: transparent;
   }
   .meiye-product-shell [data-slot="sidebar-inner"] {
-    -webkit-backdrop-filter: blur(24px);
-    backdrop-filter: blur(24px);
-    background: var(--sidebar, oklch(1 0 0 / 0.8));
-    border: 1px solid oklch(1 0 0 / 0.45);
-    border-radius: var(--radius-2xl, 1.5rem);
+    -webkit-backdrop-filter: blur(64px);
+    backdrop-filter: blur(64px);
+    background: var(--sidebar, var(--glass-80));
+    border: 1px solid oklch(1 0 0 / 0.55);
+    border-radius: 24px;
+    box-shadow: none;
   }
-  /* SidebarInset 在 hero 模式去背景让氛围层透出 */
   .meiye-product-shell [data-slot="sidebar-inset"] {
     background: transparent;
   }
 
+  /* 药丸导航（创作/内容/素材/门店） */
+  .meiye-product-shell[data-shell-mode="product"]
+  [data-slot="sidebar-menu-button"] {
+    min-height: 44px;
+    border-radius: 999px;
+    font-weight: 500;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar-menu-button"][data-active="true"] {
+    background: var(--tint-active);
+    color: var(--ink-90);
+    font-weight: 500;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar-menu-button"]:hover {
+    background: var(--tint-hover);
+  }
+
+  /* Admin：同源高密度，无氛围玻璃抢戏 */
+  .meiye-product-shell[data-shell-mode="admin"] {
+    --surface-0: oklch(0.97 0 0);
+    --background: oklch(0.97 0 0);
+    --sidebar: oklch(1 0 0);
+  }
+  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-wrapper"] {
+    padding: 0;
+  }
+  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-inner"] {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--paper);
+    border: none;
+    border-right: 1px solid var(--hairline);
+    border-radius: 0;
+  }
+  .meiye-product-shell[data-shell-mode="admin"]
+    [data-slot="sidebar-menu-button"] {
+    min-height: 36px;
+    border-radius: 10px;
+    font-size: 0.8125rem;
+  }
+  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-inset"] {
+    background: var(--surface-0);
+  }
+
+  /* Settings：白瓷中密度 */
+  .meiye-product-shell[data-shell-mode="settings"] [data-slot="sidebar-inner"] {
+    -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
+    border-radius: 20px;
+  }
+
+  .meiye-product-shell .meiye-type-display {
+    color: var(--paper);
+    font-size: clamp(1.75rem, 3.5vw, 2.75rem);
+    font-weight: 200;
+    line-height: 1.2;
+  }
+
   .meiye-product-shell .meiye-type-title {
-    color: var(--foreground);
+    color: var(--ink-90);
     font-size: 1.5rem;
     font-weight: 600;
     line-height: 1.25;
   }
 
   .meiye-product-shell .meiye-type-body {
-    color: var(--foreground);
-    font-size: 1rem;
+    color: var(--ink-90);
+    font-size: 0.875rem;
     font-weight: 400;
     line-height: 1.55;
   }
 
   .meiye-product-shell .meiye-type-aux {
-    color: var(--muted-foreground);
+    color: var(--ink-60);
     font-size: 0.875rem;
     font-weight: 400;
     line-height: 1.45;
   }
 
+  .meiye-product-shell .meiye-type-label {
+    color: var(--ink-90);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  /* 主按钮一屏一墨丸 */
+  .meiye-product-shell
+  [data-slot="button"]:not([class*="variant"]):where(.bg-primary),
+  .meiye-product-shell button.bg-primary {
+    min-height: 44px;
+    border-radius: 999px;
+    padding-inline: 20px;
+  }
+  .meiye-product-shell button.bg-primary:hover {
+    background: oklch(0.32 0 0);
+  }
+
+  /* Composer 白瓷签名 */
+  .meiye-composer {
+    border-radius: 32px;
+    background: var(--paper);
+    border: 1px solid oklch(1 0 0 / 0.95);
+    box-shadow: var(--shadow-ambient);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+  }
+
+  /* 媒体卡遮罩托字 */
+  .meiye-media-mask {
+    background: linear-gradient(0deg, var(--mask-scrim), transparent 55%);
+  }
+
+  /* 生成中玫瑰辉光 */
+  .meiye-rose-glow {
+    box-shadow: var(--shadow-rose-glow);
+    border: 1px solid oklch(0.63 0.13 18 / 0.35);
+    animation: meiye-rose-breathe 4s ease-in-out infinite;
+  }
+  @keyframes meiye-rose-breathe {
+    0%,
+    100% {
+      box-shadow: 0 6px 16px oklch(0.63 0.13 18 / 0.18);
+    }
+    50% {
+      box-shadow: 0 8px 22px oklch(0.63 0.13 18 / 0.32);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .meiye-rose-glow {
+      animation: none;
+      box-shadow: none;
+      border-color: oklch(0.63 0.13 18 / 0.55);
+    }
+  }
+
+  /* 产品顶栏：件级玻璃痕迹 */
+  .meiye-product-shell[data-shell-mode="product"] .meiye-topbar {
+    background: transparent;
+    border-bottom-color: transparent;
+  }
+  .meiye-product-shell[data-shell-mode="product"] .meiye-topbar-capsule {
+    background: var(--glass-50);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid oklch(1 0 0 / 0.5);
+    border-radius: 999px;
+  }
+
   .dark .meiye-product-shell {
     --product-focus: oklch(0.85 0.08 18);
+    --ink: oklch(0.94 0 0);
+    --ink-90: oklch(1 0 0 / 0.92);
+    --ink-60: oklch(1 0 0 / 0.66);
+    --ink-40: oklch(1 0 0 / 0.4);
+    --paper: oklch(0.21 0 0);
+    --canvas: oklch(0.17 0 0);
+    --glass-80: oklch(0.19 0 0 / 0.85);
+    --glass-50: oklch(1 0 0 / 0.08);
+    --glass-35: oklch(1 0 0 / 0.05);
+    --tint-active: oklch(1 0 0 / 0.1);
+    --tint-hover: oklch(1 0 0 / 0.06);
+    --hairline: oklch(1 0 0 / 0.1);
+    --mask-scrim: oklch(0 0 0 / 0.55);
     --spark: oklch(0.72 0.11 18);
     --spark-wash: oklch(0.3 0.045 18);
     --spark-deep: oklch(0.88 0.05 18);
-    --surface-0: oklch(0.17 0 0);
+    --surface-0: var(--canvas);
     --surface-1: oklch(0.21 0 0);
     --surface-2: oklch(0.25 0 0);
-    --surface-divider: oklch(1 0 0 / 0.1);
-    --background: oklch(0.17 0 0);
-    --foreground: oklch(0.94 0 0);
-    --card: oklch(0.21 0 0);
-    --card-foreground: oklch(0.94 0 0);
+    --surface-divider: var(--hairline);
+    --background: var(--canvas);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
     --popover: oklch(0.22 0 0);
-    --popover-foreground: oklch(0.94 0 0);
-    --primary: oklch(0.94 0 0);
-    --primary-foreground: oklch(0.17 0 0);
-    --secondary: oklch(1 0 0 / 0.1);
-    --secondary-foreground: oklch(1 0 0 / 0.92);
-    --muted: oklch(1 0 0 / 0.06);
-    --muted-foreground: oklch(1 0 0 / 0.66);
-    --accent: oklch(1 0 0 / 0.08);
-    --accent-foreground: oklch(1 0 0 / 0.92);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--canvas);
+    --secondary: var(--tint-active);
+    --secondary-foreground: var(--ink-90);
+    --muted: var(--tint-hover);
+    --muted-foreground: var(--ink-60);
+    --accent: var(--tint-hover);
+    --accent-foreground: var(--ink-90);
     --border: oklch(1 0 0 / 0.1);
     --input: oklch(1 0 0 / 0.14);
-    --sidebar: oklch(0.19 0 0 / 0.85);
-    --sidebar-foreground: oklch(1 0 0 / 0.92);
-    --sidebar-accent: oklch(1 0 0 / 0.08);
-    --sidebar-accent-foreground: oklch(1 0 0 / 0.92);
-    --sidebar-border: oklch(1 0 0 / 0.08);
+    --sidebar: var(--glass-80);
+    --sidebar-foreground: var(--ink-90);
+    --sidebar-accent: var(--tint-active);
+    --sidebar-accent-foreground: var(--ink-90);
+    --sidebar-border: var(--hairline);
     --sidebar-ring: oklch(0.85 0.08 18);
+  }
+
+  /* Auth / legals：浅色白瓷，无氛围层；主色走墨丸而非营销橙 */
+  .meiye-auth-shell {
+    --primary: oklch(0.22 0 0);
+    --primary-foreground: oklch(1 0 0);
+    --ring: oklch(0.22 0 0);
+    --muted-foreground: oklch(0 0 0 / 0.6);
+    --background: oklch(0.965 0 0);
+    --foreground: oklch(0.22 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.22 0 0);
+    --border: oklch(0 0 0 / 0.08);
+    --surface-0: oklch(0.965 0 0);
+    --surface-1: oklch(0.985 0 0);
+    --surface-2: oklch(1 0 0);
+    --surface-divider: oklch(0 0 0 / 0.04);
+    min-height: 100svh;
+    background: oklch(0.965 0 0);
+    color: oklch(0.22 0 0);
+    font-family:
+      Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
+      ui-sans-serif, system-ui, sans-serif;
+  }
+  .meiye-auth-shell .meiye-auth-card {
+    border-radius: 24px;
+    background: oklch(1 0 0);
+    border: 1px solid oklch(0 0 0 / 0.04);
+    box-shadow: 0 2px 20px oklch(0 0 0 / 0.03);
+  }
+  .meiye-auth-shell [data-slot="button"].bg-primary,
+  .meiye-auth-shell button.bg-primary {
+    background: oklch(0.22 0 0);
+    color: oklch(1 0 0);
+    border-radius: 999px;
+  }
+  .meiye-auth-shell [data-slot="button"].bg-primary:hover,
+  .meiye-auth-shell button.bg-primary:hover {
+    background: oklch(0.32 0 0);
+  }
+
+  /* Pro Studio：独立深色影棚，只共享圆角/字体/火花语义 */
+  .meiye-pro-studio {
+    --spark: oklch(0.72 0.11 18);
+    --spark-wash: oklch(0.3 0.045 18);
+    --spark-deep: oklch(0.88 0.05 18);
+    min-height: 100svh;
+    background: oklch(0.16 0.01 260);
+    color: oklch(0.95 0.01 90);
+    font-family:
+      Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
+      ui-sans-serif, system-ui, sans-serif;
   }
 }
 

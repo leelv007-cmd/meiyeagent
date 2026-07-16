@@ -22,6 +22,7 @@ import {
   shell_settings,
   shell_settings_navigation_aria,
 } from '@/locale/paraglide/messages';
+import { cn } from '@/lib/utils';
 
 interface SidebarMainProps {
   mode: ShellMode;
@@ -41,16 +42,22 @@ export function SidebarMain({ mode }: SidebarMainProps) {
     if (isMobile) setOpenMobile(false);
   };
 
+  const isAdmin = mode === 'admin';
+
   const renderNavigation = (
     items: readonly ShellNavigationItem[],
     label: string,
     groupLabel?: string
   ) => (
-    <SidebarGroup>
-      {groupLabel ? <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel> : null}
+    <SidebarGroup className={cn(isAdmin && 'py-1')}>
+      {groupLabel ? (
+        <SidebarGroupLabel className={cn(isAdmin && 'h-7 text-[11px]')}>
+          {groupLabel}
+        </SidebarGroupLabel>
+      ) : null}
       <SidebarGroupContent>
         <nav aria-label={label}>
-          <SidebarMenu className="gap-1">
+          <SidebarMenu className={cn(isAdmin ? 'gap-0.5' : 'gap-1')}>
             {items.map((item) => {
               const current = canonicalPath(pathname);
               const target = canonicalPath(item.href);
@@ -61,10 +68,16 @@ export function SidebarMain({ mode }: SidebarMainProps) {
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton
                     isActive={isActive}
+                    size={isAdmin ? 'sm' : 'default'}
                     render={
                       <Link to={item.href} onClick={closeMobileSidebar}>
                         <ProductIcon icon={item.icon} />
-                        <span className="truncate text-sm font-medium">
+                        <span
+                          className={cn(
+                            'truncate font-medium',
+                            isAdmin ? 'text-xs' : 'text-sm'
+                          )}
+                        >
                           {item.label}
                         </span>
                       </Link>

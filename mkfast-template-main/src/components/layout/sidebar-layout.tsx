@@ -59,9 +59,13 @@ export function SidebarLayout({
   const shell = (
     <SidebarProvider
       className="meiye-product-shell flex min-h-svh"
+      data-shell-mode={mode}
       style={
         {
-          '--sidebar-width': 'calc(var(--spacing) * 72)',
+          '--sidebar-width':
+            mode === 'admin'
+              ? 'calc(var(--spacing) * 60)'
+              : 'calc(var(--spacing) * 72)',
           '--header-height': 'calc(var(--spacing) * 12)',
         } as React.CSSProperties
       }

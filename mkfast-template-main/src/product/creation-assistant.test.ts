@@ -170,8 +170,46 @@ test('labels each conversation entry with its speaker for assistive technology',
     })
   );
 
-  assert.match(userHtml, /<span class="sr-only">你：<\/span>/u);
-  assert.match(assistantHtml, /<span class="sr-only">创作副驾：<\/span>/u);
+  assert.match(userHtml, /你：/u);
+  assert.match(assistantHtml, /创作副驾：/u);
+  assert.match(userHtml, /<article/u);
+  assert.match(assistantHtml, /<article/u);
+});
+
+test('renders a document timeline instead of chat-bubble chrome', () => {
+  const userHtml = renderToStaticMarkup(
+    createElement(AssistantConversationEntry, {
+      message: {
+        id: 'user-message',
+        role: 'user',
+        parts: [{ type: 'text', text: '请帮我梳理语气。' }],
+      },
+      streaming: false,
+    })
+  );
+  const assistantHtml = renderToStaticMarkup(
+    createElement(AssistantConversationEntry, {
+      message: {
+        id: 'assistant-message',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: '建议微调语气。' },
+          { type: 'data-field_patch', id: 'patch-data', data: tonePatch },
+        ],
+      },
+      streaming: false,
+    })
+  );
+
+  assert.doesNotMatch(
+    userHtml,
+    /ml-auto|rounded-2xl|bg-primary|text-primary-foreground/u
+  );
+  assert.doesNotMatch(assistantHtml, /rounded-xl border bg-muted/u);
+  assert.match(assistantHtml, /data-proposal-card="field-patch"/u);
+  assert.match(assistantHtml, /接受建议/u);
+  assert.match(assistantHtml, />编辑</u);
+  assert.match(assistantHtml, />忽略</u);
 });
 
 test('sticks only while the reader remains near the conversation bottom', () => {

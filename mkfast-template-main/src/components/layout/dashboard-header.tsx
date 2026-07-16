@@ -38,7 +38,7 @@ export function DashboardHeader({
   const isMobile = useIsMobile();
 
   return (
-    <header className="flex h-(--header-height) shrink-0 items-center border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+    <header className="meiye-topbar flex h-(--header-height) shrink-0 items-center border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full min-w-0 items-center gap-2 px-4 lg:px-6">
         {!isMobile ? (
           <>
@@ -51,7 +51,7 @@ export function DashboardHeader({
         ) : null}
 
         <Breadcrumb className="min-w-0 flex-1">
-          <BreadcrumbList className="text-base font-medium">
+          <BreadcrumbList className="text-sm font-medium">
             {breadcrumbs.map((item, index) => (
               <React.Fragment key={`breadcrumb-${index}`}>
                 {index > 0 && (
@@ -81,7 +81,7 @@ export function DashboardHeader({
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="ml-auto flex shrink-0 items-center gap-3 pl-4">
+        <div className="meiye-topbar-capsule ml-auto flex shrink-0 items-center gap-2 px-2 py-1 pl-3">
           {actions}
           <LocaleSwitcher />
           {showModeSwitch && <ModeSwitcher />}

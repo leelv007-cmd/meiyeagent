@@ -51,7 +51,7 @@ function MediaFailure({
   onRetry: () => void;
 }) {
   return (
-    <output className="flex min-h-44 flex-col items-center justify-center gap-3 rounded-md bg-muted p-4 text-center">
+    <output className="flex min-h-44 flex-col items-center justify-center gap-3 rounded-2xl bg-muted p-4 text-center">
       <span>
         <span className="block font-medium">
           {canonical_media_load_error_title()}
@@ -75,6 +75,7 @@ export function CanonicalMediaPreview({
   media,
   onActivate,
   presentation = 'thumbnail',
+  showMeta = true,
 }: {
   media: CanonicalMediaProjection;
   onActivate?: (
@@ -82,6 +83,7 @@ export function CanonicalMediaPreview({
     trigger: HTMLButtonElement
   ) => void;
   presentation?: 'thumbnail' | 'hero';
+  showMeta?: boolean;
 }) {
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -104,10 +106,10 @@ export function CanonicalMediaPreview({
   }
 
   return (
-    <div className="grid min-w-0 content-start">
+    <div className="grid min-w-0 content-start gap-1.5">
       <div
         className={cn(
-          'group overflow-hidden rounded-lg bg-muted focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring',
+          'group relative min-w-0 overflow-hidden rounded-2xl bg-muted focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring',
           presentation === 'hero' ? 'min-h-44 max-h-[70vh]' : 'aspect-10/7'
         )}
       >
@@ -126,7 +128,7 @@ export function CanonicalMediaPreview({
               key={`${media.src}:${attempt}`}
               alt={media.title}
               className={cn(
-                'size-full transition-opacity group-hover:opacity-80',
+                'size-full transition duration-500 ease-out group-hover:scale-[1.03]',
                 presentation === 'hero'
                   ? 'max-h-[70vh] object-contain'
                   : 'object-cover'
@@ -140,7 +142,7 @@ export function CanonicalMediaPreview({
               key={`${media.src}:${attempt}`}
               aria-label={media.title}
               className={cn(
-                'size-full transition-opacity group-hover:opacity-80',
+                'size-full transition duration-500 ease-out group-hover:scale-[1.03]',
                 presentation === 'hero'
                   ? 'max-h-[70vh] object-contain'
                   : 'object-cover'
@@ -152,39 +154,55 @@ export function CanonicalMediaPreview({
               src={media.src}
             />
           )}
-          <span className="absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/90 px-2 py-1 text-xs font-medium shadow-sm backdrop-blur-sm">
-            {media.kind === 'video' ? (
-              <IconVideo className="size-3.5" aria-hidden="true" />
-            ) : (
-              <IconMaximize className="size-3.5" aria-hidden="true" />
-            )}
-            {media.kind === 'video'
-              ? canonical_media_video_preview()
-              : canonical_media_image_preview()}
+
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-300 group-hover:bg-black/20 group-focus-within:bg-black/20"
+          />
+          <span
+            aria-hidden="true"
+            className="meiye-media-mask pointer-events-none absolute inset-x-0 bottom-0 h-[52%] transition-[height] duration-300 group-hover:h-[62%] group-focus-within:h-[62%]"
+          />
+
+          <span className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-2 p-3">
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-white [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]">
+                {media.title}
+              </span>
+              <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-white/80">
+                {media.kind === 'video' ? (
+                  <IconVideo className="size-3.5 shrink-0" aria-hidden="true" />
+                ) : (
+                  <IconPhoto className="size-3.5 shrink-0" aria-hidden="true" />
+                )}
+                <span className="truncate">
+                  {media.kind === 'video'
+                    ? canonical_media_kind_video()
+                    : canonical_media_kind_image()}
+                </span>
+              </span>
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/30 bg-white/15 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm">
+              {media.kind === 'video' ? (
+                <IconVideo className="size-3.5" aria-hidden="true" />
+              ) : (
+                <IconMaximize className="size-3.5" aria-hidden="true" />
+              )}
+              {media.kind === 'video'
+                ? canonical_media_video_preview()
+                : canonical_media_image_preview()}
+            </span>
           </span>
         </button>
       </div>
-      <p className="mt-2 truncate text-sm font-medium text-foreground">
-        {media.title}
-      </p>
-      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-        {media.kind === 'video' ? (
-          <IconVideo className="size-4 shrink-0" aria-hidden="true" />
-        ) : (
-          <IconPhoto className="size-4 shrink-0" aria-hidden="true" />
-        )}
-        <span className="truncate">
-          {media.kind === 'video'
-            ? canonical_media_kind_video()
-            : canonical_media_kind_image()}
-        </span>
-      </p>
-      <div className="mt-0.5 flex min-w-0 items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span className="truncate">{media.assetId}</span>
-        <span className="shrink-0">
-          <MediaDetailLink href={media.href} />
-        </span>
-      </div>
+      {showMeta ? (
+        <div className="flex min-w-0 items-center justify-between gap-2 px-0.5 text-sm text-muted-foreground">
+          <span className="truncate">{media.assetId}</span>
+          <span className="shrink-0">
+            <MediaDetailLink href={media.href} />
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -246,7 +264,7 @@ function CanonicalMediaLightbox({
               <img
                 key={`${media.src}:${attempt}`}
                 alt={media.title}
-                className="max-h-[calc(100svh-8rem)] w-full rounded-lg object-contain"
+                className="max-h-[calc(100svh-8rem)] w-full rounded-2xl object-contain"
                 onError={() => setFailed(true)}
                 src={media.src}
               />
@@ -256,7 +274,7 @@ function CanonicalMediaLightbox({
                 key={`${media.src}:${attempt}`}
                 ref={videoRef}
                 aria-label={media.title}
-                className="max-h-[calc(100svh-8rem)] w-full rounded-lg object-contain"
+                className="max-h-[calc(100svh-8rem)] w-full rounded-2xl object-contain"
                 controls
                 onError={() => setFailed(true)}
                 playsInline
@@ -299,10 +317,12 @@ export function CanonicalMediaGallery({
   className,
   media,
   presentation = 'thumbnail',
+  showMeta = true,
 }: {
   className?: string;
   media: CanonicalMediaProjection[];
   presentation?: 'thumbnail' | 'hero';
+  showMeta?: boolean;
 }) {
   const [selected, setSelected] = useState<CanonicalMediaProjection>();
   const triggerRef = useRef<HTMLButtonElement | undefined>(undefined);
@@ -319,7 +339,7 @@ export function CanonicalMediaGallery({
         className={cn(
           presentation === 'hero'
             ? 'grid gap-3'
-            : 'grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 sm:gap-x-6 lg:grid-cols-4 xl:gap-x-8',
+            : 'grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4',
           className
         )}
       >
@@ -328,6 +348,7 @@ export function CanonicalMediaGallery({
             key={item.assetId}
             media={item}
             presentation={presentation}
+            showMeta={showMeta}
             onActivate={(next, trigger) => {
               triggerRef.current = trigger;
               setSelected(next);

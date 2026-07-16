@@ -1,6 +1,4 @@
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   content_package_asset_count,
   content_package_kind_image_text,
@@ -14,6 +12,7 @@ import {
   creation_entry_platform_douyin,
   creation_entry_platform_xiaohongshu,
 } from '@/locale/paraglide/messages';
+import { cn } from '@/lib/utils';
 import type { CanonicalMediaProjection } from '@/product/canonical-history-model';
 import type {
   ContentPackage,
@@ -25,6 +24,12 @@ export type ContentPackageProjection = ContentPackage & {
   statusGroup: ContentPackageStatusGroup;
   statusLabel: string;
 };
+
+function platformLabel(platform: string) {
+  if (platform === 'xiaohongshu') return creation_entry_platform_xiaohongshu();
+  if (platform === 'douyin') return creation_entry_platform_douyin();
+  return content_package_platform_video_account();
+}
 
 export function ContentPackageCard({
   contentPackage,
@@ -42,6 +47,7 @@ export function ContentPackageCard({
     currentVersion?.orderedAssetIds.length ??
     contentPackage.generated.assetIds.length;
   const isVideo = contentPackage.kind === 'video';
+  const title = currentVersion?.title || content_package_untitled();
   const resolvedMedia = [...media];
   for (const asset of contentPackage.generated.ownedAssets ?? []) {
     if (resolvedMedia.some((item) => item.assetId === asset.id)) continue;
@@ -50,100 +56,135 @@ export function ContentPackageCard({
       href: `/dashboard/assets/${encodeURIComponent(asset.id)}`,
       kind: asset.contentType.startsWith('video/') ? 'video' : 'image',
       src: `/api/core/p1/assets?objectKey=${encodeURIComponent(asset.objectKey)}`,
-      title: currentVersion?.title || content_package_untitled(),
+      title: title,
     });
   }
 
   return (
-    <Card
-      className="rounded-md bg-surface-1 shadow-none"
+    <article
+      className="group meiye-porcelain relative flex h-full flex-col overflow-hidden rounded-2xl"
       data-content-package-id={contentPackage.id}
       id={`content-package-${contentPackage.id}`}
     >
-      <CardHeader className="gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">
-            {isVideo ? <IconVideo /> : <IconFileText />}
-            {isVideo
-              ? content_package_kind_video()
-              : content_package_kind_image_text()}
-          </Badge>
-          <Badge className="ml-auto" variant="outline">
-            {contentPackage.statusLabel}
-          </Badge>
-          {contentPackage.legacySource ? (
-            <Badge variant="outline">
-              {content_package_legacy_migrated_badge()}
-            </Badge>
-          ) : null}
-        </div>
-        <CardTitle className="text-base leading-6">
-          {currentVersion?.title || content_package_untitled()}
-        </CardTitle>
-        {currentVersion?.body ? (
-          <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">
-            {currentVersion.body}
-          </p>
-        ) : null}
-      </CardHeader>
-      <CardContent className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <div className="relative aspect-4/5 w-full overflow-hidden bg-muted sm:aspect-5/4">
         {resolvedMedia.length > 0 ? (
-          <div className="grid basis-full grid-cols-2 gap-2 sm:grid-cols-3">
-            {resolvedMedia.map((item) =>
-              item.kind === 'video' ? (
-                <video
-                  aria-label={item.title}
-                  className="aspect-video w-full rounded-md bg-muted object-cover"
-                  controls
-                  key={item.assetId}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  src={item.src}
-                />
-              ) : (
-                <img
-                  alt={item.title}
-                  className="aspect-4/3 w-full rounded-md bg-muted object-cover"
-                  key={item.assetId}
-                  loading="lazy"
-                  src={item.src}
-                />
-              )
+          resolvedMedia.map((item, index) =>
+            item.kind === 'video' ? (
+              <video
+                aria-label={item.title}
+                className={cn(
+                  index === 0
+                    ? 'absolute inset-0 size-full object-cover'
+                    : 'sr-only'
+                )}
+                controls={index === 0}
+                key={item.assetId}
+                muted
+                playsInline
+                preload="metadata"
+                src={item.src}
+              />
+            ) : (
+              <img
+                alt={item.title}
+                className={cn(
+                  index === 0
+                    ? 'absolute inset-0 size-full object-cover transition duration-500 ease-out group-hover:scale-[1.03] group-focus-within:scale-[1.03]'
+                    : 'sr-only'
+                )}
+                key={item.assetId}
+                loading="lazy"
+                src={item.src}
+              />
+            )
+          )
+        ) : (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground"
+          >
+            {isVideo ? (
+              <IconVideo className="size-10 opacity-60" />
+            ) : (
+              <IconFileText className="size-10 opacity-60" />
             )}
           </div>
-        ) : null}
-        <span>{content_package_asset_count({ count: assetCount })}</span>
-        {contentPackage.variants.map((variant) => (
-          <Badge key={variant.platform} variant="outline">
-            {variant.platform === 'xiaohongshu'
-              ? creation_entry_platform_xiaohongshu()
-              : variant.platform === 'douyin'
-                ? creation_entry_platform_douyin()
-                : content_package_platform_video_account()}
-          </Badge>
-        ))}
-        {contentPackage.legacySource ? (
-          <p className="basis-full text-xs">
-            {content_package_legacy_source_summary({
-              sourceId: contentPackage.legacySource.sourceId,
-            })}
-            {contentPackage.legacySource.mappingConfidence === 'exact'
-              ? ''
-              : ` · ${content_package_legacy_source_partial()}`}
-          </p>
-        ) : null}
-        {onOpen ? (
-          <Button
-            className="ml-auto"
-            onClick={onOpen}
-            size="sm"
-            variant="outline"
-          >
-            {content_package_view_details()}
-          </Button>
-        ) : null}
-      </CardContent>
-    </Card>
+        )}
+
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[oklch(0_0_0/0)] transition-colors duration-300 group-hover:bg-[oklch(0_0_0/0.25)] group-focus-within:bg-[oklch(0_0_0/0.25)]"
+        />
+        <div
+          aria-hidden="true"
+          className="meiye-media-mask pointer-events-none absolute inset-x-0 bottom-0 h-[58%] transition-[height] duration-300 group-hover:h-[70%] group-focus-within:h-[70%]"
+        />
+
+        <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 p-4 pt-16">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="min-w-0 text-base font-semibold leading-6 text-white [text-shadow:0_1px_2px_oklch(0_0_0/0.45)]">
+              {title}
+            </h3>
+            <span className="shrink-0 rounded-full border border-white/30 bg-white/15 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
+              {contentPackage.statusLabel}
+            </span>
+          </div>
+
+          {currentVersion?.body ? (
+            <p className="line-clamp-2 text-sm leading-5 text-white/88 [text-shadow:0_1px_2px_oklch(0_0_0/0.35)]">
+              {currentVersion.body}
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/80">
+            <span>
+              {isVideo
+                ? content_package_kind_video()
+                : content_package_kind_image_text()}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>{content_package_asset_count({ count: assetCount })}</span>
+            {contentPackage.variants.map((variant) => (
+              <span
+                className="rounded-full border border-white/25 bg-white/10 px-2 py-0.5"
+                key={variant.platform}
+              >
+                {platformLabel(variant.platform)}
+              </span>
+            ))}
+            {contentPackage.legacySource ? (
+              <span className="rounded-full border border-white/25 bg-white/10 px-2 py-0.5">
+                {content_package_legacy_migrated_badge()}
+              </span>
+            ) : null}
+          </div>
+
+          {contentPackage.legacySource ? (
+            <p className="text-xs text-white/70">
+              {content_package_legacy_source_summary({
+                sourceId: contentPackage.legacySource.sourceId,
+              })}
+              {contentPackage.legacySource.mappingConfidence === 'exact'
+                ? ''
+                : ` · ${content_package_legacy_source_partial()}`}
+            </p>
+          ) : null}
+
+          {onOpen ? (
+            <div className="pt-1 opacity-100 transition-opacity duration-300 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+              <Button
+                className="border-white/40 bg-white/15 text-white hover:bg-white/25 hover:text-white focus-visible:ring-white/50"
+                onClick={onOpen}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {content_package_view_details()}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </article>
   );
 }

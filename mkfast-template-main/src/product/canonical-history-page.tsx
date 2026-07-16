@@ -6,7 +6,6 @@ import { StatePanel } from '@/components/uiux/state-panel';
 import { WarmEmptyState } from '@/components/uiux/warm-empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
   canonical_asset_detail_description,
@@ -235,10 +234,18 @@ function CanonicalHistoryList({
     }
 
     return (
-      <StatePanel
-        kind="empty"
-        title={canonical_history_empty_title()}
+      <WarmEmptyState
+        action={
+          <a
+            className={buttonVariants()}
+            href={getPathWithLocale(Routes.Dashboard)}
+          >
+            {product_navigation_workbench()}
+          </a>
+        }
         description={canonical_history_empty_description()}
+        media={<IconPhoto />}
+        title={canonical_history_empty_title()}
       />
     );
   }
@@ -246,19 +253,30 @@ function CanonicalHistoryList({
     <ol className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
         <li key={`${item.kind}:${item.id}`}>
-          <Card className="h-full overflow-hidden">
+          <article className="meiye-porcelain group flex h-full flex-col overflow-hidden rounded-2xl">
             {item.media ? (
-              <CanonicalMediaGallery className="p-3 pb-0" media={item.media} />
-            ) : null}
-            <CardHeader>
+              <CanonicalMediaGallery
+                className="gap-0 [&>*]:rounded-none"
+                media={item.media.slice(0, 1)}
+                showMeta={false}
+              />
+            ) : (
+              <div
+                aria-hidden="true"
+                className="flex aspect-10/7 items-center justify-center bg-muted text-muted-foreground"
+              >
+                <IconPhoto className="size-10 opacity-50" />
+              </div>
+            )}
+            <div className="flex flex-1 flex-col gap-3 p-4">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 space-y-2">
                   <Badge variant="outline">
                     {HISTORY_KIND_LABELS[item.kind]()}
                   </Badge>
-                  <CardTitle className="meiye-type-body mt-2 line-clamp-2 font-semibold">
+                  <h3 className="meiye-type-body line-clamp-2 font-semibold">
                     {historyItemTitle(item)}
-                  </CardTitle>
+                  </h3>
                 </div>
                 <time className="meiye-type-aux shrink-0">
                   {new Date(item.updatedAt).toLocaleDateString(
@@ -266,17 +284,15 @@ function CanonicalHistoryList({
                   )}
                 </time>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <p className="text-muted-foreground">{item.detail}</p>
+              <p className="text-sm text-muted-foreground">{item.detail}</p>
               <a
-                className="inline-flex min-h-touch-target items-center font-medium text-primary underline-offset-4 hover:underline"
+                className="mt-auto inline-flex min-h-touch-target items-center font-medium text-primary underline-offset-4 hover:underline"
                 href={getPathWithLocale(item.href)}
               >
                 {canonical_history_open_object()}
               </a>
-            </CardContent>
-          </Card>
+            </div>
+          </article>
         </li>
       ))}
     </ol>
@@ -522,8 +538,12 @@ export function CanonicalAssetDetailPage({ assetId }: { assetId: string }) {
         />
       ) : null}
       {item ? (
-        <Card data-source-highlight="true">
-          <CardHeader>
+        <article
+          className="meiye-porcelain overflow-hidden rounded-2xl"
+          data-source-highlight="true"
+        >
+          <CanonicalMediaGallery media={media} presentation="hero" />
+          <div className="space-y-3 p-5 text-sm sm:p-6">
             <ObjectEvidence
               id={creative?.id ?? persisted!.id}
               kind="Asset"
@@ -533,18 +553,11 @@ export function CanonicalAssetDetailPage({ assetId }: { assetId: string }) {
                   : canonical_asset_source_upload()
               }
             />
-            <CardTitle className="mt-3">
+            <h2 className="text-lg font-semibold leading-7">
               {creative?.title ??
                 persisted?.tags[0] ??
                 canonical_asset_persisted_title()}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <CanonicalMediaGallery
-              className="mb-4"
-              media={media}
-              presentation="hero"
-            />
+            </h2>
             <p>
               {canonical_asset_type({
                 type: creative?.kind ?? persisted?.mediaType ?? '',
@@ -561,8 +574,8 @@ export function CanonicalAssetDetailPage({ assetId }: { assetId: string }) {
                 <CanonicalAssetGovernance asset={persisted} product={product} />
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </article>
       ) : null}
     </DashboardLayout>
   );
@@ -576,8 +589,11 @@ export function CanonicalLegacyContentCard({
   media: CanonicalMediaProjection[];
 }) {
   return (
-    <Card>
-      <CardHeader>
+    <article className="meiye-porcelain overflow-hidden rounded-2xl">
+      {media.length > 0 ? (
+        <CanonicalMediaGallery media={media} presentation="hero" />
+      ) : null}
+      <div className="space-y-4 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <ObjectEvidence
             id={detail.id}
@@ -590,15 +606,12 @@ export function CanonicalLegacyContentCard({
           />
           <Badge variant="outline">{content_package_legacy_read_only()}</Badge>
         </div>
-        <CardTitle className="mt-3">{detail.title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
-        <CanonicalMediaGallery media={media} />
-        <p className="whitespace-pre-wrap leading-6">
+        <h2 className="text-lg font-semibold leading-7">{detail.title}</h2>
+        <p className="whitespace-pre-wrap text-sm leading-6">
           {detail.body || canonical_content_body_empty()}
         </p>
         {detail.source === 'creative_content' ? (
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {canonical_content_asset_count({
               count: detail.assetIds.length,
             })}
@@ -607,8 +620,8 @@ export function CanonicalLegacyContentCard({
         {detail.productStatus ? (
           <ProductStatus status={detail.productStatus} />
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </article>
   );
 }
 
@@ -708,27 +721,27 @@ export function CanvasImageJobDetailPage({ jobId }: { jobId: string }) {
         />
       ) : null}
       {job ? (
-        <Card>
-          <CardHeader>
+        <article className="meiye-porcelain overflow-hidden rounded-2xl">
+          {media.length > 0 ? (
+            <CanonicalMediaGallery media={media} presentation="hero" />
+          ) : null}
+          <div className="space-y-3 p-5 text-sm sm:p-6">
             <ObjectEvidence
               id={job.id}
               kind="Job"
               source={canonical_canvas_job_source()}
             />
-            <CardTitle className="mt-3">
+            <h2 className="text-lg font-semibold leading-7">
               {canonical_canvas_image_generation()}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <CanonicalMediaGallery media={media} />
+            </h2>
             <ProductStatus status={job.status} />
             <p>{canonical_canvas_job_model_fixed()}</p>
             <p>{canonical_canvas_job_work_relation()}</p>
             {job.outputAssetId ? (
               <p>{canonical_canvas_job_asset_relation()}</p>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </article>
       ) : null}
     </DashboardLayout>
   );

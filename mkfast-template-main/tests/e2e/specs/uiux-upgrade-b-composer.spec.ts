@@ -58,23 +58,28 @@ test.describe('UI/UX Upgrade B composer contracts', () => {
     await loginByForm(page, user);
 
     const intent = page.getByLabel('描述这次想创作的内容');
-    const guidance = page.getByRole('heading', {
-      level: 3,
-      name: '今日建议',
-    });
-    const method = page.getByRole('group', { name: '选择创作方式' });
+    const moreStarts = page.getByRole('button', { name: '更多' });
     await expect(intent).toBeVisible();
-    await expect(guidance).toBeVisible();
+    await expect(moreStarts).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: /^做一条同城引流内容/ })
+    ).toBeVisible();
+    await expect(page.getByRole('group', { name: '选择创作方式' })).toHaveCount(
+      0
+    );
 
     const intentBox = await intent.boundingBox();
-    const guidanceBox = await guidance.boundingBox();
-    const methodBox = await method.boundingBox();
+    const moreBox = await moreStarts.boundingBox();
     expect(intentBox).not.toBeNull();
-    expect(guidanceBox).not.toBeNull();
-    expect(methodBox).not.toBeNull();
-    expect(intentBox?.y).toBeLessThan(guidanceBox?.y ?? 0);
-    expect(intentBox?.y).toBeLessThan(methodBox?.y ?? 0);
+    expect(moreBox).not.toBeNull();
+    expect(intentBox?.y).toBeLessThan(moreBox?.y ?? 0);
     await expect(page.locator('button.bg-primary:visible')).toHaveCount(1);
+
+    await moreStarts.click();
+    const method = page.getByRole('group', { name: '选择创作方式' });
+    await expect(method).toBeVisible();
+    const methodBox = await method.boundingBox();
+    expect(intentBox?.y).toBeLessThan(methodBox?.y ?? 0);
   });
 
   test('a failed projection keeps the editable intent and recovers only after an explicit retry', async ({
@@ -143,18 +148,11 @@ test.describe('UI/UX Upgrade B composer contracts', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
 
-    await expect(
-      page.getByRole('heading', { level: 3, name: '今日建议' })
-    ).toBeVisible();
-    await expect(
-      page.getByText('结合当前任务与素材，先给你三个可以直接编辑的起点。', {
-        exact: true,
-      })
-    ).toBeVisible();
     const intent = page.getByLabel('描述这次想创作的内容');
     const suggestion = page.getByRole('button', {
       name: /^做一条同城引流内容/,
     });
+    await expect(suggestion).toBeVisible();
 
     await suggestion.click();
     await expect(suggestion).toHaveAttribute('aria-pressed', 'true');
@@ -169,12 +167,11 @@ test.describe('UI/UX Upgrade B composer contracts', () => {
         sceneGroup.getByRole('button', { name: new RegExp(`^${label}`) })
       ).toBeVisible();
     }
-    await sceneGroup
-      .getByRole('button', { exact: true, name: '全部场景' })
-      .click();
+    await page.getByRole('button', { exact: true, name: '更多' }).click();
+    const allScenes = page.getByRole('group', { name: '全部场景' });
     for (const label of ['引流 · 美发', '种草 · 美发', '引流 · 皮肤管理']) {
       await expect(
-        sceneGroup.getByRole('button', { name: new RegExp(`^${label}`) })
+        allScenes.getByRole('button', { name: new RegExp(`^${label}`) })
       ).toBeVisible();
     }
 
@@ -226,6 +223,7 @@ test.describe('UI/UX Upgrade B composer contracts', () => {
     const intent = page.getByLabel('描述这次想创作的内容');
     await page.getByRole('button', { name: /^做一条同城引流内容/ }).click();
     await intent.fill('周末同城新客内容，保留人工确认的预约时段。');
+    await page.getByRole('button', { exact: true, name: '更多' }).click();
     await page.getByRole('button', { name: '直接生成' }).click();
     expect(await creativeProjection(page)).toMatchObject({
       jobs: [],
@@ -252,6 +250,7 @@ test.describe('UI/UX Upgrade B composer contracts', () => {
 
     const prompt = page.getByLabel('描述这次想创作的内容');
     await expect(prompt).toBeVisible();
+    await page.getByRole('button', { exact: true, name: '更多' }).click();
     await page.getByRole('button', { name: /^前后对比/ }).click();
 
     await expect(prompt).toHaveCount(0);
@@ -285,6 +284,7 @@ test.describe('UI/UX Upgrade B composer contracts', () => {
 
     const prompt = page.getByLabel('描述这次想创作的内容');
     await expect(prompt).toBeVisible();
+    await page.getByRole('button', { exact: true, name: '更多' }).click();
     await page.getByRole('button', { name: /^前后对比/ }).click();
     await expect(prompt).toHaveCount(0);
     await expect(

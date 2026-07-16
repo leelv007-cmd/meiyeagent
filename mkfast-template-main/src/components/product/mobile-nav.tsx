@@ -39,6 +39,9 @@ const items = [
   },
 ] as const;
 
+const itemClassName =
+  'flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-full text-[11px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
+
 export function ProductMobileNav() {
   const navigate = useNavigate();
 
@@ -50,7 +53,7 @@ export function ProductMobileNav() {
   return (
     <nav
       aria-label={common_mobile_navigation()}
-      className="fixed inset-x-0 bottom-0 z-50 grid h-[calc(4.5rem+env(safe-area-inset-bottom))] grid-cols-5 border-t border-divider bg-surface-2/96 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+      className="meiye-glass-piece fixed inset-x-3 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-50 grid h-[4.25rem] grid-cols-5 rounded-[28px] px-1.5 shadow-[var(--shadow-ambient)]"
     >
       {items.slice(0, 2).map((item) => {
         const Icon = item.icon;
@@ -58,20 +61,20 @@ export function ProductMobileNav() {
           <Link
             key={item.href}
             to={item.href}
-            activeProps={{ className: 'text-primary' }}
-            className="flex min-h-touch-target min-w-0 flex-col items-center justify-center gap-1 text-xs text-muted-foreground"
+            activeProps={{ className: 'font-medium text-foreground' }}
+            className={itemClassName}
           >
             <Icon className="size-5" aria-hidden="true" />
-            <span>{item.label()}</span>
+            <span className="truncate">{item.label()}</span>
           </Link>
         );
       })}
       <button
         type="button"
         onClick={() => void startCreation()}
-        className="flex min-h-touch-target min-w-0 flex-col items-center justify-center gap-0.5 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
-        <span className="grid size-11 place-items-center rounded-full bg-surface-1 text-foreground">
+        <span className="meiye-porcelain grid size-11 place-items-center rounded-full text-foreground">
           <IconPlus className="size-5" aria-hidden="true" />
         </span>
         <span>{product_mobile_nav_create()}</span>
@@ -82,11 +85,11 @@ export function ProductMobileNav() {
           <Link
             key={item.href}
             to={item.href}
-            activeProps={{ className: 'text-primary' }}
-            className="flex min-h-touch-target min-w-0 flex-col items-center justify-center gap-1 text-xs text-muted-foreground"
+            activeProps={{ className: 'font-medium text-foreground' }}
+            className={itemClassName}
           >
             <Icon className="size-5" aria-hidden="true" />
-            <span>{item.label()}</span>
+            <span className="truncate">{item.label()}</span>
           </Link>
         );
       })}

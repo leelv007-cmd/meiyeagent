@@ -33,7 +33,7 @@ export function SceneVisualButton({
           loading="lazy"
           src={scene.imageUrl}
         />
-        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-surface-0/95 via-surface-0/75 to-transparent px-3 pt-6 pb-2 font-semibold text-foreground">
+        <span className="meiye-media-mask absolute inset-x-0 bottom-0 px-3 pt-8 pb-2 text-sm font-medium text-white">
           {scene.label}
         </span>
       </span>
