@@ -84,6 +84,8 @@ import {
   workbench_eyebrow,
   workbench_generating_content,
   workbench_generating_video,
+  workbench_greeting,
+  workbench_greeting_fallback,
   workbench_header_badge,
   workbench_image_result,
   workbench_inbox_description,
@@ -220,6 +222,7 @@ import {
 import { runWithStableSubmissionAttempt } from '@/lib/stable-submission-attempt';
 import { friendlyProductError } from '@/lib/correlated-api-error';
 import { getLocale, localeConfig } from '@/lib/locale';
+import { cn } from '@/lib/utils';
 import { durationEstimateView } from '@/lib/uiux/duration-estimate';
 import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
 import {
@@ -1558,36 +1561,67 @@ export function UnifiedCreationWorkbench({
       !onboardingVisible &&
       currentWork
   );
+  const heroVisible =
+    onboardingVisible && !projectionFailure && !projectionQuery.isLoading;
+  const greetingName = productQuery.data?.store?.name?.trim();
 
   return (
     <>
-      <DashboardHeader
-        breadcrumbs={[
-          { label: product_navigation_workbench(), isCurrentPage: true },
-        ]}
-        actions={<Badge variant="outline">{workbench_header_badge()}</Badge>}
-      />
-      <div className="mx-auto grid w-full max-w-7xl flex-1 gap-6 px-4 py-6 lg:px-8 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="flex flex-wrap items-start justify-between gap-4 xl:col-span-2">
-          <div>
-            <p className="text-sm font-medium text-primary">
-              {workbench_eyebrow()}
-            </p>
-            <h1 className="meiye-type-title mt-1">{workbench_title()}</h1>
-            <p className="meiye-type-aux mt-2 max-w-2xl">
-              {workbench_description()}
-            </p>
+      {!heroVisible ? (
+        <DashboardHeader
+          breadcrumbs={[
+            { label: product_navigation_workbench(), isCurrentPage: true },
+          ]}
+          actions={<Badge variant="outline">{workbench_header_badge()}</Badge>}
+        />
+      ) : null}
+      {heroVisible ? (
+        <section className="relative -mb-24 h-72 sm:h-80">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-neutral-900 bg-[url(/seed/hero/hero-ambient.webp)] bg-cover bg-center"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-gradient-to-b from-black/15 via-black/5 to-surface-0"
+          />
+          <h1 className="relative mx-auto w-full max-w-3xl px-4 pt-14 text-center text-[clamp(1.75rem,3.5vw,2.75rem)] leading-tight font-extralight text-white [text-wrap:balance]">
+            {greetingName
+              ? workbench_greeting({ name: greetingName })
+              : workbench_greeting_fallback()}
+          </h1>
+        </section>
+      ) : null}
+      <div
+        className={cn(
+          'mx-auto w-full flex-1 px-4 lg:px-8',
+          heroVisible
+            ? 'relative z-10 max-w-3xl pb-6'
+            : 'grid max-w-7xl gap-6 py-6 xl:grid-cols-[minmax(0,1fr)_300px]'
+        )}
+      >
+        {!heroVisible ? (
+          <div className="flex flex-wrap items-start justify-between gap-4 xl:col-span-2">
+            <div>
+              <p className="text-sm font-medium text-primary">
+                {workbench_eyebrow()}
+              </p>
+              <h1 className="meiye-type-title mt-1">{workbench_title()}</h1>
+              <p className="meiye-type-aux mt-2 max-w-2xl">
+                {workbench_description()}
+              </p>
+            </div>
+            {currentWork ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={resetNewCreationState}
+              >
+                {workbench_new_creation()}
+              </Button>
+            ) : null}
           </div>
-          {currentWork ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={resetNewCreationState}
-            >
-              {workbench_new_creation()}
-            </Button>
-          ) : null}
-        </div>
+        ) : null}
 
         {projectionFailure ? (
           <StatePanel

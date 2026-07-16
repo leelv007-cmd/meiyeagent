@@ -95,7 +95,7 @@ function FactChoice({
   value: boolean | undefined;
 }) {
   return (
-    <fieldset className="min-w-0 space-y-2 bg-surface-1 p-3">
+    <fieldset className="min-w-0 space-y-2 rounded-2xl bg-muted p-3">
       <legend className="px-1 text-xs font-medium">{label}</legend>
       <div className="flex gap-2">
         {(
@@ -272,7 +272,7 @@ export function ComposerImageInput({
       </div>
       <div
         className={cn(
-          'space-y-3 rounded-lg border border-dashed border-divider bg-surface-1 p-3 transition-colors',
+          'space-y-3 rounded-2xl border border-dashed border-divider bg-muted p-3 transition-colors',
           dragging && 'border-primary bg-primary/5'
         )}
         onDragEnter={(event) => {
@@ -348,7 +348,7 @@ export function ComposerImageInput({
       ) : null}
       {uploads.length > 0 ? (
         <ul
-          className="grid gap-px overflow-hidden rounded-lg bg-divider sm:grid-cols-2"
+          className="grid gap-px overflow-hidden rounded-2xl bg-divider sm:grid-cols-2"
           aria-label={composer_image_upload_list_aria()}
         >
           {uploads.map((item) => {
@@ -362,7 +362,7 @@ export function ComposerImageInput({
                 )
               );
             return (
-              <li className="space-y-3 bg-surface-1 p-3" key={item.id}>
+              <li className="space-y-3 bg-surface-2 p-3" key={item.id}>
                 <div className="flex gap-3">
                   <img
                     alt={composer_image_preview_alt({ name: item.file.name })}
@@ -404,7 +404,7 @@ export function ComposerImageInput({
                 </div>
                 {item.status === 'confirming' ? (
                   <div className="space-y-3">
-                    <div className="grid gap-px overflow-hidden rounded-lg bg-divider">
+                    <div className="grid gap-px overflow-hidden rounded-xl bg-divider">
                       <FactChoice
                         label={composer_image_contains_person()}
                         onChange={(value) =>
@@ -518,7 +518,7 @@ export function ComposerImageInput({
           })}
         </ul>
       ) : (
-        <div className="flex items-center gap-2 rounded-md bg-surface-1 p-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-xl bg-muted p-3 text-xs text-muted-foreground">
           <IconPhoto aria-hidden="true" className="size-4" />
           {composer_image_empty()}
         </div>

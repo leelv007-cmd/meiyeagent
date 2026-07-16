@@ -19,7 +19,7 @@ export function SceneVisualButton({
     <Button
       aria-pressed={selected}
       className={cn(
-        'h-auto w-40 items-stretch justify-start overflow-hidden p-0 text-left whitespace-normal',
+        'h-auto w-40 items-stretch justify-start overflow-hidden rounded-2xl p-0 text-left whitespace-normal',
         className
       )}
       onClick={onSelect}

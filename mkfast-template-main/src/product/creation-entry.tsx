@@ -1,19 +1,12 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import {
   creation_entry_agent_ready,
   creation_entry_all_scenes,
   creation_entry_change_pending,
   creation_entry_create,
-  creation_entry_description,
   creation_entry_guidance_description,
   creation_entry_guidance_title,
   creation_entry_input_guide,
@@ -34,7 +27,6 @@ import {
   creation_entry_selected_preset,
   creation_entry_skip,
   creation_entry_source_legend,
-  creation_entry_title,
   creation_entry_uploads_pending,
 } from '@/locale/paraglide/messages';
 import { getLocale } from '@/lib/locale';
@@ -174,19 +166,21 @@ export function CreationEntry({
     (!selectedPreset && intent.trim().length < 2);
 
   return (
-    <Card>
+    <Card className="rounded-[2rem] border-white shadow-[0_16px_48px_-12px_oklch(0_0_0/0.18)]">
       <CardHeader>
-        <Badge className="w-fit" variant="secondary">
+        <Badge
+          className="w-fit border-transparent bg-spark-wash text-spark-deep"
+          variant="outline"
+        >
+          <IconSparkles aria-hidden="true" className="size-3.5" />
           {creation_entry_agent_ready()}
         </Badge>
-        <CardTitle>{creation_entry_title()}</CardTitle>
-        <CardDescription>{creation_entry_description()}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {pendingAction ? (
           <div
             aria-live="polite"
-            className="flex flex-wrap items-start justify-between gap-3 rounded-md bg-surface-2 p-3 text-sm"
+            className="flex flex-wrap items-start justify-between gap-3 rounded-2xl bg-muted p-3 text-sm"
           >
             <div>
               <p className="font-medium">
@@ -216,7 +210,7 @@ export function CreationEntry({
           onUpload={onUpload}
         >
           {selectedPreset ? (
-            <div aria-live="polite" className="rounded-md bg-surface-2 p-4">
+            <div aria-live="polite" className="rounded-2xl bg-muted p-4">
               <p className="font-semibold">
                 {creation_entry_selected_preset({
                   name: selectedPreset.name,
@@ -235,7 +229,7 @@ export function CreationEntry({
             <div className="space-y-4">
               <Textarea
                 aria-label={creation_entry_intent_aria()}
-                className="resize-none text-base"
+                className="min-h-24 resize-none rounded-2xl border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 onChange={(event) => onIntentChange(event.target.value)}
                 placeholder={creation_entry_intent_placeholder()}
                 ref={intentRef}
@@ -307,7 +301,7 @@ export function CreationEntry({
               {creation_entry_guidance_description()}
             </p>
           </div>
-          <div className="grid gap-px overflow-hidden rounded-lg bg-divider sm:grid-cols-3">
+          <div className="grid gap-px overflow-hidden rounded-2xl bg-divider sm:grid-cols-3">
             {suggestions.map((suggestion) => (
               <Button
                 aria-pressed={selectedGuidanceId === suggestion.id}
@@ -340,12 +334,12 @@ export function CreationEntry({
           </legend>
           <Button
             aria-pressed={!selectedPresetId}
-            className="h-auto w-full items-center justify-start gap-3 px-3 py-2.5 text-left whitespace-normal"
+            className="h-auto w-full items-center justify-start gap-3 rounded-2xl px-3 py-2.5 text-left whitespace-normal"
             onClick={() => onPresetChange(undefined)}
             type="button"
             variant={!selectedPresetId ? 'secondary' : 'outline'}
           >
-            <span className="grid size-9 shrink-0 place-items-center rounded-md bg-surface-1">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-muted">
               <IconSparkles aria-hidden="true" className="size-5" />
             </span>
             <span className="min-w-0 flex-1">
@@ -367,7 +361,7 @@ export function CreationEntry({
               return (
                 <Button
                   aria-pressed={presetSelected}
-                  className="h-auto flex-col items-stretch justify-start gap-0 overflow-hidden p-0 text-left whitespace-normal"
+                  className="h-auto flex-col items-stretch justify-start gap-0 overflow-hidden rounded-2xl p-0 text-left whitespace-normal"
                   key={preset.id}
                   onClick={() => {
                     setSelectedGuidanceId(undefined);
@@ -390,7 +384,7 @@ export function CreationEntry({
                       src={previewUrl}
                     />
                   ) : (
-                    <span className="grid aspect-[16/10] w-full place-items-center bg-surface-1">
+                    <span className="grid aspect-[16/10] w-full place-items-center bg-muted">
                       <IconSparkles aria-hidden="true" className="size-7" />
                     </span>
                   )}
@@ -447,7 +441,7 @@ export function CreationEntry({
           <span className="text-xs text-muted-foreground">
             {creation_entry_mode_label()}
           </span>
-          <div className="flex rounded-md bg-surface-2 p-1">
+          <div className="flex rounded-full bg-muted p-1">
             {(['agent', 'direct'] as const).map((item) => (
               <Button
                 aria-pressed={mode === item}
