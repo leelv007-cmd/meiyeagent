@@ -46,6 +46,21 @@ function providerReturnedImage(value: unknown) {
   );
 }
 
+function providerImageHost(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const data = (value as Record<string, unknown>).data;
+  if (!Array.isArray(data)) return null;
+  const first = data[0];
+  if (!first || typeof first !== 'object' || Array.isArray(first)) return null;
+  const url = (first as Record<string, unknown>).url;
+  if (typeof url !== 'string') return null;
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 test(
   'live Tuzi Seedream accepts an owned reference through the production multipart transport',
   {
@@ -101,6 +116,7 @@ test(
       body = null;
     }
     const code = providerErrorCode(body);
+    const outputHost = providerImageHost(body);
     const outputPresent = providerReturnedImage(body);
     const completedAt = new Date().toISOString();
     console.log(
@@ -111,6 +127,7 @@ test(
         httpStatus: response.status,
         model,
         operation: 'image.edit',
+        outputHost,
         outputPresent,
         provider: 'tuzi-seedream-relay',
         providerErrorCode: code,
@@ -126,5 +143,6 @@ test(
       `Provider rejected the production multipart reference transport with HTTP ${response.status}${code ? ` (${code})` : ''}.`,
     );
     assert.equal(outputPresent, true, 'Provider returned no generated image output.');
+    assert.ok(outputHost, 'Provider returned no valid generated image hostname.');
   },
 );

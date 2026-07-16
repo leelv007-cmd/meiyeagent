@@ -227,6 +227,7 @@ contract across the supported compact viewports.
 | 2 | Interrupted upload resumes one durable asset | Drop the first upload response after persistence, retry the same file, and verify exactly one Product Asset and one storage row remain after reload. |
 | 3 | Mobile settings and admin deep links relay to desktop | Open model settings and admin routes on mobile, verify the compact desktop-relay explanation, and return safely to the action book. |
 | 4 | Desktop secondary surfaces retain their ownership boundaries | Verify account models/BYOK, external connections, six admin routes, impact dialogs, and deliverable-output usage copy on a desktop viewport. |
+| 5 | Admin activation canary exposes its local evidence seam | Open the admin model control plane and verify the configure-to-evidence onboarding, one explicit action per declared model operation, and the persistent provider-cost and evidence-detail columns. This browser check remains fixture/local and makes no provider call. |
 
 ## 16. UI/UX Upgrade B Composer Contracts
 

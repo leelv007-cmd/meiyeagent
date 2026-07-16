@@ -10,13 +10,38 @@ test('shows per-deployment staleness, latest probe, cost, and history', () => {
   const run = {
     catalogModelId: 'seedance-2',
     configurationRevision: 'a'.repeat(64),
+    correlationId: 'corr-live-video-canary',
     createdAt: '2026-07-15T10:00:00.000Z',
     deploymentId: 'seedance-2-tuzi-relay',
     id: `activation-probe-${'b'.repeat(28)}`,
     latencyMs: 1250,
     operation: 'video.generate',
     outcome: 'passed',
-    providerCost: { amount: 0.25, currency: 'CNY', status: 'observed' },
+    outputDigest: 'd'.repeat(64),
+    providerCost: {
+      amount: 0.25,
+      currency: 'CNY',
+      status: 'observed',
+      usage: { mediaUnits: 1 },
+    },
+  };
+  const failedRun = {
+    catalogModelId: 'seedance-2',
+    configurationRevision: 'a'.repeat(64),
+    correlationId: 'corr-failed-video-canary',
+    createdAt: '2026-07-15T09:00:00.000Z',
+    deploymentId: 'seedance-2-tuzi-relay',
+    failureCategory: 'poll:rate_limit',
+    id: `activation-probe-${'c'.repeat(28)}`,
+    latencyMs: 320,
+    operation: 'video.generate',
+    outcome: 'failed',
+    providerCost: {
+      amount: 0.25,
+      currency: 'CNY',
+      status: 'estimated',
+      usage: { mediaUnits: 1 },
+    },
   };
   queryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'activation_status'),
@@ -38,13 +63,15 @@ test('shows per-deployment staleness, latest probe, cost, and history', () => {
           verifiedAt: run.createdAt,
         },
         latestProbe: run,
+        operations: ['video.generate'],
         stale: true,
+        verifiedOperations: ['video.generate'],
       },
     ]
   );
   queryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'activation_probe_runs'),
-    [run]
+    [run, failedRun]
   );
 
   const html = renderToStaticMarkup(
@@ -56,8 +83,23 @@ test('shows per-deployment staleness, latest probe, cost, and history', () => {
   assert.match(html, /seedance-2-tuzi-relay/);
   assert.match(html, /配置已变更，需重新探针/);
   assert.match(html, /运行真实探针/);
+  assert.match(html, /运行真实探针 · video\.generate/u);
   assert.match(html, /0.2 CNY\/second/);
   assert.match(html, /0.25 CNY/);
+  assert.match(html, /已观测/);
+  assert.match(html, /估算/);
+  assert.match(html, /证据详情/);
+  assert.match(html, /关联标识/);
+  assert.match(html, /用量/);
+  assert.match(html, /失败分类/);
+  assert.match(html, /产物摘要/);
+  assert.match(html, /证据引用/);
+  assert.match(html, /corr-live-video-canary/);
+  assert.match(html, /mediaUnits=1/);
+  assert.match(html, /d{64}/);
+  assert.match(html, new RegExp(run.id));
+  assert.match(html, /corr-failed-video-canary/);
+  assert.match(html, /poll:rate_limit/);
   assert.match(html, /探针历史/);
   assert.match(html, /配置 → 脱敏沙箱 → 非计费金丝雀 → 证据/u);
   assert.match(html, /已通过/);
