@@ -62,7 +62,8 @@ function parseArguments(argv: string[]) {
 function requiredOption(argv: string[], name: string) {
   const index = argv.indexOf(name);
   const value = index >= 0 ? argv[index + 1]?.trim() : undefined;
-  if (!value || value.startsWith('--')) throw new Error(legacyCanvasSnapshotCliUsage);
+  if (!value || value.startsWith('--'))
+    throw new Error(legacyCanvasSnapshotCliUsage);
   return value;
 }
 
