@@ -146,7 +146,7 @@ test('streams text through the documented lifecycle and concatenates audio', asy
     },
   });
   assert.deepEqual(JSON.parse(Buffer.from(sent[2]!.payload).toString('utf8')), {
-    text: '欢迎体验。',
+    req_params: { text: '欢迎体验。' },
   });
 });
 
