@@ -1,0 +1,279 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "pro-studio-ticket-25",
+  "controls": [
+    {
+      "id": "cross_workspace_idor",
+      "title": "Cross-workspace all-object opacity and zero side effects",
+      "objectKinds": [
+        "project",
+        "revision",
+        "asset",
+        "job",
+        "package",
+        "grant",
+        "confirmation"
+      ],
+      "rejectionAuditStatus": "missing",
+      "rejectionAuditNote": "The fixture drill proves opacity and zero cross-workspace writes, but it does not yet assert a rejection audit record for every enabled object kind.",
+      "evidence": [
+        {
+          "id": "idor-project-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio/advanced-canvas-project.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio/advanced-canvas-project.test.ts"
+        },
+        {
+          "id": "idor-asset-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio/canvas-asset-facade.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio/canvas-asset-facade.test.ts"
+        },
+        {
+          "id": "idor-job-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/generation-runtime.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/generation-runtime.test.ts"
+        },
+        {
+          "id": "idor-package-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/adoption.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/adoption.test.ts"
+        },
+        {
+          "id": "idor-confirmation-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/canvas-agent.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/canvas-agent.test.ts"
+        },
+        {
+          "id": "idor-grant-disabled-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/provider-reference-policy.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/provider-reference-policy.test.ts"
+        },
+        {
+          "id": "idor-fixture-real-services",
+          "type": "fixture_real_service",
+          "status": "passed",
+          "path": "mkfast-template-main/tests/e2e/specs/pro-studio-security-boundaries.spec.ts",
+          "command": "pnpm --dir mkfast-template-main exec playwright test tests/e2e/specs/pro-studio-security-boundaries.spec.ts --project=chromium",
+          "environment": "local",
+          "adapterMode": "fixture",
+          "productionEquivalent": false
+        }
+      ]
+    },
+    {
+      "id": "forged_provider_routing",
+      "title": "Forged serverUrl and provider routing fields are rejected before side effects",
+      "evidence": [
+        {
+          "id": "backend-port-provider-fields-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/canvas/src/server/backend-port.test.ts",
+          "command": "pnpm --filter @meiye/canvas exec tsx --test src/server/backend-port.test.ts"
+        },
+        {
+          "id": "generation-provider-fields-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/generation-runtime.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/generation-runtime.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "idempotency_replay_conflict",
+      "title": "Idempotent replay returns the original fact and conflicting payloads have zero side effects",
+      "evidence": [
+        {
+          "id": "generation-replay-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/generation-runtime.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/generation-runtime.test.ts"
+        },
+        {
+          "id": "agent-replay-conflict-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/canvas-agent.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/canvas-agent.test.ts"
+        },
+        {
+          "id": "adoption-business-replay-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/adoption.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/adoption.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "async_billing_settlement",
+      "title": "Async failures release usage and 2xx or provider acceptance does not settle",
+      "evidence": [
+        {
+          "id": "generation-billing-matrix-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/generation-runtime.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/generation-runtime.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "provider_reference_grant",
+      "title": "ProviderReferenceGrant expires and revokes when enabled, or remains absent after a scoped production transport decision",
+      "mode": "disabled_no_grant",
+      "evidence": [
+        {
+          "id": "provider-reference-policy-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/provider-reference-policy.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/provider-reference-policy.test.ts"
+        },
+        {
+          "id": "provider-reference-production-transport-probe",
+          "type": "production_drill",
+          "status": "passed",
+          "path": "docs/evidence/pro-studio/ticket-09/probe-result.json",
+          "command": "RUN_LIVE_PROVIDER_REFERENCE_PROBE=1 node --import tsx --test apps/core/src/pro-studio-runtime/provider-reference-live.integration.test.ts",
+          "environment": "production",
+          "adapterMode": "production",
+          "productionEquivalent": true,
+          "scope": "provider_reference_transport_only"
+        }
+      ]
+    },
+    {
+      "id": "dns_redirect_ssrf",
+      "title": "DNS, metadata, rebinding, redirect, MIME and response bounds fail closed",
+      "evidence": [
+        {
+          "id": "provider-safe-fetch-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/provider-safe-fetch.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/provider-safe-fetch.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "agent_allowlist_authorization",
+      "title": "Agent accepts only the seven-verb allowlist and rechecks workspace authority",
+      "evidence": [
+        {
+          "id": "agent-allowlist-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/canvas-agent-production.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/canvas-agent-production.test.ts"
+        },
+        {
+          "id": "agent-authority-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/canvas-agent.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/canvas-agent.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "dual_session_cas",
+      "title": "Concurrent sessions resolve by CAS and the losing session writes nothing",
+      "evidence": [
+        {
+          "id": "dual-session-cas-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/core/src/pro-studio-runtime/canvas-agent.test.ts",
+          "command": "pnpm --filter @meiye/core exec tsx --test src/pro-studio-runtime/canvas-agent.test.ts"
+        },
+        {
+          "id": "dual-session-cas-fixture-real-services",
+          "type": "fixture_real_service",
+          "status": "passed",
+          "path": "mkfast-template-main/tests/e2e/specs/pro-studio-security-boundaries.spec.ts",
+          "command": "pnpm --dir mkfast-template-main exec playwright test tests/e2e/specs/pro-studio-security-boundaries.spec.ts --project=chromium",
+          "environment": "local",
+          "adapterMode": "fixture",
+          "productionEquivalent": false
+        }
+      ]
+    },
+    {
+      "id": "browser_cache_isolation",
+      "title": "Identity changes clear namespaced caches and fence stale responses",
+      "evidence": [
+        {
+          "id": "cache-scope-unit",
+          "type": "unit",
+          "status": "passed",
+          "path": "apps/canvas/src/client/cache-scope.test.ts",
+          "command": "pnpm --filter @meiye/canvas exec tsx --test src/client/cache-scope.test.ts"
+        },
+        {
+          "id": "cache-switch-fixture-real-services",
+          "type": "fixture_real_service",
+          "status": "passed",
+          "path": "mkfast-template-main/tests/e2e/specs/pro-studio-security-boundaries.spec.ts",
+          "command": "pnpm --dir mkfast-template-main exec playwright test tests/e2e/specs/pro-studio-security-boundaries.spec.ts --project=chromium",
+          "environment": "local",
+          "adapterMode": "fixture",
+          "productionEquivalent": false
+        }
+      ]
+    }
+  ],
+  "releaseGates": [
+    {
+      "id": "production_security_drill",
+      "type": "production_drill",
+      "status": "missing",
+      "environment": "production",
+      "scope": "full_security_matrix",
+      "trustAnchorEnv": "PRO_STUDIO_PRODUCTION_SECURITY_RECEIPT_SHA256",
+      "covers": [
+        "cross_workspace_idor",
+        "forged_provider_routing",
+        "idempotency_replay_conflict",
+        "async_billing_settlement",
+        "provider_reference_grant",
+        "dns_redirect_ssrf",
+        "agent_allowlist_authorization",
+        "dual_session_cas",
+        "browser_cache_isolation"
+      ],
+      "note": "Repeat the complete matrix against the production deployment and production adapters. The fixture real-service drill does not satisfy this gate."
+    },
+    {
+      "id": "manual_security_approval",
+      "type": "manual_approval",
+      "status": "missing",
+      "trustAnchorEnv": "PRO_STUDIO_MANUAL_APPROVAL_RECEIPT_SHA256",
+      "covers": [
+        "cross_workspace_idor",
+        "forged_provider_routing",
+        "idempotency_replay_conflict",
+        "async_billing_settlement",
+        "provider_reference_grant",
+        "dns_redirect_ssrf",
+        "agent_allowlist_authorization",
+        "dual_session_cas",
+        "browser_cache_isolation"
+      ],
+      "note": "A named security owner must approve the redacted production drill after it passes."
+    }
+  ]
+}

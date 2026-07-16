@@ -352,3 +352,34 @@ test('release evidence keeps external and runtime gates fail closed', () => {
     'upsellValidation: evidence path is required',
   ]);
 });
+
+test('release evidence cannot outrank the computed security manifest status', () => {
+  const passed = {
+    path: 'docs/evidence/pro-studio/evidence.md',
+    status: 'passed',
+  };
+  const evidence = Object.fromEntries(
+    [
+      'n2Recovery',
+      'providerSafeFetch',
+      'providerReferenceProbe',
+      'audioSpeechActivation',
+      'audioSfxActivation',
+      'securityMatrix',
+      'crossServiceSmoke',
+      'pricingApproval',
+      'upsellValidation',
+    ].map((key) => [key, passed])
+  );
+
+  assert.deepEqual(
+    validateReleaseEvidence(evidence, () => true, {
+      blockers: ['production security drill missing'],
+      errors: [],
+      status: 'partial',
+    }),
+    [
+      'securityMatrix: release evidence status passed does not match computed partial',
+    ]
+  );
+});

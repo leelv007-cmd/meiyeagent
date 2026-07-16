@@ -4,6 +4,11 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  validateSecurityMatrixReleaseStatus,
+  verifySecurityManifestFile,
+} from './security-matrix.mjs';
+
 const FORBIDDEN_RULES = [
   {
     rule: 'agent-token',
@@ -251,7 +256,11 @@ export function findFrontendFetchViolations(
     .map((file) => `${file.path}: client fetch must use CanvasBackendPort`);
 }
 
-export function validateReleaseEvidence(evidence, evidenceExists = existsSync) {
+export function validateReleaseEvidence(
+  evidence,
+  evidenceExists = existsSync,
+  securityVerification
+) {
   const issues = [];
   for (const key of RELEASE_EVIDENCE_KEYS) {
     const record = evidence?.[key];
@@ -262,6 +271,11 @@ export function validateReleaseEvidence(evidence, evidenceExists = existsSync) {
     } else if (!evidenceExists(record.path)) {
       issues.push(`${key}: missing evidence ${record.path}`);
     }
+  }
+  if (securityVerification) {
+    issues.push(
+      ...validateSecurityMatrixReleaseStatus(evidence, securityVerification)
+    );
   }
   return issues;
 }
@@ -353,7 +367,12 @@ function run(root) {
     root,
     'docs/evidence/pro-studio/release-evidence.json'
   );
+  const securityPath = resolve(
+    root,
+    'docs/evidence/pro-studio/security-manifest.json'
+  );
   const issues = [];
+  let securityVerification;
   if (!existsSync(manifestPath)) {
     issues.push('copy manifest is missing');
   } else {
@@ -407,13 +426,35 @@ function run(root) {
       );
     }
   }
+  if (!existsSync(securityPath)) {
+    issues.push('security manifest is missing');
+  } else {
+    try {
+      securityVerification = verifySecurityManifestFile(securityPath, { root });
+    } catch (error) {
+      securityVerification = {
+        blockers: [],
+        errors: [error instanceof Error ? error.message : String(error)],
+        status: 'failed',
+      };
+    }
+    issues.push(
+      ...securityVerification.errors.map(
+        (issue) => `security manifest: ${issue}`
+      ),
+      ...securityVerification.blockers.map(
+        (issue) => `security manifest: ${issue}`
+      )
+    );
+  }
   if (!existsSync(releasePath)) {
     issues.push('release evidence manifest is missing');
   } else {
     issues.push(
       ...validateReleaseEvidence(
         JSON.parse(readFileSync(releasePath, 'utf8')),
-        (path) => existsSync(resolve(root, path))
+        (path) => existsSync(resolve(root, path)),
+        securityVerification
       )
     );
   }

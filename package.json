@@ -16,6 +16,7 @@
     "dev:worker": "pnpm --filter @meiye/core dev:worker",
     "e2e": "pnpm --filter @meiye/web e2e",
     "pro-studio:conformance": "node scripts/pro-studio/conformance-gate.mjs",
+    "pro-studio:security": "node scripts/pro-studio/security-matrix.mjs",
     "test": "pnpm -r --if-present test && node --test scripts/uiux/*.test.mjs scripts/pro-studio/*.test.mjs scripts/polotno-retirement-gate.test.mjs",
     "typecheck": "pnpm -r --if-present typecheck",
     "uiux:baseline": "node scripts/uiux/baseline-manifest.mjs --pre-cutover 0cba260",
