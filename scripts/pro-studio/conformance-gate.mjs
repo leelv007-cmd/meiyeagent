@@ -4,6 +4,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { runProductionRecoveryCli } from '../recovery/production-recovery-cli.mjs';
+
 const FORBIDDEN_RULES = [
   {
     rule: 'agent-token',
@@ -251,7 +253,11 @@ export function findFrontendFetchViolations(
     .map((file) => `${file.path}: client fetch must use CanvasBackendPort`);
 }
 
-export function validateReleaseEvidence(evidence, evidenceExists = existsSync) {
+export function validateReleaseEvidence(
+  evidence,
+  evidenceExists = existsSync,
+  verifyN2Evidence
+) {
   const issues = [];
   for (const key of RELEASE_EVIDENCE_KEYS) {
     const record = evidence?.[key];
@@ -261,6 +267,17 @@ export function validateReleaseEvidence(evidence, evidenceExists = existsSync) {
       issues.push(`${key}: status must be passed`);
     } else if (!evidenceExists(record.path)) {
       issues.push(`${key}: missing evidence ${record.path}`);
+    }
+  }
+  if (evidence?.n2Recovery?.status === 'passed') {
+    if (typeof verifyN2Evidence !== 'function') {
+      issues.push(
+        'n2Recovery: production recovery manifest verifier is required'
+      );
+    } else if (!verifyN2Evidence(evidence.n2Recovery.path)) {
+      issues.push(
+        'n2Recovery: production recovery manifest did not pass verifier'
+      );
     }
   }
   return issues;
@@ -413,7 +430,9 @@ function run(root) {
     issues.push(
       ...validateReleaseEvidence(
         JSON.parse(readFileSync(releasePath, 'utf8')),
-        (path) => existsSync(resolve(root, path))
+        (path) => existsSync(resolve(root, path)),
+        (path) =>
+          runProductionRecoveryCli(['verify', path], { root }).exitCode === 0
       )
     );
   }

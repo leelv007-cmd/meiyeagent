@@ -352,3 +352,39 @@ test('release evidence keeps external and runtime gates fail closed', () => {
     'upsellValidation: evidence path is required',
   ]);
 });
+
+test('passed N2 release evidence still requires the recovery verifier', () => {
+  const passed = (path) => ({ status: 'passed', path });
+  const evidence = {
+    n2Recovery: passed('docs/evidence/n2-recovery/manifest.json'),
+    providerSafeFetch: passed('safe-fetch.md'),
+    providerReferenceProbe: passed('provider-reference.md'),
+    audioSpeechActivation: passed('audio-speech.md'),
+    audioSfxActivation: passed('audio-sfx.md'),
+    securityMatrix: passed('security.md'),
+    crossServiceSmoke: passed('smoke.md'),
+    pricingApproval: passed('pricing.md'),
+    upsellValidation: passed('upsell.md'),
+  };
+
+  assert.deepEqual(
+    validateReleaseEvidence(evidence, () => true),
+    ['n2Recovery: production recovery manifest verifier is required']
+  );
+  assert.deepEqual(
+    validateReleaseEvidence(
+      evidence,
+      () => true,
+      () => false
+    ),
+    ['n2Recovery: production recovery manifest did not pass verifier']
+  );
+  assert.deepEqual(
+    validateReleaseEvidence(
+      evidence,
+      () => true,
+      () => true
+    ),
+    []
+  );
+});
