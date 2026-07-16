@@ -38,6 +38,9 @@ import {
   admin_activation_probe_confirm,
   admin_activation_probe_confirm_description,
   admin_activation_probe_confirm_title,
+  admin_activation_probe_correlation,
+  admin_activation_probe_cost_estimated,
+  admin_activation_probe_cost_observed,
   admin_activation_probe_cost_unavailable,
   admin_activation_probe_created,
   admin_activation_probe_deployment,
@@ -45,17 +48,22 @@ import {
   admin_activation_probe_empty,
   admin_activation_probe_estimated_cost,
   admin_activation_probe_evidence,
+  admin_activation_probe_evidence_details,
   admin_activation_probe_evidence_live,
+  admin_activation_probe_evidence_ref,
   admin_activation_probe_evidence_stale,
   admin_activation_probe_evidence_unverified,
+  admin_activation_probe_failure_category,
   admin_activation_probe_history,
   admin_activation_probe_history_empty,
   admin_activation_probe_latency,
   admin_activation_probe_latest,
   admin_activation_probe_never_run,
+  admin_activation_probe_none,
   admin_activation_probe_observed_cost,
   admin_activation_probe_onboarding_flow,
   admin_activation_probe_outcome,
+  admin_activation_probe_output_digest,
   admin_activation_probe_refresh,
   admin_activation_probe_run,
   admin_activation_probe_run_action,
@@ -65,8 +73,10 @@ import {
   admin_activation_probe_title,
   admin_activation_probe_toast_failed,
   admin_activation_probe_toast_passed,
+  admin_activation_probe_usage,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
+import type { ModelOperation } from './admin-view-model';
 import { commandP1, queryP1 } from './client';
 import { p1QueryKeys } from './query-keys';
 
@@ -80,19 +90,30 @@ interface ActivationEvidence {
 interface ActivationProbeRun {
   catalogModelId: string;
   configurationRevision: string;
+  correlationId: string;
   createdAt: string;
   deploymentId: string;
   failureCategory?: string;
   id: string;
   latencyMs: number;
-  operation: string;
+  operation: ModelOperation;
   outcome: 'passed' | 'failed';
+  outputDigest?: string;
   providerCost?: {
     amount: number;
     currency: 'CNY' | 'USD';
-    status: 'observed';
+    status: 'estimated' | 'observed';
+    usage: {
+      inputTokens?: number;
+      mediaUnits?: number;
+      outputTokens?: number;
+    };
   };
 }
+
+type ActivationProbeUsage = NonNullable<
+  ActivationProbeRun['providerCost']
+>['usage'];
 
 interface ActivationStatus {
   catalogModelId: string;
@@ -106,7 +127,9 @@ interface ActivationStatus {
   } | null;
   evidence: ActivationEvidence | null;
   latestProbe: ActivationProbeRun | null;
+  operations: ModelOperation[];
   stale: boolean;
+  verifiedOperations: ModelOperation[];
 }
 
 function costLabel(
@@ -115,7 +138,12 @@ function costLabel(
     | ActivationProbeRun['providerCost']
 ) {
   if (!cost) return admin_activation_probe_cost_unavailable();
-  return `${cost.amount} ${cost.currency}${'unit' in cost ? `/${cost.unit}` : ''}`;
+  if ('unit' in cost) return `${cost.amount} ${cost.currency}/${cost.unit}`;
+  const status =
+    cost.status === 'observed'
+      ? admin_activation_probe_cost_observed()
+      : admin_activation_probe_cost_estimated();
+  return `${cost.amount} ${cost.currency} · ${status}`;
 }
 
 function outcomeLabel(outcome: ActivationProbeRun['outcome']) {
@@ -124,8 +152,23 @@ function outcomeLabel(outcome: ActivationProbeRun['outcome']) {
     : admin_activation_probe_status_failed();
 }
 
+function usageLabel(usage: ActivationProbeUsage | undefined) {
+  if (!usage) return admin_activation_probe_none();
+  const parts = [
+    usage.inputTokens === undefined ? null : `inputTokens=${usage.inputTokens}`,
+    usage.outputTokens === undefined
+      ? null
+      : `outputTokens=${usage.outputTokens}`,
+    usage.mediaUnits === undefined ? null : `mediaUnits=${usage.mediaUnits}`,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(' / ') : admin_activation_probe_none();
+}
+
 export function AdminActivationProbeControl() {
-  const [selected, setSelected] = useState<ActivationStatus>();
+  const [selected, setSelected] = useState<{
+    operation: ModelOperation;
+    status: ActivationStatus;
+  }>();
   const queryClient = useQueryClient();
   const statusQuery = useQuery({
     queryKey: p1QueryKeys.request('model-supply', 'activation_status'),
@@ -146,10 +189,10 @@ export function AdminActivationProbeControl() {
       ),
   });
   const runMutation = useMutation({
-    mutationFn: (deploymentId: string) =>
+    mutationFn: (input: { deploymentId: string; operation: ModelOperation }) =>
       commandP1<ActivationProbeRun>('model-supply', {
         action: 'activation_probe_run',
-        payload: { deploymentId },
+        payload: input,
       }),
     onSuccess: async (run) => {
       await queryClient.invalidateQueries({
@@ -168,7 +211,10 @@ export function AdminActivationProbeControl() {
     });
   const confirmRun = async () => {
     if (!selected) return;
-    await runMutation.mutateAsync(selected.deploymentId);
+    await runMutation.mutateAsync({
+      deploymentId: selected.status.deploymentId,
+      operation: selected.operation,
+    });
     setSelected(undefined);
   };
   const statuses = statusQuery.data ?? [];
@@ -275,17 +321,23 @@ export function AdminActivationProbeControl() {
                   </TableCell>
                   <TableCell>{costLabel(status.estimatedUnitPrice)}</TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      disabled={
-                        !status.configurationRevision || runMutation.isPending
-                      }
-                      onClick={() => setSelected(status)}
-                      size="sm"
-                      type="button"
-                    >
-                      <IconPlayerPlay />
-                      {admin_activation_probe_run_action()}
-                    </Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {status.operations.map((operation) => (
+                        <Button
+                          disabled={
+                            !status.configurationRevision ||
+                            runMutation.isPending
+                          }
+                          key={operation}
+                          onClick={() => setSelected({ operation, status })}
+                          size="sm"
+                          type="button"
+                        >
+                          <IconPlayerPlay />
+                          {admin_activation_probe_run_action()} · {operation}
+                        </Button>
+                      ))}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -313,33 +365,76 @@ export function AdminActivationProbeControl() {
                     {admin_activation_probe_observed_cost()}
                   </TableHead>
                   <TableHead>{admin_activation_probe_latency()}</TableHead>
+                  <TableHead>
+                    {admin_activation_probe_evidence_details()}
+                  </TableHead>
                   <TableHead>{admin_activation_probe_created()}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {runs.map((run) => (
-                  <TableRow key={run.id}>
-                    <TableCell className="max-w-56 truncate font-mono text-xs">
-                      {run.id}
-                    </TableCell>
-                    <TableCell>{run.deploymentId}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          run.outcome === 'passed' ? 'secondary' : 'destructive'
-                        }
-                      >
-                        {outcomeLabel(run.outcome)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{costLabel(run.providerCost)}</TableCell>
-                    <TableCell>{run.latencyMs} ms</TableCell>
-                    <TableCell>{formatLocaleDateTime(run.createdAt)}</TableCell>
-                  </TableRow>
-                ))}
+                {runs.map((run) => {
+                  const evidenceRef =
+                    run.outcome === 'passed' ? run.id : undefined;
+                  const details = [
+                    [admin_activation_probe_correlation(), run.correlationId],
+                    [
+                      admin_activation_probe_usage(),
+                      usageLabel(run.providerCost?.usage),
+                    ],
+                    [
+                      admin_activation_probe_failure_category(),
+                      run.failureCategory ?? admin_activation_probe_none(),
+                    ],
+                    [
+                      admin_activation_probe_output_digest(),
+                      run.outputDigest ?? admin_activation_probe_none(),
+                    ],
+                    [
+                      admin_activation_probe_evidence_ref(),
+                      evidenceRef ?? admin_activation_probe_none(),
+                    ],
+                  ];
+                  return (
+                    <TableRow key={run.id}>
+                      <TableCell className="max-w-56 truncate font-mono text-xs">
+                        {run.id}
+                      </TableCell>
+                      <TableCell>{run.deploymentId}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            run.outcome === 'passed'
+                              ? 'secondary'
+                              : 'destructive'
+                          }
+                        >
+                          {outcomeLabel(run.outcome)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{costLabel(run.providerCost)}</TableCell>
+                      <TableCell>{run.latencyMs} ms</TableCell>
+                      <TableCell>
+                        <dl className="min-w-72 space-y-1 text-xs">
+                          {details.map(([label, value]) => (
+                            <div
+                              className="grid grid-cols-[7rem_1fr] gap-2"
+                              key={label}
+                            >
+                              <dt className="text-muted-foreground">{label}</dt>
+                              <dd className="break-all font-mono">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </TableCell>
+                      <TableCell>
+                        {formatLocaleDateTime(run.createdAt)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {runs.length === 0 ? (
                   <TableRow>
-                    <TableCell className="text-center" colSpan={6}>
+                    <TableCell className="text-center" colSpan={7}>
                       {admin_activation_probe_history_empty()}
                     </TableCell>
                   </TableRow>
@@ -361,8 +456,10 @@ export function AdminActivationProbeControl() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {admin_activation_probe_confirm_description({
-                deployment: selected?.deploymentId ?? '—',
-                estimate: costLabel(selected?.estimatedUnitPrice),
+                deployment: selected
+                  ? `${selected.status.deploymentId} · ${selected.operation}`
+                  : '—',
+                estimate: costLabel(selected?.status.estimatedUnitPrice),
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>

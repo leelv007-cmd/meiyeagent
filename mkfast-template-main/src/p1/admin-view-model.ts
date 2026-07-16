@@ -23,6 +23,7 @@ const modelOperationSchema = z.enum([
   'video.generate',
   'audio.speech',
   'audio.sfx',
+  'text.respond',
 ]);
 
 const evidenceStatusSchema = z.enum([

@@ -17,10 +17,12 @@ import {
 import {
   ModelSupplyApplicationService,
   RecordedProviderExecutionPort,
+  type MediaProviderLifecyclePort,
   type ProviderExecutionPort,
   type ReferenceAssetResolverPort,
 } from './index.js';
 import { RecordedAdapterRouter } from './adapters.js';
+import { MediaActivationProbeExecutor } from './activation-probe-executor.js';
 import { modelRuntimeAssemblyFromEnv } from './runtime-config.js';
 import { MemoryAdminConfigRepository } from '../admin-config/foundation-module.js';
 
@@ -101,7 +103,7 @@ async function query(
 }
 
 describe('ModelSupplyFoundationModule', () => {
-  it('mints activation evidence only from one persisted successful probe run', async () => {
+  it('replays each language probe and activates only after complete operation coverage', async () => {
     let providerCalls = 0;
     const setupResult = setup(
       {
@@ -116,6 +118,7 @@ describe('ModelSupplyFoundationModule', () => {
     await assert.rejects(
       command(setupResult.module, owner, 'activation_probe_run', {
         deploymentId: 'openai-direct-recorded',
+        operation: 'copy.generate',
       }),
       (error: unknown) =>
         error instanceof P1DomainError && error.code === 'FORBIDDEN',
@@ -125,7 +128,10 @@ describe('ModelSupplyFoundationModule', () => {
       setupResult.module,
       admin,
       'activation_probe_run',
-      { deploymentId: 'openai-direct-recorded' },
+      {
+        deploymentId: 'openai-direct-recorded',
+        operation: 'copy.generate',
+      },
     )) as { id: string; outcome: string; providerCost?: { status: string } };
     assert.match(run.id, /^activation-probe-[a-f0-9]{28}$/);
     assert.equal(run.outcome, 'passed');
@@ -136,7 +142,10 @@ describe('ModelSupplyFoundationModule', () => {
       setupResult.module,
       admin,
       'activation_probe_run',
-      { deploymentId: 'openai-direct-recorded' },
+      {
+        deploymentId: 'openai-direct-recorded',
+        operation: 'copy.generate',
+      },
     );
     assert.deepEqual(replay, run);
     assert.equal(providerCalls, 1);
@@ -145,21 +154,54 @@ describe('ModelSupplyFoundationModule', () => {
       '__global__',
       'model.activation.evidence.openai-direct-recorded',
     );
-    assert.equal(
-      (storedEvidence?.value as { evidenceRef?: string }).evidenceRef,
-      run.id,
-    );
+    assert.equal(storedEvidence, null);
     const status = (await query(
       setupResult.module,
       admin,
       'activation_status',
       {},
-    )) as Array<{ deploymentId: string; stale: boolean }>;
+    )) as Array<{
+      deploymentId: string;
+      evidence: unknown;
+      stale: boolean;
+    }>;
+    assert.equal(
+      status.find(
+        (candidate) => candidate.deploymentId === 'openai-direct-recorded',
+      )?.evidence,
+      null,
+    );
     assert.equal(
       status.find(
         (candidate) => candidate.deploymentId === 'openai-direct-recorded',
       )?.stale,
       false,
+    );
+
+    await command(setupResult.module, admin, 'activation_probe_run', {
+      deploymentId: 'openai-direct-recorded',
+      operation: 'copy.adapt',
+    });
+    const textRun = (await command(
+      setupResult.module,
+      admin,
+      'activation_probe_run',
+      {
+        deploymentId: 'openai-direct-recorded',
+        operation: 'text.respond',
+      },
+    )) as { id: string; outcome: string };
+
+    assert.equal(textRun.outcome, 'passed');
+    assert.equal(providerCalls, 3);
+    const completedEvidence = await setupResult.activationEvidenceConfig.get(
+      'global',
+      '__global__',
+      'model.activation.evidence.openai-direct-recorded',
+    );
+    assert.equal(
+      (completedEvidence?.value as { evidenceRef?: string }).evidenceRef,
+      textRun.id,
     );
   });
 
@@ -176,7 +218,10 @@ describe('ModelSupplyFoundationModule', () => {
       setupResult.module,
       admin,
       'activation_probe_run',
-      { deploymentId: 'openai-direct-recorded' },
+      {
+        deploymentId: 'openai-direct-recorded',
+        operation: 'copy.generate',
+      },
     )) as { outcome: string; failureCategory?: string };
 
     assert.equal(run.outcome, 'failed');
@@ -192,50 +237,102 @@ describe('ModelSupplyFoundationModule', () => {
     );
   });
 
-  it('mints media evidence only after the production lifecycle executor passes', async () => {
-    let executorCalls = 0;
+  it('mints deployment evidence only after every selected model operation passes', async () => {
+    const executorCalls: string[] = [];
+    const provider: MediaProviderLifecyclePort = {
+      async submit(request) {
+        executorCalls.push(request.submission.operation);
+        if (request.submission.operation === 'image.edit') {
+          assert.equal(request.resolvedInputAssets?.[0]?.contentType, 'image/png');
+          assert.equal(
+            request.resolvedInputAssets?.[0]?.providerReadableUrl.startsWith(
+              'data:image/png;base64,'
+            ),
+            true,
+          );
+        }
+        return {
+          acceptance: 'accepted',
+          providerCost: {
+            amount: 0.25,
+            currency: 'CNY',
+            usage: { mediaUnits: 1 },
+          },
+          taskRef: `task-${request.submission.operation}`,
+        };
+      },
+      async poll() {
+        return {
+          providerCost: {
+            amount: 0.25,
+            currency: 'CNY',
+            usage: { mediaUnits: 1 },
+          },
+          status: 'completed',
+        };
+      },
+      async download() {
+        return {
+          bytes: Uint8Array.from([1, 2, 3]),
+          contentType: 'image/png',
+        };
+      },
+      async recover() {
+        return null;
+      },
+      async cancel() {},
+    };
+    const catalog = {
+      deployments: createDefaultDeployments(),
+      models: createDefaultCatalogModels(),
+    };
     const setupResult = setup(
       new RecordedProviderExecutionPort(),
       ['seedream-5-pro-direct'],
-      {
-        async execute(input) {
-          executorCalls += 1;
-          assert.equal(input.operation, 'image.generate');
-          return {
-            outputDigestSource: {
-              contentType: 'image/png',
-              sha256: 'a'.repeat(64),
-              sizeBytes: 3,
-            },
-            providerCost: {
-              amount: 0.25,
-              currency: 'CNY',
-              status: 'observed',
-              usage: { mediaUnits: 1 },
-            },
-          };
-        },
-      },
+      new MediaActivationProbeExecutor(provider, catalog),
     );
 
-    const run = (await command(
+    const generateRun = (await command(
       setupResult.module,
       admin,
       'activation_probe_run',
-      { deploymentId: 'seedream-5-pro-direct' },
+      {
+        deploymentId: 'seedream-5-pro-direct',
+        operation: 'image.generate',
+      },
     )) as { outcome: string; providerCost?: { amount: number } };
 
-    assert.equal(run.outcome, 'passed');
-    assert.equal(run.providerCost?.amount, 0.25);
-    assert.equal(executorCalls, 1);
+    assert.equal(generateRun.outcome, 'passed');
+    assert.equal(generateRun.providerCost?.amount, 0.25);
+    assert.equal(
+      await setupResult.activationEvidenceConfig.get(
+        'global',
+        '__global__',
+        'model.activation.evidence.seedream-5-pro-direct',
+      ),
+      null,
+    );
+
+    const editRun = (await command(
+      setupResult.module,
+      admin,
+      'activation_probe_run',
+      {
+        deploymentId: 'seedream-5-pro-direct',
+        operation: 'image.edit',
+      },
+    )) as { id: string; outcome: string };
+
+    assert.equal(editRun.outcome, 'passed');
+    assert.deepEqual(executorCalls, ['image.generate', 'image.edit']);
     const evidence = await setupResult.activationEvidenceConfig.get(
       'global',
       '__global__',
       'model.activation.evidence.seedream-5-pro-direct',
     );
-    assert.match(
-      String((evidence?.value as { evidenceRef?: string }).evidenceRef),
-      /^activation-probe-/,
+    assert.equal(
+      (evidence?.value as { evidenceRef?: string }).evidenceRef,
+      editRun.id,
     );
   });
 
@@ -259,6 +356,56 @@ describe('ModelSupplyFoundationModule', () => {
         ],
       }),
       /passed, current activation probe run/,
+    );
+  });
+
+  it('rejects hand-authored live evidence with partial operation coverage', async () => {
+    const setupResult = setup(
+      new RecordedProviderExecutionPort(),
+      ['seedream-5-pro-direct'],
+      {
+        async execute() {
+          return {
+            outputDigestSource: { contentType: 'image/png', sizeBytes: 3 },
+            providerCost: {
+              amount: 0.25,
+              currency: 'CNY',
+              status: 'observed',
+              usage: { mediaUnits: 1 },
+            },
+          };
+        },
+      },
+    );
+    const run = (await command(
+      setupResult.module,
+      admin,
+      'activation_probe_run',
+      {
+        deploymentId: 'seedream-5-pro-direct',
+        operation: 'image.generate',
+      },
+    )) as { createdAt: string; id: string; outcome: string };
+    assert.equal(run.outcome, 'passed');
+
+    await assert.rejects(
+      command(setupResult.module, admin, 'catalog_create_safe_draft', {
+        models: [
+          {
+            activationEvidence: {
+              configurationRevision: 'e'.repeat(64),
+              evidenceRef: run.id,
+              status: 'live_verified',
+              verifiedAt: run.createdAt,
+            },
+            allowedDataClasses: ['public'],
+            deniedDataClasses: ['contains_face', 'pii', 'medical'],
+            id: 'seedream-5-pro',
+            lifecycle: 'available',
+          },
+        ],
+      }),
+      /covering every declared operation/,
     );
   });
 

@@ -226,7 +226,7 @@ export interface ActivationProbeRun {
   providerCost?: {
     amount: number;
     currency: 'CNY' | 'USD';
-    status: 'observed';
+    status: 'estimated' | 'observed';
     usage: { inputTokens?: number; outputTokens?: number; mediaUnits?: number };
   };
 }
@@ -242,7 +242,9 @@ export interface ActivationProbeExecutionPort {
     workspaceId: string;
   }): Promise<{
     outputDigestSource: unknown;
-    providerCost: NonNullable<ActivationProbeRun['providerCost']>;
+    providerCost: NonNullable<ActivationProbeRun['providerCost']> & {
+      status: 'observed';
+    };
   }>;
 }
 
@@ -930,6 +932,64 @@ function stableId(value: string) {
   return createHash('sha256').update(value).digest('hex').slice(0, 28);
 }
 
+function languageActivationProbePrompt(operation: ModelOperation) {
+  if (operation === 'copy.generate') {
+    return 'Return three short, distinct beauty-store captions for an activation smoke test.';
+  }
+  if (operation === 'copy.adapt') {
+    return 'Adapt this sanitized beauty-store caption into three short variants: Welcome to our skincare service.';
+  }
+  if (operation === 'text.respond') {
+    return 'Reply with one short sentence confirming this sanitized activation smoke test.';
+  }
+  throw new P1DomainError(
+    'INVALID_STATE',
+    'Language activation probe operation is unsupported.',
+  );
+}
+
+function activationProbeErrorProviderCost(
+  error: unknown,
+): ActivationProbeRun['providerCost'] | undefined {
+  if (
+    !(error instanceof Error) ||
+    !('providerCost' in error) ||
+    !error.providerCost ||
+    typeof error.providerCost !== 'object'
+  ) {
+    return undefined;
+  }
+  const providerCost = error.providerCost as Record<string, unknown>;
+  if (
+    typeof providerCost.amount !== 'number' ||
+    !Number.isFinite(providerCost.amount) ||
+    providerCost.amount < 0 ||
+    (providerCost.currency !== 'CNY' && providerCost.currency !== 'USD') ||
+    (providerCost.status !== 'estimated' &&
+      providerCost.status !== 'observed') ||
+    !providerCost.usage ||
+    typeof providerCost.usage !== 'object'
+  ) {
+    return undefined;
+  }
+  const sourceUsage = providerCost.usage as Record<string, unknown>;
+  const usage: NonNullable<ActivationProbeRun['providerCost']>['usage'] = {};
+  for (const key of ['inputTokens', 'outputTokens', 'mediaUnits'] as const) {
+    const value = sourceUsage[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      return undefined;
+    }
+    usage[key] = value;
+  }
+  return {
+    amount: providerCost.amount,
+    currency: providerCost.currency,
+    status: providerCost.status,
+    usage,
+  };
+}
+
 function publicCanvasGenerationJob(value: unknown, projectId: string) {
   const view = object(value);
   const result = object(view.result ?? view);
@@ -1033,16 +1093,12 @@ export class ModelSupplyControlPlaneService {
   async runActivationProbe(
     context: P1Context,
     deploymentId: string,
+    operation: ModelOperation,
     idempotencyKey: string,
   ) {
     const runId = `activation-probe-${stableId(
-      `${context.workspaceId}:${deploymentId}:${idempotencyKey}`,
+      `${context.workspaceId}:${deploymentId}:${operation}:${idempotencyKey}`,
     )}`;
-    const existing = await this.repository.getActivationProbeRun(
-      context.workspaceId,
-      runId,
-    );
-    if (existing) return existing;
     const source = catalogSource(
       await this.repository.getCurrentPublishedCatalogRevision(
         context.workspaceId,
@@ -1064,35 +1120,36 @@ export class ModelSupplyControlPlaneService {
         'Activation probe requires one configured runtime deployment.',
       );
     }
-    const operation = model.operations.includes('copy.generate')
-      ? ('copy.generate' as const)
-      : model.operations.includes('image.generate')
-        ? ('image.generate' as const)
-        : model.operations.includes('video.generate')
-          ? ('video.generate' as const)
-          : undefined;
-    if (!operation) {
+    if (!model.operations.includes(operation)) {
       throw new P1DomainError(
         'INVALID_STATE',
-        'Activation probe does not support this deployment operation.',
+        'Activation probe operation is not declared by this deployment model.',
       );
     }
+    const existing = await this.repository.getActivationProbeRun(
+      context.workspaceId,
+      runId,
+    );
+    if (existing) return existing;
     const startedAt = this.clock();
     let run: ActivationProbeRun;
     try {
       if (!this.activationProbeLiveDeploymentIds.has(deploymentId)) {
         throw new Error('Activation probes require a live provider adapter.');
       }
+      const languageOperation =
+        operation === 'copy.generate' ||
+        operation === 'copy.adapt' ||
+        operation === 'text.respond';
       const result =
-        operation === 'copy.generate'
-          ? await this.application.executeCopyQualityProbe({
+        languageOperation
+          ? await this.application.executeLanguageQualityProbe({
               actorId: context.userId,
               correlationId: context.correlationId,
               dataClass: [],
               idempotencyKey: runId,
               operation,
-              prompt:
-                'Return three short, distinct beauty-store captions for an activation smoke test.',
+              prompt: languageActivationProbePrompt(operation),
               selection: { catalogModelId: model.id, mode: 'fixed' },
               workspaceId: context.workspaceId,
             })
@@ -1109,7 +1166,7 @@ export class ModelSupplyControlPlaneService {
         throw new Error('Media activation probe executor is not configured.');
       }
       const providerCost =
-        'copyCandidates' in result
+        'copyCandidates' in result || 'text' in result
           ? {
               amount: result.providerCost.amount,
               currency: result.providerCost.currency,
@@ -1120,7 +1177,9 @@ export class ModelSupplyControlPlaneService {
       const output =
         'copyCandidates' in result
           ? result.copyCandidates
-          : result.outputDigestSource;
+          : 'text' in result
+            ? result.text
+            : result.outputDigestSource;
       run = {
         actorId: context.userId,
         catalogModelId: model.id,
@@ -1144,6 +1203,7 @@ export class ModelSupplyControlPlaneService {
         typeof error.failureCategory === 'string'
           ? error.failureCategory
           : 'provider_probe_failed';
+      const providerCost = activationProbeErrorProviderCost(error);
       run = {
         actorId: context.userId,
         catalogModelId: model.id,
@@ -1156,10 +1216,23 @@ export class ModelSupplyControlPlaneService {
         latencyMs: Math.max(0, this.clock().getTime() - startedAt.getTime()),
         operation,
         outcome: 'failed',
+        ...(providerCost ? { providerCost } : {}),
       };
     }
     await this.repository.saveActivationProbeRun(context.workspaceId, run);
-    if (run.outcome === 'passed' && this.activationEvidenceConfig) {
+    const verifiedOperations = await this.verifiedActivationProbeOperations(
+      context.workspaceId,
+      deploymentId,
+      configurationRevision,
+    );
+    const operationCoverageComplete = model.operations.every((candidate) =>
+      verifiedOperations.has(candidate),
+    );
+    if (
+      run.outcome === 'passed' &&
+      operationCoverageComplete &&
+      this.activationEvidenceConfig
+    ) {
       const key = `model.activation.evidence.${deploymentId}`;
       const current = await this.activationEvidenceConfig.get(
         'global',
@@ -1193,6 +1266,9 @@ export class ModelSupplyControlPlaneService {
     const runs = await this.repository.listActivationProbeRuns(workspaceId);
     return Promise.all(
       source.payload.deployments.map(async (deployment) => {
+        const model = source.payload.models.find(
+          (candidate) => candidate.id === deployment.catalogModelId,
+        );
         const configurationRevision =
           this.configurationRevisions[deployment.id] ?? null;
         const evidenceRevision = this.activationEvidenceConfig
@@ -1205,17 +1281,27 @@ export class ModelSupplyControlPlaneService {
         const evidence = evidenceRevision?.value as
           | ActivationEvidence
           | undefined;
+        const verifiedOperations = runs
+          .filter(
+            (run) =>
+              run.deploymentId === deployment.id &&
+              run.configurationRevision === configurationRevision &&
+              run.outcome === 'passed',
+          )
+          .map((run) => run.operation);
         return {
           catalogModelId: deployment.catalogModelId,
           configurationRevision,
           deploymentId: deployment.id,
           evidence: evidence ?? null,
           estimatedUnitPrice: deployment.unitPrice ?? null,
+          operations: structuredClone(model?.operations ?? []),
           latestProbe:
             runs.find((run) => run.deploymentId === deployment.id) ?? null,
           stale:
             Boolean(evidence) &&
             evidence?.configurationRevision !== configurationRevision,
+          verifiedOperations,
         };
       }),
     );
@@ -1796,6 +1882,7 @@ export class ModelSupplyControlPlaneService {
     validateCatalogPayload(payload);
     await this.assertProbeBackedActivationEvidence(
       workspaceId,
+      payload.models,
       payload.deployments,
     );
     const registry = await this.registry(workspaceId);
@@ -1806,6 +1893,7 @@ export class ModelSupplyControlPlaneService {
 
   private async assertProbeBackedActivationEvidence(
     workspaceId: string,
+    models: CatalogModel[],
     deployments: PublishedDeployment[],
   ) {
     for (const deployment of deployments) {
@@ -1816,6 +1904,16 @@ export class ModelSupplyControlPlaneService {
         : null;
       const currentConfigurationRevision =
         this.configurationRevisions[deployment.id];
+      const model = models.find(
+        (candidate) => candidate.id === deployment.catalogModelId,
+      );
+      const verifiedOperations = currentConfigurationRevision
+        ? await this.verifiedActivationProbeOperations(
+            workspaceId,
+            deployment.id,
+            currentConfigurationRevision,
+          )
+        : new Set<ModelOperation>();
       if (
         !run ||
         run.outcome !== 'passed' ||
@@ -1823,14 +1921,35 @@ export class ModelSupplyControlPlaneService {
         !currentConfigurationRevision ||
         run.configurationRevision !== currentConfigurationRevision ||
         deployment.activationEvidence.configurationRevision !==
-          currentConfigurationRevision
+          currentConfigurationRevision ||
+        !model ||
+        !model.operations.every((operation) =>
+          verifiedOperations.has(operation),
+        )
       ) {
         throw new P1DomainError(
           'INVALID_STATE',
-          'Live activation evidence must reference a passed, current activation probe run.',
+          'Live activation evidence must reference passed, current activation probe runs covering every declared operation.',
         );
       }
     }
+  }
+
+  private async verifiedActivationProbeOperations(
+    workspaceId: string,
+    deploymentId: string,
+    configurationRevision: string,
+  ) {
+    return new Set(
+      (await this.repository.listActivationProbeRuns(workspaceId))
+        .filter(
+          (candidate) =>
+            candidate.deploymentId === deploymentId &&
+            candidate.configurationRevision === configurationRevision &&
+            candidate.outcome === 'passed',
+        )
+        .map((candidate) => candidate.operation),
+    );
   }
 
   async createSafeCatalogDraft(
@@ -3196,6 +3315,7 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
         return this.controlPlane.runActivationProbe(
           args.context,
           requiredString(payload, 'deploymentId'),
+          operation(payload),
           args.idempotencyKey,
         );
       case 'set_workspace_default':

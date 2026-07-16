@@ -1609,13 +1609,28 @@ export class ModelSupplyApplicationService {
    * Run is the owning record for this provider cost and output. An inactive
    * recorded deployment may be exercised here without becoming user-routable;
    * its inactive status remains frozen in the probe snapshot.
-   */
+  */
   async executeCopyQualityProbe(submission: ModelSupplySubmission) {
+    if (submission.operation !== 'copy.generate') {
+      throw new Error('Copy quality probes require copy.generate.');
+    }
+    const result = await this.executeLanguageQualityProbe(submission);
+    if (!('copyCandidates' in result)) {
+      throw new Error('Copy quality probe provider returned no candidates.');
+    }
+    return result;
+  }
+
+  async executeLanguageQualityProbe(submission: ModelSupplySubmission) {
     if (
-      submission.operation !== 'copy.generate' ||
+      ![
+        'copy.generate',
+        'copy.adapt',
+        'text.respond',
+      ].includes(submission.operation) ||
       submission.selection.mode !== 'fixed'
     ) {
-      throw new Error('Copy quality probes require a fixed copy model.');
+      throw new Error('Language quality probes require a fixed language model.');
     }
     const catalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
       revisionId: this.catalogRevisionId,
@@ -1664,11 +1679,13 @@ export class ModelSupplyApplicationService {
     if (response.kind === 'failure') {
       throw new Error(`Quality probe provider failed: ${response.message}`);
     }
-    if (!response.copyCandidates) {
-      throw new Error('Quality probe provider returned no copy candidates.');
+    if (!response.copyCandidates && !response.text) {
+      throw new Error('Quality probe provider returned no language output.');
     }
     return {
-      copyCandidates: structuredClone(response.copyCandidates),
+      ...(response.copyCandidates
+        ? { copyCandidates: structuredClone(response.copyCandidates) }
+        : { text: response.text! }),
       snapshot,
       providerCost: {
         id: `provider-cost-${hash(`${jobId}:observed`).slice(0, 24)}`,

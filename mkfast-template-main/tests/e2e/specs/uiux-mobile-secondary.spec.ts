@@ -262,6 +262,46 @@ test.describe('desktop secondary surfaces', () => {
     }
   });
 
+  test('shows the fixture-local admin activation canary evidence seam', async ({
+    page,
+    request,
+  }) => {
+    const admin = await registerE2EUser(request, { role: 'admin' });
+    try {
+      await loginByForm(page, admin);
+      await page.goto('/admin/models');
+      await expect(
+        page.getByText('配置 → 脱敏沙箱 → 非计费金丝雀 → 证据', {
+          exact: true,
+        })
+      ).toBeVisible();
+      await expect(
+        page.getByRole('columnheader', { name: '供应成本证据' })
+      ).toBeVisible();
+      await expect(
+        page.getByRole('columnheader', { name: '证据详情' })
+      ).toBeVisible();
+      for (const operation of [
+        'copy.generate',
+        'copy.adapt',
+        'text.respond',
+        'image.generate',
+        'image.edit',
+        'video.generate',
+      ]) {
+        await expect(
+          page
+            .getByRole('button', {
+              name: `运行真实探针 · ${operation}`,
+            })
+            .first()
+        ).toBeVisible();
+      }
+    } finally {
+      await cleanupE2EUsers(request);
+    }
+  });
+
   test('expresses public plans and account usage only as deliverable output', async ({
     page,
     request,

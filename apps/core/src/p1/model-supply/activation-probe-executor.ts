@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { ActivationProbeExecutionPort } from './foundation-module.js';
+import type {
+  ActivationProbeExecutionPort,
+  ActivationProbeRun,
+} from './foundation-module.js';
 import type {
   CatalogModel,
   MediaProviderEffectRequest,
@@ -11,6 +14,14 @@ import type {
 
 const IMAGE_PROMPT =
   'A clean product still life of a white skincare bottle on beige stone, soft daylight, no people, no text, no logo.';
+const IMAGE_EDIT_PROMPT =
+  'Keep the product unchanged and replace only the background with warm beige stone, soft daylight, no people, no text, no logo.';
+const IMAGE_EDIT_REFERENCE_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64'
+);
+const IMAGE_EDIT_REFERENCE_ID = 'activation-probe-sanitized-image';
+const IMAGE_EDIT_REFERENCE_URL = `data:image/png;base64,${IMAGE_EDIT_REFERENCE_BYTES.toString('base64')}`;
 const VIDEO_PROMPT =
   'A white skincare bottle on beige stone, slow camera push in, soft daylight, no people, no text, no logo.';
 const AUDIO_SPEECH_PROMPT = '欢迎体验本次门店服务。';
@@ -32,7 +43,8 @@ export class MediaActivationProbeError extends Error {
   constructor(
     readonly phase: 'submit' | 'poll' | 'download' | 'cancel',
     readonly errorCode: string,
-    readonly retryable: boolean
+    readonly retryable: boolean,
+    readonly providerCost?: NonNullable<ActivationProbeRun['providerCost']>
   ) {
     super(`Media activation probe failed during ${phase}.`);
     this.name = 'MediaActivationProbeError';
@@ -76,6 +88,7 @@ export class MediaActivationProbeExecutor
       !deployment ||
       deployment.catalogModelId !== model.id ||
       (input.operation !== 'image.generate' &&
+        input.operation !== 'image.edit' &&
         input.operation !== 'video.generate' &&
         input.operation !== 'audio.speech' &&
         input.operation !== 'audio.sfx')
@@ -92,6 +105,9 @@ export class MediaActivationProbeExecutor
       effectIdempotencyKey: input.idempotencyKey,
       jobId: input.idempotencyKey,
       model,
+      ...(contract.resolvedInputAssets
+        ? { resolvedInputAssets: contract.resolvedInputAssets }
+        : {}),
       submission: {
         actorId: input.actorId,
         correlationId: input.correlationId,
@@ -107,7 +123,7 @@ export class MediaActivationProbeExecutor
     } satisfies MediaProviderEffectRequest;
   }
 
-  async execute(input: MediaActivationProbeInput) {
+  private async submit(input: MediaActivationProbeInput) {
     const request = this.request(input);
     let receipt: Awaited<ReturnType<MediaProviderLifecyclePort['submit']>>;
     try {
@@ -119,9 +135,15 @@ export class MediaActivationProbeExecutor
       throw new MediaActivationProbeError(
         'submit',
         receipt.errorCode ?? receipt.acceptance,
-        receipt.retryable ?? receipt.acceptance === 'acceptance_unknown'
+        receipt.retryable ?? receipt.acceptance === 'acceptance_unknown',
+        estimatedProviderCost(receipt.providerCost)
       );
     }
+    return { receipt, request, taskRef: receipt.taskRef };
+  }
+
+  async execute(input: MediaActivationProbeInput) {
+    const { receipt, request, taskRef } = await this.submit(input);
 
     let state: Awaited<ReturnType<MediaProviderLifecyclePort['poll']>> | null =
       null;
@@ -129,7 +151,7 @@ export class MediaActivationProbeExecutor
       try {
         state = await this.provider.poll({
           ...request,
-          taskRef: receipt.taskRef,
+          taskRef,
         });
       } catch {
         throw new MediaActivationProbeError('poll', 'provider_exception', true);
@@ -139,7 +161,8 @@ export class MediaActivationProbeExecutor
         throw new MediaActivationProbeError(
           'poll',
           state.errorCode ?? 'provider_failed',
-          state.retryable ?? false
+          state.retryable ?? false,
+          estimatedProviderCost(state.providerCost)
         );
       }
       if (attempt + 1 < this.maxPollAttempts) {
@@ -147,23 +170,38 @@ export class MediaActivationProbeExecutor
       }
     }
     if (!state || state.status !== 'completed') {
-      throw new MediaActivationProbeError('poll', 'timeout', true);
+      throw new MediaActivationProbeError(
+        'poll',
+        'timeout',
+        true,
+        state ? estimatedProviderCost(state.providerCost) : undefined
+      );
     }
+    const observedProviderCost = providerCostEvidence(
+      state.providerCost,
+      'observed'
+    );
     let downloaded: Awaited<ReturnType<MediaProviderLifecyclePort['download']>>;
     try {
       downloaded = await this.provider.download({
         ...request,
-        taskRef: receipt.taskRef,
+        taskRef,
       });
     } catch {
       throw new MediaActivationProbeError(
         'download',
         'provider_exception',
-        true
+        true,
+        observedProviderCost
       );
     }
     if (downloaded.bytes.byteLength === 0) {
-      throw new MediaActivationProbeError('download', 'empty_asset', false);
+      throw new MediaActivationProbeError(
+        'download',
+        'empty_asset',
+        false,
+        observedProviderCost
+      );
     }
     const expectedContentType = activationProbeContract(
       input.operation
@@ -172,7 +210,8 @@ export class MediaActivationProbeExecutor
       throw new MediaActivationProbeError(
         'download',
         'unexpected_asset_type',
-        false
+        false,
+        observedProviderCost
       );
     }
     return {
@@ -181,12 +220,65 @@ export class MediaActivationProbeExecutor
         sha256: createHash('sha256').update(downloaded.bytes).digest('hex'),
         sizeBytes: downloaded.bytes.byteLength,
       },
-      providerCost: {
-        amount: state.providerCost.amount,
-        currency: state.providerCost.currency,
-        status: 'observed' as const,
-        usage: structuredClone(state.providerCost.usage),
-      },
+      providerCost: observedProviderCost,
+    };
+  }
+
+  async executeCancellation(input: MediaActivationProbeInput) {
+    if (input.operation !== 'video.generate') {
+      throw new MediaActivationProbeError(
+        'cancel',
+        'unsupported_operation',
+        false
+      );
+    }
+    const { receipt, request, taskRef } = await this.submit(input);
+    const cancellation = await this.cancel({
+      ...input,
+      taskRef,
+    });
+    if (!cancellation || cancellation.status !== 'cancelled') {
+      throw new MediaActivationProbeError(
+        'cancel',
+        cancellation?.errorCode ?? 'cancellation_unconfirmed',
+        cancellation?.retryable ?? true,
+        estimatedProviderCost(receipt.providerCost)
+      );
+    }
+    let confirmation: Awaited<ReturnType<MediaProviderLifecyclePort['poll']>>;
+    try {
+      confirmation = await this.provider.poll({
+        ...request,
+        taskRef,
+      });
+    } catch {
+      throw new MediaActivationProbeError(
+        'cancel',
+        'confirmation_failed',
+        true,
+        estimatedProviderCost(receipt.providerCost)
+      );
+    }
+    const confirmationCost = providerCostEvidence(
+      confirmation.providerCost,
+      confirmation.status === 'completed' || confirmation.status === 'failed'
+        ? 'observed'
+        : 'estimated'
+    );
+    if (
+      confirmation.status !== 'failed' ||
+      confirmation.errorCode !== 'provider_cancelled'
+    ) {
+      throw new MediaActivationProbeError(
+        'cancel',
+        'cancellation_unconfirmed',
+        confirmation.status === 'queued' || confirmation.status === 'running',
+        confirmationCost
+      );
+    }
+    return {
+      providerCost: confirmationCost,
+      status: 'cancelled' as const,
     };
   }
 
@@ -200,9 +292,63 @@ export class MediaActivationProbeExecutor
   }
 }
 
+function estimatedProviderCost(
+  providerCost: Omit<
+    NonNullable<ActivationProbeRun['providerCost']>,
+    'status'
+  >
+) {
+  return providerCostEvidence(providerCost, 'estimated');
+}
+
+function providerCostEvidence<
+  Status extends NonNullable<ActivationProbeRun['providerCost']>['status'],
+>(
+  providerCost: Omit<
+    NonNullable<ActivationProbeRun['providerCost']>,
+    'status'
+  >,
+  status: Status
+) {
+  return {
+    amount: providerCost.amount,
+    currency: providerCost.currency,
+    status,
+    usage: structuredClone(providerCost.usage),
+  };
+}
+
 function activationProbeContract(operation: ModelOperation) {
   if (operation === 'image.generate') {
-    return { contentType: 'image/png' as const, input: {}, prompt: IMAGE_PROMPT };
+    return {
+      contentType: 'image/png' as const,
+      input: {},
+      prompt: IMAGE_PROMPT,
+    };
+  }
+  if (operation === 'image.edit') {
+    return {
+      contentType: 'image/png' as const,
+      input: {
+        inputAssets: [
+          { assetId: IMAGE_EDIT_REFERENCE_ID, role: 'reference_image' as const },
+        ],
+      },
+      prompt: IMAGE_EDIT_PROMPT,
+      resolvedInputAssets: [
+        {
+          assetId: IMAGE_EDIT_REFERENCE_ID,
+          bytes: IMAGE_EDIT_REFERENCE_BYTES,
+          contentType: 'image/png',
+          kind: 'resolved' as const,
+          providerReadableUrl: IMAGE_EDIT_REFERENCE_URL,
+          role: 'reference_image' as const,
+          sha256: createHash('sha256')
+            .update(IMAGE_EDIT_REFERENCE_BYTES)
+            .digest('hex'),
+        },
+      ],
+    };
   }
   if (operation === 'video.generate') {
     return {

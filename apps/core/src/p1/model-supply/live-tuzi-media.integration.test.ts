@@ -5,10 +5,17 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ProviderSafeFetch } from '../../pro-studio-runtime/provider-safe-fetch.js';
+import { MediaActivationProbeExecutor } from './activation-probe-executor.js';
 import { recordedRequest } from './adapters.js';
+import {
+  createDefaultCatalogModels,
+  createDefaultDeployments,
+} from './catalog.js';
 import { TuziMediaExecutionPort } from './tuzi-media-adapter.js';
 
 const enabled = process.env.RUN_LIVE_TUZI_MEDIA_TEST === '1';
+const cancellationEnabled =
+  process.env.RUN_LIVE_TUZI_CANCELLATION_TEST === '1';
 const requiredNames = [
   'TUZI_MEDIA_API_KEY',
   'TUZI_MEDIA_BASE_URL',
@@ -31,15 +38,48 @@ async function resolveThroughPublicDoh(hostname: string) {
   const response = await fetch(url, {
     headers: { accept: 'application/dns-json' },
   });
-  if (!response.ok) throw new Error(`Public DNS returned HTTP ${response.status}.`);
+  if (!response.ok)
+    throw new Error(`Public DNS returned HTTP ${response.status}.`);
   const body = (await response.json()) as {
     Answer?: Array<{ data?: unknown; type?: unknown }>;
     Status?: unknown;
   };
-  if (body.Status !== 0) throw new Error('Public DNS did not resolve the provider host.');
+  if (body.Status !== 0)
+    throw new Error('Public DNS did not resolve the provider host.');
   return (body.Answer ?? []).flatMap((answer) =>
-    answer.type === 1 && typeof answer.data === 'string' ? [answer.data] : [],
+    answer.type === 1 && typeof answer.data === 'string' ? [answer.data] : []
   );
+}
+
+function createLiveTuziAdapter() {
+  const baseUrl = required('TUZI_MEDIA_BASE_URL');
+  const assetSourceHosts = required('TUZI_MEDIA_ASSET_SOURCE_HOSTS')
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean);
+  return new TuziMediaExecutionPort({
+    apiKey: required('TUZI_MEDIA_API_KEY'),
+    assetFetch: new ProviderSafeFetch({
+      allowedHosts: [new URL(baseUrl).hostname, ...assetSourceHosts],
+      resolver: { resolve: resolveThroughPublicDoh },
+    }),
+    assetSourceHosts,
+    baseUrl,
+    credentialVersion: 'live-tuzi-key',
+    endpointRevision: 'tuzi-openai-media-v1',
+    image: {
+      catalogModelId: 'gpt-image-2',
+      costPerImage: 0,
+      model: required('TUZI_GPT_IMAGE_2_MODEL'),
+    },
+    sourceUrlTtlSeconds: 3600,
+    video: {
+      catalogModelId: 'seedance-2',
+      costPerMillionTokens: 0,
+      estimatedTokensPerSecond: 0,
+      model: required('TUZI_SEEDANCE_MODEL'),
+    },
+  });
 }
 
 test(
@@ -53,34 +93,7 @@ test(
     timeout: 15 * 60_000,
   },
   async () => {
-    const baseUrl = required('TUZI_MEDIA_BASE_URL');
-    const assetSourceHosts = required('TUZI_MEDIA_ASSET_SOURCE_HOSTS')
-      .split(',')
-      .map((host) => host.trim())
-      .filter(Boolean);
-    const adapter = new TuziMediaExecutionPort({
-      apiKey: required('TUZI_MEDIA_API_KEY'),
-      assetFetch: new ProviderSafeFetch({
-        allowedHosts: [new URL(baseUrl).hostname, ...assetSourceHosts],
-        resolver: { resolve: resolveThroughPublicDoh },
-      }),
-      assetSourceHosts,
-      baseUrl,
-      credentialVersion: 'live-tuzi-key',
-      endpointRevision: 'tuzi-openai-media-v1',
-      image: {
-        catalogModelId: 'gpt-image-2',
-        costPerImage: 0,
-        model: required('TUZI_GPT_IMAGE_2_MODEL'),
-      },
-      sourceUrlTtlSeconds: 3600,
-      video: {
-        catalogModelId: 'seedance-2',
-        costPerMillionTokens: 0,
-        estimatedTokensPerSecond: 0,
-        model: required('TUZI_SEEDANCE_MODEL'),
-      },
-    });
+    const adapter = createLiveTuziAdapter();
     const imageRequest = {
       ...recordedRequest('gpt-image-2', 'image.generate'),
       effectIdempotencyKey: `live-tuzi-image-${Date.now()}`,
@@ -131,7 +144,6 @@ test(
     });
     assert.equal(video.contentType, 'video/mp4');
     assert.ok(video.bytes.byteLength > 0);
-
     const evidenceDir = process.env.TUZI_LIVE_EVIDENCE_DIR?.trim();
     if (evidenceDir) {
       await mkdir(evidenceDir, { recursive: true });
@@ -148,5 +160,37 @@ test(
         videoSha256: createHash('sha256').update(video.bytes).digest('hex'),
       })
     );
+  }
+);
+
+test(
+  'live Tuzi cancellation reaches a confirmed provider terminal',
+  {
+    skip: !cancellationEnabled
+      ? 'Set RUN_LIVE_TUZI_CANCELLATION_TEST=1 to opt in.'
+      : missing.length > 0
+        ? `Missing live Tuzi variables: ${missing.join(', ')}`
+        : false,
+    timeout: 5 * 60_000,
+  },
+  async () => {
+    const cancellationId = `ticket-21-cancel-${Date.now()}`;
+    const cancellation = await new MediaActivationProbeExecutor(
+      createLiveTuziAdapter(),
+      {
+        deployments: createDefaultDeployments(),
+        models: createDefaultCatalogModels(),
+      }
+    ).executeCancellation({
+      actorId: 'ticket-21-live-canary',
+      catalogModelId: 'seedance-2',
+      correlationId: cancellationId,
+      deploymentId: 'seedance-2-tuzi-relay',
+      idempotencyKey: cancellationId,
+      operation: 'video.generate',
+      workspaceId: 'ticket-21-live-canary',
+    });
+    assert.equal(cancellation.status, 'cancelled');
+    assert.equal(cancellation.providerCost.status, 'observed');
   }
 );
