@@ -7,6 +7,8 @@ import {
 	type CanvasGraph,
 	type CanvasSessionService,
 	LaunchCodeError,
+	type SecurityRejectionAuditService,
+	type SecurityRejectionObjectKind,
 } from "@meiye/core/pro-studio";
 import {
 	AdvancedCanvasAdoptionError,
@@ -56,6 +58,7 @@ export const CANVAS_ACTION_CONTRACTS = {
 	listProjectGenerations: contract("POST", "none", false),
 	listProjects: contract("POST", "none", false),
 	listRevisions: contract("POST", "none", false),
+	listSecurityRejectionAudit: contract("POST", "none", false),
 	loadProject: contract("POST", "none", false),
 	planAgent: contract("POST", "header", true),
 	persistLocalCanvasArtifact: contract("POST", "header", true),
@@ -273,6 +276,7 @@ const schemas = {
 	listProjectGenerations: projectIdSchema,
 	listProjects: emptySchema,
 	listRevisions: projectIdSchema,
+	listSecurityRejectionAudit: emptySchema,
 	loadProject: projectIdSchema,
 	planAgent: z.strictObject({
 		intent: z.string().min(1).max(10_000),
@@ -371,6 +375,7 @@ export interface CanvasBackendRuntimePorts {
 			| "submit"
 		>;
 	};
+	securityAudit: Pick<SecurityRejectionAuditService, "list" | "record">;
 }
 
 interface CanvasBackendPortOptions extends CanvasBackendRuntimePorts {
@@ -403,7 +408,9 @@ export class CanvasBackendPort {
 	): Promise<Response> {
 		const correlationId =
 			request.headers.get("x-correlation-id") ?? crypto.randomUUID();
-		if (!isCanvasAction(action)) {
+		const disabledGrantLookup =
+			action === "getProviderReferenceGrant" && request.method === "POST";
+		if (!isCanvasAction(action) && !disabledGrantLookup) {
 			return errorResponse(
 				404,
 				"NOT_FOUND",
@@ -411,8 +418,10 @@ export class CanvasBackendPort {
 				correlationId,
 			);
 		}
-		const actionContract = CANVAS_ACTION_CONTRACTS[action];
-		if (request.method !== actionContract.method) {
+		const actionContract = isCanvasAction(action)
+			? CANVAS_ACTION_CONTRACTS[action]
+			: undefined;
+		if (actionContract && request.method !== actionContract.method) {
 			return errorResponse(
 				404,
 				"NOT_FOUND",
@@ -429,6 +438,10 @@ export class CanvasBackendPort {
 			);
 		}
 
+		let rejectionContext:
+			| { correlationId: string; userId: string; workspaceId: string }
+			| undefined;
+		let rejectionInput: unknown;
 		try {
 			const context = await this.options.sessions.authenticate(sessionToken);
 			const role = await this.options.entitlement.resolveRole(context);
@@ -445,6 +458,27 @@ export class CanvasBackendPort {
 				userId: context.userId,
 				workspaceId: context.workspaceId,
 			};
+			rejectionContext = runtimeContext;
+			if (disabledGrantLookup) {
+				await this.options.entitlement.service.assertCanEnter(runtimeContext);
+				const parsed = z
+					.strictObject({ grantId: identifierSchema })
+					.safeParse(await inputFor(request));
+				if (!parsed.success) return opaqueObjectNotFound(correlationId);
+				try {
+					await this.options.securityAudit.record(runtimeContext, {
+						objectKind: "grant",
+						requestAction: action,
+						targetId: parsed.data.grantId,
+					});
+				} catch {
+					return securityAuditUnavailable(correlationId);
+				}
+				return opaqueObjectNotFound(correlationId);
+			}
+			if (!actionContract || !isCanvasAction(action)) {
+				return opaqueObjectNotFound(correlationId);
+			}
 			if (requiresProStudioEntry(action)) {
 				await this.options.entitlement.service.assertCanEnter(runtimeContext);
 			}
@@ -481,6 +515,7 @@ export class CanvasBackendPort {
 					correlationId,
 				);
 			}
+			rejectionInput = parsed.data;
 			const result = await this.execute(
 				action,
 				context,
@@ -492,6 +527,19 @@ export class CanvasBackendPort {
 			if (result instanceof Response) return result;
 			return jsonResponse(200, result, correlationId);
 		} catch (error) {
+			const rejection = securityObjectRejection(
+				action,
+				rejectionInput,
+				error,
+			);
+			if (rejectionContext && rejection) {
+				try {
+					await this.options.securityAudit.record(rejectionContext, rejection);
+				} catch {
+					return securityAuditUnavailable(correlationId);
+				}
+				return opaqueObjectNotFound(correlationId);
+			}
 			return mappedError(error, correlationId);
 		}
 	}
@@ -708,6 +756,8 @@ export class CanvasBackendPort {
 					context,
 					(input as z.infer<typeof projectIdSchema>).projectId,
 				);
+			case "listSecurityRejectionAudit":
+				return this.options.securityAudit.list(runtimeContext);
 			case "getRevision": {
 				const value = input as z.infer<(typeof schemas)["getRevision"]>;
 				return this.options.projects.getRevision(
@@ -874,6 +924,77 @@ function mappedError(error: unknown, correlationId: string) {
 		500,
 		"INTERNAL_ERROR",
 		"Canvas action failed.",
+		correlationId,
+	);
+}
+
+function securityObjectRejection(
+	action: string,
+	input: unknown,
+	error: unknown,
+):
+	| {
+			objectKind: SecurityRejectionObjectKind;
+			requestAction: string;
+			targetId: string;
+	  }
+	| undefined {
+	const code = errorCode(error);
+	if (!code || !opaqueRejectionCode(code)) return undefined;
+	const value = input as Record<string, unknown> | undefined;
+	if (!value) return undefined;
+	if (action === "loadProject") {
+		return rejection("project", action, value.projectId);
+	}
+	if (action === "getRevision") {
+		return rejection("revision", action, value.revisionId);
+	}
+	if (action === "getAsset") {
+		return rejection("asset", action, value.assetId);
+	}
+	if (action === "getGenerationJob") {
+		return rejection("job", action, value.jobId);
+	}
+	if (action === "applyAgentOps") {
+		return rejection("confirmation", action, value.credentialId);
+	}
+	if (action === "adoptAdvancedCanvasOutput") {
+		const target = value.target as Record<string, unknown> | undefined;
+		if (target?.kind === "existing_package") {
+			return rejection("package", action, target.packageId);
+		}
+	}
+	return undefined;
+}
+
+function rejection(
+	objectKind: SecurityRejectionObjectKind,
+	requestAction: string,
+	targetId: unknown,
+) {
+	return typeof targetId === "string" && targetId
+		? { objectKind, requestAction, targetId }
+		: undefined;
+}
+
+function opaqueRejectionCode(code: string) {
+	return code === "NOT_FOUND" || code.includes("NOT_FOUND");
+}
+
+function opaqueObjectNotFound(correlationId: string) {
+	return errorResponse(
+		404,
+		"NOT_FOUND",
+		"Canvas object was not found.",
+		correlationId,
+	);
+}
+
+function securityAuditUnavailable(correlationId: string) {
+	return errorResponse(
+		503,
+		"SECURITY_AUDIT_UNAVAILABLE",
+		"Security rejection audit is unavailable.",
 		correlationId,
 	);
 }

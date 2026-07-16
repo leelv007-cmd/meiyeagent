@@ -32,7 +32,7 @@ real files inside this worktree, including after symlink resolution.
 
 | Control | Unit | Fixture real-service | Production / manual |
 | --- | --- | --- | --- |
-| Cross-workspace project/revision/asset/job/package/grant/confirmation IDOR | opacity and zero-write tests passed; per-kind rejection-audit proof missing | opacity/zero-write passed; per-kind rejection-audit proof missing | complete production matrix missing |
+| Cross-workspace project/revision/asset/job/package/grant/confirmation IDOR | opaque rejection and hashed audit contract passed | real Main/Canvas/Core/Postgres drill persisted all seven workspace-scoped rejection kinds with zero business-state mutation; fixture only | complete production matrix missing |
 | Forged `serverUrl` / provider routing fields | passed | not promoted from unit | complete production matrix missing |
 | Idempotency replay and conflicting payload | passed | not promoted from unit | complete production matrix missing |
 | Async failure refund and 2xx/accepted non-settlement | passed | not promoted from unit | complete production matrix missing |
@@ -45,8 +45,11 @@ real files inside this worktree, including after symlink resolution.
 The fixture drill is
 `mkfast-template-main/tests/e2e/specs/pro-studio-security-boundaries.spec.ts`.
 It proves real local service and database behavior for all-object opacity,
-two-session CAS recovery, and identity-switch cache fencing, but its model/media
-adapter is fixture mode and `productionEquivalent` is explicitly `false`.
+workspace/actor-scoped rejection audit persistence with no raw target IDs,
+zero business-state mutation, two-session CAS recovery, and identity-switch
+cache fencing. The disabled Grant branch is a rejection-only sentinel and does
+not enable a grant endpoint or produce a grant URL. The model/media adapter is
+fixture mode and `productionEquivalent` is explicitly `false`.
 
 The ProviderReferenceGrant conditional branch is disabled because the scoped
 Ticket 09 production probe proved bounded multipart upload from an owned
@@ -66,13 +69,11 @@ not credentials, and are intentionally not checked into this manifest.
 
 ## Current gate result
 
-`pnpm pro-studio:security --json` computes **partial** with three blockers:
+`pnpm pro-studio:security --json` computes **partial** with two blockers:
 
-1. add real-service rejection-audit assertions for every enabled cross-workspace
-   object kind;
-2. repeat the complete security matrix against the production deployment and
+1. repeat the complete security matrix against the production deployment and
    production adapters;
-3. obtain named manual security approval for that redacted production result.
+2. obtain named manual security approval for that redacted production result.
 
 `docs/evidence/pro-studio/release-evidence.json` therefore keeps
 `securityMatrix.status` as `partial`. Audio activation, N2 recovery, pricing,

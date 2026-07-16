@@ -171,6 +171,42 @@ function validateGrantDecision(control, options, errors) {
   }
 }
 
+function validateRejectionAuditEvidence(control, options, errors) {
+  const evidence = control.rejectionAuditEvidence;
+  if (!evidence || evidence.status !== 'passed') {
+    errors.push(
+      'cross_workspace_idor: complete durable rejection audit evidence is required'
+    );
+    return;
+  }
+  if (!sameMembers(evidence.objectKinds, IDOR_OBJECT_KINDS)) {
+    errors.push(
+      `cross_workspace_idor: rejection audit evidence must cover ${IDOR_OBJECT_KINDS.join(', ')}`
+    );
+  }
+  if (
+    evidence.type !== 'fixture_real_service' ||
+    evidence.environment !== 'local' ||
+    evidence.adapterMode !== 'fixture' ||
+    evidence.productionEquivalent !== false ||
+    evidence.durableStore !== 'pro_studio_audit_events' ||
+    evidence.opaqueNotFound !== true ||
+    evidence.zeroBusinessSideEffects !== true ||
+    evidence.rawTargetIdsPersisted !== false ||
+    !['disabled_no_grant', 'enabled_short_lived'].includes(evidence.grantMode)
+  ) {
+    errors.push(
+      'cross_workspace_idor: rejection audit evidence must be a local fixture drill with opaque rejection, zero business side effects, hashed target identity, and durable storage'
+    );
+  }
+  validatePassedEvidence(
+    evidence,
+    'cross_workspace_idor/rejection_audit',
+    options,
+    errors
+  );
+}
+
 function validateProductionDrillArtifact(gate, options, errors) {
   let artifact;
   try {
@@ -300,6 +336,12 @@ export function verifySecurityManifest(manifest, options = {}) {
         `${id}: rejection audit evidence is ${control.rejectionAuditStatus ?? 'missing'}`
       );
     }
+    if (
+      id === 'cross_workspace_idor' &&
+      control.rejectionAuditStatus === 'passed'
+    ) {
+      validateRejectionAuditEvidence(control, normalized, errors);
+    }
     if (!Array.isArray(control.evidence)) {
       errors.push(`${id}: evidence array is required`);
       continue;
@@ -333,6 +375,18 @@ export function verifySecurityManifest(manifest, options = {}) {
     if (!SECURITY_CONTROL_POLICY[id]) {
       errors.push(`${id}: control is not part of the frozen Ticket 25 matrix`);
     }
+  }
+  const rejectionAuditEvidence = controls.get(
+    'cross_workspace_idor'
+  )?.rejectionAuditEvidence;
+  const grantMode = controls.get('provider_reference_grant')?.mode;
+  if (
+    rejectionAuditEvidence?.status === 'passed' &&
+    rejectionAuditEvidence.grantMode !== grantMode
+  ) {
+    errors.push(
+      'cross_workspace_idor: rejection audit grant mode must match provider_reference_grant'
+    );
   }
 
   if (!Array.isArray(manifest?.releaseGates)) {

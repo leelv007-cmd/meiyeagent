@@ -14,8 +14,31 @@
         "grant",
         "confirmation"
       ],
-      "rejectionAuditStatus": "missing",
-      "rejectionAuditNote": "The fixture drill proves opacity and zero cross-workspace writes, but it does not yet assert a rejection audit record for every enabled object kind.",
+      "rejectionAuditStatus": "passed",
+      "rejectionAuditNote": "The local fixture real-service drill proves uniform opaque rejection, zero business-state mutation, and workspace-scoped PostgreSQL audit evidence for project, revision, asset, job, package, disabled grant access, and confirmation. This is not production evidence.",
+      "rejectionAuditEvidence": {
+        "type": "fixture_real_service",
+        "status": "passed",
+        "path": "mkfast-template-main/tests/e2e/specs/pro-studio-security-boundaries.spec.ts",
+        "command": "pnpm --dir mkfast-template-main exec playwright test tests/e2e/specs/pro-studio-security-boundaries.spec.ts --project=chromium",
+        "environment": "local",
+        "adapterMode": "fixture",
+        "productionEquivalent": false,
+        "durableStore": "pro_studio_audit_events",
+        "objectKinds": [
+          "project",
+          "revision",
+          "asset",
+          "job",
+          "package",
+          "grant",
+          "confirmation"
+        ],
+        "opaqueNotFound": true,
+        "zeroBusinessSideEffects": true,
+        "rawTargetIdsPersisted": false,
+        "grantMode": "disabled_no_grant"
+      },
       "evidence": [
         {
           "id": "idor-project-unit",
