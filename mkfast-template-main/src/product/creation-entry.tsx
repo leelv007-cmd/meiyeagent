@@ -1,0 +1,478 @@
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { m } from '@/locale/paraglide/messages';
+import { getLocale } from '@/lib/locale';
+import type { TemplateCatalogItemView } from '@/p1/types';
+import type { ProductState } from '@meiye/contracts';
+import {
+  IconArrowRight,
+  IconCheck,
+  IconChevronDown,
+  IconChevronUp,
+  IconSparkles,
+} from '@tabler/icons-react';
+import { useRef, useState, type RefObject } from 'react';
+
+import type { ComposerImageIdentity } from './composer-image-input';
+import { ComposerImageInput } from './composer-image-input';
+import {
+  openingSuggestions,
+  sceneChipGroups,
+  sceneIntent,
+  type ConfirmedAssetFacts,
+  type SceneId,
+} from './creation-entry-model';
+import { ExampleStorePreview } from './example-store-preview';
+import { useGlobalCommand } from './global-command-palette';
+import { SceneVisualButton } from './scene-visual-button';
+
+interface SourceOption {
+  id: string;
+  kind: 'task' | 'asset';
+  label: string;
+}
+
+const PRESET_SEED_PREVIEW_BY_FAMILY: Record<string, string | undefined> = {
+  before_after: '/seed/preset/preset-before-after.webp',
+  package_explainer: '/seed/preset/preset-package-flatlay.webp',
+  price_card: '/seed/preset/preset-price-card.webp',
+};
+
+const FEATURED_PRESET_FAMILIES = [
+  'before_after',
+  'package_explainer',
+  'price_card',
+] as const;
+
+export function CreationEntry({
+  assetSignals,
+  createPending,
+  example,
+  exampleHideError,
+  exampleHiding,
+  intent,
+  intentRef,
+  mode,
+  onCreate,
+  onHideExample,
+  onIntentChange,
+  onModeChange,
+  onPresetChange,
+  onSkip,
+  onSourceToggle,
+  onUpload,
+  onUploadAssetAdded,
+  onUploadAssetRemoved,
+  onUploadQueueChange,
+  presets,
+  selectedPresetId,
+  selectedSourceKeys,
+  sourceOptions,
+  taskSignals,
+  uploadsReady,
+}: {
+  assetSignals: Array<{ id: string; label: string }>;
+  createPending: boolean;
+  example?: ProductState['exampleStore'];
+  exampleHideError?: string;
+  exampleHiding: boolean;
+  intent: string;
+  intentRef: RefObject<HTMLTextAreaElement | null>;
+  mode: 'agent' | 'direct';
+  onCreate: () => void;
+  onHideExample: () => void;
+  onIntentChange: (intent: string) => void;
+  onModeChange: (mode: 'agent' | 'direct') => void;
+  onPresetChange: (presetId?: string) => void;
+  onSkip: () => void;
+  onSourceToggle: (key: string) => void;
+  onUpload: (
+    file: File,
+    facts: ConfirmedAssetFacts,
+    identity: ComposerImageIdentity
+  ) => Promise<void>;
+  onUploadAssetAdded: (assetId: string) => void;
+  onUploadAssetRemoved: (assetId: string) => void;
+  onUploadQueueChange: (
+    uploads: Array<{ status: 'uploading' | 'ready' | 'failed' }>
+  ) => void;
+  presets: TemplateCatalogItemView[];
+  selectedPresetId?: string;
+  selectedSourceKeys: Set<string>;
+  sourceOptions: SourceOption[];
+  taskSignals: Array<{ id: string; title: string }>;
+  uploadsReady: boolean;
+}) {
+  const [expandedScenes, setExpandedScenes] = useState(false);
+  const [selectedGuidanceId, setSelectedGuidanceId] = useState<string>();
+  const [selectedScene, setSelectedScene] = useState<SceneId>();
+  const materialEntryRef = useRef<HTMLElement>(null);
+  const { openPalette, pendingAction } = useGlobalCommand();
+  const selectedPreset = presets.find(
+    (preset) => preset.id === selectedPresetId
+  );
+  const sceneChips = sceneChipGroups(getLocale());
+  const featuredPresets = FEATURED_PRESET_FAMILIES.flatMap((family) => {
+    const preset = presets.find((item) => item.family === family);
+    return preset ? [preset] : [];
+  });
+  const suggestions = openingSuggestions({
+    assets: assetSignals,
+    tasks: taskSignals,
+  });
+
+  const fillEditableIntent = (
+    nextIntent: string,
+    source: { guidanceId?: string; scene?: SceneId }
+  ) => {
+    onPresetChange(undefined);
+    onIntentChange(nextIntent);
+    setSelectedGuidanceId(source.guidanceId);
+    setSelectedScene(source.scene);
+    window.requestAnimationFrame(() => intentRef.current?.focus());
+  };
+
+  const createDisabled =
+    createPending ||
+    !uploadsReady ||
+    (!selectedPreset && intent.trim().length < 2);
+
+  return (
+    <Card>
+      <CardHeader>
+        <Badge className="w-fit" variant="secondary">
+          {m.creation_entry_agent_ready()}
+        </Badge>
+        <CardTitle>{m.creation_entry_title()}</CardTitle>
+        <CardDescription>{m.creation_entry_description()}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {pendingAction ? (
+          <div
+            aria-live="polite"
+            className="flex flex-wrap items-start justify-between gap-3 rounded-md bg-surface-2 p-3 text-sm"
+          >
+            <div>
+              <p className="font-medium">
+                {m.creation_entry_pending({ label: pendingAction.label })}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {pendingAction.kind === 'tool'
+                  ? m.creation_entry_pending_tool_description()
+                  : m.creation_entry_pending_source_description()}
+              </p>
+            </div>
+            <Button
+              onClick={openPalette}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {m.creation_entry_change_pending()}
+            </Button>
+          </div>
+        ) : null}
+        <ComposerImageInput
+          focusRef={materialEntryRef}
+          onAssetAdded={onUploadAssetAdded}
+          onAssetRemoved={onUploadAssetRemoved}
+          onQueueChange={onUploadQueueChange}
+          onUpload={onUpload}
+        >
+          {selectedPreset ? (
+            <div aria-live="polite" className="rounded-md bg-surface-2 p-4">
+              <p className="font-semibold">
+                {m.creation_entry_selected_preset({
+                  name: selectedPreset.name,
+                })}
+              </p>
+              <p className="mt-2 text-sm">
+                {m.creation_entry_input_guide({
+                  guide: selectedPreset.inputGuide ?? '',
+                })}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {m.creation_entry_preset_input_hidden()}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <Textarea
+                aria-label={m.creation_entry_intent_aria()}
+                className="resize-none text-base"
+                onChange={(event) => onIntentChange(event.target.value)}
+                placeholder={m.creation_entry_intent_placeholder()}
+                ref={intentRef}
+                rows={4}
+                value={intent}
+              />
+              <fieldset className="space-y-2">
+                <legend className="sr-only">
+                  {m.creation_entry_scene_legend()}
+                </legend>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {sceneChips.primary.map((scene) => (
+                    <SceneVisualButton
+                      className="w-48"
+                      key={scene.id}
+                      onSelect={() =>
+                        fillEditableIntent(sceneIntent(scene.id), {
+                          scene: scene.id,
+                        })
+                      }
+                      scene={scene}
+                      selected={selectedScene === scene.id}
+                    />
+                  ))}
+                  <Button
+                    aria-expanded={expandedScenes}
+                    className="shrink-0"
+                    onClick={() => setExpandedScenes((current) => !current)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    {m.creation_entry_all_scenes()}
+                    {expandedScenes ? (
+                      <IconChevronUp aria-hidden="true" />
+                    ) : (
+                      <IconChevronDown aria-hidden="true" />
+                    )}
+                  </Button>
+                </div>
+                {expandedScenes ? (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {sceneChips.expanded.map((scene) => (
+                      <SceneVisualButton
+                        className="w-full"
+                        key={scene.id}
+                        onSelect={() =>
+                          fillEditableIntent(sceneIntent(scene.id), {
+                            scene: scene.id,
+                          })
+                        }
+                        scene={scene}
+                        selected={selectedScene === scene.id}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </fieldset>
+            </div>
+          )}
+        </ComposerImageInput>
+
+        <section aria-labelledby="today-guidance-title" className="space-y-2">
+          <div>
+            <h3 className="text-sm font-semibold" id="today-guidance-title">
+              {m.creation_entry_guidance_title()}
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {m.creation_entry_guidance_description()}
+            </p>
+          </div>
+          <div className="grid gap-px overflow-hidden rounded-lg bg-divider sm:grid-cols-3">
+            {suggestions.map((suggestion) => (
+              <Button
+                aria-pressed={selectedGuidanceId === suggestion.id}
+                className="h-auto min-w-0 justify-start rounded-none py-3 text-left whitespace-normal"
+                key={suggestion.id}
+                onClick={() =>
+                  fillEditableIntent(suggestion.intent, {
+                    guidanceId: suggestion.id,
+                  })
+                }
+                type="button"
+                variant={
+                  selectedGuidanceId === suggestion.id ? 'secondary' : 'outline'
+                }
+              >
+                <span className="min-w-0">
+                  <span className="block font-medium">{suggestion.label}</span>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                    {suggestion.sourceLabel}
+                  </span>
+                </span>
+              </Button>
+            ))}
+          </div>
+        </section>
+
+        <fieldset className="space-y-3">
+          <legend className="meiye-type-body font-semibold">
+            {m.creation_entry_method_legend()}
+          </legend>
+          <Button
+            aria-pressed={!selectedPresetId}
+            className="h-auto w-full items-center justify-start gap-3 px-3 py-2.5 text-left whitespace-normal"
+            onClick={() => onPresetChange(undefined)}
+            type="button"
+            variant={!selectedPresetId ? 'secondary' : 'outline'}
+          >
+            <span className="grid size-9 shrink-0 place-items-center rounded-md bg-surface-1">
+              <IconSparkles aria-hidden="true" className="size-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold">
+                {m.creation_entry_method_describe()}
+              </span>
+              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                {m.creation_entry_method_describe_hint()}
+              </span>
+            </span>
+            {!selectedPresetId ? (
+              <IconCheck aria-hidden="true" className="ml-auto shrink-0" />
+            ) : null}
+          </Button>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {featuredPresets.map((preset) => {
+              const previewUrl = PRESET_SEED_PREVIEW_BY_FAMILY[preset.family];
+              const presetSelected = selectedPresetId === preset.id;
+              return (
+                <Button
+                  aria-pressed={presetSelected}
+                  className="h-auto flex-col items-stretch justify-start gap-0 overflow-hidden p-0 text-left whitespace-normal"
+                  key={preset.id}
+                  onClick={() => {
+                    setSelectedGuidanceId(undefined);
+                    setSelectedScene(undefined);
+                    onPresetChange(preset.id);
+                    window.requestAnimationFrame(() =>
+                      materialEntryRef.current?.focus()
+                    );
+                  }}
+                  type="button"
+                  variant={presetSelected ? 'secondary' : 'outline'}
+                >
+                  {previewUrl ? (
+                    <img
+                      alt={m.creation_entry_preset_preview_alt({
+                        name: preset.name,
+                      })}
+                      className="aspect-[16/10] w-full object-cover"
+                      loading="lazy"
+                      src={previewUrl}
+                    />
+                  ) : (
+                    <span className="grid aspect-[16/10] w-full place-items-center bg-surface-1">
+                      <IconSparkles aria-hidden="true" className="size-7" />
+                    </span>
+                  )}
+                  <span className="flex flex-col gap-0.5 px-3 py-2.5">
+                    <span className="flex items-center gap-1.5 font-semibold">
+                      {presetSelected ? (
+                        <IconCheck
+                          aria-hidden="true"
+                          className="size-4 shrink-0"
+                        />
+                      ) : null}
+                      <span className="min-w-0">{preset.name}</span>
+                    </span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {m.creation_entry_input_guide({
+                        guide: preset.inputGuide ?? '',
+                      })}
+                    </span>
+                  </span>
+                </Button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        {sourceOptions.length > 0 ? (
+          <fieldset className="space-y-2">
+            <legend className="meiye-type-body font-semibold">
+              {m.creation_entry_source_legend()}
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {sourceOptions.map((source) => {
+                const key = `${source.kind}:${source.id}`;
+                const selected = selectedSourceKeys.has(key);
+                return (
+                  <Button
+                    aria-pressed={selected}
+                    key={key}
+                    onClick={() => onSourceToggle(key)}
+                    size="sm"
+                    type="button"
+                    variant={selected ? 'secondary' : 'outline'}
+                  >
+                    {selected ? <IconCheck aria-hidden="true" /> : null}
+                    {source.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </fieldset>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {m.creation_entry_mode_label()}
+          </span>
+          <div className="flex rounded-md bg-surface-2 p-1">
+            {(['agent', 'direct'] as const).map((item) => (
+              <Button
+                aria-pressed={mode === item}
+                key={item}
+                onClick={() => onModeChange(item)}
+                size="sm"
+                type="button"
+                variant={mode === item ? 'secondary' : 'ghost'}
+              >
+                {item === 'agent'
+                  ? m.creation_entry_mode_agent()
+                  : m.creation_entry_mode_direct()}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider pt-4">
+          <Button
+            className="px-0 font-normal text-muted-foreground hover:bg-transparent hover:text-foreground"
+            onClick={onSkip}
+            type="button"
+            variant="ghost"
+          >
+            {m.creation_entry_skip()}
+          </Button>
+          <div className="text-right">
+            {!uploadsReady ? (
+              <p className="mb-2 text-xs text-destructive">
+                {m.creation_entry_uploads_pending()}
+              </p>
+            ) : null}
+            <Button disabled={createDisabled} onClick={onCreate} type="button">
+              {m.creation_entry_create()}
+              <IconArrowRight aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+
+        {example ? (
+          <ExampleStorePreview
+            example={example}
+            hideError={exampleHideError}
+            hiding={exampleHiding}
+            onHide={onHideExample}
+            onRemix={(nextIntent) =>
+              fillEditableIntent(nextIntent, {
+                guidanceId: `example:${example.id}`,
+              })
+            }
+          />
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}

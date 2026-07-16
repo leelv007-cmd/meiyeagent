@@ -1,0 +1,298 @@
+[
+  {
+    "category": "progress-bars",
+    "name": "Panels with border",
+    "file": "progress-bars/panels-with-border.jsx",
+    "lang": "jsx",
+    "use": "票16 视频五步链 / 票09 阶段叙事（步骤态，非百分比）",
+    "codeLen": 5774
+  },
+  {
+    "category": "progress-bars",
+    "name": "Bullets and text",
+    "file": "progress-bars/bullets-and-text.jsx",
+    "lang": "jsx",
+    "use": "票16 视频五步链 / 票09 阶段叙事（步骤态，非百分比）",
+    "codeLen": 2465
+  },
+  {
+    "category": "progress-bars",
+    "name": "Circles with text",
+    "file": "progress-bars/circles-with-text.jsx",
+    "lang": "jsx",
+    "use": "票16 视频五步链 / 票09 阶段叙事（步骤态，非百分比）",
+    "codeLen": 4104
+  },
+  {
+    "category": "notifications",
+    "name": "With actions below",
+    "file": "notifications/with-actions-below.jsx",
+    "lang": "jsx",
+    "use": "票10 任务完成通知（查看+关闭双动作）",
+    "codeLen": 3208
+  },
+  {
+    "category": "notifications",
+    "name": "Condensed",
+    "file": "notifications/condensed.jsx",
+    "lang": "jsx",
+    "use": "票10 任务完成通知（查看+关闭双动作）",
+    "codeLen": 2440
+  },
+  {
+    "category": "feeds",
+    "name": "Simple with icons",
+    "file": "feeds/simple-with-icons.jsx",
+    "lang": "jsx",
+    "use": "Work 详情事件时间线（阶段叙事沉淀）",
+    "codeLen": 2849
+  },
+  {
+    "category": "feeds",
+    "name": "With multiple item types",
+    "file": "feeds/with-multiple-item-types.jsx",
+    "lang": "jsx",
+    "use": "Work 详情事件时间线（阶段叙事沉淀）",
+    "codeLen": 6761
+  },
+  {
+    "category": "badges",
+    "name": "Flat with dot",
+    "file": "badges/flat-with-dot.jsx",
+    "lang": "jsx",
+    "use": "Job/Work 状态徽章",
+    "codeLen": 2462
+  },
+  {
+    "category": "badges",
+    "name": "Flat pill with dot",
+    "file": "badges/flat-pill-with-dot.jsx",
+    "lang": "jsx",
+    "use": "Job/Work 状态徽章",
+    "codeLen": 2478
+  },
+  {
+    "category": "badges",
+    "name": "Small flat with dot",
+    "file": "badges/small-flat-with-dot.jsx",
+    "lang": "jsx",
+    "use": "Job/Work 状态徽章",
+    "codeLen": 2494
+  },
+  {
+    "category": "checkboxes",
+    "name": "List with description",
+    "file": "checkboxes/list-with-description.jsx",
+    "lang": "jsx",
+    "use": "票14 成套模块多选构建器",
+    "codeLen": 6063
+  },
+  {
+    "category": "checkboxes",
+    "name": "List with checkbox on right",
+    "file": "checkboxes/list-with-checkbox-on-right.jsx",
+    "lang": "jsx",
+    "use": "票14 成套模块多选构建器",
+    "codeLen": 6232
+  },
+  {
+    "category": "radio-groups",
+    "name": "Stacked cards",
+    "file": "radio-groups/stacked-cards.jsx",
+    "lang": "jsx",
+    "use": "票18 D4 三选一（radio 锁死单选）",
+    "codeLen": 2279
+  },
+  {
+    "category": "radio-groups",
+    "name": "Small cards",
+    "file": "radio-groups/small-cards.jsx",
+    "lang": "jsx",
+    "use": "票18 D4 三选一（radio 锁死单选）",
+    "codeLen": 1799
+  },
+  {
+    "category": "comboboxes",
+    "name": "With image",
+    "file": "comboboxes/with-image.jsx",
+    "lang": "jsx",
+    "use": "票15 模型/模板选择器（缩略图+可用态）",
+    "codeLen": 3594
+  },
+  {
+    "category": "comboboxes",
+    "name": "With status indicator",
+    "file": "comboboxes/with-status-indicator.jsx",
+    "lang": "jsx",
+    "use": "票15 模型/模板选择器（缩略图+可用态）",
+    "codeLen": 3581
+  },
+  {
+    "category": "category-previews",
+    "name": "With image backgrounds",
+    "file": "category-previews/with-image-backgrounds.jsx",
+    "lang": "jsx",
+    "use": "票12 L0 场景货架卡（图底卡）",
+    "codeLen": 4032
+  },
+  {
+    "category": "product-lists",
+    "name": "With color swatches and horizontal scrolling",
+    "file": "product-lists/with-color-swatches-and-horizontal-scrolling.jsx",
+    "lang": "jsx",
+    "use": "票12 移动横滑货架 / 3:4 竖图卡",
+    "codeLen": 4554
+  },
+  {
+    "category": "product-lists",
+    "name": "With tall images",
+    "file": "product-lists/with-tall-images.jsx",
+    "lang": "jsx",
+    "use": "票12 移动横滑货架 / 3:4 竖图卡",
+    "codeLen": 2909
+  },
+  {
+    "category": "drawers",
+    "name": "Create project form example",
+    "file": "drawers/create-project-form-example.jsx",
+    "lang": "jsx",
+    "use": "票12 渐进展开抽屉 / 资产详情侧拉（用 vaul）",
+    "codeLen": 15542
+  },
+  {
+    "category": "drawers",
+    "name": "File details example",
+    "file": "drawers/file-details-example.jsx",
+    "lang": "jsx",
+    "use": "票12 渐进展开抽屉 / 资产详情侧拉（用 vaul）",
+    "codeLen": 10518
+  },
+  {
+    "category": "grid-lists",
+    "name": "Images with details",
+    "file": "grid-lists/images-with-details.jsx",
+    "lang": "jsx",
+    "use": "票17 资产库/结果画廊卡",
+    "codeLen": 3008
+  },
+  {
+    "category": "product-quickviews",
+    "name": "With color and size selector",
+    "file": "product-quickviews/with-color-and-size-selector.jsx",
+    "lang": "jsx",
+    "use": "票17 资产快速预览（lightbox 加强）",
+    "codeLen": 8761
+  },
+  {
+    "category": "stacked-lists",
+    "name": "Narrow with badges",
+    "file": "stacked-lists/narrow-with-badges.jsx",
+    "lang": "jsx",
+    "use": "票 /dashboard/jobs 任务列表 / 生成历史",
+    "codeLen": 3671
+  },
+  {
+    "category": "stacked-lists",
+    "name": "With badges, button, and actions menu",
+    "file": "stacked-lists/with-badges-button-and-actions-menu.jsx",
+    "lang": "jsx",
+    "use": "票 /dashboard/jobs 任务列表 / 生成历史",
+    "codeLen": 5123
+  },
+  {
+    "category": "description-lists",
+    "name": "Left-aligned in card",
+    "file": "description-lists/left-aligned-in-card.jsx",
+    "lang": "jsx",
+    "use": "Work/Job/Asset 结构化详情（D3 内核）",
+    "codeLen": 4282
+  },
+  {
+    "category": "empty-states",
+    "name": "With starting points",
+    "file": "empty-states/with-starting-points.jsx",
+    "lang": "jsx",
+    "use": "票21 示例店空态 / 票19 今日建议 chips",
+    "codeLen": 2942
+  },
+  {
+    "category": "empty-states",
+    "name": "With templates",
+    "file": "empty-states/with-templates.jsx",
+    "lang": "jsx",
+    "use": "票21 示例店空态 / 票19 今日建议 chips",
+    "codeLen": 2580
+  },
+  {
+    "category": "empty-states",
+    "name": "With recommendations grid",
+    "file": "empty-states/with-recommendations-grid.jsx",
+    "lang": "jsx",
+    "use": "票21 示例店空态 / 票19 今日建议 chips",
+    "codeLen": 5946
+  },
+  {
+    "category": "command-palettes",
+    "name": "With groups",
+    "file": "command-palettes/with-groups.jsx",
+    "lang": "jsx",
+    "use": "票20 ⌘K 导航/添加双组（用 cmdk）",
+    "codeLen": 4612
+  },
+  {
+    "category": "command-palettes",
+    "name": "With icons",
+    "file": "command-palettes/with-icons.jsx",
+    "lang": "jsx",
+    "use": "票20 ⌘K 导航/添加双组（用 cmdk）",
+    "codeLen": 6221
+  },
+  {
+    "category": "input-groups",
+    "name": "Input with keyboard shortcut",
+    "file": "input-groups/input-with-keyboard-shortcut.jsx",
+    "lang": "jsx",
+    "use": "⌘K 提示徽标 / 票22 输入台",
+    "codeLen": 901
+  },
+  {
+    "category": "input-groups",
+    "name": "Input with leading icon and trailing button",
+    "file": "input-groups/input-with-leading-icon-and-trailing-button.jsx",
+    "lang": "jsx",
+    "use": "⌘K 提示徽标 / 票22 输入台",
+    "codeLen": 1454
+  },
+  {
+    "category": "action-panels",
+    "name": "With toggle",
+    "file": "action-panels/with-toggle.jsx",
+    "lang": "jsx",
+    "use": "设置页/BYOK 面板行",
+    "codeLen": 1552
+  },
+  {
+    "category": "action-panels",
+    "name": "With button on right",
+    "file": "action-panels/with-button-on-right.jsx",
+    "lang": "jsx",
+    "use": "设置页/BYOK 面板行",
+    "codeLen": 1047
+  },
+  {
+    "category": "stats",
+    "name": "Simple in cards",
+    "file": "stats/simple-in-cards.jsx",
+    "lang": "jsx",
+    "use": "周运营数据卡",
+    "codeLen": 748
+  },
+  {
+    "category": "stats",
+    "name": "With trending",
+    "file": "stats/with-trending.jsx",
+    "lang": "jsx",
+    "use": "周运营数据卡",
+    "codeLen": 1283
+  }
+]

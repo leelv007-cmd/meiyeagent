@@ -1,0 +1,47 @@
+{
+  "name": "@meiye/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pro-studio": "./src/pro-studio/index.ts",
+    "./pro-studio-runtime": "./src/pro-studio-runtime/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "canvas:retirement-access": "tsx src/p1/operations/polotno-retirement-access-cli.ts",
+    "canvas:retirement-inventory": "tsx src/p1/operations/polotno-retirement-inventory-cli.ts",
+    "contentpackage:cutover": "tsx src/p1/operations/content-package-migration-cli-entry.ts",
+    "cutover": "tsx src/p1/cutover/cli-entry.ts",
+    "dev": "tsx watch src/main.ts",
+    "dev:worker": "tsx watch src/job-worker.ts",
+    "start": "tsx src/main.ts",
+    "start:worker": "tsx src/job-worker.ts",
+    "test": "tsx --test --test-concurrency=1 'src/**/*.test.ts'",
+    "test:postgres": "tsx --test --test-concurrency=1 'src/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.14",
+    "@ai-sdk/google": "^4.0.14",
+    "@ai-sdk/mcp": "2.0.10",
+    "@ai-sdk/openai-compatible": "3.0.7",
+    "@aws-sdk/client-secrets-manager": "3.1085.0",
+    "@meiye/contracts": "workspace:*",
+    "ai": "^7.0.19",
+    "fflate": "^0.8.2",
+    "graphile-worker": "0.17.3",
+    "pg": "^8.16.3",
+    "pg-boss": "12.26.0",
+    "sharp": "0.34.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2"
+  }
+}

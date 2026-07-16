@@ -1,0 +1,656 @@
+import { DashboardHeader } from '@/components/layout/dashboard-header';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import { ObjectEvidence } from '@/components/uiux/object-evidence';
+import { ProductStatus } from '@/components/uiux/product-status';
+import { StatePanel } from '@/components/uiux/state-panel';
+import { WarmEmptyState } from '@/components/uiux/warm-empty-state';
+import { Badge } from '@/components/ui/badge';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { m } from '@/locale/paraglide/messages';
+import { getLocale, localeConfig } from '@/lib/locale';
+import { Routes } from '@/lib/routes';
+import { getPathWithLocale } from '@/lib/urls';
+import { operationsQuery } from '@/p1/client';
+import { templateViews } from '@/p1/operations-view-model';
+import { p1QueryKeys } from '@/p1/query-keys';
+import { useProductState } from '@/product/client';
+import { useQuery } from '@tanstack/react-query';
+import { IconPhoto } from '@tabler/icons-react';
+import { useMemo } from 'react';
+import {
+  canonicalAssetItems,
+  canonicalLegacyContentDetail,
+  canonicalHistoryWithComposedVideos,
+  canonicalHistoryItems,
+  canonicalMediaForAssetIds,
+  queryCanonicalHistory,
+  type CanonicalHistoryItem,
+  type CanonicalHistoryKind,
+  type CanonicalLegacyContentDetail,
+  type CanonicalMediaProjection,
+  type RawCanonicalHistory,
+} from './canonical-history-model';
+import { CanonicalMediaGallery } from './canonical-media-gallery';
+import type { CreationCatalogResponse } from './creation-catalog-model';
+import { useVideoWorkflowListObserver } from './creative-job-observer';
+import {
+  CanonicalAssetCapture,
+  CanonicalAssetGovernance,
+} from './canonical-asset-actions';
+
+type CanonicalHistoryMode =
+  | 'recent'
+  | 'search'
+  | 'assets'
+  | 'sessions'
+  | 'works'
+  | 'jobs';
+
+const copy: Record<
+  CanonicalHistoryMode,
+  {
+    description: () => string;
+    title: () => string;
+    kind?: CanonicalHistoryKind;
+  }
+> = {
+  assets: {
+    description: m.canonical_history_assets_description,
+    kind: 'asset',
+    title: m.product_navigation_assets,
+  },
+  jobs: {
+    description: m.canonical_history_jobs_description,
+    kind: 'job',
+    title: m.canonical_history_jobs_title,
+  },
+  recent: {
+    description: m.canonical_history_recent_description,
+    title: m.canonical_history_recent_title,
+  },
+  search: {
+    description: m.canonical_history_search_description,
+    title: m.canonical_history_search_title,
+  },
+  sessions: {
+    description: m.canonical_history_sessions_description,
+    kind: 'session',
+    title: m.canonical_history_session_title,
+  },
+  works: {
+    description: m.canonical_history_works_description,
+    kind: 'work',
+    title: m.canonical_history_works_title,
+  },
+};
+
+const HISTORY_KIND_LABELS: Record<CanonicalHistoryKind, () => string> = {
+  asset: m.canonical_history_kind_asset,
+  content: m.canonical_history_kind_content,
+  job: m.canonical_history_kind_job,
+  session: m.canonical_history_kind_session,
+  task: m.canonical_history_kind_task,
+  work: m.canonical_history_kind_work,
+};
+
+const HISTORY_NAVIGATION_CLASS = buttonVariants({
+  className:
+    'text-muted-foreground hover:bg-surface-1 aria-[current=page]:bg-surface-1 aria-[current=page]:text-foreground',
+  variant: 'ghost',
+});
+
+function historyItemTitle(item: CanonicalHistoryItem) {
+  if (item.kind !== 'asset') return item.title;
+
+  for (const kind of [
+    m.canonical_media_kind_image(),
+    m.canonical_media_kind_video(),
+  ]) {
+    if (item.title === m.canonical_history_untitled_asset({ kind })) {
+      return m.canonical_history_untitled_material({ kind });
+    }
+  }
+
+  return item.title;
+}
+
+function CanonicalHistoryList({
+  items,
+  mode,
+  hasStore,
+}: {
+  items: CanonicalHistoryItem[];
+  mode: CanonicalHistoryMode;
+  hasStore: boolean;
+}) {
+  if (items.length === 0) {
+    if (mode === 'assets') {
+      return (
+        <WarmEmptyState
+          action={
+            hasStore ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  document.getElementById('canonical-asset-upload')?.click()
+                }
+              >
+                {m.canonical_history_assets_empty_upload_action()}
+              </Button>
+            ) : (
+              <a
+                className={buttonVariants()}
+                href={getPathWithLocale(Routes.StoreProfile)}
+              >
+                {m.canonical_history_assets_empty_store_action()}
+              </a>
+            )
+          }
+          description={m.canonical_history_assets_empty_description()}
+          media={<IconPhoto />}
+          title={m.canonical_history_assets_empty_title()}
+        />
+      );
+    }
+
+    return (
+      <StatePanel
+        kind="empty"
+        title={m.canonical_history_empty_title()}
+        description={m.canonical_history_empty_description()}
+      />
+    );
+  }
+  return (
+    <ol className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {items.map((item) => (
+        <li key={`${item.kind}:${item.id}`}>
+          <Card className="h-full overflow-hidden">
+            {item.media ? (
+              <CanonicalMediaGallery className="p-3 pb-0" media={item.media} />
+            ) : null}
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Badge variant="outline">
+                    {HISTORY_KIND_LABELS[item.kind]()}
+                  </Badge>
+                  <CardTitle className="meiye-type-body mt-2 line-clamp-2 font-semibold">
+                    {historyItemTitle(item)}
+                  </CardTitle>
+                </div>
+                <time className="meiye-type-aux shrink-0">
+                  {new Date(item.updatedAt).toLocaleDateString(
+                    localeConfig[getLocale()].hreflang
+                  )}
+                </time>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <p className="text-muted-foreground">{item.detail}</p>
+              <a
+                className="inline-flex min-h-touch-target items-center font-medium text-primary underline-offset-4 hover:underline"
+                href={getPathWithLocale(item.href)}
+              >
+                {m.canonical_history_open_object()}
+              </a>
+            </CardContent>
+          </Card>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function CanonicalHistoryPage({
+  mode,
+  searchQuery = '',
+  onSearchQueryChange,
+}: {
+  mode: CanonicalHistoryMode;
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+}) {
+  const historyQuery = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'canonical_history'),
+    queryFn: ({ signal }) =>
+      operationsQuery<RawCanonicalHistory>('canonical_history', {}, signal),
+  });
+  const creationCatalogQuery = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'creation_catalog'),
+    queryFn: ({ signal }) =>
+      operationsQuery<CreationCatalogResponse>('creation_catalog', {}, signal),
+  });
+  const videoWorkflowsQuery = useVideoWorkflowListObserver();
+  const product = useProductState();
+  const page = copy[mode];
+  const templates = useMemo(
+    () =>
+      templateViews(
+        creationCatalogQuery.data?.templates ?? [],
+        creationCatalogQuery.data?.userTemplates ?? [],
+        creationCatalogQuery.data?.shortcuts ?? []
+      ),
+    [creationCatalogQuery.data]
+  );
+  const items = useMemo(() => {
+    if (!historyQuery.data) return [];
+    const projectedHistory = canonicalHistoryWithComposedVideos(
+      historyQuery.data,
+      videoWorkflowsQuery.data ?? []
+    );
+    const all =
+      mode === 'assets'
+        ? canonicalAssetItems(projectedHistory, product.state?.assets ?? [])
+        : canonicalHistoryItems(
+            projectedHistory,
+            product.state?.assets ?? [],
+            templates,
+            Boolean(creationCatalogQuery.data)
+          );
+    const scoped = page.kind
+      ? all.filter((item) => item.kind === page.kind)
+      : all;
+    return mode === 'search'
+      ? queryCanonicalHistory(scoped, searchQuery)
+      : scoped;
+  }, [
+    creationCatalogQuery.data,
+    historyQuery.data,
+    mode,
+    page.kind,
+    product.state?.assets,
+    searchQuery,
+    templates,
+    videoWorkflowsQuery.data,
+  ]);
+
+  return (
+    <>
+      <DashboardHeader
+        breadcrumbs={[
+          { label: m.product_navigation_workbench(), isCurrentPage: false },
+          { label: page.title(), isCurrentPage: true },
+        ]}
+      />
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 px-4 py-4 lg:gap-6 lg:px-6 lg:py-6">
+          <div>
+            <h1 className="hidden meiye-type-body font-semibold md:block">
+              {page.title()}
+            </h1>
+            <p className="meiye-type-aux mt-1">{page.description()}</p>
+          </div>
+          <nav
+            aria-label={m.canonical_history_navigation_aria()}
+            className="flex flex-wrap gap-2"
+          >
+            <a
+              aria-current={mode === 'recent' ? 'page' : undefined}
+              className={HISTORY_NAVIGATION_CLASS}
+              href={getPathWithLocale('/dashboard/recent')}
+            >
+              {m.canonical_history_navigation_recent()}
+            </a>
+            <a
+              aria-current={mode === 'search' ? 'page' : undefined}
+              className={HISTORY_NAVIGATION_CLASS}
+              href={getPathWithLocale('/dashboard/search')}
+            >
+              {m.canonical_history_navigation_search()}
+            </a>
+            <a
+              aria-current={mode === 'works' ? 'page' : undefined}
+              className={HISTORY_NAVIGATION_CLASS}
+              href={getPathWithLocale('/dashboard/works')}
+            >
+              {m.canonical_history_navigation_works()}
+            </a>
+            <a
+              aria-current={mode === 'jobs' ? 'page' : undefined}
+              className={HISTORY_NAVIGATION_CLASS}
+              href={getPathWithLocale('/dashboard/jobs')}
+            >
+              {m.canonical_history_navigation_jobs()}
+            </a>
+          </nav>
+          {mode === 'assets' ? (
+            <CanonicalAssetCapture product={product} />
+          ) : null}
+          {mode === 'search' ? (
+            <label
+              className="grid max-w-xl gap-1.5 text-sm font-medium"
+              htmlFor="canonical-history-search"
+            >
+              {m.canonical_history_search_label()}
+              <Input
+                id="canonical-history-search"
+                aria-label={m.canonical_history_search_label()}
+                autoFocus
+                placeholder={m.canonical_history_search_placeholder()}
+                value={searchQuery}
+                onChange={(event) => onSearchQueryChange?.(event.target.value)}
+              />
+            </label>
+          ) : null}
+          {historyQuery.isLoading ||
+          creationCatalogQuery.isLoading ||
+          videoWorkflowsQuery.isLoading ||
+          (mode === 'assets' && product.loading) ? (
+            <StatePanel
+              kind="loading"
+              title={m.canonical_history_loading_title()}
+              description={m.canonical_history_loading_description()}
+            />
+          ) : null}
+          {historyQuery.isError || videoWorkflowsQuery.isError ? (
+            <StatePanel
+              kind="error"
+              title={m.canonical_history_error_title()}
+              description={m.canonical_history_error_description()}
+              actionLabel={m.canonical_history_retry()}
+              onAction={() => {
+                void historyQuery.refetch();
+                void creationCatalogQuery.refetch();
+                void videoWorkflowsQuery.refetch();
+              }}
+            />
+          ) : null}
+          {historyQuery.isSuccess &&
+          videoWorkflowsQuery.isSuccess &&
+          (mode !== 'assets' || (!product.loading && product.state)) ? (
+            <CanonicalHistoryList
+              hasStore={Boolean(product.state?.store)}
+              items={items}
+              mode={mode}
+            />
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function CanonicalAssetDetailPage({ assetId }: { assetId: string }) {
+  const historyQuery = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'canonical_history'),
+    queryFn: ({ signal }) =>
+      operationsQuery<RawCanonicalHistory>('canonical_history', {}, signal),
+  });
+  const videoWorkflowsQuery = useVideoWorkflowListObserver();
+  const product = useProductState();
+  const projectedHistory = historyQuery.data
+    ? canonicalHistoryWithComposedVideos(
+        historyQuery.data,
+        videoWorkflowsQuery.data ?? []
+      )
+    : undefined;
+  const creative = projectedHistory?.assets.find((item) => item.id === assetId);
+  const persisted = product.state?.assets.find(
+    (item) => item.id === assetId || item.id === creative?.ownedAssetId
+  );
+  const item = creative ?? persisted;
+  const media = projectedHistory
+    ? canonicalMediaForAssetIds(
+        projectedHistory.assets,
+        product.state?.assets ?? [],
+        [creative?.id ?? persisted?.id ?? assetId]
+      )
+    : [];
+
+  return (
+    <DashboardLayout
+      breadcrumbs={[
+        { label: m.product_navigation_assets(), isCurrentPage: false },
+        { label: m.canonical_asset_detail_title(), isCurrentPage: true },
+      ]}
+      description={m.canonical_asset_detail_description()}
+      title={m.canonical_asset_detail_title()}
+    >
+      {historyQuery.isLoading ||
+      videoWorkflowsQuery.isLoading ||
+      product.loading ? (
+        <StatePanel
+          kind="loading"
+          title={m.canonical_asset_loading_title()}
+          description={m.canonical_asset_loading_description()}
+        />
+      ) : null}
+      {historyQuery.isError || videoWorkflowsQuery.isError ? (
+        <StatePanel
+          kind="error"
+          title={m.canonical_history_error_title()}
+          description={m.canonical_history_error_description()}
+          actionLabel={m.canonical_history_retry()}
+          onAction={() => {
+            void historyQuery.refetch();
+            void videoWorkflowsQuery.refetch();
+          }}
+        />
+      ) : null}
+      {!item &&
+      !historyQuery.isLoading &&
+      !videoWorkflowsQuery.isLoading &&
+      !historyQuery.isError &&
+      !videoWorkflowsQuery.isError &&
+      !product.loading ? (
+        <StatePanel
+          kind="empty"
+          title={m.canonical_asset_not_found_title()}
+          description={m.canonical_asset_not_found_description()}
+        />
+      ) : null}
+      {item ? (
+        <Card data-source-highlight="true">
+          <CardHeader>
+            <ObjectEvidence
+              id={creative?.id ?? persisted!.id}
+              kind="Asset"
+              source={
+                creative
+                  ? m.canonical_asset_source_generation()
+                  : m.canonical_asset_source_upload()
+              }
+            />
+            <CardTitle className="mt-3">
+              {creative?.title ??
+                persisted?.tags[0] ??
+                m.canonical_asset_persisted_title()}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <CanonicalMediaGallery
+              className="mb-4"
+              media={media}
+              presentation="hero"
+            />
+            <p>
+              {m.canonical_asset_type({
+                type: creative?.kind ?? persisted?.mediaType ?? '',
+              })}
+            </p>
+            {creative?.jobId ? (
+              <p>{m.canonical_asset_generation_relation()}</p>
+            ) : null}
+            {creative?.ownedAssetId ? (
+              <p>{m.canonical_asset_persisted_relation()}</p>
+            ) : null}
+            {persisted ? (
+              <div className="border-t border-divider pt-4">
+                <CanonicalAssetGovernance asset={persisted} product={product} />
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+    </DashboardLayout>
+  );
+}
+
+export function CanonicalLegacyContentCard({
+  detail,
+  media,
+}: {
+  detail: CanonicalLegacyContentDetail;
+  media: CanonicalMediaProjection[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <ObjectEvidence
+            id={detail.id}
+            kind="Content"
+            source={
+              detail.source === 'creative_content'
+                ? m.canonical_content_source_accepted_asset()
+                : m.canonical_content_source_product()
+            }
+          />
+          <Badge variant="outline">
+            {m.content_package_legacy_read_only()}
+          </Badge>
+        </div>
+        <CardTitle className="mt-3">{detail.title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <CanonicalMediaGallery media={media} />
+        <p className="whitespace-pre-wrap leading-6">
+          {detail.body || m.canonical_content_body_empty()}
+        </p>
+        {detail.source === 'creative_content' ? (
+          <p className="text-muted-foreground">
+            {m.canonical_content_asset_count({
+              count: detail.assetIds.length,
+            })}
+          </p>
+        ) : null}
+        {detail.productStatus ? (
+          <ProductStatus status={detail.productStatus} />
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function CanonicalContentDetailPage({
+  contentId,
+}: {
+  contentId: string;
+}) {
+  const historyQuery = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'canonical_history'),
+    queryFn: ({ signal }) =>
+      operationsQuery<RawCanonicalHistory>('canonical_history', {}, signal),
+  });
+  const product = useProductState();
+  const detail = canonicalLegacyContentDetail(
+    historyQuery.data?.contents ?? [],
+    product.state?.contents ?? [],
+    contentId
+  );
+  const media = historyQuery.data && detail
+    ? canonicalMediaForAssetIds(
+        historyQuery.data.assets,
+        product.state?.assets ?? [],
+        detail.assetIds
+      )
+    : [];
+
+  return (
+    <DashboardLayout
+      breadcrumbs={[
+        { label: m.product_navigation_content(), isCurrentPage: false },
+        { label: m.canonical_content_detail_title(), isCurrentPage: true },
+      ]}
+      description={m.canonical_content_detail_description()}
+      title={m.canonical_content_detail_title()}
+    >
+      {historyQuery.isLoading || product.loading ? (
+        <StatePanel
+          kind="loading"
+          title={m.canonical_content_loading_title()}
+          description={m.canonical_content_loading_description()}
+        />
+      ) : null}
+      {!detail && !historyQuery.isLoading && !product.loading ? (
+        <StatePanel
+          kind="empty"
+          title={m.canonical_content_not_found_title()}
+          description={m.canonical_content_not_found_description()}
+        />
+      ) : null}
+      {detail ? <CanonicalLegacyContentCard detail={detail} media={media} /> : null}
+    </DashboardLayout>
+  );
+}
+
+export function CanvasImageJobDetailPage({ jobId }: { jobId: string }) {
+  const historyQuery = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'canonical_history'),
+    queryFn: ({ signal }) =>
+      operationsQuery<RawCanonicalHistory>('canonical_history', {}, signal),
+  });
+  const product = useProductState();
+  const job = historyQuery.data?.imageJobs.find((item) => item.id === jobId);
+  const media =
+    historyQuery.data && job?.outputAssetId
+      ? canonicalMediaForAssetIds(
+          historyQuery.data.assets,
+          product.state?.assets ?? [],
+          [job.outputAssetId]
+        )
+      : [];
+
+  return (
+    <DashboardLayout
+      breadcrumbs={[
+        { label: m.canonical_history_jobs_title(), isCurrentPage: false },
+        { label: m.canonical_canvas_job_title(), isCurrentPage: true },
+      ]}
+      description={m.canonical_canvas_job_description()}
+      title={m.canonical_canvas_job_title()}
+    >
+      {historyQuery.isLoading || product.loading ? (
+        <StatePanel
+          kind="loading"
+          title={m.canonical_canvas_job_loading_title()}
+          description={m.canonical_canvas_job_loading_description()}
+        />
+      ) : null}
+      {!job && historyQuery.data ? (
+        <StatePanel
+          kind="empty"
+          title={m.canonical_canvas_job_not_found_title()}
+          description={m.canonical_canvas_job_not_found_description()}
+        />
+      ) : null}
+      {job ? (
+        <Card>
+          <CardHeader>
+            <ObjectEvidence
+              id={job.id}
+              kind="Job"
+              source={m.canonical_canvas_job_source()}
+            />
+            <CardTitle className="mt-3">
+              {m.canonical_canvas_image_generation()}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <CanonicalMediaGallery media={media} />
+            <ProductStatus status={job.status} />
+            <p>{m.canonical_canvas_job_model_fixed()}</p>
+            <p>{m.canonical_canvas_job_work_relation()}</p>
+            {job.outputAssetId ? (
+              <p>{m.canonical_canvas_job_asset_relation()}</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+    </DashboardLayout>
+  );
+}

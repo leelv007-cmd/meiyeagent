@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "n2Recovery": null,
+  "providerSafeFetch": {
+    "status": "passed",
+    "path": "docs/evidence/pro-studio/provider-safe-fetch.md"
+  },
+  "providerReferenceProbe": {
+    "status": "blocked",
+    "path": "docs/evidence/pro-studio/ticket-09/2026-07-16-tuzi-inline-data-url-probe.md"
+  },
+  "audioSpeechActivation": {
+    "status": "blocked",
+    "path": "docs/evidence/pro-studio/ticket-11-12/audio-foundation-blocked.md"
+  },
+  "audioSfxActivation": {
+    "status": "blocked",
+    "path": "docs/evidence/pro-studio/ticket-11-12/audio-foundation-blocked.md"
+  },
+  "securityMatrix": {
+    "status": "partial",
+    "path": "docs/evidence/pro-studio/security-matrix.md"
+  },
+  "crossServiceSmoke": {
+    "status": "passed",
+    "path": "docs/evidence/pro-studio/cross-service-smoke-status.md"
+  },
+  "pricingApproval": null,
+  "upsellValidation": null
+}
