@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "ff3aecae-3159-4d3d-95f5-b41908e982c3"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "51f5d088-b676-486f-b5d8-06259c70208b"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0",
+  "works": [
+    {
+      "currentRevisionId": "ff3aecae-3159-4d3d-95f5-b41908e982c3",
+      "id": "51f5d088-b676-486f-b5d8-06259c70208b",
+      "revisions": [
+        {
+          "id": "ff3aecae-3159-4d3d-95f5-b41908e982c3",
+          "workId": "51f5d088-b676-486f-b5d8-06259c70208b",
+          "document": {
+            "pages": [
+              {
+                "id": "79bd6cc5-669d-401f-862d-07170f1ca445",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-13T14:03:41.611Z",
+          "createdBy": "T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.725Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "277e432a4cf3770e669ad832ed77a1b8d5071f893acbcb6428ae4c5c34f4f437",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "5560da552a95e4994ee0419314dcb0b3a2d21678b4608777cf088900333dab4d"
+  }
+}

@@ -1,0 +1,1067 @@
+{
+  "label": "LOCAL_REHEARSAL_ONLY_NOT_PRODUCTION",
+  "environment": {
+    "databaseUrlHost": "127.0.0.1:54329",
+    "databaseName": "meiye",
+    "scannedAt": "2026-07-16T09:47:01.911Z"
+  },
+  "totals": {
+    "workspaces": 82,
+    "works": 86,
+    "pages": 174,
+    "revisions": 159,
+    "exportRecords": 16,
+    "templates": 15,
+    "templateVersions": 15
+  },
+  "dispositionCounts": {
+    "convertible": 69,
+    "read_only": 16,
+    "raster_fallback": 1
+  },
+  "elementKinds": {
+    "text": 94,
+    "image": 89,
+    "edge": 1
+  },
+  "unknownFields": {
+    "document.dpi": 14,
+    "document.unit": 14,
+    "document.fonts": 14,
+    "document.audios": 14,
+    "document.schemaVersion": 14,
+    "page.bleed": 13,
+    "page.width": 13,
+    "page.height": 13,
+    "page.children": 13,
+    "page.duration": 13,
+    "page.background": 14,
+    "element.image.name": 13,
+    "element.image.type": 13,
+    "element.image.cropX": 13,
+    "element.image.cropY": 13,
+    "element.image.flipX": 13,
+    "element.image.flipY": 13,
+    "element.image.custom": 13,
+    "element.image.clipSrc": 13,
+    "element.image.filters": 13,
+    "element.image.visible": 13,
+    "element.image.cropWidth": 13,
+    "element.image.draggable": 13,
+    "element.image.keepRatio": 13,
+    "element.image.removable": 13,
+    "element.image.resizable": 13,
+    "element.image.animations": 13,
+    "element.image.blurRadius": 13,
+    "element.image.borderSize": 13,
+    "element.image.brightness": 13,
+    "element.image.cropHeight": 13,
+    "element.image.selectable": 13,
+    "element.image.shadowBlur": 13,
+    "element.image.alwaysOnTop": 13,
+    "element.image.blurEnabled": 13,
+    "element.image.borderColor": 13,
+    "element.image.shadowColor": 13,
+    "element.image.cornerRadius": 13,
+    "element.image.sepiaEnabled": 13,
+    "element.image.showInExport": 13,
+    "element.image.shadowEnabled": 13,
+    "element.image.shadowOffsetX": 13,
+    "element.image.shadowOffsetY": 13,
+    "element.image.shadowOpacity": 13,
+    "element.image.styleEditable": 13,
+    "element.image.stretchEnabled": 13,
+    "element.image.contentEditable": 13,
+    "element.image.grayscaleEnabled": 13,
+    "element.image.brightnessEnabled": 13,
+    "element.image.crop": 4
+  },
+  "errors": [],
+  "note": "Aggregate classification of every workspace present in the local Postgres instance used for development/e2e. Includes the seeded ws_t18_local_rehearsal fixture. This is NOT a production inventory and cannot satisfy Ticket 18 / gate ② production evidence.",
+  "workspaceSummaries": [
+    {
+      "workspaceId": "ws_0bXEAAhlmp9Amg1Hin34WT09FN83cd4p",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_1ghwmEZd8nKZqJH9XsLEWXiAejHneHdO",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_1Iw7ZzAfPsAMoLAHakiuDw2XlYDzGyjf",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_2pVqEPORpFcbpcPepX5paxvP87MeUmnF",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_3eKdZqrLHRsl6O6SJPR6BWzN4Kh9qK5S",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_3zo7eOVKH3j24e9fxLFWc60DZJ8L7PiQ",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_4aRu9iPUwUh8vXnot5dJHiuVtIXQxlLu",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_5eZiKU1xA4XstiCo0iv1ttjrgAZQSX4o",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_7UcU9nvGOYvBPEYlyWs6bCdajsNVOF0m",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_8T7wt2aaLPrwfU6XJIw81vs45cmMTo3r",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_A1J6uweCNInZl0OqRQ7NyBbJxk3mpDcU",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_A6VqXpckwxHUl6FCTnkyUjp8vs3U3vq0",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_AJ3UykyDW9swGwe2d0q1ogg3X0NBIkDh",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_ARpYasGGTcOH643oAALGOSxxHuazCjPq",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_Atvav5g1beqjuuYEhVlWPttUaTfHv3yt",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_AuM19zOP4hH2XPCulj1VZQ0nf5xrUGyD",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_Cx48ZyFBy9WhrAPSEGsv7RhInaZRTgQ1",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_EbkhzCSLYVal4QCYVHOp9ds1i8lR552M",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_eCgCevaLwjWzk8PfaCcC2wTcNHmmZFG9",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_EGLMhNdlIyUIjkMeoAuLbEyNFL4zE37r",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_er2yYF77GNbA8pwrevDaIUcnmTtIWau6",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_eRoY2hwdGoNAGP17SO9sjKL8m0tKZ8pF",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_F6004pNaqYt5w5XsHOEHeLJbSDvDLjE9",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_FTUzIJCPdyDSj3MEblkdoIR3RwHaPpeQ",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_gMjv1IfK8tKE8vJto830CjLSstKxnRmB",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_H83cJvWqsga9O1BbmDb3NMlU2fgCoTOn",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_hXs9yfm4txCbJBOY7886ZrVpUJMv62rX",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+      "works": 1,
+      "revisions": 7,
+      "templates": 0,
+      "exportRecords": 4,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_IxCWqm0kp8OvSayMmUQ5C1aUEsojZiNp",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_ixi8mrbQLHNnDOJP6p7EHdPtBBw604om",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_j9JXpLRhnlf43V6EgHDe25wZGIMTbl3Z",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_jIChsZZykSV8okhtgqCx0otwe61CktsQ",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_JrizNBry4F0X1XaTVjVhZgnm1vARkLOA",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_JT4ycoQDJAtoKhT1vVfANhl5Ui4ij3Zu",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_jutaAQZ5awYKHj93ZOy0Qep4omYK5hDy",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_JXw6ug2S3K6yHBkTJLsSwjRkx7JV4Ttv",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_K7c3gDfwc1LCY52ViHxhjI6eF21C7P89",
+      "works": 2,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 2,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_l29wpqEn8qOUXPJXAUXc1Nx527ooeddB",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_mx8KHCOqdw29GZeBF9xkXXxkUgmUVxH5",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_myvIqbbdUtAevsAg42tA7leqnBkRrBOW",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_nDZOShSuotm5wljruI41KICh53xDwhrx",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_nlazA0Q1gf0JgtVi2s6iUukox1mSaSgB",
+      "works": 1,
+      "revisions": 3,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_nNpDHfQomMiMoqghWI3PfjJimqhwjAvs",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_pWrlDutY7O0CVUyEnzXupfcczvNFrzqY",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_pXoAuARcoAdBmtiAGAEEsLVsOZOWmrRM",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_QOyf0q7velTgOm4p4bbbu0pZd5rVGW8L",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_qYvUfhcE5jdlKnvpSWA2QD3bqBeFEROV",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_rlLCdli4ZWTvdtdIV8cqCGepQuv5kkXy",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb",
+      "works": 2,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 2,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_SH89uHoIli12yhEmn7Pa3a9objWBwHrS",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_t18_local_rehearsal",
+      "works": 3,
+      "revisions": 3,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 1,
+        "raster_fallback": 1
+      }
+    },
+    {
+      "workspaceId": "ws_T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_uSC5XicIHZt8EFAY0ZSfekLIbNrhfkIr",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_V2zcMUfRnLoalVWmDWk2o1Dx8WN7R9fE",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT",
+      "works": 1,
+      "revisions": 7,
+      "templates": 0,
+      "exportRecords": 4,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_wKX0NNZJuFjaZhsEknsnWzfTBfDZyeGj",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_WlILuDu28PVSoWk6TGA8YT9tfdmJQKWh",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_xj4Isl5ZNYBO8qKop4Wk2ezqfNTaJJQp",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_Y5nwLXjSlyoaSloR7NBJrolWx1xo5xY0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_YkVGDY9mGihXG80c7ll0WTlfUkzGL4a6",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      }
+    },
+    {
+      "workspaceId": "ws_Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "18c34d0b-f205-4e38-9091-66fcd578afdf"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "2203fcf5-28a4-4e81-910e-a565f8b2b64a"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv",
+  "works": [
+    {
+      "currentRevisionId": "18c34d0b-f205-4e38-9091-66fcd578afdf",
+      "id": "2203fcf5-28a4-4e81-910e-a565f8b2b64a",
+      "revisions": [
+        {
+          "id": "18c34d0b-f205-4e38-9091-66fcd578afdf",
+          "workId": "2203fcf5-28a4-4e81-910e-a565f8b2b64a",
+          "document": {
+            "pages": [
+              {
+                "id": "2b5afb6e-0987-4d98-810c-fb668fe8490f",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-11T02:59:06.355Z",
+          "createdBy": "Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.727Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "f6b889271dc0eda5fe76454ef8ddbbce25d2e645b9f54d1cc6dadca82843e7e5",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "4b1b7bd1a61935ae7c56dafd6984b138265f6e3da211fe37737a4c336f65a62b"
+  }
+}

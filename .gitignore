@@ -1,0 +1,40 @@
+.DS_Store
+node_modules/
+dist/
+dist-ssr/
+build/
+.next/
+.turbo/
+.cache/
+.data/
+*.local
+.env
+.env.*
+!.env.example
+!**/.env.example
+.wrangler/
+.tanstack/
+.vinxi/
+.output/
+playwright-report/
+test-results/
+/.playwright-cli/
+/docs/design/图片/
+
+# private credentials & provider docs — never commit (real API keys / base URLs)
+/docs/_private/*
+!/docs/_private/README.md
+
+# embedded repositories
+references/repos/creatok-skills/
+.gstack/
+
+# vozeb third-party clone (has its own .git, ~11M; re-cloneable, license AGPL — kept local only)
+references/repos/vozeb/
+# codex fleet run logs (bulky process artifacts, ~9M)
+.scratch/vozeb-xcheck-2026-07-15/logs/
+
+# codex 复核过程 stdout 日志(保留 prompts/reports/STATE)
+.scratch/spec-codex-review-2026-07-16/logs/
+.scratch/vozeb-canvas-migration-2026-07-16/logs/
+.worktrees/

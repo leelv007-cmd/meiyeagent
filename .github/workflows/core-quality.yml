@@ -1,0 +1,42 @@
+name: Core quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: meiye_test
+          POSTGRES_PASSWORD: meiye
+          POSTGRES_USER: meiye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meiye -d meiye_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meiye/contracts typecheck
+      - run: pnpm --filter @meiye/core typecheck
+      # PostgreSQL test files share the migration schema, so run them in a
+      # deterministic file order instead of racing idempotent DDL with writes.
+      - run: pnpm --filter @meiye/core test:postgres

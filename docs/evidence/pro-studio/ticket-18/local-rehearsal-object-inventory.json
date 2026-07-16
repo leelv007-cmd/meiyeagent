@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "captureId": "local-rehearsal-2026-07-16T17-45-00Z",
+  "capturedAt": "2026-07-16T17:45:01.000Z",
+  "deployment": "local-rehearsal",
+  "workspaceId": "ws_t18_local_rehearsal",
+  "objects": [
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_t18_local_rehearsal/owned/t18-rehearsal-export.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sizeBytes": 128
+    }
+  ]
+}

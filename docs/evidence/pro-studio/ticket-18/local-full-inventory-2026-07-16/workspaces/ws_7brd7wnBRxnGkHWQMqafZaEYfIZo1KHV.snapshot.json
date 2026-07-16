@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "6e564cd1-e20f-4a6c-86ea-9df552a4a767"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "497a0f61-e4c6-440e-8810-99f3095f4407"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV",
+  "works": [
+    {
+      "currentRevisionId": "6e564cd1-e20f-4a6c-86ea-9df552a4a767",
+      "id": "497a0f61-e4c6-440e-8810-99f3095f4407",
+      "revisions": [
+        {
+          "id": "6e564cd1-e20f-4a6c-86ea-9df552a4a767",
+          "workId": "497a0f61-e4c6-440e-8810-99f3095f4407",
+          "document": {
+            "pages": [
+              {
+                "id": "503a005c-f48f-48de-9614-80562518853b",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-13T13:09:34.620Z",
+          "createdBy": "7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.647Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "57d955e94a3cfdccc15c3db542084c0460d317200c059989f53c6e29f72008af",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "5cc4ae28b38fc7513a77037780ac58fd3a7510c3e25a4b91a2c6c4493d961e60"
+  }
+}

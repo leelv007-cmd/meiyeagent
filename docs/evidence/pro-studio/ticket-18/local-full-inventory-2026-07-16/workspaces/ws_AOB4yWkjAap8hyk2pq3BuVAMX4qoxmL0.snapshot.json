@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "edec14de-eebb-4d17-8f1b-a3d264756c6f"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "e97e25fc-007b-489f-bb24-1077aede156a"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0",
+  "works": [
+    {
+      "currentRevisionId": "edec14de-eebb-4d17-8f1b-a3d264756c6f",
+      "id": "e97e25fc-007b-489f-bb24-1077aede156a",
+      "revisions": [
+        {
+          "id": "edec14de-eebb-4d17-8f1b-a3d264756c6f",
+          "workId": "e97e25fc-007b-489f-bb24-1077aede156a",
+          "document": {
+            "pages": [
+              {
+                "id": "a0965790-8d35-4671-9950-4b0c8bf1f417",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T10:21:18.572Z",
+          "createdBy": "AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.669Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "776337490fc12cc8c2a919fb1e1c23e4c5f29585943a4f9706e777bc024f578a",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "4408507353fcb55d492b01188a7b2d3f07a790e2ed5a5da2d4e13c57e169b681"
+  }
+}

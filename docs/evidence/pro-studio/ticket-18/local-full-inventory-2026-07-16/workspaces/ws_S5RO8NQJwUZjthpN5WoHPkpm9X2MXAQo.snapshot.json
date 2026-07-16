@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "2931cda2-fbb8-4dc3-bcf3-b77aed3d280c"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "9f25b57b-8ee6-4dbc-81a8-329eb228a3c2"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo",
+  "works": [
+    {
+      "currentRevisionId": "2931cda2-fbb8-4dc3-bcf3-b77aed3d280c",
+      "id": "9f25b57b-8ee6-4dbc-81a8-329eb228a3c2",
+      "revisions": [
+        {
+          "id": "2931cda2-fbb8-4dc3-bcf3-b77aed3d280c",
+          "workId": "9f25b57b-8ee6-4dbc-81a8-329eb228a3c2",
+          "document": {
+            "pages": [
+              {
+                "id": "0e98f82e-864c-407a-8969-938cdda60c78",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T10:28:55.835Z",
+          "createdBy": "S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.718Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "cd2065c0f1ee66b380fd1552d5cb2d1c07e7df910d273433637d5d74fe7ae763",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "5c94cf32df3aae0522d62404d7f8a310de7912fbd824ef8736797405d0516201"
+  }
+}

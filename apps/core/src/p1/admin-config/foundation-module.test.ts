@@ -1,0 +1,675 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { z } from 'zod';
+import { P1ApplicationService } from '../foundation/application-service.js';
+import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import { createDefaultDeployments } from '../model-supply/catalog.js';
+import {
+  AdminConfigFoundationModule,
+  MemoryAdminConfigRepository,
+} from './foundation-module.js';
+
+describe('Admin config application seam', () => {
+  const context = {
+    workspaceId: 'workspace-a',
+    userId: 'platform-admin',
+    correlationId: 'config-apply-1',
+    actor: 'admin' as const,
+  };
+
+  it('lets an admin persist a config value while keeping the boot-time effective value honest', async () => {
+    const foundation = new MemoryFoundationRepository();
+    const config = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(foundation, {
+      operations: [
+        new AdminConfigFoundationModule(config, {
+          adminActorIds: ['platform-admin'],
+          runtime: {
+            'model.execution.mode': 'recorded',
+          },
+          activationEvidenceStatus: 'recorded_only',
+        }),
+      ],
+    });
+    const applied = await service.executeModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_apply',
+        payload: {
+          key: 'model.execution.mode',
+          value: 'direct',
+          expectedRevision: null,
+          reason: 'Prepare direct execution',
+        },
+      },
+      'config-apply-1',
+    );
+    const projected = await service.queryModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_get',
+        payload: { key: 'model.execution.mode' },
+      },
+    );
+
+    assert.deepEqual(applied, projected);
+    assert.deepEqual(projected, {
+      key: 'model.execution.mode',
+      scope: 'global',
+      storedValue: 'direct',
+      effectiveValue: 'recorded',
+      wired: false,
+      activationEvidenceStatus: 'recorded_only',
+      revision: 1,
+      status: 'applied',
+      rolledBackToRevision: null,
+      actorId: 'platform-admin',
+      reason: 'Prepare direct execution',
+      correlationId: 'config-apply-1',
+      createdAt: (projected as { createdAt: string }).createdAt,
+    });
+    assert.equal(
+      Number.isFinite(
+        Date.parse((projected as { createdAt: string }).createdAt),
+      ),
+      true,
+    );
+  });
+
+  it('lists every registered config key before any stored value exists', async () => {
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          runtime: {
+            'model.execution.mode': 'recorded',
+            'model.media.execution.mode': 'recorded',
+          },
+        }),
+      ],
+    });
+
+    const projected = await service.queryModule<
+      Record<string, unknown>,
+      Array<{
+        key: string;
+        storedValue: unknown;
+        effectiveValue: unknown;
+        wired: boolean;
+      }>
+    >(context, 'admin-config', {
+      action: 'config_list',
+      payload: {},
+    });
+
+    assert.deepEqual(
+      projected.map((item) => item.key),
+      [
+        'byok.adapter.assembly',
+        'compliance.aigc_label.default',
+        'compliance.regulated_mode.default',
+        'compliance.watermark.default',
+        'douyin.adapter.assembly',
+        ...createDefaultDeployments()
+          .map(
+            (deployment) =>
+              `model.activation.evidence.${deployment.id}`,
+          )
+          .sort(),
+        'model.execution.mode',
+        'model.media.execution.mode',
+        'plan.addons',
+        'plan.allowances.growth',
+        'plan.allowances.pro',
+        'plan.allowances.starter',
+      ],
+    );
+    assert.ok(
+      projected.every(
+        (item) => item.storedValue === null && item.wired === false,
+      ),
+    );
+    assert.equal(
+      projected.find((item) => item.key === 'model.execution.mode')
+        ?.effectiveValue,
+      'recorded',
+    );
+  });
+
+  it('projects mode assemblability and missing requirements from the apply validator', async () => {
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          valueValidators: {
+            'model.media.execution.mode': (value) => {
+              if (value === 'tuzi' || value === 'ark,tuzi') {
+                throw new Error('TUZI_MEDIA_API_KEY is required.');
+              }
+            },
+          },
+        }),
+      ],
+    });
+
+    const projected = await service.queryModule<
+      Record<string, unknown>,
+      Array<{
+        key: string;
+        modeAvailability?: Array<{
+          assemblable: boolean;
+          missingRequirements: string[];
+          value: string;
+        }>;
+      }>
+    >(context, 'admin-config', {
+      action: 'config_list',
+      payload: {},
+    });
+    const media = projected.find(
+      (item) => item.key === 'model.media.execution.mode'
+    );
+
+    assert.deepEqual(media?.modeAvailability, [
+      { assemblable: true, missingRequirements: [], value: 'disabled' },
+      { assemblable: true, missingRequirements: [], value: 'ark' },
+      {
+        assemblable: false,
+        missingRequirements: ['TUZI_MEDIA_API_KEY'],
+        value: 'tuzi',
+      },
+      {
+        assemblable: false,
+        missingRequirements: ['TUZI_MEDIA_API_KEY'],
+        value: 'ark,tuzi',
+      },
+    ]);
+  });
+
+  it('does not create a new revision when an admin reapplies the same value', async () => {
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository()),
+      ],
+    });
+    const command = (expectedRevision: number | null) => ({
+      action: 'config_apply',
+      payload: {
+        key: 'compliance.watermark.default',
+        value: true,
+        expectedRevision,
+        reason: 'Keep the approved default',
+      },
+    });
+
+    const first = await service.executeModule(
+      context,
+      'admin-config',
+      command(null),
+      'watermark-apply-1',
+    );
+    const second = await service.executeModule(
+      context,
+      'admin-config',
+      command(1),
+      'watermark-apply-2',
+    );
+    const history = await service.queryModule<
+      Record<string, unknown>,
+      Array<{ revision: number }>
+    >(context, 'admin-config', {
+      action: 'config_history',
+      payload: { key: 'compliance.watermark.default' },
+    });
+
+    assert.deepEqual(second, first);
+    assert.deepEqual(
+      history.map((revision) => revision.revision),
+      [1],
+    );
+  });
+
+  it('projects HTTP and worker effective modes independently for runtime keys', async () => {
+    const repository = new MemoryAdminConfigRepository();
+    await repository.apply({
+      actorId: context.userId,
+      correlationId: context.correlationId,
+      expectedRevision: null,
+      key: 'model.execution.mode',
+      reason: 'switch after restart',
+      scope: 'global',
+      value: 'disabled',
+      workspaceId: '__global__',
+    });
+    await repository.upsertEffectiveSnapshot({
+      bootedAt: '2026-07-15T10:00:00.000Z',
+      executionMode: 'recorded',
+      executionSource: { source: 'db_revision', revision: 1 },
+      fallbackReason: null,
+      mediaMode: 'disabled',
+      mediaSource: { source: 'env_fallback' },
+      processKind: 'http',
+    });
+    await repository.upsertEffectiveSnapshot({
+      bootedAt: '2026-07-15T10:01:00.000Z',
+      executionMode: 'disabled',
+      executionSource: { source: 'db_revision', revision: 2 },
+      fallbackReason: null,
+      mediaMode: 'disabled',
+      mediaSource: { source: 'env_fallback' },
+      processKind: 'job-worker',
+    });
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(repository, {
+          runtime: { 'model.execution.mode': 'recorded' },
+          wiredKeys: ['model.execution.mode'],
+        }),
+      ],
+    });
+
+    const projected = await service.queryModule<
+      Record<string, unknown>,
+      { effectiveSnapshots: Array<Record<string, unknown>> }
+    >(context, 'admin-config', {
+      action: 'config_get',
+      payload: { key: 'model.execution.mode' },
+    });
+
+    assert.deepEqual(projected.effectiveSnapshots, [
+      {
+        bootedAt: '2026-07-15T10:00:00.000Z',
+        effectiveValue: 'recorded',
+        fallbackReason: null,
+        processKind: 'http',
+        source: { source: 'db_revision', revision: 1 },
+      },
+      {
+        bootedAt: '2026-07-15T10:01:00.000Z',
+        effectiveValue: 'disabled',
+        fallbackReason: null,
+        processKind: 'job-worker',
+        source: { source: 'db_revision', revision: 2 },
+      },
+    ]);
+  });
+
+  it('rolls back by appending an audited revision without rewriting history', async () => {
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository()),
+      ],
+    });
+    const apply = (value: boolean, expectedRevision: number | null) =>
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: 'compliance.aigc_label.default',
+            value,
+            expectedRevision,
+            reason: `Set default to ${value}`,
+          },
+        },
+        `aigc-apply-${String(value)}`,
+      );
+    await apply(false, null);
+    await apply(true, 1);
+
+    const rolledBack = await service.executeModule<
+      Record<string, unknown>,
+      { revision: number; storedValue: boolean; rolledBackToRevision: number }
+    >(
+      context,
+      'admin-config',
+      {
+        action: 'config_rollback',
+        payload: {
+          key: 'compliance.aigc_label.default',
+          targetRevision: 1,
+          expectedRevision: 2,
+          reason: 'Restore the launch default',
+        },
+      },
+      'aigc-rollback-1',
+    );
+    const history = await service.queryModule<
+      Record<string, unknown>,
+      Array<{
+        revision: number;
+        storedValue: boolean;
+        status: string;
+        rolledBackToRevision: number | null;
+      }>
+    >(context, 'admin-config', {
+      action: 'config_history',
+      payload: { key: 'compliance.aigc_label.default' },
+    });
+
+    assert.deepEqual(
+      {
+        revision: rolledBack.revision,
+        storedValue: rolledBack.storedValue,
+        rolledBackToRevision: rolledBack.rolledBackToRevision,
+      },
+      { revision: 3, storedValue: false, rolledBackToRevision: 1 },
+    );
+    assert.deepEqual(
+      history.map((revision) => ({
+        revision: revision.revision,
+        storedValue: revision.storedValue,
+        status: revision.status,
+        rolledBackToRevision: revision.rolledBackToRevision,
+      })),
+      [
+        {
+          revision: 1,
+          storedValue: false,
+          status: 'applied',
+          rolledBackToRevision: null,
+        },
+        {
+          revision: 2,
+          storedValue: true,
+          status: 'applied',
+          rolledBackToRevision: null,
+        },
+        {
+          revision: 3,
+          storedValue: false,
+          status: 'rolled_back',
+          rolledBackToRevision: 1,
+        },
+      ],
+    );
+  });
+
+  it('rejects secret-shaped values before they can enter config history', async () => {
+    const repository = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [new AdminConfigFoundationModule(repository)],
+    });
+
+    await assert.rejects(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: 'model.execution.mode',
+            value: 'sk-test-secret-value',
+            expectedRevision: null,
+            reason: 'Must be rejected',
+          },
+        },
+        'secret-shaped-config',
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'INVALID_STATE' &&
+        /secret/i.test(error.message),
+    );
+    assert.deepEqual(
+      await repository.history(
+        'global',
+        '__global__',
+        'model.execution.mode',
+      ),
+      [],
+    );
+  });
+
+  it('rejects hand-written activation evidence through config_apply', async () => {
+    const repository = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [new AdminConfigFoundationModule(repository)],
+    });
+    const key = 'model.activation.evidence.openai-direct-recorded';
+
+    await assert.rejects(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key,
+            value: {
+              configurationRevision: 'f'.repeat(64),
+              evidenceRef: `activation-probe-${'a'.repeat(28)}`,
+              status: 'live_verified',
+              verifiedAt: '2026-07-15T00:00:00.000Z',
+            },
+            expectedRevision: null,
+            reason: 'Must come from a probe',
+          },
+        },
+        'manual-activation-evidence',
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'INVALID_STATE' &&
+        /activation_probe_run/.test(error.message),
+    );
+    assert.deepEqual(await repository.history('global', '__global__', key), []);
+  });
+
+  it('keeps workspace-scoped config isolated while denying global config to merchant roles', async () => {
+    const foundation = new MemoryFoundationRepository();
+    foundation.grantOwner('workspace-a', 'owner-a');
+    foundation.grantOwner('workspace-b', 'owner-b');
+    const service = new P1ApplicationService(foundation, {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          additionalDefinitions: [
+            {
+              key: 'workspace.test.setting',
+              scope: 'workspace',
+              description: 'Workspace isolation test setting.',
+              valueSchema: z.boolean(),
+            },
+          ],
+        }),
+      ],
+    });
+    const ownerA = {
+      workspaceId: 'workspace-a',
+      userId: 'owner-a',
+      correlationId: 'workspace-a-config',
+      actor: 'owner' as const,
+    };
+    const ownerB = {
+      workspaceId: 'workspace-b',
+      userId: 'owner-b',
+      correlationId: 'workspace-b-config',
+      actor: 'owner' as const,
+    };
+
+    await service.executeModule(
+      ownerA,
+      'admin-config',
+      {
+        action: 'config_apply',
+        payload: {
+          key: 'workspace.test.setting',
+          value: true,
+          expectedRevision: null,
+          reason: 'Workspace A setting',
+        },
+      },
+      'workspace-a-setting',
+    );
+    const visibleToA = await service.queryModule<
+      Record<string, unknown>,
+      { storedValue: unknown }
+    >(ownerA, 'admin-config', {
+      action: 'config_get',
+      payload: { key: 'workspace.test.setting' },
+    });
+    const invisibleToB = await service.queryModule<
+      Record<string, unknown>,
+      { storedValue: unknown }
+    >(ownerB, 'admin-config', {
+      action: 'config_get',
+      payload: { key: 'workspace.test.setting' },
+    });
+
+    assert.equal(visibleToA.storedValue, true);
+    assert.equal(invisibleToB.storedValue, null);
+    await assert.rejects(
+      service.queryModule(ownerA, 'admin-config', {
+        action: 'config_get',
+        payload: { key: 'model.execution.mode' },
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'FORBIDDEN',
+    );
+
+    const globalOnlyService = new P1ApplicationService(foundation, {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository()),
+      ],
+    });
+    await assert.rejects(
+      globalOnlyService.queryModule(ownerA, 'admin-config', {
+        action: 'config_list',
+        payload: {},
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'FORBIDDEN',
+    );
+  });
+
+  it('exposes only effective compliance defaults to workspace members', async () => {
+    const foundation = new MemoryFoundationRepository();
+    foundation.grantOwner('workspace-a', 'merchant-owner');
+    const config = new MemoryAdminConfigRepository();
+    await config.apply({
+      scope: 'global',
+      workspaceId: '__global__',
+      key: 'compliance.regulated_mode.default',
+      value: true,
+      expectedRevision: null,
+      actorId: 'platform-admin',
+      reason: 'Default regulated mode',
+      correlationId: 'config-defaults-1',
+    });
+    const service = new P1ApplicationService(foundation, {
+      operations: [
+        new AdminConfigFoundationModule(config, {
+          runtime: {
+            'compliance.aigc_label.default': true,
+            'compliance.regulated_mode.default': false,
+            'compliance.watermark.default': false,
+          },
+        }),
+      ],
+    });
+
+    const result = await service.queryModule(
+      {
+        workspaceId: 'workspace-a',
+        userId: 'merchant-owner',
+        correlationId: 'config-defaults-query',
+      },
+      'admin-config',
+      { action: 'config_defaults', payload: {} },
+    );
+
+    assert.deepEqual(result, {
+      'compliance.aigc_label.default': true,
+      'compliance.regulated_mode.default': true,
+      'compliance.watermark.default': false,
+    });
+    assert.equal(JSON.stringify(result).includes('actorId'), false);
+  });
+
+  it('reports hot-read commerce config as effective immediately', async () => {
+    const config = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(config, {
+          hotReadKeys: ['plan.allowances.growth'],
+          runtime: {
+            'plan.allowances.growth': {
+              allowance: { audio: 0, copy: 100, image: 40, video: 20 },
+              concurrencyLimit: 4,
+              queuePriority: 5,
+              supportLabel: 'priority',
+            },
+          },
+          wiredKeys: ['plan.allowances.growth'],
+        }),
+      ],
+    });
+    const value = {
+      allowance: { audio: 0, copy: 120, image: 48, video: 24 },
+      concurrencyLimit: 5,
+      queuePriority: 6,
+      supportLabel: 'priority',
+    };
+    await service.executeModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_apply',
+        payload: {
+          expectedRevision: null,
+          key: 'plan.allowances.growth',
+          reason: 'Apply the new growth package immediately',
+          value,
+        },
+      },
+      'hot-growth-config',
+    );
+
+    const projected = (await service.queryModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_get',
+        payload: { key: 'plan.allowances.growth' },
+      },
+    )) as { effectiveValue: unknown; storedValue: unknown; wired: boolean };
+
+    assert.deepEqual(projected.storedValue, value);
+    assert.deepEqual(projected.effectiveValue, value);
+    assert.equal(projected.wired, true);
+  });
+
+  it('returns built-in boolean compliance defaults when no config has been written', async () => {
+    const foundation = new MemoryFoundationRepository();
+    foundation.grantOwner('workspace-a', 'merchant-owner');
+    const service = new P1ApplicationService(foundation, {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository()),
+      ],
+    });
+
+    assert.deepEqual(
+      await service.queryModule(
+        {
+          workspaceId: 'workspace-a',
+          userId: 'merchant-owner',
+          correlationId: 'default-compliance-query',
+        },
+        'admin-config',
+        { action: 'config_defaults', payload: {} },
+      ),
+      {
+        'compliance.aigc_label.default': true,
+        'compliance.regulated_mode.default': false,
+        'compliance.watermark.default': false,
+      },
+    );
+  });
+});

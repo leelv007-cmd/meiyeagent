@@ -1,0 +1,284 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import {
+  FileSystemAssetStorage,
+  fileSystemAssetStorageFromEnv,
+} from './filesystem-asset-storage.js';
+import { RecordedAdapterRouter, recordedRequest } from './adapters.js';
+import { videoCompositionRuntimeFromEnv } from './composition-runtime.js';
+import { MemoryModelAssetStorage } from './index.js';
+
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zp3sAAAAASUVORK5CYII=',
+  'base64',
+);
+
+test('main and worker storage assembly share the same default public asset URL', () => {
+  const storage = fileSystemAssetStorageFromEnv({
+    APP_BASE_URL: 'http://web.test',
+    P1_ASSET_STORAGE_DIR: './.data/test-assets',
+  });
+  const objectKey = `workspace-a/generated/${'a'.repeat(64)}.png`;
+  assert.equal(
+    storage.publicUrl(objectKey),
+    `http://web.test/api/core/p1/assets?objectKey=${encodeURIComponent(objectKey)}`,
+  );
+});
+
+test('filesystem storage keeps real bytes and restores a verified receipt after restart', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-assets-test-'));
+  try {
+    const first = new FileSystemAssetStorage({
+      publicBaseUrl: 'http://core.test/v1/assets',
+      rootDirectory,
+    });
+    const receipt = await first.persistGeneratedAsset({
+      bytes: png,
+      contentType: 'image/png',
+      sourceTaskRef: 'provider-image-task',
+      workspaceId: 'workspace-a',
+    });
+    assert.equal(receipt.sizeBytes, png.byteLength);
+    assert.match(receipt.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(receipt.sourceTaskRef, 'provider-image-task');
+    assert.equal(
+      first.publicUrl(receipt.objectKey),
+      `http://core.test/v1/assets/${receipt.objectKey}`,
+    );
+
+    const restarted = new FileSystemAssetStorage({
+      publicBaseUrl: 'http://core.test/v1/assets',
+      rootDirectory,
+    });
+    const materialized = await restarted.materialize({
+      asset: receipt,
+      workspaceId: 'workspace-a',
+    });
+    const restored = await restarted.read(receipt.objectKey);
+    assert.equal(materialized.path.startsWith(rootDirectory), true);
+    assert.deepEqual(restored.bytes, png);
+    assert.equal(restored.contentType, 'image/png');
+    await assert.rejects(
+      restarted.read(`${receipt.objectKey}.json`),
+      /public media asset/,
+    );
+    await assert.rejects(
+      restarted.read(`workspace-b/private/${receipt.sha256}.png`),
+      /public media asset/,
+    );
+    assert.throws(
+      () => restarted.publicUrl(`${receipt.objectKey}.json`),
+      /public media asset/,
+    );
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});
+
+test('filesystem storage rejects audio whose MIME and container do not match', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-audio-storage-test-'));
+  try {
+    const storage = new FileSystemAssetStorage({ rootDirectory });
+    await assert.rejects(
+      storage.persistGeneratedAsset({
+        bytes: Buffer.from('not-an-mp3'),
+        contentType: 'audio/mpeg',
+        sourceTaskRef: 'audio-task-invalid',
+        workspaceId: 'workspace-a',
+      }),
+      /audio payload/i,
+    );
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});
+
+test('filesystem storage serves a persisted ContentPackage export archive', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-export-test-'));
+  try {
+    const storage = new FileSystemAssetStorage({ rootDirectory });
+    const archive = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+    const receipt = await storage.persistGeneratedAsset({
+      bytes: archive,
+      contentType: 'application/zip',
+      sourceTaskRef: 'content-package-export:package-a:version-a',
+      workspaceId: 'workspace-a',
+    });
+
+    const restored = await storage.read(receipt.objectKey);
+    assert.deepEqual(restored.bytes, archive);
+    assert.equal(restored.contentType, 'application/zip');
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});
+
+test('generated receipts stay replay-safe while identical bytes from different provider tasks remain distinct', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-assets-identity-test-'));
+  try {
+    const storage = new FileSystemAssetStorage({ rootDirectory });
+    const first = await storage.persistGeneratedAsset({
+      bytes: png,
+      contentType: 'image/png',
+      sourceTaskRef: 'provider-task-a',
+      workspaceId: 'workspace-a',
+    });
+    const replayed = await storage.persistGeneratedAsset({
+      bytes: png,
+      contentType: 'image/png',
+      sourceTaskRef: 'provider-task-a',
+      workspaceId: 'workspace-a',
+    });
+    const second = await storage.persistGeneratedAsset({
+      bytes: png,
+      contentType: 'image/png',
+      sourceTaskRef: 'provider-task-b',
+      workspaceId: 'workspace-a',
+    });
+
+    assert.equal(replayed.id, first.id);
+    assert.equal(replayed.objectKey, first.objectKey);
+    assert.notEqual(second.id, first.id);
+    assert.notEqual(second.objectKey, first.objectKey);
+    assert.equal(second.sha256, first.sha256);
+
+    const memory = new MemoryModelAssetStorage();
+    const memoryFirst = await memory.persistGeneratedAsset({
+      bytes: png,
+      contentType: 'image/png',
+      sourceTaskRef: 'provider-task-a',
+      workspaceId: 'workspace-a',
+    });
+    const memorySecond = await memory.persistGeneratedAsset({
+      bytes: png,
+      contentType: 'image/png',
+      sourceTaskRef: 'provider-task-b',
+      workspaceId: 'workspace-a',
+    });
+    assert.notEqual(memorySecond.id, memoryFirst.id);
+    assert.notEqual(memorySecond.objectKey, memoryFirst.objectKey);
+    assert.equal(memorySecond.sha256, memoryFirst.sha256);
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});
+
+test('composed output is persisted as a validated playable asset receipt', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-composed-test-'));
+  try {
+    const outputPath = join(rootDirectory, 'ffmpeg-output.mp4');
+    await writeFile(outputPath, Buffer.from('recorded-valid-video-fixture'));
+    const storage = new FileSystemAssetStorage({
+      rootDirectory,
+      videoProbe: async () => ({
+        codec: 'h264',
+        durationSeconds: 3,
+        height: 1280,
+        playable: true,
+        width: 720,
+      }),
+    });
+    const asset = await storage.persistComposedVideo({
+      compositionKey: 'composition-hash',
+      path: outputPath,
+      sourceAssetIds: ['clip-a', 'clip-b'],
+      workflowId: 'workflow-a',
+      workspaceId: 'workspace-a',
+    });
+    assert.equal(asset.contentType, 'video/mp4');
+    assert.equal(asset.technicalValidation?.playable, true);
+    assert.equal(asset.technicalValidation?.hashVerified, true);
+    assert.match(asset.objectKey, /^workspace-a\/composed\//);
+    assert.deepEqual(
+      (await storage.read(asset.objectKey)).bytes,
+      Buffer.from('recorded-valid-video-fixture'),
+    );
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});
+
+test('recorded video bytes pass ffprobe, materialize, compose with ffmpeg, and persist', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-ffmpeg-e2e-'));
+  try {
+    const storage = new FileSystemAssetStorage({ rootDirectory });
+    const provider = new RecordedAdapterRouter();
+    const request = recordedRequest(
+      'seedance-2',
+      'video.generate',
+      { durationSeconds: 1 },
+    );
+    const effectRequest = {
+      ...request,
+      effectIdempotencyKey: 'recorded-video-ffmpeg-e2e',
+    };
+    const submitted = await provider.submit(effectRequest);
+    assert.ok(submitted.taskRef);
+    const downloaded = await provider.download({
+      ...effectRequest,
+      taskRef: submitted.taskRef,
+    });
+    const clip = await storage.persistGeneratedAsset({
+      bytes: downloaded.bytes,
+      contentType: downloaded.contentType,
+      sourceTaskRef: submitted.taskRef,
+      workspaceId: 'workspace-a',
+    });
+    assert.equal(clip.technicalValidation?.playable, true);
+
+    const composed = await videoCompositionRuntimeFromEnv({}, storage).compose({
+      aigcLabelEnabled: false,
+      clips: [clip],
+      compositionKey: 'real-ffmpeg-composition',
+      workflowId: 'workflow-real-ffmpeg',
+      workspaceId: 'workspace-a',
+    });
+    assert.equal(composed.technicalValidation?.playable, true);
+    assert.equal(composed.technicalValidation?.hashVerified, true);
+    assert.match(composed.objectKey, /^workspace-a\/composed\//);
+    assert.ok((await storage.read(composed.objectKey)).bytes.byteLength > 0);
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});
+
+test('recorded audio bytes pass the production decode gate and persist', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-audio-e2e-'));
+  try {
+    const storage = new FileSystemAssetStorage({ rootDirectory });
+    const provider = new RecordedAdapterRouter();
+    const request = recordedRequest('audio-speech-fixture', 'audio.speech', {
+      format: 'wav',
+      inputAssets: [],
+      language: 'zh-CN',
+      maxDurationSeconds: 30,
+      referenceAssetIds: [],
+      speed: 1,
+      tone: 'natural',
+      voice: 'default',
+    });
+    const effectRequest = {
+      ...request,
+      effectIdempotencyKey: 'recorded-audio-ffmpeg-e2e',
+    };
+    const submitted = await provider.submit(effectRequest);
+    assert.ok(submitted.taskRef);
+    const downloaded = await provider.download({
+      ...effectRequest,
+      taskRef: submitted.taskRef,
+    });
+    const audio = await storage.persistGeneratedAsset({
+      bytes: downloaded.bytes,
+      contentType: downloaded.contentType,
+      sourceTaskRef: submitted.taskRef,
+      workspaceId: 'workspace-a',
+    });
+    assert.equal(audio.contentType, 'audio/wav');
+    assert.deepEqual((await storage.read(audio.objectKey)).bytes, downloaded.bytes);
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});

@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "14c2af87-fc34-41fc-8077-734e687cbb29"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "cff82dfc-d5e1-4a0a-88f7-8a9e62fc071a"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_jIChsZZykSV8okhtgqCx0otwe61CktsQ",
+  "works": [
+    {
+      "currentRevisionId": "14c2af87-fc34-41fc-8077-734e687cbb29",
+      "id": "cff82dfc-d5e1-4a0a-88f7-8a9e62fc071a",
+      "revisions": [
+        {
+          "id": "14c2af87-fc34-41fc-8077-734e687cbb29",
+          "workId": "cff82dfc-d5e1-4a0a-88f7-8a9e62fc071a",
+          "document": {
+            "pages": [
+              {
+                "id": "1298bafa-a1b6-4ea6-bc07-b5f218d80b84",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-11T03:05:38.538Z",
+          "createdBy": "jIChsZZykSV8okhtgqCx0otwe61CktsQ"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.760Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "740ead8c17d09b4bb7fef6971000a563ae2ed24236725712d1333c5ddb666afc",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "ad4c1780a0b13eb021e9dd79229963025076241fbaeaa92c153ccb1fd5067259"
+  }
+}

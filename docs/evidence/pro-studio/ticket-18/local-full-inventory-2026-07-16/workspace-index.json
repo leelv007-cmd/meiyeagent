@@ -1,0 +1,4119 @@
+{
+  "label": "LOCAL_FULL_INVENTORY_ONLY_NOT_PRODUCTION",
+  "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+  "deployment": "local-postgres-dev",
+  "workspaces": [
+    {
+      "workspaceId": "ws_0bXEAAhlmp9Amg1Hin34WT09FN83cd4p",
+      "snapshotSha256": "12dff6dbc3ee98e396167fab4c14af239b1cfb4a2b01509e05a6e04b49a6608f",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "2af0bfdd-113c-4f8a-9510-c6128792ba1e",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T08:59:03.181Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "00362aac-1eca-4500-bd63-a3e4cdd06590",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_0bXEAAhlmp9Amg1Hin34WT09FN83cd4p.object-inventory.json",
+        "snapshot": "workspaces/ws_0bXEAAhlmp9Amg1Hin34WT09FN83cd4p.snapshot.json",
+        "inventoryReport": "workspaces/ws_0bXEAAhlmp9Amg1Hin34WT09FN83cd4p.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_1Iw7ZzAfPsAMoLAHakiuDw2XlYDzGyjf",
+      "snapshotSha256": "f5289813dcddce20954eb45a6248f0e5c54a5ee604ebfa55c5c0dcc971df4cd1",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "e9ff8f45-d4eb-4656-bc68-fd6e02fb07f9",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-12T07:25:54.112Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "4dffa8ca-7d25-4edb-bf93-03b13c4c2492",
+              "disposition": "convertible"
+            },
+            {
+              "id": "b6973fd5-c4b1-4ea0-902b-282f3c5d8c49",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_1Iw7ZzAfPsAMoLAHakiuDw2XlYDzGyjf.object-inventory.json",
+        "snapshot": "workspaces/ws_1Iw7ZzAfPsAMoLAHakiuDw2XlYDzGyjf.snapshot.json",
+        "inventoryReport": "workspaces/ws_1Iw7ZzAfPsAMoLAHakiuDw2XlYDzGyjf.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_1ghwmEZd8nKZqJH9XsLEWXiAejHneHdO",
+      "snapshotSha256": "fbae927ceb524a19b0c1fc07d4dea8af5a06abe51dffa9691766b103a470feea",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "636ffb7d-5f3e-4e4c-bfa7-9af32c0dbe74",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T04:58:33.917Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "ca5e0ce6-266f-449a-a176-1741ac23f5c0",
+              "disposition": "convertible"
+            },
+            {
+              "id": "5ed8977a-beed-41ac-90b2-df95ffb23742",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_1ghwmEZd8nKZqJH9XsLEWXiAejHneHdO.object-inventory.json",
+        "snapshot": "workspaces/ws_1ghwmEZd8nKZqJH9XsLEWXiAejHneHdO.snapshot.json",
+        "inventoryReport": "workspaces/ws_1ghwmEZd8nKZqJH9XsLEWXiAejHneHdO.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot",
+      "snapshotSha256": "f7ba771b5f76f3601a6051ba1c4c81a63b25d58dbaf1ba26803e7ac109541fce",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "2c1872e9-31dd-496b-9efe-0aba70d65fdc",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T13:41:14.937Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "d8229e32-795d-44e4-a563-1425a4040ab6",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot.object-inventory.json",
+        "snapshot": "workspaces/ws_2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot.snapshot.json",
+        "inventoryReport": "workspaces/ws_2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_2pVqEPORpFcbpcPepX5paxvP87MeUmnF",
+      "snapshotSha256": "fe4d0f83e9b58c5f4f01f798b4228b8130dbd114079ccdfb95d6b1045fa76e06",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 4,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 5,
+        "revisions": 4,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "581288b7-fd95-4c70-9e91-55cfa3fb6e06",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:12:04.139Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "5fdb3090-0f55-44dd-a8ef-441b16f89f8d",
+              "disposition": "convertible"
+            },
+            {
+              "id": "a1ad9c4a-eec0-420f-b295-f90a759f05e7",
+              "disposition": "convertible"
+            },
+            {
+              "id": "3c650e94-277f-4ea0-b8a6-7685ec1227db",
+              "disposition": "convertible"
+            },
+            {
+              "id": "79077d2d-fa7e-4d12-a38f-ddf634eba5a1",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_2pVqEPORpFcbpcPepX5paxvP87MeUmnF.object-inventory.json",
+        "snapshot": "workspaces/ws_2pVqEPORpFcbpcPepX5paxvP87MeUmnF.snapshot.json",
+        "inventoryReport": "workspaces/ws_2pVqEPORpFcbpcPepX5paxvP87MeUmnF.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N",
+      "snapshotSha256": "805fceef8c7914a0fa58c0fbfcae581e20b79b18b51288153c30b0abbf3e8461",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "65a58953-8bdd-442c-ace6-ef3ac9c2d5d0",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T16:43:32.360Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "d2f766b6-d7c6-49e4-9bc6-54ca051cc278",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N.object-inventory.json",
+        "snapshot": "workspaces/ws_36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N.snapshot.json",
+        "inventoryReport": "workspaces/ws_36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT",
+      "snapshotSha256": "04eb6d83ef2afb0ab6e79c5279bae64b416efa1b6b43b7bde78b5cf39491a699",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "4ba08c95-8a2f-459f-b5db-92f0acbf7ace",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T11:52:46.277Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "236a057d-3a64-4966-96b4-58a7fddeaaa6",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT.object-inventory.json",
+        "snapshot": "workspaces/ws_3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT.snapshot.json",
+        "inventoryReport": "workspaces/ws_3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_3eKdZqrLHRsl6O6SJPR6BWzN4Kh9qK5S",
+      "snapshotSha256": "32f9690a736fe71e9c226a8ad3b8c70b3c11782ea1845c60f49d5d5858dba904",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "b0f5efcf-03bd-44b1-af51-97caf37da1b0",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T03:11:42.502Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "07e329d2-6e0a-4bff-b765-525dfa78b45b",
+              "disposition": "convertible"
+            },
+            {
+              "id": "f4637b84-4dc5-4d9e-bcf6-943534cd2643",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_3eKdZqrLHRsl6O6SJPR6BWzN4Kh9qK5S.object-inventory.json",
+        "snapshot": "workspaces/ws_3eKdZqrLHRsl6O6SJPR6BWzN4Kh9qK5S.snapshot.json",
+        "inventoryReport": "workspaces/ws_3eKdZqrLHRsl6O6SJPR6BWzN4Kh9qK5S.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0",
+      "snapshotSha256": "72d30b877988370c7bd26f80c13e6180ee2f222c0687cddc9a449142a79efe42",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "e7689f2d-8961-4584-9cbd-39a16edb17f4",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T09:57:11.662Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "f435a5e6-2baf-487b-a5ea-428be4825097",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0.object-inventory.json",
+        "snapshot": "workspaces/ws_3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0.snapshot.json",
+        "inventoryReport": "workspaces/ws_3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_3zo7eOVKH3j24e9fxLFWc60DZJ8L7PiQ",
+      "snapshotSha256": "c460863e6300bdb2fd0d8c202834ff2289b21147881ffbd81fd0e1bfd7aeca62",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "71599062-93bf-4817-879b-215bcbc86e94",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T09:01:35.294Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "5b947ed0-4073-4d29-a9fb-7ed791e9ed51",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_3zo7eOVKH3j24e9fxLFWc60DZJ8L7PiQ.object-inventory.json",
+        "snapshot": "workspaces/ws_3zo7eOVKH3j24e9fxLFWc60DZJ8L7PiQ.snapshot.json",
+        "inventoryReport": "workspaces/ws_3zo7eOVKH3j24e9fxLFWc60DZJ8L7PiQ.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_4aRu9iPUwUh8vXnot5dJHiuVtIXQxlLu",
+      "snapshotSha256": "491edbb8519c9adcbd0a453d321c7eefa0f915155ee02aca8561b6481b5f5507",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 4,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 5,
+        "revisions": 4,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "f5a8d3c7-2bd5-4527-ad5b-5b6a5c67e0f0",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:21:16.836Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "431a0dbe-2375-4f98-97d8-90c99594bbb0",
+              "disposition": "convertible"
+            },
+            {
+              "id": "f5bc956f-accd-4044-909b-1cabe2d32900",
+              "disposition": "convertible"
+            },
+            {
+              "id": "2a35fea2-84c6-4e41-ac7c-f42bd440f578",
+              "disposition": "convertible"
+            },
+            {
+              "id": "eb3f1eaa-82c3-4944-8698-aa1479559756",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_4aRu9iPUwUh8vXnot5dJHiuVtIXQxlLu.object-inventory.json",
+        "snapshot": "workspaces/ws_4aRu9iPUwUh8vXnot5dJHiuVtIXQxlLu.snapshot.json",
+        "inventoryReport": "workspaces/ws_4aRu9iPUwUh8vXnot5dJHiuVtIXQxlLu.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_5eZiKU1xA4XstiCo0iv1ttjrgAZQSX4o",
+      "snapshotSha256": "c941c3952238728d745fb473597110ab6bcb1e37521cf9ac969c20ff1541ca02",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "6d74782a-df7d-460a-acca-001d50190518",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T14:52:00.810Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "0573085b-03d9-4a33-880d-51c54c9807ca",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_5eZiKU1xA4XstiCo0iv1ttjrgAZQSX4o.object-inventory.json",
+        "snapshot": "workspaces/ws_5eZiKU1xA4XstiCo0iv1ttjrgAZQSX4o.snapshot.json",
+        "inventoryReport": "workspaces/ws_5eZiKU1xA4XstiCo0iv1ttjrgAZQSX4o.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_7UcU9nvGOYvBPEYlyWs6bCdajsNVOF0m",
+      "snapshotSha256": "e0baed479e6584653acd011c4a1fed39935819e3ef0080adb670e60e6dad85e8",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "f0a69ff9-7482-4127-b406-d81c4f95da95",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-12T07:30:30.596Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "00afaed7-4f85-43dd-9c21-df77aa2d7aae",
+              "disposition": "convertible"
+            },
+            {
+              "id": "67e87171-52a3-42d4-b346-c773bc6f6f65",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_7UcU9nvGOYvBPEYlyWs6bCdajsNVOF0m.object-inventory.json",
+        "snapshot": "workspaces/ws_7UcU9nvGOYvBPEYlyWs6bCdajsNVOF0m.snapshot.json",
+        "inventoryReport": "workspaces/ws_7UcU9nvGOYvBPEYlyWs6bCdajsNVOF0m.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV",
+      "snapshotSha256": "5cc4ae28b38fc7513a77037780ac58fd3a7510c3e25a4b91a2c6c4493d961e60",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "497a0f61-e4c6-440e-8810-99f3095f4407",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T13:09:34.620Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "6e564cd1-e20f-4a6c-86ea-9df552a4a767",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV.object-inventory.json",
+        "snapshot": "workspaces/ws_7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV.snapshot.json",
+        "inventoryReport": "workspaces/ws_7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_8T7wt2aaLPrwfU6XJIw81vs45cmMTo3r",
+      "snapshotSha256": "cdd900bca4952251c9301e86cff49531228f738081ef23558da203302b17de3c",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "734562f1-5b22-4228-b50f-eab63f30946d",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T13:44:47.757Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "84b6338a-8d2b-41f0-98cb-f344864b8d21",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_8T7wt2aaLPrwfU6XJIw81vs45cmMTo3r.object-inventory.json",
+        "snapshot": "workspaces/ws_8T7wt2aaLPrwfU6XJIw81vs45cmMTo3r.snapshot.json",
+        "inventoryReport": "workspaces/ws_8T7wt2aaLPrwfU6XJIw81vs45cmMTo3r.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI",
+      "snapshotSha256": "e79c5c384bda083d76e6ef82e6f9e81e7a9b872e218e6e8b4886a1e98abc108a",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 5,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 1,
+        "pages": 6,
+        "revisions": 5,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "5fc93865-9ba6-41f7-92e3-6d69541e57d7",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-16T09:18:07.993Z",
+          "lastExportedAt": "2026-07-16T09:18:08.128Z",
+          "revisionDispositions": [
+            {
+              "id": "afed4ff1-f28b-4d00-a4b1-8f5d7c6b18f2",
+              "disposition": "convertible"
+            },
+            {
+              "id": "8d937257-1905-47c6-939d-e3552438c3d4",
+              "disposition": "convertible"
+            },
+            {
+              "id": "c5d9da5d-430f-43e9-887b-94594f61e1da",
+              "disposition": "convertible"
+            },
+            {
+              "id": "a34277b8-d9e2-4932-9d13-3ee5ece88957",
+              "disposition": "read_only"
+            },
+            {
+              "id": "4d813a86-fbec-46be-8585-475905bf3ed5",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 1,
+      "paths": {
+        "objectInventory": "workspaces/ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI.object-inventory.json",
+        "snapshot": "workspaces/ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI.snapshot.json",
+        "inventoryReport": "workspaces/ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb",
+      "snapshotSha256": "cd6c056bc43d078a2c63a2a6bd6f17b39ec442144f967570b9a4d5293e8e684b",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 5,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 1,
+        "pages": 6,
+        "revisions": 5,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "d9757f1b-37e1-4f95-8985-5345e2b28296",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T05:34:50.422Z",
+          "lastExportedAt": "2026-07-16T05:34:50.532Z",
+          "revisionDispositions": [
+            {
+              "id": "9160a52b-fac4-4528-9304-d19462e3943d",
+              "disposition": "convertible"
+            },
+            {
+              "id": "63b65d61-e34c-4024-8c6e-8a7bef47a58a",
+              "disposition": "convertible"
+            },
+            {
+              "id": "271ab89b-b256-4da0-965e-f6b440ae5472",
+              "disposition": "convertible"
+            },
+            {
+              "id": "22d34603-9acc-485c-8318-5f7b589d90b6",
+              "disposition": "convertible"
+            },
+            {
+              "id": "39248490-c0d8-49ea-ae44-95e4b5758552",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 1,
+      "paths": {
+        "objectInventory": "workspaces/ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb.object-inventory.json",
+        "snapshot": "workspaces/ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb.snapshot.json",
+        "inventoryReport": "workspaces/ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i",
+      "snapshotSha256": "f63894cabd334c41ed6257f94a7febb1c7cd004f3a5fbe85c64b7c804147aa88",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "7761295b-d0db-4cf4-97ef-5417476cc6c1",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T13:29:13.982Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "696e48e4-23f2-4b1a-bd23-8530dab99f25",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i.object-inventory.json",
+        "snapshot": "workspaces/ws_9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i.snapshot.json",
+        "inventoryReport": "workspaces/ws_9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_A1J6uweCNInZl0OqRQ7NyBbJxk3mpDcU",
+      "snapshotSha256": "b0007d44fa01fc6b195c6a9f8af701c1795e5d0ad2a21fbd8334c8eea9ec9a4f",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 5,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 1,
+        "pages": 6,
+        "revisions": 5,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "e0d31d6c-46e6-4ade-b8b5-b4543f4f6a8e",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T05:50:47.846Z",
+          "lastExportedAt": "2026-07-16T05:50:47.966Z",
+          "revisionDispositions": [
+            {
+              "id": "73836128-9bf2-43cd-aee2-cfb6067baff1",
+              "disposition": "convertible"
+            },
+            {
+              "id": "4f34693f-c890-4c46-84e6-c9166a2f9513",
+              "disposition": "convertible"
+            },
+            {
+              "id": "5fea8cc7-8092-40fe-8242-b14cd5c35b6e",
+              "disposition": "convertible"
+            },
+            {
+              "id": "b113cbab-55be-4bcb-992c-6d2eeebd9def",
+              "disposition": "convertible"
+            },
+            {
+              "id": "a7b16473-6e64-4479-a3ec-0d0ea67d15eb",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 1,
+      "paths": {
+        "objectInventory": "workspaces/ws_A1J6uweCNInZl0OqRQ7NyBbJxk3mpDcU.object-inventory.json",
+        "snapshot": "workspaces/ws_A1J6uweCNInZl0OqRQ7NyBbJxk3mpDcU.snapshot.json",
+        "inventoryReport": "workspaces/ws_A1J6uweCNInZl0OqRQ7NyBbJxk3mpDcU.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_A6VqXpckwxHUl6FCTnkyUjp8vs3U3vq0",
+      "snapshotSha256": "c7a6ec38d9f0728e86e5762f7daee13570b90ff805a301323eb81ffe9e55cdee",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "25b7c079-1263-42aa-af77-4fc822b07f40",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-12T06:44:56.789Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "e100dc94-6234-4dc5-98e9-5eebbbd035d0",
+              "disposition": "convertible"
+            },
+            {
+              "id": "39319009-e0c9-4031-9a2a-1eb78972a746",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_A6VqXpckwxHUl6FCTnkyUjp8vs3U3vq0.object-inventory.json",
+        "snapshot": "workspaces/ws_A6VqXpckwxHUl6FCTnkyUjp8vs3U3vq0.snapshot.json",
+        "inventoryReport": "workspaces/ws_A6VqXpckwxHUl6FCTnkyUjp8vs3U3vq0.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_AJ3UykyDW9swGwe2d0q1ogg3X0NBIkDh",
+      "snapshotSha256": "5855c85b4bd54399c45eda86b1aa9e1e29be03f03544a36f025545f7267d5c4a",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "e69fdb00-9ddb-4153-8d37-b1ea0e3fa8d3",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T03:13:25.801Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "2662b943-18a1-480f-8e35-c983b249e062",
+              "disposition": "convertible"
+            },
+            {
+              "id": "c59d1526-b1f4-4f00-b545-8f4fe9bc772c",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_AJ3UykyDW9swGwe2d0q1ogg3X0NBIkDh.object-inventory.json",
+        "snapshot": "workspaces/ws_AJ3UykyDW9swGwe2d0q1ogg3X0NBIkDh.snapshot.json",
+        "inventoryReport": "workspaces/ws_AJ3UykyDW9swGwe2d0q1ogg3X0NBIkDh.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0",
+      "snapshotSha256": "4408507353fcb55d492b01188a7b2d3f07a790e2ed5a5da2d4e13c57e169b681",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "e97e25fc-007b-489f-bb24-1077aede156a",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T10:21:18.572Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "edec14de-eebb-4d17-8f1b-a3d264756c6f",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0.object-inventory.json",
+        "snapshot": "workspaces/ws_AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0.snapshot.json",
+        "inventoryReport": "workspaces/ws_AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_ARpYasGGTcOH643oAALGOSxxHuazCjPq",
+      "snapshotSha256": "dfd6ea30d77db4cd006938e59f13d45dbd72204cfc841e572c572be274d45cac",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "03595802-c0c5-4e99-ad2d-ce8d43a06f2b",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T05:34:56.523Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "5a284cba-7942-4da9-bc0a-cad1ae499cd8",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_ARpYasGGTcOH643oAALGOSxxHuazCjPq.object-inventory.json",
+        "snapshot": "workspaces/ws_ARpYasGGTcOH643oAALGOSxxHuazCjPq.snapshot.json",
+        "inventoryReport": "workspaces/ws_ARpYasGGTcOH643oAALGOSxxHuazCjPq.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_Atvav5g1beqjuuYEhVlWPttUaTfHv3yt",
+      "snapshotSha256": "e7b90f8b21f6dd1f6196f5cc2049dfad2ecade39c0c1a9fc094d72f039c1b6a5",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "b68a123b-92c0-4365-9dd0-4455ca1115f4",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T13:45:08.538Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "7ea13f2d-9363-454d-8471-699780687965",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_Atvav5g1beqjuuYEhVlWPttUaTfHv3yt.object-inventory.json",
+        "snapshot": "workspaces/ws_Atvav5g1beqjuuYEhVlWPttUaTfHv3yt.snapshot.json",
+        "inventoryReport": "workspaces/ws_Atvav5g1beqjuuYEhVlWPttUaTfHv3yt.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_AuM19zOP4hH2XPCulj1VZQ0nf5xrUGyD",
+      "snapshotSha256": "6e984b837d1ab7cf43982211b6a69cb1480c47133b85234548afe37f50a8fe28",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 4,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 5,
+        "revisions": 4,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "df8aa931-cc05-442d-8c8c-4246600882ba",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T03:58:04.220Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "231ef3a6-6c40-485d-8ce4-9209a1c06c55",
+              "disposition": "convertible"
+            },
+            {
+              "id": "7513a63e-1d8a-4301-9c38-8a1c888c46d9",
+              "disposition": "convertible"
+            },
+            {
+              "id": "3a0589b2-7e93-440d-a6ce-f8c4f2aa3e05",
+              "disposition": "convertible"
+            },
+            {
+              "id": "88883c42-af89-4e7f-a1ae-262a6626a16a",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_AuM19zOP4hH2XPCulj1VZQ0nf5xrUGyD.object-inventory.json",
+        "snapshot": "workspaces/ws_AuM19zOP4hH2XPCulj1VZQ0nf5xrUGyD.snapshot.json",
+        "inventoryReport": "workspaces/ws_AuM19zOP4hH2XPCulj1VZQ0nf5xrUGyD.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_Cx48ZyFBy9WhrAPSEGsv7RhInaZRTgQ1",
+      "snapshotSha256": "852f212f4999619ba2856cedce109b4162684e3f5865fec20aa2cca5fa1ca5bf",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "d1e7cd8c-9d31-4fc6-ae84-f843c8a2385e",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T14:06:33.389Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "54847108-c43d-4b3e-99d0-21787aed73a8",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_Cx48ZyFBy9WhrAPSEGsv7RhInaZRTgQ1.object-inventory.json",
+        "snapshot": "workspaces/ws_Cx48ZyFBy9WhrAPSEGsv7RhInaZRTgQ1.snapshot.json",
+        "inventoryReport": "workspaces/ws_Cx48ZyFBy9WhrAPSEGsv7RhInaZRTgQ1.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk",
+      "snapshotSha256": "21029739110d9e9703b2bc8ee905628408d28bc36d50fd138d15b9cbfe4577ea",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "759617b3-246b-4593-84b0-9cee7b26cacc",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-12T06:32:16.960Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "1a1b66c4-ddfd-45bc-9f61-eba9f3633e5a",
+              "disposition": "convertible"
+            },
+            {
+              "id": "31ac24b4-3d6b-4950-8377-15eedbbb9f9a",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk.object-inventory.json",
+        "snapshot": "workspaces/ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk.snapshot.json",
+        "inventoryReport": "workspaces/ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_EGLMhNdlIyUIjkMeoAuLbEyNFL4zE37r",
+      "snapshotSha256": "58632aaa8d557f6d3756401e6c087e6573c086f7e764b2c297ef310deb5b58df",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "d80455bd-39f3-4d24-9d09-c6ecd69705f5",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T04:19:19.881Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "b3444286-3e6d-4756-a4c4-129e0b7cc742",
+              "disposition": "convertible"
+            },
+            {
+              "id": "37477f5a-7c9c-455e-bc58-7b86d4840545",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_EGLMhNdlIyUIjkMeoAuLbEyNFL4zE37r.object-inventory.json",
+        "snapshot": "workspaces/ws_EGLMhNdlIyUIjkMeoAuLbEyNFL4zE37r.snapshot.json",
+        "inventoryReport": "workspaces/ws_EGLMhNdlIyUIjkMeoAuLbEyNFL4zE37r.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4",
+      "snapshotSha256": "3784126d74ac5749309ab4954807f7eeb301f5485be2b37cfc94b9d08239276c",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "0ce7cc3d-8313-4574-90c9-48a17a9f338f",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:21:22.625Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "60cde992-7da5-42b1-8628-33d2eafbf480",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4.object-inventory.json",
+        "snapshot": "workspaces/ws_EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4.snapshot.json",
+        "inventoryReport": "workspaces/ws_EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_EbkhzCSLYVal4QCYVHOp9ds1i8lR552M",
+      "snapshotSha256": "14254bbf4cd6babc18135b272c7c20455a9ad721af02fc61a4342ef251249795",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "74d48fd3-e67e-44ac-aec8-0519e9ded31f",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-11T02:52:57.598Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "54eb6bae-75c9-44db-9854-2d62f170d18f",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_EbkhzCSLYVal4QCYVHOp9ds1i8lR552M.object-inventory.json",
+        "snapshot": "workspaces/ws_EbkhzCSLYVal4QCYVHOp9ds1i8lR552M.snapshot.json",
+        "inventoryReport": "workspaces/ws_EbkhzCSLYVal4QCYVHOp9ds1i8lR552M.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_F6004pNaqYt5w5XsHOEHeLJbSDvDLjE9",
+      "snapshotSha256": "3dfaf73be63e84413bf084d78df6d4aa266e5a975f46b1437c5acca938ca8c67",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "a42bf232-bfb9-4f82-a7d5-bedc71a0583c",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T06:02:41.944Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "a11fc598-c39a-492c-a9a6-f5013d4fb22d",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_F6004pNaqYt5w5XsHOEHeLJbSDvDLjE9.object-inventory.json",
+        "snapshot": "workspaces/ws_F6004pNaqYt5w5XsHOEHeLJbSDvDLjE9.snapshot.json",
+        "inventoryReport": "workspaces/ws_F6004pNaqYt5w5XsHOEHeLJbSDvDLjE9.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS",
+      "snapshotSha256": "522ba34f2b309daa2a8293ddb8e9f04775375324024cdb7775ecbca19d10da99",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "197514fe-2c8e-412e-92b2-0b7aef2c12c3",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T09:02:15.548Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "82054dd1-4005-46ad-b1cd-308cbc08c965",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS.object-inventory.json",
+        "snapshot": "workspaces/ws_FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS.snapshot.json",
+        "inventoryReport": "workspaces/ws_FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_FTUzIJCPdyDSj3MEblkdoIR3RwHaPpeQ",
+      "snapshotSha256": "93e70d318d3b37beb9b2ba2f4bf34b74f2e88b6495b7feea4c3db6441fe0a22c",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 5,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 1,
+        "pages": 6,
+        "revisions": 5,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "2892312e-eded-4834-ba33-62d491d7bd0c",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T05:28:02.331Z",
+          "lastExportedAt": "2026-07-16T05:28:02.442Z",
+          "revisionDispositions": [
+            {
+              "id": "ef3622f8-7a64-4ea6-875a-42d7ec45cd74",
+              "disposition": "convertible"
+            },
+            {
+              "id": "225b80f9-253b-4b39-b598-61ddbb91f9e0",
+              "disposition": "convertible"
+            },
+            {
+              "id": "6cb3698f-def7-4203-bc18-e995c3ecab6c",
+              "disposition": "convertible"
+            },
+            {
+              "id": "990829af-3375-49f7-8c8e-62f706498b1e",
+              "disposition": "convertible"
+            },
+            {
+              "id": "719508bd-f0f6-4ecf-b4d9-7c00463c9ab4",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 1,
+      "paths": {
+        "objectInventory": "workspaces/ws_FTUzIJCPdyDSj3MEblkdoIR3RwHaPpeQ.object-inventory.json",
+        "snapshot": "workspaces/ws_FTUzIJCPdyDSj3MEblkdoIR3RwHaPpeQ.snapshot.json",
+        "inventoryReport": "workspaces/ws_FTUzIJCPdyDSj3MEblkdoIR3RwHaPpeQ.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_H83cJvWqsga9O1BbmDb3NMlU2fgCoTOn",
+      "snapshotSha256": "db02d1c1243a8e760164d2998c8befc058320a7be82e71c0705d9cbf742e4f57",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "c61fe545-921b-47ad-8a5e-25a5ac62b554",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T12:03:17.992Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "5ccdee30-e694-4dd2-b94e-a2c6c8dfba21",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_H83cJvWqsga9O1BbmDb3NMlU2fgCoTOn.object-inventory.json",
+        "snapshot": "workspaces/ws_H83cJvWqsga9O1BbmDb3NMlU2fgCoTOn.snapshot.json",
+        "inventoryReport": "workspaces/ws_H83cJvWqsga9O1BbmDb3NMlU2fgCoTOn.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX",
+      "snapshotSha256": "6cc683ea59c34d78fe9ed5af8a0f34ab5d71710da085d309526211035283c4da",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "be665aca-6834-43ca-9b60-3bcf50a7f103",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T11:54:31.878Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "1ef38d6d-860b-4e33-a05d-f4f6d47fd215",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX.object-inventory.json",
+        "snapshot": "workspaces/ws_HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX.snapshot.json",
+        "inventoryReport": "workspaces/ws_HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+      "snapshotSha256": "1abe275bae34bd27ae062ba24e1646ad4cf38a277e2f6513249f7cd89b9b6938",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 4,
+        "revisions": 7,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 4,
+        "pages": 7,
+        "revisions": 7,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T07:24:59.857Z",
+          "lastExportedAt": "2026-07-16T07:25:00.009Z",
+          "revisionDispositions": [
+            {
+              "id": "86d7bf87-f0f4-467e-a8e6-76a697a19866",
+              "disposition": "convertible"
+            },
+            {
+              "id": "c74c46c6-cbf7-4e06-9f49-0bb0d4b38212",
+              "disposition": "convertible"
+            },
+            {
+              "id": "694f1f81-2b89-4f48-a317-b99bc02bc81c",
+              "disposition": "convertible"
+            },
+            {
+              "id": "021be314-ed5f-4b78-ac72-e922fded45af",
+              "disposition": "convertible"
+            },
+            {
+              "id": "524fd01b-c25a-4728-9a69-01c0b24b6af6",
+              "disposition": "convertible"
+            },
+            {
+              "id": "bdba79ab-6827-4b6d-af3a-5848c9eae5f0",
+              "disposition": "convertible"
+            },
+            {
+              "id": "c9a09f0f-29f9-46b1-b631-ea800eab035e",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 4,
+      "paths": {
+        "objectInventory": "workspaces/ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e.object-inventory.json",
+        "snapshot": "workspaces/ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e.snapshot.json",
+        "inventoryReport": "workspaces/ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_IxCWqm0kp8OvSayMmUQ5C1aUEsojZiNp",
+      "snapshotSha256": "d2536e6e525144456bd09f849b53304afe2ff3edabbb2bd0fa1439e40da6314b",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "30421872-3804-4163-af7d-4898e456f2e6",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T05:50:53.947Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "dcd82405-1454-4d0c-8f79-7b81f4b47d1f",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_IxCWqm0kp8OvSayMmUQ5C1aUEsojZiNp.object-inventory.json",
+        "snapshot": "workspaces/ws_IxCWqm0kp8OvSayMmUQ5C1aUEsojZiNp.snapshot.json",
+        "inventoryReport": "workspaces/ws_IxCWqm0kp8OvSayMmUQ5C1aUEsojZiNp.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_JT4ycoQDJAtoKhT1vVfANhl5Ui4ij3Zu",
+      "snapshotSha256": "ff6cbe1f5cc39858615fed403590af4c8035d6e1869a5ca651ba3a997717681f",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 4,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 5,
+        "revisions": 4,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "44b8321c-769c-4e2d-97a7-46ed00f12904",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:09:04.565Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "45da1e2e-a5df-41f6-b673-7e6841b9a7b3",
+              "disposition": "convertible"
+            },
+            {
+              "id": "be2a02a6-3fcf-4122-be49-50f9ed0c035f",
+              "disposition": "convertible"
+            },
+            {
+              "id": "a7cd0bcc-8f78-4e41-b655-7944e454b52f",
+              "disposition": "convertible"
+            },
+            {
+              "id": "6d3e11b2-b75d-4583-b43b-0ab4260c03ce",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_JT4ycoQDJAtoKhT1vVfANhl5Ui4ij3Zu.object-inventory.json",
+        "snapshot": "workspaces/ws_JT4ycoQDJAtoKhT1vVfANhl5Ui4ij3Zu.snapshot.json",
+        "inventoryReport": "workspaces/ws_JT4ycoQDJAtoKhT1vVfANhl5Ui4ij3Zu.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_JXw6ug2S3K6yHBkTJLsSwjRkx7JV4Ttv",
+      "snapshotSha256": "50ef88de61fab60b4d0d7f500ffae53736ac235b7a9d0d85b5e3fb09ddf91fb3",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "093dabef-625c-4a83-9cc4-37a5edf3ad38",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T10:12:23.646Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "ce553f77-fc6f-4e7f-971e-fa4a64374023",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_JXw6ug2S3K6yHBkTJLsSwjRkx7JV4Ttv.object-inventory.json",
+        "snapshot": "workspaces/ws_JXw6ug2S3K6yHBkTJLsSwjRkx7JV4Ttv.snapshot.json",
+        "inventoryReport": "workspaces/ws_JXw6ug2S3K6yHBkTJLsSwjRkx7JV4Ttv.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_JrizNBry4F0X1XaTVjVhZgnm1vARkLOA",
+      "snapshotSha256": "efb4eeea94bf7a5bfe832e412a792800e39c421cb5a3b47cc514bd67559a58ac",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "f6c01d99-91ba-465c-af1a-75400ef39614",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T09:03:31.485Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "39682f39-3c36-4c74-aad9-35a84b3e9f95",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_JrizNBry4F0X1XaTVjVhZgnm1vARkLOA.object-inventory.json",
+        "snapshot": "workspaces/ws_JrizNBry4F0X1XaTVjVhZgnm1vARkLOA.snapshot.json",
+        "inventoryReport": "workspaces/ws_JrizNBry4F0X1XaTVjVhZgnm1vARkLOA.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_K7c3gDfwc1LCY52ViHxhjI6eF21C7P89",
+      "snapshotSha256": "ce96f41af42e50ebd0f29efb30933bc36c0e67c1e7d8c22c7356e99babf23836",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 2
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 2
+      },
+      "dispositions": {
+        "convertible": 2,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "3daaf76c-6e2f-4ab1-be0a-5bbd20a8c68b",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T06:13:02.902Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "3b665cef-78cc-4953-849c-c245412a8e73",
+              "disposition": "convertible"
+            }
+          ]
+        },
+        {
+          "id": "57136455-8bca-4024-a43a-9606d709ec03",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T06:13:05.729Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "3aa39599-f546-4a96-b214-3b284c2c4267",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_K7c3gDfwc1LCY52ViHxhjI6eF21C7P89.object-inventory.json",
+        "snapshot": "workspaces/ws_K7c3gDfwc1LCY52ViHxhjI6eF21C7P89.snapshot.json",
+        "inventoryReport": "workspaces/ws_K7c3gDfwc1LCY52ViHxhjI6eF21C7P89.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_QOyf0q7velTgOm4p4bbbu0pZd5rVGW8L",
+      "snapshotSha256": "0aea2e74af6caf97246dacc51f9f489ea3d1c9a649767d54e62255a2b179a3ca",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "1a583239-9597-4402-9a5e-15a573ccba63",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-11T02:41:49.022Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "a8455cbe-17c2-4edc-b3c5-018ec8905671",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_QOyf0q7velTgOm4p4bbbu0pZd5rVGW8L.object-inventory.json",
+        "snapshot": "workspaces/ws_QOyf0q7velTgOm4p4bbbu0pZd5rVGW8L.snapshot.json",
+        "inventoryReport": "workspaces/ws_QOyf0q7velTgOm4p4bbbu0pZd5rVGW8L.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo",
+      "snapshotSha256": "5c94cf32df3aae0522d62404d7f8a310de7912fbd824ef8736797405d0516201",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "9f25b57b-8ee6-4dbc-81a8-329eb228a3c2",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T10:28:55.835Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "2931cda2-fbb8-4dc3-bcf3-b77aed3d280c",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo.object-inventory.json",
+        "snapshot": "workspaces/ws_S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo.snapshot.json",
+        "inventoryReport": "workspaces/ws_S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_SH89uHoIli12yhEmn7Pa3a9objWBwHrS",
+      "snapshotSha256": "149e9395df28d672c73f76326f5947916781a2d3a8ef90cdf6d67debd9b7c116",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "306d118b-4572-4ccd-b8cb-b374c9cb0f4b",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T03:22:50.567Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "6aab18f7-9b9a-4a0a-9e33-771d3f0ae17e",
+              "disposition": "convertible"
+            },
+            {
+              "id": "5495b36b-42a0-47ad-b3af-b0efad3c46aa",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_SH89uHoIli12yhEmn7Pa3a9objWBwHrS.object-inventory.json",
+        "snapshot": "workspaces/ws_SH89uHoIli12yhEmn7Pa3a9objWBwHrS.snapshot.json",
+        "inventoryReport": "workspaces/ws_SH89uHoIli12yhEmn7Pa3a9objWBwHrS.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb",
+      "snapshotSha256": "8c313ec651cbbfa2d4c7d47d2c6ee91578bdbf5a2f4eee80ec9d787126e212f3",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 2
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 2
+      },
+      "dispositions": {
+        "convertible": 2,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "561f9347-eae4-4dcd-846b-157f8af20270",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T06:41:32.123Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "8858f28f-3d90-4d08-bb4e-36cf512f332c",
+              "disposition": "convertible"
+            }
+          ]
+        },
+        {
+          "id": "b9bdb636-f51c-41fb-86fc-5b8c41950529",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T06:41:34.991Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "836dd6dd-a091-46c0-bfaa-ca3028bb3f61",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb.object-inventory.json",
+        "snapshot": "workspaces/ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb.snapshot.json",
+        "inventoryReport": "workspaces/ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0",
+      "snapshotSha256": "5560da552a95e4994ee0419314dcb0b3a2d21678b4608777cf088900333dab4d",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "51f5d088-b676-486f-b5d8-06259c70208b",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T14:03:41.611Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "ff3aecae-3159-4d3d-95f5-b41908e982c3",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0.object-inventory.json",
+        "snapshot": "workspaces/ws_T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0.snapshot.json",
+        "inventoryReport": "workspaces/ws_T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv",
+      "snapshotSha256": "4b1b7bd1a61935ae7c56dafd6984b138265f6e3da211fe37737a4c336f65a62b",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "2203fcf5-28a4-4e81-910e-a565f8b2b64a",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-11T02:59:06.355Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "18c34d0b-f205-4e38-9091-66fcd578afdf",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv.object-inventory.json",
+        "snapshot": "workspaces/ws_Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv.snapshot.json",
+        "inventoryReport": "workspaces/ws_Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_V2zcMUfRnLoalVWmDWk2o1Dx8WN7R9fE",
+      "snapshotSha256": "36ec71d0bfb11b65e9c64af70205d34080194d018a7cc0f177b22e334db223be",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 4,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 5,
+        "revisions": 4,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "06bd2573-84e3-4131-95f5-fcad485f5bec",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:23:29.516Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "f55d4667-3f1e-49c2-af02-6dce2c7a614a",
+              "disposition": "convertible"
+            },
+            {
+              "id": "360c64b5-91ef-45ac-9dbe-288bbaf0c418",
+              "disposition": "convertible"
+            },
+            {
+              "id": "ef9a1248-8582-4de9-845d-6462c0adf078",
+              "disposition": "convertible"
+            },
+            {
+              "id": "ec4fb4d1-8a33-425f-9cc7-91035cad99eb",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_V2zcMUfRnLoalVWmDWk2o1Dx8WN7R9fE.object-inventory.json",
+        "snapshot": "workspaces/ws_V2zcMUfRnLoalVWmDWk2o1Dx8WN7R9fE.snapshot.json",
+        "inventoryReport": "workspaces/ws_V2zcMUfRnLoalVWmDWk2o1Dx8WN7R9fE.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y",
+      "snapshotSha256": "b72f7d57e4d519584e2a845e4b6032ae1f864ef6181ca302757674daf06c963e",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "abd181ce-cd5c-4dd6-aac3-7e6c876b8e91",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T15:15:56.347Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "5121fc19-36f7-4478-82de-366a10af765f",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y.object-inventory.json",
+        "snapshot": "workspaces/ws_VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y.snapshot.json",
+        "inventoryReport": "workspaces/ws_VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI",
+      "snapshotSha256": "d8710781d0fa038bfa2bf32ec4e6365db22384310c6aa3e55db3df99f13bf94e",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "cf47449c-20a4-458b-9b67-9703313f34d4",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T15:13:11.771Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "57d5168d-02c6-47fc-952f-4ac51005db69",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI.object-inventory.json",
+        "snapshot": "workspaces/ws_WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI.snapshot.json",
+        "inventoryReport": "workspaces/ws_WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_WlILuDu28PVSoWk6TGA8YT9tfdmJQKWh",
+      "snapshotSha256": "b8b8edee77cb0b632f0a847868d47a0e66af7e7eac4fd84d36b1afe945c07a92",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "79ed6267-b1d8-4e4f-818b-c611273cfc10",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T11:44:24.388Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "4ab024f4-5ed1-419d-af2f-08b04e51ae5a",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_WlILuDu28PVSoWk6TGA8YT9tfdmJQKWh.object-inventory.json",
+        "snapshot": "workspaces/ws_WlILuDu28PVSoWk6TGA8YT9tfdmJQKWh.snapshot.json",
+        "inventoryReport": "workspaces/ws_WlILuDu28PVSoWk6TGA8YT9tfdmJQKWh.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_Y5nwLXjSlyoaSloR7NBJrolWx1xo5xY0",
+      "snapshotSha256": "f87df8d945ab24ae44ed18cf717d344b556fbe59a45513729f456b118510900f",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "271aa458-f9a0-41fd-bd60-fa347bfcfa44",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T10:25:09.559Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "735e55bc-8c71-4cc1-b6fb-a211ca2d8681",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_Y5nwLXjSlyoaSloR7NBJrolWx1xo5xY0.object-inventory.json",
+        "snapshot": "workspaces/ws_Y5nwLXjSlyoaSloR7NBJrolWx1xo5xY0.snapshot.json",
+        "inventoryReport": "workspaces/ws_Y5nwLXjSlyoaSloR7NBJrolWx1xo5xY0.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_YkVGDY9mGihXG80c7ll0WTlfUkzGL4a6",
+      "snapshotSha256": "cf00fd38b24dee20545e84d0d8f7326952ba0bad1f0cd0d0daff4371e994efdb",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "0d0f7ccc-e87e-48a5-b1e8-8126eb388eb4",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T03:51:33.238Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "810624ac-8ba3-4927-913d-cd7ea1c6fbf6",
+              "disposition": "convertible"
+            },
+            {
+              "id": "78d32742-97d1-4bf2-bd58-7466bd052e96",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_YkVGDY9mGihXG80c7ll0WTlfUkzGL4a6.object-inventory.json",
+        "snapshot": "workspaces/ws_YkVGDY9mGihXG80c7ll0WTlfUkzGL4a6.snapshot.json",
+        "inventoryReport": "workspaces/ws_YkVGDY9mGihXG80c7ll0WTlfUkzGL4a6.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe",
+      "snapshotSha256": "fda3659b99ce513ff689a4596759b6262c0a31801d10ee065676d26cbe603913",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "a99b9946-d94d-4b6b-b849-92408d4c7379",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T11:59:27.996Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "8337237b-40da-42a9-aedd-76a114ff3cd4",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe.object-inventory.json",
+        "snapshot": "workspaces/ws_Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe.snapshot.json",
+        "inventoryReport": "workspaces/ws_Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_eCgCevaLwjWzk8PfaCcC2wTcNHmmZFG9",
+      "snapshotSha256": "4c16ffdc894ec0562b947ae63d35ae6f4c3c3d6b086868df89cbf39c69a13a0d",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 5,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 1,
+        "pages": 6,
+        "revisions": 5,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "1a3170db-3aad-466f-a098-65c52dc42217",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T05:28:55.533Z",
+          "lastExportedAt": "2026-07-16T05:28:55.647Z",
+          "revisionDispositions": [
+            {
+              "id": "3f545053-76d7-4b09-9537-510675590844",
+              "disposition": "convertible"
+            },
+            {
+              "id": "e4062daa-956d-4a1a-9cdc-139d10459ee2",
+              "disposition": "convertible"
+            },
+            {
+              "id": "81e4f10c-f8f4-490a-ab00-3b3a481a1d35",
+              "disposition": "convertible"
+            },
+            {
+              "id": "8a0f0172-63dc-4428-8ced-b7f44623eaa3",
+              "disposition": "convertible"
+            },
+            {
+              "id": "8ce802f4-be59-4781-9a47-de9ee0a59b77",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 1,
+      "paths": {
+        "objectInventory": "workspaces/ws_eCgCevaLwjWzk8PfaCcC2wTcNHmmZFG9.object-inventory.json",
+        "snapshot": "workspaces/ws_eCgCevaLwjWzk8PfaCcC2wTcNHmmZFG9.snapshot.json",
+        "inventoryReport": "workspaces/ws_eCgCevaLwjWzk8PfaCcC2wTcNHmmZFG9.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_eRoY2hwdGoNAGP17SO9sjKL8m0tKZ8pF",
+      "snapshotSha256": "113f75ebdf388f0bb964541950a62e84674f51931ed2117a6da1b54727184a09",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "6926afe5-7c4e-4dcf-852c-d49b1b9a0d8e",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T03:09:41.943Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "4d55f88e-a51b-4837-a106-62087a1e2f21",
+              "disposition": "convertible"
+            },
+            {
+              "id": "46884a85-8ac1-410e-8f27-acc7563e67af",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_eRoY2hwdGoNAGP17SO9sjKL8m0tKZ8pF.object-inventory.json",
+        "snapshot": "workspaces/ws_eRoY2hwdGoNAGP17SO9sjKL8m0tKZ8pF.snapshot.json",
+        "inventoryReport": "workspaces/ws_eRoY2hwdGoNAGP17SO9sjKL8m0tKZ8pF.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_er2yYF77GNbA8pwrevDaIUcnmTtIWau6",
+      "snapshotSha256": "5e0241b6f053b60f66b86cc9f86d0740488f3b3cfe249b34ccae78e749909fd3",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "c7200ef1-6b8b-4bac-81fc-9b134dcb5626",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:12:09.983Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "d0acadb3-e28c-4d25-8ce4-86deb4d4ce5c",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_er2yYF77GNbA8pwrevDaIUcnmTtIWau6.object-inventory.json",
+        "snapshot": "workspaces/ws_er2yYF77GNbA8pwrevDaIUcnmTtIWau6.snapshot.json",
+        "inventoryReport": "workspaces/ws_er2yYF77GNbA8pwrevDaIUcnmTtIWau6.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_gMjv1IfK8tKE8vJto830CjLSstKxnRmB",
+      "snapshotSha256": "646bd4b7408c81b34bed811a0fb2cef2288d402df80c138f61d2f4e0b307c5dc",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "7d211228-a318-496e-81bc-cccdc31b8502",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T14:54:45.786Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "c5d35b23-bc4b-486e-97ed-b6e941173dac",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_gMjv1IfK8tKE8vJto830CjLSstKxnRmB.object-inventory.json",
+        "snapshot": "workspaces/ws_gMjv1IfK8tKE8vJto830CjLSstKxnRmB.snapshot.json",
+        "inventoryReport": "workspaces/ws_gMjv1IfK8tKE8vJto830CjLSstKxnRmB.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_hXs9yfm4txCbJBOY7886ZrVpUJMv62rX",
+      "snapshotSha256": "349c240541b434735d6a0819e2a6b0bc7cc881acfc0168148b86b7fd5975596a",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "8682e9e6-da21-41bf-b85a-cf3d6dc91cd1",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T03:46:29.687Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "f17ad964-b158-4675-a074-f8925cf677f4",
+              "disposition": "convertible"
+            },
+            {
+              "id": "2bb1f003-ad38-4f65-9bad-093e6eadf4a7",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_hXs9yfm4txCbJBOY7886ZrVpUJMv62rX.object-inventory.json",
+        "snapshot": "workspaces/ws_hXs9yfm4txCbJBOY7886ZrVpUJMv62rX.snapshot.json",
+        "inventoryReport": "workspaces/ws_hXs9yfm4txCbJBOY7886ZrVpUJMv62rX.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_ixi8mrbQLHNnDOJP6p7EHdPtBBw604om",
+      "snapshotSha256": "f110135ca2b291614ab17b2179598c6ec7e6eb24678f7ab5301921a07ad8ef54",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "58205fe2-d40b-4968-94bb-28f593c1d9fd",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T11:41:45.839Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "c5a76205-b00d-4283-b301-2ad360924003",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_ixi8mrbQLHNnDOJP6p7EHdPtBBw604om.object-inventory.json",
+        "snapshot": "workspaces/ws_ixi8mrbQLHNnDOJP6p7EHdPtBBw604om.snapshot.json",
+        "inventoryReport": "workspaces/ws_ixi8mrbQLHNnDOJP6p7EHdPtBBw604om.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_j9JXpLRhnlf43V6EgHDe25wZGIMTbl3Z",
+      "snapshotSha256": "14c7b7bb9487916f1e908d6471195e08d8b4e4431d0f6943fb0ef51d614c9a88",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "d887965b-9440-4848-b4d3-b43c019b61b0",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:04:45.051Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "02d2d19e-6e8a-4930-beae-20c87b5ba1fd",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_j9JXpLRhnlf43V6EgHDe25wZGIMTbl3Z.object-inventory.json",
+        "snapshot": "workspaces/ws_j9JXpLRhnlf43V6EgHDe25wZGIMTbl3Z.snapshot.json",
+        "inventoryReport": "workspaces/ws_j9JXpLRhnlf43V6EgHDe25wZGIMTbl3Z.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_jIChsZZykSV8okhtgqCx0otwe61CktsQ",
+      "snapshotSha256": "ad4c1780a0b13eb021e9dd79229963025076241fbaeaa92c153ccb1fd5067259",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "cff82dfc-d5e1-4a0a-88f7-8a9e62fc071a",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-11T03:05:38.538Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "14c2af87-fc34-41fc-8077-734e687cbb29",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_jIChsZZykSV8okhtgqCx0otwe61CktsQ.object-inventory.json",
+        "snapshot": "workspaces/ws_jIChsZZykSV8okhtgqCx0otwe61CktsQ.snapshot.json",
+        "inventoryReport": "workspaces/ws_jIChsZZykSV8okhtgqCx0otwe61CktsQ.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_jutaAQZ5awYKHj93ZOy0Qep4omYK5hDy",
+      "snapshotSha256": "0fa5dba82a64ae87558b4f2869b595db32b39ae04de8c24ab45641b54df7f698",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 4,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 5,
+        "revisions": 4,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "f44fe7e1-42d4-45cd-a2cf-b92f27026b83",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:02:47.096Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "d1db7ef6-f8e2-4bcd-b13a-93883e79f846",
+              "disposition": "convertible"
+            },
+            {
+              "id": "573cce2f-4399-49c0-85fe-59731cac471d",
+              "disposition": "convertible"
+            },
+            {
+              "id": "bfc438cf-4fff-4831-a5b2-634f4e9ca661",
+              "disposition": "convertible"
+            },
+            {
+              "id": "0467a092-e00b-45de-929e-88e035f39d4a",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_jutaAQZ5awYKHj93ZOy0Qep4omYK5hDy.object-inventory.json",
+        "snapshot": "workspaces/ws_jutaAQZ5awYKHj93ZOy0Qep4omYK5hDy.snapshot.json",
+        "inventoryReport": "workspaces/ws_jutaAQZ5awYKHj93ZOy0Qep4omYK5hDy.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_l29wpqEn8qOUXPJXAUXc1Nx527ooeddB",
+      "snapshotSha256": "fbcbb6e6cbc62ae410ea274e4f8b78299cb68367c98d9e9740cc8a102523a7cb",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "34b864fe-78cd-4715-b48e-8da88b68e861",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-11T02:22:31.861Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "d8c58c16-da87-440f-a762-6950223afe8b",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_l29wpqEn8qOUXPJXAUXc1Nx527ooeddB.object-inventory.json",
+        "snapshot": "workspaces/ws_l29wpqEn8qOUXPJXAUXc1Nx527ooeddB.snapshot.json",
+        "inventoryReport": "workspaces/ws_l29wpqEn8qOUXPJXAUXc1Nx527ooeddB.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_mx8KHCOqdw29GZeBF9xkXXxkUgmUVxH5",
+      "snapshotSha256": "d4f7a38490fa1a3ff6c106758051465686d789c4999bafe30c00fe4971c16d1a",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 5,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 1,
+        "pages": 6,
+        "revisions": 5,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "405d73ff-8927-49fc-8386-06a24355e027",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T06:02:35.882Z",
+          "lastExportedAt": "2026-07-16T06:02:36.007Z",
+          "revisionDispositions": [
+            {
+              "id": "5b8520af-6c7c-4227-8a68-de2031b0b597",
+              "disposition": "convertible"
+            },
+            {
+              "id": "ef263512-54b4-4a68-9dc4-bff7734c479f",
+              "disposition": "convertible"
+            },
+            {
+              "id": "96e89984-0b57-4394-8471-da5ecebc714c",
+              "disposition": "convertible"
+            },
+            {
+              "id": "7169b515-4045-4e02-8d79-8cdebda3d2c0",
+              "disposition": "convertible"
+            },
+            {
+              "id": "49c80805-f941-4f32-8958-9da1407f6294",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 1,
+      "paths": {
+        "objectInventory": "workspaces/ws_mx8KHCOqdw29GZeBF9xkXXxkUgmUVxH5.object-inventory.json",
+        "snapshot": "workspaces/ws_mx8KHCOqdw29GZeBF9xkXXxkUgmUVxH5.snapshot.json",
+        "inventoryReport": "workspaces/ws_mx8KHCOqdw29GZeBF9xkXXxkUgmUVxH5.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_myvIqbbdUtAevsAg42tA7leqnBkRrBOW",
+      "snapshotSha256": "c601dd9f4f3e9defeabcc4677b151943d32d4f9e4ed07295647320f34aca4211",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "602f3918-9899-44d8-b254-312a9961565b",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T13:32:01.817Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "3c3c947e-35aa-4982-8936-4ccddf875c44",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_myvIqbbdUtAevsAg42tA7leqnBkRrBOW.object-inventory.json",
+        "snapshot": "workspaces/ws_myvIqbbdUtAevsAg42tA7leqnBkRrBOW.snapshot.json",
+        "inventoryReport": "workspaces/ws_myvIqbbdUtAevsAg42tA7leqnBkRrBOW.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_nDZOShSuotm5wljruI41KICh53xDwhrx",
+      "snapshotSha256": "a68638d8c839a1887a63b9f9aeb0b5c4040342aad473a82e791e618b904a26f9",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "38760afe-4d6e-4d1e-a8c2-e8249f3d870b",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T13:26:37.420Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "73972281-067f-45b1-a40f-fc96db7330e9",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_nDZOShSuotm5wljruI41KICh53xDwhrx.object-inventory.json",
+        "snapshot": "workspaces/ws_nDZOShSuotm5wljruI41KICh53xDwhrx.snapshot.json",
+        "inventoryReport": "workspaces/ws_nDZOShSuotm5wljruI41KICh53xDwhrx.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_nNpDHfQomMiMoqghWI3PfjJimqhwjAvs",
+      "snapshotSha256": "824aa554a01341eb3f87a155bac38f0dc776c0a305726023c8b0e9cd01c9918d",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "c3145f6a-9e9e-48f6-8de6-a786a2086446",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T14:05:40.948Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "4a4c693c-9fa7-4fdd-8bc4-404bf86938b1",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_nNpDHfQomMiMoqghWI3PfjJimqhwjAvs.object-inventory.json",
+        "snapshot": "workspaces/ws_nNpDHfQomMiMoqghWI3PfjJimqhwjAvs.snapshot.json",
+        "inventoryReport": "workspaces/ws_nNpDHfQomMiMoqghWI3PfjJimqhwjAvs.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_nlazA0Q1gf0JgtVi2s6iUukox1mSaSgB",
+      "snapshotSha256": "d2445d99c5ffd028c7f82b65963ed3553ce0c417fb15f2e6c667df99ffdd636f",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 3,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 4,
+        "revisions": 3,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "a70c2551-e1c5-49ef-8e65-61a8e3520b20",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:06:23.835Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "41d1f669-45c0-4201-921f-136bc8b737f6",
+              "disposition": "convertible"
+            },
+            {
+              "id": "c1f8b2a6-fce5-4966-b6ce-8edb04d0016d",
+              "disposition": "convertible"
+            },
+            {
+              "id": "0e98e51e-5ec2-40e7-bb3a-b422de980158",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_nlazA0Q1gf0JgtVi2s6iUukox1mSaSgB.object-inventory.json",
+        "snapshot": "workspaces/ws_nlazA0Q1gf0JgtVi2s6iUukox1mSaSgB.snapshot.json",
+        "inventoryReport": "workspaces/ws_nlazA0Q1gf0JgtVi2s6iUukox1mSaSgB.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd",
+      "snapshotSha256": "145f4b69ce40af044adec79e91567a07efe7b991a3feded757fa7a5635958fdf",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "a0eb76f1-d47b-49a7-9d4c-459845d83550",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T10:32:44.393Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "067cfbfd-4961-4080-a3e2-7140a8346043",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd.object-inventory.json",
+        "snapshot": "workspaces/ws_oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd.snapshot.json",
+        "inventoryReport": "workspaces/ws_oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_pWrlDutY7O0CVUyEnzXupfcczvNFrzqY",
+      "snapshotSha256": "ac77fffe3f8a0be02742eb99de158dfb6814c069b847af560f3b605a4420602f",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "dbfe40ee-9f78-4e0f-91d1-4730b864166d",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T13:05:15.355Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "4c3b9268-47c2-46fb-aca0-3fa1afb96b4c",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_pWrlDutY7O0CVUyEnzXupfcczvNFrzqY.object-inventory.json",
+        "snapshot": "workspaces/ws_pWrlDutY7O0CVUyEnzXupfcczvNFrzqY.snapshot.json",
+        "inventoryReport": "workspaces/ws_pWrlDutY7O0CVUyEnzXupfcczvNFrzqY.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_pXoAuARcoAdBmtiAGAEEsLVsOZOWmrRM",
+      "snapshotSha256": "9206292e4acf2eb0c4236d7a0fe59cb295b3a9ebc5b54eda0349316ed73bf9da",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "4fbf78dd-401e-4dc9-adb7-0f8c48249048",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-11T03:06:34.974Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "7724ad1a-b662-4e27-ab26-75fc59bee3f9",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_pXoAuARcoAdBmtiAGAEEsLVsOZOWmrRM.object-inventory.json",
+        "snapshot": "workspaces/ws_pXoAuARcoAdBmtiAGAEEsLVsOZOWmrRM.snapshot.json",
+        "inventoryReport": "workspaces/ws_pXoAuARcoAdBmtiAGAEEsLVsOZOWmrRM.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_qYvUfhcE5jdlKnvpSWA2QD3bqBeFEROV",
+      "snapshotSha256": "64152803e21d063f3434e0f92dac39832a62c6daea2eed0eac4d05baa491dfdd",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "51fa9192-f4a0-4472-8c6b-303b752fd93e",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T03:58:41.739Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "aa51b4c7-e45f-4510-a12a-e420265e1f00",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_qYvUfhcE5jdlKnvpSWA2QD3bqBeFEROV.object-inventory.json",
+        "snapshot": "workspaces/ws_qYvUfhcE5jdlKnvpSWA2QD3bqBeFEROV.snapshot.json",
+        "inventoryReport": "workspaces/ws_qYvUfhcE5jdlKnvpSWA2QD3bqBeFEROV.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_rlLCdli4ZWTvdtdIV8cqCGepQuv5kkXy",
+      "snapshotSha256": "36f75203ffdf4b344a9825200f036cb03a78774c58e6fdcca2757240e092f95f",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "51843601-d370-4a29-986d-fc2301ea2496",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:23:35.287Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "2c93c22a-6c65-471e-b54d-ed1c0574fb36",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_rlLCdli4ZWTvdtdIV8cqCGepQuv5kkXy.object-inventory.json",
+        "snapshot": "workspaces/ws_rlLCdli4ZWTvdtdIV8cqCGepQuv5kkXy.snapshot.json",
+        "inventoryReport": "workspaces/ws_rlLCdli4ZWTvdtdIV8cqCGepQuv5kkXy.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_t18_local_rehearsal",
+      "snapshotSha256": "46619181bcdf68eaee04946edf560ea8f5db4905c820169611f6a36bf81d8864",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 3,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 3
+      },
+      "inventoryTotals": {
+        "exportRecords": 1,
+        "pages": 4,
+        "revisions": 3,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 3
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 1,
+        "raster_fallback": 1
+      },
+      "works": [
+        {
+          "id": "work-convertible",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T10:00:00.000Z",
+          "lastExportedAt": "2026-07-16T10:40:00.000Z",
+          "revisionDispositions": [
+            {
+              "id": "rev-convertible",
+              "disposition": "convertible"
+            }
+          ]
+        },
+        {
+          "id": "work-raster-fallback",
+          "disposition": "raster_fallback",
+          "lastEditedAt": "2026-07-16T10:20:00.000Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "rev-raster-fallback",
+              "disposition": "raster_fallback"
+            }
+          ]
+        },
+        {
+          "id": "work-read-only",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-16T10:10:00.000Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "rev-read-only",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 1,
+      "paths": {
+        "objectInventory": "workspaces/ws_t18_local_rehearsal.object-inventory.json",
+        "snapshot": "workspaces/ws_t18_local_rehearsal.snapshot.json",
+        "inventoryReport": "workspaces/ws_t18_local_rehearsal.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr",
+      "snapshotSha256": "b675ac094e9add296c9e289163ad7fa8949dbe7d1753375b9d6c93e6328420f3",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "3a80bb8d-7509-4099-bf0b-24aca6255e6d",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T04:06:32.645Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "070add1b-5381-41d6-88af-30810a4c41f6",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr.object-inventory.json",
+        "snapshot": "workspaces/ws_tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr.snapshot.json",
+        "inventoryReport": "workspaces/ws_tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_uSC5XicIHZt8EFAY0ZSfekLIbNrhfkIr",
+      "snapshotSha256": "0541fb8643df0b8d47b251a2f103ea5ba8d80c2e020ff47d1d7c44de203d9d4a",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 2,
+        "revisions": 2,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "8bd4d042-1d5e-498a-9183-e07ef1017bc6",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-11T06:06:36.809Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "e56163a1-3da2-48ca-b40a-d822cd284375",
+              "disposition": "convertible"
+            },
+            {
+              "id": "f63ddb23-5a44-4cee-9314-ce13fdcdace0",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_uSC5XicIHZt8EFAY0ZSfekLIbNrhfkIr.object-inventory.json",
+        "snapshot": "workspaces/ws_uSC5XicIHZt8EFAY0ZSfekLIbNrhfkIr.snapshot.json",
+        "inventoryReport": "workspaces/ws_uSC5XicIHZt8EFAY0ZSfekLIbNrhfkIr.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_wKX0NNZJuFjaZhsEknsnWzfTBfDZyeGj",
+      "snapshotSha256": "47301163b5fe23093b0753e63480fa9e59ab71fedab70b077927864e6de4fe9a",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "1f4888de-f56c-49b6-b5cb-e2717db17727",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T13:30:47.392Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "41b57e5b-53aa-4695-af46-fcfcabb49729",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_wKX0NNZJuFjaZhsEknsnWzfTBfDZyeGj.object-inventory.json",
+        "snapshot": "workspaces/ws_wKX0NNZJuFjaZhsEknsnWzfTBfDZyeGj.snapshot.json",
+        "inventoryReport": "workspaces/ws_wKX0NNZJuFjaZhsEknsnWzfTBfDZyeGj.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT",
+      "snapshotSha256": "01e6072f74b842b98b49d2080f243ea3c5f770370975fa82f91caad1b82cdcab",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 4,
+        "revisions": 7,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 4,
+        "pages": 7,
+        "revisions": 7,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "3d95a048-eb81-4615-937c-455fef8542f7",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-16T07:47:13.991Z",
+          "lastExportedAt": "2026-07-16T07:47:14.136Z",
+          "revisionDispositions": [
+            {
+              "id": "6760e228-4824-4a10-b596-efaaaa082279",
+              "disposition": "convertible"
+            },
+            {
+              "id": "9284b36d-f9d5-463e-9d75-2f497ababfbc",
+              "disposition": "convertible"
+            },
+            {
+              "id": "7ac4dd38-0a91-447c-8caf-f02e70d577f5",
+              "disposition": "convertible"
+            },
+            {
+              "id": "b9469ac2-81aa-4c90-8087-6ed6a7605c5d",
+              "disposition": "convertible"
+            },
+            {
+              "id": "b667e5f5-b603-49e9-8727-2a9eaabaca5b",
+              "disposition": "convertible"
+            },
+            {
+              "id": "74b41dc1-2c1a-43e7-a820-ce1206783959",
+              "disposition": "convertible"
+            },
+            {
+              "id": "e309c57c-5e13-487b-97f6-a9f983dec33e",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 4,
+      "paths": {
+        "objectInventory": "workspaces/ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT.object-inventory.json",
+        "snapshot": "workspaces/ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT.snapshot.json",
+        "inventoryReport": "workspaces/ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0",
+      "snapshotSha256": "f7de60049fbf1e1049ba6f20fb49816ace2941628dc88afa185afe39a94a4131",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "d72c3d9a-cb67-4dc6-a5e0-779191365b6c",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-12T09:09:10.840Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "02fd386d-32ce-4a88-8e28-4538b24c15b9",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0.object-inventory.json",
+        "snapshot": "workspaces/ws_xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0.snapshot.json",
+        "inventoryReport": "workspaces/ws_xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_xj4Isl5ZNYBO8qKop4Wk2ezqfNTaJJQp",
+      "snapshotSha256": "0da91f9763b53fc3f967c3d5871dbaf1197f8f08d8e1ba50e655df5359f04bc7",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 5,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 1,
+        "pages": 6,
+        "revisions": 5,
+        "templateVersions": 1,
+        "templates": 1,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "7a577581-d100-4345-b765-9517771a894e",
+          "disposition": "read_only",
+          "lastEditedAt": "2026-07-16T09:19:07.218Z",
+          "lastExportedAt": "2026-07-16T09:19:07.346Z",
+          "revisionDispositions": [
+            {
+              "id": "aabdef64-ca15-4e19-857e-2348a7e1775c",
+              "disposition": "convertible"
+            },
+            {
+              "id": "20f62a33-1c2e-4128-adb5-fdd53979ae16",
+              "disposition": "convertible"
+            },
+            {
+              "id": "4c4c1ef7-2f54-47c4-9aef-d2e395c90983",
+              "disposition": "convertible"
+            },
+            {
+              "id": "0c047ed9-89ee-45d4-a923-99d2cfced687",
+              "disposition": "read_only"
+            },
+            {
+              "id": "37f90d1c-4759-45a0-9a35-98f2eee47627",
+              "disposition": "read_only"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 1,
+      "paths": {
+        "objectInventory": "workspaces/ws_xj4Isl5ZNYBO8qKop4Wk2ezqfNTaJJQp.object-inventory.json",
+        "snapshot": "workspaces/ws_xj4Isl5ZNYBO8qKop4Wk2ezqfNTaJJQp.snapshot.json",
+        "inventoryReport": "workspaces/ws_xj4Isl5ZNYBO8qKop4Wk2ezqfNTaJJQp.inventory-report.json"
+      }
+    },
+    {
+      "workspaceId": "ws_yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt",
+      "snapshotSha256": "2d7d792f6ef9c1fab1e525a51e29f2e2a66081f4cb8ba22c554887a568a2c3a5",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      },
+      "inventoryTotals": {
+        "exportRecords": 0,
+        "pages": 1,
+        "revisions": 1,
+        "templateVersions": 0,
+        "templates": 0,
+        "works": 1
+      },
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "works": [
+        {
+          "id": "6f8d6195-3236-435d-af28-aebef5b66956",
+          "disposition": "convertible",
+          "lastEditedAt": "2026-07-13T13:41:58.298Z",
+          "lastExportedAt": null,
+          "revisionDispositions": [
+            {
+              "id": "3051ccb4-512f-46ce-83d9-9d79b9022af1",
+              "disposition": "convertible"
+            }
+          ]
+        }
+      ],
+      "objectInventoryEntries": 0,
+      "paths": {
+        "objectInventory": "workspaces/ws_yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt.object-inventory.json",
+        "snapshot": "workspaces/ws_yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt.snapshot.json",
+        "inventoryReport": "workspaces/ws_yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt.inventory-report.json"
+      }
+    }
+  ]
+}

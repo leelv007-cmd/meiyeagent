@@ -1,0 +1,1318 @@
+{
+  "label": "LOCAL_FULL_INVENTORY_ONLY_NOT_PRODUCTION",
+  "environment": {
+    "databaseUrlHost": "127.0.0.1:54329",
+    "databaseName": "meiye",
+    "deployment": "local-postgres-dev",
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "scannedAt": "2026-07-16T10:01:11.810Z",
+    "databaseUrl": "postgres://meiye:***@127.0.0.1:54329/meiye"
+  },
+  "method": {
+    "perWorkspace": "exportLegacyCanvasProductionSnapshot + inventoryLegacyCanvasData for every workspace with p1_canvas_works rows",
+    "objectInventory": "Derived from p1_export_receipts distinct objectKey metadata in the same local database (not production object store listing)",
+    "accessSamples": "LegacyCanvasHistoryAccess open/export for each disposition class on local rehearsal fixture with synthetic managed rasters; plus one real local convertible row that already had managedRasterAvailable"
+  },
+  "totals": {
+    "workspaces": 82,
+    "works": 86,
+    "revisions": 159,
+    "pages": 174,
+    "templates": 15,
+    "templateVersions": 15,
+    "exportRecords": 16,
+    "managedRasters": 17
+  },
+  "dispositionCounts": {
+    "convertible": 69,
+    "read_only": 16,
+    "raster_fallback": 1
+  },
+  "elementKinds": {
+    "image": 89,
+    "text": 94,
+    "edge": 1
+  },
+  "unknownFields": {
+    "document.dpi": 14,
+    "document.unit": 14,
+    "document.fonts": 14,
+    "document.audios": 14,
+    "document.schemaVersion": 14,
+    "page.bleed": 13,
+    "page.width": 13,
+    "page.height": 13,
+    "page.children": 13,
+    "page.duration": 13,
+    "page.background": 14,
+    "element.image.name": 13,
+    "element.image.type": 13,
+    "element.image.cropX": 13,
+    "element.image.cropY": 13,
+    "element.image.flipX": 13,
+    "element.image.flipY": 13,
+    "element.image.custom": 13,
+    "element.image.clipSrc": 13,
+    "element.image.filters": 13,
+    "element.image.visible": 13,
+    "element.image.cropWidth": 13,
+    "element.image.draggable": 13,
+    "element.image.keepRatio": 13,
+    "element.image.removable": 13,
+    "element.image.resizable": 13,
+    "element.image.animations": 13,
+    "element.image.blurRadius": 13,
+    "element.image.borderSize": 13,
+    "element.image.brightness": 13,
+    "element.image.cropHeight": 13,
+    "element.image.selectable": 13,
+    "element.image.shadowBlur": 13,
+    "element.image.alwaysOnTop": 13,
+    "element.image.blurEnabled": 13,
+    "element.image.borderColor": 13,
+    "element.image.shadowColor": 13,
+    "element.image.cornerRadius": 13,
+    "element.image.sepiaEnabled": 13,
+    "element.image.showInExport": 13,
+    "element.image.shadowEnabled": 13,
+    "element.image.shadowOffsetX": 13,
+    "element.image.shadowOffsetY": 13,
+    "element.image.shadowOpacity": 13,
+    "element.image.styleEditable": 13,
+    "element.image.stretchEnabled": 13,
+    "element.image.contentEditable": 13,
+    "element.image.grayscaleEnabled": 13,
+    "element.image.brightnessEnabled": 13,
+    "element.image.crop": 4
+  },
+  "lsnRange": {
+    "first": "1/86410A80",
+    "last": "1/86410A80"
+  },
+  "provenanceSamples": [
+    {
+      "workspaceId": "ws_0bXEAAhlmp9Amg1Hin34WT09FN83cd4p",
+      "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+      "deployment": "local-postgres-dev",
+      "snapshotSha256": "12dff6dbc3ee98e396167fab4c14af239b1cfb4a2b01509e05a6e04b49a6608f",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 1,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      }
+    },
+    {
+      "workspaceId": "ws_1Iw7ZzAfPsAMoLAHakiuDw2XlYDzGyjf",
+      "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+      "deployment": "local-postgres-dev",
+      "snapshotSha256": "f5289813dcddce20954eb45a6248f0e5c54a5ee604ebfa55c5c0dcc971df4cd1",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      }
+    },
+    {
+      "workspaceId": "ws_1ghwmEZd8nKZqJH9XsLEWXiAejHneHdO",
+      "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+      "deployment": "local-postgres-dev",
+      "snapshotSha256": "fbae927ceb524a19b0c1fc07d4dea8af5a06abe51dffa9691766b103a470feea",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 0,
+        "revisions": 2,
+        "templates": 0,
+        "templateVersions": 0,
+        "works": 1
+      }
+    },
+    {
+      "workspaceId": "ws_t18_local_rehearsal",
+      "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+      "deployment": "local-postgres-dev",
+      "snapshotSha256": "46619181bcdf68eaee04946edf560ea8f5db4905c820169611f6a36bf81d8864",
+      "databaseLsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:",
+      "sourceCounts": {
+        "exportReceipts": 1,
+        "revisions": 3,
+        "templates": 1,
+        "templateVersions": 1,
+        "works": 3
+      }
+    }
+  ],
+  "accessSamples": [
+    {
+      "label": "LOCAL_ACCESS_SAMPLE_NOT_PRODUCTION",
+      "dispositionClass": "convertible",
+      "workspaceId": "ws_t18_local_rehearsal",
+      "workId": "work-convertible",
+      "revisionId": "rev-convertible",
+      "fixture": "ws_t18_local_rehearsal snapshot with synthetic managed raster for path classification",
+      "open": {
+        "disposition": "convertible",
+        "mode": "light_composer",
+        "editable": true
+      },
+      "export": {
+        "disposition": "convertible",
+        "source": "existing_managed_raster",
+        "contentType": "image/png",
+        "sizeBytes": 70,
+        "objectKey": "ws_t18_local_rehearsal/owned/t18-access-sample.png",
+        "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+      },
+      "note": "LOCAL ONLY. Synthetic 1x1 PNG proves open/export disposition routing; not production object custody."
+    },
+    {
+      "label": "LOCAL_ACCESS_SAMPLE_NOT_PRODUCTION",
+      "dispositionClass": "read_only",
+      "workspaceId": "ws_t18_local_rehearsal",
+      "workId": "work-read-only",
+      "revisionId": "rev-read-only",
+      "fixture": "ws_t18_local_rehearsal snapshot with synthetic managed raster for path classification",
+      "open": {
+        "disposition": "read_only",
+        "mode": "read_only_document",
+        "editable": false
+      },
+      "export": {
+        "disposition": "read_only",
+        "source": "existing_managed_raster",
+        "contentType": "image/png",
+        "sizeBytes": 70,
+        "objectKey": "ws_t18_local_rehearsal/owned/t18-access-sample.png",
+        "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+      },
+      "note": "LOCAL ONLY. Synthetic 1x1 PNG proves open/export disposition routing; not production object custody."
+    },
+    {
+      "label": "LOCAL_ACCESS_SAMPLE_NOT_PRODUCTION",
+      "dispositionClass": "raster_fallback",
+      "workspaceId": "ws_t18_local_rehearsal",
+      "workId": "work-raster-fallback",
+      "revisionId": "rev-raster-fallback",
+      "fixture": "ws_t18_local_rehearsal snapshot with synthetic managed raster for path classification",
+      "open": {
+        "disposition": "raster_fallback",
+        "mode": "managed_raster",
+        "editable": false,
+        "contentType": "image/png",
+        "sizeBytes": 70
+      },
+      "export": {
+        "disposition": "raster_fallback",
+        "source": "existing_managed_raster",
+        "contentType": "image/png",
+        "sizeBytes": 70,
+        "objectKey": "ws_t18_local_rehearsal/owned/t18-access-sample.png",
+        "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+      },
+      "note": "LOCAL ONLY. Synthetic 1x1 PNG proves open/export disposition routing; not production object custody."
+    }
+  ],
+  "errors": [],
+  "workspaceSummaries": [
+    {
+      "workspaceId": "ws_0bXEAAhlmp9Amg1Hin34WT09FN83cd4p",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "12dff6dbc3ee98e396167fab4c14af239b1cfb4a2b01509e05a6e04b49a6608f"
+    },
+    {
+      "workspaceId": "ws_1Iw7ZzAfPsAMoLAHakiuDw2XlYDzGyjf",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "f5289813dcddce20954eb45a6248f0e5c54a5ee604ebfa55c5c0dcc971df4cd1"
+    },
+    {
+      "workspaceId": "ws_1ghwmEZd8nKZqJH9XsLEWXiAejHneHdO",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "fbae927ceb524a19b0c1fc07d4dea8af5a06abe51dffa9691766b103a470feea"
+    },
+    {
+      "workspaceId": "ws_2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "f7ba771b5f76f3601a6051ba1c4c81a63b25d58dbaf1ba26803e7ac109541fce"
+    },
+    {
+      "workspaceId": "ws_2pVqEPORpFcbpcPepX5paxvP87MeUmnF",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "fe4d0f83e9b58c5f4f01f798b4228b8130dbd114079ccdfb95d6b1045fa76e06"
+    },
+    {
+      "workspaceId": "ws_36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "805fceef8c7914a0fa58c0fbfcae581e20b79b18b51288153c30b0abbf3e8461"
+    },
+    {
+      "workspaceId": "ws_3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "04eb6d83ef2afb0ab6e79c5279bae64b416efa1b6b43b7bde78b5cf39491a699"
+    },
+    {
+      "workspaceId": "ws_3eKdZqrLHRsl6O6SJPR6BWzN4Kh9qK5S",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "32f9690a736fe71e9c226a8ad3b8c70b3c11782ea1845c60f49d5d5858dba904"
+    },
+    {
+      "workspaceId": "ws_3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "72d30b877988370c7bd26f80c13e6180ee2f222c0687cddc9a449142a79efe42"
+    },
+    {
+      "workspaceId": "ws_3zo7eOVKH3j24e9fxLFWc60DZJ8L7PiQ",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "c460863e6300bdb2fd0d8c202834ff2289b21147881ffbd81fd0e1bfd7aeca62"
+    },
+    {
+      "workspaceId": "ws_4aRu9iPUwUh8vXnot5dJHiuVtIXQxlLu",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "491edbb8519c9adcbd0a453d321c7eefa0f915155ee02aca8561b6481b5f5507"
+    },
+    {
+      "workspaceId": "ws_5eZiKU1xA4XstiCo0iv1ttjrgAZQSX4o",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "c941c3952238728d745fb473597110ab6bcb1e37521cf9ac969c20ff1541ca02"
+    },
+    {
+      "workspaceId": "ws_7UcU9nvGOYvBPEYlyWs6bCdajsNVOF0m",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "e0baed479e6584653acd011c4a1fed39935819e3ef0080adb670e60e6dad85e8"
+    },
+    {
+      "workspaceId": "ws_7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "5cc4ae28b38fc7513a77037780ac58fd3a7510c3e25a4b91a2c6c4493d961e60"
+    },
+    {
+      "workspaceId": "ws_8T7wt2aaLPrwfU6XJIw81vs45cmMTo3r",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "cdd900bca4952251c9301e86cff49531228f738081ef23558da203302b17de3c"
+    },
+    {
+      "workspaceId": "ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "e79c5c384bda083d76e6ef82e6f9e81e7a9b872e218e6e8b4886a1e98abc108a"
+    },
+    {
+      "workspaceId": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "cd6c056bc43d078a2c63a2a6bd6f17b39ec442144f967570b9a4d5293e8e684b"
+    },
+    {
+      "workspaceId": "ws_9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "f63894cabd334c41ed6257f94a7febb1c7cd004f3a5fbe85c64b7c804147aa88"
+    },
+    {
+      "workspaceId": "ws_A1J6uweCNInZl0OqRQ7NyBbJxk3mpDcU",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "b0007d44fa01fc6b195c6a9f8af701c1795e5d0ad2a21fbd8334c8eea9ec9a4f"
+    },
+    {
+      "workspaceId": "ws_A6VqXpckwxHUl6FCTnkyUjp8vs3U3vq0",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "c7a6ec38d9f0728e86e5762f7daee13570b90ff805a301323eb81ffe9e55cdee"
+    },
+    {
+      "workspaceId": "ws_AJ3UykyDW9swGwe2d0q1ogg3X0NBIkDh",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "5855c85b4bd54399c45eda86b1aa9e1e29be03f03544a36f025545f7267d5c4a"
+    },
+    {
+      "workspaceId": "ws_AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "4408507353fcb55d492b01188a7b2d3f07a790e2ed5a5da2d4e13c57e169b681"
+    },
+    {
+      "workspaceId": "ws_ARpYasGGTcOH643oAALGOSxxHuazCjPq",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "dfd6ea30d77db4cd006938e59f13d45dbd72204cfc841e572c572be274d45cac"
+    },
+    {
+      "workspaceId": "ws_Atvav5g1beqjuuYEhVlWPttUaTfHv3yt",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "e7b90f8b21f6dd1f6196f5cc2049dfad2ecade39c0c1a9fc094d72f039c1b6a5"
+    },
+    {
+      "workspaceId": "ws_AuM19zOP4hH2XPCulj1VZQ0nf5xrUGyD",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "6e984b837d1ab7cf43982211b6a69cb1480c47133b85234548afe37f50a8fe28"
+    },
+    {
+      "workspaceId": "ws_Cx48ZyFBy9WhrAPSEGsv7RhInaZRTgQ1",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "852f212f4999619ba2856cedce109b4162684e3f5865fec20aa2cca5fa1ca5bf"
+    },
+    {
+      "workspaceId": "ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "21029739110d9e9703b2bc8ee905628408d28bc36d50fd138d15b9cbfe4577ea"
+    },
+    {
+      "workspaceId": "ws_EGLMhNdlIyUIjkMeoAuLbEyNFL4zE37r",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "58632aaa8d557f6d3756401e6c087e6573c086f7e764b2c297ef310deb5b58df"
+    },
+    {
+      "workspaceId": "ws_EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "3784126d74ac5749309ab4954807f7eeb301f5485be2b37cfc94b9d08239276c"
+    },
+    {
+      "workspaceId": "ws_EbkhzCSLYVal4QCYVHOp9ds1i8lR552M",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "14254bbf4cd6babc18135b272c7c20455a9ad721af02fc61a4342ef251249795"
+    },
+    {
+      "workspaceId": "ws_F6004pNaqYt5w5XsHOEHeLJbSDvDLjE9",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "3dfaf73be63e84413bf084d78df6d4aa266e5a975f46b1437c5acca938ca8c67"
+    },
+    {
+      "workspaceId": "ws_FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "522ba34f2b309daa2a8293ddb8e9f04775375324024cdb7775ecbca19d10da99"
+    },
+    {
+      "workspaceId": "ws_FTUzIJCPdyDSj3MEblkdoIR3RwHaPpeQ",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "93e70d318d3b37beb9b2ba2f4bf34b74f2e88b6495b7feea4c3db6441fe0a22c"
+    },
+    {
+      "workspaceId": "ws_H83cJvWqsga9O1BbmDb3NMlU2fgCoTOn",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "db02d1c1243a8e760164d2998c8befc058320a7be82e71c0705d9cbf742e4f57"
+    },
+    {
+      "workspaceId": "ws_HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "6cc683ea59c34d78fe9ed5af8a0f34ab5d71710da085d309526211035283c4da"
+    },
+    {
+      "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+      "works": 1,
+      "revisions": 7,
+      "templates": 0,
+      "exportRecords": 4,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "1abe275bae34bd27ae062ba24e1646ad4cf38a277e2f6513249f7cd89b9b6938"
+    },
+    {
+      "workspaceId": "ws_IxCWqm0kp8OvSayMmUQ5C1aUEsojZiNp",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "d2536e6e525144456bd09f849b53304afe2ff3edabbb2bd0fa1439e40da6314b"
+    },
+    {
+      "workspaceId": "ws_JT4ycoQDJAtoKhT1vVfANhl5Ui4ij3Zu",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "ff6cbe1f5cc39858615fed403590af4c8035d6e1869a5ca651ba3a997717681f"
+    },
+    {
+      "workspaceId": "ws_JXw6ug2S3K6yHBkTJLsSwjRkx7JV4Ttv",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "50ef88de61fab60b4d0d7f500ffae53736ac235b7a9d0d85b5e3fb09ddf91fb3"
+    },
+    {
+      "workspaceId": "ws_JrizNBry4F0X1XaTVjVhZgnm1vARkLOA",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "efb4eeea94bf7a5bfe832e412a792800e39c421cb5a3b47cc514bd67559a58ac"
+    },
+    {
+      "workspaceId": "ws_K7c3gDfwc1LCY52ViHxhjI6eF21C7P89",
+      "works": 2,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 2,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "ce96f41af42e50ebd0f29efb30933bc36c0e67c1e7d8c22c7356e99babf23836"
+    },
+    {
+      "workspaceId": "ws_QOyf0q7velTgOm4p4bbbu0pZd5rVGW8L",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "0aea2e74af6caf97246dacc51f9f489ea3d1c9a649767d54e62255a2b179a3ca"
+    },
+    {
+      "workspaceId": "ws_S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "5c94cf32df3aae0522d62404d7f8a310de7912fbd824ef8736797405d0516201"
+    },
+    {
+      "workspaceId": "ws_SH89uHoIli12yhEmn7Pa3a9objWBwHrS",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "149e9395df28d672c73f76326f5947916781a2d3a8ef90cdf6d67debd9b7c116"
+    },
+    {
+      "workspaceId": "ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb",
+      "works": 2,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 2,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "8c313ec651cbbfa2d4c7d47d2c6ee91578bdbf5a2f4eee80ec9d787126e212f3"
+    },
+    {
+      "workspaceId": "ws_T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "5560da552a95e4994ee0419314dcb0b3a2d21678b4608777cf088900333dab4d"
+    },
+    {
+      "workspaceId": "ws_Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "4b1b7bd1a61935ae7c56dafd6984b138265f6e3da211fe37737a4c336f65a62b"
+    },
+    {
+      "workspaceId": "ws_V2zcMUfRnLoalVWmDWk2o1Dx8WN7R9fE",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "36ec71d0bfb11b65e9c64af70205d34080194d018a7cc0f177b22e334db223be"
+    },
+    {
+      "workspaceId": "ws_VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "b72f7d57e4d519584e2a845e4b6032ae1f864ef6181ca302757674daf06c963e"
+    },
+    {
+      "workspaceId": "ws_WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "d8710781d0fa038bfa2bf32ec4e6365db22384310c6aa3e55db3df99f13bf94e"
+    },
+    {
+      "workspaceId": "ws_WlILuDu28PVSoWk6TGA8YT9tfdmJQKWh",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "b8b8edee77cb0b632f0a847868d47a0e66af7e7eac4fd84d36b1afe945c07a92"
+    },
+    {
+      "workspaceId": "ws_Y5nwLXjSlyoaSloR7NBJrolWx1xo5xY0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "f87df8d945ab24ae44ed18cf717d344b556fbe59a45513729f456b118510900f"
+    },
+    {
+      "workspaceId": "ws_YkVGDY9mGihXG80c7ll0WTlfUkzGL4a6",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "cf00fd38b24dee20545e84d0d8f7326952ba0bad1f0cd0d0daff4371e994efdb"
+    },
+    {
+      "workspaceId": "ws_Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "fda3659b99ce513ff689a4596759b6262c0a31801d10ee065676d26cbe603913"
+    },
+    {
+      "workspaceId": "ws_eCgCevaLwjWzk8PfaCcC2wTcNHmmZFG9",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "4c16ffdc894ec0562b947ae63d35ae6f4c3c3d6b086868df89cbf39c69a13a0d"
+    },
+    {
+      "workspaceId": "ws_eRoY2hwdGoNAGP17SO9sjKL8m0tKZ8pF",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "113f75ebdf388f0bb964541950a62e84674f51931ed2117a6da1b54727184a09"
+    },
+    {
+      "workspaceId": "ws_er2yYF77GNbA8pwrevDaIUcnmTtIWau6",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "5e0241b6f053b60f66b86cc9f86d0740488f3b3cfe249b34ccae78e749909fd3"
+    },
+    {
+      "workspaceId": "ws_gMjv1IfK8tKE8vJto830CjLSstKxnRmB",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "646bd4b7408c81b34bed811a0fb2cef2288d402df80c138f61d2f4e0b307c5dc"
+    },
+    {
+      "workspaceId": "ws_hXs9yfm4txCbJBOY7886ZrVpUJMv62rX",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "349c240541b434735d6a0819e2a6b0bc7cc881acfc0168148b86b7fd5975596a"
+    },
+    {
+      "workspaceId": "ws_ixi8mrbQLHNnDOJP6p7EHdPtBBw604om",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "f110135ca2b291614ab17b2179598c6ec7e6eb24678f7ab5301921a07ad8ef54"
+    },
+    {
+      "workspaceId": "ws_j9JXpLRhnlf43V6EgHDe25wZGIMTbl3Z",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "14c7b7bb9487916f1e908d6471195e08d8b4e4431d0f6943fb0ef51d614c9a88"
+    },
+    {
+      "workspaceId": "ws_jIChsZZykSV8okhtgqCx0otwe61CktsQ",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "ad4c1780a0b13eb021e9dd79229963025076241fbaeaa92c153ccb1fd5067259"
+    },
+    {
+      "workspaceId": "ws_jutaAQZ5awYKHj93ZOy0Qep4omYK5hDy",
+      "works": 1,
+      "revisions": 4,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "0fa5dba82a64ae87558b4f2869b595db32b39ae04de8c24ab45641b54df7f698"
+    },
+    {
+      "workspaceId": "ws_l29wpqEn8qOUXPJXAUXc1Nx527ooeddB",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "fbcbb6e6cbc62ae410ea274e4f8b78299cb68367c98d9e9740cc8a102523a7cb"
+    },
+    {
+      "workspaceId": "ws_mx8KHCOqdw29GZeBF9xkXXxkUgmUVxH5",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "d4f7a38490fa1a3ff6c106758051465686d789c4999bafe30c00fe4971c16d1a"
+    },
+    {
+      "workspaceId": "ws_myvIqbbdUtAevsAg42tA7leqnBkRrBOW",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "c601dd9f4f3e9defeabcc4677b151943d32d4f9e4ed07295647320f34aca4211"
+    },
+    {
+      "workspaceId": "ws_nDZOShSuotm5wljruI41KICh53xDwhrx",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "a68638d8c839a1887a63b9f9aeb0b5c4040342aad473a82e791e618b904a26f9"
+    },
+    {
+      "workspaceId": "ws_nNpDHfQomMiMoqghWI3PfjJimqhwjAvs",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "824aa554a01341eb3f87a155bac38f0dc776c0a305726023c8b0e9cd01c9918d"
+    },
+    {
+      "workspaceId": "ws_nlazA0Q1gf0JgtVi2s6iUukox1mSaSgB",
+      "works": 1,
+      "revisions": 3,
+      "templates": 1,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "d2445d99c5ffd028c7f82b65963ed3553ce0c417fb15f2e6c667df99ffdd636f"
+    },
+    {
+      "workspaceId": "ws_oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "145f4b69ce40af044adec79e91567a07efe7b991a3feded757fa7a5635958fdf"
+    },
+    {
+      "workspaceId": "ws_pWrlDutY7O0CVUyEnzXupfcczvNFrzqY",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "ac77fffe3f8a0be02742eb99de158dfb6814c069b847af560f3b605a4420602f"
+    },
+    {
+      "workspaceId": "ws_pXoAuARcoAdBmtiAGAEEsLVsOZOWmrRM",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "9206292e4acf2eb0c4236d7a0fe59cb295b3a9ebc5b54eda0349316ed73bf9da"
+    },
+    {
+      "workspaceId": "ws_qYvUfhcE5jdlKnvpSWA2QD3bqBeFEROV",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "64152803e21d063f3434e0f92dac39832a62c6daea2eed0eac4d05baa491dfdd"
+    },
+    {
+      "workspaceId": "ws_rlLCdli4ZWTvdtdIV8cqCGepQuv5kkXy",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "36f75203ffdf4b344a9825200f036cb03a78774c58e6fdcca2757240e092f95f"
+    },
+    {
+      "workspaceId": "ws_t18_local_rehearsal",
+      "works": 3,
+      "revisions": 3,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 1,
+        "raster_fallback": 1
+      },
+      "snapshotSha256": "46619181bcdf68eaee04946edf560ea8f5db4905c820169611f6a36bf81d8864"
+    },
+    {
+      "workspaceId": "ws_tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "b675ac094e9add296c9e289163ad7fa8949dbe7d1753375b9d6c93e6328420f3"
+    },
+    {
+      "workspaceId": "ws_uSC5XicIHZt8EFAY0ZSfekLIbNrhfkIr",
+      "works": 1,
+      "revisions": 2,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "0541fb8643df0b8d47b251a2f103ea5ba8d80c2e020ff47d1d7c44de203d9d4a"
+    },
+    {
+      "workspaceId": "ws_wKX0NNZJuFjaZhsEknsnWzfTBfDZyeGj",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "47301163b5fe23093b0753e63480fa9e59ab71fedab70b077927864e6de4fe9a"
+    },
+    {
+      "workspaceId": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT",
+      "works": 1,
+      "revisions": 7,
+      "templates": 0,
+      "exportRecords": 4,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "01e6072f74b842b98b49d2080f243ea3c5f770370975fa82f91caad1b82cdcab"
+    },
+    {
+      "workspaceId": "ws_xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "f7de60049fbf1e1049ba6f20fb49816ace2941628dc88afa185afe39a94a4131"
+    },
+    {
+      "workspaceId": "ws_xj4Isl5ZNYBO8qKop4Wk2ezqfNTaJJQp",
+      "works": 1,
+      "revisions": 5,
+      "templates": 1,
+      "exportRecords": 1,
+      "dispositions": {
+        "convertible": 0,
+        "read_only": 1,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "0da91f9763b53fc3f967c3d5871dbaf1197f8f08d8e1ba50e655df5359f04bc7"
+    },
+    {
+      "workspaceId": "ws_yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt",
+      "works": 1,
+      "revisions": 1,
+      "templates": 0,
+      "exportRecords": 0,
+      "dispositions": {
+        "convertible": 1,
+        "read_only": 0,
+        "raster_fallback": 0
+      },
+      "snapshotSha256": "2d7d792f6ef9c1fab1e525a51e29f2e2a66081f4cb8ba22c554887a568a2c3a5"
+    }
+  ],
+  "note": "LOCAL Postgres development/e2e data only. This is NOT a production inventory and MUST NOT close Ticket 18 / retirement gate ②.",
+  "accessAudit": {
+    "rehearsalFullAuditPassed": true,
+    "rehearsalTargetCount": 8,
+    "realConvertibleSample": {
+      "label": "LOCAL_REAL_ROW_ACCESS_SAMPLE_NOT_PRODUCTION",
+      "sourceSnapshot": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb.snapshot.json",
+      "workspaceId": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb",
+      "workId": "d9757f1b-37e1-4f95-8985-5345e2b28296",
+      "revisionId": "39248490-c0d8-49ea-ae44-95e4b5758552",
+      "open": {
+        "disposition": "convertible",
+        "mode": "light_composer",
+        "editable": true
+      },
+      "export": {
+        "disposition": "convertible",
+        "source": "existing_managed_raster",
+        "contentType": "image/png",
+        "sizeBytes": 70,
+        "objectKey": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb/owned/4c92ddb1db8a18b65f8345165a728b639861c92adf163147f9c299ccbdc4c711.png"
+      },
+      "note": "Selected from local DB snapshot rows that already had managedRasterAvailable=true; bytes replaced with synthetic PNG for local FS integrity."
+    }
+  }
+}

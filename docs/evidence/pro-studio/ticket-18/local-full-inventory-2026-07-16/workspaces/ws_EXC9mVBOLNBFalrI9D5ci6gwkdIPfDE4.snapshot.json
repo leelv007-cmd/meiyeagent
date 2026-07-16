@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "60cde992-7da5-42b1-8628-33d2eafbf480"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "0ce7cc3d-8313-4574-90c9-48a17a9f338f"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4",
+  "works": [
+    {
+      "currentRevisionId": "60cde992-7da5-42b1-8628-33d2eafbf480",
+      "id": "0ce7cc3d-8313-4574-90c9-48a17a9f338f",
+      "revisions": [
+        {
+          "id": "60cde992-7da5-42b1-8628-33d2eafbf480",
+          "workId": "0ce7cc3d-8313-4574-90c9-48a17a9f338f",
+          "document": {
+            "pages": [
+              {
+                "id": "2f4b55b8-c22b-426e-93bd-951a8ac4068e",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-16T04:21:22.625Z",
+          "createdBy": "EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.686Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "85e40477a39496dc17df5fb4684ff081736bc26804ac3b503066302a837c67f1",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "3784126d74ac5749309ab4954807f7eeb301f5485be2b37cfc94b9d08239276c"
+  }
+}

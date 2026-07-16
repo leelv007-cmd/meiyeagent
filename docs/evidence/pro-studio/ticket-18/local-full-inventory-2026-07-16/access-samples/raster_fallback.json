@@ -1,0 +1,24 @@
+{
+  "label": "LOCAL_ACCESS_SAMPLE_NOT_PRODUCTION",
+  "dispositionClass": "raster_fallback",
+  "workspaceId": "ws_t18_local_rehearsal",
+  "workId": "work-raster-fallback",
+  "revisionId": "rev-raster-fallback",
+  "fixture": "ws_t18_local_rehearsal snapshot with synthetic managed raster for path classification",
+  "open": {
+    "disposition": "raster_fallback",
+    "mode": "managed_raster",
+    "editable": false,
+    "contentType": "image/png",
+    "sizeBytes": 70
+  },
+  "export": {
+    "disposition": "raster_fallback",
+    "source": "existing_managed_raster",
+    "contentType": "image/png",
+    "sizeBytes": 70,
+    "objectKey": "ws_t18_local_rehearsal/owned/t18-access-sample.png",
+    "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+  },
+  "note": "LOCAL ONLY. Synthetic 1x1 PNG proves open/export disposition routing; not production object custody."
+}

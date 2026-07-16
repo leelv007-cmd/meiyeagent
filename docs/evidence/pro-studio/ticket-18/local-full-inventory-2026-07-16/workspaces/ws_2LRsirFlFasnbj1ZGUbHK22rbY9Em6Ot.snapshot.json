@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "d8229e32-795d-44e4-a563-1425a4040ab6"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "2c1872e9-31dd-496b-9efe-0aba70d65fdc"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot",
+  "works": [
+    {
+      "currentRevisionId": "d8229e32-795d-44e4-a563-1425a4040ab6",
+      "id": "2c1872e9-31dd-496b-9efe-0aba70d65fdc",
+      "revisions": [
+        {
+          "id": "d8229e32-795d-44e4-a563-1425a4040ab6",
+          "workId": "2c1872e9-31dd-496b-9efe-0aba70d65fdc",
+          "document": {
+            "pages": [
+              {
+                "id": "0143954f-8fe4-4785-b336-68950a9ba0c9",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T13:41:14.937Z",
+          "createdBy": "2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.618Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "c21bcfcaf30f1c5d29671c859ef6580fdd3ffe46734518898b25ca5d6d362e47",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "f7ba771b5f76f3601a6051ba1c4c81a63b25d58dbaf1ba26803e7ac109541fce"
+  }
+}

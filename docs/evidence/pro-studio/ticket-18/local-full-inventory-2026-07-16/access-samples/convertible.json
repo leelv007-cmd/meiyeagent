@@ -1,0 +1,22 @@
+{
+  "label": "LOCAL_ACCESS_SAMPLE_NOT_PRODUCTION",
+  "dispositionClass": "convertible",
+  "workspaceId": "ws_t18_local_rehearsal",
+  "workId": "work-convertible",
+  "revisionId": "rev-convertible",
+  "fixture": "ws_t18_local_rehearsal snapshot with synthetic managed raster for path classification",
+  "open": {
+    "disposition": "convertible",
+    "mode": "light_composer",
+    "editable": true
+  },
+  "export": {
+    "disposition": "convertible",
+    "source": "existing_managed_raster",
+    "contentType": "image/png",
+    "sizeBytes": 70,
+    "objectKey": "ws_t18_local_rehearsal/owned/t18-access-sample.png",
+    "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+  },
+  "note": "LOCAL ONLY. Synthetic 1x1 PNG proves open/export disposition routing; not production object custody."
+}

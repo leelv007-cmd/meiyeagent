@@ -1,0 +1,20 @@
+{
+  "label": "LOCAL_REAL_ROW_ACCESS_SAMPLE_NOT_PRODUCTION",
+  "sourceSnapshot": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb.snapshot.json",
+  "workspaceId": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb",
+  "workId": "d9757f1b-37e1-4f95-8985-5345e2b28296",
+  "revisionId": "39248490-c0d8-49ea-ae44-95e4b5758552",
+  "open": {
+    "disposition": "convertible",
+    "mode": "light_composer",
+    "editable": true
+  },
+  "export": {
+    "disposition": "convertible",
+    "source": "existing_managed_raster",
+    "contentType": "image/png",
+    "sizeBytes": 70,
+    "objectKey": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb/owned/4c92ddb1db8a18b65f8345165a728b639861c92adf163147f9c299ccbdc4c711.png"
+  },
+  "note": "Selected from local DB snapshot rows that already had managedRasterAvailable=true; bytes replaced with synthetic PNG for local FS integrity."
+}
