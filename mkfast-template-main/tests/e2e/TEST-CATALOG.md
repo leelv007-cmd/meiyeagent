@@ -332,7 +332,7 @@ and complete touch-target audits at the two target mobile viewports.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Engineering tickets keep their bounded UI and lifecycle journeys | Verify the fixture entitlement, prompt seeds, Light Composer template editing/export, merchant diagnostics, and media-custody recovery journeys through the owning product routes. |
+| 1 | Engineering tickets keep their bounded UI and lifecycle journeys | Verify the fixture entitlement and prompt seeds; in Light Composer, upload and authorize a distinctive asset, replace and source-crop an image without changing its destination box, save the normalized crop in a revision, export and sample the cropped PNG pixels, and adopt it into ContentPackage; then verify merchant diagnostics and media-custody recovery through the owning product routes. |
 | 2 | Cross-service generation is adopted into the main ContentPackage library | Register and sign in, unlock the fixture workspace, enter Canvas, create a project and checkpoint, generate a recorded image, save the graph, adopt the Advanced Canvas output, and verify the resulting package is visible in Main ContentPackage. |
 | 3 | Recorded TTS and SFX complete through Core and remain playable in Canvas | In the same real Main + Canvas + Core + Postgres harness, quote and submit independent `audio.speech` and `audio.sfx` jobs, let the durable Worker recover both, persist decoded workspace-owned audio, render two Canvas audio players, verify bounded Range delivery, and require server-controlled attachment headers for download. |
 

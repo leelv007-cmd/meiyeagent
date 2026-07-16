@@ -15,6 +15,7 @@ export interface LightCanvasTextElement {
 
 export interface LightCanvasImageElement {
   assetId: string;
+  crop?: LightCanvasSourceCrop;
   height: number;
   id: string;
   kind: 'image';
@@ -22,6 +23,13 @@ export interface LightCanvasImageElement {
   rotation: number;
   sourceJobId?: string;
   src?: string;
+  width: number;
+  x: number;
+  y: number;
+}
+
+export interface LightCanvasSourceCrop {
+  height: number;
   width: number;
   x: number;
   y: number;
@@ -41,7 +49,7 @@ type LightComposerEdit =
   | { elementId: string; text: string; type: 'edit_text' }
   | {
       assetId: string;
-      crop?: { height: number; width: number; x: number; y: number };
+      crop?: LightCanvasSourceCrop;
       elementId: string;
       src?: string;
       type: 'replace_image';
@@ -81,6 +89,31 @@ function optionalNumber(value: unknown, field: string) {
 
 function optionalString(value: unknown, field: string) {
   return value === undefined ? undefined : string(value, field);
+}
+
+function assertCrop(crop: LightCanvasSourceCrop) {
+  const values = [crop.x, crop.y, crop.width, crop.height];
+  if (
+    values.some((value) => !Number.isFinite(value) || value < 0 || value > 1) ||
+    crop.width <= 0 ||
+    crop.height <= 0 ||
+    crop.x + crop.width > 1 ||
+    crop.y + crop.height > 1
+  ) {
+    throw new Error('light Composer crop must stay inside the source image.');
+  }
+}
+
+function parseCrop(value: unknown): LightCanvasSourceCrop {
+  const raw = record(value);
+  const crop = {
+    height: number(raw.height, 'crop height'),
+    width: number(raw.width, 'crop width'),
+    x: number(raw.x, 'crop x'),
+    y: number(raw.y, 'crop y'),
+  };
+  assertCrop(crop);
+  return crop;
 }
 
 function parseElement(value: unknown): LightCanvasElement {
@@ -130,6 +163,7 @@ function parseElement(value: unknown): LightCanvasElement {
       ...base,
       assetId: string(item.assetId, 'image assetId'),
       kind: 'image',
+      ...(item.crop === undefined ? {} : { crop: parseCrop(item.crop) }),
       ...(optionalString(item.sourceJobId, 'source job id')
         ? { sourceJobId: item.sourceJobId as string }
         : {}),
@@ -165,23 +199,6 @@ export function parseLightCanvasDocument(value: unknown): LightCanvasDocument {
   };
 }
 
-function assertCrop(
-  crop: NonNullable<
-    Extract<LightComposerEdit, { type: 'replace_image' }>['crop']
-  >
-) {
-  const values = [crop.x, crop.y, crop.width, crop.height];
-  if (
-    values.some((value) => !Number.isFinite(value) || value < 0 || value > 1) ||
-    crop.width <= 0 ||
-    crop.height <= 0 ||
-    crop.x + crop.width > 1 ||
-    crop.y + crop.height > 1
-  ) {
-    throw new Error('light Composer crop must stay inside the source image.');
-  }
-}
-
 export function applyLightComposerEdit(
   source: LightCanvasDocument,
   edit: LightComposerEdit
@@ -208,14 +225,18 @@ export function applyLightComposerEdit(
     if (element.kind !== 'image') {
       throw new Error('light Composer image edits require an image module.');
     }
+    const previousAssetId = element.assetId;
     element.assetId = string(edit.assetId, 'image assetId');
-    if (edit.src) element.src = edit.src;
+    if (edit.src) {
+      element.src = edit.src;
+    } else if (previousAssetId !== element.assetId) {
+      delete element.src;
+    }
     if (edit.crop) {
       assertCrop(edit.crop);
-      element.x += element.width * edit.crop.x;
-      element.y += element.height * edit.crop.y;
-      element.width *= edit.crop.width;
-      element.height *= edit.crop.height;
+      element.crop = structuredClone(edit.crop);
+    } else if (previousAssetId !== element.assetId || edit.src) {
+      delete element.crop;
     }
     return document;
   }
