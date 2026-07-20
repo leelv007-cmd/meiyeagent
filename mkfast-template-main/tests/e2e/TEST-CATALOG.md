@@ -51,7 +51,7 @@ browser console errors or page errors.
 | # | Test name | Flow |
 |---|---|---|
 | 1 | Public pages render successfully | Open `/`, `/pricing`, `/contact`, `/cookie`, `/privacy`, `/terms`, `/auth/login`, `/auth/register`, `/auth/forgot-password`, and `/auth/reset-password` for `en` and `zh`, in `dark` and `light` mode. Verify each returns 2xx, renders a visible body, applies the requested theme, and emits no browser errors. |
-| 2 | Home login modal opens | Open `/`, click the navbar login button, verify the login dialog and credential inputs are visible, and assert no browser errors. |
+| 2 | Home 登录 links to the login page | Open `/`, click the landing header 登录 link, verify navigation to `/auth/login` with credential inputs visible, and assert no browser errors. |
 | 3 | Retired starter and AI demo routes stay unavailable | Open `/ai`, `/about`, `/blog`, `/blog/getting-started`, `/changelog`, `/roadmap`, and `/waitlist` in `en` and `zh`; verify each returns the branded 404 surface without a generation form or template-brand residue. |
 | 4 | Health check responds with pong | Call `/api/ping` and verify `{ "message": "pong" }`. |
 
@@ -437,6 +437,25 @@ operator path is complete.
 | 1 | Admin enters the exception-first home and drills into model supply | Register and sign in as an administrator, open `/admin`, require the read-only exception-first surface with no acknowledge/assign ownership workflow, follow a visible model-supply drilldown, and reach the model supply and gateway control center at `/admin/supply`. |
 | 2 | Governed channel isolation requires impact review and reaches audit evidence | On `/admin/supply`, select a real fixture channel target from the `channel_isolate` governed action, require impact scope/reversibility plus a concrete reason before confirmation, confirm through the typed action UI, follow the resulting audit link, and find the exact unique reason on `/admin/audit`. |
 | 3 | Daily operator surfaces expose no technical editors or exception ownership workflow | Walk `/admin`, `/admin/capabilities`, `/admin/supply`, and `/admin/audit`; require successful documents and visible main surfaces, then reject any code, SQL, env, raw JSON, CLI, shell, or terminal editor/control and any acknowledge/assign/owner control. |
+
+## 32. LIKEPAGE Marketing Landing Page
+
+**File:** `specs/landing-page.spec.ts` | **Priority:** P0
+
+Locks the 丽客美页 LIKEPAGE landing rebuild at `/` (ai-saas template structure,
+champagne-amber palette, register-first CTAs). Sections and animations come
+from the ported template; copy authority is
+`docs/design/landing-copy-2026-07-21.md`.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Landing sections render in order | Open `/`, verify hero slogan 美页出发/丽客进门, then the section anchors `#features`, `#showcase`, `#pricing`, `#faq` all exist in DOM order with their headings visible on scroll. |
+| 2 | Nav anchors scroll to their sections | Click 功能/作品/定价/常见问题 in the header and verify the target section becomes visible (viewport intersects the anchor element). |
+| 3 | Pricing tiers speak the launch contract | In `#pricing`, verify Starter shows 免费, Growth shows ¥399 with 上线特惠 and a register link, and 终身版 is disabled 敬请期待 with no link. |
+| 4 | Every live CTA stays inside the allowed destinations | Collect all `<a href>` values on `/`; assert each is a section anchor or one of `/auth/register`, `/auth/login`, `/pricing`, `/contact`, `/terms`, `/privacy`, `/cookie`, `/`. |
+| 5 | Bottom form invites registration | Fill the bottom email input, submit, and verify navigation to `/auth/register` with no browser errors. |
+| 6 | Theme toggle flips the landing skin | Click the floating theme switch, verify `html.dark` toggles and the page stays healthy. |
+| 7 | Reduced motion renders all sections | Emulate `prefers-reduced-motion: reduce`, reload `/`, and verify all section anchors and pricing copy render with no browser errors. |
 
 ## Deferred Coverage
 

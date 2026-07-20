@@ -62,15 +62,20 @@ test('published brand copy and website config contain no starter vendor residue'
     'project.inlang/messages/en.json',
     'project.inlang/messages/zh.json',
     'src/config/website.ts',
-    'src/components/blocks/hero.tsx',
-    'src/components/blocks/features.tsx',
+    'src/components/landing/landing-page.tsx',
+    'src/components/landing/hero.tsx',
+    'src/components/landing/pricing.tsx',
+    'src/components/landing/footer.tsx',
     'src/components/layout/footer.tsx',
   ];
   const source = publishedFiles
     .map((file) => readFileSync(resolve(process.cwd(), file), 'utf8'))
     .join('\n');
 
-  assert.doesNotMatch(source, /TanStarter|MkFast|MkSaaS|mksaas|Built with/i);
+  assert.doesNotMatch(
+    source,
+    /TanStarter|MkFast|MkSaaS|mksaas|Built with|Kraft|Nexus AI/i
+  );
 });
 
 test('shared product shell copy uses the Chinese-first Paraglide track', () => {
