@@ -1139,6 +1139,7 @@ describe('durable composed-video application seam', () => {
       operations: [module],
     });
     const context = {
+      actor: 'owner' as const,
       correlationId: 'corr-package-confirm-retry',
       userId: 'owner-a',
       workspaceId: 'workspace-a',
@@ -1182,15 +1183,25 @@ describe('durable composed-video application seam', () => {
       ),
       /simulated ContentPackage confirmation loss/
     );
-    const pending = (await application.queryModule(
+    const pendingPublic = (await application.queryModule(
       context,
       'model-supply',
       {
         action: 'video_workflow',
         payload: { workflowId: 'foundation-confirm-retry' },
       }
-    )) as { job: unknown };
-    assert.equal(pending.job, null);
+    )) as {
+      workflowId: string;
+    };
+    assert.equal(pendingPublic.workflowId, 'foundation-confirm-retry');
+    assert.equal('job' in pendingPublic, false);
+    assert.equal('attempts' in pendingPublic, false);
+    assert.equal('routeSnapshot' in pendingPublic, false);
+    const pendingInternal = await setupResult.application.query({
+      workspaceId: 'workspace-a',
+      workflowId: 'foundation-confirm-retry',
+    });
+    assert.equal(pendingInternal.job, null);
     assert.equal(setupResult.jobSubmissions(), 0);
 
     const recovered = (await application.executeModule(
@@ -2405,9 +2416,20 @@ describe('durable composed-video application seam', () => {
         action: 'video_workflow',
         payload: { workflowId: 'foundation-video' },
       },
-    })) as { workflow: { confirmed: boolean }; job: { kind: string } };
-    assert.equal(queried.workflow.confirmed, true);
-    assert.equal(queried.job.kind, COMPOSED_VIDEO_JOB_KIND);
+    })) as {
+      confirmed: boolean;
+      workflowId: string;
+    };
+    assert.equal(queried.workflowId, 'foundation-video');
+    assert.equal(queried.confirmed, true);
+    assert.equal('job' in queried, false);
+    assert.equal('attempts' in queried, false);
+    assert.equal('routeSnapshot' in queried, false);
+    const queriedInternal = await setupResult.application.query({
+      workspaceId: 'workspace-a',
+      workflowId: 'foundation-video',
+    });
+    assert.equal(queriedInternal.job?.kind, COMPOSED_VIDEO_JOB_KIND);
 
     const latest = (await module.query({
       context,
@@ -2415,9 +2437,15 @@ describe('durable composed-video application seam', () => {
         action: 'video_workflow_latest',
         payload: { workId: 'creative-work-video-a' },
       },
-    })) as { workflow: { id: string }; job: { kind: string } };
-    assert.equal(latest.workflow.id, 'foundation-video');
-    assert.equal(latest.job.kind, COMPOSED_VIDEO_JOB_KIND);
+    })) as {
+      confirmed: boolean;
+      workflowId: string;
+    };
+    assert.equal(latest.workflowId, 'foundation-video');
+    assert.equal(latest.confirmed, true);
+    assert.equal('job' in latest, false);
+    assert.equal('attempts' in latest, false);
+    assert.equal('routeSnapshot' in latest, false);
     const publicLatest = (await module.query({
       context,
       input: {
@@ -2551,13 +2579,21 @@ describe('durable composed-video application seam', () => {
         correlationId: 'corr-video-list',
       },
       input: { action: 'video_workflows', payload: {} },
-    })) as Array<{ workflow: { actorId: string; id: string } }>;
+    })) as Array<{ workflowId: string }>;
 
     assert.deepEqual(
-      listed.map((item) => item.workflow.id),
+      listed.map((item) => item.workflowId),
       ['workflow-owner-a'],
     );
-    assert.ok(listed.every((item) => item.workflow.actorId === 'owner-a'));
+    assert.ok(
+      listed.every(
+        (item) =>
+          !('job' in item) &&
+          !('attempts' in item) &&
+          !('routeSnapshot' in item) &&
+          !('actorId' in item),
+      ),
+    );
   });
 
   it('selects an unranked video candidate through the shared P1 foundation module', async () => {
@@ -2767,14 +2803,28 @@ describe('durable composed-video application seam', () => {
         },
       },
     })) as { revision: number };
-    const internal = (await module.query({
+    const publicQueried = (await module.query({
       context,
       input: {
         action: 'video_workflow',
         payload: { workflowId: 'public-edit-video' },
       },
-    })) as { workflow: DurableVideoWorkflow };
+    })) as {
+      revision: number;
+      workflowId: string;
+      shots: Array<{ selectedCandidateIndex?: number }>;
+    };
     assert.equal(selected.revision, edited.revision + 1);
+    assert.equal(publicQueried.workflowId, 'public-edit-video');
+    assert.equal(publicQueried.revision, selected.revision);
+    assert.equal(publicQueried.shots[0]?.selectedCandidateIndex, 0);
+    assert.equal('job' in publicQueried, false);
+    assert.equal('attempts' in publicQueried, false);
+    assert.equal('routeSnapshot' in publicQueried, false);
+    const internal = await setupResult.application.query({
+      workspaceId: context.workspaceId,
+      workflowId: 'public-edit-video',
+    });
     assert.equal(
       internal.workflow.shots[0]?.selectionAudit?.selectedBy,
       context.userId,

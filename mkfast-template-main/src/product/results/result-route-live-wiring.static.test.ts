@@ -58,6 +58,16 @@ test('result route does not ship hard-coded empty works or copy workspace', () =
   assert.doesNotMatch(route, /provisional shell/);
 });
 
+test('result route wires live copy token stream (ADR-0007) for running phase', () => {
+  assert.match(route, /useCopyCandidateStream/);
+  assert.match(route, /partialCandidates=/);
+  assert.match(route, /streamLoading=/);
+  assert.match(
+    route,
+    /progressState === ['"]running['"][\s\S]*progressState === ['"]waiting['"]|progressState === ['"]waiting['"][\s\S]*progressState === ['"]running['"]/
+  );
+});
+
 test('wechat moments full-package action downloads canonical caption segments', () => {
   assert.match(route, /deliveryTarget === ['"]wechat_moments['"]/);
   assert.match(route, /buildCaptionText/);

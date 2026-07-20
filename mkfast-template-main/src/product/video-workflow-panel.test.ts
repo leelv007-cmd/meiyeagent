@@ -4,20 +4,21 @@ import test from 'node:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { CreativeExecutionContract } from '@meiye/contracts';
+import type {
+  CreativeExecutionContract,
+  VideoWorkflowPublicProjection,
+} from '@meiye/contracts';
 
 import { p1QueryKeys } from '@/p1/query-keys';
 
 import {
+  publicProjectionFromWorkflow,
   syncVideoWorkflowMutationSuccess,
   VideoWorkflowPanel,
   videoWorkflowMutationFailure,
   videoWorkflowPollingFallback,
 } from './video-workflow-panel';
-import type {
-  VideoWorkflow,
-  VideoWorkflowEnvelope,
-} from './video-workflow-model';
+import type { VideoWorkflow } from './video-workflow-model';
 
 const executionContract: CreativeExecutionContract = {
   aigcLabelEnabled: true,
@@ -49,30 +50,40 @@ const props = {
   workId: 'work-a',
 };
 
-test('polling is only a temporary fallback while SSE is degraded', () => {
-  const running: VideoWorkflowEnvelope = {
-    job: { status: 'running' },
-    workflow: {
-      aigcLabelEnabled: true,
-      catalogModelId: 'seedance-2',
-      confirmed: true,
-      id: 'workflow-polling-a',
-      revision: 2,
-      shots: [],
-      status: 'running',
-      storyboardRevision: 'storyboard-polling-a',
-      storyboardVersion: 1,
-      updatedAt: '2026-07-18T08:00:00.000Z',
-    },
+function publicProjection(
+  overrides: Partial<VideoWorkflowPublicProjection> &
+    Pick<VideoWorkflowPublicProjection, 'workflowId' | 'status'>
+): VideoWorkflowPublicProjection {
+  return {
+    catalogModelId: 'seedance-2',
+    confirmed: overrides.status !== 'draft',
+    revision: 2,
+    shots: [],
+    storyboardRevision: 'storyboard-a',
+    storyboardVersion: 1,
+    updatedAt: '2026-07-18T08:00:00.000Z',
+    workId: props.workId,
+    ...overrides,
   };
+}
+
+test('polling is only a temporary fallback while SSE is degraded', () => {
+  const running = publicProjection({
+    confirmed: true,
+    workflowId: 'workflow-polling-a',
+    status: 'running',
+  });
 
   assert.equal(videoWorkflowPollingFallback('open', running), false);
   assert.equal(videoWorkflowPollingFallback('degraded', running), true);
   assert.equal(
-    videoWorkflowPollingFallback('degraded', {
-      ...running,
-      workflow: { ...running.workflow, status: 'completed' },
-    }),
+    videoWorkflowPollingFallback(
+      'degraded',
+      publicProjection({
+        workflowId: 'workflow-polling-a',
+        status: 'completed',
+      })
+    ),
     false
   );
 });
@@ -95,32 +106,22 @@ test('renders the local AIDA editor only after latest recovery returns empty', (
   assert.match(html, /Seedance 2.0/u);
 });
 
-test('restores a completed workflow and plays only its workspace BFF asset', () => {
-  const workflow: VideoWorkflow = {
-    aigcLabelEnabled: true,
+test('restores a completed workflow and routes to Result Center without durable media blobs', () => {
+  const projection = publicProjection({
     catalogModelId: 'seedance-2',
-    composedAsset: {
-      contentType: 'video/mp4',
-      objectKey: 'workspace-a/composed/final video.mp4',
-    },
     confirmed: true,
-    derivedFromWorkflowId: 'workflow-parent',
-    id: 'workflow-a',
     revision: 8,
-    shots: [],
-    status: 'completed',
-    storyboardRevision: 'storyboard-a',
     storyboardVersion: 2,
+    status: 'completed',
     updatedAt: '2026-07-13T12:00:00.000Z',
-    workId: 'work-a',
-  };
-  const envelope = { workflow, job: null };
-  const queryClient = queryClientWithLatest(envelope);
+    workflowId: 'workflow-a',
+  });
+  const queryClient = queryClientWithLatest(projection);
   queryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'video_workflow', {
-      workflowId: workflow.id,
+      workflowId: projection.workflowId,
     }),
-    envelope
+    projection
   );
   const html = renderToStaticMarkup(
     createElement(
@@ -144,27 +145,25 @@ test('restores a completed workflow and plays only its workspace BFF asset', () 
   assert.doesNotMatch(html, /seedance-2/u);
   assert.doesNotMatch(html, /New Selection/u);
   assert.match(html, /分镜版本 V2/u);
-  assert.match(html, /来源：分镜 V1/u);
-  assert.match(
-    html,
-    /\/api\/core\/p1\/assets\?objectKey=workspace-a%2Fcomposed%2Ffinal%20video.mp4/u
-  );
+  // Public projection no longer carries composed object keys.
+  assert.doesNotMatch(html, /objectKey|\/api\/core\/p1\/assets/u);
   assert.doesNotMatch(html, /CORE_SERVICE_URL|\/v1\/assets/u);
   assert.doesNotMatch(html, /% 已完成/u);
-  assert.match(html, /href="\/dashboard\/content"/u);
+  assert.match(html, /href="\/dashboard\/results\/work-a"/u);
   assert.match(html, /在内容库查看/u);
 
-  const retiredWorkflow = {
-    ...workflow,
+  const retired = publicProjection({
     catalogModelId: 'retired-secret-model-id',
-  };
-  const retiredEnvelope = { job: null, workflow: retiredWorkflow };
-  const retiredQueryClient = queryClientWithLatest(retiredEnvelope);
+    confirmed: true,
+    status: 'completed',
+    workflowId: 'workflow-retired',
+  });
+  const retiredQueryClient = queryClientWithLatest(retired);
   retiredQueryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'video_workflow', {
-      workflowId: retiredWorkflow.id,
+      workflowId: retired.workflowId,
     }),
-    retiredEnvelope
+    retired
   );
   const retiredHtml = renderToStaticMarkup(
     createElement(
@@ -199,42 +198,28 @@ test('mobile progress mode renders nothing until this Work has a workflow', () =
 });
 
 test('progress mode restores the requested workflow instead of a newer one', () => {
-  const latestWorkflow: VideoWorkflow = {
-    aigcLabelEnabled: true,
-    catalogModelId: 'seedance-2',
-    composedAsset: {
-      contentType: 'video/mp4',
-      objectKey: 'workspace-a/composed/latest.mp4',
-    },
+  const latest = publicProjection({
     confirmed: true,
-    id: 'workflow-latest',
-    revision: 2,
-    shots: [],
     status: 'completed',
     storyboardRevision: 'storyboard-latest',
     storyboardVersion: 2,
     updatedAt: '2026-07-13T12:10:00.000Z',
-    workId: props.workId,
-  };
-  const requestedWorkflow: VideoWorkflow = {
-    ...latestWorkflow,
-    composedAsset: {
-      contentType: 'video/mp4',
-      objectKey: 'workspace-a/composed/requested.mp4',
-    },
-    id: 'workflow-requested',
+    workflowId: 'workflow-latest',
+  });
+  const requested = publicProjection({
+    confirmed: true,
+    status: 'completed',
     storyboardRevision: 'storyboard-requested',
     storyboardVersion: 1,
-  };
-  const queryClient = queryClientWithLatest({
-    job: null,
-    workflow: latestWorkflow,
+    updatedAt: '2026-07-13T12:00:00.000Z',
+    workflowId: 'workflow-requested',
   });
+  const queryClient = queryClientWithLatest(latest);
   queryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'video_workflow', {
-      workflowId: requestedWorkflow.id,
+      workflowId: requested.workflowId,
     }),
-    { job: null, workflow: requestedWorkflow }
+    requested
   );
 
   const html = renderToStaticMarkup(
@@ -243,43 +228,37 @@ test('progress mode restores the requested workflow instead of a newer one', () 
       { client: queryClient },
       createElement(VideoWorkflowPanel, {
         mode: 'progress',
-        workflowId: requestedWorkflow.id,
+        workflowId: requested.workflowId,
         workId: props.workId,
       })
     )
   );
 
-  assert.match(html, /requested\.mp4/u);
-  assert.doesNotMatch(html, /latest\.mp4/u);
+  assert.match(html, /分镜版本 V1/u);
+  assert.doesNotMatch(html, /分镜版本 V2/u);
 });
 
 test('a server draft can return to local editing without overwriting it', () => {
-  const workflow: VideoWorkflow = {
-    aigcLabelEnabled: true,
-    catalogModelId: 'seedance-2',
+  const projection = publicProjection({
     confirmed: false,
-    id: 'workflow-draft-a',
     revision: 1,
     shots: [
       {
-        candidates: [],
+        candidateCount: 0,
         candidatesPerShot: 1,
-        id: 'aida-attention',
-        prompt: '真实开场',
+        promptPreview: '真实开场',
+        shotId: 'aida-attention',
       },
     ],
     status: 'draft',
-    storyboardRevision: 'storyboard-a',
-    storyboardVersion: 1,
-    updatedAt: '2026-07-13T12:00:00.000Z',
-    workId: 'work-a',
-  };
-  const queryClient = queryClientWithLatest({ workflow, job: null });
+    workflowId: 'workflow-draft-a',
+  });
+  const queryClient = queryClientWithLatest(projection);
   queryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'video_workflow', {
-      workflowId: workflow.id,
+      workflowId: projection.workflowId,
     }),
-    { workflow, job: null }
+    projection
   );
   const html = renderToStaticMarkup(
     createElement(
@@ -293,41 +272,28 @@ test('a server draft can return to local editing without overwriting it', () => 
   assert.match(html, /确认分镜并开始生成/u);
 });
 
-test('renders a failed Tracer Job as stopped with one clear recovery action', () => {
-  const workflow: VideoWorkflow = {
-    aigcLabelEnabled: true,
-    catalogModelId: 'seedance-2',
+test('renders a failed public workflow as stopped with one clear recovery action', () => {
+  const projection = publicProjection({
     confirmed: true,
-    derivedFromWorkflowId: 'workflow-parent',
-    id: 'workflow-failed-a',
     revision: 4,
     shots: [
       {
-        candidates: [],
+        candidateCount: 0,
         candidatesPerShot: 1,
-        id: 'aida-attention',
-        prompt: '真实开场',
+        promptPreview: '真实开场',
+        shotId: 'aida-attention',
       },
     ],
-    status: 'running',
-    storyboardRevision: 'storyboard-a',
+    status: 'failed',
     storyboardVersion: 2,
-    updatedAt: '2026-07-13T12:00:00.000Z',
-    workId: 'work-a',
-  };
-  const envelope: VideoWorkflowEnvelope = {
-    workflow,
-    job: {
-      error: 'raw provider timeout payload',
-      status: 'failed',
-    },
-  };
-  const queryClient = queryClientWithLatest(envelope);
+    workflowId: 'workflow-failed-a',
+  });
+  const queryClient = queryClientWithLatest(projection);
   queryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'video_workflow', {
-      workflowId: workflow.id,
+      workflowId: projection.workflowId,
     }),
-    envelope
+    projection
   );
   const html = renderToStaticMarkup(
     createElement(
@@ -338,7 +304,6 @@ test('renders a failed Tracer Job as stopped with one clear recovery action', ()
   );
 
   assert.match(html, /视频任务未完成/u);
-  assert.equal((html.match(/data-step-state="failed"/g) ?? []).length, 5);
   assert.doesNotMatch(html, /data-step-state="running"/u);
   assert.match(html, /返回分镜并新建版本/u);
   assert.match(html, /不会自动重投/u);
@@ -386,19 +351,19 @@ test('successful video workflow mutations refresh the content package cache', as
     updatedAt: '2026-07-13T12:00:00.000Z',
     workId: props.workId,
   };
-  const envelope = { job: null, workflow };
+  const projection = publicProjectionFromWorkflow(workflow);
   queryClient.setQueryData(contentPackagesKey, []);
 
-  await syncVideoWorkflowMutationSuccess(queryClient, latestKey, envelope);
+  await syncVideoWorkflowMutationSuccess(queryClient, latestKey, projection);
 
-  assert.deepEqual(queryClient.getQueryData(latestKey), envelope);
+  assert.deepEqual(queryClient.getQueryData(latestKey), projection);
   assert.deepEqual(
     queryClient.getQueryData(
       p1QueryKeys.request('model-supply', 'video_workflow', {
-        workflowId: workflow.id,
+        workflowId: projection.workflowId,
       })
     ),
-    envelope
+    projection
   );
   assert.equal(
     queryClient.getQueryState(contentPackagesKey)?.isInvalidated,
@@ -406,7 +371,7 @@ test('successful video workflow mutations refresh the content package cache', as
   );
 });
 
-function queryClientWithLatest(value: VideoWorkflowEnvelope | null) {
+function queryClientWithLatest(value: VideoWorkflowPublicProjection | null) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
   });

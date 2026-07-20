@@ -15,15 +15,18 @@ import {
   type ImageWorksurfaceFacts,
 } from './image-worksurface-model';
 import {
+  applyWorkingSelectionDriftChoice,
   createEmptyWorkingSelection,
   isWorkingSelectionExpired,
   parseWorkingSelection,
   reduceWorkingSelection,
   serializeWorkingSelection,
   workingSelectionStorageKey,
+  type WorkingSelectionDrift,
   type WorkingSelectionIntent,
   type WorkingSelectionState,
 } from './working-selection-reducer';
+import type { ResultRevisionDriftChoice } from '@meiye/contracts';
 
 export type ImageWorksurfaceProps = {
   facts: Omit<ImageWorksurfaceFacts, 'workingSelection' | 'explicitMode'> & {
@@ -54,13 +57,19 @@ type LocalState = {
   feedback: string | null;
   focusedAssetId: string | undefined;
   modeOverride: 'single' | 'set' | undefined;
+  drift: WorkingSelectionDrift | null;
 };
 
 type LocalAction =
   | { type: 'intent'; intent: WorkingSelectionIntent }
   | { type: 'focus'; assetId: string }
   | { type: 'mode'; mode: 'single' | 'set' }
-  | { type: 'feedback'; feedback: string | null };
+  | { type: 'feedback'; feedback: string | null }
+  | {
+      type: 'drift_choice';
+      choice: ResultRevisionDriftChoice;
+      now: string;
+    };
 
 function localReducer(state: LocalState, action: LocalAction): LocalState {
   switch (action.type) {
@@ -70,6 +79,7 @@ function localReducer(state: LocalState, action: LocalAction): LocalState {
         ...state,
         selection: result.state,
         feedback: result.feedback,
+        drift: result.drift ?? state.drift,
       };
     }
     case 'focus':
@@ -78,6 +88,26 @@ function localReducer(state: LocalState, action: LocalAction): LocalState {
       return { ...state, modeOverride: action.mode, feedback: null };
     case 'feedback':
       return { ...state, feedback: action.feedback };
+    case 'drift_choice': {
+      if (!state.drift) return state;
+      const applied = applyWorkingSelectionDriftChoice(
+        state.selection,
+        state.drift,
+        action.choice,
+        action.now
+      );
+      return {
+        ...state,
+        selection: applied.state,
+        drift: null,
+        feedback:
+          action.choice === 'discard'
+            ? '已丢弃本地套图草稿'
+            : action.choice === 'compare'
+              ? `对比：本地 ${state.drift.baseRevisionId} / 当前 ${state.drift.currentRevisionId}`
+              : '已保留本地套图草稿',
+      };
+    }
     default: {
       const _exhaustive: never = action;
       return _exhaustive;
@@ -99,23 +129,27 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
     (): LocalState => {
       const supplied = props.facts.workingSelection;
       let selection = supplied ?? emptySelection();
+      let drift: WorkingSelectionDrift | null = null;
       if (!supplied && typeof window !== 'undefined') {
         const key = workingSelectionStorageKey(props.facts.workId);
         const stored = parseWorkingSelection(
           window.localStorage.getItem(key) ?? ''
         );
-        if (
-          stored &&
-          stored.workId === props.facts.workId &&
-          stored.baseRevisionId === props.facts.baseRevisionId &&
-          !isWorkingSelectionExpired(stored, new Date().toISOString())
-        ) {
-          selection = stored;
-        } else if (
-          stored &&
-          isWorkingSelectionExpired(stored, new Date().toISOString())
-        ) {
-          window.localStorage.removeItem(key);
+        const nowIso = new Date().toISOString();
+        if (stored && stored.workId === props.facts.workId) {
+          // Hydrate via reducer so baseRevision drift surfaces as three-way UI
+          // instead of silently dropping the same-device draft.
+          const hydrated = reduceWorkingSelection(emptySelection(), {
+            type: 'hydrate',
+            snapshot: stored,
+            currentRevisionId: props.facts.baseRevisionId,
+            now: nowIso,
+          });
+          selection = hydrated.state;
+          drift = hydrated.drift;
+          if (isWorkingSelectionExpired(stored, nowIso)) {
+            window.localStorage.removeItem(key);
+          }
         }
       }
       return {
@@ -123,6 +157,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
         feedback: null,
         focusedAssetId: props.facts.focusedAssetId,
         modeOverride: props.facts.explicitMode,
+        drift,
       };
     }
   );
@@ -175,6 +210,43 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
         >
           {view.feedback}
         </p>
+      ) : null}
+
+      {local.drift ? (
+        <div
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4"
+          data-testid="image-selection-drift"
+        >
+          <p className="text-sm font-medium">套图草稿版本已更新</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            本地套图基于 {local.drift.baseRevisionId}，当前为{' '}
+            {local.drift.currentRevisionId}。请选择恢复、对比或丢弃。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {local.drift.choices.map((choice) => (
+              <Button
+                key={choice}
+                type="button"
+                size="sm"
+                variant={choice === 'discard' ? 'outline' : 'default'}
+                data-testid={`image-selection-drift-${choice}`}
+                onClick={() =>
+                  dispatch({
+                    type: 'drift_choice',
+                    choice,
+                    now: now(),
+                  })
+                }
+              >
+                {choice === 'restore'
+                  ? '恢复'
+                  : choice === 'compare'
+                    ? '对比'
+                    : '丢弃'}
+              </Button>
+            ))}
+          </div>
+        </div>
       ) : null}
 
       {view.modeSwitchable ? (
@@ -381,10 +453,18 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
             data-testid="image-role-primary"
             data-action-kind={view.primaryAction.kind}
             disabled={
-              view.primaryAction.kind !== 'add_to_set' && !props.onAdoptPrimary
+              (view.primaryAction.kind === 'adopt_set' &&
+                view.wholeSetAdopt?.kind === 'rejected') ||
+              (view.primaryAction.kind !== 'add_to_set' && !props.onAdoptPrimary)
             }
             onClick={async () => {
               const kind = view.primaryAction!.kind;
+              if (
+                kind === 'adopt_set' &&
+                view.wholeSetAdopt?.kind === 'rejected'
+              ) {
+                return;
+              }
               if (kind === 'add_to_set' && local.focusedAssetId) {
                 dispatch({
                   type: 'intent',

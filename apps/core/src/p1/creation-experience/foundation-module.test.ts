@@ -165,6 +165,48 @@ describe('Creation Experience FoundationModule seam', () => {
     assert.deepEqual(projection.triggers, []);
   });
 
+  it('does not force restricted_assets merely because sourceIds are attached', async () => {
+    const { service } = createService({ quoteAmount: 0 });
+    await service.executeModule(
+      context,
+      'creation-experience',
+      {
+        action: 'brief_context_sync',
+        payload: {
+          briefContextId: 'brief-context-plain-sources',
+          draft: {
+            delivery: { deliverableKind: 'copy', platform: 'xiaohongshu' },
+            settings: { quantity: 1 },
+            sources: [{ id: 'asset-plain', category: 'product_photo' }],
+            userText: '夏日美甲项目介绍',
+          },
+          expectedRevision: null,
+          lensId: 'copy',
+          quoteId: null,
+          recipeRevisionId: null,
+          sourceIds: ['asset-plain', 'asset-plain-2'],
+          surfaceRevisionId: null,
+        },
+      },
+      'idem-brief-context-plain-sources',
+    );
+
+    const projection = (await service.queryModule(
+      context,
+      'creation-experience',
+      {
+        action: 'brief_project',
+        payload: { briefContextId: 'brief-context-plain-sources' },
+      },
+    )) as { requiresBrief: boolean; triggers: Array<{ code: string }> };
+
+    assert.equal(projection.requiresBrief, false);
+    assert.equal(
+      projection.triggers.some((trigger) => trigger.code === 'restricted_assets'),
+      false,
+    );
+  });
+
   it('still requires Brief for explicit multi-kind delivery and every video', async () => {
     const { service } = createService();
     for (const input of [
@@ -215,6 +257,37 @@ describe('Creation Experience FoundationModule seam', () => {
       )) as { requiresBrief: boolean; triggers: Array<{ code: string }> };
       assert.equal(projection.requiresBrief, true);
     }
+  });
+
+  it('strips hiddenPromptBody from recipe_draft command body', async () => {
+    const { service } = createService();
+    const draft = (await service.executeModule(
+      context,
+      'creation-experience',
+      {
+        action: 'recipe_draft',
+        payload: {
+          recipeId: 'recipe.no-hidden',
+          expectedRevision: null,
+          reason: 'browser must not inject hidden prompts',
+          body: {
+            lensId: 'copy',
+            presentation: { title: '文案模板', summary: '安全草稿' },
+            modelPolicy: { mode: 'auto' },
+            promptRevisionRef: 'prompt.copy@1',
+            targetWorkspaceKind: 'copy',
+            hiddenPromptBody: 'SYSTEM: must-not-persist-from-command',
+          },
+        },
+      },
+      'idem-recipe-no-hidden',
+    )) as ServerRecipeRecord;
+
+    assert.equal(draft.hiddenPromptBody, undefined);
+    assert.doesNotMatch(
+      JSON.stringify(draft),
+      /must-not-persist-from-command/,
+    );
   });
 
   it('runs full recipe/surface publish lifecycle through the module', async () => {
@@ -428,6 +501,27 @@ describe('Creation Experience FoundationModule seam', () => {
     assert.equal(patchPreview.recipeRevisionId, published.revisionId);
     assert.equal(patchPreview.lensId, 'copy');
     assert.deepEqual(patchPreview.preserve, ['userText']);
+
+    await assert.rejects(
+      () =>
+        service.queryModule(context, 'creation-experience', {
+          action: 'recipe_patch_preview',
+          payload: {
+            recipeRevisionId: draft.revisionId,
+            currentLens: null,
+            draft: {
+              userText: '保留这段原文',
+              sources: [],
+              lensId: null,
+              recipeRevisionId: null,
+              settings: {},
+              dirtySettings: {},
+            },
+          },
+        }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'NOT_FOUND',
+    );
 
     await assert.rejects(
       () =>

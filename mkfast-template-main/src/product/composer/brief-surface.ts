@@ -242,12 +242,30 @@ export function decideSubmitPath(input: {
   projection: BriefTriggerProjection | null | undefined;
   confirmation?: BriefConfirmation | null;
   quotaExhausted?: boolean;
+  /**
+   * Video lens / video_confirm_required gate — force Brief open so the
+   * merchant cannot runCreate without an explicit price-and-duration accept.
+   * When true and a projection is present, always returns open_brief with
+   * requiresBrief:true (even if the server projection said otherwise).
+   */
+  videoConfirmRequired?: boolean;
 }): SubmitPathDecision {
   if (input.quotaExhausted) {
     return { path: 'blocked_quota', reason: 'quota_exhausted' };
   }
 
   const projection = input.projection;
+
+  // Video confirm must open Brief whenever a projection exists.
+  // Missing projection is the caller's responsibility (hint + never runCreate).
+  if (input.videoConfirmRequired && projection) {
+    return {
+      path: 'open_brief',
+      reason: 'brief_required',
+      projection: { ...projection, requiresBrief: true },
+    };
+  }
+
   if (!projection) {
     return { path: 'direct_submit', reason: 'no_brief_required' };
   }

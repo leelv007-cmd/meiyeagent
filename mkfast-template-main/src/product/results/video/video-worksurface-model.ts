@@ -96,7 +96,8 @@ export type VideoSubtitleState = {
 
 export type VideoShotCandidate = {
   index: number;
-  assetId: string;
+  /** Canonical asset id when known; omitted for count-only public summaries. */
+  assetId?: string;
   selected: boolean;
 };
 
@@ -349,12 +350,13 @@ export type BuildVideoWorksurfaceInput = {
 function shotsFromPublic(shots: VideoShotSummary[]): VideoStoryboardShot[] {
   return shots.map((shot, order) => {
     const selected = shot.selectedCandidateIndex;
+    // Public projection only exposes candidateCount — never fabricate asset ids.
+    // Slots exist for display / index selection; assetId stays optional.
     const candidateCount = Math.max(shot.candidateCount, 0);
     const candidates: VideoShotCandidate[] = Array.from(
       { length: candidateCount },
       (_, index) => ({
         index,
-        assetId: `shot-asset-${shot.shotId}-${index}`,
         selected: selected === index,
       })
     );

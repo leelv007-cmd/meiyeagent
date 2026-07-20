@@ -171,7 +171,6 @@ function nonNegativeInteger(value: unknown, fallback: number) {
 function projectionFactsFromDraft(
   draft: Record<string, unknown>,
   lensId: CreationLensId,
-  sourceIds: readonly string[],
 ): BriefProjectionFacts {
   const delivery = recordValue(draft.delivery);
   const settings = recordValue(draft.settings);
@@ -302,9 +301,10 @@ function projectionFactsFromDraft(
         ? nonNegativeInteger(settings?.quantity ?? draft.imageCount, 1)
         : 0,
     outputCount,
-    // Until every source kind has a trusted rights resolver, unknown selected
-    // sources fail safe as restricted. Operations later binds these exact IDs.
-    restrictedAssets: restrictedAssets || sourceIds.length > 0,
+    // Restricted only from explicit rights signals on draft sources
+    // (restricted / containsPerson / restricted categories). Mere attachment
+    // of sourceIds must not force Brief.
+    restrictedAssets,
   };
 }
 
@@ -392,11 +392,14 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         if (!body || typeof body !== 'object' || Array.isArray(body)) {
           throw new P1DomainError('INVALID_STATE', 'body is required.');
         }
+        // Browser/command path must never set server-only hidden prompts.
+        const safeBody = { ...(body as RecipeBodyInput) };
+        delete safeBody.hiddenPromptBody;
         const input: DraftRecipeInput = {
           recipeId: stringField(value, 'recipeId'),
           expectedRevision: expectedRevisionOf(value),
           ...audit(),
-          body: body as RecipeBodyInput,
+          body: safeBody,
         };
         return this.service.draftRecipe(input);
       }
@@ -550,11 +553,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
                 : '',
             ),
             lensId,
-            projectionFacts: projectionFactsFromDraft(
-              draftRecord,
-              lensId,
-              normalizedSourceIds,
-            ),
+            projectionFacts: projectionFactsFromDraft(draftRecord, lensId),
             quoteId: nullableId('quoteId'),
             recipeRevisionId: nullableId('recipeRevisionId'),
             sourceRevisionId: briefSourceRevisionId(normalizedSourceIds),
@@ -831,10 +830,10 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         const recipe = await this.service.getRecipeByRevisionId(
           recipeRevisionId,
         );
-        if (!recipe) {
+        if (!recipe || recipe.status !== 'published') {
           throw new P1DomainError(
             'NOT_FOUND',
-            `Recipe revision ${recipeRevisionId} was not found.`,
+            `Published recipe revision ${recipeRevisionId} was not found.`,
           );
         }
         const currentLens = value.currentLens;

@@ -268,11 +268,13 @@ export function projectResultCenterPageView(
   const view = shellViewFromResolveOutcome(props.resolveOutcome, props.facts);
   const workspaceKind = props.facts.workspaceKind ?? 'copy';
   const tokenStream = projectResultTokenStream({
+    // copy + image (图文 image_text) share the ADR-0007 token stream path;
+    // pure image.generate still projects through the same slots while running.
     workspaceKind:
       workspaceKind === 'copy'
         ? 'copy'
         : workspaceKind === 'image'
-          ? 'image'
+          ? 'image_text'
           : 'video',
     progressState: props.facts.progressState,
     partialCandidates: props.partialCandidates,

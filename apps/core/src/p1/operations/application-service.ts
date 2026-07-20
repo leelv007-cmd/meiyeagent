@@ -9015,6 +9015,7 @@ export class OperationsApplicationService {
     try {
       const artifact = await exporter.export({
         compliance: contentPackage.compliance,
+        contentPackageRevision: contentPackage.revision,
         kind: contentPackage.kind,
         packageId: contentPackage.id,
         platform: input.platform,

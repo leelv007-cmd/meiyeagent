@@ -98,57 +98,41 @@ test('a composed-video review gate becomes one actionable unread transition', ()
   ]);
 });
 
-test('composed-video summaries reuse workflow and Tracer facts without exposing internal ids', () => {
-  const workflow = {
-    actorId: 'owner-a',
-    aigcLabelEnabled: true,
+test('composed-video summaries use public projections without exposing internal ids', () => {
+  const base = {
     catalogModelId: 'seedance-2',
     confirmed: true,
-    createdAt: '2026-07-13T00:00:00.000Z',
-    id: 'internal-workflow-id',
     revision: 2,
-    shots: [],
-    status: 'running' as const,
+    shots: [] as const,
     storyboardRevision: 'storyboard-a',
     storyboardVersion: 1,
-    updatedAt: '2026-07-13T00:01:00.000Z',
     workId: 'merchant-work-a',
-    workspaceId: 'workspace-a',
-  };
-  const job = {
-    createdAt: '2026-07-13T00:00:30.000Z',
-    error: null,
-    jobId: 'model.composed-video:internal-workflow-id',
-    status: 'running' as const,
-    updatedAt: '2026-07-13T00:01:30.000Z',
   };
   const summaries = composedVideoAsyncTaskSummaries([
-    { workflow, job },
     {
-      workflow: {
-        ...workflow,
-        id: 'review-workflow-id',
-        status: 'awaiting_quality_review',
-        updatedAt: '2026-07-13T00:02:00.000Z',
-      },
-      job: { ...job, jobId: 'review-job-id' },
+      ...base,
+      status: 'running',
+      updatedAt: '2026-07-13T00:01:00.000Z',
+      workflowId: 'internal-workflow-id',
     },
     {
-      workflow: {
-        ...workflow,
-        id: 'failed-workflow-id',
-        updatedAt: '2026-07-13T00:03:00.000Z',
-      },
-      job: { ...job, jobId: 'failed-job-id', status: 'failed' },
+      ...base,
+      status: 'awaiting_quality_review',
+      updatedAt: '2026-07-13T00:02:00.000Z',
+      workflowId: 'review-workflow-id',
     },
     {
-      workflow: {
-        ...workflow,
-        confirmed: false,
-        id: 'draft-workflow-id',
-        status: 'draft',
-      },
-      job: null,
+      ...base,
+      status: 'failed',
+      updatedAt: '2026-07-13T00:03:00.000Z',
+      workflowId: 'failed-workflow-id',
+    },
+    {
+      ...base,
+      confirmed: false,
+      status: 'draft',
+      updatedAt: '2026-07-13T00:00:00.000Z',
+      workflowId: 'draft-workflow-id',
     },
   ]);
 
@@ -159,7 +143,7 @@ test('composed-video summaries reuse workflow and Tracer facts without exposing 
   assert.ok(summaries.every((summary) => summary.source === 'video_workflow'));
   assert.equal(
     summaries.find((summary) => summary.status === 'running')?.providerJobId,
-    'model.composed-video:internal-workflow-id'
+    'internal-workflow-id'
   );
   assert.ok(
     summaries.every(
@@ -173,7 +157,6 @@ test('composed-video summaries reuse workflow and Tracer facts without exposing 
     /internal-workflow-id|model\.composed-video/u
   );
 });
-
 test('read state is isolated by authenticated user', () => {
   assert.equal(asyncTaskStorageKey('user-a'), 'meiye:async-task-center:user-a');
   assert.notEqual(asyncTaskStorageKey('user-a'), asyncTaskStorageKey('user-b'));

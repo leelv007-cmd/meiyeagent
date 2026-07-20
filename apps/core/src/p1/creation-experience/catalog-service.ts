@@ -626,9 +626,9 @@ export class CreationExperienceCatalogService {
   async projectBrowserRecipe(recipeId: RecipeId, revision?: number) {
     const record =
       revision === undefined
-        ? await this.repository.getRecipeHead(recipeId)
+        ? await this.repository.latestPublishedRecipe(recipeId)
         : await this.repository.getRecipeRevision(recipeId, revision);
-    if (!record) {
+    if (!record || record.status !== 'published') {
       throw new P1DomainError('NOT_FOUND', `Recipe "${recipeId}" was not found.`);
     }
     return projectBrowserRecipe(record);
@@ -637,9 +637,9 @@ export class CreationExperienceCatalogService {
   async projectBrowserSurface(surfaceId: SurfaceId, revision?: number) {
     const record =
       revision === undefined
-        ? await this.repository.getSurfaceHead(surfaceId)
+        ? await this.repository.latestPublishedSurface(surfaceId)
         : await this.repository.getSurfaceRevision(surfaceId, revision);
-    if (!record) {
+    if (!record || record.status !== 'published') {
       throw new P1DomainError('NOT_FOUND', `Surface "${surfaceId}" was not found.`);
     }
     const recipes = await this.resolveSurfaceRecipes(record);

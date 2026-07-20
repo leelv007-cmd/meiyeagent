@@ -244,21 +244,28 @@ export class DurableProductBillingService
               `Product quote ${quote.quoteId} revision no longer matches the accepted execution contract.`,
             );
           }
-          const service = await this.localService(
-            transaction,
-            input.workspaceId,
-            quote,
-          );
-          const confirmed =
-            quote.lifecycleStatus === 'quoted'
-              ? service.confirm({ quoteId: quote.quoteId, taskId: input.taskId })
-              : quote;
-          if (confirmed.taskId !== input.taskId) {
+          // Confirm is an explicit user/product step; never auto-promote
+          // quoted → confirmed inside reserve/submit.
+          if (
+            quote.lifecycleStatus !== 'confirmed' &&
+            quote.lifecycleStatus !== 'reserved'
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              `Product quote ${quote.quoteId} is not confirmed for submission.`,
+            );
+          }
+          if (quote.taskId !== input.taskId) {
             throw new P1DomainError(
               'INVALID_STATE',
               `Product quote ${quote.quoteId} is not bound to task ${input.taskId}.`,
             );
           }
+          const service = await this.localService(
+            transaction,
+            input.workspaceId,
+            quote,
+          );
           const result = service.reserve({
             quoteId: quote.quoteId,
             resource: input.resource,

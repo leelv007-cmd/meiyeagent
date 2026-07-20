@@ -290,15 +290,20 @@ export function transitionContentPackage(
     exportReceipts = [...exportReceipts, event.receipt];
   }
   if (event.type === 'export_succeeded') {
-    const expectedContentType =
-      contentPackage.kind === 'video' ? 'video/mp4' : 'application/zip';
+    // Video primary path is application/zip (full delivery package); video/mp4
+    // remains accepted for historical/legacy receipts.
+    const allowedContentTypes =
+      contentPackage.kind === 'video'
+        ? new Set(['application/zip', 'video/mp4'])
+        : new Set(['application/zip']);
     if (
       event.receipt.status !== 'succeeded' ||
-      event.receipt.contentType !== expectedContentType
+      !event.receipt.contentType ||
+      !allowedContentTypes.has(event.receipt.contentType)
     ) {
       throw new ContentPackageTransitionError(
         contentPackage.kind === 'video'
-          ? 'A video export_succeeded transition requires a succeeded MP4 receipt.'
+          ? 'A video export_succeeded transition requires a succeeded ZIP or legacy MP4 receipt.'
           : 'An image-text export_succeeded transition requires a succeeded ZIP receipt.'
       );
     }

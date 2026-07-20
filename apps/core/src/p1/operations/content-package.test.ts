@@ -3413,7 +3413,7 @@ describe('ContentPackage frozen status contract', () => {
     );
   });
 
-  it('accepts direct-MP4 receipts for video while keeping image-text exports ZIP-only', () => {
+  it('accepts ZIP (primary) and legacy MP4 receipts for video while keeping image-text ZIP-only', () => {
     const version = {
       body: '历史视频正文',
       createdAt: NOW,
@@ -3457,7 +3457,7 @@ describe('ContentPackage frozen status contract', () => {
 
     assert.equal(revoked.status, 'needs_replacement');
     assert.equal(revoked.exportReceipts[0]?.contentType, 'video/mp4');
-    const exported = transitionContentPackage(
+    const exportedMp4 = transitionContentPackage(
       { ...historical, exportReceipts: [] },
       {
         receipt: {
@@ -3476,7 +3476,28 @@ describe('ContentPackage frozen status contract', () => {
       },
       NOW
     );
-    assert.equal(exported.exportReceipts[0]?.contentType, 'video/mp4');
+    assert.equal(exportedMp4.exportReceipts[0]?.contentType, 'video/mp4');
+
+    const exportedZip = transitionContentPackage(
+      { ...historical, exportReceipts: [] },
+      {
+        receipt: {
+          artifactAssetId: 'owned-new-video-zip',
+          artifactObjectKey: 'workspace-state-contract/generated/video-full.zip',
+          contentType: 'application/zip',
+          createdAt: NOW,
+          id: 'receipt-new-video-zip',
+          platform: 'douyin',
+          sha256: 'd'.repeat(64),
+          sizeBytes: 4_096,
+          status: 'succeeded',
+          variantVersionId: version.id,
+        },
+        type: 'export_succeeded',
+      },
+      NOW
+    );
+    assert.equal(exportedZip.exportReceipts[0]?.contentType, 'application/zip');
 
     const imageText = buildContentPackage({
       id: 'package-image-text-export',

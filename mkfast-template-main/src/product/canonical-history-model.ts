@@ -5,6 +5,7 @@ import type {
   CreativeContent,
   CreativeJob,
   CreativeWork,
+  VideoWorkflowPublicProjection,
 } from '@meiye/contracts';
 import {
   canonical_canvas_image_generation,
@@ -41,7 +42,6 @@ import {
 } from '@/locale/paraglide/messages';
 import { taskView, type RawTask } from '@/p1/operations-view-model';
 import { productStatusView } from '@/lib/uiux/status';
-import type { ComposedVideoTaskEnvelope } from './async-task-center-model';
 import { creativeOutputLabel } from './creative-quote';
 import { canvasName } from '@/p1/canvas-name';
 import {
@@ -310,56 +310,26 @@ export function canonicalMediaForAssetIds(
   );
 }
 
+/**
+ * Public video_workflows list no longer carries composed media blobs.
+ * Owned assets / Result Center remain the media source of truth.
+ */
 export function composedVideoCanonicalAssets(
-  envelopes: readonly ComposedVideoTaskEnvelope[]
+  _workflows: readonly VideoWorkflowPublicProjection[]
 ): CreativeAssetProjection[] {
-  const seenAssetIds = new Set<string>();
-  return envelopes
-    .flatMap((envelope): CreativeAssetProjection[] => {
-      const { job, workflow } = envelope;
-      const asset = workflow.composedAsset;
-      if (
-        workflow.status !== 'completed' ||
-        !workflow.workId ||
-        !job ||
-        !asset?.id ||
-        !asset.sha256 ||
-        asset.contentType !== 'video/mp4' ||
-        asset.technicalValidation?.playable !== true ||
-        seenAssetIds.has(asset.id)
-      ) {
-        return [];
-      }
-      seenAssetIds.add(asset.id);
-      return [
-        {
-          contentType: 'video/mp4',
-          createdAt: workflow.updatedAt,
-          id: asset.id,
-          jobId: job.jobId,
-          kind: 'video',
-          objectKey: asset.objectKey,
-          ownedAssetId: asset.id,
-          sha256: asset.sha256,
-          title: `${p1_admin_model_operation_video()} · V${workflow.storyboardVersion}`,
-          workId: workflow.workId,
-          workspaceId: workflow.workspaceId,
-        },
-      ];
-    })
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return [];
 }
 
 export function canonicalHistoryWithComposedVideos(
   history: RawCanonicalHistory,
-  envelopes: readonly ComposedVideoTaskEnvelope[]
+  workflows: readonly VideoWorkflowPublicProjection[]
 ): RawCanonicalHistory {
   const knownAssetIds = new Set(
     history.assets.flatMap((asset) =>
       asset.ownedAssetId ? [asset.id, asset.ownedAssetId] : [asset.id]
     )
   );
-  const additions = composedVideoCanonicalAssets(envelopes).filter((asset) => {
+  const additions = composedVideoCanonicalAssets(workflows).filter((asset) => {
     if (knownAssetIds.has(asset.id)) return false;
     knownAssetIds.add(asset.id);
     return true;

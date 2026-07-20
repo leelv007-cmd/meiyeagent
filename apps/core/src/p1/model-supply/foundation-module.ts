@@ -4559,10 +4559,6 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           ),
         });
       case 'video_workflow':
-        return this.requireComposedVideo().query({
-          workspaceId: args.context.workspaceId,
-          workflowId: requiredString(payload, 'workflowId'),
-        });
       case 'video_workflow_public': {
         const current = await this.requireComposedVideo().query({
           workspaceId: args.context.workspaceId,
@@ -4576,14 +4572,18 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
         }
         return projectVideoWorkflowPublic(current.workflow);
       }
-      case 'video_workflow_latest':
-        return this.requireComposedVideo().latest({
+      case 'video_workflow_latest': {
+        const latest = await this.requireComposedVideo().latest({
           workspaceId: args.context.workspaceId,
           actorId: args.context.userId,
           ...(typeof payload.workId === 'string'
             ? { workId: requiredString(payload, 'workId') }
             : {}),
         });
+        return latest
+          ? projectVideoWorkflowPublic(latest.workflow)
+          : null;
+      }
       case 'video_workflow_public_latest': {
         const latest = await this.requireComposedVideo().latest({
           workspaceId: args.context.workspaceId,
@@ -4594,11 +4594,13 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           ? projectVideoWorkflowPublic(latest.workflow)
           : null;
       }
-      case 'video_workflows':
-        return this.requireComposedVideo().list({
+      case 'video_workflows': {
+        const listed = await this.requireComposedVideo().list({
           workspaceId: args.context.workspaceId,
           actorId: args.context.userId,
         });
+        return listed.map((item) => projectVideoWorkflowPublic(item.workflow));
+      }
       default:
         throw new P1DomainError('INVALID_STATE', `Unknown model-supply query ${action}.`);
     }

@@ -123,8 +123,37 @@ export interface ProductQuoteSnapshot {
 }
 
 /**
+ * Browser / merchant-facing product quote projection.
+ *
+ * Durable routing fields (`frozenCandidateDeploymentIds`, `routeSnapshotRef`)
+ * are server-only and must never cross the browser boundary.
+ */
+export type PublicProductQuoteSnapshot = Omit<
+  ProductQuoteSnapshot,
+  'frozenCandidateDeploymentIds' | 'routeSnapshotRef'
+>;
+
+/**
+ * Strip server-only routing fields from a durable ProductQuoteSnapshot.
+ * The sole serializer for merchant/browser quote responses.
+ */
+export function toPublicProductQuoteSnapshot(
+  quote: ProductQuoteSnapshot,
+): PublicProductQuoteSnapshot {
+  const {
+    frozenCandidateDeploymentIds: _frozenCandidateDeploymentIds,
+    routeSnapshotRef: _routeSnapshotRef,
+    ...publicQuote
+  } = quote;
+  return publicQuote;
+}
+
+/**
  * Attempt-level provider cost freeze (separate from product quote).
  * One ProviderAttempt → one ProviderCostSnapshot + cost event stream.
+ *
+ * Supply / internal only — never serialize to the browser. Product quote
+ * public responses must not embed this type or any provider routing fields.
  */
 export interface ProviderCostSnapshot {
   attemptId: string;

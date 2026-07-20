@@ -180,40 +180,8 @@ export class ContentPackageZipExportAdapter
     input: Parameters<ContentPackageExportPort['export']>[0],
   ): Promise<ContentPackageExportArtifactWithName> {
     if (input.kind === 'video') {
-      // Legacy single-MP4 path kept for ContentPackage export_succeeded
-      // (video/mp4 receipt). Full delivery ZIP uses exportVideoFullPackage.
-      if (
-        input.compliance.aigcLabelEnabled ||
-        input.compliance.watermarkEnabled
-      ) {
-        throw new UnverifiedVideoComplianceError();
-      }
-      const assetId = input.version.orderedAssetIds[0];
-      if (!assetId || input.version.orderedAssetIds.length !== 1) {
-        throw new Error('A video export requires one owned composed asset.');
-      }
-      const { asset, bytes } = await this.assets.readOwnedAsset({
-        assetId,
-        workspaceId: input.workspaceId,
-      });
-      if (asset.contentType !== 'video/mp4') {
-        throw new Error('The selected video asset is not an MP4 file.');
-      }
-      const artifact = await this.storage.persistGeneratedAsset({
-        bytes,
-        contentType: 'video/mp4',
-        sourceTaskRef:
-          `content-package-export:${input.packageId}:` +
-          `${input.platform}:${input.version.id}`,
-        workspaceId: input.workspaceId,
-      });
-      return {
-        artifactAssetId: artifact.id,
-        artifactObjectKey: artifact.objectKey,
-        contentType: 'video/mp4' as const,
-        sha256: artifact.sha256,
-        sizeBytes: artifact.sizeBytes,
-      };
+      // B-01: video main export path is the full delivery ZIP (manifest/v1).
+      return this.exportVideoFullPackage(input);
     }
 
     const images: {
@@ -264,7 +232,7 @@ export class ContentPackageZipExportAdapter
         topics: input.version.topics,
       },
       compliance: input.compliance,
-      contentPackageRevision: this.options.contentPackageRevision ?? 0,
+      contentPackageRevision: resolveContentPackageRevision(input, this.options),
       factSummary: this.options.factSummary,
       generatedAt: input.version.createdAt,
       images,
@@ -294,9 +262,9 @@ export class ContentPackageZipExportAdapter
   }
 
   /**
-   * Video full delivery package branch (B3 / D-096):
+   * Video full delivery package (B-01 / D-096):
    * video.mp4 + cover + caption + optional subtitles + checklist + manifest/v1.
-   * Returns application/zip (distinct from the single-MP4 export path).
+   * Primary video export path — returns application/zip.
    */
   async exportVideoFullPackage(
     input: ContentPackageVideoFullExportInput,
@@ -350,10 +318,7 @@ export class ContentPackageZipExportAdapter
         topics: input.version.topics,
       },
       compliance: input.compliance,
-      contentPackageRevision:
-        input.contentPackageRevision ??
-        this.options.contentPackageRevision ??
-        0,
+      contentPackageRevision: resolveContentPackageRevision(input, this.options),
       ...(cover ? { cover } : {}),
       factSummary: input.factSummary ?? this.options.factSummary,
       generatedAt: input.version.createdAt,
@@ -383,6 +348,24 @@ export class ContentPackageZipExportAdapter
       sizeBytes: artifact.sizeBytes,
     };
   }
+}
+
+/**
+ * B-02: fail-closed revision freeze for delivery manifests.
+ * Prefer the per-call input revision, then adapter options; never default to 0.
+ */
+export function resolveContentPackageRevision(
+  input: { contentPackageRevision?: number },
+  options: ContentPackageZipExportOptions = {},
+): number {
+  const revision =
+    input.contentPackageRevision ?? options.contentPackageRevision;
+  if (typeof revision !== 'number' || !Number.isFinite(revision)) {
+    throw new Error(
+      'contentPackageRevision is required for ContentPackage export.',
+    );
+  }
+  return revision;
 }
 
 function isExportMediaType(

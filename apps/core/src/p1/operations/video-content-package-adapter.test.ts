@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { unzipSync } from 'fflate';
 import {
   MemoryOperationsRepository,
   OperationsApplicationService,
@@ -333,7 +334,7 @@ describe('video ContentPackage lifecycle adapter', () => {
     assert.equal(state.creativeContents.length, 0);
   });
 
-  it('lands a completed composed receipt and exports its MP4 through the public seam', async () => {
+  it('lands a completed composed receipt and exports its full ZIP through the public seam', async () => {
     const repository = new MemoryOperationsRepository();
     repository.grantMembership(confirmation.actorId, confirmation.workspaceId);
     const storage = new MemoryModelAssetStorage();
@@ -418,15 +419,23 @@ describe('video ContentPackage lifecycle adapter', () => {
     });
     const receipt = exported.exportReceipts.at(-1);
     assert.equal(receipt?.status, 'succeeded');
-    assert.equal(receipt?.contentType, 'video/mp4');
-    assert.equal(receipt?.sha256, composedAsset.sha256);
-    assert.equal(receipt?.sizeBytes, composedAsset.sizeBytes);
-    assert.deepEqual(
-      receipt?.artifactObjectKey
-        ? storage.read(receipt.artifactObjectKey)
-        : undefined,
-      sourceBytes
+    assert.equal(receipt?.contentType, 'application/zip');
+    assert.ok(receipt?.sha256);
+    assert.ok(receipt?.sizeBytes && receipt.sizeBytes > 0);
+    const archiveBytes = receipt?.artifactObjectKey
+      ? storage.read(receipt.artifactObjectKey)
+      : undefined;
+    assert.ok(archiveBytes);
+    const files = unzipSync(archiveBytes);
+    assert.ok(files['video.mp4']);
+    assert.deepEqual(files['video.mp4'], sourceBytes);
+    assert.ok(files['manifest.json']);
+    const manifest = JSON.parse(
+      new TextDecoder().decode(files['manifest.json']),
     );
+    assert.equal(manifest.schema, 'beauty-delivery-manifest/v1');
+    assert.equal(manifest.kind, 'video');
+    assert.equal(manifest.contentPackageRevision, contentPackage.revision);
   });
 
   it('keeps a canonical Work video review-ready until result_adopt writes its first version', async () => {

@@ -1,4 +1,7 @@
-import type { CreativeExecutionContract } from '@meiye/contracts';
+import type {
+  CreativeExecutionContract,
+  VideoWorkflowPublicProjection,
+} from '@meiye/contracts';
 import {
   type QueryClient,
   type QueryKey,
@@ -26,10 +29,6 @@ import {
   video_workflow_aigc_disabled,
   video_workflow_aigc_enabled,
   video_workflow_cancel_task,
-  video_workflow_candidate_legend,
-  video_workflow_candidate_select,
-  video_workflow_candidate_select_aria,
-  video_workflow_candidate_video_aria,
   video_workflow_composer_description,
   video_workflow_confirm_and_generate,
   video_workflow_create_version_from_this,
@@ -37,7 +36,6 @@ import {
   video_workflow_editor_description,
   video_workflow_editor_title,
   video_workflow_failure_desktop_recovery,
-  video_workflow_final_video_aria,
   video_workflow_lock_storyboard,
   video_workflow_locked_model,
   video_workflow_locking,
@@ -51,7 +49,6 @@ import {
   video_workflow_restoring,
   video_workflow_return_and_create_version,
   video_workflow_review_candidates_pending,
-  video_workflow_source_storyboard_version,
   video_workflow_step_state_failed,
   video_workflow_step_state_running,
   video_workflow_step_state_success,
@@ -80,33 +77,67 @@ import {
   buildVideoWorkflowDraft,
   buildVideoWorkflowMutation,
   createAidaStoryboard,
-  videoAssetUrl,
-  videoCandidateQualityText,
-  videoWorkflowEffectiveStatus,
-  videoWorkflowReviewShots,
   videoWorkflowShouldPoll,
   videoWorkflowSteps,
   videoWorkflowStatusView,
   type AidaStoryboardShot,
   type VideoDataClass,
   type VideoWorkflow,
-  type VideoWorkflowCandidate,
   type VideoWorkflowEnvelope,
 } from './video-workflow-model';
+
 const POLL_INTERVAL_MS = 5_000;
 
 export function videoWorkflowPollingFallback(
   transportStatus: WorkflowEventTransportStatus,
-  envelope: VideoWorkflowEnvelope | undefined
+  projection: VideoWorkflowPublicProjection | undefined
 ) {
   return (
     transportStatus === 'degraded' &&
-    (!envelope || videoWorkflowShouldPoll(envelope))
+    (!projection ||
+      videoWorkflowShouldPoll({
+        job: null,
+        workflow: { status: projection.status },
+      }))
   );
 }
 
 export function videoWorkflowMutationFailure(error: unknown) {
   return friendlyProductError(error, video_workflow_mutation_failed());
+}
+
+/** Map a durable mutation response into the public query cache shape. */
+export function publicProjectionFromWorkflow(
+  workflow: VideoWorkflow
+): VideoWorkflowPublicProjection {
+  return {
+    workflowId: workflow.id,
+    ...(workflow.workId ? { workId: workflow.workId } : {}),
+    status: workflow.status,
+    storyboardVersion: workflow.storyboardVersion,
+    storyboardRevision: workflow.storyboardRevision,
+    catalogModelId: workflow.catalogModelId,
+    confirmed: workflow.confirmed,
+    shots: workflow.shots.map((shot) => ({
+      shotId: shot.id,
+      ...(shot.prompt
+        ? {
+            promptPreview:
+              shot.prompt.length > 80
+                ? `${shot.prompt.slice(0, 77)}...`
+                : shot.prompt,
+          }
+        : {}),
+      candidatesPerShot: shot.candidatesPerShot,
+      ...(shot.selectedCandidateIndex !== undefined
+        ? { selectedCandidateIndex: shot.selectedCandidateIndex }
+        : {}),
+      candidateCount: shot.candidates.length,
+    })),
+    ...(workflow.failureCode ? { failureCode: workflow.failureCode } : {}),
+    revision: workflow.revision,
+    updatedAt: workflow.updatedAt,
+  };
 }
 
 type WorkflowAction =
@@ -150,15 +181,15 @@ export type VideoWorkflowPanelProps =
 export async function syncVideoWorkflowMutationSuccess(
   queryClient: QueryClient,
   latestKey: QueryKey,
-  envelope: VideoWorkflowEnvelope
+  projection: VideoWorkflowPublicProjection
 ) {
   queryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'video_workflow', {
-      workflowId: envelope.workflow.id,
+      workflowId: projection.workflowId,
     }),
-    envelope
+    projection
   );
-  queryClient.setQueryData(latestKey, envelope);
+  queryClient.setQueryData(latestKey, projection);
   await refreshCreativeJobCanonicalState(queryClient);
 }
 
@@ -170,16 +201,16 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
   const recoveryHref =
     props.mode === 'progress' ? props.recoveryHref : undefined;
   const queryClient = useQueryClient();
-  const previousObservedEnvelope = useRef<
-    VideoWorkflowEnvelope | null | undefined
+  const previousObserved = useRef<
+    VideoWorkflowPublicProjection | null | undefined
   >(undefined);
   const [shots, setShots] = useState(() =>
     composer ? createAidaStoryboard(composer.intent) : []
   );
   const [activeWorkflowId, setActiveWorkflowId] = useState('');
   const [editingFromWorkflow, setEditingFromWorkflow] = useState<Pick<
-    VideoWorkflow,
-    'id' | 'storyboardVersion'
+    VideoWorkflowPublicProjection,
+    'workflowId' | 'storyboardVersion'
   > | null>(null);
   const latestKey = p1QueryKeys.request(
     'model-supply',
@@ -190,7 +221,7 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
     enabled: !requestedWorkflowId,
     queryKey: latestKey,
     queryFn: ({ signal }) =>
-      queryP1<VideoWorkflowEnvelope | null>(
+      queryP1<VideoWorkflowPublicProjection | null>(
         'model-supply',
         { action: 'video_workflow_latest', payload: { workId } },
         signal
@@ -201,7 +232,7 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
   const workflowId =
     activeWorkflowId ||
     requestedWorkflowId ||
-    latestQuery.data?.workflow.id ||
+    latestQuery.data?.workflowId ||
     '';
   const workflowKey = p1QueryKeys.request('model-supply', 'video_workflow', {
     workflowId,
@@ -216,16 +247,16 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
     enabled: Boolean(workflowId),
     queryKey: workflowKey,
     queryFn: ({ signal }) =>
-      queryP1<VideoWorkflowEnvelope>(
+      queryP1<VideoWorkflowPublicProjection>(
         'model-supply',
         { action: 'video_workflow', payload: { workflowId } },
         signal
       ),
     refetchInterval: (query) => {
-      const envelope = query.state.data;
+      const projection = query.state.data;
       return videoWorkflowPollingFallback(
         workflowStream.transportStatus,
-        envelope
+        projection
       )
         ? POLL_INTERVAL_MS
         : false;
@@ -234,10 +265,12 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
     retry: 2,
   });
 
-  const rememberWorkflow = async (envelope: VideoWorkflowEnvelope) => {
-    setActiveWorkflowId(envelope.workflow.id);
-    previousObservedEnvelope.current = envelope;
-    await syncVideoWorkflowMutationSuccess(queryClient, latestKey, envelope);
+  const rememberProjection = async (
+    projection: VideoWorkflowPublicProjection
+  ) => {
+    setActiveWorkflowId(projection.workflowId);
+    previousObserved.current = projection;
+    await syncVideoWorkflowMutationSuccess(queryClient, latestKey, projection);
   };
 
   const createDraft = useMutation({
@@ -249,7 +282,12 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
         brandWatermarkText: composer.brandWatermarkText,
         catalogModelId: composer.catalogModelId,
         dataClass: composer.dataClass,
-        derivedFrom: editingFromWorkflow ?? undefined,
+        derivedFrom: editingFromWorkflow
+          ? {
+              id: editingFromWorkflow.workflowId,
+              storyboardVersion: editingFromWorkflow.storyboardVersion,
+            }
+          : undefined,
         executionContract: composer.executionContract,
         referenceAssetIds: composer.referenceAssetIds,
         shots,
@@ -263,7 +301,7 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
     },
     onSuccess: (workflow) => {
       setEditingFromWorkflow(null);
-      return rememberWorkflow({ workflow, job: null });
+      return rememberProjection(publicProjectionFromWorkflow(workflow));
     },
   });
 
@@ -276,28 +314,34 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
               shotId: input.shotId,
             })
           : buildVideoWorkflowMutation(input.kind, input.workflowId);
-      return commandP1<VideoWorkflowEnvelope>(
+      return commandP1<VideoWorkflowEnvelope | VideoWorkflow>(
         'model-supply',
         { action: plan.action, payload: plan.payload },
         plan.idempotencyKey
       );
     },
-    onSuccess: rememberWorkflow,
+    onSuccess: (result) => {
+      const workflow =
+        result && typeof result === 'object' && 'workflow' in result
+          ? result.workflow
+          : (result as VideoWorkflow);
+      return rememberProjection(publicProjectionFromWorkflow(workflow));
+    },
   });
 
-  const envelope =
-    workflowQuery.data ?? (requestedWorkflowId ? undefined : latestQuery.data);
+  const projection =
+    workflowQuery.data ??
+    (requestedWorkflowId ? undefined : latestQuery.data ?? undefined);
   useEffect(() => {
-    const previous = previousObservedEnvelope.current;
-    previousObservedEnvelope.current = envelope;
-    if (!previous || !envelope) return;
+    const previous = previousObserved.current;
+    previousObserved.current = projection ?? null;
+    if (!previous || !projection) return;
     void refreshCreativeJobCanonicalStateOnVideoWorkflowChange(
       queryClient,
-      [previous],
-      [envelope]
+      [{ workflowId: previous.workflowId, status: previous.status }],
+      [{ workflowId: projection.workflowId, status: projection.status }]
     );
-  }, [envelope, queryClient]);
-  const workflow = envelope?.workflow;
+  }, [projection, queryClient]);
   const queryError =
     workflowQuery.error ??
     (requestedWorkflowId ? undefined : latestQuery.error);
@@ -308,10 +352,10 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
     : undefined;
   const editable =
     Boolean(composer) &&
-    ((!workflow && !latestQuery.isPending && !latestQuery.error) ||
+    ((!projection && !latestQuery.isPending && !latestQuery.error) ||
       Boolean(editingFromWorkflow));
-  const lockedModelName = workflow
-    ? (composer?.catalogModelNames[workflow.catalogModelId] ??
+  const lockedModelName = projection
+    ? (composer?.catalogModelNames[projection.catalogModelId] ??
       video_workflow_locked_model())
     : composer
       ? (composer.catalogModelNames[composer.catalogModelId] ??
@@ -322,7 +366,7 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
   if (
     props.mode === 'progress' &&
     recoveryQuery.isSuccess &&
-    !workflow &&
+    !projection &&
     !queryError
   ) {
     return null;
@@ -338,10 +382,9 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
         <CardDescription>
           {composer
             ? video_workflow_composer_description({
-                aigcState:
-                  (workflow?.aigcLabelEnabled ?? composer.aigcLabelEnabled)
-                    ? video_workflow_aigc_enabled()
-                    : video_workflow_aigc_disabled(),
+                aigcState: composer.aigcLabelEnabled
+                  ? video_workflow_aigc_enabled()
+                  : video_workflow_aigc_disabled(),
                 model: lockedModelName ?? video_workflow_locked_model(),
               })
             : video_workflow_progress_description()}
@@ -356,7 +399,7 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
             {workflowStream.latestProgress.message}
           </output>
         ) : null}
-        {recoveryQuery.isPending && !workflow ? (
+        {recoveryQuery.isPending && !projection ? (
           <output className="text-sm text-muted-foreground">
             {video_workflow_restoring()}
           </output>
@@ -380,14 +423,16 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
           />
         ) : null}
 
-        {workflow && !editingFromWorkflow ? (
+        {projection && !editingFromWorkflow ? (
           <WorkflowState
-            job={envelope?.job ?? null}
             onEditDraft={
               composer
                 ? () => {
                     const promptById = new Map(
-                      workflow.shots.map((shot) => [shot.id, shot.prompt])
+                      projection.shots.map((shot) => [
+                        shot.shotId,
+                        shot.promptPreview ?? '',
+                      ])
                     );
                     setShots(
                       createAidaStoryboard(composer.intent).map((shot) => ({
@@ -396,15 +441,15 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
                       }))
                     );
                     setEditingFromWorkflow({
-                      id: workflow.id,
-                      storyboardVersion: workflow.storyboardVersion,
+                      workflowId: projection.workflowId,
+                      storyboardVersion: projection.storyboardVersion,
                     });
                   }
                 : undefined
             }
             pending={workflowAction.isPending}
             recoveryHref={recoveryHref}
-            workflow={workflow}
+            projection={projection}
             onAction={(action) => workflowAction.mutate(action)}
           />
         ) : null}
@@ -479,54 +524,58 @@ function StoryboardEditor({
 }
 
 function WorkflowState({
-  job,
   onAction,
   onEditDraft,
   pending,
+  projection,
   recoveryHref,
-  workflow,
 }: {
-  job: VideoWorkflowEnvelope['job'];
   onAction: (action: WorkflowAction) => void;
   onEditDraft?: () => void;
   pending: boolean;
   recoveryHref?: string;
-  workflow: VideoWorkflow;
+  projection: VideoWorkflowPublicProjection;
 }) {
-  const effectiveStatus = videoWorkflowEffectiveStatus({ job, workflow });
-  const status = videoWorkflowStatusView(effectiveStatus);
-  const steps = videoWorkflowSteps(workflow, job?.status);
-  const reviewShots =
-    effectiveStatus === 'failed' ? [] : videoWorkflowReviewShots(workflow);
+  // Public projection has no job tracer; status is the workflow lifecycle only.
+  const status = videoWorkflowStatusView(projection.status);
+  const steps = videoWorkflowSteps(
+    {
+      confirmed: projection.confirmed,
+      shots: projection.shots.map((shot) => ({
+        candidates: [],
+        candidatesPerShot: shot.candidatesPerShot,
+        id: shot.shotId,
+        prompt: shot.promptPreview ?? '',
+        selectedCandidateIndex: shot.selectedCandidateIndex,
+      })),
+      status: projection.status,
+    },
+    // Public projection has no job tracer; map failed lifecycle onto step state.
+    projection.status === 'failed' ? 'failed' : undefined
+  );
   const canCancel =
-    effectiveStatus !== 'failed' &&
-    (workflow.status === 'running' ||
-      workflow.status === 'awaiting_quality_review');
-  const sourceWorkflowId = workflow.derivedFromWorkflowId;
+    projection.status === 'running' ||
+    projection.status === 'awaiting_quality_review';
+  const resultHref = projection.workId
+    ? `/dashboard/results/${encodeURIComponent(projection.workId)}`
+    : '/dashboard/content';
   return (
     <section className="space-y-4" aria-labelledby="video-workflow-status">
       <div
         className={cn(
           'rounded-lg p-3',
-          effectiveStatus === 'failed'
+          projection.status === 'failed'
             ? 'border border-destructive/30 bg-destructive/5'
             : 'bg-muted/60'
         )}
-        role={effectiveStatus === 'failed' ? 'alert' : undefined}
+        role={projection.status === 'failed' ? 'alert' : undefined}
       >
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Badge variant="outline">
             {video_workflow_storyboard_version({
-              version: workflow.storyboardVersion,
+              version: projection.storyboardVersion,
             })}
           </Badge>
-          {sourceWorkflowId ? (
-            <span className="text-xs text-muted-foreground">
-              {video_workflow_source_storyboard_version({
-                version: Math.max(1, workflow.storyboardVersion - 1),
-              })}
-            </span>
-          ) : null}
         </div>
         <h3 className="font-medium" id="video-workflow-status">
           {status.label}
@@ -604,9 +653,9 @@ function WorkflowState({
         ))}
       </ol>
 
-      <ReadOnlyStoryboard shots={workflow.shots} />
+      <ReadOnlyStoryboard shots={projection.shots} />
 
-      {effectiveStatus === 'draft' ? (
+      {projection.status === 'draft' ? (
         <div className="flex flex-wrap gap-2">
           <Button
             disabled={pending}
@@ -614,7 +663,7 @@ function WorkflowState({
             onClick={() =>
               onAction({
                 kind: 'confirm',
-                workflowId: workflow.id,
+                workflowId: projection.workflowId,
               })
             }
           >
@@ -639,7 +688,7 @@ function WorkflowState({
         </div>
       ) : null}
 
-      {effectiveStatus === 'failed' ? (
+      {projection.status === 'failed' ? (
         <div className="flex flex-wrap items-center gap-2">
           {onEditDraft ? (
             <Button
@@ -665,46 +714,15 @@ function WorkflowState({
         </div>
       ) : null}
 
-      {reviewShots.map((shot, index) => (
-        <CandidateReview
-          key={shot.id}
-          pending={pending}
-          shot={shot}
-          shotNumber={index + 1}
-          onSelect={(candidateIndex) =>
-            onAction({
-              candidateIndex,
-              kind: 'select',
-              shotId: shot.id,
-              workflowId: workflow.id,
-            })
-          }
-        />
-      ))}
-
-      {effectiveStatus === 'awaiting_quality_review' &&
-      reviewShots.length === 0 ? (
+      {projection.status === 'awaiting_quality_review' ? (
         <output className="text-sm text-muted-foreground">
           {video_workflow_review_candidates_pending()}
         </output>
       ) : null}
 
-      {effectiveStatus === 'completed' && workflow.composedAsset ? (
+      {projection.status === 'completed' ? (
         <div className="space-y-3">
-          {/* biome-ignore lint/a11y/useMediaCaption: Generated media has no caption artifact to attach. */}
-          <video
-            aria-label={video_workflow_final_video_aria()}
-            className="max-h-[70vh] w-full rounded-xl bg-black object-contain"
-            controls
-            playsInline
-            poster="/seed/video/video-poster-wide.webp"
-            preload="metadata"
-            src={videoAssetUrl(workflow.composedAsset.objectKey)}
-          />
-          <a
-            className={buttonVariants({ variant: 'outline' })}
-            href="/dashboard/content"
-          >
+          <a className={buttonVariants({ variant: 'outline' })} href={resultHref}>
             {copy_candidate_view_in_content()}
           </a>
         </div>
@@ -715,7 +733,9 @@ function WorkflowState({
           disabled={pending}
           type="button"
           variant="destructive"
-          onClick={() => onAction({ kind: 'cancel', workflowId: workflow.id })}
+          onClick={() =>
+            onAction({ kind: 'cancel', workflowId: projection.workflowId })
+          }
         >
           {pending
             ? video_workflow_submitting_action()
@@ -726,77 +746,24 @@ function WorkflowState({
   );
 }
 
-function ReadOnlyStoryboard({ shots }: { shots: VideoWorkflow['shots'] }) {
+function ReadOnlyStoryboard({
+  shots,
+}: {
+  shots: VideoWorkflowPublicProjection['shots'];
+}) {
   return (
     <div className="grid gap-2 lg:grid-cols-2">
       {shots.map((shot, index) => (
-        <article className="rounded-lg border p-3" key={shot.id}>
+        <article className="rounded-lg border p-3" key={shot.shotId}>
           <p className="text-xs font-medium text-muted-foreground">
             {video_workflow_storyboard_number({ number: index + 1 })}
           </p>
-          <p className="mt-1 whitespace-pre-wrap text-sm">{shot.prompt}</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm">
+            {shot.promptPreview ?? ''}
+          </p>
         </article>
       ))}
     </div>
-  );
-}
-
-function CandidateReview({
-  onSelect,
-  pending,
-  shot,
-  shotNumber,
-}: {
-  onSelect: (candidateIndex: number) => void;
-  pending: boolean;
-  shot: VideoWorkflow['shots'][number];
-  shotNumber: number;
-}) {
-  const candidates = shot.candidates.filter(isPlayableCandidate);
-  return (
-    <fieldset className="space-y-3 rounded-xl border p-3">
-      <legend className="px-1 font-medium">
-        {video_workflow_candidate_legend({ number: shotNumber })}
-      </legend>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {candidates.map((candidate) => (
-          <article
-            className="space-y-2 rounded-lg bg-muted/50 p-2"
-            key={candidate.index}
-          >
-            {/* biome-ignore lint/a11y/useMediaCaption: Generated candidates have no caption artifact to attach. */}
-            <video
-              aria-label={video_workflow_candidate_video_aria({
-                candidate: candidate.index + 1,
-                shot: shotNumber,
-              })}
-              className="aspect-[9/16] max-h-80 w-full rounded-lg bg-black object-contain"
-              controls
-              playsInline
-              poster="/seed/video/video-poster-vertical.webp"
-              preload="metadata"
-              src={videoAssetUrl(candidate.asset.objectKey)}
-            />
-            <p className="text-xs text-muted-foreground">
-              {videoCandidateQualityText(candidate)}
-            </p>
-            <Button
-              aria-label={video_workflow_candidate_select_aria({
-                candidate: candidate.index + 1,
-                shot: shotNumber,
-              })}
-              disabled={pending}
-              size="sm"
-              type="button"
-              variant="outline"
-              onClick={() => onSelect(candidate.index)}
-            >
-              {video_workflow_candidate_select()}
-            </Button>
-          </article>
-        ))}
-      </div>
-    </fieldset>
   );
 }
 
@@ -826,16 +793,4 @@ function videoWorkflowStepStateLabel(
   if (state === 'suspended') return video_workflow_step_state_suspended();
   if (state === 'failed') return video_workflow_step_state_failed();
   return video_workflow_step_state_waiting();
-}
-
-function isPlayableCandidate(
-  candidate: VideoWorkflowCandidate
-): candidate is VideoWorkflowCandidate & {
-  asset: NonNullable<VideoWorkflowCandidate['asset']>;
-} {
-  return (
-    candidate.status === 'completed' &&
-    candidate.asset?.contentType === 'video/mp4' &&
-    candidate.asset.technicalValidation?.playable !== false
-  );
 }

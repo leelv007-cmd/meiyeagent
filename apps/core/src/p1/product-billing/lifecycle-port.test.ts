@@ -233,4 +233,39 @@ describe('ProductBillingLifecycle', () => {
       }),
     );
   });
+
+  it('does not auto-confirm a quoted quote inside beforeSubmit', () => {
+    const usage = new MemoryProductUsageLedger();
+    const quotes = new ProductQuoteService({ usageLedger: usage });
+    const quoted = quotes.buildQuote({
+      billingMode: 'per_output_second',
+      catalogModelId: 'video-model',
+      frozenCandidateDeploymentIds: ['deployment-a'],
+      quoteId: 'quote-still-quoted',
+      quotePolicyRevision: 'policy-1',
+      roundingStepSeconds: 1,
+      targetSeconds: 10,
+      unitRate: 0.5,
+      workspaceId: 'workspace-1',
+    });
+    const lifecycle = new ProductBillingLifecycle(quotes);
+
+    assert.throws(
+      () =>
+        lifecycle.beforeSubmit({
+          quoteId: quoted.quoteId,
+          quoteRevision: quoted.revision,
+          resource: 'video',
+          taskId: 'work-quoted',
+          workspaceId: 'workspace-1',
+        }),
+      (error: unknown) =>
+        error instanceof Error &&
+        /is not confirmed for submission/.test(error.message),
+    );
+    assert.equal(
+      quotes.getQuote(quoted.quoteId)?.lifecycleStatus,
+      'quoted',
+    );
+  });
 });

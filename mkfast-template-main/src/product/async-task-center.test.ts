@@ -15,7 +15,7 @@ import {
   handleAsyncTaskPanelDismiss,
 } from './async-task-center';
 import type { RawCanonicalHistory } from './canonical-history-model';
-import type { ComposedVideoTaskEnvelope } from './async-task-center-model';
+import type { VideoWorkflowPublicProjection } from '@meiye/contracts';
 
 const emptyHistory: RawCanonicalHistory = {
   assets: [],
@@ -186,29 +186,17 @@ test('keeps the portalled panel inside common walkthrough viewports', () => {
 });
 
 test('the collapsed global center includes an active composed-video Job without exposing ids', () => {
-  const envelope: ComposedVideoTaskEnvelope = {
-    job: {
-      createdAt: '2026-07-13T00:00:00.000Z',
-      jobId: 'model.composed-video:private-workflow-id',
-      status: 'running',
-      updatedAt: '2026-07-13T00:01:00.000Z',
-    },
-    workflow: {
-      actorId: 'owner-a',
-      aigcLabelEnabled: true,
-      catalogModelId: 'seedance-2',
-      confirmed: true,
-      createdAt: '2026-07-13T00:00:00.000Z',
-      id: 'private-workflow-id',
-      revision: 1,
-      shots: [],
-      status: 'running',
-      storyboardRevision: 'storyboard-a',
-      storyboardVersion: 1,
-      updatedAt: '2026-07-13T00:01:00.000Z',
-      workId: 'work-a',
-      workspaceId: 'workspace-a',
-    },
+  const projection: VideoWorkflowPublicProjection = {
+    catalogModelId: 'seedance-2',
+    confirmed: true,
+    revision: 1,
+    shots: [],
+    status: 'running',
+    storyboardRevision: 'storyboard-a',
+    storyboardVersion: 1,
+    updatedAt: '2026-07-13T00:01:00.000Z',
+    workId: 'work-a',
+    workflowId: 'private-workflow-id',
   };
   const queryClient = new QueryClient({
     defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
@@ -219,7 +207,7 @@ test('the collapsed global center includes an active composed-video Job without 
   );
   queryClient.setQueryData(
     p1QueryKeys.request('model-supply', 'video_workflows'),
-    [envelope]
+    [projection]
   );
 
   const html = renderToStaticMarkup(

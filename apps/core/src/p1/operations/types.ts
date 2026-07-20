@@ -919,6 +919,8 @@ export interface ContentPackageExportArtifact {
 export interface ContentPackageExportPort {
   export(input: {
     compliance: ContentPackage['compliance'];
+    /** Frozen ContentPackage revision written into the delivery manifest. */
+    contentPackageRevision?: number;
     kind: ContentPackage['kind'];
     packageId: string;
     platform: ContentPackage['variants'][number]['platform'];

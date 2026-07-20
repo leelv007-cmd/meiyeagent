@@ -184,6 +184,16 @@ export async function submitComposerJourney(
   return decodeURIComponent(match![1]!);
 }
 
+/**
+ * Wait for Result Center to reach a usable terminal phase.
+ *
+ * Honesty contract (E-02):
+ * - Prefer observing intermediate `running` (and for copy/image_text, a real
+ *   first token on `copy-stream-slot`) before `ready|delivered`.
+ * - If the Job already completed by the time the shell mounts, record an
+ *   auditable fast-path via `data-phase` assertion message — do not pretend
+ *   we saw streaming when we did not.
+ */
 export async function waitForResultJourney(
   page: Page,
   contract: JourneyContract,
@@ -197,27 +207,42 @@ export async function waitForResultJourney(
     contract.workspace
   );
 
+  const phase = page.getByTestId('result-shell-phase');
   await expect(
-    page.getByTestId('result-shell-phase'),
-    'the Result shell must expose either the active Job or its already completed fast-path'
+    phase,
+    'Result shell must expose active Job (running) or an auditable completed fast-path (ready|delivered)'
   ).toHaveAttribute('data-phase', /running|ready|delivered/u, {
     timeout: 30_000,
   });
 
+  const initialPhase = await phase.getAttribute('data-phase');
+  const observedRunning = initialPhase === 'running';
+
   if (contract.modality !== 'video') {
-    await expect(
-      page
-        .locator('[data-testid="copy-stream-slot"][data-has-token="true"]')
-        .first(),
-      'copy/image_text must render a real first token before the ready result'
-    ).toBeVisible({ timeout: 120_000 });
+    if (observedRunning) {
+      // Intermediate path: require a real first token while still running.
+      await expect(
+        page
+          .locator('[data-testid="copy-stream-slot"][data-has-token="true"]')
+          .first(),
+        'copy/image_text running path must render a real first token before ready'
+      ).toBeVisible({ timeout: 120_000 });
+    } else {
+      // Fast-path: job already ready/delivered when shell mounted.
+      // Still require stream slots OR ready worksurface so we do not silently
+      // accept an empty result shell — but do not invent a running observation.
+      await expect(
+        page.getByTestId(contract.resultSurfaceTestId).or(
+          page.locator('[data-testid="copy-stream-slot"]').first()
+        ),
+        `auditable fast-path: initial phase was "${initialPhase}" without observed running/token intermediate`
+      ).toBeVisible({ timeout: 60_000 });
+    }
   }
 
-  await expect(page.getByTestId('result-shell-phase')).toHaveAttribute(
-    'data-phase',
-    /ready|delivered/u,
-    { timeout: 180_000 }
-  );
+  await expect(phase).toHaveAttribute('data-phase', /ready|delivered/u, {
+    timeout: 180_000,
+  });
   await expect(page.getByTestId(contract.resultSurfaceTestId)).toBeVisible();
 }
 

@@ -523,6 +523,110 @@ describe('Creation Experience Catalog aggregate', () => {
     assert.equal(fresh.surface.recipes[0]?.presentation.title, '全新标题');
   });
 
+  it('browser projection serves published-only and ignores draft heads', async () => {
+    const { service } = createService();
+    const published = await publishRecipe(
+      service,
+      'recipe.browser-published',
+      sampleRecipeBody({
+        presentation: {
+          title: '已发布标题',
+          summary: '已发布摘要',
+          actionLabel: '选择',
+        },
+      }),
+    );
+    assert.equal(published.status, 'published');
+
+    const draftHead = await service.draftRecipe({
+      recipeId: 'recipe.browser-published',
+      expectedRevision: published.revision,
+      body: sampleRecipeBody({
+        presentation: {
+          title: '草稿头标题',
+          summary: '草稿头摘要',
+          actionLabel: '选择',
+        },
+      }),
+      ...audit({ reason: 'draft after publish' }),
+    });
+    assert.equal(draftHead.status, 'draft');
+    assert.ok(draftHead.revision > published.revision);
+
+    const browser = await service.projectBrowserRecipe(
+      'recipe.browser-published',
+    );
+    assert.equal(browser.revision, published.revision);
+    assert.equal(browser.presentation.title, '已发布标题');
+
+    await assert.rejects(
+      () =>
+        service.projectBrowserRecipe(
+          'recipe.browser-published',
+          draftHead.revision,
+        ),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'NOT_FOUND',
+    );
+
+    const surfacePublished = await service.draftSurface({
+      surfaceId: 'surface.browser-published',
+      expectedRevision: null,
+      body: {
+        recipeRefs: [
+          {
+            recipeRevisionId: published.revisionId,
+            lensId: 'image_text',
+            order: 0,
+            featured: true,
+            visible: true,
+          },
+        ],
+      } satisfies SurfaceBodyInput,
+      ...audit(),
+    });
+    const surfacePreview = await service.previewSurface({
+      surfaceId: 'surface.browser-published',
+      expectedRevision: surfacePublished.revision,
+      ...audit({ reason: 'preview' }),
+    });
+    const surfaceLive = await service.publishSurface({
+      surfaceId: 'surface.browser-published',
+      expectedRevision: surfacePreview.revision,
+      ...audit({ reason: 'publish' }),
+    });
+    const surfaceDraftHead = await service.draftSurface({
+      surfaceId: 'surface.browser-published',
+      expectedRevision: surfaceLive.revision,
+      body: {
+        recipeRefs: [
+          {
+            recipeRevisionId: published.revisionId,
+            lensId: 'image_text',
+            order: 0,
+            featured: false,
+            visible: true,
+          },
+        ],
+      } satisfies SurfaceBodyInput,
+      ...audit({ reason: 'draft surface after publish' }),
+    });
+
+    const surfaceBrowser = await service.projectBrowserSurface(
+      'surface.browser-published',
+    );
+    assert.equal(surfaceBrowser.revision, surfaceLive.revision);
+    await assert.rejects(
+      () =>
+        service.projectBrowserSurface(
+          'surface.browser-published',
+          surfaceDraftHead.revision,
+        ),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'NOT_FOUND',
+    );
+  });
+
   it('never ships hidden prompt bodies in browser projection', async () => {
     const { service } = createService();
     const draft = await service.draftRecipe({

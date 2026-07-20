@@ -116,6 +116,11 @@ describe(
         unitRate: 1,
         workspaceId,
       });
+      await firstBillingProcess.confirm({
+        quoteId: quote.quoteId,
+        taskId: workflowId,
+        workspaceId,
+      });
       await firstBillingProcess.beforeSubmit({
         quoteId: quote.quoteId,
         quoteRevision: quote.revision,

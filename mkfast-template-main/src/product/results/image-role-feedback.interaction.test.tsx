@@ -10,6 +10,7 @@ import type { ImageWorksurfaceFacts } from './image-worksurface-model';
 import {
   createEmptyWorkingSelection,
   reduceWorkingSelection,
+  serializeWorkingSelection,
   workingSelectionStorageKey,
 } from './working-selection-reducer';
 
@@ -305,5 +306,103 @@ describe('image role feedback (exact D-087 copy)', () => {
       assetId: 'img-2',
       kind: 'asset',
     });
+  });
+
+  it('surfaces selection revision drift and discard restores empty current revision', async () => {
+    const user = userEvent.setup();
+    let selection = createEmptyWorkingSelection({
+      workId: 'work-rtl',
+      baseRevisionId: 'rev-old',
+      now: NOW,
+    });
+    selection = reduceWorkingSelection(selection, {
+      type: 'add',
+      assetId: 'img-1',
+      now: NOW,
+    }).state;
+    window.localStorage.setItem(
+      workingSelectionStorageKey('work-rtl'),
+      serializeWorkingSelection(selection),
+    );
+
+    render(
+      <ImageWorksurface
+        facts={baseFacts({
+          baseRevisionId: 'rev-new',
+          explicitMode: 'set',
+          outputType: 'ordered_image_set',
+          slot: 'gallery',
+        })}
+      />,
+    );
+
+    const drift = screen.getByTestId('image-selection-drift');
+    expect(drift).toHaveTextContent('rev-old');
+    expect(drift).toHaveTextContent('rev-new');
+    // Local selection still hydrated under drift
+    expect(screen.getByTestId('image-set-slot')).toHaveAttribute(
+      'data-asset-id',
+      'img-1',
+    );
+
+    await user.click(screen.getByTestId('image-selection-drift-discard'));
+    expect(screen.queryByTestId('image-selection-drift')).toBeNull();
+    expect(screen.queryByTestId('image-set-slot')).toBeNull();
+    expect(screen.getByTestId('image-role-feedback-visible')).toHaveTextContent(
+      '已丢弃本地套图草稿',
+    );
+  });
+
+  it('disables adopt_set primary when wholeSetAdopt is rejected', async () => {
+    const user = userEvent.setup();
+    const onAdoptPrimary = vi.fn();
+    let selection = createEmptyWorkingSelection({
+      workId: 'work-rtl',
+      baseRevisionId: 'rev-1',
+      now: NOW,
+    });
+    for (const id of ['img-1', 'img-2']) {
+      selection = reduceWorkingSelection(selection, {
+        type: 'add',
+        assetId: id,
+        now: NOW,
+      }).state;
+    }
+
+    render(
+      <ImageWorksurface
+        facts={baseFacts({
+          explicitMode: 'set',
+          outputType: 'ordered_image_set',
+          slot: 'gallery',
+          lifecycle: 'candidate',
+          focusedAssetId: 'img-1',
+          // Partial generation → wholeSetAdopt rejected while primary is adopt_set
+          candidates: [
+            {
+              assetId: 'img-1',
+              persisted: true,
+              rightsOk: true,
+              generationOk: true,
+            },
+            {
+              assetId: 'img-2',
+              persisted: true,
+              rightsOk: true,
+              generationOk: false,
+            },
+          ],
+          workingSelection: selection,
+        })}
+        onAdoptPrimary={onAdoptPrimary}
+      />,
+    );
+
+    const primary = screen.getByTestId('image-role-primary');
+    expect(primary).toHaveAttribute('data-action-kind', 'adopt_set');
+    expect(primary).toBeDisabled();
+    expect(screen.getByTestId('image-whole-set-reject')).toBeInTheDocument();
+    await user.click(primary);
+    expect(onAdoptPrimary).not.toHaveBeenCalled();
   });
 });

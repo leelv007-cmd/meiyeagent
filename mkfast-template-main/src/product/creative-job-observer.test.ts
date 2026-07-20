@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CreativeJob } from '@meiye/contracts';
+import type { CreativeJob, VideoWorkflowPublicProjection } from '@meiye/contracts';
 import { QueryClient } from '@tanstack/react-query';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
@@ -40,6 +40,23 @@ function job(overrides: Partial<CreativeJob> = {}): CreativeJob {
     updatedAt: '2026-07-13T00:00:01.000Z',
     workId: 'work-1',
     workspaceId: 'workspace-1',
+    ...overrides,
+  };
+}
+
+function publicWorkflow(
+  overrides: Partial<VideoWorkflowPublicProjection> &
+    Pick<VideoWorkflowPublicProjection, 'workflowId' | 'status'>
+): VideoWorkflowPublicProjection {
+  return {
+    catalogModelId: 'seedance-2',
+    confirmed: overrides.status !== 'draft',
+    revision: 1,
+    shots: [],
+    storyboardRevision: 'storyboard-a',
+    storyboardVersion: 1,
+    updatedAt: '2026-07-13T00:01:00.000Z',
+    workId: 'work-a',
     ...overrides,
   };
 }
@@ -181,10 +198,8 @@ test('video workflow status changes refresh content packages while unchanged tic
     'operations',
     'content_packages'
   );
-  const running = [{ workflow: { id: 'video-workflow-a', status: 'running' } }];
-  const completed = [
-    { workflow: { id: 'video-workflow-a', status: 'completed' } },
-  ];
+  const running = [{ workflowId: 'video-workflow-a', status: 'running' }];
+  const completed = [{ workflowId: 'video-workflow-a', status: 'completed' }];
   queryClient.setQueryData(contentPackagesKey, []);
 
   await refreshCreativeJobCanonicalStateOnVideoWorkflowChange(
@@ -212,101 +227,47 @@ test('video workflow status changes refresh content packages while unchanged tic
 });
 
 test('the shared composed-video list polls only while a workflow can advance', () => {
-  const envelope = (input: {
-    jobStatus: 'failed' | 'running';
-    workflowStatus: 'completed' | 'draft' | 'running';
-  }) => ({
-    job:
-      input.workflowStatus === 'draft'
-        ? null
-        : {
-            createdAt: '2026-07-13T00:00:00.000Z',
-            jobId: 'video-job-a',
-            status: input.jobStatus,
-            updatedAt: '2026-07-13T00:01:00.000Z',
-          },
-    workflow: {
-      actorId: 'owner-a',
-      aigcLabelEnabled: true,
-      catalogModelId: 'seedance-2',
-      confirmed: input.workflowStatus !== 'draft',
-      createdAt: '2026-07-13T00:00:00.000Z',
-      id: 'video-workflow-a',
-      revision: 1,
-      shots: [],
-      status: input.workflowStatus,
-      storyboardRevision: 'storyboard-a',
-      storyboardVersion: 1,
-      updatedAt: '2026-07-13T00:01:00.000Z',
-      workId: 'work-a',
-      workspaceId: 'workspace-a',
-    },
-  });
-
   assert.equal(shouldPollVideoWorkflowList(undefined), true);
   assert.equal(
     shouldPollVideoWorkflowList([
-      envelope({ jobStatus: 'running', workflowStatus: 'draft' }),
+      publicWorkflow({ workflowId: 'video-workflow-a', status: 'draft' }),
     ]),
     true
   );
   assert.equal(
     shouldPollVideoWorkflowList([
-      envelope({ jobStatus: 'running', workflowStatus: 'running' }),
+      publicWorkflow({ workflowId: 'video-workflow-a', status: 'running' }),
     ]),
     true
   );
   assert.equal(
     shouldPollVideoWorkflowList([
-      envelope({ jobStatus: 'failed', workflowStatus: 'running' }),
+      publicWorkflow({ workflowId: 'video-workflow-a', status: 'failed' }),
     ]),
     false
   );
   assert.equal(
     shouldPollVideoWorkflowList([
-      envelope({ jobStatus: 'running', workflowStatus: 'completed' }),
+      publicWorkflow({ workflowId: 'video-workflow-a', status: 'completed' }),
     ]),
     false
   );
 });
 
 test('an individual workflow cache update wakes and replaces the shared list fact', () => {
-  const envelope = {
-    job: null,
-    workflow: {
-      actorId: 'owner-a',
-      aigcLabelEnabled: true,
-      catalogModelId: 'seedance-2',
-      confirmed: false,
-      createdAt: '2026-07-13T00:00:00.000Z',
-      id: 'video-workflow-a',
-      revision: 1,
-      shots: [],
-      status: 'draft' as const,
-      storyboardRevision: 'storyboard-a',
-      storyboardVersion: 1,
-      updatedAt: '2026-07-13T00:01:00.000Z',
-      workId: 'work-a',
-      workspaceId: 'workspace-a',
-    },
-  };
-  const confirmed = {
-    ...envelope,
-    job: {
-      createdAt: '2026-07-13T00:02:00.000Z',
-      jobId: 'video-job-a',
-      status: 'queued' as const,
-      updatedAt: '2026-07-13T00:02:00.000Z',
-    },
-    workflow: {
-      ...envelope.workflow,
-      confirmed: true,
-      revision: 2,
-      status: 'running' as const,
-      updatedAt: '2026-07-13T00:02:00.000Z',
-    },
-  };
+  const draft = publicWorkflow({
+    confirmed: false,
+    workflowId: 'video-workflow-a',
+    status: 'draft',
+  });
+  const confirmed = publicWorkflow({
+    confirmed: true,
+    revision: 2,
+    workflowId: 'video-workflow-a',
+    status: 'running',
+    updatedAt: '2026-07-13T00:02:00.000Z',
+  });
 
-  assert.deepEqual(mergeVideoWorkflowList(undefined, envelope), [envelope]);
-  assert.deepEqual(mergeVideoWorkflowList([envelope], confirmed), [confirmed]);
+  assert.deepEqual(mergeVideoWorkflowList(undefined, draft), [draft]);
+  assert.deepEqual(mergeVideoWorkflowList([draft], confirmed), [confirmed]);
 });

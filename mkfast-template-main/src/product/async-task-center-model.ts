@@ -12,10 +12,13 @@ import {
 } from '@/locale/paraglide/messages';
 import { creativeOutputLabel } from './creative-quote';
 
+import type { VideoWorkflowPublicProjection } from '@meiye/contracts';
+
 import type { RawCanonicalHistory } from './canonical-history-model';
 import type {
   VideoWorkflow,
   VideoWorkflowEnvelope,
+  VideoWorkflowStatus,
 } from './video-workflow-model';
 
 export type AsyncTaskStatus =
@@ -183,50 +186,44 @@ export function canonicalAsyncTaskSummaries(
 }
 
 export function composedVideoAsyncTaskSummaries(
-  envelopes: ComposedVideoTaskEnvelope[]
+  workflows: VideoWorkflowPublicProjection[]
 ): AsyncTaskSummary[] {
-  return envelopes
-    .flatMap((envelope): AsyncTaskSummary[] => {
-      const { job, workflow } = envelope;
-      if (!job || !workflow.workId) return [];
-      const status = composedVideoTaskStatus(envelope);
+  return workflows
+    .flatMap((workflow): AsyncTaskSummary[] => {
+      // Public list omits job tracers; only confirmed workflows surface as tasks.
+      if (!workflow.workId || !workflow.confirmed) return [];
+      const status = publicVideoTaskStatus(workflow.status);
       return [
         {
-          createdAt: workflow.createdAt,
+          createdAt: workflow.updatedAt,
           href: `/dashboard/results/${encodeURIComponent(workflow.workId)}`,
-          id: `video-workflow:${workflow.id}`,
+          id: `video-workflow:${workflow.workflowId}`,
           kind: 'video',
           label: async_task_kind_video(),
           operation: 'video.generate',
-          providerJobId: job.jobId,
+          providerJobId: workflow.workflowId,
           source: 'video_workflow',
           status,
-          updatedAt:
-            workflow.updatedAt.localeCompare(job.updatedAt) >= 0
-              ? workflow.updatedAt
-              : job.updatedAt,
+          updatedAt: workflow.updatedAt,
         },
       ];
     })
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
-function composedVideoTaskStatus(
-  envelope: ComposedVideoTaskEnvelope
-): AsyncTaskStatus {
-  if (envelope.job?.status === 'failed') return 'failed';
-  switch (envelope.workflow.status) {
+function publicVideoTaskStatus(status: VideoWorkflowStatus): AsyncTaskStatus {
+  switch (status) {
     case 'awaiting_quality_review':
       return 'recoverable';
     case 'cancel_requested':
     case 'cancelled':
     case 'completed':
     case 'failed':
-      return envelope.workflow.status;
+      return status;
     case 'draft':
       return 'queued';
     case 'running':
-      return envelope.job?.status ?? 'running';
+      return 'running';
   }
 }
 

@@ -11,7 +11,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { productStatusView } from '@/lib/uiux/status';
 import { operationsCommand, operationsQuery, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import type { ComposedVideoTaskEnvelope } from './async-task-center-model';
 import { videoWorkflowShouldPoll } from './video-workflow-model';
 
 export type ProviderJobStatus =
@@ -135,23 +134,29 @@ export function isActiveProviderStatus(status: string) {
 }
 
 export function shouldPollVideoWorkflowList(
-  envelopes: ComposedVideoTaskEnvelope[] | undefined
+  workflows: VideoWorkflowPublicProjection[] | undefined
 ) {
-  return envelopes === undefined || envelopes.some(videoWorkflowShouldPoll);
+  return (
+    workflows === undefined ||
+    workflows.some((workflow) =>
+      videoWorkflowShouldPoll({
+        job: null,
+        workflow: { status: workflow.status },
+      })
+    )
+  );
 }
 
 export function mergeVideoWorkflowList(
-  current: ComposedVideoTaskEnvelope[] | undefined,
-  incoming: ComposedVideoTaskEnvelope
+  current: VideoWorkflowPublicProjection[] | undefined,
+  incoming: VideoWorkflowPublicProjection
 ) {
   return [
     ...(current ?? []).filter(
-      (item) => item.workflow.id !== incoming.workflow.id
+      (item) => item.workflowId !== incoming.workflowId
     ),
     incoming,
-  ].sort((left, right) =>
-    right.workflow.updatedAt.localeCompare(left.workflow.updatedAt)
-  );
+  ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export async function refreshCreativeJobCanonicalState(
@@ -171,10 +176,8 @@ export async function refreshCreativeJobCanonicalState(
 }
 
 interface VideoWorkflowStatusObservation {
-  workflow: {
-    id: string;
-    status: string;
-  };
+  workflowId: string;
+  status: string;
 }
 
 export async function refreshCreativeJobCanonicalStateOnVideoWorkflowChange(
@@ -184,13 +187,12 @@ export async function refreshCreativeJobCanonicalStateOnVideoWorkflowChange(
 ) {
   if (!previous || !current) return;
   const previousStatuses = new Map(
-    previous.map((envelope) => [envelope.workflow.id, envelope.workflow.status])
+    previous.map((workflow) => [workflow.workflowId, workflow.status])
   );
-  const statusChanged = current.some((envelope) => {
-    const previousStatus = previousStatuses.get(envelope.workflow.id);
+  const statusChanged = current.some((workflow) => {
+    const previousStatus = previousStatuses.get(workflow.workflowId);
     return (
-      previousStatus !== undefined &&
-      previousStatus !== envelope.workflow.status
+      previousStatus !== undefined && previousStatus !== workflow.status
     );
   });
   if (!statusChanged) return;
@@ -200,12 +202,12 @@ export async function refreshCreativeJobCanonicalStateOnVideoWorkflowChange(
 export function useVideoWorkflowListObserver() {
   const queryClient = useQueryClient();
   const previousVideoWorkflows = useRef<
-    ComposedVideoTaskEnvelope[] | undefined
+    VideoWorkflowPublicProjection[] | undefined
   >(undefined);
   const query = useQuery({
     queryKey: videoWorkflowListQueryKey,
     queryFn: ({ signal }) =>
-      queryP1<ComposedVideoTaskEnvelope[]>(
+      queryP1<VideoWorkflowPublicProjection[]>(
         'model-supply',
         { action: 'video_workflows', payload: {} },
         signal
@@ -236,11 +238,11 @@ export function useVideoWorkflowListObserver() {
           key[0] !== 'p1' ||
           key[1] !== 'model-supply' ||
           (key[2] !== 'video_workflow' && key[2] !== 'video_workflow_latest') ||
-          !isComposedVideoTaskEnvelope(event.query.state.data)
+          !isVideoWorkflowPublicProjection(event.query.state.data)
         ) {
           return;
         }
-        queryClient.setQueryData<ComposedVideoTaskEnvelope[]>(
+        queryClient.setQueryData<VideoWorkflowPublicProjection[]>(
           videoWorkflowListQueryKey,
           (current) => mergeVideoWorkflowList(current, event.query.state.data)
         );
@@ -251,38 +253,20 @@ export function useVideoWorkflowListObserver() {
   return query;
 }
 
-function isComposedVideoTaskEnvelope(
+function isVideoWorkflowPublicProjection(
   value: unknown
-): value is ComposedVideoTaskEnvelope {
-  if (!value || typeof value !== 'object' || !('workflow' in value)) {
-    return false;
-  }
-  const workflow = value.workflow;
-  if (
-    !workflow ||
-    typeof workflow !== 'object' ||
-    !('id' in workflow) ||
-    typeof workflow.id !== 'string' ||
-    !('createdAt' in workflow) ||
-    typeof workflow.createdAt !== 'string' ||
-    !('updatedAt' in workflow) ||
-    typeof workflow.updatedAt !== 'string'
-  ) {
-    return false;
-  }
-  if (!('job' in value)) return false;
-  if (value.job === null) return true;
+): value is VideoWorkflowPublicProjection {
   return Boolean(
-    value.job &&
-      typeof value.job === 'object' &&
-      'jobId' in value.job &&
-      typeof value.job.jobId === 'string' &&
-      'status' in value.job &&
-      typeof value.job.status === 'string' &&
-      'createdAt' in value.job &&
-      typeof value.job.createdAt === 'string' &&
-      'updatedAt' in value.job &&
-      typeof value.job.updatedAt === 'string'
+    value &&
+      typeof value === 'object' &&
+      'workflowId' in value &&
+      typeof value.workflowId === 'string' &&
+      'status' in value &&
+      typeof value.status === 'string' &&
+      'updatedAt' in value &&
+      typeof value.updatedAt === 'string' &&
+      'revision' in value &&
+      typeof value.revision === 'number'
   );
 }
 

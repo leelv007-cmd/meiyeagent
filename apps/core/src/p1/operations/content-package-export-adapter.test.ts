@@ -48,6 +48,7 @@ it('builds one durable zip with copy and ordered owned images', async () => {
 
   const artifact = await adapter.export({
     compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    contentPackageRevision: 1,
     kind: 'image_text',
     packageId: 'package-export',
     platform: 'xiaohongshu',
@@ -90,6 +91,7 @@ it('retries the same export with identical archive bytes and object key', async 
   });
   const input = {
     compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    contentPackageRevision: 1,
     kind: 'image_text' as const,
     packageId: 'package-export-retry',
     platform: 'xiaohongshu' as const,
@@ -186,6 +188,7 @@ it('uses ordered safe image entry names even when Product asset ids are hostile 
 
   const artifact = await adapter.export({
     compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    contentPackageRevision: 1,
     kind: 'image_text',
     packageId: 'package-hostile-asset-ids',
     platform: 'xiaohongshu',
@@ -289,7 +292,7 @@ it('rejects a labeled video export before persisting without verifiable burn-in 
   assert.equal(persisted, false);
 });
 
-it('exports an unlabeled video package as a durable direct MP4 with stable receipt bytes', async () => {
+it('exports an unlabeled video package as a full delivery ZIP with manifest revision', async () => {
   const storage = new MemoryModelAssetStorage();
   const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
   const video = await storage.persistGeneratedAsset({
@@ -311,6 +314,7 @@ it('exports an unlabeled video package as a durable direct MP4 with stable recei
 
   const input = {
     compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    contentPackageRevision: 4,
     kind: 'video' as const,
     packageId: 'package-video-export',
     platform: 'douyin' as const,
@@ -327,10 +331,21 @@ it('exports an unlabeled video package as a durable direct MP4 with stable recei
   };
   const artifact = await adapter.export(input);
 
-  assert.equal(artifact.contentType, 'video/mp4');
+  assert.equal(artifact.contentType, 'application/zip');
   assert.notEqual(artifact.artifactAssetId, video.id);
-  assert.match(artifact.artifactObjectKey, /\.mp4$/u);
-  assert.deepEqual(storage.read(artifact.artifactObjectKey), videoBytes);
+  assert.match(artifact.artifactObjectKey, /\.zip$/u);
+  const archiveBytes = storage.read(artifact.artifactObjectKey);
+  assert.ok(archiveBytes);
+  const files = unzipSync(archiveBytes);
+  assert.ok(files['video.mp4']);
+  assert.deepEqual(files['video.mp4'], videoBytes);
+  assert.ok(files['manifest.json']);
+  assert.ok(files['caption.txt']);
+  assert.ok(files['platform-checklist.md']);
+  const manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']));
+  assert.equal(manifest.schema, 'beauty-delivery-manifest/v1');
+  assert.equal(manifest.kind, 'video');
+  assert.equal(manifest.contentPackageRevision, 4);
   const replayed = await adapter.export(input);
   assert.equal(replayed.artifactObjectKey, artifact.artifactObjectKey);
   assert.equal(replayed.sha256, artifact.sha256);
@@ -346,6 +361,97 @@ it('exports an unlabeled video package as a durable direct MP4 with stable recei
   assert.equal(
     contentPackageExportReceiptSchema.safeParse(receipt).success,
     true
+  );
+});
+
+it('rejects export when contentPackageRevision is missing', async () => {
+  const storage = new MemoryModelAssetStorage();
+  const image = await storage.persistGeneratedAsset({
+    bytes: Uint8Array.from([137, 80, 78, 71]),
+    contentType: 'image/png',
+    workspaceId: 'workspace-revision-required',
+  });
+  const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
+  const video = await storage.persistGeneratedAsset({
+    bytes: videoBytes,
+    contentType: 'video/mp4',
+    workspaceId: 'workspace-revision-required',
+  });
+  const adapter = new ContentPackageZipExportAdapter(storage, {
+    async readOwnedAsset({ assetId }) {
+      if (assetId === image.id) {
+        const bytes = storage.read(image.objectKey);
+        assert.ok(bytes);
+        return {
+          asset: { ...image, contentType: 'image/png' as const },
+          bytes,
+        };
+      }
+      if (assetId === video.id) {
+        return {
+          asset: { ...video, contentType: 'video/mp4' as const },
+          bytes: videoBytes,
+        };
+      }
+      throw new Error(`unknown asset ${assetId}`);
+    },
+  });
+
+  await assert.rejects(
+    adapter.export({
+      compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+      kind: 'image_text',
+      packageId: 'package-revision-missing-image',
+      platform: 'xiaohongshu',
+      version: {
+        body: '正文',
+        createdAt: '2026-07-15T09:00:00.000Z',
+        id: 'version-revision-missing-image',
+        orderedAssetIds: [image.id],
+        title: '标题',
+        topics: [],
+      },
+      workspaceId: 'workspace-revision-required',
+    }),
+    /contentPackageRevision is required/i,
+  );
+
+  await assert.rejects(
+    adapter.export({
+      compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+      kind: 'video',
+      packageId: 'package-revision-missing-video',
+      platform: 'douyin',
+      version: {
+        body: '视频正文',
+        createdAt: '2026-07-15T09:00:00.000Z',
+        id: 'version-revision-missing-video',
+        orderedAssetIds: [video.id],
+        title: '视频标题',
+        topics: [],
+      },
+      workspaceId: 'workspace-revision-required',
+    }),
+    /contentPackageRevision is required/i,
+  );
+
+  await assert.rejects(
+    adapter.exportVideoFullPackage({
+      compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+      kind: 'video',
+      packageId: 'package-revision-missing-full',
+      platform: 'douyin',
+      version: {
+        body: '视频正文',
+        createdAt: '2026-07-15T09:00:00.000Z',
+        id: 'version-revision-missing-full',
+        orderedAssetIds: [video.id],
+        title: '视频标题',
+        topics: [],
+      },
+      workspaceId: 'workspace-revision-required',
+    }),
+    /contentPackageRevision is required/i,
   );
 });
 
@@ -397,6 +503,7 @@ it('burns enabled AIGC and brand labels into exported image bytes', async () => 
       watermarkEnabled: true,
       watermarkText: '清风美学',
     },
+    contentPackageRevision: 1,
     kind: 'image_text',
     packageId: 'package-labeled',
     platform: 'xiaohongshu',
@@ -536,6 +643,7 @@ it('preserves authorized Product JPEG bytes when compliance labels are disabled'
 
   await adapter.export({
     compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    contentPackageRevision: 1,
     kind: 'image_text',
     packageId: 'package-product-photo',
     platform: 'xiaohongshu',
@@ -592,6 +700,7 @@ it('preserves unlabeled WebP bytes and renders either compliance label as PNG', 
   ) => {
     const artifact = await adapter.export({
       compliance,
+      contentPackageRevision: 1,
       kind: 'image_text',
       packageId: `package-webp-export-${suffix}`,
       platform: 'xiaohongshu',

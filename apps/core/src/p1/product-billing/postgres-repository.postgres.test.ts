@@ -131,6 +131,11 @@ describe(
       const original = await firstProcess.buildQuote(
         quoteInput(workspaceId, 'original-quote'),
       );
+      await firstProcess.confirm({
+        quoteId: original.quoteId,
+        taskId: 'original-task',
+        workspaceId,
+      });
       await firstProcess.beforeSubmit({
         quoteId: original.quoteId,
         quoteRevision: original.revision,
@@ -170,6 +175,11 @@ describe(
       const reroll = await rerollProcess.buildQuote(
         quoteInput(workspaceId, 'reroll-quote'),
       );
+      await rerollProcess.confirm({
+        quoteId: reroll.quoteId,
+        taskId: 'reroll-job',
+        workspaceId,
+      });
       await rerollProcess.beforeSubmit({
         quoteId: reroll.quoteId,
         quoteRevision: reroll.revision,

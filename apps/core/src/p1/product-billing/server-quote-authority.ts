@@ -1,6 +1,8 @@
-import type {
-  BuildProductQuoteInput,
-  ProductQuoteSnapshot,
+import type { BuildProductQuoteInput } from '@meiye/contracts';
+
+export {
+  toPublicProductQuoteSnapshot,
+  type PublicProductQuoteSnapshot,
 } from '@meiye/contracts';
 
 import { P1DomainError } from '../foundation/domain.js';
@@ -26,22 +28,6 @@ export interface PublicProductQuoteIntent {
 
 export interface ProductQuoteAuthority {
   resolve(input: PublicProductQuoteIntent): Promise<BuildProductQuoteInput>;
-}
-
-export type PublicProductQuoteSnapshot = Omit<
-  ProductQuoteSnapshot,
-  'frozenCandidateDeploymentIds' | 'routeSnapshotRef'
->;
-
-export function toPublicProductQuoteSnapshot(
-  quote: ProductQuoteSnapshot,
-): PublicProductQuoteSnapshot {
-  const {
-    frozenCandidateDeploymentIds: _frozenCandidateDeploymentIds,
-    routeSnapshotRef: _routeSnapshotRef,
-    ...publicQuote
-  } = quote;
-  return publicQuote;
 }
 
 export interface ProductPricingCatalogPort {

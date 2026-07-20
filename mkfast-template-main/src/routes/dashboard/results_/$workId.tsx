@@ -10,6 +10,7 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { StatePanel } from '@/components/uiux/state-panel';
 import { commandP1, operationsQuery, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
+import { useCopyCandidateStream } from '@/product/copy-stream';
 import {
   creativeJobObservation,
   useCreativeJobObserver,
@@ -111,6 +112,8 @@ function ResultCenterRoutePage() {
   const [adjustError, setAdjustError] = useState<string | undefined>();
   const deliveryViewport = useDeliveryViewport();
   const target = parseResultCenterSearch(workId, search);
+  // ADR-0007 token stream — live partials for copy / image_text running phase.
+  const copyCandidateStream = useCopyCandidateStream({ id: workId });
 
   const targetResolverQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'result_target_resolve', {
@@ -284,6 +287,20 @@ function ResultCenterRoutePage() {
   }
 
   const workspaceKind = selected?.workspaceKind ?? 'copy';
+  // Token stream is live for copy (incl. image_text copy path) and image
+  // workspaces while Job progress is still running/waiting.
+  const streamActive =
+    (workspaceKind === 'copy' || workspaceKind === 'image') &&
+    (selected?.progressState === 'running' ||
+      selected?.progressState === 'waiting');
+  const partialCandidates = streamActive
+    ? copyCandidateStream.object?.candidates
+    : undefined;
+  const streamLoading = streamActive
+    ? Boolean(copyCandidateStream.isLoading) ||
+      selected?.progressState === 'running' ||
+      selected?.progressState === 'waiting'
+    : false;
   const deliveryTarget = deliveryTargetForIntent(
     workspaceKind,
     selected?.work.intent ?? ''
@@ -689,6 +706,8 @@ function ResultCenterRoutePage() {
         hasAdoptedCandidate: Boolean(currentPackageVersion),
         jobId: selected?.job?.id,
       }}
+      partialCandidates={partialCandidates}
+      streamLoading={streamLoading}
       copyWorksurface={copyWorksurface}
       imageWorksurface={imageWorksurface}
       videoWorksurface={videoWorksurface}

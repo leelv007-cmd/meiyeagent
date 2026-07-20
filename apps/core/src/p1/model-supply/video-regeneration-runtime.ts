@@ -317,7 +317,13 @@ export class VideoRegenerationApplicationService {
       }
     }
 
-    const quote = await this.requireQuote(input.workspaceId, input.quoteId);
+    await this.requireQuote(input.workspaceId, input.quoteId);
+    // Explicit product confirm — beforeSubmit no longer auto-promotes quoted.
+    const quote = await this.billing.confirm({
+      quoteId: input.quoteId,
+      taskId: input.taskId,
+      workspaceId: input.workspaceId,
+    });
     await this.billing.beforeSubmit({
       quoteId: input.quoteId,
       quoteRevision: quote.revision,

@@ -112,7 +112,7 @@ export class ProductBillingLifecycle implements BillingLifecyclePort {
     quoteRevision: string;
     resource: BillingResource;
   }) {
-    let quote = input.quoteId
+    const quote = input.quoteId
       ? this.quotes.getQuote(input.quoteId)
       : this.quotes.getQuoteByTask(input.taskId);
     if (!quote) {
@@ -128,8 +128,16 @@ export class ProductBillingLifecycle implements BillingLifecyclePort {
         `Product quote ${quote.quoteId} revision no longer matches the accepted execution contract.`,
       );
     }
-    if (quote.lifecycleStatus === 'quoted') {
-      quote = this.quotes.confirm({ quoteId: quote.quoteId, taskId: input.taskId });
+    // Confirm is an explicit user/product step; never auto-promote quoted →
+    // confirmed inside reserve/submit.
+    if (
+      quote.lifecycleStatus !== 'confirmed' &&
+      quote.lifecycleStatus !== 'reserved'
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Product quote ${quote.quoteId} is not confirmed for submission.`,
+      );
     }
     if (quote.taskId !== input.taskId) {
       throw new P1DomainError(

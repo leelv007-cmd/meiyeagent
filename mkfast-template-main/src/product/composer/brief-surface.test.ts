@@ -171,6 +171,47 @@ describe('simple task — no Brief, direct submit contrast', () => {
     });
     assert.equal(decision.path, 'blocked_quota');
   });
+
+  it('videoConfirmRequired forces open_brief with requiresBrief true', () => {
+    const projection = fixtureBriefProjection({
+      requiresBrief: false,
+      triggerCodes: [],
+      lensId: 'video',
+      summary: {},
+    });
+    const decision = decideSubmitPath({
+      projection,
+      videoConfirmRequired: true,
+    });
+    assert.equal(decision.path, 'open_brief');
+    if (decision.path === 'open_brief') {
+      assert.equal(decision.projection.requiresBrief, true);
+      assert.equal(decision.reason, 'brief_required');
+    }
+  });
+
+  it('videoConfirmRequired without projection does not invent open_brief', () => {
+    // Caller must setShowRequiredHint and never runCreate in this case.
+    const decision = decideSubmitPath({
+      projection: null,
+      videoConfirmRequired: true,
+    });
+    assert.equal(decision.path, 'direct_submit');
+    assert.equal(decision.reason, 'no_brief_required');
+  });
+
+  it('videoConfirmRequired still yields to quota block', () => {
+    const projection = fixtureBriefProjection({
+      requiresBrief: false,
+      lensId: 'video',
+    });
+    const decision = decideSubmitPath({
+      projection,
+      videoConfirmRequired: true,
+      quotaExhausted: true,
+    });
+    assert.equal(decision.path, 'blocked_quota');
+  });
 });
 
 describe('evidence drawer — no evidence = not shown', () => {

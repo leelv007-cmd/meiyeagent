@@ -9,7 +9,7 @@ import {
   queryCanonicalHistory,
   type RawCanonicalHistory,
 } from './canonical-history-model';
-import type { ComposedVideoTaskEnvelope } from './async-task-center-model';
+import type { VideoWorkflowPublicProjection } from '@meiye/contracts';
 import { overwriteGetLocale } from '../locale/paraglide/runtime';
 
 const history: RawCanonicalHistory = {
@@ -65,43 +65,24 @@ const history: RawCanonicalHistory = {
   tasks: [],
 };
 
-function completedVideoEnvelope(input: {
-  assetId: string;
-  objectKey: string;
-  storyboardVersion: number;
-  updatedAt: string;
+function publicVideoWorkflow(input: {
+  status?: VideoWorkflowPublicProjection['status'];
+  storyboardVersion?: number;
+  updatedAt?: string;
   workflowId: string;
-}): ComposedVideoTaskEnvelope {
+  workId?: string;
+}): VideoWorkflowPublicProjection {
   return {
-    job: {
-      createdAt: '2026-07-12T10:04:00.000Z',
-      jobId: `tracer-${input.workflowId}`,
-      status: 'completed',
-      updatedAt: input.updatedAt,
-    },
-    workflow: {
-      actorId: 'owner-a',
-      aigcLabelEnabled: true,
-      catalogModelId: 'seedance-2',
-      composedAsset: {
-        contentType: 'video/mp4',
-        id: input.assetId,
-        objectKey: input.objectKey,
-        sha256: `sha-${input.assetId}`,
-        technicalValidation: { playable: true },
-      },
-      confirmed: true,
-      createdAt: '2026-07-12T10:04:00.000Z',
-      id: input.workflowId,
-      revision: input.storyboardVersion,
-      shots: [],
-      status: 'completed',
-      storyboardRevision: `storyboard-${input.storyboardVersion}`,
-      storyboardVersion: input.storyboardVersion,
-      updatedAt: input.updatedAt,
-      workId: 'creative-work-a',
-      workspaceId: 'workspace-a',
-    },
+    catalogModelId: 'seedance-2',
+    confirmed: input.status !== 'draft',
+    revision: input.storyboardVersion ?? 1,
+    shots: [],
+    status: input.status ?? 'completed',
+    storyboardRevision: `storyboard-${input.storyboardVersion ?? 1}`,
+    storyboardVersion: input.storyboardVersion ?? 1,
+    updatedAt: input.updatedAt ?? '2026-07-12T10:05:00.000Z',
+    workId: input.workId ?? 'creative-work-a',
+    workflowId: input.workflowId,
   };
 }
 
@@ -465,105 +446,54 @@ describe('canonical history projection', () => {
     );
   });
 
-  it('projects only completed playable composed videos with their durable Asset identity', () => {
-    const completed = completedVideoEnvelope({
-      assetId: 'composed-asset-v1',
-      objectKey: 'workspace-a/composed/final v1.mp4',
-      storyboardVersion: 1,
-      updatedAt: '2026-07-12T10:05:00.000Z',
-      workflowId: 'workflow-raw-v1',
-    });
-    const running: ComposedVideoTaskEnvelope = {
-      ...completed,
-      workflow: {
-        ...completed.workflow,
-        composedAsset: undefined,
-        id: 'workflow-running',
-        status: 'running',
-      },
-    };
-    const unplayable: ComposedVideoTaskEnvelope = {
-      ...completed,
-      workflow: {
-        ...completed.workflow,
-        composedAsset: {
-          ...completed.workflow.composedAsset!,
-          id: 'composed-asset-unplayable',
-          technicalValidation: { playable: false },
-        },
-        id: 'workflow-unplayable',
-      },
-    };
-    const completedWithLaggingTracer: ComposedVideoTaskEnvelope = {
-      ...completed,
-      job: { ...completed.job!, status: 'running' },
-    };
-
+  it('public video_workflows list does not manufacture composed media assets', () => {
     const assets = composedVideoCanonicalAssets([
-      running,
-      unplayable,
-      completedWithLaggingTracer,
-      completed,
+      publicVideoWorkflow({
+        status: 'running',
+        workflowId: 'workflow-running',
+      }),
+      publicVideoWorkflow({
+        status: 'completed',
+        storyboardVersion: 1,
+        updatedAt: '2026-07-12T10:05:00.000Z',
+        workflowId: 'workflow-raw-v1',
+      }),
+      publicVideoWorkflow({
+        status: 'failed',
+        workflowId: 'workflow-failed',
+      }),
     ]);
 
-    assert.deepEqual(
-      assets.map((asset) => asset.id),
-      ['composed-asset-v1']
-    );
-    assert.equal(assets[0]?.ownedAssetId, 'composed-asset-v1');
-    assert.equal(assets[0]?.workId, 'creative-work-a');
-    assert.doesNotMatch(assets[0]?.title ?? '', /workflow-raw-v1|tracer-/u);
+    // Owned assets / Result Center remain the media source of truth.
+    assert.deepEqual(assets, []);
   });
 
-  it('keeps immutable composed video versions in Work history and reuses one authorized media projection', () => {
+  it('canonical history is unchanged when only public video projections are available', () => {
     const projected = canonicalHistoryWithComposedVideos(history, [
-      completedVideoEnvelope({
-        assetId: 'composed-asset-v2',
-        objectKey: 'workspace-a/composed/final v2.mp4',
+      publicVideoWorkflow({
         storyboardVersion: 2,
         updatedAt: '2026-07-12T10:06:00.000Z',
         workflowId: 'workflow-raw-v2',
       }),
-      completedVideoEnvelope({
-        assetId: 'composed-asset-v1',
-        objectKey: 'workspace-a/composed/final v1.mp4',
+      publicVideoWorkflow({
         storyboardVersion: 1,
         updatedAt: '2026-07-12T10:05:00.000Z',
         workflowId: 'workflow-raw-v1',
       }),
     ]);
-    const items = canonicalHistoryItems(projected);
-    const work = items.find((item) => item.id === 'creative-work-a');
-    const versionOne = items.find((item) => item.id === 'composed-asset-v1');
-    const versionTwo = items.find((item) => item.id === 'composed-asset-v2');
 
+    assert.equal(projected, history);
     assert.deepEqual(
-      work?.media?.map((media) => media.assetId),
-      ['composed-asset-v2', 'composed-asset-v1']
-    );
-    assert.equal(
-      versionOne?.media?.[0]?.src,
-      '/api/core/p1/assets?objectKey=workspace-a%2Fcomposed%2Ffinal%20v1.mp4'
-    );
-    assert.equal(
-      versionTwo?.media?.[0],
-      work?.media?.find((media) => media.assetId === 'composed-asset-v2')
-    );
-    assert.equal(
-      versionTwo?.href,
-      '/dashboard/assets/composed-asset-v2?from=assets'
+      projected.assets.map((asset) => asset.id),
+      ['creative-asset-a']
     );
     assert.doesNotMatch(
-      `${versionOne?.title} ${versionOne?.detail}`,
-      /workflow-raw|tracer-|workspace-a\/composed/u
-    );
-    assert.deepEqual(
-      history.assets.map((asset) => asset.id),
-      ['creative-asset-a']
+      projected.assets.map((asset) => asset.id).join(' '),
+      /workflow-raw|tracer-/u
     );
   });
 
-  it('does not duplicate a composed receipt that already has a canonical Asset projection', () => {
+  it('does not invent media when a work already has a canonical video Asset', () => {
     const projected = canonicalHistoryWithComposedVideos(
       {
         ...history,
@@ -577,9 +507,7 @@ describe('canonical history projection', () => {
         ],
       },
       [
-        completedVideoEnvelope({
-          assetId: 'composed-asset-v1',
-          objectKey: 'workspace-a/composed/final v1.mp4',
+        publicVideoWorkflow({
           storyboardVersion: 1,
           updatedAt: '2026-07-12T10:05:00.000Z',
           workflowId: 'workflow-raw-v1',

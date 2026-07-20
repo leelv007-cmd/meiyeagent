@@ -83,7 +83,10 @@ import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { isTwoColumnMobileViewport } from './mobile-layout';
 import { projectComposerQuoteView } from './quote-wiring';
-import { listColdCardsFromSurface } from './recipe-cards';
+import {
+  listColdCardsFromSeeds,
+  listColdCardsFromSurface,
+} from './recipe-cards';
 import { RecipeCardsPanel } from './recipe-cards-panel';
 import { QuotaBlockingCard } from './quota-blocking-card';
 import {
@@ -278,7 +281,9 @@ export function ComposerHome({
   });
   const coldCards = useMemo(
     () =>
-      surfaceQuery.data ? listColdCardsFromSurface(surfaceQuery.data) : [],
+      surfaceQuery.data
+        ? listColdCardsFromSurface(surfaceQuery.data)
+        : listColdCardsFromSeeds(),
     [surfaceQuery.data]
   );
   const settingsFields = useMemo(
@@ -763,19 +768,39 @@ export function ComposerHome({
       setBriefPending(false);
     }
 
-    const path = decideSubmitPath({ projection });
-    if (path.path === 'open_brief' && projection) {
+    // Video paths always require explicit Brief accept — never runCreate
+    // while the lens gate reports video_confirm_required or lens is video.
+    const videoConfirmRequired =
+      lensState.lensId === 'video' ||
+      (!gate.allowed && gate.reason === 'video_confirm_required');
+
+    if (videoConfirmRequired && !projection) {
+      setShowRequiredHint(true);
+      return;
+    }
+
+    const path = decideSubmitPath({
+      projection,
+      videoConfirmRequired,
+    });
+    if (path.path === 'open_brief') {
       setBriefState(
         openBriefSurface(briefState, {
-          projection,
+          projection: path.projection,
           composerSnapshot: {
             userText: lensState.draft.userText,
             sources: [...lensState.draft.sources],
             lensId: lensState.lensId,
-            draftRevisionId: projection.bindRevisions.draftRevisionId,
+            draftRevisionId: path.projection.bindRevisions.draftRevisionId,
           },
         })
       );
+      return;
+    }
+
+    // Safety net: video must never submit without Brief accept.
+    if (videoConfirmRequired) {
+      setShowRequiredHint(true);
       return;
     }
 
