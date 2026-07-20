@@ -1,3 +1,10 @@
+/**
+ * Live single-slot direct LLM probe (three copy candidates — product quality).
+ *
+ * Dual-channel text conformance (official_direct + upstream_reseller, attemptLimit:2)
+ * lives in `provider-conformance/live-text-conformance.integration.test.ts` (MP-04T / #116).
+ * Do not conflate three copy candidates with the two-route-attempt ceiling.
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ModelSupplyApplicationService } from './index.js';
