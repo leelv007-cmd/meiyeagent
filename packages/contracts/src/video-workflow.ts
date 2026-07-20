@@ -4,9 +4,9 @@
  * WT-E exclusive owner of evolution.
  *
  * This module is the **stable derived projection** for Composer / Result Center /
- * billing consumers. Canonical truth is Task/Job/Asset-shaped CanonicalVideoRun
- * in core (`video-workflow-canonical.ts`); DurableVideoWorkflow is an internal
- * execution/audit projection. Public payloads must never include Provider,
+ * billing consumers. Canonical truth remains the existing generic Task/Job/
+ * Asset records; `CanonicalVideoRun` is only their Core command assembly and
+ * DurableVideoWorkflow is an internal execution/audit projection. Public payloads must never include Provider,
  * Credential, route internals, or owned asset blobs — only ids/status/summary.
  *
  * Core projection helper: `projectVideoWorkflowPublic` in
@@ -50,6 +50,7 @@ export interface VideoWorkflowPublicProjection {
   catalogModelId: string;
   confirmed: boolean;
   shots: VideoShotSummary[];
+  subtitleText?: string;
   failureCode?: string;
   revision: number;
   updatedAt: string;

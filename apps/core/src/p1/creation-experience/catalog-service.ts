@@ -341,10 +341,10 @@ export class CreationExperienceCatalogService {
   async publishRecipe(input: RecipeTransitionInput): Promise<ServerRecipeRecord> {
     const head = await this.requireRecipeHead(input.recipeId);
     assertExpectedRevision(head.revision, input.expectedRevision, 'recipe');
-    if (head.status !== 'draft' && head.status !== 'preview') {
+    if (head.status !== 'preview') {
       throw new P1DomainError(
         'INVALID_STATE',
-        'Only draft or preview recipes can be published.',
+        'Only preview recipes can be published.',
       );
     }
     const validation = this.validateRecipeRecord(head);
@@ -484,10 +484,10 @@ export class CreationExperienceCatalogService {
   async publishSurface(input: SurfaceTransitionInput): Promise<ServerSurfaceRecord> {
     const head = await this.requireSurfaceHead(input.surfaceId);
     assertExpectedRevision(head.revision, input.expectedRevision, 'surface');
-    if (head.status !== 'draft' && head.status !== 'preview') {
+    if (head.status !== 'preview') {
       throw new P1DomainError(
         'INVALID_STATE',
-        'Only draft or preview surfaces can be published.',
+        'Only preview surfaces can be published.',
       );
     }
     const validation = await this.validateSurfaceRecord(head);
@@ -584,6 +584,7 @@ export class CreationExperienceCatalogService {
     const recipes = await this.resolveSurfaceRecipes(surface);
     const freeze: CatalogSessionFreeze = {
       sessionId: input.sessionId ?? this.id(),
+      workspaceId: input.workspaceId,
       surfaceRevisionId: surface.revisionId,
       frozenAt: this.now(),
       surface: projectBrowserSurface(surface, recipes),
@@ -591,8 +592,11 @@ export class CreationExperienceCatalogService {
     return this.repository.putSessionFreeze(freeze);
   }
 
-  async getSessionFreeze(sessionId: string): Promise<CatalogSessionFreeze | null> {
-    return this.repository.getSessionFreeze(sessionId);
+  async getSessionFreeze(
+    workspaceId: string,
+    sessionId: string,
+  ): Promise<CatalogSessionFreeze | null> {
+    return this.repository.getSessionFreeze(workspaceId, sessionId);
   }
 
   async getRecipeHead(recipeId: RecipeId) {

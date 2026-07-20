@@ -25,7 +25,7 @@ test('buildDeviceRelayAbsoluteUrl encodes work relay', () => {
     { kind: 'work', workId: 'work-9' },
     'https://app.example'
   );
-  assert.match(url, /workId=work-9/u);
+  assert.match(url, /\/dashboard\/results\/work-9$/u);
 });
 
 test('DeviceRelayPopover exposes a phone-continue trigger without publish handoff copy', () => {
@@ -54,7 +54,7 @@ test('copy handler is reachable via clipboard mock contract', async () => {
     );
     await globalThis.navigator.clipboard.writeText(payload);
     assert.equal(writeText.mock.calls.length, 1);
-    assert.match(payload, /workId=w1/u);
+    assert.match(payload, /\/dashboard\/results\/w1$/u);
   } finally {
     Object.defineProperty(globalThis, 'navigator', {
       configurable: true,

@@ -177,11 +177,10 @@ describe('canonical history projection', () => {
     assert.equal(userWork?.title, 'My best work');
   });
 
-  it('uses a named preset title instead of its internal execution intent', () => {
-    const internalIntent = '内部命名预设执行摘要';
+  it('keeps recorded work intent after hidden-prompt preset retirement', () => {
+    const legacyGeneratedPrompt = '内部命名预设执行摘要';
     const namedPreset = {
       id: 'template-a',
-      internalIntent,
       name: '到店套餐说明',
     };
     const items = canonicalHistoryItems(
@@ -190,7 +189,7 @@ describe('canonical history projection', () => {
         creativeWorks: [
           {
             ...history.creativeWorks[0]!,
-            intent: internalIntent,
+            intent: legacyGeneratedPrompt,
             sourceReferences: [{ id: namedPreset.id, kind: 'template' }],
           },
         ],
@@ -202,7 +201,7 @@ describe('canonical history projection', () => {
 
     assert.equal(
       items.find((item) => item.id === 'creative-work-a')?.title,
-      namedPreset.name
+      legacyGeneratedPrompt
     );
   });
 

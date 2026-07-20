@@ -10,10 +10,14 @@ import { createFileRoute } from '@tanstack/react-router';
  * Five association view routes (J4 / D-058).
  * Shared wiring deferred — see supply/WIRING-DIFF.md.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = (createFileRoute as any)('/admin/supply/views/$viewId')({
-  component: SupplyAssociationViewPage,
+export const Route = createFileRoute('/admin/supply/views/$viewId')({
+  component: SupplyAssociationViewRoute,
 });
+
+function SupplyAssociationViewRoute() {
+  const { viewId } = Route.useParams();
+  return <SupplyAssociationViewPage viewId={viewId} />;
+}
 
 export function SupplyAssociationViewPage({
   viewId: viewIdProp,

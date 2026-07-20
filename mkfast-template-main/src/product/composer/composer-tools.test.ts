@@ -23,11 +23,17 @@ test('desktop ordinary cap is 3, mobile is 2', () => {
   const mobile = listOrdinaryHomeTools({ viewport: 'mobile' });
   assert.ok(desktop.length <= 3);
   assert.ok(mobile.length <= 2);
-  assert.equal(mobile.length, 2);
-  assert.equal(desktop.length, 3);
+  assert.equal(mobile.length, 0);
+  assert.equal(desktop.length, 0);
   // Pro Studio never appears in ordinary slots.
   assert.ok(desktop.every((t) => t.id !== 'tool.pro_studio'));
   assert.ok(mobile.every((t) => t.id !== 'tool.pro_studio'));
+});
+
+test('first-ship ordinary tools stay hidden until their full execution chain is verified', () => {
+  const strip = projectComposerToolsStrip({ viewport: 'desktop' });
+  assert.deepEqual(strip.ordinary, []);
+  assert.ok(strip.proStudio);
 });
 
 test('Pro Studio projects as full-width banner to canonical gate', () => {

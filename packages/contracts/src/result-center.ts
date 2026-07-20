@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * Result Center navigation / shell contract (S1 / #87, WT-D1 / #99).
  *
@@ -163,6 +165,99 @@ export type ResultCommandOutcome =
 export interface ResultCommandAdapter {
   execute(input: ResultCommandInput): Promise<ResultCommandOutcome>;
 }
+
+const resultObjectIdSchema = z.string().trim().min(1);
+
+export const resultAdoptSelectionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      copyAssetId: resultObjectIdSchema,
+      kind: z.literal('copy'),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('image'),
+      orderedAssetIds: z.array(resultObjectIdSchema).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      copyAssetId: resultObjectIdSchema,
+      kind: z.literal('image_text'),
+      orderedAssetIds: z.array(resultObjectIdSchema).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('video'),
+      videoAssetId: resultObjectIdSchema,
+    })
+    .strict(),
+]);
+
+/** Canonical merchant adoption command for copy, image sets, and video. */
+export const resultAdoptCommandSchema = z
+  .object({
+    expectedRevision: z.number().int().nonnegative(),
+    selection: resultAdoptSelectionSchema,
+    workId: resultObjectIdSchema,
+  })
+  .strict();
+
+/** Prepare an adjustment by freezing its source revision and explicit scope. */
+export const resultAdjustCommandSchema = z
+  .object({
+    baseJobId: resultObjectIdSchema,
+    expectedWorkUpdatedAt: z.iso.datetime(),
+    instruction: z.string().trim().min(1).max(2_000),
+    scope: z
+      .discriminatedUnion('kind', [
+        z
+          .object({
+            assetId: resultObjectIdSchema,
+            kind: z.literal('asset'),
+          })
+          .strict(),
+        z
+          .object({
+            assetIds: z.array(resultObjectIdSchema).min(1),
+            kind: z.literal('set'),
+          })
+          .strict(),
+      ])
+      .optional(),
+    workId: resultObjectIdSchema,
+  })
+  .strict();
+
+/**
+ * Submit a prepared adjustment with a server-owned, already-confirmed quote.
+ * Money, pricing policy, and execution-contract fields are never browser input.
+ */
+export const resultAdjustConfirmCommandSchema = z
+  .object({
+    baseJobId: resultObjectIdSchema,
+    billingQuoteId: resultObjectIdSchema,
+    derivedWorkId: resultObjectIdSchema,
+  })
+  .strict();
+
+export const resultExportCommandSchema = z
+  .object({
+    expectedRevision: z.number().int().nonnegative(),
+    packageId: resultObjectIdSchema,
+    platform: z.enum(['xiaohongshu', 'douyin', 'video_account']),
+  })
+  .strict();
+
+export type ResultAdoptCommand = z.infer<typeof resultAdoptCommandSchema>;
+export type ResultAdoptSelection = z.infer<typeof resultAdoptSelectionSchema>;
+export type ResultAdjustCommand = z.infer<typeof resultAdjustCommandSchema>;
+export type ResultAdjustConfirmCommand = z.infer<
+  typeof resultAdjustConfirmCommandSchema
+>;
+export type ResultExportCommand = z.infer<typeof resultExportCommandSchema>;
 
 /**
  * Result Shell pure projection shape (D-085 / D-089).

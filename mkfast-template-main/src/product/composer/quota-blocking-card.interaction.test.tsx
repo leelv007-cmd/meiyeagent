@@ -6,7 +6,10 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { QuotaBlockingCard } from './quota-blocking-card';
+import {
+  QuotaBlockingCard,
+  type QuotaBlockingCardProps,
+} from './quota-blocking-card';
 
 afterEach(() => {
   cleanup();
@@ -106,7 +109,9 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
 
   it('passes redemptions CAS command shape to onRedeem', async () => {
     const user = userEvent.setup();
-    const redeem = vi.fn(async () => ({ ok: true as const }));
+    const redeem = vi.fn<QuotaBlockingCardProps['onRedeem']>(async () => ({
+      ok: true as const,
+    }));
     render(
       <QuotaBlockingCard
         blocked

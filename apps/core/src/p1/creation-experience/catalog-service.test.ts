@@ -208,11 +208,16 @@ describe('Creation Experience Catalog aggregate', () => {
     assert.equal(validation.ok, false);
     assert.match(validation.errors.join(' '), /not published/);
 
+    const badPreview = await service.previewSurface({
+      surfaceId: 'surface.bad',
+      expectedRevision: 1,
+      ...audit({ reason: 'preview invalid surface' }),
+    });
     await assert.rejects(
       () =>
         service.publishSurface({
           surfaceId: 'surface.bad',
-          expectedRevision: 1,
+          expectedRevision: badPreview.revision,
           ...audit({ reason: 'should fail' }),
         }),
       (error: unknown) => {
@@ -252,10 +257,29 @@ describe('Creation Experience Catalog aggregate', () => {
       body: sampleRecipeBody(),
       ...audit(),
     });
+    await assert.rejects(
+      () =>
+        service.publishRecipe({
+          recipeId: 'recipe.cas',
+          expectedRevision: draft.revision,
+          ...audit({ reason: 'must preview first' }),
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof P1DomainError);
+        assert.equal(error.code, 'INVALID_STATE');
+        assert.match(error.message, /Only preview recipes/);
+        return true;
+      },
+    );
+    const preview = await service.previewRecipe({
+      recipeId: 'recipe.cas',
+      expectedRevision: draft.revision,
+      ...audit({ reason: 'preview for concurrent publish' }),
+    });
 
     const first = await service.publishRecipe({
       recipeId: 'recipe.cas',
-      expectedRevision: draft.revision,
+      expectedRevision: preview.revision,
       ...audit({ reason: 'first publisher' }),
     });
     assert.equal(first.status, 'published');
@@ -264,7 +288,7 @@ describe('Creation Experience Catalog aggregate', () => {
       () =>
         service.publishRecipe({
           recipeId: 'recipe.cas',
-          expectedRevision: draft.revision,
+          expectedRevision: preview.revision,
           ...audit({ reason: 'stale publisher' }),
         }),
       (error: unknown) => {
@@ -297,9 +321,14 @@ describe('Creation Experience Catalog aggregate', () => {
       }),
       ...audit({ reason: 'edit v2' }),
     });
-    const v2 = await service.publishRecipe({
+    const preview2 = await service.previewRecipe({
       recipeId: 'recipe.rollback',
       expectedRevision: draft2.revision,
+      ...audit({ reason: 'preview v2' }),
+    });
+    const v2 = await service.publishRecipe({
+      recipeId: 'recipe.rollback',
+      expectedRevision: preview2.revision,
       ...audit({ reason: 'publish v2' }),
     });
     assert.equal(v2.presentation.title, 'Version Two');
@@ -331,9 +360,14 @@ describe('Creation Experience Catalog aggregate', () => {
       },
       ...audit(),
     });
-    const publishedSurface = await service.publishSurface({
+    const surfacePreview1 = await service.previewSurface({
       surfaceId: 'surface.rollback',
       expectedRevision: surfaceV1.revision,
+      ...audit({ reason: 'preview surface v1' }),
+    });
+    const publishedSurface = await service.publishSurface({
+      surfaceId: 'surface.rollback',
+      expectedRevision: surfacePreview1.revision,
       ...audit({ reason: 'publish surface v1' }),
     });
 
@@ -353,9 +387,14 @@ describe('Creation Experience Catalog aggregate', () => {
       },
       ...audit({ reason: 'surface v2' }),
     });
-    const surfaceV2 = await service.publishSurface({
+    const surfacePreview2 = await service.previewSurface({
       surfaceId: 'surface.rollback',
       expectedRevision: surfaceDraft2.revision,
+      ...audit({ reason: 'preview surface v2' }),
+    });
+    const surfaceV2 = await service.publishSurface({
+      surfaceId: 'surface.rollback',
+      expectedRevision: surfacePreview2.revision,
       ...audit({ reason: 'publish surface v2' }),
     });
 
@@ -392,13 +431,19 @@ describe('Creation Experience Catalog aggregate', () => {
       },
       ...audit(),
     });
-    const surface = await service.publishSurface({
+    const surfacePreview = await service.previewSurface({
       surfaceId: 'surface.freeze',
       expectedRevision: surfaceDraft.revision,
+      ...audit({ reason: 'preview freeze surface' }),
+    });
+    const surface = await service.publishSurface({
+      surfaceId: 'surface.freeze',
+      expectedRevision: surfacePreview.revision,
       ...audit({ reason: 'publish freeze surface' }),
     });
 
     const freeze = await service.freezeSession({
+      workspaceId: 'workspace-a',
       surfaceRevisionId: surface.revisionId,
       sessionId: 'sess-1',
     });
@@ -417,9 +462,14 @@ describe('Creation Experience Catalog aggregate', () => {
       }),
       ...audit({ reason: 'post-freeze edit' }),
     });
-    const recipe2 = await service.publishRecipe({
+    const recipe2Preview = await service.previewRecipe({
       recipeId: 'recipe.freeze',
       expectedRevision: recipe2Draft.revision,
+      ...audit({ reason: 'post-freeze preview' }),
+    });
+    const recipe2 = await service.publishRecipe({
+      recipeId: 'recipe.freeze',
+      expectedRevision: recipe2Preview.revision,
       ...audit({ reason: 'post-freeze publish' }),
     });
     const surface2Draft = await service.draftSurface({
@@ -438,13 +488,21 @@ describe('Creation Experience Catalog aggregate', () => {
       },
       ...audit({ reason: 'new surface' }),
     });
-    await service.publishSurface({
+    const surface2Preview = await service.previewSurface({
       surfaceId: 'surface.freeze',
       expectedRevision: surface2Draft.revision,
+      ...audit({ reason: 'preview new surface' }),
+    });
+    await service.publishSurface({
+      surfaceId: 'surface.freeze',
+      expectedRevision: surface2Preview.revision,
       ...audit({ reason: 'publish new surface' }),
     });
 
-    const frozenAgain = await service.getSessionFreeze('sess-1');
+    const frozenAgain = await service.getSessionFreeze(
+      'workspace-a',
+      'sess-1',
+    );
     assert.ok(frozenAgain);
     assert.equal(frozenAgain.surfaceRevisionId, surface.revisionId);
     assert.equal(
@@ -459,6 +517,7 @@ describe('Creation Experience Catalog aggregate', () => {
     const head = await service.getSurfaceHead('surface.freeze');
     assert.ok(head);
     const fresh = await service.freezeSession({
+      workspaceId: 'workspace-a',
       surfaceRevisionId: head.revisionId,
     });
     assert.equal(fresh.surface.recipes[0]?.presentation.title, '全新标题');
@@ -489,9 +548,14 @@ describe('Creation Experience Catalog aggregate', () => {
     assert.equal(serialized.includes('SYSTEM:'), false);
     assert.equal(findForbiddenBrowserKey(browser), null);
 
-    const published = await service.publishRecipe({
+    const preview = await service.previewRecipe({
       recipeId: 'recipe.secret',
       expectedRevision: draft.revision,
+      ...audit({ reason: 'preview secret' }),
+    });
+    const published = await service.publishRecipe({
+      recipeId: 'recipe.secret',
+      expectedRevision: preview.revision,
       ...audit({ reason: 'publish secret' }),
     });
     const surfaceDraft = await service.draftSurface({
@@ -510,9 +574,14 @@ describe('Creation Experience Catalog aggregate', () => {
       } satisfies SurfaceBodyInput,
       ...audit(),
     });
-    await service.publishSurface({
+    const surfacePreview = await service.previewSurface({
       surfaceId: 'surface.secret',
       expectedRevision: surfaceDraft.revision,
+      ...audit({ reason: 'preview' }),
+    });
+    await service.publishSurface({
+      surfaceId: 'surface.secret',
+      expectedRevision: surfacePreview.revision,
       ...audit({ reason: 'publish' }),
     });
     const surfaceBrowser = await service.projectBrowserSurface('surface.secret');

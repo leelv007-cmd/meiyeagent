@@ -46,6 +46,10 @@ export class TaskBlockingNodeConflictError extends Error {
 }
 
 export interface OperationsRepository {
+	lockBriefRevisionContext(
+		workspaceId: string,
+		briefContextId: string,
+	): Promise<number | null>;
 	assertTaskHasNoPendingQuestion(
 		workspaceId: string,
 		taskId: string,
@@ -142,6 +146,10 @@ export class MemoryOperationsRepository implements OperationsRepository {
 
 	seedPendingQuestion(workspaceId: string, taskId: string) {
 		this.pendingQuestionTasks.add(`${workspaceId}:${taskId}`);
+	}
+
+	async lockBriefRevisionContext() {
+		return null;
 	}
 
 	async assertTaskHasNoPendingQuestion(workspaceId: string, taskId: string) {

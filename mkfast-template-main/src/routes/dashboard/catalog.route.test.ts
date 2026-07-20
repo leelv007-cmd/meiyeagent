@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { validateCatalogSearch } from './catalog';
+import { validateCatalogSearch } from '@/product/composer/catalog-route-model';
 
 test('validateCatalogSearch keeps allowlisted fields', () => {
   const result = validateCatalogSearch({

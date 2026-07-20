@@ -7,7 +7,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 
 import { AdjustPrompt } from './adjust-prompt';
 import {
@@ -16,7 +16,11 @@ import {
 } from './image-worksurface-model';
 import {
   createEmptyWorkingSelection,
+  isWorkingSelectionExpired,
+  parseWorkingSelection,
   reduceWorkingSelection,
+  serializeWorkingSelection,
+  workingSelectionStorageKey,
   type WorkingSelectionIntent,
   type WorkingSelectionState,
 } from './working-selection-reducer';
@@ -26,10 +30,21 @@ export type ImageWorksurfaceProps = {
     workingSelection?: WorkingSelectionState;
     explicitMode?: 'single' | 'set';
   };
-  onAdoptPrimary?: (actionKind: string, orderedAssetIds: string[]) => void;
-  onSaveLibrary?: (kind: 'save_one' | 'save_selected', assetIds: string[]) => void;
-  onSaveDraft?: () => void;
-  onAdjust?: (instruction: string) => void;
+  onAdoptPrimary?: (
+    actionKind: string,
+    orderedAssetIds: string[]
+  ) => void | Promise<void>;
+  onSaveLibrary?: (
+    kind: 'save_one' | 'save_selected',
+    assetIds: string[]
+  ) => void;
+  onSaveDraft?: (selection: WorkingSelectionState) => void | Promise<void>;
+  onAdjust?: (
+    instruction: string,
+    scope?:
+      | { kind: 'asset'; assetId: string }
+      | { kind: 'set'; assetIds: string[] }
+  ) => void;
   onCreateFromThis?: () => void;
   onModeChange?: (mode: 'single' | 'set') => void;
 };
@@ -71,20 +86,56 @@ function localReducer(state: LocalState, action: LocalAction): LocalState {
 }
 
 export function ImageWorksurface(props: ImageWorksurfaceProps) {
-  const initialSelection =
-    props.facts.workingSelection ??
+  const emptySelection = () =>
     createEmptyWorkingSelection({
       workId: props.facts.workId,
       baseRevisionId: props.facts.baseRevisionId,
       now: new Date().toISOString(),
     });
 
-  const [local, dispatch] = useReducer(localReducer, {
-    selection: initialSelection,
-    feedback: null,
-    focusedAssetId: props.facts.focusedAssetId,
-    modeOverride: props.facts.explicitMode,
-  });
+  const [local, dispatch] = useReducer(
+    localReducer,
+    undefined,
+    (): LocalState => {
+      const supplied = props.facts.workingSelection;
+      let selection = supplied ?? emptySelection();
+      if (!supplied && typeof window !== 'undefined') {
+        const key = workingSelectionStorageKey(props.facts.workId);
+        const stored = parseWorkingSelection(
+          window.localStorage.getItem(key) ?? ''
+        );
+        if (
+          stored &&
+          stored.workId === props.facts.workId &&
+          stored.baseRevisionId === props.facts.baseRevisionId &&
+          !isWorkingSelectionExpired(stored, new Date().toISOString())
+        ) {
+          selection = stored;
+        } else if (
+          stored &&
+          isWorkingSelectionExpired(stored, new Date().toISOString())
+        ) {
+          window.localStorage.removeItem(key);
+        }
+      }
+      return {
+        selection,
+        feedback: null,
+        focusedAssetId: props.facts.focusedAssetId,
+        modeOverride: props.facts.explicitMode,
+      };
+    }
+  );
+  const [adjustScope, setAdjustScope] = useState<'adjust_one' | 'adjust_set'>(
+    props.facts.explicitMode === 'set' ? 'adjust_set' : 'adjust_one'
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      workingSelectionStorageKey(props.facts.workId),
+      serializeWorkingSelection(local.selection)
+    );
+  }, [local.selection, props.facts.workId]);
 
   const facts: ImageWorksurfaceFacts = useMemo(
     () => ({
@@ -93,7 +144,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
       focusedAssetId: local.focusedAssetId ?? props.facts.focusedAssetId,
       explicitMode: local.modeOverride ?? props.facts.explicitMode,
     }),
-    [props.facts, local.selection, local.focusedAssetId, local.modeOverride],
+    [props.facts, local.selection, local.focusedAssetId, local.modeOverride]
   );
 
   const view = projectImageWorksurface(facts, {
@@ -173,7 +224,9 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
             data-cover={candidate.isWorkingCover ? 'true' : 'false'}
             data-adopted={candidate.isAdopted ? 'true' : 'false'}
             aria-label={candidate.a11yName}
-            onClick={() => dispatch({ type: 'focus', assetId: candidate.assetId })}
+            onClick={() =>
+              dispatch({ type: 'focus', assetId: candidate.assetId })
+            }
           >
             <div className="flex flex-wrap items-center gap-1">
               <Badge variant="outline">第 {candidate.order} 张</Badge>
@@ -225,8 +278,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
                   data-order={slot.order}
                 >
                   <span>
-                    第 {slot.order} 张
-                    {slot.isCover ? ' · 封面' : ''}
+                    第 {slot.order} 张{slot.isCover ? ' · 封面' : ''}
                   </span>
                   <code className="text-xs">{slot.assetId}</code>
                   <Button
@@ -313,7 +365,8 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
               size="sm"
               variant="outline"
               data-testid="image-save-draft"
-              onClick={() => props.onSaveDraft?.()}
+              disabled={!props.onSaveDraft}
+              onClick={() => props.onSaveDraft?.(local.selection)}
             >
               保存草稿
             </Button>
@@ -327,7 +380,10 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
             type="button"
             data-testid="image-role-primary"
             data-action-kind={view.primaryAction.kind}
-            onClick={() => {
+            disabled={
+              view.primaryAction.kind !== 'add_to_set' && !props.onAdoptPrimary
+            }
+            onClick={async () => {
               const kind = view.primaryAction!.kind;
               if (kind === 'add_to_set' && local.focusedAssetId) {
                 dispatch({
@@ -346,7 +402,8 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
                 view.workingSelection.orderedAssetIds.length > 0
                   ? view.workingSelection.orderedAssetIds
                   : view.candidates.map((c) => c.assetId);
-              props.onAdoptPrimary?.(kind, ordered);
+              if (!props.onAdoptPrimary) return;
+              await props.onAdoptPrimary(kind, ordered);
               if (kind === 'adopt_set') {
                 dispatch({
                   type: 'feedback',
@@ -376,11 +433,13 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
             type="button"
             variant="outline"
             data-testid={`image-library-${action.kind}`}
+            disabled={!props.onSaveLibrary}
             onClick={() => {
+              if (!props.onSaveLibrary) return;
               if (action.kind === 'save_one') {
-                props.onSaveLibrary?.('save_one', [action.assetId]);
+                props.onSaveLibrary('save_one', [action.assetId]);
               } else {
-                props.onSaveLibrary?.('save_selected', action.assetIds);
+                props.onSaveLibrary('save_selected', action.assetIds);
               }
               dispatch({ type: 'feedback', feedback: '已在素材库' });
             }}
@@ -394,6 +453,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
             type="button"
             variant="outline"
             data-testid="image-create-from-this"
+            disabled={!props.onCreateFromThis}
             onClick={() => props.onCreateFromThis?.()}
           >
             {view.createFromThis.label}
@@ -412,8 +472,27 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
       ) : null}
 
       <AdjustPrompt
-        onSubmit={props.onAdjust}
+        onSubmit={(instruction) => {
+          const focusedAssetId =
+            local.focusedAssetId ?? props.facts.focusedAssetId;
+          if (adjustScope === 'adjust_one' && focusedAssetId) {
+            props.onAdjust?.(instruction, {
+              assetId: focusedAssetId,
+              kind: 'asset',
+            });
+            return;
+          }
+          const assetIds =
+            local.selection.orderedAssetIds.length > 0
+              ? [...local.selection.orderedAssetIds]
+              : props.facts.candidates.map((candidate) => candidate.assetId);
+          props.onAdjust?.(instruction, { assetIds, kind: 'set' });
+        }}
         scopeActions={view.adjustPrompt.scopeActions}
+        selectedScopeId={adjustScope}
+        onScopeAction={(scope) =>
+          setAdjustScope(scope === 'adjust_one' ? 'adjust_one' : 'adjust_set')
+        }
       />
 
       <span data-testid="image-mobile-desktop-gate" hidden>
@@ -422,4 +501,3 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
     </div>
   );
 }
-

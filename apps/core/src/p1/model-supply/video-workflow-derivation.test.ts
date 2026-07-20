@@ -414,4 +414,80 @@ describe('VideoWorkflow derivation (#102)', () => {
     assert.equal(adapter.get('wf-shared-1')?.confirmed, true);
     assert.equal(adapter.get('wf-shared-1')?.revision, viaCommand.revision);
   });
+
+  it('edits completed shot selection, order, and subtitle through one OCC canonical command', async () => {
+    const { runner, draftInput } = setupRunner();
+    const draft = runner.createVideoWorkflow({
+      ...draftInput,
+      workflowId: 'wf-edit-1',
+    });
+    runner.confirmVideoWorkflow(draft.id, draft.workspaceId);
+    const completed = await runner.runVideoWorkflow(draft.id, draft.workspaceId);
+    const store = new InMemoryCanonicalVideoRunStore();
+    store.restore(liftDurableToCanonical(completed));
+    const commands = new VideoWorkflowCanonicalCommands(store);
+    const base = completed.revision;
+
+    const selected = commands.edit(
+      {
+        actorId: 'actor-a',
+        correlationId: 'corr-select',
+        edit: { kind: 'select_candidate', shotId: 'shot-1', candidateIndex: 0 },
+        expectedRevision: base,
+        workflowId: completed.id,
+        workspaceId: completed.workspaceId,
+      },
+      () => Date.parse('2026-07-20T08:00:00.000Z'),
+    );
+    assert.equal(selected.revision, base + 1);
+
+    const reordered = commands.edit(
+      {
+        actorId: 'actor-a',
+        correlationId: 'corr-order',
+        edit: { kind: 'reorder_shots', shotIds: ['shot-2', 'shot-1'] },
+        expectedRevision: selected.revision,
+        workflowId: completed.id,
+        workspaceId: completed.workspaceId,
+      },
+      () => Date.parse('2026-07-20T08:00:01.000Z'),
+    );
+    assert.deepEqual(reordered.shots.map((shot) => shot.id), ['shot-2', 'shot-1']);
+    assert.deepEqual(
+      reordered.clipAssets.map((asset) => asset.id),
+      [completed.clipAssets[1]!.id, completed.clipAssets[0]!.id],
+    );
+
+    const subtitled = commands.edit(
+      {
+        actorId: 'actor-a',
+        correlationId: 'corr-subtitle',
+        edit: { kind: 'set_subtitle', text: '  今天也要好好爱自己  ' },
+        expectedRevision: reordered.revision,
+        workflowId: completed.id,
+        workspaceId: completed.workspaceId,
+      },
+      () => Date.parse('2026-07-20T08:00:02.000Z'),
+    );
+    assert.equal(subtitled.subtitleText, '今天也要好好爱自己');
+    assert.equal(
+      projectVideoWorkflowPublic(subtitled).subtitleText,
+      '今天也要好好爱自己',
+    );
+    assert.throws(
+      () =>
+        commands.edit(
+          {
+            actorId: 'actor-a',
+            correlationId: 'corr-stale',
+            edit: { kind: 'set_subtitle', text: '过期写入' },
+            expectedRevision: base,
+            workflowId: completed.id,
+            workspaceId: completed.workspaceId,
+          },
+          () => Date.parse('2026-07-20T08:00:03.000Z'),
+        ),
+      /revision is stale/,
+    );
+  });
 });

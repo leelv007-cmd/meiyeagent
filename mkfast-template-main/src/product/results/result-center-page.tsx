@@ -12,17 +12,33 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type {
   ResultAction,
+  ResultAdjustCommand,
   ResultShellModel,
   ResultTarget,
   ResultTargetResolveOutcome,
   ResultWorkspaceKind,
 } from '@meiye/contracts';
+import type { ReactNode } from 'react';
 
 import { AdjustPrompt } from './adjust-prompt';
-import { CopyImageTextWorksurface } from './copy-image-text-worksurface';
+import {
+  CopyImageTextWorksurface,
+  type CopyImageTextWorksurfaceProps,
+} from './copy-image-text-worksurface';
 import type { CopyImageTextWorksurfaceFacts } from './copy-image-text-worksurface-model';
-import { ImageWorksurface } from './image-worksurface';
+import {
+  ImageWorksurface,
+  type ImageWorksurfaceProps,
+} from './image-worksurface';
 import type { ImageWorksurfaceFacts } from './image-worksurface-model';
+import { VideoWorksurface } from './video/video-worksurface';
+import type {
+  VideoCanonicalEditCommand,
+  VideoRegenerationQuoteRequest,
+  VideoRegenerationServerQuote,
+} from './video/video-worksurface';
+import type { VideoWorksurfaceState } from './video/video-worksurface-model';
+import type { VideoProStudioRefineHandoff } from './video/video-worksurface-model';
 import {
   desktopVisibleActions,
   mobileVisibleActions,
@@ -42,6 +58,9 @@ import {
   type ResultReturnRestoreStore,
 } from './result-return-restore';
 import type { ResultRevisionDriftChoice } from '@meiye/contracts';
+import type { DeliveryActionId } from './delivery-capability-groups';
+import type { AssistedResponsibilityRole } from './delivery-b3-types';
+import type { DeliveryOutcome } from './delivery-outcomes-a11y';
 import { DeliveryPanel } from './delivery-panel';
 import {
   projectDeliveryPanel,
@@ -70,16 +89,50 @@ export type ResultCenterPageProps = {
     workingSelection?: ImageWorksurfaceFacts['workingSelection'];
     explicitMode?: ImageWorksurfaceFacts['explicitMode'];
   };
+  /** E3: video worksurface projected from the public VideoWorkflow contract. */
+  videoWorksurface?: VideoWorksurfaceState;
+  onVideoAdopt?: (state: VideoWorksurfaceState) => void | Promise<void>;
+  onVideoDeliver?: (state: VideoWorksurfaceState) => void | Promise<void>;
+  onVideoRequestRegenerationQuote?: (
+    request: VideoRegenerationQuoteRequest
+  ) => Promise<VideoRegenerationServerQuote>;
+  onVideoConfirmRegeneration?: (input: {
+    quoteId: string;
+    taskId: string;
+  }) => Promise<void>;
+  onVideoCanonicalEdit?: (command: VideoCanonicalEditCommand) => Promise<void>;
+  onVideoProStudio?: (handoff: VideoProStudioRefineHandoff) => void;
+  onCopyAdopt?: () => void | Promise<void>;
+  onCopyHandEdit?: CopyImageTextWorksurfaceProps['onHandEdit'];
+  onImageAdopt?: (
+    actionKind: string,
+    orderedAssetIds: string[]
+  ) => void | Promise<void>;
+  onImageSaveLibrary?: ImageWorksurfaceProps['onSaveLibrary'];
+  onImageSaveDraft?: ImageWorksurfaceProps['onSaveDraft'];
+  onImageCreateFromThis?: ImageWorksurfaceProps['onCreateFromThis'];
+  onDeliveryAction?: (
+    actionId: DeliveryActionId,
+    assisted?: {
+      ownerId?: string;
+      responsibilityRole: AssistedResponsibilityRole;
+    }
+  ) => DeliveryOutcome | undefined | Promise<DeliveryOutcome | undefined>;
   onAction?: (action: ResultAction, shell: ResultShellModel) => void;
+  supportedActionIds?: readonly ResultAction['id'][];
+  adjustConfirmation?: ReactNode;
   onDriftChoice?: (choice: ResultRevisionDriftChoice) => void;
-  onAdjust?: (instruction: string) => void;
+  onAdjust?: (
+    instruction: string,
+    scope?: ResultAdjustCommand['scope']
+  ) => void;
   onBack?: () => void;
   /** Optional delivery panel facts when shell.panel === 'delivery'. */
   deliveryPanelFacts?: DeliveryPanelFacts;
 };
 
 function errorPanelKind(
-  code: Extract<ResultShellView, { kind: 'error' }>['code'],
+  code: Extract<ResultShellView, { kind: 'error' }>['code']
 ): 'error' | 'permission-denied' | 'empty' {
   if (code === 'FORBIDDEN') return 'permission-denied';
   if (code === 'NOT_FOUND') return 'empty';
@@ -87,7 +140,7 @@ function errorPanelKind(
 }
 
 function errorTitle(
-  code: Extract<ResultShellView, { kind: 'error' }>['code'],
+  code: Extract<ResultShellView, { kind: 'error' }>['code']
 ): string {
   switch (code) {
     case 'NOT_FOUND':
@@ -109,17 +162,45 @@ function WorkspaceBody(props: {
   workspaceKind: ResultWorkspaceKind;
   copyWorksurface?: ResultCenterPageProps['copyWorksurface'];
   imageWorksurface?: ResultCenterPageProps['imageWorksurface'];
-  onAdjust?: (instruction: string) => void;
+  videoWorksurface?: ResultCenterPageProps['videoWorksurface'];
+  viewport?: ResultCenterPageProps['viewport'];
+  onVideoAdopt?: ResultCenterPageProps['onVideoAdopt'];
+  onVideoDeliver?: ResultCenterPageProps['onVideoDeliver'];
+  onVideoRequestRegenerationQuote?: ResultCenterPageProps['onVideoRequestRegenerationQuote'];
+  onVideoConfirmRegeneration?: ResultCenterPageProps['onVideoConfirmRegeneration'];
+  onVideoCanonicalEdit?: ResultCenterPageProps['onVideoCanonicalEdit'];
+  onVideoProStudio?: ResultCenterPageProps['onVideoProStudio'];
+  onCopyAdopt?: ResultCenterPageProps['onCopyAdopt'];
+  onCopyHandEdit?: ResultCenterPageProps['onCopyHandEdit'];
+  onImageAdopt?: ResultCenterPageProps['onImageAdopt'];
+  onImageSaveLibrary?: ResultCenterPageProps['onImageSaveLibrary'];
+  onImageSaveDraft?: ResultCenterPageProps['onImageSaveDraft'];
+  onImageCreateFromThis?: ResultCenterPageProps['onImageCreateFromThis'];
+  onAdjust?: (
+    instruction: string,
+    scope?: ResultAdjustCommand['scope']
+  ) => void;
   /** Fallback document when copy worksurface facts are not yet wired. */
   fallbackCopy?: CopyImageTextWorksurfaceFacts;
 }) {
   if (props.workspaceKind === 'video') {
-    return (
+    return props.videoWorksurface ? (
+      <VideoWorksurface
+        initialState={props.videoWorksurface}
+        viewport={props.viewport}
+        onAdopt={props.onVideoAdopt}
+        onDeliver={props.onVideoDeliver}
+        onRequestRegenerationQuote={props.onVideoRequestRegenerationQuote}
+        onConfirmRegeneration={props.onVideoConfirmRegeneration}
+        onCanonicalEdit={props.onVideoCanonicalEdit}
+        onOpenProStudio={props.onVideoProStudio}
+      />
+    ) : (
       <div
         className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
-        data-testid="result-video-workspace-stub"
+        data-testid="result-video-workspace-empty"
       >
-        视频工作面将由 E3 接入 Result Center。
+        等待视频工作流投影…
       </div>
     );
   }
@@ -129,6 +210,10 @@ function WorkspaceBody(props: {
         <ImageWorksurface
           facts={props.imageWorksurface}
           onAdjust={props.onAdjust}
+          onAdoptPrimary={props.onImageAdopt}
+          onSaveLibrary={props.onImageSaveLibrary}
+          onSaveDraft={props.onImageSaveDraft}
+          onCreateFromThis={props.onImageCreateFromThis}
         />
       );
     }
@@ -146,7 +231,12 @@ function WorkspaceBody(props: {
   const copyFacts = props.copyWorksurface ?? props.fallbackCopy;
   if (copyFacts) {
     return (
-      <CopyImageTextWorksurface facts={copyFacts} onAdjust={props.onAdjust} />
+      <CopyImageTextWorksurface
+        facts={copyFacts}
+        onAdjust={props.onAdjust}
+        onAdopt={props.onCopyAdopt}
+        onHandEdit={props.onCopyHandEdit}
+      />
     );
   }
   return (
@@ -169,7 +259,7 @@ export function projectResultCenterPageView(
     | 'streamLoading'
     | 'restoreStore'
     | 'currentRevisionId'
-  >,
+  >
 ): {
   view: ResultShellView;
   tokenStream: ReturnType<typeof projectResultTokenStream>;
@@ -191,18 +281,11 @@ export function projectResultCenterPageView(
   });
 
   let drift: ReturnType<typeof detectRevisionDrift> = null;
-  if (
-    props.restoreStore &&
-    props.currentRevisionId &&
-    view.kind === 'ready'
-  ) {
+  if (props.restoreStore && props.currentRevisionId && view.kind === 'ready') {
     const key = Object.keys(props.restoreStore.drafts)[0];
     if (key) {
       // Prefer explicit uncommitted key from facts target + revision.
-      const snapshot =
-        props.restoreStore.byWorkId[
-          view.shell.target.workId
-        ];
+      const snapshot = props.restoreStore.byWorkId[view.shell.target.workId];
       if (snapshot?.uncommittedEditKey) {
         drift = detectRevisionDrift({
           uncommittedEditKey: snapshot.uncommittedEditKey,
@@ -218,6 +301,10 @@ export function projectResultCenterPageView(
 export function ResultCenterPage(props: ResultCenterPageProps) {
   const viewport = props.viewport ?? 'desktop';
   const { view, tokenStream, drift } = projectResultCenterPageView(props);
+  const actionEnabled = (action: ResultAction) =>
+    action.enabled &&
+    Boolean(props.onAction) &&
+    (props.supportedActionIds?.includes(action.id) ?? true);
 
   if (view.kind === 'error') {
     return (
@@ -242,9 +329,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             data-error-code={view.code}
           >
             {view.code}
-            {view.requested.workId
-              ? ` · workId=${view.requested.workId}`
-              : ''}
+            {view.requested.workId ? ` · workId=${view.requested.workId}` : ''}
           </p>
         </StatePanel>
       </DashboardLayout>
@@ -332,13 +417,18 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap gap-2" data-testid="result-shell-actions">
+        {props.adjustConfirmation}
+
+        <div
+          className="flex flex-wrap gap-2"
+          data-testid="result-shell-actions"
+        >
           {actions.primary ? (
             <Button
               type="button"
               data-testid="result-primary-action"
               data-action-id={actions.primary.id}
-              disabled={!actions.primary.enabled}
+              disabled={!actionEnabled(actions.primary)}
               onClick={() => props.onAction?.(actions.primary!, shell)}
             >
               {actions.primary.label}
@@ -351,20 +441,34 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
               variant="outline"
               data-testid="result-secondary-action"
               data-action-id={item.id}
-              disabled={!item.enabled}
+              disabled={!actionEnabled(item)}
               onClick={() => props.onAction?.(item, shell)}
             >
               {item.label}
             </Button>
           ))}
           {actions.more.length > 0 ? (
-            <Button
-              type="button"
-              variant="ghost"
-              data-testid="result-more-actions"
-            >
-              更多
-            </Button>
+            <details data-testid="result-more-actions">
+              <summary className="cursor-pointer px-3 py-2 text-sm">
+                更多
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {actions.more.map((item) => (
+                  <Button
+                    key={item.id}
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    data-testid="result-overflow-action"
+                    data-action-id={item.id}
+                    disabled={!actionEnabled(item)}
+                    onClick={() => props.onAction?.(item, shell)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+            </details>
           ) : null}
         </div>
 
@@ -409,6 +513,22 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             workspaceKind={shell.workspaceKind}
             copyWorksurface={props.copyWorksurface}
             imageWorksurface={props.imageWorksurface}
+            videoWorksurface={props.videoWorksurface}
+            viewport={viewport}
+            onVideoAdopt={props.onVideoAdopt}
+            onVideoDeliver={props.onVideoDeliver}
+            onVideoRequestRegenerationQuote={
+              props.onVideoRequestRegenerationQuote
+            }
+            onVideoConfirmRegeneration={props.onVideoConfirmRegeneration}
+            onVideoCanonicalEdit={props.onVideoCanonicalEdit}
+            onVideoProStudio={props.onVideoProStudio}
+            onCopyAdopt={props.onCopyAdopt}
+            onCopyHandEdit={props.onCopyHandEdit}
+        onImageAdopt={props.onImageAdopt}
+        onImageSaveLibrary={props.onImageSaveLibrary}
+        onImageSaveDraft={props.onImageSaveDraft}
+        onImageCreateFromThis={props.onImageCreateFromThis}
             onAdjust={props.onAdjust}
           />
         )}
@@ -417,7 +537,9 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
           <div data-testid="result-harness-candidates" className="text-sm">
             <p>
               推荐候选{' '}
-              <span className="font-medium">{sub.candidates.primary.title}</span>
+              <span className="font-medium">
+                {sub.candidates.primary.title}
+              </span>
             </p>
             {sub.candidates.alternatives.length > 0 ? (
               <p className="text-muted-foreground">
@@ -440,6 +562,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
         {shell.panel === 'delivery' && props.deliveryPanelFacts ? (
           <DeliveryPanel
             view={projectDeliveryPanel(props.deliveryPanelFacts)}
+            onAction={props.onDeliveryAction}
           />
         ) : null}
       </div>
@@ -451,13 +574,13 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
 export function applyPageDriftChoice(
   store: ResultReturnRestoreStore,
   drift: NonNullable<ReturnType<typeof detectRevisionDrift>>,
-  choice: ResultRevisionDriftChoice,
+  choice: ResultRevisionDriftChoice
 ) {
   return applyRevisionDriftChoice(store, drift, choice);
 }
 
 export function anyCandidateHasToken(
-  candidates?: PartialCopyCandidate[],
+  candidates?: PartialCopyCandidate[]
 ): boolean {
   return Boolean(candidates?.some((c) => candidateHasToken(c)));
 }
@@ -465,7 +588,7 @@ export function anyCandidateHasToken(
 /** Build shell facts with explicit target — never substitutes latest work. */
 export function factsForResolvedTarget(
   target: ResultTarget,
-  rest: Omit<ResultShellFacts, 'target'>,
+  rest: Omit<ResultShellFacts, 'target'>
 ): ResultShellFacts {
   return { ...rest, target };
 }

@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { P1Context } from '../foundation/domain.js';
-import { ProductBillingFoundationModule } from './foundation-module.js';
+import {
+  ProductBillingFoundationModule,
+  type ProductQuoteAuthority,
+} from './foundation-module.js';
 import { ProductQuoteService } from './quote-service.js';
 
 const context: P1Context = {
@@ -11,18 +14,46 @@ const context: P1Context = {
   correlationId: 'corr-module',
 };
 
-function module() {
+function module(authority: ProductQuoteAuthority = authoritativeQuote()) {
   const quotes = new ProductQuoteService({
     clock: () => new Date('2026-07-20T12:00:00.000Z'),
   });
   return {
     quotes,
-    module: new ProductBillingFoundationModule(quotes),
+    module: new ProductBillingFoundationModule(quotes, authority),
+  };
+}
+
+function authoritativeQuote(): ProductQuoteAuthority {
+  return {
+    async resolve(input) {
+      return {
+        billingMode:
+          input.operation === 'video.generate'
+            ? 'per_output_second'
+            : 'per_request',
+        catalogModelId: input.catalogModelId,
+        catalogModelRevision: 'catalog-server-1',
+        quoteId: input.quoteId,
+        quotePolicyRevision: 'quote-policy-server-1',
+        frozenCandidateDeploymentIds: ['server-deployment-1'],
+        routeSnapshotRef: 'server-route-1',
+        ...(input.operation === 'video.generate'
+          ? {
+              minChargeSeconds: 2,
+              roundingStepSeconds: 1,
+              targetSeconds: input.targetSeconds ?? 15,
+            }
+          : {}),
+        unitRate: input.operation === 'copy.generate' ? 2 : 0.5,
+        workspaceId: input.workspaceId,
+      };
+    },
   };
 }
 
 describe('ProductBillingFoundationModule', () => {
-  it('executes quote→confirm→reserve→dispatch→settle via module actions', async () => {
+  it('quotes and confirms from server-authoritative pricing only', async () => {
     const { module: billing } = module();
 
     const quoted = (await billing.execute({
@@ -33,19 +64,22 @@ describe('ProductBillingFoundationModule', () => {
         payload: {
           quoteId: 'mod-quote-1',
           catalogModelId: 'model-v',
-          quotePolicyRevision: 'qp-1',
-          billingMode: 'per_output_second',
-          unitRate: 1,
+          operation: 'video.generate',
           targetSeconds: 6,
-          minChargeSeconds: 2,
-          frozenCandidateDeploymentIds: ['dep-1', 'dep-2'],
-          routeSnapshotRef: 'route-1',
         },
       },
-    })) as { quoteId: string; confirmedAmount?: number; lifecycleStatus: string };
+    })) as {
+      quoteId: string;
+      confirmedAmount?: number;
+      lifecycleStatus: string;
+      frozenCandidateDeploymentIds?: string[];
+      routeSnapshotRef?: string;
+    };
 
     assert.equal(quoted.lifecycleStatus, 'quoted');
-    assert.equal(quoted.confirmedAmount, 6);
+    assert.equal(quoted.confirmedAmount, 3);
+    assert.equal(quoted.frozenCandidateDeploymentIds, undefined);
+    assert.equal(quoted.routeSnapshotRef, undefined);
 
     await billing.execute({
       context,
@@ -55,64 +89,6 @@ describe('ProductBillingFoundationModule', () => {
         payload: { quoteId: 'mod-quote-1', taskId: 'task-mod-1' },
       },
     });
-
-    const reserved = (await billing.execute({
-      context,
-      idempotencyKey: 'key-reserve',
-      input: {
-        action: 'reserve',
-        payload: { quoteId: 'mod-quote-1', resource: 'video' },
-      },
-    })) as { usage: { reservedQuantity: number } };
-    assert.equal(reserved.usage.reservedQuantity, 6);
-
-    await billing.execute({
-      context,
-      idempotencyKey: 'key-dispatch',
-      input: {
-        action: 'dispatch',
-        payload: {
-          quoteId: 'mod-quote-1',
-          deploymentId: 'dep-1',
-          attemptId: 'att-1',
-          providerCost: {
-            supplierPriceRevision: 'sp-1',
-            billingMode: 'per_output_second',
-            unitPriceMicros: 10_000,
-            currency: 'CNY',
-            unit: 'second',
-          },
-        },
-      },
-    });
-
-    const settled = (await billing.execute({
-      context,
-      idempotencyKey: 'key-settle',
-      input: {
-        action: 'settle',
-        payload: {
-          quoteId: 'mod-quote-1',
-          trustedUsage: {
-            kind: 'provider_usage',
-            actualSeconds: 3,
-          },
-          attemptId: 'att-1',
-        },
-      },
-    })) as {
-      quote: {
-        settledAmount?: number;
-        refundedAmount?: number;
-        billedSeconds?: number;
-        settlementStatus?: string;
-      };
-    };
-
-    assert.equal(settled.quote.billedSeconds, 3);
-    assert.equal(settled.quote.settledAmount, 3);
-    assert.equal(settled.quote.refundedAmount, 3);
-    assert.equal(settled.quote.settlementStatus, 'reconciled');
 
     const loaded = await billing.query?.({
       context,
@@ -124,45 +100,173 @@ describe('ProductBillingFoundationModule', () => {
     assert.equal((loaded as { quoteId: string }).quoteId, 'mod-quote-1');
   });
 
-  it('quotes from canvas source adapter via module', async () => {
+  it('rejects browser-forged price, policy, route, deployment, and ceiling facts', async () => {
     const { module: billing } = module();
-    const quoted = (await billing.execute({
+    for (const forged of [
+      { unitRate: 0 },
+      { quotePolicyRevision: 'attacker-policy' },
+      { billingMode: 'per_request' },
+      { catalogModelRevision: 'attacker-catalog' },
+      { authorizedCeiling: 0 },
+      { routeSnapshotRef: 'attacker-route' },
+      { frozenCandidateDeploymentIds: ['attacker-deployment'] },
+    ]) {
+      await assert.rejects(
+        billing.execute({
+          context,
+          idempotencyKey: `forged-${Object.keys(forged)[0]}`,
+          input: {
+            action: 'quote',
+            payload: {
+              quoteId: `forged-${Object.keys(forged)[0]}`,
+              catalogModelId: 'model-v',
+              operation: 'video.generate',
+              targetSeconds: 6,
+              ...forged,
+            },
+          },
+        }),
+        /server-authoritative/i,
+      );
+    }
+  });
+
+  it('does not expose provider lifecycle or settlement commands to browsers', async () => {
+    const { module: billing } = module();
+    for (const action of [
+      'reserve',
+      'dispatch',
+      'fallback_dispatch',
+      'settle',
+      'fail_and_refund',
+    ]) {
+      await assert.rejects(
+        billing.execute({
+          context,
+          idempotencyKey: `forbidden-${action}`,
+          input: { action, payload: { quoteId: 'quote-1' } },
+        }),
+        /Unknown product-billing command/,
+      );
+    }
+  });
+
+  it('does not accept a browser ceiling override at confirmation', async () => {
+    const { module: billing } = module();
+    await billing.execute({
       context,
-      idempotencyKey: 'key-canvas',
+      idempotencyKey: 'quote-before-forged-confirm',
       input: {
         action: 'quote',
         payload: {
-          source: 'canvas',
-          targetSeconds: 5,
-          canvasQuote: {
-            quoteId: 'canvas-mod-1',
-            catalogRevisionId: 'cat-1',
-            deploymentId: 'dep-c',
-            operation: 'video.generate',
-            priceRevision: 'price-1',
-            routeSnapshot: {
-              id: 'route-c',
-              actualCatalogModelId: 'model-c',
-              allowedCandidates: [{ deploymentId: 'dep-c' }],
-            },
-            estimatedProviderCost: {
-              amountMicros: 500_000,
-              currency: 'CNY',
-              unit: 'second',
-            },
-            workspaceId: context.workspaceId,
-          },
+          catalogModelId: 'model-v',
+          operation: 'video.generate',
+          quoteId: 'quote-before-forged-confirm',
+          targetSeconds: 6,
         },
       },
-    })) as {
-      quoteId: string;
-      billingMode: string;
-      unitRate?: number;
-      formula: { unitRate: number };
-    };
+    });
+    await assert.rejects(
+      billing.execute({
+        context,
+        idempotencyKey: 'forged-confirm-ceiling',
+        input: {
+          action: 'confirm',
+          payload: {
+            authorizedCeiling: 0,
+            quoteId: 'quote-before-forged-confirm',
+            taskId: 'task-forged-confirm',
+          },
+        },
+      }),
+      /server-authoritative/,
+    );
+  });
 
-    assert.equal(quoted.quoteId, 'canvas-mod-1');
-    assert.equal(quoted.billingMode, 'per_output_second');
-    assert.equal(quoted.formula.unitRate, 0.5);
+  it('keeps every quote lifecycle command and task query workspace-scoped', async () => {
+    const { module: billing } = module();
+    await billing.execute({
+      context,
+      idempotencyKey: 'key-scoped-quote',
+      input: {
+        action: 'quote',
+        payload: {
+          quoteId: 'mod-quote-scoped',
+          catalogModelId: 'model-scoped',
+          operation: 'image.generate',
+        },
+      },
+    });
+
+    const foreignContext = { ...context, workspaceId: 'ws-foreign' };
+    await assert.rejects(
+      billing.execute({
+        context: foreignContext,
+        idempotencyKey: 'key-foreign-confirm',
+        input: {
+          action: 'confirm',
+          payload: { quoteId: 'mod-quote-scoped', taskId: 'task-scoped' },
+        },
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'FORBIDDEN',
+    );
+
+    await billing.execute({
+      context,
+      idempotencyKey: 'key-scoped-confirm',
+      input: {
+        action: 'confirm',
+        payload: { quoteId: 'mod-quote-scoped', taskId: 'task-scoped' },
+      },
+    });
+    for (const [action, payload] of [
+      ['get_quote_by_task', { taskId: 'task-scoped' }],
+    ] as const) {
+      await assert.rejects(
+        billing.query?.({
+          context: foreignContext,
+          input: { action, payload },
+        }),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'FORBIDDEN',
+      );
+    }
+  });
+
+  it('binds authoritative quotes to the authenticated workspace', async () => {
+    const requested: unknown[] = [];
+    const { module: billing } = module({
+      async resolve(input) {
+        requested.push(input);
+        return authoritativeQuote().resolve(input);
+      },
+    });
+    const quoted = (await billing.execute({
+      context,
+      idempotencyKey: 'key-authoritative-workspace',
+      input: {
+        action: 'quote',
+        payload: {
+          quoteId: 'authoritative-workspace-quote',
+          catalogModelId: 'model-c',
+          operation: 'image.generate',
+        },
+      },
+    })) as { workspaceId?: string };
+
+    assert.equal(quoted.workspaceId, context.workspaceId);
+    assert.deepEqual(requested, [
+      {
+        catalogModelId: 'model-c',
+        operation: 'image.generate',
+        quoteId: 'authoritative-workspace-quote',
+        workspaceId: context.workspaceId,
+      },
+    ]);
   });
 });

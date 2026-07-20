@@ -24,6 +24,33 @@ const contract: CreativeExecutionContract = {
   watermarkEnabled: false,
 };
 
+const videoContract: CreativeExecutionContract = {
+  ...contract,
+  aspectRatio: '9:16',
+  catalogModelId: 'seedance-1-5-pro',
+  durationSeconds: 15,
+  operation: 'video.generate',
+  outputCount: 1,
+  outputLabel: '1 段竖屏视频',
+};
+
+function acceptedInspectionAuthority(
+  executionContract: CreativeExecutionContract,
+  quoteId = 'fresh-adjust-quote-1',
+) {
+  return {
+    catalogModelId: executionContract.catalogModelId,
+    catalogModelRevision: executionContract.catalogRevision,
+    confirmedAmount: executionContract.estimatedAmount,
+    currency: executionContract.currency,
+    kind: 'accepted_product_quote' as const,
+    outputCount: executionContract.outputCount,
+    outputLabel: executionContract.outputLabel,
+    quoteId,
+    quoteRevision: executionContract.quoteRevision,
+  };
+}
+
 function executor() {
   return new ModelSupplyCreationExecutor({
     async getCatalog() {
@@ -75,6 +102,296 @@ test('accepts only the server-derived current creative quote', async () => {
       /execution quote changed/i
     );
   }
+});
+
+test('accepts an opaque ProductQuote revision only after Operations validated its quote binding', async () => {
+  const creation = executor();
+  const acceptedProductQuoteContract = {
+    ...contract,
+    quoteRevision: 'product-quote-sha256-opaque-revision',
+  };
+
+  await assert.rejects(
+    creation.inspect('workspace-a', acceptedProductQuoteContract),
+    /execution quote changed/i,
+  );
+  await creation.inspect('workspace-a', acceptedProductQuoteContract, {
+    ...acceptedInspectionAuthority(acceptedProductQuoteContract),
+  });
+
+  await assert.rejects(
+    creation.inspect(
+      'workspace-a',
+      { ...acceptedProductQuoteContract, estimatedAmount: 0 },
+      acceptedInspectionAuthority(acceptedProductQuoteContract),
+    ),
+    /accepted Product quote no longer matches/i,
+  );
+  await assert.rejects(
+    creation.inspect(
+      'workspace-a',
+      { ...acceptedProductQuoteContract, catalogRevision: 'stale-catalog' },
+      acceptedInspectionAuthority(acceptedProductQuoteContract),
+    ),
+    /model catalog changed/i,
+  );
+});
+
+test('accepts server-bound single and set image quotes without legacy output-count reconstruction', async () => {
+  const creation = new ModelSupplyCreationExecutor({
+    async getCatalog() {
+      return {
+        models: [
+          {
+            activationEvidence: { status: 'live_verified' as const },
+            availability: 'available' as const,
+            capabilities: ['image.generate' as const],
+            dataClasses: { allowed: ['public' as const], denied: [] },
+            displayName: 'Live image',
+            id: 'image-live',
+            manufacturer: 'Recorded',
+            modality: 'image' as const,
+            operations: ['image.generate' as const],
+            qualityRank: 1,
+            stableModelName: 'image-live',
+            unitPrice: {
+              amountMicros: 1_000_000,
+              currency: 'CNY' as const,
+              revision: 'price-image-v1',
+              unit: 'request',
+            },
+            version: '1',
+          },
+        ],
+        operation: 'image.generate' as const,
+        revisionId: 'catalog-image-v1',
+        stage: 'published' as const,
+      };
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+  const single: CreativeExecutionContract = {
+    ...contract,
+    aspectRatio: '3:4',
+    catalogModelId: 'image-live',
+    catalogRevision: 'catalog-image-v1',
+    estimatedAmount: 1,
+    operation: 'image.generate',
+    outputCount: 1,
+    outputLabel: '1 张 3:4 图片',
+    quoteRevision: 'opaque-image-single',
+  };
+  const set: CreativeExecutionContract = {
+    ...single,
+    estimatedAmount: 3,
+    outputCount: 3,
+    outputLabel: '3 张 3:4 图片',
+    quoteRevision: 'opaque-image-set',
+  };
+
+  await creation.inspect(
+    'workspace-a',
+    single,
+    acceptedInspectionAuthority(single, 'quote-image-single'),
+  );
+  await creation.inspect(
+    'workspace-a',
+    set,
+    acceptedInspectionAuthority(set, 'quote-image-set'),
+  );
+
+  for (const altered of [
+    { ...set, estimatedAmount: 1 },
+    { ...set, outputCount: 1 },
+    { ...set, outputLabel: '1 张 3:4 图片' },
+  ]) {
+    await assert.rejects(
+      creation.inspect(
+        'workspace-a',
+        altered,
+        acceptedInspectionAuthority(set, 'quote-image-set'),
+      ),
+      /accepted Product quote no longer matches/i,
+    );
+  }
+});
+
+test('forwards the canonical Operations billing task into Model Supply', async () => {
+  let captured:
+    | { billingTaskId?: string; billingQuoteRevision?: string }
+    | undefined;
+  const expectedError = new Error('stop after billing capture');
+  const creation = new ModelSupplyCreationExecutor({
+    async submitGeneration(_context: unknown, request: typeof captured) {
+      captured = structuredClone(request);
+      throw expectedError;
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  await assert.rejects(
+    creation.submit({
+      billingQuoteRevision: contract.quoteRevision,
+      billingTaskId: 'creative-work-billing-1',
+      context: {
+        actor: 'owner',
+        correlationId: 'corr-billing-task',
+        userId: 'owner-a',
+        workspaceId: 'workspace-a',
+      },
+      contract,
+      idempotencyKey: 'billing-task-submit',
+      intent: '写三条内容',
+      productUsageQuantity: 1,
+    }),
+    expectedError,
+  );
+
+  assert.deepEqual(captured, {
+    billingQuoteRevision: contract.quoteRevision,
+    billingTaskId: 'creative-work-billing-1',
+    dataClass: [],
+    exampleSetRevision: 'none',
+    input: {},
+    operation: 'copy.generate',
+    productUsageQuantity: 1,
+    prompt: '写三条内容\n\n本次成套内容结构（按顺序全部覆盖）：社交媒体封面。',
+    promptRevision: 'creative-brief-grounding-v3',
+    selection: { catalogModelId: 'llm-live', mode: 'fixed' },
+  });
+});
+
+test('routes video submission and recovery through the Work-bound composed-video workflow', async () => {
+  const calls: Array<{ action: string; input: Record<string, unknown> }> = [];
+  const routeSnapshot = {
+    actualCatalogModelId: 'seedance-1-5-pro',
+    allowedCandidates: [],
+    candidateCatalogModelIds: ['seedance-1-5-pro'],
+    catalogRevisionId: videoContract.catalogRevision,
+    dataClass: [],
+    deploymentId: 'seedance-1-5-pro-recorded',
+    id: 'route-video-composed-1',
+    reason: 'fixed_selection' as const,
+    requestedSelection: {
+      catalogModelId: 'seedance-1-5-pro',
+      mode: 'fixed' as const,
+    },
+  };
+  const baseWorkflow = {
+    actorId: 'owner-a',
+    aigcLabelEnabled: true,
+    attempts: [],
+    catalogModelId: 'seedance-1-5-pro',
+    clipAssets: [],
+    confirmed: true,
+    createdAt: '2026-07-20T00:00:00.000Z',
+    dataClass: [],
+    deliveryMode: 'candidate_only' as const,
+    id: 'video-workflow-canonical-1',
+    referenceAssetIds: [],
+    revision: 2,
+    routeSnapshot,
+    shots: [],
+    status: 'running' as const,
+    storyboardRevision: 'storyboard-canonical-1',
+    storyboardVersion: 1,
+    updatedAt: '2026-07-20T00:00:01.000Z',
+    workId: 'creative-work-video-1',
+    workspaceId: 'workspace-a',
+  };
+  let currentWorkflow = baseWorkflow as unknown as import('../model-supply/index.js').DurableVideoWorkflow;
+  const creation = new ModelSupplyCreationExecutor(
+    {} as ModelSupplyControlPlaneService,
+    undefined,
+    undefined,
+    {
+      async createDraft(input) {
+        calls.push({ action: 'create', input: structuredClone(input) });
+        currentWorkflow = {
+          ...currentWorkflow,
+          id: input.workflowId,
+          storyboardRevision: input.storyboardRevision,
+          workId: input.workId,
+        };
+        return structuredClone(currentWorkflow);
+      },
+      async confirmAndSubmit(input) {
+        calls.push({ action: 'confirm', input: structuredClone(input) });
+        return { workflow: structuredClone(currentWorkflow) };
+      },
+      async query(input) {
+        calls.push({ action: 'query', input: structuredClone(input) });
+        return { workflow: structuredClone(currentWorkflow) };
+      },
+    }
+  );
+
+  const submitted = await creation.submit({
+    context: {
+      actor: 'owner',
+      correlationId: 'corr-video-composed',
+      userId: 'owner-a',
+      workspaceId: 'workspace-a',
+    },
+    contract: videoContract,
+    idempotencyKey: 'submit-video-composed',
+    intent: '介绍真实门店服务',
+    productUsageQuantity: 1,
+    workId: 'creative-work-video-1',
+  });
+
+  assert.equal(submitted.status, 'running');
+  assert.match(submitted.providerJobId, /^video-workflow-/);
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ['create', 'confirm']
+  );
+  const create = calls[0]?.input as {
+    deliveryMode: string;
+    executionContract: CreativeExecutionContract;
+    shots: Array<{
+      candidatesPerShot: number;
+      durationSeconds: number;
+      id: string;
+    }>;
+    workId: string;
+  };
+  assert.equal(create.deliveryMode, 'candidate_only');
+  assert.equal(create.workId, 'creative-work-video-1');
+  assert.equal(create.executionContract.operation, 'video.generate');
+  assert.deepEqual(
+    create.shots.map((shot) => shot.id),
+    ['aida-attention', 'aida-interest', 'aida-desire', 'aida-action']
+  );
+  assert.deepEqual(
+    create.shots.map((shot) => shot.durationSeconds),
+    [4, 4, 4, 3]
+  );
+  assert.ok(create.shots.every((shot) => shot.candidatesPerShot === 2));
+
+  currentWorkflow = {
+    ...currentWorkflow,
+    composedAsset: {
+      contentType: 'video/mp4',
+      id: 'owned-composed-video-1',
+      objectKey: 'workspace-a/owned/composed-video-1.mp4',
+      sha256: 'a'.repeat(64),
+      sizeBytes: 2048,
+    },
+    status: 'completed',
+  } as import('../model-supply/index.js').DurableVideoWorkflow;
+  const verified = await creation.verify({
+    context: {
+      actor: 'owner',
+      correlationId: 'corr-video-verify',
+      userId: 'owner-a',
+      workspaceId: 'workspace-a',
+    },
+    contract: videoContract,
+    providerJobId: submitted.providerJobId,
+    routeSnapshotId: submitted.routeSnapshotId,
+  });
+  assert.equal(verified.status, 'completed');
+  assert.equal(verified.asset?.id, 'owned-composed-video-1');
+  assert.equal(calls.at(-1)?.action, 'query');
 });
 
 test('accepts an explicit local-fixture execution flag without live evidence', async () => {
@@ -284,6 +601,22 @@ test('passes frozen Brief and confirmed Product grounding to copy, image and vid
       async resolve() {
         throw new Error('execution resolution is not part of submission');
       },
+    },
+    {
+      async createDraft(input) {
+        requests.push({
+          input: { referenceAssetIds: input.referenceAssetIds },
+          operation: 'video.generate',
+          prompt: input.shots[0]!.prompt,
+        });
+        throw expectedError;
+      },
+      async confirmAndSubmit() {
+        throw new Error('must not confirm after capture');
+      },
+      async query() {
+        throw new Error('must not query after capture');
+      },
     }
   );
 
@@ -301,11 +634,22 @@ test('passes frozen Brief and confirmed Product grounding to copy, image and vid
           userId: 'owner-a',
           workspaceId: 'workspace-a',
         },
-        contract: { ...contract, operation },
+        contract:
+          operation === 'video.generate'
+            ? {
+                ...contract,
+                aspectRatio: '9:16',
+                durationSeconds: 15,
+                operation,
+              }
+            : { ...contract, operation },
         groundingSnapshot,
         idempotencyKey: `grounding-${operation}`,
         intent: '这个原始意图不得覆盖已确认 Brief',
         productUsageQuantity: 1,
+        ...(operation === 'video.generate'
+          ? { workId: 'creative-work-video-grounding' }
+          : {}),
       }),
       expectedError
     );

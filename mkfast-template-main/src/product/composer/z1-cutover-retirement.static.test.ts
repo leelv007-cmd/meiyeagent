@@ -5,7 +5,7 @@
  * - entries resolve to Result Center deep link
  */
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -15,11 +15,27 @@ const PRODUCT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DASHBOARD_INDEX = fileURLToPath(
   new URL('../../routes/dashboard/index.tsx', import.meta.url)
 );
+const CONTENT_PACKAGE_DETAIL = fileURLToPath(
+  new URL('../../p1/content-package-detail.tsx', import.meta.url)
+);
+const CONTENT_ROUTE = fileURLToPath(
+  new URL('../../routes/dashboard/content.tsx', import.meta.url)
+);
+const DAY0_SPEC = fileURLToPath(
+  new URL(
+    '../../../tests/e2e/specs/uiux-day0-contract.spec.ts',
+    import.meta.url
+  )
+);
+const DAY0_FIXTURES = fileURLToPath(
+  new URL('../../../tests/e2e/fixtures/user-activation.ts', import.meta.url)
+);
 
 const FORBIDDEN_RUNTIME_TOKENS = [
   'Scene' + 'VisualButton',
+  'scene' + 'ChipGroups',
   'NAMED_' + 'PRESET_CONTRACTS',
-  'selectedPreset.internal' + 'Intent',
+  'internal' + 'Intent',
 ] as const;
 
 function walkSourceFiles(dir: string): string[] {
@@ -66,6 +82,14 @@ test('dashboard index mounts ComposerHome and unhooks workId bridge to results',
   assert.match(source, /unhook|UNHOOKED|unhooked/i);
 });
 
+test('legacy desktop and mobile creation entry files are physically removed', () => {
+  assert.equal(
+    existsSync(join(PRODUCT_ROOT, 'unified-creation-workbench.tsx')),
+    false
+  );
+  assert.equal(existsSync(join(PRODUCT_ROOT, 'mobile-action-book.tsx')), false);
+});
+
 test('composer home submits to Result Center navigation helpers', () => {
   const home = readFileSync(
     join(PRODUCT_ROOT, 'composer/composer-home.tsx'),
@@ -73,6 +97,59 @@ test('composer home submits to Result Center navigation helpers', () => {
   );
   assert.match(home, /navigateAfterSubmitSuccess/);
   assert.match(home, /\/dashboard\/results\/\$workId/);
-  assert.doesNotMatch(home, /selectedPreset\.internalIntent/);
+  assert.doesNotMatch(home, new RegExp('selectedPreset\\.internal' + 'Intent'));
   assert.doesNotMatch(home, /\?workId=/);
+});
+
+test('legacy ContentPackage detail is a read-only archive with one Result Center handoff', () => {
+  const detail = readFileSync(CONTENT_PACKAGE_DETAIL, 'utf8');
+  const route = readFileSync(CONTENT_ROUTE, 'utf8');
+  const retiredProps = [
+    'on' + 'Edit',
+    'on' + 'Export',
+    'on' + 'GenerateVariants',
+    'on' + 'ApproveAndDeliver',
+    'on' + 'RecordManualResult',
+    'on' + 'RetryDelivery',
+    'on' + 'RetryVariantCatalog',
+    'on' + 'Reuse',
+    'on' + 'Rollback',
+  ];
+
+  assert.match(detail, /\/dashboard\/results\//u);
+  assert.match(detail, /legacy-read-only/u);
+  assert.doesNotMatch(detail, /<(?:form|Input|Textarea)\b/u);
+  assert.doesNotMatch(route, /operationsCommand/u);
+  for (const prop of retiredProps) {
+    assert.doesNotMatch(detail, new RegExp(`\\b${prop}\\b`, 'u'));
+    assert.doesNotMatch(route, new RegExp(`\\b${prop}=`, 'u'));
+  }
+});
+
+test('runtime sources never produce the retired dashboard query bridge', () => {
+  const violations = walkSourceFiles(SRC_ROOT).filter((file) =>
+    /\/dashboard\/?\?workId=/u.test(readFileSync(file, 'utf8'))
+  );
+  assert.deepEqual(
+    violations.map((file) => relative(SRC_ROOT, file)),
+    [],
+    violations.map((file) => relative(SRC_ROOT, file)).join('\n')
+  );
+});
+
+test('Day-0 gate locates Composer lens/cards instead of retired workbench controls', () => {
+  const source = `${readFileSync(DAY0_SPEC, 'utf8')}\n${readFileSync(
+    DAY0_FIXTURES,
+    'utf8'
+  )}`;
+
+  assert.match(source, /composerLensOption/);
+  assert.match(source, /composerRecipeCard/);
+  assert.match(source, /composer-lens-option-/);
+  assert.match(source, /composer-recipe-card-/);
+  assert.doesNotMatch(source, new RegExp('sceneTemplate' + 'Card'));
+  assert.doesNotMatch(source, new RegExp('creationMode' + 'Chip'));
+  assert.doesNotMatch(source, new RegExp('Scene' + 'VisualButton'));
+  assert.doesNotMatch(source, new RegExp('CreationMode' + 'Picker'));
+  assert.doesNotMatch(source, new RegExp('harness-primary-' + 'candidate'));
 });

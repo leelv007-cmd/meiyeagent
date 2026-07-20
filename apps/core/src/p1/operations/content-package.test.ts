@@ -23,6 +23,8 @@ import {
   ContentPackageTransitionError,
   transitionContentPackage,
 } from './content-package.js';
+import { ResultDeliveryFoundationModule } from '../result-delivery/foundation-module.js';
+import { OperationsVisualAdoptionPort } from '../result-delivery/operations-visual-adoption.js';
 import { ContentPackageDeliveryService } from './content-package-delivery.js';
 import {
   type CreationExecutorPort,
@@ -2053,7 +2055,10 @@ describe('ContentPackage application service contract', () => {
         id: 'image-1',
         jobId: 'image-job-1',
         kind: 'image',
+        objectKey: `${context.workspaceId}/generated/image-1.png`,
         ownedAssetId: 'owned-image-1',
+        sha256: '1'.repeat(64),
+        sizeBytes: 101,
         title: '图片 1',
         workId: visualWork.id,
         workspaceId: context.workspaceId,
@@ -2064,7 +2069,10 @@ describe('ContentPackage application service contract', () => {
         id: 'image-2',
         jobId: 'image-job-2',
         kind: 'image',
+        objectKey: `${context.workspaceId}/generated/image-2.png`,
         ownedAssetId: 'owned-image-2',
+        sha256: '2'.repeat(64),
+        sizeBytes: 102,
         title: '图片 2',
         workId: visualWork.id,
         workspaceId: context.workspaceId,
@@ -2166,28 +2174,129 @@ describe('ContentPackage application service contract', () => {
         workId: work.id,
       },
     };
-    const adopted = await service.executeModule<
-      typeof command,
-      {
-        currentVersionId: string;
-        id: string;
-        kind: 'image_text';
-        source: { assetIds: string[] };
-        status: 'accepted';
-        statusGroup: 'usable';
-        versions: Array<{
-          id: string;
-          orderedAssetIds: string[];
-          title: string;
-        }>;
-      }
-    >(context, 'operations', command, 'adopt-package-1');
-    const replay = await service.executeModule<typeof command, typeof adopted>(
-      context,
-      'operations',
-      command,
-      'adopt-package-1'
+    const resultDelivery = new ResultDeliveryFoundationModule(
+      new OperationsVisualAdoptionPort(operationsService),
     );
+    const adopted = (await resultDelivery.execute({
+      context,
+      idempotencyKey: 'adopt-package-1',
+      input: command,
+    })) as {
+      currentVersionId: string;
+      generated: {
+        ownedAssets?: Array<{
+          id: string;
+          objectKey: string;
+          sha256: string;
+          sourceAssetId?: string;
+        }>;
+      };
+      id: string;
+      kind: 'image_text';
+      revision: number;
+      source: { assetIds: string[] };
+      status: 'accepted';
+      statusGroup: 'usable';
+      versions: Array<{
+        id: string;
+        orderedAssetIds: string[];
+        title: string;
+      }>;
+    };
+    const restartedOperationsService = new OperationsApplicationService(
+      operations,
+      {
+        canvasExporter: new RecordedCanvasExportAdapter(),
+        contentPackageRightsResolver: {
+          async resolve({ assetIds }) {
+            return { unauthorizedAssetIds: assetIds };
+          },
+        },
+        imageGenerator: new RecordedImageGenerationAdapter(),
+        notifier: { async send() {} },
+      },
+    );
+    const restartedResultDelivery = new ResultDeliveryFoundationModule(
+      new OperationsVisualAdoptionPort(restartedOperationsService),
+    );
+    const replay = (await restartedResultDelivery.execute({
+      context,
+      idempotencyKey: 'adopt-package-1',
+      input: command,
+    })) as typeof adopted;
+    await assert.rejects(
+      restartedResultDelivery.execute({
+        context,
+        idempotencyKey: 'adopt-package-1',
+        input: {
+          ...command,
+          payload: { ...command.payload, copyCandidateAssetId: 'copy-a' },
+        },
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'IDEMPOTENCY_CONFLICT',
+    );
+    const reviseCommand = {
+      action: 'revise_content_package_visuals',
+      payload: {
+        baseVersionId: adopted.currentVersionId,
+        expectedRevision: adopted.revision,
+        orderedVisualAssetIds: ['image-1', 'image-2'],
+        packageId: adopted.id,
+        roleAction: 'replace_set' as const,
+      },
+    };
+    const revised = (await restartedResultDelivery.execute({
+      context: { ...context, correlationId: 'corr-revise-visuals' },
+      idempotencyKey: 'revise-package-visuals-1',
+      input: reviseCommand,
+    })) as typeof adopted;
+    const replayAfterRestart = (await new ResultDeliveryFoundationModule(
+      new OperationsVisualAdoptionPort(
+        new OperationsApplicationService(operations, {
+          canvasExporter: new RecordedCanvasExportAdapter(),
+          imageGenerator: new RecordedImageGenerationAdapter(),
+          notifier: { async send() {} },
+        }),
+      ),
+    ).execute({
+      context: { ...context, correlationId: 'corr-revise-visuals-replay' },
+      idempotencyKey: 'revise-package-visuals-1',
+      input: reviseCommand,
+    })) as typeof adopted;
+    const concurrentBase = revised;
+    const concurrent = await Promise.allSettled([
+      restartedResultDelivery.execute({
+        context: { ...context, correlationId: 'corr-revise-cover' },
+        idempotencyKey: 'revise-package-cover',
+        input: {
+          action: 'revise_content_package_visuals',
+          payload: {
+            baseVersionId: concurrentBase.currentVersionId,
+            expectedRevision: concurrentBase.revision,
+            orderedVisualAssetIds: ['image-1'],
+            packageId: adopted.id,
+            roleAction: 'set_cover',
+          },
+        },
+      }),
+      restartedResultDelivery.execute({
+        context: { ...context, correlationId: 'corr-revise-primary' },
+        idempotencyKey: 'revise-package-primary',
+        input: {
+          action: 'revise_content_package_visuals',
+          payload: {
+            baseVersionId: concurrentBase.currentVersionId,
+            expectedRevision: concurrentBase.revision,
+            orderedVisualAssetIds: ['image-2'],
+            packageId: adopted.id,
+            roleAction: 'set_primary',
+          },
+        },
+      }),
+    ]);
     const library = await service.queryModule<
       { action: string; payload: Record<string, never> },
       Array<typeof adopted>
@@ -2222,6 +2331,43 @@ describe('ContentPackage application service contract', () => {
     ]);
     assert.equal(adopted.currentVersionId, adopted.versions[0]?.id);
     assert.equal(replay.id, adopted.id);
+    assert.equal(replay.revision, adopted.revision);
+    assert.equal(revised.revision, adopted.revision + 1);
+    assert.equal(replayAfterRestart.revision, revised.revision);
+    const revisedVersion = revised.versions.at(-1);
+    assert.equal(revisedVersion?.orderedAssetIds.length, 2);
+    assert.deepEqual(
+      revisedVersion?.orderedAssetIds.map(
+        (assetId) =>
+          revised.generated.ownedAssets?.find((asset) => asset.id === assetId)
+            ?.sourceAssetId,
+      ),
+      ['image-1', 'image-2'],
+    );
+    assert.deepEqual(
+      revisedVersion?.orderedAssetIds.map(
+        (assetId) =>
+          revised.generated.ownedAssets?.find((asset) => asset.id === assetId)
+            ?.objectKey,
+      ),
+      [
+        `${context.workspaceId}/generated/image-1.png`,
+        `${context.workspaceId}/generated/image-2.png`,
+      ],
+    );
+    assert.equal(
+      concurrent.filter((outcome) => outcome.status === 'fulfilled').length,
+      1,
+    );
+    const staleRevision = concurrent.find(
+      (outcome) => outcome.status === 'rejected',
+    );
+    assert.ok(staleRevision && staleRevision.status === 'rejected');
+    assert.equal(
+      (staleRevision.reason as { code?: string }).code,
+      'CONTENT_PACKAGE_REVISION_CONFLICT',
+    );
+    assert.equal((staleRevision.reason as { status?: number }).status, 409);
     assert.deepEqual(
       library.map((item) => item.id),
       [adopted.id]

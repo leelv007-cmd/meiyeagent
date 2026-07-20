@@ -154,6 +154,22 @@ export type BuildVideoRegenQuoteInput = {
   now?: Date;
 };
 
+/** Browser-safe regeneration intent; all money, model, route and duration facts are server-derived. */
+export type VideoRegenQuoteIntent = {
+  scope: VideoRegenScope;
+  sourceRunId: string;
+  workspaceId: string;
+  actorId: string;
+  requestId?: string;
+  shotId?: string;
+};
+
+export type VideoRegenRetryIntent = VideoRegenQuoteIntent & {
+  approvalReceiptId?: string;
+  quoteId: string;
+  taskId: string;
+};
+
 export type ConfirmVideoRegenInput = {
   quoteId: string;
   /**

@@ -9,6 +9,7 @@ import type {
 import type {
   CreateVideoWorkflowInput,
   DurableVideoWorkflow,
+  EditVideoWorkflowInput,
   SelectVideoCandidateInput,
 } from './index.js';
 import type { VideoContentPackagePort } from '../video-content-package-port.js';
@@ -33,6 +34,7 @@ export interface ComposedVideoWorkflowRunnerPort {
   selectVideoCandidate(
     input: SelectVideoCandidateInput,
   ): MaybePromise<DurableVideoWorkflow>;
+  editVideoWorkflow?(input: EditVideoWorkflowInput): MaybePromise<DurableVideoWorkflow>;
   runVideoWorkflow(id: string, workspaceId?: string): Promise<DurableVideoWorkflow>;
   requestVideoWorkflowCancel(
     id: string,
@@ -51,6 +53,10 @@ export interface ComposedVideoJobApplicationPort {
 export type ComposedVideoRunnerFactory = (
   workspaceId: string,
 ) => MaybePromise<ComposedVideoWorkflowRunnerPort>;
+
+export interface ComposedVideoTerminalObserver {
+  settle(workflow: DurableVideoWorkflow): MaybePromise<unknown>;
+}
 
 export class DurableComposedVideoApplicationService {
   private readonly jobs: ComposedVideoJobApplicationPort;
@@ -99,9 +105,12 @@ export class DurableComposedVideoApplicationService {
     workspaceId: string;
     actorId: string;
     workId?: string;
+    billingTaskId?: string;
+    billingQuoteRevision?: string;
     approvalReceiptId?: string;
     workflowId: string;
     derivedFromWorkflowId?: string;
+    deliveryMode?: CreateVideoWorkflowInput['deliveryMode'];
     storyboardRevision: string;
     catalogModelId: string;
     dataClass: CreateVideoWorkflowInput['dataClass'];
@@ -114,6 +123,12 @@ export class DurableComposedVideoApplicationService {
     requireText(input.workspaceId, 'workspaceId');
     requireText(input.actorId, 'actorId');
     if (input.workId !== undefined) requireText(input.workId, 'workId');
+    if (input.billingTaskId !== undefined) {
+      requireText(input.billingTaskId, 'billingTaskId');
+    }
+    if (input.billingQuoteRevision !== undefined) {
+      requireText(input.billingQuoteRevision, 'billingQuoteRevision');
+    }
     requireText(input.workflowId, 'workflowId');
     if (input.derivedFromWorkflowId !== undefined) {
       requireText(input.derivedFromWorkflowId, 'derivedFromWorkflowId');
@@ -126,12 +141,17 @@ export class DurableComposedVideoApplicationService {
       workspaceId: input.workspaceId,
       actorId: input.actorId,
       ...(input.workId ? { workId: input.workId } : {}),
+      ...(input.billingTaskId ? { billingTaskId: input.billingTaskId } : {}),
+      ...(input.billingQuoteRevision
+        ? { billingQuoteRevision: input.billingQuoteRevision }
+        : {}),
       ...(input.approvalReceiptId
         ? { approvalReceiptId: input.approvalReceiptId }
         : {}),
       ...(input.derivedFromWorkflowId
         ? { derivedFromWorkflowId: input.derivedFromWorkflowId }
         : {}),
+      ...(input.deliveryMode ? { deliveryMode: input.deliveryMode } : {}),
       dataClass: [...input.dataClass],
       ...(input.executionContract
         ? { executionContract: structuredClone(input.executionContract) }
@@ -154,31 +174,9 @@ export class DurableComposedVideoApplicationService {
       input.workspaceId,
     );
     try {
-      await this.contentPackages.confirm({
-        actorId: workflow.actorId,
-        ...(workflow.approvalReceiptId
-          ? { approvalReceiptId: workflow.approvalReceiptId }
-          : {}),
-        aigcLabelEnabled: workflow.aigcLabelEnabled,
-        ...(workflow.brandWatermarkText
-          ? { brandWatermarkText: workflow.brandWatermarkText }
-          : {}),
-        catalogModelId: workflow.catalogModelId,
-        dataClass: [...workflow.dataClass],
-        ...(workflow.executionContract
-          ? { executionContract: structuredClone(workflow.executionContract) }
-          : {}),
-        referenceAssetIds: [...(workflow.referenceAssetIds ?? [])],
-        shots: workflow.shots.map((shot) => ({
-          id: shot.id,
-          prompt: shot.prompt,
-        })),
-        storyboardRevision: workflow.storyboardRevision,
-        storyboardVersion: workflow.storyboardVersion,
-        workflowId: workflow.id,
-        workspaceId: workflow.workspaceId,
-        ...(workflow.workId ? { workId: workflow.workId } : {}),
-      });
+      if (shouldWriteVideoContentPackage(workflow)) {
+        await confirmVideoContentPackage(this.contentPackages, workflow);
+      }
     } catch (error) {
       // The durable job has not been submitted yet and both confirm steps are
       // idempotent, so mark the failure claim-releasable: the same HTTP
@@ -198,6 +196,25 @@ export class DurableComposedVideoApplicationService {
     return { workflow, job };
   }
 
+  async adoptCandidate(input: { workspaceId: string; workflowId: string }) {
+    const runner = await this.runnerForWorkspace(input.workspaceId);
+    const workflow = await runner.getVideoWorkflow(
+      input.workflowId,
+      input.workspaceId,
+    );
+    if (!isAdoptableVideoCandidate(workflow)) {
+      throw new Error(
+        `Video workflow ${workflow.id} does not have an adoptable candidate.`,
+      );
+    }
+    await confirmVideoContentPackage(this.contentPackages, workflow);
+    await reconcileCompletedVideoContentPackage(
+      this.contentPackages,
+      workflow,
+    );
+    return { workflow };
+  }
+
   async query(input: { workspaceId: string; workflowId: string }) {
     const runner = await this.runnerForWorkspace(input.workspaceId);
     const workflow = await runner.getVideoWorkflow(
@@ -206,6 +223,19 @@ export class DurableComposedVideoApplicationService {
     );
     const job = await this.findJobForWorkflow(workflow);
     return { workflow, job };
+  }
+
+  async recoverSupplierTask(input: {
+    workspaceId: string;
+    workflowId: string;
+  }) {
+    const runner = await this.runnerForWorkspace(input.workspaceId);
+    const workflow = await runner.getVideoWorkflow(
+      input.workflowId,
+      input.workspaceId,
+    );
+    const job = await this.jobs.submit(this.jobInput(workflow));
+    return { job, workflow };
   }
 
   async selectCandidateAndResume(input: {
@@ -232,6 +262,15 @@ export class DurableComposedVideoApplicationService {
       payload: { workflowId: input.workflowId },
     });
     return { workflow, job };
+  }
+
+  async edit(input: EditVideoWorkflowInput) {
+    const runner = await this.runnerForWorkspace(input.workspaceId);
+    if (!runner.editVideoWorkflow) {
+      throw new Error('Canonical video editing is not configured.');
+    }
+    const workflow = await runner.editVideoWorkflow(input);
+    return { workflow };
   }
 
   async latest(input: {
@@ -295,6 +334,7 @@ export class ComposedVideoJobEffect implements TracerExternalEffect {
   constructor(
     private readonly runnerForWorkspace: ComposedVideoRunnerFactory,
     private readonly contentPackages: VideoContentPackagePort,
+    private readonly terminalObserver?: ComposedVideoTerminalObserver,
   ) {}
 
   execute(request: TracerExternalRequest) {
@@ -312,12 +352,15 @@ export class ComposedVideoJobEffect implements TracerExternalEffect {
       workflowId,
       request.workspaceId,
     );
-    await this.contentPackages.reconcile({
-      actorId: workflow.actorId,
-      status: 'cancelled',
-      workflowId: workflow.id,
-      workspaceId: workflow.workspaceId,
-    });
+    if (shouldWriteVideoContentPackage(workflow)) {
+      await this.contentPackages.reconcile({
+        actorId: workflow.actorId,
+        status: 'cancelled',
+        workflowId: workflow.id,
+        workspaceId: workflow.workspaceId,
+      });
+    }
+    await this.terminalObserver?.settle(workflow);
     return {
       taskRef: workflow.id,
       output: { workflowId: workflow.id, status: workflow.status },
@@ -336,12 +379,14 @@ export class ComposedVideoJobEffect implements TracerExternalEffect {
     const runner = await this.runnerForWorkspace(request.workspaceId);
     const workflow = await runner.runVideoWorkflow(workflowId, request.workspaceId);
     if (workflow.status === 'awaiting_quality_review') {
-      await this.contentPackages.reconcile({
-        actorId: workflow.actorId,
-        status: 'awaiting_quality_review',
-        workflowId: workflow.id,
-        workspaceId: workflow.workspaceId,
-      });
+      if (shouldWriteVideoContentPackage(workflow)) {
+        await this.contentPackages.reconcile({
+          actorId: workflow.actorId,
+          status: 'awaiting_quality_review',
+          workflowId: workflow.id,
+          workspaceId: workflow.workspaceId,
+        });
+      }
       return {
         acceptance: 'accepted',
         delivery: 'pending',
@@ -351,13 +396,16 @@ export class ComposedVideoJobEffect implements TracerExternalEffect {
     }
     if (workflow.status === 'failed') {
       const failureCode = workflow.failureCode ?? 'VIDEO_WORKFLOW_FAILED';
-      await this.contentPackages.reconcile({
-        actorId: workflow.actorId,
-        failureCode,
-        status: 'failed',
-        workflowId: workflow.id,
-        workspaceId: workflow.workspaceId,
-      });
+      if (shouldWriteVideoContentPackage(workflow)) {
+        await this.contentPackages.reconcile({
+          actorId: workflow.actorId,
+          failureCode,
+          status: 'failed',
+          workflowId: workflow.id,
+          workspaceId: workflow.workspaceId,
+        });
+      }
+      await this.terminalObserver?.settle(workflow);
       return {
         acceptance: 'accepted',
         delivery: 'failed',
@@ -377,31 +425,13 @@ export class ComposedVideoJobEffect implements TracerExternalEffect {
         `Composed video workflow ${workflow.id} completed without an owned asset.`,
       );
     }
-    await this.contentPackages.reconcile({
-      actorId: workflow.actorId,
-      clipAssetIds: workflow.clipAssets.map((asset) => asset.id),
-      composedAsset: {
-        contentType: workflow.composedAsset.contentType,
-        id: workflow.composedAsset.id,
-        objectKey: workflow.composedAsset.objectKey,
-        sha256: workflow.composedAsset.sha256,
-        sizeBytes: workflow.composedAsset.sizeBytes,
-        compositionEvidence: structuredClone(
-          workflow.composedAsset.compositionEvidence
-        ),
-      },
-      providerAttempts: structuredClone(workflow.attempts),
-      providerCosts: uniqueProviderCosts(workflow),
-      routeSnapshot: structuredClone(workflow.routeSnapshot),
-      shots: workflow.shots.map((shot) => ({
-        id: shot.id,
-        prompt: shot.prompt,
-      })),
-      status: 'completed',
-      storyboardRevision: workflow.storyboardRevision,
-      workflowId: workflow.id,
-      workspaceId: workflow.workspaceId,
-    });
+    if (shouldWriteVideoContentPackage(workflow)) {
+      await reconcileCompletedVideoContentPackage(
+        this.contentPackages,
+        workflow,
+      );
+    }
+    await this.terminalObserver?.settle(workflow);
     return {
       acceptance: 'accepted',
       delivery: 'completed',
@@ -415,6 +445,90 @@ export class ComposedVideoJobEffect implements TracerExternalEffect {
       },
     };
   }
+}
+
+type AdoptableVideoCandidate = DurableVideoWorkflow & {
+  composedAsset: NonNullable<DurableVideoWorkflow['composedAsset']>;
+  routeSnapshot: NonNullable<DurableVideoWorkflow['routeSnapshot']>;
+};
+
+function shouldWriteVideoContentPackage(workflow: DurableVideoWorkflow) {
+  return workflow.deliveryMode !== 'candidate_only';
+}
+
+function isAdoptableVideoCandidate(
+  workflow: DurableVideoWorkflow,
+): workflow is AdoptableVideoCandidate {
+  return Boolean(
+    workflow.deliveryMode === 'candidate_only' &&
+      workflow.status === 'completed' &&
+      workflow.composedAsset?.contentType === 'video/mp4' &&
+      workflow.composedAsset.compositionEvidence &&
+      workflow.routeSnapshot,
+  );
+}
+
+function confirmVideoContentPackage(
+  contentPackages: VideoContentPackagePort,
+  workflow: DurableVideoWorkflow,
+) {
+  return contentPackages.confirm({
+    actorId: workflow.actorId,
+    ...(workflow.approvalReceiptId
+      ? { approvalReceiptId: workflow.approvalReceiptId }
+      : {}),
+    aigcLabelEnabled: workflow.aigcLabelEnabled,
+    ...(workflow.brandWatermarkText
+      ? { brandWatermarkText: workflow.brandWatermarkText }
+      : {}),
+    catalogModelId: workflow.catalogModelId,
+    dataClass: [...workflow.dataClass],
+    ...(workflow.executionContract
+      ? { executionContract: structuredClone(workflow.executionContract) }
+      : {}),
+    referenceAssetIds: [...(workflow.referenceAssetIds ?? [])],
+    shots: workflow.shots.map((shot) => ({
+      id: shot.id,
+      prompt: shot.prompt,
+    })),
+    storyboardRevision: workflow.storyboardRevision,
+    storyboardVersion: workflow.storyboardVersion,
+    workflowId: workflow.id,
+    workspaceId: workflow.workspaceId,
+    ...(workflow.workId ? { workId: workflow.workId } : {}),
+  });
+}
+
+function reconcileCompletedVideoContentPackage(
+  contentPackages: VideoContentPackagePort,
+  workflow: DurableVideoWorkflow,
+) {
+  const composedAsset = workflow.composedAsset!;
+  return contentPackages.reconcile({
+    actorId: workflow.actorId,
+    clipAssetIds: workflow.clipAssets.map((asset) => asset.id),
+    composedAsset: {
+      compositionEvidence: structuredClone(
+        composedAsset.compositionEvidence!,
+      ),
+      contentType: 'video/mp4',
+      id: composedAsset.id,
+      objectKey: composedAsset.objectKey,
+      sha256: composedAsset.sha256,
+      sizeBytes: composedAsset.sizeBytes,
+    },
+    providerAttempts: structuredClone(workflow.attempts),
+    providerCosts: uniqueProviderCosts(workflow),
+    routeSnapshot: structuredClone(workflow.routeSnapshot!),
+    shots: workflow.shots.map((shot) => ({
+      id: shot.id,
+      prompt: shot.prompt,
+    })),
+    status: 'completed',
+    storyboardRevision: workflow.storyboardRevision,
+    workflowId: workflow.id,
+    workspaceId: workflow.workspaceId,
+  });
 }
 
 function uniqueProviderCosts(workflow: DurableVideoWorkflow) {

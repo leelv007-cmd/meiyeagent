@@ -34,12 +34,14 @@ export type CanonicalHandoffPageProps = {
   resolve: CanonicalHandoffResolveResult;
   onCopy?: (fieldId: string, value: string) => void;
   onDownload?: (href: string) => void;
-  onShare?: () => Promise<'shared' | 'cancelled' | 'failed' | 'unsupported'>;
+  onShare?: () => Promise<
+    'shared' | 'cancelled' | 'downloaded' | 'failed' | 'unsupported'
+  >;
   onReport?: (input: {
     outcome: 'published' | 'not_published' | 'failed';
     platformUrl?: string;
     note?: string;
-  }) => void;
+  }) => void | Promise<void>;
 };
 
 export function CanonicalHandoffPage({
@@ -53,6 +55,7 @@ export function CanonicalHandoffPage({
   const [message, setMessage] = useState<string>();
   const [platformUrl, setPlatformUrl] = useState('');
   const [reportNote, setReportNote] = useState('');
+  const [reporting, setReporting] = useState(false);
 
   if (resolve.kind === 'not_found' || resolve.kind === 'expired') {
     return (
@@ -88,6 +91,11 @@ export function CanonicalHandoffPage({
             ? { kind: 'unsupported' }
             : { kind: 'failed', reason: 'share_failed' },
     );
+    if (result === 'downloaded') {
+      setOutcome('download_done');
+      setMessage('已改用下载');
+      return;
+    }
     setMessage(record.message);
     if (record.markDelivered) {
       setOutcome('share_done');
@@ -106,19 +114,27 @@ export function CanonicalHandoffPage({
     setMessage('已复制');
   }
 
-  function handleReport(result: 'published' | 'not_published' | 'failed') {
-    onReport?.({
-      outcome: result,
-      ...(result === 'published' && platformUrl.trim()
-        ? { platformUrl: platformUrl.trim() }
-        : {}),
-      ...(reportNote.trim() ? { note: reportNote.trim() } : {}),
-    });
-    if (result === 'published') {
-      setOutcome('published');
-      setMessage('已记录发布结果');
-    } else {
-      setMessage('已记录回报');
+  async function handleReport(
+    result: 'published' | 'not_published' | 'failed'
+  ) {
+    if (!onReport || reporting) return;
+    setReporting(true);
+    try {
+      await onReport({
+        outcome: result,
+        ...(result === 'published' && platformUrl.trim()
+          ? { platformUrl: platformUrl.trim() }
+          : {}),
+        ...(reportNote.trim() ? { note: reportNote.trim() } : {}),
+      });
+      if (result === 'published') {
+        setOutcome('published');
+        setMessage('已记录发布结果');
+      } else {
+        setMessage('已记录回报');
+      }
+    } finally {
+      setReporting(false);
     }
   }
 
@@ -312,24 +328,27 @@ export function CanonicalHandoffPage({
               <div className="grid gap-2 sm:grid-cols-3">
                 <Button
                   type="button"
+                  disabled={reporting}
                   data-testid="handoff-report-published"
-                  onClick={() => handleReport('published')}
+                  onClick={() => void handleReport('published')}
                 >
                   已发布
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
+                  disabled={reporting}
                   data-testid="handoff-report-not-published"
-                  onClick={() => handleReport('not_published')}
+                  onClick={() => void handleReport('not_published')}
                 >
                   未发布
                 </Button>
                 <Button
                   type="button"
                   variant="destructive"
+                  disabled={reporting}
                   data-testid="handoff-report-failed"
-                  onClick={() => handleReport('failed')}
+                  onClick={() => void handleReport('failed')}
                 >
                   失败
                 </Button>

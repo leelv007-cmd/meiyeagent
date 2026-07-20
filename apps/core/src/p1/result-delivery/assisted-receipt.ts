@@ -139,6 +139,20 @@ export const assistedHandoffLinkSchema = z
 
 export type AssistedHandoffLink = z.infer<typeof assistedHandoffLinkSchema>;
 
+export const assistedCanonicalTargetSchema = z
+  .object({
+    contentPackageRevision: z.number().int().nonnegative(),
+    currentPackageRevision: z.number().int().nonnegative(),
+    exportReceiptId: z.string().trim().min(1),
+    platform: z.enum(['xiaohongshu', 'douyin', 'video_account']),
+    variantVersionId: z.string().trim().min(1),
+  })
+  .strict();
+
+export type AssistedCanonicalTarget = z.infer<
+  typeof assistedCanonicalTargetSchema
+>;
+
 export const assistedReceiptEventSchema = z.discriminatedUnion('type', [
   z
     .object({
@@ -182,6 +196,7 @@ export type AssistedReceiptEvent = z.infer<typeof assistedReceiptEventSchema>;
 export const assistedReceiptSchema = z
   .object({
     binding: assistedReceiptBindingSchema.optional(),
+    canonicalTarget: assistedCanonicalTargetSchema.optional(),
     events: z.array(assistedReceiptEventSchema).min(1),
     exportReceiptId: z.string().trim().min(1).optional(),
     handoffLink: assistedHandoffLinkSchema.optional(),
@@ -245,6 +260,7 @@ export class AssistedReceiptError extends Error {
 
 export type PrepareMaterialsInput = {
   actorId: string;
+  canonicalTarget?: AssistedCanonicalTarget;
   exportReceiptId?: string;
   id?: string;
   occurredAt: string;
@@ -265,6 +281,9 @@ export function prepareAssistedMaterials(
     ],
     ...(input.exportReceiptId
       ? { exportReceiptId: input.exportReceiptId }
+      : {}),
+    ...(input.canonicalTarget
+      ? { canonicalTarget: input.canonicalTarget }
       : {}),
     id: input.id ?? `assisted-receipt-${randomUUID()}`,
     packageId: input.packageId,

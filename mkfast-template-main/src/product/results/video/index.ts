@@ -62,3 +62,8 @@ export {
   type VideoWorksurfaceFreeAction,
   type VideoWorksurfaceState,
 } from './video-worksurface-model';
+
+export {
+  VideoWorksurface,
+  type VideoWorksurfaceProps,
+} from './video-worksurface';

@@ -108,6 +108,13 @@ test('URL serialization stays on whitelist and asserts safe', () => {
   assert.equal(parsed.handoff.sourceId, 'asset_9');
 });
 
+test('URL parser rejects every unknown query key, not only known sensitive keys', () => {
+  const parsed = parseToolHandoffFromSearchParams(
+    new URLSearchParams('toolEntryId=tool.multi_size&unexpected=value')
+  );
+  assert.equal(parsed.ok, false);
+});
+
 test('assertToolHandoffUrlSafe throws on sensitive material', () => {
   assert.throws(() => assertToolHandoffUrlSafe('?prompt=hello'), /forbidden/i);
   assert.throws(

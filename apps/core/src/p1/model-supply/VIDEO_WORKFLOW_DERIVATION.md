@@ -11,7 +11,7 @@ projection** for runners, Composer, and Result Center.
 
 | Layer | Module | Role |
 | --- | --- | --- |
-| **Canonical truth** | `video-workflow-projection.ts` types + `video-workflow-canonical.ts` store | `CanonicalVideoRun` = Task + Job + Assets; `InMemoryCanonicalVideoRunStore` is sole memory write authority |
+| **Canonical truth** | existing `p1_content_tasks` / `p1_creative_jobs` / `p1_creative_assets` | Storyboard plan, lifecycle/OCC/lease, and one row per owned candidate/composed asset |
 | **Commands** | `VideoWorkflowCanonicalCommandPort` / `VideoWorkflowCanonicalCommands` | create / confirm / select / claim / checkpoint / cancel — only intended write path |
 | **Durable projection** | `projectDurableVideoWorkflow` | Flatten canonical → `DurableVideoWorkflow` (compat shape for `ContentWorkflowRunner`) |
 | **Public projection** | `projectVideoWorkflowPublic` + `packages/contracts/src/video-workflow.ts` | Cross-lane ids/status/shot summary; **no** Provider / Credential / route / asset blobs |
@@ -19,7 +19,7 @@ projection** for runners, Composer, and Result Center.
 | **Deprecated adapter** | `InMemoryDurableVideoWorkflowStore` | Delegates save/claim/cancel to canonical commands then projects — **not** independent authority |
 
 ```
-Commands ──put/claim/cancel──▶ CanonicalVideoRunStore
+Commands ──put/claim/cancel/edit──▶ generic Task / Job / Asset records
                                       │
                     projectDurable / projectPublic
                                       ▼
@@ -27,8 +27,9 @@ Commands ──put/claim/cancel──▶ CanonicalVideoRunStore
 ```
 
 **Invariant:** there must not be two competing write authorities. Postgres
-`model_video_workflows` remains a dual-read physical table during migration
-(see below); logical authority is the canonical shape.
+`model_video_workflows` and `model_canonical_video_runs` are read-only
+compatibility inputs during startup backfill; all create/confirm/run/cancel/
+checkpoint/edit mutations write the existing generic records.
 
 ## Field mapping (legacy table → canonical)
 
@@ -38,10 +39,10 @@ Legacy row: `model_video_workflows.workflow` JSONB + `revision` + `run_lease_tok
 | --- | --- |
 | `id` | `runId` |
 | `workspaceId` / `actorId` / `workId` | same |
-| `storyboardVersion`, `storyboardRevision`, `catalogModelId`, `dataClass`, `aigcLabelEnabled`, `brandWatermarkText`, `referenceAssetIds`, `executionContract`, `approvalReceiptId`, `shots` | `task.*` (`derivedFromWorkflowId` → `task.derivedFromRunId`) |
-| `status`, `confirmed`, `revision`, `failureCode`, `cancelRequestedAt`, `createdAt`, `updatedAt` | `job.*` |
-| `attempts`, `clipAssets`, `composedAsset`, `routeSnapshot` | `assets.*` |
-| `run_lease_token` (column) | store-side lease map (`InMemoryCanonicalVideoRunStore`) / future Job lease |
+| `storyboardVersion`, `storyboardRevision`, `catalogModelId`, `dataClass`, authoring settings and ordered shot plans | `p1_content_tasks.payload` |
+| `status`, `confirmed`, `revision`, candidate execution facts, `failureCode`, timestamps | `p1_creative_jobs.payload` |
+| each candidate/clip/composed owned asset | one `p1_creative_assets` row |
+| `run_lease_token` | generic Job `payload.runLeaseToken` |
 
 Helpers:
 
@@ -49,19 +50,17 @@ Helpers:
 - `projectDurableVideoWorkflow(run)` — reverse flatten for runners
 - `InMemoryDurableVideoWorkflowStore.restore` / `VideoWorkflowCanonicalCommands.restoreFromLegacy` — import one legacy row
 
-## Dual-read window (Postgres)
+## Postgres cutover and compatibility
 
-1. **Write path (logical):** all new command semantics go through
-   `VideoWorkflowCanonicalCommandPort` (memory proven in E1 tests).
-2. **Physical persistence (current):** `PostgresDurableVideoWorkflowStore` still
-   stores the durable projection JSONB. It is a **serialization of the
-   projection**, not a second domain model. E2/E3 may introduce a
-   `model_canonical_video_runs` (or JobPort payload) table; until then the
-   projection column is the on-disk encoding of canonical truth via
-   lift/project round-trip.
-3. **Read path:** `get` → lift optional for canonical consumers; project for
-   public/API consumers.
-4. **Idempotent recovery:** claim + checkpoint + provider `idempotencyKey`
+1. Operations migrates the existing generic Task/Job/Asset tables first;
+   `PostgresCanonicalVideoWorkflowSchema` refuses to manufacture a video table.
+2. Startup migration imports missing rows from both historical
+   `model_video_workflows` and the superseded `model_canonical_video_runs`.
+3. After import, reads and every mutation target generic records only. Legacy
+   rows remain unchanged as rollback evidence, never as runtime fallback.
+4. Runtime entrypoints instantiate `PostgresCanonicalVideoRunStore`; the old
+   writable `PostgresDurableVideoWorkflowStore` has been removed.
+5. **Idempotent recovery:** claim + checkpoint + provider `idempotencyKey`
    (`${runId}:shot:${shotId}:candidate:${index}`) unchanged — double recover
    must not re-charge (`productUsageQuantity` only on first shot/candidate) or
    re-deliver ContentPackage reconcile for a terminal run.
@@ -73,7 +72,8 @@ Helpers:
 | `InMemoryDurableVideoWorkflowStore.save/claimRun/requestCancel` | Deprecated adapter → canonical |
 | `DurableVideoWorkflowStore` interface | Compat port; new code should depend on command port + projection facade |
 | Direct mutation of projection without command | Forbidden (`VideoWorkflowProjectionReadFacade`) |
-| `model_video_workflows` drop | **Not** in E1 — requires dual-write/backfill ticket after Job/Asset ports absorb run state |
+| `model_video_workflows` | Read-only backfill source; no production command may write it |
+| Legacy table drop | Separate operational cleanup after retention and rollback windows expire |
 
 ## Crash-recovery semantics (preserved)
 
@@ -90,12 +90,11 @@ Helpers:
 include provider/credential/route/asset tokens. Contracts consumers must only
 see `VideoWorkflowPublicProjection`.
 
-## Residual risks (E2 / E3)
+## Residual risks
 
-- Postgres store still writes projection JSONB without an explicit canonical
-  column; a true table cutover is E2+.
-- `ContentWorkflowRunner` still builds working copies as `DurableVideoWorkflow`
-  and checkpoints via the adapter — behavioral equivalence is proven, but the
-  runner is not yet command-port-only.
+- `ContentWorkflowRunner` still builds an in-memory `DurableVideoWorkflow`
+  working copy, but its production store boundary lifts each checkpoint into a
+  canonical command and never exposes `save(DurableVideoWorkflow)` to the
+  Postgres authority.
 - Frontend `video-workflow-model` remains a UI pure model; public status aligns
   with contracts, not with core durable fields.

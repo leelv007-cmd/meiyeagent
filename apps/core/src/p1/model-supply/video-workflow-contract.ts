@@ -35,6 +35,10 @@ export type VideoExecutionContract = CreativeExecutionContract & {
   operation: 'video.generate';
 };
 
+export type VideoWorkflowDeliveryMode =
+  | 'content_package'
+  | 'candidate_only';
+
 export interface DurableVideoCandidate {
   index: number;
   generationKey: string;
@@ -87,8 +91,13 @@ export interface DurableVideoWorkflow {
   actorId: string;
   /** Missing only on workflows created before the Work-bound UI shipped. */
   workId?: string;
+  /** Parent ProductBilling task for an initial Operations submission. */
+  billingTaskId?: string;
+  /** Accepted parent quote revision frozen by Operations before dispatch. */
+  billingQuoteRevision?: string;
   approvalReceiptId?: string;
   derivedFromWorkflowId?: string;
+  deliveryMode?: VideoWorkflowDeliveryMode;
   storyboardVersion: number;
   dataClass: DataClass[];
   aigcLabelEnabled: boolean;
@@ -99,6 +108,8 @@ export interface DurableVideoWorkflow {
   referenceAssetIds?: string[];
   /** Missing only on workflows created before the frozen video contract shipped. */
   executionContract?: VideoExecutionContract;
+  /** Canonical presentation draft; changing it does not re-compose a video. */
+  subtitleText?: string;
   shots: DurableVideoShot[];
   attempts: ProviderAttempt[];
   clipAssets: OwnedAsset[];
@@ -124,8 +135,11 @@ export interface CreateVideoWorkflowInput {
   workspaceId: string;
   actorId: string;
   workId?: string;
+  billingTaskId?: string;
+  billingQuoteRevision?: string;
   approvalReceiptId?: string;
   derivedFromWorkflowId?: string;
+  deliveryMode?: VideoWorkflowDeliveryMode;
   dataClass: DataClass[];
   aigcLabelEnabled?: boolean;
   brandWatermarkText?: string;
@@ -135,6 +149,18 @@ export interface CreateVideoWorkflowInput {
   executionContract?: VideoExecutionContract;
   shots: Array<string | VideoWorkflowShotInput>;
 }
+
+export type EditVideoWorkflowInput = {
+  workflowId: string;
+  workspaceId: string;
+  actorId: string;
+  correlationId: string;
+  expectedRevision: number;
+  edit:
+    | { kind: 'select_candidate'; shotId: string; candidateIndex: number }
+    | { kind: 'reorder_shots'; shotIds: string[] }
+    | { kind: 'set_subtitle'; text: string };
+};
 
 /** A production adapter persists this serializable state beside the JobPort. */
 export interface DurableVideoWorkflowSaveOptions {
@@ -173,6 +199,10 @@ export interface DurableVideoWorkflowStore {
     workspaceId: string,
     requestedAt: string
   ): DurableVideoWorkflow;
+  edit?(
+    input: EditVideoWorkflowInput,
+    editedAt: string,
+  ): DurableVideoWorkflow;
   assertRunnable(
     id: string,
     workspaceId: string,
@@ -180,4 +210,3 @@ export interface DurableVideoWorkflowStore {
     leaseToken: string
   ): void;
 }
-

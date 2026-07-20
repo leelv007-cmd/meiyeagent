@@ -14,6 +14,8 @@ import { useEffect } from 'react';
  */
 
 interface DashboardSearch {
+  catalogRecipeRevisionId?: string;
+  catalogSurfaceRevisionId?: string;
   entry?: 'feishu' | 'notification';
   packageId?: string;
   stage?: 'action' | 'progress' | 'handoff';
@@ -24,6 +26,14 @@ interface DashboardSearch {
 
 export const Route = createFileRoute('/dashboard/')({
   validateSearch: (search: Record<string, unknown>): DashboardSearch => ({
+    ...(typeof search.catalogRecipeRevisionId === 'string' &&
+    search.catalogRecipeRevisionId.length > 0
+      ? { catalogRecipeRevisionId: search.catalogRecipeRevisionId }
+      : {}),
+    ...(typeof search.catalogSurfaceRevisionId === 'string' &&
+    search.catalogSurfaceRevisionId.length > 0
+      ? { catalogSurfaceRevisionId: search.catalogSurfaceRevisionId }
+      : {}),
     ...(search.entry === 'feishu' || search.entry === 'notification'
       ? { entry: search.entry }
       : {}),
@@ -85,5 +95,10 @@ function DashboardHome() {
     return null;
   }
 
-  return <ComposerHome />;
+  return (
+    <ComposerHome
+      initialRecipeRevisionId={search.catalogRecipeRevisionId}
+      initialSurfaceRevisionId={search.catalogSurfaceRevisionId}
+    />
+  );
 }

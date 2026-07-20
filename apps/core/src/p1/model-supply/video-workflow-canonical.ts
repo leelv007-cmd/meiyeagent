@@ -1,7 +1,8 @@
 /**
- * Canonical video-run write authority (WT-E / #102).
+ * Canonical video Task / Job / Asset command model (WT-E / #102).
  *
- * Truth lives here as Task / Job / Asset-shaped records.
+ * Production truth lives in the existing generic Task / Job / Asset records.
+ * CanonicalVideoRun is only their in-process command/projection assembly.
  * VideoWorkflow (DurableVideoWorkflow + public projection) is derived read-only.
  *
  * Commands mutate this store; projections never write back as authority.
@@ -14,6 +15,7 @@ import type {
   CreateVideoWorkflowInput,
   DurableVideoWorkflow,
   DurableVideoWorkflowSaveOptions,
+  EditVideoWorkflowInput,
   SelectVideoCandidateInput,
 } from './video-workflow-contract.js';
 import {
@@ -60,6 +62,7 @@ export interface CanonicalVideoRunStore {
     workspaceId: string,
     requestedAt: string
   ): CanonicalVideoRun;
+  edit(input: EditVideoWorkflowInput, editedAt: string): CanonicalVideoRun;
   assertRunnable(
     runId: string,
     workspaceId: string,
@@ -69,6 +72,40 @@ export interface CanonicalVideoRunStore {
   getRunLease(runId: string): string | undefined;
   /** Import a legacy durable row without OCC (migration / dual-read seed). */
   restore(run: CanonicalVideoRun): CanonicalVideoRun;
+}
+
+export interface AsyncCanonicalVideoRunStore {
+  getRun(runId: string): Promise<CanonicalVideoRun | undefined>;
+  listRuns(workspaceId: string, actorId: string): Promise<CanonicalVideoRun[]>;
+  findLatestRun(
+    workspaceId: string,
+    actorId: string,
+    workId?: string,
+  ): Promise<CanonicalVideoRun | undefined>;
+  putRun(
+    run: CanonicalVideoRun,
+    options?: DurableVideoWorkflowSaveOptions,
+  ): Promise<CanonicalVideoRun>;
+  claimRun(
+    runId: string,
+    workspaceId: string,
+    leaseToken: string,
+  ): Promise<CanonicalVideoRun>;
+  requestCancel(
+    runId: string,
+    workspaceId: string,
+    requestedAt: string,
+  ): Promise<CanonicalVideoRun>;
+  editRun(
+    input: EditVideoWorkflowInput,
+    editedAt: string,
+  ): Promise<CanonicalVideoRun>;
+  assertRunnable(
+    runId: string,
+    workspaceId: string,
+    revision: number,
+    leaseToken: string,
+  ): Promise<void>;
 }
 
 /**
@@ -115,13 +152,13 @@ export class InMemoryCanonicalVideoRunStore implements CanonicalVideoRunStore {
   }
 
   restore(run: CanonicalVideoRun) {
-    const normalized = normalizeCanonicalRun(run);
+    const normalized = normalizeCanonicalVideoRun(run);
     this.runs.set(normalized.runId, cloneRun(normalized));
     return cloneRun(normalized);
   }
 
   put(run: CanonicalVideoRun, options: DurableVideoWorkflowSaveOptions = {}) {
-    const candidate = normalizeCanonicalRun(run);
+    const candidate = normalizeCanonicalVideoRun(run);
     const current = this.runs.get(candidate.runId);
     if (!current) {
       if ((options.expectedRevision ?? candidate.job.revision) !== 0) {
@@ -134,7 +171,7 @@ export class InMemoryCanonicalVideoRunStore implements CanonicalVideoRunStore {
     }
     const expectedRevision =
       options.expectedRevision ?? candidate.job.revision;
-    assertCanonicalMutationAllowed(
+    assertCanonicalVideoMutationAllowed(
       current,
       candidate,
       expectedRevision,
@@ -156,12 +193,7 @@ export class InMemoryCanonicalVideoRunStore implements CanonicalVideoRunStore {
         revision: current.job.revision + 1,
       },
     };
-    if (
-      saved.job.status === 'completed' ||
-      saved.job.status === 'cancelled' ||
-      saved.job.status === 'failed' ||
-      saved.job.status === 'awaiting_quality_review'
-    ) {
+    if (isCanonicalVideoLeaseReleasingStatus(saved.job.status)) {
       this.runLeases.delete(saved.runId);
     }
     this.runs.set(saved.runId, cloneRun(saved));
@@ -231,6 +263,13 @@ export class InMemoryCanonicalVideoRunStore implements CanonicalVideoRunStore {
     return cloneRun(requested);
   }
 
+  edit(input: EditVideoWorkflowInput, editedAt: string) {
+    const current = this.require(input.workflowId, input.workspaceId);
+    const edited = applyCanonicalVideoEdit(current, input, editedAt);
+    this.runs.set(edited.runId, cloneRun(edited));
+    return cloneRun(edited);
+  }
+
   assertRunnable(
     runId: string,
     workspaceId: string,
@@ -238,23 +277,12 @@ export class InMemoryCanonicalVideoRunStore implements CanonicalVideoRunStore {
     leaseToken: string
   ) {
     const current = this.require(runId, workspaceId);
-    if (
-      current.job.status === 'cancel_requested' ||
-      current.job.status === 'cancelled'
-    ) {
-      throw new VideoWorkflowCancellationError(
-        'Video workflow cancellation was requested.'
-      );
-    }
-    if (
-      current.job.status !== 'running' ||
-      current.job.revision !== revision ||
-      this.runLeases.get(runId) !== leaseToken
-    ) {
-      throw new VideoWorkflowConcurrencyError(
-        'Video workflow result belongs to a stale run lease.'
-      );
-    }
+    assertCanonicalVideoRunIsRunnable(
+      current,
+      revision,
+      this.runLeases.get(runId),
+      leaseToken,
+    );
   }
 
   getRunLease(runId: string) {
@@ -305,6 +333,7 @@ export interface VideoWorkflowCanonicalCommandPort {
     input: SelectVideoCandidateInput,
     clock: () => number
   ): DurableVideoWorkflow;
+  edit(input: EditVideoWorkflowInput, clock: () => number): DurableVideoWorkflow;
   claimRun(
     runId: string,
     workspaceId: string,
@@ -459,6 +488,15 @@ export class VideoWorkflowCanonicalCommands
     return this.checkpoint(workflow, { expectedRevision });
   }
 
+  edit(input: EditVideoWorkflowInput, clock: () => number) {
+    return projectDurableVideoWorkflow(
+      this.store.edit(
+        input,
+        new Date(clock()).toISOString(),
+      ),
+    );
+  }
+
   claimRun(runId: string, workspaceId: string, leaseToken: string) {
     return projectDurableVideoWorkflow(
       this.store.claimRun(runId, workspaceId, leaseToken)
@@ -598,12 +636,25 @@ function cloneRun(run: CanonicalVideoRun): CanonicalVideoRun {
   return structuredClone(run);
 }
 
-function normalizeCanonicalRun(run: CanonicalVideoRun): CanonicalVideoRun {
+export function normalizeCanonicalVideoRun(
+  run: CanonicalVideoRun,
+): CanonicalVideoRun {
   const cloned = cloneRun(run);
   return {
     ...cloned,
     task: {
       ...cloned.task,
+      ...(cloned.task.referenceAssetIds
+        ? {
+            referenceAssetIds: [
+              ...new Set(
+                cloned.task.referenceAssetIds
+                  .map((id) => id.trim())
+                  .filter(Boolean),
+              ),
+            ],
+          }
+        : {}),
       storyboardVersion:
         Number.isInteger(cloned.task.storyboardVersion) &&
         cloned.task.storyboardVersion >= 1
@@ -620,7 +671,100 @@ function normalizeCanonicalRun(run: CanonicalVideoRun): CanonicalVideoRun {
   };
 }
 
-function assertCanonicalMutationAllowed(
+export function applyCanonicalVideoEdit(
+  current: CanonicalVideoRun,
+  input: EditVideoWorkflowInput,
+  editedAt: string,
+) {
+  if (
+    current.workspaceId !== input.workspaceId ||
+    current.runId !== input.workflowId
+  ) {
+    throw new Error('Video workflow belongs to another workspace.');
+  }
+  if (current.job.revision !== input.expectedRevision) {
+    throw new VideoWorkflowConcurrencyError('Video workflow revision is stale.');
+  }
+  if (
+    current.job.status !== 'completed' &&
+    current.job.status !== 'awaiting_quality_review'
+  ) {
+    throw new Error('Only reviewable or completed video workflows can be edited.');
+  }
+  const edited = cloneRun(current);
+  const edit = input.edit;
+  if (edit.kind === 'select_candidate') {
+    const shot = edited.task.shots.find(
+      (candidate) => candidate.id === edit.shotId,
+    );
+    if (!shot) throw new Error(`Unknown video shot ${edit.shotId}.`);
+    const candidate = edited.job.candidatesByShot[shot.id]?.find(
+      (value) => value.index === edit.candidateIndex,
+    );
+    if (
+      !candidate?.assetId ||
+      !edited.assets.byId[candidate.assetId] ||
+      candidate.status !== 'completed' ||
+      candidate.technicalValidation?.playable !== true
+    ) {
+      throw new Error(
+        `Candidate ${edit.candidateIndex} for shot ${shot.id} is not eligible for selection.`,
+      );
+    }
+    const selectedAt = editedAt;
+    shot.selectedCandidateIndex = candidate.index;
+    shot.selectionReason = `Candidate ${candidate.index + 1} was explicitly selected in the video workspace.`;
+    shot.selectionAudit = {
+      selectedBy: requireText(input.actorId, 'actorId'),
+      correlationId: requireText(input.correlationId, 'correlationId'),
+      selectedAt,
+      source: 'human_quality_review',
+    };
+    for (const peer of edited.job.candidatesByShot[shot.id] ?? []) {
+      peer.selectionReason =
+        peer.index === candidate.index
+          ? shot.selectionReason
+          : 'Not selected in the current canonical shot revision.';
+    }
+  } else if (edit.kind === 'reorder_shots') {
+    const shotIds = edit.shotIds.map((shotId) =>
+      requireText(shotId, 'shotId'),
+    );
+    if (
+      shotIds.length !== edited.task.shots.length ||
+      new Set(shotIds).size !== shotIds.length ||
+      shotIds.some(
+        (shotId) => !edited.task.shots.some((shot) => shot.id === shotId),
+      )
+    ) {
+      throw new Error('Shot order must contain every canonical shot exactly once.');
+    }
+    const byId = new Map(edited.task.shots.map((shot) => [shot.id, shot]));
+    edited.task.shots = shotIds.map((shotId) => byId.get(shotId)!);
+  } else {
+    const text = edit.text.trim();
+    if (text.length > 5_000) {
+      throw new Error('Subtitle text must not exceed 5000 characters.');
+    }
+    edited.task.subtitleText = text;
+  }
+  edited.assets.clipAssetIds = edited.task.shots.flatMap((shot) => {
+    const selected = edited.job.candidatesByShot[shot.id]?.find(
+      (candidate) => candidate.index === shot.selectedCandidateIndex,
+    );
+    return selected?.assetId && edited.assets.byId[selected.assetId]
+      ? [selected.assetId]
+      : [];
+  });
+  edited.job = {
+    ...edited.job,
+    revision: edited.job.revision + 1,
+    updatedAt: editedAt,
+  };
+  return normalizeCanonicalVideoRun(edited);
+}
+
+export function assertCanonicalVideoMutationAllowed(
   current: CanonicalVideoRun,
   candidate: CanonicalVideoRun,
   expectedRevision: number,
@@ -693,6 +837,42 @@ function assertCanonicalMutationAllowed(
       'Video workflow completion requires its run lease.'
     );
   }
+}
+
+export function assertCanonicalVideoRunIsRunnable(
+  current: CanonicalVideoRun,
+  expectedRevision: number,
+  activeLeaseToken: string | undefined,
+  suppliedLeaseToken: string,
+) {
+  if (
+    current.job.status === 'cancel_requested' ||
+    current.job.status === 'cancelled'
+  ) {
+    throw new VideoWorkflowCancellationError(
+      'Video workflow cancellation was requested.'
+    );
+  }
+  if (
+    current.job.status !== 'running' ||
+    current.job.revision !== expectedRevision ||
+    activeLeaseToken !== suppliedLeaseToken
+  ) {
+    throw new VideoWorkflowConcurrencyError(
+      'Video workflow result belongs to a stale run lease.'
+    );
+  }
+}
+
+export function isCanonicalVideoLeaseReleasingStatus(
+  status: CanonicalVideoRun['job']['status'],
+) {
+  return (
+    status === 'completed' ||
+    status === 'cancelled' ||
+    status === 'failed' ||
+    status === 'awaiting_quality_review'
+  );
 }
 
 function compareCanonicalRecoveryPriority(

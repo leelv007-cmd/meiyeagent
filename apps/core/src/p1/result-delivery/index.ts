@@ -97,6 +97,22 @@ export {
   type RecordPublishResultInput,
 } from './assisted-receipt.js';
 
+export { AssistedReceiptService } from './assisted-receipt-service.js';
+export {
+  CanonicalAssistedDeliveryError,
+  PostgresCanonicalAssistedReceiptRepository,
+  type CanonicalAssistedHandoff,
+  type CanonicalAssistedPrepareInput,
+  type CanonicalHandoffConsumeResult,
+} from './assisted-canonical-repository.js';
+export {
+  AssistedReceiptConflictError,
+  MemoryAssistedReceiptRepository,
+  PostgresAssistedReceiptRepository,
+  type AssistedReceiptRepository,
+  type StoredAssistedReceipt,
+} from './assisted-receipt-repository.js';
+
 export {
   ACTIONABLE_INBOX_REQUIRED_STATUS_KINDS,
   compareActionableInboxItems,
@@ -122,3 +138,14 @@ export {
   type ResolverLegacyPackage,
   type ResolverWorkRecord,
 } from './result-target-resolver.js';
+
+export {
+  ResultDeliveryProjectionService,
+  type ResultDeliveryOperationsReader,
+  type ResultDeliveryPendingActionsReader,
+} from './result-delivery-projection-service.js';
+
+export {
+  createDurableResultDeliveryRuntime,
+  type DurableResultDeliveryRuntime,
+} from './runtime.js';

@@ -667,9 +667,23 @@ export interface CreativeWork {
   contentModules?: CreativeContentModuleId[];
   /** Missing only on historical rows and drafts not yet compiled by AI. */
   brief?: CreativeBrief;
+  /** Conditional Brief gate binding for server-side submit validation. */
+  briefContextId?: string;
+  /** Exact server Brief context revision atomically checked with Work creation. */
+  briefContextRevision?: number;
+  briefConfirmationId?: string;
   status: 'draft' | 'running' | 'completed' | 'accepted' | 'failed';
   currentJobId?: string;
   derivedFrom?: string;
+  workingSelectionDraft?: {
+    baseRevisionId: string;
+    orderedAssetIds: string[];
+    coverAssetId: string | null;
+    surfaceVersion: string;
+    revision: number;
+    savedAt: string;
+    savedBy: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -680,6 +694,10 @@ export interface CreativeJob {
   workId: string;
   status: CreativeJobStatus;
   contract: CreativeExecutionContract;
+  /** ProductBilling task; paid rerolls use their new Job id, never the Work id. */
+  billingTaskId?: string;
+  /** Fresh ProductQuote required by a paid reroll. */
+  billingQuoteId?: string;
   submissionKey: string;
   providerJobId?: string;
   routeSnapshotId?: string;
@@ -702,6 +720,8 @@ export interface CreativeJob {
   inheritanceContext?: CreativeInheritanceContext;
   /** Frozen at first submission and reused by technical retries and rerolls. */
   briefSnapshot?: CreativeBrief;
+  /** Exact server Brief context revision atomically checked with Job creation. */
+  briefContextRevision?: number;
   /** Confirmed Product facts and authorized source Assets frozen at submission. */
   groundingSnapshot?: CreativeGroundingSnapshot;
   failureCode?: string;
@@ -740,6 +760,9 @@ export interface CreativeAssetProjection {
     | 'audio/mp4';
   sha256?: string;
   sizeBytes?: number;
+  savedToLibraryAt?: string;
+  savedToLibraryBy?: string;
+  libraryRevisionId?: string;
   createdAt: string;
 }
 
@@ -818,7 +841,8 @@ export interface CreationExecutionResult {
 export interface CreationExecutorPort {
   inspect(
     workspaceId: string,
-    contract: CreativeExecutionContract
+    contract: CreativeExecutionContract,
+    authority?: AcceptedProductQuoteInspectionAuthority,
   ): Promise<void>;
   submit(input: {
     context: OperationContext;
@@ -827,7 +851,10 @@ export interface CreationExecutorPort {
     groundingSnapshot?: CreativeGroundingSnapshot;
     inheritanceContext?: CreativeInheritanceContext;
     intent: string;
+    workId?: string;
     idempotencyKey: string;
+    billingTaskId?: string;
+    billingQuoteRevision?: string;
     productUsageQuantity: 0 | 1;
   }): Promise<CreationExecutionResult>;
   startCopyStream?(input: {
@@ -838,6 +865,8 @@ export interface CreationExecutorPort {
     inheritanceContext?: CreativeInheritanceContext;
     intent: string;
     idempotencyKey: string;
+    billingTaskId?: string;
+    billingQuoteRevision?: string;
     productUsageQuantity: 0 | 1;
     abortSignal?: AbortSignal;
   }): Promise<{
@@ -850,12 +879,33 @@ export interface CreationExecutorPort {
     providerJobId: string;
     routeSnapshotId: string;
   }): Promise<CreationExecutionResult>;
+  cancel?(input: {
+    context: OperationContext;
+    contract: CreativeExecutionContract;
+    providerJobId: string;
+  }): Promise<CreationExecutionResult>;
   recordReroll?(input: {
     context: OperationContext;
     contract: CreativeExecutionContract;
     rerollKind: CreativeRerollKind;
     targetJobId: string;
   }): Promise<void>;
+}
+
+/**
+ * Internal-only proof that Operations validated the accepted quote binding and
+ * copied its frozen execution facts through ProductBillingLifecycle.
+ */
+export interface AcceptedProductQuoteInspectionAuthority {
+  kind: 'accepted_product_quote';
+  quoteId: string;
+  quoteRevision: string;
+  catalogModelId: string;
+  catalogModelRevision: string;
+  confirmedAmount: number;
+  currency: string;
+  outputCount: number;
+  outputLabel: string;
 }
 
 export interface ContentPackageExportArtifact {

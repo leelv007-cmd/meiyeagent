@@ -57,6 +57,104 @@ test('legacy Product commands resolve to the fixed four-role capability matrix',
 });
 
 test('P1 module actions resolve to the same role capabilities used by the UI', () => {
+  for (const module of [
+    'creation-experience',
+    'product-billing',
+    'result-delivery',
+  ] as const) {
+    assert.equal(
+      p1ModuleRequestSchema.parse({
+        action: 'fixture_action',
+        module,
+        payload: {},
+      }).module,
+      module,
+    );
+  }
+  assert.equal(
+    requiredP1Capability('query', 'creation-experience', 'surface_browser'),
+    'workspace.read',
+  );
+  assert.equal(
+    requiredP1Capability('query', 'creation-experience', 'brief_project'),
+    'workspace.read',
+  );
+  assert.equal(
+    requiredP1Capability(
+      'query',
+      'creation-experience',
+      'recipe_patch_preview',
+    ),
+    'workspace.read',
+  );
+  assert.equal(
+    requiredP1Capability('command', 'creation-experience', 'session_freeze'),
+    'content.create',
+  );
+  assert.equal(
+    requiredP1Capability('command', 'creation-experience', 'brief_confirm'),
+    'content.create',
+  );
+  assert.equal(
+    requiredP1Capability(
+      'command',
+      'creation-experience',
+      'brief_context_sync',
+    ),
+    'content.create',
+  );
+  assert.equal(
+    requiredP1Capability('command', 'creation-experience', 'event_append'),
+    'content.create',
+  );
+  assert.equal(
+    requiredP1Capability('command', 'product-billing', 'quote'),
+    'content.create',
+  );
+  for (const action of [
+    'reserve',
+    'dispatch',
+    'fallback_dispatch',
+    'settle',
+    'fail_and_refund',
+  ]) {
+    assert.equal(
+      requiredP1Capability('command', 'product-billing', action),
+      null,
+    );
+  }
+  assert.equal(
+    requiredP1Capability('query', 'product-billing', 'list_provider_costs'),
+    null,
+  );
+  assert.equal(
+    requiredP1Capability('command', 'result-delivery', 'adopt_into_content_package'),
+    'content.review',
+  );
+  assert.equal(
+    requiredP1Capability('command', 'result-delivery', 'result_adjust_prepare'),
+    'content.review',
+  );
+  assert.equal(
+    requiredP1Capability('query', 'result-delivery', 'result_target_resolve'),
+    'workspace.read',
+  );
+  assert.equal(
+    requiredP1Capability('query', 'result-delivery', 'actionable_inbox'),
+    'workspace.read',
+  );
+  assert.equal(
+    requiredP1Capability('command', 'result-delivery', 'assisted_prepare'),
+    'publication.handoff',
+  );
+  assert.equal(
+    requiredP1Capability(
+      'command',
+      'result-delivery',
+      'assisted_consume_handoff',
+    ),
+    'publication.handoff',
+  );
   assert.equal(
     p1ModuleRequestSchema.parse({
       action: 'list_adoptions',
@@ -111,7 +209,7 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
       'operations',
       'accept_creative_asset'
     ),
-    'content.review'
+    null
   );
   assert.equal(
     requiredP1Capability(
@@ -140,6 +238,14 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
       'video_workflow_select_candidate',
     ),
     'content.review',
+  );
+  assert.equal(
+    requiredP1Capability(
+      'query',
+      'model-supply',
+      'video_workflow_public_latest',
+    ),
+    'workspace.read',
   );
   assert.equal(
     requiredP1Capability('query', 'operations', 'inbox'),

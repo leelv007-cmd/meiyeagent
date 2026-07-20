@@ -9,9 +9,7 @@ import { createFileRoute } from '@tanstack/react-router';
  * intentionally NOT modified here — see
  * `src/components/admin/supply/WIRING-DIFF.md` for Z2-WIRING batch B.
  */
-// Path not yet registered in routeTree.gen.ts (Z2-WIRING batch B).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = (createFileRoute as any)('/admin/supply')({
+export const Route = createFileRoute('/admin/supply')({
   component: SupplyControlCenterPage,
 });
 

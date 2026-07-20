@@ -33,7 +33,7 @@ Rules:
 | Old query / command | Consumer today | New seam | Retire when |
 |---|---|---|---|
 | `operations` action `creation_catalog` → `{ shortcuts, templates, userTemplates }` | Frontend creation entry / catalog model | `creation-experience` query `surface_browser` (+ nested `recipes`) for published Surface; `lens_list` / `tool_list` for static seeds | After C1/C3 consume new projection **and** Z1 removes dual entry. Until then old query stays read-only frozen. |
-| `listTemplates` / template family admin APIs | Admin templates UI, ops tests | Admin "创作入口与模板" editor over Recipe/Surface (future admin ticket; not A1) | Admin editor ships → dual-write window closed by Z1. Canvas template admin may remain for Canvas-only assets, not Composer entry. |
+| `listTemplates` / template family admin APIs | Admin templates UI, ops tests | Admin "创作入口与模板" visual editor over the Creation Experience Recipe/Surface lifecycle, mounted at `/admin/templates` | Editor shipped; close the Composer-entry dual-write window at Z1. Canvas template admin may remain for Canvas-only assets, not Composer entry. |
 | `publishTemplateVersion` / `retireTemplate` | Admin | `recipe_publish` / `surface_publish` / rollback | Composer entry publish moves fully to creation-experience; Canvas publish stays on template versions for canvas documents only. |
 | Frontend `projectCreationCatalog(shortcuts, templates, userTemplates)` | Cold-start catalog list | Browser projection from frozen session Surface | C1 rewires; function deleted or reduced to adapter during dual-read, removed at Z1. |
 

@@ -41,7 +41,9 @@ import {
   type RequestedSelection,
   type RouteSimulationFailureScenario,
   type VideoExecutionContract,
+  type EditVideoWorkflowInput,
   type VideoWorkflowShotInput,
+  projectVideoWorkflowPublic,
 } from './index.js';
 import type { AiStreamingRunner } from './ai-sdk-runner.js';
 import {
@@ -3214,6 +3216,51 @@ function videoWorkflowShots(
   });
 }
 
+function videoWorkflowEdit(
+  payload: Record<string, unknown>,
+): EditVideoWorkflowInput['edit'] {
+  const edit = object(payload.edit);
+  const kind = requiredString(edit, 'kind');
+  if (kind === 'select_candidate') {
+    return {
+      kind,
+      shotId: requiredString(edit, 'shotId'),
+      candidateIndex: videoCandidateIndex(edit.candidateIndex),
+    };
+  }
+  if (kind === 'reorder_shots') {
+    if (!Array.isArray(edit.shotIds) || edit.shotIds.length === 0) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'shotIds must be a non-empty array.',
+      );
+    }
+    return {
+      kind,
+      shotIds: edit.shotIds.map((shotId) =>
+        requiredString({ shotId }, 'shotId'),
+      ),
+    };
+  }
+  if (kind === 'set_subtitle') {
+    if (typeof edit.text !== 'string') {
+      throw new P1DomainError('INVALID_STATE', 'subtitle text must be a string.');
+    }
+    return { kind, text: edit.text };
+  }
+  throw new P1DomainError('INVALID_STATE', `Unknown video edit ${kind}.`);
+}
+
+function videoWorkflowExpectedRevision(value: unknown) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'expectedRevision must be a non-negative integer.',
+    );
+  }
+  return value;
+}
+
 function videoExecutionContract(value: unknown): VideoExecutionContract {
   const parsed = creativeExecutionContractSchema.safeParse(value);
   if (
@@ -3701,6 +3748,17 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           workspaceId: args.context.workspaceId,
           actorId: args.context.userId,
           workId: requiredString(payload, 'workId'),
+          ...(payload.billingTaskId === undefined
+            ? {}
+            : { billingTaskId: requiredString(payload, 'billingTaskId') }),
+          ...(payload.billingQuoteRevision === undefined
+            ? {}
+            : {
+                billingQuoteRevision: requiredString(
+                  payload,
+                  'billingQuoteRevision',
+                ),
+              }),
           ...(payload.approvalReceiptId === undefined
             ? {}
             : {
@@ -3748,6 +3806,19 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           shotId: requiredString(payload, 'shotId'),
           candidateIndex: videoCandidateIndex(payload.candidateIndex),
         });
+      case 'video_workflow_edit': {
+        const result = await this.requireComposedVideo().edit({
+          workspaceId: args.context.workspaceId,
+          actorId: args.context.userId,
+          correlationId: args.context.correlationId,
+          workflowId: requiredString(payload, 'workflowId'),
+          expectedRevision: videoWorkflowExpectedRevision(
+            payload.expectedRevision,
+          ),
+          edit: videoWorkflowEdit(payload),
+        });
+        return projectVideoWorkflowPublic(result.workflow);
+      }
       case 'video_workflow_cancel':
         return this.requireComposedVideo().cancel({
           workspaceId: args.context.workspaceId,
@@ -3918,6 +3989,19 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           workspaceId: args.context.workspaceId,
           workflowId: requiredString(payload, 'workflowId'),
         });
+      case 'video_workflow_public': {
+        const current = await this.requireComposedVideo().query({
+          workspaceId: args.context.workspaceId,
+          workflowId: requiredString(payload, 'workflowId'),
+        });
+        if (current.workflow.actorId !== args.context.userId) {
+          throw new P1DomainError(
+            'FORBIDDEN',
+            'This video workflow belongs to another actor.',
+          );
+        }
+        return projectVideoWorkflowPublic(current.workflow);
+      }
       case 'video_workflow_latest':
         return this.requireComposedVideo().latest({
           workspaceId: args.context.workspaceId,
@@ -3926,6 +4010,16 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
             ? { workId: requiredString(payload, 'workId') }
             : {}),
         });
+      case 'video_workflow_public_latest': {
+        const latest = await this.requireComposedVideo().latest({
+          workspaceId: args.context.workspaceId,
+          actorId: args.context.userId,
+          workId: requiredString(payload, 'workId'),
+        });
+        return latest
+          ? projectVideoWorkflowPublic(latest.workflow)
+          : null;
+      }
       case 'video_workflows':
         return this.requireComposedVideo().list({
           workspaceId: args.context.workspaceId,

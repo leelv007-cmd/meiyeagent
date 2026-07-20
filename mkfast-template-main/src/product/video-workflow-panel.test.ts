@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -76,32 +75,6 @@ test('polling is only a temporary fallback while SSE is degraded', () => {
     }),
     false
   );
-});
-
-test('both hosts remount local video state when the current Work changes', () => {
-  for (const file of [
-    './mobile-action-book.tsx',
-    './unified-creation-workbench.tsx',
-  ]) {
-    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(
-      source,
-      /<VideoWorkflowPanel[\s\S]*?key=\{currentWork\.id\}[\s\S]*?workId=\{currentWork\.id\}/u
-    );
-  }
-});
-
-test('the desktop workbench freezes the confirmed store name as the video watermark', () => {
-  const source = readFileSync(
-    new URL('./unified-creation-workbench.tsx', import.meta.url),
-    'utf8'
-  );
-
-  assert.match(
-    source,
-    /brandWatermarkText=\{[\s\S]*?watermarkEnabled[\s\S]*?productQuery\.data\?\.store\?\.name\.trim\(\)[\s\S]*?p1_canvas_export_brand_fallback[\s\S]*?: undefined[\s\S]*?\}/u
-  );
-  assert.doesNotMatch(source, /watermarkEnabled \? '门店品牌'/u);
 });
 
 test('renders the local AIDA editor only after latest recovery returns empty', () => {

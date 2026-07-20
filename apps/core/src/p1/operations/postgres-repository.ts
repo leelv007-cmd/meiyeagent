@@ -26,6 +26,8 @@ const WORKSPACE_TABLES = {
 	commandReceipts: "p1_operations_command_receipts",
 	creationEvents: "p1_creation_events",
 	contentPackages: "p1_content_packages",
+	creativeGenerationApprovalReceipts:
+		"p1_creative_generation_approval_receipts",
 	creativeAssets: "p1_creative_assets",
 	creativeContents: "p1_creative_contents",
 	creativeJobs: "p1_creative_jobs",
@@ -48,6 +50,7 @@ const WORKSPACE_TABLES = {
 const MUTABLE_COLLECTIONS = new Set<keyof typeof WORKSPACE_TABLES>([
 	"commandReceipts",
 	"contentPackages",
+	"creativeGenerationApprovalReceipts",
 	"creativeContents",
 	"creativeJobs",
 	"creativeWorks",
@@ -71,6 +74,25 @@ export class PostgresOperationsRepository implements OperationsRepository {
 
 	private get database() {
 		return this.transactionClient ?? this.pool;
+	}
+
+	async lockBriefRevisionContext(
+		workspaceId: string,
+		briefContextId: string,
+	): Promise<number | null> {
+		if (!this.transactionClient) {
+			throw new Error(
+				"Brief revision context locks require the active Operations transaction.",
+			);
+		}
+		const result = await this.transactionClient.query<{ revision: string }>(
+			`SELECT revision::text AS revision
+			   FROM p1_creation_brief_revision_contexts
+			  WHERE workspace_id = $1 AND brief_context_id = $2
+			  FOR UPDATE`,
+			[workspaceId, briefContextId],
+		);
+		return result.rows[0] ? Number(result.rows[0].revision) : null;
 	}
 
 	async assertTaskHasNoPendingQuestion(workspaceId: string, taskId: string) {
@@ -210,6 +232,13 @@ export class PostgresOperationsRepository implements OperationsRepository {
         PRIMARY KEY (workspace_id, id)
       );
       CREATE TABLE IF NOT EXISTS p1_canvas_image_jobs (
+        workspace_id text NOT NULL,
+        id text NOT NULL,
+        payload jsonb NOT NULL,
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, id)
+      );
+      CREATE TABLE IF NOT EXISTS p1_creative_generation_approval_receipts (
         workspace_id text NOT NULL,
         id text NOT NULL,
         payload jsonb NOT NULL,
@@ -621,7 +650,7 @@ export class PostgresOperationsRepository implements OperationsRepository {
 		for (const [collection, table] of Object.entries(WORKSPACE_TABLES) as Array<
 			[keyof typeof WORKSPACE_TABLES, string]
 		>) {
-			const rows = state[collection] as unknown as Array<
+			const rows = (state[collection] ?? []) as unknown as Array<
 				Record<string, unknown>
 			>;
 			if (collection === "contentPackages") {

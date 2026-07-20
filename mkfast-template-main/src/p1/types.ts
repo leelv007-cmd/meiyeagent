@@ -140,7 +140,6 @@ export interface TemplateCatalogItemView {
   thumbnailUrl?: string;
   tags?: string[];
   inputGuide?: string;
-  internalIntent?: string;
   availableContentModules?: Array<
     | 'social_cover'
     | 'before_after'

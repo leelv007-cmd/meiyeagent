@@ -225,10 +225,42 @@ describe('personal workspace bootstrap', () => {
             },
           },
           provisioner: { async execute() {} },
+          processingPoll: { attempts: 1, intervalMs: 0 },
         }
       ),
       /still processing/iu
     );
+  });
+
+  it('waits for a concurrent provisioning claimant instead of failing sibling requests', async () => {
+    const record: WorkspaceProvisioningRecord = {
+      modelDefaultStatus: 'completed',
+      ownerUserId: 'user-123',
+      status: 'processing',
+      trialStatus: 'completed',
+      workspaceId: 'ws_user-123',
+    };
+    let reads = 0;
+    const result = await consumeWorkspaceProvisioning(
+      { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
+      {
+        outbox: {
+          ...memoryProvisioningOutbox(record),
+          async claim() {
+            return null;
+          },
+          async get() {
+            reads += 1;
+            if (reads === 2) record.status = 'completed';
+            return { ...record };
+          },
+        },
+        processingPoll: { attempts: 3, intervalMs: 0 },
+        provisioner: { async execute() {} },
+      }
+    );
+    assert.equal(result?.status, 'completed');
+    assert.equal(reads, 2);
   });
 
   it('fences a stale provisioning claimant after the lease is reclaimed', async () => {

@@ -27,6 +27,7 @@ const ALL_KINDS: CreationExperienceEventKind[] = [
   'correct',
   'cancel',
 ];
+const AUDIT_REF = `ref:${'a'.repeat(64)}`;
 
 describe('creation experience event kinds', () => {
   it('exports exactly seven kinds', () => {
@@ -40,11 +41,11 @@ describe('append-only audit channel', () => {
   it('records all seven kinds with surface/recipe/action/lens revision', () => {
     const audit = new MemoryCreationExperienceEventAudit();
     for (const kind of ALL_KINDS) {
-      audit.append({
+      audit.append('workspace-1', {
         kind,
-        sessionId: 'sess-1',
-        correlationId: 'corr-1',
-        actorId: 'user-1',
+        sessionId: AUDIT_REF,
+        correlationId: AUDIT_REF,
+        actorId: AUDIT_REF,
         lensId: 'image_text',
         lensRevisionId: 'lens.static@1',
         surfaceRevisionId: 'surface.home.launch@3',
@@ -56,10 +57,10 @@ describe('append-only audit channel', () => {
     }
 
     assert.equal(audit.size, 7);
-    const listed = audit.list();
+    const listed = audit.list('workspace-1');
     assert.equal(listed.length, 7);
 
-    const counts = audit.countByKind();
+    const counts = audit.countByKind('workspace-1');
     for (const kind of ALL_KINDS) {
       assert.equal(counts[kind], 1, `expected one ${kind} event`);
     }
@@ -79,7 +80,7 @@ describe('append-only audit channel', () => {
 
   it('is append-only: list returns a snapshot; history is frozen', () => {
     const audit = new MemoryCreationExperienceEventAudit();
-    const first = audit.append({
+    const first = audit.append('workspace-1', {
       kind: 'exposure',
       surfaceRevisionId: 'surface@1',
     });
@@ -87,7 +88,7 @@ describe('append-only audit channel', () => {
     assert.equal(snapshot.length, 1);
 
     // Mutating the returned list must not affect the store.
-    (snapshot as CreationExperienceEventKind[]).pop?.();
+    (snapshot as unknown as Array<(typeof snapshot)[number]>).pop();
     // @ts-expect-error — intentional runtime mutation attempt on snapshot array
     snapshot.length = 0;
     assert.equal(audit.size, 1);
@@ -99,7 +100,7 @@ describe('append-only audit channel', () => {
       first.userText = 'secret body';
     });
 
-    audit.append({ kind: 'select', lensId: 'copy' });
+    audit.append('workspace-1', { kind: 'select', lensId: 'copy' });
     assert.equal(audit.size, 2);
     assert.equal(audit.list()[0]?.kind, 'exposure');
     assert.equal(audit.list()[1]?.kind, 'select');
@@ -134,14 +135,14 @@ describe('privacy boundary', () => {
     assert.deepEqual(cleaned, { cardIndex: 1, okFlag: true });
   });
 
-  it('drops nested objects and long body-like strings from meta', () => {
+  it('drops nested objects and all strings from meta', () => {
     const cleaned = sanitizeEventMeta({
       nested: { userText: 'smuggle' },
       arr: [1, 2],
       short: 'ok',
       longBody: 'x'.repeat(281),
     });
-    assert.deepEqual(cleaned, { short: 'ok' });
+    assert.equal(cleaned, undefined);
   });
 
   it('buildCreationExperienceEvent never retains forbidden keys', () => {
@@ -158,7 +159,7 @@ describe('privacy boundary', () => {
       },
     });
     assert.equal(findForbiddenEventPayloadKey(event), null);
-    assert.equal(event.meta?.surfaceLabel, '首页');
+    assert.equal(event.meta?.surfaceLabel, undefined);
     assert.equal(event.meta?.userText, undefined);
     assert.equal(event.meta?.hiddenPromptBody, undefined);
     // Serialized form also clean.
@@ -175,6 +176,57 @@ describe('privacy boundary', () => {
         `serialized event must not contain ${key}`,
       );
     }
+  });
+
+  it('rejects sensitive text smuggled through top-level identifier fields', () => {
+    assert.throws(
+      () =>
+        buildCreationExperienceEvent({
+          actionId: '顾客说这是敏感正文',
+          kind: 'start',
+        }),
+      /actionId must be a registered Creation action/,
+    );
+    assert.throws(
+      () =>
+        buildCreationExperienceEvent({
+          kind: 'start',
+          recipeRevisionId: 'contains whitespace body',
+        }),
+      /recipeRevisionId must be a server Catalog revision/,
+    );
+    assert.throws(
+      () =>
+        buildCreationExperienceEvent({
+          actionId: 'customer_secret_phone_13800138000',
+          kind: 'start',
+        }),
+      /registered Creation action/,
+    );
+    assert.throws(
+      () =>
+        buildCreationExperienceEvent({
+          actorId: 'sk_live_abcdefghijklmnopqrstuvwxyz',
+          kind: 'start',
+        }),
+      /server-derived audit reference/,
+    );
+    assert.throws(
+      () =>
+        buildCreationExperienceEvent({
+          kind: 'start',
+          lensId: '13800138000',
+        } as never),
+      /registered Creation Lens/,
+    );
+    const serverTimestamp = buildCreationExperienceEvent({
+      kind: 'start',
+      recordedAt: 'redacted-provider-token',
+    } as never);
+    assert.notEqual(
+      serverTimestamp.recordedAt,
+      'redacted-provider-token',
+    );
   });
 
   it('findForbiddenEventPayloadKey detects deep leaks', () => {
@@ -215,7 +267,10 @@ describe('privacy boundary', () => {
 
   it('audit channel records have no dashboard aggregation API surface', () => {
     const audit = new MemoryCreationExperienceEventAudit();
-    audit.append({ kind: 'complete', recipeRevisionId: 'r@1' });
+    audit.append('workspace-1', {
+      kind: 'complete',
+      recipeRevisionId: 'recipe@1',
+    });
     // Only append / list / countByKind / size — no metrics rollup / charts.
     const methods = Object.getOwnPropertyNames(
       Object.getPrototypeOf(audit),

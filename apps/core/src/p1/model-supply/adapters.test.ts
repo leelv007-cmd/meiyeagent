@@ -17,6 +17,7 @@ import {
   RECORDED_MEDIA_ADAPTER_CONTRACTS,
   RecordedAdapterRouter,
   RecordedMediaAdapterError,
+  Seedance15ProRecordedAdapter,
   Seedance2RecordedAdapter,
   Seedream5ProRecordedAdapter,
   VeoLatestRecordedAdapter,
@@ -185,6 +186,7 @@ test('four image and four video stable adapter classes enforce operation/spec an
   );
 
   for (const adapter of [
+    new Seedance15ProRecordedAdapter(),
     new Seedance2RecordedAdapter(),
     new KlingLatestRecordedAdapter(),
     new GrokLatestVideoRecordedAdapter(),
@@ -224,6 +226,7 @@ test('every recorded media model replays its structured error contract with acce
     new NanoBanana2RecordedAdapter(),
     new NanoBananaProRecordedAdapter(),
     new Seedream5ProRecordedAdapter(),
+    new Seedance15ProRecordedAdapter(),
     new Seedance2RecordedAdapter(),
     new KlingLatestRecordedAdapter(),
     new GrokLatestVideoRecordedAdapter(),

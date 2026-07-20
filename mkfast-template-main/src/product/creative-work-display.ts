@@ -7,7 +7,6 @@ import {
 export interface CreativeWorkTemplateDisplay {
   id: string;
   inputGuide?: string;
-  internalIntent?: string;
   name: string;
 }
 
@@ -44,19 +43,9 @@ export function creativeWorkDisplay(
     return { kind: 'unresolved', title: creative_work_preset_unavailable() };
   }
 
-  const preset = resolved
-    .reverse()
-    .find(
-      (template) =>
-        template?.internalIntent && template.internalIntent === work.intent
-    );
-  if (!preset) {
-    return { kind: 'manual', title: work.intent };
-  }
-  return {
-    ...(preset.inputGuide ? { inputGuide: preset.inputGuide } : {}),
-    kind: 'preset',
-    presetId: preset.id,
-    title: preset.name,
-  };
+  // Z1 removed the hidden prompt contract that used to identify preset-backed
+  // work. A template reference alone is not enough evidence: users may attach
+  // an unrelated template after writing their own intent. Keep the recorded
+  // intent as the honest title instead of guessing a preset identity.
+  return { kind: 'manual', title: work.intent };
 }

@@ -90,4 +90,15 @@ describe('copy / image_text worksurface', () => {
       screen.getByTestId('copy-platform-preview-pending'),
     ).toBeInTheDocument();
   });
+
+  it('does not expose inert rewrite actions and switches preview carrier locally', async () => {
+    const user = userEvent.setup();
+    render(<CopyImageTextWorksurface facts={facts} />);
+    expect(screen.getByTestId('copy-rewrite-rewrite')).toBeDisabled();
+    await user.click(screen.getByTestId('copy-carrier-wechat_moments'));
+    expect(screen.getByTestId('copy-carrier-wechat_moments')).toHaveAttribute(
+      'data-active',
+      'true',
+    );
+  });
 });

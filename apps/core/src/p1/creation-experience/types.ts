@@ -143,6 +143,7 @@ export interface RollbackSurfaceInput extends CatalogCasMeta {
 }
 
 export interface FreezeSessionInput {
+  workspaceId: string;
   surfaceRevisionId: SurfaceRevisionId;
   sessionId?: string;
 }

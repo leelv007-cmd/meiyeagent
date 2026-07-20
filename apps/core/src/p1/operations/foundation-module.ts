@@ -24,7 +24,9 @@ import {
   recordContentPackageResultSignalCommandSchema,
   reuseContentPackageCommandSchema,
   rollbackContentPackageVersionCommandSchema,
+  toPublicContentPackage,
   type ContentPackage,
+  type PublicContentPackage,
 } from '@meiye/contracts';
 import type { P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
@@ -98,6 +100,16 @@ function optionalString(value: unknown) {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function stringList(value: unknown, key: string) {
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== 'string' || item.trim().length === 0)
+  ) {
+    throw new Error(`${key} must be an array of non-empty strings.`);
+  }
+  return value as string[];
 }
 
 function imageDataClass(
@@ -331,33 +343,10 @@ function operationContext(context: P1Context): OperationContext {
   };
 }
 
-function merchantContentPackage<T extends ContentPackage>(contentPackage: T): T {
-  return {
-    ...structuredClone(contentPackage),
-    generated: {
-      ...contentPackage.generated,
-      childRuns: contentPackage.generated.childRuns.map(
-        ({
-          apiCounterparty: _apiCounterparty,
-          providerCost: _providerCost,
-          providerModel: _providerModel,
-          routeSnapshotId: _routeSnapshotId,
-          providerAttempts,
-          ...run
-        }) => ({
-          ...run,
-          ...(providerAttempts
-            ? {
-                providerAttempts: providerAttempts.map(
-                  ({ providerTaskRef: _providerTaskRef, ...attempt }) =>
-                    attempt
-                ),
-              }
-            : {}),
-        })
-      ),
-    },
-  };
+function merchantContentPackage(
+  contentPackage: ContentPackage,
+): PublicContentPackage {
+  return toPublicContentPackage(contentPackage);
 }
 
 function rolloutPercent(input: Record<string, unknown>, fallback?: number) {
@@ -755,6 +744,17 @@ export class OperationsFoundationModule implements P1OperationModule {
             ? {}
             : { operation: creativeOperation(payload.operation) }),
           sessionId: requiredString(payload, 'sessionId'),
+          ...(payload.briefContextId === undefined
+            ? {}
+            : { briefContextId: requiredString(payload, 'briefContextId') }),
+          ...(payload.briefConfirmationId === undefined
+            ? {}
+            : {
+                briefConfirmationId: requiredString(
+                  payload,
+                  'briefConfirmationId',
+                ),
+              }),
           sourceReferences: creativeSourceReferences(payload.sourceReferences),
           ...(payload.autoConfirmBrief === undefined
             ? {}
@@ -841,6 +841,9 @@ export class OperationsFoundationModule implements P1OperationModule {
           requiredString(payload, 'submissionKey'),
           undefined,
           optionalString(payload.approvalReceiptId),
+          optionalString(payload.briefContextId),
+          optionalString(payload.briefConfirmationId),
+          optionalString(payload.billingQuoteId),
         );
       case 'approve_creative_generation':
         return this.operations.approveCreativeGeneration(context, {
@@ -853,6 +856,27 @@ export class OperationsFoundationModule implements P1OperationModule {
           context,
           requiredString(payload, 'jobId')
         );
+      case 'cancel_creative_job':
+        return this.operations.cancelCreativeJob(
+          context,
+          requiredString(payload, 'jobId')
+        );
+      case 'save_creative_work_selection_draft':
+        return this.operations.saveCreativeWorkSelectionDraft(context, {
+          workId: requiredString(payload, 'workId'),
+          baseRevisionId: requiredString(payload, 'baseRevisionId'),
+          orderedAssetIds: stringList(
+            payload.orderedAssetIds,
+            'orderedAssetIds',
+          ),
+          coverAssetId: optionalString(payload.coverAssetId) ?? null,
+          surfaceVersion: requiredString(payload, 'surfaceVersion'),
+        });
+      case 'save_creative_assets_to_library':
+        return this.operations.saveCreativeAssetsToLibrary(context, {
+          workId: requiredString(payload, 'workId'),
+          assetIds: stringList(payload.assetIds, 'assetIds'),
+        });
       case 'retry_creative_job':
         return this.operations.retryCreativeJob(
           context,
@@ -863,18 +887,14 @@ export class OperationsFoundationModule implements P1OperationModule {
         return this.operations.rerollCreativeJob(
           context,
           requiredString(payload, 'jobId'),
-          requiredString(payload, 'submissionKey')
+          requiredString(payload, 'submissionKey'),
+          requiredString(payload, 'quoteId'),
         );
       case 'quality_retry_creative_job':
         return this.operations.qualityRetryCreativeJob(
           context,
           requiredString(payload, 'jobId'),
           requiredString(payload, 'submissionKey')
-        );
-      case 'accept_creative_asset':
-        return this.operations.acceptCreativeAsset(
-          context,
-          requiredString(payload, 'assetId')
         );
       case 'create_task':
         return this.operations.createTask(

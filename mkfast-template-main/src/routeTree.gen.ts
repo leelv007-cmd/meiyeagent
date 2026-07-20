@@ -41,10 +41,10 @@ import { Route as DashboardStoreRouteImport } from './routes/dashboard/store'
 import { Route as DashboardSessionsRouteImport } from './routes/dashboard/sessions'
 import { Route as DashboardSearchRouteImport } from './routes/dashboard/search'
 import { Route as DashboardRecentRouteImport } from './routes/dashboard/recent'
-import { Route as DashboardCatalogRouteImport } from './routes/dashboard/catalog'
 import { Route as DashboardLeadsRouteImport } from './routes/dashboard/leads'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard/jobs'
 import { Route as DashboardContentRouteImport } from './routes/dashboard/content'
+import { Route as DashboardCatalogRouteImport } from './routes/dashboard/catalog'
 import { Route as DashboardAssetsRouteImport } from './routes/dashboard/assets'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
@@ -54,6 +54,7 @@ import { Route as AuthErrorRouteImport } from './routes/auth/error'
 import { Route as ApiPingRouteImport } from './routes/api/ping'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminTemplatesRouteImport } from './routes/admin/templates'
+import { Route as AdminSupplyRouteImport } from './routes/admin/supply'
 import { Route as AdminRedemptionsRouteImport } from './routes/admin/redemptions'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
 import { Route as AdminP1RouteImport } from './routes/admin/p1'
@@ -70,6 +71,7 @@ import { Route as legalsTermsRouteImport } from './routes/(legals)/terms'
 import { Route as legalsPrivacyRouteImport } from './routes/(legals)/privacy'
 import { Route as legalsCookieRouteImport } from './routes/(legals)/cookie'
 import { Route as DashboardWorksWorkIdRouteImport } from './routes/dashboard/works_/$workId'
+import { Route as DashboardToolsToolEntryIdRouteImport } from './routes/dashboard/tools_/$toolEntryId'
 import { Route as DashboardTasksTaskIdRouteImport } from './routes/dashboard/tasks_/$taskId'
 import { Route as DashboardSessionsSessionIdRouteImport } from './routes/dashboard/sessions_/$sessionId'
 import { Route as DashboardResultsWorkIdRouteImport } from './routes/dashboard/results_/$workId'
@@ -94,6 +96,8 @@ import { Route as ApiCoreP1QueryRouteImport } from './routes/api/core/p1/query'
 import { Route as ApiCoreP1PendingActionsRouteImport } from './routes/api/core/p1/pending-actions'
 import { Route as ApiCoreP1CommandsRouteImport } from './routes/api/core/p1/commands'
 import { Route as ApiCoreP1AssetsRouteImport } from './routes/api/core/p1/assets'
+import { Route as AdminSupplyViewsViewIdRouteImport } from './routes/admin/supply.views.$viewId'
+import { Route as AdminSupplyTasksTaskIdRouteImport } from './routes/admin/supply.tasks.$taskId'
 import { Route as ApiCoreP1HarnessTasksRouteImport } from './routes/api/core/p1/harness/tasks'
 import { Route as ApiCoreP1HarnessRecommendationRouteImport } from './routes/api/core/p1/harness/recommendation'
 import { Route as ApiCoreP1CopyStreamRouteImport } from './routes/api/core/p1/copy/stream'
@@ -264,11 +268,6 @@ const DashboardRecentRoute = DashboardRecentRouteImport.update({
   path: '/recent',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardCatalogRoute = DashboardCatalogRouteImport.update({
-  id: '/catalog',
-  path: '/catalog',
-  getParentRoute: () => DashboardRoute,
-} as any)
 const DashboardLeadsRoute = DashboardLeadsRouteImport.update({
   id: '/leads',
   path: '/leads',
@@ -282,6 +281,11 @@ const DashboardJobsRoute = DashboardJobsRouteImport.update({
 const DashboardContentRoute = DashboardContentRouteImport.update({
   id: '/content',
   path: '/content',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardCatalogRoute = DashboardCatalogRouteImport.update({
+  id: '/catalog',
+  path: '/catalog',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardAssetsRoute = DashboardAssetsRouteImport.update({
@@ -327,6 +331,11 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
 const AdminTemplatesRoute = AdminTemplatesRouteImport.update({
   id: '/templates',
   path: '/templates',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSupplyRoute = AdminSupplyRouteImport.update({
+  id: '/supply',
+  path: '/supply',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminRedemptionsRoute = AdminRedemptionsRouteImport.update({
@@ -409,6 +418,12 @@ const DashboardWorksWorkIdRoute = DashboardWorksWorkIdRouteImport.update({
   path: '/works/$workId',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardToolsToolEntryIdRoute =
+  DashboardToolsToolEntryIdRouteImport.update({
+    id: '/tools_/$toolEntryId',
+    path: '/tools/$toolEntryId',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardTasksTaskIdRoute = DashboardTasksTaskIdRouteImport.update({
   id: '/tasks_/$taskId',
   path: '/tasks/$taskId',
@@ -531,6 +546,16 @@ const ApiCoreP1AssetsRoute = ApiCoreP1AssetsRouteImport.update({
   path: '/api/core/p1/assets',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminSupplyViewsViewIdRoute = AdminSupplyViewsViewIdRouteImport.update({
+  id: '/views/$viewId',
+  path: '/views/$viewId',
+  getParentRoute: () => AdminSupplyRoute,
+} as any)
+const AdminSupplyTasksTaskIdRoute = AdminSupplyTasksTaskIdRouteImport.update({
+  id: '/tasks/$taskId',
+  path: '/tasks/$taskId',
+  getParentRoute: () => AdminSupplyRoute,
+} as any)
 const ApiCoreP1HarnessTasksRoute = ApiCoreP1HarnessTasksRouteImport.update({
   id: '/api/core/p1/harness/tasks',
   path: '/api/core/p1/harness/tasks',
@@ -611,6 +636,7 @@ export interface FileRoutesByFullPath {
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/ping': typeof ApiPingRoute
@@ -620,11 +646,11 @@ export interface FileRoutesByFullPath {
   '/auth/register': typeof AuthRegisterRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/dashboard/assets': typeof DashboardAssetsRoute
+  '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
-  '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
   '/dashboard/store': typeof DashboardStoreRoute
@@ -663,7 +689,10 @@ export interface FileRoutesByFullPath {
   '/dashboard/results/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/tools/$toolEntryId': typeof DashboardToolsToolEntryIdRoute
   '/dashboard/works/$workId': typeof DashboardWorksWorkIdRoute
+  '/admin/supply/tasks/$taskId': typeof AdminSupplyTasksTaskIdRoute
+  '/admin/supply/views/$viewId': typeof AdminSupplyViewsViewIdRoute
   '/api/core/p1/assets': typeof ApiCoreP1AssetsRoute
   '/api/core/p1/commands': typeof ApiCoreP1CommandsRoute
   '/api/core/p1/pending-actions': typeof ApiCoreP1PendingActionsRoute
@@ -704,6 +733,7 @@ export interface FileRoutesByTo {
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/ping': typeof ApiPingRoute
@@ -713,11 +743,11 @@ export interface FileRoutesByTo {
   '/auth/register': typeof AuthRegisterRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/dashboard/assets': typeof DashboardAssetsRoute
+  '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
-  '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
   '/dashboard/store': typeof DashboardStoreRoute
@@ -756,7 +786,10 @@ export interface FileRoutesByTo {
   '/dashboard/results/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/tools/$toolEntryId': typeof DashboardToolsToolEntryIdRoute
   '/dashboard/works/$workId': typeof DashboardWorksWorkIdRoute
+  '/admin/supply/tasks/$taskId': typeof AdminSupplyTasksTaskIdRoute
+  '/admin/supply/views/$viewId': typeof AdminSupplyViewsViewIdRoute
   '/api/core/p1/assets': typeof ApiCoreP1AssetsRoute
   '/api/core/p1/commands': typeof ApiCoreP1CommandsRoute
   '/api/core/p1/pending-actions': typeof ApiCoreP1PendingActionsRoute
@@ -801,6 +834,7 @@ export interface FileRoutesById {
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/ping': typeof ApiPingRoute
@@ -810,11 +844,11 @@ export interface FileRoutesById {
   '/auth/register': typeof AuthRegisterRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/dashboard/assets': typeof DashboardAssetsRoute
+  '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/content': typeof DashboardContentRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
-  '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/search': typeof DashboardSearchRoute
   '/dashboard/sessions': typeof DashboardSessionsRoute
   '/dashboard/store': typeof DashboardStoreRoute
@@ -853,7 +887,10 @@ export interface FileRoutesById {
   '/dashboard/results_/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions_/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks_/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/tools_/$toolEntryId': typeof DashboardToolsToolEntryIdRoute
   '/dashboard/works_/$workId': typeof DashboardWorksWorkIdRoute
+  '/admin/supply/tasks/$taskId': typeof AdminSupplyTasksTaskIdRoute
+  '/admin/supply/views/$viewId': typeof AdminSupplyViewsViewIdRoute
   '/api/core/p1/assets': typeof ApiCoreP1AssetsRoute
   '/api/core/p1/commands': typeof ApiCoreP1CommandsRoute
   '/api/core/p1/pending-actions': typeof ApiCoreP1PendingActionsRoute
@@ -899,6 +936,7 @@ export interface FileRouteTypes {
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
+    | '/admin/supply'
     | '/admin/templates'
     | '/admin/users'
     | '/api/ping'
@@ -908,11 +946,11 @@ export interface FileRouteTypes {
     | '/auth/register'
     | '/auth/reset-password'
     | '/dashboard/assets'
+    | '/dashboard/catalog'
     | '/dashboard/content'
     | '/dashboard/jobs'
     | '/dashboard/leads'
     | '/dashboard/recent'
-    | '/dashboard/catalog'
     | '/dashboard/search'
     | '/dashboard/sessions'
     | '/dashboard/store'
@@ -951,7 +989,10 @@ export interface FileRouteTypes {
     | '/dashboard/results/$workId'
     | '/dashboard/sessions/$sessionId'
     | '/dashboard/tasks/$taskId'
+    | '/dashboard/tools/$toolEntryId'
     | '/dashboard/works/$workId'
+    | '/admin/supply/tasks/$taskId'
+    | '/admin/supply/views/$viewId'
     | '/api/core/p1/assets'
     | '/api/core/p1/commands'
     | '/api/core/p1/pending-actions'
@@ -992,6 +1033,7 @@ export interface FileRouteTypes {
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
+    | '/admin/supply'
     | '/admin/templates'
     | '/admin/users'
     | '/api/ping'
@@ -1001,11 +1043,11 @@ export interface FileRouteTypes {
     | '/auth/register'
     | '/auth/reset-password'
     | '/dashboard/assets'
+    | '/dashboard/catalog'
     | '/dashboard/content'
     | '/dashboard/jobs'
     | '/dashboard/leads'
     | '/dashboard/recent'
-    | '/dashboard/catalog'
     | '/dashboard/search'
     | '/dashboard/sessions'
     | '/dashboard/store'
@@ -1044,7 +1086,10 @@ export interface FileRouteTypes {
     | '/dashboard/results/$workId'
     | '/dashboard/sessions/$sessionId'
     | '/dashboard/tasks/$taskId'
+    | '/dashboard/tools/$toolEntryId'
     | '/dashboard/works/$workId'
+    | '/admin/supply/tasks/$taskId'
+    | '/admin/supply/views/$viewId'
     | '/api/core/p1/assets'
     | '/api/core/p1/commands'
     | '/api/core/p1/pending-actions'
@@ -1088,6 +1133,7 @@ export interface FileRouteTypes {
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
+    | '/admin/supply'
     | '/admin/templates'
     | '/admin/users'
     | '/api/ping'
@@ -1097,11 +1143,11 @@ export interface FileRouteTypes {
     | '/auth/register'
     | '/auth/reset-password'
     | '/dashboard/assets'
+    | '/dashboard/catalog'
     | '/dashboard/content'
     | '/dashboard/jobs'
     | '/dashboard/leads'
     | '/dashboard/recent'
-    | '/dashboard/catalog'
     | '/dashboard/search'
     | '/dashboard/sessions'
     | '/dashboard/store'
@@ -1140,7 +1186,10 @@ export interface FileRouteTypes {
     | '/dashboard/results_/$workId'
     | '/dashboard/sessions_/$sessionId'
     | '/dashboard/tasks_/$taskId'
+    | '/dashboard/tools_/$toolEntryId'
     | '/dashboard/works_/$workId'
+    | '/admin/supply/tasks/$taskId'
+    | '/admin/supply/views/$viewId'
     | '/api/core/p1/assets'
     | '/api/core/p1/commands'
     | '/api/core/p1/pending-actions'
@@ -1427,13 +1476,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRecentRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/catalog': {
-      id: '/dashboard/catalog'
-      path: '/catalog'
-      fullPath: '/dashboard/catalog'
-      preLoaderRoute: typeof DashboardCatalogRouteImport
-      parentRoute: typeof DashboardRoute
-    }
     '/dashboard/leads': {
       id: '/dashboard/leads'
       path: '/leads'
@@ -1453,6 +1495,13 @@ declare module '@tanstack/react-router' {
       path: '/content'
       fullPath: '/dashboard/content'
       preLoaderRoute: typeof DashboardContentRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/catalog': {
+      id: '/dashboard/catalog'
+      path: '/catalog'
+      fullPath: '/dashboard/catalog'
+      preLoaderRoute: typeof DashboardCatalogRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/assets': {
@@ -1516,6 +1565,13 @@ declare module '@tanstack/react-router' {
       path: '/templates'
       fullPath: '/admin/templates'
       preLoaderRoute: typeof AdminTemplatesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/supply': {
+      id: '/admin/supply'
+      path: '/supply'
+      fullPath: '/admin/supply'
+      preLoaderRoute: typeof AdminSupplyRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/redemptions': {
@@ -1628,6 +1684,13 @@ declare module '@tanstack/react-router' {
       path: '/works/$workId'
       fullPath: '/dashboard/works/$workId'
       preLoaderRoute: typeof DashboardWorksWorkIdRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/tools_/$toolEntryId': {
+      id: '/dashboard/tools_/$toolEntryId'
+      path: '/tools/$toolEntryId'
+      fullPath: '/dashboard/tools/$toolEntryId'
+      preLoaderRoute: typeof DashboardToolsToolEntryIdRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/tasks_/$taskId': {
@@ -1798,6 +1861,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1AssetsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/supply/views/$viewId': {
+      id: '/admin/supply/views/$viewId'
+      path: '/views/$viewId'
+      fullPath: '/admin/supply/views/$viewId'
+      preLoaderRoute: typeof AdminSupplyViewsViewIdRouteImport
+      parentRoute: typeof AdminSupplyRoute
+    }
+    '/admin/supply/tasks/$taskId': {
+      id: '/admin/supply/tasks/$taskId'
+      path: '/tasks/$taskId'
+      fullPath: '/admin/supply/tasks/$taskId'
+      preLoaderRoute: typeof AdminSupplyTasksTaskIdRouteImport
+      parentRoute: typeof AdminSupplyRoute
+    }
     '/api/core/p1/harness/tasks': {
       id: '/api/core/p1/harness/tasks'
       path: '/api/core/p1/harness/tasks'
@@ -1864,6 +1941,20 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AdminSupplyRouteChildren {
+  AdminSupplyTasksTaskIdRoute: typeof AdminSupplyTasksTaskIdRoute
+  AdminSupplyViewsViewIdRoute: typeof AdminSupplyViewsViewIdRoute
+}
+
+const AdminSupplyRouteChildren: AdminSupplyRouteChildren = {
+  AdminSupplyTasksTaskIdRoute: AdminSupplyTasksTaskIdRoute,
+  AdminSupplyViewsViewIdRoute: AdminSupplyViewsViewIdRoute,
+}
+
+const AdminSupplyRouteWithChildren = AdminSupplyRoute._addFileChildren(
+  AdminSupplyRouteChildren,
+)
+
 interface AdminRouteChildren {
   AdminAuditRoute: typeof AdminAuditRoute
   AdminCapabilitiesRoute: typeof AdminCapabilitiesRoute
@@ -1873,6 +1964,7 @@ interface AdminRouteChildren {
   AdminP1Route: typeof AdminP1Route
   AdminPlansRoute: typeof AdminPlansRoute
   AdminRedemptionsRoute: typeof AdminRedemptionsRoute
+  AdminSupplyRoute: typeof AdminSupplyRouteWithChildren
   AdminTemplatesRoute: typeof AdminTemplatesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -1887,6 +1979,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminP1Route: AdminP1Route,
   AdminPlansRoute: AdminPlansRoute,
   AdminRedemptionsRoute: AdminRedemptionsRoute,
+  AdminSupplyRoute: AdminSupplyRouteWithChildren,
   AdminTemplatesRoute: AdminTemplatesRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
@@ -1914,11 +2007,11 @@ const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 interface DashboardRouteChildren {
   DashboardAssetsRoute: typeof DashboardAssetsRoute
+  DashboardCatalogRoute: typeof DashboardCatalogRoute
   DashboardContentRoute: typeof DashboardContentRoute
   DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLeadsRoute: typeof DashboardLeadsRoute
   DashboardRecentRoute: typeof DashboardRecentRoute
-  DashboardCatalogRoute: typeof DashboardCatalogRoute
   DashboardSearchRoute: typeof DashboardSearchRoute
   DashboardSessionsRoute: typeof DashboardSessionsRoute
   DashboardStoreRoute: typeof DashboardStoreRoute
@@ -1933,16 +2026,17 @@ interface DashboardRouteChildren {
   DashboardResultsWorkIdRoute: typeof DashboardResultsWorkIdRoute
   DashboardSessionsSessionIdRoute: typeof DashboardSessionsSessionIdRoute
   DashboardTasksTaskIdRoute: typeof DashboardTasksTaskIdRoute
+  DashboardToolsToolEntryIdRoute: typeof DashboardToolsToolEntryIdRoute
   DashboardWorksWorkIdRoute: typeof DashboardWorksWorkIdRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAssetsRoute: DashboardAssetsRoute,
+  DashboardCatalogRoute: DashboardCatalogRoute,
   DashboardContentRoute: DashboardContentRoute,
   DashboardJobsRoute: DashboardJobsRoute,
   DashboardLeadsRoute: DashboardLeadsRoute,
   DashboardRecentRoute: DashboardRecentRoute,
-  DashboardCatalogRoute: DashboardCatalogRoute,
   DashboardSearchRoute: DashboardSearchRoute,
   DashboardSessionsRoute: DashboardSessionsRoute,
   DashboardStoreRoute: DashboardStoreRoute,
@@ -1957,6 +2051,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardResultsWorkIdRoute: DashboardResultsWorkIdRoute,
   DashboardSessionsSessionIdRoute: DashboardSessionsSessionIdRoute,
   DashboardTasksTaskIdRoute: DashboardTasksTaskIdRoute,
+  DashboardToolsToolEntryIdRoute: DashboardToolsToolEntryIdRoute,
   DashboardWorksWorkIdRoute: DashboardWorksWorkIdRoute,
 }
 
@@ -2076,3 +2171,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.tsx'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

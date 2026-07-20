@@ -15,21 +15,12 @@ import {
   content_library_empty_description,
   content_library_empty_title,
   content_operation_failed_description,
-  content_package_action_failed,
-  content_package_action_failed_description,
   content_package_legacy_collapse,
   content_package_legacy_copy,
   content_package_legacy_expand,
   content_package_legacy_history,
   content_package_legacy_read_only,
   content_package_legacy_view_migrated,
-  content_package_result_cta_message,
-  content_package_result_cta_reply,
-  content_package_variant_output_label,
-  content_package_variants_failed,
-  content_package_variants_generating,
-  content_package_variants_retry_action,
-  content_package_version_conflict_description,
   creation_entry_platform_douyin,
   creation_entry_platform_xiaohongshu,
   dashboard_content_checklist_title,
@@ -81,29 +72,11 @@ import {
   type ContentPackageProjection,
 } from '@/p1/content-package-card';
 import {
-  type ContentPackageActionFeedback,
-  recoverContentPackageAction,
-} from '@/p1/content-package-action-feedback';
-import {
   ContentPackageDetail,
-  type ContentPackageEditInput,
   type ContentPackageLineageProjection,
 } from '@/p1/content-package-detail';
-import type {
-  ContentPackageResultsProjection,
-  ContentPackageWeeklyResultReviewProjection,
-} from '@/p1/content-package-results';
-import {
-  createOperationsCommandIntentRegistry,
-  operationsCommand,
-  operationsQuery,
-  queryP1,
-} from '@/p1/client';
+import { operationsQuery, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import {
-  normalizeCatalog,
-  selectAvailableCatalogModel,
-} from '@/p1/settings-view-model';
 import {
   optionalSourceId,
   sourceObjectElementId,
@@ -111,12 +84,9 @@ import {
 import { useProductState } from '@/product/client';
 import type { AccountUsageProjection } from '@/product/account-usage';
 import { canonicalMediaForAssetIds } from '@/product/canonical-history-model';
-import { creativeQuoteRevision, quoteFor } from '@/product/creative-quote';
 import { OutputQuotaMeter } from '@/product/output-quota-meter';
 import {
   CONTENT_PACKAGE_STATUS_GROUP_LABELS,
-  type ApprovalReceipt,
-  type ContentPackageDeliveryCapability,
   type ContentPackageDeliveryEvent,
   type ContentItem,
   type ContentPackageStatusGroup,
@@ -139,7 +109,7 @@ import {
   IconSparkles,
 } from '@tabler/icons-react';
 import { createFileRoute } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -167,99 +137,6 @@ const quickEdits = [
   'local_positioning',
 ] as const;
 
-interface ContentPackageVariantIntentStorage {
-  getItem(key: string): string | null;
-  removeItem(key: string): void;
-  setItem(key: string, value: string): void;
-}
-
-interface ContentPackageVariantSubmissionIdentity {
-  currentVersionId?: string;
-  quoteAcceptedAt: string;
-  submissionKey: string;
-}
-
-interface ContentPackageVariantSubmissionOptions {
-  createIntentId?: () => string;
-  now?: () => Date;
-  storage?: ContentPackageVariantIntentStorage;
-}
-
-const contentPackageVariantIntentStoragePrefix =
-  'meiye:content-package-variant-intent:v1:';
-
-function browserVariantIntentStorage() {
-  return typeof window === 'undefined' ? undefined : window.sessionStorage;
-}
-
-function variantIntentStorageKey(packageId: string) {
-  return `${contentPackageVariantIntentStoragePrefix}${packageId}`;
-}
-
-function readContentPackageVariantSubmissionIdentity(
-  packageId: string,
-  storage: ContentPackageVariantIntentStorage | undefined
-): ContentPackageVariantSubmissionIdentity | undefined {
-  const stored = storage?.getItem(variantIntentStorageKey(packageId));
-  if (!stored) return undefined;
-  try {
-    const value = JSON.parse(stored) as Record<string, unknown>;
-    if (
-      (value.currentVersionId === undefined ||
-        typeof value.currentVersionId === 'string') &&
-      typeof value.quoteAcceptedAt === 'string' &&
-      typeof value.submissionKey === 'string'
-    ) {
-      return value as unknown as ContentPackageVariantSubmissionIdentity;
-    }
-  } catch {
-    // A malformed local intent is replaced by the next explicit submission.
-  }
-  return undefined;
-}
-
-export function createContentPackageVariantSubmissionIdentity(
-  packageId: string,
-  currentVersionId: string | undefined,
-  options: ContentPackageVariantSubmissionOptions = {}
-) {
-  const storage = options.storage ?? browserVariantIntentStorage();
-  const existing = readContentPackageVariantSubmissionIdentity(
-    packageId,
-    storage
-  );
-  if (existing && existing.currentVersionId === currentVersionId) {
-    return existing;
-  }
-
-  const quoteAcceptedAt = (options.now ?? (() => new Date()))().toISOString();
-  const identity = {
-    ...(currentVersionId ? { currentVersionId } : {}),
-    quoteAcceptedAt,
-    submissionKey: `content-package-variants:${packageId}:${currentVersionId ?? 'none'}:${(options.createIntentId ?? (() => crypto.randomUUID()))()}`,
-  };
-  storage?.setItem(
-    variantIntentStorageKey(packageId),
-    JSON.stringify(identity)
-  );
-  return identity;
-}
-
-export function clearContentPackageVariantSubmissionIdentity(
-  packageId: string,
-  currentVersionId: string | undefined,
-  storage:
-    | ContentPackageVariantIntentStorage
-    | undefined = browserVariantIntentStorage()
-) {
-  const existing = readContentPackageVariantSubmissionIdentity(
-    packageId,
-    storage
-  );
-  if (existing?.currentVersionId !== currentVersionId) return;
-  storage?.removeItem(variantIntentStorageKey(packageId));
-}
-
 export async function writeTextToClipboard(
   text: string,
   clipboard: Pick<Clipboard, 'writeText'> = navigator.clipboard
@@ -284,39 +161,6 @@ function platformLabel(platform: 'xiaohongshu' | 'douyin') {
   return platform === 'xiaohongshu'
     ? creation_entry_platform_xiaohongshu()
     : creation_entry_platform_douyin();
-}
-
-export function ContentPackageVariantsStatus({
-  failed = false,
-  onRetry,
-  pending,
-}: {
-  failed?: boolean;
-  onRetry?: () => void;
-  pending: boolean;
-}) {
-  if (pending) {
-    return (
-      <Alert>
-        <IconSparkles />
-        <AlertTitle>{content_package_variants_generating()}</AlertTitle>
-      </Alert>
-    );
-  }
-  if (!failed) return null;
-
-  return (
-    <Alert variant="destructive">
-      <IconAlertTriangle />
-      <AlertTitle>{content_package_variants_failed()}</AlertTitle>
-      <AlertDescription>
-        <Button size="sm" variant="outline" onClick={onRetry}>
-          <IconRefresh />
-          {content_package_variants_retry_action()}
-        </Button>
-      </AlertDescription>
-    </Alert>
-  );
 }
 
 export function LegacyContentBody({
@@ -398,7 +242,6 @@ export function ContentLibrarySurface({
     packageId: requestedPackageId,
     from: trustedReturnFrom,
   } = selection;
-  const queryClient = useQueryClient();
   const { state, error, loading, pending, execute, refresh } =
     useProductState();
   const contentPackagesQuery = useQuery({
@@ -435,34 +278,6 @@ export function ContentLibrarySurface({
   const sourcePackage = requestedPackageId
     ? contentPackages.find((item) => item.id === requestedPackageId)
     : undefined;
-  const variantCatalogQuery = useQuery<{
-    deployments?: unknown[];
-    models?: unknown[];
-    revisionId?: string;
-  }>({
-    enabled: Boolean(sourcePackage && sourcePackage.variants.length === 0),
-    queryFn: ({ signal }) =>
-      queryP1(
-        'model-supply',
-        { action: 'catalog', payload: { operation: 'copy.adapt' } },
-        signal
-      ),
-    queryKey: p1QueryKeys.request('model-supply', 'catalog', {
-      operation: 'copy.adapt',
-    }),
-    retry: false,
-  });
-  const variantModel = selectAvailableCatalogModel(
-    normalizeCatalog(variantCatalogQuery.data ?? {}, 'copy.adapt')
-  );
-  const variantQuote = quoteFor('copy.adapt', variantModel, '3:4');
-  const variantContractReady = Boolean(
-    variantModel?.unitPrice &&
-      variantCatalogQuery.data?.revisionId &&
-      variantQuote.estimatedAmount !== undefined &&
-      variantQuote.currency &&
-      variantQuote.priceRevision
-  );
   const lineageQuery = useQuery({
     enabled: Boolean(sourcePackage),
     queryFn: ({ signal }) =>
@@ -472,19 +287,6 @@ export function ContentLibrarySurface({
         signal
       ),
     queryKey: p1QueryKeys.request('operations', 'content_package_lineage', {
-      packageId: requestedPackageId ?? '',
-    }),
-    retry: false,
-  });
-  const resultsQuery = useQuery({
-    enabled: Boolean(sourcePackage),
-    queryFn: ({ signal }) =>
-      operationsQuery<ContentPackageResultsProjection>(
-        'content_package_results',
-        { packageId: requestedPackageId! },
-        signal
-      ),
-    queryKey: p1QueryKeys.request('operations', 'content_package_results', {
       packageId: requestedPackageId ?? '',
     }),
     retry: false,
@@ -504,42 +306,7 @@ export function ContentLibrarySurface({
     ),
     retry: false,
   });
-  const deliveryCapabilitiesQuery = useQuery({
-    enabled: Boolean(sourcePackage),
-    queryFn: ({ signal }) =>
-      operationsQuery<ContentPackageDeliveryCapability[]>(
-        'content_package_delivery_capabilities',
-        { packageId: requestedPackageId! },
-        signal
-      ),
-    queryKey: p1QueryKeys.request(
-      'operations',
-      'content_package_delivery_capabilities',
-      { packageId: requestedPackageId ?? '' }
-    ),
-    retry: false,
-  });
-  const weeklyResultReviewQuery = useQuery({
-    enabled: Boolean(sourcePackage),
-    queryFn: ({ signal }) =>
-      operationsQuery<ContentPackageWeeklyResultReviewProjection>(
-        'content_package_weekly_result_review',
-        {},
-        signal
-      ),
-    queryKey: p1QueryKeys.request(
-      'operations',
-      'content_package_weekly_result_review'
-    ),
-    retry: false,
-  });
   const [copied, setCopied] = useState<string>();
-  const [packageCommandIntents] = useState(() =>
-    createOperationsCommandIntentRegistry()
-  );
-  const [packageActionError, setPackageActionError] =
-    useState<ContentPackageActionFeedback>();
-  const [packageActionPending, setPackageActionPending] = useState<string>();
   const sourceHandoff = sourceHandoffId
     ? state?.handoffPackages.find(
         (item) => item.id === sourceHandoffId || item.token === sourceHandoffId
@@ -570,18 +337,6 @@ export function ContentLibrarySurface({
     return () => window.cancelAnimationFrame(frame);
   }, [requestedPackageId, sourcePackage]);
 
-  useEffect(() => {
-    if (!sourcePackage || sourcePackage.variants.length === 0) return;
-    clearContentPackageVariantSubmissionIdentity(
-      sourcePackage.id,
-      sourcePackage.currentVersionId
-    );
-  }, [
-    sourcePackage?.currentVersionId,
-    sourcePackage?.id,
-    sourcePackage?.variants.length,
-  ]);
-
   async function run(command: ProductCommand) {
     try {
       await execute(command);
@@ -599,113 +354,6 @@ export function ContentLibrarySurface({
 
   function openPackage(packageId: string) {
     onOpenPackage(packageId);
-  }
-
-  async function runPackageCommand<T>(
-    action: string,
-    payload: Record<string, unknown>,
-    preserveIntentOnFailure = false,
-    idempotencyKey?: string
-  ) {
-    setPackageActionError(undefined);
-    setPackageActionPending(action);
-    try {
-      const result = preserveIntentOnFailure
-        ? await packageCommandIntents.execute<T>(action, payload)
-        : await operationsCommand<T>(action, payload, idempotencyKey);
-      await queryClient.invalidateQueries({
-        queryKey: p1QueryKeys.module('operations'),
-      });
-      return result;
-    } catch (error) {
-      setPackageActionError(
-        await recoverContentPackageAction(
-          error,
-          () =>
-            queryClient.invalidateQueries({
-              queryKey: p1QueryKeys.request('operations', 'content_packages'),
-            }),
-          action
-        )
-      );
-      return undefined;
-    } finally {
-      setPackageActionPending(undefined);
-    }
-  }
-
-  async function editPackage(input: ContentPackageEditInput) {
-    if (!sourcePackage) return;
-    await runPackageCommand(
-      input.platform
-        ? 'edit_content_package_variant'
-        : 'edit_content_package_version',
-      {
-        baseVersionId: input.baseVersionId,
-        changes: input.changes,
-        expectedRevision: sourcePackage.revision,
-        packageId: sourcePackage.id,
-        ...(input.intent ? { intent: input.intent } : {}),
-        ...(input.platform ? { platform: input.platform } : {}),
-      }
-    );
-  }
-
-  function generatePackageVariants() {
-    if (
-      !sourcePackage ||
-      !variantModel?.unitPrice ||
-      !variantCatalogQuery.data?.revisionId ||
-      variantQuote.estimatedAmount === undefined ||
-      !variantQuote.currency ||
-      !variantQuote.priceRevision ||
-      !accountUsageQuery.data ||
-      accountUsageQuery.data.usage.copy.available < 1
-    ) {
-      setPackageActionError('variant_generation');
-      return;
-    }
-    const variantSubmission = createContentPackageVariantSubmissionIdentity(
-      sourcePackage.id,
-      sourcePackage.currentVersionId
-    );
-    const { quoteAcceptedAt } = variantSubmission;
-    void runPackageCommand(
-      'generate_content_package_variants',
-      {
-        contract: {
-          aigcLabelEnabled: sourcePackage.compliance.aigcLabelEnabled,
-          catalogModelId: variantModel.id,
-          catalogRevision: variantCatalogQuery.data.revisionId,
-          currency: variantQuote.currency,
-          dataClass: [],
-          estimatedAmount: variantQuote.estimatedAmount,
-          operation: 'copy.adapt',
-          outputCount: 3,
-          outputLabel: content_package_variant_output_label(),
-          quoteAcceptedAt,
-          quoteRevision: creativeQuoteRevision({
-            aspectRatio: '3:4',
-            catalogModelId: variantModel.id,
-            catalogRevision: variantCatalogQuery.data.revisionId,
-            operation: 'copy.adapt',
-            priceRevision: variantQuote.priceRevision,
-          }),
-          watermarkEnabled: sourcePackage.compliance.watermarkEnabled,
-        },
-        expectedRevision: sourcePackage.revision,
-        packageId: sourcePackage.id,
-        submissionKey: variantSubmission.submissionKey,
-      },
-      false,
-      variantSubmission.submissionKey
-    ).then((result) => {
-      if (!result) return;
-      clearContentPackageVariantSubmissionIdentity(
-        sourcePackage.id,
-        sourcePackage.currentVersionId
-      );
-    });
   }
 
   if (
@@ -823,32 +471,9 @@ export function ContentLibrarySurface({
           </Alert>
         ) : null}
 
-        <ContentPackageVariantsStatus
-          failed={packageActionError === 'variant_generation'}
-          onRetry={generatePackageVariants}
-          pending={packageActionPending === 'generate_content_package_variants'}
-        />
-
-        {packageActionError && packageActionError !== 'variant_generation' ? (
-          <Alert variant="destructive">
-            <IconAlertTriangle />
-            <AlertTitle>
-              {packageActionError === 'version_conflict'
-                ? content_package_version_conflict_description()
-                : content_package_action_failed()}
-            </AlertTitle>
-            {packageActionError === 'generic' ? (
-              <AlertDescription>
-                {content_package_action_failed_description()}
-              </AlertDescription>
-            ) : null}
-          </Alert>
-        ) : null}
-
         {sourcePackage ? (
           <ContentPackageDetail
             contentPackage={sourcePackage}
-            deliveryCapabilities={deliveryCapabilitiesQuery.data}
             deliveryTimeline={deliveryTimelineQuery.data}
             lineage={lineageQuery.data}
             media={canonicalMediaForAssetIds(
@@ -858,239 +483,8 @@ export function ContentLibrarySurface({
                 (version) => version.id === sourcePackage.currentVersionId
               )?.orderedAssetIds ?? sourcePackage.generated.assetIds
             )}
-            relayTarget={{ kind: 'package', packageId: sourcePackage.id }}
-            returnFrom={trustedReturnFrom}
-            onEdit={(input) => void editPackage(input)}
-            onApproveAndDeliver={async (input) => {
-              const approvalRequest = (
-                sourcePackage.approvalRequests ?? []
-              ).find(
-                (request) =>
-                  request.status === 'pending' &&
-                  request.platform === input.platform &&
-                  request.variantVersionId === input.variantVersionId
-              );
-              if (!approvalRequest) {
-                setPackageActionError('generic');
-                return;
-              }
-              const approvalKey = `content-package-approval:${crypto.randomUUID()}`;
-              const approval = await runPackageCommand<ApprovalReceipt>(
-                'approve_content_package_action',
-                {
-                  ...input,
-                  actionKind: 'publish',
-                  approvalKey,
-                  expectedRevision: sourcePackage.revision,
-                  packageId: sourcePackage.id,
-                  requestId: approvalRequest.id,
-                },
-                false,
-                approvalKey
-              );
-              if (!approval) return;
-              await runPackageCommand(
-                'deliver_content_package',
-                {
-                  ...input,
-                  actionKind: 'publish',
-                  expectedRevision: sourcePackage.revision + 1,
-                  packageId: sourcePackage.id,
-                  receiptId: approval.id,
-                },
-                false,
-                `content-package-delivery:${approval.id}`
-              );
-            }}
-            onRetryDelivery={async (input) => {
-              let currentPackage: ContentPackageProjection;
-              try {
-                currentPackage =
-                  await operationsQuery<ContentPackageProjection>(
-                    'content_package',
-                    { packageId: sourcePackage.id }
-                  );
-              } catch {
-                setPackageActionError('generic');
-                return;
-              }
-              const approved = (currentPackage.approvalReceipts ?? []).find(
-                (receipt) =>
-                  receipt.id === input.receiptId &&
-                  receipt.status === 'approved' &&
-                  receipt.binding.platform === input.platform &&
-                  receipt.binding.variantVersionId === input.variantVersionId
-              );
-              if (!approved) {
-                setPackageActionError('generic');
-                return;
-              }
-              await runPackageCommand(
-                'deliver_content_package',
-                {
-                  ...input,
-                  actionKind: approved.binding.actionKind,
-                  expectedRevision: currentPackage.revision,
-                  packageId: currentPackage.id,
-                },
-                false,
-                `content-package-delivery:${approved.id}`
-              );
-            }}
-            onExport={(platform) => {
-              const variant = sourcePackage.variants.find(
-                (item) => item.platform === platform
-              );
-              if (!variant) return;
-              void runPackageCommand(
-                'export_content_package',
-                {
-                  expectedRevision: sourcePackage.revision,
-                  packageId: sourcePackage.id,
-                  platform,
-                },
-                true
-              );
-            }}
-            onGenerateVariants={generatePackageVariants}
             onOpenPackage={openPackage}
-            onRetryVariantCatalog={() => {
-              void variantCatalogQuery.refetch();
-            }}
-            onReuse={() => {
-              void runPackageCommand<ContentPackageProjection>(
-                'reuse_content_package',
-                { sourcePackageId: sourcePackage.id },
-                true
-              ).then((reused) => {
-                if (reused) openPackage(reused.id);
-              });
-            }}
-            onRecordResultSignal={(kind) => {
-              void runPackageCommand('record_content_package_result_signal', {
-                expectedRevision: sourcePackage.revision,
-                kind,
-                packageId: sourcePackage.id,
-              });
-            }}
-            onRecordManualResult={(input) => {
-              void runPackageCommand('record_content_package_manual_result', {
-                expectedRevision: sourcePackage.revision,
-                packageId: sourcePackage.id,
-                ...input,
-              });
-            }}
-            onResultReviewAction={(action) => {
-              if (action === 'continue_series') {
-                const currentVersion = sourcePackage.versions.find(
-                  (version) => version.id === sourcePackage.currentVersionId
-                );
-                if (!currentVersion) return;
-                void runPackageCommand<{ id: string }>('create_task', {
-                  dedupeKey: `weekly-result:${sourcePackage.id}:${crypto.randomUUID()}`,
-                  dueAt: new Date().toISOString(),
-                  executable: true,
-                  relatedObject: { id: sourcePackage.id, kind: 'content' },
-                  risk: 'normal',
-                  source: 'weekly_review',
-                  title: currentVersion.title,
-                }).then((task) => {
-                  if (!task) return;
-                  window.location.assign(
-                    getPathWithLocale(
-                      `/dashboard?taskId=${encodeURIComponent(task.id)}`
-                    )
-                  );
-                });
-                return;
-              }
-              if (action === 'change_cta') {
-                const currentVersion = sourcePackage.versions.find(
-                  (version) => version.id === sourcePackage.currentVersionId
-                );
-                if (!currentVersion) return;
-                const conversionHook =
-                  currentVersion.conversionHook ===
-                  content_package_result_cta_message()
-                    ? content_package_result_cta_reply()
-                    : content_package_result_cta_message();
-                void runPackageCommand<ContentPackageProjection>(
-                  'edit_content_package_version',
-                  {
-                    baseVersionId: currentVersion.id,
-                    changes: {
-                      body: currentVersion.body,
-                      conversionHook,
-                      orderedAssetIds: currentVersion.orderedAssetIds,
-                      title: currentVersion.title,
-                      topics: currentVersion.topics,
-                    },
-                    expectedRevision: sourcePackage.revision,
-                    packageId: sourcePackage.id,
-                  }
-                ).then((updated) => {
-                  if (!updated) return;
-                  void runPackageCommand(
-                    'record_content_package_result_review_action',
-                    {
-                      action,
-                      expectedRevision: updated.revision,
-                      packageId: updated.id,
-                    }
-                  );
-                });
-                return;
-              }
-              void runPackageCommand(
-                'record_content_package_result_review_action',
-                {
-                  action,
-                  expectedRevision: sourcePackage.revision,
-                  packageId: sourcePackage.id,
-                }
-              );
-            }}
-            onRollback={(targetVersionId) =>
-              void runPackageCommand('rollback_content_package_version', {
-                expectedRevision: sourcePackage.revision,
-                packageId: sourcePackage.id,
-                targetVersionId,
-              })
-            }
-            pending={Boolean(packageActionPending)}
-            results={resultsQuery.data}
-            variantQuota={
-              variantContractReady && accountUsageQuery.data
-                ? {
-                    allowance: accountUsageQuery.data.usage.copy.allowance,
-                    available: accountUsageQuery.data.usage.copy.available,
-                  }
-                : undefined
-            }
-            variantCatalogState={
-              variantCatalogQuery.isPending || accountUsageQuery.isPending
-                ? 'loading'
-                : variantContractReady && accountUsageQuery.data
-                  ? undefined
-                  : 'unavailable'
-            }
-            videoDataClass={[
-              ...(state.assets.some(
-                (asset) =>
-                  sourcePackage.source.assetIds.includes(asset.id) &&
-                  asset.containsPerson
-              )
-                ? (['contains_face'] as const)
-                : []),
-              ...(state.assets.some(
-                (asset) =>
-                  sourcePackage.source.assetIds.includes(asset.id) &&
-                  asset.containsSensitiveData
-              )
-                ? (['pii'] as const)
-                : []),
-            ]}
-            weeklyResultReview={weeklyResultReviewQuery.data}
+            returnFrom={trustedReturnFrom}
           />
         ) : null}
 

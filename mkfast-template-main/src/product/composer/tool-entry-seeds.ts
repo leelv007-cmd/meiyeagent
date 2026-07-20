@@ -2,12 +2,13 @@
  * Browser-side CreativeToolEntry seeds (C3 / #97, D-092 / D-098 C3).
  *
  * Mirror of core `static-seeds` TOOL_ENTRY_SEEDS — browser must not import core.
- * Four first-ship standalone tools; Pro Studio is a workspace gate entry.
+ * Registry metadata for planned tools. Only entries whose complete execution
+ * chain has been verified may set `capabilityPublished` to true.
  */
 
 import type { CreativeToolContainer, CreativeToolKind } from '@meiye/contracts';
 
-import { STANDALONE_TOOL_ENTRY_IDS } from './tool-handoff';
+import type { STANDALONE_TOOL_ENTRY_IDS } from './tool-handoff';
 
 /** Task-language tool categories (D-093). */
 export const TOOL_CATALOG_CATEGORIES = [
@@ -54,8 +55,8 @@ export type ComposerToolEntrySeed = {
 };
 
 /**
- * First-ship four standalone tools (D-092):
- * multi-size export, batch bg remove, subtitle erase, Pro Studio canvas.
+ * Planned standalone tools. The three ordinary tools remain unpublished until
+ * input, preview, submit, task and billing are all wired and acceptance-tested.
  */
 export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
   {
@@ -67,7 +68,7 @@ export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
     order: 1,
     categories: ['image', 'publish'],
     isProStudioBanner: false,
-    capabilityPublished: true,
+    capabilityPublished: false,
     entitlementLocked: false,
   },
   {
@@ -79,7 +80,7 @@ export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
     order: 2,
     categories: ['image'],
     isProStudioBanner: false,
-    capabilityPublished: true,
+    capabilityPublished: false,
     entitlementLocked: false,
   },
   {
@@ -91,7 +92,7 @@ export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
     order: 3,
     categories: ['video'],
     isProStudioBanner: false,
-    capabilityPublished: true,
+    capabilityPublished: false,
     entitlementLocked: false,
   },
   {

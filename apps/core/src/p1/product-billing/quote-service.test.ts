@@ -18,6 +18,8 @@ function perRequestInput(quoteId = 'quote-req-1') {
     catalogModelRevision: 'catalog-r1',
     quotePolicyRevision: 'qp-r1',
     billingMode: 'per_request' as const,
+    outputCount: 3,
+    outputLabel: '3 条内容候选',
     unitRate: 1,
     currency: 'CNY',
     routeSnapshotRef: 'route-1',
@@ -109,6 +111,8 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(result.quoted.confirmedAmount, 1);
     assert.equal(result.quoted.authorizedCeiling, 1);
     assert.equal(result.quoted.billingMode, 'per_request');
+    assert.equal(result.quoted.outputCount, 3);
+    assert.equal(result.quoted.outputLabel, '3 条内容候选');
 
     assert.equal(result.confirmed.lifecycleStatus, 'confirmed');
     assert.equal(result.confirmed.taskId, 'task-req-1');

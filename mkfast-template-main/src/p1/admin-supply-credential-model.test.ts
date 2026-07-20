@@ -72,7 +72,7 @@ test('env_fallback risk and migration entry always visible on panel', () => {
 
 test('secret no-echo: raw keys and bearer tokens rejected', () => {
   assert.throws(() =>
-    assertNoSecretEcho({ apiKey: 'sk-abcdefghijklmnopqrstuvwxyz' }),
+    assertNoSecretEcho({ apiKey: 'fixture-secret' }),
   );
   assert.throws(() =>
     assertNoSecretEcho({ authorization: 'Bearer abcdefghijklmnop' }),

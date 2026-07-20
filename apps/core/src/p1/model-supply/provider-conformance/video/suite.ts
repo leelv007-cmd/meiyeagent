@@ -558,7 +558,6 @@ async function caseBurnInLabelChain(
           id: shotId,
           prompt: 'burn-in conformance shot',
           candidatesPerShot: 1,
-          candidates: [],
         },
       ],
     },
@@ -566,12 +565,14 @@ async function caseBurnInLabelChain(
       status: 'running',
       confirmed: true,
       revision: 1,
+      candidatesByShot: { [shotId]: [] },
+      attempts: [],
       createdAt: now,
       updatedAt: now,
     },
     assets: {
-      attempts: [],
-      clipAssets: [],
+      byId: {},
+      clipAssetIds: [],
     },
   };
 

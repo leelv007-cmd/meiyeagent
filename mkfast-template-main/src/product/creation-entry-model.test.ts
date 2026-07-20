@@ -44,21 +44,16 @@ test('production releases all five complete marketing entries', () => {
   );
 });
 
-test('keeps the two result choices on the single creation composer axis', () => {
+test('mounts lens and Recipe choices on the canonical Composer axis', () => {
   const source = readFileSync(
-    new URL('./unified-creation-workbench.tsx', import.meta.url),
+    new URL('./composer/composer-home.tsx', import.meta.url),
     'utf8'
   );
 
-  assert.match(
-    source,
-    /<CreationEntry[\s\S]*?onOperationChange=\{selectOperation\}/u
-  );
-  assert.match(source, /<CreationModePicker/u);
-  assert.doesNotMatch(
-    source,
-    /className=\{workbenchStage === 'empty' \? undefined : 'hidden'\}[\s\S]*?workbench_quick_start/u
-  );
+  assert.match(source, /<LensRadiogroup/u);
+  assert.match(source, /<RecipeCardsPanel/u);
+  assert.doesNotMatch(source, /<CreationEntry/u);
+  assert.doesNotMatch(source, /<CreationModePicker/u);
 });
 
 test('states the real authorized-asset gate before generation', () => {
@@ -152,9 +147,6 @@ test('opening suggestions identify fallback copy as common instead of insight', 
   assert.equal(suggestions.length, 3);
   assert.ok(suggestions.every((item) => item.sourceLabel === '常用建议'));
 });
-
-
-
 
 test('example store waits for every successful real query and exits on any fact', () => {
   const empty = {

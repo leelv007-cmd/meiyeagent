@@ -10,10 +10,12 @@ import type { ImageWorksurfaceFacts } from './image-worksurface-model';
 import {
   createEmptyWorkingSelection,
   reduceWorkingSelection,
+  workingSelectionStorageKey,
 } from './working-selection-reducer';
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
 });
 
 const NOW = '2026-07-20T12:00:00.000Z';
@@ -69,6 +71,7 @@ describe('image role feedback (exact D-087 copy)', () => {
           ],
           explicitMode: 'single',
         })}
+        onAdoptPrimary={vi.fn().mockResolvedValue(undefined)}
       />,
     );
 
@@ -220,5 +223,87 @@ describe('image role feedback (exact D-087 copy)', () => {
     expect(screen.getByTestId('image-role-feedback-visible')).toHaveTextContent(
       '已在素材库',
     );
+  });
+
+  it('persists working selection on the same device and restores it after remount', async () => {
+    const user = userEvent.setup();
+    const facts = baseFacts({
+      explicitMode: 'set',
+      outputType: 'ordered_image_set',
+      slot: 'gallery',
+      focusedAssetId: 'img-1',
+      candidates: [
+        {
+          assetId: 'img-1',
+          persisted: true,
+          rightsOk: true,
+          generationOk: true,
+        },
+        {
+          assetId: 'img-2',
+          persisted: true,
+          rightsOk: true,
+          generationOk: false,
+        },
+      ],
+    });
+
+    const first = render(<ImageWorksurface facts={facts} />);
+    await user.click(screen.getByTestId('image-role-primary'));
+    expect(
+      window.localStorage.getItem(workingSelectionStorageKey('work-rtl')),
+    ).toContain('img-1');
+    first.unmount();
+
+    render(<ImageWorksurface facts={facts} />);
+    expect(screen.getByTestId('image-set-slot')).toHaveAttribute(
+      'data-asset-id',
+      'img-1',
+    );
+  });
+
+  it('does not claim a library save when no canonical handler exists', () => {
+    render(
+      <ImageWorksurface
+        facts={baseFacts({
+          candidates: [
+            {
+              assetId: 'img-1',
+              persisted: true,
+              rightsOk: true,
+              generationOk: true,
+            },
+          ],
+          explicitMode: 'single',
+          focusedAssetId: 'img-1',
+          mediaVersionReady: true,
+        })}
+      />,
+    );
+    expect(screen.getByTestId('image-library-save_one')).toBeDisabled();
+    expect(screen.queryByText('已在素材库')).toBeNull();
+  });
+
+  it('submits the explicitly selected image adjustment scope', async () => {
+    const user = userEvent.setup();
+    const onAdjust = vi.fn();
+    render(
+      <ImageWorksurface
+        facts={baseFacts({
+          explicitMode: 'set',
+          focusedAssetId: 'img-2',
+          outputType: 'ordered_image_set',
+          slot: 'gallery',
+        })}
+        onAdjust={onAdjust}
+      />,
+    );
+    await user.click(screen.getByTestId('result-adjust-scope-adjust_one'));
+    await user.type(screen.getByTestId('result-adjust-input'), '换成夏日风格');
+    await user.click(screen.getByTestId('result-adjust-submit'));
+    expect(onAdjust).toHaveBeenCalledWith('换成夏日风格', {
+      assetId: 'img-2',
+      kind: 'asset',
+    });
   });
 });

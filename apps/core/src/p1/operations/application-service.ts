@@ -6,6 +6,8 @@ import {
   type ContentPackageKind,
   type ContentPackageSource,
   type QuickEditIntent,
+  type ResultAdoptCommand,
+  type ReviseContentPackageVisualsCommand,
   contentPackageVisibleStatus,
   generatedPlatformVariantsSchema,
   DEFAULT_CANVAS_TEMPLATE_NAME,
@@ -17,6 +19,12 @@ import {
   promotionalMaterialReceiptSchema,
   creativeGenerationApprovalReceiptSchema,
 } from '@meiye/contracts';
+import {
+  reviseContentPackageVisualsPure,
+  type VisualAssetRecord,
+} from '../result-delivery/visual-adoption.js';
+import { VisualAdoptionError } from '../result-delivery/errors.js';
+import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import { appendPendingApprovalRequest } from './content-package-approval.js';
 import {
   buildContentPackage,
@@ -252,6 +260,8 @@ function canonicalTemplateDefaultName(
 interface OperationsDependencies {
   assetDataClassResolver?: AssetDataClassResolverPort;
   batchExecutor?: BatchExecutionPort;
+  billingLifecycle?: BillingLifecyclePort;
+  briefSubmissionGate?: import('../creation-experience/brief-submission-gate.js').BriefSubmissionGate;
   canvasExporter: CanvasExportPort;
   creationExecutor?: import('./types.js').CreationExecutorPort;
   contentPackageExporter?: ContentPackageExportPort;
@@ -280,6 +290,9 @@ interface OperationsDependencies {
 
 interface CreativeJobPreparationOptions {
   approvalReceiptId?: string;
+  billingQuoteId?: string;
+  briefConfirmationId?: string;
+  briefContextId?: string;
   retryOf?: string;
   reroll?: {
     kind: CreativeRerollKind;
@@ -319,6 +332,15 @@ const CONTENT_MODULE_IDS = new Set<CreativeContentModuleId>([
   'shooting_checklist',
 ]);
 const DEFAULT_CONTENT_MODULES: CreativeContentModuleId[] = ['social_cover'];
+
+function creativeBillingResource(
+  operation: CreativeExecutionContract['operation']
+): 'copy' | 'image' | 'video' | 'audio' {
+  if (operation.startsWith('copy.')) return 'copy';
+  if (operation.startsWith('audio.')) return 'audio';
+  if (operation === 'video.generate') return 'video';
+  return 'image';
+}
 const INHERITANCE_FIELD_IDS = new Set<CreativeInheritanceFieldId>([
   'content_structure',
   'layout_slots',
@@ -693,6 +715,12 @@ export class OperationsApplicationService {
     this.id = dependencies.createId ?? randomUUID;
   }
 
+  attachBriefSubmissionGate(
+    gate: import('../creation-experience/brief-submission-gate.js').BriefSubmissionGate,
+  ) {
+    this.dependencies.briefSubmissionGate = gate;
+  }
+
   private timestamp() {
     return this.now().toISOString();
   }
@@ -1044,6 +1072,35 @@ export class OperationsApplicationService {
       (await this.repository.loadWorkspace(context.workspaceId)) ??
       initialWorkspace(context.workspaceId)
     );
+  }
+
+  private async assertBriefCurrentForWrite(
+    repository: OperationsRepository,
+    input: Parameters<
+      import('../creation-experience/brief-submission-gate.js').BriefSubmissionGate['assertCurrent']
+    >[0],
+  ) {
+    const gate = this.dependencies.briefSubmissionGate;
+    if (!gate) {
+      throw new OperationsError(
+        'BRIEF_GATE_UNAVAILABLE',
+        'The server Brief submission gate is unavailable.',
+        503,
+      );
+    }
+    const lockedRevision = await repository.lockBriefRevisionContext(
+      input.workspaceId,
+      input.briefContextId,
+    );
+    const expectedContextRevision =
+      input.expectedContextRevision ?? lockedRevision ?? undefined;
+    const validated = await gate.assertCurrent({
+      ...input,
+      ...(expectedContextRevision === undefined
+        ? {}
+        : { expectedContextRevision }),
+    });
+    return validated?.contextRevision ?? expectedContextRevision;
   }
 
   private async mutate<T>(
@@ -4916,6 +4973,7 @@ export class OperationsApplicationService {
       existing.retryOf !== options.retryOf ||
       existing.rerollOf !== options.reroll?.sourceJobId ||
       existing.rerollKind !== options.reroll?.kind ||
+      existing.billingQuoteId !== options.billingQuoteId ||
       JSON.stringify(stableValue(existing.contract)) !==
         JSON.stringify(stableValue(contract))
     ) {
@@ -5114,6 +5172,8 @@ export class OperationsApplicationService {
        * Opt-in to preserve existing create→update→confirm flows.
        */
       autoConfirmBrief?: boolean;
+      briefConfirmationId?: string;
+      briefContextId?: string;
       /** Optional AI draft values for scene/tone/audience (intent uses input.intent). */
       briefDrafts?: Partial<
         Record<Exclude<CreativeBriefFieldId, 'intent'>, string>
@@ -5138,7 +5198,32 @@ export class OperationsApplicationService {
     );
     const contentModules = this.normalizedContentModules(input.contentModules);
     const autoConfirmBrief = input.autoConfirmBrief === true;
-    return this.mutate(context, (state) => {
+    const operation = input.operation ?? 'copy.generate';
+    if (this.dependencies.briefSubmissionGate && !input.operation) {
+      throw new OperationsError(
+        'INVALID_CREATIVE_CONTRACT',
+        'Creative operation is required when the server Brief gate is enabled.',
+      );
+    }
+    if (this.dependencies.briefSubmissionGate && !input.briefContextId) {
+      throw new OperationsError(
+        'BRIEF_CONTEXT_REQUIRED',
+        'Creative submissions require a server Brief context.',
+      );
+    }
+    return this.mutate(context, async (state, repository) => {
+      const briefContextRevision = input.briefContextId
+        ? await this.assertBriefCurrentForWrite(repository, {
+            ...(input.briefConfirmationId
+              ? { briefConfirmationId: input.briefConfirmationId }
+              : {}),
+            briefContextId: input.briefContextId,
+            intent,
+            operation,
+            sourceReferenceIds: sourceReferences.map((source) => source.id),
+            workspaceId: context.workspaceId,
+          })
+        : undefined;
       if (
         input.derivedFrom &&
         !state.creativeWorks.some((work) => work.id === input.derivedFrom)
@@ -5155,9 +5240,18 @@ export class OperationsApplicationService {
         createdAt: timestamp,
         ...(input.derivedFrom ? { derivedFrom: input.derivedFrom } : {}),
         id: this.id(),
+        ...(input.briefConfirmationId
+          ? { briefConfirmationId: input.briefConfirmationId }
+          : {}),
+        ...(input.briefContextId
+          ? { briefContextId: input.briefContextId }
+          : {}),
+        ...(briefContextRevision === undefined
+          ? {}
+          : { briefContextRevision }),
         intent,
         mode: input.mode,
-        operation: input.operation ?? 'copy.generate',
+        operation,
         sessionId: input.sessionId,
         sourceReferences,
         status: 'draft',
@@ -5461,6 +5555,145 @@ export class OperationsApplicationService {
     });
   }
 
+  async saveCreativeWorkSelectionDraft(
+    context: OperationContext,
+    input: {
+      workId: string;
+      baseRevisionId: string;
+      orderedAssetIds: string[];
+      coverAssetId: string | null;
+      surfaceVersion: string;
+    },
+  ) {
+    return this.mutate(context, (state) => {
+      const work = state.creativeWorks.find((item) => item.id === input.workId);
+      if (!work) {
+        throw new OperationsError(
+          'CREATIVE_WORK_NOT_FOUND',
+          'The creative Work was not found.',
+          404,
+        );
+      }
+      const validBaseRevisionIds = new Set([
+        work.id,
+        ...(work.currentJobId ? [work.currentJobId] : []),
+        ...state.creativeContents
+          .filter((content) => content.workId === work.id)
+          .map((content) => content.id),
+      ]);
+      if (!validBaseRevisionIds.has(input.baseRevisionId)) {
+        throw new OperationsError(
+          'WORKING_SELECTION_BASE_STALE',
+          'The image selection base revision is stale.',
+          409,
+        );
+      }
+      const orderedAssetIds = [...new Set(input.orderedAssetIds)];
+      if (orderedAssetIds.length !== input.orderedAssetIds.length) {
+        throw new OperationsError(
+          'INVALID_WORKING_SELECTION',
+          'The image selection cannot contain duplicate Assets.',
+        );
+      }
+      const ownedImages = new Set(
+        state.creativeAssets
+          .filter((asset) => asset.workId === work.id && asset.kind === 'image')
+          .map((asset) => asset.id),
+      );
+      if (orderedAssetIds.some((assetId) => !ownedImages.has(assetId))) {
+        throw new OperationsError(
+          'INVALID_WORKING_SELECTION',
+          'The image selection can contain only this Work\'s owned image Assets.',
+        );
+      }
+      if (input.coverAssetId && !orderedAssetIds.includes(input.coverAssetId)) {
+        throw new OperationsError(
+          'INVALID_WORKING_SELECTION',
+          'The cover must belong to the ordered image selection.',
+        );
+      }
+      const savedAt = this.timestamp();
+      work.workingSelectionDraft = {
+        baseRevisionId: input.baseRevisionId,
+        orderedAssetIds,
+        coverAssetId: input.coverAssetId,
+        surfaceVersion: input.surfaceVersion,
+        revision: (work.workingSelectionDraft?.revision ?? 0) + 1,
+        savedAt,
+        savedBy: context.userId,
+      };
+      work.updatedAt = savedAt;
+      this.audit(
+        state,
+        context,
+        'creative_work.selection_draft_saved',
+        'creative_work',
+        work.id,
+        {
+          baseRevisionId: input.baseRevisionId,
+          orderedAssetIds,
+          coverAssetId: input.coverAssetId,
+          revision: work.workingSelectionDraft.revision,
+        },
+      );
+      return structuredClone(work.workingSelectionDraft);
+    });
+  }
+
+  async saveCreativeAssetsToLibrary(
+    context: OperationContext,
+    input: { workId: string; assetIds: string[] },
+  ) {
+    return this.mutate(context, (state) => {
+      const assetIds = [...new Set(input.assetIds)];
+      if (assetIds.length === 0 || assetIds.length !== input.assetIds.length) {
+        throw new OperationsError(
+          'INVALID_LIBRARY_SELECTION',
+          'Select one or more unique image Assets to save.',
+        );
+      }
+      const assets = assetIds.map((assetId) =>
+        state.creativeAssets.find(
+          (asset) => asset.id === assetId && asset.workId === input.workId,
+        ),
+      );
+      if (
+        assets.some(
+          (asset) =>
+            !asset ||
+            asset.kind !== 'image' ||
+            !asset.sha256 ||
+            (!asset.ownedAssetId && !asset.objectKey),
+        )
+      ) {
+        throw new OperationsError(
+          'ASSET_NOT_LIBRARY_READY',
+          'Only durable owned image versions with lineage can be saved to the library.',
+          409,
+        );
+      }
+      const savedAt = this.timestamp();
+      for (const asset of assets) {
+        if (!asset) continue;
+        asset.savedToLibraryAt ??= savedAt;
+        asset.savedToLibraryBy ??= context.userId;
+        asset.libraryRevisionId ??= `media-revision-${createHash('sha256')
+          .update(`${asset.workspaceId}:${asset.workId}:${asset.jobId}:${asset.id}:${asset.sha256}`)
+          .digest('hex')
+          .slice(0, 24)}`;
+      }
+      this.audit(
+        state,
+        context,
+        'creative_asset.saved_to_library',
+        'creative_work',
+        input.workId,
+        { assetIds },
+      );
+      return assets.map((asset) => structuredClone(asset!));
+    });
+  }
+
   private async applyCreativeOutcome(
     context: OperationContext,
     jobId: string,
@@ -5728,7 +5961,23 @@ export class OperationsApplicationService {
       job.inheritanceContext ??
       (await this.creativeInheritanceContext(context, work.id));
 
+    if ((job.productUsageQuantity ?? 1) > 0) {
+      await this.dependencies.billingLifecycle?.beforeSubmit({
+        ...(job.billingQuoteId ? { quoteId: job.billingQuoteId } : {}),
+        quoteRevision: job.contract.quoteRevision,
+        resource: creativeBillingResource(job.contract.operation),
+        taskId: job.billingTaskId ?? work.id,
+        workspaceId: context.workspaceId,
+      });
+    }
+
     const outcome = await executor.submit({
+      ...((job.productUsageQuantity ?? 1) > 0
+        ? {
+            billingQuoteRevision: job.contract.quoteRevision,
+            billingTaskId: job.billingTaskId ?? work.id,
+          }
+        : {}),
       briefSnapshot: structuredClone(job.briefSnapshot),
       context,
       contract: structuredClone(job.contract),
@@ -5737,6 +5986,7 @@ export class OperationsApplicationService {
       inheritanceContext: structuredClone(inheritanceContext),
       intent: job.briefSnapshot?.fields.intent?.current ?? work.intent,
       productUsageQuantity: job.productUsageQuantity ?? 1,
+      workId: work.id,
     });
     return this.applyCreativeOutcome(context, job.id, outcome);
   }
@@ -5769,6 +6019,8 @@ export class OperationsApplicationService {
       );
     }
     const jobId = this.creativeJobId(workId, submissionKey);
+    const billingTaskId =
+      options.reroll?.kind === 'paid' ? jobId : workId;
     const snapshotState = await this.read(context);
     const existingJob = snapshotState.creativeJobs.find(
       (job) => job.id === jobId
@@ -5859,10 +6111,110 @@ export class OperationsApplicationService {
       }
       groundingSnapshot = resolution.snapshot;
     }
-    if (!existingJob) {
-      await executor.inspect(context.workspaceId, resolvedContract);
+    let acceptedQuoteAuthority:
+      | import('./types.js').AcceptedProductQuoteInspectionAuthority
+      | undefined;
+    if (options.billingQuoteId) {
+      const assertAcceptedQuote =
+        this.dependencies.billingLifecycle?.assertAcceptedQuote;
+      if (!assertAcceptedQuote) {
+        throw new OperationsError(
+          'BILLING_QUOTE_VALIDATOR_UNAVAILABLE',
+          'Confirmed Product quote validation is unavailable.',
+          503,
+        );
+      }
+      const acceptedQuote = await assertAcceptedQuote.call(
+        this.dependencies.billingLifecycle,
+        {
+          quoteId: options.billingQuoteId,
+          quoteRevision: resolvedContract.quoteRevision,
+          taskId: billingTaskId,
+          workspaceId: context.workspaceId,
+        },
+      );
+      if (
+        acceptedQuote.quoteId !== options.billingQuoteId ||
+        acceptedQuote.revision !== resolvedContract.quoteRevision ||
+        acceptedQuote.catalogModelId !== resolvedContract.catalogModelId ||
+        acceptedQuote.catalogModelRevision !== resolvedContract.catalogRevision ||
+        acceptedQuote.confirmedAmount !== resolvedContract.estimatedAmount ||
+        acceptedQuote.formula.currency !== resolvedContract.currency ||
+        acceptedQuote.outputCount !== resolvedContract.outputCount ||
+        acceptedQuote.outputLabel !== resolvedContract.outputLabel
+      ) {
+        throw new OperationsError(
+          'CREATIVE_QUOTE_CHANGED',
+          'The accepted Product quote no longer matches the execution contract.',
+          409,
+        );
+      }
+      acceptedQuoteAuthority = {
+        kind: 'accepted_product_quote',
+        quoteId: acceptedQuote.quoteId,
+        quoteRevision: acceptedQuote.revision,
+        catalogModelId: acceptedQuote.catalogModelId,
+        catalogModelRevision: acceptedQuote.catalogModelRevision,
+        confirmedAmount: acceptedQuote.confirmedAmount,
+        currency: acceptedQuote.formula.currency,
+        outputCount: acceptedQuote.outputCount,
+        outputLabel: acceptedQuote.outputLabel,
+      };
     }
-    const prepared = await this.mutate(context, (state) => {
+    if (!existingJob) {
+      if (acceptedQuoteAuthority) {
+        await executor.inspect(
+          context.workspaceId,
+          resolvedContract,
+          acceptedQuoteAuthority,
+        );
+      } else {
+        await executor.inspect(context.workspaceId, resolvedContract);
+      }
+    }
+    const prepared = await this.mutate(context, async (state, repository) => {
+      const briefContextId =
+        options.briefContextId ?? snapshotWork.briefContextId;
+      const briefConfirmationId =
+        options.briefConfirmationId ?? snapshotWork.briefConfirmationId;
+      let briefContextRevision: number | undefined;
+      if (this.dependencies.briefSubmissionGate) {
+        if (!briefContextId) {
+          throw new OperationsError(
+            'BRIEF_CONTEXT_REQUIRED',
+            'Creative submissions require a server Brief context.',
+          );
+        }
+        briefContextRevision = await this.assertBriefCurrentForWrite(
+          repository,
+          {
+            ...(briefConfirmationId ? { briefConfirmationId } : {}),
+            briefContextId,
+            ...(resolvedContract.aspectRatio
+              ? { aspectRatio: resolvedContract.aspectRatio }
+              : {}),
+            catalogModelId: resolvedContract.catalogModelId,
+            catalogRevision: resolvedContract.catalogRevision,
+            ...(resolvedContract.durationSeconds !== undefined
+              ? { durationSeconds: resolvedContract.durationSeconds }
+              : {}),
+            ...(snapshotWork.briefContextRevision === undefined
+              ? {}
+              : {
+                  expectedContextRevision:
+                    snapshotWork.briefContextRevision,
+                }),
+            intent: snapshotWork.intent,
+            operation: resolvedContract.operation,
+            outputCount: resolvedContract.outputCount,
+            quoteRevision: resolvedContract.quoteRevision,
+            sourceReferenceIds: snapshotWork.sourceReferences.map(
+              (source) => source.id,
+            ),
+            workspaceId: context.workspaceId,
+          },
+        );
+      }
       const existing = state.creativeJobs.find((job) => job.id === jobId);
       if (existing) {
         this.assertCreativeJobReplay(existing, resolvedContract, options);
@@ -6044,7 +6396,14 @@ export class OperationsApplicationService {
         ...(briefSnapshot
           ? { briefSnapshot: structuredClone(briefSnapshot) }
           : {}),
+        ...(briefContextRevision === undefined
+          ? {}
+          : { briefContextRevision }),
         contract: structuredClone(resolvedContract),
+        billingTaskId,
+        ...(options.billingQuoteId
+          ? { billingQuoteId: options.billingQuoteId }
+          : {}),
         createdAt: timestamp,
         ...(groundingSnapshot
           ? { groundingSnapshot: structuredClone(groundingSnapshot) }
@@ -6095,7 +6454,10 @@ export class OperationsApplicationService {
         prepared.job.inheritanceContext ?? inheritanceContext
       ),
       intent: work.intent,
+      billingQuoteId: prepared.job.billingQuoteId,
+      billingTaskId: prepared.job.billingTaskId ?? work.id,
       jobId: prepared.job.id,
+      productUsageQuantity: prepared.job.productUsageQuantity ?? 1,
       replayed: prepared.replayed,
     };
   }
@@ -6107,14 +6469,65 @@ export class OperationsApplicationService {
     submissionKey: string,
     retryOf?: string,
     approvalReceiptId?: string,
+    briefContextId?: string,
+    briefConfirmationId?: string,
+    billingQuoteId?: string,
   ) {
+    const state = await this.read(context);
+    const work = state.creativeWorks.find((item) => item.id === workId);
+    if (
+      briefContextId &&
+      work?.briefContextId &&
+      briefContextId !== work.briefContextId
+    ) {
+      throw new OperationsError(
+        'INVALID_CREATIVE_CONTRACT',
+        'The Work Brief context cannot be replaced at submission.',
+      );
+    }
+    if (
+      briefConfirmationId &&
+      work?.briefConfirmationId &&
+      briefConfirmationId !== work.briefConfirmationId
+    ) {
+      throw new OperationsError(
+        'INVALID_CREATIVE_CONTRACT',
+        'The Work Brief confirmation cannot be replaced at submission.',
+      );
+    }
+    if (
+      this.dependencies.briefSubmissionGate &&
+      work &&
+      contract.operation !== work.operation
+    ) {
+      throw new OperationsError(
+        'INVALID_CREATIVE_CONTRACT',
+        'The execution operation must match the Work operation.',
+      );
+    }
+    const effectiveBriefContextId = work?.briefContextId ?? briefContextId;
+    const effectiveBriefConfirmationId =
+      work?.briefConfirmationId ?? briefConfirmationId;
+    if (this.dependencies.briefSubmissionGate && !effectiveBriefContextId) {
+      throw new OperationsError(
+        'BRIEF_CONTEXT_REQUIRED',
+        'Creative submissions require a server Brief context.',
+      );
+    }
     const prepared = await this.prepareCreativeJob(
       context,
       workId,
       contract,
       submissionKey,
-      retryOf || approvalReceiptId
+      retryOf || approvalReceiptId || effectiveBriefContextId || billingQuoteId
         ? {
+            ...(billingQuoteId ? { billingQuoteId } : {}),
+            ...(effectiveBriefConfirmationId
+              ? { briefConfirmationId: effectiveBriefConfirmationId }
+              : {}),
+            ...(effectiveBriefContextId
+              ? { briefContextId: effectiveBriefContextId }
+              : {}),
             ...(retryOf ? { retryOf } : {}),
             ...(approvalReceiptId ? { approvalReceiptId } : {}),
           }
@@ -6254,8 +6667,25 @@ export class OperationsApplicationService {
         409
       );
     }
+    if (prepared.productUsageQuantity > 0) {
+      await this.dependencies.billingLifecycle?.beforeSubmit({
+        ...(prepared.billingQuoteId
+          ? { quoteId: prepared.billingQuoteId }
+          : {}),
+        quoteRevision: prepared.contract.quoteRevision,
+        resource: creativeBillingResource(prepared.contract.operation),
+        taskId: prepared.billingTaskId,
+        workspaceId: context.workspaceId,
+      });
+    }
     const started = await executor.startCopyStream({
       abortSignal,
+      ...(prepared.productUsageQuantity > 0
+        ? {
+            billingQuoteRevision: prepared.contract.quoteRevision,
+            billingTaskId: prepared.billingTaskId,
+          }
+        : {}),
       briefSnapshot: structuredClone(prepared.briefSnapshot),
       context,
       contract: structuredClone(prepared.contract),
@@ -6263,7 +6693,7 @@ export class OperationsApplicationService {
       idempotencyKey: submissionKey,
       inheritanceContext: structuredClone(prepared.inheritanceContext),
       intent: prepared.intent,
-      productUsageQuantity: 1,
+      productUsageQuantity: prepared.productUsageQuantity,
     });
     return {
       response: started.response,
@@ -6308,6 +6738,39 @@ export class OperationsApplicationService {
       );
     }
     return this.executeCreativeJob(context, job.id);
+  }
+
+  async cancelCreativeJob(context: OperationContext, jobId: string) {
+    const state = await this.read(context);
+    const job = state.creativeJobs.find((item) => item.id === jobId);
+    if (!job) {
+      throw new OperationsError(
+        'CREATIVE_JOB_NOT_FOUND',
+        'The creative Job was not found.',
+        404,
+      );
+    }
+    if (!['submitting', 'running', 'recoverable', 'unknown'].includes(job.status)) {
+      throw new OperationsError(
+        'CREATIVE_JOB_NOT_CANCELLABLE',
+        'Only an active creative Job can be cancelled.',
+        409,
+      );
+    }
+    const executor = this.dependencies.creationExecutor;
+    if (!executor?.cancel || !job.providerJobId) {
+      throw new OperationsError(
+        'CREATIVE_JOB_NOT_CANCELLABLE',
+        'The active creative Job does not expose a cancellation handle.',
+        409,
+      );
+    }
+    const outcome = await executor.cancel({
+      context,
+      contract: structuredClone(job.contract),
+      providerJobId: job.providerJobId,
+    });
+    return this.applyCreativeOutcome(context, job.id, outcome);
   }
 
   private async resolveCreativeContract(
@@ -6405,7 +6868,8 @@ export class OperationsApplicationService {
     context: OperationContext,
     sourceJobId: string,
     submissionKey: string,
-    kind: CreativeRerollKind
+    kind: CreativeRerollKind,
+    billingQuoteId?: string,
   ) {
     const state = await this.read(context);
     const source = state.creativeJobs.find((job) => job.id === sourceJobId);
@@ -6421,7 +6885,10 @@ export class OperationsApplicationService {
       source.workId,
       source.contract,
       submissionKey,
-      { reroll: { kind, sourceJobId } }
+      {
+        ...(billingQuoteId ? { billingQuoteId } : {}),
+        reroll: { kind, sourceJobId },
+      },
     );
     const result = await this.executeCreativeJob(context, prepared.jobId);
     if (result.job.status === 'completed') {
@@ -6442,13 +6909,15 @@ export class OperationsApplicationService {
   async rerollCreativeJob(
     context: OperationContext,
     sourceJobId: string,
-    submissionKey: string
+    submissionKey: string,
+    billingQuoteId: string,
   ) {
     return this.rerollCompletedCreativeJob(
       context,
       sourceJobId,
       submissionKey,
-      'paid'
+      'paid',
+      billingQuoteId,
     );
   }
 
@@ -6463,26 +6932,6 @@ export class OperationsApplicationService {
       submissionKey,
       'quality'
     );
-  }
-
-  private async requireLegacyCreativeWrite(context: OperationContext) {
-    const owner = await this.dependencies.contentWriteOwnership?.get(
-      context.workspaceId
-    );
-    if (owner === 'frozen') {
-      throw new OperationsError(
-        'CONTENT_COMMANDS_FROZEN',
-        'Legacy creative content changes are frozen for migration.',
-        409
-      );
-    }
-    if (owner === 'contentpackage') {
-      throw new OperationsError(
-        'LEGACY_CONTENT_READ_ONLY',
-        '旧内容已迁移为只读历史，请到内容库的新成品上操作。',
-        409
-      );
-    }
   }
 
   private async requireContentPackageWrite(context: OperationContext) {
@@ -6500,105 +6949,6 @@ export class OperationsApplicationService {
       'Content changes are frozen for migration.',
       409
     );
-  }
-
-  async acceptCreativeAsset(context: OperationContext, assetId: string) {
-    await this.requireLegacyCreativeWrite(context);
-    return this.mutate(context, async (state) => {
-      await this.requireLegacyCreativeWrite(context);
-      const asset = state.creativeAssets.find((item) => item.id === assetId);
-      if (!asset) {
-        throw new OperationsError(
-          'CREATIVE_ASSET_NOT_FOUND',
-          'The creative Asset was not found.',
-          404
-        );
-      }
-      const job = state.creativeJobs.find((item) => item.id === asset.jobId);
-      if (!job) {
-        throw new OperationsError(
-          'CREATIVE_JOB_NOT_FOUND',
-          'The creative Job was not found.',
-          404
-        );
-      }
-      const existingForAsset = state.creativeContents.find((content) =>
-        content.assetIds.includes(asset.id)
-      );
-      if (existingForAsset) return existingForAsset;
-      if (job.contract.operation === 'copy.generate') {
-        const candidates = this.completeCopyCandidateBatch(state, job);
-        if (
-          asset.kind !== 'text' ||
-          !candidates?.some((candidate) => candidate.id === asset.id)
-        ) {
-          throw new OperationsError(
-            'INVALID_COPY_CANDIDATE_BATCH',
-            'Only one candidate from a completed three-candidate copy batch can be accepted.',
-            409
-          );
-        }
-        const acceptedForWork = state.creativeContents.find((content) => {
-          const contentJob = state.creativeJobs.find(
-            (candidate) => candidate.id === content.jobId
-          );
-          return (
-            content.workId === job.workId &&
-            contentJob?.contract.operation === 'copy.generate' &&
-            contentJob.workId === job.workId
-          );
-        });
-        if (acceptedForWork || job.outputContentIds.length > 0) {
-          throw new OperationsError(
-            'COPY_CANDIDATE_ALREADY_ACCEPTED',
-            'This copy Work already has an accepted candidate.',
-            409
-          );
-        }
-      }
-      const timestamp = this.timestamp();
-      const contentId = `creative-content-${createHash('sha256')
-        .update(`${asset.id}:accepted`)
-        .digest('hex')
-        .slice(0, 24)}`;
-      const content = {
-        acceptedAt: timestamp,
-        assetIds: [asset.id],
-        body: asset.body ?? '',
-        createdAt: timestamp,
-        id: contentId,
-        jobId: asset.jobId,
-        status: 'accepted' as const,
-        title: asset.title,
-        workId: asset.workId,
-        workspaceId: context.workspaceId,
-      };
-      state.creativeContents.push(content);
-      if (!job.outputContentIds.includes(content.id)) {
-        job.outputContentIds.push(content.id);
-        job.updatedAt = timestamp;
-      }
-      const work = state.creativeWorks.find((item) => item.id === asset.workId);
-      if (work) {
-        work.status = 'accepted';
-        work.updatedAt = timestamp;
-      }
-      this.audit(
-        state,
-        context,
-        'creative_content.accepted',
-        'creative_content',
-        content.id,
-        { assetId: asset.id, jobId: content.jobId, workId: content.workId }
-      );
-      this.creationEvent(state, context, 'first_content_accepted', {
-        assetId: asset.id,
-        contentId: content.id,
-        jobId: content.jobId,
-        workId: content.workId,
-      });
-      return content;
-    });
   }
 
   async adoptIntoContentPackage(
@@ -6858,6 +7208,474 @@ export class OperationsApplicationService {
       return {
         ...contentPackage,
         ...contentPackageVisibleStatus(contentPackage.status),
+      };
+    });
+  }
+
+  async reviseContentPackageVisuals(
+    context: OperationContext,
+    input: ReviseContentPackageVisualsCommand,
+  ) {
+    return this.mutate(context, async (state) => {
+      await this.requireContentPackageWrite(context);
+      state.contentPackages ??= [];
+      const packageIndex = state.contentPackages.findIndex(
+        (candidate) => candidate.id === input.packageId,
+      );
+      if (packageIndex < 0) {
+        throw new OperationsError(
+          'CONTENT_PACKAGE_NOT_FOUND',
+          'The ContentPackage was not found.',
+          404,
+        );
+      }
+      const current = state.contentPackages[packageIndex]!;
+      await this.requireContentPackageRevision(
+        context,
+        current,
+        input.expectedRevision,
+      );
+
+      const sourceWork = current.source.workId
+        ? state.creativeWorks.find((work) => work.id === current.source.workId)
+        : undefined;
+      const sessionWorkIds = new Set(
+        sourceWork
+          ? state.creativeWorks
+              .filter((work) => work.sessionId === sourceWork.sessionId)
+              .map((work) => work.id)
+          : [],
+      );
+      const visualAssets = input.orderedVisualAssetIds.map((assetId) => {
+        const creativeAsset = state.creativeAssets.find(
+          (asset) => asset.id === assetId,
+        );
+        if (creativeAsset) {
+          if (
+            creativeAsset.workspaceId !== context.workspaceId ||
+            creativeAsset.kind !== 'image' ||
+            !creativeAsset.ownedAssetId ||
+            !creativeAsset.objectKey ||
+            !creativeAsset.sha256 ||
+            !creativeAsset.contentType?.startsWith('image/') ||
+            !sessionWorkIds.has(creativeAsset.workId)
+          ) {
+            throw new OperationsError(
+              'INVALID_VISUAL_ASSET',
+              'Every revised visual must be an owned image from the same creation Session.',
+              409,
+            );
+          }
+          return {
+            contentType: creativeAsset.contentType,
+            id: creativeAsset.id,
+            kind: creativeAsset.kind,
+            objectKey: creativeAsset.objectKey,
+            sha256: creativeAsset.sha256,
+            ...(typeof creativeAsset.sizeBytes === 'number'
+              ? { sizeBytes: creativeAsset.sizeBytes }
+              : {}),
+            workspaceId: creativeAsset.workspaceId,
+          } satisfies VisualAssetRecord;
+        }
+
+        const owned = current.generated.ownedAssets?.find(
+          (asset) => asset.id === assetId,
+        );
+        if (!owned?.contentType.startsWith('image/')) {
+          throw new OperationsError(
+            'INVALID_VISUAL_ASSET',
+            'Every revised visual must resolve to an owned image.',
+            409,
+          );
+        }
+        return {
+          contentType: owned.contentType,
+          id: owned.id,
+          kind: 'image',
+          objectKey: owned.objectKey,
+          sha256: owned.sha256,
+          ...(typeof owned.sizeBytes === 'number'
+            ? { sizeBytes: owned.sizeBytes }
+            : {}),
+          workspaceId: context.workspaceId,
+        } satisfies VisualAssetRecord;
+      });
+
+      let revised: ContentPackage;
+      try {
+        revised = reviseContentPackageVisualsPure({
+          baseVersionId: input.baseVersionId,
+          contentPackage: current,
+          expectedRevision: input.expectedRevision,
+          orderedVisualAssetIds: input.orderedVisualAssetIds,
+          timestamp: this.timestamp(),
+          userId: context.userId,
+          visualAssets,
+        });
+      } catch (error) {
+        if (error instanceof VisualAdoptionError) {
+          throw new OperationsError(error.code, error.message, error.status);
+        }
+        throw error;
+      }
+
+      state.contentPackages[packageIndex] = revised;
+      this.audit(
+        state,
+        context,
+        'content_package.visuals_revised',
+        'content_package',
+        revised.id,
+        {
+          baseVersionId: input.baseVersionId,
+          orderedVisualAssetIds: [...input.orderedVisualAssetIds],
+          ...(input.roleAction ? { roleAction: input.roleAction } : {}),
+        },
+      );
+      return {
+        ...revised,
+        ...contentPackageVisibleStatus(revised.status),
+      };
+    });
+  }
+
+  async adoptResult(
+    context: OperationContext,
+    input: ResultAdoptCommand,
+  ) {
+    return this.mutate(context, async (state) => {
+      await this.requireContentPackageWrite(context);
+      state.contentPackages ??= [];
+      const work = state.creativeWorks.find(({ id }) => id === input.workId);
+      if (!work) {
+        throw new OperationsError(
+          'CREATIVE_WORK_NOT_FOUND',
+          'The creative Work was not found.',
+          404,
+        );
+      }
+      const packageKind =
+        input.selection.kind === 'video' ? 'video' : 'image_text';
+      const packageIndex = state.contentPackages.findIndex(
+        (candidate) =>
+          candidate.kind === packageKind &&
+          candidate.source.workId === work.id,
+      );
+      const current = state.contentPackages[packageIndex];
+      if (current) {
+        await this.requireContentPackageRevision(
+          context,
+          current,
+          input.expectedRevision,
+        );
+      } else if (input.expectedRevision !== 0) {
+        throw new OperationsError(
+          'CONTENT_PACKAGE_REVISION_CONFLICT',
+          'The first Result adoption must use revision 0.',
+          409,
+        );
+      }
+
+      const selection = input.selection;
+      const copyAssetId =
+        selection.kind === 'copy' || selection.kind === 'image_text'
+          ? selection.copyAssetId
+          : undefined;
+      const copyAsset = copyAssetId
+        ? state.creativeAssets.find(({ id }) => id === copyAssetId)
+        : undefined;
+      const copyJob = copyAsset
+        ? state.creativeJobs.find(({ id }) => id === copyAsset.jobId)
+        : undefined;
+      if (
+        copyAssetId &&
+        (!copyAsset ||
+          !copyJob ||
+          copyAsset.kind !== 'text' ||
+          copyAsset.workId !== work.id ||
+          copyJob.workId !== work.id ||
+          copyJob.status !== 'completed' ||
+          !copyJob.outputAssetIds.includes(copyAsset.id) ||
+          (copyJob.contract.operation === 'copy.generate' &&
+            !this.completeCopyCandidateBatch(state, copyJob)?.some(
+              ({ id }) => id === copyAsset.id,
+            )))
+      ) {
+        throw new OperationsError(
+          'INVALID_COPY_CANDIDATE_BATCH',
+          'The selected copy must belong to the completed Result batch.',
+          409,
+        );
+      }
+
+      const orderedAssetIds =
+        selection.kind === 'image' || selection.kind === 'image_text'
+          ? selection.orderedAssetIds
+          : selection.kind === 'video'
+            ? [selection.videoAssetId]
+            : [];
+      if (new Set(orderedAssetIds).size !== orderedAssetIds.length) {
+        throw new OperationsError(
+          'DUPLICATE_RESULT_ASSET',
+          'Adopted Result Assets must be unique and ordered.',
+          400,
+        );
+      }
+      const sessionWorkIds = new Set(
+        state.creativeWorks
+          .filter(
+            (candidate) =>
+              candidate.workspaceId === context.workspaceId &&
+              candidate.sessionId === work.sessionId,
+          )
+          .map(({ id }) => id),
+      );
+      const mediaAssets = orderedAssetIds.map((assetId) =>
+        state.creativeAssets.find(({ id }) => id === assetId),
+      );
+      if (selection.kind === 'image' || selection.kind === 'image_text') {
+        if (
+          mediaAssets.some(
+            (asset) =>
+              !asset ||
+              asset.kind !== 'image' ||
+              asset.workspaceId !== context.workspaceId ||
+              !sessionWorkIds.has(asset.workId) ||
+              !asset.ownedAssetId ||
+              !asset.objectKey ||
+              !asset.sha256 ||
+              !asset.contentType?.startsWith('image/'),
+          )
+        ) {
+          throw new OperationsError(
+            'INVALID_VISUAL_ASSET',
+            'Every adopted image must be an owned Result from this creation Session.',
+            409,
+          );
+        }
+      }
+      if (selection.kind === 'video') {
+        const ownedVideo = current?.generated.ownedAssets?.find(
+          ({ id }) => id === selection.videoAssetId,
+        );
+        if (
+          !current ||
+          !ownedVideo ||
+          ownedVideo.contentType !== 'video/mp4' ||
+          !current.generated.assetIds.includes(selection.videoAssetId)
+        ) {
+          throw new OperationsError(
+            'INVALID_VIDEO_RESULT_ASSET',
+            'The selected video must be the owned completed Result.',
+            409,
+          );
+        }
+      }
+
+      const timestamp = this.timestamp();
+      const title =
+        copyAsset?.title ??
+        (selection.kind === 'video'
+          ? `视频成片 · V${current?.source.storyboardVersion ?? 1}`
+          : work.intent);
+      const body =
+        copyAsset?.body ??
+        (selection.kind === 'video'
+          ? (current?.source.shots ?? [])
+              .map((shot) => `${shot.id}: ${shot.prompt}`)
+              .join('\n')
+          : '');
+      const activeVersion = current?.versions.find(
+        ({ id }) => id === current.currentVersionId,
+      );
+      if (
+        current?.status === 'accepted' &&
+        activeVersion?.title === title &&
+        activeVersion.body === body &&
+        JSON.stringify(activeVersion.orderedAssetIds) ===
+          JSON.stringify(orderedAssetIds)
+      ) {
+        return {
+          ...current,
+          ...contentPackageVisibleStatus(current.status),
+        };
+      }
+
+      const packageId =
+        current?.id ??
+        `content-package-${createHash('sha256')
+          .update(`${context.workspaceId}:${work.id}:${packageKind}`)
+          .digest('hex')
+          .slice(0, 24)}`;
+      const version = {
+        body,
+        ...(copyAsset?.conversionHook
+          ? { conversionHook: copyAsset.conversionHook }
+          : {}),
+        createdAt: timestamp,
+        ...(current?.currentVersionId
+          ? { derivedFromVersionId: current.currentVersionId }
+          : {}),
+        id: `${packageId}-result-${this.id()}`,
+        orderedAssetIds: [...orderedAssetIds],
+        title,
+        topics: [] as string[],
+      };
+      const deliveredAssets = mediaAssets.filter(
+        (asset): asset is CreativeAssetProjection => Boolean(asset),
+      );
+      const primaryMediaJob = deliveredAssets[0]
+        ? state.creativeJobs.find(
+            ({ id }) => id === deliveredAssets[0]?.jobId,
+          )
+        : undefined;
+      const deliveredOwnedAssets = deliveredAssets.map((asset) => ({
+        contentType: asset.contentType!,
+        id: asset.id,
+        objectKey: asset.objectKey!,
+        sha256: asset.sha256!,
+        ...(typeof asset.sizeBytes === 'number'
+          ? { sizeBytes: asset.sizeBytes }
+          : {}),
+      }));
+      const deliveredRunIds = [
+        ...new Set(
+          [copyJob?.id, ...deliveredAssets.map(({ jobId }) => jobId)].filter(
+            (id): id is string => Boolean(id),
+          ),
+        ),
+      ];
+      const draft =
+        current
+          ? {
+              ...current,
+              generated: {
+                ...current.generated,
+                assetIds: [
+                  ...new Set([
+                    ...current.generated.assetIds,
+                    ...deliveredAssets.map(({ id }) => id),
+                  ]),
+                ],
+                childRuns: [
+                  ...current.generated.childRuns,
+                  ...deliveredRunIds
+                    .filter(
+                      (runId) =>
+                        !current.generated.childRuns.some(
+                          (run) => run.runId === runId,
+                        ),
+                    )
+                    .map((runId) => ({
+                      runId,
+                      runType: 'creative_job' as const,
+                      status: 'succeeded' as const,
+                    })),
+                ],
+                ownedAssets: [
+                  ...(current.generated.ownedAssets ?? []),
+                  ...deliveredOwnedAssets.filter(
+                    (asset) =>
+                      !current.generated.ownedAssets?.some(
+                        (owned) => owned.id === asset.id,
+                      ),
+                  ),
+                ],
+              },
+              source: {
+                ...current.source,
+                assetIds: [
+                  ...new Set([
+                    ...current.source.assetIds,
+                    ...(copyAsset ? [copyAsset.id] : []),
+                    ...orderedAssetIds,
+                  ]),
+                ],
+              },
+            }
+          :
+        ({
+          ...buildContentPackage({
+            id: packageId,
+            kind: packageKind,
+            source: {
+              assetIds: [
+                ...(copyAsset ? [copyAsset.id] : []),
+                ...orderedAssetIds,
+              ],
+              workId: work.id,
+            },
+            timestamp,
+            workspaceId: context.workspaceId,
+          }),
+          compliance: {
+            aigcLabelEnabled:
+              copyJob?.contract.aigcLabelEnabled ??
+              primaryMediaJob?.contract.aigcLabelEnabled ??
+              false,
+            watermarkEnabled:
+              copyJob?.contract.watermarkEnabled ??
+              primaryMediaJob?.contract.watermarkEnabled ??
+              false,
+          },
+          generated: {
+            assetIds: deliveredAssets.map(({ id }) => id),
+            childRuns: deliveredRunIds.map((runId) => ({
+              runId,
+              runType: 'creative_job' as const,
+              status: 'succeeded' as const,
+            })),
+            ownedAssets: deliveredOwnedAssets,
+          },
+        } satisfies ContentPackage);
+      let adopted: ContentPackage;
+      if (draft.status === 'draft' || draft.status === 'review_ready') {
+        adopted = transitionContentPackage(
+          draft,
+          { type: 'adopted', version },
+          timestamp,
+        );
+      } else if (draft.status === 'accepted') {
+        adopted = {
+          ...draft,
+          currentVersionId: version.id,
+          updatedAt: timestamp,
+          versions: [...draft.versions, version],
+        };
+      } else {
+        throw new OperationsError(
+          'RESULT_NOT_ADOPTABLE',
+          'Only a review-ready or accepted Result can be adopted.',
+          409,
+        );
+      }
+      const persisted = current
+        ? this.incrementContentPackageRevision(current, adopted)
+        : adopted;
+      if (current) state.contentPackages[packageIndex] = persisted;
+      else state.contentPackages.push(persisted);
+      work.status = 'accepted';
+      work.updatedAt = timestamp;
+      this.audit(
+        state,
+        context,
+        'content_package.result_adopted',
+        'content_package',
+        persisted.id,
+        {
+          selection: structuredClone(selection),
+          versionId: version.id,
+          workId: work.id,
+        },
+      );
+      this.creationEvent(state, context, 'first_content_accepted', {
+        contentPackageId: persisted.id,
+        workId: work.id,
+      });
+      return {
+        ...persisted,
+        ...contentPackageVisibleStatus(persisted.status),
       };
     });
   }
@@ -7344,6 +8162,20 @@ export class OperationsApplicationService {
             409
           );
         }
+        const existingOwnedVideo = current.generated.ownedAssets?.find(
+          (asset) =>
+            asset.id === input.composedAsset.id &&
+            asset.sha256 === input.composedAsset.sha256,
+        );
+        if (
+          existingOwnedVideo &&
+          (current.status === 'review_ready' || current.status === 'accepted')
+        ) {
+          return {
+            ...current,
+            ...contentPackageVisibleStatus(current.status),
+          };
+        }
         const versionId = `${current.id}-video-${createHash('sha256')
           .update(`${input.workflowId}:${input.composedAsset.sha256}`)
           .digest('hex')
@@ -7411,23 +8243,31 @@ export class OperationsApplicationService {
             { type: 'provider_completed' },
             timestamp
           );
-          state.contentPackages[index] = transitionContentPackage(
-            reviewReady,
-            {
-              type: 'adopted',
-              version: {
-                body: input.shots
-                  .map((shot) => `${shot.id}: ${shot.prompt}`)
-                  .join('\n'),
-                createdAt: timestamp,
-                id: versionId,
-                orderedAssetIds: [input.composedAsset.id],
-                title: `视频成片 · V${current.source.storyboardVersion ?? 1}`,
-                topics: [],
-              },
-            },
-            timestamp
+          const hasCanonicalWork = Boolean(
+            current.source.workId &&
+              state.creativeWorks.some(
+                ({ id }) => id === current.source.workId,
+              ),
           );
+          state.contentPackages[index] = hasCanonicalWork
+            ? reviewReady
+            : transitionContentPackage(
+                reviewReady,
+                {
+                  type: 'adopted',
+                  version: {
+                    body: input.shots
+                      .map((shot) => `${shot.id}: ${shot.prompt}`)
+                      .join('\n'),
+                    createdAt: timestamp,
+                    id: versionId,
+                    orderedAssetIds: [input.composedAsset.id],
+                    title: `视频成片 · V${current.source.storyboardVersion ?? 1}`,
+                    topics: [],
+                  },
+                },
+                timestamp,
+              );
         }
       }
       const next = state.contentPackages[index]!;

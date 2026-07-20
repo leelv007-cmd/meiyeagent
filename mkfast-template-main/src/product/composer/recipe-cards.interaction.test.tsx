@@ -29,7 +29,7 @@ function ColdHarness({
   userText?: string;
 }) {
   const [lensState, setLensState] = useState<ComposerLensState>(() => {
-    let state = createComposerLensState({ userText });
+    let state: ComposerLensState = createComposerLensState({ userText });
     if (initialLens) state = selectLens(state, initialLens);
     return state;
   });

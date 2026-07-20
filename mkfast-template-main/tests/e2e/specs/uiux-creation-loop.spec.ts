@@ -1351,9 +1351,11 @@ test.describe('S2 cold start and unified creation loop', () => {
     }
 
     const parentWorkId = before.works[0]!.id;
-    await page.goto(`/dashboard?workId=${encodeURIComponent(parentWorkId)}`);
+    await page.goto(`/dashboard/results/${encodeURIComponent(parentWorkId)}`);
     await expect(page).toHaveURL(
-      new RegExp(`workId=${encodeURIComponent(parentWorkId)}`)
+      new RegExp(
+        `/dashboard/results/${encodeURIComponent(parentWorkId)}(?:\\?|$)`
+      )
     );
     const recovered = await creativeProjection(page);
     expect(recovered.works.map(({ id }) => id)).toEqual(
@@ -1378,7 +1380,9 @@ test.describe('S2 cold start and unified creation loop', () => {
     );
     expect(derivedWork).toBeTruthy();
     await expect(page).toHaveURL(
-      new RegExp(`workId=${encodeURIComponent(derivedWork!.id)}`)
+      new RegExp(
+        `/dashboard/results/${encodeURIComponent(derivedWork!.id)}(?:\\?|$)`
+      )
     );
     expect(derived.jobs.map(({ id }) => id)).toEqual(
       before.jobs.map(({ id }) => id)

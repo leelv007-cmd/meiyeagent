@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { Pool } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
+import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { RecordedAdapterRouter } from './adapters.js';
 import {
   CatalogRevisionRegistry,
@@ -11,6 +12,7 @@ import {
 } from './catalog.js';
 import {
   ModelSupplyApplicationService,
+  projectDurableVideoWorkflow,
   VersionedHumanCalibratedVideoQualityScorer,
   RecordedProviderExecutionPort,
   RecordedVideoCompositionPort,
@@ -23,9 +25,12 @@ import {
 } from './foundation-module.js';
 import {
   PersistentContentWorkflowRunner,
-  PostgresDurableVideoWorkflowStore,
   PostgresModelSupplyRepository,
 } from './postgres-repository.js';
+import {
+  PostgresCanonicalVideoRunStore,
+  PostgresCanonicalVideoWorkflowSchema,
+} from './video-workflow-canonical-postgres.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -37,9 +42,35 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
   const qualityWorkspaceId = `workspace-${randomUUID()}`;
   const catalogCasWorkspaceId = `workspace-${randomUUID()}`;
 
-  before(async () => repository.migrate());
+  before(async () => {
+    await repository.migrate();
+    await new PostgresOperationsRepository(pool).migrate();
+    await new PostgresCanonicalVideoWorkflowSchema(pool).migrate();
+  });
 
   after(async () => {
+    for (const scopedWorkspaceId of [
+      workspaceId,
+      otherWorkspaceId,
+      qualityWorkspaceId,
+      catalogCasWorkspaceId,
+    ]) {
+      await pool.query(
+        `DELETE FROM p1_creative_assets
+          WHERE workspace_id = $1 AND payload->>'videoWorkflowId' IS NOT NULL`,
+        [scopedWorkspaceId],
+      );
+      await pool.query(
+        `DELETE FROM p1_creative_jobs
+          WHERE workspace_id = $1 AND payload->>'videoWorkflowId' IS NOT NULL`,
+        [scopedWorkspaceId],
+      );
+      await pool.query(
+        `DELETE FROM p1_content_tasks
+          WHERE workspace_id = $1 AND payload->>'videoWorkflowId' IS NOT NULL`,
+        [scopedWorkspaceId],
+      );
+    }
     await repository.deleteWorkspaceForTest(workspaceId);
     await repository.deleteWorkspaceForTest(otherWorkspaceId);
     await repository.deleteWorkspaceForTest(qualityWorkspaceId);
@@ -266,7 +297,7 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
       deployments,
       execution: new RecordedAdapterRouter(),
     });
-    const store = new PostgresDurableVideoWorkflowStore(pool, workspaceId);
+    const store = new PostgresCanonicalVideoRunStore(pool, workspaceId);
     const runner = new PersistentContentWorkflowRunner(
       service,
       new RecordedVideoCompositionPort(),
@@ -526,7 +557,7 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
         }),
         execution,
       });
-    const store = new PostgresDurableVideoWorkflowStore(pool, workspaceId);
+    const store = new PostgresCanonicalVideoRunStore(pool, workspaceId);
     const interruptedScorer: VideoQualityScoringPort = {
       async score() {
         throw new Error('recorded scorer interruption');
@@ -554,7 +585,10 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
       /scorer interruption/,
     );
     assert.equal(executionCount, 2);
-    const checkpoint = await store.get(workflowId);
+    const checkpointRun = await store.getRun(workflowId);
+    const checkpoint = checkpointRun
+      ? projectDurableVideoWorkflow(checkpointRun)
+      : undefined;
     assert.equal(checkpoint?.shots[0]?.candidates.length, 2);
     assert.ok(
       checkpoint?.shots[0]?.candidates.every(
@@ -565,7 +599,7 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     const restarted = new PersistentContentWorkflowRunner(
       service(),
       new RecordedVideoCompositionPort(),
-      new PostgresDurableVideoWorkflowStore(pool, workspaceId),
+      new PostgresCanonicalVideoRunStore(pool, workspaceId),
       new VersionedHumanCalibratedVideoQualityScorer(),
     );
     const awaitingReview = await restarted.runVideoWorkflow(
@@ -606,12 +640,12 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
       shots: [{ id: 'pending', prompt: '待确认分镜', candidatesPerShot: 1 }],
     });
     assert.equal(
-      (await store.findLatest(workspaceId, 'owner-a'))?.id,
+      (await store.findLatestRun(workspaceId, 'owner-a'))?.runId,
       pendingWorkflowId,
     );
     await restarted.cancelVideoWorkflow(pendingWorkflowId, workspaceId);
     assert.equal(
-      (await store.findLatest(workspaceId, 'owner-a'))?.id,
+      (await store.findLatestRun(workspaceId, 'owner-a'))?.runId,
       pendingWorkflowId,
     );
     await restarted.createVideoWorkflow({
@@ -624,21 +658,21 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
       shots: [{ id: 'other', prompt: '其他用户分镜', candidatesPerShot: 1 }],
     });
     assert.equal(
-      (await store.findLatest(workspaceId, 'owner-a'))?.id,
+      (await store.findLatestRun(workspaceId, 'owner-a'))?.runId,
       pendingWorkflowId,
     );
     await assert.rejects(
-      store.findLatest(otherWorkspaceId, 'owner-a'),
+      store.findLatestRun(otherWorkspaceId, 'owner-a'),
       /workspace does not match/,
     );
     assert.equal(
-      await new PostgresDurableVideoWorkflowStore(pool, otherWorkspaceId).get(workflowId),
+      await new PostgresCanonicalVideoRunStore(pool, otherWorkspaceId).getRun(workflowId),
       undefined,
     );
   });
 
   it('recovers the latest storyboard version before a later parent update', async () => {
-    const store = new PostgresDurableVideoWorkflowStore(pool, workspaceId);
+    const store = new PostgresCanonicalVideoRunStore(pool, workspaceId);
     const runner = new PersistentContentWorkflowRunner(
       new ModelSupplyApplicationService({
         models: createDefaultCatalogModels(),
@@ -690,15 +724,15 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     });
 
     assert.equal(
-      (await store.findLatest(workspaceId, actorId, workId))?.id,
+      (await store.findLatestRun(workspaceId, actorId, workId))?.runId,
       derived.id,
     );
     assert.deepEqual(
-      new Set((await store.list(workspaceId, actorId)).map((item) => item.id)),
+      new Set((await store.listRuns(workspaceId, actorId)).map((item) => item.runId)),
       new Set([parent.id, derived.id]),
     );
     await assert.rejects(
-      store.list(otherWorkspaceId, actorId),
+      store.listRuns(otherWorkspaceId, actorId),
       /workspace does not match/,
     );
   });
@@ -715,7 +749,7 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     const first = new PersistentContentWorkflowRunner(
       service,
       new RecordedVideoCompositionPort(),
-      new PostgresDurableVideoWorkflowStore(pool, workspaceId),
+      new PostgresCanonicalVideoRunStore(pool, workspaceId),
     );
     await first.createVideoWorkflow({
       workflowId,
@@ -736,7 +770,7 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     const restarted = new PersistentContentWorkflowRunner(
       service,
       new RecordedVideoCompositionPort(),
-      new PostgresDurableVideoWorkflowStore(pool, workspaceId),
+      new PostgresCanonicalVideoRunStore(pool, workspaceId),
     );
     assert.equal(
       (await restarted.getVideoWorkflow(workflowId, workspaceId)).status,
@@ -779,7 +813,7 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     const first = new PersistentContentWorkflowRunner(
       service,
       new RecordedVideoCompositionPort(),
-      new PostgresDurableVideoWorkflowStore(pool, workspaceId),
+      new PostgresCanonicalVideoRunStore(pool, workspaceId),
     );
     await first.createVideoWorkflow({
       workflowId,
@@ -797,7 +831,7 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     const restarted = new PersistentContentWorkflowRunner(
       service,
       new RecordedVideoCompositionPort(),
-      new PostgresDurableVideoWorkflowStore(pool, workspaceId),
+      new PostgresCanonicalVideoRunStore(pool, workspaceId),
     );
     assert.equal(
       (await restarted.requestVideoWorkflowCancel(workflowId, workspaceId))

@@ -54,15 +54,15 @@ test('validateResultCenterSearch drops stage and unknown panel', () => {
   });
 });
 
-test('provisional empty catalog keeps exact route workId (no latest rewrite)', () => {
+test('loaded empty catalog reports not_found for the exact route workId', () => {
   const target = parseResultCenterSearch('work-route-only', {
     panel: 'run',
   });
   const outcome = resolveRouteResultTarget({ target, works: [] });
-  assert.equal(outcome.kind, 'ok');
-  if (outcome.kind !== 'ok') return;
-  assert.equal(outcome.target.workId, 'work-route-only');
-  assert.equal(outcome.target.panel, 'run');
+  assert.equal(outcome.kind, 'not_found');
+  if (outcome.kind !== 'not_found') return;
+  assert.equal(outcome.requested.workId, 'work-route-only');
+  assert.equal(outcome.requested.panel, 'run');
 });
 
 test('loaded catalog not_found for unknown workId never returns another work', () => {

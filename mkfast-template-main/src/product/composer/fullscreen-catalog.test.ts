@@ -3,12 +3,17 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BrowserRecipeProjection } from '@meiye/contracts';
+import type {
+  BrowserRecipeProjection,
+  BrowserSurfaceProjection,
+  CreativeToolEntry,
+} from '@meiye/contracts';
 
 import {
   CATALOG_SEARCH_GATE,
   TEMPLATE_CATALOG_CATEGORIES,
   captureCatalogReturnSnapshot,
+  catalogItemSourceFromLive,
   catalogStateFromSearch,
   catalogStateToHref,
   countPublishedVisible,
@@ -106,6 +111,33 @@ test('unpublished items do not count toward search gate', () => {
   assert.equal(shouldShowCatalogSearch('templates', { recipes }), false);
 });
 
+test('Surface-hidden recipes never render or count when every ref is hidden', () => {
+  const recipes = nRecipes(2);
+  const surface = {
+    surfaceId: 'surface.home.launch',
+    revision: 1,
+    revisionId: 'surface.home.launch@1',
+    status: 'published',
+    recipeRefs: recipes.map((recipe, order) => ({
+      recipeRevisionId: recipe.revisionId,
+      lensId: recipe.lensId,
+      order,
+      featured: false,
+      visible: false,
+    })),
+    toolEntryRefs: [],
+    contentHash: 'hash',
+    recipes,
+  } satisfies BrowserSurfaceProjection;
+  assert.equal(countPublishedVisible('templates', { surface }), 0);
+  assert.deepEqual(
+    listCatalogItems('templates', { surface }).map(
+      (item) => item.publishedVisible
+    ),
+    [false, false]
+  );
+});
+
 test('capability-gated tools do not count', () => {
   const tools: ComposerToolEntrySeed[] = Array.from({ length: 15 }, (_, i) => ({
     id: `tool.extra_${i}` as ComposerToolEntrySeed['id'],
@@ -121,6 +153,62 @@ test('capability-gated tools do not count', () => {
   }));
   assert.equal(countPublishedVisible('tools', { tools }), 5);
   assert.equal(shouldShowCatalogSearch('tools', { tools }), false);
+});
+
+test('live Surface cannot publish an ordinary tool without a verified capability', () => {
+  const recipe = makeRecipe({
+    recipeId: 'recipe.live',
+    revisionId: 'recipe.live@7',
+    lensId: 'copy',
+    presentation: { title: '服务端模板', summary: '实时 recipe' },
+  });
+  const surface = {
+    surfaceId: 'surface.home.launch',
+    revision: 7,
+    revisionId: 'surface.home.launch@7',
+    status: 'published',
+    contentHash: 'surface-hash',
+    recipeRefs: [
+      {
+        recipeRevisionId: recipe.revisionId,
+        lensId: 'copy',
+        order: 3,
+        featured: true,
+        visible: true,
+      },
+    ],
+    toolEntryRefs: [
+      { toolEntryId: 'tool.multi_size', order: 4, visible: true },
+      { toolEntryId: 'tool.batch_bg_remove', order: 5, visible: false },
+    ],
+    recipes: [recipe],
+  } satisfies BrowserSurfaceProjection;
+  const tools: CreativeToolEntry[] = [
+    {
+      id: 'tool.multi_size',
+      label: '服务端多尺寸',
+      summary: '服务端说明',
+      kind: 'standalone_tool',
+      container: 'route',
+      order: 9,
+    },
+    {
+      id: 'tool.batch_bg_remove',
+      label: '不可见工具',
+      summary: '不应渲染',
+      kind: 'standalone_tool',
+      container: 'dialog',
+      order: 10,
+    },
+  ];
+
+  const source = catalogItemSourceFromLive(surface, tools);
+  const templateItems = listCatalogItems('templates', source);
+  assert.equal(templateItems[0]?.title, '服务端模板');
+  assert.equal(templateItems[0]?.recipeRevisionId, 'recipe.live@7');
+  const toolItems = listCatalogItems('tools', source);
+  assert.ok(toolItems.every((item) => item.publishedVisible === false));
+  assert.equal(countPublishedVisible('tools', source), 0);
 });
 
 test('first-ship tool seeds are below search gate', () => {

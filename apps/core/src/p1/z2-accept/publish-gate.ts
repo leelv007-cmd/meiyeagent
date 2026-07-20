@@ -99,13 +99,12 @@ export function evaluateMultiChannelPublishGate(
     honestClaim = 'not_verified';
   }
 
-  const requiresNoFallbackLabel =
-    honestClaim === 'single_channel' || honestClaim === 'no_fallback';
+  const requiresNoFallbackLabel = honestClaim === 'single_channel';
 
   const surfaceLabel =
     honestClaim === 'multi_channel_ready'
       ? '双渠道就绪'
-      : honestClaim === 'single_channel' || honestClaim === 'no_fallback'
+      : honestClaim === 'single_channel'
         ? '单渠道 / 无回退'
         : honestClaim === 'blocked'
           ? '无部署'

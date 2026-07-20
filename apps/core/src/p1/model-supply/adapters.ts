@@ -421,6 +421,7 @@ export {
   Seedream5ProRecordedAdapter,
   type RecordedTaskStatus,
   type RecordedMediaTask,
+  Seedance15ProRecordedAdapter,
   Seedance2RecordedAdapter,
   KlingLatestRecordedAdapter,
   GrokLatestVideoRecordedAdapter,

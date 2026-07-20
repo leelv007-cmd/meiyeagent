@@ -56,6 +56,18 @@ export {
   projectEvidenceDrawer,
 } from './brief-trigger-projection.js';
 export {
+  MemoryBriefConfirmationRepository,
+  type BriefConfirmationRepository,
+} from './brief-confirmation-repository.js';
+export {
+  CreationExperienceBriefSubmissionGate,
+  type BriefSubmissionGate,
+} from './brief-submission-gate.js';
+export {
+  MissingBriefRevisionResolver,
+  type BriefRevisionResolver,
+} from './brief-revision-resolver.js';
+export {
   FORBIDDEN_EVENT_PAYLOAD_KEYS,
   MemoryCreationExperienceEventAudit,
   buildCreationExperienceEvent,
@@ -63,8 +75,25 @@ export {
   listCreationExperienceEventKinds,
   sanitizeEventMeta,
   type ForbiddenEventPayloadKey,
+  type CreationExperienceEventAuditPort,
   type RecordCreationExperienceEventInput,
 } from './creation-experience-events.js';
+export { PostgresCreationExperienceCatalogRepository } from './postgres-repository.js';
+export { PostgresCreationExperienceAuditRepository } from './postgres-audit-repository.js';
+export {
+  CompositeBriefRevisionResolver,
+  MemoryBriefRevisionContextRepository,
+  PostgresBriefRevisionContextRepository,
+  type BriefRevisionContext,
+  type BriefRevisionContextRepository,
+  type CurrentModelCatalogSource,
+  type CurrentProductQuoteSource,
+  type SyncBriefRevisionContextInput,
+} from './postgres-brief-revision-context.js';
+export {
+  createDurableCreationExperienceRuntime,
+  type DurableCreationExperienceRuntime,
+} from './runtime.js';
 export {
   recipeRevisionId,
   surfaceRevisionId,

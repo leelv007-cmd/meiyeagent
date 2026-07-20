@@ -367,12 +367,10 @@ export function routeAdjustExecution(input: {
   baseRevisionId: string;
   instruction?: string;
   handEdit?: {
-    changes: AdjustExecutionPath extends { path: 'occ_derived_revision' }
-      ? Extract<
-          AdjustExecutionPath,
-          { path: 'occ_derived_revision' }
-        >['changes']
-      : never;
+    changes: Extract<
+      AdjustExecutionPath,
+      { path: 'occ_derived_revision' }
+    >['changes'];
     expectedRevision: number;
     packageId: string;
     reason: string;

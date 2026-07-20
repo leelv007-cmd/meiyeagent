@@ -1,4 +1,7 @@
-import type { CreativeJob } from '@meiye/contracts';
+import type {
+  CreativeJob,
+  VideoWorkflowPublicProjection,
+} from '@meiye/contracts';
 import {
   type QueryClient,
   useQuery,
@@ -30,6 +33,7 @@ export interface MediaJobObservation {
   operation: 'image.generate' | 'video.generate';
   providerJobId: string;
   status: string;
+  workId: string;
 }
 
 export interface CanvasImageJobObservation {
@@ -104,7 +108,17 @@ export function creativeJobObservation(
     operation: job.contract.operation,
     providerJobId: job.providerJobId,
     status: job.status,
+    workId: job.workId,
   };
+}
+
+export function isComposedVideoObservation(
+  observation: MediaJobObservation | undefined
+) {
+  return Boolean(
+    observation?.operation === 'video.generate' &&
+      observation.providerJobId.startsWith('video-workflow-')
+  );
 }
 
 export function providerTerminalResumeKey(
@@ -281,17 +295,45 @@ export function useCreativeJobObserver(
   const creativeJobId = observation?.creativeJobId;
   const observationStatus = observation?.status;
   const enabled = Boolean(observation);
+  const composedVideo = isComposedVideoObservation(observation);
   const query = useQuery({
     enabled,
-    queryKey: p1QueryKeys.request('model-supply', 'job', {
-      jobId: providerJobId,
-    }),
-    queryFn: ({ signal }) =>
-      queryP1<ProviderJobView>(
+    queryKey: composedVideo
+      ? p1QueryKeys.request('model-supply', 'video_workflow_public', {
+          creativeJobId,
+          observer: 'creative_job_terminal_recovery',
+          workflowId: providerJobId,
+        })
+      : p1QueryKeys.request('model-supply', 'job', {
+          jobId: providerJobId,
+        }),
+    queryFn: async ({ signal }) => {
+      if (composedVideo) {
+        const workflow = await queryP1<VideoWorkflowPublicProjection | null>(
+          'model-supply',
+          {
+            action: 'video_workflow_public',
+            payload: { workflowId: providerJobId },
+          },
+          signal
+        );
+        return {
+          jobId: providerJobId,
+          status:
+            workflow?.status === 'completed'
+              ? ('completed' as const)
+              : workflow?.status === 'failed' ||
+                  workflow?.status === 'cancelled'
+                ? ('failed' as const)
+                : ('running' as const),
+        };
+      }
+      return queryP1<ProviderJobView>(
         'model-supply',
         { action: 'job', payload: { jobId: providerJobId } },
         signal
-      ),
+      );
+    },
     refetchInterval: (current) => {
       const status = current.state.data?.status;
       return !status || isActiveProviderStatus(status) ? 5_000 : false;

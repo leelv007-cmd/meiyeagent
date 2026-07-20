@@ -11,6 +11,7 @@ import type {
   BrowserRecipeProjection,
   BrowserSurfaceProjection,
   CreationLensId,
+  CreativeToolEntry,
 } from '@meiye/contracts';
 
 import {
@@ -22,6 +23,7 @@ import {
   COMPOSER_TOOL_ENTRY_SEEDS,
   TOOL_CATALOG_CATEGORIES,
   TOOL_CATALOG_CATEGORY_LABELS,
+  getComposerToolEntrySeed,
   type ComposerToolEntrySeed,
   type ToolCatalogCategory,
 } from './tool-entry-seeds';
@@ -88,6 +90,7 @@ export type CatalogItemView = {
   lensId?: CreationLensId | null;
   toolEntryId?: string;
   recipeId?: string;
+  recipeRevisionId?: string;
   isProStudioBanner?: boolean;
 };
 
@@ -107,6 +110,43 @@ export type CatalogItemSource = {
    */
   toolVisibility?: Record<string, boolean>;
 };
+
+/** Join live server facts with browser-only category/entitlement presentation. */
+export function catalogItemSourceFromLive(
+  surface: BrowserSurfaceProjection,
+  tools: readonly CreativeToolEntry[]
+): CatalogItemSource {
+  const refs = new Map(
+    surface.toolEntryRefs.map((ref) => [ref.toolEntryId, ref] as const)
+  );
+  const hasSurfaceToolRefs = refs.size > 0;
+  const projectedTools = tools.flatMap((tool) => {
+    const presentation = getComposerToolEntrySeed(tool.id);
+    if (!presentation || tool.kind !== 'standalone_tool') return [];
+    const ref = refs.get(tool.id);
+    return [
+      {
+        ...presentation,
+        label: tool.label,
+        summary: tool.summary,
+        kind: tool.kind,
+        container: tool.container ?? presentation.container,
+        order: ref?.order ?? tool.order,
+      },
+    ];
+  });
+  return {
+    surface,
+    recipes: surface.recipes,
+    tools: projectedTools,
+    toolVisibility: Object.fromEntries(
+      projectedTools.map((tool) => [
+        tool.id,
+        hasSurfaceToolRefs ? refs.get(tool.id)?.visible === true : true,
+      ])
+    ),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Return / restore snapshot
@@ -139,8 +179,7 @@ export function createCatalogUiState(
   return {
     tab: partial.tab ?? 'templates',
     category:
-      partial.category ??
-      (partial.tab === 'tools' ? 'all' : 'featured'),
+      partial.category ?? (partial.tab === 'tools' ? 'all' : 'featured'),
     scrollY: partial.scrollY ?? 0,
     focusKey: partial.focusKey ?? null,
     query: partial.query ?? '',
@@ -217,6 +256,7 @@ function projectTemplateItems(source: CatalogItemSource): CatalogItemView[] {
   const featuredIds = new Set<string>();
   const visibleIds = new Set<string>();
   const orderByRevision = new Map<string, number>();
+  const hasSurfaceRecipeRefs = Boolean(surface?.recipeRefs?.length);
 
   if (surface?.recipeRefs?.length) {
     for (const ref of surface.recipeRefs) {
@@ -227,14 +267,13 @@ function projectTemplateItems(source: CatalogItemSource): CatalogItemView[] {
   }
 
   return recipes.map((recipe, index) => {
-    const featured =
-      featuredIds.size === 0
-        ? true
-        : featuredIds.has(recipe.revisionId);
-    const surfaceVisible =
-      visibleIds.size === 0 ? true : visibleIds.has(recipe.revisionId);
-    const publishedVisible =
-      recipe.status === 'published' && surfaceVisible;
+    const featured = !hasSurfaceRecipeRefs
+      ? true
+      : featuredIds.has(recipe.revisionId);
+    const surfaceVisible = !hasSurfaceRecipeRefs
+      ? true
+      : visibleIds.has(recipe.revisionId);
+    const publishedVisible = recipe.status === 'published' && surfaceVisible;
     return {
       id: recipe.recipeId,
       kind: 'template' as const,
@@ -245,6 +284,7 @@ function projectTemplateItems(source: CatalogItemSource): CatalogItemView[] {
       publishedVisible,
       lensId: recipe.lensId,
       recipeId: recipe.recipeId,
+      recipeRevisionId: recipe.revisionId,
     };
   });
 }
@@ -284,7 +324,9 @@ export function listCatalogItems(
   source: CatalogItemSource = {}
 ): CatalogItemView[] {
   const items =
-    tab === 'templates' ? projectTemplateItems(source) : projectToolItems(source);
+    tab === 'templates'
+      ? projectTemplateItems(source)
+      : projectToolItems(source);
   return items.slice().sort((a, b) => a.order - b.order);
 }
 
@@ -373,8 +415,9 @@ export function projectFullscreenCatalogView(
   source: CatalogItemSource = {}
 ): FullscreenCatalogView {
   const allItems = listCatalogItems(state.tab, source);
-  const publishedVisibleCount = allItems.filter((i) => i.publishedVisible)
-    .length;
+  const publishedVisibleCount = allItems.filter(
+    (i) => i.publishedVisible
+  ).length;
   const showSearch = publishedVisibleCount >= CATALOG_SEARCH_GATE;
   const items = filterCatalogItems(allItems, state.category);
   // Intentionally ignore state.query for filtering (gate-only this ticket).
@@ -465,9 +508,7 @@ export function catalogStateFromSearch(
   const parsed: ComposerCatalogSearchParams = parseComposerCatalogSearch(raw);
   return createCatalogUiState({
     tab: parsed.tab ?? 'templates',
-    category:
-      parsed.category ??
-      (parsed.tab === 'tools' ? 'all' : 'featured'),
+    category: parsed.category ?? (parsed.tab === 'tools' ? 'all' : 'featured'),
     query: parsed.q ?? '',
     surfaceRevisionId: parsed.surfaceRevisionId ?? null,
     returnKey: parsed.returnKey ?? null,

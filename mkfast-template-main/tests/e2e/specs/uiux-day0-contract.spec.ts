@@ -1,9 +1,4 @@
-import {
-  expect,
-  test,
-  type Page,
-  type Response as PlaywrightResponse,
-} from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type {
   ApiEnvelope,
   ProductCommand,
@@ -15,18 +10,15 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import {
-  productState,
-  seedComposerInlineAuthorize,
-  seedConfirmedStore,
-} from '../fixtures/product';
+import { productState, seedConfirmedStore } from '../fixtures/product';
 import {
   blockingQuestionLocator,
   briefConfirmButton,
+  composerLensOption,
+  composerRecipeCard,
   composerSubmitButton,
-  creationModeChip,
+  firstTokenLocator,
   installUserActivationCounter,
-  sceneTemplateCard,
   skipOnboardingButton,
   type UserActivationCounter,
 } from '../fixtures/user-activation';
@@ -44,35 +36,14 @@ import {
  * Old free-text "≤2 without mode select" semantics are retired — they conflict
  * with D-081 forced lens selection.
  *
- * Assertions target the CURRENT shipped surface (CreationModePicker chips +
- * scene cards). Red is honest until C/D Composer / C4 Brief UI lands; do not
- * weaken isTrusted counters or soft-pass missing steps.
+ * Assertions target the shipped Composer lens radiogroup + Recipe cards.
+ * Do not weaken isTrusted counters or soft-pass missing steps.
  */
 
 const PNG_FIXTURE = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64'
 );
-
-function isFirstUsableDraftMetricResponse(response: PlaywrightResponse) {
-  if (
-    response.request().method() !== 'POST' ||
-    !response.url().includes('/api/core/p1/harness/tasks/') ||
-    !response.url().endsWith('/product-metrics')
-  ) {
-    return false;
-  }
-  const body = response.request().postDataJSON() as Record<string, unknown>;
-  return (
-    typeof body.idempotencyKey === 'string' &&
-    body.idempotencyKey.startsWith('first-usable-draft-v1:') &&
-    (body.path === 'canonical_mouse' ||
-      body.path === 'keyboard' ||
-      body.path === 'conflict') &&
-    typeof body.timeToFirstUsableDraftMs === 'number' &&
-    typeof body.userActivationCount === 'number'
-  );
-}
 
 async function day0SeedPrep(
   page: Page,
@@ -82,8 +53,34 @@ async function day0SeedPrep(
   await loginByForm(page, user);
   await seedConfirmedStore(page);
   await page.goto('/dashboard');
-  await seedComposerInlineAuthorize(page);
   return user;
+}
+
+async function assertResultFirstToken(page: Page, workspace: 'copy' | 'image') {
+  await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+/u, {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId('result-center-shell')).toBeVisible();
+  await expect(page.getByTestId('result-shell-workspace')).toHaveText(
+    workspace
+  );
+  await expect(firstTokenLocator(page)).toHaveAttribute(
+    'data-has-token',
+    'true',
+    { timeout: 90_000 }
+  );
+}
+
+async function assertVideoFirstUsableResult(page: Page) {
+  await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+/u, {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId('result-center-shell')).toBeVisible();
+  await expect(page.getByTestId('result-shell-workspace')).toHaveText('video');
+  await expect(page.getByTestId('video-worksurface')).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(page.getByTestId('video-player')).toBeVisible();
 }
 
 async function creativeEventTypes(page: Page) {
@@ -114,8 +111,8 @@ async function creativeEventTypes(page: Page) {
 }
 
 async function assertNoSkipUsed(page: Page, counter: UserActivationCounter) {
-  // Canonical path must never click "暂时跳过" (would fake-green onboarding).
-  await expect(skipOnboardingButton(page)).toHaveCount(1);
+  // The retired onboarding bypass is absent from the canonical Composer.
+  await expect(skipOnboardingButton(page)).toHaveCount(0);
   expect(counter.count()).toBe(0);
 }
 
@@ -124,6 +121,13 @@ async function assertZeroBlockingBeforeSubmit(page: Page) {
   await expect(briefConfirmButton(page)).toHaveCount(0);
   await expect(page.getByText('尚未完成可用性验证')).toHaveCount(0);
   await expect(page.getByText('保留原模型，但暂不可提交')).toHaveCount(0);
+}
+
+async function assertComposerQuoteReady(page: Page) {
+  await expect(
+    page.getByTestId('composer-quote-line'),
+    'the live ProductQuote must be bound before submit'
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 function assertActivationBudget(
@@ -167,12 +171,9 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await assertNoSkipUsed(page, counter);
       await assertZeroBlockingBeforeSubmit(page);
 
-      // C6: template/scenario card click is dual-purpose (select lens + apply).
-      // On the current surface this is a SceneVisualButton (e.g. 引流 · 美甲)
-      // that fills intent and resolves a named preset family in one click.
-      // That single activation occupies the lens-selection budget slot; do NOT
-      // also click CreationModePicker here (would over-count past 2).
-      const templateCard = sceneTemplateCard(page);
+      // C6: a Recipe card click is dual-purpose (select lens + apply patch).
+      // That single activation occupies the lens-selection budget slot.
+      const templateCard = composerRecipeCard(page);
       await expect(
         templateCard,
         'Day-0 template path needs a visible scene/template card on the entry surface'
@@ -183,35 +184,24 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
         `template card must count as exactly 1 isTrusted activation (C6 dual-purpose); events=${JSON.stringify(counter.events())}`
       ).toBe(1);
 
+      await assertComposerQuoteReady(page);
       await expect(composerSubmitButton(page)).toBeEnabled();
       await assertZeroBlockingBeforeSubmit(page);
 
-      const acceptedMetric = page.waitForResponse(
-        isFirstUsableDraftMetricResponse,
-        { timeout: 90_000 }
-      );
       await composerSubmitButton(page).click();
 
+      await assertResultFirstToken(page, 'copy');
       const activationCount = await counter.waitForFirstTokenAndStop({
         timeout: 90_000,
       });
-      const metricResponse = await acceptedMetric;
-      expect(metricResponse.status()).toBe(202);
-      expect(metricResponse.request().postDataJSON()).toMatchObject({
-        idempotencyKey: expect.stringMatching(/^first-usable-draft-v1:/),
-        path: 'canonical_mouse',
-        timeToFirstUsableDraftMs: expect.any(Number),
-        userActivationCount: activationCount,
-      });
-      expect(metricResponse.request().postDataJSON().path).not.toBe('conflict');
 
       assertActivationBudget(activationCount, 2, counter, 'template path (C6)');
 
       await expect(blockingQuestionLocator(page)).toHaveCount(0);
-      await expect(
-        page.getByTestId('harness-primary-candidate')
-      ).toHaveAttribute('data-has-token', 'true');
-      await expect(page.getByText('新项目到店前先看这几点')).toBeVisible();
+      await expect(firstTokenLocator(page)).toHaveAttribute(
+        'data-has-token',
+        'true'
+      );
       const events = await creativeEventTypes(page);
       expect(events).toContain('first_work_created');
       expect(events).not.toContain('cold_start_skipped');
@@ -232,11 +222,9 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await assertZeroBlockingBeforeSubmit(page);
 
       // D-081 / C6: pure free-text MUST pay for an explicit lens/mode select.
-      // Current chips: 做图文 | 做视频. Clicking the mode chip always counts as
-      // 1 isTrusted activation even if the UI still auto-defaults a mode today.
-      // When C/D Composer enforces D-081 (no auto-default), this same select
-      // click remains required — red is expected if the chip is missing.
-      const lensChip = creationModeChip(page, 'image_text');
+      // The Composer starts cold; selecting the explicit copy radio is
+      // one trusted activation and never relies on an inferred default.
+      const lensChip = composerLensOption(page, 'copy');
       await expect(
         lensChip,
         'pure text path requires a visible lens/mode chip (做图文/做文案); red until C/D Composer enforces D-081 if absent'
@@ -251,38 +239,32 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       // Cmd+Enter). Free-text path budget is still exactly 2 clicks.
       const intent = page.getByLabel('描述这次想创作的内容');
       await intent.fill('为透亮猫眼写一条克制的到店种草');
+      await assertComposerQuoteReady(page);
       await expect(composerSubmitButton(page)).toBeEnabled();
       await expect(blockingQuestionLocator(page)).toHaveCount(0);
       expect(counter.count()).toBe(1);
 
-      const acceptedMetric = page.waitForResponse(
-        isFirstUsableDraftMetricResponse,
-        { timeout: 90_000 }
-      );
       await composerSubmitButton(page).click();
 
+      await assertResultFirstToken(page, 'copy');
       const activationCount = await counter.waitForFirstTokenAndStop({
         timeout: 90_000,
       });
-      const metricResponse = await acceptedMetric;
-      expect(metricResponse.status()).toBe(202);
-      expect(metricResponse.request().postDataJSON()).toMatchObject({
-        idempotencyKey: expect.stringMatching(/^first-usable-draft-v1:/),
-        path: 'canonical_mouse',
-        timeToFirstUsableDraftMs: expect.any(Number),
-        userActivationCount: activationCount,
-      });
-      expect(metricResponse.request().postDataJSON().path).not.toBe('conflict');
 
       // Exact 2 — not ≤2. A path that skips lens select and only clicks start
       // (old free-text semantics) would report 1 and must fail this gate.
-      assertActivationBudget(activationCount, 2, counter, 'pure text path (C6)');
+      assertActivationBudget(
+        activationCount,
+        2,
+        counter,
+        'pure text path (C6)'
+      );
 
       await expect(blockingQuestionLocator(page)).toHaveCount(0);
-      await expect(
-        page.getByTestId('harness-primary-candidate')
-      ).toHaveAttribute('data-has-token', 'true');
-      await expect(page.getByText('新项目到店前先看这几点')).toBeVisible();
+      await expect(firstTokenLocator(page)).toHaveAttribute(
+        'data-has-token',
+        'true'
+      );
       const events = await creativeEventTypes(page);
       expect(events).toContain('first_work_created');
       expect(events).not.toContain('cold_start_skipped');
@@ -303,7 +285,7 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await assertZeroBlockingBeforeSubmit(page);
 
       // Base C6 budget: lens select + start = 2.
-      const videoChip = creationModeChip(page, 'video');
+      const videoChip = composerLensOption(page, 'video');
       await expect(
         videoChip,
         'video path requires a visible 做视频 mode chip'
@@ -313,6 +295,7 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
 
       const intent = page.getByLabel('描述这次想创作的内容');
       await intent.fill('为夏季美甲写一条15秒到店种草短视频');
+      await assertComposerQuoteReady(page);
       await expect(composerSubmitButton(page)).toBeEnabled();
       expect(counter.count()).toBe(1);
 
@@ -338,9 +321,9 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       // First-token endpoint is the Day-0 stop condition for all three paths.
       // Video may still be red on the current surface until Result Center /
       // video first-token projection lands — keep the hard wait (no fake-green).
-      const activationCount = await counter.waitForFirstTokenAndStop({
-        timeout: 90_000,
-      });
+      await assertVideoFirstUsableResult(page);
+      counter.stop();
+      const activationCount = counter.count();
       expect(
         activationCount,
         `video path (C6+D-094): expected exactly 3 isTrusted activations (lens + start + Brief confirm) to first token; got ${activationCount}: ${JSON.stringify(counter.events())}`
@@ -369,16 +352,18 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     // C6: keyboard equivalence covers the submit activation only. Pure free-text
     // still owes an explicit lens select under D-081 — do NOT reintroduce the
     // old "keyboard alone ≤2 / =1 without mode select" free-text semantics.
-    const lensChip = creationModeChip(page, 'image_text');
+    const lensChip = composerLensOption(page, 'copy');
     await expect(lensChip).toBeVisible();
     await lensChip.click();
 
     const intent = page.getByLabel('描述这次想创作的内容');
     await intent.fill('快捷键提交也应直达首 token');
+    await assertComposerQuoteReady(page);
     await intent.press(
       process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter'
     );
 
+    await assertResultFirstToken(page, 'copy');
     const activationCount = await counter.waitForFirstTokenAndStop({
       timeout: 90_000,
     });
@@ -446,54 +431,40 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     ]);
   });
 
-  test('conflict path: exactly one question then continue (exempt from C6 2-click base budget)', async ({
+  test('high-risk conflict path: exactly one Brief confirmation then continue (exempt from C6 base budget)', async ({
     page,
     request,
   }) => {
     test.setTimeout(180_000);
-    // Conflict path is exempt from the C6 2-click base budget (extra question
-    // card is mandatory when facts conflict). Do not re-apply free-text ≤2
-    // semantics here — only assert the single-question contract + token reach.
+    // Conflict path is exempt from the C6 2-click base budget because the
+    // conditional Brief confirmation is mandatory. The new Composer must not
+    // resurrect the retired Harness question form.
     await installUserActivationCounter(page);
     await day0SeedPrep(page, request);
 
     // Conflict fixture path: free-text that triggers the offer-price question.
-    // Lens default on current surface is copy; we do not assert the C6 base
-    // budget on this path (exempt). When D-081 is enforced, this path still
-    // remains exempt for the conflict card itself.
+    // D-081 still requires an explicit lens. This path is exempt only from
+    // the two-click budget because the conflict confirmation is mandatory.
+    await composerLensOption(page, 'copy').click();
     const intent = page.getByLabel('描述这次想创作的内容');
     await intent.fill('把新团购做一套能发的');
+    await assertComposerQuoteReady(page);
     await composerSubmitButton(page).click();
 
-    await expect(page.getByText('只需确认一件事')).toBeVisible({
-      timeout: 60_000,
-    });
+    const brief = page.getByTestId('composer-brief-surface');
+    await expect(brief).toBeVisible({ timeout: 60_000 });
     await expect(
-      page.getByRole('heading', { name: '这次团购价按哪个金额写？' })
-    ).toBeVisible();
-    // Exactly one question card — not a multi-form wall.
-    await expect(
-      page.getByRole('heading', { name: '这次团购价按哪个金额写？' })
+      brief.getByTestId(
+        'composer-brief-trigger-high_risk_fact_missing_or_conflict'
+      )
     ).toHaveCount(1);
-
-    const workUrl = page.url();
-    await page
-      .getByRole('textbox', { name: '这次团购价按哪个金额写？' })
-      .fill('398 元');
-    await page.getByRole('button', { name: '确认并继续' }).click();
-
+    await expect(page.getByText('只需确认一件事')).toHaveCount(0);
     await expect(
       page.getByRole('heading', { name: '这次团购价按哪个金额写？' })
-    ).toBeHidden({ timeout: 30_000 });
-    await expect(page).toHaveURL(workUrl);
+    ).toHaveCount(0);
 
-    // Continuation to a real token is still mandatory; original Harness task
-    // must not be resubmitted.
-    await expect(page.getByText('只需确认一件事')).toHaveCount(0);
-    await expect(page.locator('[data-has-token="true"]').first()).toBeVisible({
-      timeout: 60_000,
-    });
-    await expect(page.getByText('新项目到店前先看这几点')).toBeVisible();
+    await briefConfirmButton(page).click();
+    await assertResultFirstToken(page, 'copy');
   });
 });
 
@@ -530,7 +501,13 @@ test.describe('V1 T5 independent inline one-click authorize', () => {
       observedCommands.push(command);
     });
 
-    const galleryInput = page.locator('#composer-gallery-input');
+    const sourcePicker = page.getByTestId('composer-source-picker');
+    await expect(
+      sourcePicker,
+      'the canonical Composer must provide inline source intake'
+    ).toBeVisible();
+    const galleryInput = sourcePicker.locator('#composer-gallery-input');
+    await expect(galleryInput).toBeAttached();
     await galleryInput.setInputFiles({
       buffer: PNG_FIXTURE,
       mimeType: 'image/png',
@@ -642,7 +619,9 @@ test.describe('V1 T5 independent inline one-click authorize', () => {
     });
 
     // Continue: intent + submit still on the same surface.
+    await composerLensOption(page, 'copy').click();
     await page.getByLabel('描述这次想创作的内容').fill('内联授权后继续创作');
+    await assertComposerQuoteReady(page);
     await expect(composerSubmitButton(page)).toBeEnabled();
     // Prove the authorized asset is in product state (composer source-ready).
     const reread = (await page.evaluate(async () => {
@@ -667,7 +646,7 @@ test.describe('V1 T5 independent inline one-click authorize', () => {
     await expect(page.locator('[data-has-token="true"]').first()).toBeVisible({
       timeout: 90_000,
     });
-    await expect(page.getByText('新项目到店前先看这几点')).toBeVisible();
+    await expect(page.getByTestId('result-center-shell')).toBeVisible();
 
     void user;
   });

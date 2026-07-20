@@ -4,7 +4,7 @@
  * - No conflict → local apply (select lens + patch draft); zero business write
  * - Conflict → surface RecipePatchPreview (two CTAs); cancel restores baseline
  * - After apply → inline tip + undo + first missing input focus target
- * - userText / sources / assetRights always preserved (never internalIntent)
+ * - userText / sources / assetRights always preserved (never a hidden prompt)
  *
  * Browse / apply / preview / cancel / undo MUST NOT create Work/Task/Job/
  * ContentPackage — this module only mutates ComposerLensState.
@@ -200,7 +200,7 @@ function cloneState(state: ComposerLensState): ComposerLensState {
 
 /**
  * Apply recipe onto composer state.
- * NEVER overwrites userText with recipe / internalIntent content.
+ * NEVER overwrites userText with recipe-owned hidden prompt content.
  */
 export function applyRecipeToLensState(
   state: ComposerLensState,
@@ -235,7 +235,7 @@ export function applyRecipeToLensState(
     source: 'user_explicit',
     draft: {
       ...draft,
-      // CRITICAL: user original text preserved — no internalIntent path.
+      // CRITICAL: user original text preserved — no hidden-prompt path.
       userText: preservedText,
       sources: preservedSources,
       assetRights: preservedRights,
@@ -344,7 +344,7 @@ export function requestApplyRecipe(
   // Passthrough local apply.
   return {
     kind: 'applied',
-    session: commitApply(session, recipe, preview, /* wasCrossLens */ false),
+    session: commitApply(session, recipe, /* wasCrossLens */ false),
   };
 }
 
@@ -450,7 +450,6 @@ export function confirmApply(session: RecipeApplySession): RecipeApplySession {
   return commitApply(
     session,
     session.pendingRecipe,
-    session.preview,
     wasCrossLens
   );
 }
@@ -503,7 +502,6 @@ export function undoApply(session: RecipeApplySession): RecipeApplySession {
 function commitApply(
   session: RecipeApplySession,
   recipe: RecipeCardTarget,
-  preview: RecipePatchPreview,
   wasCrossLens: boolean
 ): RecipeApplySession {
   const baseline = session.baseline ?? {
@@ -514,7 +512,7 @@ function commitApply(
   // Invariant: user text byte-identical.
   if (nextLens.draft.userText !== session.lensState.draft.userText) {
     throw new Error(
-      'recipe apply must preserve userText (no internalIntent overwrite)'
+      'recipe apply must preserve userText (no hidden-prompt overwrite)'
     );
   }
 

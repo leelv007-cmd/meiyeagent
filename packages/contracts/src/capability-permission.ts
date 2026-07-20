@@ -110,13 +110,17 @@ export type P1Module =
   | 'admin-config'
   | 'asset-memory'
   | 'context'
+  | 'creation-experience'
   | 'entitlements'
   | 'integrations'
   | 'job-runtime'
   | 'marketing-identity'
   | 'model-supply'
   | 'operations'
-  | 'redemptions';
+  | 'product-billing'
+  | 'redemptions'
+  | 'result-delivery'
+  | 'video-regeneration';
 
 const personalModelActions = new Set([
   'record_recent',
@@ -163,6 +167,7 @@ const modelWorkspaceReadQueries = new Set([
   'job',
   'preferences',
   'video_workflow',
+  'video_workflow_public_latest',
 ]);
 const integrationUseActions = new Set([
   'confirm_douyin_publish',
@@ -215,7 +220,6 @@ const jobRuntimeCommands = new Set([
   'unschedule_recurring',
 ]);
 const contentReviewOperations = new Set([
-  'accept_creative_asset',
   'adopt_canvas_work_export',
   'adopt_into_content_package',
   'revoke_content_package_rights',
@@ -282,6 +286,111 @@ export function requiredP1Capability(
   // D-053: Cloudflare write ops must not gain authorization from any key.
   if (cloudflareWriteActions.has(action)) return null;
 
+  if (module === 'creation-experience') {
+    if (kind === 'query') {
+      return new Set([
+        'brief_project',
+        'lens_list',
+        'recipe_patch_preview',
+        'recipe_browser',
+        'session_get',
+        'surface_browser',
+        'tool_list',
+      ]).has(action)
+        ? 'workspace.read'
+        : new Set([
+              'recipe_get',
+              'recipe_history',
+              'recipe_validate',
+              'surface_get',
+              'surface_history',
+              'surface_validate',
+            ]).has(action)
+          ? 'config.publish'
+          : null;
+    }
+    if (action === 'session_freeze') return 'content.create';
+    if (
+      action === 'brief_confirm' ||
+      action === 'brief_context_sync' ||
+      action === 'event_append'
+    ) {
+      return 'content.create';
+    }
+    return new Set([
+      'recipe_draft',
+      'recipe_preview',
+      'recipe_publish',
+      'recipe_rollback',
+      'surface_draft',
+      'surface_preview',
+      'surface_publish',
+      'surface_rollback',
+    ]).has(action)
+      ? 'config.publish'
+      : null;
+  }
+
+  if (module === 'product-billing') {
+    if (kind === 'query') {
+      return new Set([
+        'get_quote',
+        'get_quote_by_task',
+        'get_usage',
+      ]).has(action)
+        ? 'workspace.read'
+        : null;
+    }
+    return new Set(['confirm', 'quote']).has(action)
+      ? 'content.create'
+      : null;
+  }
+
+  if (module === 'result-delivery') {
+    if (kind === 'query') {
+      return new Set([
+        'actionable_inbox',
+        'assisted_get',
+        'assisted_list',
+        'assisted_pending_confirm',
+        'recent_list',
+        'result_target_resolve',
+      ]).has(action)
+        ? 'workspace.read'
+        : null;
+    }
+    if (
+      new Set([
+        'assisted_consume_handoff',
+        'assisted_hand_over',
+        'assisted_mark_pending',
+        'assisted_prepare',
+        'assisted_record_publish_result',
+      ]).has(action)
+    ) {
+      return 'publication.handoff';
+    }
+    return new Set([
+      'adopt_into_content_package',
+      'result_adjust',
+      'result_adjust_prepare',
+      'result_adopt',
+      'result_export',
+      'revise_content_package_visuals',
+    ]).has(action)
+      ? 'content.review'
+      : null;
+  }
+
+  if (module === 'video-regeneration') {
+    if (kind === 'query') {
+      return action === 'get_task' ? 'workspace.read' : null;
+    }
+    return new Set(['quote', 'confirm', 'recover', 'retry', 'free_action']).has(action)
+      ? 'content.create'
+      : null;
+  }
+
   if (module === 'advanced-canvas') {
     // Small module: all queries share workspace.read; all commands require review.
     return kind === 'query' ? 'workspace.read' : 'content.review';
@@ -347,6 +456,8 @@ export function requiredP1Capability(
       }
       return 'workspace.read';
     }
+    // Z1/#105: legacy CreativeContent acceptance is no longer a public write.
+    if (action === 'accept_creative_asset') return null;
     if (taskRecoverActions.has(action)) return 'task.recover';
     if (contentReviewOperations.has(action)) return 'content.review';
     // Remaining operations commands are product content work (registered class).
@@ -417,7 +528,12 @@ export function requiredP1Capability(
       return 'personal.preferences.manage';
     }
     if (action === 'set_workspace_default') return 'workspace.models.manage';
-    if (action === 'video_workflow_select_candidate') return 'content.review';
+    if (
+      action === 'video_workflow_select_candidate' ||
+      action === 'video_workflow_edit'
+    ) {
+      return 'content.review';
+    }
     if (modelExecutionActions.has(action)) return 'content.create';
     if (modelConfigPublishActions.has(action)) return 'config.publish';
     if (

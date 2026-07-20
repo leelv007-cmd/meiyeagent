@@ -9,6 +9,16 @@ export {
 } from './canvas-quote-adapter.js';
 export { ProductBillingFoundationModule } from './foundation-module.js';
 export {
+  DurableProductBillingService,
+  type ProductBillingApplicationPort,
+} from './durable-service.js';
+export {
+  ProductBillingLifecycle,
+  type BillingAttemptCost,
+  type BillingLifecyclePort,
+  type BillingResource,
+} from './lifecycle-port.js';
+export {
   MemoryProductUsageLedger,
   type ProductUsageLedger,
   type RefundProductUsageInput,
@@ -23,6 +33,11 @@ export {
   type BuildProviderCostSnapshotInput,
 } from './provider-cost-snapshot.js';
 export {
+  PostgresProductBillingRepository,
+  type ProductBillingRepository,
+  type ProductBillingTransaction,
+} from './postgres-repository.js';
+export {
   ProductQuoteService,
   type ConfirmQuoteInput,
   type DispatchQuoteInput,
@@ -31,3 +46,13 @@ export {
   type SettleQuoteInput,
   type TrustedUsageEvidence,
 } from './quote-service.js';
+export {
+  CatalogProductQuoteAuthority,
+  publicProductQuoteOperations,
+  toPublicProductQuoteSnapshot,
+  type ProductPricingCatalogPort,
+  type PublicProductQuoteSnapshot,
+  type ProductQuoteAuthority,
+  type PublicProductQuoteIntent,
+  type PublicProductQuoteOperation,
+} from './server-quote-authority.js';

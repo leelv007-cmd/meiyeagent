@@ -94,6 +94,8 @@ function revisionFor(input: BuildProductQuoteInput): string {
         catalogModelId: input.catalogModelId,
         catalogModelRevision: input.catalogModelRevision,
         minChargeSeconds: input.minChargeSeconds,
+        outputCount: input.outputCount,
+        outputLabel: input.outputLabel,
         quotePolicyRevision: input.quotePolicyRevision,
         roundingStepSeconds: input.roundingStepSeconds,
         targetSeconds: input.targetSeconds,
@@ -109,6 +111,12 @@ function usageIdFor(taskId: string, quoteId: string): string {
     .update(`${taskId}:${quoteId}`)
     .digest('hex')
     .slice(0, 20)}`;
+}
+
+/** Server policy registry. Unknown policy revisions fail safe at any paid quote. */
+function extraConfirmThresholdFor(quotePolicyRevision: string) {
+  if (quotePolicyRevision === 'quote.policy@1') return 20;
+  return Number.EPSILON;
 }
 
 export class ProductQuoteService {
@@ -153,6 +161,24 @@ export class ProductQuoteService {
       throw new P1DomainError(
         'INVALID_STATE',
         'unitRate must be a finite non-negative number.',
+      );
+    }
+    if (
+      input.outputCount !== undefined &&
+      (!Number.isSafeInteger(input.outputCount) || input.outputCount < 1)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'outputCount must be a positive integer.',
+      );
+    }
+    if (
+      input.outputLabel !== undefined &&
+      input.outputLabel.trim().length === 0
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'outputLabel must be a non-empty string.',
       );
     }
     if (
@@ -213,7 +239,16 @@ export class ProductQuoteService {
         ? { catalogModelRevision: input.catalogModelRevision }
         : {}),
       quotePolicyRevision: input.quotePolicyRevision,
+      extraConfirmThreshold: extraConfirmThresholdFor(
+        input.quotePolicyRevision,
+      ),
       billingMode: input.billingMode,
+      ...(input.outputCount !== undefined
+        ? { outputCount: input.outputCount }
+        : {}),
+      ...(input.outputLabel
+        ? { outputLabel: input.outputLabel.trim() }
+        : {}),
       formula: {
         unitRate: input.unitRate,
         ...(input.currency ? { currency: input.currency } : {}),
@@ -262,6 +297,30 @@ export class ProductQuoteService {
     const quoteId = this.taskIndex.get(taskId);
     if (!quoteId) return null;
     return this.getQuote(quoteId);
+  }
+
+  /** Hydrates a transaction-local service from a durable repository snapshot. */
+  restoreState(input: {
+    quote: ProductQuoteSnapshot;
+    usage?: ProductUsageRecord | null;
+    providerCosts?: ProviderCostSnapshot[];
+  }) {
+    this.quotes.set(input.quote.quoteId, structuredClone(input.quote));
+    if (input.quote.taskId) {
+      this.taskIndex.set(input.quote.taskId, input.quote.quoteId);
+    }
+    if (input.usage) {
+      if (!this.usage.restore) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'The configured ProductUsage ledger cannot restore durable state.',
+        );
+      }
+      this.usage.restore(structuredClone(input.usage));
+    }
+    for (const cost of input.providerCosts ?? []) {
+      this.providerCosts.save(structuredClone(cost));
+    }
   }
 
   confirm(input: ConfirmQuoteInput): ProductQuoteSnapshot {

@@ -41,6 +41,7 @@ export interface AsyncTaskSummary {
   source: 'creative' | 'canvas' | 'video_workflow';
   status: AsyncTaskStatus;
   updatedAt: string;
+  workId?: string;
 }
 
 type ComposedVideoJobStatus = Exclude<
@@ -160,6 +161,7 @@ export function canonicalAsyncTaskSummaries(
           source: 'creative',
           status: job.status,
           updatedAt: job.updatedAt,
+          workId: job.workId,
         },
       ];
     }),
