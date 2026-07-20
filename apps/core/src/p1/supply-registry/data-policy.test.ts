@@ -72,10 +72,29 @@ test('medical/medical-health is content sensitivity, not D-025 medical beauty ca
 });
 
 test('dataClass hard filter negative: restricted class into non-whitelist Deployment is rejected', () => {
-  // Overseas has no face whitelist → reject contains_face.
+  // F-G-03: restricted without DataPolicy fails closed before thin whitelist.
+  const faceOverseasMissing = evaluateDataPolicyHardFilter({
+    deployment: overseas,
+    requestedDataClasses: ['contains_face'],
+  });
+  assert.equal(faceOverseasMissing.allowed, false);
+  assert.ok(
+    faceOverseasMissing.reasons.includes(
+      'data_policy_missing_for_restricted_class',
+    ),
+  );
+
+  // With DataPolicy present, overseas face whitelist still rejects contains_face.
   const faceOverseas = evaluateDataPolicyHardFilter({
     deployment: overseas,
     requestedDataClasses: ['contains_face'],
+    dataPolicy: {
+      sourceTrustLevel: 'contract_attested',
+      processingRegion: 'overseas',
+      allowedDataClasses: ['public'],
+      dualApprovalRequiredFor: [],
+    },
+    dataPolicyRevisionId: 'dp-overseas',
   });
   assert.equal(faceOverseas.allowed, false);
   assert.ok(faceOverseas.reasons.includes('data_class_disallowed'));

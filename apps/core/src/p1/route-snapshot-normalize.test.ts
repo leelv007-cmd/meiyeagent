@@ -418,7 +418,8 @@ describe('RouteSnapshot four-shape normalization (S2b)', () => {
 
     assert.equal(checkpoint.id, 'route-ms-1');
     assert.equal(checkpoint.catalogRevision, 'catalog-ms-9');
-    assert.equal(checkpoint.policyRevision, 'policy-video-v1');
+    // F-S2-01: ledger prefers routePolicyRevisionId over deployment policyRevision.
+    assert.equal(checkpoint.policyRevision, 'route-policy-video-v7');
     assert.equal(checkpoint.priceRevision, 'price-video-v2');
     assert.equal(checkpoint.fallbackConsent, true);
     assert.equal(checkpoint.allowedCandidates.length, 2);
