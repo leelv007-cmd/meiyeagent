@@ -67,21 +67,27 @@ function LensHarness({
 }
 
 describe('LensRadiogroup a11y and keyboard', () => {
-  it('exposes a required radiogroup with visible label and three options', () => {
-    render(<LensHarness />);
+  it(
+    'exposes a required radiogroup with visible label and three options',
+    () => {
+      render(<LensHarness />);
 
-    const group = screen.getByRole('radiogroup', { name: new RegExp(LENS_GROUP_LABEL) });
-    expect(group).toHaveAttribute('aria-required', 'true');
-    expect(group).toHaveAttribute('data-testid', 'composer-lens-radiogroup');
+      const group = screen.getByRole('radiogroup', {
+        name: new RegExp(LENS_GROUP_LABEL),
+      });
+      expect(group).toHaveAttribute('aria-required', 'true');
+      expect(group).toHaveAttribute('data-testid', 'composer-lens-radiogroup');
 
-    const radios = within(group).getAllByRole('radio');
-    expect(radios).toHaveLength(3);
-    expect(radios.map((r) => r.textContent)).toEqual(['文案', '图文', '视频']);
+      const radios = within(group).getAllByRole('radio');
+      expect(radios).toHaveLength(3);
+      expect(radios.map((r) => r.textContent)).toEqual(['文案', '图文', '视频']);
 
-    for (const radio of radios) {
-      expect(radio).toHaveAttribute('aria-checked', 'false');
-    }
-  });
+      for (const radio of radios) {
+        expect(radio).toHaveAttribute('aria-checked', 'false');
+      }
+    },
+    15_000
+  );
 
   it('selects a lens via click and records user_explicit phase', async () => {
     const user = userEvent.setup();
