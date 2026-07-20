@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,13 +31,14 @@ export const Route = createFileRoute('/admin/integrations')({
   component: IntegrationsPage,
 });
 
-function IntegrationsPage() {
+export function IntegrationsPage() {
   return (
     <AdminRoutePage
       title={admin_integrations_title()}
       description={admin_integrations_description()}
     >
       <div className="space-y-6">
+        <CapabilityDrilldownBanner pageId="integrations" />
         <DouyinIntegrationEvidence />
         <AdminProviderCredentialControl />
         <AdminFeishuToolControl />

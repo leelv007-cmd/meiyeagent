@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import {
   admin_title,
   admin_users_description,
@@ -11,7 +12,7 @@ export const Route = createFileRoute('/admin/users')({
   component: AdminUsersPage,
 });
 
-function AdminUsersPage() {
+export function AdminUsersPage() {
   const breadcrumbs = [
     { label: admin_title(), isCurrentPage: false },
     { label: admin_users_title(), isCurrentPage: true },
@@ -31,7 +32,10 @@ function AdminUsersPage() {
                   {admin_users_description()}
                 </p>
               </div>
-              <AdminUsersContent />
+              <div className="space-y-4">
+                <CapabilityDrilldownBanner pageId="users" />
+                <AdminUsersContent />
+              </div>
             </div>
           </div>
         </div>

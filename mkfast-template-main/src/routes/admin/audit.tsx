@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -55,17 +56,22 @@ import { createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/admin/audit')({ component: AuditPage });
 
-function AuditPage() {
+export function AuditPage() {
   return (
     <AdminRoutePage
       title={admin_audit_title()}
       description={admin_audit_description()}
     >
       <div className="space-y-8">
+        <CapabilityDrilldownBanner pageId="audit" />
         <AdminMerchantSupport />
         <AdminByokAuditProjection />
         <AdminAuditControl />
-        <section className="space-y-4 border-t pt-6">
+        <section
+          className="space-y-4 border-t pt-6"
+          data-testid="runtime-governance-health"
+          data-domain="runtime_and_governance"
+        >
           <h2 className="text-lg font-semibold">
             {admin_health_evidence_title()}
           </h2>

@@ -6,6 +6,8 @@ export * from './p1.js';
 export * from './content-package.js';
 export * from './editing-context.js';
 export * from './uiux.js';
+export * from './capability-registry.js';
+export * from './capability-inventory.js';
 
 export interface ApiMeta {
   correlationId: string;

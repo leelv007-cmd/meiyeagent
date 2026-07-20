@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { AdminTemplateControl } from '@/p1/admin-template-control';
 import { createFileRoute } from '@tanstack/react-router';
@@ -10,13 +11,16 @@ export const Route = createFileRoute('/admin/templates')({
   component: TemplatesPage,
 });
 
-function TemplatesPage() {
+export function TemplatesPage() {
   return (
     <AdminRoutePage
       title={admin_templates_title()}
       description={admin_templates_description()}
     >
-      <AdminTemplateControl />
+      <div className="space-y-4">
+        <CapabilityDrilldownBanner pageId="templates" />
+        <AdminTemplateControl />
+      </div>
     </AdminRoutePage>
   );
 }
