@@ -7,7 +7,7 @@
  *
  * Fairness contract: under contention, no single product account monopolizes
  * the shared supply-account slots when peers have waiting work (weighted
- * round-robin by queuePriority, higher priority served first within a turn).
+ * round-robin by queuePriority without starving a continuously waiting peer).
  */
 
 import { P1DomainError } from '../foundation/domain.js';
@@ -27,21 +27,19 @@ export type FairQueueDequeueResult =
 
 /**
  * In-memory fair queue scoped to one supply account.
- * Weighted round-robin: accounts ordered by max waiting priority, then
- * oldest enqueuedAt; after a dequeue the account rotates to the back of
- * its priority band so peers are not starved.
+ * Weighted fair queue: an account with priority N receives N + 1 service
+ * tickets per round. The candidate with the lowest next normalized service
+ * count wins, so higher priorities receive proportionally more turns while a
+ * continuously waiting low-priority account still advances.
  */
 export class SupplyAccountFairQueue {
   private readonly waiting: FairQueueEntry[] = [];
-  private readonly recentServed: string[] = [];
-  private readonly maxRecent: number;
+  private readonly serviceCounts = new Map<string, number>();
 
   constructor(
     readonly supplyAccountId: string,
-    options?: { maxRecentServed?: number }
-  ) {
-    this.maxRecent = options?.maxRecentServed ?? 64;
-  }
+    _options?: { maxRecentServed?: number }
+  ) {}
 
   enqueue(input: {
     requestId: string;
@@ -60,10 +58,7 @@ export class SupplyAccountFairQueue {
         'Fair queue entry requires requestId, productAccountId, and workspaceId.'
       );
     }
-    if (
-      !Number.isInteger(input.queuePriority) ||
-      input.queuePriority < 0
-    ) {
+    if (!Number.isInteger(input.queuePriority) || input.queuePriority < 0) {
       throw new P1DomainError(
         'INVALID_STATE',
         'queuePriority must be a non-negative integer.'
@@ -96,18 +91,12 @@ export class SupplyAccountFairQueue {
 
   /**
    * Dequeue next request under fair-share rules:
-   * 1. Prefer higher queuePriority.
-   * 2. Among equal priority, prefer product accounts not recently served.
+   * 1. Prefer the lowest (serviceCount + 1) / (queuePriority + 1).
+   * 2. At an exact ticket boundary, prefer the higher priority.
    * 3. Tie-break by enqueuedAt ASC (FIFO within account fairness).
    */
   dequeue(): FairQueueDequeueResult {
     if (this.waiting.length === 0) return { status: 'empty' };
-
-    const recentRank = new Map<string, number>();
-    this.recentServed.forEach((accountId, index) => {
-      // More recent = higher index = less preferred for next turn.
-      recentRank.set(accountId, index);
-    });
 
     let bestIndex = 0;
     for (let i = 1; i < this.waiting.length; i += 1) {
@@ -115,7 +104,7 @@ export class SupplyAccountFairQueue {
         compareFairQueueOrder(
           this.waiting[i]!,
           this.waiting[bestIndex]!,
-          recentRank
+          this.serviceCounts
         ) < 0
       ) {
         bestIndex = i;
@@ -125,10 +114,10 @@ export class SupplyAccountFairQueue {
     const [entry] = this.waiting.splice(bestIndex, 1);
     if (!entry) return { status: 'empty' };
 
-    this.recentServed.push(entry.productAccountId);
-    if (this.recentServed.length > this.maxRecent) {
-      this.recentServed.shift();
-    }
+    this.serviceCounts.set(
+      entry.productAccountId,
+      (this.serviceCounts.get(entry.productAccountId) ?? 0) + 1
+    );
 
     return { status: 'dequeued', entry: structuredClone(entry) };
   }
@@ -154,16 +143,17 @@ export class SupplyAccountFairQueue {
 export function compareFairQueueOrder(
   left: FairQueueEntry,
   right: FairQueueEntry,
-  recentRank: ReadonlyMap<string, number>
+  serviceCounts: ReadonlyMap<string, number>
 ): number {
+  const leftWeight = left.queuePriority + 1;
+  const rightWeight = right.queuePriority + 1;
+  const leftNextCount = (serviceCounts.get(left.productAccountId) ?? 0) + 1;
+  const rightNextCount = (serviceCounts.get(right.productAccountId) ?? 0) + 1;
+  const normalizedComparison =
+    leftNextCount * rightWeight - rightNextCount * leftWeight;
+  if (normalizedComparison !== 0) return normalizedComparison;
   if (left.queuePriority !== right.queuePriority) {
     return right.queuePriority - left.queuePriority;
-  }
-  const leftRecent = recentRank.get(left.productAccountId) ?? -1;
-  const rightRecent = recentRank.get(right.productAccountId) ?? -1;
-  if (leftRecent !== rightRecent) {
-    // Lower recent rank (older / never) wins.
-    return leftRecent - rightRecent;
   }
   const byTime = Date.parse(left.enqueuedAt) - Date.parse(right.enqueuedAt);
   if (byTime !== 0) return byTime;

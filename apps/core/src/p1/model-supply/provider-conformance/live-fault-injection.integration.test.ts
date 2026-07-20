@@ -1,129 +1,183 @@
 /**
- * Env-gated live MP-08 fault-injection matrix (I4 / provider-live gate).
+ * Env-gated MP-04T/I/V + MP-08 live provider gate.
  *
- * Open gate: RUN_PROVIDER_LIVE_FAULT_INJECTION=1
- * Optional cost cap: PROVIDER_LIVE_COST_CAP_USD (default 1.0)
- *
- * Live path currently validates dual-channel readiness evidence + recorded
- * matrix parity when credentials are present. Full destructive live inject
- * (force 401 on real primary) is opt-in via RUN_PROVIDER_LIVE_DESTRUCTIVE=1
- * and still routes through the same router so reconcile/no-resubmit holds.
- *
- * Does NOT run under core-persistence — use .github/workflows/provider-live.yml.
+ * Unlike the recorded unit matrix, this file first executes the production
+ * OpenAI-compatible, Ark and Tuzi adapters. Only successful provider receipts
+ * may become live_verified evidence. A paid success receipt is not reused as
+ * fake fault evidence: the release gate remains blocked until a real transport
+ * injector executes switch/no-resubmit/drain/replay scenarios.
  */
 import assert from 'node:assert/strict';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
-  createFaultInjectionHarnessForModality,
-  evaluateMultiChannelPublishGate,
-  matrixModelsForOperation,
-  qualifiedDeployment,
-  runFaultInjectionMatrix,
-  CORE_FAULT_INJECTION_OPERATIONS,
-  type FaultInjectionModality,
-} from './fault-injection/index.js';
+  probeLiveProviderChannel,
+  resolveLiveProviderChannels,
+  type ResolvedLiveProviderChannel,
+} from './live-provider-adapters.js';
+import {
+  runLiveProviderGate,
+  type LiveProviderLifecycleEvidence,
+  type LiveTransportFaultEvidence,
+} from './live-provider-gate.js';
+
+interface ExternalEvidenceBundle {
+  lifecycleEvidence?: LiveProviderLifecycleEvidence[];
+  transportFaultEvidence?: LiveTransportFaultEvidence[];
+}
 
 function env(name: string): string | undefined {
   const value = process.env[name]?.trim();
-  return value ? value : undefined;
+  return value || undefined;
 }
 
 const liveEnabled = env('RUN_PROVIDER_LIVE_FAULT_INJECTION') === '1';
+const requireAll = env('PROVIDER_LIVE_REQUIRE_ALL') === '1';
 const costCap = Number(env('PROVIDER_LIVE_COST_CAP_USD') ?? '1');
-
-function hasAnyCredentialHint(hints: readonly string[]): boolean {
-  return hints.some((name) => Boolean(env(name)));
-}
-
-function modalityForOperation(
-  operation: (typeof CORE_FAULT_INJECTION_OPERATIONS)[number],
-): FaultInjectionModality {
-  if (operation === 'copy.generate') return 'llm';
-  if (operation === 'image.generate') return 'image';
-  return 'video';
-}
+const resolution = resolveLiveProviderChannels();
+const missingSummary = resolution.missingByChannel
+  .map(
+    (entry) =>
+      `${entry.operation}/${entry.channelKind}: ${entry.missing.join(', ')}`,
+  )
+  .join('; ');
+const liveSkip = !liveEnabled
+  ? 'RUN_PROVIDER_LIVE_FAULT_INJECTION=1 is required (spends provider quota)'
+  : resolution.missingByChannel.length > 0 && !requireAll
+    ? `missing live provider configuration: ${missingSummary}`
+    : false;
 
 test(
-  'live gate: dual-channel matrix models present for three core operations',
-  { skip: !liveEnabled },
-  () => {
-    assert.ok(Number.isFinite(costCap) && costCap > 0, 'cost cap must be > 0');
-    for (const operation of CORE_FAULT_INJECTION_OPERATIONS) {
-      const models = matrixModelsForOperation(operation);
-      assert.equal(models.length, 2, operation);
-      const kinds = new Set(models.map((m) => m.channelKind));
-      assert.ok(kinds.has('official_direct'));
-      assert.ok(kinds.has('upstream_reseller'));
-    }
+  'live MP-04T/I/V + MP-08: real adapters must not publish while conformance checks are blocked',
+  {
+    skip: liveSkip,
+    timeout: 45 * 60_000,
   },
-);
-
-test(
-  'live gate: recorded dual-channel matrix still green (parity under live workflow)',
-  { skip: !liveEnabled },
   async () => {
-    for (const modality of ['llm', 'image', 'video'] as const) {
-      const harness = createFaultInjectionHarnessForModality(modality);
-      harness.evidenceKind = 'recorded';
-      const report = await runFaultInjectionMatrix(harness);
+    assert.ok(Number.isFinite(costCap) && costCap > 0 && costCap <= 5);
+    assert.deepEqual(
+      resolution.missingByChannel,
+      [],
+      `protected provider-live workflow requires all six channels: ${missingSummary}`,
+    );
+    assert.equal(resolution.channels.length, 6);
+
+    const evidenceDirectory = env('PROVIDER_LIVE_EVIDENCE_DIR');
+    const evidencePath = evidenceDirectory
+      ? join(evidenceDirectory, 'provider-live-gate.json')
+      : undefined;
+    if (evidenceDirectory) await mkdir(evidenceDirectory, { recursive: true });
+    const externalEvidencePath = env(
+      'PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH',
+    );
+    const externalEvidence = externalEvidencePath
+      ? await loadExternalEvidence(externalEvidencePath)
+      : {};
+    const externalEvidenceCostReservationUsd = Number(
+      env('PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD') ?? '0',
+    );
+
+    const report = await runLiveProviderGate({
+      channels: resolution.channels,
+      costCapUsd: costCap,
+      externalEvidenceCostReservationUsd,
+      lifecycleEvidence: externalEvidence.lifecycleEvidence,
+      transportFaultEvidence: externalEvidence.transportFaultEvidence,
+      probe: async (channel) =>
+        probeLiveProviderChannel(channel as ResolvedLiveProviderChannel),
+      ...(evidencePath
+        ? {
+            onProbe: async (probes) =>
+              writeEvidence(evidencePath, {
+                complete: false,
+                probes,
+              }),
+          }
+        : {}),
+    });
+
+    // Persist failures too: the protected workflow uploads this artifact with
+    // `if: always()`, so a red gate still leaves truthful, redacted evidence.
+    if (evidencePath) await writeEvidence(evidencePath, report);
+
+    assert.equal(report.probes.length, 6);
+    for (const probe of report.probes) {
+      assert.equal(probe.adapterExecuted, true, probe.evidenceRef);
       assert.equal(
-        report.allPassed,
+        probe.providerCallSucceeded,
         true,
-        `${modality} matrix failed under live workflow`,
+        `${probe.evidenceRef}: ${probe.failureCode ?? 'unknown'} ${probe.failureMessage ?? ''}`,
       );
-    }
-  },
-);
-
-test(
-  'live gate: publish multi-channel ready only when both channel env credentials exist',
-  { skip: !liveEnabled },
-  () => {
-    for (const operation of CORE_FAULT_INJECTION_OPERATIONS) {
-      const models = matrixModelsForOperation(operation);
-      const deployments = models.map((model, index) => {
-        const live = hasAnyCredentialHint(model.credentialEnvHints);
-        return qualifiedDeployment({
-          deploymentId: `live-${operation}-${index}`,
-          catalogModelId: model.catalogModelId,
-          providerProfileId: model.providerProfileId,
-          executionChannelId: `ec-${model.channelKind}`,
-          channelKind: model.channelKind,
-          activationStatus: live ? 'live_verified' : 'documented',
-          manufacturer: model.manufacturer,
-          accountIdentity: `${model.providerProfileId}-acct`,
-          endpointFingerprint: `${model.modelEnv}:${model.providerModel}`,
-        });
-      });
-
-      const gate = evaluateMultiChannelPublishGate({
-        operation,
-        catalogModelId: models[0]?.catalogModelId ?? null,
-        deployments,
-        requireLiveVerified: true,
-      });
-
-      const bothLive = deployments.every(
-        (d) => d.activationStatus === 'live_verified',
-      );
-      if (bothLive) {
-        assert.equal(
-          gate.multiChannelReady,
-          true,
-          `${operation} should be multi_channel_ready when both envs present`,
-        );
-      } else {
-        // Honest: missing credentials → cannot claim multi-channel ready.
-        assert.equal(
-          gate.multiChannelReady,
-          false,
-          `${operation} must not claim multi-channel ready without dual live evidence`,
-        );
+      assert.equal(probe.acceptance, 'accepted', probe.evidenceRef);
+      assert.ok(probe.providerTaskRef, probe.evidenceRef);
+      assert.equal(probe.lifecycle.submitted, true, probe.evidenceRef);
+      if (probe.modality === 'llm') {
+        assert.ok((probe.providerCost.usage?.inputTokens ?? 0) > 0);
+        assert.ok((probe.providerCost.usage?.outputTokens ?? 0) > 0);
       }
-
-      // Cost cap is enforced at workflow level; assert it's visible here.
-      assert.ok(costCap <= 50, 'provider-live cost cap sanity bound');
-      void modalityForOperation(operation);
+      if (probe.modality === 'image' || probe.modality === 'video') {
+        assert.equal(probe.lifecycle.recovered, true, probe.evidenceRef);
+        assert.equal(probe.lifecycle.pollStatus, 'completed', probe.evidenceRef);
+        assert.equal(probe.lifecycle.downloaded, true, probe.evidenceRef);
+        assert.ok((probe.lifecycle.downloadedBytes ?? 0) > 0);
+        assert.match(probe.lifecycle.assetSha256 ?? '', /^[a-f0-9]{64}$/u);
+        assert.ok((probe.providerCost.usage?.mediaUnits ?? 0) > 0);
+        if (probe.modality === 'video') {
+          assert.ok((probe.providerCost.usage?.outputTokens ?? 0) > 0);
+        }
+      }
     }
+
+    assert.equal(report.activationEvidence.length, 6);
+    assert.ok(
+      report.activationEvidence.every(
+        (evidence) => evidence.activationStatus === 'live_verified',
+      ),
+    );
+    assert.deepEqual(
+      report.blockedChecks,
+      [],
+      `provider-live gate remains blocked: ${JSON.stringify(report.blockedChecks)}`,
+    );
+    assert.equal(report.publishGates.length, 3);
+    assert.ok(report.publishGates.every((gate) => gate.multiChannelReady));
+    assert.deepEqual(report.skippedOperations, []);
+    assert.equal(report.liveMatrixReports.length, 3);
+    assert.ok(
+      report.liveMatrixReports.every(
+        (matrix) =>
+          matrix.evidenceKind === 'live_provider' &&
+          matrix.allPassed &&
+          matrix.dualChannelReady &&
+          matrix.scenarios.length === 5,
+      ),
+    );
+    assert.ok(report.externalEvidenceRefs.length > 0);
   },
 );
+
+async function writeEvidence(path: string, value: unknown): Promise<void> {
+  const temporaryPath = `${path}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  await rename(temporaryPath, path);
+}
+
+async function loadExternalEvidence(
+  path: string,
+): Promise<ExternalEvidenceBundle> {
+  let source: string;
+  try {
+    source = await readFile(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw error;
+  }
+  const parsed: unknown = JSON.parse(source);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Provider live external evidence must be a JSON object.');
+  }
+  return parsed as ExternalEvidenceBundle;
+}

@@ -59,6 +59,8 @@ export interface SupplyExecutionChannel {
   region: 'domestic' | 'overseas' | string;
   protocolFamily?: string;
   accountOwnership: 'platform' | 'workspace_byok' | 'provider_managed';
+  /** Persisted control-plane lifecycle CAS revision, independent of catalog revisionId. */
+  lifecycleRevision?: string;
   revisionId: string;
 }
 
@@ -83,6 +85,10 @@ export interface SupplyDeployment {
   dataPolicyRevisionId?: string;
   priceRevisionId?: string;
   credentialAccountId?: string;
+  /** Opaque stable upstream account fingerprint used to collapse credential aliases. */
+  accountIdentity?: string;
+  /** Opaque stable endpoint/fault-domain fingerprint used to collapse endpoint aliases. */
+  endpointFingerprint?: string;
   activationEvidence?: {
     status: ActivationEvidenceStatus;
     verifiedAt?: string;
@@ -211,8 +217,11 @@ export interface CanonicalRouteCandidate {
   credentialVersion?: string;
   providerProfileId?: string;
   executionChannelId?: string;
+  accountIdentity?: string;
+  endpointFingerprint?: string;
   providerModel?: string;
   endpointRevision?: string;
+  dataPolicyRevisionId?: string;
   lifecycleRevision?: string;
   policyRevision?: string;
   priceRevision?: string;
@@ -258,6 +267,8 @@ export interface CanonicalRouteSnapshot {
    */
   fallbackChain?: string[];
   fallbackConsent?: boolean;
+  maxAttempts?: number;
+  fallbackAuthorized?: boolean;
   sourceKind?: SupplyChannelKind;
   selectionMode?: 'fixed' | 'llm_auto' | 'auto';
   primaryDataClass?: string;

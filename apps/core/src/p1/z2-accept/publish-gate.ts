@@ -94,7 +94,7 @@ export function evaluateMultiChannelPublishGate(
   } else if (independentFaultDomainCount >= 2) {
     honestClaim = 'multi_channel_ready';
   } else if (qualifiedCount >= 1) {
-    honestClaim = 'single_channel';
+    honestClaim = input.claim === 'no_fallback' ? 'no_fallback' : 'single_channel';
   } else {
     honestClaim = 'not_verified';
   }

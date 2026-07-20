@@ -95,6 +95,7 @@ export {
 export {
   specializeCredentialAccount,
   createCredentialAccount,
+  PLATFORM_CREDENTIAL_WORKSPACE_ID,
   toPublicMetadata,
   assertNoSecretEcho,
   type CredentialAccount,
@@ -124,6 +125,7 @@ export {
   type AssembleCredentialRequest,
   type AssembledCredential,
   type CredentialSecretBrokerPort,
+  type CredentialConnectivityTestBrokerPort,
   type CredentialAccountDirectory,
   type NormalizedConnectivityTestResult,
 } from './secret-broker.js';
@@ -241,6 +243,48 @@ export {
   type AdapterBindingRecord,
   type CapabilityHotAssemblyPort,
 } from './hot-assembly.js';
+
+export {
+  PostgresEffectiveCapabilityRevisionStore,
+  PostgresSupplyControlPlaneRepository,
+} from './postgres-control-plane.js';
+
+export {
+  PLATFORM_SUPPLY_SCOPE_ID,
+  PostgresCapabilityHotAssemblyMigration,
+  PostgresCapabilityHotAssemblyPort,
+} from './postgres-hot-assembly.js';
+
+export {
+  PostgresHealthOverlayPort,
+  PostgresSupplyPlanningControlPlane,
+  PostgresSupplyPlanningMigration,
+} from './postgres-planning-control-plane.js';
+
+export {
+  AdminSupplyControlPlane,
+  type AdminSupplyGovernedActionDispatchRequest,
+  type AdminSupplyGovernedActionRequest,
+  type AdminSupplyGovernedDomainPort,
+  type AdminSupplyGovernedPorts,
+  type AdminSupplyIdempotencyPort,
+  type GovernedSupplyDispatchResult,
+  type GovernedSupplyImpactPreview,
+  type PendingAdminSupplyExecution,
+  type SupplyControlSnapshot,
+  type SupplyControlSnapshotPorts,
+} from './admin-control-plane.js';
+
+export {
+  createPostgresAdminSupplyControlPlane,
+  PostgresAdminSupplyMigration,
+  PostgresAdminSupplyStore,
+  PostgresCredentialRotationReceiptStore,
+  type CredentialRotationReceipt,
+  type CredentialRotationSecretBinding,
+  type CredentialRotationSecretVerifier,
+} from './postgres-admin-supply-runtime.js';
+export { ProductionAdminProviderEvidence } from './production-provider-evidence.js';
 
 // --- G5 DataPolicy + three-layer ranking -----------------------------
 

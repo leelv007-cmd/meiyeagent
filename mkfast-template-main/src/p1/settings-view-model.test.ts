@@ -661,4 +661,26 @@ describe('P1 settings view models', () => {
     ]);
     assert.equal(JSON.stringify(snapshots).includes('must-not-surface'), false);
   });
+
+  it('preserves the Core channel-readiness claim for merchant model cards', () => {
+    const catalog = normalizeCatalog(
+      {
+        models: [
+          {
+            activationEvidence: { status: 'live_verified' },
+            availability: 'available',
+            channelReadiness: 'single_channel',
+            displayName: 'Named Image Model',
+            id: 'named-image-model',
+            modality: 'image',
+            operations: ['image.generate'],
+            qualityRank: 1,
+          },
+        ],
+      },
+      'image.generate'
+    );
+
+    assert.equal(catalog.models[0]?.channelReadiness, 'single_channel');
+  });
 });

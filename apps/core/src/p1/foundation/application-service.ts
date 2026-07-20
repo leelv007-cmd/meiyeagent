@@ -279,8 +279,8 @@ export class P1ApplicationService {
       payloadHash(input),
       async (store) => {
         await this.authorizeOwner(store, context);
-        if (!Number.isInteger(input.amount) || input.amount === 0) {
-          throw new P1DomainError('INVALID_STATE', 'Usage amount must be a non-zero integer.');
+        if (!Number.isFinite(input.amount) || input.amount === 0) {
+          throw new P1DomainError('INVALID_STATE', 'Usage amount must be a finite non-zero number.');
         }
         if (input.action !== 'adjust' && input.amount < 0) {
           throw new P1DomainError('INVALID_STATE', 'Usage amount must be positive.');
@@ -310,7 +310,11 @@ export class P1ApplicationService {
           const reservation = events.find(
             (event) => event.action === 'reserve' && event.reservationId === input.reservationId
           );
-          if (!reservation || reservation.amount !== input.amount) {
+          const amountMatches =
+            input.action === 'commit'
+              ? input.amount >= 0 && input.amount <= (reservation?.amount ?? -1)
+              : reservation?.amount === input.amount;
+          if (!reservation || !amountMatches) {
             throw new P1DomainError('INVALID_STATE', 'Reservation does not match the terminal event.');
           }
           const existingTerminal = events.find(
@@ -1399,7 +1403,7 @@ export function projectUsage(events: UsageEvent[]): UsageProjection {
       .filter((event) =>
         event.action === 'commit' || event.action === 'refund' || event.action === 'expire'
       )
-      .map((event) => [event.reservationId, event.action])
+      .map((event) => [event.reservationId, event])
   );
   let reserved = 0;
   let committed = 0;
@@ -1407,8 +1411,11 @@ export function projectUsage(events: UsageEvent[]): UsageProjection {
   for (const event of events) {
     if (event.action !== 'reserve' || !event.reservationId) continue;
     const terminal = terminals.get(event.reservationId);
-    if (terminal === 'commit') committed += event.amount;
-    else if (terminal === 'refund' || terminal === 'expire') {
+    if (terminal?.action === 'commit') {
+      committed += terminal.amount;
+      released += Math.max(0, event.amount - terminal.amount);
+    }
+    else if (terminal?.action === 'refund' || terminal?.action === 'expire') {
       released += event.amount;
     }
     else if (!terminal) reserved += event.amount;

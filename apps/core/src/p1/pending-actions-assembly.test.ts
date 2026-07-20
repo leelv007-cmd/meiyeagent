@@ -50,8 +50,9 @@ test('pending-actions assembles and lists without harness runtime', async () => 
   });
 
   assert.equal(actions.length, 1);
-  assert.equal(actions[0]?.kind, 'approval');
-  assert.equal(actions[0]?.taskId, 'task-1');
+  assert.ok(actions[0] && 'kind' in actions[0]);
+  assert.equal(actions[0].kind, 'approval');
+  assert.equal(actions[0].taskId, 'task-1');
 });
 
 test('pending-actions empty question reader yields approval-only inbox without harness', async () => {

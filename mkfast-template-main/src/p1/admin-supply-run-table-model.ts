@@ -9,7 +9,9 @@ import type { SupplyDataClass, SupplyOperation } from '@meiye/contracts';
 import { buildDefaultSupplyControlSnapshot } from './admin-supply-fixture';
 import type {
   SupplyControlSnapshot,
+  SupplyRunQuery,
   SupplyRunRecord,
+  SupplyRunSortField,
 } from './admin-supply-types';
 
 export const RUN_TABLE_SORT_FIELDS = [
@@ -20,24 +22,10 @@ export const RUN_TABLE_SORT_FIELDS = [
   'costMicros',
 ] as const;
 
-export type RunTableSortField = (typeof RUN_TABLE_SORT_FIELDS)[number];
+export type RunTableSortField = SupplyRunSortField;
 export type RunTableSortDir = 'asc' | 'desc';
 
-export interface SupplyRunTableUrlState {
-  page: number;
-  pageSize: number;
-  sort: RunTableSortField;
-  dir: RunTableSortDir;
-  operation?: SupplyOperation;
-  status?: SupplyRunRecord['status'];
-  modality?: SupplyRunRecord['modality'];
-  channelKind?: SupplyRunRecord['channelKind'];
-  catalogModelId?: string;
-  deploymentId?: string;
-  dataClass?: SupplyDataClass;
-  q?: string;
-  taskId?: string;
-}
+export interface SupplyRunTableUrlState extends SupplyRunQuery {}
 
 export const DEFAULT_RUN_TABLE_URL_STATE: SupplyRunTableUrlState = {
   page: 1,
@@ -66,7 +54,7 @@ const SORT_SET = new Set<string>(RUN_TABLE_SORT_FIELDS);
 
 function parsePositiveInt(
   raw: string | null | undefined,
-  fallback: number,
+  fallback: number
 ): number {
   if (raw == null || raw === '') return fallback;
   const n = Number.parseInt(raw, 10);
@@ -76,14 +64,15 @@ function parsePositiveInt(
 
 /** Parse run-table URL state from URLSearchParams or plain record. */
 export function parseRunTableUrlState(
-  input: URLSearchParams | Record<string, string | undefined | null>,
+  input: URLSearchParams | Record<string, string | undefined | null>
 ): SupplyRunTableUrlState {
   const get =
     input instanceof URLSearchParams
       ? (key: string) => input.get(key)
       : (key: string) => input[key] ?? null;
 
-  const sortRaw = get(RUN_TABLE_URL_KEYS.sort) ?? DEFAULT_RUN_TABLE_URL_STATE.sort;
+  const sortRaw =
+    get(RUN_TABLE_URL_KEYS.sort) ?? DEFAULT_RUN_TABLE_URL_STATE.sort;
   const sort = SORT_SET.has(sortRaw)
     ? (sortRaw as RunTableSortField)
     : DEFAULT_RUN_TABLE_URL_STATE.sort;
@@ -93,14 +82,14 @@ export function parseRunTableUrlState(
   const state: SupplyRunTableUrlState = {
     page: parsePositiveInt(
       get(RUN_TABLE_URL_KEYS.page),
-      DEFAULT_RUN_TABLE_URL_STATE.page,
+      DEFAULT_RUN_TABLE_URL_STATE.page
     ),
     pageSize: Math.min(
       100,
       parsePositiveInt(
         get(RUN_TABLE_URL_KEYS.pageSize),
-        DEFAULT_RUN_TABLE_URL_STATE.pageSize,
-      ),
+        DEFAULT_RUN_TABLE_URL_STATE.pageSize
+      )
     ),
     sort,
     dir,
@@ -131,7 +120,7 @@ export function parseRunTableUrlState(
 
 /** Serialize run-table state to URLSearchParams (omit defaults). */
 export function serializeRunTableUrlState(
-  state: SupplyRunTableUrlState,
+  state: SupplyRunTableUrlState
 ): URLSearchParams {
   const params = new URLSearchParams();
   if (state.page !== DEFAULT_RUN_TABLE_URL_STATE.page) {
@@ -146,7 +135,8 @@ export function serializeRunTableUrlState(
   if (state.dir !== DEFAULT_RUN_TABLE_URL_STATE.dir) {
     params.set(RUN_TABLE_URL_KEYS.dir, state.dir);
   }
-  if (state.operation) params.set(RUN_TABLE_URL_KEYS.operation, state.operation);
+  if (state.operation)
+    params.set(RUN_TABLE_URL_KEYS.operation, state.operation);
   if (state.status) params.set(RUN_TABLE_URL_KEYS.status, state.status);
   if (state.modality) params.set(RUN_TABLE_URL_KEYS.modality, state.modality);
   if (state.channelKind)
@@ -155,7 +145,8 @@ export function serializeRunTableUrlState(
     params.set(RUN_TABLE_URL_KEYS.catalogModelId, state.catalogModelId);
   if (state.deploymentId)
     params.set(RUN_TABLE_URL_KEYS.deploymentId, state.deploymentId);
-  if (state.dataClass) params.set(RUN_TABLE_URL_KEYS.dataClass, state.dataClass);
+  if (state.dataClass)
+    params.set(RUN_TABLE_URL_KEYS.dataClass, state.dataClass);
   if (state.q) params.set(RUN_TABLE_URL_KEYS.q, state.q);
   if (state.taskId) params.set(RUN_TABLE_URL_KEYS.taskId, state.taskId);
   return params;
@@ -163,7 +154,7 @@ export function serializeRunTableUrlState(
 
 /** Round-trip helper for tests and shareable links. */
 export function runTableStateToSearchString(
-  state: SupplyRunTableUrlState,
+  state: SupplyRunTableUrlState
 ): string {
   const params = serializeRunTableUrlState(state);
   const s = params.toString();
@@ -172,13 +163,14 @@ export function runTableStateToSearchString(
 
 export function filterSupplyRuns(
   runs: readonly SupplyRunRecord[],
-  state: SupplyRunTableUrlState,
+  state: SupplyRunTableUrlState
 ): SupplyRunRecord[] {
   return runs.filter((run) => {
     if (state.operation && run.operation !== state.operation) return false;
     if (state.status && run.status !== state.status) return false;
     if (state.modality && run.modality !== state.modality) return false;
-    if (state.channelKind && run.channelKind !== state.channelKind) return false;
+    if (state.channelKind && run.channelKind !== state.channelKind)
+      return false;
     if (state.catalogModelId && run.catalogModelId !== state.catalogModelId)
       return false;
     if (state.deploymentId && run.deploymentId !== state.deploymentId)
@@ -209,7 +201,7 @@ function compareRuns(
   a: SupplyRunRecord,
   b: SupplyRunRecord,
   sort: RunTableSortField,
-  dir: RunTableSortDir,
+  dir: RunTableSortDir
 ): number {
   const mul = dir === 'asc' ? 1 : -1;
   const av = a[sort];
@@ -225,7 +217,7 @@ function compareRuns(
 
 export function sortSupplyRuns(
   runs: readonly SupplyRunRecord[],
-  state: Pick<SupplyRunTableUrlState, 'sort' | 'dir'>,
+  state: Pick<SupplyRunTableUrlState, 'sort' | 'dir'>
 ): SupplyRunRecord[] {
   return [...runs].sort((a, b) => compareRuns(a, b, state.sort, state.dir));
 }
@@ -244,10 +236,10 @@ export interface SupplyRunTablePage {
   };
 }
 
-/** Apply facets + sort + pagination (server-pagination contract shape). */
+/** Fixture/reference query helper. Production consumes Core's server page. */
 export function querySupplyRunTable(
   runs: readonly SupplyRunRecord[],
-  state: SupplyRunTableUrlState,
+  state: SupplyRunTableUrlState
 ): SupplyRunTablePage {
   const filtered = filterSupplyRuns(runs, state);
   const sorted = sortSupplyRuns(filtered, state);
@@ -274,16 +266,21 @@ export function querySupplyRunTable(
 }
 
 export function buildSupplyRunTablePage(
-  snapshot: SupplyControlSnapshot = buildDefaultSupplyControlSnapshot(),
-  state: SupplyRunTableUrlState = DEFAULT_RUN_TABLE_URL_STATE,
+  snapshot: SupplyControlSnapshot = buildDefaultSupplyControlSnapshot()
 ): SupplyRunTablePage {
-  return querySupplyRunTable(snapshot.runs, state);
+  return {
+    state: structuredClone(snapshot.runPage.query),
+    total: snapshot.runPage.total,
+    totalPages: snapshot.runPage.totalPages,
+    rows: structuredClone(snapshot.runPage.rows),
+    facets: structuredClone(snapshot.runPage.facets),
+  };
 }
 
 /** Merge partial URL updates and reset page when filters change. */
 export function updateRunTableUrlState(
   current: SupplyRunTableUrlState,
-  patch: Partial<SupplyRunTableUrlState>,
+  patch: Partial<SupplyRunTableUrlState>
 ): SupplyRunTableUrlState {
   const next = { ...current, ...patch };
   const filterKeys: (keyof SupplyRunTableUrlState)[] = [
@@ -300,7 +297,7 @@ export function updateRunTableUrlState(
     'sort',
     'dir',
   ];
-  const filtersChanged = filterKeys.some((key) => patch[key] !== undefined);
+  const filtersChanged = filterKeys.some((key) => Object.hasOwn(patch, key));
   if (filtersChanged && patch.page === undefined) {
     next.page = 1;
   }

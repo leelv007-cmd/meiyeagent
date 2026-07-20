@@ -29,8 +29,61 @@ import type {
 import type {
   ActivationProbeRun,
   CanvasTextGenerationOutboxRecord,
+  ModelSupplyJobListPage,
+  ModelSupplyJobListQuery,
   PersistedCanvasGenerationQuote,
 } from './foundation-module.js';
+
+const JOB_OPERATION_SQL = `COALESCE(result->>'operation', 'copy.generate')`;
+const JOB_STATUS_SQL = `CASE
+  WHEN result->>'status' = 'completed' THEN 'succeeded'
+  WHEN result->>'status' = 'failed' THEN 'failed'
+  WHEN result #>> '{attempt,acceptance}' = 'accepted' THEN 'accepted'
+  WHEN result #>> '{attempt,acceptance}' = 'acceptance_unknown' THEN 'acceptance_unknown'
+  ELSE 'rejected_before_accept'
+END`;
+const JOB_MODALITY_SQL = `CASE
+  WHEN ${JOB_OPERATION_SQL} LIKE 'image.%' THEN 'image'
+  WHEN ${JOB_OPERATION_SQL} LIKE 'video.%' THEN 'video'
+  WHEN ${JOB_OPERATION_SQL} LIKE 'audio.%' THEN 'audio'
+  ELSE 'llm'
+END`;
+
+interface PersistedJobReadRow {
+  result: ModelSupplyResult;
+  ended_at: Date | string | null;
+  latency_ms: number | string | null;
+}
+
+function terminalJobTiming(result: ModelSupplyResult): {
+  endedAt: string | null;
+  latencyMs: number | null;
+} {
+  if (result.status === 'unknown') {
+    return { endedAt: null, latencyMs: null };
+  }
+  const endedAt = result.endedAt ?? new Date().toISOString();
+  const startedAtMs = Date.parse(result.attempt.createdAt);
+  const endedAtMs = Date.parse(endedAt);
+  return {
+    endedAt,
+    latencyMs: result.latencyMs ?? Math.max(0, endedAtMs - startedAtMs),
+  };
+}
+
+function projectPersistedJob(row: PersistedJobReadRow): ModelSupplyResult {
+  const endedAt = row.ended_at
+    ? row.ended_at instanceof Date
+      ? row.ended_at.toISOString()
+      : new Date(row.ended_at).toISOString()
+    : undefined;
+  const latencyMs = row.latency_ms == null ? undefined : Number(row.latency_ms);
+  return {
+    ...row.result,
+    ...(endedAt ? { endedAt } : {}),
+    ...(latencyMs !== undefined ? { latencyMs } : {}),
+  };
+}
 
 type StoredQualityEvaluationRunHeader = Omit<
   BeautyQualityEvaluationRun,
@@ -93,6 +146,31 @@ export class PostgresModelSupplyRepository {
         created_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (workspace_id, job_id)
       );
+      ALTER TABLE model_generation_jobs
+        ADD COLUMN IF NOT EXISTS ended_at timestamptz;
+      ALTER TABLE model_generation_jobs
+        ADD COLUMN IF NOT EXISTS latency_ms bigint;
+      UPDATE model_generation_jobs
+         SET ended_at = COALESCE(ended_at, created_at),
+             latency_ms = COALESCE(
+               latency_ms,
+               GREATEST(
+                 0,
+                 FLOOR(
+                   EXTRACT(
+                     EPOCH FROM (
+                       COALESCE(ended_at, created_at) -
+                       (result #>> '{attempt,createdAt}')::timestamptz
+                     )
+                   ) * 1000
+                 )::bigint
+               )
+             )
+       WHERE status IN ('completed', 'failed')
+         AND (ended_at IS NULL OR latency_ms IS NULL)
+         AND result #>> '{attempt,createdAt}' IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS model_generation_jobs_workspace_latency_idx
+        ON model_generation_jobs (workspace_id, latency_ms, job_id);
       CREATE TABLE IF NOT EXISTS model_canvas_generation_quotes (
         workspace_id text NOT NULL,
         quote_id text NOT NULL,
@@ -527,12 +605,23 @@ export class PostgresModelSupplyRepository {
   async saveResult(workspaceId: string, result: ModelSupplyResult) {
     // Denormalized read model only. Foundation owns RouteSnapshot, Attempt,
     // Asset, Product Usage and Provider Cost append-only facts.
+    const timing = terminalJobTiming(result);
     await this.pool.query(
-      `INSERT INTO model_generation_jobs (workspace_id, job_id, status, result)
-       VALUES ($1, $2, $3, $4::jsonb)
+      `INSERT INTO model_generation_jobs
+         (workspace_id, job_id, status, result, ended_at, latency_ms)
+       VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::bigint)
        ON CONFLICT (workspace_id, job_id)
-       DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result`,
-      [workspaceId, result.jobId, result.status, JSON.stringify(result)]
+       DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result,
+                     ended_at = COALESCE(model_generation_jobs.ended_at, EXCLUDED.ended_at),
+                     latency_ms = COALESCE(model_generation_jobs.latency_ms, EXCLUDED.latency_ms)`,
+      [
+        workspaceId,
+        result.jobId,
+        result.status,
+        JSON.stringify(result),
+        timing.endedAt,
+        timing.latencyMs,
+      ]
     );
   }
 
@@ -584,11 +673,20 @@ export class PostgresModelSupplyRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      const timing = terminalJobTiming(queued);
       await client.query(
-        `INSERT INTO model_generation_jobs (workspace_id, job_id, status, result)
-         VALUES ($1, $2, $3, $4::jsonb)
+        `INSERT INTO model_generation_jobs
+           (workspace_id, job_id, status, result, ended_at, latency_ms)
+         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::bigint)
          ON CONFLICT (workspace_id, job_id) DO NOTHING`,
-        [workspaceId, queued.jobId, queued.status, JSON.stringify(queued)],
+        [
+          workspaceId,
+          queued.jobId,
+          queued.status,
+          JSON.stringify(queued),
+          timing.endedAt,
+          timing.latencyMs,
+        ],
       );
       await client.query(
         `INSERT INTO model_canvas_text_generation_outbox
@@ -691,12 +789,23 @@ export class PostgresModelSupplyRepository {
         await client.query('ROLLBACK');
         return false;
       }
+      const timing = terminalJobTiming(input.result);
       await client.query(
-        `INSERT INTO model_generation_jobs (workspace_id, job_id, status, result)
-         VALUES ($1, $2, $3, $4::jsonb)
+        `INSERT INTO model_generation_jobs
+           (workspace_id, job_id, status, result, ended_at, latency_ms)
+         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::bigint)
          ON CONFLICT (workspace_id, job_id)
-         DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result`,
-        [workspaceId, input.result.jobId, input.result.status, JSON.stringify(input.result)],
+         DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result,
+                       ended_at = COALESCE(model_generation_jobs.ended_at, EXCLUDED.ended_at),
+                       latency_ms = COALESCE(model_generation_jobs.latency_ms, EXCLUDED.latency_ms)`,
+        [
+          workspaceId,
+          input.result.jobId,
+          input.result.status,
+          JSON.stringify(input.result),
+          timing.endedAt,
+          timing.latencyMs,
+        ],
       );
       await client.query('COMMIT');
       return true;
@@ -723,21 +832,137 @@ export class PostgresModelSupplyRepository {
   }
 
   async getJob(workspaceId: string, jobId: string) {
-    const result = await this.pool.query<{ result: ModelSupplyResult }>(
-      `SELECT result FROM model_generation_jobs
+    const result = await this.pool.query<PersistedJobReadRow>(
+      `SELECT result, ended_at, latency_ms FROM model_generation_jobs
         WHERE workspace_id = $1 AND job_id = $2`,
       [workspaceId, jobId]
     );
-    return result.rows[0]?.result ?? null;
+    return result.rows[0] ? projectPersistedJob(result.rows[0]) : null;
   }
 
-  async listJobs(workspaceId: string) {
-    const result = await this.pool.query<{ result: ModelSupplyResult }>(
-      `SELECT result FROM model_generation_jobs
-        WHERE workspace_id = $1 ORDER BY created_at DESC, job_id DESC`,
-      [workspaceId]
-    );
-    return result.rows.map((row) => row.result);
+  async listJobs(workspaceId: string): Promise<ModelSupplyResult[]>;
+  async listJobs(
+    workspaceId: string,
+    query: ModelSupplyJobListQuery
+  ): Promise<ModelSupplyJobListPage>;
+  async listJobs(
+    workspaceId: string,
+    query?: ModelSupplyJobListQuery
+  ): Promise<ModelSupplyResult[] | ModelSupplyJobListPage> {
+    if (!query) {
+      const result = await this.pool.query<PersistedJobReadRow>(
+        `SELECT result, ended_at, latency_ms FROM model_generation_jobs
+          WHERE workspace_id = $1 ORDER BY created_at DESC, job_id DESC`,
+        [workspaceId]
+      );
+      return result.rows.map(projectPersistedJob);
+    }
+
+    const page = Number.isInteger(query.page) && query.page > 0 ? query.page : 1;
+    const pageSize =
+      Number.isInteger(query.pageSize) && query.pageSize > 0
+        ? Math.min(query.pageSize, 100)
+        : 20;
+    const values: unknown[] = [workspaceId];
+    const where = ['workspace_id = $1'];
+    const bind = (value: unknown) => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+
+    if (query.operation) where.push(`${JOB_OPERATION_SQL} = ${bind(query.operation)}`);
+    if (query.status) where.push(`${JOB_STATUS_SQL} = ${bind(query.status)}`);
+    if (query.modality) where.push(`${JOB_MODALITY_SQL} = ${bind(query.modality)}`);
+    if (query.catalogModelId) {
+      where.push(`result #>> '{attempt,catalogModelId}' = ${bind(query.catalogModelId)}`);
+    }
+    if (query.deploymentId) {
+      where.push(`result #>> '{attempt,deploymentId}' = ${bind(query.deploymentId)}`);
+    }
+    if (query.deploymentIds) {
+      where.push(
+        query.deploymentIds.length === 0
+          ? 'FALSE'
+          : `result #>> '{attempt,deploymentId}' = ANY(${bind(query.deploymentIds)}::text[])`
+      );
+    }
+    if (query.dataClass) {
+      where.push(
+        query.dataClass === 'public'
+          ? `jsonb_array_length(COALESCE(result #> '{snapshot,dataClass}', '[]'::jsonb)) = 0`
+          : `COALESCE(result #> '{snapshot,dataClass}', '[]'::jsonb) ? ${bind(query.dataClass)}`
+      );
+    }
+    if (query.taskId) where.push(`job_id = ${bind(query.taskId)}`);
+    if (query.q) {
+      where.push(
+        `concat_ws(' ', job_id, result #>> '{attempt,id}', result #>> '{attempt,catalogModelId}', result #>> '{attempt,deploymentId}', result->>'failureCode') ILIKE ${bind(`%${query.q}%`)}`
+      );
+    }
+
+    const sortExpression: Record<ModelSupplyJobListQuery['sort'], string> = {
+      startedAt: `(result #>> '{attempt,createdAt}')::timestamptz`,
+      latencyMs: 'latency_ms',
+      status: JOB_STATUS_SQL,
+      operation: JOB_OPERATION_SQL,
+      costMicros: `(result #>> '{providerCost,amount}')::numeric`,
+    };
+    const direction = query.dir === 'asc' ? 'ASC' : 'DESC';
+    const predicate = where.join(' AND ');
+    const limit = bind(pageSize);
+    const offset = bind((page - 1) * pageSize);
+    const itemValues = [...values];
+    const countValues = values.slice(0, -2);
+
+    const [items, total, facetValues, dataClassValues] = await Promise.all([
+      this.pool.query<PersistedJobReadRow>(
+        `SELECT result, ended_at, latency_ms FROM model_generation_jobs
+          WHERE ${predicate}
+          ORDER BY ${sortExpression[query.sort]} ${direction} NULLS LAST, job_id ${direction}
+          LIMIT ${limit} OFFSET ${offset}`,
+        itemValues
+      ),
+      this.pool.query<{ total: string | number }>(
+        `SELECT count(*) AS total FROM model_generation_jobs WHERE ${predicate}`,
+        countValues
+      ),
+      this.pool.query<{
+        operations: string[] | null;
+        statuses: string[] | null;
+        modalities: string[] | null;
+      }>(
+        `SELECT array_agg(DISTINCT operation ORDER BY operation) AS operations,
+                array_agg(DISTINCT status ORDER BY status) AS statuses,
+                array_agg(DISTINCT modality ORDER BY modality) AS modalities
+           FROM (SELECT ${JOB_OPERATION_SQL} AS operation,
+                        ${JOB_STATUS_SQL} AS status,
+                        ${JOB_MODALITY_SQL} AS modality
+                   FROM model_generation_jobs WHERE workspace_id = $1) facets`,
+        [workspaceId]
+      ),
+      this.pool.query<{ data_class: string }>(
+        `SELECT DISTINCT COALESCE(classes.data_class, 'public') AS data_class
+           FROM model_generation_jobs jobs
+           LEFT JOIN LATERAL jsonb_array_elements_text(
+             COALESCE(jobs.result #> '{snapshot,dataClass}', '[]'::jsonb)
+           ) AS classes(data_class) ON TRUE
+          WHERE jobs.workspace_id = $1 ORDER BY data_class`,
+        [workspaceId]
+      ),
+    ]);
+    const facets = facetValues.rows[0];
+    return {
+      items: items.rows.map(projectPersistedJob),
+      total: Number(total.rows[0]?.total ?? 0),
+      page,
+      pageSize,
+      facets: {
+        operations: (facets?.operations ?? []) as ModelSupplyJobListPage['facets']['operations'],
+        statuses: (facets?.statuses ?? []) as ModelSupplyJobListPage['facets']['statuses'],
+        modalities: (facets?.modalities ?? []) as ModelSupplyJobListPage['facets']['modalities'],
+        dataClasses: dataClassValues.rows.map((row) => row.data_class) as ModelSupplyJobListPage['facets']['dataClasses'],
+      },
+    };
   }
 
   async saveQualityEvent(workspaceId: string, event: QualityEvent) {

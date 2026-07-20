@@ -23,6 +23,7 @@ import {
   ModelSupplyControlPlaneService,
   ModelSupplyFoundationModule,
 } from './foundation-module.js';
+import type { ModelSupplyResult } from './ledger-contracts.js';
 import {
   PersistentContentWorkflowRunner,
   PostgresModelSupplyRepository,
@@ -34,6 +35,57 @@ import {
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
+function persistedJob(input: {
+  jobId: string;
+  operation: 'copy.generate' | 'image.generate';
+  createdAt: string;
+  deploymentId: string;
+}): ModelSupplyResult {
+  const catalogModelId =
+    input.operation === 'image.generate' ? 'model-image' : 'model-copy';
+  const attempt = {
+    id: `attempt:${input.jobId}`,
+    jobId: input.jobId,
+    catalogModelId,
+    deploymentId: input.deploymentId,
+    acceptance: 'accepted' as const,
+    status: 'completed' as const,
+    createdAt: input.createdAt,
+  };
+  return {
+    jobId: input.jobId,
+    operation: input.operation,
+    status: 'completed',
+    snapshot: {
+      id: `snapshot:${input.jobId}`,
+      catalogRevisionId: 'catalog:r1',
+      requestedSelection: { mode: 'fixed' },
+      candidateCatalogModelIds: [catalogModelId],
+      actualCatalogModelId: catalogModelId,
+      deploymentId: input.deploymentId,
+      policyRevision: 'policy:r1',
+      priceRevision: 'price:r1',
+      credentialMode: 'platform',
+      credentialVersion: 'credential:r1',
+      fallbackConsent: false,
+      reason: 'fixed_selection',
+      dataClass: [],
+      createdAt: input.createdAt,
+    },
+    attempt,
+    attempts: [attempt],
+    usage: { id: `usage:${input.jobId}`, status: 'committed', quantity: 1 },
+    providerCost: {
+      id: `cost:${input.jobId}`,
+      status: 'observed',
+      amount: 0.01,
+      currency: 'CNY',
+      usage: {},
+    },
+    providerCosts: [],
+  };
+}
+
 describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST_DATABASE_URL is not configured' }, () => {
   const pool = new Pool({ connectionString: databaseUrl });
   const repository = new PostgresModelSupplyRepository(pool);
@@ -41,6 +93,8 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
   const otherWorkspaceId = `workspace-${randomUUID()}`;
   const qualityWorkspaceId = `workspace-${randomUUID()}`;
   const catalogCasWorkspaceId = `workspace-${randomUUID()}`;
+  const paginationWorkspaceId = `workspace-${randomUUID()}`;
+  const timingMigrationWorkspaceId = `workspace-${randomUUID()}`;
 
   before(async () => {
     await repository.migrate();
@@ -75,6 +129,8 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     await repository.deleteWorkspaceForTest(otherWorkspaceId);
     await repository.deleteWorkspaceForTest(qualityWorkspaceId);
     await repository.deleteWorkspaceForTest(catalogCasWorkspaceId);
+    await repository.deleteWorkspaceForTest(paginationWorkspaceId);
+    await repository.deleteWorkspaceForTest(timingMigrationWorkspaceId);
     await pool.end();
   });
 
@@ -148,6 +204,90 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
       await restarted.getActivationProbeRun(otherWorkspaceId, run.id),
       null,
     );
+  });
+
+  it('filters, sorts, and paginates generation jobs in PostgreSQL', async () => {
+    await Promise.all([
+      repository.saveResult(
+        paginationWorkspaceId,
+        persistedJob({
+          jobId: 'image-a-old',
+          operation: 'image.generate',
+          createdAt: '2026-07-20T01:00:00.000Z',
+          deploymentId: 'deployment-image-a',
+        }),
+      ),
+      repository.saveResult(
+        paginationWorkspaceId,
+        persistedJob({
+          jobId: 'copy-newest',
+          operation: 'copy.generate',
+          createdAt: '2026-07-20T03:00:00.000Z',
+          deploymentId: 'deployment-copy-a',
+        }),
+      ),
+      repository.saveResult(
+        paginationWorkspaceId,
+        persistedJob({
+          jobId: 'image-z-new',
+          operation: 'image.generate',
+          createdAt: '2026-07-20T02:00:00.000Z',
+          deploymentId: 'deployment-image-b',
+        }),
+      ),
+    ]);
+
+    const page = await repository.listJobs(paginationWorkspaceId, {
+      page: 1,
+      pageSize: 1,
+      sort: 'latencyMs',
+      dir: 'asc',
+      operation: 'image.generate',
+    });
+
+    assert.equal(page.total, 2);
+    assert.equal(page.items.length, 1);
+    assert.equal(page.items[0]?.jobId, 'image-z-new');
+    assert.equal(typeof page.items[0]?.endedAt, 'string');
+    assert.equal(typeof page.items[0]?.latencyMs, 'number');
+    assert.ok(Date.parse(page.items[0]?.endedAt ?? '') > Date.parse('2026-07-20T02:00:00.000Z'));
+    assert.ok((page.items[0]?.latencyMs ?? -1) > 0);
+    assert.deepEqual(page.facets.operations, [
+      'copy.generate',
+      'image.generate',
+    ]);
+  });
+
+  it('backfills durable timing facts for terminal jobs created before timing columns', async () => {
+    const legacy = persistedJob({
+      jobId: 'legacy-terminal-job',
+      operation: 'copy.generate',
+      createdAt: '2026-07-20T05:00:00.000Z',
+      deploymentId: 'deployment-copy-a',
+    });
+    await pool.query(
+      `INSERT INTO model_generation_jobs
+         (workspace_id, job_id, status, result, created_at, ended_at, latency_ms)
+       VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, NULL, NULL)`,
+      [
+        timingMigrationWorkspaceId,
+        legacy.jobId,
+        legacy.status,
+        JSON.stringify(legacy),
+        '2026-07-20T05:00:02.500Z',
+      ]
+    );
+
+    await repository.migrate();
+    const page = await repository.listJobs(timingMigrationWorkspaceId, {
+      page: 1,
+      pageSize: 20,
+      sort: 'latencyMs',
+      dir: 'asc',
+    });
+
+    assert.equal(page.items[0]?.endedAt, '2026-07-20T05:00:02.500Z');
+    assert.equal(page.items[0]?.latencyMs, 2_500);
   });
 
   it('publishes exactly one catalog when concurrent admins share a stale head', async () => {

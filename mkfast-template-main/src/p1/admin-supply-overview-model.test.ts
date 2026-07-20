@@ -68,6 +68,70 @@ test('single-channel catalog model is no multi-channel ready', () => {
   assert.match(coverage.label, /单渠道|无回退/);
 });
 
+test('different registry IDs without stable account and endpoint identities are not independent domains', () => {
+  const snapshot = buildDefaultSupplyControlSnapshot();
+  const deployments = snapshot.deployments
+    .filter((deployment) => deployment.catalogModelId === 'model-text-seed')
+    .map((deployment, index) => ({
+      ...deployment,
+      id: `generated-deployment-${index}`,
+      providerProfileId: `generated-provider-${index}`,
+      executionChannelId: snapshot.executionChannels[index]!.id,
+      accountIdentity: undefined,
+      endpointFingerprint: undefined,
+    }));
+  const coverage = projectDualChannelCoverage({
+    operation: 'copy.generate',
+    catalogModelId: 'model-text-seed',
+    snapshot: { ...snapshot, deployments },
+  });
+
+  assert.equal(coverage.qualifiedDeployments.length, 2);
+  assert.equal(coverage.independentFaultDomainCount, 0);
+  assert.equal(coverage.multiChannelReady, false);
+  assert.equal(coverage.status, 'single_channel');
+});
+
+test('shared stable account and endpoint identities collapse aliases to one domain', () => {
+  const snapshot = buildDefaultSupplyControlSnapshot();
+  const deployments = snapshot.deployments
+    .filter((deployment) => deployment.catalogModelId === 'model-text-seed')
+    .map((deployment, index) => ({
+      ...deployment,
+      id: `alias-deployment-${index}`,
+      providerProfileId: `alias-provider-${index}`,
+      executionChannelId: snapshot.executionChannels[index]!.id,
+      accountIdentity: 'stable-upstream-account',
+      endpointFingerprint: 'stable-upstream-endpoint',
+    }));
+  const coverage = projectDualChannelCoverage({
+    operation: 'copy.generate',
+    catalogModelId: 'model-text-seed',
+    snapshot: { ...snapshot, deployments },
+  });
+
+  assert.equal(coverage.independentFaultDomainCount, 1);
+  assert.equal(coverage.multiChannelReady, false);
+});
+
+test('distinct endpoints on one stable account remain one fault domain', () => {
+  const snapshot = buildDefaultSupplyControlSnapshot();
+  const deployments = snapshot.deployments
+    .filter((deployment) => deployment.catalogModelId === 'model-text-seed')
+    .map((deployment) => ({
+      ...deployment,
+      accountIdentity: 'shared-stable-account',
+    }));
+  const coverage = projectDualChannelCoverage({
+    operation: 'copy.generate',
+    catalogModelId: 'model-text-seed',
+    snapshot: { ...snapshot, deployments },
+  });
+
+  assert.equal(coverage.independentFaultDomainCount, 1);
+  assert.equal(coverage.multiChannelReady, false);
+});
+
 test('missing model projects not_verified', () => {
   const snapshot = buildDefaultSupplyControlSnapshot();
   const coverage = projectDualChannelCoverage({

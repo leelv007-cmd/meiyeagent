@@ -20,8 +20,11 @@ export class SecretBrokerError extends Error {
   constructor(
     readonly code:
       | 'ACCOUNT_NOT_FOUND'
+      | 'ACCOUNT_PENDING'
       | 'VERSION_NOT_FOUND'
+      | 'VERSION_NOT_CURRENT'
       | 'ACCOUNT_RETIRED'
+      | 'ACCOUNT_EXPIRED'
       | 'SECRET_UNAVAILABLE'
       | 'SCOPE_ISOLATION',
     message: string,
@@ -34,8 +37,8 @@ export class SecretBrokerError extends Error {
 /** Frozen assembly request from RouteSnapshot / attempt. */
 export interface AssembleCredentialRequest {
   credentialAccountId: string;
-  /** Frozen version from RouteSnapshot — never silently upgraded. */
-  frozenVersion: string;
+  /** Frozen version from RouteSnapshot. Omit only at a new request boundary. */
+  frozenVersion?: string;
   /**
    * Requested scope. Platform tasks must not read workspace_byok and vice versa
    * (extends FoundationStrictByokLedger isolation baseline — no rebuild).
@@ -62,6 +65,16 @@ export interface CredentialSecretBrokerPort {
   projectPublic(accountId: string): Promise<ReturnType<typeof toPublicMetadata>>;
 }
 
+/** Governed probe-only extension. Normal provider execution never consumes it. */
+export interface CredentialConnectivityTestBrokerPort
+  extends CredentialSecretBrokerPort {
+  assembleForConnectivityTest(request: {
+    credentialAccountId: string;
+    version: string;
+    requiredScope: 'platform' | 'workspace_byok';
+  }): Promise<AssembledCredential>;
+}
+
 export interface CredentialAccountDirectory {
   get(id: string): Promise<CredentialAccount | null> | CredentialAccount | null;
 }
@@ -70,10 +83,13 @@ export interface CredentialAccountDirectory {
  * Request-time broker backed by existing SecretStorePort + CredentialAccount
  * directory. In-flight tasks keep their frozen version via versionHistory.
  */
-export class RequestTimeSecretBroker implements CredentialSecretBrokerPort {
+export class RequestTimeSecretBroker
+  implements CredentialConnectivityTestBrokerPort
+{
   constructor(
     private readonly directory: CredentialAccountDirectory,
     private readonly secrets: SecretStorePort,
+    private readonly clock: () => Date = () => new Date(),
   ) {}
 
   async assembleForRequest(
@@ -92,19 +108,83 @@ export class RequestTimeSecretBroker implements CredentialSecretBrokerPort {
         `CredentialAccount scope=${account.scope} cannot serve requiredScope=${request.requiredScope}.`,
       );
     }
+    if (account.status === 'pending') {
+      throw new SecretBrokerError(
+        'ACCOUNT_PENDING',
+        `CredentialAccount ${account.id} is pending verification.`,
+      );
+    }
     if (account.status === 'retired') {
-      // Retired head still allows frozen historical versions for in-flight drain.
-      // Only block when the requested frozen version itself is absent.
+      throw new SecretBrokerError(
+        'ACCOUNT_RETIRED',
+        `CredentialAccount ${account.id} is retired.`,
+      );
+    }
+    if (
+      account.expiresAt &&
+      Date.parse(account.expiresAt) <= this.clock().getTime()
+    ) {
+      throw new SecretBrokerError(
+        'ACCOUNT_EXPIRED',
+        `CredentialAccount ${account.id} expired at ${account.expiresAt}.`,
+      );
     }
 
-    const frozen = resolveFrozenCredentialVersion(
-      account,
-      request.frozenVersion,
-    );
+    const requestedVersion = request.frozenVersion ?? account.version;
+    return this.assembleVersion(account, requestedVersion);
+  }
+
+  async assembleForConnectivityTest(request: {
+    credentialAccountId: string;
+    version: string;
+    requiredScope: 'platform' | 'workspace_byok';
+  }): Promise<AssembledCredential> {
+    const account = await this.directory.get(request.credentialAccountId);
+    if (!account) {
+      throw new SecretBrokerError(
+        'ACCOUNT_NOT_FOUND',
+        `CredentialAccount ${request.credentialAccountId} not found.`,
+      );
+    }
+    if (account.scope !== request.requiredScope) {
+      throw new SecretBrokerError(
+        'SCOPE_ISOLATION',
+        `CredentialAccount scope=${account.scope} cannot serve requiredScope=${request.requiredScope}.`,
+      );
+    }
+    if (account.status === 'retired') {
+      throw new SecretBrokerError(
+        'ACCOUNT_RETIRED',
+        `CredentialAccount ${account.id} is retired.`,
+      );
+    }
+    if (
+      account.expiresAt &&
+      Date.parse(account.expiresAt) <= this.clock().getTime()
+    ) {
+      throw new SecretBrokerError(
+        'ACCOUNT_EXPIRED',
+        `CredentialAccount ${account.id} expired at ${account.expiresAt}.`,
+      );
+    }
+    if (request.version !== account.version) {
+      throw new SecretBrokerError(
+        'VERSION_NOT_CURRENT',
+        `Credential version ${request.version} is no longer the current head for ${account.id}.`,
+      );
+    }
+    return this.assembleVersion(account, request.version);
+  }
+
+  private async assembleVersion(
+    account: CredentialAccount,
+    requestedVersion: string,
+  ): Promise<AssembledCredential> {
+    const frozen = resolveFrozenCredentialVersion(account, requestedVersion);
     if (!frozen) {
       throw new SecretBrokerError(
         'VERSION_NOT_FOUND',
-        `Frozen credential version ${request.frozenVersion} is not recorded on ${account.id}; refusing silent upgrade.`,
+        `Frozen credential version ${requestedVersion} is not recorded on ${account.id}; refusing silent upgrade.`,
       );
     }
 

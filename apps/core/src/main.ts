@@ -55,6 +55,10 @@ import {
 } from './p1/foundation/index.js';
 import { e2ePlatformModelDefaultsFromEnv } from './p1/foundation/e2e-platform-model-defaults.js';
 import {
+  CloudflareInventoryAdapter,
+  runCloudflareSelfProbes,
+} from './p1/cloudflare-read/index.js';
+import {
   P1CutoverExecutionService,
   PostgresLegacyInFlightDecisionPort,
 } from './p1/cutover/index.js';
@@ -68,6 +72,9 @@ import {
   byokExecutionRuntimeFromEnv,
   feishuMcpAdapterFromEnv,
   integrationSecretStoreFromEnv,
+  createProviderCredentialSecretBroker,
+  migrateProviderCredentialAccountsFromIntegrations,
+  ProviderCredentialAccountProvisioner,
   providerConnectivityProbeFromEnv,
   providerCredentialEnvFromVault,
   registerDouyinOAuthLifecycleSchedule,
@@ -112,10 +119,32 @@ import {
   createModelSupplyRuntime,
   modelMediaExecutionMode,
   seedCapabilityHotAssemblyFromCatalog,
+  RECORDED_CATALOG_REVISION_ID,
   videoCompositionRuntimeFromEnv,
 } from './p1/model-supply/index.js';
 import { createPermissionAuthorizer } from './p1/capability-permission/index.js';
-import { SupplyPoolRegistry } from './p1/entitlement-pools/index.js';
+import {
+  ensureDefaultRuntimeSupplyPool,
+  PostgresAccountAllocationStore,
+  PostgresCapacityLeaseStore,
+  PostgresEntitlementPoolsMigration,
+  PostgresEntitlementPolicyStore,
+  PostgresModelSupplyProviderAdmission,
+  PostgresSupplyFreezeStore,
+  PostgresSupplyPoolStore,
+} from './p1/entitlement-pools/index.js';
+import {
+  PLATFORM_SUPPLY_SCOPE_ID,
+  createPostgresAdminSupplyControlPlane,
+  PostgresAdminSupplyMigration,
+  PostgresCredentialRotationReceiptStore,
+  PostgresCapabilityHotAssemblyMigration,
+  PostgresCapabilityHotAssemblyPort,
+  ProductionAdminProviderEvidence,
+  PostgresSupplyControlPlaneRepository,
+  PostgresSupplyPlanningControlPlane,
+  PostgresSupplyPlanningMigration,
+} from './p1/supply-registry/index.js';
 import {
   ModelSupplyStructuredNodeRunner,
 } from './p1/model-supply/structured-node-runner.js';
@@ -307,16 +336,62 @@ const contentPackageMigration = new ContentPackageMigrationService({
   }),
 });
 const adminConfigRepository = new PostgresAdminConfigRepository(pool);
+const cloudflareMapping = {
+  internalRef: process.env.CLOUDFLARE_MAPPING_REF ?? 'shell-production',
+  accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+  scriptName: process.env.CLOUDFLARE_SCRIPT_NAME,
+  r2BucketName: process.env.CLOUDFLARE_R2_BUCKET_NAME,
+  hyperdriveConfigId: process.env.CLOUDFLARE_HYPERDRIVE_CONFIG_ID,
+  verified: process.env.CLOUDFLARE_MAPPING_VERIFIED === 'true',
+};
+const cloudflareInventory = new CloudflareInventoryAdapter({
+  apiToken: process.env.CLOUDFLARE_INVENTORY_READ_TOKEN,
+  mapping: cloudflareMapping,
+});
 const integrationRepository = new PostgresIntegrationRepository(pool);
+const supplyControlRepository = new PostgresSupplyControlPlaneRepository(pool);
+const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
+  pool,
+  PLATFORM_SUPPLY_SCOPE_ID,
+);
 await migratePostgresSchema(pool, [
   adminConfigRepository,
   integrationRepository,
+  supplyControlRepository,
+  new PostgresCapabilityHotAssemblyMigration(),
+  new PostgresSupplyPlanningMigration(),
+  new PostgresEntitlementPoolsMigration(),
+  new PostgresAdminSupplyMigration(),
 ]);
 const integrationSecrets = integrationSecretStoreFromEnv(process.env);
-const providerCredentialRuntime = await providerCredentialEnvFromVault(
+const credentialRotationReceipts = new PostgresCredentialRotationReceiptStore(
+  pool,
+  async (binding) => {
+    await integrationSecrets.use(binding.secretReference, {
+      workspaceId: binding.workspaceId,
+      credentialId: binding.credentialId,
+      version: binding.secretVersion,
+      provider: binding.provider,
+    });
+  },
+);
+const providerCredentialOperator = new ProviderCredentialAccountProvisioner(
+  supplyControlRepository,
+  credentialRotationReceipts,
+  integrationSecrets,
+);
+await migrateProviderCredentialAccountsFromIntegrations(
   integrationRepository,
+  supplyControlRepository,
+);
+const providerCredentialRuntime = await providerCredentialEnvFromVault(
+  supplyControlRepository,
   integrationSecrets,
   process.env,
+);
+const providerCredentialSecretBroker = createProviderCredentialSecretBroker(
+  supplyControlRepository,
+  integrationSecrets,
 );
 const modelSupplyRepository = new PostgresModelSupplyRepository(pool);
 const videoRegenerationRepository =
@@ -352,22 +427,31 @@ const {
 } = runtimeAssembly.assembly;
 // G3 hot assembly: seed process-local capability head from boot catalog so
 // HTTP reports the same boot fingerprint Worker seeds (dual-process alignment).
-const capabilityHotAssembly = seedCapabilityHotAssemblyFromCatalog(
+const bootCapabilityHotAssembly = seedCapabilityHotAssemblyFromCatalog(
   runtimeAssembly.assembly,
 );
-// H2 entitlement-pools: in-memory SupplyPool registry (no schema; domain memory-backed).
-const supplyPoolRegistry = new SupplyPoolRegistry();
+const capabilityHotAssembly = new PostgresCapabilityHotAssemblyPort(
+  pool,
+  supplyControlRepository,
+  PLATFORM_SUPPLY_SCOPE_ID,
+  providerCredentialSecretBroker,
+);
+await capabilityHotAssembly.seedIfEmpty(
+  bootCapabilityHotAssembly.bootRevision,
+);
+capabilityHotAssembly.applyCatalogRevisionHead(
+  RECORDED_CATALOG_REVISION_ID,
+);
+const supplyPoolStore = new PostgresSupplyPoolStore(pool);
+const entitlementPolicyStore = new PostgresEntitlementPolicyStore(pool);
+const accountAllocationStore = new PostgresAccountAllocationStore(pool);
+const capacityLeaseStore = new PostgresCapacityLeaseStore(pool);
+const supplyFreezeStore = new PostgresSupplyFreezeStore(pool);
 const bootDeploymentIds =
   deployments.length > 0
     ? deployments.map((deployment) => deployment.id)
     : ['boot-placeholder-deployment'];
-supplyPoolRegistry.registerShared({
-  id: 'pool-shared-default',
-  displayName: 'Shared default supply pool',
-  credentialAccountIds: ['cred-platform-default'],
-  deploymentIds: bootDeploymentIds,
-  revisionId: 'boot-pool-shared-default',
-});
+await ensureDefaultRuntimeSupplyPool(supplyPoolStore, bootDeploymentIds);
 // #92 one durable ProductQuote/ProductUsage/ProviderCost lifecycle shared by
 // HTTP, Operations, and model-supply across process restarts.
 const productQuoteService = new DurableProductBillingService(
@@ -448,6 +532,14 @@ const executionEntitlementPolicy = new CompositeProductEntitlementPolicy(
     allowFoundationSupplements: recordedCommerceEnabled,
   }
 );
+const modelSupplyProviderAdmission =
+  new PostgresModelSupplyProviderAdmission({
+    productEntitlements: executionEntitlementPolicy,
+    entitlementPolicies: entitlementPolicyStore,
+    accountAllocations: accountAllocationStore,
+    supplyPools: supplyPoolStore,
+    capacityLeases: capacityLeaseStore,
+  });
 const p1ModelSupplyRuntime = createModelSupplyRuntime({
   application: {
     assetStorage,
@@ -459,13 +551,15 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       {
         billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
+        supplyFreezes: supplyFreezeStore,
       },
     ),
+    providerAdmission: modelSupplyProviderAdmission,
     resultSink: modelSupplyRepository,
     submissionGate: streamingModeGate,
   },
   catalog: runtimeAssembly.assembly,
-  capabilityHotAssembly: capabilityHotAssembly.hotAssembly,
+  capabilityHotAssembly,
   controlPlane: {
     activationEvidenceConfig: adminConfigRepository,
     ...(gatedMediaExecution
@@ -478,16 +572,47 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       : {}),
     canvasProjects,
     durationSamples: foundationRepository,
+    planningControlPlane: supplyPlanningControlPlane,
     repository: modelSupplyRepository,
+    supplyRegistry: supplyControlRepository,
   },
 });
 const p1ModelSupplyService = p1ModelSupplyRuntime.application;
 const modelControlPlane = p1ModelSupplyRuntime.controlPlane;
 const productQuoteAuthority = new CatalogProductQuoteAuthority(modelControlPlane);
+const providerConnectivity = providerConnectivityProbeFromEnv(
+  providerCredentialRuntime.env,
+);
+const adminProviderEvidence = new ProductionAdminProviderEvidence({
+  registry: supplyControlRepository,
+  pools: supplyPoolStore,
+  credentials: providerCredentialSecretBroker,
+  connectivity: providerConnectivity,
+  conformance: modelControlPlane,
+  health: supplyPlanningControlPlane.health,
+  verification: providerCredentialOperator,
+  credentialWorkspaceId: '__global__',
+});
+const adminSupplyControlPlane = createPostgresAdminSupplyControlPlane({
+  pool,
+  permission: permissionAuthorizer,
+  registry: supplyControlRepository,
+  pools: supplyPoolStore,
+  entitlementPolicies: entitlementPolicyStore,
+  accountAllocations: accountAllocationStore,
+  planning: supplyPlanningControlPlane,
+  hotAssembly: capabilityHotAssembly,
+  modelControlPlane,
+  modelRepository: modelSupplyRepository,
+  credentialRotations: credentialRotationReceipts,
+  providerProbes: adminProviderEvidence,
+  operationalEvidence: adminProviderEvidence,
+});
 {
-  const view = capabilityHotAssembly.report('http');
+  const view = await capabilityHotAssembly.reportProcessView('http');
+  const defaultSupplyPool = await supplyPoolStore.get('pool-shared-default');
   console.log(
-    `[z2-wiring] http capability revision=${view.effectiveCapabilityRevisionId ?? 'none'} catalog=${view.effectiveCatalogRevisionId ?? 'none'} supplyPool=${supplyPoolRegistry.get('pool-shared-default')?.id ?? 'missing'}`,
+    `[z2-wiring] http capability revision=${view.effectiveCapabilityRevisionId ?? 'none'} catalog=${view.effectiveCatalogRevisionId ?? 'none'} supplyPool=${defaultSupplyPool?.id ?? 'missing'}`,
   );
 }
 const legacyModelSupplyRuntime = createModelSupplyRuntime({
@@ -891,7 +1016,15 @@ const pendingActions: PendingActionsService = new PendingActionsService(
 );
 const resultDeliveryRuntime = await createDurableResultDeliveryRuntime({
   operations: operationsRepository,
-  pendingActions,
+  pendingActions: {
+    async list(input) {
+      return (await pendingActions.list(input)).filter(
+        (item) =>
+          'kind' in item &&
+          (item.kind === 'question' || item.kind === 'approval'),
+      );
+    },
+  },
   pool,
 });
 const reuseTaskHarnessAdapter = new ReuseTaskHarnessAdapter(
@@ -985,6 +1118,17 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     new AdminConfigFoundationModule(adminConfigRepository, {
       activationEvidenceStatus: modelRuntime.activation,
       adminActorIds: modelAdminActorIds,
+      cloudflareInventory,
+      cloudflareSelfProbes: () =>
+        runCloudflareSelfProbes({
+          shellBaseUrl: process.env.APP_BASE_URL ?? 'http://localhost:3000',
+          databasePing: async () => {
+            await pool.query('SELECT 1');
+            return { ok: true, detail: 'select_1' };
+          },
+          mapping: cloudflareMapping,
+          hyperdriveId: cloudflareMapping.hyperdriveConfigId,
+        }),
       runtime: adminConfigRuntime,
       valueValidators: runtimeModeValidatorsFromProviderCredentials(
         providerCredentialRuntime,
@@ -1135,6 +1279,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     ),
     new IntegrationsFoundationModule(integrationService, {
       adminActorIds: modelAdminActorIds,
+      providerCredentialOperator,
       providerCredentialSources: providerCredentialRuntime.sources,
     }),
     new JobRuntimeFoundationModule(tracerJobs, entitlementJobRuntime, {
@@ -1148,6 +1293,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     }),
     new ModelSupplyFoundationModule(modelControlPlane, {
       adminActorIds: modelAdminActorIds,
+      adminSupply: adminSupplyControlPlane,
       composedVideo,
     }),
     new VideoRegenerationFoundationModule(videoRegeneration),

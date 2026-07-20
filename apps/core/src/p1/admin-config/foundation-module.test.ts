@@ -877,4 +877,65 @@ describe('Admin config application seam', () => {
       },
     );
   });
+
+  it('exposes the injected Cloudflare read-only inventory without fixture fallback', async () => {
+    const inventory = {
+      mappingRef: 'production-worker',
+      capturedAt: '2026-07-20T08:00:00.000Z',
+      freshness: 'unknown' as const,
+      deployments: {
+        status: 'unknown' as const,
+        reason: 'token_missing' as const,
+        freshness: 'unknown' as const,
+      },
+      versions: {
+        status: 'unknown' as const,
+        reason: 'token_missing' as const,
+        freshness: 'unknown' as const,
+      },
+      resources: [],
+      cloudflareQueuesEnabled: false as const,
+      graphqlAnalyticsDeferred: true as const,
+      cache: { hit: false, ttlMs: 120_000, ageMs: null },
+    };
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          cloudflareInventory: {
+            async getInventory() {
+              return inventory;
+            },
+          },
+          cloudflareSelfProbes: async () => [
+            {
+              kind: 'database_connectivity',
+              status: 'ok',
+              businessImpact: '业务库连通',
+              observedAt: '2026-07-20T08:00:01.000Z',
+              mutatesCloudflare: false,
+            },
+          ],
+        }),
+      ],
+    });
+
+    assert.deepEqual(
+      await service.queryModule(context, 'admin-config', {
+        action: 'cloudflare_inventory',
+        payload: {},
+      }),
+      {
+        inventory,
+        probes: [
+          {
+            kind: 'database_connectivity',
+            status: 'ok',
+            businessImpact: '业务库连通',
+            observedAt: '2026-07-20T08:00:01.000Z',
+            mutatesCloudflare: false,
+          },
+        ],
+      },
+    );
+  });
 });

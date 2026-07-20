@@ -11,6 +11,7 @@ import { MemoryIntegrationRepository } from './repository.js';
 import { RecordedFeishuMcpAdapter } from './feishu.js';
 import { FakeKmsSecretStore } from './secret-store.js';
 import { RecordedDouyinAdapter } from './douyin.js';
+import { createCredentialAccount } from '../supply-registry/credential-account.js';
 
 const context = {
   correlationId: 'corr-a',
@@ -291,7 +292,94 @@ test('platform admin tests a provider credential without exposing or activating 
   assert.equal(JSON.stringify(tested).includes('activationEvidence'), false);
 });
 
-test('provider credential rotation clears the previous connectivity result', async () => {
+test('platform admin credential query reads global CredentialAccount truth instead of request workspace connections', async () => {
+  const globalAccount = createCredentialAccount({
+    id: 'credential-account:platform:model.direct',
+    label: 'Platform model.direct',
+    providerProfileId: 'provider-tu-zi',
+    type: 'model.direct',
+    scope: 'platform',
+    secretReference: 'kms://__global__/cred-model-direct/v3',
+    version: '3',
+    secretVersion: 3,
+    credentialId: 'cred-model-direct',
+    connectionId: 'platform:model.direct',
+    workspaceId: '__global__',
+    provider: 'model',
+    source: 'registry',
+    status: 'active',
+    now: '2026-07-20T00:00:00.000Z',
+  });
+  const listWorkspaces: string[] = [];
+  const module = new IntegrationsFoundationModule(
+    new IntegrationApplicationService({
+      repository: new MemoryIntegrationRepository(),
+      secrets: new FakeKmsSecretStore(),
+    }),
+    {
+      providerCredentialOperator: {
+        async listAccounts(workspaceId) {
+          listWorkspaces.push(workspaceId);
+          return [globalAccount];
+        },
+        async provisionConnection() {
+          return globalAccount;
+        },
+        async stageRotation() {
+          throw new Error('not used');
+        },
+        async recordConnectivityResult() {
+          return { account: {} as never, activated: false };
+        },
+      },
+      providerCredentialSources: {
+        arkMedia: { source: 'env_fallback' },
+        modelDirect: { source: 'vault', credentialVersion: 3 },
+      },
+    },
+  );
+
+  const listed = (await module.query({
+    context: {
+      actor: 'admin',
+      correlationId: 'corr-global-account-query',
+      userId: 'admin-provider',
+      workspaceId: 'tenant-that-must-not-scope-platform-credentials',
+    },
+    input: { action: 'admin_provider_credentials', payload: {} },
+  })) as Array<Record<string, unknown>>;
+
+  assert.deepEqual(listWorkspaces, ['__global__']);
+  assert.equal(listed[0]?.id, 'platform:model.direct');
+  assert.equal(
+    listed[0]?.credentialAccountId,
+    'credential-account:platform:model.direct',
+  );
+  assert.equal(listed[0]?.version, '3');
+  assert.equal(listed[0]?.status, 'active');
+  assert.equal(listed[0]?.accountStatus, 'active');
+  assert.deepEqual(listed[0]?.credential, {
+    id: 'cred-model-direct',
+    version: 3,
+    mask: '••••••••',
+    scope: [],
+    status: 'active',
+  });
+  assert.equal(listed[0]?.workspaceId, '__global__');
+  assert.equal(listed[0]?.effectiveSource, 'vault');
+  await assert.rejects(
+    module.query({
+      context,
+      input: { action: 'admin_provider_credentials', payload: {} },
+    }),
+    /Admin identity is required/,
+  );
+});
+
+test('provider credential rotation stages a secure-write receipt without echoing the secret', async () => {
+  let provisioned = 0;
+  let receiptIssuedForVersion = 0;
+  let rotationWorkspaceId = '';
   const module = new IntegrationsFoundationModule(
     new IntegrationApplicationService({
       providerConnectivity: {
@@ -302,6 +390,34 @@ test('provider credential rotation clears the previous connectivity result', asy
       repository: new MemoryIntegrationRepository(),
       secrets: new FakeKmsSecretStore(),
     }),
+    {
+      providerCredentialOperator: {
+        async listAccounts() {
+          return [];
+        },
+        async provisionConnection() {
+          provisioned += 1;
+          return {} as never;
+        },
+        async stageRotation(input) {
+          receiptIssuedForVersion = 2;
+          rotationWorkspaceId = input.workspaceId;
+          return {
+            account: { id: input.accountId, version: '1' } as never,
+            secureWriteReceipt: {
+              id: 'secure-write-receipt-v2',
+              workspaceId: input.workspaceId,
+              accountId: input.accountId,
+              nextSecretVersion: 2,
+              expiresAt: '2026-07-20T00:15:00.000Z',
+            },
+          };
+        },
+        async recordConnectivityResult() {
+          return { account: {} as never, activated: false };
+        },
+      },
+    },
   );
   const adminContext = {
     actor: 'admin' as const,
@@ -341,10 +457,16 @@ test('provider credential rotation clears the previous connectivity result', asy
     },
   })) as Record<string, any>;
 
-  assert.equal(rotated.credential.version, 2);
-  assert.equal(rotated.credential.testedAt, undefined);
-  assert.equal(rotated.credential.testStatus, undefined);
-  assert.equal(rotated.credential.testErrorCode, undefined);
+  assert.equal(rotated.account.version, '1');
+  assert.equal(provisioned, 1);
+  assert.equal(receiptIssuedForVersion, 2);
+  assert.equal(rotationWorkspaceId, '__global__');
+  assert.equal(
+    rotated.secureWriteReceipt.id,
+    'secure-write-receipt-v2',
+  );
+  assert.equal('secretReference' in rotated.secureWriteReceipt, false);
+  assert.equal(JSON.stringify(rotated).includes('new-secret'), false);
 });
 
 test('integration module exposes the runtime Douyin integration status', async () => {

@@ -424,6 +424,20 @@ Implements D-043 Day-0 contract + V1 复审修订七条计数口径. Metric name
 |---|---|---|
 | 1 | Admin visually publishes and rolls back Recipe and Surface revisions | Sign in as an admin, use the `/admin/templates` visual editor to draft, preview, publish, revise, and roll back a Recipe; compose a Surface from the published Recipe revision, verify only capability-approved Pro Studio is offered, then draft, preview, publish, revise, and roll back the Surface through the real Creation Experience API. |
 
+## 31. Admin Supply Operations Acceptance
+
+**File:** `specs/admin-supply-ops.spec.ts` | **Priority:** P0 | **Tickets:** #122 / #123 / #128
+
+Locks the four-service admin operations journey at the public browser seam. It
+does not treat fixture projections or SSR-only checks as proof that the
+operator path is complete.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Admin enters the exception-first home and drills into model supply | Register and sign in as an administrator, open `/admin`, require the read-only exception-first surface with no acknowledge/assign ownership workflow, follow a visible model-supply drilldown, and reach the model supply and gateway control center at `/admin/supply`. |
+| 2 | Governed channel isolation requires impact review and reaches audit evidence | On `/admin/supply`, select a real fixture channel target from the `channel_isolate` governed action, require impact scope/reversibility plus a concrete reason before confirmation, confirm through the typed action UI, follow the resulting audit link, and find the exact unique reason on `/admin/audit`. |
+| 3 | Daily operator surfaces expose no technical editors or exception ownership workflow | Walk `/admin`, `/admin/capabilities`, `/admin/supply`, and `/admin/audit`; require successful documents and visible main surfaces, then reject any code, SQL, env, raw JSON, CLI, shell, or terminal editor/control and any acknowledge/assign/owner control. |
+
 ## Deferred Coverage
 
 These flows should be added after their dependencies are made deterministic:

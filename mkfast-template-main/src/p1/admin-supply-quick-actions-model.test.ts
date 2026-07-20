@@ -37,6 +37,7 @@ function targetFor(id: GovernedQuickActionId): GovernedActionTarget {
         idempotencyKey: `idem-${id}`,
       };
     case 'route_simulate':
+    case 'candidate_config_save':
     case 'candidate_config_validate':
       return {
         resourceType: 'operation',
@@ -57,11 +58,11 @@ function targetFor(id: GovernedQuickActionId): GovernedActionTarget {
   }
 }
 
-test('full D-070 quick action set is registered (13 actions)', () => {
-  assert.equal(GOVERNED_QUICK_ACTION_IDS.length, 13);
-  assert.equal(GOVERNED_QUICK_ACTIONS.length, 13);
+test('full governed quick action set includes candidate authoring (14 actions)', () => {
+  assert.equal(GOVERNED_QUICK_ACTION_IDS.length, 14);
+  assert.equal(GOVERNED_QUICK_ACTIONS.length, 14);
   const panel = buildGovernedActionsPanelView();
-  assert.equal(panel.count, 13);
+  assert.equal(panel.count, 14);
   assert.equal(panel.forbids.secretEcho, true);
   assert.equal(panel.forbids.directDbWrite, true);
   assert.equal(panel.forbids.bypassPublishGate, true);

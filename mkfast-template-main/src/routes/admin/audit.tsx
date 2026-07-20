@@ -1,5 +1,6 @@
 import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
+import { SupplyAuditTable } from '@/components/admin/supply/supply-audit-table';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -45,6 +46,8 @@ import { formatLocaleDateTime } from '@/lib/locale';
 import { AdminAuditControl } from '@/p1/admin-audit-control';
 import { AdminOperationsHealth } from '@/p1/admin-operations-health';
 import { AdminMerchantSupport } from '@/p1/admin-merchant-support';
+import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
+import { ADMIN_SUPPLY_CONTROL_QUERY } from '@/p1/use-admin-supply-control';
 import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
@@ -65,6 +68,7 @@ export function AuditPage() {
       <div className="space-y-8">
         <CapabilityDrilldownBanner pageId="audit" />
         <AdminMerchantSupport />
+        <AdminSupplyAuditProjection />
         <AdminByokAuditProjection />
         <AdminAuditControl />
         <section
@@ -79,6 +83,38 @@ export function AuditPage() {
         </section>
       </div>
     </AdminRoutePage>
+  );
+}
+
+function AdminSupplyAuditProjection() {
+  const auditQuery = useQuery({
+    queryKey: p1QueryKeys.request('model-supply', ADMIN_SUPPLY_CONTROL_QUERY),
+    queryFn: ({ signal }) =>
+      queryP1<SupplyControlSnapshot>(
+        'model-supply',
+        { action: ADMIN_SUPPLY_CONTROL_QUERY, payload: {} },
+        signal
+      ),
+  });
+
+  return (
+    <Card data-testid="admin-supply-audit-projection">
+      <CardHeader>
+        <CardTitle>模型供应治理审计</CardTitle>
+        <CardDescription>
+          受治理动作的不可变原因、目标、操作者与关联证据。
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {auditQuery.isPending ? (
+          <p className="text-sm text-muted-foreground">{common_loading()}</p>
+        ) : auditQuery.isError ? (
+          <p className="text-sm text-destructive">{integration_load_error()}</p>
+        ) : (
+          <SupplyAuditTable changes={auditQuery.data?.recentChanges ?? []} />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

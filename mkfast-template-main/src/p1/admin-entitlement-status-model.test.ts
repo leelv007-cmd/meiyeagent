@@ -6,26 +6,73 @@ import {
   buildEntitlementStatusView,
   entitlementPolicyStageLabel,
 } from './admin-entitlement-status-model';
+import { buildDefaultSupplyControlSnapshot } from './admin-supply-fixture';
 
-test('entitlement status surfaces policies, allocations, pools', () => {
+test('missing entitlement reporters stay honestly unknown without production fixtures', () => {
   const view = buildEntitlementStatusView();
-  assert.ok(view.policies.length >= 2);
-  assert.ok(view.allocations.length >= 1);
-  assert.ok(view.pools.length >= 1);
-  assert.ok(view.publishedPolicyCount >= 1);
-  assert.ok(view.activeAllocationCount >= 1);
+  assert.deepEqual(view.policies, []);
+  assert.deepEqual(view.allocations, []);
+  assert.deepEqual(view.pools, []);
+  assert.deepEqual(view.publishedPolicyCount, {
+    status: 'unknown',
+    reason: 'entitlement_policy_reporter_not_wired',
+  });
+  assert.deepEqual(view.activeAllocationCount, {
+    status: 'unknown',
+    reason: 'account_allocation_reporter_not_wired',
+  });
+  assert.deepEqual(view.supplyPoolCount, {
+    status: 'unknown',
+    reason: 'supply_pool_snapshot_not_available',
+  });
   assert.match(view.dualTruthNote, /产品侧|上游/);
 });
 
+test('live supply snapshot projects entitlement policy and allocation reporters as known', () => {
+  const snapshot = buildDefaultSupplyControlSnapshot();
+  snapshot.entitlementPolicies = [
+    {
+      id: 'entitlement-policy:growth:r7',
+      tier: 'growth',
+      revision: 7,
+      stage: 'published',
+      revisionId: 'entitlement-policy:growth:r7',
+      concurrencyLimit: 7,
+      queuePriority: 9,
+      supportLabel: 'priority',
+      allowanceSummary: 'copy=100, image=20',
+    },
+  ];
+  snapshot.accountAllocations = [];
+
+  const view = buildEntitlementStatusView({ snapshot });
+
+  assert.equal(view.policies[0]?.revisionId, 'entitlement-policy:growth:r7');
+  assert.deepEqual(view.publishedPolicyCount, { status: 'known', value: 1 });
+  assert.deepEqual(view.activeAllocationCount, { status: 'known', value: 0 });
+});
+
 test('pool projection carries revision and capacity without upstream secrets', () => {
-  const view = buildEntitlementStatusView();
+  const view = buildEntitlementStatusView({
+    pools: [
+      {
+        id: 'pool-live',
+        kind: 'shared',
+        displayName: 'Live pool',
+        credentialAccountIds: ['credential-live'],
+        deploymentIds: ['deployment-live'],
+        revisionId: 'pool-live:r7',
+        capacity: { supplyAccount: { concurrency: 4 } },
+      },
+    ],
+  });
   const pool = view.pools[0];
   assert.ok(pool.revisionId.length > 0);
   assert.ok(pool.deploymentCount >= 1);
   assert.ok(
     pool.status === 'healthy' ||
       pool.status === 'constrained' ||
-      pool.status === 'unknown',
+      pool.status === 'unknown'
   );
   const blob = JSON.stringify(view);
   assert.doesNotMatch(blob, /upstreamToken|providerApiKey|credentialSecret/);
@@ -69,4 +116,16 @@ test('custom input overrides defaults', () => {
   assert.equal(view.allocations.length, 0);
   assert.equal(view.pools[0].id, 'pool-x');
   assert.equal(view.pools[0].status, 'unknown');
+  assert.deepEqual(view.publishedPolicyCount, {
+    status: 'known',
+    value: 1,
+  });
+  assert.deepEqual(view.activeAllocationCount, {
+    status: 'known',
+    value: 0,
+  });
+  assert.deepEqual(view.supplyPoolCount, {
+    status: 'known',
+    value: 1,
+  });
 });

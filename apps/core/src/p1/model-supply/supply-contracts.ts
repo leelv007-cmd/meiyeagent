@@ -92,10 +92,15 @@ export interface ModelDeployment {
   catalogModelId: string;
   providerProfileId?: string;
   executionChannelId?: string;
+  /** Stable upstream account identity; credential aliases must share it. */
+  accountIdentity?: string;
+  /** Stable endpoint/fault-domain identity; endpoint aliases must share it. */
+  endpointFingerprint?: string;
   providerModel?: string;
   endpointRevision?: string;
   apiCounterparty?: string;
   credentialOwner?: 'platform' | 'workspace_byok' | 'provider_managed';
+  credentialAccountId?: string;
   lifecycleRevision?: string;
   apiFamily:
     | 'openai'
@@ -138,6 +143,7 @@ export type RuntimeDeploymentCapability = Pick<
   | 'providerModel'
   | 'endpointRevision'
   | 'lifecycleRevision'
+  | 'credentialAccountId'
   | 'credentialVersion'
 >;
 

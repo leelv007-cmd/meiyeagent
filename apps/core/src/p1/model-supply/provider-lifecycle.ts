@@ -10,14 +10,69 @@ import type {
   ModelDeployment,
   OwnedAsset,
 } from './supply-contracts.js';
-import type { ModelSupplySubmission } from './route-contracts.js';
+import type {
+  ModelSupplySubmission,
+  ProviderAttempt,
+  RouteSnapshot,
+} from './route-contracts.js';
 import type { CopyCandidate, ProviderCost } from './ledger-contracts.js';
+
+/** Serializable, secret-free provider configuration frozen with an adapter revision. */
+export interface AdapterRuntimeConfig {
+  baseUrl?: string;
+  endpoint?: string;
+  providerModel?: string;
+  endpointRevision?: string;
+  apiFamily?: 'openai' | 'anthropic' | 'gemini' | 'custom';
+  customProtocol?:
+    | 'openai_chat'
+    | 'anthropic_messages'
+    | 'gemini_generate_content';
+  inputCostPerMillion?: number;
+  outputCostPerMillion?: number;
+  currency?: 'CNY' | 'USD';
+  costPerImage?: number;
+  costPerMillionTokens?: number;
+  estimatedTokensPerSecond?: number;
+  sourceUrlTtlSeconds?: number;
+  assetSourceHosts?: string[];
+  approvedPricePerTextWordCny?: number;
+  priceRevision?: string;
+  resourceId?: 'seed-tts-2.0' | 'seed-icl-2.0';
+  defaultSpeaker?: string;
+}
+
+/** Runtime-only binding resolved from the frozen capability/credential head. */
+export interface ProviderRuntimeBinding {
+  capabilityRevisionId: string;
+  deploymentId: string;
+  adapterKey: string;
+  adapterBindingRevision?: string;
+  adapterConfig?: AdapterRuntimeConfig;
+  credential?: {
+    credentialAccountId: string;
+    version: string;
+    secretReference: string;
+    secretVersion: number;
+    scope: 'platform' | 'workspace_byok';
+    /** Runtime-only secret material. It must never enter snapshots or APIs. */
+    secret: string;
+  };
+}
 
 export interface ProviderExecutionRequest {
   jobId: string;
   model: CatalogModel;
   deployment: ModelDeployment;
   submission: ModelSupplySubmission;
+  runtimeBinding?: ProviderRuntimeBinding;
+  /** Stable per-candidate attempt facts for guarded async media effects. */
+  attemptId?: string;
+  attemptOrdinal?: number;
+  effectIdempotencyKey?: string;
+  routeSnapshot?: RouteSnapshot;
+  previousAttempts?: ProviderAttempt[];
+  previousProviderCosts?: ProviderCost[];
   resolvedReferenceAssets?: import('./reference-asset-resolver.js').ResolvedReferenceAsset[];
   resolvedInputAssets?: Array<
     import('./reference-asset-resolver.js').ResolvedReferenceAsset & {

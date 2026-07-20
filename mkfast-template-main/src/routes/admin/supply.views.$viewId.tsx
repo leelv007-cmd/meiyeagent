@@ -6,15 +6,12 @@ import {
 import { AdminSupplyAssociationView } from '@/p1/admin-supply-control';
 import { createFileRoute } from '@tanstack/react-router';
 
-/**
- * Five association view routes (J4 / D-058).
- * Shared wiring deferred — see supply/WIRING-DIFF.md.
- */
+/** Five association view routes (J4 / D-058). */
 export const Route = createFileRoute('/admin/supply/views/$viewId')({
-  component: SupplyAssociationViewRoute,
+  component: RoutedSupplyAssociationViewPage,
 });
 
-function SupplyAssociationViewRoute() {
+function RoutedSupplyAssociationViewPage() {
   const { viewId } = Route.useParams();
   return <SupplyAssociationViewPage viewId={viewId} />;
 }

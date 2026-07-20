@@ -3,6 +3,10 @@ import type { P1OperationModule } from '../foundation/ports.js';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { createDefaultDeployments } from '../model-supply/catalog.js';
+import type {
+  CloudflareInventorySnapshot,
+  CloudflareSelfProbeResult,
+} from '../cloudflare-read/index.js';
 
 export type AdminConfigScope = 'global' | 'workspace';
 export type AdminConfigStatus = 'applied' | 'rolled_back';
@@ -83,6 +87,10 @@ export interface AdminConfigRepository {
   upsertEffectiveSnapshot(
     snapshot: RuntimeEffectiveSnapshot,
   ): Promise<RuntimeEffectiveSnapshot>;
+}
+
+export interface CloudflareInventoryReadPort {
+  getInventory(): Promise<CloudflareInventorySnapshot>;
 }
 
 export class MemoryAdminConfigRepository implements AdminConfigRepository {
@@ -436,6 +444,10 @@ export class AdminConfigFoundationModule implements P1OperationModule {
   >;
   private readonly wiredKeys: ReadonlySet<string>;
   private readonly hotReadKeys: ReadonlySet<string>;
+  private readonly cloudflareInventory: CloudflareInventoryReadPort | null;
+  private readonly cloudflareSelfProbes:
+    | (() => Promise<CloudflareSelfProbeResult[]>)
+    | null;
 
   constructor(
     private readonly repository: AdminConfigRepository,
@@ -449,6 +461,8 @@ export class AdminConfigFoundationModule implements P1OperationModule {
       >;
       wiredKeys?: readonly string[];
       hotReadKeys?: readonly string[];
+      cloudflareInventory?: CloudflareInventoryReadPort;
+      cloudflareSelfProbes?: () => Promise<CloudflareSelfProbeResult[]>;
     } = {},
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
@@ -457,6 +471,8 @@ export class AdminConfigFoundationModule implements P1OperationModule {
     this.valueValidators = options.valueValidators ?? {};
     this.wiredKeys = new Set(options.wiredKeys ?? []);
     this.hotReadKeys = new Set(options.hotReadKeys ?? []);
+    this.cloudflareInventory = options.cloudflareInventory ?? null;
+    this.cloudflareSelfProbes = options.cloudflareSelfProbes ?? null;
     this.definitions = [
       ...CONFIG_DEFINITIONS,
       ...(options.additionalDefinitions ?? []),
@@ -569,6 +585,20 @@ export class AdminConfigFoundationModule implements P1OperationModule {
         }),
       );
       return Object.fromEntries(values);
+    }
+    if (action === 'cloudflare_inventory') {
+      this.requireAdmin(args.context);
+      if (!this.cloudflareInventory) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Cloudflare inventory is not wired.',
+        );
+      }
+      const [inventory, probes] = await Promise.all([
+        this.cloudflareInventory.getInventory(),
+        this.cloudflareSelfProbes?.() ?? Promise.resolve([]),
+      ]);
+      return { inventory, probes };
     }
     if (action === 'config_list') {
       const visibleDefinitions = this.isAdmin(args.context)

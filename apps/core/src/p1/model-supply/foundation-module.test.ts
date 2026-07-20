@@ -5,6 +5,7 @@ import {
   CatalogRevisionRegistry,
   createDefaultCatalogModels,
   createDefaultDeployments,
+  type PublishedDeployment,
 } from './catalog.js';
 import {
   MemoryModelSupplyControlPlaneRepository,
@@ -13,6 +14,7 @@ import {
   ModelSupplyFoundationModule,
   RECORDED_CATALOG_REVISION_ID,
   type ActivationProbeExecutionPort,
+  type ModelSupplyPlanningControlPlanePort,
 } from './foundation-module.js';
 import {
   ModelSupplyApplicationService,
@@ -28,6 +30,13 @@ import {
   MemoryAdminConfigRepository,
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
+import { MemoryHealthOverlayPort } from '../supply-registry/health-overlay.js';
+import type { RankingCandidateInput } from '../supply-registry/three-layer-ranking.js';
+import type {
+  AdminSupplyControlPlane,
+  AdminSupplyGovernedActionDispatchRequest,
+  AdminSupplyGovernedActionRequest,
+} from '../supply-registry/admin-control-plane.js';
 
 const owner: P1Context = {
   workspaceId: 'workspace-a',
@@ -108,6 +117,118 @@ async function query(
 }
 
 describe('ModelSupplyFoundationModule', () => {
+  it('exposes the governed admin supply snapshot, preview, and dispatch seams without rewriting their payloads', async () => {
+    const setupResult = setup();
+    const requests: Array<
+      AdminSupplyGovernedActionRequest | AdminSupplyGovernedActionDispatchRequest
+    > = [];
+    const preview = {
+      id: 'preview-isolate-channel-a',
+      scope: 'channel:channel-a',
+      changes: ['isolate channel-a'],
+      warnings: [],
+      reversible: true,
+      expectedRevisionId: 'channel-revision-a',
+      before: { lifecycle: 'active' },
+      after: { lifecycle: 'isolated' },
+    };
+    const adminSupply = {
+      async getSnapshot(context: P1Context) {
+        return { workspaceId: context.workspaceId, source: 'durable' };
+      },
+      async previewAction(request: AdminSupplyGovernedActionRequest) {
+        requests.push(request);
+        return preview;
+      },
+      async dispatchAction(request: AdminSupplyGovernedActionDispatchRequest) {
+        requests.push(request);
+        return { action: request.action, previewId: request.approvedPreviewId };
+      },
+      async listPendingActions(context: P1Context) {
+        return [
+          {
+            idempotencyKey: 'pending-action-1',
+            payloadHash: 'payload-pending-1',
+            outcome: 'recorded' as const,
+            createdAt: '2026-07-20T00:00:00.000Z',
+          },
+        ].map((row) => ({ ...row, workspaceId: context.workspaceId }));
+      },
+      async reconcilePendingAction(
+        context: P1Context,
+        input: { idempotencyKey: string; payloadHash: string },
+      ) {
+        return { ...input, workspaceId: context.workspaceId, replayed: false };
+      },
+    } as unknown as Pick<
+      AdminSupplyControlPlane,
+      | 'getSnapshot'
+      | 'previewAction'
+      | 'dispatchAction'
+      | 'listPendingActions'
+      | 'reconcilePendingAction'
+    >;
+    const module = new ModelSupplyFoundationModule(setupResult.controlPlane, {
+      adminActorIds: ['admin-a'],
+      adminSupply,
+    });
+    const governedRequest = {
+      action: 'isolate',
+      context: admin,
+      target: { resourceType: 'channel', resourceId: 'channel-a' },
+      reason: 'provider error rate exceeded threshold',
+      expectedRevisionId: 'channel-revision-a',
+      idempotencyKey: 'isolate-channel-a',
+    } as const;
+
+    assert.deepEqual(
+      await query(module, admin, 'admin_supply_control', {}),
+      { workspaceId: admin.workspaceId, source: 'durable' },
+    );
+    assert.deepEqual(
+      await query(module, admin, 'admin_supply_action_preview', governedRequest),
+      preview,
+    );
+    assert.deepEqual(
+      await command(module, admin, 'admin_supply_action', {
+        ...governedRequest,
+        approvedPreviewId: preview.id,
+      }),
+      { action: 'isolate', previewId: preview.id },
+    );
+    assert.deepEqual(
+      await query(module, admin, 'admin_supply_pending_actions', {}),
+      [
+        {
+          idempotencyKey: 'pending-action-1',
+          payloadHash: 'payload-pending-1',
+          outcome: 'recorded',
+          createdAt: '2026-07-20T00:00:00.000Z',
+          workspaceId: admin.workspaceId,
+        },
+      ],
+    );
+    assert.deepEqual(
+      await command(module, admin, 'admin_supply_reconcile_pending', {
+        idempotencyKey: 'pending-action-1',
+        payloadHash: 'payload-pending-1',
+      }),
+      {
+        idempotencyKey: 'pending-action-1',
+        payloadHash: 'payload-pending-1',
+        workspaceId: admin.workspaceId,
+        replayed: false,
+      },
+    );
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests[0], governedRequest);
+    assert.deepEqual(requests[1], {
+      ...governedRequest,
+      approvedPreviewId: preview.id,
+      idempotencyKey: 'admin_supply_action-corr-admin',
+    });
+  });
+
   it('replays each language probe and activates only after complete operation coverage', async () => {
     let providerCalls = 0;
     const setupResult = setup(
@@ -786,6 +907,325 @@ describe('ModelSupplyFoundationModule', () => {
     assert.equal(models.attempts().length, 0);
   });
 
+  it('routes production simulation through published policy, health, data, and three-layer control-plane state', async () => {
+    const deployments = createDefaultDeployments({
+      activatedDeploymentIds: [
+        'openai-direct-recorded',
+        'anthropic-direct-recorded',
+        'gemini-direct-recorded',
+        'domestic-llm-direct-recorded',
+      ],
+    });
+    const openAiDeployment = deployments.find(
+      (deployment) => deployment.id === 'openai-direct-recorded',
+    );
+    assert.ok(openAiDeployment);
+    deployments.push({
+      ...structuredClone(openAiDeployment),
+      id: 'policy-excluded-openai-relay',
+      providerProfileId: 'provider-policy-excluded',
+      executionChannelId: 'channel-policy-excluded',
+    });
+    const repository = new MemoryModelSupplyControlPlaneRepository();
+    const application = new ModelSupplyApplicationService({
+      deployments,
+      execution: new RecordedProviderExecutionPort(),
+      models: createDefaultCatalogModels(),
+      resultSink: repository,
+    });
+    const overlay = new MemoryHealthOverlayPort();
+    await overlay.reportFact({
+      targetKind: 'deployment',
+      targetId: 'anthropic-direct-recorded',
+      kind: 'probe_unavailable',
+      reason: 'live_probe_failed',
+      source: 'probe',
+    });
+    const observedAt = new Date().toISOString();
+    const rankingInput = (
+      deploymentId: string,
+      amountMicros: number,
+    ): RankingCandidateInput => ({
+      deploymentId,
+      quality: {
+        activationEvidence: {
+          kind: 'activation_evidence',
+          observedAt,
+          sampleSize: 20,
+          status: 'fresh',
+        },
+        acceptanceCompleteness: {
+          kind: 'acceptance_completeness',
+          observedAt,
+          sampleSize: 20,
+          status: 'fresh',
+          value: 1,
+        },
+        conformance: {
+          kind: 'conformance',
+          observedAt,
+          sampleSize: 20,
+          status: 'fresh',
+        },
+        mappingTrust: {
+          kind: 'mapping_trust',
+          observedAt,
+          sampleSize: 20,
+          status: 'fresh',
+        },
+        p95: {
+          kind: 'p95',
+          observedAt,
+          sampleSize: 20,
+          status: 'fresh',
+          value: 500,
+        },
+        successRate: {
+          kind: 'success_rate',
+          observedAt,
+          sampleSize: 20,
+          status: 'fresh',
+          value: 0.99,
+        },
+        versionedQualityBaseline: {
+          kind: 'versioned_quality_baseline',
+          observedAt,
+          sampleSize: 20,
+          status: 'fresh',
+        },
+      },
+      health: { capacityHeadroom: 1, healthState: 'healthy' },
+      cost: {
+        amountMicros,
+        currency: 'USD',
+        source: 'observed_usage',
+      },
+    });
+    let reads = 0;
+    const planningControlPlane: ModelSupplyPlanningControlPlanePort = {
+      async readPlanningState(input) {
+        reads += 1;
+        assert.equal(input.workspaceId, admin.workspaceId);
+        assert.equal(input.catalogRevisionId, RECORDED_CATALOG_REVISION_ID);
+        assert.equal(input.operation, 'copy.generate');
+        assert.equal(input.qualityTier, 'quality');
+        return {
+          routePolicyRevisionId: 'route-policy:copy.generate:quality:r3',
+          routePolicy: {
+            operation: 'copy.generate',
+            qualityTier: 'quality',
+            hardConstraints: ['deployment_active', 'data_class'],
+            candidateDeploymentIds: [
+              'openai-direct-recorded',
+              'anthropic-direct-recorded',
+              'gemini-direct-recorded',
+              'domestic-llm-direct-recorded',
+            ],
+            maxAttempts: 2,
+            fallbackAuthorized: true,
+          },
+          healthOverlay: overlay,
+          dataPolicyByDeploymentId: new Map([
+            [
+              'gemini-direct-recorded',
+              {
+                deploymentId: 'gemini-direct-recorded',
+                dataPolicyRevisionId: 'data-policy:r7',
+                dataPolicy: {
+                  sourceTrustLevel: 'contract_attested',
+                  processingRegion: 'overseas',
+                  allowedDataClasses: ['contains_face'],
+                },
+              },
+            ],
+          ]),
+          rankingInputsByDeploymentId: new Map([
+            [
+              'openai-direct-recorded',
+              rankingInput('openai-direct-recorded', 30_000),
+            ],
+            [
+              'domestic-llm-direct-recorded',
+              rankingInput('domestic-llm-direct-recorded', 10_000),
+            ],
+          ]),
+        };
+      },
+    };
+    const controlPlane = new ModelSupplyControlPlaneService({
+      application,
+      planningControlPlane,
+      repository,
+    });
+    const module = new ModelSupplyFoundationModule(controlPlane, {
+      adminActorIds: [admin.userId],
+    });
+
+    const simulation = (await query(module, admin, 'route_simulation', {
+      operation: 'copy.generate',
+      selection: {
+        mode: 'auto',
+        profile: 'quality',
+        fallbackConsent: true,
+      },
+      dataClass: [],
+      failureScenario: 'rejected_before_accept',
+    })) as {
+      routePolicyRevisionId: string | null;
+      candidateEvaluations: Array<{
+        deploymentId: string;
+        exclusionReasons: string[];
+      }>;
+      rankedCandidates: Array<{ deploymentId: string }>;
+      expectedOutcome: {
+        action: string;
+        primaryDeploymentId?: string;
+        fallbackDeploymentId?: string;
+      };
+      decisionExplanation: {
+        sort: { layerOrder: string[] };
+        liveExclusions: Array<{ deploymentId: string }>;
+      };
+    };
+
+    assert.equal(reads, 1);
+    assert.equal(
+      simulation.routePolicyRevisionId,
+      'route-policy:copy.generate:quality:r3',
+    );
+    assert.deepEqual(
+      simulation.rankedCandidates.map((candidate) => candidate.deploymentId),
+      ['domestic-llm-direct-recorded', 'openai-direct-recorded'],
+    );
+    assert.ok(
+      simulation.candidateEvaluations
+        .find(
+          (candidate) =>
+            candidate.deploymentId === 'anthropic-direct-recorded',
+        )
+        ?.exclusionReasons.includes('simulated_unavailable'),
+    );
+    assert.ok(
+      simulation.candidateEvaluations
+        .find(
+          (candidate) => candidate.deploymentId === 'gemini-direct-recorded',
+        )
+        ?.exclusionReasons.includes('data_class_disallowed'),
+    );
+    assert.equal(
+      simulation.candidateEvaluations.some(
+        (candidate) =>
+          candidate.deploymentId === 'policy-excluded-openai-relay',
+      ),
+      false,
+    );
+    assert.deepEqual(simulation.expectedOutcome, {
+      action: 'fallback',
+      attemptLimit: 2,
+      expectedAttempts: 2,
+      primaryDeploymentId: 'domestic-llm-direct-recorded',
+      fallbackDeploymentId: 'openai-direct-recorded',
+      reason: 'safe_auto_fallback',
+    });
+    assert.deepEqual(simulation.decisionExplanation.sort.layerOrder, [
+      'quality_reliability_gate',
+      'health_capacity_guardrail',
+      'cost_optimization',
+    ]);
+    assert.deepEqual(simulation.decisionExplanation.liveExclusions, [
+      {
+        deploymentId: 'anthropic-direct-recorded',
+        layer: 'live',
+        reasons: ['health_overlay_blocking'],
+      },
+    ]);
+  });
+
+  it('validates the explicitly requested RoutePolicy candidate instead of the published head', async () => {
+    const repository = new MemoryModelSupplyControlPlaneRepository();
+    const application = new ModelSupplyApplicationService({
+      deployments: createDefaultDeployments({
+        activatedDeploymentIds: [
+          'openai-direct-recorded',
+          'domestic-llm-direct-recorded',
+        ],
+      }),
+      execution: new RecordedProviderExecutionPort(),
+      models: createDefaultCatalogModels(),
+      resultSink: repository,
+    });
+    const candidateRevisionId = 'route-policy:copy.generate:quality:candidate-r8';
+    const planningControlPlane: ModelSupplyPlanningControlPlanePort = {
+      async readPlanningState(input) {
+        if (input.routePolicyRevisionId !== candidateRevisionId) {
+          return {
+            routePolicyRevisionId: 'route-policy:copy.generate:quality:head-r7',
+            routePolicy: {
+              operation: 'copy.generate',
+              qualityTier: 'quality',
+              hardConstraints: ['deployment_active'],
+              candidateDeploymentIds: ['domestic-llm-direct-recorded'],
+              maxAttempts: 1,
+              fallbackAuthorized: false,
+            },
+          };
+        }
+        return {
+          routePolicyRevisionId: candidateRevisionId,
+          routePolicy: {
+            operation: 'copy.generate',
+            qualityTier: 'quality',
+            hardConstraints: ['deployment_active'],
+            candidateDeploymentIds: ['openai-direct-recorded'],
+            maxAttempts: 1,
+            fallbackAuthorized: false,
+          },
+        };
+      },
+    };
+    const controlPlane = new ModelSupplyControlPlaneService({
+      application,
+      planningControlPlane,
+      repository,
+    });
+
+    const simulation = await controlPlane.simulateRoute(admin, {
+      operation: 'copy.generate',
+      selection: {
+        mode: 'auto',
+        profile: 'quality',
+        fallbackConsent: true,
+      },
+      dataClass: [],
+      failureScenario: 'success',
+      unavailableDeploymentIds: [],
+      routePolicyRevisionId: candidateRevisionId,
+    });
+
+    assert.equal(simulation.routePolicyRevisionId, candidateRevisionId);
+    assert.deepEqual(
+      simulation.rankedCandidates.map((candidate) => candidate.deploymentId),
+      ['openai-direct-recorded'],
+    );
+
+    await assert.rejects(
+      controlPlane.simulateRoute(admin, {
+        operation: 'copy.generate',
+        selection: {
+          mode: 'auto',
+          profile: 'quality',
+          fallbackConsent: true,
+        },
+        dataClass: [],
+        failureScenario: 'success',
+        unavailableDeploymentIds: [],
+        routePolicyRevisionId: 'route-policy:copy.generate:quality:missing',
+      }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'NOT_FOUND',
+    );
+  });
+
   it('returns a frontend-safe recorded catalog with stable business metadata', async () => {
     const { controlPlane, module } = setup();
     await controlPlane.initialize(owner.workspaceId);
@@ -820,7 +1260,7 @@ describe('ModelSupplyFoundationModule', () => {
             ?.amountMicros === 'number'
       )
     );
-    assert.equal(JSON.stringify(view).includes('channel'), false);
+    assert.equal(JSON.stringify(view).includes('"channel":'), false);
     assert.equal(JSON.stringify(view).includes('credential'), false);
     assert.equal(JSON.stringify(view).includes('endpoint'), false);
     assert.equal(JSON.stringify(view).includes('live_verified'), false);
@@ -982,6 +1422,168 @@ describe('ModelSupplyFoundationModule', () => {
       degraded.models.find((model) => model.id === 'llm-openai')
         ?.durationEstimate.status,
       'insufficient_data'
+    );
+  });
+
+  it('projects single-channel versus multi-channel readiness from qualified deployments', async () => {
+    const repository = new MemoryModelSupplyControlPlaneRepository();
+    const models = createDefaultCatalogModels();
+    const liveEvidence = {
+      status: 'live_verified' as const,
+      verifiedAt: '2026-07-20T00:00:00.000Z',
+      evidenceRef: 'test://provider-live/channel-a',
+      configurationRevision: 'provider-live-a-v1',
+    };
+    const deployments = createDefaultDeployments({
+      activatedDeploymentIds: ['openai-direct-recorded'],
+      activationEvidenceByDeploymentId: {
+        'openai-direct-recorded': liveEvidence,
+      },
+    });
+    const primary = deployments.find(
+      (deployment) => deployment.id === 'openai-direct-recorded',
+    );
+    assert.ok(primary);
+    primary.accountIdentity = 'account-fingerprint-official';
+    primary.endpointFingerprint = 'endpoint-fingerprint-official';
+    const application = new ModelSupplyApplicationService({
+      deployments,
+      execution: new RecordedProviderExecutionPort(),
+      models,
+      resultSink: repository,
+    });
+    const controlPlane = new ModelSupplyControlPlaneService({
+      application,
+      fallbackCatalog: {
+        payload: {
+          capabilities: [],
+          deployments,
+          models,
+          prices: [],
+          routes: [],
+        },
+        revisionId: 'single-channel-v1',
+      },
+      repository,
+    });
+
+    const single = await controlPlane.getCatalog(
+      owner.workspaceId,
+      'copy.generate',
+    );
+    assert.equal(
+      single.models.find((model) => model.id === 'llm-openai')
+        ?.channelReadiness,
+      'single_channel',
+    );
+    assert.equal(
+      single.models.find((model) => model.id === 'llm-anthropic')
+        ?.channelReadiness,
+      'not_verified',
+    );
+
+    const dualDeployments = [
+      ...deployments,
+      {
+        ...primary,
+        id: 'openai-reseller-live',
+        accountIdentity: 'account-fingerprint-reseller',
+        channel: 'managed' as const,
+        endpointFingerprint: 'endpoint-fingerprint-reseller',
+        providerProfileId: 'provider-openai-reseller',
+        executionChannelId: 'channel-openai-reseller',
+        activationEvidence: {
+          ...liveEvidence,
+          evidenceRef: 'test://provider-live/channel-b',
+          configurationRevision: 'provider-live-b-v1',
+        },
+      },
+    ];
+    const readinessFor = async (
+      candidateDeployments: PublishedDeployment[],
+      revisionId: string,
+    ) => {
+      const candidateControlPlane = new ModelSupplyControlPlaneService({
+        application: new ModelSupplyApplicationService({
+          deployments: candidateDeployments,
+          execution: new RecordedProviderExecutionPort(),
+          models,
+          resultSink: repository,
+        }),
+        fallbackCatalog: {
+          payload: {
+            capabilities: [],
+            deployments: candidateDeployments,
+            models,
+            prices: [],
+            routes: [],
+          },
+          revisionId,
+        },
+        repository,
+      });
+      const catalog = await candidateControlPlane.getCatalog(
+        owner.workspaceId,
+        'copy.generate',
+      );
+      return catalog.models.find((model) => model.id === 'llm-openai')
+        ?.channelReadiness;
+    };
+
+    assert.equal(
+      await readinessFor(dualDeployments, 'dual-channel-v1'),
+      'multi_channel_ready',
+    );
+
+    const aliasedDeployments = dualDeployments.map((deployment) =>
+      deployment.id === 'openai-reseller-live'
+        ? {
+            ...deployment,
+            accountIdentity: primary.accountIdentity,
+          }
+        : deployment,
+    );
+    assert.equal(
+      await readinessFor(aliasedDeployments, 'aliased-account-channel-v1'),
+      'single_channel',
+    );
+
+    const endpointAliasedDeployments = dualDeployments.map((deployment) =>
+      deployment.id === 'openai-reseller-live'
+        ? {
+            ...deployment,
+            endpointFingerprint: primary.endpointFingerprint,
+          }
+        : deployment,
+    );
+    assert.equal(
+      await readinessFor(
+        endpointAliasedDeployments,
+        'aliased-endpoint-channel-v1',
+      ),
+      'single_channel',
+    );
+
+    const directOnlyDeployments = dualDeployments.map((deployment) => ({
+      ...deployment,
+      channel: 'direct' as const,
+    }));
+    assert.equal(
+      await readinessFor(directOnlyDeployments, 'direct-only-channel-v1'),
+      'single_channel',
+    );
+
+    const idOnlyDeployments = dualDeployments.map((deployment) => {
+      const {
+        accountIdentity: _accountIdentity,
+        endpointFingerprint: _endpointFingerprint,
+        ...idOnly
+      } = deployment;
+      return idOnly;
+    });
+    assert.equal(
+      await readinessFor(idOnlyDeployments, 'id-only-channel-v1'),
+      'single_channel',
     );
   });
 

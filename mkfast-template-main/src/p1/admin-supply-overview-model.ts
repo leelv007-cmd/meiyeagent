@@ -36,7 +36,9 @@ export interface QualifiedDeploymentProjection {
   lifecycleStatus: SupplyDeployment['lifecycleStatus'];
   activationStatus: string;
   healthState: HealthOverlayState | 'healthy';
-  faultDomainKey: string;
+  accountIdentity?: string;
+  endpointFingerprint?: string;
+  faultDomainKey: string | null;
 }
 
 export interface DualChannelCoverageProjection {
@@ -180,10 +182,12 @@ function isQualifiedDeployment(
 }
 
 function faultDomainKey(
-  providerProfileId: string,
-  channelKind: string,
-): string {
-  return `${providerProfileId}::${channelKind}`;
+  accountIdentity: string | undefined,
+  endpointFingerprint: string | undefined,
+): string | null {
+  const account = accountIdentity?.trim();
+  const endpoint = endpointFingerprint?.trim();
+  return account && endpoint ? `${account}::${endpoint}` : null;
 }
 
 /**
@@ -241,22 +245,46 @@ export function projectDualChannelCoverage(input: {
       lifecycleStatus: deployment.lifecycleStatus,
       activationStatus: deployment.activationEvidence?.status ?? 'none',
       healthState: healthByTarget.get(deployment.id) ?? 'healthy',
+      accountIdentity: deployment.accountIdentity,
+      endpointFingerprint: deployment.endpointFingerprint,
       faultDomainKey: faultDomainKey(
-        deployment.providerProfileId,
-        channel.kind,
+        deployment.accountIdentity,
+        deployment.endpointFingerprint,
       ),
     });
   }
 
-  const domainKeys = new Set(qualified.map((q) => q.faultDomainKey));
+  const identityVerified = qualified.filter(
+    (deployment): deployment is QualifiedDeploymentProjection & {
+      faultDomainKey: string;
+    } => deployment.faultDomainKey !== null,
+  );
+  const domainKeys = new Set(
+    identityVerified.map((deployment) => deployment.faultDomainKey),
+  );
+  const accountIdentities = new Set(
+    identityVerified.map((deployment) => deployment.accountIdentity!.trim()),
+  );
+  const endpointIdentities = new Set(
+    identityVerified.map((deployment) =>
+      deployment.endpointFingerprint!.trim(),
+    ),
+  );
+  const independentFaultDomainCount = Math.min(
+    domainKeys.size,
+    accountIdentities.size,
+    endpointIdentities.size,
+  );
   const providers = new Set(qualified.map((q) => q.providerProfileId));
-  const channelKinds = new Set(qualified.map((q) => q.channelKind));
+  const channelKinds = new Set(
+    identityVerified.map((deployment) => deployment.channelKind),
+  );
   const manufacturers = new Set(
     qualified.map((q) => q.manufacturer ?? 'unknown'),
   );
 
   let faultDomainKind: FaultDomainKind | 'none' = 'none';
-  if (domainKeys.size >= 2) {
+  if (independentFaultDomainCount >= 2) {
     faultDomainKind =
       manufacturers.size >= 2
         ? 'independent_counterparty'
@@ -265,7 +293,10 @@ export function projectDualChannelCoverage(input: {
           : 'shared_manufacturer_only';
   }
 
-  const multiChannelReady = domainKeys.size >= 2;
+  const multiChannelReady =
+    independentFaultDomainCount >= 2 &&
+    channelKinds.has('official_direct') &&
+    channelKinds.has('upstream_reseller');
   const manufacturerIndependent = manufacturers.size >= 2 && multiChannelReady;
 
   let status: DualChannelCoverageStatus;
@@ -283,12 +314,17 @@ export function projectDualChannelCoverage(input: {
     status = 'multi_channel_ready';
     label = '双渠道就绪';
     note = manufacturerIndependent
-      ? `独立故障域 ${domainKeys.size}（含制造商级独立）`
-      : `渠道级容灾 ${domainKeys.size} 域（共享制造商，非制造商级双供应）`;
+      ? `独立故障域 ${independentFaultDomainCount}（含制造商级独立）`
+      : `渠道级容灾 ${independentFaultDomainCount} 域（共享制造商，非制造商级双供应）`;
   } else {
     status = 'single_channel';
     label = '单渠道 / 无回退';
-    note = '仅一条合格故障域；发布门不得标记 multi-channel ready';
+    note =
+      identityVerified.length < qualified.length
+        ? '缺少稳定账号或端点身份；发布门不得标记 multi-channel ready'
+        : independentFaultDomainCount < 2
+          ? '仅一条合格故障域；发布门不得标记 multi-channel ready'
+          : '缺少官方直连或上游中转渠道；发布门不得标记 multi-channel ready';
   }
 
   return {
@@ -297,7 +333,7 @@ export function projectDualChannelCoverage(input: {
     catalogModelDisplayName: model.displayName,
     status,
     qualifiedDeployments: qualified,
-    independentFaultDomainCount: domainKeys.size,
+    independentFaultDomainCount,
     faultDomainKind,
     multiChannelReady,
     manufacturerIndependent,

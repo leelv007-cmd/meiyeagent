@@ -1,6 +1,8 @@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   model_card_capability_missing,
+  model_card_channel_multi,
+  model_card_channel_single,
   model_card_group_aria,
   model_card_output_copy,
   model_card_output_image,
@@ -36,11 +38,18 @@ export function modelCardView(model: CatalogModelView, usage?: ModelCardUsage) {
         ? model_card_output_image()
         : model_card_output_video();
   const selectable = model.available && Boolean(model.unitPrice);
+  const channelReadinessLabel =
+    model.channelReadiness === 'multi_channel_ready'
+      ? model_card_channel_multi()
+      : model.channelReadiness === 'single_channel'
+        ? model_card_channel_single()
+        : undefined;
   return {
     capabilityLabel:
       model.capabilityLabels.length > 0
         ? model.capabilityLabels.join(' · ')
         : model_card_capability_missing(),
+    channelReadinessLabel,
     metaLabel: [model.manufacturer, model.version].filter(Boolean).join(' · '),
     previewAlt: model_card_preview_alt({ name: model.displayName }),
     previewLabel: model_card_preview_label(),
@@ -188,6 +197,14 @@ export function ModelCardPicker({
                 <span className="mt-1 block text-xs text-muted-foreground">
                   {view.capabilityLabel}
                 </span>
+                {view.channelReadinessLabel ? (
+                  <span
+                    className="mt-1 block text-xs font-medium text-foreground"
+                    data-channel-readiness={model.channelReadiness}
+                  >
+                    {view.channelReadinessLabel}
+                  </span>
+                ) : null}
                 <span className="mt-2 block text-xs">{view.usageLabel}</span>
                 <span className="mt-1 block text-xs">{view.quoteLabel}</span>
                 {view.unavailableReason ? (

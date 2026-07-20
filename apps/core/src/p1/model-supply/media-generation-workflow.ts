@@ -12,7 +12,9 @@ import {
   type ProviderReferencePolicyPort,
 } from './reference-asset-delivery.js';
 import {
+  applyActualRouteDecisionExplanation,
   mediaSubmissionFingerprint,
+  ModelSupplyProviderAdmissionError,
   type CancelledMediaProviderTerminalOutcome,
   type CancelledMediaProviderTerminalReconciliation,
   type DurableMediaGenerationJobView,
@@ -25,7 +27,8 @@ import {
   type ModelSupplyResult,
   type ModelSupplySubmission,
   type ProviderCost,
-  type ProviderExecutionPort,
+  type ProviderExecutionRequest,
+  type ProviderExecutionResponse,
   type ReferenceAssetResolutionFailure,
   type ReferenceAssetResolverPort,
   type ResolvedReferenceAsset,
@@ -43,7 +46,7 @@ export interface MediaGenerationJobApplicationPort {
     jobId: string,
     providerTaskRef: string,
     reconciliationKey: string,
-    output: Record<string, unknown>,
+    output: Record<string, unknown>
   ): Promise<TracerJobRecord>;
 }
 
@@ -55,22 +58,23 @@ export class DurableMediaGenerationApplicationService
       jobs: MediaGenerationJobApplicationPort;
       models: ModelSupplyApplicationService;
       provider?: MediaProviderLifecyclePort;
-    },
+    }
   ) {}
 
   async submit(submission: ModelSupplySubmission) {
-    const preview = this.dependencies.models.previewMediaSubmission(submission);
+    const preview =
+      await this.dependencies.models.prepareMediaSubmission(submission);
     const requestFingerprint = mediaSubmissionFingerprint(submission);
     const existing = await this.dependencies.jobs.find(
       submission.workspaceId,
-      preview.jobId,
+      preview.jobId
     );
     if (existing) {
       assertRequestFingerprint(existing, requestFingerprint);
       const result = (await this.view(existing)).result;
       await this.dependencies.models.persistGenerationResult(
         submission.workspaceId,
-        result,
+        result
       );
       return result;
     }
@@ -90,7 +94,7 @@ export class DurableMediaGenerationApplicationService
     const result = (await this.view(record)).result;
     await this.dependencies.models.persistGenerationResult(
       submission.workspaceId,
-      result,
+      result
     );
     return result;
   }
@@ -99,13 +103,9 @@ export class DurableMediaGenerationApplicationService
     return this.view(await this.dependencies.jobs.get(workspaceId, jobId));
   }
 
-  async cancel(input: {
-    workspaceId: string;
-    jobId: string;
-    actorId: string;
-  }) {
+  async cancel(input: { workspaceId: string; jobId: string; actorId: string }) {
     return this.view(
-      await this.dependencies.jobs.cancel(input.workspaceId, input.jobId),
+      await this.dependencies.jobs.cancel(input.workspaceId, input.jobId)
     );
   }
 
@@ -116,16 +116,16 @@ export class DurableMediaGenerationApplicationService
   }): Promise<CancelledMediaProviderTerminalOutcome> {
     const record = await this.dependencies.jobs.get(
       input.workspaceId,
-      input.jobId,
+      input.jobId
     );
     if (record.providerTaskRef !== input.providerTaskRef) {
       throw new Error(
-        'Late provider terminal task reference does not match the cancelled job.',
+        'Late provider terminal task reference does not match the cancelled job.'
       );
     }
     if (record.status !== 'cancelled') {
       throw new Error(
-        'Late provider terminal reconciliation requires a cancelled media job.',
+        'Late provider terminal reconciliation requires a cancelled media job.'
       );
     }
     const replay = cancelledTerminalFromOutput(record.output);
@@ -140,7 +140,7 @@ export class DurableMediaGenerationApplicationService
     const provider = this.dependencies.provider;
     if (!provider) {
       throw new Error(
-        'Late provider terminal reconciliation requires the media provider runtime.',
+        'Late provider terminal reconciliation requires the media provider runtime.'
       );
     }
     const effect = new ModelMediaGenerationEffect({
@@ -148,26 +148,27 @@ export class DurableMediaGenerationApplicationService
       provider,
     });
     const outcome = await effect.reconcileCancelledProviderTerminal(
-      tracerRequestFromRecord(record),
+      tracerRequestFromRecord(record)
     );
     if (outcome.status === 'pending') return outcome;
-    const persisted = await this.dependencies.jobs.recordCancelledReconciliation(
-      input.workspaceId,
-      input.jobId,
-      input.providerTaskRef,
-      outcome.reconciliation.reconciliationKey,
-      {
-        result: outcome.result,
-        cancelledProviderTerminal: outcome.reconciliation,
-      },
-    );
+    const persisted =
+      await this.dependencies.jobs.recordCancelledReconciliation(
+        input.workspaceId,
+        input.jobId,
+        input.providerTaskRef,
+        outcome.reconciliation.reconciliationKey,
+        {
+          result: outcome.result,
+          cancelledProviderTerminal: outcome.reconciliation,
+        }
+      );
     const persistedResult = resultFromOutput(persisted.output);
     const persistedReconciliation = cancelledTerminalFromOutput(
-      persisted.output,
+      persisted.output
     );
     if (!persistedResult || !persistedReconciliation) {
       throw new Error(
-        'Cancelled media reconciliation was not durably recorded.',
+        'Cancelled media reconciliation was not durably recorded.'
       );
     }
     return {
@@ -178,15 +179,16 @@ export class DurableMediaGenerationApplicationService
   }
 
   private async view(
-    record: TracerJobRecord,
+    record: TracerJobRecord
   ): Promise<DurableMediaGenerationJobView> {
     const completed = resultFromOutput(record.output);
     const submission = submissionFromPayload(record.payload);
-    const result = completed ?? this.dependencies.models.previewMediaSubmission(submission);
+    const result =
+      completed ?? this.dependencies.models.previewMediaSubmission(submission);
     if (record.providerTaskRef && !result.attempt.providerTaskRef) {
       result.attempt.providerTaskRef = record.providerTaskRef;
       const current = result.attempts.find(
-        (attempt) => attempt.id === result.attempt.id,
+        (attempt) => attempt.id === result.attempt.id
       );
       if (current) current.providerTaskRef = record.providerTaskRef;
     }
@@ -199,12 +201,12 @@ export class DurableMediaGenerationApplicationService
         : {}),
       providerLifecycleLatencyMs: Math.max(
         0,
-        Date.parse(record.updatedAt) - Date.parse(record.createdAt),
+        Date.parse(record.updatedAt) - Date.parse(record.createdAt)
       ),
       ...(result.cancelledProviderTerminal
         ? {
             cancelledProviderTerminal: structuredClone(
-              result.cancelledProviderTerminal,
+              result.cancelledProviderTerminal
             ),
           }
         : {}),
@@ -220,68 +222,59 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
       provider: MediaProviderLifecyclePort;
       referencePolicy?: ProviderReferencePolicyPort;
       referenceAssets?: ReferenceAssetResolverPort;
-    },
+    }
   ) {}
 
   async execute(request: TracerExternalRequest) {
     requireMediaKind(request);
     const submission = submissionFromPayload(request.payload);
-    const resolution = await this.resolveProviderRequest(submission, request);
-    if (resolution.kind === 'failure') {
-      return this.recordReferenceResolutionFailure(
-        submission,
-        resolution.failures,
-      );
-    }
-    if (resolution.kind === 'policy_failure') {
-      return this.recordProviderReferencePolicyFailure(
-        submission,
-        resolution.error,
-      );
-    }
-    const providerRequest = resolution.request;
-    const accepted = await this.dependencies.provider.submit(providerRequest);
-    return this.recordSubmissionReceipt(submission, accepted);
+    return this.submitProviderRoute(submission, request, false);
   }
 
   async reconcile(request: TracerExternalRequest) {
     requireMediaKind(request);
     const submission = submissionFromPayload(request.payload);
-    const providerRequest = this.providerRequest(submission, request);
+    let providerSubmission = submission;
+    if (request.providerTaskRef) {
+      const pending = await this.recoverPending(submission);
+      providerSubmission = {
+        ...structuredClone(submission),
+        frozenRouteSnapshot: structuredClone(pending.snapshot),
+      };
+    }
+    let providerRequest = await this.providerRequest(
+      providerSubmission,
+      request
+    );
     let taskRef = request.providerTaskRef;
     if (!taskRef) {
-      const recovered = await this.dependencies.provider.recover(providerRequest);
-      let receipt = recovered;
-      if (!receipt) {
-        const resolution = await this.resolveProviderRequest(submission, request);
-        if (resolution.kind === 'failure') {
-          return this.recordReferenceResolutionFailure(
-            submission,
-            resolution.failures,
-          );
-        }
-        if (resolution.kind === 'policy_failure') {
-          return this.recordProviderReferencePolicyFailure(
-            submission,
-            resolution.error,
-          );
-        }
-        receipt = await this.dependencies.provider.submit(resolution.request);
-      }
-      const submissionOutcome = await this.recordSubmissionReceipt(
+      const submissionOutcome = await this.submitProviderRoute(
         submission,
-        receipt,
+        request,
+        true
       );
-      if (!recovered || submissionOutcome.acceptance !== 'accepted') {
+      if (submissionOutcome.acceptance !== 'accepted') {
         return submissionOutcome;
       }
       taskRef = submissionOutcome.taskRef;
       if (!taskRef) return submissionOutcome;
+      const pending = await this.recoverPending(submission);
+      providerSubmission = {
+        ...structuredClone(submission),
+        frozenRouteSnapshot: structuredClone(pending.snapshot),
+      };
+      providerRequest = await this.providerRequest(providerSubmission, request);
     }
-    const providerState = await this.dependencies.provider.poll({
-      ...providerRequest,
-      taskRef,
-    });
+    const providerState = await this.providerEffect(
+      providerSubmission,
+      providerRequest,
+      'poll',
+      () =>
+        this.dependencies.provider.poll({
+          ...providerRequest,
+          taskRef,
+        })
+    );
     if (
       providerState.status === 'queued' ||
       providerState.status === 'running' ||
@@ -303,7 +296,7 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
               error: providerErrorEvidence(
                 'poll',
                 providerState,
-                providerState.error ?? 'Provider media delivery is pending.',
+                providerState.error ?? 'Provider media delivery is pending.'
               ),
             }
           : {}),
@@ -316,12 +309,12 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
         pending,
         taskRef,
         providerState.providerCost,
-        'failed',
+        'failed'
       );
       await this.dependencies.models.reconcileProviderResult(
         submission,
         failed,
-        'provider_poll_failed',
+        'provider_poll_failed'
       );
       return {
         acceptance: 'accepted' as const,
@@ -330,22 +323,26 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
         error: providerErrorEvidence(
           'poll',
           providerState,
-          providerState.error ?? 'Provider media delivery failed.',
+          providerState.error ?? 'Provider media delivery failed.'
         ),
       };
     }
 
-    let downloaded: Awaited<
-      ReturnType<MediaProviderLifecyclePort['download']>
-    >;
+    let downloaded: Awaited<ReturnType<MediaProviderLifecyclePort['download']>>;
     let asset: Awaited<
       ReturnType<ModelSupplyApplicationService['persistProviderAsset']>
     >;
     try {
-      downloaded = await this.dependencies.provider.download({
-        ...providerRequest,
-        taskRef,
-      });
+      downloaded = await this.providerEffect(
+        providerSubmission,
+        providerRequest,
+        'download',
+        () =>
+          this.dependencies.provider.download({
+            ...providerRequest,
+            taskRef,
+          })
+      );
       asset = await this.dependencies.models.persistProviderAsset({
         workspaceId: submission.workspaceId,
         bytes: downloaded.bytes,
@@ -367,14 +364,14 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
         pending,
         taskRef,
         providerState.providerCost,
-        'completed',
+        'completed'
       ),
       asset,
     };
     await this.dependencies.models.reconcileProviderResult(
       submission,
       completed,
-      'provider_poll_completed_with_storage_receipt',
+      'provider_poll_completed_with_storage_receipt'
     );
     return {
       acceptance: 'accepted' as const,
@@ -385,30 +382,40 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
   }
 
   async reconcileCancelledProviderTerminal(
-    request: TracerExternalRequest,
+    request: TracerExternalRequest
   ): Promise<CancelledMediaProviderTerminalOutcome> {
     requireMediaKind(request);
     const submission = submissionFromPayload(request.payload);
     const taskRef = request.providerTaskRef;
     if (!taskRef) {
       throw new Error(
-        'Cancelled media reconciliation requires a provider task reference.',
+        'Cancelled media reconciliation requires a provider task reference.'
       );
     }
     const pending = await this.recoverPending(submission);
-    if (
-      pending.status !== 'failed' ||
-      pending.usage.status !== 'refunded'
-    ) {
+    if (pending.status !== 'failed' || pending.usage.status !== 'refunded') {
       throw new Error(
-        'Late provider terminal reconciliation requires a refunded cancelled result.',
+        'Late provider terminal reconciliation requires a refunded cancelled result.'
       );
     }
-    const providerRequest = this.providerRequest(submission, request);
-    const providerState = await this.dependencies.provider.poll({
-      ...providerRequest,
-      taskRef,
-    });
+    const providerSubmission = {
+      ...structuredClone(submission),
+      frozenRouteSnapshot: structuredClone(pending.snapshot),
+    };
+    const providerRequest = await this.providerRequest(
+      providerSubmission,
+      request
+    );
+    const providerState = await this.providerEffect(
+      providerSubmission,
+      providerRequest,
+      'late_poll',
+      () =>
+        this.dependencies.provider.poll({
+          ...providerRequest,
+          taskRef,
+        })
+    );
     if (
       providerState.status === 'queued' ||
       providerState.status === 'running' ||
@@ -428,7 +435,7 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
               error: providerErrorEvidence(
                 'late_poll',
                 providerState,
-                providerState.error ?? 'Provider terminal is still pending.',
+                providerState.error ?? 'Provider terminal is still pending.'
               ),
             }
           : {}),
@@ -441,10 +448,16 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
         >
       | undefined;
     if (providerState.status === 'completed') {
-      const downloaded = await this.dependencies.provider.download({
-        ...providerRequest,
-        taskRef,
-      });
+      const downloaded = await this.providerEffect(
+        providerSubmission,
+        providerRequest,
+        'late_download',
+        () =>
+          this.dependencies.provider.download({
+            ...providerRequest,
+            taskRef,
+          })
+      );
       asset = await this.dependencies.models.persistProviderAsset({
         workspaceId: submission.workspaceId,
         bytes: downloaded.bytes,
@@ -458,7 +471,7 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
       pending,
       taskRef,
       providerState.status,
-      providerState.providerCost,
+      providerState.providerCost
     );
     const reconciliation: CancelledMediaProviderTerminalReconciliation = {
       reconciliationKey: lateTerminalReconciliationKey(
@@ -466,7 +479,7 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
         taskRef,
         providerState.status,
         providerCost,
-        asset,
+        asset
       ),
       providerTaskRef: taskRef,
       providerStatus: providerState.status,
@@ -484,17 +497,18 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
             error: providerErrorEvidence(
               'late_poll',
               providerState,
-              providerState.error,
+              providerState.error
             ),
           }
         : {}),
       reconciledAt: new Date().toISOString(),
     };
-    const result = await this.dependencies.models.recordCancelledProviderTerminal(
-      submission,
-      pending,
-      reconciliation,
-    );
+    const result =
+      await this.dependencies.models.recordCancelledProviderTerminal(
+        submission,
+        pending,
+        reconciliation
+      );
     return {
       status: reconciliation.providerStatus,
       reconciliation,
@@ -502,66 +516,128 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
     };
   }
 
-  private async recordSubmissionReceipt(
-    submission: ModelSupplySubmission,
-    accepted: MediaProviderSubmissionReceipt,
-  ) {
-    const pendingExecution: ProviderExecutionPort = {
-      execute: async () => ({
-        kind: 'failure',
-        acceptance:
-          accepted.acceptance === 'rejected_before_accept'
-            ? 'rejected_before_accept'
-            : accepted.acceptance,
-        ...(accepted.taskRef ? { providerTaskRef: accepted.taskRef } : {}),
-        ...(accepted.errorCode ? { errorCode: accepted.errorCode } : {}),
-        ...(accepted.retryable === undefined
-          ? {}
-          : { retryable: accepted.retryable }),
-        message:
-          accepted.error || accepted.errorCode
-            ? providerErrorEvidence(
-                'submit',
-                accepted,
-                accepted.error ?? 'Provider media submission failed.',
-              )
-            : accepted.acceptance === 'rejected_before_accept'
-              ? 'Provider rejected media generation before accepting it.'
-              : 'Provider task was accepted and awaits reconciliation.',
-        providerCost: accepted.providerCost,
-      }),
+  private providerResponseForReceipt(
+    receipt: MediaProviderSubmissionReceipt
+  ): ProviderExecutionResponse {
+    return {
+      kind: 'failure',
+      acceptance: receipt.acceptance,
+      ...(receipt.taskRef ? { providerTaskRef: receipt.taskRef } : {}),
+      ...(receipt.errorCode ? { errorCode: receipt.errorCode } : {}),
+      ...(receipt.retryable === undefined
+        ? {}
+        : { retryable: receipt.retryable }),
+      message:
+        receipt.error ??
+        (receipt.acceptance === 'rejected_before_accept'
+          ? 'Provider rejected media generation before accepting it.'
+          : 'Provider task was accepted and awaits reconciliation.'),
+      providerCost: receipt.providerCost,
     };
-    const result = await this.dependencies.models.executeMediaProviderSubmission(
-      submission,
-      pendingExecution,
-    );
-    if (accepted.acceptance === 'rejected_before_accept') {
+  }
+
+  private async submitProviderRoute(
+    submission: ModelSupplySubmission,
+    tracerRequest: TracerExternalRequest,
+    recoverFirst: boolean
+  ) {
+    let finalReceipt: MediaProviderSubmissionReceipt | undefined;
+    const result =
+      await this.dependencies.models.executeMediaProviderSubmission(
+        submission,
+        {
+          execute: async (supplyRequest: ProviderExecutionRequest) => {
+            const attemptRequest: TracerExternalRequest = {
+              ...tracerRequest,
+              effectIdempotencyKey:
+                supplyRequest.effectIdempotencyKey ??
+                tracerRequest.effectIdempotencyKey,
+            };
+            const resolution = await this.resolveProviderRequest(
+              supplyRequest.submission,
+              attemptRequest,
+              supplyRequest
+            );
+            if (resolution.kind === 'failure') {
+              const message = `Reference asset resolution required: ${resolution.failures
+                .map((failure) => `${failure.assetId} (${failure.reason})`)
+                .join(', ')}.`;
+              finalReceipt = {
+                acceptance: 'rejected_before_accept',
+                errorCode: 'reference_asset_resolution_required',
+                retryable: false,
+                error: message,
+                providerCost: { amount: 0, currency: 'USD', usage: {} },
+              };
+              return this.providerResponseForReceipt(finalReceipt);
+            }
+            if (resolution.kind === 'policy_failure') {
+              finalReceipt = {
+                acceptance: 'rejected_before_accept',
+                errorCode: resolution.error.code,
+                retryable: false,
+                error: resolution.error.message,
+                providerCost: { amount: 0, currency: 'USD', usage: {} },
+              };
+              return this.providerResponseForReceipt(finalReceipt);
+            }
+            let receipt: MediaProviderSubmissionReceipt | null = null;
+            if (recoverFirst) {
+              receipt = await this.providerEffect(
+                supplyRequest.submission,
+                resolution.request,
+                'recover',
+                () => this.dependencies.provider.recover(resolution.request)
+              );
+            }
+            if (!receipt) {
+              receipt = await this.submitProvider(
+                supplyRequest.submission,
+                resolution.request
+              );
+            }
+            finalReceipt = receipt;
+            return this.providerResponseForReceipt(receipt);
+          },
+        },
+        {
+          continueAfterRecoveredCheckpoint: true,
+          useFrozenMediaCandidateSequence: true,
+          attemptEffectGuardsCheckpoint: true,
+          effectIdempotencyKey: tracerRequest.effectIdempotencyKey,
+          reconcileProviderReceipt: recoverFirst,
+        }
+      );
+    const receipt = finalReceipt;
+    if (result.attempt.acceptance === 'rejected_before_accept') {
       return {
-        acceptance: accepted.acceptance,
+        acceptance: 'rejected_before_accept' as const,
         delivery: 'failed' as const,
-        error: providerErrorEvidence(
-          'submit',
-          accepted,
-          accepted.error ?? 'Provider rejected media generation.',
-        ),
+        error: receipt
+          ? providerErrorEvidence(
+              'submit',
+              receipt,
+              receipt.error ?? 'Provider rejected media generation.'
+            )
+          : 'Provider rejected media generation.',
         output: { result },
-        retryable: accepted.retryable ?? false,
-        ...(accepted.taskRef ? { taskRef: accepted.taskRef } : {}),
+        retryable: receipt?.retryable ?? false,
+        ...(receipt?.taskRef ? { taskRef: receipt.taskRef } : {}),
       };
     }
     return {
-      acceptance: accepted.acceptance,
+      acceptance: result.attempt.acceptance,
       delivery:
-        accepted.acceptance === 'acceptance_unknown'
+        result.attempt.acceptance === 'acceptance_unknown'
           ? ('unknown' as const)
           : ('pending' as const),
-      taskRef: accepted.taskRef ?? result.attempt.providerTaskRef,
-      ...(accepted.error || accepted.errorCode
+      taskRef: result.attempt.providerTaskRef ?? receipt?.taskRef,
+      ...(receipt?.error || receipt?.errorCode
         ? {
             error: providerErrorEvidence(
               'submit',
-              accepted,
-              accepted.error ?? 'Provider media submission is unresolved.',
+              receipt,
+              receipt.error ?? 'Provider media submission is unresolved.'
             ),
           }
         : {}),
@@ -574,20 +650,37 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
     const hadPriorAttempt = (request.previousAttemptCount ?? 0) > 0;
     let acceptance = request.previousAcceptance;
     let taskRef = request.providerTaskRef;
+    const shouldSettleAttempt = Boolean(taskRef) || hadPriorAttempt;
+    const pending = shouldSettleAttempt
+      ? await this.recoverPending(submission)
+      : undefined;
+    const providerSubmission = pending
+      ? {
+          ...structuredClone(submission),
+          frozenRouteSnapshot: structuredClone(pending.snapshot),
+        }
+      : submission;
     if (!taskRef && hadPriorAttempt) {
-      const recovered = await this.dependencies.provider.recover(
-        this.providerRequest(submission, request),
+      const providerRequest = await this.providerRequest(
+        providerSubmission,
+        request
+      );
+      const recovered = await this.providerEffect(
+        providerSubmission,
+        providerRequest,
+        'recover',
+        () => this.dependencies.provider.recover(providerRequest)
       );
       if (!recovered) {
         throw new Error(
-          'Provider cancellation recovery has not confirmed whether the submitted task was accepted.',
+          'Provider cancellation recovery has not confirmed whether the submitted task was accepted.'
         );
       }
       acceptance = recovered.acceptance;
       taskRef = recovered.taskRef;
       if (acceptance !== 'rejected_before_accept' && !taskRef) {
         throw new Error(
-          'Provider cancellation recovery returned no task reference for a possibly accepted task.',
+          'Provider cancellation recovery returned no task reference for a possibly accepted task.'
         );
       }
     }
@@ -595,10 +688,20 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
       acceptance = 'rejected_before_accept';
     }
     if (taskRef) {
-      const cancellation = await this.dependencies.provider.cancel({
-        ...this.providerRequest(submission, request),
-        taskRef,
-      });
+      const providerRequest = await this.providerRequest(
+        providerSubmission,
+        request
+      );
+      const cancellation = await this.providerEffect(
+        providerSubmission,
+        providerRequest,
+        'cancel',
+        () =>
+          this.dependencies.provider.cancel({
+            ...providerRequest,
+            taskRef,
+          })
+      );
       acceptance = 'accepted';
       if (cancellation?.status === 'pending') {
         return {
@@ -608,36 +711,34 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
           error: providerErrorEvidence(
             'cancel',
             cancellation,
-            cancellation.error ?? 'Provider cancellation remains pending.',
+            cancellation.error ?? 'Provider cancellation remains pending.'
           ),
         };
       }
     }
     if (!taskRef && acceptance !== 'rejected_before_accept') {
       throw new Error(
-        'Provider cancellation is not confirmed, so the job remains pending reconciliation.',
+        'Provider cancellation is not confirmed, so the job remains pending reconciliation.'
       );
     }
-    const shouldSettleAttempt = Boolean(taskRef) || hadPriorAttempt;
-    const pending = shouldSettleAttempt
-      ? await this.recoverPending(submission)
-      : this.dependencies.models.previewMediaSubmission(submission);
+    const result =
+      pending ?? this.dependencies.models.previewMediaSubmission(submission);
     const cancelled = terminalResult(
-      pending,
+      result,
       taskRef,
       {
-        amount: pending.providerCost.amount,
-        currency: pending.providerCost.currency,
-        usage: structuredClone(pending.providerCost.usage),
+        amount: result.providerCost.amount,
+        currency: result.providerCost.currency,
+        usage: structuredClone(result.providerCost.usage),
       },
       'failed',
-      acceptance,
+      acceptance
     );
     if (shouldSettleAttempt) {
       await this.dependencies.models.reconcileProviderResult(
         submission,
         cancelled,
-        taskRef ? 'provider_cancelled' : 'provider_rejected_before_cancel',
+        taskRef ? 'provider_cancelled' : 'provider_rejected_before_cancel'
       );
     }
     return {
@@ -650,21 +751,87 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
   private recoverPending(submission: ModelSupplySubmission) {
     return this.dependencies.models.executeMediaProviderSubmission(submission, {
       async execute() {
-        throw new Error('A persisted media attempt must reconcile, never resubmit.');
+        throw new Error(
+          'A persisted media attempt must reconcile, never resubmit.'
+        );
       },
     });
   }
 
-  private providerRequest(
+  private async submitProvider(
+    submission: ModelSupplySubmission,
+    request: MediaProviderEffectRequest
+  ): Promise<MediaProviderSubmissionReceipt> {
+    try {
+      return await this.providerEffect(submission, request, 'submit', () =>
+        this.dependencies.provider.submit(request)
+      );
+    } catch (error) {
+      if (!(error instanceof ModelSupplyProviderAdmissionError)) throw error;
+      return {
+        acceptance: 'rejected_before_accept',
+        errorCode: error.errorCode,
+        error: error.message,
+        retryable: true,
+        providerCost: {
+          amount: 0,
+          currency: request.deployment.region === 'domestic' ? 'CNY' : 'USD',
+          usage: {},
+        },
+      };
+    }
+  }
+
+  private providerEffect<T>(
+    submission: ModelSupplySubmission,
+    request: MediaProviderEffectRequest,
+    stage:
+      | 'submit'
+      | 'recover'
+      | 'poll'
+      | 'download'
+      | 'cancel'
+      | 'late_poll'
+      | 'late_download',
+    execute: () => Promise<T>
+  ) {
+    return this.dependencies.models.executeMediaProviderEffect({
+      submission,
+      effectIdempotencyKey: request.effectIdempotencyKey,
+      stage,
+      ...(request.attemptId ? { attemptId: request.attemptId } : {}),
+      ...(request.attemptOrdinal
+        ? { attemptOrdinal: request.attemptOrdinal }
+        : {}),
+      ...(request.routeSnapshot
+        ? { routeSnapshot: request.routeSnapshot }
+        : {}),
+      model: request.model,
+      deployment: request.deployment,
+      ...(request.previousAttempts
+        ? { previousAttempts: request.previousAttempts }
+        : {}),
+      ...(request.previousProviderCosts
+        ? { previousProviderCosts: request.previousProviderCosts }
+        : {}),
+      execute,
+    });
+  }
+
+  private async providerRequest(
     submission: ModelSupplySubmission,
     request: TracerExternalRequest,
     resolvedReferenceAssets?: ResolvedReferenceAsset[],
     resolvedInputAssets?: Array<
       ResolvedReferenceAsset & { role: CanvasGenerationInputAsset['role'] }
     >,
-  ): MediaProviderEffectRequest {
+    supplyRequest?: ProviderExecutionRequest
+  ): Promise<MediaProviderEffectRequest> {
     return {
-      ...this.dependencies.models.mediaProviderRequest(submission),
+      ...(supplyRequest ??
+        (await this.dependencies.models.mediaProviderRequestForExecution(
+          submission
+        ))),
       effectIdempotencyKey: request.effectIdempotencyKey,
       ...(resolvedReferenceAssets?.length
         ? { resolvedReferenceAssets: structuredClone(resolvedReferenceAssets) }
@@ -678,19 +845,30 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
   private async resolveProviderRequest(
     submission: ModelSupplySubmission,
     request: TracerExternalRequest,
+    supplyRequest?: ProviderExecutionRequest
   ): Promise<
     | { kind: 'request'; request: MediaProviderEffectRequest }
     | { kind: 'failure'; failures: ReferenceAssetResolutionFailure[] }
     | { kind: 'policy_failure'; error: ProviderReferencePolicyError }
   > {
-    const declaredInputAssets = submission.input?.inputAssets ??
+    const declaredInputAssets =
+      submission.input?.inputAssets ??
       (submission.input?.referenceAssetIds ?? []).map((assetId) => ({
         assetId,
         role: 'reference_image' as const,
       }));
     const assetIds = declaredInputAssets.map((asset) => asset.assetId);
     if (assetIds.length === 0) {
-      return { kind: 'request', request: this.providerRequest(submission, request) };
+      return {
+        kind: 'request',
+        request: await this.providerRequest(
+          submission,
+          request,
+          undefined,
+          undefined,
+          supplyRequest
+        ),
+      };
     }
     if (!this.dependencies.referenceAssets) {
       return {
@@ -704,14 +882,14 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
     }
     const results = await this.dependencies.referenceAssets.resolve(
       submission.workspaceId,
-      assetIds,
+      assetIds
     );
     const failures = results.filter(
       (result): result is ReferenceAssetResolutionFailure =>
-        result.kind === 'failure',
+        result.kind === 'failure'
     );
     const resolved = results.filter(
-      (result): result is ResolvedReferenceAsset => result.kind === 'resolved',
+      (result): result is ResolvedReferenceAsset => result.kind === 'resolved'
     );
     if (
       failures.length > 0 ||
@@ -730,7 +908,7 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
               })),
       };
     }
-    const providerRequest = this.providerRequest(
+    const providerRequest = await this.providerRequest(
       submission,
       request,
       resolved,
@@ -738,17 +916,16 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
         ...asset,
         role: declaredInputAssets[index]!.role,
       })),
+      supplyRequest
     );
     try {
       (
-        this.dependencies.referencePolicy ??
-        CURRENT_PROVIDER_REFERENCE_POLICY
+        this.dependencies.referencePolicy ?? CURRENT_PROVIDER_REFERENCE_POLICY
       ).assertCanDispatch({
         deploymentId: providerRequest.deployment.id,
         ...(providerRequest.deployment.executionChannelId
           ? {
-              executionChannelId:
-                providerRequest.deployment.executionChannelId,
+              executionChannelId: providerRequest.deployment.executionChannelId,
             }
           : {}),
         operation: providerRequest.submission.operation,
@@ -771,69 +948,10 @@ export class ModelMediaGenerationEffect implements TracerExternalEffect {
       request: providerRequest,
     };
   }
-
-  private async recordReferenceResolutionFailure(
-    submission: ModelSupplySubmission,
-    failures: ReferenceAssetResolutionFailure[],
-  ) {
-    const message = `Reference asset resolution required: ${failures
-      .map((failure) => `${failure.assetId} (${failure.reason})`)
-      .join(', ')}.`;
-    const result = await this.dependencies.models.executeMediaProviderSubmission(
-      submission,
-      {
-        async execute() {
-          return {
-            kind: 'failure' as const,
-            acceptance: 'rejected_before_accept' as const,
-            errorCode: 'reference_asset_resolution_required',
-            retryable: false,
-            message,
-            providerCost: { amount: 0, currency: 'USD' as const, usage: {} },
-          };
-        },
-      },
-    );
-    return {
-      acceptance: 'rejected_before_accept' as const,
-      delivery: 'failed' as const,
-      error: message,
-      output: { result },
-      retryable: false,
-    };
-  }
-
-  private async recordProviderReferencePolicyFailure(
-    submission: ModelSupplySubmission,
-    error: ProviderReferencePolicyError,
-  ) {
-    const result = await this.dependencies.models.executeMediaProviderSubmission(
-      submission,
-      {
-        async execute() {
-          return {
-            kind: 'failure' as const,
-            acceptance: 'rejected_before_accept' as const,
-            errorCode: error.code,
-            retryable: false,
-            message: error.message,
-            providerCost: { amount: 0, currency: 'USD' as const, usage: {} },
-          };
-        },
-      },
-    );
-    return {
-      acceptance: 'rejected_before_accept' as const,
-      delivery: 'failed' as const,
-      error: error.message,
-      output: { result },
-      retryable: false,
-    };
-  }
 }
 
 export function createMediaGenerationJobHandler(
-  worker: Pick<DurableTracerWorkerLike, 'handle'>,
+  worker: Pick<DurableTracerWorkerLike, 'handle'>
 ): JobRuntimeHandler {
   return (envelope, context) => worker.handle(envelope, context);
 }
@@ -847,7 +965,7 @@ function terminalResult(
   taskRef: string | undefined,
   cost: Omit<ProviderCost, 'id' | 'status'>,
   status: 'completed' | 'failed',
-  acceptance: ModelSupplyResult['attempt']['acceptance'] = 'accepted',
+  acceptance: ModelSupplyResult['attempt']['acceptance'] = 'accepted'
 ): ModelSupplyResult {
   const observed: ProviderCost = {
     id: `${pending.providerCost.id}-${status}-observed`,
@@ -860,12 +978,12 @@ function terminalResult(
     ...(taskRef ? { providerTaskRef: taskRef } : {}),
     status,
   };
-  return {
+  return applyActualRouteDecisionExplanation({
     ...structuredClone(pending),
     status,
     attempt,
     attempts: pending.attempts.map((candidate) =>
-      candidate.id === attempt.id ? structuredClone(attempt) : candidate,
+      candidate.id === attempt.id ? structuredClone(attempt) : candidate
     ),
     usage: {
       ...pending.usage,
@@ -873,12 +991,16 @@ function terminalResult(
     },
     providerCost: observed,
     providerCosts: [...pending.providerCosts, observed],
-  };
+  });
 }
 
 function submissionFromPayload(payload: Record<string, unknown>) {
   const submission = payload.submission;
-  if (!submission || typeof submission !== 'object' || Array.isArray(submission)) {
+  if (
+    !submission ||
+    typeof submission !== 'object' ||
+    Array.isArray(submission)
+  ) {
     throw new Error('Media job payload requires a submission.');
   }
   return structuredClone(submission) as ModelSupplySubmission;
@@ -892,20 +1014,18 @@ function resultFromOutput(output: Record<string, unknown> | null) {
   return structuredClone(result) as ModelSupplyResult;
 }
 
-function cancelledTerminalFromOutput(
-  output: Record<string, unknown> | null,
-) {
+function cancelledTerminalFromOutput(output: Record<string, unknown> | null) {
   const terminal = output?.cancelledProviderTerminal;
   if (!terminal || typeof terminal !== 'object' || Array.isArray(terminal)) {
     return undefined;
   }
   return structuredClone(
-    terminal,
+    terminal
   ) as CancelledMediaProviderTerminalReconciliation;
 }
 
 function tracerRequestFromRecord(
-  record: TracerJobRecord,
+  record: TracerJobRecord
 ): TracerExternalRequest {
   return {
     workspaceId: record.workspaceId,
@@ -925,7 +1045,7 @@ function tracerRequestFromRecord(
 function providerErrorEvidence(
   phase: string,
   value: { errorCode?: string; retryable?: boolean },
-  message: string,
+  message: string
 ) {
   return `provider_error phase=${phase} code=${value.errorCode ?? 'unknown'} retryable=${
     value.retryable === undefined ? 'unknown' : String(value.retryable)
@@ -958,7 +1078,7 @@ function lateObservedProviderCost(
   pending: ModelSupplyResult,
   taskRef: string,
   status: 'completed' | 'failed',
-  cost: Omit<ProviderCost, 'id' | 'status'>,
+  cost: Omit<ProviderCost, 'id' | 'status'>
 ): ProviderCost {
   return {
     id: `provider-cost-${createHash('sha256')
@@ -975,7 +1095,7 @@ function lateTerminalReconciliationKey(
   taskRef: string,
   status: 'completed' | 'failed',
   cost: ProviderCost,
-  asset?: { sha256: string },
+  asset?: { sha256: string }
 ) {
   return `late-provider-terminal-${createHash('sha256')
     .update(
@@ -985,7 +1105,7 @@ function lateTerminalReconciliationKey(
         status,
         cost,
         assetSha256: asset?.sha256 ?? null,
-      }),
+      })
     )
     .digest('hex')
     .slice(0, 28)}`;
@@ -993,10 +1113,12 @@ function lateTerminalReconciliationKey(
 
 function assertRequestFingerprint(
   record: TracerJobRecord,
-  requestFingerprint: string,
+  requestFingerprint: string
 ) {
   if (record.payload.requestFingerprint !== requestFingerprint) {
-    throw new Error('Media generation idempotency key conflicts with another request.');
+    throw new Error(
+      'Media generation idempotency key conflicts with another request.'
+    );
   }
 }
 

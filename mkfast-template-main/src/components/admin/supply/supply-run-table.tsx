@@ -3,15 +3,105 @@
  * Facets + pagination/sort reflected via URL state helpers (pure props).
  */
 import { Badge } from '@/components/ui/badge';
-import type { SupplyRunTablePage } from '@/p1/admin-supply-run-table-model';
-import { runTableStateToSearchString } from '@/p1/admin-supply-run-table-model';
+import type {
+  SupplyRunTablePage,
+  SupplyRunTableUrlState,
+} from '@/p1/admin-supply-run-table-model';
+import {
+  runTableStateToSearchString,
+  updateRunTableUrlState,
+} from '@/p1/admin-supply-run-table-model';
+
+type FacetKey =
+  | 'operation'
+  | 'status'
+  | 'modality'
+  | 'channelKind'
+  | 'dataClass';
+
+function StateLink({
+  basePath,
+  current,
+  next,
+  label,
+  onStateChange,
+  testId,
+}: {
+  basePath: string;
+  current: SupplyRunTableUrlState;
+  next: Partial<SupplyRunTableUrlState>;
+  label: string;
+  onStateChange?: (state: SupplyRunTableUrlState) => void;
+  testId?: string;
+}) {
+  const state = updateRunTableUrlState(current, next);
+  const href = `${basePath}${runTableStateToSearchString(state)}`;
+  return (
+    <a
+      href={href}
+      data-testid={testId}
+      className="rounded border px-2 py-1 text-foreground hover:bg-muted"
+      onClick={(event) => {
+        if (!onStateChange) return;
+        event.preventDefault();
+        onStateChange(state);
+      }}
+    >
+      {label}
+    </a>
+  );
+}
+
+function FacetLinks({
+  basePath,
+  current,
+  facetKey,
+  label,
+  values,
+  onStateChange,
+}: {
+  basePath: string;
+  current: SupplyRunTableUrlState;
+  facetKey: FacetKey;
+  label: string;
+  values: readonly string[];
+  onStateChange?: (state: SupplyRunTableUrlState) => void;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-1"
+      data-facet-key={facetKey}
+    >
+      <span className="font-medium">{label}</span>
+      <StateLink
+        basePath={basePath}
+        current={current}
+        next={{ [facetKey]: undefined }}
+        label={`${label} 全部`}
+        onStateChange={onStateChange}
+      />
+      {values.map((value) => (
+        <StateLink
+          key={value}
+          basePath={basePath}
+          current={current}
+          next={{ [facetKey]: value }}
+          label={`${label} ${value}`}
+          onStateChange={onStateChange}
+        />
+      ))}
+    </div>
+  );
+}
 
 export function SupplyRunTable({
   page,
   basePath = '/admin/supply',
+  onStateChange,
 }: {
   page: SupplyRunTablePage;
   basePath?: string;
+  onStateChange?: (state: SupplyRunTableUrlState) => void;
 }) {
   const sharePath = `${basePath}${runTableStateToSearchString(page.state)}`;
 
@@ -41,6 +131,96 @@ export function SupplyRunTable({
           {sharePath}
         </a>
       </header>
+
+      <div
+        data-testid="supply-run-table-controls"
+        className="space-y-2 rounded-md border p-3 text-xs"
+      >
+        <FacetLinks
+          basePath={basePath}
+          current={page.state}
+          facetKey="operation"
+          label="操作"
+          values={page.facets.operations}
+          onStateChange={onStateChange}
+        />
+        <FacetLinks
+          basePath={basePath}
+          current={page.state}
+          facetKey="status"
+          label="状态"
+          values={page.facets.statuses}
+          onStateChange={onStateChange}
+        />
+        <FacetLinks
+          basePath={basePath}
+          current={page.state}
+          facetKey="modality"
+          label="模态"
+          values={page.facets.modalities}
+          onStateChange={onStateChange}
+        />
+        <FacetLinks
+          basePath={basePath}
+          current={page.state}
+          facetKey="channelKind"
+          label="渠道"
+          values={page.facets.channelKinds}
+          onStateChange={onStateChange}
+        />
+        <FacetLinks
+          basePath={basePath}
+          current={page.state}
+          facetKey="dataClass"
+          label="数据类别"
+          values={page.facets.dataClasses}
+          onStateChange={onStateChange}
+        />
+        <div className="flex flex-wrap items-center gap-1" data-control="sort">
+          <span className="font-medium">排序</span>
+          {(
+            [
+              'startedAt',
+              'latencyMs',
+              'status',
+              'operation',
+              'costMicros',
+            ] as const
+          ).map((sort) => (
+            <StateLink
+              key={sort}
+              basePath={basePath}
+              current={page.state}
+              next={{ sort }}
+              label={`排序 ${sort}`}
+              onStateChange={onStateChange}
+            />
+          ))}
+          <StateLink
+            basePath={basePath}
+            current={page.state}
+            next={{ dir: page.state.dir === 'asc' ? 'desc' : 'asc' }}
+            label={page.state.dir === 'asc' ? '切换为降序' : '切换为升序'}
+            onStateChange={onStateChange}
+          />
+        </div>
+        <div
+          className="flex flex-wrap items-center gap-1"
+          data-control="page-size"
+        >
+          <span className="font-medium">每页</span>
+          {[10, 20, 50, 100].map((pageSize) => (
+            <StateLink
+              key={pageSize}
+              basePath={basePath}
+              current={page.state}
+              next={{ pageSize }}
+              label={`每页 ${pageSize}`}
+              onStateChange={onStateChange}
+            />
+          ))}
+        </div>
+      </div>
 
       <div
         data-testid="supply-run-table-facets"
@@ -78,7 +258,10 @@ export function SupplyRunTable({
       </div>
 
       <div className="overflow-x-auto rounded-md border">
-        <table className="w-full text-left text-xs" data-testid="supply-run-table-grid">
+        <table
+          className="w-full text-left text-xs"
+          data-testid="supply-run-table-grid"
+        >
           <thead className="border-b bg-muted/40">
             <tr>
               <th className="p-2">任务</th>
@@ -98,6 +281,8 @@ export function SupplyRunTable({
                 data-run-id={row.id}
                 data-task-id={row.taskId}
                 data-status={row.status}
+                data-ended-at={row.endedAt}
+                data-latency-ms={row.latencyMs}
                 className="border-b last:border-0"
               >
                 <td className="p-2">
@@ -152,6 +337,26 @@ export function SupplyRunTable({
         <span>
           排序 {page.state.sort} {page.state.dir}
         </span>
+        {page.state.page > 1 ? (
+          <StateLink
+            basePath={basePath}
+            current={page.state}
+            next={{ page: page.state.page - 1 }}
+            label="上一页"
+            onStateChange={onStateChange}
+            testId="supply-run-table-previous"
+          />
+        ) : null}
+        {page.state.page < page.totalPages ? (
+          <StateLink
+            basePath={basePath}
+            current={page.state}
+            next={{ page: page.state.page + 1 }}
+            label="下一页"
+            onStateChange={onStateChange}
+            testId="supply-run-table-next"
+          />
+        ) : null}
       </footer>
     </section>
   );

@@ -151,6 +151,9 @@ const modelAdminQueryActions = new Set([
   'activation_probe_runs',
   'activation_status',
   'admin_catalog_control',
+  'admin_supply_action_preview',
+  'admin_supply_control',
+  'admin_supply_pending_actions',
   'catalog_revisions',
   'prompt_revisions',
   'quality_dashboard',
@@ -400,6 +403,9 @@ export function requiredP1Capability(
     if (kind === 'query' && action === 'config_defaults') {
       return 'workspace.read';
     }
+    if (kind === 'query' && action === 'cloudflare_inventory') {
+      return 'system.capability.view';
+    }
     if (
       action === 'config_apply' ||
       action === 'config_rollback' ||
@@ -537,6 +543,8 @@ export function requiredP1Capability(
     if (modelExecutionActions.has(action)) return 'content.create';
     if (modelConfigPublishActions.has(action)) return 'config.publish';
     if (
+      action === 'admin_supply_action' ||
+      action === 'admin_supply_reconcile_pending' ||
       action === 'activation_probe_run' ||
       action === 'quality_evaluation_run'
     ) {

@@ -112,8 +112,15 @@ test('streams text through the documented lifecycle and concatenates audio', asy
     resourceId: 'seed-tts-2.0',
     socketFactory,
   });
+  const published = adapter.withRuntimeBinding({
+    secret: 'published-key',
+    endpoint: 'wss://hot-tts.example.test/v3',
+    model: 'published-tts-model',
+    resourceId: 'seed-icl-2.0',
+    defaultSpeaker: 'published-speaker',
+  });
 
-  const result = await adapter.synthesize({
+  const result = await published.synthesize({
     format: 'mp3',
     language: 'zh-CN',
     sampleRate: 24_000,
@@ -124,11 +131,11 @@ test('streams text through the documented lifecycle and concatenates audio', asy
   assert.deepEqual(connection, {
     headers: {
       'X-Api-Connect-Id': 'connect-id',
-      'X-Api-Key': 'fixture-key',
-      'X-Api-Resource-Id': 'seed-tts-2.0',
+      'X-Api-Key': 'published-key',
+      'X-Api-Resource-Id': 'seed-icl-2.0',
       'X-Control-Require-Usage-Tokens-Return': '*',
     },
-    url: 'wss://openspeech.bytedance.com/api/v3/tts/bidirection',
+    url: 'wss://hot-tts.example.test/v3',
   });
   assert.deepEqual(result, {
     billedTextWords: 6,
@@ -173,8 +180,8 @@ test('streams text through the documented lifecycle and concatenates audio', asy
         speech_rate: 25,
       },
       explicit_language: 'zh-cn',
-      model: 'seed-tts-2.0-standard',
-      speaker: 'fixture-speaker',
+      model: 'published-tts-model',
+      speaker: 'published-speaker',
     },
   });
   assert.deepEqual(JSON.parse(Buffer.from(sent[2]!.payload).toString('utf8')), {

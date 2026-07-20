@@ -1,4 +1,7 @@
-import { pendingActionsSchema, type ApiEnvelope } from '@meiye/contracts';
+import {
+  pendingActionsResponseSchema,
+  type ApiEnvelope,
+} from '@meiye/contracts';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
 import { P1RequestError } from '@/p1/client';
@@ -22,7 +25,7 @@ export async function readPendingActions(signal?: AbortSignal) {
       'error' in envelope ? envelope.error.code : undefined
     );
   }
-  return pendingActionsSchema.parse(envelope.data);
+  return pendingActionsResponseSchema.parse(envelope.data);
 }
 
 export const pendingActionsQueryKey = ['pending-actions'] as const;

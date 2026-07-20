@@ -44,6 +44,7 @@ export interface CatalogModelView {
   capabilityLabels: string[];
   available: boolean;
   availabilityKind: 'local_fixture' | 'production' | 'unavailable';
+  channelReadiness?: 'multi_channel_ready' | 'single_channel' | 'not_verified';
   durationEstimate?: DurationEstimate;
   unavailableReason?: string;
   unitPrice?: {
@@ -410,6 +411,13 @@ export function normalizeCatalog(
         : availability === 'recorded' && activationStatus === 'recorded'
           ? ('local_fixture' as const)
           : ('production' as const);
+      const rawChannelReadiness = string(model.channelReadiness);
+      const channelReadiness =
+        rawChannelReadiness === 'multi_channel_ready' ||
+        rawChannelReadiness === 'single_channel' ||
+        rawChannelReadiness === 'not_verified'
+          ? rawChannelReadiness
+          : undefined;
       const rawReason =
         model.unavailableReason ??
         matchingDeployments.find((deployment) => deployment.unavailableReason)
@@ -466,6 +474,7 @@ export function normalizeCatalog(
         capabilityLabels,
         available,
         availabilityKind,
+        ...(channelReadiness ? { channelReadiness } : {}),
         ...(durationEstimateResult.success
           ? { durationEstimate: durationEstimateResult.data }
           : {}),

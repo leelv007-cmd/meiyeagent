@@ -71,37 +71,59 @@ export function evaluateMultiChannelPublishGate(input: {
   const normalized = qualified.map((d) => ({
     ...d,
     faultDomainKey: faultDomainKey({
-      providerProfileId: d.providerProfileId,
-      channelKind: d.channelKind,
       endpointFingerprint: d.endpointFingerprint,
       accountIdentity: d.accountIdentity,
     }),
   }));
-
-  const domainKeys = new Set(normalized.map((d) => d.faultDomainKey));
-  const manufacturers = new Set(
-    normalized.map((d) => d.manufacturer ?? 'unknown'),
+  const identityVerified = normalized.filter(
+    (deployment) =>
+      Boolean(deployment.accountIdentity?.trim()) &&
+      Boolean(deployment.endpointFingerprint?.trim()),
   );
-  const channelKinds = new Set(normalized.map((d) => d.channelKind));
+
+  const domainKeys = new Set(
+    identityVerified.map((deployment) => deployment.faultDomainKey),
+  );
+  const accountIdentities = new Set(
+    identityVerified.map((deployment) => deployment.accountIdentity!.trim()),
+  );
+  const endpointIdentities = new Set(
+    identityVerified.map((deployment) =>
+      deployment.endpointFingerprint!.trim(),
+    ),
+  );
+  const independentFaultDomainCount = Math.min(
+    domainKeys.size,
+    accountIdentities.size,
+    endpointIdentities.size,
+  );
+  const manufacturers = new Set(
+    identityVerified.map((d) => d.manufacturer ?? 'unknown'),
+  );
+  const channelKinds = new Set(
+    identityVerified.map((deployment) => deployment.channelKind),
+  );
   const hasOfficialDirect = channelKinds.has('official_direct');
   const hasUpstreamReseller = channelKinds.has('upstream_reseller');
 
   let faultDomainKind: MultiChannelPublishGateResult['faultDomainKind'] =
     'none';
-  if (domainKeys.size >= 2) {
+  if (independentFaultDomainCount >= 2) {
     faultDomainKind =
       manufacturers.size >= 2
         ? 'independent_counterparty'
         : 'independent_channel';
-    if (manufacturers.size === 1 && domainKeys.size >= 2) {
+    if (manufacturers.size === 1 && independentFaultDomainCount >= 2) {
       faultDomainKind = 'shared_manufacturer_only';
     }
   }
 
   // C5: multi-channel ready requires ≥2 independent fault domains AND both
-// official_direct + upstream_reseller source kinds.
+  // official_direct + upstream_reseller source kinds.
   const c5MultiChannelReady =
-    domainKeys.size >= 2 && hasOfficialDirect && hasUpstreamReseller;
+    independentFaultDomainCount >= 2 &&
+    hasOfficialDirect &&
+    hasUpstreamReseller;
 
   let status: MultiChannelReadinessStatus;
   let reason: string;
@@ -118,13 +140,15 @@ export function evaluateMultiChannelPublishGate(input: {
     status = 'multi_channel_ready';
     reason =
       manufacturers.size < 2
-        ? `Channel-level resilience across ${domainKeys.size} independent fault domains (shared manufacturer)`
-        : `Manufacturer-level dual supply across ${domainKeys.size} independent fault domains`;
+        ? `Channel-level resilience across ${independentFaultDomainCount} independent fault domains (shared manufacturer)`
+        : `Manufacturer-level dual supply across ${independentFaultDomainCount} independent fault domains`;
   } else if (normalized.length >= 1) {
     status = 'single_channel';
     reason =
-      domainKeys.size < 2
-        ? 'Fewer than 2 independent fault domains — cannot mark multi-channel ready'
+      independentFaultDomainCount < 2
+        ? identityVerified.length < normalized.length
+          ? 'Stable account and endpoint identities are required for independent fault domains'
+          : 'Fewer than 2 independent fault domains — cannot mark multi-channel ready'
         : !hasOfficialDirect || !hasUpstreamReseller
           ? 'Missing official_direct or upstream_reseller channel kind'
           : 'Not multi-channel ready';
@@ -146,7 +170,7 @@ export function evaluateMultiChannelPublishGate(input: {
     catalogModelId: input.catalogModelId,
     status,
     multiChannelReady: c5MultiChannelReady,
-    independentFaultDomainCount: domainKeys.size,
+    independentFaultDomainCount,
     faultDomainKind: c5MultiChannelReady
       ? manufacturers.size >= 2
         ? 'independent_counterparty'
@@ -242,8 +266,6 @@ export function qualifiedDeployment(input: {
     lifecycleStatus: input.lifecycleStatus ?? 'active',
     healthBlocking: input.healthBlocking ?? false,
     faultDomainKey: faultDomainKey({
-      providerProfileId: input.providerProfileId,
-      channelKind: input.channelKind,
       endpointFingerprint: input.endpointFingerprint,
       accountIdentity: input.accountIdentity,
     }),

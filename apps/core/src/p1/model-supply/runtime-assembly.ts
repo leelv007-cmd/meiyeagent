@@ -28,6 +28,7 @@ type ApplicationAdapters = Omit<
   | 'deployments'
   | 'execution'
   | 'models'
+  | 'capabilityHotAssembly'
   | 'runtimeCapabilities'
 > & {
   execution: ConstructorParameters<
@@ -93,6 +94,7 @@ export function seedCapabilityHotAssemblyFromCatalog(
       providerModel: capability.providerModel,
       endpointRevision: capability.endpointRevision,
       lifecycleRevision: capability.lifecycleRevision,
+      credentialAccountId: capability.credentialAccountId,
       credentialVersion: capability.credentialVersion,
     }),
   );
@@ -163,11 +165,16 @@ export function createModelSupplyRuntime(
   input: ModelSupplyRuntimeAssemblyInput,
 ) {
   const { deployments, models, runtime, runtimeCapabilities } = input.catalog;
+  const capabilityHotAssembly =
+    input.capabilityHotAssembly ??
+    seedCapabilityHotAssemblyFromCatalog(input.catalog).hotAssembly;
   const application = new ModelSupplyApplicationService({
     ...input.application,
     catalogRevisionId: RECORDED_CATALOG_REVISION_ID,
     deployments,
     models,
+    capabilityHotAssembly,
+    planningControlPlane: input.controlPlane.planningControlPlane,
     runtimeCapabilities,
   });
   const fallbackCatalog = {
@@ -215,10 +222,6 @@ export function createModelSupplyRuntime(
     configurationRevisions: input.catalog.configurationRevisions,
     fallbackCatalog,
   });
-  const capabilityHotAssembly =
-    input.capabilityHotAssembly ??
-    seedCapabilityHotAssemblyFromCatalog(input.catalog).hotAssembly;
-
   return {
     activationProbeLiveDeploymentIds,
     application,

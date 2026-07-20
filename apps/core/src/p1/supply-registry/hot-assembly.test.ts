@@ -171,6 +171,23 @@ async function seededAccount(
     },
     { now: '2026-07-18T01:00:00.000Z' },
   );
+  account = transitionCredentialLifecycle(
+    account,
+    {
+      kind: 'record_test',
+      evidence: {
+        status: 'passed',
+        testedAt: '2026-07-18T01:01:00.000Z',
+        evidenceRef: 'test://hot-assembly/v2/pass',
+      },
+    },
+    { now: '2026-07-18T01:01:00.000Z' },
+  );
+  account = transitionCredentialLifecycle(
+    account,
+    { kind: 'activate' },
+    { now: '2026-07-18T01:01:00.000Z' },
+  );
   return account;
 }
 
@@ -320,7 +337,7 @@ test('catalog-only hot switch does not change capability revision or invalidate 
   });
   assert.equal(before.credential?.secret, 'sk-live-secret-v1');
   const statsBefore = registry.getAssemblyCacheStats();
-  assert.ok(statsBefore.size >= 1);
+  assert.equal(statsBefore.size, 0);
 
   // Catalog-only hot switch (existing applyCatalogRevision behavior).
   const previousCatalog = registry.getCatalogRevisionHead();
@@ -589,9 +606,11 @@ test('channel isolate/drain/restore semantic contract without restart', () => {
   );
 
   // Drain — reject new submit, continue poll/download/cancel for in-flight.
+  registry.acquireChannelSubmission(channelId, 'drain-flight-1');
+  registry.acquireChannelSubmission(channelId, 'drain-flight-2');
+  registry.acquireChannelSubmission(channelId, 'drain-flight-3');
   const draining = registry.startChannelDrain(channelId, 'rotate_credential', {
     now: '2026-07-20T11:00:00.000Z',
-    inFlightCount: 3,
   });
   assert.equal(draining.mode, 'draining');
   assert.equal(draining.drainMode, 'draining');
@@ -607,6 +626,9 @@ test('channel isolate/drain/restore semantic contract without restart', () => {
   );
 
   // Complete drain → accepting, in-flight cleared.
+  registry.releaseChannelSubmission(channelId, 'drain-flight-1');
+  registry.releaseChannelSubmission(channelId, 'drain-flight-2');
+  registry.releaseChannelSubmission(channelId, 'drain-flight-3');
   const completed = registry.completeChannelDrain(
     channelId,
     'drain_complete',
@@ -635,6 +657,7 @@ test('channel isolate/drain/restore semantic contract without restart', () => {
 
 test('pure decideChannelAdmission and transitionChannelLifecycle contracts', () => {
   const base = initialChannelLifecycle('ch-1', '2026-07-20T00:00:00.000Z');
+  assert.equal(base.lifecycleRevision, 'ch-1:lifecycle:r0');
   assert.equal(decideChannelAdmission(base, 'new_submit').admitted, true);
 
   const isolated = transitionChannelLifecycle(
@@ -643,6 +666,7 @@ test('pure decideChannelAdmission and transitionChannelLifecycle contracts', () 
     { channelId: 'ch-1', now: '2026-07-20T01:00:00.000Z', inFlightCount: 1 },
   );
   assert.equal(isolated.mode, 'isolated');
+  assert.equal(isolated.lifecycleRevision, 'ch-1:lifecycle:r1');
   assert.equal(decideChannelAdmission(isolated, 'new_submit').admitted, false);
   assert.equal(decideChannelAdmission(isolated, 'in_flight').admitted, true);
 
@@ -652,9 +676,63 @@ test('pure decideChannelAdmission and transitionChannelLifecycle contracts', () 
     { channelId: 'ch-1', now: '2026-07-20T02:00:00.000Z' },
   );
   assert.equal(draining.drainMode, 'draining');
+  assert.equal(draining.lifecycleRevision, 'ch-1:lifecycle:r2');
   assert.equal(
     decideChannelAdmission(draining, 'new_submit').errorCode,
     'channel_draining',
+  );
+});
+
+test('channel submission leases enforce stop-new and maintain drain count', async () => {
+  const registry = new CapabilityHotAssemblyRegistry();
+  const channelId = 'channel-production-submit';
+
+  const acquired = await registry.acquireChannelSubmission(
+    channelId,
+    'attempt-1',
+  );
+  assert.equal(acquired.admitted, true);
+  assert.equal(acquired.inFlightCount, 1);
+  assert.equal(registry.getChannelLifecycle(channelId).inFlightCount, 1);
+
+  registry.startChannelDrain(channelId, 'operator drain');
+  const blocked = await registry.acquireChannelSubmission(
+    channelId,
+    'attempt-2',
+  );
+  assert.equal(blocked.admitted, false);
+  assert.equal(blocked.errorCode, 'channel_draining');
+  assert.equal(blocked.inFlightCount, 1);
+
+  const released = await registry.releaseChannelSubmission(
+    channelId,
+    'attempt-1',
+  );
+  assert.equal(released.mode, 'draining');
+  assert.equal(released.inFlightCount, 0);
+});
+
+test('channel lifecycle transitions reject stale expected revisions', () => {
+  const registry = new CapabilityHotAssemblyRegistry();
+  const channelId = 'channel-lifecycle-cas';
+  const initial = registry.getChannelLifecycle(channelId);
+  const isolated = registry.isolateChannel(channelId, 'operator isolate', {
+    expectedLifecycleRevision: initial.lifecycleRevision,
+  });
+  assert.equal(isolated.lifecycleRevision, `${channelId}:lifecycle:r1`);
+
+  assert.throws(
+    () =>
+      registry.restoreChannel(channelId, 'stale operator restore', {
+        expectedLifecycleRevision: initial.lifecycleRevision,
+      }),
+    (error: unknown) =>
+      error instanceof HotAssemblyError &&
+      error.code === 'LIFECYCLE_REVISION_CONFLICT',
+  );
+  assert.equal(
+    registry.getChannelLifecycle(channelId).lifecycleRevision,
+    isolated.lifecycleRevision,
   );
 });
 

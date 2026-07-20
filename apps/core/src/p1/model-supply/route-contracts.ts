@@ -13,6 +13,7 @@ import type {
   ModelModality,
   ModelOperation,
 } from './supply-contracts.js';
+import type { RouteDecisionExplanation } from '../supply-registry/route-explanation.js';
 
 export interface RequestedSelection {
   mode: 'fixed' | 'auto';
@@ -125,6 +126,8 @@ export interface ModelSupplyRouteSimulationInput {
   dataClass: DataClass[];
   failureScenario: RouteSimulationFailureScenario;
   unavailableDeploymentIds?: string[];
+  /** Validate this immutable candidate revision instead of the published head. */
+  routePolicyRevisionId?: string;
 }
 
 export interface ModelSupplyRouteSimulation {
@@ -165,6 +168,11 @@ export interface ModelSupplyRouteSimulation {
 export interface RouteSnapshot {
   id: string;
   catalogRevisionId: string;
+  capabilityRevisionId?: string;
+  routePolicyRevisionId?: string;
+  dataPolicyRevisionId?: string;
+  runtimeExclusionReasons?: string[];
+  decisionExplanation?: RouteDecisionExplanation;
   requestedSelection: RequestedSelection;
   candidateCatalogModelIds: string[];
   actualCatalogModelId: string;
@@ -173,6 +181,10 @@ export interface RouteSnapshot {
   priceRevision?: string;
   credentialMode?: 'platform' | 'byok_strict';
   credentialVersion?: string;
+  credentialAccountId?: string;
+  supplyPoolId?: string;
+  entitlementPolicyRevision?: string;
+  appliedAllocationIds?: string[];
   providerProfileId?: string;
   executionChannelId?: string;
   providerModel?: string;
@@ -181,6 +193,8 @@ export interface RouteSnapshot {
   credentialOwner?: ModelDeployment['credentialOwner'];
   deploymentLifecycleRevision?: string;
   fallbackConsent?: boolean;
+  maxAttempts?: number;
+  fallbackAuthorized?: boolean;
   allowedCandidates?: Array<{
     catalogModelId: string;
     deploymentId: string;
@@ -196,7 +210,10 @@ export interface RouteSnapshot {
     endpointRevision?: string | null;
     apiCounterparty?: string | null;
     credentialOwner?: ModelDeployment['credentialOwner'] | null;
+    accountIdentity?: string | null;
+    endpointFingerprint?: string | null;
     deploymentLifecycleRevision?: string | null;
+    dataPolicyRevisionId?: string | null;
     apiFamily: ModelDeployment['apiFamily'];
     channel: ModelDeployment['channel'];
     region: ModelDeployment['region'];
@@ -209,6 +226,7 @@ export interface RouteSnapshot {
     policyRevision: string;
     priceRevision: string;
     unitPriceMicros: number;
+    pricingStatus?: 'unknown';
     currency: 'CNY' | 'USD';
     unit: string;
     fallbackRank: number;

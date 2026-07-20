@@ -14,7 +14,10 @@ import type {
   SupplierPriceRevision,
 } from '@meiye/contracts';
 
-import type { SupplyControlSnapshot, SupplyRunRecord } from './admin-supply-types';
+import type {
+  SupplyControlSnapshot,
+  SupplyRunRecord,
+} from './admin-supply-types';
 
 const CAPTURED_AT = '2026-07-20T12:00:00.000Z';
 
@@ -89,6 +92,7 @@ const executionChannels: SupplyExecutionChannel[] = [
     region: 'domestic',
     protocolFamily: 'ark',
     accountOwnership: 'platform',
+    lifecycleRevision: 'channel-ark-direct:lifecycle:r0',
     revisionId: 'channel-ark-direct:r1',
   },
   {
@@ -98,6 +102,7 @@ const executionChannels: SupplyExecutionChannel[] = [
     region: 'overseas',
     protocolFamily: 'openai-compat',
     accountOwnership: 'platform',
+    lifecycleRevision: 'channel-tuzi-reseller:lifecycle:r0',
     revisionId: 'channel-tuzi-reseller:r1',
   },
   {
@@ -107,6 +112,7 @@ const executionChannels: SupplyExecutionChannel[] = [
     region: 'overseas',
     protocolFamily: 'openai',
     accountOwnership: 'platform',
+    lifecycleRevision: 'channel-openai-direct:lifecycle:r0',
     revisionId: 'channel-openai-direct:r1',
   },
 ];
@@ -121,7 +127,7 @@ function dep(
     status: 'live_verified',
     verifiedAt: '2026-07-19T00:00:00.000Z',
     evidenceRef: `evidence://${id}`,
-  },
+  }
 ): SupplyDeployment {
   return {
     id,
@@ -133,6 +139,8 @@ function dep(
     dataPolicyRevisionId: 'data-policy-r1',
     priceRevisionId: `price-${id}`,
     credentialAccountId: `cred-${providerProfileId}`,
+    accountIdentity: `account:${providerProfileId}`,
+    endpointFingerprint: `endpoint:${executionChannelId}`,
     revisionId: `${id}:r1`,
   };
 }
@@ -140,39 +148,44 @@ function dep(
 const deployments: SupplyDeployment[] = [
   // Text dual-channel
   dep('dep-text-ark', 'model-text-seed', 'provider-ark', 'channel-ark-direct'),
-  dep('dep-text-tuzi', 'model-text-seed', 'provider-tuzi', 'channel-tuzi-reseller'),
+  dep(
+    'dep-text-tuzi',
+    'model-text-seed',
+    'provider-tuzi',
+    'channel-tuzi-reseller'
+  ),
   // Image dual-channel
   dep(
     'dep-image-ark',
     'model-image-seedream',
     'provider-ark',
-    'channel-ark-direct',
+    'channel-ark-direct'
   ),
   dep(
     'dep-image-tuzi',
     'model-image-seedream',
     'provider-tuzi',
-    'channel-tuzi-reseller',
+    'channel-tuzi-reseller'
   ),
   // Video dual-channel (shared manufacturer → channel-level only)
   dep(
     'dep-video-ark',
     'model-video-seedance',
     'provider-ark',
-    'channel-ark-direct',
+    'channel-ark-direct'
   ),
   dep(
     'dep-video-tuzi',
     'model-video-seedance',
     'provider-tuzi',
-    'channel-tuzi-reseller',
+    'channel-tuzi-reseller'
   ),
   // Single-channel image (no fallback)
   dep(
     'dep-image-openai',
     'model-image-single',
     'provider-openai',
-    'channel-openai-direct',
+    'channel-openai-direct'
   ),
 ];
 
@@ -188,7 +201,8 @@ const contracts: SupplyContract[] = [
     id: 'contract-tuzi',
     providerProfileId: 'provider-tuzi',
     termsRevisionId: 'terms-tuzi-r1',
-    dataProcessingSummary: 'overseas relay; retention per subprocessor schedule',
+    dataProcessingSummary:
+      'overseas relay; retention per subprocessor schedule',
     effectiveFrom: '2026-01-01T00:00:00.000Z',
   },
   {
@@ -458,6 +472,36 @@ export function buildDefaultSupplyControlSnapshot(): SupplyControlSnapshot {
     contracts,
     credentials,
     pools,
+    entitlementPolicies: [
+      {
+        id: 'entitlement-policy:growth:r1',
+        tier: 'growth',
+        revision: 1,
+        stage: 'published',
+        revisionId: 'entitlement-policy:growth:r1',
+        concurrencyLimit: 4,
+        queuePriority: 5,
+        supportLabel: 'priority',
+        allowanceSummary: 'audio=10, copy=100, image=20, video=5',
+        publishedAt: CAPTURED_AT,
+        actorId: 'admin-1',
+        reason: 'Default fixture policy',
+      },
+    ],
+    accountAllocations: [
+      {
+        id: 'allocation-fixture-a',
+        accountId: 'acct-pro',
+        workspaceId: 'ws-pro',
+        kind: 'grant',
+        targetLabel: 'supply_pool:pool-shared-default',
+        source: 'enterprise_contract',
+        status: 'active',
+        reason: 'Default fixture allocation',
+        startsAt: CAPTURED_AT,
+        endsAt: null,
+      },
+    ],
     routePolicies,
     priceRevisions,
     healthOverlays: [
@@ -470,6 +514,24 @@ export function buildDefaultSupplyControlSnapshot(): SupplyControlSnapshot {
         startedAt: '2026-07-20T11:40:10.000Z',
       },
     ],
+    runPage: {
+      query: {
+        page: 1,
+        pageSize: 20,
+        sort: 'startedAt',
+        dir: 'desc',
+      },
+      total: runs.length,
+      totalPages: Math.max(1, Math.ceil(runs.length / 20)),
+      rows: runs,
+      facets: {
+        operations: [...new Set(runs.map((run) => run.operation))],
+        statuses: [...new Set(runs.map((run) => run.status))],
+        modalities: [...new Set(runs.map((run) => run.modality))],
+        channelKinds: [...new Set(runs.map((run) => run.channelKind))],
+        dataClasses: [...new Set(runs.map((run) => run.dataClass))],
+      },
+    },
     runs,
     recentChanges: [
       {

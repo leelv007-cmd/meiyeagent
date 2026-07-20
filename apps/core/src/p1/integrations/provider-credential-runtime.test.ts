@@ -7,9 +7,56 @@ import { FakeKmsSecretStore } from './secret-store.js';
 import {
   assembleProviderCredentialByFrozenVersion,
   createProviderCredentialSecretBroker,
+  migrateProviderCredentialAccountsFromIntegrations,
   projectProviderCredentialEnvFallbackMonitor,
+  ProviderCredentialAccountProvisioner,
   providerCredentialEnvFromVault,
+  type ProviderCredentialAccountRepository,
 } from './provider-credential-runtime.js';
+import type { CredentialAccount } from '../supply-registry/credential-account.js';
+import { transitionCredentialLifecycle } from '../supply-registry/credential-lifecycle.js';
+
+class MemoryProviderCredentialAccountRepository
+  implements ProviderCredentialAccountRepository
+{
+  private readonly rows = new Map<
+    string,
+    { account: CredentialAccount; recordRevision: number }
+  >();
+
+  async getCredentialAccount(workspaceId: string, accountId: string) {
+    const row = this.rows.get(`${workspaceId}:${accountId}`);
+    return row ? structuredClone(row) : null;
+  }
+
+  async saveCredentialAccount(
+    workspaceId: string,
+    account: CredentialAccount,
+    expectedRecordRevision: number | null,
+  ) {
+    const key = `${workspaceId}:${account.id}`;
+    const current = this.rows.get(key);
+    if (
+      (expectedRecordRevision === null && current) ||
+      (expectedRecordRevision !== null &&
+        current?.recordRevision !== expectedRecordRevision)
+    ) {
+      throw new Error('credential account CAS conflict');
+    }
+    const recordRevision = (current?.recordRevision ?? 0) + 1;
+    this.rows.set(key, {
+      account: structuredClone(account),
+      recordRevision,
+    });
+    return recordRevision;
+  }
+
+  async listCredentialAccounts(workspaceId: string) {
+    return [...this.rows.entries()]
+      .filter(([key]) => key.startsWith(`${workspaceId}:credential-account:`))
+      .map(([, row]) => structuredClone(row));
+  }
+}
 
 const admin = {
   correlationId: 'credential-runtime-test',
@@ -77,9 +124,11 @@ test('vault credentials take over direct and Ark boot configuration and downgrad
   const service = new IntegrationApplicationService({ repository, secrets });
   await storeCredential(service, 'model.direct', 'vault-direct-secret');
   await storeCredential(service, 'ark.media', 'vault-ark-secret');
+  const accounts = new MemoryProviderCredentialAccountRepository();
+  await migrateProviderCredentialAccountsFromIntegrations(repository, accounts);
 
   const result = await providerCredentialEnvFromVault(
-    repository,
+    accounts,
     secrets,
     runtimeEnv,
   );
@@ -105,7 +154,7 @@ test('vault credentials take over direct and Ark boot configuration and downgrad
 
 test('boot credential binding falls back to env when vault slots are absent', async () => {
   const result = await providerCredentialEnvFromVault(
-    new MemoryIntegrationRepository(),
+    new MemoryProviderCredentialAccountRepository(),
     new FakeKmsSecretStore(),
     runtimeEnv,
   );
@@ -125,9 +174,11 @@ test('boot credential binding falls back to env when a recorded secret is unavai
     secrets: new FakeKmsSecretStore(),
   });
   await storeCredential(service, 'model.direct', 'ephemeral-recorded-secret');
+  const accounts = new MemoryProviderCredentialAccountRepository();
+  await migrateProviderCredentialAccountsFromIntegrations(repository, accounts);
 
   const result = await providerCredentialEnvFromVault(
-    repository,
+    accounts,
     new FakeKmsSecretStore(),
     runtimeEnv,
   );
@@ -147,9 +198,11 @@ test('boot credential binding rejects a secret with mismatched AAD', async () =>
   );
   const ark = await storeCredential(service, 'ark.media', 'vault-ark-secret');
   await repository.saveConnection({ ...direct, secretRef: ark.secretRef });
+  const accounts = new MemoryProviderCredentialAccountRepository();
+  await migrateProviderCredentialAccountsFromIntegrations(repository, accounts);
 
   await assert.rejects(
-    providerCredentialEnvFromVault(repository, secrets, runtimeEnv),
+    providerCredentialEnvFromVault(accounts, secrets, runtimeEnv),
     /AAD does not match/,
   );
 });
@@ -159,8 +212,10 @@ test('G2 migration adapter assembles vault credentials by frozen version without
   const secrets = new FakeKmsSecretStore();
   const service = new IntegrationApplicationService({ repository, secrets });
   await storeCredential(service, 'model.direct', 'vault-direct-secret-v1');
+  const accounts = new MemoryProviderCredentialAccountRepository();
+  await migrateProviderCredentialAccountsFromIntegrations(repository, accounts);
 
-  const broker = createProviderCredentialSecretBroker(repository, secrets);
+  const broker = createProviderCredentialSecretBroker(accounts, secrets);
   const assembled = await assembleProviderCredentialByFrozenVersion(broker, {
     credentialAccountId: 'credential-account:platform:model.direct',
     frozenVersion: '1',
@@ -176,9 +231,99 @@ test('G2 migration adapter assembles vault credentials by frozen version without
   assert.equal(JSON.stringify(publicMeta).includes('vault-direct-secret'), false);
 });
 
+test('connectivity verification activates only the exact tested pending head', async () => {
+  const integrations = new MemoryIntegrationRepository();
+  const secrets = new FakeKmsSecretStore();
+  const service = new IntegrationApplicationService({
+    repository: integrations,
+    secrets,
+  });
+  await storeCredential(
+    service,
+    'model.direct',
+    'vault-direct-secret-v1',
+  );
+  const accounts = new MemoryProviderCredentialAccountRepository();
+  await migrateProviderCredentialAccountsFromIntegrations(
+    integrations,
+    accounts,
+  );
+  const accountId = 'credential-account:platform:model.direct';
+  const current = await accounts.getCredentialAccount('__global__', accountId);
+  assert.ok(current);
+  const secretReference = await secrets.put(
+    {
+      workspaceId: '__global__',
+      credentialId: current.account.credentialId,
+      version: 2,
+      provider: 'model',
+    },
+    'vault-direct-secret-v2',
+  );
+  const pending = transitionCredentialLifecycle(
+    current.account,
+    {
+      kind: 'rotate',
+      next: { version: '2', secretReference, secretVersion: 2 },
+    },
+    { now: '2026-07-20T00:00:00.000Z' },
+  );
+  await accounts.saveCredentialAccount(
+    '__global__',
+    pending,
+    current.recordRevision,
+  );
+  const verifier = new ProviderCredentialAccountProvisioner(
+    accounts,
+    { async issue() { throw new Error('not used'); } },
+    secrets,
+  );
+
+  await verifier.recordConnectivityResult({
+    workspaceId: '__global__',
+    accountId,
+    expectedVersion: '2',
+    status: 'unauthorized',
+    errorCode: 'http_401',
+    testedAt: '2026-07-20T00:01:00.000Z',
+    evidenceRef: 'audit://credential-connectivity/v2/fail',
+  });
+  assert.equal(
+    (await accounts.getCredentialAccount('__global__', accountId))?.account
+      .status,
+    'pending',
+  );
+
+  await verifier.recordConnectivityResult({
+    workspaceId: '__global__',
+    accountId,
+    expectedVersion: '2',
+    status: 'passed',
+    testedAt: '2026-07-20T00:02:00.000Z',
+    evidenceRef: 'audit://credential-connectivity/v2/pass',
+  });
+  assert.equal(
+    (await accounts.getCredentialAccount('__global__', accountId))?.account
+      .status,
+    'active',
+  );
+
+  await assert.rejects(
+    verifier.recordConnectivityResult({
+      workspaceId: '__global__',
+      accountId,
+      expectedVersion: '1',
+      status: 'passed',
+      testedAt: '2026-07-20T00:03:00.000Z',
+      evidenceRef: 'audit://credential-connectivity/v1/stale',
+    }),
+    /changed before connectivity verification/,
+  );
+});
+
 test('G2 boot sources project env_fallback monitor with migration entry', async () => {
   const result = await providerCredentialEnvFromVault(
-    new MemoryIntegrationRepository(),
+    new MemoryProviderCredentialAccountRepository(),
     new FakeKmsSecretStore(),
     runtimeEnv,
   );

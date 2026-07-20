@@ -1,4 +1,9 @@
-import type { ProductRole } from '@meiye/contracts';
+import type {
+  ProductBillingMode,
+  ProductRole,
+  ProductSettlementStatus,
+  ProviderCostSnapshot,
+} from '@meiye/contracts';
 
 /** Re-export canonical supply-route evidence shape (S2b). */
 export type {
@@ -84,6 +89,16 @@ export interface UsageEvent {
   actorId: string;
   correlationId: string;
   createdAt: string;
+  /** ProductUsage facts attached to the canonical usage event chain (#92). */
+  billing?: {
+    quoteId: string;
+    taskId: string;
+    billingMode: ProductBillingMode;
+    settlementStatus: ProductSettlementStatus;
+    settledQuantity?: number;
+    refundedQuantity?: number;
+    evidenceRef?: string;
+  };
 }
 
 export type AppendUsageEventInput = Omit<
@@ -116,6 +131,9 @@ export interface RouteCandidate {
   providerModel?: string;
   endpointRevision?: string;
   executionChannelId?: string;
+  accountIdentity?: string;
+  endpointFingerprint?: string;
+  dataPolicyRevisionId?: string;
   lifecycleRevision?: string;
   policyRevision?: string;
   priceRevision?: string;
@@ -142,6 +160,8 @@ export interface RouteSnapshot {
   dataClass: GenerationDataClass;
   dataClasses?: GenerationDataClass[];
   fallbackConsent: boolean;
+  maxAttempts?: number;
+  fallbackAuthorized?: boolean;
   allowedCandidates: RouteCandidate[];
   retryOwner?: 'product';
   providerRetryDisabled?: true;
@@ -189,6 +209,8 @@ export interface ProviderCostEvent {
   actorId: string;
   correlationId: string;
   createdAt: string;
+  /** Frozen attempt cost facts; the event remains the canonical append-only chain. */
+  snapshot?: ProviderCostSnapshot;
 }
 
 export type ProductPlanTier = 'trial' | 'starter' | 'growth' | 'pro';

@@ -92,12 +92,13 @@ export class PostgresFoundationRepository implements FoundationRepository {
         id text NOT NULL,
         resource text NOT NULL,
         action text NOT NULL,
-        amount integer NOT NULL,
+        amount numeric NOT NULL,
         reservation_id text,
         reason text NOT NULL,
         actor_id text NOT NULL,
         correlation_id text NOT NULL,
         created_at timestamptz NOT NULL,
+        billing jsonb,
         PRIMARY KEY (workspace_id, id)
       );
       ALTER TABLE p1_usage_events
@@ -177,6 +178,7 @@ export class PostgresFoundationRepository implements FoundationRepository {
         actor_id text NOT NULL,
         correlation_id text NOT NULL,
         created_at timestamptz NOT NULL,
+        snapshot jsonb,
         PRIMARY KEY (workspace_id, id),
         FOREIGN KEY (workspace_id, attempt_id)
           REFERENCES p1_provider_attempts(workspace_id, id)
@@ -250,7 +252,11 @@ export class PostgresFoundationRepository implements FoundationRepository {
         ADD COLUMN IF NOT EXISTS result jsonb;
       ALTER TABLE p1_provider_cost_events
         ALTER COLUMN amount_micros DROP NOT NULL,
-        ADD COLUMN IF NOT EXISTS billing_status text NOT NULL DEFAULT 'known';
+        ADD COLUMN IF NOT EXISTS billing_status text NOT NULL DEFAULT 'known',
+        ADD COLUMN IF NOT EXISTS snapshot jsonb;
+      ALTER TABLE p1_usage_events
+        ALTER COLUMN amount TYPE numeric USING amount::numeric,
+        ADD COLUMN IF NOT EXISTS billing jsonb;
     `);
   }
 
@@ -523,10 +529,11 @@ export class PostgresFoundationRepository implements FoundationRepository {
   async appendUsageEvent(event: UsageEvent) {
     await this.database.query(
       `INSERT INTO p1_usage_events
-       (workspace_id,id,resource,action,amount,reservation_id,reason,actor_id,correlation_id,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz)`,
+       (workspace_id,id,resource,action,amount,reservation_id,reason,actor_id,correlation_id,created_at,billing)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11::jsonb)`,
       [event.workspaceId, event.id, event.resource, event.action, event.amount,
-        event.reservationId ?? null, event.reason, event.actorId, event.correlationId, event.createdAt]
+        event.reservationId ?? null, event.reason, event.actorId, event.correlationId, event.createdAt,
+        event.billing ? JSON.stringify(event.billing) : null]
     );
     await this.syncRolledBackUsageProjection(event);
   }
@@ -550,7 +557,7 @@ export class PostgresFoundationRepository implements FoundationRepository {
         .filter((item) =>
           ['commit', 'refund', 'expire'].includes(item.action)
         )
-        .map((item) => [item.reservationId, item.action])
+        .map((item) => [item.reservationId, item])
     );
     const allowance = events
       .filter((item) =>
@@ -570,9 +577,13 @@ export class PostgresFoundationRepository implements FoundationRepository {
         (item) =>
           item.action === 'reserve' &&
           item.reservationId &&
-          terminals.get(item.reservationId) === 'commit'
+          terminals.get(item.reservationId)?.action === 'commit'
       )
-      .reduce((sum, item) => sum + item.amount, 0);
+      .reduce(
+        (sum, item) =>
+          sum + (terminals.get(item.reservationId)?.amount ?? item.amount),
+        0,
+      );
     const bucket = event.resource === 'copy' ? 'content' : event.resource;
     state.entitlement[bucket] = {
       allowance,
@@ -611,14 +622,14 @@ export class PostgresFoundationRepository implements FoundationRepository {
   }
 
   async listUsageEvents(workspaceId: string, resource: UsageResource) {
-    const result = await this.database.query<UsageEvent>(
+    const result = await this.database.query<Omit<UsageEvent, 'amount'> & { amount: string | number }>(
       `SELECT id, workspace_id AS "workspaceId", resource, action, amount,
               reservation_id AS "reservationId", reason, actor_id AS "actorId",
-              correlation_id AS "correlationId", created_at::text AS "createdAt"
+              correlation_id AS "correlationId", created_at::text AS "createdAt", billing
          FROM p1_usage_events WHERE workspace_id = $1 AND resource = $2 ORDER BY created_at, id`,
       [workspaceId, resource]
     );
-    return result.rows;
+    return result.rows.map((row) => ({ ...row, amount: Number(row.amount) }));
   }
 
   async insertRouteSnapshot(snapshot: RouteSnapshot) {
@@ -757,12 +768,12 @@ export class PostgresFoundationRepository implements FoundationRepository {
     await this.database.query(
       `INSERT INTO p1_provider_cost_events
        (workspace_id,id,attempt_id,stage,amount_micros,currency,unit,evidence,payer,billing_status,
-        actor_id,correlation_id,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::timestamptz)`,
+        actor_id,correlation_id,created_at,snapshot)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::timestamptz,$14::jsonb)`,
       [event.workspaceId, event.id, event.attemptId, event.stage, event.amountMicros,
         event.currency, event.unit, event.evidence, event.payer,
         event.billingStatus ?? 'known', event.actorId, event.correlationId,
-        event.createdAt]
+        event.createdAt, event.snapshot ? JSON.stringify(event.snapshot) : null]
     );
   }
 
@@ -771,7 +782,8 @@ export class PostgresFoundationRepository implements FoundationRepository {
       `SELECT id, workspace_id AS "workspaceId", attempt_id AS "attemptId", stage,
               amount_micros AS "amountMicros", currency, unit, evidence, payer,
               billing_status AS "billingStatus",
-              actor_id AS "actorId", correlation_id AS "correlationId", created_at::text AS "createdAt"
+              actor_id AS "actorId", correlation_id AS "correlationId", created_at::text AS "createdAt",
+              snapshot
          FROM p1_provider_cost_events WHERE workspace_id = $1 AND attempt_id = $2 ORDER BY created_at, id`,
       [workspaceId, attemptId]
     );

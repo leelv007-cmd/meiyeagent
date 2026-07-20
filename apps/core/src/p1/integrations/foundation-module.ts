@@ -10,7 +10,11 @@ import {
   type IntegrationContext,
   type SubmitStrictByokInput,
 } from './contracts.js';
-import type { ProviderCredentialRuntimeSources } from './provider-credential-runtime.js';
+import type {
+  ProviderCredentialOperatorPort,
+  ProviderCredentialRuntimeSources,
+} from './provider-credential-runtime.js';
+import { toPublicMetadata } from '../supply-registry/credential-account.js';
 
 type ProviderCredentialEffectiveSource = 'vault' | 'env_fallback' | 'env';
 
@@ -22,6 +26,7 @@ const PROVIDER_CREDENTIAL_SLOTS = [
 
 interface IntegrationsFoundationModuleOptions {
   adminActorIds?: readonly string[];
+  providerCredentialOperator?: ProviderCredentialOperatorPort;
   providerCredentialSources?: ProviderCredentialRuntimeSources;
 }
 
@@ -280,6 +285,7 @@ function publicDouyinPublishJob(
 export class IntegrationsFoundationModule implements P1OperationModule {
   readonly name = 'integrations';
   private readonly adminActorIds: Set<string>;
+  private readonly providerCredentialOperator?: ProviderCredentialOperatorPort;
   private readonly providerCredentialSources?: ProviderCredentialRuntimeSources;
 
   constructor(
@@ -287,6 +293,7 @@ export class IntegrationsFoundationModule implements P1OperationModule {
     options: IntegrationsFoundationModuleOptions = {}
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
+    this.providerCredentialOperator = options.providerCredentialOperator;
     this.providerCredentialSources = options.providerCredentialSources;
   }
 
@@ -342,32 +349,39 @@ export class IntegrationsFoundationModule implements P1OperationModule {
     switch (action) {
       case 'admin_store_provider_credential': {
         const { id, slot } = this.platformCredentialId(payload);
-        return publicConnection(
-          await this.integrations.createConnection(
-            this.platformCredentialContext(args.context),
-            {
-              id,
-              provider: slot === 'douyin.platform' ? 'douyin' : 'model',
-              identityMode: 'service',
-              requestedCapabilities: [slot],
-              grantedCapabilities: [slot],
-              subject: slot,
-              credential: credentialInput(payload.credential),
-            },
-            args.idempotencyKey,
-          ),
+        const connection = await this.integrations.createConnection(
+          this.platformCredentialContext(args.context),
+          {
+            id,
+            provider: slot === 'douyin.platform' ? 'douyin' : 'model',
+            identityMode: 'service',
+            requestedCapabilities: [slot],
+            grantedCapabilities: [slot],
+            subject: slot,
+            credential: credentialInput(payload.credential),
+          },
+          args.idempotencyKey,
         );
+        await this.providerCredentialOperator?.provisionConnection(connection);
+        return publicConnection(connection);
       }
       case 'admin_rotate_provider_credential': {
         const { id } = this.platformCredentialId(payload);
-        return publicConnection(
-          await this.integrations.rotateConnectionCredential(
-            this.platformCredentialContext(args.context),
-            id,
-            credentialInput(payload.credential),
-            args.idempotencyKey,
-          ),
+        const credential = credentialInput(payload.credential);
+        if (this.providerCredentialOperator) {
+          return this.providerCredentialOperator.stageRotation({
+            workspaceId: '__global__',
+            accountId: `credential-account:${id}`,
+            secret: credential.value,
+          });
+        }
+        const connection = await this.integrations.rotateConnectionCredential(
+          this.platformCredentialContext(args.context),
+          id,
+          credential,
+          args.idempotencyKey,
         );
+        return publicConnection(connection);
       }
       case 'admin_revoke_provider_credential': {
         const { id } = this.platformCredentialId(payload);
@@ -541,6 +555,62 @@ export class IntegrationsFoundationModule implements P1OperationModule {
     switch (action) {
       case 'admin_provider_credentials':
         {
+          if (this.providerCredentialOperator) {
+            const platformContext = this.platformCredentialContext(
+              args.context,
+            );
+            const accounts = new Map(
+              (
+                await this.providerCredentialOperator.listAccounts(
+                  platformContext.workspaceId,
+                )
+              ).map((account) => [account.connectionId, account]),
+            );
+            return PROVIDER_CREDENTIAL_SLOTS.map((slot) => {
+              const id = `platform:${slot}`;
+              const account = accounts.get(id);
+              if (!account) {
+                return {
+                  id,
+                  effectiveSource: this.providerCredentialEffectiveSource(id),
+                };
+              }
+              const {
+                id: credentialAccountId,
+                secretReference: _secretReference,
+                ...metadata
+              } = toPublicMetadata(account);
+              return {
+                ...metadata,
+                id,
+                credentialAccountId,
+                accountStatus: account.status,
+                workspaceId: account.workspaceId,
+                credential: {
+                  id: account.credentialId,
+                  version: account.secretVersion,
+                  mask: '••••••••' as const,
+                  scope: [],
+                  status:
+                    account.status === 'active'
+                      ? ('active' as const)
+                      : account.status === 'retired'
+                        ? ('revoked' as const)
+                        : ('unverified' as const),
+                  ...(account.lastTest
+                    ? {
+                        testedAt: account.lastTest.testedAt,
+                        testStatus: account.lastTest.status,
+                        ...(account.lastTest.errorCode
+                          ? { testErrorCode: account.lastTest.errorCode }
+                          : {}),
+                      }
+                    : {}),
+                },
+                effectiveSource: this.providerCredentialEffectiveSource(id),
+              };
+            });
+          }
           const connections = new Map(
             (
               await this.integrations.listConnections(

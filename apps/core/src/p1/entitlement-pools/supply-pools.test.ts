@@ -391,6 +391,34 @@ test('fair queue contract: peers share supply slots; priority still orders bands
   if (first.status === 'dequeued') {
     assert.equal(first.entry.requestId, 'high');
   }
+
+  // A sustained high-priority backlog receives its weighted share but cannot
+  // starve a continuously waiting low-priority request.
+  const weightedQueue = new SupplyAccountFairQueue('cred-weighted');
+  weightedQueue.enqueue({
+    requestId: 'low-waiting',
+    productAccountId: 'acct-low',
+    workspaceId: 'ws-low',
+    queuePriority: 0,
+    enqueuedAt: t0,
+  });
+  for (let i = 0; i < 24; i += 1) {
+    weightedQueue.enqueue({
+      requestId: `high-backlog-${i}`,
+      productAccountId: 'acct-high',
+      workspaceId: 'ws-high',
+      queuePriority: 10,
+      enqueuedAt: t0,
+    });
+  }
+  const firstTwelve = Array.from({ length: 12 }, () => weightedQueue.dequeue());
+  assert.ok(
+    firstTwelve.some(
+      (result) =>
+        result.status === 'dequeued' && result.entry.requestId === 'low-waiting',
+    ),
+    'weighted priority must admit the waiting low-priority account by turn 12',
+  );
 });
 
 // ---------------------------------------------------------------------------

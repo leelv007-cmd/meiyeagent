@@ -14,7 +14,9 @@ import {
   MemoryProductUsageLedger,
   ProductBillingLifecycle,
   ProductQuoteService,
+  type BillingLifecyclePort,
 } from '../product-billing/index.js';
+import type { SupplyRequestFreeze } from '../entitlement-pools/supply-ledger-fields.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
 import {
   ModelSupplyApplicationService,
@@ -106,13 +108,23 @@ test('uses the Operations billing task as the single ProductUsage and ProviderCo
     workspaceId: context.workspaceId,
   });
   quotes.confirm({ quoteId: quote.quoteId, taskId: 'creative-work-1' });
-  const billingLifecycle = new ProductBillingLifecycle(quotes);
-  billingLifecycle.beforeSubmit({
+  const canonicalBilling = new ProductBillingLifecycle(quotes);
+  canonicalBilling.beforeSubmit({
     quoteRevision: quote.revision,
     resource: 'image',
     taskId: 'creative-work-1',
     workspaceId: context.workspaceId,
   });
+  let settleAttempts = 0;
+  const billingLifecycle: BillingLifecyclePort = {
+    beforeSubmit: (input) => canonicalBilling.beforeSubmit(input),
+    dispatchAttempt: (input) => canonicalBilling.dispatchAttempt(input),
+    settleTask(input) {
+      settleAttempts += 1;
+      if (settleAttempts === 1) throw new Error('billing settle response lost');
+      return canonicalBilling.settleTask(input);
+    },
+  };
   const ledger = new FoundationModelSupplyLedger(
     foundation,
     undefined,
@@ -137,17 +149,20 @@ test('uses the Operations billing task as the single ProductUsage and ProviderCo
     workspaceId: context.workspaceId,
   };
 
-  const first = await application.submit(submission);
+  await assert.rejects(
+    application.submit(submission),
+    /billing settle response lost/,
+  );
   const replay = await application.submit(submission);
 
-  assert.equal(replay.jobId, first.jobId);
   assert.equal(productUsage.listByWorkspace(context.workspaceId).length, 1);
   assert.equal(productUsage.getByTask('creative-work-1')?.status, 'committed');
   assert.equal(quotes.getQuoteByTask('creative-work-1')?.lifecycleStatus, 'settled');
   assert.deepEqual(
     quotes.listProviderCosts('creative-work-1').map((cost) => cost.attemptId),
-    [first.attempt.id],
+    [replay.attempt.id],
   );
+  assert.equal(settleAttempts, 2);
   assert.equal(
     ledger.getSupplyFreeze('creative-work-1')?.productUsageTaskId,
     'creative-work-1',
@@ -204,6 +219,109 @@ test('rejects a permanently invalid route before consuming a grant lot', async (
       .some((transaction) => transaction.transactionType === 'USAGE'),
     false,
   );
+});
+
+test('persists one immutable supply freeze before provider I/O and links settlement cost', async () => {
+  const { repository, foundation } = await fixture();
+  const freezes = new Map<string, SupplyRequestFreeze>();
+  const supplyFreezes = {
+    async append(freeze: SupplyRequestFreeze) {
+      const existing = freezes.get(freeze.id);
+      if (existing) {
+        assert.deepEqual(freeze, existing);
+        return structuredClone(existing);
+      }
+      freezes.set(freeze.id, structuredClone(freeze));
+      return structuredClone(freeze);
+    },
+    async get(freezeId: string) {
+      const freeze = freezes.get(freezeId);
+      return freeze ? structuredClone(freeze) : null;
+    },
+  };
+  let freezeObservedBeforeProvider = false;
+  const ledger = new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    {
+      defaultSupplyPoolId: 'pool-shared',
+      supplyFreezes,
+    },
+  );
+  const application = new ModelSupplyApplicationService({
+    models: [model],
+    deployments: [deployment],
+    ledger,
+    execution: {
+      async execute(request) {
+        const [freeze] = [...freezes.values()];
+        freezeObservedBeforeProvider =
+          freeze?.workspaceId === request.submission.workspaceId &&
+          freeze.providerCostAttemptId?.startsWith('model-attempt-') === true &&
+          freeze.productUsageTaskId === request.jobId;
+        return new RecordedProviderExecutionPort().execute(request);
+      },
+    },
+  });
+
+  const result = await application.submit({
+    workspaceId: context.workspaceId,
+    actorId: context.userId,
+    correlationId: context.correlationId,
+    idempotencyKey: 'durable-supply-freeze',
+    operation: 'image.generate',
+    selection: { mode: 'fixed', catalogModelId: model.id },
+    dataClass: [],
+    prompt: '持久供应冻结',
+  });
+
+  assert.equal(freezeObservedBeforeProvider, true);
+  assert.equal(freezes.size, 1);
+  const [freeze] = [...freezes.values()];
+  assert.ok(freeze);
+  assert.equal(freeze.routeSnapshotRef, result.snapshot.id);
+  assert.equal(freeze.providerCostAttemptId, result.attempt.id);
+  assert.equal(freeze.supplyPoolId, 'pool-shared');
+  const providerCosts = await repository.listProviderCosts(
+    context.workspaceId,
+    result.attempt.id,
+  );
+  assert.match(providerCosts[0]?.evidence ?? '', /supplyPoolId=pool-shared/);
+  assert.match(
+    providerCosts[0]?.evidence ?? '',
+    new RegExp(`routeSnapshotRef=${result.snapshot.id}`),
+  );
+});
+
+test('records unknown pricing explicitly instead of fabricating a zero estimate', async () => {
+  const { ledger } = await fixture();
+  const application = new ModelSupplyApplicationService({
+    models: [model],
+    deployments: [
+      {
+        ...deployment,
+        priceRevision: undefined,
+        unitPrice: undefined,
+      },
+    ],
+    execution: new RecordedProviderExecutionPort(),
+    ledger,
+  });
+
+  const result = await application.submit({
+    workspaceId: context.workspaceId,
+    actorId: context.userId,
+    idempotencyKey: 'unknown-price-is-not-zero',
+    operation: 'image.generate',
+    selection: { mode: 'fixed', catalogModelId: model.id },
+    dataClass: [],
+    prompt: 'Unknown supplier price',
+  });
+
+  const candidate = result.snapshot.allowedCandidates?.[0];
+  assert.equal(candidate?.pricingStatus, 'unknown');
+  assert.equal(candidate?.priceRevision, 'recorded-price-v1');
 });
 
 test('checkpoints route, job, reservation and pending attempt before provider execution', async () => {

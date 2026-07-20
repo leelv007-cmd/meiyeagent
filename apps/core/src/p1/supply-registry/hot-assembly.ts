@@ -18,7 +18,10 @@ import type {
   CredentialSecretBrokerPort,
 } from './secret-broker.js';
 import { SecretBrokerError } from './secret-broker.js';
-import type { MediaProviderDrainMode } from '../model-supply/provider-lifecycle.js';
+import type {
+  AdapterRuntimeConfig,
+  MediaProviderDrainMode,
+} from '../model-supply/provider-lifecycle.js';
 
 // ---------------------------------------------------------------------------
 // Capability entry / revision (versioned runtime capability)
@@ -49,6 +52,8 @@ export interface RuntimeCapabilityEntry {
   adapterKey: string;
   /** Adapter binding revision (endpoint/protocol family fingerprint). */
   adapterBindingRevision?: string;
+  /** Serializable, secret-free provider configuration frozen with this revision. */
+  adapterConfig?: AdapterRuntimeConfig;
 }
 
 /** Match input accepted by supports/assert helpers (deployment-shaped). */
@@ -109,6 +114,8 @@ export type ChannelLifecycleMode = 'accepting' | 'isolated' | 'draining';
 
 export interface ChannelLifecycleState {
   channelId: string;
+  /** Persistent CAS revision for lifecycle mutations; unrelated to catalog revision. */
+  lifecycleRevision: string;
   mode: ChannelLifecycleMode;
   reason: string;
   startedAt: string;
@@ -128,6 +135,13 @@ export interface ChannelAdmissionDecision {
   /** Stable error code when rejected (wiring surfaces to adapters). */
   errorCode?: 'channel_isolated' | 'channel_draining';
   message?: string;
+}
+
+export interface ChannelSubmissionAdmission extends ChannelAdmissionDecision {
+  inFlightId: string;
+  inFlightCount: number;
+  lifecycleRevision: string;
+  newlyAcquired: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +170,7 @@ export interface AssembledCapabilityBinding {
   entry: RuntimeCapabilityEntry;
   adapterKey: string;
   adapterBindingRevision?: string;
+  adapterConfig?: AdapterRuntimeConfig;
   /** Present when the entry binds a CredentialAccount and assembly succeeded. */
   credential?: AssembledCredential;
   channelLifecycle: ChannelLifecycleState;
@@ -211,6 +226,10 @@ export interface EffectiveCapabilityRevisionStore {
 export interface AdapterBindingDirectory {
   get(
     deploymentId: string,
+    lookup?: {
+      capabilityRevisionId: string;
+      adapterBindingRevision?: string;
+    },
   ): AdapterBindingRecord | null | Promise<AdapterBindingRecord | null>;
 }
 
@@ -219,6 +238,7 @@ export interface AdapterBindingRecord {
   adapterKey: string;
   adapterBindingRevision?: string;
   executionChannelId?: string;
+  adapterConfig?: AdapterRuntimeConfig;
 }
 
 /**
@@ -245,28 +265,46 @@ export interface CapabilityHotAssemblyPort {
   isolateChannel(
     channelId: string,
     reason: string,
-    options?: { now?: string; inFlightCount?: number },
-  ): ChannelLifecycleState;
+    options?: {
+      now?: string;
+      inFlightCount?: number;
+      expectedLifecycleRevision?: string;
+    },
+  ): ChannelLifecycleState | Promise<ChannelLifecycleState>;
   startChannelDrain(
     channelId: string,
     reason: string,
-    options?: { now?: string; inFlightCount?: number },
-  ): ChannelLifecycleState;
+    options?: {
+      now?: string;
+      inFlightCount?: number;
+      expectedLifecycleRevision?: string;
+    },
+  ): ChannelLifecycleState | Promise<ChannelLifecycleState>;
   completeChannelDrain(
     channelId: string,
     reason: string,
-    options?: { now?: string },
-  ): ChannelLifecycleState;
+    options?: { now?: string; expectedLifecycleRevision?: string },
+  ): ChannelLifecycleState | Promise<ChannelLifecycleState>;
   restoreChannel(
     channelId: string,
     reason: string,
-    options?: { now?: string },
-  ): ChannelLifecycleState;
-  getChannelLifecycle(channelId: string): ChannelLifecycleState;
+    options?: { now?: string; expectedLifecycleRevision?: string },
+  ): ChannelLifecycleState | Promise<ChannelLifecycleState>;
+  getChannelLifecycle(
+    channelId: string,
+  ): ChannelLifecycleState | Promise<ChannelLifecycleState>;
   decideAdmission(
     channelId: string,
     intent: ChannelAdmissionIntent,
-  ): ChannelAdmissionDecision;
+  ): ChannelAdmissionDecision | Promise<ChannelAdmissionDecision>;
+  acquireChannelSubmission(
+    channelId: string,
+    inFlightId: string,
+  ): ChannelSubmissionAdmission | Promise<ChannelSubmissionAdmission>;
+  releaseChannelSubmission(
+    channelId: string,
+    inFlightId: string,
+  ): ChannelLifecycleState | Promise<ChannelLifecycleState>;
   invalidateAssemblyCache(): void;
   getAssemblyCacheStats(): { size: number; generation: number };
   /**
@@ -291,6 +329,7 @@ export class HotAssemblyError extends Error {
       | 'DEPLOYMENT_OUTSIDE_CAPABILITY'
       | 'ENTRY_NOT_FOUND'
       | 'CHANNEL_NOT_ACCEPTING'
+      | 'LIFECYCLE_REVISION_CONFLICT'
       | 'CREDENTIAL_REQUIRED'
       | 'ADAPTER_BINDING_MISSING'
       | 'INVALID_REVISION',
@@ -310,6 +349,7 @@ export function toRuntimeCapabilityEntry(
     credentialAccountId?: string;
     adapterKey?: string;
     adapterBindingRevision?: string;
+    adapterConfig?: AdapterRuntimeConfig;
   },
 ): RuntimeCapabilityEntry {
   return {
@@ -339,6 +379,9 @@ export function toRuntimeCapabilityEntry(
     adapterKey: deployment.adapterKey ?? defaultAdapterKey(deployment),
     ...(deployment.adapterBindingRevision
       ? { adapterBindingRevision: deployment.adapterBindingRevision }
+      : {}),
+    ...(deployment.adapterConfig
+      ? { adapterConfig: structuredClone(deployment.adapterConfig) }
       : {}),
   };
 }
@@ -404,7 +447,7 @@ export function projectCapabilityRevision(input: {
   return {
     revisionId: input.revisionId,
     number: input.number,
-    entries: input.entries.map((entry) => ({ ...entry })),
+    entries: input.entries.map((entry) => structuredClone(entry)),
     publishedAt: input.publishedAt ?? new Date().toISOString(),
     ...(input.previousRevisionId
       ? { previousRevisionId: input.previousRevisionId }
@@ -565,7 +608,8 @@ function capabilityEntriesEqual(
     left.credentialVersion === right.credentialVersion &&
     left.credentialAccountId === right.credentialAccountId &&
     left.adapterKey === right.adapterKey &&
-    left.adapterBindingRevision === right.adapterBindingRevision
+    left.adapterBindingRevision === right.adapterBindingRevision &&
+    JSON.stringify(left.adapterConfig) === JSON.stringify(right.adapterConfig)
   );
 }
 
@@ -608,12 +652,30 @@ export function initialChannelLifecycle(
 ): ChannelLifecycleState {
   return {
     channelId,
+    lifecycleRevision: channelLifecycleRevisionId(channelId, 0),
     mode: 'accepting',
     reason: 'initial',
     startedAt: now,
     drainMode: 'accepting',
     inFlightCount: 0,
   };
+}
+
+export function channelLifecycleRevisionId(
+  channelId: string,
+  revision: number,
+): string {
+  return `${channelId}:lifecycle:r${revision}`;
+}
+
+function nextChannelLifecycleRevisionId(
+  state: ChannelLifecycleState,
+): string {
+  const current = state.lifecycleRevision.match(/:lifecycle:r(\d+)$/);
+  return channelLifecycleRevisionId(
+    state.channelId,
+    current ? Number(current[1]) + 1 : 1,
+  );
 }
 
 /**
@@ -670,7 +732,12 @@ export function transitionChannelLifecycle(
     | { kind: 'complete_drain'; reason: string }
     | { kind: 'restore'; reason: string }
     | { kind: 'set_in_flight'; count: number },
-  options: { now?: string; channelId: string; inFlightCount?: number } ,
+  options: {
+    now?: string;
+    channelId: string;
+    inFlightCount?: number;
+    lifecycleRevision?: string;
+  },
 ): ChannelLifecycleState {
   const now = options.now ?? new Date().toISOString();
   const base =
@@ -678,11 +745,14 @@ export function transitionChannelLifecycle(
     initialChannelLifecycle(options.channelId, now);
   const inFlight =
     options.inFlightCount ?? base.inFlightCount;
+  const lifecycleRevision =
+    options.lifecycleRevision ?? nextChannelLifecycleRevisionId(base);
 
   switch (command.kind) {
     case 'isolate':
       return {
         channelId: options.channelId,
+        lifecycleRevision,
         mode: 'isolated',
         reason: command.reason,
         startedAt: now,
@@ -692,6 +762,7 @@ export function transitionChannelLifecycle(
     case 'start_drain':
       return {
         channelId: options.channelId,
+        lifecycleRevision,
         mode: 'draining',
         reason: command.reason,
         startedAt: now,
@@ -699,8 +770,15 @@ export function transitionChannelLifecycle(
         inFlightCount: inFlight,
       };
     case 'complete_drain':
+      if (base.inFlightCount > 0) {
+        throw new HotAssemblyError(
+          'CHANNEL_NOT_ACCEPTING',
+          `Channel ${options.channelId} still has ${base.inFlightCount} in-flight submissions.`,
+        );
+      }
       return {
         channelId: options.channelId,
+        lifecycleRevision,
         mode: 'accepting',
         reason: command.reason,
         startedAt: now,
@@ -710,6 +788,7 @@ export function transitionChannelLifecycle(
     case 'restore':
       return {
         channelId: options.channelId,
+        lifecycleRevision,
         mode: 'accepting',
         reason: command.reason,
         startedAt: now,
@@ -719,6 +798,7 @@ export function transitionChannelLifecycle(
     case 'set_in_flight':
       return {
         ...base,
+        lifecycleRevision,
         inFlightCount: command.count,
       };
     default: {
@@ -797,6 +877,7 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
   private cacheGeneration = 0;
   private readonly assemblyCache = new Map<string, AssemblyCacheEntry>();
   private readonly channelStates = new Map<string, ChannelLifecycleState>();
+  private readonly channelInFlight = new Map<string, Set<string>>();
 
   constructor(
     private readonly store: EffectiveCapabilityRevisionStore = new MemoryEffectiveCapabilityRevisionStore(),
@@ -879,23 +960,34 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
 
     let adapterKey = entry.adapterKey;
     let adapterBindingRevision = entry.adapterBindingRevision;
+    let adapterBinding: AdapterBindingRecord | null = null;
     if (this.adapters) {
-      const binding = await this.adapters.get(entry.deploymentId);
-      if (binding) {
-        adapterKey = binding.adapterKey;
+      adapterBinding = await this.adapters.get(entry.deploymentId, {
+        capabilityRevisionId: revision.revisionId,
+        ...(entry.adapterBindingRevision
+          ? { adapterBindingRevision: entry.adapterBindingRevision }
+          : {}),
+      });
+      if (adapterBinding) {
+        adapterKey = adapterBinding.adapterKey;
         adapterBindingRevision =
-          binding.adapterBindingRevision ?? adapterBindingRevision;
+          adapterBinding.adapterBindingRevision ?? adapterBindingRevision;
       }
     }
 
     const cacheKey = [
       revision.revisionId,
       entry.deploymentId,
-      request.frozenCredentialVersion ?? entry.credentialVersion ?? '',
+      request.frozenCredentialVersion ?? '',
       adapterKey,
+      adapterBindingRevision ?? '',
       this.cacheGeneration,
     ].join('::');
-    const cached = this.assemblyCache.get(cacheKey);
+    // A credential binding contains raw secret material. Always traverse the
+    // request-time broker so rotation/revocation is visible immediately.
+    const cached = entry.credentialAccountId
+      ? undefined
+      : this.assemblyCache.get(cacheKey);
     if (cached) {
       return {
         ...cached.binding,
@@ -911,18 +1003,12 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
           `Deployment ${entry.deploymentId} requires CredentialSecretBrokerPort for account ${entry.credentialAccountId}.`,
         );
       }
-      const frozenVersion =
-        request.frozenCredentialVersion ?? entry.credentialVersion;
-      if (!frozenVersion) {
-        throw new HotAssemblyError(
-          'CREDENTIAL_REQUIRED',
-          `Deployment ${entry.deploymentId} requires a frozen credential version.`,
-        );
-      }
       try {
         credential = await this.secrets.assembleForRequest({
           credentialAccountId: entry.credentialAccountId,
-          frozenVersion,
+          ...(request.frozenCredentialVersion
+            ? { frozenVersion: request.frozenCredentialVersion }
+            : {}),
           requiredScope: request.requiredScope,
         });
       } catch (error) {
@@ -939,6 +1025,11 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
       ...(adapterBindingRevision
         ? { adapterBindingRevision }
         : {}),
+      ...(adapterBinding?.adapterConfig
+        ? { adapterConfig: structuredClone(adapterBinding.adapterConfig) }
+        : entry.adapterConfig
+          ? { adapterConfig: structuredClone(entry.adapterConfig) }
+          : {}),
       ...(credential ? { credential } : {}),
       channelLifecycle,
       resolvedFromHistory,
@@ -946,7 +1037,7 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
 
     // Do not cache when admission is closed for new submit — still return for
     // inspection, but cache only successful accepting assemblies.
-    if (admission.admitted) {
+    if (admission.admitted && !entry.credentialAccountId) {
       this.assemblyCache.set(cacheKey, { key: cacheKey, binding });
     }
 
@@ -956,8 +1047,17 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
   isolateChannel(
     channelId: string,
     reason: string,
-    options: { now?: string; inFlightCount?: number } = {},
+    options: {
+      now?: string;
+      inFlightCount?: number;
+      expectedLifecycleRevision?: string;
+    } = {},
   ): ChannelLifecycleState {
+    const current = this.getChannelLifecycle(channelId);
+    this.assertExpectedLifecycleRevision(
+      current,
+      options.expectedLifecycleRevision,
+    );
     const next = transitionChannelLifecycle(
       this.channelStates.get(channelId) ?? null,
       { kind: 'isolate', reason },
@@ -971,8 +1071,17 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
   startChannelDrain(
     channelId: string,
     reason: string,
-    options: { now?: string; inFlightCount?: number } = {},
+    options: {
+      now?: string;
+      inFlightCount?: number;
+      expectedLifecycleRevision?: string;
+    } = {},
   ): ChannelLifecycleState {
+    const current = this.getChannelLifecycle(channelId);
+    this.assertExpectedLifecycleRevision(
+      current,
+      options.expectedLifecycleRevision,
+    );
     const next = transitionChannelLifecycle(
       this.channelStates.get(channelId) ?? null,
       { kind: 'start_drain', reason },
@@ -986,7 +1095,7 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
   completeChannelDrain(
     channelId: string,
     reason: string,
-    options: { now?: string } = {},
+    options: { now?: string; expectedLifecycleRevision?: string } = {},
   ): ChannelLifecycleState {
     const current = this.channelStates.get(channelId);
     if (!current || current.mode !== 'draining') {
@@ -995,6 +1104,10 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
         `Channel ${channelId} is not draining.`,
       );
     }
+    this.assertExpectedLifecycleRevision(
+      current,
+      options.expectedLifecycleRevision,
+    );
     const next = transitionChannelLifecycle(
       current,
       { kind: 'complete_drain', reason },
@@ -1008,8 +1121,13 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
   restoreChannel(
     channelId: string,
     reason: string,
-    options: { now?: string } = {},
+    options: { now?: string; expectedLifecycleRevision?: string } = {},
   ): ChannelLifecycleState {
+    const current = this.getChannelLifecycle(channelId);
+    this.assertExpectedLifecycleRevision(
+      current,
+      options.expectedLifecycleRevision,
+    );
     const next = transitionChannelLifecycle(
       this.channelStates.get(channelId) ?? null,
       { kind: 'restore', reason },
@@ -1018,6 +1136,21 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
     this.channelStates.set(channelId, next);
     this.invalidateAssemblyCache();
     return { ...next };
+  }
+
+  private assertExpectedLifecycleRevision(
+    current: ChannelLifecycleState,
+    expectedLifecycleRevision?: string,
+  ): void {
+    if (
+      expectedLifecycleRevision &&
+      current.lifecycleRevision !== expectedLifecycleRevision
+    ) {
+      throw new HotAssemblyError(
+        'LIFECYCLE_REVISION_CONFLICT',
+        `Channel ${current.channelId} lifecycle changed from ${expectedLifecycleRevision} to ${current.lifecycleRevision}.`,
+      );
+    }
   }
 
   getChannelLifecycle(channelId: string): ChannelLifecycleState {
@@ -1032,6 +1165,66 @@ export class CapabilityHotAssemblyRegistry implements CapabilityHotAssemblyPort 
     intent: ChannelAdmissionIntent,
   ): ChannelAdmissionDecision {
     return decideChannelAdmission(this.getChannelLifecycle(channelId), intent);
+  }
+
+  acquireChannelSubmission(
+    channelId: string,
+    inFlightId: string,
+  ): ChannelSubmissionAdmission {
+    const state = this.getChannelLifecycle(channelId);
+    const flights = this.channelInFlight.get(channelId) ?? new Set<string>();
+    if (flights.has(inFlightId)) {
+      const replay = decideChannelAdmission(state, 'in_flight');
+      return {
+        ...replay,
+        inFlightId,
+        inFlightCount: flights.size,
+        lifecycleRevision: state.lifecycleRevision,
+        newlyAcquired: false,
+      };
+    }
+    const decision = decideChannelAdmission(state, 'new_submit');
+    if (!decision.admitted) {
+      return {
+        ...decision,
+        inFlightId,
+        inFlightCount: flights.size,
+        lifecycleRevision: state.lifecycleRevision,
+        newlyAcquired: false,
+      };
+    }
+    flights.add(inFlightId);
+    this.channelInFlight.set(channelId, flights);
+    const next = transitionChannelLifecycle(
+      state,
+      { kind: 'set_in_flight', count: flights.size },
+      { channelId },
+    );
+    this.channelStates.set(channelId, next);
+    return {
+      ...decision,
+      inFlightId,
+      inFlightCount: flights.size,
+      lifecycleRevision: next.lifecycleRevision,
+      newlyAcquired: true,
+    };
+  }
+
+  releaseChannelSubmission(
+    channelId: string,
+    inFlightId: string,
+  ): ChannelLifecycleState {
+    const state = this.getChannelLifecycle(channelId);
+    const flights = this.channelInFlight.get(channelId);
+    if (!flights?.delete(inFlightId)) return state;
+    if (flights.size === 0) this.channelInFlight.delete(channelId);
+    const next = transitionChannelLifecycle(
+      state,
+      { kind: 'set_in_flight', count: flights.size },
+      { channelId },
+    );
+    this.channelStates.set(channelId, next);
+    return { ...next };
   }
 
   invalidateAssemblyCache(): void {
@@ -1166,6 +1359,6 @@ function cloneRevision(
 ): RuntimeCapabilityRevision {
   return {
     ...revision,
-    entries: revision.entries.map((entry) => ({ ...entry })),
+    entries: revision.entries.map((entry) => structuredClone(entry)),
   };
 }

@@ -320,6 +320,7 @@ export function modelRuntimeAssemblyFromEnv(
         ...deployment,
         providerModel: direct.model,
         endpointRevision: direct.endpointRevision,
+        credentialAccountId: 'credential-account:platform:model.direct',
         credentialVersion: direct.credentialVersion,
         lifecycleRevision: `direct-runtime:${direct.endpointRevision}:${direct.model}`,
       };
@@ -337,6 +338,7 @@ export function modelRuntimeAssemblyFromEnv(
         ...deployment,
         providerModel,
         endpointRevision: arkMedia.endpointRevision,
+        credentialAccountId: 'credential-account:platform:ark.media',
         credentialVersion: arkMedia.credentialVersion,
         lifecycleRevision: `ark-media:${arkMedia.endpointRevision}:${providerModel}`,
       };
@@ -409,6 +411,7 @@ export function modelRuntimeAssemblyFromEnv(
       providerModel: deployment.providerModel,
       endpointRevision: deployment.endpointRevision,
       lifecycleRevision: deployment.lifecycleRevision,
+      credentialAccountId: deployment.credentialAccountId,
       credentialVersion: deployment.credentialVersion,
     }));
   const configurationRevisions: Record<string, string> = {};
