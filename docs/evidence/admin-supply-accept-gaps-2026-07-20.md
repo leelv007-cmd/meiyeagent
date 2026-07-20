@@ -10,7 +10,7 @@
 | # | Gate | Recorded / unit status | Live / env status |
 |---|------|------------------------|-------------------|
 | 1 | Capability skeleton completion (inventory + D-051 six-question + drilldown + exceptions aggregable) | **GREEN** — `packages/contracts` inventory + `mkfast-template-main/src/p1/z2-accept-ap.test.tsx` | N/A (pure projection) |
-| 2 | Tri-modal dual-channel + story 30 main chain (procurement→publish→allocate→task→ledger→audit) | **GREEN** — `apps/core/src/p1/z2-accept/z2-accept.test.ts` recorded/fake | **GAP** live I4 matrix (see below) |
+| 2 | Tri-modal dual-channel + story 30 main chain (procurement→publish→allocate→task→ledger→audit) | **GREEN** — `apps/core/src/p1/z2-accept/z2-accept.test.ts` recorded/fake | **GREEN** unit matrix on main; **GAP** live env-gated (see below) |
 | 3 | Publish gate: <2 qualified Deployments cannot mark multi-channel ready; single-channel no-fallback labeled | **GREEN** — core `publish-gate.ts` + admin supply overview SSR | **GAP** merchant user-selection page label (see below) |
 | 4 | D-048 interaction ban on ops main paths (no code/SQL/env/raw JSON/CLI) | **GREEN** — catalog / exception home / supply SSR unit assertions | **GAP** Playwright four-service e2e (see below) |
 | 5 | Gap list on disk (this file) | **GREEN** | — |
@@ -21,12 +21,12 @@
 
 ## Explicit gaps (must not be claimed complete)
 
-### G-LIVE-I4 — MP-08 fault-injection live matrix (#119 I4 not on main)
+### G-LIVE-I4 — MP-08 fault-injection live matrix (unit matrix on main; live env-gated)
 
 | Field | Value |
 |-------|--------|
 | Status | **open** |
-| Why | I4 (`ticket/119-i4-fault-injection`) has not landed independent fault-injection suite + protected `provider-live` workflow on `main` at accept time. |
+| Why | I4 unit matrix + `.github/workflows/provider-live.yml` are on main; live runs still require `RUN_PROVIDER_LIVE_FAULT_INJECTION=1` + secrets + cost cap. |
 | Required for C5 claim | Per core operation: ≥2 independent fault-domain `live_verified` Deployments; four scenarios: pre-accept failover, accepted/acceptance_unknown no re-submit, isolate/drain without restart, RouteSnapshot + dual ledger replay. |
 | Evidence expected | `live-*.integration.test.ts` env-gated + manual/scheduled provider-live workflow (secrets + cost cap). |
 | Recorded substitute | Story 30 recorded chain + MP-04T/I/V fake dual-channel conformance + publish-gate negative tests. |
