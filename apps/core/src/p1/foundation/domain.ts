@@ -163,6 +163,14 @@ export interface RouteSnapshot {
   maxAttempts?: number;
   fallbackAuthorized?: boolean;
   allowedCandidates: RouteCandidate[];
+  /** Top-level data policy revision (F-S2-03 round-trip with CanonicalRouteSnapshot). */
+  dataPolicyRevisionId?: string;
+  /** Top-level supply channel kind (F-S2-03 round-trip with CanonicalRouteSnapshot). */
+  sourceKind?:
+    | 'official_direct'
+    | 'upstream_reseller'
+    | 'workspace_byok'
+    | 'third_party_proxy';
   retryOwner?: 'product';
   providerRetryDisabled?: true;
   createdAt: string;

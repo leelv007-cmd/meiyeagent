@@ -27,9 +27,9 @@ import type {
   ProviderExecutionResponse,
 } from './index.js';
 import {
+  getSharedRecordedHealthOverlay,
   healthOverlayIsolationTargetId,
   isHealthOverlayBlocking,
-  MemoryHealthOverlayPort,
 } from '../supply-registry/health-overlay.js';
 
 const execFileAsync = promisify(execFile);
@@ -565,8 +565,8 @@ abstract class ImageRecordedAdapter implements ProviderExecutionPort {
   >;
   protected readonly taskRefPrefix: string = 'recorded-task';
   private readonly tasks = new Map<string, RecordedMediaTask>();
-  /** G4: health overlay replaces process-local cooldown map. */
-  private readonly healthOverlay = new MemoryHealthOverlayPort();
+  /** G4 / F-G-05: shared process overlay (single map owner across recorded adapters). */
+  private readonly healthOverlay = getSharedRecordedHealthOverlay();
   private nextPollStatus?: RecordedTaskStatus;
   private nextErrorCode?: string;
 
@@ -867,8 +867,8 @@ abstract class VideoRecordedAdapter implements ProviderExecutionPort {
   >;
   protected readonly taskRefPrefix: string = 'recorded-task';
   protected readonly tasks = new Map<string, RecordedMediaTask>();
-  /** G4: health overlay replaces process-local cooldown map. */
-  private readonly healthOverlay = new MemoryHealthOverlayPort();
+  /** G4 / F-G-05: shared process overlay (single map owner across recorded adapters). */
+  private readonly healthOverlay = getSharedRecordedHealthOverlay();
   private nextPollStatus?: RecordedTaskStatus;
   private nextErrorCode?: string;
 

@@ -69,6 +69,12 @@
 
 ---
 
+## Code-side notes (2026-07-21 review remediations)
+
+- Wave 0/1 + P2 code fixes landed on branch `fix/admin-supply-review-findings-2026-07-21` (F-G-01..05, F-S2-01..03, F-I-03). These do **not** close any G-LIVE-* item.
+- F-I-01 (`dualChannelReady` same-CatalogModel unit honesty) is **not** assumed fixed here; do not claim unit dual-channel matrix honesty until that finding is closed separately.
+- **G-LIVE-\*** and Playwright / merchant-label gaps remain **open** as above. #128 must not be claimed complete.
+
 ## What is explicitly **not** a gap
 
 - Audio modality out of supply v1 (`generation_audio` = `not_in_scope_for_supply_v1`) — inventory stub retained (D-051/D-068).

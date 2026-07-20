@@ -91,6 +91,12 @@ export function fromFoundationRouteSnapshot(
     ? ranked.map((c) => c.deploymentId)
     : ranked.slice(0, 1).map((c) => c.deploymentId);
 
+  // F-S2-03: prefer options, then foundation top-level, then primary candidate.
+  const sourceKind =
+    options?.sourceKind ??
+    (snapshot.sourceKind as SupplyChannelKind | undefined) ??
+    primary.sourceKind;
+
   return {
     id: snapshot.id,
     catalogModelId: primary.catalogModelId,
@@ -103,6 +109,7 @@ export function fromFoundationRouteSnapshot(
     policyRevisionId: snapshot.policyRevision,
     priceRevisionId: snapshot.priceRevision,
     endpointRevisionId: primary.endpointRevision,
+    dataPolicyRevisionId: snapshot.dataPolicyRevisionId,
     catalogRevisionId: snapshot.catalogRevision,
     allowedCandidates: ranked,
     actualDeploymentId: options?.actualDeploymentId ?? primary.deploymentId,
@@ -111,7 +118,7 @@ export function fromFoundationRouteSnapshot(
     fallbackConsent: snapshot.fallbackConsent,
     maxAttempts: snapshot.maxAttempts,
     fallbackAuthorized: snapshot.fallbackAuthorized,
-    sourceKind: options?.sourceKind ?? primary.sourceKind,
+    sourceKind,
     selectionMode: snapshot.selectionMode,
     primaryDataClass: snapshot.dataClass,
     dataClasses: snapshot.dataClasses ?? [snapshot.dataClass],
@@ -348,6 +355,9 @@ export function toFoundationRouteCheckpoint(
     fallbackAuthorized:
       product?.fallbackAuthorized ?? canonical.fallbackAuthorized,
     allowedCandidates: canonical.allowedCandidates.map(toFoundationCandidate),
+    // F-S2-03: persist top-level dataPolicy/sourceKind on foundation checkpoint.
+    dataPolicyRevisionId: canonical.dataPolicyRevisionId,
+    sourceKind: canonical.sourceKind,
     retryOwner: product?.retryOwner ?? 'product',
     providerRetryDisabled: product?.providerRetryDisabled ?? true,
   };

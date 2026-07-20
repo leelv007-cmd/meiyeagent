@@ -325,6 +325,39 @@ describe('RouteSnapshot four-shape normalization (S2b)', () => {
     assert.equal(back.allowedCandidates[1]?.endpointFingerprint, 'endpoint-gateway');
     assert.equal(back.allowedCandidates[0]?.dataPolicyRevisionId, 'data-policy-video-v3');
     assert.equal(back.allowedCandidates[1]?.dataPolicyRevisionId, 'data-policy-video-v4');
+    // F-S2-03: top-level dataPolicy/sourceKind survive foundation checkpoint round-trip.
+    assert.equal(checkpoint.dataPolicyRevisionId, 'data-policy-video-v3');
+    assert.equal(checkpoint.sourceKind, 'official_direct');
+    assert.equal(back.dataPolicyRevisionId, 'data-policy-video-v3');
+    assert.equal(back.sourceKind, 'official_direct');
+  });
+
+  it('F-S2-03 foundation top-level dataPolicyRevisionId + sourceKind round-trip', () => {
+    const foundation = foundationFixture();
+    foundation.dataPolicyRevisionId = 'data-policy-foundation-v1';
+    foundation.sourceKind = 'upstream_reseller';
+
+    const canonical = fromFoundationRouteSnapshot(foundation, {
+      actualDeploymentId: 'dep-primary',
+    });
+    assert.equal(canonical.dataPolicyRevisionId, 'data-policy-foundation-v1');
+    assert.equal(canonical.sourceKind, 'upstream_reseller');
+
+    const checkpoint = toFoundationRouteCheckpoint(canonical);
+    assert.equal(checkpoint.dataPolicyRevisionId, 'data-policy-foundation-v1');
+    assert.equal(checkpoint.sourceKind, 'upstream_reseller');
+
+    const back = fromFoundationRouteSnapshot({
+      ...checkpoint,
+      workspaceId: foundation.workspaceId,
+      createdAt: foundation.createdAt,
+    });
+    assert.equal(back.dataPolicyRevisionId, 'data-policy-foundation-v1');
+    assert.equal(back.sourceKind, 'upstream_reseller');
+
+    const replayed = replayCanonicalRouteSnapshot(back);
+    assert.equal(replayed.dataPolicyRevisionId, 'data-policy-foundation-v1');
+    assert.equal(replayed.sourceKind, 'upstream_reseller');
   });
 
   it('strict BYOK shape preserves fallbackConsent=false, single candidate, no-fallback chain', () => {
