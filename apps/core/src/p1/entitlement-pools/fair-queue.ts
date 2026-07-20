@@ -12,6 +12,13 @@
 
 import { P1DomainError } from '../foundation/domain.js';
 
+/**
+ * Max retained service-turn samples per supply account (F-H-05).
+ * Fair weights use a sliding window so service_turns / in-memory counts
+ * cannot grow without bound.
+ */
+export const FAIR_QUEUE_SERVICE_TURN_WINDOW = 256;
+
 export type FairQueueEntry = {
   requestId: string;
   productAccountId: string;
@@ -31,15 +38,31 @@ export type FairQueueDequeueResult =
  * tickets per round. The candidate with the lowest next normalized service
  * count wins, so higher priorities receive proportionally more turns while a
  * continuously waiting low-priority account still advances.
+ *
+ * Service counts are a sliding window of at most `maxRecentServed` turns
+ * (default {@link FAIR_QUEUE_SERVICE_TURN_WINDOW}) so history cannot grow
+ * unbounded (F-H-05).
  */
 export class SupplyAccountFairQueue {
   private readonly waiting: FairQueueEntry[] = [];
   private readonly serviceCounts = new Map<string, number>();
+  /** Product-account ids of recent dequeues, oldest first. */
+  private readonly recentServed: string[] = [];
+  readonly maxRecentServed: number;
 
   constructor(
     readonly supplyAccountId: string,
-    _options?: { maxRecentServed?: number }
-  ) {}
+    options?: { maxRecentServed?: number }
+  ) {
+    const window = options?.maxRecentServed ?? FAIR_QUEUE_SERVICE_TURN_WINDOW;
+    if (!Number.isInteger(window) || window <= 0) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'maxRecentServed must be a positive integer.'
+      );
+    }
+    this.maxRecentServed = window;
+  }
 
   enqueue(input: {
     requestId: string;
@@ -89,6 +112,16 @@ export class SupplyAccountFairQueue {
     return this.waiting.map((entry) => structuredClone(entry));
   }
 
+  /** Current sliding-window service sample size (for tests / diagnostics). */
+  recentServiceSampleSize(): number {
+    return this.recentServed.length;
+  }
+
+  /** Copy of sliding-window service counts (for tests / diagnostics). */
+  snapshotServiceCounts(): Map<string, number> {
+    return new Map(this.serviceCounts);
+  }
+
   /**
    * Dequeue next request under fair-share rules:
    * 1. Prefer the lowest (serviceCount + 1) / (queuePriority + 1).
@@ -114,10 +147,7 @@ export class SupplyAccountFairQueue {
     const [entry] = this.waiting.splice(bestIndex, 1);
     if (!entry) return { status: 'empty' };
 
-    this.serviceCounts.set(
-      entry.productAccountId,
-      (this.serviceCounts.get(entry.productAccountId) ?? 0) + 1
-    );
+    this.recordService(entry.productAccountId);
 
     return { status: 'dequeued', entry: structuredClone(entry) };
   }
@@ -137,6 +167,21 @@ export class SupplyAccountFairQueue {
       );
     }
     return counts;
+  }
+
+  private recordService(productAccountId: string) {
+    this.serviceCounts.set(
+      productAccountId,
+      (this.serviceCounts.get(productAccountId) ?? 0) + 1
+    );
+    this.recentServed.push(productAccountId);
+    while (this.recentServed.length > this.maxRecentServed) {
+      const oldest = this.recentServed.shift();
+      if (!oldest) break;
+      const next = (this.serviceCounts.get(oldest) ?? 1) - 1;
+      if (next <= 0) this.serviceCounts.delete(oldest);
+      else this.serviceCounts.set(oldest, next);
+    }
   }
 }
 

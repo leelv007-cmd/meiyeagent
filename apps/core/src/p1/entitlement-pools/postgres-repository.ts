@@ -18,7 +18,11 @@ import {
   buildSupplyRequestFreeze,
   type SupplyRequestFreeze,
 } from './supply-ledger-fields.js';
-import { compareFairQueueOrder, type FairQueueEntry } from './fair-queue.js';
+import {
+  compareFairQueueOrder,
+  FAIR_QUEUE_SERVICE_TURN_WINDOW,
+  type FairQueueEntry,
+} from './fair-queue.js';
 import {
   normalizeThreeLayerLimits,
   type CapacityAdmissionDecision,
@@ -26,6 +30,24 @@ import {
   type CapacityUsageSnapshot,
   type ThreeLayerCapacityLimits,
 } from './three-layer-capacity.js';
+
+/**
+ * Per-supply-account capacity lock (F-H-04).
+ * Replaces the former global `p1:capacity-leases:global` hotspot so distinct
+ * supply accounts no longer serialize on one advisory lock.
+ */
+export function capacitySupplyAccountLockKey(supplyAccountId: string): string {
+  return `p1:capacity-leases:supply:${supplyAccountId}`;
+}
+
+/**
+ * Independent system-total capacity lock (F-H-04).
+ * Held only for the system-total count + lease insert path so supply-local
+ * checks can proceed in parallel across accounts.
+ */
+export function capacitySystemLockKey(): string {
+  return 'p1:capacity-leases:system';
+}
 
 interface PayloadRow<T = unknown> extends QueryResultRow {
   payload: T;
@@ -178,6 +200,9 @@ export class PostgresEntitlementPoolsMigration
         ON p1_supply_capacity_service_turns (
           supply_account_id, product_account_id, turn_id DESC
         );
+      -- Sliding-window purge/count path (F-H-05): newest turns per supply account.
+      CREATE INDEX IF NOT EXISTS p1_supply_capacity_service_turns_window_idx
+        ON p1_supply_capacity_service_turns (supply_account_id, turn_id DESC);
 
       CREATE TABLE IF NOT EXISTS p1_supply_request_freezes (
         freeze_id text PRIMARY KEY,
@@ -978,15 +1003,21 @@ export class PostgresSupplyAccountFairQueue {
           WHERE supply_account_id = $1 AND status = 'waiting'`,
         [supplyAccountId]
       );
+      // F-H-05: only the sliding window of recent turns feeds fair weights.
       const service = await client.query<{
         product_account_id: string;
         served_count: string;
       }>(
         `SELECT product_account_id, count(*)::text AS served_count
-           FROM p1_supply_capacity_service_turns
-          WHERE supply_account_id = $1
+           FROM (
+             SELECT product_account_id
+               FROM p1_supply_capacity_service_turns
+              WHERE supply_account_id = $1
+              ORDER BY turn_id DESC
+              LIMIT $2
+           ) recent
           GROUP BY product_account_id`,
-        [supplyAccountId]
+        [supplyAccountId, FAIR_QUEUE_SERVICE_TURN_WINDOW]
       );
       const serviceCounts = new Map(
         service.rows.map((row) => [
@@ -1058,6 +1089,20 @@ export class PostgresSupplyAccountFairQueue {
            supply_account_id, product_account_id, request_id, served_at
          ) VALUES ($1, $2, $3, $4)`,
         [supplyAccountId, productAccountId, requestId, admittedAt]
+      );
+      // F-H-05: purge turns outside the sliding window so the table cannot grow unbounded.
+      await client.query(
+        `DELETE FROM p1_supply_capacity_service_turns
+          WHERE supply_account_id = $1
+            AND turn_id <= (
+              SELECT turn_id
+                FROM p1_supply_capacity_service_turns
+               WHERE supply_account_id = $1
+               ORDER BY turn_id DESC
+               OFFSET $2
+               LIMIT 1
+            )`,
+        [supplyAccountId, FAIR_QUEUE_SERVICE_TURN_WINDOW]
       );
     });
   }
@@ -1289,8 +1334,9 @@ export class PostgresCapacityLeaseStore {
       );
     }
     return inTransaction(this.pool, async (client) => {
+      // F-H-04: per-supply-account lock (not the former global hotspot).
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        'p1:capacity-leases:global',
+        capacitySupplyAccountLockKey(input.supplyAccountId),
       ]);
       const existing = await client.query<CapacityLeaseRow>(
         `SELECT lease_id, supply_account_id, product_account_id, workspace_id,
@@ -1349,24 +1395,18 @@ export class PostgresCapacityLeaseStore {
           };
         }
       }
-      const usage = await client.query<{
-        supply_in_use: string;
-        product_in_use: string;
-        system_in_use: string;
-      }>(
-        `SELECT
-           count(*) FILTER (WHERE supply_account_id = $1)::text AS supply_in_use,
-           count(*) FILTER (WHERE product_account_id = $2)::text AS product_in_use,
-           count(*)::text AS system_in_use
-         FROM p1_capacity_leases
-         WHERE released_at IS NULL
-           AND acquired_at <= $3
-           AND expires_at > $3`,
-        [input.supplyAccountId, input.productAccountId, normalizedNow]
+
+      // Supply-local count under the supply-account lock only.
+      const supplyUsage = await client.query<{ supply_in_use: string }>(
+        `SELECT count(*)::text AS supply_in_use
+           FROM p1_capacity_leases
+          WHERE supply_account_id = $1
+            AND released_at IS NULL
+            AND acquired_at <= $2
+            AND expires_at > $2`,
+        [input.supplyAccountId, normalizedNow]
       );
-      const supplyInUse = Number(usage.rows[0]?.supply_in_use ?? 0);
-      const productInUse = Number(usage.rows[0]?.product_in_use ?? 0);
-      const systemInUse = Number(usage.rows[0]?.system_in_use ?? 0);
+      const supplyInUse = Number(supplyUsage.rows[0]?.supply_in_use ?? 0);
       if (supplyInUse >= limits.supplyAccount.concurrency) {
         return {
           status: 'rejected',
@@ -1377,6 +1417,27 @@ export class PostgresCapacityLeaseStore {
           limit: limits.supplyAccount.concurrency,
         };
       }
+
+      // F-H-04: independent system-total lock (always after supply lock → no deadlock).
+      // Product-account and system-total are global layers; re-check them here.
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        capacitySystemLockKey(),
+      ]);
+      const globalUsage = await client.query<{
+        product_in_use: string;
+        system_in_use: string;
+      }>(
+        `SELECT
+           count(*) FILTER (WHERE product_account_id = $1)::text AS product_in_use,
+           count(*)::text AS system_in_use
+         FROM p1_capacity_leases
+         WHERE released_at IS NULL
+           AND acquired_at <= $2
+           AND expires_at > $2`,
+        [input.productAccountId, normalizedNow]
+      );
+      const productInUse = Number(globalUsage.rows[0]?.product_in_use ?? 0);
+      const systemInUse = Number(globalUsage.rows[0]?.system_in_use ?? 0);
       if (systemInUse >= limits.systemTotal.concurrency) {
         return {
           status: 'rejected',
