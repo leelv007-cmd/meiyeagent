@@ -28,6 +28,10 @@ import {
   type GovernedQuickActionId,
 } from '@/p1/admin-supply-quick-actions-model';
 import {
+  projectLiveRouteDecision,
+  type LiveRouteSimulatorState,
+} from '@/p1/admin-supply-route-simulator-model';
+import {
   isSecureWriteReceiptId,
   type GovernedActionDraft,
   type GovernedActionExecution,
@@ -326,16 +330,40 @@ function GovernedActionFormCells({
   );
 }
 
+function publishRouteSimulatorUpdate(
+  actionId: GovernedQuickActionId,
+  payload: unknown,
+  onRouteSimulatorUpdate?: (state: LiveRouteSimulatorState) => void
+) {
+  if (actionId !== 'route_simulate' || !onRouteSimulatorUpdate) return;
+  const panel = projectLiveRouteDecision(payload);
+  if (panel) {
+    onRouteSimulatorUpdate({ status: 'ready', view: panel });
+  }
+}
+
+function publishRouteSimulatorError(
+  actionId: GovernedQuickActionId,
+  message: string,
+  onRouteSimulatorUpdate?: (state: LiveRouteSimulatorState) => void
+) {
+  if (actionId !== 'route_simulate' || !onRouteSimulatorUpdate) return;
+  onRouteSimulatorUpdate({ status: 'error', message });
+}
+
 export function SupplyGovernedActionsPanel({
   view,
   targets,
   onPreview,
   onExecute,
+  onRouteSimulatorUpdate,
 }: {
   view: GovernedActionsPanelView;
   targets: Partial<Record<GovernedQuickActionId, GovernedExecutionTarget[]>>;
   onPreview?: (input: GovernedActionDraft) => Promise<GovernedActionReview>;
   onExecute?: (input: GovernedActionExecution) => Promise<unknown>;
+  /** F-J-02: lift Core route_simulate projections into the simulator panel. */
+  onRouteSimulatorUpdate?: (state: LiveRouteSimulatorState) => void;
 }) {
   const [impactReview, setImpactReview] = useState<ImpactReviewRequest>();
   const [outcome, setOutcome] = useState<ActionOutcome>();
@@ -387,6 +415,11 @@ export function SupplyGovernedActionsPanel({
         ...(secureWriteReceiptId ? { secureWriteReceiptId } : {}),
         target,
       });
+      publishRouteSimulatorUpdate(
+        actionId,
+        review.preview.routeDecision,
+        onRouteSimulatorUpdate
+      );
       const routeDecision = projectRouteDecision(review.preview.routeDecision);
       setOutcome(undefined);
       setImpactReview({
@@ -411,6 +444,15 @@ export function SupplyGovernedActionsPanel({
           });
           try {
             const result = await onExecute({ reason: confirmedReason, review });
+            const resultRecord =
+              result && typeof result === 'object'
+                ? (result as Record<string, unknown>)
+                : undefined;
+            publishRouteSimulatorUpdate(
+              actionId,
+              resultRecord?.routeDecision ?? review.preview.routeDecision,
+              onRouteSimulatorUpdate
+            );
             setOutcome({
               actionId,
               details: projectActionResult(result),
@@ -419,6 +461,11 @@ export function SupplyGovernedActionsPanel({
             });
           } catch (error) {
             const message = error instanceof Error ? error.message : '未知错误';
+            publishRouteSimulatorError(
+              actionId,
+              message,
+              onRouteSimulatorUpdate
+            );
             setOutcome({
               actionId,
               message: `${definition.label}执行失败：${message}`,
@@ -430,6 +477,7 @@ export function SupplyGovernedActionsPanel({
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
+      publishRouteSimulatorError(actionId, message, onRouteSimulatorUpdate);
       setOutcome({
         actionId,
         message: `${definition.label}预览失败：${message}`,

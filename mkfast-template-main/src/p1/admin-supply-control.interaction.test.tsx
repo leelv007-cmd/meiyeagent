@@ -247,7 +247,12 @@ describe('AdminSupplyControl live data', () => {
       },
       expect.any(AbortSignal)
     );
-    expect(screen.queryByTestId('supply-route-simulator-panel')).toBeNull();
+    // F-J-02: live always mounts route simulator (idle until route_simulate).
+    const simulator = screen.getByTestId('supply-route-simulator-panel');
+    expect(simulator).toHaveAttribute('data-status', 'idle');
+    expect(
+      screen.getByTestId('supply-route-simulator-idle')
+    ).toBeInTheDocument();
   });
 
   it('shows an honest error instead of falling back to the demo fixture', async () => {
@@ -502,6 +507,11 @@ describe('AdminSupplyControl governed actions', () => {
       /硬过滤.*三层排序.*实时排除.*最大成本.*接受态.*未选原因.*证据新鲜度.*成本证据来源.*数据处理等级.*Fail closed/
     );
     expect(details).toHaveTextContent('safe_auto_fallback');
+    // F-J-02: dedicated simulator panel projects Core routeDecision (ready).
+    const simulator = screen.getByTestId('supply-route-simulator-panel');
+    expect(simulator).toHaveAttribute('data-status', 'ready');
+    expect(simulator).toHaveTextContent('safe_auto_fallback');
+    expect(screen.getByTestId('supply-route-hard-filter')).toBeInTheDocument();
   });
 
   it('binds provider probes to a deployment and its exact operation', async () => {

@@ -2,7 +2,7 @@
  * Admin supply control center (J4 + J5).
  * Loads the admin supply snapshot from Core. A snapshot prop is test-only.
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { SupplyAssociationViewsPanel } from '@/components/admin/supply/supply-association-views-panel';
 import { SupplyControlCenterPanel } from '@/components/admin/supply/supply-control-center-panel';
@@ -20,7 +20,10 @@ import {
   type GovernedQuickActionId,
 } from '@/p1/admin-supply-quick-actions-model';
 import { buildSupplyOverviewView } from '@/p1/admin-supply-overview-model';
-import { buildDemoRouteSimulatorPanel } from '@/p1/admin-supply-route-simulator-model';
+import {
+  buildDemoRouteSimulatorPanel,
+  type LiveRouteSimulatorState,
+} from '@/p1/admin-supply-route-simulator-model';
 import {
   DEFAULT_RUN_TABLE_URL_STATE,
   buildSupplyRunTablePage,
@@ -182,9 +185,15 @@ function AdminSupplyControlSnapshotView({
       }),
     [snapshot]
   );
-  const routeSimulator = useMemo(
-    () => (fixtureOnlyPanels ? buildDemoRouteSimulatorPanel() : null),
-    [fixtureOnlyPanels]
+  // F-J-02: fixture keeps demo ready panel; live always shows idle/error/ready.
+  const [liveRouteSimulator, setLiveRouteSimulator] =
+    useState<LiveRouteSimulatorState>({ status: 'idle' });
+  const routeSimulator = useMemo<LiveRouteSimulatorState>(
+    () =>
+      fixtureOnlyPanels
+        ? { status: 'ready', view: buildDemoRouteSimulatorPanel() }
+        : liveRouteSimulator,
+    [fixtureOnlyPanels, liveRouteSimulator]
   );
   const governedActions = useMemo(() => buildGovernedActionsPanelView(), []);
   const governedActionTargets = useMemo(
@@ -204,6 +213,9 @@ function AdminSupplyControlSnapshotView({
       governedActionTargets={governedActionTargets}
       onPreviewGovernedAction={onPreviewGovernedAction}
       onExecuteGovernedAction={onExecuteGovernedAction}
+      onRouteSimulatorUpdate={
+        fixtureOnlyPanels ? undefined : setLiveRouteSimulator
+      }
       catalogRevisionId={snapshot.catalogRevisionId}
       onRunTableStateChange={onRunTableStateChange}
     />

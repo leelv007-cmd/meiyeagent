@@ -6,6 +6,7 @@ import {
   buildDemoRouteExplanationFacts,
   buildDemoRouteSimulatorPanel,
   buildRouteDecisionExplanationView,
+  projectLiveRouteDecision,
   projectRouteSimulatorPanel,
 } from './admin-supply-route-simulator-model';
 
@@ -108,4 +109,67 @@ test('demo panel is SSR-ready with all G5 sections', () => {
   assert.ok(panel.notSelectedReasons.length >= 1);
   assert.ok(panel.evidenceFreshness.length >= 1);
   assert.ok(panel.costEvidenceSource.length >= 1);
+});
+
+test('projectLiveRouteDecision accepts preview flat explanation and execute wrapper', () => {
+  const flat = {
+    surface: 'simulator',
+    hardFilter: {
+      passedDeploymentIds: ['dep-a'],
+      excluded: [{ deploymentId: 'dep-b', reasons: ['data_class'] }],
+    },
+    sort: {
+      layerOrder: [
+        'quality_reliability_gate',
+        'health_capacity_guardrail',
+        'cost_optimization',
+      ],
+      ranked: [{ deploymentId: 'dep-a', rank: 1, band: 'production' }],
+    },
+    liveExclusions: [],
+    acceptanceBranch: {
+      decision: 'complete',
+      reason: 'primary accepted',
+      primaryDeploymentId: 'dep-a',
+    },
+    failClosed: false,
+    failClosedReason: null,
+    maxCost: {
+      amountMicros: 1000,
+      currency: 'CNY',
+      evidenceSource: 'catalog',
+    },
+    notSelectedReasons: [{ deploymentId: 'dep-b', reasons: ['data_class'] }],
+    evidenceFreshness: [
+      {
+        deploymentId: 'dep-a',
+        criticalEvidence: [{ kind: 'conformance', status: 'fresh' }],
+      },
+    ],
+    costEvidenceSource: [
+      { deploymentId: 'dep-a', source: 'catalog', amountMicros: 1000 },
+    ],
+    dataProcessingLevel: {
+      level: 'standard',
+      protectedChannel: false,
+      copy: '标准数据处理等级',
+    },
+  };
+
+  const fromPreview = projectLiveRouteDecision(flat);
+  assert.ok(fromPreview);
+  assert.equal(fromPreview?.hardFilterPassed[0], 'dep-a');
+  assert.equal(fromPreview?.acceptanceBranch.decision, 'complete');
+  assert.equal(fromPreview?.maxCost?.evidenceSource, 'catalog');
+
+  const fromExecute = projectLiveRouteDecision({
+    simulator: flat,
+    taskAudit: { ...flat, surface: 'task_audit' },
+  });
+  assert.ok(fromExecute);
+  assert.equal(fromExecute?.surface, 'simulator');
+  assert.equal(fromExecute?.sortRanked[0]?.deploymentId, 'dep-a');
+
+  assert.equal(projectLiveRouteDecision(null), null);
+  assert.equal(projectLiveRouteDecision({}), null);
 });

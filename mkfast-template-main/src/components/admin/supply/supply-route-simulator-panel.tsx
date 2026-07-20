@@ -2,6 +2,9 @@
  * Route simulator explanation panel (J5 / G5 / D-065 ④).
  * Renders the shared projection: hard filter / sort / live exclude / max cost /
  * acceptance branch / not-selected reasons / evidence freshness / cost source.
+ *
+ * Live path (F-J-02) always mounts with idle / error / ready honest states;
+ * fixture path supplies a ready demo view.
  */
 import { Badge } from '@/components/ui/badge';
 import {
@@ -12,28 +15,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { RouteSimulatorPanelView } from '@/p1/admin-supply-route-simulator-model';
+import type {
+  LiveRouteSimulatorState,
+  RouteSimulatorPanelView,
+} from '@/p1/admin-supply-route-simulator-model';
 
-export function SupplyRouteSimulatorPanel({
-  view,
-}: {
-  view: RouteSimulatorPanelView;
-}) {
+function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
   return (
-    <section
-      data-testid="supply-route-simulator-panel"
-      data-surface={view.surface}
-      data-fail-closed={String(view.failClosed)}
-      className="space-y-4"
-    >
-      <header className="space-y-1">
-        <h2 className="text-base font-semibold">路由模拟器</h2>
-        <p className="text-xs text-muted-foreground">
-          与任务审计共用同一解释投影（G5）：硬过滤 / 排序 / 实时排除 / 最大成本 /
-          接受态 / 未选原因 / 证据新鲜度 / 成本证据来源。
-        </p>
-      </header>
-
+    <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div
           data-testid="supply-route-hard-filter"
@@ -128,10 +117,7 @@ export function SupplyRouteSimulatorPanel({
         </div>
       </div>
 
-      <div
-        data-testid="supply-route-live-exclusions"
-        className="space-y-2"
-      >
+      <div data-testid="supply-route-live-exclusions" className="space-y-2">
         <h3 className="text-sm font-semibold">实时排除</h3>
         {view.liveExclusions.length === 0 ? (
           <p className="text-xs text-muted-foreground">无实时排除</p>
@@ -147,17 +133,16 @@ export function SupplyRouteSimulatorPanel({
         )}
       </div>
 
-      <div
-        data-testid="supply-route-not-selected"
-        className="space-y-2"
-      >
+      <div data-testid="supply-route-not-selected" className="space-y-2">
         <h3 className="text-sm font-semibold">未选原因</h3>
         {view.notSelectedReasons.length === 0 ? (
           <p className="text-xs text-muted-foreground">全部通过</p>
         ) : (
           <ul className="list-disc space-y-1 pl-5 text-sm">
             {view.notSelectedReasons.map((row) => (
-              <li key={`ns-${row.layer}-${row.deploymentId}-${row.reasons.join()}`}>
+              <li
+                key={`ns-${row.layer}-${row.deploymentId}-${row.reasons.join()}`}
+              >
                 <Badge variant="outline" className="mr-1">
                   {row.layer ?? 'unknown'}
                 </Badge>
@@ -169,10 +154,7 @@ export function SupplyRouteSimulatorPanel({
         )}
       </div>
 
-      <div
-        data-testid="supply-route-evidence-freshness"
-        className="space-y-2"
-      >
+      <div data-testid="supply-route-evidence-freshness" className="space-y-2">
         <h3 className="text-sm font-semibold">证据新鲜度</h3>
         <div className="overflow-hidden rounded-lg border">
           <Table>
@@ -219,10 +201,7 @@ export function SupplyRouteSimulatorPanel({
         </div>
       </div>
 
-      <div
-        data-testid="supply-route-cost-evidence"
-        className="space-y-2"
-      >
+      <div data-testid="supply-route-cost-evidence" className="space-y-2">
         <h3 className="text-sm font-semibold">成本证据来源</h3>
         <ul className="list-disc space-y-1 pl-5 text-sm">
           {view.costEvidenceSource.map((row) => (
@@ -237,6 +216,70 @@ export function SupplyRouteSimulatorPanel({
           ))}
         </ul>
       </div>
+    </>
+  );
+}
+
+export function SupplyRouteSimulatorPanel({
+  state,
+  view,
+}: {
+  /** Live path: idle / error / ready. Prefer this over bare `view`. */
+  state?: LiveRouteSimulatorState;
+  /** Fixture / ready-only convenience: treated as `{ status: 'ready', view }`. */
+  view?: RouteSimulatorPanelView | null;
+}) {
+  const resolved: LiveRouteSimulatorState =
+    state ??
+    (view
+      ? { status: 'ready', view }
+      : { status: 'idle' });
+
+  return (
+    <section
+      data-testid="supply-route-simulator-panel"
+      data-status={resolved.status}
+      data-surface={
+        resolved.status === 'ready' ? resolved.view.surface : 'simulator'
+      }
+      data-fail-closed={
+        resolved.status === 'ready' ? String(resolved.view.failClosed) : 'false'
+      }
+      className="space-y-4"
+    >
+      <header className="space-y-1">
+        <h2 className="text-base font-semibold">路由模拟器</h2>
+        <p className="text-xs text-muted-foreground">
+          与任务审计共用同一解释投影（G5）：硬过滤 / 排序 / 实时排除 / 最大成本 /
+          接受态 / 未选原因 / 证据新鲜度 / 成本证据来源。经
+          admin_supply_action_preview / admin_supply_action（route_simulate）由
+          Core 生成，禁止演示数据回退。
+        </p>
+      </header>
+
+      {resolved.status === 'idle' ? (
+        <p
+          data-testid="supply-route-simulator-idle"
+          className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+        >
+          尚未运行路由模拟。使用下方「路由模拟」受治理动作，经 Core
+          预览并执行后，此处展示解释投影。当前为空闲态，不是无候选。
+        </p>
+      ) : null}
+
+      {resolved.status === 'error' ? (
+        <p
+          data-testid="supply-route-simulator-error"
+          role="alert"
+          className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
+        >
+          路由模拟失败：{resolved.message}。当前状态未知，未使用演示数据回退。
+        </p>
+      ) : null}
+
+      {resolved.status === 'ready' ? (
+        <ReadyRouteSimulatorBody view={resolved.view} />
+      ) : null}
     </section>
   );
 }

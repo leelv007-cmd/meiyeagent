@@ -173,3 +173,21 @@ test('pending-actions load failure produces an honest stale exception', () => {
   assert.match(html, /data-severity="stale"/);
   assert.doesNotMatch(html, /\u5f53\u524d\u65e0\u5f85\u5904\u7406\u5f02\u5e38/);
 });
+
+test('live exception home shows explicit loading until sources settle (F-J-04)', () => {
+  // Empty QueryClient: queries start pending — must not render empty "no exceptions".
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminExceptionHome input={{ now: NOW }} />
+    </QueryClientProvider>
+  );
+  assert.match(html, /data-testid="exception-home-loading"/);
+  assert.doesNotMatch(html, /data-testid="exception-empty-state"/);
+  assert.doesNotMatch(html, /\u5f53\u524d\u65e0\u5f85\u5904\u7406\u5f02\u5e38/);
+  assert.doesNotMatch(html, /data-testid="exception-home-panel"/);
+});

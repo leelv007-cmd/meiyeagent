@@ -22,7 +22,7 @@ import type {
   GovernedExecutionTarget,
 } from '@/p1/use-admin-supply-control';
 import type { SupplyOverviewView } from '@/p1/admin-supply-overview-model';
-import type { RouteSimulatorPanelView } from '@/p1/admin-supply-route-simulator-model';
+import type { LiveRouteSimulatorState } from '@/p1/admin-supply-route-simulator-model';
 import type { SupplyRunTablePage } from '@/p1/admin-supply-run-table-model';
 import type { SupplyRunTableUrlState } from '@/p1/admin-supply-run-table-model';
 import type { TaskDrilldownView } from '@/p1/admin-supply-task-drilldown-model';
@@ -38,6 +38,7 @@ export function SupplyControlCenterPanel({
   governedActionTargets,
   onPreviewGovernedAction,
   onExecuteGovernedAction,
+  onRouteSimulatorUpdate,
   catalogRevisionId,
   onRunTableStateChange,
 }: {
@@ -48,8 +49,11 @@ export function SupplyControlCenterPanel({
   drilldown?: TaskDrilldownView | null;
   /** J5 CredentialAccount panel. */
   credentials?: CredentialUiPanelView | null;
-  /** J5 route simulator shared explanation projection. */
-  routeSimulator?: RouteSimulatorPanelView | null;
+  /**
+   * Route simulator state. Live path always passes idle/error/ready;
+   * fixture path passes ready demo. Panel is always mounted when provided.
+   */
+  routeSimulator?: LiveRouteSimulatorState | null;
   /** J5 governed quick actions catalog. */
   governedActions?: GovernedActionsPanelView | null;
   governedActionTargets?: Partial<
@@ -61,6 +65,8 @@ export function SupplyControlCenterPanel({
   onExecuteGovernedAction?: (
     input: GovernedActionExecution
   ) => Promise<unknown>;
+  /** Lift route_simulate Core projections into the simulator panel (F-J-02). */
+  onRouteSimulatorUpdate?: (state: LiveRouteSimulatorState) => void;
   catalogRevisionId: string;
   onRunTableStateChange?: (state: SupplyRunTableUrlState) => void;
 }) {
@@ -75,7 +81,7 @@ export function SupplyControlCenterPanel({
       {drilldown ? <SupplyTaskDrilldown view={drilldown} /> : null}
       {credentials ? <SupplyCredentialPanel view={credentials} /> : null}
       {routeSimulator ? (
-        <SupplyRouteSimulatorPanel view={routeSimulator} />
+        <SupplyRouteSimulatorPanel state={routeSimulator} />
       ) : null}
       {governedActions ? (
         <SupplyGovernedActionsPanel
@@ -83,6 +89,7 @@ export function SupplyControlCenterPanel({
           targets={governedActionTargets ?? {}}
           onPreview={onPreviewGovernedAction}
           onExecute={onExecuteGovernedAction}
+          onRouteSimulatorUpdate={onRouteSimulatorUpdate}
         />
       ) : null}
       <SupplyAssociationViewsIndex />

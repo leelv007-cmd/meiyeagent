@@ -1,4 +1,8 @@
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
+import {
+  admin_supply_description,
+  admin_supply_title,
+} from '@/locale/paraglide/messages';
 import { AdminSupplyControl } from '@/p1/admin-supply-control';
 import {
   parseRunTableUrlState,
@@ -43,8 +47,8 @@ export function SupplyControlCenterPage({
 } = {}) {
   return (
     <AdminRoutePage
-      title="模型供应与网关控制中心"
-      description="总览三模态 readiness / 双渠道覆盖 / 六实体关系 / 生效 revision / 运行表与任务下钻 / 五关联视图 / 权益池状态。外部网关 Console 仅作技术证据深链。"
+      title={admin_supply_title()}
+      description={admin_supply_description()}
     >
       <div className="space-y-4 text-sm [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm">
         <AdminSupplyControl

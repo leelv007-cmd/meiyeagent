@@ -411,3 +411,225 @@ export function buildDemoRouteSimulatorPanel(): RouteSimulatorPanelView {
   const explanation = buildRouteDecisionExplanationView(facts);
   return projectRouteSimulatorPanel(explanation);
 }
+
+/**
+ * Live route-simulator UI state (F-J-02).
+ * Fixture path uses ready+demo; live always mounts the panel with idle/error/ready.
+ */
+export type LiveRouteSimulatorState =
+  | { status: 'idle' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; view: RouteSimulatorPanelView };
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function asRecordList(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.flatMap((item) => {
+        const record = asRecord(item);
+        return record ? [record] : [];
+      })
+    : [];
+}
+
+function projectExclusion(
+  record: Record<string, unknown>
+): ExplanationExclusion | null {
+  const deploymentId = asString(record.deploymentId);
+  if (!deploymentId) return null;
+  const layer = asString(record.layer);
+  return {
+    deploymentId,
+    reasons: asStringList(record.reasons),
+    ...(layer
+      ? {
+          layer: layer as ExplanationExclusion['layer'],
+        }
+      : {}),
+  };
+}
+
+function projectRankEntry(
+  record: Record<string, unknown>
+): ExplanationRankEntry | null {
+  const deploymentId = asString(record.deploymentId);
+  const rank = asNumber(record.rank);
+  if (!deploymentId || rank == null) return null;
+  const bandRaw = asString(record.band);
+  const band: ExplanationRankEntry['band'] =
+    bandRaw === 'canary' ? 'canary' : 'production';
+  return {
+    deploymentId,
+    rank,
+    band,
+    sortKeys: {},
+  };
+}
+
+/**
+ * Project Core / BFF routeDecision payloads into the shared panel view.
+ * Accepts either a flat explanation (preview) or `{ simulator, taskAudit }` (execute).
+ */
+export function projectLiveRouteDecision(
+  value: unknown
+): RouteSimulatorPanelView | null {
+  const root = asRecord(value);
+  if (!root) return null;
+
+  const explanation =
+    asRecord(root.simulator) ??
+    (asRecord(root.hardFilter) || asRecord(root.sort) ? root : undefined);
+  if (!explanation) return null;
+
+  const hardFilter = asRecord(explanation.hardFilter) ?? {};
+  const sort = asRecord(explanation.sort) ?? {};
+  const acceptance = asRecord(explanation.acceptanceBranch) ?? {};
+  const maxCostRaw = asRecord(explanation.maxCost);
+  const dataProcessing = asRecord(explanation.dataProcessingLevel) ?? {};
+
+  const hardFilterPassed = asStringList(hardFilter.passedDeploymentIds);
+  const hardFilterExcluded = asRecordList(hardFilter.excluded)
+    .map(projectExclusion)
+    .filter((row): row is ExplanationExclusion => row != null);
+  const sortRanked = asRecordList(sort.ranked)
+    .map(projectRankEntry)
+    .filter((row): row is ExplanationRankEntry => row != null);
+  const layerOrderRaw = asStringList(sort.layerOrder);
+  const layerOrder =
+    layerOrderRaw.length > 0
+      ? (layerOrderRaw as RankingLayerId[])
+      : THREE_LAYER_ORDER;
+  const liveExclusions = asRecordList(explanation.liveExclusions)
+    .map(projectExclusion)
+    .filter((row): row is ExplanationExclusion => row != null);
+  const notSelectedReasons = asRecordList(explanation.notSelectedReasons)
+    .map(projectExclusion)
+    .filter((row): row is ExplanationExclusion => row != null);
+
+  const evidenceFreshness: ExplanationEvidenceFreshness[] = asRecordList(
+    explanation.evidenceFreshness
+  ).flatMap((row) => {
+    const deploymentId = asString(row.deploymentId);
+    if (!deploymentId) return [];
+    const criticalEvidence: CriticalEvidenceFactView[] = asRecordList(
+      row.criticalEvidence
+    ).flatMap((fact) => {
+      const kind = asString(fact.kind);
+      const status = asString(fact.status);
+      if (!kind || !status) return [];
+      return [
+        {
+          kind,
+          status: status as CriticalEvidenceFactView['status'],
+          ...(asString(fact.observedAt)
+            ? { observedAt: asString(fact.observedAt) }
+            : {}),
+          ...(asNumber(fact.sampleSize) != null
+            ? { sampleSize: asNumber(fact.sampleSize) }
+            : {}),
+          ...(asNumber(fact.value) != null ? { value: asNumber(fact.value) } : {}),
+        },
+      ];
+    });
+    return [{ deploymentId, criticalEvidence }];
+  });
+
+  const costEvidenceSource: ExplanationCostEvidence[] = asRecordList(
+    explanation.costEvidenceSource
+  ).flatMap((row) => {
+    const deploymentId = asString(row.deploymentId);
+    if (!deploymentId) return [];
+    return [
+      {
+        deploymentId,
+        source: (asString(row.source) as ExplanationCostEvidence['source']) ?? null,
+        ...(asNumber(row.amountMicros) != null
+          ? { amountMicros: asNumber(row.amountMicros) }
+          : {}),
+        ...(row.riskDiscountApplied === true
+          ? { riskDiscountApplied: true }
+          : {}),
+      },
+    ];
+  });
+
+  const decisionRaw = asString(acceptance.decision) ?? 'stop';
+  const acceptanceBranch: ExplanationAcceptanceBranch = {
+    acceptance:
+      (asString(acceptance.acceptance) as ExplanationAcceptanceBranch['acceptance']) ??
+      'acceptance_unknown',
+    decision: decisionRaw as ExplanationAcceptanceDecision,
+    reason: asString(acceptance.reason) ?? decisionRaw,
+    ...(asString(acceptance.primaryDeploymentId)
+      ? { primaryDeploymentId: asString(acceptance.primaryDeploymentId) }
+      : {}),
+    ...(asString(acceptance.fallbackDeploymentId)
+      ? { fallbackDeploymentId: asString(acceptance.fallbackDeploymentId) }
+      : {}),
+  };
+
+  const currencyRaw = asString(maxCostRaw?.currency);
+  const maxCost =
+    maxCostRaw && asNumber(maxCostRaw.amountMicros) != null
+      ? {
+          amountMicros: asNumber(maxCostRaw.amountMicros)!,
+          currency: (currencyRaw === 'USD' ? 'USD' : 'CNY') as 'CNY' | 'USD',
+          evidenceSource: (asString(maxCostRaw.evidenceSource) ??
+            null) as NonNullable<RouteDecisionExplanationView['maxCost']>['evidenceSource'],
+        }
+      : null;
+
+  const surfaceRaw = asString(explanation.surface);
+  const surface: RouteExplanationSurface =
+    surfaceRaw === 'task_audit' ? 'task_audit' : 'simulator';
+
+  const failClosed = explanation.failClosed === true;
+  const failClosedReason =
+    failClosed || explanation.failClosedReason === 'no_compliant_candidate'
+      ? ('no_compliant_candidate' as const)
+      : null;
+
+  return {
+    surface,
+    hardFilterPassed,
+    hardFilterExcluded,
+    sortRanked,
+    layerOrder,
+    liveExclusions,
+    maxCost,
+    acceptanceBranch,
+    notSelectedReasons,
+    evidenceFreshness,
+    costEvidenceSource,
+    dataProcessingLevel: {
+      level: asString(dataProcessing.level) ?? 'standard',
+      protectedChannel: dataProcessing.protectedChannel === true,
+      copy:
+        asString(dataProcessing.copy) ??
+        (dataProcessing.protectedChannel === true
+          ? '受保护通道：受限数据类仅进入双批准 Deployment'
+          : '标准数据处理等级'),
+    },
+    failClosed,
+    failClosedReason,
+  };
+}

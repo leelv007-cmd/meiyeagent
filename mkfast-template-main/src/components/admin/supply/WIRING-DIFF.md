@@ -25,11 +25,11 @@
 | `src/routes/admin/supply.tasks.$taskId.tsx` | Task drilldown route |
 | `src/routes/admin/-supply.route.test.tsx` | Route + five-view + URL state tests |
 
-## Shared surfaces to wire in batch B
+## Shared surfaces — batch B status
 
 ### 1. `src/lib/routes.ts`
 
-Add:
+Add (if not yet present):
 
 ```ts
 AdminSupply: '/admin/supply',
@@ -57,15 +57,17 @@ adminSupplyTaskPath: (taskId: string) => `/admin/supply/tasks/${taskId}`,
 }
 ```
 
-### 3. Locales (`project.inlang/messages/{en,zh}.json`)
+### 3. Locales (`project.inlang/messages/{en,zh}.json`) — **landed (F-J-03)**
 
-| Key | zh | en |
-|---|---|---|
-| `admin_navigation_supply` | 供应控制中心 | Supply control center |
-| `admin_supply_title` | 模型供应与网关控制中心 | Model supply & gateway control center |
-| `admin_supply_description` | 总览三模态 readiness、双渠道覆盖、运行表与任务下钻、五关联视图与权益池状态。外部网关 Console 仅作技术证据深链。 | Overview of tri-modal readiness, dual-channel coverage, run table and task drilldown, five association views, and entitlement/pool status. External gateway consoles are evidence deep-links only. |
+| Key | zh | en | Status |
+|---|---|---|---|
+| `admin_navigation_supply` | 供应控制中心 | Supply control center | **landed** |
+| `admin_supply_title` | 模型供应与网关控制中心 | Model supply & gateway control center | **landed** |
+| `admin_supply_description` | 总览三模态 readiness… | Overview of tri-modal readiness… | **landed** |
+| `admin_exception_home_title` | 异常优先首页 | Exception-first home | **landed** |
+| `admin_exception_home_description` | 只读聚合… | Read-only aggregation… | **landed** |
 
-After locale land, replace hardcoded title/description in `supply.tsx`.
+Routes `/admin` and `/admin/supply` consume paraglide keys (no hardcoded Chinese titles).
 
 ### 4. `src/routeTree.gen.ts`
 
@@ -84,11 +86,18 @@ Ensure paths:
 
 Then drop provisional `(createFileRoute as any)` casts in the three route modules.
 
-### 5. Optional Core HTTP (Z2 batch A)
+### 5. Core HTTP / live reporters — **wired (Z2 + F-J-02)**
 
-- Mount typed admin query for expanded supply registry + runs + entitlement status.
-- Never expose credential secrets; metadata only.
-- External gateway consoles remain deep-link only (no second business truth).
+| Surface | Status |
+|---|---|
+| `admin_supply_control` snapshot query | **Live** via `useAdminSupplyControlSnapshot` → BFF `queryP1('model-supply')` |
+| Run table server pagination / filters | **Live** — URL state → payload.runQuery |
+| Credential panel | **Live** projection from snapshot (secret no-echo) |
+| Governed quick actions | **Live** via `admin_supply_action_preview` + `admin_supply_action` |
+| Route simulator panel | **Live (F-J-02)** — always mounted; idle until `route_simulate`; ready/error from Core preview/execute; fixture keeps demo ready |
+| Exception-first home | **Live** pending-actions + OperationalMetric; explicit loading/error (F-J-04) |
+| Merchant dual-end labels | **Partial (F-J-01)** — `channelReadiness` badge on `model-settings` ModelCard via `model_card_channel_*` |
+| External gateway consoles | Evidence deep-link only (no second business truth) |
 
 ### 6. nuqs wiring (optional polish)
 
@@ -100,30 +109,33 @@ Run table pure model already owns parse/serialize. Batch B may bind `nuqs` `useQ
 - Association views: `/admin/supply/views/{model,counterparty-channel,deployment,credential,route}`
 - Task drilldown: `/admin/supply/tasks/{taskId}`
 
-## J5 delivered (same package; pure presentation until Z2)
+## J5 delivered (same package; pure presentation + live BFF)
 
 | Path | Role |
 |---|---|
 | `src/p1/admin-supply-credential-model.ts` (+`.test.ts`) | CredentialAccount UI: 3-state + tested gate + draining, secret no-echo, env_fallback risk |
-| `src/p1/admin-supply-route-simulator-model.ts` (+`.test.ts`) | G5 shared explanation projection (simulator ≡ task_audit) |
+| `src/p1/admin-supply-route-simulator-model.ts` (+`.test.ts`) | G5 shared explanation projection (simulator ≡ task_audit) + `projectLiveRouteDecision` for BFF payloads |
 | `src/p1/admin-supply-quick-actions-model.ts` (+`.test.ts`) | D-070 full governed quick actions: command+permission+preview+audit |
 | `src/components/admin/supply/supply-credential-panel.tsx` | CredentialAccount panel |
-| `src/components/admin/supply/supply-route-simulator-panel.tsx` | Route simulator explanation panel |
-| `src/components/admin/supply/supply-governed-actions-panel.tsx` | Governed actions catalog panel |
+| `src/components/admin/supply/supply-route-simulator-panel.tsx` | Route simulator panel (idle / error / ready) |
+| `src/components/admin/supply/supply-governed-actions-panel.tsx` | Governed actions catalog; lifts `route_simulate` into simulator panel |
 | `src/p1/admin-provider-credential-control*` | Evolved: trunk status / activation gate / drain / migration entry |
 
 ## Out of scope for this note
 
 - Cloudflare read-only → J6  
-- Live Core fetch / secret broker / hot assembly wiring → Z2  
-- Composer / results / dashboard (#83) — zero intersection  
+- Secret broker / hot assembly domain → Core (not web)  
+- Composer / results / dashboard (#83) product worksurfaces beyond model-settings dual-end labels  
+- Sidebar `Routes.AdminSupply` nav item (remaining batch B shell wire)
 
-## Verification after batch B
+## Verification
 
 ```bash
 pnpm --filter @meiye/web test -- src/p1/admin-supply
+pnpm --filter @meiye/web test -- src/p1/admin-exception-home
 pnpm --filter @meiye/web test -- src/p1/admin-entitlement-status
 pnpm --filter @meiye/web test -- src/routes/admin/-supply
 pnpm --filter @meiye/web typecheck
-# manual: /admin/supply → readiness cards → run table share URL → five views → task drilldown
+# manual: /admin → loading then exceptions or empty panorama
+# manual: /admin/supply → readiness → route simulator idle → route_simulate → ready panel
 ```

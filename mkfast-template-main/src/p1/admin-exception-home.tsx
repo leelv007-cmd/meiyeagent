@@ -124,23 +124,89 @@ function LiveAdminExceptionHome({
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
   });
+
+  // F-J-04: wait until both sources settle so loading never looks like "no exceptions".
+  const metricsSettled =
+    operationalMetrics.isSuccess || operationalMetrics.isError;
+  const pendingSettled = pendingActions.isSuccess || pendingActions.isError;
+  if (!metricsSettled || !pendingSettled) {
+    return (
+      <output
+        data-testid="exception-home-loading"
+        className="text-sm text-muted-foreground"
+      >
+        正在加载异常优先首页…
+      </output>
+    );
+  }
+
+  if (
+    operationalMetrics.isError &&
+    pendingActions.isError &&
+    !operationalMetrics.data &&
+    !pendingActions.data
+  ) {
+    const metricsMessage =
+      operationalMetrics.error instanceof Error
+        ? operationalMetrics.error.message
+        : 'OperationalMetric 加载失败';
+    const pendingMessage =
+      pendingActions.error instanceof Error
+        ? pendingActions.error.message
+        : 'pending-actions 加载失败';
+    return (
+      <section
+        data-testid="exception-home-error"
+        role="alert"
+        className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
+      >
+        异常优先首页加载失败：{metricsMessage}；{pendingMessage}
+        。当前状态未知，不能宣称无待处理异常。
+      </section>
+    );
+  }
+
+  return (
+    <LiveAdminExceptionHomeReady
+      input={input}
+      metricsFailed={operationalMetrics.isError}
+      operationalMetrics={operationalMetrics.data}
+      pendingActions={pendingActions.data}
+      pendingActionsFailed={pendingActions.isError}
+    />
+  );
+}
+
+function LiveAdminExceptionHomeReady({
+  input,
+  metricsFailed,
+  operationalMetrics,
+  pendingActions,
+  pendingActionsFailed,
+}: {
+  input?: BuildExceptionHomeInput;
+  metricsFailed: boolean;
+  operationalMetrics: unknown;
+  pendingActions: readonly (PendingAction | ActionableInboxItem)[] | undefined;
+  pendingActionsFailed: boolean;
+}) {
   const view = useMemo(
     () =>
       projectLiveExceptionHome({
-        inboxItems: pendingActions.data
-          ? projectPendingActionsForExceptionHome(pendingActions.data)
+        inboxItems: pendingActions
+          ? projectPendingActionsForExceptionHome(pendingActions)
           : undefined,
-        metricsFailed: operationalMetrics.isError,
+        metricsFailed,
         now: input?.now,
-        operationalMetrics: operationalMetrics.data,
-        pendingActionsFailed: pendingActions.isError,
+        operationalMetrics,
+        pendingActionsFailed,
       }),
     [
       input?.now,
-      operationalMetrics.data,
-      operationalMetrics.isError,
-      pendingActions.data,
-      pendingActions.isError,
+      metricsFailed,
+      operationalMetrics,
+      pendingActions,
+      pendingActionsFailed,
     ]
   );
 

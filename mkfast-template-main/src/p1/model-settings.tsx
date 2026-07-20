@@ -12,6 +12,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  model_card_channel_multi,
+  model_card_channel_single,
   model_card_preview_alt,
   model_settings_capability_pending,
   model_settings_empty,
@@ -136,6 +138,28 @@ function ModelStatus({ model }: { model: CatalogModelView }) {
   );
 }
 
+/** Merchant dual-end channel label (F-J-01); same keys as ModelCardPicker. */
+function ModelChannelReadinessBadge({ model }: { model: CatalogModelView }) {
+  if (model.channelReadiness === 'multi_channel_ready') {
+    return (
+      <Badge
+        data-channel-readiness="multi_channel_ready"
+        variant="secondary"
+      >
+        {model_card_channel_multi()}
+      </Badge>
+    );
+  }
+  if (model.channelReadiness === 'single_channel') {
+    return (
+      <Badge data-channel-readiness="single_channel" variant="outline">
+        {model_card_channel_single()}
+      </Badge>
+    );
+  }
+  return null;
+}
+
 interface ModelCardProps {
   busy: boolean;
   canManageWorkspace: boolean;
@@ -187,6 +211,7 @@ function ModelCard({
             <span>{model.displayName}</span>
           </label>
           <ModelStatus model={model} />
+          <ModelChannelReadinessBadge model={model} />
         </CardTitle>
         <CardDescription className="meiye-type-body text-foreground">
           {tagline ??
