@@ -3,7 +3,10 @@ import {
   createDecipheriv,
   createHash,
   randomBytes,
+  randomUUID,
 } from 'node:crypto';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import sharp from 'sharp';
 import {
   ProviderSafeFetch,
@@ -11,8 +14,11 @@ import {
   type SafeFetchResult,
 } from '../../pro-studio-runtime/provider-safe-fetch.js';
 import type {
+  MediaProviderDrainMode,
   MediaProviderEffectRequest,
+  MediaProviderHealthReport,
   MediaProviderLifecyclePort,
+  MediaProviderReceiptStore,
   MediaProviderSubmissionReceipt,
   ProviderExecutionPort,
   ProviderExecutionRequest,
@@ -48,6 +54,11 @@ export interface ArkMediaExecutionOptions {
   sourceUrlTtlSeconds: number;
   fetch?: typeof fetch;
   now?: () => Date;
+  /**
+   * Durable receipt store for cross-process recover (MP-04I).
+   * Defaults to process-local memory; production should inject filesystem/Postgres.
+   */
+  receiptStore?: MediaProviderReceiptStore;
 }
 
 interface ArkImageResponse {
@@ -142,6 +153,72 @@ function classify(status: number, providerCode?: string): ClassifiedError {
   return { code: 'invalid_request', retryable: false };
 }
 
+class InMemoryMediaProviderReceiptStore implements MediaProviderReceiptStore {
+  private readonly receipts = new Map<string, MediaProviderSubmissionReceipt>();
+
+  async get(scope: string) {
+    const receipt = this.receipts.get(scope);
+    return receipt ? structuredClone(receipt) : undefined;
+  }
+
+  async put(scope: string, receipt: MediaProviderSubmissionReceipt) {
+    this.receipts.set(scope, structuredClone(receipt));
+  }
+
+  size() {
+    return this.receipts.size;
+  }
+}
+
+/**
+ * Filesystem-backed receipt store for cross-process recover after kill-restart.
+ * Scope keys are hashed so path characters stay safe.
+ */
+export class FileSystemMediaProviderReceiptStore
+  implements MediaProviderReceiptStore
+{
+  private readonly rootDirectory: string;
+
+  constructor(rootDirectory: string) {
+    if (!rootDirectory.trim()) {
+      throw new Error('Media receipt store directory is required.');
+    }
+    this.rootDirectory = resolve(rootDirectory.trim());
+  }
+
+  async get(scope: string) {
+    try {
+      const raw = await readFile(this.pathFor(scope), 'utf8');
+      return JSON.parse(raw) as MediaProviderSubmissionReceipt;
+    } catch (error) {
+      if (isMissingFile(error)) return undefined;
+      throw error;
+    }
+  }
+
+  async put(scope: string, receipt: MediaProviderSubmissionReceipt) {
+    await mkdir(this.rootDirectory, { mode: 0o700, recursive: true });
+    const path = this.pathFor(scope);
+    const temporaryPath = `${path}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporaryPath, JSON.stringify(receipt), {
+        flag: 'wx',
+        mode: 0o600,
+      });
+      await rename(temporaryPath, path);
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
+  }
+
+  private pathFor(scope: string) {
+    if (!/^[a-f0-9]{64}$/u.test(scope)) {
+      throw new Error('Media receipt scope is invalid.');
+    }
+    return `${this.rootDirectory}/${scope}.json`;
+  }
+}
+
 function providerError(value: unknown, fallback: string) {
   const root = isRecord(value) ? value : undefined;
   const nested = root && isRecord(root.error) ? root.error : root;
@@ -157,6 +234,12 @@ function providerError(value: unknown, fallback: string) {
  * its temporary source URL and observed usage are carried in an opaque task
  * receipt. Seedance keeps Ark's native async task id. Both receipts are scoped
  * to the workspace, effect key, catalog model, and credential revision.
+ *
+ * MP-04I gaps covered here (without reworking submit/poll/download/cancel):
+ * - durable receipt store for cross-process recover
+ * - idempotent submit replay from stored receipt
+ * - drain mode (reject new submit, continue in-flight)
+ * - health reporting (adapter-local observation)
  */
 export class ArkMediaExecutionPort
   implements ProviderExecutionPort, MediaProviderLifecyclePort
@@ -165,7 +248,14 @@ export class ArkMediaExecutionPort
   private readonly assetFetch: ProviderAssetFetchPort;
   private readonly assetAuthorizationHost: string;
   private readonly now: () => Date;
-  private readonly receipts = new Map<string, MediaProviderSubmissionReceipt>();
+  private readonly receiptStore: MediaProviderReceiptStore;
+  private drainMode: MediaProviderDrainMode = 'accepting';
+  private lastHealth: MediaProviderHealthReport = {
+    state: 'healthy',
+    reason: 'adapter_ready',
+    source: 'adapter',
+    observedAt: new Date(0).toISOString(),
+  };
 
   constructor(private readonly options: ArkMediaExecutionOptions) {
     if (!options.apiKey.trim()) throw new Error('Ark API key is required.');
@@ -208,6 +298,14 @@ export class ArkMediaExecutionPort
         ],
       });
     this.now = options.now ?? (() => new Date());
+    this.receiptStore =
+      options.receiptStore ?? new InMemoryMediaProviderReceiptStore();
+    this.lastHealth = {
+      state: 'healthy',
+      reason: 'adapter_ready',
+      source: 'adapter',
+      observedAt: this.now().toISOString(),
+    };
   }
 
   async execute(
@@ -263,16 +361,40 @@ export class ArkMediaExecutionPort
   ): Promise<MediaProviderSubmissionReceipt> {
     try {
       this.assertCompatible(request);
+      const scope = this.scope(request);
+      const existing = await this.receiptStore.get(scope);
+      if (existing) {
+        // Idempotent replay: never re-hit the provider once a receipt is durable.
+        return structuredClone(existing);
+      }
+      if (this.drainMode === 'draining') {
+        return {
+          acceptance: 'rejected_before_accept',
+          providerCost: this.estimatedCost(request, 0),
+          errorCode: 'channel_draining',
+          retryable: false,
+          error:
+            'Media channel is draining; new submissions are rejected while in-flight tasks continue.',
+        };
+      }
       const receipt =
         request.model.id === this.options.image.catalogModelId
           ? await this.submitImage(request)
           : await this.submitVideo(request);
-      this.receipts.set(this.scope(request), structuredClone(receipt));
-      return receipt;
+      await this.receiptStore.put(scope, receipt);
+      this.observeHealth({
+        state: 'healthy',
+        reason: 'submit_accepted',
+      });
+      return structuredClone(receipt);
     } catch (error) {
       const cost = this.estimatedCost(request, 0);
       if (error instanceof ArkHttpError) {
         const classified = classify(error.status, error.providerCode);
+        this.observeHealth({
+          state: classified.code === 'rate_limit' ? 'cooldown' : 'degraded',
+          reason: classified.code,
+        });
         return {
           acceptance: 'rejected_before_accept',
           providerCost: cost,
@@ -282,6 +404,26 @@ export class ArkMediaExecutionPort
         };
       }
       if (error instanceof ArkAdapterError) {
+        if (error.submissionAcceptance === 'acceptance_unknown') {
+          // Persist unknown so restart recover will not resubmit.
+          const unknown: MediaProviderSubmissionReceipt = {
+            acceptance: 'acceptance_unknown',
+            providerCost: cost,
+            errorCode: error.code,
+            retryable: error.retryable,
+            error: this.redact(error.message),
+          };
+          await this.receiptStore.put(this.scope(request), unknown);
+          this.observeHealth({
+            state: 'degraded',
+            reason: error.code,
+          });
+          return structuredClone(unknown);
+        }
+        this.observeHealth({
+          state: 'degraded',
+          reason: error.code,
+        });
         return {
           acceptance: error.submissionAcceptance,
           providerCost: cost,
@@ -290,7 +432,7 @@ export class ArkMediaExecutionPort
           error: this.redact(error.message),
         };
       }
-      return {
+      const unknown: MediaProviderSubmissionReceipt = {
         acceptance: 'acceptance_unknown',
         providerCost: cost,
         errorCode: 'network',
@@ -299,6 +441,12 @@ export class ArkMediaExecutionPort
           error instanceof Error ? error.message : 'Ark media submission failed.',
         ),
       };
+      await this.receiptStore.put(this.scope(request), unknown);
+      this.observeHealth({
+        state: 'degraded',
+        reason: 'network',
+      });
+      return structuredClone(unknown);
     }
   }
 
@@ -306,7 +454,7 @@ export class ArkMediaExecutionPort
     request: MediaProviderEffectRequest,
   ): Promise<MediaProviderSubmissionReceipt> {
     this.assertCompatible(request);
-    const receipt = this.receipts.get(this.scope(request));
+    const receipt = await this.receiptStore.get(this.scope(request));
     if (receipt) return structuredClone(receipt);
     return {
       acceptance: 'acceptance_unknown',
@@ -316,6 +464,26 @@ export class ArkMediaExecutionPort
       error:
         'Ark does not expose lookup by client request id; the adapter will not resubmit a possibly accepted task.',
     };
+  }
+
+  reportHealth(): MediaProviderHealthReport {
+    return {
+      ...this.lastHealth,
+      drainMode: this.drainMode,
+      observedAt: this.now().toISOString(),
+    };
+  }
+
+  setDrainMode(mode: MediaProviderDrainMode) {
+    this.drainMode = mode;
+    this.observeHealth({
+      state: mode === 'draining' ? 'degraded' : 'healthy',
+      reason: mode === 'draining' ? 'channel_draining' : 'drain_cleared',
+    });
+  }
+
+  getDrainMode(): MediaProviderDrainMode {
+    return this.drainMode;
   }
 
   async poll(request: MediaProviderEffectRequest & { taskRef: string }) {
@@ -1002,6 +1170,30 @@ export class ArkMediaExecutionPort
   private redact(message: string) {
     return message.split(this.options.apiKey).join('[REDACTED]');
   }
+
+  private observeHealth(input: {
+    state: MediaProviderHealthReport['state'];
+    reason: string;
+    endsAt?: string;
+  }) {
+    this.lastHealth = {
+      state: input.state,
+      reason: input.reason,
+      source: 'adapter',
+      observedAt: this.now().toISOString(),
+      drainMode: this.drainMode,
+      ...(input.endsAt ? { endsAt: input.endsAt } : {}),
+    };
+  }
+}
+
+function isMissingFile(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'ENOENT'
+  );
 }
 
 function providerAssetFetchRetryable(error: unknown) {

@@ -705,6 +705,34 @@ export interface MediaProviderSubmissionReceipt {
   error?: string;
 }
 
+/**
+ * Adapter-local health observation (MP-04I/V).
+ * WT-I reports facts; WT-G owns HealthOverlayPort persistence.
+ */
+export type MediaProviderHealthState =
+  | 'healthy'
+  | 'degraded'
+  | 'cooldown'
+  | 'circuit_open'
+  | 'unavailable';
+
+export interface MediaProviderHealthReport {
+  state: MediaProviderHealthState;
+  reason: string;
+  source: 'adapter';
+  observedAt: string;
+  endsAt?: string;
+  /** Accepted tasks still tracked by this adapter (in-memory or durable store). */
+  inFlightCount?: number;
+  drainMode?: MediaProviderDrainMode;
+}
+
+/**
+ * Drain mode for async media channels (D-080 C4).
+ * `draining` rejects new submit but continues poll/download/cancel/recover.
+ */
+export type MediaProviderDrainMode = 'accepting' | 'draining';
+
 export interface MediaProviderLifecyclePort {
   submit(
     request: MediaProviderEffectRequest
@@ -733,6 +761,24 @@ export interface MediaProviderLifecyclePort {
     retryable?: boolean;
     error?: string;
   }>;
+  /**
+   * Optional thin hooks for MP-04I/V conformance.
+   * Production image/video adapters implement these; test fakes may omit them.
+   */
+  reportHealth?():
+    | MediaProviderHealthReport
+    | Promise<MediaProviderHealthReport>;
+  setDrainMode?(mode: MediaProviderDrainMode): void | Promise<void>;
+  getDrainMode?(): MediaProviderDrainMode;
+}
+
+/**
+ * Durable receipt store for cross-process recover after kill-restart.
+ * Keyed by adapter scope (workspace + effect key + model + credential).
+ */
+export interface MediaProviderReceiptStore {
+  get(scope: string): Promise<MediaProviderSubmissionReceipt | undefined>;
+  put(scope: string, receipt: MediaProviderSubmissionReceipt): Promise<void>;
 }
 
 function hash(value: string | Uint8Array) {

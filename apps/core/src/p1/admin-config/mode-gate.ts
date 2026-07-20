@@ -153,4 +153,24 @@ export class ModeGateMediaLifecyclePort implements MediaProviderLifecyclePort {
   cancel(request: MediaProviderEffectRequest & { taskRef: string }) {
     return this.inner.cancel(request);
   }
+
+  reportHealth() {
+    if (this.inner.reportHealth) return this.inner.reportHealth();
+    return {
+      state: 'unavailable' as const,
+      reason: 'health_not_instrumented',
+      source: 'adapter' as const,
+      observedAt: new Date().toISOString(),
+    };
+  }
+
+  setDrainMode(
+    mode: Parameters<NonNullable<MediaProviderLifecyclePort['setDrainMode']>>[0],
+  ) {
+    return this.inner.setDrainMode?.(mode);
+  }
+
+  getDrainMode() {
+    return this.inner.getDrainMode?.() ?? ('accepting' as const);
+  }
 }
