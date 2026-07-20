@@ -35,7 +35,7 @@ import {
 } from './credential-sensitive-audit.js';
 
 function fixtureConnection(
-  overrides: Partial<IntegrationConnection> = {},
+  overrides: Partial<IntegrationConnection> = {}
 ): IntegrationConnection {
   return {
     id: 'platform:model.direct',
@@ -127,10 +127,7 @@ test('specializes IntegrationConnection into CredentialAccount metadata without 
   const publicMeta = toPublicMetadata(account);
   assertNoSecretEcho(publicMeta);
   assert.equal(publicMeta.secretReference, connection.secretRef);
-  assert.equal(
-    JSON.stringify(publicMeta).includes('sk-'),
-    false,
-  );
+  assert.equal(JSON.stringify(publicMeta).includes('sk-'), false);
   // Ensure specialization did not invent a second vault field.
   assert.equal('vault' in account, false);
   assert.equal('secretValue' in account, false);
@@ -146,11 +143,10 @@ test('lifecycle trunk pending → active → retired with tested activation gate
 
   // Activate without test evidence fails.
   assert.throws(
-    () =>
-      transitionCredentialLifecycle(account, { kind: 'activate' }, { now }),
+    () => transitionCredentialLifecycle(account, { kind: 'activate' }, { now }),
     (err: unknown) =>
       err instanceof CredentialLifecycleError &&
-      err.code === 'ACTIVATION_GATE_FAILED',
+      err.code === 'ACTIVATION_GATE_FAILED'
   );
 
   // Failed probe does not open the gate.
@@ -165,13 +161,12 @@ test('lifecycle trunk pending → active → retired with tested activation gate
         errorCode: 'http_401',
       },
     },
-    { now },
+    { now }
   );
   assert.equal(isActivationGateSatisfied(account, { now }), false);
   assert.throws(
-    () =>
-      transitionCredentialLifecycle(account, { kind: 'activate' }, { now }),
-    /ACTIVATION_GATE_FAILED|recent passed/,
+    () => transitionCredentialLifecycle(account, { kind: 'activate' }, { now }),
+    /ACTIVATION_GATE_FAILED|recent passed/
   );
 
   // Passed probe opens the gate.
@@ -185,13 +180,13 @@ test('lifecycle trunk pending → active → retired with tested activation gate
         evidenceRef: 'test://acc/v1/pass',
       },
     },
-    { now },
+    { now }
   );
   assert.equal(isActivationGateSatisfied(account, { now }), true);
   account = transitionCredentialLifecycle(
     account,
     { kind: 'activate' },
-    { now },
+    { now }
   );
   assert.equal(account.status, 'active');
   assert.equal(account.drainSubstate, 'none');
@@ -201,7 +196,7 @@ test('lifecycle trunk pending → active → retired with tested activation gate
   account = transitionCredentialLifecycle(
     account,
     { kind: 'start_drain' },
-    { now },
+    { now }
   );
   assert.equal(account.status, 'active');
   assert.equal(account.drainSubstate, 'draining');
@@ -209,7 +204,7 @@ test('lifecycle trunk pending → active → retired with tested activation gate
   account = transitionCredentialLifecycle(
     account,
     { kind: 'complete_drain' },
-    { now },
+    { now }
   );
   assert.equal(account.drainSubstate, 'none');
 
@@ -233,10 +228,13 @@ test('rotation appends version history and never rewrites prior snapshots', () =
         secretVersion: 2,
       },
     },
-    { now },
+    { now }
   );
 
   assert.equal(account.version, '2');
+  assert.equal(account.status, 'pending');
+  assert.equal(account.verifiedAt, undefined);
+  assert.equal(account.lastTest, undefined);
   assert.equal(account.versionHistory.length, 2);
   // Historical snapshot frozen.
   assert.deepEqual(account.versionHistory[0], prior);
@@ -260,11 +258,11 @@ test('rotation appends version history and never rewrites prior snapshots', () =
             secretVersion: 1,
           },
         },
-        { now },
+        { now }
       ),
     (err: unknown) =>
       err instanceof CredentialLifecycleError &&
-      err.code === 'VERSION_ALREADY_EXISTS',
+      err.code === 'VERSION_ALREADY_EXISTS'
   );
 });
 
@@ -272,16 +270,20 @@ test('drain rejected outside active; revoke from pending retires', () => {
   const pending = activeAccount({ status: 'pending' });
   assert.throws(
     () =>
-      transitionCredentialLifecycle(pending, { kind: 'start_drain' }, {
-        now: '2026-07-18T14:00:00.000Z',
-      }),
-    /Drain is only allowed on active/,
+      transitionCredentialLifecycle(
+        pending,
+        { kind: 'start_drain' },
+        {
+          now: '2026-07-18T14:00:00.000Z',
+        }
+      ),
+    /Drain is only allowed on active/
   );
 
   const retired = transitionCredentialLifecycle(
     pending,
     { kind: 'revoke' },
-    { now: '2026-07-18T14:00:00.000Z' },
+    { now: '2026-07-18T14:00:00.000Z' }
   );
   assert.equal(retired.status, 'retired');
 });
@@ -335,13 +337,66 @@ test('secret broker assembles by frozen version and product projection never ech
         secretVersion: 2,
       },
     },
-    { now: '2026-07-18T01:00:00.000Z' },
+    { now: '2026-07-18T01:00:00.000Z' }
   );
 
   const directory = {
     get: (id: string) => (id === account.id ? account : null),
   };
   const broker = new RequestTimeSecretBroker(directory, secrets);
+
+  await assert.rejects(
+    () =>
+      broker.assembleForRequest({
+        credentialAccountId: account.id,
+        requiredScope: 'platform',
+      }),
+    (err: unknown) =>
+      err instanceof SecretBrokerError && err.code === 'ACCOUNT_PENDING'
+  );
+
+  const connectivityCredential = await broker.assembleForConnectivityTest({
+    credentialAccountId: account.id,
+    requiredScope: 'platform',
+    version: '2',
+  });
+  assert.equal(
+    connectivityCredential.secret,
+    await secrets.use(put2.secretReference, {
+      workspaceId: '__global__',
+      credentialId: 'cred-model-direct',
+      version: 2,
+      provider: 'model',
+    })
+  );
+  await assert.rejects(
+    () =>
+      broker.assembleForConnectivityTest({
+        credentialAccountId: account.id,
+        requiredScope: 'platform',
+        version: '1',
+      }),
+    (err: unknown) =>
+      err instanceof SecretBrokerError && err.code === 'VERSION_NOT_CURRENT'
+  );
+
+  account = transitionCredentialLifecycle(
+    account,
+    {
+      kind: 'record_test',
+      evidence: {
+        status: 'passed',
+        testedAt: '2026-07-18T01:01:00.000Z',
+        evidenceRef: 'test://acc/v2/pass',
+      },
+    },
+    { now: '2026-07-18T01:01:00.000Z' }
+  );
+  account = transitionCredentialLifecycle(
+    account,
+    { kind: 'activate' },
+    { now: '2026-07-18T01:01:00.000Z' }
+  );
 
   // In-flight task frozen on v1 keeps v1 secret (no silent upgrade to v2).
   const assembledV1 = await broker.assembleForRequest({
@@ -359,6 +414,13 @@ test('secret broker assembles by frozen version and product projection never ech
   });
   assert.equal(assembledV2.secret, 'sk-live-secret-version-two');
 
+  const assembledHead = await broker.assembleForRequest({
+    credentialAccountId: account.id,
+    requiredScope: 'platform',
+  });
+  assert.equal(assembledHead.secret, assembledV2.secret);
+  assert.equal(assembledHead.version, '2');
+
   // Unknown frozen version refuses silent upgrade.
   await assert.rejects(
     () =>
@@ -368,7 +430,7 @@ test('secret broker assembles by frozen version and product projection never ech
         requiredScope: 'platform',
       }),
     (err: unknown) =>
-      err instanceof SecretBrokerError && err.code === 'VERSION_NOT_FOUND',
+      err instanceof SecretBrokerError && err.code === 'VERSION_NOT_FOUND'
   );
 
   // Scope isolation (platform task must not read workspace_byok).
@@ -380,14 +442,52 @@ test('secret broker assembles by frozen version and product projection never ech
         requiredScope: 'workspace_byok',
       }),
     (err: unknown) =>
-      err instanceof SecretBrokerError && err.code === 'SCOPE_ISOLATION',
+      err instanceof SecretBrokerError && err.code === 'SCOPE_ISOLATION'
   );
 
   const publicMeta = await broker.projectPublic(account.id);
   assertNoSecretEcho(publicMeta);
-  assert.equal(
-    JSON.stringify(publicMeta).includes('sk-live-secret'),
-    false,
+  assert.equal(JSON.stringify(publicMeta).includes('sk-live-secret'), false);
+});
+
+test('secret broker rejects retired accounts including frozen versions', async () => {
+  const account = activeAccount({ status: 'retired' });
+  const broker = new RequestTimeSecretBroker(
+    { get: () => account },
+    new FakeKmsSecretStore()
+  );
+
+  await assert.rejects(
+    () =>
+      broker.assembleForRequest({
+        credentialAccountId: account.id,
+        frozenVersion: '1',
+        requiredScope: 'platform',
+      }),
+    (err: unknown) =>
+      err instanceof SecretBrokerError && err.code === 'ACCOUNT_RETIRED'
+  );
+});
+
+test('secret broker rejects expired active accounts', async () => {
+  const account = activeAccount({
+    status: 'active',
+    expiresAt: '2026-07-18T00:30:00.000Z',
+  });
+  const broker = new RequestTimeSecretBroker(
+    { get: () => account },
+    new FakeKmsSecretStore(),
+    () => new Date('2026-07-18T01:00:00.000Z')
+  );
+
+  await assert.rejects(
+    () =>
+      broker.assembleForRequest({
+        credentialAccountId: account.id,
+        requiredScope: 'platform',
+      }),
+    (err: unknown) =>
+      err instanceof SecretBrokerError && err.code === 'ACCOUNT_EXPIRED'
   );
 });
 
@@ -397,7 +497,10 @@ test('connectivity test normalizes without logging upstream response / Authoriza
     credentialVersion: '1',
     status: 'passed',
     testedAt: '2026-07-18T15:00:00.000Z',
-    upstreamResponse: { data: [{ id: 'model-x' }], secret: 'sk-should-not-leak' },
+    upstreamResponse: {
+      data: [{ id: 'model-x' }],
+      secret: 'sk-should-not-leak',
+    },
     authorizationHeader: 'Bearer sk-live-secret-version-one',
     endpointWithQuery:
       'https://api.example.test/v1/models?api_key=sk-live-secret-version-one',
@@ -438,10 +541,7 @@ test('bare env is projected as monitored env_fallback with migration entry', () 
   assert.ok(bare.migrationEntry);
   assert.equal(bare.migrationEntry?.action, 'migrate_to_vault');
   assert.equal(bare.migrationEntry?.workerSecretsNotRegistry, true);
-  assert.equal(
-    bare.migrationEntry?.target,
-    'credential_account_registry',
-  );
+  assert.equal(bare.migrationEntry?.target, 'credential_account_registry');
 
   const monitored = projectEnvFallbackRisk('ark.media', {
     kind: 'env_fallback',
@@ -467,10 +567,7 @@ test('bare env is projected as monitored env_fallback with migration entry', () 
   assert.equal(view.bareEnvCount, 1);
   assert.equal(view.monitoredFallbackCount, 1);
   assert.equal(view.notWiredCount, 1);
-  assert.deepEqual(view.migrationRequiredSlots, [
-    'model.direct',
-    'ark.media',
-  ]);
+  assert.deepEqual(view.migrationRequiredSlots, ['model.direct', 'ark.media']);
 
   const classified = classifyBootCredentialSource({ source: 'env' });
   assert.equal(classified.monitoredAs, 'env_fallback');
@@ -494,7 +591,7 @@ test('high-sensitivity credential actions each produce credential.govern audits'
         authorization: 'Bearer sk-must-not-appear',
         note: 'rotation',
       },
-    }),
+    })
   );
 
   assertCredentialSensitiveActionsAudited(audits);
@@ -503,19 +600,16 @@ test('high-sensitivity credential actions each produce credential.govern audits'
     assert.equal(audit.target.module, 'supply-registry.credential');
     assert.ok(
       (CREDENTIAL_SENSITIVE_ACTIONS as readonly string[]).includes(
-        audit.target.action,
-      ),
+        audit.target.action
+      )
     );
     assertNoSecretEcho(audit);
-    assert.equal(
-      JSON.stringify(audit).includes('sk-must-not-appear'),
-      false,
-    );
+    assert.equal(JSON.stringify(audit).includes('sk-must-not-appear'), false);
   }
 
   // Distinct action coverage (view_meta / write_rotate / test / activate / drain / revoke).
   assert.deepEqual(
     audits.map((a) => a.target.action).sort(),
-    [...CREDENTIAL_SENSITIVE_ACTIONS].sort(),
+    [...CREDENTIAL_SENSITIVE_ACTIONS].sort()
   );
 });

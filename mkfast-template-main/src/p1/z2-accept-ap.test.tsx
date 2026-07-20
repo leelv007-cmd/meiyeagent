@@ -33,8 +33,8 @@ import {
   projectCapabilityExceptionCandidates,
   projectInboxExceptionCandidates,
 } from './admin-exception-home-model';
-import { AdminSupplyControl } from './admin-supply-control';
-import { buildDefaultSupplyControlSnapshot } from './admin-supply-fixture';
+import { AdminSupplyControl } from '@/p1/admin-supply-control';
+import { buildDefaultSupplyControlSnapshot } from '@/p1/admin-supply-fixture';
 import {
   buildSupplyOverviewView,
   projectDualChannelCoverage,
@@ -213,7 +213,9 @@ test('Z2-ACCEPT gate3 UI: single-channel model cannot be multi_channel_ready; la
 test('Z2-ACCEPT gate3 UI: admin supply overview SSR surfaces single-channel / multi-channel labels', () => {
   const view = buildSupplyOverviewView();
   assert.ok(view.operationReadiness.length === 3);
-  const html = renderToStaticMarkup(<AdminSupplyControl />);
+  const html = renderToStaticMarkup(
+    <AdminSupplyControl snapshot={buildDefaultSupplyControlSnapshot()} />
+  );
   assert.match(html, /双渠道就绪|multi_channel_ready/);
   assert.match(html, /单渠道|single-channel|无回退/);
   assert.match(html, /data-multi-channel-ready=/);
@@ -260,7 +262,7 @@ test('Z2-ACCEPT gate4: capability catalog ops path has zero banned controls', ()
 
 test('Z2-ACCEPT gate4: exception home ops path has zero banned controls + no ack/assign', () => {
   const html = renderToStaticMarkup(
-    <AdminExceptionHome input={{ now: NOW }} />,
+    <AdminExceptionHome view={buildExceptionHomeView({ now: NOW })} />
   );
   assert.deepEqual(assertOpsPathHasNoD048BannedControls(html), []);
   assert.deepEqual(assertNoAckAssignOwnerUi(html), []);
@@ -272,7 +274,9 @@ test('Z2-ACCEPT gate4: exception home ops path has zero banned controls + no ack
 });
 
 test('Z2-ACCEPT gate4: supply control center ops path has zero banned controls', () => {
-  const html = renderToStaticMarkup(<AdminSupplyControl />);
+  const html = renderToStaticMarkup(
+    <AdminSupplyControl snapshot={buildDefaultSupplyControlSnapshot()} />
+  );
   assert.deepEqual(assertOpsPathHasNoD048BannedControls(html), []);
   for (const id of D048_BANNED_OPS_CONTROLS) {
     assert.doesNotMatch(html, new RegExp(`data-testid="${id}"`));

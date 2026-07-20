@@ -30,8 +30,61 @@ import type {
 import type {
   ActivationProbeRun,
   CanvasTextGenerationOutboxRecord,
+  ModelSupplyJobListPage,
+  ModelSupplyJobListQuery,
   PersistedCanvasGenerationQuote,
 } from './foundation-module.js';
+
+const JOB_OPERATION_SQL = `COALESCE(result->>'operation', 'copy.generate')`;
+const JOB_STATUS_SQL = `CASE
+  WHEN result->>'status' = 'completed' THEN 'succeeded'
+  WHEN result->>'status' = 'failed' THEN 'failed'
+  WHEN result #>> '{attempt,acceptance}' = 'accepted' THEN 'accepted'
+  WHEN result #>> '{attempt,acceptance}' = 'acceptance_unknown' THEN 'acceptance_unknown'
+  ELSE 'rejected_before_accept'
+END`;
+const JOB_MODALITY_SQL = `CASE
+  WHEN ${JOB_OPERATION_SQL} LIKE 'image.%' THEN 'image'
+  WHEN ${JOB_OPERATION_SQL} LIKE 'video.%' THEN 'video'
+  WHEN ${JOB_OPERATION_SQL} LIKE 'audio.%' THEN 'audio'
+  ELSE 'llm'
+END`;
+
+interface PersistedJobReadRow {
+  result: ModelSupplyResult;
+  ended_at: Date | string | null;
+  latency_ms: number | string | null;
+}
+
+function terminalJobTiming(result: ModelSupplyResult): {
+  endedAt: string | null;
+  latencyMs: number | null;
+} {
+  if (result.status === 'unknown') {
+    return { endedAt: null, latencyMs: null };
+  }
+  const endedAt = result.endedAt ?? new Date().toISOString();
+  const startedAtMs = Date.parse(result.attempt.createdAt);
+  const endedAtMs = Date.parse(endedAt);
+  return {
+    endedAt,
+    latencyMs: result.latencyMs ?? Math.max(0, endedAtMs - startedAtMs),
+  };
+}
+
+function projectPersistedJob(row: PersistedJobReadRow): ModelSupplyResult {
+  const endedAt = row.ended_at
+    ? row.ended_at instanceof Date
+      ? row.ended_at.toISOString()
+      : new Date(row.ended_at).toISOString()
+    : undefined;
+  const latencyMs = row.latency_ms == null ? undefined : Number(row.latency_ms);
+  return {
+    ...row.result,
+    ...(endedAt ? { endedAt } : {}),
+    ...(latencyMs !== undefined ? { latencyMs } : {}),
+  };
+}
 
 type StoredQualityEvaluationRunHeader = Omit<
   BeautyQualityEvaluationRun,
@@ -94,6 +147,31 @@ export class PostgresModelSupplyRepository {
         created_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (workspace_id, job_id)
       );
+      ALTER TABLE model_generation_jobs
+        ADD COLUMN IF NOT EXISTS ended_at timestamptz;
+      ALTER TABLE model_generation_jobs
+        ADD COLUMN IF NOT EXISTS latency_ms bigint;
+      UPDATE model_generation_jobs
+         SET ended_at = COALESCE(ended_at, created_at),
+             latency_ms = COALESCE(
+               latency_ms,
+               GREATEST(
+                 0,
+                 FLOOR(
+                   EXTRACT(
+                     EPOCH FROM (
+                       COALESCE(ended_at, created_at) -
+                       (result #>> '{attempt,createdAt}')::timestamptz
+                     )
+                   ) * 1000
+                 )::bigint
+               )
+             )
+       WHERE status IN ('completed', 'failed')
+         AND (ended_at IS NULL OR latency_ms IS NULL)
+         AND result #>> '{attempt,createdAt}' IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS model_generation_jobs_workspace_latency_idx
+        ON model_generation_jobs (workspace_id, latency_ms, job_id);
       CREATE TABLE IF NOT EXISTS model_canvas_generation_quotes (
         workspace_id text NOT NULL,
         quote_id text NOT NULL,
@@ -203,7 +281,7 @@ export class PostgresModelSupplyRepository {
         run.outcome,
         JSON.stringify(run),
         run.createdAt,
-      ],
+      ]
     );
   }
 
@@ -211,7 +289,7 @@ export class PostgresModelSupplyRepository {
     const result = await this.pool.query<{ run: ActivationProbeRun }>(
       `SELECT run FROM model_activation_probe_runs
        WHERE workspace_id = $1 AND run_id = $2`,
-      [workspaceId, runId],
+      [workspaceId, runId]
     );
     return result.rows[0]?.run ?? null;
   }
@@ -221,7 +299,7 @@ export class PostgresModelSupplyRepository {
       `SELECT run FROM model_activation_probe_runs
        WHERE workspace_id = $1
        ORDER BY created_at DESC, run_id DESC`,
-      [workspaceId],
+      [workspaceId]
     );
     return result.rows.map((row) => row.run);
   }
@@ -261,7 +339,7 @@ export class PostgresModelSupplyRepository {
   async setCurrentPublishedCatalogRevision(
     workspaceId: string,
     revision: CatalogRevision,
-    expectedHeadRevisionId: string | null,
+    expectedHeadRevisionId: string | null
   ) {
     if (revision.stage !== 'published') {
       throw new Error('Only a published catalog revision can become current.');
@@ -275,25 +353,26 @@ export class PostgresModelSupplyRepository {
          ON CONFLICT (workspace_id, revision_id) DO NOTHING`,
         [workspaceId, revision.id, revision.stage, JSON.stringify(revision)]
       );
-      const head = expectedHeadRevisionId === null
-        ? await client.query(
-            `INSERT INTO model_catalog_heads (workspace_id, revision_id, updated_at)
+      const head =
+        expectedHeadRevisionId === null
+          ? await client.query(
+              `INSERT INTO model_catalog_heads (workspace_id, revision_id, updated_at)
              VALUES ($1, $2, now())
              ON CONFLICT (workspace_id) DO NOTHING
              RETURNING revision_id`,
-            [workspaceId, revision.id],
-          )
-        : await client.query(
-            `UPDATE model_catalog_heads
+              [workspaceId, revision.id]
+            )
+          : await client.query(
+              `UPDATE model_catalog_heads
                 SET revision_id = $2, updated_at = now()
               WHERE workspace_id = $1 AND revision_id = $3
               RETURNING revision_id`,
-            [workspaceId, revision.id, expectedHeadRevisionId],
-          );
+              [workspaceId, revision.id, expectedHeadRevisionId]
+            );
       if (head.rowCount !== 1) {
         throw new P1DomainError(
           'IDEMPOTENCY_CONFLICT',
-          'Catalog head changed before publication could be applied.',
+          'Catalog head changed before publication could be applied.'
         );
       }
       await client.query('COMMIT');
@@ -320,7 +399,7 @@ export class PostgresModelSupplyRepository {
     workspaceId: string,
     expectedHeadRevisionId: string | null,
     targetRevision: CatalogRevision | null,
-    audit: RevisionRollbackAudit,
+    audit: RevisionRollbackAudit
   ) {
     const client = await this.pool.connect();
     try {
@@ -328,12 +407,12 @@ export class PostgresModelSupplyRepository {
       const current = await client.query<{ revision_id: string }>(
         `SELECT revision_id FROM model_catalog_heads
           WHERE workspace_id = $1 FOR UPDATE`,
-        [workspaceId],
+        [workspaceId]
       );
       if ((current.rows[0]?.revision_id ?? null) !== expectedHeadRevisionId) {
         throw new P1DomainError(
           'IDEMPOTENCY_CONFLICT',
-          'Catalog head changed before rollback could be applied.',
+          'Catalog head changed before rollback could be applied.'
         );
       }
       if (targetRevision) {
@@ -347,19 +426,19 @@ export class PostgresModelSupplyRepository {
             targetRevision.id,
             targetRevision.stage,
             JSON.stringify(targetRevision),
-          ],
+          ]
         );
         await client.query(
           `INSERT INTO model_catalog_heads (workspace_id, revision_id, updated_at)
            VALUES ($1, $2, now())
            ON CONFLICT (workspace_id)
            DO UPDATE SET revision_id = EXCLUDED.revision_id, updated_at = now()`,
-          [workspaceId, targetRevision.id],
+          [workspaceId, targetRevision.id]
         );
       } else {
         await client.query(
           `DELETE FROM model_catalog_heads WHERE workspace_id = $1`,
-          [workspaceId],
+          [workspaceId]
         );
       }
       await this.insertRollbackAudit(client, workspaceId, audit);
@@ -375,7 +454,7 @@ export class PostgresModelSupplyRepository {
   async getCurrentPromptRevision(workspaceId: string) {
     const result = await this.pool.query<{ revision_id: string }>(
       `SELECT revision_id FROM model_prompt_heads WHERE workspace_id = $1`,
-      [workspaceId],
+      [workspaceId]
     );
     return result.rows[0]?.revision_id ?? null;
   }
@@ -384,7 +463,7 @@ export class PostgresModelSupplyRepository {
     workspaceId: string,
     expectedHeadRevisionId: string | null,
     targetRevisionId: string,
-    audit: RevisionRollbackAudit,
+    audit: RevisionRollbackAudit
   ) {
     const client = await this.pool.connect();
     try {
@@ -392,12 +471,12 @@ export class PostgresModelSupplyRepository {
       const current = await client.query<{ revision_id: string }>(
         `SELECT revision_id FROM model_prompt_heads
           WHERE workspace_id = $1 FOR UPDATE`,
-        [workspaceId],
+        [workspaceId]
       );
       if ((current.rows[0]?.revision_id ?? null) !== expectedHeadRevisionId) {
         throw new P1DomainError(
           'IDEMPOTENCY_CONFLICT',
-          'Prompt head changed before rollback could be applied.',
+          'Prompt head changed before rollback could be applied.'
         );
       }
       await client.query(
@@ -405,7 +484,7 @@ export class PostgresModelSupplyRepository {
          VALUES ($1, $2, now())
          ON CONFLICT (workspace_id)
          DO UPDATE SET revision_id = EXCLUDED.revision_id, updated_at = now()`,
-        [workspaceId, targetRevisionId],
+        [workspaceId, targetRevisionId]
       );
       await this.insertRollbackAudit(client, workspaceId, audit);
       await client.query('COMMIT');
@@ -528,18 +607,29 @@ export class PostgresModelSupplyRepository {
   async saveResult(workspaceId: string, result: ModelSupplyResult) {
     // Denormalized read model only. Foundation owns RouteSnapshot, Attempt,
     // Asset, Product Usage and Provider Cost append-only facts.
+    const timing = terminalJobTiming(result);
     await this.pool.query(
-      `INSERT INTO model_generation_jobs (workspace_id, job_id, status, result)
-       VALUES ($1, $2, $3, $4::jsonb)
+      `INSERT INTO model_generation_jobs
+         (workspace_id, job_id, status, result, ended_at, latency_ms)
+       VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::bigint)
        ON CONFLICT (workspace_id, job_id)
-       DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result`,
-      [workspaceId, result.jobId, result.status, JSON.stringify(result)]
+       DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result,
+                     ended_at = COALESCE(model_generation_jobs.ended_at, EXCLUDED.ended_at),
+                     latency_ms = COALESCE(model_generation_jobs.latency_ms, EXCLUDED.latency_ms)`,
+      [
+        workspaceId,
+        result.jobId,
+        result.status,
+        JSON.stringify(result),
+        timing.endedAt,
+        timing.latencyMs,
+      ]
     );
   }
 
   async saveCanvasGenerationQuote(
     workspaceId: string,
-    quote: PersistedCanvasGenerationQuote,
+    quote: PersistedCanvasGenerationQuote
   ) {
     await this.pool.query(
       `INSERT INTO model_canvas_generation_quotes
@@ -552,16 +642,16 @@ export class PostgresModelSupplyRepository {
         quote.payloadHash,
         JSON.stringify(quote),
         quote.createdAt,
-      ],
+      ]
     );
     const stored = await this.getCanvasGenerationQuote(
       workspaceId,
-      quote.quoteId,
+      quote.quoteId
     );
     if (stored?.payloadHash !== quote.payloadHash) {
       throw new P1DomainError(
         'IDEMPOTENCY_CONFLICT',
-        'Canvas generation quote idempotency key conflicts with another payload.',
+        'Canvas generation quote idempotency key conflicts with another payload.'
       );
     }
   }
@@ -572,7 +662,7 @@ export class PostgresModelSupplyRepository {
     }>(
       `SELECT quote FROM model_canvas_generation_quotes
         WHERE workspace_id = $1 AND quote_id = $2`,
-      [workspaceId, quoteId],
+      [workspaceId, quoteId]
     );
     return result.rows[0]?.quote ?? null;
   }
@@ -580,23 +670,37 @@ export class PostgresModelSupplyRepository {
   async enqueueCanvasTextGeneration(
     workspaceId: string,
     queued: ModelSupplyResult,
-    outbox: CanvasTextGenerationOutboxRecord,
+    outbox: CanvasTextGenerationOutboxRecord
   ) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      const timing = terminalJobTiming(queued);
       await client.query(
-        `INSERT INTO model_generation_jobs (workspace_id, job_id, status, result)
-         VALUES ($1, $2, $3, $4::jsonb)
+        `INSERT INTO model_generation_jobs
+           (workspace_id, job_id, status, result, ended_at, latency_ms)
+         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::bigint)
          ON CONFLICT (workspace_id, job_id) DO NOTHING`,
-        [workspaceId, queued.jobId, queued.status, JSON.stringify(queued)],
+        [
+          workspaceId,
+          queued.jobId,
+          queued.status,
+          JSON.stringify(queued),
+          timing.endedAt,
+          timing.latencyMs,
+        ]
       );
       await client.query(
         `INSERT INTO model_canvas_text_generation_outbox
            (outbox_id, workspace_id, status, submission, created_at)
          VALUES ($1, $2, 'pending', $3::jsonb, $4::timestamptz)
          ON CONFLICT (outbox_id) DO NOTHING`,
-        [outbox.id, workspaceId, JSON.stringify(outbox.submission), outbox.createdAt],
+        [
+          outbox.id,
+          workspaceId,
+          JSON.stringify(outbox.submission),
+          outbox.createdAt,
+        ]
       );
       const existing = await client.query<{
         submission: CanvasTextGenerationOutboxRecord['submission'];
@@ -605,7 +709,7 @@ export class PostgresModelSupplyRepository {
         `SELECT workspace_id, submission
            FROM model_canvas_text_generation_outbox
           WHERE outbox_id = $1`,
-        [outbox.id],
+        [outbox.id]
       );
       if (
         existing.rows[0]?.workspace_id !== workspaceId ||
@@ -614,7 +718,7 @@ export class PostgresModelSupplyRepository {
       ) {
         throw new P1DomainError(
           'IDEMPOTENCY_CONFLICT',
-          'Canvas text generation outbox conflicts with another request.',
+          'Canvas text generation outbox conflicts with another request.'
         );
       }
       await client.query('COMMIT');
@@ -655,7 +759,7 @@ export class PostgresModelSupplyRepository {
          FROM candidate
         WHERE outbox.outbox_id = candidate.outbox_id
        RETURNING outbox.*`,
-      [input.now, input.claimToken, input.leaseExpiresAt],
+      [input.now, input.claimToken, input.leaseExpiresAt]
     );
     const row = result.rows[0];
     return row
@@ -685,19 +789,30 @@ export class PostgresModelSupplyRepository {
                 lease_expires_at = NULL
           WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
         RETURNING workspace_id`,
-        [input.id, input.claimToken],
+        [input.id, input.claimToken]
       );
       const workspaceId = completed.rows[0]?.workspace_id;
       if (!workspaceId) {
         await client.query('ROLLBACK');
         return false;
       }
+      const timing = terminalJobTiming(input.result);
       await client.query(
-        `INSERT INTO model_generation_jobs (workspace_id, job_id, status, result)
-         VALUES ($1, $2, $3, $4::jsonb)
+        `INSERT INTO model_generation_jobs
+           (workspace_id, job_id, status, result, ended_at, latency_ms)
+         VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz, $6::bigint)
          ON CONFLICT (workspace_id, job_id)
-         DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result`,
-        [workspaceId, input.result.jobId, input.result.status, JSON.stringify(input.result)],
+         DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result,
+                       ended_at = COALESCE(model_generation_jobs.ended_at, EXCLUDED.ended_at),
+                       latency_ms = COALESCE(model_generation_jobs.latency_ms, EXCLUDED.latency_ms)`,
+        [
+          workspaceId,
+          input.result.jobId,
+          input.result.status,
+          JSON.stringify(input.result),
+          timing.endedAt,
+          timing.latencyMs,
+        ]
       );
       await client.query('COMMIT');
       return true;
@@ -709,36 +824,187 @@ export class PostgresModelSupplyRepository {
     }
   }
 
-  async releaseCanvasTextGeneration(input: {
-    claimToken: string;
-    id: string;
-  }) {
+  async releaseCanvasTextGeneration(input: { claimToken: string; id: string }) {
     const result = await this.pool.query(
       `UPDATE model_canvas_text_generation_outbox
           SET status = 'pending', claim_token = NULL, lease_expires_at = NULL
         WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
       RETURNING outbox_id`,
-      [input.id, input.claimToken],
+      [input.id, input.claimToken]
     );
     return result.rowCount === 1;
   }
 
   async getJob(workspaceId: string, jobId: string) {
-    const result = await this.pool.query<{ result: ModelSupplyResult }>(
-      `SELECT result FROM model_generation_jobs
+    const result = await this.pool.query<PersistedJobReadRow>(
+      `SELECT result, ended_at, latency_ms FROM model_generation_jobs
         WHERE workspace_id = $1 AND job_id = $2`,
       [workspaceId, jobId]
     );
-    return result.rows[0]?.result ?? null;
+    return result.rows[0] ? projectPersistedJob(result.rows[0]) : null;
   }
 
-  async listJobs(workspaceId: string) {
-    const result = await this.pool.query<{ result: ModelSupplyResult }>(
-      `SELECT result FROM model_generation_jobs
-        WHERE workspace_id = $1 ORDER BY created_at DESC, job_id DESC`,
-      [workspaceId]
-    );
-    return result.rows.map((row) => row.result);
+  async listJobs(workspaceId: string): Promise<ModelSupplyResult[]>;
+  async listJobs(
+    workspaceId: string,
+    query: ModelSupplyJobListQuery
+  ): Promise<ModelSupplyJobListPage>;
+  async listJobs(
+    workspaceId: string,
+    query?: ModelSupplyJobListQuery
+  ): Promise<ModelSupplyResult[] | ModelSupplyJobListPage> {
+    if (!query) {
+      const result = await this.pool.query<PersistedJobReadRow>(
+        `SELECT result, ended_at, latency_ms FROM model_generation_jobs
+          WHERE workspace_id = $1 ORDER BY created_at DESC, job_id DESC`,
+        [workspaceId]
+      );
+      return result.rows.map(projectPersistedJob);
+    }
+
+    const page =
+      Number.isInteger(query.page) && query.page > 0 ? query.page : 1;
+    const pageSize =
+      Number.isInteger(query.pageSize) && query.pageSize > 0
+        ? Math.min(query.pageSize, 100)
+        : 20;
+    const values: unknown[] = [workspaceId];
+    const where = ['workspace_id = $1'];
+    const bind = (value: unknown) => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+
+    if (query.operation) {
+      where.push(`${JOB_OPERATION_SQL} = ${bind(query.operation)}`);
+    }
+    if (query.status) {
+      where.push(`${JOB_STATUS_SQL} = ${bind(query.status)}`);
+    }
+    if (query.modality) {
+      where.push(`${JOB_MODALITY_SQL} = ${bind(query.modality)}`);
+    }
+    if (query.catalogModelId) {
+      where.push(
+        `result #>> '{attempt,catalogModelId}' = ${bind(query.catalogModelId)}`
+      );
+    }
+    if (query.deploymentId) {
+      where.push(
+        `result #>> '{attempt,deploymentId}' = ${bind(query.deploymentId)}`
+      );
+    }
+    if (query.deploymentIds) {
+      if (query.deploymentIds.length === 0) {
+        where.push('FALSE');
+      } else {
+        where.push(
+          `result #>> '{attempt,deploymentId}' = ANY(${bind(query.deploymentIds)}::text[])`
+        );
+      }
+    }
+    if (query.dataClass) {
+      if (query.dataClass === 'public') {
+        where.push(
+          `jsonb_array_length(COALESCE(result #> '{snapshot,dataClass}', '[]'::jsonb)) = 0`
+        );
+      } else {
+        where.push(
+          `COALESCE(result #> '{snapshot,dataClass}', '[]'::jsonb) ? ${bind(query.dataClass)}`
+        );
+      }
+    }
+    if (query.taskId) {
+      where.push(`job_id = ${bind(query.taskId)}`);
+    }
+    if (query.q) {
+      where.push(
+        `concat_ws(' ',
+          job_id,
+          result #>> '{attempt,id}',
+          result #>> '{attempt,catalogModelId}',
+          result #>> '{attempt,deploymentId}',
+          result->>'failureCode'
+        ) ILIKE ${bind(`%${query.q}%`)}`
+      );
+    }
+
+    const sortExpression: Record<ModelSupplyJobListQuery['sort'], string> = {
+      startedAt: `(result #>> '{attempt,createdAt}')::timestamptz`,
+      latencyMs: 'latency_ms',
+      status: JOB_STATUS_SQL,
+      operation: JOB_OPERATION_SQL,
+      costMicros: `(result #>> '{providerCost,amount}')::numeric`,
+    };
+    const direction = query.dir === 'asc' ? 'ASC' : 'DESC';
+    const predicate = where.join(' AND ');
+    const limit = bind(pageSize);
+    const offset = bind((page - 1) * pageSize);
+    const itemValues = [...values];
+    const countValues = values.slice(0, -2);
+
+    const [items, total, facetValues, dataClassValues] = await Promise.all([
+      this.pool.query<PersistedJobReadRow>(
+        `SELECT result, ended_at, latency_ms
+           FROM model_generation_jobs
+          WHERE ${predicate}
+          ORDER BY ${sortExpression[query.sort]} ${direction} NULLS LAST,
+                   job_id ${direction}
+          LIMIT ${limit} OFFSET ${offset}`,
+        itemValues
+      ),
+      this.pool.query<{ total: string | number }>(
+        `SELECT count(*) AS total
+           FROM model_generation_jobs
+          WHERE ${predicate}`,
+        countValues
+      ),
+      this.pool.query<{
+        operations: string[] | null;
+        statuses: string[] | null;
+        modalities: string[] | null;
+      }>(
+        `SELECT array_agg(DISTINCT operation ORDER BY operation) AS operations,
+                array_agg(DISTINCT status ORDER BY status) AS statuses,
+                array_agg(DISTINCT modality ORDER BY modality) AS modalities
+           FROM (
+             SELECT ${JOB_OPERATION_SQL} AS operation,
+                    ${JOB_STATUS_SQL} AS status,
+                    ${JOB_MODALITY_SQL} AS modality
+               FROM model_generation_jobs
+              WHERE workspace_id = $1
+           ) facets`,
+        [workspaceId]
+      ),
+      this.pool.query<{ data_class: string }>(
+        `SELECT DISTINCT COALESCE(classes.data_class, 'public') AS data_class
+           FROM model_generation_jobs jobs
+           LEFT JOIN LATERAL jsonb_array_elements_text(
+             COALESCE(jobs.result #> '{snapshot,dataClass}', '[]'::jsonb)
+           ) AS classes(data_class) ON TRUE
+          WHERE jobs.workspace_id = $1
+          ORDER BY data_class`,
+        [workspaceId]
+      ),
+    ]);
+    const facets = facetValues.rows[0];
+    return {
+      items: items.rows.map(projectPersistedJob),
+      total: Number(total.rows[0]?.total ?? 0),
+      page,
+      pageSize,
+      facets: {
+        operations: (facets?.operations ??
+          []) as ModelSupplyJobListPage['facets']['operations'],
+        statuses: (facets?.statuses ??
+          []) as ModelSupplyJobListPage['facets']['statuses'],
+        modalities: (facets?.modalities ??
+          []) as ModelSupplyJobListPage['facets']['modalities'],
+        dataClasses: dataClassValues.rows.map(
+          (row) => row.data_class
+        ) as ModelSupplyJobListPage['facets']['dataClasses'],
+      },
+    };
   }
 
   async saveQualityEvent(workspaceId: string, event: QualityEvent) {
@@ -767,7 +1033,7 @@ export class PostgresModelSupplyRepository {
 
   async saveQualityEvaluationRun(
     workspaceId: string,
-    run: BeautyQualityEvaluationRun,
+    run: BeautyQualityEvaluationRun
   ) {
     const { cases, ...header } = run;
     const client = await this.pool.connect();
@@ -778,7 +1044,7 @@ export class PostgresModelSupplyRepository {
            (workspace_id, run_id, run, created_at)
          VALUES ($1, $2, $3::jsonb, $4::timestamptz)
          ON CONFLICT (workspace_id, run_id) DO NOTHING`,
-        [workspaceId, run.id, JSON.stringify(header), run.createdAt],
+        [workspaceId, run.id, JSON.stringify(header), run.createdAt]
       );
       for (const result of cases) {
         await client.query(
@@ -786,7 +1052,13 @@ export class PostgresModelSupplyRepository {
              (workspace_id, run_id, case_id, ordinal, result)
            VALUES ($1, $2, $3, $4, $5::jsonb)
            ON CONFLICT (workspace_id, run_id, case_id) DO NOTHING`,
-          [workspaceId, run.id, result.id, result.ordinal, JSON.stringify(result)],
+          [
+            workspaceId,
+            run.id,
+            result.id,
+            result.ordinal,
+            JSON.stringify(result),
+          ]
         );
       }
       await client.query('COMMIT');
@@ -804,18 +1076,20 @@ export class PostgresModelSupplyRepository {
     }>(
       `SELECT run FROM model_quality_evaluation_runs
         WHERE workspace_id = $1 AND run_id = $2`,
-      [workspaceId, runId],
+      [workspaceId, runId]
     );
     const header = run.rows[0]?.run;
     if (!header) return null;
     const rejectionCases = Array.isArray(header.rejectionCases)
       ? header.rejectionCases
       : [];
-    const cases = await this.pool.query<{ result: BeautyQualityEvaluationCaseResult }>(
+    const cases = await this.pool.query<{
+      result: BeautyQualityEvaluationCaseResult;
+    }>(
       `SELECT result FROM model_quality_evaluation_cases
         WHERE workspace_id = $1 AND run_id = $2
         ORDER BY ordinal, case_id`,
-      [workspaceId, runId],
+      [workspaceId, runId]
     );
     return {
       ...header,
@@ -841,7 +1115,7 @@ export class PostgresModelSupplyRepository {
     const result = await this.pool.query<{ run_id: string }>(
       `SELECT run_id FROM model_quality_evaluation_runs
         WHERE workspace_id = $1 ORDER BY created_at DESC, run_id`,
-      [workspaceId],
+      [workspaceId]
     );
     const runs: BeautyQualityEvaluationRun[] = [];
     for (const row of result.rows) {
@@ -855,7 +1129,7 @@ export class PostgresModelSupplyRepository {
     const result = await this.pool.query<{ audit: RevisionRollbackAudit }>(
       `SELECT audit FROM model_revision_rollback_audits
         WHERE workspace_id = $1 ORDER BY created_at DESC, audit_id`,
-      [workspaceId],
+      [workspaceId]
     );
     return result.rows.map((row) => row.audit);
   }
@@ -875,7 +1149,9 @@ export class PostgresModelSupplyRepository {
       'model_quality_events',
       'model_video_workflows',
     ]) {
-      await this.pool.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [workspaceId]);
+      await this.pool.query(`DELETE FROM ${table} WHERE workspace_id = $1`, [
+        workspaceId,
+      ]);
     }
   }
 
@@ -895,48 +1171,50 @@ export class PostgresModelSupplyRepository {
   private insertRollbackAudit(
     client: PoolClient,
     workspaceId: string,
-    audit: RevisionRollbackAudit,
+    audit: RevisionRollbackAudit
   ) {
     return client.query(
       `INSERT INTO model_revision_rollback_audits
          (workspace_id, audit_id, kind, audit, created_at)
        VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)`,
-      [workspaceId, audit.id, audit.kind, JSON.stringify(audit), audit.createdAt],
+      [
+        workspaceId,
+        audit.id,
+        audit.kind,
+        JSON.stringify(audit),
+        audit.createdAt,
+      ]
     );
   }
-
 }
 
 export interface AsyncDurableVideoWorkflowStore {
   get(id: string): Promise<DurableVideoWorkflow | undefined>;
-  list(
-    workspaceId: string,
-    actorId: string,
-  ): Promise<DurableVideoWorkflow[]>;
+  list(workspaceId: string, actorId: string): Promise<DurableVideoWorkflow[]>;
   findLatest(
     workspaceId: string,
     actorId: string,
-    workId?: string,
+    workId?: string
   ): Promise<DurableVideoWorkflow | undefined>;
   save(
     workflow: DurableVideoWorkflow,
-    options?: DurableVideoWorkflowSaveOptions,
+    options?: DurableVideoWorkflowSaveOptions
   ): Promise<DurableVideoWorkflow>;
   claimRun(
     id: string,
     workspaceId: string,
-    leaseToken: string,
+    leaseToken: string
   ): Promise<DurableVideoWorkflow>;
   requestCancel(
     id: string,
     workspaceId: string,
-    requestedAt: string,
+    requestedAt: string
   ): Promise<DurableVideoWorkflow>;
   assertRunnable(
     id: string,
     workspaceId: string,
     revision: number,
-    leaseToken: string,
+    leaseToken: string
   ): Promise<void>;
 }
 
@@ -946,7 +1224,9 @@ interface DurableVideoWorkflowRow {
   run_lease_token: string | null;
 }
 
-export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkflowStore {
+export class PostgresDurableVideoWorkflowStore
+  implements AsyncDurableVideoWorkflowStore
+{
   constructor(
     private readonly pool: Pool,
     private readonly workspaceId: string
@@ -963,20 +1243,24 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
 
   async list(workspaceId: string, actorId: string) {
     if (workspaceId !== this.workspaceId) {
-      throw new Error('Video workflow workspace does not match its durable store.');
+      throw new Error(
+        'Video workflow workspace does not match its durable store.'
+      );
     }
     const result = await this.pool.query<DurableVideoWorkflowRow>(
       `SELECT workflow, revision, run_lease_token FROM model_video_workflows
         WHERE workspace_id = $1 AND workflow->>'actorId' = $2
         ORDER BY workflow->>'updatedAt' DESC, workflow_id DESC`,
-      [workspaceId, actorId],
+      [workspaceId, actorId]
     );
     return result.rows.map(workflowFromRow);
   }
 
   async findLatest(workspaceId: string, actorId: string, workId?: string) {
     if (workspaceId !== this.workspaceId) {
-      throw new Error('Video workflow workspace does not match its durable store.');
+      throw new Error(
+        'Video workflow workspace does not match its durable store.'
+      );
     }
     const result = await this.pool.query<DurableVideoWorkflowRow>(
       `SELECT workflow, revision, run_lease_token FROM model_video_workflows
@@ -1000,31 +1284,33 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
           workflow->>'updatedAt' DESC,
           workflow_id DESC
         LIMIT 1`,
-      [workspaceId, actorId, workId ?? null],
+      [workspaceId, actorId, workId ?? null]
     );
     return result.rows[0] ? workflowFromRow(result.rows[0]) : undefined;
   }
 
   async save(
     workflow: DurableVideoWorkflow,
-    options: DurableVideoWorkflowSaveOptions = {},
+    options: DurableVideoWorkflowSaveOptions = {}
   ) {
     if (workflow.workspaceId !== this.workspaceId) {
-      throw new Error('Video workflow workspace does not match its durable store.');
+      throw new Error(
+        'Video workflow workspace does not match its durable store.'
+      );
     }
     const candidate = normalizeStoredVideoWorkflow(workflow);
     return this.withWorkflowLock(candidate.id, async (client, row) => {
       if (!row) {
         if ((options.expectedRevision ?? candidate.revision) !== 0) {
           throw new VideoWorkflowConcurrencyError(
-            'Video workflow creation used a stale revision.',
+            'Video workflow creation used a stale revision.'
           );
         }
         await client.query(
           `INSERT INTO model_video_workflows
              (workspace_id, workflow_id, workflow, revision, run_lease_token, updated_at)
            VALUES ($1, $2, $3::jsonb, 0, NULL, now())`,
-          [this.workspaceId, candidate.id, JSON.stringify(candidate)],
+          [this.workspaceId, candidate.id, JSON.stringify(candidate)]
         );
         return structuredClone(candidate);
       }
@@ -1035,7 +1321,7 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
         candidate,
         expectedRevision,
         row.run_lease_token ?? undefined,
-        options,
+        options
       );
       if (JSON.stringify(current) === JSON.stringify(candidate)) {
         return current;
@@ -1067,11 +1353,11 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
           releaseRunLease,
           expectedRevision,
           options.runLeaseToken ?? null,
-        ],
+        ]
       );
       if (!updated.rows[0]) {
         throw new VideoWorkflowConcurrencyError(
-          'Video workflow result belongs to a stale run lease.',
+          'Video workflow result belongs to a stale run lease.'
         );
       }
       return workflowFromRow(updated.rows[0]);
@@ -1088,7 +1374,7 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
         current.status === 'cancelled'
       ) {
         throw new VideoWorkflowCancellationError(
-          'Video workflow cancellation was requested.',
+          'Video workflow cancellation was requested.'
         );
       }
       if (current.status === 'completed' || current.status === 'failed') {
@@ -1096,7 +1382,7 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
       }
       if (!current.confirmed) {
         throw new Error(
-          'Storyboard must be confirmed before clip attempts are created.',
+          'Storyboard must be confirmed before clip attempts are created.'
         );
       }
       const claimed = {
@@ -1117,11 +1403,11 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
           claimed.revision,
           leaseToken,
           current.revision,
-        ],
+        ]
       );
       if (!updated.rows[0]) {
         throw new VideoWorkflowConcurrencyError(
-          'Video workflow run claim is stale.',
+          'Video workflow run claim is stale.'
         );
       }
       return workflowFromRow(updated.rows[0]);
@@ -1161,11 +1447,11 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
           JSON.stringify(requested),
           requested.revision,
           current.revision,
-        ],
+        ]
       );
       if (!updated.rows[0]) {
         throw new VideoWorkflowConcurrencyError(
-          'Video workflow cancellation used a stale revision.',
+          'Video workflow cancellation used a stale revision.'
         );
       }
       return workflowFromRow(updated.rows[0]);
@@ -1176,27 +1462,30 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
     id: string,
     workspaceId: string,
     revision: number,
-    leaseToken: string,
+    leaseToken: string
   ) {
     this.assertWorkspace(workspaceId);
     const result = await this.pool.query<DurableVideoWorkflowRow>(
       `SELECT workflow, revision, run_lease_token
          FROM model_video_workflows
         WHERE workspace_id = $1 AND workflow_id = $2`,
-      [this.workspaceId, id],
+      [this.workspaceId, id]
     );
-    if (!result.rows[0]) throw new Error(`Unknown durable video workflow ${id}.`);
+    if (!result.rows[0])
+      throw new Error(`Unknown durable video workflow ${id}.`);
     assertVideoWorkflowRunnable(
       workflowFromRow(result.rows[0]),
       revision,
       result.rows[0].run_lease_token ?? undefined,
-      leaseToken,
+      leaseToken
     );
   }
 
   private assertWorkspace(workspaceId: string) {
     if (workspaceId !== this.workspaceId) {
-      throw new Error('Video workflow workspace does not match its durable store.');
+      throw new Error(
+        'Video workflow workspace does not match its durable store.'
+      );
     }
   }
 
@@ -1204,8 +1493,8 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
     id: string,
     action: (
       client: PoolClient,
-      row: DurableVideoWorkflowRow | undefined,
-    ) => Promise<T>,
+      row: DurableVideoWorkflowRow | undefined
+    ) => Promise<T>
   ) {
     const client = await this.pool.connect();
     try {
@@ -1215,7 +1504,7 @@ export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkf
            FROM model_video_workflows
           WHERE workspace_id = $1 AND workflow_id = $2
           FOR UPDATE`,
-        [this.workspaceId, id],
+        [this.workspaceId, id]
       );
       const value = await action(client, result.rows[0]);
       await client.query('COMMIT');
@@ -1243,7 +1532,7 @@ export class PersistentContentWorkflowRunner {
     private readonly composer: VideoCompositionPort,
     private readonly workflows: AsyncDurableVideoWorkflowStore,
     private readonly qualityScorer: VideoQualityScoringPort = new VersionedHumanCalibratedVideoQualityScorer(),
-    private readonly clock: () => number = () => Date.now(),
+    private readonly clock: () => number = () => Date.now()
   ) {}
 
   async createVideoWorkflow(input: CreateVideoWorkflowInput) {
@@ -1257,7 +1546,7 @@ export class PersistentContentWorkflowRunner {
           this.composer,
           memory,
           this.qualityScorer,
-          this.clock,
+          this.clock
         ).createVideoWorkflow(input);
       }
     }
@@ -1274,7 +1563,7 @@ export class PersistentContentWorkflowRunner {
       this.composer,
       memory,
       this.qualityScorer,
-      this.clock,
+      this.clock
     ).createVideoWorkflow(input);
     return this.workflows.save(workflow);
   }
@@ -1295,7 +1584,7 @@ export class PersistentContentWorkflowRunner {
   async findLatestVideoWorkflow(
     workspaceId: string,
     actorId: string,
-    workId?: string,
+    workId?: string
   ) {
     return this.workflows.findLatest(workspaceId, actorId, workId);
   }
@@ -1329,7 +1618,7 @@ export class PersistentContentWorkflowRunner {
     const workflow = await this.workflows.claimRun(
       id,
       current.workspaceId,
-      leaseToken,
+      leaseToken
     );
     return runDurableVideoWorkflow({
       workflow,
@@ -1342,7 +1631,7 @@ export class PersistentContentWorkflowRunner {
           checkpoint.id,
           checkpoint.workspaceId,
           checkpoint.revision,
-          leaseToken,
+          leaseToken
         ),
       checkpoint: async (checkpoint) =>
         this.workflows.save(checkpoint, { runLeaseToken: leaseToken }),
@@ -1354,7 +1643,7 @@ export class PersistentContentWorkflowRunner {
     return this.workflows.requestCancel(
       id,
       current.workspaceId,
-      new Date(this.clock()).toISOString(),
+      new Date(this.clock()).toISOString()
     );
   }
 
@@ -1368,7 +1657,7 @@ export class PersistentContentWorkflowRunner {
       this.composer,
       memory,
       this.qualityScorer,
-      this.clock,
+      this.clock
     ).cancelVideoWorkflow(id, workspaceId);
     return this.workflows.save(workflow, {
       completeCancellation: true,
@@ -1388,7 +1677,7 @@ export class PersistentContentWorkflowRunner {
         this.composer,
         memory,
         this.qualityScorer,
-        this.clock,
+        this.clock
       ),
     };
   }

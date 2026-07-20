@@ -131,6 +131,27 @@ test('priced model card shows this run output without provider currency', () => 
   assert.doesNotMatch(view.quoteLabel, /\$|USD|CNY|0\.30|price-v2/u);
 });
 
+test('single-channel model card tells merchants there is no fallback', () => {
+  const view = modelCardView({
+    availabilityKind: 'production',
+    available: true,
+    capabilityLabels: ['图片生成'],
+    channelReadiness: 'single_channel',
+    displayName: 'Named Image Model',
+    id: 'named-image-model',
+    modality: 'image',
+    qualityRank: 1,
+    unitPrice: {
+      amountMicros: 100_000,
+      currency: 'CNY',
+      revision: 'price-v1',
+      unit: 'image',
+    },
+  });
+
+  assert.equal(view.channelReadinessLabel, '单渠道 / 无回退');
+});
+
 test('busy picker locks model changes while preserving the selected model', () => {
   const html = renderToStaticMarkup(
     createElement(ModelCardPicker, {

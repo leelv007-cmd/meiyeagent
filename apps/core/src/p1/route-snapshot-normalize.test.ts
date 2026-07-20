@@ -73,6 +73,8 @@ function foundationFixture(): FoundationRouteSnapshot {
 function modelSupplyFixture(): ModelSupplyRouteSnapshot {
   return {
     id: 'route-ms-1',
+    maxAttempts: 2,
+    fallbackAuthorized: true,
     catalogRevisionId: 'catalog-ms-9',
     requestedSelection: {
       mode: 'fixed',
@@ -82,6 +84,11 @@ function modelSupplyFixture(): ModelSupplyRouteSnapshot {
     candidateCatalogModelIds: ['seedance-pro'],
     actualCatalogModelId: 'seedance-pro',
     deploymentId: 'seedance-pro-direct',
+    routePolicyRevisionId: 'route-policy-video-v7',
+    dataPolicyRevisionId: 'data-policy-video-v3',
+    runtimeExclusionReasons: [
+      'seedance-pro-retired:health_overlay_blocking',
+    ],
     policyRevision: 'policy-video-v1',
     priceRevision: 'price-video-v2',
     credentialMode: 'platform',
@@ -117,6 +124,9 @@ function modelSupplyFixture(): ModelSupplyRouteSnapshot {
         modelVersion: '1.0',
         credentialMode: 'platform',
         credentialVersion: 'cred-ms-1',
+        accountIdentity: 'account-volc',
+        endpointFingerprint: 'endpoint-volc',
+        dataPolicyRevisionId: 'data-policy-video-v3',
         policyRevision: 'policy-video-v1',
         priceRevision: 'price-video-v2',
         unitPriceMicros: 50_000,
@@ -150,6 +160,9 @@ function modelSupplyFixture(): ModelSupplyRouteSnapshot {
         modelVersion: '1.0',
         credentialMode: 'platform',
         credentialVersion: 'cred-ms-1',
+        accountIdentity: 'account-gateway',
+        endpointFingerprint: 'endpoint-gateway',
+        dataPolicyRevisionId: 'data-policy-video-v4',
         policyRevision: 'policy-video-v1',
         priceRevision: 'price-video-v2',
         unitPriceMicros: 45_000,
@@ -191,6 +204,8 @@ function assertFrozenEvidenceStable(
   assert.equal(after.dataPolicyRevisionId, before.dataPolicyRevisionId);
   assert.equal(after.sourceKind, before.sourceKind);
   assert.equal(after.fallbackConsent, before.fallbackConsent);
+  assert.equal(after.maxAttempts, before.maxAttempts);
+  assert.equal(after.fallbackAuthorized, before.fallbackAuthorized);
   assert.deepEqual(after.fallbackChain, before.fallbackChain);
   assert.deepEqual(after.runtimeExclusionReasons, before.runtimeExclusionReasons);
   assert.deepEqual(
@@ -198,12 +213,18 @@ function assertFrozenEvidenceStable(
       catalogModelId: c.catalogModelId,
       deploymentId: c.deploymentId,
       rank: c.rank,
+      accountIdentity: c.accountIdentity,
+      endpointFingerprint: c.endpointFingerprint,
+      dataPolicyRevisionId: c.dataPolicyRevisionId,
       exclusionReasons: c.exclusionReasons,
     })),
     before.allowedCandidates.map((c) => ({
       catalogModelId: c.catalogModelId,
       deploymentId: c.deploymentId,
       rank: c.rank,
+      accountIdentity: c.accountIdentity,
+      endpointFingerprint: c.endpointFingerprint,
+      dataPolicyRevisionId: c.dataPolicyRevisionId,
       exclusionReasons: c.exclusionReasons,
     })),
   );
@@ -248,9 +269,7 @@ describe('RouteSnapshot four-shape normalization (S2b)', () => {
 
   it('model-supply rich shape → canonical preserves rank, sourceKind, and exclusion evidence', () => {
     const modelSupply = modelSupplyFixture();
-    const canonical = fromModelSupplyRouteSnapshot(modelSupply, {
-      runtimeExclusionReasons: ['simulated_unavailable:seedance-pro-retired'],
-    });
+    const canonical = fromModelSupplyRouteSnapshot(modelSupply);
 
     assert.equal(canonical.catalogModelId, 'seedance-pro');
     assert.equal(canonical.providerProfileId, 'pp-volc');
@@ -258,16 +277,26 @@ describe('RouteSnapshot four-shape normalization (S2b)', () => {
     assert.equal(canonical.deploymentId, 'seedance-pro-direct');
     assert.equal(canonical.actualDeploymentId, 'seedance-pro-direct');
     assert.equal(canonical.endpointRevisionId, 'ep-ms-3');
+    assert.equal(canonical.policyRevisionId, 'route-policy-video-v7');
+    assert.equal(canonical.dataPolicyRevisionId, 'data-policy-video-v3');
     assert.equal(canonical.sourceKind, 'official_direct');
     assert.equal(canonical.fallbackConsent, true);
+    assert.equal(canonical.maxAttempts, 2);
+    assert.equal(canonical.fallbackAuthorized, true);
     assert.deepEqual(canonical.fallbackChain, [
       'seedance-pro-direct',
       'seedance-pro-managed',
     ]);
     assert.equal(canonical.allowedCandidates[0]?.sourceKind, 'official_direct');
     assert.equal(canonical.allowedCandidates[1]?.sourceKind, 'upstream_reseller');
+    assert.equal(canonical.allowedCandidates[0]?.accountIdentity, 'account-volc');
+    assert.equal(canonical.allowedCandidates[1]?.accountIdentity, 'account-gateway');
+    assert.equal(canonical.allowedCandidates[0]?.endpointFingerprint, 'endpoint-volc');
+    assert.equal(canonical.allowedCandidates[1]?.endpointFingerprint, 'endpoint-gateway');
+    assert.equal(canonical.allowedCandidates[0]?.dataPolicyRevisionId, 'data-policy-video-v3');
+    assert.equal(canonical.allowedCandidates[1]?.dataPolicyRevisionId, 'data-policy-video-v4');
     assert.deepEqual(canonical.runtimeExclusionReasons, [
-      'simulated_unavailable:seedance-pro-retired',
+      'seedance-pro-retired:health_overlay_blocking',
     ]);
 
     const replayed = replayCanonicalRouteSnapshot(canonical);
@@ -288,6 +317,14 @@ describe('RouteSnapshot four-shape normalization (S2b)', () => {
       'seedance-pro-direct',
       'seedance-pro-managed',
     ]);
+    assert.equal(back.maxAttempts, 2);
+    assert.equal(back.fallbackAuthorized, true);
+    assert.equal(back.allowedCandidates[0]?.accountIdentity, 'account-volc');
+    assert.equal(back.allowedCandidates[1]?.accountIdentity, 'account-gateway');
+    assert.equal(back.allowedCandidates[0]?.endpointFingerprint, 'endpoint-volc');
+    assert.equal(back.allowedCandidates[1]?.endpointFingerprint, 'endpoint-gateway');
+    assert.equal(back.allowedCandidates[0]?.dataPolicyRevisionId, 'data-policy-video-v3');
+    assert.equal(back.allowedCandidates[1]?.dataPolicyRevisionId, 'data-policy-video-v4');
   });
 
   it('strict BYOK shape preserves fallbackConsent=false, single candidate, no-fallback chain', () => {

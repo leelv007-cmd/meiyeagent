@@ -6,14 +6,6 @@ name: Provider live gate
 on:
   workflow_dispatch:
     inputs:
-      run_destructive:
-        description: 'Also run destructive live inject (force reject on primary)'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
       cost_cap_usd:
         description: 'Hard cost ceiling in USD for this run'
         required: false
@@ -32,31 +24,62 @@ permissions:
 
 jobs:
   provider-live-matrix:
-    name: MP-08 fault-injection live matrix
+    name: Provider evidence and MP-08 release gate
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Test timeout is 45m; keep cleanup + artifact upload headroom.
+    timeout-minutes: 60
     environment: provider-live
     env:
       RUN_PROVIDER_LIVE_FAULT_INJECTION: '1'
+      # Local/default runs skip when credentials are absent. The protected
+      # workflow is the release gate, so it must fail unless all six real
+      # adapter channels produce evidence.
+      PROVIDER_LIVE_REQUIRE_ALL: '1'
       PROVIDER_LIVE_COST_CAP_USD: ${{ github.event.inputs.cost_cap_usd || '1.0' }}
-      RUN_PROVIDER_LIVE_DESTRUCTIVE: ${{ github.event.inputs.run_destructive || 'false' }}
+      PROVIDER_LIVE_EVIDENCE_DIR: apps/core/provider-live-evidence
+      PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH: apps/core/provider-live-evidence/external-conformance.json
+      PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND: ${{ secrets.PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND }}
+      PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD: ${{ secrets.PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD }}
       # Text dual-channel (handoff matrix)
       ARK_TEXT_API_KEY: ${{ secrets.ARK_TEXT_API_KEY }}
       ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
       ARK_TEXT_MODEL: ${{ secrets.ARK_TEXT_MODEL }}
+      ARK_TEXT_CATALOG_MODEL_ID: ${{ secrets.ARK_TEXT_CATALOG_MODEL_ID }}
       ARK_TEXT_BASE_URL: ${{ secrets.ARK_TEXT_BASE_URL }}
       ARK_BASE_URL: ${{ secrets.ARK_BASE_URL }}
+      ARK_PROVIDER_ACCOUNT_IDENTITY: ${{ secrets.ARK_PROVIDER_ACCOUNT_IDENTITY }}
+      ARK_TEXT_MAX_PROBE_COST_USD: ${{ secrets.ARK_TEXT_MAX_PROBE_COST_USD }}
+      # Public official TOS origins (Seedream v2, Seedance, combined ACG).
+      # Keep explicit: ProviderSafeFetch never trusts a provider-returned host.
+      ARK_MEDIA_ASSET_SOURCE_HOSTS: >-
+        ark-content-generation-v2-cn-beijing.tos-cn-beijing.volces.com,
+        ark-content-generation-cn-beijing.tos-cn-beijing.volces.com,
+        ark-acg-cn-beijing.tos-cn-beijing.volces.com
       MODEL_DIRECT_API_KEY: ${{ secrets.MODEL_DIRECT_API_KEY }}
       MODEL_DIRECT_BASE_URL: ${{ secrets.MODEL_DIRECT_BASE_URL }}
       MODEL_DIRECT_MODEL: ${{ secrets.MODEL_DIRECT_MODEL }}
       MODEL_DIRECT_CATALOG_MODEL_ID: ${{ secrets.MODEL_DIRECT_CATALOG_MODEL_ID }}
+      MODEL_DIRECT_PROVIDER_ACCOUNT_IDENTITY: ${{ secrets.MODEL_DIRECT_PROVIDER_ACCOUNT_IDENTITY }}
+      MODEL_DIRECT_MAX_PROBE_COST_USD: ${{ secrets.MODEL_DIRECT_MAX_PROBE_COST_USD }}
       # Image / video
       ARK_SEEDREAM_MODEL: ${{ secrets.ARK_SEEDREAM_MODEL }}
       ARK_SEEDANCE_MODEL: ${{ secrets.ARK_SEEDANCE_MODEL }}
+      ARK_IMAGE_CATALOG_MODEL_ID: ${{ secrets.ARK_IMAGE_CATALOG_MODEL_ID }}
+      ARK_VIDEO_CATALOG_MODEL_ID: ${{ secrets.ARK_VIDEO_CATALOG_MODEL_ID }}
+      ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: ${{ secrets.ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND }}
+      ARK_IMAGE_MAX_PROBE_COST_USD: ${{ secrets.ARK_IMAGE_MAX_PROBE_COST_USD }}
+      ARK_VIDEO_MAX_PROBE_COST_USD: ${{ secrets.ARK_VIDEO_MAX_PROBE_COST_USD }}
       TUZI_API_KEY: ${{ secrets.TUZI_API_KEY }}
       TUZI_BASE_URL: ${{ secrets.TUZI_BASE_URL }}
+      TUZI_PROVIDER_ACCOUNT_IDENTITY: ${{ secrets.TUZI_PROVIDER_ACCOUNT_IDENTITY }}
+      TUZI_MEDIA_ASSET_SOURCE_HOSTS: ${{ secrets.TUZI_MEDIA_ASSET_SOURCE_HOSTS }}
       TUZI_GPT_IMAGE_2_MODEL: ${{ secrets.TUZI_GPT_IMAGE_2_MODEL }}
       TUZI_SEEDANCE_MODEL: ${{ secrets.TUZI_SEEDANCE_MODEL }}
+      TUZI_IMAGE_CATALOG_MODEL_ID: ${{ secrets.TUZI_IMAGE_CATALOG_MODEL_ID }}
+      TUZI_VIDEO_CATALOG_MODEL_ID: ${{ secrets.TUZI_VIDEO_CATALOG_MODEL_ID }}
+      TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: ${{ secrets.TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND }}
+      TUZI_IMAGE_MAX_PROBE_COST_USD: ${{ secrets.TUZI_IMAGE_MAX_PROBE_COST_USD }}
+      TUZI_VIDEO_MAX_PROBE_COST_USD: ${{ secrets.TUZI_VIDEO_MAX_PROBE_COST_USD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,16 +103,38 @@ jobs:
       - name: Cost cap guard
         shell: bash
         run: |
-          CAP="${PROVIDER_LIVE_COST_CAP_USD:-1.0}"
-          # Refuse runaway caps in CI even if dispatch input is raised.
-          node -e "
+          node <<'NODE'
             const cap = Number(process.env.PROVIDER_LIVE_COST_CAP_USD);
             if (!Number.isFinite(cap) || cap <= 0 || cap > 5) {
               console.error('PROVIDER_LIVE_COST_CAP_USD out of allowed range (0, 5]:', process.env.PROVIDER_LIVE_COST_CAP_USD);
               process.exit(1);
             }
-            console.log('provider-live cost cap USD =', cap);
-          "
+            const reservations = [
+              'ARK_TEXT_MAX_PROBE_COST_USD',
+              'MODEL_DIRECT_MAX_PROBE_COST_USD',
+              'ARK_IMAGE_MAX_PROBE_COST_USD',
+              'TUZI_IMAGE_MAX_PROBE_COST_USD',
+              'ARK_VIDEO_MAX_PROBE_COST_USD',
+              'TUZI_VIDEO_MAX_PROBE_COST_USD',
+            ];
+            if (process.env.PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND) {
+              reservations.push('PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD');
+            }
+            const values = reservations.map((name) => {
+              const value = Number(process.env[name]);
+              if (!Number.isFinite(value) || value <= 0) {
+                console.error(`${name} must be a finite positive reservation.`);
+                process.exit(1);
+              }
+              return value;
+            });
+            const reserved = values.reduce((sum, value) => sum + value, 0);
+            if (reserved > cap) {
+              console.error(`Provider live reservations ${reserved} exceed cap ${cap}.`);
+              process.exit(1);
+            }
+            console.log('provider-live cost cap validated');
+          NODE
 
       - name: Run MP-08 unit matrix (always, free)
         env:
@@ -99,12 +144,24 @@ jobs:
           src/p1/model-supply/provider-conformance/fault-injection/fault-injection.matrix.test.ts
           src/p1/model-supply/provider-conformance/fault-injection/publish-gate.test.ts
 
-      - name: Run env-gated live fault-injection gate
+      - name: Run optional real transport conformance injector
+        if: ${{ env.PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND != '' }}
+        shell: bash
+        run: |
+          mkdir -p "${PROVIDER_LIVE_EVIDENCE_DIR}"
+          bash -euo pipefail -c "${PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND}"
+          test -s "${PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH}"
+
+      - name: Run real-adapter evidence and MP-08 release gate
         env:
           NODE_OPTIONS: --test-reporter=spec
         run: >-
           pnpm --filter @meiye/core exec tsx --test --test-concurrency=1
           src/p1/model-supply/provider-conformance/live-fault-injection.integration.test.ts
+
+      - name: Require live evidence artifact
+        if: always()
+        run: test -s apps/core/provider-live-evidence/provider-live-gate.json
 
       - name: Upload live gate log
         if: always()
@@ -112,5 +169,5 @@ jobs:
         with:
           name: provider-live-matrix
           path: |
-            apps/core/**/*.log
-          if-no-files-found: ignore
+            apps/core/provider-live-evidence/provider-live-gate.json
+          if-no-files-found: error

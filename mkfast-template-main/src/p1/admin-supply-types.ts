@@ -90,6 +90,43 @@ export interface SupplyRunRecord {
   poolId?: string;
 }
 
+export type SupplyRunSortField =
+  | 'startedAt'
+  | 'latencyMs'
+  | 'status'
+  | 'operation'
+  | 'costMicros';
+
+export interface SupplyRunQuery {
+  page: number;
+  pageSize: number;
+  sort: SupplyRunSortField;
+  dir: 'asc' | 'desc';
+  operation?: SupplyOperation;
+  status?: SupplyRunRecord['status'];
+  modality?: SupplyRunRecord['modality'];
+  channelKind?: SupplyRunRecord['channelKind'];
+  catalogModelId?: string;
+  deploymentId?: string;
+  dataClass?: SupplyDataClass;
+  q?: string;
+  taskId?: string;
+}
+
+export interface SupplyRunPage {
+  query: SupplyRunQuery;
+  total: number;
+  totalPages: number;
+  rows: SupplyRunRecord[];
+  facets: {
+    operations: SupplyOperation[];
+    statuses: SupplyRunRecord['status'][];
+    modalities: SupplyRunRecord['modality'][];
+    channelKinds: SupplyRunRecord['channelKind'][];
+    dataClasses: SupplyDataClass[];
+  };
+}
+
 export interface SupplyAuditChange {
   id: string;
   at: string;
@@ -110,6 +147,42 @@ export interface SupplyGatewayDeepLink {
   evidenceOnly: true;
 }
 
+export type EntitlementPolicyStage =
+  | 'draft'
+  | 'published'
+  | 'superseded'
+  | 'rolled_back';
+
+export interface EntitlementPolicyStatusRecord {
+  id: string;
+  tier: string;
+  revision: number;
+  stage: EntitlementPolicyStage;
+  revisionId: string;
+  concurrencyLimit: number;
+  queuePriority: number;
+  supportLabel: 'standard' | 'priority';
+  allowanceSummary: string;
+  publishedAt?: string;
+  actorId?: string;
+  reason?: string;
+}
+
+export type AccountAllocationStatus = 'active' | 'expired' | 'rolled_back';
+
+export interface AccountAllocationStatusRecord {
+  id: string;
+  accountId: string;
+  workspaceId: string;
+  kind: 'grant' | 'restrict';
+  targetLabel: string;
+  source: string;
+  status: AccountAllocationStatus;
+  reason: string;
+  startsAt: string;
+  endsAt: string | null;
+}
+
 /** Snapshot consumed by overview / run table / association views. */
 export interface SupplyControlSnapshot {
   catalogRevisionId: string;
@@ -122,9 +195,15 @@ export interface SupplyControlSnapshot {
   contracts: SupplyContract[];
   credentials: CredentialAccountMetadata[];
   pools: SupplyPool[];
+  entitlementPolicies: EntitlementPolicyStatusRecord[];
+  accountAllocations: AccountAllocationStatusRecord[];
+  routePolicyRevisions?: RoutePolicyRevision[];
+  routePolicyPublicationHistory?: RoutePolicyRevision[];
   routePolicies: RoutePolicyRevision[];
   priceRevisions: SupplierPriceRevision[];
   healthOverlays: HealthOverlayView[];
+  runPage: SupplyRunPage;
+  /** Current server page rows for overview/task compatibility. */
   runs: SupplyRunRecord[];
   recentChanges: SupplyAuditChange[];
   gatewayDeepLinks: SupplyGatewayDeepLink[];

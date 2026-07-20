@@ -18,6 +18,8 @@ import type {
   CredentialVersionSnapshot,
 } from './credential-account.js';
 
+export type { CredentialTestEvidence } from './credential-account.js';
+
 export type CredentialLifecycleCommand =
   | { kind: 'record_test'; evidence: CredentialTestEvidence }
   | { kind: 'activate' }
@@ -233,22 +235,21 @@ export function transitionCredentialLifecycle(
       return withUpdated(
         account,
         {
+          status: 'pending',
+          drainSubstate: 'none',
           version: command.next.version,
           secretReference: command.next.secretReference,
           secretVersion: command.next.secretVersion,
           source: command.next.source ?? account.source,
-          // Rotation clears activation evidence — must re-test before activate
-          // when pending, or re-verify when already active (caller decides).
+          // Rotation clears activation evidence and returns the account to
+          // pending. The new head cannot serve requests until it is tested and
+          // activated again.
           lastTest: undefined,
           lastTestEvidenceRef: undefined,
           verifiedAt: undefined,
           ...(command.next.expiresAt
             ? { expiresAt: command.next.expiresAt }
             : { expiresAt: account.expiresAt }),
-          // New secret starts pending verification unless already active and
-          // operator keeps serving the prior frozen version for in-flight work.
-          // Head version becomes current; status stays active but drain may be set
-          // by a separate start_drain command for media.
           versionHistory,
         },
         now,

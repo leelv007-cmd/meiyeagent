@@ -131,8 +131,8 @@ export function expandDeployment(
     ...(deployment.priceRevision
       ? { priceRevisionId: deployment.priceRevision }
       : {}),
-    ...(deployment.credentialVersion
-      ? { credentialAccountId: `cred:${deployment.credentialVersion}` }
+    ...(deployment.credentialAccountId
+      ? { credentialAccountId: deployment.credentialAccountId }
       : {}),
     ...(deployment.activationEvidence
       ? { activationEvidence: structuredClone(deployment.activationEvidence) }

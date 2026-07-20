@@ -472,6 +472,7 @@ test('gateway mode routes Veo through the shared fal queue while direct-only vid
 
 test('configured media runtime routes Ark and Tuzi by deployment channel', async () => {
   const calls: string[] = [];
+  const authorizations: Array<string | null> = [];
   const mediaOptions = {
     apiKey: 'media-secret',
     baseUrl: 'https://ark.example.test/v1',
@@ -494,8 +495,9 @@ test('configured media runtime routes Ark and Tuzi by deployment channel', async
     mode: 'recorded',
     arkMedia: {
       ...mediaOptions,
-      fetch: async (input) => {
+      fetch: async (input, init) => {
         calls.push(String(input));
+        authorizations.push(new Headers(init?.headers).get('authorization'));
         return Response.json({
           data: [{ url: 'https://assets.test/ark.png' }],
         });
@@ -538,6 +540,19 @@ test('configured media runtime routes Ark and Tuzi by deployment channel', async
   const ark = await runtime.media!.submit({
     ...arkRequest,
     effectIdempotencyKey: 'ark-image-effect',
+    runtimeBinding: {
+      capabilityRevisionId: 'capability-media-v2',
+      deploymentId: arkRequest.deployment.id,
+      adapterKey: 'ark-media',
+      credential: {
+        credentialAccountId: 'ark-account',
+        version: 'media-key-v2',
+        secretReference: 'vault://ark-account/2',
+        secretVersion: 2,
+        scope: 'platform' as const,
+        secret: 'rotated-media-secret',
+      },
+    },
   });
   const tuzi = await runtime.media!.submit({
     ...tuziRequest,
@@ -560,10 +575,187 @@ test('configured media runtime routes Ark and Tuzi by deployment channel', async
     'https://ark.example.test/v1/images/generations',
     'https://tuzi.example.test/v1/images/edits',
   ]);
+  assert.equal(authorizations[0], 'Bearer rotated-media-secret');
+});
+
+test('published Ark and Tuzi adapter bindings override boot endpoint and provider model', async () => {
+  const calls: Array<{ model: string; url: string }> = [];
+  const mediaOptions = {
+    apiKey: 'boot-media-secret',
+    baseUrl: 'https://boot-ark.example.test/v1',
+    credentialVersion: 'media-key-v1',
+    endpointRevision: 'media-boot-v1',
+    image: {
+      catalogModelId: 'seedream-5-pro' as const,
+      costPerImage: 0.2,
+      model: 'boot-image-model',
+    },
+    sourceUrlTtlSeconds: 3600,
+    video: {
+      catalogModelId: 'seedance-2' as const,
+      costPerMillionTokens: 20,
+      estimatedTokensPerSecond: 10_000,
+      model: 'boot-video-model',
+    },
+  };
+  const runtime = createModelExecutionRuntime({
+    mode: 'recorded',
+    arkMedia: {
+      ...mediaOptions,
+      fetch: async (input, init) => {
+        calls.push({
+          model: (JSON.parse(String(init?.body)) as { model: string }).model,
+          url: String(input),
+        });
+        return Response.json({
+          data: [{ url: 'https://assets.test/ark-hot.png' }],
+        });
+      },
+    },
+    tuziMedia: {
+      ...mediaOptions,
+      baseUrl: 'https://boot-tuzi.example.test/v1',
+      image: {
+        catalogModelId: 'gpt-image-2',
+        costPerImage: 0.2,
+        model: 'boot-tuzi-image-model',
+      },
+      fetch: async (input, init) => {
+        calls.push({
+          model: (JSON.parse(String(init?.body)) as { model: string }).model,
+          url: String(input),
+        });
+        return Response.json({
+          data: [{ url: 'https://assets.test/tuzi-hot.png' }],
+        });
+      },
+    },
+  });
+  const cases = [
+    {
+      adapterKey: 'ark-media',
+      baseUrl: 'https://hot-ark.example.test/v2',
+      catalogModelId: 'seedream-5-pro',
+      providerModel: 'hot-ark-image-model',
+    },
+    {
+      adapterKey: 'tuzi-media',
+      baseUrl: 'https://hot-tuzi.example.test/v2',
+      catalogModelId: 'gpt-image-2',
+      providerModel: 'hot-tuzi-image-model',
+    },
+  ] as const;
+
+  for (const [index, item] of cases.entries()) {
+    const base = recordedRequest(item.catalogModelId, 'image.generate');
+    await runtime.media!.submit({
+      ...base,
+      deployment: {
+        ...base.deployment,
+        executionChannelId: 'channel-deliberately-stale',
+      },
+      effectIdempotencyKey: `hot-media-${index}`,
+      runtimeBinding: {
+        capabilityRevisionId: 'capability-media-hot-v2',
+        deploymentId: base.deployment.id,
+        adapterKey: item.adapterKey,
+        adapterBindingRevision: `${item.adapterKey}-binding-v2`,
+        adapterConfig: {
+          baseUrl: item.baseUrl,
+          providerModel: item.providerModel,
+          endpointRevision: `${item.adapterKey}-endpoint-v2`,
+          costPerImage: 0.4,
+          sourceUrlTtlSeconds: 7200,
+        },
+        credential: {
+          credentialAccountId: `${item.adapterKey}-account`,
+          version: `${item.adapterKey}-credential-v2`,
+          secretReference: `vault://${item.adapterKey}/2`,
+          secretVersion: 2,
+          scope: 'platform' as const,
+          secret: `${item.adapterKey}-hot-secret`,
+        },
+      },
+    });
+  }
+
+  assert.deepEqual(calls, [
+    {
+      model: 'hot-ark-image-model',
+      url: 'https://hot-ark.example.test/v2/images/generations',
+    },
+    {
+      model: 'hot-tuzi-image-model',
+      url: 'https://hot-tuzi.example.test/v2/images/generations',
+    },
+  ]);
+});
+
+test('published media binding without runtime config fails closed before boot transport', async () => {
+  let calls = 0;
+  const runtime = createModelExecutionRuntime({
+    mode: 'recorded',
+    arkMedia: {
+      apiKey: 'boot-media-secret',
+      baseUrl: 'https://boot-ark.example.test/v1',
+      credentialVersion: 'media-key-v1',
+      endpointRevision: 'media-boot-v1',
+      image: {
+        catalogModelId: 'seedream-5-pro',
+        costPerImage: 0.2,
+        model: 'boot-image-model',
+      },
+      sourceUrlTtlSeconds: 3600,
+      video: {
+        catalogModelId: 'seedance-2',
+        costPerMillionTokens: 20,
+        estimatedTokensPerSecond: 10_000,
+        model: 'boot-video-model',
+      },
+      fetch: async () => {
+        calls += 1;
+        return Response.json({ data: [] });
+      },
+    },
+  });
+  const request = recordedRequest('seedream-5-pro', 'image.generate');
+
+  assert.throws(
+    () => runtime.media!.submit({
+      ...request,
+      effectIdempotencyKey: 'missing-hot-media-config',
+      runtimeBinding: {
+        capabilityRevisionId: 'capability-media-hot-v2',
+        deploymentId: request.deployment.id,
+        adapterKey: 'ark-media',
+        adapterBindingRevision: 'ark-media-binding-v2',
+        credential: {
+          credentialAccountId: 'ark-account',
+          version: 'ark-credential-v2',
+          secretReference: 'vault://ark/2',
+          secretVersion: 2,
+          scope: 'platform',
+          secret: 'ark-hot-secret',
+        },
+      },
+    }),
+    /has no runtime config/,
+  );
+  assert.equal(calls, 0);
 });
 
 test('configured media runtime routes real speech through the TTS lifecycle', async () => {
   const synthesisRequests: unknown[] = [];
+  const requestCredentials: string[] = [];
+  const runtimeConfigs: unknown[] = [];
+  const synthesize = async (input: unknown) => {
+    synthesisRequests.push(input);
+    return {
+      billedTextWords: 4,
+      bytes: Uint8Array.from([0x49, 0x44, 0x33, 1]),
+      contentType: 'audio/mpeg' as const,
+    };
+  };
   const runtime = createModelExecutionRuntime({
     mode: 'recorded',
     volcengineTts: {
@@ -571,13 +763,14 @@ test('configured media runtime routes real speech through the TTS lifecycle', as
       credentialVersion: 'tts-credential-v1',
       priceRevision: 'tts-price-approved-v1',
       synthesis: {
-        async synthesize(input) {
-          synthesisRequests.push(input);
-          return {
-            billedTextWords: 4,
-            bytes: Uint8Array.from([0x49, 0x44, 0x33, 1]),
-            contentType: 'audio/mpeg',
-          };
+        synthesize,
+        withCredential(secret) {
+          requestCredentials.push(secret);
+          return { synthesize };
+        },
+        withRuntimeBinding(input) {
+          runtimeConfigs.push(input);
+          return { synthesize };
         },
       },
       validateAudio: async () => ({ durationSeconds: 1 }),
@@ -599,14 +792,36 @@ test('configured media runtime routes real speech through the TTS lifecycle', as
       id: 'seed-tts-2-volcengine-direct',
       credentialVersion: 'tts-credential-v1',
       executionChannelId: 'channel-seed-tts-volcengine-direct',
-      priceRevision: 'tts-price-approved-v1',
+      priceRevision: 'tts-price-approved-v2',
       unitPrice: {
-        amountMicros: 2_000,
+        amountMicros: 4_000,
         currency: 'CNY' as const,
         unit: 'text_word',
       },
     },
     effectIdempotencyKey: 'tts-routing-effect',
+    runtimeBinding: {
+      capabilityRevisionId: 'capability-tts-v2',
+      deploymentId: 'seed-tts-2-volcengine-direct',
+      adapterKey: 'volcengine-tts',
+      adapterBindingRevision: 'volcengine-tts-binding-v2',
+      adapterConfig: {
+        endpoint: 'wss://hot-tts.example.test/v3',
+        providerModel: 'seed-tts-hot-model',
+        approvedPricePerTextWordCny: 0.004,
+        priceRevision: 'tts-price-approved-v2',
+        resourceId: 'seed-tts-2.0' as const,
+        defaultSpeaker: 'hot-speaker',
+      },
+      credential: {
+        credentialAccountId: 'tts-account',
+        version: 'tts-credential-v2',
+        secretReference: 'vault://tts-account/2',
+        secretVersion: 2,
+        scope: 'platform' as const,
+        secret: 'rotated-tts-secret',
+      },
+    },
   };
 
   const submitted = await runtime.media!.submit(request);
@@ -616,7 +831,7 @@ test('configured media runtime routes real speech through the TTS lifecycle', as
     taskRef: submitted.taskRef!,
   });
   assert.equal(state.status, 'completed');
-  assert.equal(state.providerCost.amount, 0.008);
+  assert.equal(state.providerCost.amount, 0.016);
   assert.equal(
     (
       await runtime.media!.download({
@@ -627,6 +842,16 @@ test('configured media runtime routes real speech through the TTS lifecycle', as
     'audio/mpeg',
   );
   assert.equal(synthesisRequests.length, 1);
+  assert.deepEqual(requestCredentials, []);
+  assert.deepEqual(runtimeConfigs, [
+    {
+      secret: 'rotated-tts-secret',
+      endpoint: 'wss://hot-tts.example.test/v3',
+      model: 'seed-tts-hot-model',
+      resourceId: 'seed-tts-2.0',
+      defaultSpeaker: 'hot-speaker',
+    },
+  ]);
 });
 
 test('Bifrost and LiteLLM comparison remains an evidence-backed six-axis report, not product state', () => {
@@ -765,6 +990,157 @@ test('OpenAI-compatible direct execution makes one request, parses exactly three
     assert.equal(mismatch.acceptance, 'rejected_before_accept');
   }
   assert.equal(calls, 1);
+});
+
+test('direct execution uses the request-time credential instead of the boot secret', async () => {
+  let authorization: string | null = null;
+  const adapter = new OpenAiCompatibleLlmExecutionPort({
+    catalogModelId: 'llm-openai',
+    baseUrl: 'https://llm.example.test/v1',
+    apiKey: 'boot-secret',
+    model: 'provider-copy-model',
+    inputCostPerMillion: 1,
+    outputCostPerMillion: 1,
+    fetch: async (_input, init) => {
+      authorization = new Headers(init?.headers).get('authorization');
+      return new Response('', { status: 401 });
+    },
+  });
+  const request = recordedRequest('llm-openai', 'copy.generate');
+  await adapter.execute({
+    ...request,
+    runtimeBinding: {
+      capabilityRevisionId: 'capability-v2',
+      deploymentId: request.deployment.id,
+      adapterKey: 'direct-llm',
+      credential: {
+        credentialAccountId: 'credential-account-1',
+        version: 'credential-v2',
+        secretReference: 'vault://credential-account-1/2',
+        secretVersion: 2,
+        scope: 'platform' as const,
+        secret: 'rotated-request-secret',
+      },
+    },
+  });
+  assert.equal(authorization, 'Bearer rotated-request-secret');
+});
+
+test('published direct LLM binding overrides boot endpoint, provider model, and price config', async () => {
+  let call: { model: string; url: string } | undefined;
+  const adapter = new OpenAiCompatibleLlmExecutionPort({
+    catalogModelId: 'llm-openai',
+    baseUrl: 'https://boot-llm.example.test/v1',
+    apiKey: 'boot-secret',
+    model: 'boot-provider-model',
+    inputCostPerMillion: 1,
+    outputCostPerMillion: 1,
+    fetch: async (input, init) => {
+      call = {
+        model: (JSON.parse(String(init?.body)) as { model: string }).model,
+        url: String(input),
+      };
+      return Response.json({
+        object: 'chat.completion',
+        id: 'completion-hot-binding',
+        created: 1_752_364_800,
+        model: 'hot-provider-model',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: JSON.stringify({
+                candidates: [
+                  { title: 'A', body: 'A body', conversionHook: 'A hook' },
+                  { title: 'B', body: 'B body', conversionHook: 'B hook' },
+                  { title: 'C', body: 'C body', conversionHook: 'C hook' },
+                ],
+              }),
+            },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 100, completion_tokens: 50 },
+      });
+    },
+  });
+  const request = recordedRequest('llm-openai', 'copy.generate');
+  const response = await adapter.execute({
+    ...request,
+    runtimeBinding: {
+      capabilityRevisionId: 'capability-hot-v2',
+      deploymentId: request.deployment.id,
+      adapterKey: 'direct-llm',
+      adapterBindingRevision: 'direct-llm-binding-v2',
+      adapterConfig: {
+        apiFamily: 'openai',
+        baseUrl: 'https://hot-llm.example.test/v2',
+        providerModel: 'hot-provider-model',
+        endpointRevision: 'hot-llm-endpoint-v2',
+        inputCostPerMillion: 3,
+        outputCostPerMillion: 9,
+        currency: 'USD',
+      },
+      credential: {
+        credentialAccountId: 'credential-account-1',
+        version: 'credential-v2',
+        secretReference: 'vault://credential-account-1/2',
+        secretVersion: 2,
+        scope: 'platform',
+        secret: 'rotated-request-secret',
+      },
+    },
+  });
+
+  assert.deepEqual(call, {
+    model: 'hot-provider-model',
+    url: 'https://hot-llm.example.test/v2/chat/completions',
+  });
+  assert.equal(response.kind, 'completed');
+  if (response.kind === 'completed') {
+    assert.equal(response.providerCost.amount, 0.00075);
+  }
+});
+
+test('published direct LLM binding without runtime config fails closed before boot transport', async () => {
+  let calls = 0;
+  const adapter = new OpenAiCompatibleLlmExecutionPort({
+    catalogModelId: 'llm-openai',
+    baseUrl: 'https://boot-llm.example.test/v1',
+    apiKey: 'boot-secret',
+    model: 'boot-provider-model',
+    inputCostPerMillion: 1,
+    outputCostPerMillion: 1,
+    fetch: async () => {
+      calls += 1;
+      return new Response('', { status: 500 });
+    },
+  });
+  const request = recordedRequest('llm-openai', 'copy.generate');
+  const response = await adapter.execute({
+    ...request,
+    runtimeBinding: {
+      capabilityRevisionId: 'capability-hot-v2',
+      deploymentId: request.deployment.id,
+      adapterKey: 'direct-llm',
+      adapterBindingRevision: 'direct-llm-binding-v2',
+      credential: {
+        credentialAccountId: 'credential-account-1',
+        version: 'credential-v2',
+        secretReference: 'vault://credential-account-1/2',
+        secretVersion: 2,
+        scope: 'platform',
+        secret: 'rotated-request-secret',
+      },
+    },
+  });
+
+  assert.equal(response.kind, 'failure');
+  if (response.kind === 'failure') {
+    assert.equal(response.acceptance, 'rejected_before_accept');
+  }
+  assert.equal(calls, 0);
 });
 
 test('OpenAI-compatible text.respond returns one plain-text deliverable', async () => {

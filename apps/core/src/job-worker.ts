@@ -34,7 +34,10 @@ import {
   createFeishuIntentReconciliationJobHandler,
   createFeishuToolLifecycleJobHandler,
   feishuMcpAdapterFromEnv,
+  createProviderCredentialSecretBroker,
   integrationSecretStoreFromEnv,
+  migrateProviderCredentialAccountsFromIntegrations,
+  providerConnectivityProbeFromEnv,
   providerCredentialEnvFromVault,
 } from './p1/integrations/index.js';
 import {
@@ -70,9 +73,28 @@ import {
   createModelSupplyRuntime,
   modelMediaExecutionMode,
   seedCapabilityHotAssemblyFromCatalog,
+  RECORDED_CATALOG_REVISION_ID,
   videoCompositionRuntimeFromEnv,
 } from './p1/model-supply/index.js';
-import { SupplyPoolRegistry } from './p1/entitlement-pools/index.js';
+import {
+  ensureDefaultRuntimeSupplyPool,
+  PostgresAccountAllocationStore,
+  PostgresCapacityLeaseStore,
+  PostgresEntitlementPoolsMigration,
+  PostgresEntitlementPolicyStore,
+  PostgresModelSupplyProviderAdmission,
+  PostgresSupplyFreezeStore,
+  PostgresSupplyPoolStore,
+} from './p1/entitlement-pools/index.js';
+import {
+  PLATFORM_SUPPLY_SCOPE_ID,
+  PostgresAdminSupplyMigration,
+  PostgresCapabilityHotAssemblyMigration,
+  PostgresCapabilityHotAssemblyPort,
+  PostgresSupplyControlPlaneRepository,
+  PostgresSupplyPlanningControlPlane,
+  PostgresSupplyPlanningMigration,
+} from './p1/supply-registry/index.js';
 import { MemoryProductUsageLedger } from './p1/product-billing/index.js';
 import {
   ModelSupplyImageGenerationAdapter,
@@ -176,6 +198,11 @@ const contentPackageWriteOwnership =
   new PostgresContentPackageWriteOwnership(pool);
 const modelRepository = new PostgresModelSupplyRepository(pool);
 const integrationRepository = new PostgresIntegrationRepository(pool);
+const supplyControlRepository = new PostgresSupplyControlPlaneRepository(pool);
+const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
+  pool,
+  PLATFORM_SUPPLY_SCOPE_ID,
+);
 const legacyInFlightDecisions = new PostgresLegacyInFlightDecisionPort(pool);
 const productEntitlementPolicy = new ProductStateEntitlementPolicy(
   relationalProductRepository,
@@ -219,15 +246,31 @@ await migratePostgresSchema(pool, [
   contentPackageWriteOwnership,
   modelRepository,
   integrationRepository,
+  supplyControlRepository,
+  new PostgresCapabilityHotAssemblyMigration(),
+  new PostgresSupplyPlanningMigration(),
+  new PostgresEntitlementPoolsMigration(),
+  new PostgresAdminSupplyMigration(),
   repository,
   operationalTelemetryStore,
   notifier,
 ]);
 const integrationSecrets = integrationSecretStoreFromEnv(process.env);
-const providerCredentialRuntime = await providerCredentialEnvFromVault(
+await migrateProviderCredentialAccountsFromIntegrations(
   integrationRepository,
+  supplyControlRepository,
+);
+const providerCredentialRuntime = await providerCredentialEnvFromVault(
+  supplyControlRepository,
   integrationSecrets,
   process.env,
+);
+const providerCredentialSecretBroker = createProviderCredentialSecretBroker(
+  supplyControlRepository,
+  integrationSecrets,
+);
+const providerConnectivity = providerConnectivityProbeFromEnv(
+  providerCredentialRuntime.env,
 );
 const runtimeAssembly = await modelRuntimeAssemblyFromSources(
   adminConfigRepository,
@@ -240,22 +283,39 @@ const {
   runtime: modelRuntime,
 } =
   runtimeAssembly.assembly;
-// G3 hot assembly (Worker process) — same seed fingerprint as HTTP from shared catalog.
-const capabilityHotAssembly = seedCapabilityHotAssemblyFromCatalog(
+const bootCapabilityHotAssembly = seedCapabilityHotAssemblyFromCatalog(
   runtimeAssembly.assembly,
 );
-const supplyPoolRegistry = new SupplyPoolRegistry();
+const capabilityHotAssembly = new PostgresCapabilityHotAssemblyPort(
+  pool,
+  supplyControlRepository,
+  PLATFORM_SUPPLY_SCOPE_ID,
+  providerCredentialSecretBroker,
+);
+await capabilityHotAssembly.seedIfEmpty(
+  bootCapabilityHotAssembly.bootRevision,
+);
+capabilityHotAssembly.applyCatalogRevisionHead(
+  RECORDED_CATALOG_REVISION_ID,
+);
+const supplyPoolStore = new PostgresSupplyPoolStore(pool);
+const entitlementPolicyStore = new PostgresEntitlementPolicyStore(pool);
+const accountAllocationStore = new PostgresAccountAllocationStore(pool);
+const capacityLeaseStore = new PostgresCapacityLeaseStore(pool);
+const supplyFreezeStore = new PostgresSupplyFreezeStore(pool);
 const bootDeploymentIds =
   deployments.length > 0
     ? deployments.map((deployment) => deployment.id)
     : ['boot-placeholder-deployment'];
-supplyPoolRegistry.registerShared({
-  id: 'pool-shared-default',
-  displayName: 'Shared default supply pool',
-  credentialAccountIds: ['cred-platform-default'],
-  deploymentIds: bootDeploymentIds,
-  revisionId: 'boot-pool-shared-default',
-});
+await ensureDefaultRuntimeSupplyPool(supplyPoolStore, bootDeploymentIds);
+const modelSupplyProviderAdmission =
+  new PostgresModelSupplyProviderAdmission({
+    productEntitlements: executionEntitlementPolicy,
+    entitlementPolicies: entitlementPolicyStore,
+    accountAllocations: accountAllocationStore,
+    supplyPools: supplyPoolStore,
+    capacityLeases: capacityLeaseStore,
+  });
 const productUsageLedger = new MemoryProductUsageLedger();
 const mediaExecutionMode = modelMediaExecutionMode(modelRuntime);
 const gatedModelExecution = new ModeGateExecutionPort(
@@ -282,12 +342,14 @@ const modelSupplyRuntime = createModelSupplyRuntime({
       {
         productUsage: productUsageLedger,
         defaultSupplyPoolId: 'pool-shared-default',
+        supplyFreezes: supplyFreezeStore,
       },
     ),
+    providerAdmission: modelSupplyProviderAdmission,
     resultSink: modelRepository,
   },
   catalog: runtimeAssembly.assembly,
-  capabilityHotAssembly: capabilityHotAssembly.hotAssembly,
+  capabilityHotAssembly,
   controlPlane: {
     activationEvidenceConfig: adminConfigRepository,
     ...(gatedMediaExecution
@@ -298,20 +360,24 @@ const modelSupplyRuntime = createModelSupplyRuntime({
           ),
         }
       : {}),
+    planningControlPlane: supplyPlanningControlPlane,
     repository: modelRepository,
+    supplyRegistry: supplyControlRepository,
   },
 });
 const modelSupply = modelSupplyRuntime.application;
 const modelControlPlane = modelSupplyRuntime.controlPlane;
 {
-  const view = capabilityHotAssembly.report('job-worker');
+  const view = await capabilityHotAssembly.reportProcessView('job-worker');
+  const defaultSupplyPool = await supplyPoolStore.get('pool-shared-default');
   console.log(
-    `[z2-wiring] job-worker capability revision=${view.effectiveCapabilityRevisionId ?? 'none'} catalog=${view.effectiveCatalogRevisionId ?? 'none'} supplyPool=${supplyPoolRegistry.get('pool-shared-default')?.id ?? 'missing'}`,
+    `[z2-wiring] job-worker capability revision=${view.effectiveCapabilityRevisionId ?? 'none'} catalog=${view.effectiveCatalogRevisionId ?? 'none'} supplyPool=${defaultSupplyPool?.id ?? 'missing'}`,
   );
 }
 const integrationService = new IntegrationApplicationService({
   douyin: new RecordedDouyinAdapter(),
   feishu: feishuMcpAdapterFromEnv(process.env),
+  providerConnectivity,
   repository: integrationRepository,
   secrets: integrationSecrets,
 });

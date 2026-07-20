@@ -34,11 +34,14 @@ import {
   type ModelOperation,
   type ModelDeployment,
   type ModelSupplyApplicationService,
+  type ModelSupplyPlanningControlPlanePort,
+  type ModelSupplyPlanningControlPlaneState,
   type ModelSupplyRouteSimulationInput,
   type ModelSupplyResult,
   type RouteSnapshot,
   type QualityEvent,
   type RequestedSelection,
+  type RouteCandidateCostEstimate,
   type RouteSimulationFailureScenario,
   type VideoExecutionContract,
   type VideoWorkflowShotInput,
@@ -69,6 +72,21 @@ import {
   type BeautyQualityEvaluationRun,
   type RevisionRollbackAudit,
 } from './quality-evaluation.js';
+import {
+  collectHealthExcludedDeploymentIds,
+  explainPlanDecision,
+  planModelSupplyCandidatesWithDataPolicy,
+} from '../supply-registry/supply-control-plane.js';
+import {
+  expandCatalogRevisionPayload,
+  type ExpandedSupplyRegistrySnapshot,
+} from '../supply-registry/expand.js';
+import {
+  normalizeSupplyRunQuery,
+  type AdminSupplyControlPlane,
+  type AdminSupplyGovernedActionDispatchRequest,
+  type AdminSupplyGovernedActionRequest,
+} from '../supply-registry/admin-control-plane.js';
 
 const recordedModels = createDefaultCatalogModels();
 const recordedDeploymentIds = createDefaultDeployments().map((deployment) => deployment.id);
@@ -112,6 +130,52 @@ export interface CanvasTextGenerationOutboxRecord {
   submission: Parameters<ModelSupplyApplicationService['submit']>[0];
   workspaceId: string;
 }
+
+export type ModelSupplyJobListStatus =
+  | 'succeeded'
+  | 'failed'
+  | 'accepted'
+  | 'acceptance_unknown'
+  | 'rejected_before_accept';
+
+export type ModelSupplyJobListModality = 'llm' | 'image' | 'video' | 'audio';
+
+export type ModelSupplyJobListSort =
+  | 'startedAt'
+  | 'latencyMs'
+  | 'status'
+  | 'operation'
+  | 'costMicros';
+
+export interface ModelSupplyJobListQuery {
+  page: number;
+  pageSize: number;
+  sort: ModelSupplyJobListSort;
+  dir: 'asc' | 'desc';
+  operation?: ModelOperation;
+  status?: ModelSupplyJobListStatus;
+  modality?: ModelSupplyJobListModality;
+  catalogModelId?: string;
+  deploymentId?: string;
+  deploymentIds?: string[];
+  dataClass?: DataClass | 'public';
+  q?: string;
+  taskId?: string;
+}
+
+export interface ModelSupplyJobListPage {
+  items: ModelSupplyResult[];
+  total: number;
+  page: number;
+  pageSize: number;
+  facets: {
+    operations: ModelOperation[];
+    statuses: ModelSupplyJobListStatus[];
+    modalities: ModelSupplyJobListModality[];
+    dataClasses: Array<DataClass | 'public'>;
+  };
+}
+
 export interface ModelSupplyControlPlaneRepository {
   saveCatalogRevision(workspaceId: string, revision: CatalogRevision): Promise<void>;
   listCatalogRevisions(workspaceId: string): Promise<CatalogRevision[]>;
@@ -170,6 +234,10 @@ export interface ModelSupplyControlPlaneRepository {
   saveResult(workspaceId: string, result: ModelSupplyResult): Promise<void>;
   getJob(workspaceId: string, jobId: string): Promise<ModelSupplyResult | null>;
   listJobs(workspaceId: string): Promise<ModelSupplyResult[]>;
+  listJobs(
+    workspaceId: string,
+    query: ModelSupplyJobListQuery,
+  ): Promise<ModelSupplyJobListPage>;
   saveCanvasGenerationQuote(
     workspaceId: string,
     quote: PersistedCanvasGenerationQuote,
@@ -256,6 +324,165 @@ export interface ActivationProbeExecutionPort {
       status: 'observed';
     };
   }>;
+}
+
+export type {
+  ModelSupplyPlanningControlPlanePort,
+  ModelSupplyPlanningControlPlaneState,
+} from './index.js';
+
+export interface ModelSupplyRegistryPersistencePort {
+  getCurrentRegistryRevision(
+    workspaceId: string,
+  ): Promise<ExpandedSupplyRegistrySnapshot | null>;
+  setCurrentRegistryRevision(
+    workspaceId: string,
+    snapshot: ExpandedSupplyRegistrySnapshot,
+    expectedHeadRevisionId: string | null,
+  ): Promise<void>;
+}
+
+function jobListStatus(result: ModelSupplyResult): ModelSupplyJobListStatus {
+  if (result.status === 'completed') return 'succeeded';
+  if (result.status === 'failed') return 'failed';
+  if (result.attempt.acceptance === 'accepted') return 'accepted';
+  if (result.attempt.acceptance === 'acceptance_unknown') {
+    return 'acceptance_unknown';
+  }
+  return 'rejected_before_accept';
+}
+
+function jobListModality(
+  operation: ModelOperation,
+): ModelSupplyJobListModality {
+  if (operation.startsWith('image.')) return 'image';
+  if (operation.startsWith('video.')) return 'video';
+  if (operation.startsWith('audio.')) return 'audio';
+  return 'llm';
+}
+
+function jobOperation(result: ModelSupplyResult): ModelOperation {
+  return result.operation ?? 'copy.generate';
+}
+
+function jobMatchesQuery(
+  result: ModelSupplyResult,
+  query: ModelSupplyJobListQuery,
+): boolean {
+  const operation = jobOperation(result);
+  if (query.operation && operation !== query.operation) return false;
+  if (query.status && jobListStatus(result) !== query.status) return false;
+  if (query.modality && jobListModality(operation) !== query.modality) {
+    return false;
+  }
+  if (
+    query.catalogModelId &&
+    result.attempt.catalogModelId !== query.catalogModelId
+  ) {
+    return false;
+  }
+  if (query.deploymentId && result.attempt.deploymentId !== query.deploymentId) {
+    return false;
+  }
+  if (
+    query.deploymentIds &&
+    !query.deploymentIds.includes(result.attempt.deploymentId)
+  ) {
+    return false;
+  }
+  if (query.dataClass) {
+    if (query.dataClass === 'public' && result.snapshot.dataClass.length > 0) {
+      return false;
+    }
+    if (
+      query.dataClass !== 'public' &&
+      !result.snapshot.dataClass.includes(query.dataClass)
+    ) {
+      return false;
+    }
+  }
+  if (query.taskId && result.jobId !== query.taskId) return false;
+  if (query.q) {
+    const haystack = [
+      result.jobId,
+      result.attempt.id,
+      result.attempt.catalogModelId,
+      result.attempt.deploymentId,
+      result.failureCode,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (!haystack.includes(query.q.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function compareJobListResults(
+  left: ModelSupplyResult,
+  right: ModelSupplyResult,
+  query: Pick<ModelSupplyJobListQuery, 'sort' | 'dir'>,
+): number {
+  const value = (result: ModelSupplyResult): string | number | undefined => {
+    switch (query.sort) {
+      case 'startedAt':
+        return result.attempt.createdAt;
+      case 'status':
+        return jobListStatus(result);
+      case 'operation':
+        return jobOperation(result);
+      case 'costMicros':
+        return result.providerCost.amount * 1_000_000;
+      case 'latencyMs':
+        return result.latencyMs;
+    }
+  };
+  const leftValue = value(left);
+  const rightValue = value(right);
+  if (leftValue === undefined && rightValue === undefined) {
+    return left.jobId.localeCompare(right.jobId);
+  }
+  if (leftValue === undefined) return 1;
+  if (rightValue === undefined) return -1;
+  const compared =
+    typeof leftValue === 'number' && typeof rightValue === 'number'
+      ? leftValue - rightValue
+      : String(leftValue).localeCompare(String(rightValue));
+  if (compared !== 0) return query.dir === 'asc' ? compared : -compared;
+  return left.jobId.localeCompare(right.jobId);
+}
+
+function jobListPage(
+  source: ModelSupplyResult[],
+  query: ModelSupplyJobListQuery,
+): ModelSupplyJobListPage {
+  const filtered = source.filter((result) => jobMatchesQuery(result, query));
+  filtered.sort((left, right) => compareJobListResults(left, right, query));
+  const start = (query.page - 1) * query.pageSize;
+  const uniqueSorted = <T extends string>(values: T[]) =>
+    [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  return {
+    items: filtered
+      .slice(start, start + query.pageSize)
+      .map((result) => structuredClone(result)),
+    total: filtered.length,
+    page: query.page,
+    pageSize: query.pageSize,
+    facets: {
+      operations: uniqueSorted(source.map(jobOperation)),
+      statuses: uniqueSorted(source.map(jobListStatus)),
+      modalities: uniqueSorted(
+        source.map((result) => jobListModality(jobOperation(result))),
+      ),
+      dataClasses: uniqueSorted(
+        source.flatMap((result) =>
+          result.snapshot.dataClass.length > 0
+            ? result.snapshot.dataClass
+            : (['public'] as const),
+        ),
+      ),
+    },
+  };
 }
 
 interface ActivationEvidenceConfigPort {
@@ -451,10 +678,18 @@ export class MemoryModelSupplyControlPlaneRepository
     return result ? structuredClone(result) : null;
   }
 
-  async listJobs(workspaceId: string) {
-    return [...(this.jobs.get(workspaceId)?.values() ?? [])].map((result) =>
-      structuredClone(result),
-    );
+  async listJobs(workspaceId: string): Promise<ModelSupplyResult[]>;
+  async listJobs(
+    workspaceId: string,
+    query: ModelSupplyJobListQuery,
+  ): Promise<ModelSupplyJobListPage>;
+  async listJobs(
+    workspaceId: string,
+    query?: ModelSupplyJobListQuery,
+  ): Promise<ModelSupplyResult[] | ModelSupplyJobListPage> {
+    const source = [...(this.jobs.get(workspaceId)?.values() ?? [])];
+    if (query) return jobListPage(source, query);
+    return source.map((result) => structuredClone(result));
   }
 
   async saveCanvasGenerationQuote(
@@ -652,6 +887,10 @@ export interface CatalogModelView {
     revision: string;
   };
   activationEvidence: ActivationEvidence;
+  channelReadiness:
+    | 'multi_channel_ready'
+    | 'single_channel'
+    | 'not_verified';
   dataClasses: {
     allowed: Array<'public' | 'contains_face' | 'pii' | 'medical'>;
     denied: Array<'public' | 'contains_face' | 'pii' | 'medical'>;
@@ -765,6 +1004,39 @@ function toCatalogModelView(
     .sort((left, right) => deploymentRank(right) - deploymentRank(left));
   const deployment = candidates[0];
   const rank = deployment ? deploymentRank(deployment) : 0;
+  const liveCandidates = candidates.filter(
+    (candidate) =>
+      candidate.status === 'active' &&
+      candidate.activationEvidence.status === 'live_verified',
+  );
+  const identityVerified = liveCandidates.filter(
+    (candidate) =>
+      Boolean(candidate.accountIdentity?.trim()) &&
+      Boolean(candidate.endpointFingerprint?.trim()),
+  );
+  const accountIdentities = new Set(
+    identityVerified.map((candidate) => candidate.accountIdentity!.trim()),
+  );
+  const endpointFingerprints = new Set(
+    identityVerified.map((candidate) => candidate.endpointFingerprint!.trim()),
+  );
+  const hasOfficialDirect = identityVerified.some(
+    (candidate) => candidate.channel === 'direct',
+  );
+  const hasUpstreamReseller = identityVerified.some(
+    (candidate) => candidate.channel === 'managed',
+  );
+  const multiChannelReady =
+    accountIdentities.size >= 2 &&
+    endpointFingerprints.size >= 2 &&
+    hasOfficialDirect &&
+    hasUpstreamReseller;
+  const channelReadiness =
+    multiChannelReady
+      ? ('multi_channel_ready' as const)
+      : liveCandidates.length > 0
+        ? ('single_channel' as const)
+        : ('not_verified' as const);
   const allowed = new Set(deployment?.allowedDataClasses ?? ['public']);
   return {
     id: model.id,
@@ -797,6 +1069,7 @@ function toCatalogModelView(
     activationEvidence: structuredClone(
       deployment?.activationEvidence ?? { status: 'documented' },
     ),
+    channelReadiness,
     dataClasses: {
       allowed: allDataClasses.filter((value) => allowed.has(value)),
       denied: allDataClasses.filter((value) => !allowed.has(value)),
@@ -1133,6 +1406,28 @@ function publicCanvasGenerationInputs(value: unknown, bindingsValue: unknown) {
   };
 }
 
+function sumSimulationRouteCosts(
+  costs: RouteCandidateCostEstimate[],
+): RouteCandidateCostEstimate | null {
+  const first = costs[0];
+  if (!first) return null;
+  if (
+    costs.some(
+      (cost) => cost.currency !== first.currency || cost.unit !== first.unit,
+    )
+  ) {
+    return null;
+  }
+  return {
+    amountMicros: costs.reduce((total, cost) => total + cost.amountMicros, 0),
+    currency: first.currency,
+    source: costs.some((cost) => cost.source === 'recorded_estimate')
+      ? 'recorded_estimate'
+      : 'catalog',
+    unit: first.unit,
+  };
+}
+
 export class ModelSupplyControlPlaneService {
   private readonly application: ModelSupplyApplicationService;
   private readonly repository: ModelSupplyControlPlaneRepository;
@@ -1145,6 +1440,8 @@ export class ModelSupplyControlPlaneService {
   private readonly configurationRevisions: Readonly<Record<string, string>>;
   private readonly clock: () => Date;
   private readonly canvasProjects?: CanvasGenerationProjectAuthority;
+  private readonly planningControlPlane?: ModelSupplyPlanningControlPlanePort;
+  private readonly supplyRegistry?: ModelSupplyRegistryPersistencePort;
 
   constructor(options: {
     application: ModelSupplyApplicationService;
@@ -1157,6 +1454,8 @@ export class ModelSupplyControlPlaneService {
     activationProbeLiveDeploymentIds?: readonly string[];
     configurationRevisions?: Readonly<Record<string, string>>;
     canvasProjects?: CanvasGenerationProjectAuthority;
+    planningControlPlane?: ModelSupplyPlanningControlPlanePort;
+    supplyRegistry?: ModelSupplyRegistryPersistencePort;
     clock?: () => Date;
   }) {
     this.application = options.application;
@@ -1173,6 +1472,8 @@ export class ModelSupplyControlPlaneService {
     );
     this.configurationRevisions = options.configurationRevisions ?? {};
     this.canvasProjects = options.canvasProjects;
+    this.planningControlPlane = options.planningControlPlane;
+    this.supplyRegistry = options.supplyRegistry;
     this.clock = options.clock ?? (() => new Date());
   }
 
@@ -1432,20 +1733,43 @@ export class ModelSupplyControlPlaneService {
   }
 
   async initialize(workspaceId: string) {
-    const source = catalogSource(
-      await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
-      this.fallbackCatalog,
-    );
-    const deployments = this.application.constrainRuntimeDeployments(
-      source.payload.deployments,
+    const published =
+      await this.repository.getCurrentPublishedCatalogRevision(workspaceId);
+    const source = catalogSource(published, this.fallbackCatalog);
+    await this.syncSupplyRegistry(
+      workspaceId,
+      source,
+      published?.number ?? 0,
     );
     this.application.applyCatalogRevision(
       workspaceId,
       source.revisionId,
       source.payload.models,
-      deployments,
+      source.payload.deployments,
     );
     return source.revisionId;
+  }
+
+  private async syncSupplyRegistry(
+    workspaceId: string,
+    source: {
+      revisionId: string;
+      payload: CatalogRevisionPayload;
+    },
+    catalogRevisionNumber: number,
+  ): Promise<void> {
+    if (!this.supplyRegistry) return;
+    const current =
+      await this.supplyRegistry.getCurrentRegistryRevision(workspaceId);
+    if (current?.catalogRevisionId === source.revisionId) return;
+    await this.supplyRegistry.setCurrentRegistryRevision(
+      workspaceId,
+      expandCatalogRevisionPayload(source.payload, {
+        catalogRevisionId: source.revisionId,
+        catalogRevisionNumber,
+      }),
+      current?.catalogRevisionId ?? null,
+    );
   }
 
   async getCatalog(workspaceId: string, operation: ModelOperation): Promise<CatalogView> {
@@ -1453,9 +1777,10 @@ export class ModelSupplyControlPlaneService {
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
       this.fallbackCatalog,
     );
-    const deployments = this.application.constrainRuntimeDeployments(
-      source.payload.deployments,
-    );
+    const deployments =
+      await this.application.constrainRuntimeDeploymentsForRequest(
+        source.payload.deployments,
+      );
     const asOf = new Date().toISOString();
     const since = new Date(
       Date.parse(asOf) - DURATION_ESTIMATE_WINDOW_DAYS * 24 * 60 * 60 * 1_000
@@ -1504,9 +1829,10 @@ export class ModelSupplyControlPlaneService {
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
       this.fallbackCatalog,
     );
-    const deployments = this.application.constrainRuntimeDeployments(
-      source.payload.deployments,
-    );
+    const deployments =
+      await this.application.constrainRuntimeDeploymentsForRequest(
+        source.payload.deployments,
+      );
     const operations = MODEL_OPERATIONS.filter(
       (candidate) =>
         candidate === 'text.respond' ||
@@ -1646,7 +1972,7 @@ export class ModelSupplyControlPlaneService {
       priceRevision:
         deployment.priceRevision ??
         `${deployment.catalogModelId}:price-unavailable`,
-      routeSnapshot: this.application.freezeFixedRoute({
+      routeSnapshot: await this.application.freezeFixedRouteForExecution({
         catalogModelId: deployment.catalogModelId,
         dataClass: request.dataClass,
         deploymentId: deployment.id,
@@ -1814,9 +2140,11 @@ export class ModelSupplyControlPlaneService {
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
       this.fallbackCatalog,
     );
-    const deployment = this.application
-      .constrainRuntimeDeployments(source.payload.deployments)
-      .find((candidate) =>
+    const deployment = (
+      await this.application.constrainRuntimeDeploymentsForRequest(
+        source.payload.deployments,
+      )
+    ).find((candidate) =>
         (request.modelId === undefined ||
           candidate.catalogModelId === request.modelId) &&
         candidate.status === 'active' &&
@@ -1951,10 +2279,199 @@ export class ModelSupplyControlPlaneService {
     input: Omit<ModelSupplyRouteSimulationInput, 'workspaceId'>,
   ) {
     await this.initialize(context.workspaceId);
-    return this.application.simulateRoute({
+    const legacy = this.application.simulateRoute({
       ...structuredClone(input),
       workspaceId: context.workspaceId,
     });
+    const source = catalogSource(
+      await this.repository.getCurrentPublishedCatalogRevision(
+        context.workspaceId,
+      ),
+      this.fallbackCatalog,
+    );
+    const deployments =
+      await this.application.constrainRuntimeDeploymentsForRequest(
+        source.payload.deployments,
+      );
+    const qualityTier =
+      input.selection.mode === 'auto'
+        ? (input.selection.profile ?? 'quality')
+        : ('quality' as const);
+    const planningState =
+      (await this.planningControlPlane?.readPlanningState({
+        workspaceId: context.workspaceId,
+        catalogRevisionId: source.revisionId,
+        operation: input.operation,
+        qualityTier,
+        deploymentIds: deployments.map((deployment) => deployment.id),
+        ...(input.routePolicyRevisionId
+          ? { routePolicyRevisionId: input.routePolicyRevisionId }
+          : {}),
+      })) ?? {};
+    if (
+      input.routePolicyRevisionId &&
+      planningState.routePolicyRevisionId !== input.routePolicyRevisionId
+    ) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `RoutePolicy revision ${input.routePolicyRevisionId} was not found for ${input.operation}/${qualityTier}.`,
+      );
+    }
+    const healthExcludedDeploymentIds = planningState.healthOverlay
+      ? await collectHealthExcludedDeploymentIds({
+          overlay: planningState.healthOverlay,
+          deploymentIds: deployments.map((deployment) => deployment.id),
+        })
+      : [];
+    const planResult = planModelSupplyCandidatesWithDataPolicy({
+      catalog: {
+        modelById: new Map(
+          source.payload.models.map((model) => [model.id, model] as const),
+        ),
+        deployments,
+      },
+      operation: input.operation,
+      selection: input.selection,
+      dataClass: input.dataClass,
+      unavailableDeploymentIds: input.unavailableDeploymentIds,
+      healthExcludedDeploymentIds,
+      routePolicy: planningState.routePolicy,
+      dataPolicyByDeploymentId: planningState.dataPolicyByDeploymentId,
+      rankingInputsByDeploymentId:
+        planningState.rankingInputsByDeploymentId,
+    });
+    const evaluationByDeploymentId = new Map(
+      planResult.plan.candidateEvaluations.map((evaluation) => [
+        evaluation.deploymentId,
+        evaluation,
+      ]),
+    );
+    const rankedCandidates = planResult.plan.candidates.map(
+      ({ deployment }, index) => ({
+        ...structuredClone(evaluationByDeploymentId.get(deployment.id)!),
+        rank: index + 1,
+      }),
+    );
+    const primary = rankedCandidates[0];
+    const fallback = rankedCandidates[1];
+    const routePolicyMaxAttempts =
+      planningState.routePolicy?.maxAttempts ?? legacy.expectedOutcome.attemptLimit;
+    const fallbackAuthorized =
+      input.selection.mode === 'auto' &&
+      (input.selection.fallbackConsent ?? true) &&
+      (planningState.routePolicy?.fallbackAuthorized ?? true) &&
+      routePolicyMaxAttempts > 1;
+    let expectedOutcome = legacy.expectedOutcome;
+    let estimatedCosts = primary ? [primary.costEstimate] : [];
+    if (!primary) {
+      expectedOutcome = {
+        action: 'awaiting_selection',
+        attemptLimit: 2,
+        expectedAttempts: 0,
+        reason: 'no_eligible_candidate',
+      };
+      estimatedCosts = [];
+    } else if (input.failureScenario === 'success') {
+      expectedOutcome = {
+        action: 'complete',
+        attemptLimit: 2,
+        expectedAttempts: 1,
+        primaryDeploymentId: primary.deploymentId,
+        reason: 'provider_completed',
+      };
+    } else if (input.failureScenario === 'accepted_failure') {
+      expectedOutcome = {
+        action: 'recover_without_resubmit',
+        attemptLimit: 2,
+        expectedAttempts: 1,
+        primaryDeploymentId: primary.deploymentId,
+        reason: 'provider_already_accepted',
+      };
+    } else if (input.failureScenario === 'acceptance_unknown') {
+      expectedOutcome = {
+        action: 'recover_without_resubmit',
+        attemptLimit: 2,
+        expectedAttempts: 1,
+        primaryDeploymentId: primary.deploymentId,
+        reason: 'provider_acceptance_unknown',
+      };
+    } else if (fallbackAuthorized && fallback) {
+      estimatedCosts = [primary.costEstimate, fallback.costEstimate];
+      expectedOutcome = {
+        action: 'fallback',
+        attemptLimit: 2,
+        expectedAttempts: 2,
+        primaryDeploymentId: primary.deploymentId,
+        fallbackDeploymentId: fallback.deploymentId,
+        reason: 'safe_auto_fallback',
+      };
+    } else {
+      expectedOutcome = {
+        action: 'stop',
+        attemptLimit: 2,
+        expectedAttempts: 1,
+        primaryDeploymentId: primary.deploymentId,
+        reason: fallbackAuthorized
+          ? 'no_safe_fallback_candidate'
+          : 'fallback_not_authorized',
+      };
+    }
+    const acceptanceBranch = {
+      acceptance:
+        input.failureScenario === 'rejected_before_accept'
+          ? ('rejected_before_accept' as const)
+          : input.failureScenario === 'accepted_failure'
+            ? ('accepted' as const)
+            : input.failureScenario === 'acceptance_unknown'
+              ? ('acceptance_unknown' as const)
+              : ('not_attempted' as const),
+      decision:
+        expectedOutcome.action === 'fallback'
+          ? ('safe_auto_fallback' as const)
+          : expectedOutcome.action === 'recover_without_resubmit'
+            ? ('query_reconcile_manual' as const)
+            : expectedOutcome.action,
+      reason: expectedOutcome.reason,
+      ...(expectedOutcome.primaryDeploymentId
+        ? { primaryDeploymentId: expectedOutcome.primaryDeploymentId }
+        : {}),
+      ...(expectedOutcome.fallbackDeploymentId
+        ? { fallbackDeploymentId: expectedOutcome.fallbackDeploymentId }
+        : {}),
+    };
+    const decisionExplanation = explainPlanDecision({
+      surface: 'simulator',
+      planResult,
+      requestedDataClasses: input.dataClass,
+      liveExclusions: healthExcludedDeploymentIds.map((deploymentId) => ({
+        deploymentId,
+        reasons: ['health_overlay_blocking'],
+      })),
+      acceptanceBranch,
+      costEvidenceSourceByDeploymentId: new Map(
+        [...(planningState.rankingInputsByDeploymentId?.entries() ?? [])].map(
+          ([deploymentId, ranking]) => [
+            deploymentId,
+            ranking.cost.source === 'recorded_placeholder'
+              ? 'recorded_estimate'
+              : ranking.cost.source,
+          ],
+        ),
+      ),
+    });
+    return {
+      ...legacy,
+      candidateEvaluations: structuredClone(
+        planResult.plan.candidateEvaluations,
+      ),
+      rankedCandidates,
+      expectedOutcome,
+      estimatedMaximumCost: sumSimulationRouteCosts(estimatedCosts),
+      routePolicyRevisionId:
+        planningState.routePolicyRevisionId ?? null,
+      routePolicyMaxAttempts,
+      decisionExplanation,
+    };
   }
 
   async setWorkspaceDefault(
@@ -2205,13 +2722,18 @@ export class ModelSupplyControlPlaneService {
   ) {
     const registry = await this.registry(workspaceId);
     const revision = registry.publish(revisionId, reason, audit);
-    this.application.assertRuntimeCatalogCompatible(
+    await this.application.assertRuntimeCatalogCompatibleForRequest(
       revision.payload.deployments,
     );
     await this.repository.setCurrentPublishedCatalogRevision(
       workspaceId,
       revision,
       expectedHeadRevisionId,
+    );
+    await this.syncSupplyRegistry(
+      workspaceId,
+      { revisionId: revision.id, payload: revision.payload },
+      revision.number,
     );
     this.application.applyCatalogRevision(
       workspaceId,
@@ -2435,7 +2957,9 @@ export class ModelSupplyControlPlaneService {
       );
     }
     if (target) {
-      this.application.assertRuntimeCatalogCompatible(target.payload.deployments);
+      await this.application.assertRuntimeCatalogCompatibleForRequest(
+        target.payload.deployments,
+      );
     }
     const audit: RevisionRollbackAudit = {
       id: randomUUID(),
@@ -2991,6 +3515,8 @@ function publicCatalogRevision(revision: CatalogRevision) {
 }
 
 const adminActions = new Set([
+  'admin_supply_action',
+  'admin_supply_reconcile_pending',
   'activation_probe_run',
   'catalog_create_draft',
   'catalog_create_safe_draft',
@@ -3005,6 +3531,9 @@ const adminActions = new Set([
 ]);
 
 const adminQueries = new Set([
+  'admin_supply_action_preview',
+  'admin_supply_control',
+  'admin_supply_pending_actions',
   'activation_probe_runs',
   'activation_status',
   'admin_catalog_control',
@@ -3550,16 +4079,33 @@ function productUsageQuantity(
 export class ModelSupplyFoundationModule implements P1OperationModule {
   readonly name = 'model-supply';
   private readonly adminActorIds: Set<string>;
+  private readonly adminSupply?: Pick<
+    AdminSupplyControlPlane,
+    | 'getSnapshot'
+    | 'previewAction'
+    | 'dispatchAction'
+    | 'listPendingActions'
+    | 'reconcilePendingAction'
+  >;
   private readonly composedVideo?: DurableComposedVideoApplicationService;
 
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
     options: {
       adminActorIds?: readonly string[];
+      adminSupply?: Pick<
+        AdminSupplyControlPlane,
+        | 'getSnapshot'
+        | 'previewAction'
+        | 'dispatchAction'
+        | 'listPendingActions'
+        | 'reconcilePendingAction'
+      >;
       composedVideo?: DurableComposedVideoApplicationService;
     } = {},
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
+    this.adminSupply = options.adminSupply;
     this.composedVideo = options.composedVideo;
   }
 
@@ -3579,6 +4125,19 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
     }
 
     switch (action) {
+      case 'admin_supply_action':
+        await this.controlPlane.initialize(args.context.workspaceId);
+        return this.requireAdminSupply().dispatchAction({
+          ...(structuredClone(payload) as unknown as AdminSupplyGovernedActionDispatchRequest),
+          context: structuredClone(args.context),
+          idempotencyKey: args.idempotencyKey,
+        });
+      case 'admin_supply_reconcile_pending':
+        await this.controlPlane.initialize(args.context.workspaceId);
+        return this.requireAdminSupply().reconcilePendingAction(args.context, {
+          idempotencyKey: requiredString(payload, 'idempotencyKey'),
+          payloadHash: requiredString(payload, 'payloadHash'),
+        });
       case 'activation_probe_run':
         return this.controlPlane.runActivationProbe(
           args.context,
@@ -3839,6 +4398,21 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
       );
     }
     switch (action) {
+      case 'admin_supply_control':
+        await this.controlPlane.initialize(args.context.workspaceId);
+        return this.requireAdminSupply().getSnapshot(
+          args.context,
+          normalizeSupplyRunQuery(payload.runQuery),
+        );
+      case 'admin_supply_pending_actions':
+        await this.controlPlane.initialize(args.context.workspaceId);
+        return this.requireAdminSupply().listPendingActions(args.context);
+      case 'admin_supply_action_preview':
+        await this.controlPlane.initialize(args.context.workspaceId);
+        return this.requireAdminSupply().previewAction({
+          ...(structuredClone(payload) as unknown as AdminSupplyGovernedActionRequest),
+          context: structuredClone(args.context),
+        });
       case 'activation_probe_runs':
         return this.controlPlane.listActivationProbeRuns(
           args.context.workspaceId,
@@ -3944,5 +4518,15 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
       );
     }
     return this.composedVideo;
+  }
+
+  private requireAdminSupply() {
+    if (!this.adminSupply) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Admin supply control plane is not configured.',
+      );
+    }
+    return this.adminSupply;
   }
 }

@@ -333,7 +333,13 @@ export function AsyncTaskCenter({
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
   });
-  const pendingActions = pendingActionsQuery.data ?? [];
+  const pendingActions = (pendingActionsQuery.data ?? []).flatMap((item) =>
+    'statusKind' in item
+      ? item.pendingAction
+        ? [item.pendingAction]
+        : []
+      : [item]
+  );
   const tasks = useMemo(
     () =>
       [

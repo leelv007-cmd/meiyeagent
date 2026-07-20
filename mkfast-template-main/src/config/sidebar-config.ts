@@ -3,6 +3,7 @@ import {
   admin_navigation_capabilities,
   admin_navigation_cloudflare,
   admin_navigation_integrations,
+  admin_navigation_model_catalog,
   admin_navigation_models,
   admin_navigation_plans,
   admin_navigation_redemptions,
@@ -93,6 +94,14 @@ export const SETTINGS_SIDEBAR_ITEMS = [
 
 export const ADMIN_SIDEBAR_ITEMS = [
   {
+    id: 'supply',
+    get label() {
+      return admin_navigation_models();
+    },
+    href: Routes.AdminSupply,
+    icon: IconCpu,
+  },
+  {
     id: 'capabilities',
     get label() {
       return admin_navigation_capabilities();
@@ -103,7 +112,7 @@ export const ADMIN_SIDEBAR_ITEMS = [
   {
     id: 'models',
     get label() {
-      return admin_navigation_models();
+      return admin_navigation_model_catalog();
     },
     href: Routes.AdminModels,
     icon: IconCpu,

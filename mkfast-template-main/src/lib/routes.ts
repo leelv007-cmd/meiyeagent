@@ -50,6 +50,7 @@ export const Routes = {
   Admin: '/admin',
   AdminCapabilities: '/admin/capabilities',
   AdminCloudflare: '/admin/cloudflare',
+  AdminSupply: '/admin/supply',
   AdminModels: '/admin/models',
   AdminTemplates: '/admin/templates',
   AdminIntegrations: '/admin/integrations',

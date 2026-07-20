@@ -7,6 +7,7 @@ import {
   type AudioSpeechContract,
 } from '../../pro-studio-runtime/audio-contracts.js';
 import type {
+  AdapterRuntimeConfig,
   MediaProviderEffectRequest,
   MediaProviderLifecyclePort,
   ProviderExecutionPort,
@@ -22,7 +23,29 @@ export interface VolcengineTtsSynthesisPort {
   synthesize(
     request: VolcengineTtsSynthesisRequest,
   ): Promise<VolcengineTtsSynthesisResult>;
+  withCredential?(secret: string): VolcengineTtsSynthesisPort;
+  withRuntimeBinding?(input: {
+    secret: string;
+    endpoint?: string;
+    model?: string;
+    resourceId?: 'seed-tts-2.0' | 'seed-icl-2.0';
+    defaultSpeaker?: string;
+  }): VolcengineTtsSynthesisPort;
 }
+
+type PublishedTtsRuntime = {
+  config: AdapterRuntimeConfig & {
+    approvedPricePerTextWordCny: number;
+    defaultSpeaker: string;
+    endpoint: string;
+    priceRevision: string;
+    providerModel: string;
+    resourceId: 'seed-tts-2.0' | 'seed-icl-2.0';
+  };
+  credential: NonNullable<
+    NonNullable<ProviderExecutionRequest['runtimeBinding']>['credential']
+  >;
+};
 
 export interface VolcengineTtsLifecycleOptions {
   approvedPricePerTextWordCny: number;
@@ -218,10 +241,11 @@ export class VolcengineTtsLifecyclePort
 
   async submit(request: MediaProviderEffectRequest) {
     const contract = this.contract(request);
+    const runtime = this.publishedRuntime(request);
     const taskRef = this.taskRef(request);
     const existing = await this.taskStore.get(taskRef);
     if (existing) return receipt(await this.settleReceived(existing, contract));
-    const preflightFailure = this.preflightFailure(request, contract);
+    const preflightFailure = this.preflightFailure(request, contract, runtime);
     if (preflightFailure) return preflightFailure;
 
     const unknown: VolcengineTtsStoredTask = {
@@ -242,7 +266,20 @@ export class VolcengineTtsLifecyclePort
     }
     let result: Awaited<ReturnType<VolcengineTtsSynthesisPort['synthesize']>>;
     try {
-      result = await this.options.synthesis.synthesize({
+      const synthesis = runtime
+        ? this.options.synthesis.withRuntimeBinding!({
+            secret: runtime.credential.secret,
+            endpoint: runtime.config.endpoint,
+            model: runtime.config.providerModel,
+            resourceId: runtime.config.resourceId,
+            defaultSpeaker: runtime.config.defaultSpeaker,
+          })
+        : request.runtimeBinding?.credential
+          ? (this.options.synthesis.withCredential?.(
+              request.runtimeBinding.credential.secret,
+            ) ?? this.options.synthesis)
+          : this.options.synthesis;
+      result = await synthesis.synthesize({
         format: contract.format,
         language: contract.language,
         speaker: contract.voice === 'default' ? undefined : contract.voice,
@@ -265,7 +302,8 @@ export class VolcengineTtsLifecyclePort
         ? emptyCost()
         : observedCost(
             result.billedTextWords!,
-            this.options.approvedPricePerTextWordCny,
+            runtime?.config.approvedPricePerTextWordCny ??
+              this.options.approvedPricePerTextWordCny,
           ),
       credentialVersion: deploymentCredentialVersion(request),
       deploymentId: request.deployment.id,
@@ -456,6 +494,7 @@ export class VolcengineTtsLifecyclePort
   private preflightFailure(
     request: MediaProviderEffectRequest,
     contract: AudioSpeechContract,
+    runtime: PublishedTtsRuntime | undefined,
   ) {
     if (contract.tone !== 'natural') {
       return rejectedReceipt(
@@ -464,10 +503,16 @@ export class VolcengineTtsLifecyclePort
       );
     }
     const price = request.deployment.unitPrice;
+    const approvedPrice =
+      runtime?.config.approvedPricePerTextWordCny ??
+      this.options.approvedPricePerTextWordCny;
+    const priceRevision =
+      runtime?.config.priceRevision ?? this.options.priceRevision;
     const expectedAmountMicros = Math.round(
-      this.options.approvedPricePerTextWordCny * 1_000_000,
+      approvedPrice * 1_000_000,
     );
     if (
+      !runtime &&
       request.deployment.credentialVersion !== this.options.credentialVersion
     ) {
       return rejectedReceipt(
@@ -476,7 +521,7 @@ export class VolcengineTtsLifecyclePort
       );
     }
     if (
-      request.deployment.priceRevision !== this.options.priceRevision ||
+      request.deployment.priceRevision !== priceRevision ||
       price?.amountMicros !== expectedAmountMicros ||
       price.currency !== 'CNY' ||
       price.unit !== 'text_word'
@@ -488,6 +533,85 @@ export class VolcengineTtsLifecyclePort
     }
     return undefined;
   }
+
+  private publishedRuntime(
+    request: MediaProviderEffectRequest,
+  ): PublishedTtsRuntime | undefined {
+    const binding = request.runtimeBinding;
+    if (!binding) return undefined;
+    if (binding.adapterKey !== 'volcengine-tts') {
+      throw new Error(
+        `Published adapter binding ${binding.adapterKey} cannot execute through volcengine-tts.`,
+      );
+    }
+    if (!binding.adapterBindingRevision) return undefined;
+    const config = binding.adapterConfig;
+    if (!config) {
+      throw new Error(
+        `Published adapter binding ${binding.adapterBindingRevision} has no runtime config.`,
+      );
+    }
+    const credential = binding.credential;
+    if (!credential?.secret.trim()) {
+      throw new Error(
+        'Published volcengine-tts binding has no runtime credential.',
+      );
+    }
+    if (!this.options.synthesis.withRuntimeBinding) {
+      throw new Error(
+        'Published volcengine-tts binding requires a runtime-configurable synthesis adapter.',
+      );
+    }
+    const endpoint = requiredRuntimeText(config.endpoint, 'TTS endpoint');
+    if (!endpoint.startsWith('wss://')) {
+      throw new Error('Published TTS endpoint must use wss.');
+    }
+    const approvedPricePerTextWordCny = requiredRuntimeNumber(
+      config.approvedPricePerTextWordCny,
+      'TTS approved text-word price',
+    );
+    const resourceId = config.resourceId;
+    if (resourceId !== 'seed-tts-2.0' && resourceId !== 'seed-icl-2.0') {
+      throw new Error('Published adapter binding requires a TTS resource ID.');
+    }
+    return {
+      config: {
+        ...config,
+        approvedPricePerTextWordCny,
+        defaultSpeaker: requiredRuntimeText(
+          config.defaultSpeaker,
+          'TTS default speaker',
+        ),
+        endpoint,
+        priceRevision: requiredRuntimeText(
+          config.priceRevision,
+          'TTS price revision',
+        ),
+        providerModel: requiredRuntimeText(
+          config.providerModel,
+          'TTS provider model',
+        ),
+        resourceId,
+      },
+      credential,
+    };
+  }
+}
+
+function requiredRuntimeText(value: unknown, name: string) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Published adapter binding requires ${name}.`);
+  }
+  return value.trim();
+}
+
+function requiredRuntimeNumber(value: unknown, name: string) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `Published adapter binding requires a non-negative finite ${name}.`,
+    );
+  }
+  return value;
 }
 
 function receipt(task: VolcengineTtsStoredTask) {

@@ -109,6 +109,8 @@ export function fromFoundationRouteSnapshot(
     runtimeExclusionReasons: options?.runtimeExclusionReasons,
     fallbackChain,
     fallbackConsent: snapshot.fallbackConsent,
+    maxAttempts: snapshot.maxAttempts,
+    fallbackAuthorized: snapshot.fallbackAuthorized,
     sourceKind: options?.sourceKind ?? primary.sourceKind,
     selectionMode: snapshot.selectionMode,
     primaryDataClass: snapshot.dataClass,
@@ -163,15 +165,22 @@ export function fromModelSupplyRouteSnapshot(
     credentialAccountVersion:
       snapshot.credentialVersion ?? primary.credentialVersion,
     credentialMode: snapshot.credentialMode ?? primary.credentialMode,
-    policyRevisionId: snapshot.policyRevision ?? primary.policyRevision,
+    policyRevisionId:
+      snapshot.routePolicyRevisionId ??
+      snapshot.policyRevision ??
+      primary.policyRevision,
     priceRevisionId: snapshot.priceRevision ?? primary.priceRevision,
     endpointRevisionId: snapshot.endpointRevision ?? primary.endpointRevision,
     catalogRevisionId: snapshot.catalogRevisionId,
     allowedCandidates: candidates,
     actualDeploymentId: snapshot.deploymentId,
-    runtimeExclusionReasons: options?.runtimeExclusionReasons,
+    dataPolicyRevisionId: snapshot.dataPolicyRevisionId,
+    runtimeExclusionReasons:
+      options?.runtimeExclusionReasons ?? snapshot.runtimeExclusionReasons,
     fallbackChain,
     fallbackConsent,
+    maxAttempts: snapshot.maxAttempts,
+    fallbackAuthorized: snapshot.fallbackAuthorized,
     sourceKind,
     selectionMode:
       snapshot.requestedSelection.mode === 'auto' ? 'auto' : 'fixed',
@@ -275,6 +284,8 @@ export function toFoundationRouteCheckpoint(
     dataClass: GenerationDataClass;
     dataClasses: GenerationDataClass[];
     fallbackConsent: boolean;
+    maxAttempts: number;
+    fallbackAuthorized: boolean;
     retryOwner: 'product';
     providerRetryDisabled: true;
   }>,
@@ -316,6 +327,9 @@ export function toFoundationRouteCheckpoint(
     dataClasses,
     fallbackConsent:
       product?.fallbackConsent ?? canonical.fallbackConsent ?? false,
+    maxAttempts: product?.maxAttempts ?? canonical.maxAttempts,
+    fallbackAuthorized:
+      product?.fallbackAuthorized ?? canonical.fallbackAuthorized,
     allowedCandidates: canonical.allowedCandidates.map(toFoundationCandidate),
     retryOwner: product?.retryOwner ?? 'product',
     providerRetryDisabled: product?.providerRetryDisabled ?? true,
@@ -404,6 +418,8 @@ export function modelSupplyCheckpointToFoundationRoute(
     catalogRevisionId: input.snapshot.catalogRevisionId,
     allowedCandidates,
     fallbackConsent: input.snapshot.fallbackConsent ?? false,
+    maxAttempts: input.snapshot.maxAttempts,
+    fallbackAuthorized: input.snapshot.fallbackAuthorized,
     fallbackChain: (input.snapshot.fallbackConsent ?? false)
       ? allowedCandidates.map((c) => c.deploymentId)
       : [input.deployment.id],
@@ -501,6 +517,15 @@ function rankFoundationCandidates(
       ...(candidate.executionChannelId
         ? { executionChannelId: candidate.executionChannelId }
         : {}),
+      ...(candidate.accountIdentity
+        ? { accountIdentity: candidate.accountIdentity }
+        : {}),
+      ...(candidate.endpointFingerprint
+        ? { endpointFingerprint: candidate.endpointFingerprint }
+        : {}),
+      ...(candidate.dataPolicyRevisionId
+        ? { dataPolicyRevisionId: candidate.dataPolicyRevisionId }
+        : {}),
       ...(candidate.lifecycleRevision
         ? { lifecycleRevision: candidate.lifecycleRevision }
         : {}),
@@ -540,6 +565,15 @@ function modelSupplyCandidates(
           : {}),
         ...(candidate.executionChannelId
           ? { executionChannelId: candidate.executionChannelId }
+          : {}),
+        ...(candidate.accountIdentity
+          ? { accountIdentity: candidate.accountIdentity }
+          : {}),
+        ...(candidate.endpointFingerprint
+          ? { endpointFingerprint: candidate.endpointFingerprint }
+          : {}),
+        ...(candidate.dataPolicyRevisionId
+          ? { dataPolicyRevisionId: candidate.dataPolicyRevisionId }
           : {}),
         ...(candidate.providerModel
           ? { providerModel: candidate.providerModel }
@@ -662,6 +696,15 @@ function toFoundationCandidate(
       : {}),
     ...(candidate.executionChannelId
       ? { executionChannelId: candidate.executionChannelId }
+      : {}),
+    ...(candidate.accountIdentity
+      ? { accountIdentity: candidate.accountIdentity }
+      : {}),
+    ...(candidate.endpointFingerprint
+      ? { endpointFingerprint: candidate.endpointFingerprint }
+      : {}),
+    ...(candidate.dataPolicyRevisionId
+      ? { dataPolicyRevisionId: candidate.dataPolicyRevisionId }
       : {}),
     ...(candidate.lifecycleRevision
       ? { lifecycleRevision: candidate.lifecycleRevision }

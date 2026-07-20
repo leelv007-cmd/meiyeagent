@@ -17,6 +17,7 @@ import {
   type VolcengineTtsLifecycleOptions,
 } from './volcengine-tts-lifecycle.js';
 import type {
+  AdapterRuntimeConfig,
   CatalogModel,
   ModelOperation,
   MediaProviderDrainMode,
@@ -340,18 +341,58 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
     }
 
     try {
+      const runtimeConfig = publishedAdapterConfig(request, 'direct-llm');
+      if (runtimeConfig) {
+        requiredRuntimeText(
+          runtimeConfig.endpointRevision,
+          'direct-llm endpoint revision',
+        );
+      }
+      const runner = runtimeConfig
+        ? new OpenAiCompatibleAiSdkRunner({
+            ...this.options,
+            apiKey: requiredRuntimeCredential(request, 'direct-llm').secret,
+            apiFamily: requiredRuntimeText(
+              runtimeConfig.apiFamily,
+              'direct-llm api family',
+            ) as NonNullable<OpenAiCompatibleAiSdkOptions['apiFamily']>,
+            baseUrl: requiredRuntimeText(
+              runtimeConfig.baseUrl,
+              'direct-llm base URL',
+            ),
+            currency: requiredRuntimeCurrency(runtimeConfig.currency),
+            customProtocol: runtimeConfig.customProtocol,
+            inputCostPerMillion: requiredRuntimeNumber(
+              runtimeConfig.inputCostPerMillion,
+              'direct-llm input price',
+            ),
+            model: requiredRuntimeText(
+              runtimeConfig.providerModel,
+              'direct-llm provider model',
+            ),
+            outputCostPerMillion: requiredRuntimeNumber(
+              runtimeConfig.outputCostPerMillion,
+              'direct-llm output price',
+            ),
+          })
+        : request.runtimeBinding?.credential
+          ? new OpenAiCompatibleAiSdkRunner({
+              ...this.options,
+              apiKey: request.runtimeBinding.credential.secret,
+            })
+          : this.runner;
       const result =
         request.submission.operation === 'copy.adapt'
-          ? await this.runner.adaptPlatformVariants(request.submission.prompt)
+          ? await runner.adaptPlatformVariants(request.submission.prompt)
           : request.submission.operation === 'text.respond'
-            ? await this.runner.respondText(
+            ? await runner.respondText(
                 request.submission.prompt,
                 request.resolvedInputAssets
                   ?.filter((asset) => asset.role === 'reference_image') ??
                   request.resolvedReferenceAssets ??
                   [],
               )
-            : await this.runner.generateCopy(request.submission.prompt);
+            : await runner.generateCopy(request.submission.prompt);
       const inputTokens = result.usage.inputTokens;
       const outputTokens = result.usage.outputTokens;
       return {
@@ -362,7 +403,7 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
           : 'platformVariants' in result
           ? { platformVariants: result.platformVariants }
           : { copyCandidates: result.candidates }),
-        providerCost: this.runner.providerCost({ inputTokens, outputTokens }),
+        providerCost: runner.providerCost({ inputTokens, outputTokens }),
       };
     } catch (error) {
       const failureDetail =
@@ -379,6 +420,84 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
       );
     }
   }
+}
+
+class PublishedAdapterBindingError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'PublishedAdapterBindingError';
+  }
+}
+
+function publishedAdapterConfig(
+  request: ProviderExecutionRequest,
+  expectedAdapterKey: string,
+): AdapterRuntimeConfig | undefined {
+  const binding = request.runtimeBinding;
+  if (!binding) return undefined;
+  if (binding.adapterKey !== expectedAdapterKey) {
+    throw new PublishedAdapterBindingError(
+      `Published adapter binding ${binding.adapterKey} cannot execute through ${expectedAdapterKey}.`,
+    );
+  }
+  if (!binding.adapterBindingRevision) return undefined;
+  if (!binding.adapterConfig) {
+    throw new PublishedAdapterBindingError(
+      `Published adapter binding ${binding.adapterBindingRevision} has no runtime config.`,
+    );
+  }
+  return binding.adapterConfig;
+}
+
+function requiredRuntimeCredential(
+  request: ProviderExecutionRequest,
+  adapterKey: string,
+) {
+  const credential = request.runtimeBinding?.credential;
+  if (!credential?.secret.trim()) {
+    throw new PublishedAdapterBindingError(
+      `Published ${adapterKey} binding has no runtime credential.`,
+    );
+  }
+  return credential;
+}
+
+function requiredRuntimeText(value: unknown, name: string) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new PublishedAdapterBindingError(
+      `Published adapter binding requires ${name}.`,
+    );
+  }
+  return value.trim();
+}
+
+function requiredRuntimeNumber(value: unknown, name: string) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new PublishedAdapterBindingError(
+      `Published adapter binding requires a non-negative finite ${name}.`,
+    );
+  }
+  return value;
+}
+
+function requiredRuntimePositiveInteger(value: unknown, name: string) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new PublishedAdapterBindingError(
+      `Published adapter binding requires a positive integer ${name}.`,
+    );
+  }
+  return value;
+}
+
+function requiredRuntimeCurrency(value: unknown): 'CNY' | 'USD' {
+  if (value !== 'CNY' && value !== 'USD') {
+    throw new PublishedAdapterBindingError(
+      'Published adapter binding requires a supported currency.',
+    );
+  }
+  return value;
 }
 
 function directFailureAcceptance(error: unknown) {
@@ -493,12 +612,50 @@ class ConfiguredMediaExecutionPort
 {
   constructor(
     private readonly fallback: ProviderExecutionPort,
-    private readonly ark?: ArkMediaExecutionPort,
-    private readonly tuzi?: TuziMediaExecutionPort,
-    private readonly volcengineTts?: VolcengineTtsLifecyclePort,
-  ) {}
+    private readonly arkOptions?: ArkMediaExecutionOptions,
+    private readonly tuziOptions?: TuziMediaExecutionOptions,
+    private readonly volcengineTtsOptions?: VolcengineTtsLifecycleOptions,
+  ) {
+    this.ark = arkOptions ? new ArkMediaExecutionPort(arkOptions) : undefined;
+    this.tuzi = tuziOptions ? new TuziMediaExecutionPort(tuziOptions) : undefined;
+    this.volcengineTts = volcengineTtsOptions
+      ? new VolcengineTtsLifecyclePort(volcengineTtsOptions)
+      : undefined;
+  }
+
+  private readonly ark?: ArkMediaExecutionPort;
+  private readonly tuzi?: TuziMediaExecutionPort;
+  private readonly volcengineTts?: VolcengineTtsLifecyclePort;
 
   private provider(request: ProviderExecutionRequest) {
+    const binding = request.runtimeBinding;
+    if (binding) {
+      if (binding.adapterKey === 'volcengine-tts') {
+        if (!this.volcengineTts) {
+          throw new Error('Published volcengine-tts binding has no runtime adapter.');
+        }
+        return this.volcengineTts;
+      }
+      if (binding.adapterKey === 'ark-media') {
+        if (!this.arkOptions) {
+          throw new Error('Published ark-media binding has no runtime adapter.');
+        }
+        return new ArkMediaExecutionPort(
+          this.boundMediaOptions(this.arkOptions, request, 'ark-media'),
+        );
+      }
+      if (binding.adapterKey === 'tuzi-media') {
+        if (!this.tuziOptions) {
+          throw new Error('Published tuzi-media binding has no runtime adapter.');
+        }
+        return new TuziMediaExecutionPort(
+          this.boundMediaOptions(this.tuziOptions, request, 'tuzi-media'),
+        );
+      }
+      throw new Error(
+        `Published adapter binding ${binding.adapterKey} cannot execute media.`,
+      );
+    }
     if (request.model.id === 'seed-tts-2') {
       return this.volcengineTts;
     }
@@ -508,6 +665,87 @@ class ConfiguredMediaExecutionPort
       return this.ark;
     }
     return this.tuzi ?? this.ark;
+  }
+
+  private boundMediaOptions<VideoCatalogModelId extends string>(
+    options: ArkMediaExecutionOptions<VideoCatalogModelId>,
+    request: ProviderExecutionRequest,
+    adapterKey: 'ark-media' | 'tuzi-media',
+  ): ArkMediaExecutionOptions<VideoCatalogModelId> {
+    const config = publishedAdapterConfig(request, adapterKey);
+    const credential = request.runtimeBinding?.credential;
+    if (!config) {
+      return credential
+        ? {
+            ...options,
+            apiKey: credential.secret,
+            credentialVersion: credential.version,
+          }
+        : options;
+    }
+    const boundCredential = requiredRuntimeCredential(request, adapterKey);
+    const providerModel = requiredRuntimeText(
+      config.providerModel,
+      `${adapterKey} provider model`,
+    );
+    const common = {
+      ...options,
+      apiKey: boundCredential.secret,
+      assetSourceHosts: config.assetSourceHosts,
+      baseUrl: requiredRuntimeText(config.baseUrl, `${adapterKey} base URL`),
+      credentialVersion: boundCredential.version,
+      endpointRevision: requiredRuntimeText(
+        config.endpointRevision,
+        `${adapterKey} endpoint revision`,
+      ),
+      sourceUrlTtlSeconds: requiredRuntimePositiveInteger(
+        config.sourceUrlTtlSeconds,
+        `${adapterKey} source URL TTL`,
+      ),
+    };
+    if (request.model.modality === 'image') {
+      if (options.image.catalogModelId !== request.model.id) {
+        throw new Error(
+          `Published ${adapterKey} binding cannot serve image model ${request.model.id}.`,
+        );
+      }
+      return {
+        ...common,
+        image: {
+          ...options.image,
+          costPerImage: requiredRuntimeNumber(
+            config.costPerImage,
+            `${adapterKey} image price`,
+          ),
+          model: providerModel,
+        },
+      };
+    }
+    if (request.model.modality === 'video') {
+      if (options.video.catalogModelId !== request.model.id) {
+        throw new Error(
+          `Published ${adapterKey} binding cannot serve video model ${request.model.id}.`,
+        );
+      }
+      return {
+        ...common,
+        video: {
+          ...options.video,
+          costPerMillionTokens: requiredRuntimeNumber(
+            config.costPerMillionTokens,
+            `${adapterKey} video token price`,
+          ),
+          estimatedTokensPerSecond: requiredRuntimeNumber(
+            config.estimatedTokensPerSecond,
+            `${adapterKey} estimated video tokens per second`,
+          ),
+          model: providerModel,
+        },
+      };
+    }
+    throw new Error(
+      `Published ${adapterKey} binding cannot serve ${request.model.modality}.`,
+    );
   }
 
   execute(request: ProviderExecutionRequest) {
@@ -590,11 +828,9 @@ function withConfiguredMedia(
   if (!arkOptions && !tuziOptions && !volcengineTtsOptions) return runtime;
   const media = new ConfiguredMediaExecutionPort(
     runtime.execution,
-    arkOptions ? new ArkMediaExecutionPort(arkOptions) : undefined,
-    tuziOptions ? new TuziMediaExecutionPort(tuziOptions) : undefined,
-    volcengineTtsOptions
-      ? new VolcengineTtsLifecyclePort(volcengineTtsOptions)
-      : undefined,
+    arkOptions,
+    tuziOptions,
+    volcengineTtsOptions,
   );
   return {
     ...runtime,

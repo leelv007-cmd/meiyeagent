@@ -233,7 +233,7 @@ import {
   openingSuggestions,
   readCreationDraftIntent,
   type AssetFactAnswers,
-  type ConfirmedAssetFacts
+  type ConfirmedAssetFacts,
   writeCreationDraftIntent,
 } from './creation-entry-model';
 import { assistantSourceSummaries } from './creation-assistant-context';

@@ -176,3 +176,32 @@ test('Cloudflare write verbs remain denied even for admin', () => {
     assert.equal(decision.reason, 'unregistered');
   }
 });
+
+test('Cloudflare inventory is a registered read-only capability query', () => {
+  assert.deepEqual(
+    authorizer.decide({
+      actor: 'admin',
+      kind: 'query',
+      module: 'admin-config',
+      action: 'cloudflare_inventory',
+    }),
+    {
+      allow: true,
+      required: 'system.capability.view',
+      reason: 'capability_granted',
+    }
+  );
+  assert.deepEqual(
+    authorizer.decide({
+      actor: 'owner',
+      kind: 'query',
+      module: 'admin-config',
+      action: 'cloudflare_inventory',
+    }),
+    {
+      allow: false,
+      required: 'system.capability.view',
+      reason: 'capability_denied',
+    }
+  );
+});

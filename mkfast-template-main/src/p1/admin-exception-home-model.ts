@@ -275,6 +275,9 @@ export function redactHandoffContext(
 
 function drilldownPathForKey(drilldownKey: string | undefined): string {
   if (!drilldownKey) return CAPABILITY_CATALOG_PATH;
+  if (drilldownKey.includes('supply') || drilldownKey.includes('model')) {
+    return '/admin/supply';
+  }
   const page = ADMIN_DRILLDOWN_PAGES.find(
     (item) =>
       drilldownKey === `admin.${item.pageId}` ||
@@ -284,9 +287,6 @@ function drilldownPathForKey(drilldownKey: string | undefined): string {
   if (page) return page.path;
 
   // Map common registry drilldown keys to existing admin pages.
-  if (drilldownKey.includes('supply') || drilldownKey.includes('model')) {
-    return '/admin/models';
-  }
   if (drilldownKey.includes('job') || drilldownKey.includes('audit')) {
     return '/admin/audit';
   }

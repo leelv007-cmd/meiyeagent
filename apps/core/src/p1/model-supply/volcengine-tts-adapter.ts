@@ -118,6 +118,36 @@ export class VolcengineBidirectionalTtsAdapter {
     this.nextId = options.nextId ?? randomUUID;
   }
 
+  withCredential(secret: string): VolcengineBidirectionalTtsAdapter {
+    return this.withRuntimeBinding({ secret });
+  }
+
+  withRuntimeBinding(input: {
+    secret: string;
+    endpoint?: string;
+    model?: string;
+    resourceId?: 'seed-tts-2.0' | 'seed-icl-2.0';
+    defaultSpeaker?: string;
+  }): VolcengineBidirectionalTtsAdapter {
+    const auth: VolcengineTtsAuth =
+      this.options.auth.kind === 'api_key'
+        ? { kind: 'api_key', apiKey: input.secret }
+        : {
+            ...this.options.auth,
+            accessToken: input.secret,
+          };
+    return new VolcengineBidirectionalTtsAdapter({
+      ...this.options,
+      auth,
+      ...(input.defaultSpeaker
+        ? { defaultSpeaker: input.defaultSpeaker }
+        : {}),
+      ...(input.endpoint ? { endpoint: input.endpoint } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.resourceId ? { resourceId: input.resourceId } : {}),
+    });
+  }
+
   async synthesize(
     request: VolcengineTtsSynthesisRequest,
   ): Promise<VolcengineTtsSynthesisResult> {

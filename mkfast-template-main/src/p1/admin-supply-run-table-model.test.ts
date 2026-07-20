@@ -15,7 +15,7 @@ import {
 
 test('parseRunTableUrlState reads facets, sort, pagination from URLSearchParams', () => {
   const params = new URLSearchParams(
-    'page=2&pageSize=10&sort=latencyMs&dir=asc&operation=image.generate&status=failed&modality=image&channelKind=upstream_reseller&q=503',
+    'page=2&pageSize=10&sort=latencyMs&dir=asc&operation=image.generate&status=failed&modality=image&channelKind=upstream_reseller&q=503'
   );
   const state = parseRunTableUrlState(params);
   assert.equal(state.page, 2);
@@ -102,20 +102,47 @@ test('status filter isolates failed runs', () => {
 test('updateRunTableUrlState resets page when filters change', () => {
   const next = updateRunTableUrlState(
     { ...DEFAULT_RUN_TABLE_URL_STATE, page: 4 },
-    { status: 'failed' },
+    { status: 'failed' }
   );
   assert.equal(next.page, 1);
   assert.equal(next.status, 'failed');
 
   const pageOnly = updateRunTableUrlState(
     { ...DEFAULT_RUN_TABLE_URL_STATE, page: 2 },
-    { page: 3 },
+    { page: 3 }
   );
   assert.equal(pageOnly.page, 3);
+
+  const cleared = updateRunTableUrlState(
+    { ...DEFAULT_RUN_TABLE_URL_STATE, page: 4, status: 'failed' },
+    { status: undefined }
+  );
+  assert.equal(cleared.status, undefined);
+  assert.equal(cleared.page, 1);
 });
 
-test('buildSupplyRunTablePage uses fixture by default', () => {
-  const page = buildSupplyRunTablePage();
-  assert.ok(page.total >= 1);
-  assert.ok(page.rows.length >= 1);
+test('buildSupplyRunTablePage consumes the Core page without filtering all snapshot runs', () => {
+  const snapshot = buildDefaultSupplyControlSnapshot();
+  const serverRow = snapshot.runs.at(-1)!;
+  snapshot.runPage = {
+    query: {
+      ...DEFAULT_RUN_TABLE_URL_STATE,
+      page: 3,
+      pageSize: 1,
+      status: serverRow.status,
+    },
+    total: 7,
+    totalPages: 7,
+    rows: [serverRow],
+    facets: snapshot.runPage.facets,
+  };
+
+  const page = buildSupplyRunTablePage(snapshot);
+
+  assert.equal(page.state.page, 3);
+  assert.equal(page.total, 7);
+  assert.deepEqual(
+    page.rows.map((row) => row.id),
+    [serverRow.id]
+  );
 });

@@ -116,6 +116,9 @@ export interface RouteCandidate {
   providerModel?: string;
   endpointRevision?: string;
   executionChannelId?: string;
+  accountIdentity?: string;
+  endpointFingerprint?: string;
+  dataPolicyRevisionId?: string;
   lifecycleRevision?: string;
   policyRevision?: string;
   priceRevision?: string;
@@ -142,6 +145,8 @@ export interface RouteSnapshot {
   dataClass: GenerationDataClass;
   dataClasses?: GenerationDataClass[];
   fallbackConsent: boolean;
+  maxAttempts?: number;
+  fallbackAuthorized?: boolean;
   allowedCandidates: RouteCandidate[];
   retryOwner?: 'product';
   providerRetryDisabled?: true;

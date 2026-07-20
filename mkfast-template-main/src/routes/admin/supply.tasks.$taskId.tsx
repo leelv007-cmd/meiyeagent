@@ -2,14 +2,15 @@ import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { AdminSupplyTaskDrilldown } from '@/p1/admin-supply-control';
 import { createFileRoute } from '@tanstack/react-router';
 
-/**
- * Supply task drilldown route (J4 / D-070).
- * Shared wiring deferred — see supply/WIRING-DIFF.md.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = (createFileRoute as any)('/admin/supply/tasks/$taskId')({
-  component: SupplyTaskDrilldownPage,
+/** Supply task drilldown route (J4 / D-070). */
+export const Route = createFileRoute('/admin/supply/tasks/$taskId')({
+  component: RoutedSupplyTaskDrilldownPage,
 });
+
+function RoutedSupplyTaskDrilldownPage() {
+  const { taskId } = Route.useParams();
+  return <SupplyTaskDrilldownPage taskId={taskId} />;
+}
 
 export function SupplyTaskDrilldownPage({
   taskId: taskIdProp,

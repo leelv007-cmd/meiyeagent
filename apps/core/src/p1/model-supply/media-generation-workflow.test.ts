@@ -13,7 +13,10 @@ import {
   createDefaultCatalogModels,
   createDefaultDeployments,
   type MediaProviderLifecyclePort,
+  type ModelSupplyLedgerCheckpointInput,
   type ModelSupplyLedgerPort,
+  type ModelSupplyPlanningControlPlanePort,
+  type ModelSupplyProviderAdmissionPort,
   type ModelSupplyResult,
 } from './index.js';
 import {
@@ -30,8 +33,16 @@ const png = Buffer.from(
 class RecoveringLedger implements ModelSupplyLedgerPort {
   result?: ModelSupplyResult;
   lateTerminalCalls = 0;
+  freezeCalls = 0;
+  checkpointCalls = 0;
+  readonly frozenAttempts: Array<{
+    attemptId: string;
+    ordinal: number;
+    deploymentId: string;
+  }> = [];
 
   async checkpointAttempt() {
+    this.checkpointCalls += 1;
     return this.result
       ? { replayed: true, recoveredResult: structuredClone(this.result) }
       : { replayed: false };
@@ -39,6 +50,16 @@ class RecoveringLedger implements ModelSupplyLedgerPort {
 
   async settleAttempt(input: { result: ModelSupplyResult }) {
     this.result = structuredClone(input.result);
+  }
+
+  async freezeAttempt(input: ModelSupplyLedgerCheckpointInput) {
+    this.freezeCalls += 1;
+    this.frozenAttempts.push({
+      attemptId: input.attemptId,
+      ordinal: input.ordinal,
+      deploymentId: input.deployment.id,
+    });
+    return { persisted: true };
   }
 
   async recordCancelledProviderTerminal(input: { result: ModelSupplyResult }) {
@@ -121,6 +142,8 @@ class RecoveringProvider implements MediaProviderLifecyclePort {
 function createModels(
   ledger: ModelSupplyLedgerPort,
   assets: MemoryModelAssetStorage,
+  providerAdmission?: ModelSupplyProviderAdmissionPort,
+  planningControlPlane?: ModelSupplyPlanningControlPlanePort,
 ) {
   return new ModelSupplyApplicationService({
     assetStorage: assets,
@@ -131,6 +154,8 @@ function createModels(
     execution: new RecordedAdapterRouter(),
     ledger,
     models: createDefaultCatalogModels(),
+    ...(providerAdmission ? { providerAdmission } : {}),
+    ...(planningControlPlane ? { planningControlPlane } : {}),
   });
 }
 
@@ -146,6 +171,643 @@ function envelope(record: Awaited<ReturnType<TracerJobApplicationService['get']>
 }
 
 describe('durable media generation', () => {
+  it('guards submit, poll, and download with durable admission and releases every lease', async () => {
+    const ledger = new RecoveringLedger();
+    let activeLeases = 0;
+    const admittedAttempts: string[] = [];
+    let renewCalls = 0;
+    const released: string[] = [];
+    const providerAdmission: ModelSupplyProviderAdmissionPort = {
+      async admit(input) {
+        admittedAttempts.push(input.attemptId);
+        activeLeases += 1;
+        return {
+          status: 'admitted',
+          leaseId: `capacity:${input.attemptId}`,
+          supplyPoolId: 'pool-shared-default',
+          entitlementPolicyRevision: 'entitlement:growth:r1',
+          appliedAllocationIds: [],
+        };
+      },
+      async renew() {
+        renewCalls += 1;
+        return true;
+      },
+      async release(leaseId) {
+        assert.equal(activeLeases, 1);
+        activeLeases -= 1;
+        released.push(leaseId);
+      },
+    };
+    const provider: MediaProviderLifecyclePort = {
+      async submit() {
+        assert.equal(activeLeases, 1);
+        assert.equal(ledger.freezeCalls, 1);
+        assert.equal(ledger.checkpointCalls, 1);
+        return {
+          acceptance: 'accepted',
+          taskRef: 'provider-task-governed',
+          providerCost: {
+            amount: 0.1,
+            currency: 'USD',
+            usage: { mediaUnits: 1 },
+          },
+        };
+      },
+      async recover() {
+        throw new Error('accepted task must not recover');
+      },
+      async poll() {
+        assert.equal(activeLeases, 1);
+        return {
+          status: 'completed',
+          providerCost: {
+            amount: 0.1,
+            currency: 'USD',
+            usage: { mediaUnits: 1 },
+          },
+        };
+      },
+      async download() {
+        assert.equal(activeLeases, 1);
+        return { bytes: png, contentType: 'image/png' };
+      },
+      async cancel() {
+        throw new Error('completed task must not cancel');
+      },
+    };
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      providerAdmission,
+    );
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
+    models.attachDurableMediaRuntime(runtime);
+    const queued = await models.submit({
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'governed-media-effects',
+      operation: 'image.generate',
+      prompt: '受治理媒体任务',
+      selection: { catalogModelId: 'gpt-image-2', mode: 'fixed' },
+      workspaceId: 'workspace-a',
+    });
+    const record = await jobs.get('workspace-a', queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({ models, provider }),
+    );
+
+    assert.equal((await worker.handle(envelope(record))).status, 'deferred');
+    const terminal = await worker.handle(envelope(record));
+    assert.equal(terminal.status, 'completed');
+    assert.equal(admittedAttempts.length, 1);
+    assert.equal(renewCalls, 2);
+    assert.deepEqual(released, [`capacity:${admittedAttempts[0]}`]);
+    assert.equal(activeLeases, 0);
+    assert.equal(ledger.freezeCalls, 1);
+  });
+
+  it('does not call the provider when an expired lease cannot re-enter the fair queue', async () => {
+    const ledger = new RecoveringLedger();
+    let reacquireCalls = 0;
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      {
+        async admit(input) {
+          return {
+            status: 'admitted',
+            leaseId: `capacity:${input.attemptId}`,
+            supplyPoolId: 'pool-shared-default',
+            entitlementPolicyRevision: 'entitlement:growth:r1',
+            appliedAllocationIds: [],
+          };
+        },
+        async renew() {
+          return false;
+        },
+        async reacquire() {
+          reacquireCalls += 1;
+          return false;
+        },
+        async release() {},
+      },
+    );
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
+    models.attachDurableMediaRuntime(runtime);
+    const provider = new RecoveringProvider('accepted');
+    const queued = await models.submit({
+      actorId: 'owner-expired',
+      dataClass: [],
+      idempotencyKey: 'expired-lease-does-not-overcommit',
+      operation: 'image.generate',
+      prompt: '过期容量租约',
+      selection: { catalogModelId: 'gpt-image-2', mode: 'fixed' },
+      workspaceId: 'workspace-expired',
+    });
+    const record = await jobs.get('workspace-expired', queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({ models, provider }),
+    );
+
+    assert.equal((await worker.handle(envelope(record))).status, 'deferred');
+    assert.deepEqual(await worker.handle(envelope(record)), {
+      status: 'deferred',
+      output: { acceptance: 'acceptance_unknown' },
+    });
+    assert.equal(reacquireCalls, 1);
+    assert.equal(provider.pollCalls, 0);
+  });
+
+  it('preserves the frozen planning explanation through the observed media terminal', async () => {
+    const ledger = new RecoveringLedger();
+    const planningControlPlane: ModelSupplyPlanningControlPlanePort = {
+      async readPlanningState() {
+        return {
+          routePolicyRevisionId: 'route-policy:image.generate:quality:r5',
+          routePolicy: {
+            operation: 'image.generate',
+            qualityTier: 'quality',
+            hardConstraints: ['deployment_active', 'data_class'],
+            candidateDeploymentIds: ['gpt-image-2-managed'],
+            maxAttempts: 1,
+            fallbackAuthorized: false,
+          },
+          dataPolicyByDeploymentId: new Map([
+            [
+              'gpt-image-2-managed',
+              {
+                deploymentId: 'gpt-image-2-managed',
+                dataPolicyRevisionId: 'data-policy:gpt-image:r3',
+                dataPolicy: {
+                  sourceTrustLevel: 'contract_attested',
+                  processingRegion: 'overseas',
+                  allowedDataClasses: ['public'],
+                },
+              },
+            ],
+          ]),
+        };
+      },
+    };
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      undefined,
+      planningControlPlane,
+    );
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
+    models.attachDurableMediaRuntime(runtime);
+    const workspaceId = 'workspace-media-planning-audit';
+    const queued = await models.submit({
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'media-planning-audit',
+      operation: 'image.generate',
+      prompt: '异步媒体规划审计',
+      selection: { catalogModelId: 'gpt-image-2', mode: 'fixed' },
+      workspaceId,
+    });
+    const record = await jobs.get(workspaceId, queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({
+        models,
+        provider: new RecoveringProvider('accepted'),
+      }),
+    );
+
+    assert.deepEqual(
+      queued.snapshot.decisionExplanation?.acceptanceBranch,
+      {
+        acceptance: 'not_attempted',
+        decision: 'complete',
+        reason: 'planned_execution',
+        primaryDeploymentId: 'gpt-image-2-managed',
+      },
+    );
+    assert.equal((await worker.handle(envelope(record))).status, 'deferred');
+    assert.equal((await worker.handle(envelope(record))).status, 'completed');
+    const completed = await runtime.get(workspaceId, queued.jobId);
+
+    assert.equal(
+      completed.result.snapshot.routePolicyRevisionId,
+      'route-policy:image.generate:quality:r5',
+    );
+    assert.equal(
+      completed.result.snapshot.dataPolicyRevisionId,
+      'data-policy:gpt-image:r3',
+    );
+    assert.deepEqual(
+      completed.result.snapshot.decisionExplanation?.acceptanceBranch,
+      {
+        acceptance: 'accepted',
+        decision: 'complete',
+        reason: 'provider_completed',
+        primaryDeploymentId: 'gpt-image-2-managed',
+      },
+    );
+  });
+
+  it('runs the production media chain across independent frozen channels only after pre-accept rejection', async () => {
+    const primaryId = 'gpt-image-2-managed';
+    const fallbackId = 'gpt-image-2-tuzi-relay';
+    const deployments = createDefaultDeployments({
+      activatedDeploymentIds: [primaryId, fallbackId],
+      activationEvidenceStatus: 'recorded',
+    }).map((deployment) =>
+      deployment.id === primaryId
+        ? {
+            ...deployment,
+            accountIdentity: 'account-openai-image',
+            endpointFingerprint: 'endpoint-openai-image',
+          }
+        : deployment.id === fallbackId
+          ? {
+              ...deployment,
+              accountIdentity: 'account-tuzi-image',
+              endpointFingerprint: 'endpoint-tuzi-image',
+            }
+          : deployment,
+    );
+    const planningControlPlane: ModelSupplyPlanningControlPlanePort = {
+      async readPlanningState() {
+        return {
+          routePolicyRevisionId: 'route-policy:image.generate:quality:r12',
+          routePolicy: {
+            operation: 'image.generate',
+            qualityTier: 'quality',
+            hardConstraints: ['deployment_active', 'data_class'],
+            candidateDeploymentIds: [primaryId, fallbackId],
+            maxAttempts: 2,
+            fallbackAuthorized: true,
+          },
+          dataPolicyByDeploymentId: new Map(
+            [primaryId, fallbackId].map((deploymentId) => [
+              deploymentId,
+              {
+                deploymentId,
+                dataPolicyRevisionId: `data-policy:${deploymentId}:r1`,
+                dataPolicy: {
+                  sourceTrustLevel: 'contract_attested' as const,
+                  processingRegion: 'overseas' as const,
+                  allowedDataClasses: ['public' as const],
+                },
+              },
+            ]),
+          ),
+        };
+      },
+    };
+    const ledger = new RecoveringLedger();
+    const admitted: Array<{ attemptId: string; deploymentId: string }> = [];
+    const released: string[] = [];
+    const providerAdmission: ModelSupplyProviderAdmissionPort = {
+      async admit(input) {
+        admitted.push({
+          attemptId: input.attemptId,
+          deploymentId: input.deployment.id,
+        });
+        return {
+          status: 'admitted',
+          leaseId: `capacity:${input.attemptId}`,
+          supplyPoolId: `pool:${input.deployment.id}`,
+          entitlementPolicyRevision: 'entitlement:growth:r7',
+          appliedAllocationIds: [],
+        };
+      },
+      async renew() {
+        return true;
+      },
+      async release(leaseId) {
+        released.push(leaseId);
+      },
+    };
+    const models = new ModelSupplyApplicationService({
+      assetStorage: new MemoryModelAssetStorage(),
+      deployments,
+      execution: new RecordedAdapterRouter(),
+      ledger,
+      models: createDefaultCatalogModels(),
+      planningControlPlane,
+      providerAdmission,
+    });
+    const submitted: Array<{
+      deploymentId: string;
+      effectIdempotencyKey: string;
+    }> = [];
+    const provider: MediaProviderLifecyclePort = {
+      async submit(request) {
+        submitted.push({
+          deploymentId: request.deployment.id,
+          effectIdempotencyKey: request.effectIdempotencyKey,
+        });
+        if (request.deployment.id === primaryId) {
+          return {
+            acceptance: 'rejected_before_accept',
+            errorCode: 'primary_pre_accept_failure',
+            retryable: true,
+            error: 'primary rejected before acceptance',
+            providerCost: { amount: 0, currency: 'USD', usage: {} },
+          };
+        }
+        return {
+          acceptance: 'accepted',
+          taskRef: 'provider-task-fallback',
+          providerCost: {
+            amount: 0.02,
+            currency: 'USD',
+            usage: { mediaUnits: 1 },
+          },
+        };
+      },
+      async recover() {
+        throw new Error('accepted fallback already has a durable task ref');
+      },
+      async poll(request) {
+        assert.equal(request.deployment.id, fallbackId);
+        return {
+          status: 'completed',
+          providerCost: {
+            amount: 0.02,
+            currency: 'USD',
+            usage: { mediaUnits: 1 },
+          },
+        };
+      },
+      async download(request) {
+        assert.equal(request.deployment.id, fallbackId);
+        return { bytes: png, contentType: 'image/png' };
+      },
+      async cancel() {},
+    };
+    const repository = new MemoryTracerJobRepository(new MemoryJobPort());
+    const jobs = new TracerJobApplicationService(repository);
+    const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
+    models.attachDurableMediaRuntime(runtime);
+    const workspaceId = 'workspace-media-safe-fallback';
+    const queued = await models.submit({
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'media-safe-fallback',
+      operation: 'image.generate',
+      prompt: '主渠道接单前失败后安全切换',
+      selection: {
+        catalogModelId: 'gpt-image-2',
+        fallbackConsent: true,
+        mode: 'fixed',
+      },
+      workspaceId,
+    });
+    const record = await jobs.get(workspaceId, queued.jobId);
+    const worker = new DurableTracerWorker(
+      repository,
+      new ModelMediaGenerationEffect({ models, provider }),
+    );
+
+    assert.equal(queued.snapshot.maxAttempts, 2);
+    assert.equal(queued.snapshot.fallbackAuthorized, true);
+    assert.deepEqual(
+      queued.snapshot.allowedCandidates?.map((candidate) => ({
+        deploymentId: candidate.deploymentId,
+        accountIdentity: candidate.accountIdentity,
+        endpointFingerprint: candidate.endpointFingerprint,
+      })),
+      [
+        {
+          deploymentId: primaryId,
+          accountIdentity: 'account-openai-image',
+          endpointFingerprint: 'endpoint-openai-image',
+        },
+        {
+          deploymentId: fallbackId,
+          accountIdentity: 'account-tuzi-image',
+          endpointFingerprint: 'endpoint-tuzi-image',
+        },
+      ],
+    );
+    assert.equal((await worker.handle(envelope(record))).status, 'deferred');
+    assert.equal((await worker.handle(envelope(record))).status, 'completed');
+    const completed = await runtime.get(workspaceId, queued.jobId);
+
+    assert.deepEqual(
+      submitted.map((entry) => entry.deploymentId),
+      [primaryId, fallbackId],
+    );
+    assert.equal(new Set(submitted.map((entry) => entry.effectIdempotencyKey)).size, 2);
+    assert.deepEqual(
+      admitted.map((entry) => entry.deploymentId),
+      [primaryId, fallbackId],
+    );
+    assert.equal(new Set(admitted.map((entry) => entry.attemptId)).size, 2);
+    assert.ok(admitted.every((entry) => !entry.attemptId.includes(':lease:')));
+    assert.deepEqual(
+      ledger.frozenAttempts.map((entry) => ({
+        ordinal: entry.ordinal,
+        deploymentId: entry.deploymentId,
+      })),
+      [
+        { ordinal: 1, deploymentId: primaryId },
+        { ordinal: 2, deploymentId: fallbackId },
+      ],
+    );
+    assert.deepEqual(
+      completed.result.attempts.map((attempt) => ({
+        deploymentId: attempt.deploymentId,
+        acceptance: attempt.acceptance,
+      })),
+      [
+        { deploymentId: primaryId, acceptance: 'rejected_before_accept' },
+        { deploymentId: fallbackId, acceptance: 'accepted' },
+      ],
+    );
+    assert.equal(completed.result.snapshot.deploymentId, fallbackId);
+    assert.deepEqual(
+      completed.result.snapshot.decisionExplanation?.acceptanceBranch,
+      {
+        acceptance: 'accepted',
+        decision: 'safe_auto_fallback',
+        reason: 'provider_completed_after_safe_auto_fallback',
+        primaryDeploymentId: primaryId,
+        fallbackDeploymentId: fallbackId,
+      },
+    );
+    assert.deepEqual(released.sort(), admitted
+      .map((entry) => `capacity:${entry.attemptId}`)
+      .sort());
+  });
+
+  it('never crosses to a frozen media fallback after accepted or acceptance_unknown', async () => {
+    const primaryId = 'gpt-image-2-managed';
+    const fallbackId = 'gpt-image-2-tuzi-relay';
+    const deployments = createDefaultDeployments({
+      activatedDeploymentIds: [primaryId, fallbackId],
+      activationEvidenceStatus: 'recorded',
+    }).map((deployment) =>
+      deployment.id === primaryId
+        ? {
+            ...deployment,
+            accountIdentity: 'account-openai-image',
+            endpointFingerprint: 'endpoint-openai-image',
+          }
+        : deployment.id === fallbackId
+          ? {
+              ...deployment,
+              accountIdentity: 'account-tuzi-image',
+              endpointFingerprint: 'endpoint-tuzi-image',
+            }
+          : deployment,
+    );
+    for (const acceptance of ['accepted', 'acceptance_unknown'] as const) {
+      const models = new ModelSupplyApplicationService({
+        assetStorage: new MemoryModelAssetStorage(),
+        deployments,
+        execution: new RecordedAdapterRouter(),
+        ledger: new RecoveringLedger(),
+        models: createDefaultCatalogModels(),
+        planningControlPlane: {
+          async readPlanningState() {
+            return {
+              routePolicyRevisionId: 'route-policy:image.generate:quality:r13',
+              routePolicy: {
+                operation: 'image.generate',
+                qualityTier: 'quality',
+                hardConstraints: ['deployment_active', 'data_class'],
+                candidateDeploymentIds: [primaryId, fallbackId],
+                maxAttempts: 2,
+                fallbackAuthorized: true,
+              },
+            };
+          },
+        },
+      });
+      const submission = {
+        actorId: 'owner-a',
+        dataClass: [],
+        idempotencyKey: `media-no-resubmit-${acceptance}`,
+        operation: 'image.generate' as const,
+        prompt: '已接单或接单未知不重投',
+        selection: {
+          catalogModelId: 'gpt-image-2',
+          fallbackConsent: true,
+          mode: 'fixed' as const,
+        },
+        workspaceId: 'workspace-media-no-resubmit',
+      };
+      const preview = await models.prepareMediaSubmission(submission);
+      const frozenSubmission = {
+        ...submission,
+        frozenRouteSnapshot: preview.snapshot,
+      };
+      const deploymentsCalled: string[] = [];
+      const result = await models.executeMediaProviderSubmission(
+        frozenSubmission,
+        {
+          async execute(request) {
+            deploymentsCalled.push(request.deployment.id);
+            return {
+              kind: 'failure',
+              acceptance,
+              providerTaskRef: 'provider-task-primary',
+              message: 'provider owns reconciliation',
+              providerCost: { amount: 0.01, currency: 'USD', usage: {} },
+            };
+          },
+        },
+        { useFrozenMediaCandidateSequence: true },
+      );
+
+      assert.deepEqual(deploymentsCalled, [primaryId]);
+      assert.equal(result.attempts.length, 1);
+      assert.equal(result.attempt.acceptance, acceptance);
+      assert.equal(
+        result.snapshot.decisionExplanation?.acceptanceBranch.decision,
+        'query_reconcile_manual',
+      );
+    }
+  });
+
+  it('refuses a frozen media fallback that shares the primary fault domain', async () => {
+    const primaryId = 'gpt-image-2-managed';
+    const fallbackId = 'gpt-image-2-tuzi-relay';
+    const deployments = createDefaultDeployments({
+      activatedDeploymentIds: [primaryId, fallbackId],
+      activationEvidenceStatus: 'recorded',
+    }).map((deployment) =>
+      [primaryId, fallbackId].includes(deployment.id)
+        ? {
+            ...deployment,
+            accountIdentity: 'shared-image-account',
+            endpointFingerprint: 'shared-image-endpoint',
+          }
+        : deployment,
+    );
+    const models = new ModelSupplyApplicationService({
+      assetStorage: new MemoryModelAssetStorage(),
+      deployments,
+      execution: new RecordedAdapterRouter(),
+      ledger: new RecoveringLedger(),
+      models: createDefaultCatalogModels(),
+      planningControlPlane: {
+        async readPlanningState() {
+          return {
+            routePolicyRevisionId: 'route-policy:image.generate:quality:r14',
+            routePolicy: {
+              operation: 'image.generate',
+              qualityTier: 'quality',
+              hardConstraints: ['deployment_active', 'data_class'],
+              candidateDeploymentIds: [primaryId, fallbackId],
+              maxAttempts: 2,
+              fallbackAuthorized: true,
+            },
+          };
+        },
+      },
+    });
+    const submission = {
+      actorId: 'owner-a',
+      dataClass: [],
+      idempotencyKey: 'media-shared-domain-no-fallback',
+      operation: 'image.generate' as const,
+      prompt: '同故障域不切换',
+      selection: {
+        catalogModelId: 'gpt-image-2',
+        fallbackConsent: true,
+        mode: 'fixed' as const,
+      },
+      workspaceId: 'workspace-media-shared-domain',
+    };
+    const preview = await models.prepareMediaSubmission(submission);
+    const deploymentsCalled: string[] = [];
+    const result = await models.executeMediaProviderSubmission(
+      { ...submission, frozenRouteSnapshot: preview.snapshot },
+      {
+        async execute(request) {
+          deploymentsCalled.push(request.deployment.id);
+          return {
+            kind: 'failure',
+            acceptance: 'rejected_before_accept',
+            message: 'primary rejected before acceptance',
+            providerCost: { amount: 0, currency: 'USD', usage: {} },
+          };
+        },
+      },
+      { useFrozenMediaCandidateSequence: true },
+    );
+
+    assert.deepEqual(deploymentsCalled, [primaryId]);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.attempts.length, 1);
+  });
+
   it('recovers a provider receipt by stable effect key after response loss without resubmitting', async () => {
     let now = new Date('2026-07-11T01:00:00.000Z');
     class ResponseLossRepository extends MemoryTracerJobRepository {
@@ -164,7 +826,25 @@ describe('durable media generation', () => {
 
     const ledger = new RecoveringLedger();
     const assets = new MemoryModelAssetStorage();
-    const models = createModels(ledger, assets);
+    const admittedAttempts: string[] = [];
+    let renewCalls = 0;
+    const models = createModels(ledger, assets, {
+      async admit(input) {
+        admittedAttempts.push(input.attemptId);
+        return {
+          status: 'admitted',
+          leaseId: `capacity:${input.attemptId}`,
+          supplyPoolId: 'pool-shared-default',
+          entitlementPolicyRevision: 'entitlement:growth:r1',
+          appliedAllocationIds: [],
+        };
+      },
+      async renew() {
+        renewCalls += 1;
+        return true;
+      },
+      async release() {},
+    });
     const repository = new ResponseLossRepository(
       new MemoryJobPort(),
       () => new Date(now),
@@ -206,6 +886,8 @@ describe('durable media generation', () => {
     assert.equal(provider.submitCalls, 1);
     assert.equal(provider.recoverCalls, 1);
     assert.equal(provider.pollCalls, 1);
+    assert.equal(admittedAttempts.length, 1);
+    assert.equal(renewCalls, 3);
     assert.equal(
       (await jobs.get('workspace-a', queued.jobId)).providerTaskRef,
       'provider-task-stable',
@@ -279,7 +961,32 @@ describe('durable media generation', () => {
 
   it('applies cancel to the durable provider task instead of a local projection', async () => {
     const ledger = new RecoveringLedger();
-    const models = createModels(ledger, new MemoryModelAssetStorage());
+    const admittedAttempts: string[] = [];
+    let renewCalls = 0;
+    const released: string[] = [];
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      {
+        async admit(input) {
+          admittedAttempts.push(input.attemptId);
+          return {
+            status: 'admitted',
+            leaseId: `capacity:${input.attemptId}`,
+            supplyPoolId: 'pool-shared-default',
+            entitlementPolicyRevision: 'entitlement:growth:r1',
+            appliedAllocationIds: [],
+          };
+        },
+        async renew() {
+          renewCalls += 1;
+          return true;
+        },
+        async release(leaseId) {
+          released.push(leaseId);
+        },
+      },
+    );
     const repository = new MemoryTracerJobRepository(new MemoryJobPort());
     const jobs = new TracerJobApplicationService(repository);
     const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
@@ -315,6 +1022,9 @@ describe('durable media generation', () => {
     assert.equal(ledger.result?.status, 'failed');
     assert.equal(ledger.result?.usage.status, 'refunded');
     assert.equal(provider.cancelCalls, 1);
+    assert.equal(admittedAttempts.length, 1);
+    assert.equal(renewCalls, 1);
+    assert.deepEqual(released, [`capacity:${admittedAttempts[0]}`]);
   });
 
   it('keeps an in-flight submit fenced until its task reference is durable, then cancels and refunds it', async () => {

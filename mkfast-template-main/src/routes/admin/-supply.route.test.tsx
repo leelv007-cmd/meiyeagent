@@ -35,9 +35,12 @@ const {
   AdminSupplyControl,
   AdminSupplyTaskDrilldown,
 } = await import('@/p1/admin-supply-control');
+const { buildDefaultSupplyControlSnapshot } = await import(
+  '@/p1/admin-supply-fixture'
+);
 const {
   parseRunTableUrlState,
-  runTableStateToSearchString,
+  querySupplyRunTable,
   serializeRunTableUrlState,
 } = await import('@/p1/admin-supply-run-table-model');
 
@@ -51,7 +54,9 @@ test('admin supply route module exports Route and page components', () => {
 });
 
 test('supply control center body includes overview + run table + entitlements', () => {
-  const html = renderToStaticMarkup(<AdminSupplyControl />);
+  const html = renderToStaticMarkup(
+    <AdminSupplyControl snapshot={buildDefaultSupplyControlSnapshot()} />
+  );
   assert.match(html, /data-testid="supply-control-center-panel"/);
   assert.match(html, /data-testid="supply-overview-panel"/);
   assert.match(html, /data-testid="supply-run-table"/);
@@ -67,13 +72,16 @@ test('five association view routes are reachable and render forward+reverse', ()
   for (const viewId of ASSOCIATION_VIEW_IDS) {
     assert.equal(
       ASSOCIATION_VIEW_PATHS[viewId],
-      `/admin/supply/views/${viewId}`,
+      `/admin/supply/views/${viewId}`
     );
     // Page export is a function (router will inject params; tests pass viewId prop).
     assert.equal(typeof viewsRoute.SupplyAssociationViewPage, 'function');
 
     const pageHtml = renderToStaticMarkup(
-      <AdminSupplyAssociationView viewId={viewId} />,
+      <AdminSupplyAssociationView
+        snapshot={buildDefaultSupplyControlSnapshot()}
+        viewId={viewId}
+      />
     );
     assert.match(pageHtml, /data-testid="supply-association-views-panel"/);
     assert.match(pageHtml, new RegExp(`data-view-id="${viewId}"`));
@@ -82,8 +90,8 @@ test('five association view routes are reachable and render forward+reverse', ()
     assert.match(
       pageHtml,
       new RegExp(
-        `href="${ASSOCIATION_VIEW_PATHS[viewId].replace(/\//g, '\\/')}"`,
-      ),
+        `href="${ASSOCIATION_VIEW_PATHS[viewId].replace(/\//g, '\\/')}"`
+      )
     );
 
     // Nav links cover all five from each page.
@@ -95,7 +103,10 @@ test('five association view routes are reachable and render forward+reverse', ()
 
 test('task drilldown route body renders information completeness contract', () => {
   const html = renderToStaticMarkup(
-    <AdminSupplyTaskDrilldown taskId="task-image-002" />,
+    <AdminSupplyTaskDrilldown
+      snapshot={buildDefaultSupplyControlSnapshot()}
+      taskId="task-image-002"
+    />
   );
   assert.match(html, /data-testid="supply-task-drilldown"/);
   assert.match(html, /data-testid="supply-task-summary-cards"/);
@@ -110,13 +121,19 @@ test('task drilldown route body renders information completeness contract', () =
 test('run table URL state sync preserves shareable filter contract on control', () => {
   const state = parseRunTableUrlState(
     new URLSearchParams(
-      'operation=copy.generate&status=succeeded&page=1&sort=startedAt&dir=desc',
-    ),
+      'operation=copy.generate&status=succeeded&page=1&sort=startedAt&dir=desc'
+    )
   );
-  const search = runTableStateToSearchString(state);
-  const html = renderToStaticMarkup(
-    <AdminSupplyControl runTableSearch={search} />,
-  );
+  const snapshot = buildDefaultSupplyControlSnapshot();
+  const serverPage = querySupplyRunTable(snapshot.runs, state);
+  snapshot.runPage = {
+    query: serverPage.state,
+    total: serverPage.total,
+    totalPages: serverPage.totalPages,
+    rows: serverPage.rows,
+    facets: serverPage.facets,
+  };
+  const html = renderToStaticMarkup(<AdminSupplyControl snapshot={snapshot} />);
   assert.match(html, /data-testid="supply-run-table-share-link"/);
   // Defaults omitted from serialization — operation/status must remain.
   assert.match(html, /operation=copy.generate/);
@@ -131,7 +148,10 @@ test('run table URL state sync preserves shareable filter contract on control', 
 test('association view control is import-stable for all five ids', () => {
   for (const viewId of ASSOCIATION_VIEW_IDS) {
     const html = renderToStaticMarkup(
-      <AdminSupplyAssociationView viewId={viewId} />,
+      <AdminSupplyAssociationView
+        snapshot={buildDefaultSupplyControlSnapshot()}
+        viewId={viewId}
+      />
     );
     assert.match(html, /data-testid="supply-association-projection"/);
   }

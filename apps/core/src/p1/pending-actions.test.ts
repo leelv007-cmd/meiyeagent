@@ -58,7 +58,10 @@ test('projects authoritative questions and approval requests in stable order', a
 
   assert.deepEqual(first, refreshed);
   assert.deepEqual(
-    first.map((action) => [action.taskId, action.kind, action.questionOrApprovalRef]),
+    first.map((action) => {
+      assert.ok('kind' in action);
+      return [action.taskId, action.kind, action.questionOrApprovalRef];
+    }),
     [
       ['task-a', 'question', 'question-a'],
       ['task-c', 'question', 'question-c'],
@@ -195,4 +198,96 @@ test('extended actionable inbox keeps PendingAction compatibility and adds termi
     (item) => item.statusKind === 'needs_choice_or_confirm',
   );
   assert.deepEqual(pendingItem?.pendingAction, pending);
+});
+
+test('service projects operations, delivery, and acceptance-unknown facts from production readers', async () => {
+  const service = new PendingActionsService(
+    {
+      async listPendingQuestions() {
+        return [];
+      },
+    },
+    {
+      async hasMembership() {
+        return true;
+      },
+      async loadWorkspace() {
+        return {
+          tasks: [
+            {
+              id: 'task-completed',
+              title: '结果已完成',
+              relatedObject: { id: 'work-completed', kind: 'work' },
+            },
+          ],
+          taskEvents: [
+            {
+              id: 'event-completed',
+              taskId: 'task-completed',
+              event: 'execution_completed',
+              createdAt: '2026-07-20T08:00:00.000Z',
+            },
+          ],
+          contentPackages: [
+            {
+              id: 'package-a',
+              revision: 2,
+              source: { assetIds: [], workId: 'work-delivery' },
+              approvalRequests: [],
+              deliveryEvents: [
+                {
+                  id: 'delivery-a',
+                  actorId: 'owner-a',
+                  occurredAt: '2026-07-20T09:00:00.000Z',
+                  platform: 'douyin',
+                  source: 'native',
+                  variantVersionId: 'variant-a',
+                  type: 'manual_publish_result',
+                  status: 'published',
+                },
+              ],
+            } as never,
+          ],
+        };
+      },
+    },
+    {
+      async listJobs() {
+        return [
+          {
+            jobId: 'job-unknown',
+            operation: 'video.generate',
+            status: 'unknown',
+            origin: {
+              kind: 'advanced_canvas',
+              projectId: 'work-unknown',
+              revisionId: 'revision-a',
+            },
+            attempt: {
+              id: 'attempt-a',
+              jobId: 'job-unknown',
+              catalogModelId: 'model-a',
+              deploymentId: 'deployment-a',
+              acceptance: 'acceptance_unknown',
+              status: 'unknown',
+              createdAt: '2026-07-20T10:00:00.000Z',
+            },
+          } as never,
+        ];
+      },
+    },
+  );
+
+  const items = await service.list({
+    userId: 'owner-a',
+    workspaceId: 'workspace-a',
+  });
+  assert.deepEqual(
+    items.map((item) => ('statusKind' in item ? item.statusKind : item.kind)),
+    [
+      'result_available',
+      'delivery_completed',
+      'acceptance_unknown_recovery',
+    ],
+  );
 });

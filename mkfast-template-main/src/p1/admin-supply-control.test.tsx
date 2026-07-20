@@ -6,11 +6,14 @@ import {
   AdminSupplyAssociationView,
   AdminSupplyControl,
   AdminSupplyTaskDrilldown,
-} from './admin-supply-control';
-import { ASSOCIATION_VIEW_IDS } from './admin-supply-association-views-model';
+} from '@/p1/admin-supply-control';
+import { ASSOCIATION_VIEW_IDS } from '@/p1/admin-supply-association-views-model';
+import { buildDefaultSupplyControlSnapshot } from '@/p1/admin-supply-fixture';
+
+const SNAPSHOT = buildDefaultSupplyControlSnapshot();
 
 test('SSR supply control center renders overview, run table, associations, entitlements', () => {
-  const html = renderToStaticMarkup(<AdminSupplyControl />);
+  const html = renderToStaticMarkup(<AdminSupplyControl snapshot={SNAPSHOT} />);
 
   assert.match(html, /data-testid="supply-control-center-panel"/);
   assert.match(html, /data-testid="supply-overview-panel"/);
@@ -19,6 +22,9 @@ test('SSR supply control center renders overview, run table, associations, entit
   assert.match(html, /data-testid="supply-six-entity"/);
   assert.match(html, /data-testid="supply-effective-revisions"/);
   assert.match(html, /data-testid="supply-run-table"/);
+  assert.match(html, /data-ended-at="2026-07-20T11:50:02.400Z"/);
+  assert.match(html, /data-latency-ms="2400"/);
+  assert.match(html, />2400ms</);
   assert.match(html, /data-testid="supply-association-index"/);
   assert.match(html, /data-testid="entitlement-status-panel"/);
   assert.match(html, /data-external-gateway-deeplink-only="true"/);
@@ -27,7 +33,7 @@ test('SSR supply control center renders overview, run table, associations, entit
 });
 
 test('SSR J5 credential UI + route simulator + governed actions', () => {
-  const html = renderToStaticMarkup(<AdminSupplyControl />);
+  const html = renderToStaticMarkup(<AdminSupplyControl snapshot={SNAPSHOT} />);
 
   assert.match(html, /data-testid="supply-credential-panel"/);
   assert.match(html, /data-secret-never-echoed="true"/);
@@ -50,7 +56,7 @@ test('SSR J5 credential UI + route simulator + governed actions', () => {
   assert.match(html, /invoice/);
 
   assert.match(html, /data-testid="supply-governed-actions-panel"/);
-  assert.match(html, /data-action-count="13"/);
+  assert.match(html, /data-action-count="14"/);
   assert.match(html, /data-forbid-secret-echo="true"/);
   assert.match(html, /data-forbid-direct-db="true"/);
   assert.match(html, /data-forbid-bypass-publish="true"/);
@@ -63,9 +69,15 @@ test('SSR J5 credential UI + route simulator + governed actions', () => {
 });
 
 test('SSR run table share link reflects URL state', () => {
-  const html = renderToStaticMarkup(
-    <AdminSupplyControl runTableSearch="page=2&status=failed&sort=latencyMs&dir=asc" />,
-  );
+  const snapshot = structuredClone(SNAPSHOT);
+  snapshot.runPage.query = {
+    ...snapshot.runPage.query,
+    page: 2,
+    status: 'failed',
+    sort: 'latencyMs',
+    dir: 'asc',
+  };
+  const html = renderToStaticMarkup(<AdminSupplyControl snapshot={snapshot} />);
   assert.match(html, /data-testid="supply-run-table-share-link"/);
   assert.match(html, /status=failed/);
   assert.match(html, /sort=latencyMs/);
@@ -74,7 +86,7 @@ test('SSR run table share link reflects URL state', () => {
 
 test('SSR task drilldown embeds summary latency timeline error artifact', () => {
   const html = renderToStaticMarkup(
-    <AdminSupplyControl taskId="task-image-002" />,
+    <AdminSupplyControl snapshot={SNAPSHOT} taskId="task-image-002" />
   );
   assert.match(html, /data-testid="supply-task-drilldown"/);
   assert.match(html, /data-testid="supply-task-summary-cards"/);
@@ -87,7 +99,7 @@ test('SSR task drilldown embeds summary latency timeline error artifact', () => 
 test('SSR association views render forward+reverse for all five ids', () => {
   for (const viewId of ASSOCIATION_VIEW_IDS) {
     const html = renderToStaticMarkup(
-      <AdminSupplyAssociationView viewId={viewId} />,
+      <AdminSupplyAssociationView snapshot={SNAPSHOT} viewId={viewId} />
     );
     assert.match(html, /data-testid="supply-association-views-panel"/);
     assert.match(html, new RegExp(`data-view-id="${viewId}"`));
@@ -98,13 +110,13 @@ test('SSR association views render forward+reverse for all five ids', () => {
 
 test('SSR standalone task drilldown for known and unknown task', () => {
   const ok = renderToStaticMarkup(
-    <AdminSupplyTaskDrilldown taskId="task-video-003" />,
+    <AdminSupplyTaskDrilldown snapshot={SNAPSHOT} taskId="task-video-003" />
   );
   assert.match(ok, /data-testid="supply-task-drilldown"/);
   assert.match(ok, /acceptance_unknown/);
 
   const missing = renderToStaticMarkup(
-    <AdminSupplyTaskDrilldown taskId="task-missing" />,
+    <AdminSupplyTaskDrilldown snapshot={SNAPSHOT} taskId="task-missing" />
   );
   assert.match(missing, /data-testid="supply-task-not-found"/);
 });

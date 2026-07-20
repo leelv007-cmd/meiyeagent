@@ -45,11 +45,17 @@ export interface FoundationModelSupplyLedgerBilateral {
   productUsage?: ProductUsageLedger;
   /** Default shared pool id when freeze is synthesized from route snapshot. */
   defaultSupplyPoolId?: string;
+  /** Durable H2 store shared by HTTP and Worker processes. */
+  supplyFreezes?: {
+    append(freeze: SupplyRequestFreeze): Promise<SupplyRequestFreeze>;
+    get(freezeId: string): Promise<SupplyRequestFreeze | null>;
+  };
 }
 
 export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
   private readonly productUsageBridge?: SupplySideProductUsageBridge;
   private readonly defaultSupplyPoolId: string;
+  private readonly supplyFreezes?: FoundationModelSupplyLedgerBilateral['supplyFreezes'];
 
   constructor(
     private readonly foundation: P1ApplicationService,
@@ -80,6 +86,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       : undefined;
     this.defaultSupplyPoolId =
       bilateral.defaultSupplyPoolId ?? 'pool-shared-default';
+    this.supplyFreezes = bilateral.supplyFreezes;
   }
 
   /** Test / audit accessor for attached supply freezes (H2 bridge). */
@@ -210,8 +217,9 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
         : persistedAttempt.acceptance;
     const canSafelyFallback =
       acceptance === 'rejected_before_accept' &&
-      input.submission.selection.mode === 'auto' &&
       input.snapshot.fallbackConsent === true &&
+      (input.snapshot.fallbackAuthorized ??
+        input.submission.selection.mode === 'auto') &&
       input.ordinal < (input.snapshot.allowedCandidates?.length ?? 1);
     const attempt: ProviderAttempt = {
       id: persistedAttempt.id,
@@ -270,7 +278,10 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     };
     const cost = input.result.providerCost;
     const outcome = foundationOutcome(input.result);
-    const freeze = this.attachBilateralFreeze(input);
+    const freeze =
+      (await this.supplyFreezes?.get(
+        `supply-freeze:${input.result.jobId}:${input.result.attempt.id}`,
+      )) ?? this.attachBilateralFreeze(input);
     const stage = (
       cost.status === 'observed' ? 'observed' : 'estimated'
     ) as 'observed' | 'estimated';
@@ -348,6 +359,10 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     }
   }
 
+  async freezeAttempt(input: ModelSupplyLedgerCheckpointInput) {
+    return this.persistBilateralFreeze(input);
+  }
+
   /**
    * Bilateral bridge: synthesize H2 SupplyRequestFreeze from the settled
    * RouteSnapshot (G1 credential/route fields) and optionally attach it to
@@ -368,6 +383,10 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     const candidate = snapshot.allowedCandidates?.find(
       (row) => row.deploymentId === snapshot.deploymentId,
     );
+    // Unknown pricing is an explicit state on the immutable route snapshot.
+    // Do not manufacture a zero-valued estimate: there is no price revision
+    // that can be frozen or reconciled until the control plane supplies one.
+    if (!candidate || candidate.pricingStatus === 'unknown') return null;
     const resource = usageResource(input.submission.operation);
     const freeze = buildSupplyRequestFreeze({
       id: `supply-freeze:${input.result.jobId}:${input.result.attempt.id}`,
@@ -375,29 +394,29 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       routeSnapshotRef: snapshot.id,
       credentialAccountVersion: credentialVersion,
       supplierRequestTaskId:
-        input.result.attempt.providerTaskRef ?? input.result.attempt.id,
+        input.result.attempt.id,
       usage: {
         resource,
         quantity: input.result.usage.quantity,
         unit: candidate?.unit ?? resource,
       },
       supplierPriceRevision: {
-        id: candidate?.priceRevision ?? snapshot.priceRevision ?? 'unknown',
+        id: candidate.priceRevision,
         deploymentId: snapshot.deploymentId,
-        amountMicros: candidate?.unitPriceMicros ?? 0,
-        currency: candidate?.currency ?? 'CNY',
-        unit: candidate?.unit ?? resource,
+        amountMicros: candidate.unitPriceMicros,
+        currency: candidate.currency,
+        unit: candidate.unit,
         evidence: {
           source: 'gateway_estimate',
           note: 'z2_foundation_ledger_bridge',
         },
         revisionId:
-          candidate?.priceRevision ?? snapshot.priceRevision ?? 'unknown',
+          candidate.priceRevision,
       },
-      supplyPoolId: this.defaultSupplyPoolId,
+      supplyPoolId: snapshot.supplyPoolId ?? this.defaultSupplyPoolId,
       providerCostAttemptId: input.result.attempt.id,
       productUsageTaskId: input.result.jobId,
-      frozenAt: new Date().toISOString(),
+      frozenAt: snapshot.createdAt,
     });
 
     if (this.productUsageBridge) {
@@ -413,6 +432,65 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       }
     }
     return freeze;
+  }
+
+  private async persistBilateralFreeze(
+    input: ModelSupplyLedgerCheckpointInput,
+  ): Promise<SupplyRequestFreeze | null> {
+    if (!this.supplyFreezes) return null;
+    const snapshot = input.snapshot;
+    const candidate = snapshot.allowedCandidates?.find(
+      (row) => row.deploymentId === snapshot.deploymentId,
+    );
+    const credentialVersion =
+      snapshot.credentialVersion ?? candidate?.credentialVersion;
+    if (
+      !credentialVersion ||
+      !candidate ||
+      candidate.pricingStatus === 'unknown'
+    ) {
+      return null;
+    }
+    const resource = usageResource(input.submission.operation);
+    const freeze = buildSupplyRequestFreeze({
+      id: `supply-freeze:${input.jobId}:${input.attemptId}`,
+      workspaceId: input.submission.workspaceId,
+      routeSnapshotRef: snapshot.id,
+      credentialAccountVersion: credentialVersion,
+      supplierRequestTaskId: input.attemptId,
+      usage: {
+        resource,
+        quantity: input.submission.productUsageQuantity ?? 1,
+        unit: candidate.unit,
+      },
+      supplierPriceRevision: {
+        id: candidate.priceRevision,
+        deploymentId: snapshot.deploymentId,
+        amountMicros: candidate.unitPriceMicros,
+        currency: candidate.currency,
+        unit: candidate.unit,
+        evidence: {
+          source: 'gateway_estimate',
+          note: 'z2_foundation_ledger_bridge',
+        },
+        revisionId: candidate.priceRevision,
+      },
+      supplyPoolId: snapshot.supplyPoolId ?? this.defaultSupplyPoolId,
+      ...(input.ordinal === 1 ? { productUsageTaskId: input.jobId } : {}),
+      providerCostAttemptId: input.attemptId,
+      frozenAt: snapshot.createdAt,
+    });
+    const persisted = await this.supplyFreezes.append(freeze);
+    if (input.ordinal === 1 && this.productUsageBridge) {
+      try {
+        return this.productUsageBridge.attachFreeze(input.jobId, persisted);
+      } catch (error) {
+        if (!(error instanceof P1DomainError && error.code === 'NOT_FOUND')) {
+          throw error;
+        }
+      }
+    }
+    return persisted;
   }
 
   /**

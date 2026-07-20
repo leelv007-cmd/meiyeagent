@@ -61,6 +61,10 @@ export function copyCandidateBodiesAreDistinct(
 
 export interface ModelSupplyResult {
   jobId: string;
+  /** Durable repository-observed terminal time; absent while outcome is unknown. */
+  endedAt?: string;
+  /** End-to-end elapsed time from the first provider attempt to endedAt. */
+  latencyMs?: number;
   operation?: ModelOperation;
   inputAssets?: CanvasGenerationInputAsset[];
   inputNodeBindings?: CanvasGenerationInputNodeBinding[];
@@ -152,6 +156,8 @@ export interface ModelSupplyLedgerPort {
   checkpointAttempt(
     input: ModelSupplyLedgerCheckpointInput
   ): Promise<{ replayed: boolean; recoveredResult?: ModelSupplyResult }>;
+  /** Freeze route/credential/pool/price facts after admission and before provider I/O. */
+  freezeAttempt?(input: ModelSupplyLedgerCheckpointInput): Promise<unknown>;
   settleAttempt(input: {
     submission: ModelSupplySubmission;
     result: ModelSupplyResult;

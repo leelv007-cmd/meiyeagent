@@ -3506,7 +3506,7 @@ export function UnifiedCreationWorkbench({
                     videoApprovalReceiptId &&
                     currentWork.brief?.confirmedAt &&
                     groundingMissing.length === 0 ? (
-                      {null /* Z1 video result face retired */}
+                      null
                     ) : selectedModel?.available &&
                       selectedModel.unitPrice &&
                       currentWork.brief?.confirmedAt &&

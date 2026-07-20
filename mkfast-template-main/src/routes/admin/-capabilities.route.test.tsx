@@ -16,9 +16,14 @@ registerHooks({
 });
 
 const routeModule = await import('./capabilities');
-const { AdminCapabilityCatalog } = await import('@/p1/admin-capability-catalog');
+const { AdminCapabilityCatalog } = await import(
+  '@/p1/admin-capability-catalog'
+);
 const { AdminCapabilityRegistry } = await import(
   '@/p1/admin-capability-registry'
+);
+const { buildCapabilityRegistry } = await import(
+  '@/p1/admin-capability-registry-model'
 );
 const { assertOpsPathHasNoD048BannedControls } = await import(
   '@/p1/admin-capability-catalog-model'
@@ -42,7 +47,9 @@ test('capabilities page body includes two-level catalog + registry six questions
   assert.match(catalogHtml, /data-page-id="audit"/);
   assert.deepEqual(assertOpsPathHasNoD048BannedControls(catalogHtml), []);
 
-  const registryHtml = renderToStaticMarkup(<AdminCapabilityRegistry />);
+  const registryHtml = renderToStaticMarkup(
+    <AdminCapabilityRegistry view={buildCapabilityRegistry()} />
+  );
   assert.match(registryHtml, /能力清单全景/);
   assert.match(registryHtml, /data-testid="capability-registry-panel"/);
   assert.match(registryHtml, /模型供应商与路由质量/);

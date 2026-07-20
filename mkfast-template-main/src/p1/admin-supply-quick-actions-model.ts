@@ -27,6 +27,7 @@ export function isValidImpactReason(reason: string): boolean {
 export const GOVERNED_QUICK_ACTION_IDS = [
   'connectivity_probe',
   'conformance_probe',
+  'candidate_config_save',
   'candidate_config_validate',
   'route_simulate',
   'publish',
@@ -152,6 +153,21 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] = 
     description: '运行模态 conformance 探针并记录证据',
     module: 'model-supply',
     action: 'activation_probe_run',
+    kind: 'command',
+    requiredPermission: 'platform.manage',
+    requiresImpactPreview: true,
+    requiresReason: true,
+    casIdempotency: true,
+    reversibleDrain: false,
+    immutableAudit: true,
+    forbids: FORBIDS,
+  },
+  {
+    id: 'candidate_config_save',
+    label: '候选配置保存',
+    description: '基于当前 RoutePolicy head 保存新的不可变候选 revision（不发布）',
+    module: 'model-supply',
+    action: 'admin_supply_action',
     kind: 'command',
     requiredPermission: 'platform.manage',
     requiresImpactPreview: true,
@@ -375,6 +391,12 @@ export function buildImpactPreview(
         '结果规范化，不记录上游 Authorization / 完整 endpoint',
       );
       break;
+    case 'candidate_config_save':
+      changes.push(
+        '保存新的不可变 RoutePolicy 候选 revision',
+        '不改变当前生效 head，后续仍需验证和发布',
+      );
+      break;
     case 'candidate_config_validate':
       changes.push(
         '验证候选配置与硬过滤/数据政策',
@@ -481,6 +503,10 @@ export function buildGovernedCommand(
       payload.deploymentId = target.resourceId;
       payload.probeKind =
         def.id === 'conformance_probe' ? 'conformance' : 'connectivity';
+      break;
+    case 'candidate_config_save':
+      payload.routePolicyRevisionId = target.resourceId;
+      payload.mode = 'save_candidate';
       break;
     case 'route_simulate':
     case 'candidate_config_validate':

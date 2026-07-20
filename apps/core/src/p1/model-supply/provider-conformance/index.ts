@@ -11,3 +11,5 @@ export * from './text/runner.js';
 export * from './text/dual-channel.js';
 export * from './video/suite.js';
 export * from './fault-injection/index.js';
+export * from './live-provider-gate.js';
+export * from './live-provider-adapters.js';

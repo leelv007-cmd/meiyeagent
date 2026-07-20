@@ -64,16 +64,14 @@ export type FaultDomainKind =
  * (they do not count as independent domains).
  */
 export function faultDomainKey(input: {
-  providerProfileId: string;
-  channelKind: SupplyChannelKind;
   /** Optional endpoint fingerprint — same endpoint aliases collapse. */
   endpointFingerprint?: string;
   /** Optional account identity — dual tokens on same account collapse. */
   accountIdentity?: string;
 }): string {
-  const endpoint = input.endpointFingerprint ?? 'endpoint:default';
-  const account = input.accountIdentity ?? 'account:default';
-  return `${input.providerProfileId}::${input.channelKind}::${account}::${endpoint}`;
+  const endpoint = input.endpointFingerprint?.trim() || 'endpoint:default';
+  const account = input.accountIdentity?.trim() || 'account:default';
+  return `${account}::${endpoint}`;
 }
 
 export interface QualifiedDeploymentEvidence {

@@ -83,6 +83,8 @@ test('NEGATIVE: single qualified Deployment cannot mark multi-channel ready', ()
       channelKind: 'official_direct',
       activationStatus: 'live_verified',
       manufacturer: 'volcengine',
+      accountIdentity: 'ark-account-only',
+      endpointFingerprint: 'ark.endpoint.only',
     }),
   ];
   const gate = evaluateMultiChannelPublishGate({
@@ -145,8 +147,6 @@ test('NEGATIVE: same-account dual token does not count as two fault domains', ()
   // Same provider+channel+account+endpoint → one domain key.
   assert.equal(
     faultDomainKey({
-      providerProfileId: 'pp-volcengine-ark',
-      channelKind: 'official_direct',
       accountIdentity: 'shared-account',
       endpointFingerprint: 'ark.cn-beijing',
     }),
@@ -204,6 +204,67 @@ test('NEGATIVE: same-endpoint dual alias does not count as two fault domains', (
     catalogModelId: 'seedance-1-5-pro',
     deployments: aliases,
   });
+  assert.equal(gate.independentFaultDomainCount, 1);
+  assert.equal(gate.multiChannelReady, false);
+});
+
+test('NEGATIVE: different registry IDs without stable account and endpoint identities are not independent domains', () => {
+  const gate = evaluateMultiChannelPublishGate({
+    operation: 'copy.generate',
+    catalogModelId,
+    deployments: [
+      qualifiedDeployment({
+        deploymentId: 'dep-direct-generated-id',
+        catalogModelId,
+        providerProfileId: 'provider-direct-generated-id',
+        executionChannelId: 'channel-direct-generated-id',
+        channelKind: 'official_direct',
+        activationStatus: 'live_verified',
+      }),
+      qualifiedDeployment({
+        deploymentId: 'dep-reseller-generated-id',
+        catalogModelId,
+        providerProfileId: 'provider-reseller-generated-id',
+        executionChannelId: 'channel-reseller-generated-id',
+        channelKind: 'upstream_reseller',
+        activationStatus: 'live_verified',
+      }),
+    ],
+  });
+
+  assert.equal(gate.independentFaultDomainCount, 0);
+  assert.equal(gate.multiChannelReady, false);
+  assert.equal(gate.status, 'single_channel');
+});
+
+test('NEGATIVE: distinct endpoints on one stable account are still one fault domain', () => {
+  const deployments = dualLiveDeployments();
+  deployments[1] = {
+    ...deployments[1]!,
+    accountIdentity: deployments[0]!.accountIdentity,
+  };
+  const gate = evaluateMultiChannelPublishGate({
+    operation: 'copy.generate',
+    catalogModelId,
+    deployments,
+  });
+
+  assert.equal(gate.independentFaultDomainCount, 1);
+  assert.equal(gate.multiChannelReady, false);
+});
+
+test('NEGATIVE: distinct accounts on one stable endpoint are still one fault domain', () => {
+  const deployments = dualLiveDeployments();
+  deployments[1] = {
+    ...deployments[1]!,
+    endpointFingerprint: deployments[0]!.endpointFingerprint,
+  };
+  const gate = evaluateMultiChannelPublishGate({
+    operation: 'copy.generate',
+    catalogModelId,
+    deployments,
+  });
+
   assert.equal(gate.independentFaultDomainCount, 1);
   assert.equal(gate.multiChannelReady, false);
 });

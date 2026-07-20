@@ -16,6 +16,8 @@ import type {
   IntegrationProvider,
 } from '../integrations/contracts.js';
 
+export const PLATFORM_CREDENTIAL_WORKSPACE_ID = '__global__';
+
 /** High-sensitivity credential governance actions (D-057 / D-060). */
 export type CredentialSensitiveAction =
   | 'view_meta'
@@ -101,7 +103,7 @@ export interface SpecializeCredentialAccountInput {
 }
 
 function mapConnectionStatus(
-  connection: IntegrationConnection,
+  connection: IntegrationConnection
 ): CredentialAccountLifecycle {
   if (
     connection.status === 'revoked' ||
@@ -122,7 +124,7 @@ function mapConnectionStatus(
 
 function mapSource(
   connection: IntegrationConnection,
-  explicit?: CredentialAccountMetadata['source'],
+  explicit?: CredentialAccountMetadata['source']
 ): CredentialAccountMetadata['source'] {
   if (explicit) return explicit;
   if (connection.secretRef.startsWith('env://')) return 'env_fallback';
@@ -135,7 +137,7 @@ function mapSource(
  * or copying secret values.
  */
 export function specializeCredentialAccount(
-  input: SpecializeCredentialAccountInput,
+  input: SpecializeCredentialAccountInput
 ): CredentialAccount {
   const { connection } = input;
   const now = input.now ?? new Date().toISOString();
@@ -182,7 +184,9 @@ export function specializeCredentialAccount(
     ...(input.publicQuotaHint
       ? { publicQuotaHint: input.publicQuotaHint }
       : {}),
-    ...(lastTest ? { lastTestEvidenceRef: lastTest.evidenceRef, lastTest } : {}),
+    ...(lastTest
+      ? { lastTestEvidenceRef: lastTest.evidenceRef, lastTest }
+      : {}),
     connectionId: connection.id,
     workspaceId: connection.workspaceId,
     provider: connection.provider,
@@ -261,15 +265,13 @@ export function createCredentialAccount(input: {
  * Product API / admin projection — secret values never appear.
  */
 export function toPublicMetadata(
-  account: CredentialAccount,
+  account: CredentialAccount
 ): CredentialAccountMetadata {
   return {
     id: account.id,
     label: account.label,
     providerProfileId: account.providerProfileId,
-    ...(account.projectRegion
-      ? { projectRegion: account.projectRegion }
-      : {}),
+    ...(account.projectRegion ? { projectRegion: account.projectRegion } : {}),
     type: account.type,
     scope: account.scope,
     secretReference: account.secretReference,

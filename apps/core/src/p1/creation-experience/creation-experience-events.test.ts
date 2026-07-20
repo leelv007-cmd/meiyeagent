@@ -87,7 +87,7 @@ describe('append-only audit channel', () => {
     assert.equal(snapshot.length, 1);
 
     // Mutating the returned list must not affect the store.
-    (snapshot as CreationExperienceEventKind[]).pop?.();
+    (snapshot as unknown as CreationExperienceEventKind[]).pop?.();
     // @ts-expect-error — intentional runtime mutation attempt on snapshot array
     snapshot.length = 0;
     assert.equal(audit.size, 1);

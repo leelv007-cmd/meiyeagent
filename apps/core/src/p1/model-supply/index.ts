@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type {
   GeneratedCopyCandidateContent,
   GeneratedPlatformVariants,
+  HealthOverlayPort,
   VideoCompositionEvidence,
 } from '@meiye/contracts';
 import type { ZodType } from 'zod';
@@ -67,9 +68,11 @@ export {
   type ModelSupplyLedgerPort,
 } from './ledger-contracts.js';
 export {
+  type AdapterRuntimeConfig,
   type ProviderExecutionRequest,
   type ProviderExecutionResponse,
   type ProviderExecutionPort,
+  type ProviderRuntimeBinding,
   type StructuredObjectExecutor,
   type MediaProviderEffectRequest,
   type MediaProviderSubmissionReceipt,
@@ -111,6 +114,7 @@ import {
   type CancelledMediaProviderTerminalReconciliation,
   type CopyCandidate,
   type DurableMediaGenerationRuntimePort,
+  type ModelSupplyLedgerCheckpointInput,
   type ModelSupplyLedgerPort,
   type ModelSupplyResult,
   type ModelSupplyResultSink,
@@ -121,6 +125,7 @@ import type {
   ProviderExecutionPort,
   ProviderExecutionRequest,
   ProviderExecutionResponse,
+  ProviderRuntimeBinding,
   StructuredObjectExecutor,
 } from './provider-lifecycle.js';
 import {
@@ -132,6 +137,39 @@ import {
   isHealthOverlayBlocking,
   MemoryHealthOverlayPort,
 } from '../supply-registry/health-overlay.js';
+import type { CapabilityHotAssemblyPort } from '../supply-registry/hot-assembly.js';
+import {
+  collectHealthExcludedDeploymentIds,
+  explainPlanDecision,
+  planModelSupplyCandidatesWithDataPolicy,
+  type DeploymentDataPolicyBinding,
+} from '../supply-registry/supply-control-plane.js';
+import type { RoutePolicyPayload } from '../supply-registry/route-policy.js';
+import type { RankingCandidateInput } from '../supply-registry/three-layer-ranking.js';
+import type { RouteDecisionExplanation } from '../supply-registry/route-explanation.js';
+
+export interface ModelSupplyPlanningControlPlaneState {
+  routePolicy?: RoutePolicyPayload | null;
+  routePolicyRevisionId?: string | null;
+  healthOverlay?: HealthOverlayPort;
+  dataPolicyByDeploymentId?: ReadonlyMap<
+    string,
+    DeploymentDataPolicyBinding
+  >;
+  rankingInputsByDeploymentId?: ReadonlyMap<string, RankingCandidateInput>;
+}
+
+/** Durable planning state shared by simulation and real task submission. */
+export interface ModelSupplyPlanningControlPlanePort {
+  readPlanningState(input: {
+    workspaceId: string;
+    catalogRevisionId: string;
+    operation: ModelOperation;
+    qualityTier: 'quality' | 'balanced' | 'auto';
+    deploymentIds: readonly string[];
+    routePolicyRevisionId?: string;
+  }): Promise<ModelSupplyPlanningControlPlaneState>;
+}
 
 function modelSupplyProductUsageQuantity(
   submission: ModelSupplySubmission
@@ -324,9 +362,19 @@ function sumRouteCosts(
 }
 
 function canonical(submission: ModelSupplySubmission) {
+  const frozenRouteSnapshot = submission.frozenRouteSnapshot
+    ? structuredClone(submission.frozenRouteSnapshot)
+    : undefined;
+  if (frozenRouteSnapshot) {
+    delete frozenRouteSnapshot.credentialAccountId;
+    delete frozenRouteSnapshot.supplyPoolId;
+    delete frozenRouteSnapshot.entitlementPolicyRevision;
+    delete frozenRouteSnapshot.appliedAllocationIds;
+  }
   return JSON.stringify({
     ...submission,
     dataClass: [...submission.dataClass].sort(),
+    ...(frozenRouteSnapshot ? { frozenRouteSnapshot } : {}),
   });
 }
 
@@ -335,6 +383,60 @@ export function modelSupplyJobId(submission: ModelSupplySubmission) {
     submission.workspaceId,
     submission.idempotencyKey
   );
+}
+
+/** Preserve the shared planning explanation while replacing its branch with observed facts. */
+export function applyActualRouteDecisionExplanation(
+  result: ModelSupplyResult,
+): ModelSupplyResult {
+  const explanation = result.snapshot.decisionExplanation;
+  if (!explanation) return result;
+  const attempts = result.attempts.length > 0
+    ? result.attempts
+    : [result.attempt];
+  const primaryDeploymentId = attempts[0]?.deploymentId;
+  const fallbackDeploymentId =
+    attempts.length > 1 ? result.attempt.deploymentId : undefined;
+  const acceptance = result.attempt.acceptance;
+  let decision: RouteDecisionExplanation['acceptanceBranch']['decision'];
+  let reason: string;
+  if (result.status === 'completed') {
+    decision = fallbackDeploymentId ? 'safe_auto_fallback' : 'complete';
+    reason = fallbackDeploymentId
+      ? 'provider_completed_after_safe_auto_fallback'
+      : 'provider_completed';
+  } else if (
+    acceptance === 'accepted' ||
+    acceptance === 'acceptance_unknown'
+  ) {
+    decision = 'query_reconcile_manual';
+    reason =
+      acceptance === 'accepted'
+        ? 'provider_accepted_without_completed_delivery'
+        : 'provider_acceptance_unknown';
+  } else {
+    const hadAuthorizedFallback =
+      result.snapshot.fallbackConsent === true &&
+      (result.snapshot.allowedCandidates?.length ?? 0) > 1;
+    decision = hadAuthorizedFallback
+      ? 'no_safe_fallback_candidate'
+      : 'fallback_not_authorized';
+    reason = hadAuthorizedFallback
+      ? 'all_authorized_candidates_rejected_before_accept'
+      : 'provider_rejected_before_accept_without_authorized_fallback';
+  }
+  result.snapshot.decisionExplanation = {
+    ...structuredClone(explanation),
+    surface: 'task_audit',
+    acceptanceBranch: {
+      acceptance,
+      decision,
+      reason,
+      ...(primaryDeploymentId ? { primaryDeploymentId } : {}),
+      ...(fallbackDeploymentId ? { fallbackDeploymentId } : {}),
+    },
+  };
+  return result;
 }
 
 export function modelSupplyJobIdForKey(
@@ -562,6 +664,57 @@ interface StoredIdempotency {
   result: ModelSupplyResult;
 }
 
+interface SubmissionPlanningDecision {
+  candidates: Array<{ model: CatalogModel; deployment: ModelDeployment }>;
+  routePolicyRevisionId?: string;
+  dataPolicyRevisionIdByDeploymentId: ReadonlyMap<string, string>;
+  runtimeExclusionReasons: string[];
+  decisionExplanation?: RouteDecisionExplanation;
+  maxAttempts?: number;
+  fallbackAuthorized?: boolean;
+}
+
+export type ModelSupplyProviderAdmissionDecision =
+  | {
+      status: 'admitted';
+      leaseId: string;
+      supplyPoolId: string;
+      entitlementPolicyRevision: string;
+      appliedAllocationIds: string[];
+    }
+  | {
+      status: 'rejected';
+      errorCode: string;
+      message: string;
+    };
+
+/** Product/supply entitlement and capacity gate immediately before provider I/O. */
+export interface ModelSupplyProviderAdmissionPort {
+  admit(input: {
+    submission: ModelSupplySubmission;
+    jobId: string;
+    attemptId: string;
+    snapshot: RouteSnapshot;
+    model: CatalogModel;
+    deployment: ModelDeployment;
+    lifecycleLease?: boolean;
+  }): Promise<ModelSupplyProviderAdmissionDecision>;
+  renew?(leaseId: string): Promise<boolean>;
+  reacquire?(leaseId: string): Promise<boolean>;
+  release(leaseId: string): Promise<void>;
+}
+
+export class ModelSupplyProviderAdmissionError extends Error {
+  readonly name = 'ModelSupplyProviderAdmissionError';
+
+  constructor(
+    readonly errorCode: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export class ModelSupplyApplicationService {
   readonly execution: RecordedProviderExecutionPort | ProviderExecutionPort;
   private readonly modelById = new Map<string, CatalogModel>();
@@ -587,9 +740,12 @@ export class ModelSupplyApplicationService {
     string,
     RuntimeDeploymentCapability
   >;
+  private readonly capabilityHotAssembly?: CapabilityHotAssemblyPort;
+  private readonly planningControlPlane?: ModelSupplyPlanningControlPlanePort;
   private readonly submissionGate?: {
     blocksNewSubmission(): Promise<boolean>;
   };
+  private readonly providerAdmission?: ModelSupplyProviderAdmissionPort;
 
   constructor(options: {
     models: CatalogModel[];
@@ -599,9 +755,12 @@ export class ModelSupplyApplicationService {
     ledger?: ModelSupplyLedgerPort;
     catalogRevisionId?: string;
     runtimeCapabilities?: RuntimeDeploymentCapability[];
+    capabilityHotAssembly?: CapabilityHotAssemblyPort;
+    planningControlPlane?: ModelSupplyPlanningControlPlanePort;
     assetStorage?: ModelAssetStoragePort;
     referenceAssets?: ReferenceAssetResolverPort;
     submissionGate?: { blocksNewSubmission(): Promise<boolean> };
+    providerAdmission?: ModelSupplyProviderAdmissionPort;
   }) {
     for (const model of options.models) this.modelById.set(model.id, model);
     this.runtimeCapabilities = options.runtimeCapabilities
@@ -612,6 +771,8 @@ export class ModelSupplyApplicationService {
           ])
         )
       : undefined;
+    this.capabilityHotAssembly = options.capabilityHotAssembly;
+    this.planningControlPlane = options.planningControlPlane;
     this.deployments = this.constrainRuntimeDeployments(options.deployments);
     this.catalogRevisionId = options.catalogRevisionId ?? 'recorded-runtime';
     this.execution = options.execution;
@@ -620,6 +781,7 @@ export class ModelSupplyApplicationService {
     this.assetStorage = options.assetStorage ?? new MemoryModelAssetStorage();
     this.referenceAssets = options.referenceAssets;
     this.submissionGate = options.submissionGate;
+    this.providerAdmission = options.providerAdmission;
   }
 
   attempts() {
@@ -685,6 +847,30 @@ export class ModelSupplyApplicationService {
     });
   }
 
+  async constrainRuntimeDeploymentsForRequest<T extends ModelDeployment>(
+    deployments: T[],
+  ): Promise<T[]> {
+    if (!this.capabilityHotAssembly) {
+      return this.constrainRuntimeDeployments(deployments);
+    }
+    return Promise.all(
+      deployments.map(async (deployment) => {
+        const stored = structuredClone(deployment);
+        if (
+          stored.status !== 'active' ||
+          (await this.capabilityHotAssembly!.supportsDeployment(stored))
+        ) {
+          return stored;
+        }
+        return {
+          ...stored,
+          status: 'inactive',
+          unavailableReason: 'deployment_unavailable',
+        } as T;
+      }),
+    );
+  }
+
   assertRuntimeCatalogCompatible(deployments: ModelDeployment[]) {
     const unsupported = deployments.find(
       (deployment) =>
@@ -696,6 +882,16 @@ export class ModelSupplyApplicationService {
         `Deployment ${unsupported.id} is outside the immutable runtime capability.`
       );
     }
+  }
+
+  async assertRuntimeCatalogCompatibleForRequest(
+    deployments: ModelDeployment[],
+  ): Promise<void> {
+    if (!this.capabilityHotAssembly) {
+      this.assertRuntimeCatalogCompatible(deployments);
+      return;
+    }
+    await this.capabilityHotAssembly.assertCompatible(deployments);
   }
 
   /**
@@ -722,7 +918,9 @@ export class ModelSupplyApplicationService {
       modelById: new Map(
         models.map((model) => [model.id, structuredClone(model)] as const)
       ),
-      deployments: this.constrainRuntimeDeployments(deployments),
+      deployments: this.capabilityHotAssembly
+        ? structuredClone(deployments)
+        : this.constrainRuntimeDeployments(deployments),
     });
   }
 
@@ -766,6 +964,56 @@ export class ModelSupplyApplicationService {
       input.deploymentId ? [selected] : candidates,
       selected,
       catalog.revisionId
+    );
+  }
+
+  async freezeFixedRouteForExecution(input: {
+    workspaceId: string;
+    operation: ModelOperation;
+    catalogModelId: string;
+    deploymentId?: string;
+    dataClass: DataClass[];
+    promptRevision?: string;
+  }): Promise<RouteSnapshot> {
+    const submission: ModelSupplySubmission = {
+      workspaceId: input.workspaceId,
+      actorId: 'workflow-gate',
+      idempotencyKey: 'route-preview-only',
+      operation: input.operation,
+      selection: { mode: 'fixed', catalogModelId: input.catalogModelId },
+      dataClass: [...input.dataClass],
+      prompt: '',
+      ...(input.promptRevision ? { promptRevision: input.promptRevision } : {}),
+    };
+    const storedCatalog = this.workspaceCatalogs.get(input.workspaceId) ?? {
+      revisionId: this.catalogRevisionId,
+      modelById: this.modelById,
+      deployments: this.deployments,
+    };
+    const catalog = {
+      ...storedCatalog,
+      deployments: await this.constrainRuntimeDeploymentsForRequest(
+        storedCatalog.deployments,
+      ),
+    };
+    const planning = await this.planSubmissionCandidates(submission, catalog);
+    const selected = input.deploymentId
+      ? planning.candidates.find(
+          (candidate) => candidate.deployment.id === input.deploymentId,
+        )
+      : planning.candidates[0];
+    if (!selected) {
+      throw new Error(
+        'No compliant deployment can be frozen under the published route and data policy.',
+      );
+    }
+    return this.snapshotFor(
+      submission,
+      input.deploymentId ? [selected] : planning.candidates,
+      selected,
+      catalog.revisionId,
+      undefined,
+      planning,
     );
   }
 
@@ -1133,10 +1381,16 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Language quality probes require a fixed language model.');
     }
-    const catalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
+    const storedCatalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
+    };
+    const catalog = {
+      ...storedCatalog,
+      deployments: await this.constrainRuntimeDeploymentsForRequest(
+        storedCatalog.deployments,
+      ),
     };
     const probeCatalog = {
       ...catalog,
@@ -1236,7 +1490,14 @@ export class ModelSupplyApplicationService {
 
   executeMediaProviderSubmission(
     submission: ModelSupplySubmission,
-    execution: ProviderExecutionPort
+    execution: ProviderExecutionPort,
+    options: {
+      continueAfterRecoveredCheckpoint?: boolean;
+      useFrozenMediaCandidateSequence?: boolean;
+      attemptEffectGuardsCheckpoint?: boolean;
+      effectIdempotencyKey?: string;
+      reconcileProviderReceipt?: boolean;
+    } = {},
   ) {
     if (
       submission.operation.startsWith('copy.') ||
@@ -1246,7 +1507,10 @@ export class ModelSupplyApplicationService {
         'Durable media execution cannot submit language generation.',
       );
     }
-    return this.executeSubmission(submission, execution);
+    return this.executeSubmission(submission, execution, {
+      providerEffectAlreadyGuarded: true,
+      ...options,
+    });
   }
 
   previewMediaSubmission(submission: ModelSupplySubmission): ModelSupplyResult {
@@ -1257,20 +1521,82 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Durable media generation requires a fixed media model.');
     }
-    const request = this.mediaProviderRequest(submission);
     const catalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
     };
     const candidates = this.resolveCandidates(submission, catalog);
-    const selected = { model: request.model, deployment: request.deployment };
-    const jobId = request.jobId;
+    const selected = candidates[0];
+    if (!selected) {
+      throw new Error('No active deployment satisfies this media request.');
+    }
+    return this.mediaPreviewResult(
+      submission,
+      catalog.revisionId,
+      candidates,
+      selected,
+    );
+  }
+
+  async prepareMediaSubmission(
+    submission: ModelSupplySubmission,
+  ): Promise<ModelSupplyResult> {
+    if (
+      submission.operation.startsWith('copy.') ||
+      submission.operation === 'text.respond' ||
+      submission.selection.mode !== 'fixed'
+    ) {
+      throw new Error('Durable media generation requires a fixed media model.');
+    }
+    const storedCatalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
+      revisionId: this.catalogRevisionId,
+      modelById: this.modelById,
+      deployments: this.deployments,
+    };
+    const catalog = {
+      ...storedCatalog,
+      deployments: await this.constrainRuntimeDeploymentsForRequest(
+        storedCatalog.deployments,
+      ),
+    };
+    const planning = await this.planSubmissionCandidates(submission, catalog);
+    const fallbackConsented = submission.selection.fallbackConsent === true;
+    const attemptLimit =
+      planning.fallbackAuthorized === true && fallbackConsented
+        ? Math.max(1, planning.maxAttempts ?? 1)
+        : 1;
+    const candidates = planning.candidates.slice(0, attemptLimit);
+    const selected = candidates[0];
+    if (!selected) {
+      throw new Error(
+        'No compliant deployment satisfies the published route and data policy.',
+      );
+    }
+    return this.mediaPreviewResult(
+      submission,
+      catalog.revisionId,
+      candidates,
+      selected,
+      planning,
+    );
+  }
+
+  private mediaPreviewResult(
+    submission: ModelSupplySubmission,
+    catalogRevisionId: string,
+    candidates: Array<{ model: CatalogModel; deployment: ModelDeployment }>,
+    selected: { model: CatalogModel; deployment: ModelDeployment },
+    planning?: SubmissionPlanningDecision,
+  ): ModelSupplyResult {
+    const jobId = modelSupplyJobId(submission);
     const snapshot = this.snapshotFor(
       submission,
       candidates,
       selected,
-      catalog.revisionId
+      catalogRevisionId,
+      undefined,
+      planning,
     );
     const attempt: ProviderAttempt = {
       id: modelAttemptId(jobId, 1, selected.deployment.id),
@@ -1392,6 +1718,286 @@ export class ModelSupplyApplicationService {
     };
   }
 
+  async mediaProviderRequestForExecution(
+    submission: ModelSupplySubmission,
+  ): Promise<ProviderExecutionRequest> {
+    const request = this.mediaProviderRequest(submission);
+    const catalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
+      revisionId: this.catalogRevisionId,
+      modelById: this.modelById,
+      deployments: this.deployments,
+    };
+    const candidates = this.resolveCandidates(submission, catalog);
+    const selected = candidates.find(
+      (candidate) => candidate.deployment.id === request.deployment.id,
+    );
+    if (!selected) {
+      throw new Error('No active deployment satisfies this media request.');
+    }
+    const snapshot =
+      submission.frozenRouteSnapshot ??
+      this.snapshotFor(
+        submission,
+        candidates,
+        selected,
+        catalog.revisionId,
+      );
+    const runtimeBinding = await this.runtimeBindingFor(
+      request.deployment,
+      snapshot,
+      {
+        useFrozenCredentialVersion: Boolean(
+          submission.frozenRouteSnapshot?.credentialAccountId,
+        ),
+      },
+    );
+    if (
+      submission.frozenRouteSnapshot &&
+      snapshot.credentialAccountId
+    ) {
+      submission.frozenRouteSnapshot.credentialAccountId =
+        snapshot.credentialAccountId;
+      submission.frozenRouteSnapshot.credentialVersion =
+        snapshot.credentialVersion;
+    }
+    return {
+      ...request,
+      ...(runtimeBinding ? { runtimeBinding } : {}),
+      attemptId: modelAttemptId(
+        request.jobId,
+        snapshot.allowedCandidates?.find(
+          (candidate) => candidate.deploymentId === request.deployment.id,
+        )?.fallbackRank ?? 1,
+        request.deployment.id,
+      ),
+      attemptOrdinal:
+        snapshot.allowedCandidates?.find(
+          (candidate) => candidate.deploymentId === request.deployment.id,
+        )?.fallbackRank ?? 1,
+      routeSnapshot: structuredClone(snapshot),
+    };
+  }
+
+  async executeMediaProviderEffect<T>(input: {
+    submission: ModelSupplySubmission;
+    effectIdempotencyKey: string;
+    stage: 'submit' | 'recover' | 'poll' | 'download' | 'cancel' | 'late_poll' | 'late_download';
+    attemptId?: string;
+    attemptOrdinal?: number;
+    routeSnapshot?: RouteSnapshot;
+    model?: CatalogModel;
+    deployment?: ModelDeployment;
+    previousAttempts?: ProviderAttempt[];
+    previousProviderCosts?: ProviderCost[];
+    execute(): Promise<T>;
+  }): Promise<T> {
+    const preview = this.previewMediaSubmission(input.submission);
+    const request = this.mediaProviderRequest(input.submission);
+    const snapshot = structuredClone(input.routeSnapshot ?? preview.snapshot);
+    const attemptId = input.attemptId ?? preview.attempt.id;
+    const attemptOrdinal = input.attemptOrdinal ?? 1;
+    const model = input.model ?? request.model;
+    const deployment = input.deployment ?? request.deployment;
+    const leaseId = `capacity:${attemptId}`;
+    const channelId =
+      deployment.executionChannelId ?? deployment.id;
+    let acquiredChannelSubmission = false;
+    if (input.stage === 'submit' && this.capabilityHotAssembly) {
+      const channelAdmission =
+        await this.capabilityHotAssembly.acquireChannelSubmission(
+          channelId,
+          attemptId,
+        );
+      if (!channelAdmission.admitted) {
+        throw new ModelSupplyProviderAdmissionError(
+          channelAdmission.errorCode ?? 'channel_not_accepting',
+          channelAdmission.message ??
+            `Channel ${channelId} is not accepting new submissions.`,
+        );
+      }
+      acquiredChannelSubmission = channelAdmission.newlyAcquired;
+    }
+    const releaseChannelOnTerminal = async (result: T): Promise<T> => {
+      if (!this.capabilityHotAssembly) return result;
+      const acceptance =
+        result && typeof result === 'object'
+          ? Reflect.get(result, 'acceptance')
+          : undefined;
+      const status =
+        result && typeof result === 'object'
+          ? Reflect.get(result, 'status')
+          : undefined;
+      const reachedTerminal =
+        ((input.stage === 'submit' || input.stage === 'recover') &&
+          acceptance === 'rejected_before_accept') ||
+        ((input.stage === 'poll' || input.stage === 'late_poll') &&
+          (status === 'completed' || status === 'failed')) ||
+        (input.stage === 'cancel' && status !== 'pending') ||
+        input.stage === 'download' ||
+        input.stage === 'late_download';
+      if (reachedTerminal) {
+        await this.capabilityHotAssembly.releaseChannelSubmission(
+          channelId,
+          attemptId,
+        );
+      }
+      return result;
+    };
+    if (!this.providerAdmission) {
+      if (input.stage === 'submit') {
+        const checkpointInput: ModelSupplyLedgerCheckpointInput = {
+          submission: input.submission,
+          jobId: preview.jobId,
+          attemptId,
+          ordinal: attemptOrdinal,
+          snapshot,
+          model,
+          deployment,
+          previousAttempts: structuredClone(input.previousAttempts ?? []),
+          previousProviderCosts: structuredClone(
+            input.previousProviderCosts ?? [],
+          ),
+        };
+        try {
+          await this.ledger?.freezeAttempt?.(checkpointInput);
+          await this.ledger?.checkpointAttempt(checkpointInput);
+        } catch (error) {
+          if (acquiredChannelSubmission) {
+            await this.capabilityHotAssembly?.releaseChannelSubmission(
+              channelId,
+              attemptId,
+            );
+          }
+          throw error;
+        }
+      }
+      return releaseChannelOnTerminal(await input.execute());
+    }
+    if (input.stage === 'late_poll' || input.stage === 'late_download') {
+      return releaseChannelOnTerminal(await input.execute());
+    }
+    if (
+      input.stage === 'poll' ||
+      input.stage === 'download' ||
+      input.stage === 'cancel'
+    ) {
+      await this.ensureActiveProviderLease(leaseId);
+      const result = await input.execute();
+      const status =
+        result && typeof result === 'object'
+          ? Reflect.get(result, 'status')
+          : undefined;
+      const reachedTerminal =
+        input.stage === 'download' ||
+        (input.stage === 'poll' && status === 'failed') ||
+        (input.stage === 'cancel' && status !== 'pending');
+      if (reachedTerminal) {
+        await Promise.all([
+          this.providerAdmission.release(leaseId),
+          releaseChannelOnTerminal(result),
+        ]);
+        return result;
+      }
+      return releaseChannelOnTerminal(result);
+    }
+
+    if (input.stage === 'recover') {
+      await this.ensureActiveProviderLease(leaseId);
+      return releaseChannelOnTerminal(await input.execute());
+    }
+    const admission = await this.providerAdmission.admit({
+      submission: input.submission,
+      jobId: preview.jobId,
+      attemptId,
+      snapshot,
+      model,
+      deployment,
+      lifecycleLease: true,
+    });
+    if (admission.status === 'rejected') {
+      if (acquiredChannelSubmission) {
+        await this.capabilityHotAssembly?.releaseChannelSubmission(
+          channelId,
+          attemptId,
+        );
+      }
+      throw new ModelSupplyProviderAdmissionError(
+        admission.errorCode,
+        admission.message,
+      );
+    }
+    snapshot.supplyPoolId = admission.supplyPoolId;
+    snapshot.entitlementPolicyRevision =
+      admission.entitlementPolicyRevision;
+    snapshot.appliedAllocationIds = [...admission.appliedAllocationIds];
+    if (input.submission.frozenRouteSnapshot) {
+      input.submission.frozenRouteSnapshot.supplyPoolId =
+        admission.supplyPoolId;
+      input.submission.frozenRouteSnapshot.entitlementPolicyRevision =
+        admission.entitlementPolicyRevision;
+      input.submission.frozenRouteSnapshot.appliedAllocationIds = [
+        ...admission.appliedAllocationIds,
+      ];
+    }
+
+    try {
+      const checkpointInput: ModelSupplyLedgerCheckpointInput = {
+        submission: input.submission,
+        jobId: preview.jobId,
+        attemptId,
+        ordinal: attemptOrdinal,
+        snapshot,
+        model,
+        deployment,
+        previousAttempts: structuredClone(input.previousAttempts ?? []),
+        previousProviderCosts: structuredClone(
+          input.previousProviderCosts ?? [],
+        ),
+      };
+      await this.freezeAdmittedAttempt(checkpointInput);
+      await this.ledger?.checkpointAttempt(checkpointInput);
+    } catch (error) {
+      await Promise.all([
+        this.providerAdmission.release(admission.leaseId),
+        acquiredChannelSubmission
+          ? this.capabilityHotAssembly?.releaseChannelSubmission(
+              channelId,
+              attemptId,
+            )
+          : undefined,
+      ]);
+      throw error;
+    }
+
+    const result = await input.execute();
+    const acceptance =
+      result && typeof result === 'object'
+        ? Reflect.get(result, 'acceptance')
+        : undefined;
+    if (acceptance === 'rejected_before_accept') {
+      try {
+        await Promise.all([
+          this.providerAdmission.release(admission.leaseId),
+          releaseChannelOnTerminal(result),
+        ]);
+      } catch (error) {
+        return result;
+      }
+      return result;
+    }
+    return releaseChannelOnTerminal(result);
+  }
+
+  private async ensureActiveProviderLease(leaseId: string): Promise<void> {
+    if (!this.providerAdmission?.renew) return;
+    if (await this.providerAdmission.renew(leaseId)) return;
+    if (await this.providerAdmission.reacquire?.(leaseId)) return;
+    throw new ModelSupplyProviderAdmissionError(
+      'CAPACITY_LEASE_EXPIRED',
+      `Capacity lease ${leaseId} expired and could not be readmitted through the fair queue.`,
+    );
+  }
+
   persistProviderAsset(input: {
     workspaceId: string;
     bytes: Uint8Array;
@@ -1412,7 +2018,15 @@ export class ModelSupplyApplicationService {
 
   private async executeSubmission(
     submission: ModelSupplySubmission,
-    execution: ProviderExecutionPort
+    execution: ProviderExecutionPort,
+    options: {
+      providerEffectAlreadyGuarded?: boolean;
+      continueAfterRecoveredCheckpoint?: boolean;
+      useFrozenMediaCandidateSequence?: boolean;
+      attemptEffectGuardsCheckpoint?: boolean;
+      effectIdempotencyKey?: string;
+      reconcileProviderReceipt?: boolean;
+    } = {},
   ): Promise<ModelSupplyResult> {
     const productUsageQuantity = modelSupplyProductUsageQuantity(submission);
     if (
@@ -1427,22 +2041,57 @@ export class ModelSupplyApplicationService {
     const key = `${submission.workspaceId}:${submission.idempotencyKey}`;
     const payload = canonical(submission);
     const existing = this.idempotency.get(key);
-    if (existing) {
+    if (existing && !options.reconcileProviderReceipt) {
       if (existing.canonical !== payload)
         throw new Error('Idempotency key conflicts with a different payload.');
       return existing.result;
     }
 
-    const catalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
+    const storedCatalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
       revisionId: this.catalogRevisionId,
       modelById: this.modelById,
       deployments: this.deployments,
     };
-    const resolvedCandidates = this.resolveCandidates(submission, catalog);
-    const candidates =
-      submission.selection.mode === 'auto'
-        ? resolvedCandidates.slice(0, 2)
-        : resolvedCandidates;
+    const catalog = {
+      ...storedCatalog,
+      deployments: await this.constrainRuntimeDeploymentsForRequest(
+        storedCatalog.deployments,
+      ),
+    };
+    const planning =
+      options.useFrozenMediaCandidateSequence &&
+      submission.frozenRouteSnapshot
+        ? this.frozenMediaPlanningDecision(submission, catalog)
+        : await this.planSubmissionCandidates(submission, catalog);
+    const fallbackConsented =
+      submission.frozenRouteSnapshot?.fallbackConsent ??
+      submission.selection.fallbackConsent ??
+      submission.selection.mode === 'auto';
+    const planningAttemptLimit =
+      planning.maxAttempts === undefined
+        ? undefined
+        : Math.max(
+            1,
+            planning.fallbackAuthorized === false || !fallbackConsented
+              ? 1
+              : planning.maxAttempts,
+          );
+    const candidates = planning.candidates.slice(
+      0,
+      planningAttemptLimit ??
+        (submission.selection.mode === 'auto'
+          ? 2
+          : planning.candidates.length),
+    );
+    if (
+      candidates.length === 0 &&
+      this.planningControlPlane &&
+      !submission.frozenRouteSnapshot
+    ) {
+      throw new Error(
+        'No compliant deployment satisfies the published route and data policy.',
+      );
+    }
     if (candidates.length === 0)
       throw new Error(
         'No active deployment satisfies the requested data class and operation.'
@@ -1451,22 +2100,45 @@ export class ModelSupplyApplicationService {
     const jobId = modelSupplyJobId(submission);
     const attemptChain: ProviderAttempt[] = [];
     const providerCostChain: ProviderCost[] = [];
+    const capabilityRevisionId = this.capabilityHotAssembly
+      ? (submission.frozenRouteSnapshot?.capabilityRevisionId ??
+        (await this.capabilityHotAssembly.getEffectiveRevisionId()) ??
+        undefined)
+      : undefined;
 
     for (const [candidateIndex, candidate] of candidates.entries()) {
+      const frozenCandidate = submission.frozenRouteSnapshot?.allowedCandidates?.find(
+        (entry) => entry.deploymentId === candidate.deployment.id,
+      );
+      const attemptSubmission =
+        options.useFrozenMediaCandidateSequence && frozenCandidate
+          ? this.submissionForFrozenMediaCandidate(
+              submission,
+              frozenCandidate,
+              candidateIndex + 1,
+            )
+          : submission;
       const snapshot = this.snapshotFor(
-        submission,
+        attemptSubmission,
         candidates,
         candidate,
         catalog.revisionId,
-        lastFailure ? 'auto_fallback_before_accept' : undefined
+        lastFailure ? 'auto_fallback_before_accept' : undefined,
+        planning,
       );
+      const fallbackAuthorized =
+        snapshot.fallbackAuthorized ??
+        attemptSubmission.selection.mode === 'auto';
+      if (capabilityRevisionId) {
+        snapshot.capabilityRevisionId = capabilityRevisionId;
+      }
       const attemptId = modelAttemptId(
         jobId,
         candidateIndex + 1,
         candidate.deployment.id
       );
-      const checkpoint = await this.ledger?.checkpointAttempt({
-        submission,
+      const checkpointInput: ModelSupplyLedgerCheckpointInput = {
+        submission: attemptSubmission,
         jobId,
         attemptId,
         ordinal: candidateIndex + 1,
@@ -1475,11 +2147,70 @@ export class ModelSupplyApplicationService {
         deployment: candidate.deployment,
         previousAttempts: structuredClone(attemptChain),
         previousProviderCosts: structuredClone(providerCostChain),
-      });
-      if (checkpoint?.recoveredResult) {
+      };
+      const runtimeBinding = await this.runtimeBindingFor(
+        candidate.deployment,
+        snapshot,
+        {
+          useFrozenCredentialVersion: Boolean(
+            attemptSubmission.frozenRouteSnapshot?.credentialAccountId,
+          ),
+        },
+      );
+      let admission: ModelSupplyProviderAdmissionDecision | undefined;
+      let admissionError: unknown;
+      if (!options.providerEffectAlreadyGuarded && this.providerAdmission) {
+        try {
+          admission = await this.providerAdmission.admit({
+            submission: attemptSubmission,
+            jobId,
+            attemptId,
+            snapshot,
+            model: candidate.model,
+            deployment: candidate.deployment,
+          });
+          if (admission.status === 'admitted') {
+            snapshot.supplyPoolId = admission.supplyPoolId;
+            snapshot.entitlementPolicyRevision =
+              admission.entitlementPolicyRevision;
+            snapshot.appliedAllocationIds = [
+              ...admission.appliedAllocationIds,
+            ];
+            await this.freezeAdmittedAttempt(checkpointInput);
+          }
+        } catch (error) {
+          admissionError = error;
+        }
+      } else if (
+        !options.providerEffectAlreadyGuarded &&
+        this.ledger?.freezeAttempt
+      ) {
+        await this.ledger.freezeAttempt(checkpointInput);
+      }
+
+      let checkpoint:
+        | Awaited<ReturnType<ModelSupplyLedgerPort['checkpointAttempt']>>
+        | undefined;
+      if (!options.attemptEffectGuardsCheckpoint) {
+        try {
+          checkpoint = await this.ledger?.checkpointAttempt(checkpointInput);
+        } catch (error) {
+          if (admission?.status === 'admitted') {
+            await this.providerAdmission?.release(admission.leaseId);
+          }
+          throw error;
+        }
+      }
+      if (
+        checkpoint?.recoveredResult &&
+        !options.continueAfterRecoveredCheckpoint
+      ) {
+        if (admission?.status === 'admitted') {
+          await this.providerAdmission?.release(admission.leaseId);
+        }
         const recovered = {
           ...checkpoint.recoveredResult,
-          ...canvasGenerationResultInputs(submission),
+          ...canvasGenerationResultInputs(attemptSubmission),
         };
         for (const attempt of recovered.attempts) {
           if (!this.storedAttempts.some((stored) => stored.id === attempt.id)) {
@@ -1489,8 +2220,8 @@ export class ModelSupplyApplicationService {
         if (
           recovered.status === 'failed' &&
           recovered.attempt.acceptance === 'rejected_before_accept' &&
-          submission.selection.mode === 'auto' &&
           recovered.snapshot.fallbackConsent === true &&
+          fallbackAuthorized &&
           candidateIndex < candidates.length - 1
         ) {
           attemptChain.splice(
@@ -1506,13 +2237,38 @@ export class ModelSupplyApplicationService {
           lastFailure = recovered;
           continue;
         }
-        await this.resultSink?.saveResult(submission.workspaceId, recovered);
-        this.idempotency.set(key, { canonical: payload, result: recovered });
-        return recovered;
+        const audited = applyActualRouteDecisionExplanation(recovered);
+        await this.resultSink?.saveResult(submission.workspaceId, audited);
+        this.idempotency.set(key, { canonical: payload, result: audited });
+        return audited;
       }
 
       let response: ProviderExecutionResponse;
+      let providerInvoked = false;
       try {
+        if (admissionError) {
+          if (admission?.status === 'admitted') {
+            await this.providerAdmission?.release(admission.leaseId);
+            admission = undefined;
+          }
+          throw admissionError;
+        }
+        if (admission?.status === 'rejected') {
+          response = {
+            kind: 'failure',
+            acceptance: 'rejected_before_accept',
+            errorCode: admission.errorCode,
+            retryable: true,
+            message: admission.message,
+            providerCost: {
+              amount: 0,
+              currency:
+                candidate.deployment.region === 'domestic' ? 'CNY' : 'USD',
+              usage: {},
+            },
+          };
+        } else {
+          try {
         let resolvedReferenceAssets: ResolvedReferenceAsset[] | undefined;
         const referenceAssetIds = submission.input?.inputAssets
           ?.filter((asset) => asset.role === 'reference_image')
@@ -1558,33 +2314,93 @@ export class ModelSupplyApplicationService {
                 },
               };
             } else {
-              resolvedReferenceAssets = resolutions as ResolvedReferenceAsset[];
+              const resolved = resolutions as ResolvedReferenceAsset[];
+              resolvedReferenceAssets = resolved;
               const roleByAssetId = new Map(
                 submission.input?.inputAssets?.map((asset) => [
                   asset.assetId,
                   asset.role,
                 ]) ?? [],
               );
-              response = await execution.execute({
-                jobId,
-                model: candidate.model,
-                deployment: candidate.deployment,
-                submission,
-                resolvedReferenceAssets,
-                resolvedInputAssets: resolvedReferenceAssets.map((asset) => ({
-                  ...asset,
-                  role: roleByAssetId.get(asset.assetId) ?? 'reference_image',
-                })),
-              });
+              providerInvoked = true;
+              const executeCandidate = () =>
+                execution.execute({
+                    jobId,
+                    model: candidate.model,
+                    deployment: candidate.deployment,
+                    submission: attemptSubmission,
+                    ...(runtimeBinding ? { runtimeBinding } : {}),
+                    attemptId,
+                    attemptOrdinal: candidateIndex + 1,
+                    routeSnapshot: snapshot,
+                    previousAttempts: structuredClone(attemptChain),
+                    previousProviderCosts: structuredClone(providerCostChain),
+                    ...(options.effectIdempotencyKey
+                      ? {
+                          effectIdempotencyKey:
+                            candidateIndex === 0
+                              ? options.effectIdempotencyKey
+                              : `${options.effectIdempotencyKey}:attempt:${candidateIndex + 1}:${candidate.deployment.id}`,
+                        }
+                      : {}),
+                    resolvedReferenceAssets: resolved,
+                    resolvedInputAssets: resolved.map(
+                      (asset) => ({
+                        ...asset,
+                        role:
+                          roleByAssetId.get(asset.assetId) ?? 'reference_image',
+                      }),
+                    ),
+                  });
+              response = options.providerEffectAlreadyGuarded
+                ? await executeCandidate()
+                : await this.executeOnAdmittedChannel({
+                    deployment: candidate.deployment,
+                    inFlightId: attemptId,
+                    execute: executeCandidate,
+                  });
             }
           }
         } else {
-          response = await execution.execute({
-            jobId,
-            model: candidate.model,
-            deployment: candidate.deployment,
-            submission,
-          });
+          providerInvoked = true;
+          const executeCandidate = () =>
+            execution.execute({
+                jobId,
+                model: candidate.model,
+                deployment: candidate.deployment,
+                submission: attemptSubmission,
+                ...(runtimeBinding ? { runtimeBinding } : {}),
+                attemptId,
+                attemptOrdinal: candidateIndex + 1,
+                routeSnapshot: snapshot,
+                previousAttempts: structuredClone(attemptChain),
+                previousProviderCosts: structuredClone(providerCostChain),
+                ...(options.effectIdempotencyKey
+                  ? {
+                      effectIdempotencyKey:
+                        candidateIndex === 0
+                          ? options.effectIdempotencyKey
+                          : `${options.effectIdempotencyKey}:attempt:${candidateIndex + 1}:${candidate.deployment.id}`,
+                    }
+                  : {}),
+              });
+          response = options.providerEffectAlreadyGuarded
+            ? await executeCandidate()
+            : await this.executeOnAdmittedChannel({
+                deployment: candidate.deployment,
+                inFlightId: attemptId,
+                execute: executeCandidate,
+              });
+        }
+          } finally {
+            if (admission) {
+              try {
+                await this.providerAdmission?.release(admission.leaseId);
+              } catch (error) {
+                if (!providerInvoked) throw error;
+              }
+            }
+          }
         }
       } catch (error) {
         const attempt: ProviderAttempt = {
@@ -1592,15 +2408,17 @@ export class ModelSupplyApplicationService {
           jobId,
           catalogModelId: candidate.model.id,
           deploymentId: candidate.deployment.id,
-          acceptance: 'acceptance_unknown',
-          status: 'unknown',
+          acceptance: providerInvoked
+            ? 'acceptance_unknown'
+            : 'rejected_before_accept',
+          status: providerInvoked ? 'unknown' : 'failed',
           createdAt: now(),
         };
         attemptChain.push(attempt);
         this.storedAttempts.push(attempt);
         const usage: ProductUsage = {
           id: `model-usage-${hash(jobId).slice(0, 28)}`,
-          status: 'reserved',
+          status: providerInvoked ? 'reserved' : 'refunded',
           quantity: productUsageQuantity,
         };
         const providerCost: ProviderCost = {
@@ -1613,11 +2431,11 @@ export class ModelSupplyApplicationService {
         providerCostChain.push(providerCost);
         const unknown: ModelSupplyResult = {
           jobId,
-          operation: submission.operation,
-          ...canvasGenerationResultInputs(submission),
-          status: 'unknown',
-          ...(submission.origin
-            ? { origin: structuredClone(submission.origin) }
+          operation: attemptSubmission.operation,
+          ...canvasGenerationResultInputs(attemptSubmission),
+          status: providerInvoked ? 'unknown' : 'failed',
+          ...(attemptSubmission.origin
+            ? { origin: structuredClone(attemptSubmission.origin) }
             : {}),
           snapshot,
           attempt,
@@ -1626,10 +2444,13 @@ export class ModelSupplyApplicationService {
           providerCost,
           providerCosts: [...providerCostChain],
         };
+        applyActualRouteDecisionExplanation(unknown);
         await this.ledger?.settleAttempt({
-          submission,
+          submission: attemptSubmission,
           result: unknown,
-          evidence: `provider_exception:${error instanceof Error ? error.name : 'unknown'}`,
+          evidence:
+            (providerInvoked ? 'provider' : 'pre_provider') +
+            `_exception:${error instanceof Error ? error.name : 'unknown'}`,
         });
         await this.resultSink?.saveResult(submission.workspaceId, unknown);
         this.idempotency.set(key, { canonical: payload, result: unknown });
@@ -1637,7 +2458,7 @@ export class ModelSupplyApplicationService {
       }
       if (
         response.kind === 'completed' &&
-        submission.operation === 'text.respond' &&
+        attemptSubmission.operation === 'text.respond' &&
         !response.text?.trim() &&
         response.structuredOutput === undefined
       ) {
@@ -1673,8 +2494,8 @@ export class ModelSupplyApplicationService {
       this.storedAttempts.push(attempt);
       attemptChain.push(attempt);
       const isCopyOperation =
-        submission.operation.startsWith('copy.') ||
-        submission.operation === 'text.respond';
+        attemptSubmission.operation.startsWith('copy.') ||
+        attemptSubmission.operation === 'text.respond';
       const usage: ProductUsage = {
         id: `model-usage-${hash(jobId).slice(0, 28)}`,
         status:
@@ -1691,8 +2512,8 @@ export class ModelSupplyApplicationService {
                 response.acceptance === 'accepted'
               ? 'reserved'
               : response.acceptance === 'rejected_before_accept' &&
-                  submission.selection.mode === 'auto' &&
                   snapshot.fallbackConsent === true &&
+                  fallbackAuthorized &&
                   candidateIndex < candidates.length - 1
                 ? 'reserved'
                 : 'refunded',
@@ -1710,11 +2531,11 @@ export class ModelSupplyApplicationService {
       if (response.kind === 'failure') {
         const failed: ModelSupplyResult = {
           jobId,
-          operation: submission.operation,
-          ...canvasGenerationResultInputs(submission),
+          operation: attemptSubmission.operation,
+          ...canvasGenerationResultInputs(attemptSubmission),
           status: attempt.status === 'unknown' ? 'unknown' : 'failed',
-          ...(submission.origin
-            ? { origin: structuredClone(submission.origin) }
+          ...(attemptSubmission.origin
+            ? { origin: structuredClone(attemptSubmission.origin) }
             : {}),
           ...(response.errorCode ? { failureCode: response.errorCode } : {}),
           snapshot,
@@ -1724,18 +2545,22 @@ export class ModelSupplyApplicationService {
           providerCost,
           providerCosts: [...providerCostChain],
         };
+        const willFallback =
+          response.acceptance === 'rejected_before_accept' &&
+          snapshot.fallbackConsent === true &&
+          fallbackAuthorized &&
+          candidateIndex < candidates.length - 1;
+        if (!willFallback) {
+          applyActualRouteDecisionExplanation(failed);
+        }
         await this.ledger?.settleAttempt({
-          submission,
+          submission: attemptSubmission,
           result: failed,
           evidence: response.errorCode
             ? `provider_response:${response.errorCode}`
             : 'provider_response',
         });
-        if (
-          response.acceptance !== 'rejected_before_accept' ||
-          submission.selection.mode === 'fixed' ||
-          snapshot.fallbackConsent !== true
-        ) {
+        if (!willFallback) {
           await this.resultSink?.saveResult(submission.workspaceId, failed);
           if (failed.status !== 'failed') {
             this.idempotency.set(key, { canonical: payload, result: failed });
@@ -1749,7 +2574,7 @@ export class ModelSupplyApplicationService {
       const asset =
         response.assetBytes && response.contentType
           ? await this.assetStorage.persistGeneratedAsset({
-              workspaceId: submission.workspaceId,
+              workspaceId: attemptSubmission.workspaceId,
               bytes: response.assetBytes,
               contentType: response.contentType,
               ...(response.providerTaskRef
@@ -1759,11 +2584,11 @@ export class ModelSupplyApplicationService {
           : undefined;
       const result: ModelSupplyResult = {
         jobId,
-        operation: submission.operation,
-        ...canvasGenerationResultInputs(submission),
+        operation: attemptSubmission.operation,
+        ...canvasGenerationResultInputs(attemptSubmission),
         status: 'completed',
-        ...(submission.origin
-          ? { origin: structuredClone(submission.origin) }
+        ...(attemptSubmission.origin
+          ? { origin: structuredClone(attemptSubmission.origin) }
           : {}),
         snapshot,
         attempt,
@@ -1783,8 +2608,9 @@ export class ModelSupplyApplicationService {
         providerCost,
         providerCosts: [...providerCostChain],
       };
+      applyActualRouteDecisionExplanation(result);
       await this.ledger?.settleAttempt({
-        submission,
+        submission: attemptSubmission,
         result,
         evidence: 'provider_response',
       });
@@ -1794,15 +2620,31 @@ export class ModelSupplyApplicationService {
     }
 
     if (lastFailure) {
-      const failed = {
+      const failed = applyActualRouteDecisionExplanation({
         ...lastFailure,
         attempts: [...attemptChain],
         providerCosts: [...providerCostChain],
-      };
+      });
       await this.resultSink?.saveResult(submission.workspaceId, failed);
       return failed;
     }
     throw new Error('No candidate produced an execution result.');
+  }
+
+  private async freezeAdmittedAttempt(
+    input: ModelSupplyLedgerCheckpointInput,
+  ): Promise<void> {
+    if (!this.ledger?.freezeAttempt) {
+      throw new Error(
+        'Provider admission requires a durable SupplyRequestFreeze ledger.',
+      );
+    }
+    const frozen = await this.ledger.freezeAttempt(input);
+    if (frozen === null || frozen === undefined) {
+      throw new Error(
+        'Provider admission did not persist a SupplyRequestFreeze.',
+      );
+    }
   }
 
   /**
@@ -1830,13 +2672,14 @@ export class ModelSupplyApplicationService {
         'Reconciled provider result does not match the submission job.'
       );
     }
-    await this.ledger.settleAttempt({ submission, result, evidence });
-    await this.resultSink?.saveResult(submission.workspaceId, result);
+    const audited = applyActualRouteDecisionExplanation(result);
+    await this.ledger.settleAttempt({ submission, result: audited, evidence });
+    await this.resultSink?.saveResult(submission.workspaceId, audited);
     this.idempotency.set(
       `${submission.workspaceId}:${submission.idempotencyKey}`,
-      { canonical: canonical(submission), result: structuredClone(result) }
+      { canonical: canonical(submission), result: structuredClone(audited) }
     );
-    return structuredClone(result);
+    return structuredClone(audited);
   }
 
   /**
@@ -1894,12 +2737,12 @@ export class ModelSupplyApplicationService {
           ...structuredClone(cancelled.providerCosts),
           structuredClone(reconciliation.providerCost),
         ];
-    const result: ModelSupplyResult = {
+    const result = applyActualRouteDecisionExplanation({
       ...structuredClone(cancelled),
       providerCost: structuredClone(reconciliation.providerCost),
       providerCosts,
       cancelledProviderTerminal: structuredClone(reconciliation),
-    };
+    });
     await this.ledger?.recordCancelledProviderTerminal?.({
       submission,
       result,
@@ -1951,6 +2794,220 @@ export class ModelSupplyApplicationService {
       rate: accepted / adoptionEvents.length,
       sampleSize: adoptionEvents.length,
       minimumSampleSize: QUALITY_NORTH_STAR_MIN_SAMPLE_SIZE,
+    };
+  }
+
+  private async planSubmissionCandidates(
+    submission: ModelSupplySubmission,
+    catalog: {
+      revisionId: string;
+      modelById: Map<string, CatalogModel>;
+      deployments: ModelDeployment[];
+    },
+  ): Promise<SubmissionPlanningDecision> {
+    if (!this.planningControlPlane || submission.frozenRouteSnapshot) {
+      return {
+        candidates: this.resolveCandidates(submission, catalog),
+        dataPolicyRevisionIdByDeploymentId: new Map(),
+        runtimeExclusionReasons: [],
+      };
+    }
+
+    const qualityTier =
+      submission.selection.mode === 'auto'
+        ? (submission.selection.profile ?? 'quality')
+        : ('quality' as const);
+    const state = await this.planningControlPlane.readPlanningState({
+      workspaceId: submission.workspaceId,
+      catalogRevisionId: catalog.revisionId,
+      operation: submission.operation,
+      qualityTier,
+      deploymentIds: catalog.deployments.map((deployment) => deployment.id),
+    });
+    const healthExcludedDeploymentIds = state.healthOverlay
+      ? await collectHealthExcludedDeploymentIds({
+          overlay: state.healthOverlay,
+          deploymentIds: catalog.deployments.map((deployment) => deployment.id),
+        })
+      : [];
+    const planResult = planModelSupplyCandidatesWithDataPolicy({
+      catalog,
+      operation: submission.operation,
+      selection: submission.selection,
+      dataClass: submission.dataClass,
+      healthExcludedDeploymentIds,
+      routePolicy: state.routePolicy,
+      dataPolicyByDeploymentId: state.dataPolicyByDeploymentId,
+      rankingInputsByDeploymentId: state.rankingInputsByDeploymentId,
+    });
+    const primaryDeploymentId = planResult.plan.candidates[0]?.deployment.id;
+    const decisionExplanation = explainPlanDecision({
+      surface: 'task_audit',
+      planResult,
+      requestedDataClasses: submission.dataClass,
+      liveExclusions: healthExcludedDeploymentIds.map((deploymentId) => ({
+        deploymentId,
+        reasons: ['health_overlay_blocking'],
+      })),
+      acceptanceBranch: {
+        acceptance: 'not_attempted',
+        decision: primaryDeploymentId ? 'complete' : 'awaiting_selection',
+        reason: primaryDeploymentId
+          ? 'planned_execution'
+          : 'no_compliant_candidate',
+        ...(primaryDeploymentId ? { primaryDeploymentId } : {}),
+      },
+      costEvidenceSourceByDeploymentId: new Map(
+        [...(state.rankingInputsByDeploymentId?.entries() ?? [])].map(
+          ([deploymentId, ranking]) => [
+            deploymentId,
+            ranking.cost.source === 'recorded_placeholder'
+              ? 'recorded_estimate'
+              : ranking.cost.source,
+          ],
+        ),
+      ),
+    });
+
+    return {
+      candidates: planResult.plan.candidates,
+      ...(state.routePolicyRevisionId
+        ? { routePolicyRevisionId: state.routePolicyRevisionId }
+        : {}),
+      dataPolicyRevisionIdByDeploymentId: new Map(
+        [...(state.dataPolicyByDeploymentId?.entries() ?? [])].map(
+          ([deploymentId, binding]) => [
+            deploymentId,
+            binding.dataPolicyRevisionId,
+          ],
+        ),
+      ),
+      runtimeExclusionReasons: healthExcludedDeploymentIds.map(
+        (deploymentId) => `${deploymentId}:health_overlay_blocking`,
+      ),
+      decisionExplanation,
+      ...(state.routePolicy?.maxAttempts !== undefined
+        ? { maxAttempts: state.routePolicy.maxAttempts }
+        : {}),
+      ...(state.routePolicy?.fallbackAuthorized !== undefined
+        ? { fallbackAuthorized: state.routePolicy.fallbackAuthorized }
+        : {}),
+    };
+  }
+
+  private submissionForFrozenMediaCandidate(
+    submission: ModelSupplySubmission,
+    candidate: NonNullable<RouteSnapshot['allowedCandidates']>[number],
+    ordinal: number,
+  ): ModelSupplySubmission {
+    const frozen = structuredClone(submission.frozenRouteSnapshot);
+    if (!frozen) {
+      throw new Error('Media fallback requires a frozen RouteSnapshot.');
+    }
+    frozen.id = ordinal === 1
+      ? frozen.id
+      : `model-route-${hash(`${frozen.id}:${ordinal}:${candidate.deploymentId}`).slice(0, 28)}`;
+    frozen.deploymentId = candidate.deploymentId;
+    frozen.actualCatalogModelId = candidate.catalogModelId;
+    frozen.providerProfileId = candidate.providerProfileId ?? undefined;
+    frozen.executionChannelId = candidate.executionChannelId ?? undefined;
+    frozen.providerModel = candidate.providerModel ?? undefined;
+    frozen.endpointRevision = candidate.endpointRevision ?? undefined;
+    frozen.apiCounterparty = candidate.apiCounterparty ?? undefined;
+    frozen.credentialOwner = candidate.credentialOwner ?? undefined;
+    frozen.deploymentLifecycleRevision =
+      candidate.deploymentLifecycleRevision ?? undefined;
+    frozen.dataPolicyRevisionId = candidate.dataPolicyRevisionId ?? undefined;
+    frozen.credentialMode = candidate.credentialMode;
+    frozen.credentialVersion = candidate.credentialVersion;
+    frozen.policyRevision = candidate.policyRevision;
+    frozen.priceRevision = candidate.priceRevision;
+    frozen.reason = ordinal > 1
+      ? 'auto_fallback_before_accept'
+      : frozen.reason;
+    delete frozen.credentialAccountId;
+    delete frozen.supplyPoolId;
+    delete frozen.entitlementPolicyRevision;
+    delete frozen.appliedAllocationIds;
+    return {
+      ...structuredClone(submission),
+      frozenRouteSnapshot: frozen,
+    };
+  }
+
+  private frozenMediaPlanningDecision(
+    submission: ModelSupplySubmission,
+    catalog: {
+      revisionId: string;
+      modelById: Map<string, CatalogModel>;
+      deployments: ModelDeployment[];
+    },
+  ): SubmissionPlanningDecision {
+    const frozen = submission.frozenRouteSnapshot;
+    if (!frozen?.allowedCandidates?.length) {
+      throw new Error('Media fallback requires a complete frozen candidate sequence.');
+    }
+    const ordered = [...frozen.allowedCandidates].sort(
+      (left, right) => left.fallbackRank - right.fallbackRank,
+    );
+    const primary = ordered.find(
+      (candidate) => candidate.deploymentId === frozen.deploymentId,
+    );
+    if (!primary) {
+      throw new Error('Frozen RouteSnapshot is missing its primary candidate.');
+    }
+    const fallbackAuthorized =
+      frozen.fallbackAuthorized === true && frozen.fallbackConsent === true;
+    const attemptLimit = Math.max(1, frozen.maxAttempts ?? 1);
+    const safe = [
+      primary,
+      ...(fallbackAuthorized
+        ? ordered.filter(
+            (candidate) =>
+              candidate.deploymentId !== primary.deploymentId &&
+              candidate.catalogModelId === primary.catalogModelId &&
+              Boolean(primary.executionChannelId) &&
+              Boolean(candidate.executionChannelId) &&
+              candidate.executionChannelId !== primary.executionChannelId &&
+              Boolean(primary.accountIdentity) &&
+              Boolean(candidate.accountIdentity) &&
+              candidate.accountIdentity !== primary.accountIdentity &&
+              Boolean(primary.endpointFingerprint) &&
+              Boolean(candidate.endpointFingerprint) &&
+              candidate.endpointFingerprint !== primary.endpointFingerprint,
+          )
+        : []),
+    ].slice(0, attemptLimit);
+    const candidates = safe.map((candidate, index) => {
+      const scoped = this.submissionForFrozenMediaCandidate(
+        submission,
+        candidate,
+        index + 1,
+      );
+      const resolved = this.resolveCandidates(scoped, catalog)[0];
+      if (!resolved) {
+        throw new Error(
+          `Frozen media candidate ${candidate.deploymentId} is not executable.`,
+        );
+      }
+      return resolved;
+    });
+    return {
+      candidates,
+      routePolicyRevisionId: frozen.routePolicyRevisionId,
+      dataPolicyRevisionIdByDeploymentId: new Map(
+        safe.flatMap((candidate) =>
+          candidate.dataPolicyRevisionId
+            ? [[candidate.deploymentId, candidate.dataPolicyRevisionId] as const]
+            : [],
+        ),
+      ),
+      runtimeExclusionReasons: [...(frozen.runtimeExclusionReasons ?? [])],
+      ...(frozen.decisionExplanation
+        ? { decisionExplanation: structuredClone(frozen.decisionExplanation) }
+        : {}),
+      maxAttempts: attemptLimit,
+      fallbackAuthorized,
     };
   }
 
@@ -2043,6 +3100,12 @@ export class ModelSupplyApplicationService {
         ...(frozenCandidate.credentialOwner
           ? { credentialOwner: frozenCandidate.credentialOwner }
           : {}),
+        ...(frozenCandidate.accountIdentity
+          ? { accountIdentity: frozenCandidate.accountIdentity }
+          : {}),
+        ...(frozenCandidate.endpointFingerprint
+          ? { endpointFingerprint: frozenCandidate.endpointFingerprint }
+          : {}),
         ...(frozenCandidate.deploymentLifecycleRevision
           ? {
               lifecycleRevision: frozenCandidate.deploymentLifecycleRevision,
@@ -2128,7 +3191,8 @@ export class ModelSupplyApplicationService {
     candidates: Array<{ model: CatalogModel; deployment: ModelDeployment }>,
     selected: { model: CatalogModel; deployment: ModelDeployment },
     catalogRevisionId: string,
-    fallback?: RouteSnapshot['reason']
+    fallback?: RouteSnapshot['reason'],
+    planning?: SubmissionPlanningDecision,
   ): RouteSnapshot {
     if (submission.frozenRouteSnapshot) {
       if (
@@ -2154,7 +3218,36 @@ export class ModelSupplyApplicationService {
       actualCatalogModelId: selected.model.id,
       deploymentId: selected.deployment.id,
       policyRevision:
-        selected.deployment.policyRevision ?? 'recorded-policy-v1',
+        planning?.routePolicyRevisionId ??
+        selected.deployment.policyRevision ??
+        'recorded-policy-v1',
+      ...(planning?.routePolicyRevisionId
+        ? { routePolicyRevisionId: planning.routePolicyRevisionId }
+        : {}),
+      ...(planning?.dataPolicyRevisionIdByDeploymentId.get(
+        selected.deployment.id,
+      )
+        ? {
+            dataPolicyRevisionId:
+              planning.dataPolicyRevisionIdByDeploymentId.get(
+                selected.deployment.id,
+              )!,
+          }
+        : {}),
+      ...(planning?.runtimeExclusionReasons.length
+        ? {
+            runtimeExclusionReasons: [
+              ...planning.runtimeExclusionReasons,
+            ],
+          }
+        : {}),
+      ...(planning?.decisionExplanation
+        ? {
+            decisionExplanation: structuredClone(
+              planning.decisionExplanation,
+            ),
+          }
+        : {}),
       priceRevision: selected.deployment.priceRevision ?? 'recorded-price-v1',
       credentialMode: selected.deployment.credentialMode ?? 'platform',
       credentialVersion:
@@ -2185,6 +3278,12 @@ export class ModelSupplyApplicationService {
       fallbackConsent:
         submission.selection.fallbackConsent ??
         submission.selection.mode === 'auto',
+      ...(planning?.maxAttempts !== undefined
+        ? { maxAttempts: planning.maxAttempts }
+        : {}),
+      ...(planning?.fallbackAuthorized !== undefined
+        ? { fallbackAuthorized: planning.fallbackAuthorized }
+        : {}),
       allowedCandidates: candidates.map(({ model, deployment }, index) => ({
         catalogModelId: model.id,
         deploymentId: deployment.id,
@@ -2200,7 +3299,12 @@ export class ModelSupplyApplicationService {
         endpointRevision: deployment.endpointRevision ?? null,
         apiCounterparty: deployment.apiCounterparty ?? null,
         credentialOwner: deployment.credentialOwner ?? null,
+        accountIdentity: deployment.accountIdentity ?? null,
+        endpointFingerprint: deployment.endpointFingerprint ?? null,
         deploymentLifecycleRevision: deployment.lifecycleRevision ?? null,
+        dataPolicyRevisionId:
+          planning?.dataPolicyRevisionIdByDeploymentId.get(deployment.id) ??
+          null,
         apiFamily: deployment.apiFamily,
         channel: deployment.channel,
         region: deployment.region,
@@ -2217,6 +3321,7 @@ export class ModelSupplyApplicationService {
         policyRevision: deployment.policyRevision ?? 'recorded-policy-v1',
         priceRevision: deployment.priceRevision ?? 'recorded-price-v1',
         unitPriceMicros: deployment.unitPrice?.amountMicros ?? 0,
+        ...(!deployment.unitPrice ? { pricingStatus: 'unknown' as const } : {}),
         currency:
           deployment.unitPrice?.currency ??
           (deployment.region === 'domestic' ? 'CNY' : 'USD'),
@@ -2240,6 +3345,83 @@ export class ModelSupplyApplicationService {
         : {}),
       createdAt: now(),
     };
+  }
+
+  private async runtimeBindingFor(
+    deployment: ModelDeployment,
+    snapshot: RouteSnapshot,
+    options: { useFrozenCredentialVersion: boolean },
+  ): Promise<ProviderRuntimeBinding | undefined> {
+    if (!this.capabilityHotAssembly) return undefined;
+    const binding = await this.capabilityHotAssembly.assembleForRequest({
+      deploymentId: deployment.id,
+      ...(snapshot.capabilityRevisionId
+        ? { frozenCapabilityRevisionId: snapshot.capabilityRevisionId }
+        : {}),
+      ...(options.useFrozenCredentialVersion && snapshot.credentialVersion
+        ? { frozenCredentialVersion: snapshot.credentialVersion }
+        : {}),
+      requiredScope:
+        deployment.credentialMode === 'byok_strict' ||
+        deployment.credentialOwner === 'workspace_byok'
+          ? 'workspace_byok'
+          : 'platform',
+    });
+    if (binding.deploymentId !== deployment.id) {
+      throw new Error(
+        `Runtime binding deployment ${binding.deploymentId} does not match ${deployment.id}.`,
+      );
+    }
+    if (binding.entry.credentialAccountId) {
+      snapshot.credentialAccountId = binding.entry.credentialAccountId;
+    }
+    if (binding.credential) {
+      snapshot.credentialVersion = binding.credential.version;
+    }
+    return binding;
+  }
+
+  private async executeOnAdmittedChannel(input: {
+    deployment: ModelDeployment;
+    inFlightId: string;
+    execute(): Promise<ProviderExecutionResponse>;
+  }): Promise<ProviderExecutionResponse> {
+    if (!this.capabilityHotAssembly) return input.execute();
+    const channelId =
+      input.deployment.executionChannelId ?? input.deployment.id;
+    const admission =
+      await this.capabilityHotAssembly.acquireChannelSubmission(
+        channelId,
+        input.inFlightId,
+      );
+    if (!admission.admitted) {
+      return {
+        kind: 'failure',
+        acceptance: 'rejected_before_accept',
+        errorCode: admission.errorCode,
+        retryable: true,
+        message:
+          admission.message ??
+          `Channel ${channelId} is not accepting new submissions.`,
+        providerCost: {
+          amount: 0,
+          currency:
+            input.deployment.region === 'domestic' ? 'CNY' : 'USD',
+          usage: {},
+        },
+      };
+    }
+    const response = await input.execute();
+    if (
+      response.kind === 'completed' ||
+      response.acceptance === 'rejected_before_accept'
+    ) {
+      await this.capabilityHotAssembly.releaseChannelSubmission(
+        channelId,
+        input.inFlightId,
+      );
+    }
+    return response;
   }
 
   private supportsRuntimeDeployment(deployment: ModelDeployment) {

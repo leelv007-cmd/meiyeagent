@@ -8,3 +8,5 @@ export * from './supply-pool.js';
 export * from './three-layer-capacity.js';
 export * from './fair-queue.js';
 export * from './supply-ledger-fields.js';
+export * from './postgres-repository.js';
+export * from './model-supply-admission.js';
