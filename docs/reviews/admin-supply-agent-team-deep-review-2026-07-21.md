@@ -158,15 +158,15 @@
 | **F-G-02** | FIXED | G | 冻结凭据门控过松：仅有 accountId 即 use frozen，缺 version 可落到 head | `index.ts:1745-1752`；`secret-broker.ts:133-134` | 有 `credentialVersion` 必须传 `frozenVersion`；缺 freeze 字段 fail-closed |
 | **F-G-03** | FIXED | G | DataPolicy 无 binding map 时 restricted 非 fail-closed | `supply-control-plane.ts:417-454`；`data-policy.ts:267-302` | restricted dataClass 且无 DataPolicy head → 全局 fail-closed；或强制每个可路由 Deployment 绑定 revision |
 | **F-G-04** | FIXED | G | 排序缺证据时合成满分 fresh 证据 | `supply-control-plane.ts:514-584` | 缺关键证据 → excluded/canary；禁止合成 fresh 满分 |
-| **F-H-01** | OPEN | H | Fair-queue product 层拒绝后仍占 `selected`，饿死邻居 | `postgres-repository.ts` claimTurn + tryAcquireFair | product 层拒绝立即 requeue/终态；仅 supply/system 限流可持有 selected 重试 |
-| **F-H-02** | OPEN | H | RPM/TPM 死字段，测试写 rpm 却只断言 concurrency | `three-layer-capacity.ts`；`supply-pools.test.ts` | 实现滑动窗口 **或** 从契约/测试删除 rpm/tpm，避免假绿 |
-| **F-I-01** | OPEN | I | Unit `dualChannelReady` 不校验同 CatalogModel | `fault-injection/matrix.ts:63-66`；`matrix-models.ts` 跨模型 | unit 矩阵要求 `primary.catalogModelId === fallback.catalogModelId`；修正 matrix-models / fakes 对齐 handoff 或显式标 `channel_matrix_misaligned` |
+| **F-H-01** | FIXED | H | Fair-queue product 层拒绝后仍占 `selected`，饿死邻居 | `postgres-repository.ts` claimTurn + tryAcquireFair | product 层拒绝立即 requeue/终态；仅 supply/system 限流可持有 selected 重试 |
+| **F-H-02** | FIXED | H | RPM/TPM 死字段，测试写 rpm 却只断言 concurrency | `three-layer-capacity.ts`；`supply-pools.test.ts` | 实现滑动窗口 **或** 从契约/测试删除 rpm/tpm，避免假绿 |
+| **F-I-01** | FIXED | I | Unit `dualChannelReady` 不校验同 CatalogModel | `fault-injection/matrix.ts:63-66`；`matrix-models.ts` 跨模型 | unit 矩阵要求 `primary.catalogModelId === fallback.catalogModelId`；修正 matrix-models / fakes 对齐 handoff 或显式标 `channel_matrix_misaligned` |
 | **F-I-02** | KNOWN | I | Live C5 / fault injector 未跑 | accept-gaps G-LIVE-* | 开闸 `RUN_PROVIDER_LIVE_FAULT_INJECTION=1` + secrets + external hook；更新 gap 文件后才可宣称 |
-| **F-J-01** | KNOWN | J/#83 | 商户端 single-channel/no-fallback 未挂主路径 | `ModelCardPicker` 仅 test 引用；gap G-UI-MERCHANT-NO-FALLBACK | 在 #83 选型/composer 挂 `channelReadiness` 投影；复用 `userSelectChannelLabel` 语义 |
-| **F-J-02** | OPEN | J | Live 路由模拟器缺席 | `admin-supply-control.tsx:185-187` | 接 Core route simulate 命令；禁止仅 fixture 可见 |
-| **F-KZ-01** | OPEN | KZ | service-token 提权面过大 + 非 timing-safe | `server.ts` p1Identity；`authorizer` worker_bypass | timingSafeEqual；worker/payment 独立凭证或 mTLS；缩小 actor 可设范围 |
-| **F-KZ-02** | OPEN | KZ | authorizer 可选 → 内部静默全开 | `application-service.ts:171` | 生产构造 **require** authorizer 或默认 `createPermissionAuthorizer()` |
-| **F-KZ-03** | OPEN | KZ | 弱密钥黑名单不含 `dev-token` | `secret-hardening.ts`；本地 `.env` | 拒短熵 + 扩展 placeholder 列表（含 `dev-token`） |
+| **F-J-01** | PARTIAL | J/#83 | 商户端 single-channel/no-fallback 未挂主路径 | `ModelCardPicker` 仅 test 引用；gap G-UI-MERCHANT-NO-FALLBACK | model-settings ModelCard 已挂 `channelReadiness` badge；composer 全量 ModelCardPicker 仍 deferred |
+| **F-J-02** | FIXED | J | Live 路由模拟器缺席 | `admin-supply-control.tsx:185-187` | 接 Core route simulate 命令；禁止仅 fixture 可见 |
+| **F-KZ-01** | FIXED | KZ | service-token 提权面过大 + 非 timing-safe | `server.ts` p1Identity；`authorizer` worker_bypass | timingSafeEqual；worker/payment 独立凭证或 mTLS；缩小 actor 可设范围 |
+| **F-KZ-02** | FIXED | KZ | authorizer 可选 → 内部静默全开 | `application-service.ts:171` | 生产构造 **require** authorizer 或默认 `createPermissionAuthorizer()` |
+| **F-KZ-03** | FIXED | KZ | 弱密钥黑名单不含 `dev-token` | `secret-hardening.ts`；本地 `.env` | 拒短熵 + 扩展 placeholder 列表（含 `dev-token`） |
 | **F-H-03** | KNOWN | H/#92 | ProductUsage 仅 Memory；bridge 生产注入不全 | product-billing；审计 #115/#127 partial | 等 #92 持久化；本包禁止自建第二 ledger；wiring 注入 durable usage + freeze 关联 |
 
 ### 3.3 P2 — 卫生与后续
@@ -182,10 +182,10 @@
 | **F-H-04** | OPEN | H | 全局 capacity advisory lock 热点 | 锁粒度改 supply_account + 独立 system 计数 |
 | **F-H-05** | OPEN | H | service_turns 无限增长 | 滑动窗口 / purge |
 | **F-I-03** | FIXED | I | 默认 InMemory receipt store | 生产 media adapter 强制 durable store |
-| **F-J-03** | OPEN | J | `/admin` `/admin/supply` i18n 硬编码 | paraglide keys |
-| **F-J-04** | OPEN | J | exception home 加载态静默 | 显式 loading/error |
-| **F-J-05** | DOC | J | WIRING-DIFF 过时 | 同步 live reporters 已接线事实 |
-| **F-KZ-04** | OPEN | KZ | product command 授权与 P1 分叉 | 未知 command 对 worker 也 default-deny |
+| **F-J-03** | FIXED | J | `/admin` `/admin/supply` i18n 硬编码 | paraglide keys |
+| **F-J-04** | FIXED | J | exception home 加载态静默 | 显式 loading/error |
+| **F-J-05** | FIXED | J | WIRING-DIFF 过时 | 同步 live reporters 已接线事实 |
+| **F-KZ-04** | FIXED | KZ | product command 授权与 P1 分叉 | 未知 command 对 worker 也 default-deny |
 | **F-KZ-05** | OPEN | KZ | runtime assembly 硬编码 recorded catalog revision id | live 路径用 published head 标签 |
 | **F-I-04** | KNOWN | I | Playwright 四服务 D-048 e2e | gap G-E2E-PLAYWRIGHT-D048 |
 
@@ -231,8 +231,8 @@
 
 1. **#128 Z2-ACCEPT 整包完成**  
 2. **生产 C5 multi-channel ready**（三模态 × 同 CatalogModel × official_direct + upstream_reseller × 独立故障域 × 真故障注入）  
-3. **unit `dualChannelReady=true` = 同 CatalogModel 双渠道**（F-I-01 未修前）  
-4. **商户端 dual-end single-channel/no-fallback 完成**（F-J-01）  
+3. **unit `dualChannelReady=true` = 同 CatalogModel 双渠道**（F-I-01 已修：text/image 跨模型诚实 `false`；live 仍需 F-I-02）  
+4. **商户端 dual-end single-channel/no-fallback 完成**（F-J-01 仅 model-settings partial）  
 5. **RouteSnapshot 已单一权威落库**（F-S2-04）  
 6. **ProductUsage 持久化预占/结算完成**（属 #92，本包 partial）  
 7. **视频制造商级双供应**（仅可声称渠道级容灾，Seedance 同源）
@@ -304,8 +304,12 @@ pnpm --filter @meiye/web exec tsx --test src/p1/z2-accept-ap.test.tsx
 |---|---|---|
 | 2026-07-21 | Agent Team 深度 review 落盘 | 1 P0 + 16 P1 + 若干 P2 登记；修复波次 0–3 已排；业务代码未动 |
 | 2026-07-21 | Wave 0/1 core 落地 (`a8f8e17`) | **FIXED**: F-G-01, F-G-02, F-G-03, F-G-04, F-S2-01, F-S2-02, F-I-03 |
-| 2026-07-21 | Wave P2 + docs | **FIXED**: F-S2-03（foundation `dataPolicyRevisionId`/`sourceKind` round-trip）、F-G-05（recorded adapters 改用 `getSharedRecordedHealthOverlay`）；**DOC**: F-S2-04（#108 审计降 partial） |
+| 2026-07-21 | Wave P2 + docs (`aa044e3`) | **FIXED**: F-S2-03（foundation `dataPolicyRevisionId`/`sourceKind` round-trip）、F-G-05（recorded adapters 改用 `getSharedRecordedHealthOverlay`）；**DOC**: F-S2-04（#108 审计降 partial） |
+| 2026-07-21 | Wave 1 I/H (`1dd60ba`) | **FIXED**: F-I-01 dualChannelReady 同 CatalogModel + channelMatrixAligned；F-H-01 product 拒后立即 requeue；F-H-02 滑动窗口 RPM/TPM |
+| 2026-07-21 | Wave 1 KZ (`8ca86f5`) | **FIXED**: F-KZ-01 timing-safe token + elevation allowlist；F-KZ-02 authorizer 默认强制；F-KZ-03 weak secrets；F-KZ-04 product command default-deny |
+| 2026-07-21 | Wave 1/2 J (`724cc1b`) | **FIXED**: F-J-02 live 路由模拟器；F-J-03/04 i18n + loading；F-J-05 WIRING-DIFF；**PARTIAL**: F-J-01 model-settings badge（composer 全量 ModelCardPicker deferred） |
 | 2026-07-21 | Wave 2 外部门禁（保持 OPEN/KNOWN） | **OPEN/KNOWN 未动**: F-I-02 live matrix、F-H-03/#92 ProductUsage、F-I-04 Playwright D-048；#128 仍 external_blocked，严禁宣称整包完成 |
+| 2026-07-21 | Agent Team 修复收口 | 分支 `fix/admin-supply-review-findings-2026-07-21`；Core/Web 相关 unit 回归绿；**未 push** |
 
 ---
 
