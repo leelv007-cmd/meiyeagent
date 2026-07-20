@@ -1,0 +1,127 @@
+/*
+ * Landing design system — 丽客美页 LIKEPAGE (docs/design/landing-design-2026-07-21.md)
+ * Scoped under .meiye-landing so product-shell pages are untouched.
+ * Palette: 暖香槟金·琥珀丝绒 (from references/风格参考图 commonalities).
+ */
+
+@font-face {
+  font-family: "Likepage Didone";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/didone-display-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+2000-206F;
+}
+
+.meiye-landing {
+  /* high-key pearl-champagne (ref: 风格参考图/huaban-5406234642.jpg) */
+  --background: #faf5ec;
+  --foreground: #4a3826;
+  --muted: #f3ecdd;
+  --muted-foreground: #8a7862;
+  --border: #eaddc6;
+  --ring: #c09649;
+  --accent: #c09649;
+  --accent-light: #efdcb2;
+  --accent-foreground: #3f2f1b;
+  --l-gradient-from: #c39a5e;
+  --l-gradient-to: #ead3a2;
+  --l-glow: #f4ce96;
+  --l-rose: #e96b5f;
+  --l-card: #fdfbf5;
+
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-brand);
+  /* own stacking context so -z-10 hero backdrop paints above this background */
+  isolation: isolate;
+  /* film-grain film: SVG feTurbulence noise layered under content, zero stacking risk */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  overflow-x: clip;
+}
+
+.dark .meiye-landing {
+  --background: #2a1b10;
+  --foreground: #f3e9dc;
+  --muted: #3e2a18;
+  --muted-foreground: #c4b39e;
+  --border: #5c3a1e;
+  --ring: #d4a155;
+  --accent: #d4a155;
+  --accent-light: #e8c98f;
+  --accent-foreground: #2a1b10;
+  --l-glow: #f0a868;
+  --l-rose: #e77f87;
+}
+
+.meiye-landing ::selection {
+  background-color: var(--accent);
+  color: #3f2f1b;
+}
+
+.meiye-landing .landing-display {
+  font-family:
+    "Likepage Didone", Didot, "Bodoni MT", "Songti SC", "Noto Serif SC", serif;
+}
+
+.meiye-landing .skip-to-content {
+  position: absolute;
+  left: -9999px;
+  top: 1rem;
+  z-index: 9999;
+  padding: 0.75rem 1rem;
+  background: var(--background);
+  border: 2px solid var(--ring);
+  border-radius: 0.375rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--foreground);
+}
+
+.meiye-landing .skip-to-content:focus {
+  left: 1rem;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.meiye-landing .focus-ring:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.meiye-landing a:focus-visible,
+.meiye-landing button:focus-visible,
+.meiye-landing input:focus-visible,
+.meiye-landing select:focus-visible,
+.meiye-landing textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.meiye-landing .no-focus-ring:focus-visible {
+  outline: none;
+}
+
+.meiye-landing .scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.meiye-landing .scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Lenis owns scrolling while landing is mounted; neutralize global smooth */
+html.lenis {
+  scroll-behavior: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meiye-landing *,
+  .meiye-landing *::before,
+  .meiye-landing *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

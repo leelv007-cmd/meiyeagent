@@ -32,7 +32,6 @@ const readSource = (file: string) =>
 test('merchant-facing forms never render raw upstream error messages', () => {
   const clientFiles = [
     'src/components/contact/contact-form-card.tsx',
-    'src/components/blocks/newsletter-card.tsx',
     'src/components/settings/notification/newsletter-form-card.tsx',
     'src/components/admin/users/user-detail-viewer.tsx',
   ];
@@ -86,14 +85,12 @@ test('pricing comparison and shared accessibility copy use Paraglide', () => {
 
 test('pricing stays readable without checkout and every public pricing CTA reaches it', async () => {
   const [
-    { default: HeroSection },
-    { default: CallToActionSection },
-    { default: Integration2Section },
+    { Pricing: LandingPricing },
+    { Footer: LandingFooter },
     { Route: pricingRoute },
   ] = await Promise.all([
-    import('../components/blocks/hero'),
-    import('../components/blocks/calltoaction'),
-    import('../components/blocks/integration2'),
+    import('../components/landing/pricing'),
+    import('../components/landing/footer'),
     import('../routes/(pages)/pricing'),
   ]);
 
@@ -114,9 +111,8 @@ test('pricing stays readable without checkout and every public pricing CTA reach
       createElement(
         Fragment,
         null,
-        createElement(HeroSection),
-        createElement(CallToActionSection),
-        createElement(Integration2Section)
+        createElement(LandingPricing),
+        createElement(LandingFooter)
       ),
     getParentRoute: () => rootRoute,
     path: '/',
@@ -130,7 +126,13 @@ test('pricing stays readable without checkout and every public pricing CTA reach
   const ctaHtml = renderToStaticMarkup(
     createElement(RouterProvider, { router })
   );
-  assert.equal((ctaHtml.match(/href="\/pricing"/g) ?? []).length, 3);
+  // The landing surface keeps /pricing reachable and register-first CTAs live;
+  // the lifetime tier stays a disabled non-link.
+  assert.ok((ctaHtml.match(/href="\/pricing"/g) ?? []).length >= 1);
+  assert.ok((ctaHtml.match(/href="\/auth\/register"/g) ?? []).length >= 2);
+  assert.match(ctaHtml, /aria-disabled="true"/u);
+  assert.match(ctaHtml, />敬请期待</u);
+  assert.doesNotMatch(ctaHtml, /<a[^>]*>[^<]*敬请期待/u);
 });
 
 test('peripheral Paraglide handoff records every new key in both languages', () => {

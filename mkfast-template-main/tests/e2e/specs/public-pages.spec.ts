@@ -57,19 +57,18 @@ test.describe('public page smoke coverage', () => {
     });
   }
 
-  test('opens the home page login modal', async ({ page }) => {
+  test('home page 登录 links to the login page', async ({ page }) => {
     await setTheme(page, 'dark');
     const monitor = installPageHealthMonitor(page);
 
     await expectHealthyPage(page, monitor, '/', { theme: 'dark' });
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: '登录' }).click();
+    await page.getByRole('link', { name: '登录' }).click();
 
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
-    await expect(dialog.locator('input[name="email"]')).toBeVisible();
-    await expect(dialog.locator('input[name="password"]')).toBeVisible();
-    monitor.expectNoErrors('home login modal');
+    await expect(page).toHaveURL(/\/auth\/login/);
+    await expect(page.locator('input[name="email"]')).toBeVisible();
+    await expect(page.locator('input[name="password"]')).toBeVisible();
+    monitor.expectNoErrors('home login link');
   });
 
   test('retired starter and AI demo routes stay unavailable and branded', async ({

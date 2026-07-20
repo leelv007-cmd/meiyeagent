@@ -130,6 +130,17 @@ function RootComponent() {
     canonicalPathname !== Routes.Root &&
     canonicalPathname !== '' &&
     matches.length <= 1;
+  // Landing page brings its own header/footer/main (meiye-landing scope)
+  const isLandingPage =
+    canonicalPathname === Routes.Root || canonicalPathname === '';
+
+  if (isLandingPage) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <Outlet />
+      </div>
+    );
+  }
 
   if (isProtectedPages) {
     return (

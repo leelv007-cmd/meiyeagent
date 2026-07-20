@@ -8,7 +8,7 @@ const read = (file: string) =>
 
 const PRICING = 'src/routes/(pages)/pricing.tsx';
 const PRICING_SHELL = 'src/components/pricing/pricing-shell.tsx';
-const HOME_PRICING = 'src/components/blocks/pricing.tsx';
+const HOME_PRICING = 'src/components/landing/pricing.tsx';
 const PRICING_CARD = 'src/components/pricing/pricing-card.tsx';
 
 test('pricing page is reskinned to brand tokens, not the template skin', () => {
@@ -30,11 +30,32 @@ test('pricing page is reskinned to brand tokens, not the template skin', () => {
   assert.match(src, /IconSparkles/u);
 });
 
-test('homepage pricing section shares the Shop Window shell', () => {
+test('landing pricing speaks the launch contract in the landing scope', () => {
+  // The LIKEPAGE landing is exempt from PricingShell (own design system,
+  // docs/design/landing-design-2026-07-21.md); it must speak the launch
+  // pricing contract instead: Starter free / Growth ¥399 / lifetime disabled.
   const home = read(HOME_PRICING);
-  assert.match(home, /PricingShell/u);
-  assert.match(home, /meiye-pricing-shell|PricingShell/u);
-  assert.match(home, /from '@\/components\/pricing\/pricing-shell'/u);
+  const zh = JSON.parse(read('project.inlang/messages/zh.json'));
+  const en = JSON.parse(read('project.inlang/messages/en.json'));
+
+  assert.doesNotMatch(home, /PricingShell/u);
+  assert.doesNotMatch(home, /[㐀-鿿]/u);
+  assert.match(home, /landing_pricing_[a-z0-9_]+/u);
+  assert.match(home, /Routes\.Register/u);
+  assert.match(home, /Routes\.Pricing/u);
+  assert.match(home, /aria-disabled/u);
+
+  assert.equal(zh.landing_pricing_growth_price, '¥399');
+  assert.match(zh.landing_pricing_growth_badge, /上线特惠/u);
+  assert.match(zh.landing_pricing_coming_soon, /敬请期待/u);
+  for (const key of [
+    'landing_pricing_growth_price',
+    'landing_pricing_growth_badge',
+    'landing_pricing_coming_soon',
+  ]) {
+    assert.equal(typeof en[key], 'string', `en missing ${key}`);
+    assert.ok(en[key].length > 0, `en empty ${key}`);
+  }
 });
 
 test('dead "不可用" CTA is gone; availability is computed, not faked', () => {

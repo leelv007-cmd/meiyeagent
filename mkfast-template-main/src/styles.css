@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "./custom.css";
+@import "./components/landing/landing.css";
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
@@ -102,6 +103,10 @@
   --color-spark: var(--spark, oklch(0.63 0.13 18));
   --color-spark-wash: var(--spark-wash, oklch(0.95 0.025 18));
   --color-spark-deep: var(--spark-deep, oklch(0.45 0.1 18));
+  /* landing-only tokens; fallbacks keep product pages unaffected */
+  --color-accent-light: var(--accent-light, oklch(0.87 0.09 80));
+  --font-landing-display: 'Likepage Didone', Didot, 'Bodoni MT', 'Songti SC',
+    'Noto Serif SC', serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
