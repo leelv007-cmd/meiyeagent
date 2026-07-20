@@ -232,14 +232,10 @@ import {
   exampleStoreVisibility,
   openingSuggestions,
   readCreationDraftIntent,
-  sceneChipGroups,
-  sceneIntent,
   type AssetFactAnswers,
-  type ConfirmedAssetFacts,
-  type SceneId,
+  type ConfirmedAssetFacts
   writeCreationDraftIntent,
 } from './creation-entry-model';
-import { SceneVisualButton } from './scene-visual-button';
 import { assistantSourceSummaries } from './creation-assistant-context';
 import type { CreationCatalogResponse } from './creation-catalog-model';
 import { CanonicalMediaGallery } from './canonical-media-gallery';
@@ -1099,10 +1095,8 @@ export function MobileActionBook({
   const [createdWork, setCreatedWork] =
     useState<CreativeWorkbenchProjection['works'][number]>();
   const [videoComposerWorkId, setVideoComposerWorkId] = useState<string>();
-  const [expandedScenes, setExpandedScenes] = useState(false);
   const [exampleOpened, setExampleOpened] = useState(false);
   const [selectedGuidanceId, setSelectedGuidanceId] = useState<string>();
-  const [selectedScene, setSelectedScene] = useState<SceneId>();
   const draftIntentRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -1239,14 +1233,12 @@ export function MobileActionBook({
       title: taskView(task).title,
     })),
   });
-  const sceneChips = sceneChipGroups(getLocale());
   const updateDraftIntent = (
     nextIntent: string,
-    source?: { guidanceId?: string; scene?: SceneId }
+    source?: { guidanceId?: string }
   ) => {
     setDraftIntent(nextIntent);
     setSelectedGuidanceId(source?.guidanceId);
-    setSelectedScene(source?.scene);
     if (!writeCreationDraftIntent(window.sessionStorage, nextIntent)) {
       window.sessionStorage.removeItem(CREATION_DRAFT_INTENT_STORAGE_KEY);
     }
@@ -2051,58 +2043,6 @@ export function MobileActionBook({
             {!currentWork ? (
               <Card>
                 <CardContent className="space-y-4">
-                  <fieldset className="min-w-0 space-y-2">
-                    <legend className="text-sm font-medium">
-                      {creation_entry_scene_legend()}
-                    </legend>
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                      {sceneChips.primary.map((scene) => (
-                        <SceneVisualButton
-                          className="w-48"
-                          key={scene.id}
-                          onSelect={() =>
-                            updateDraftIntent(sceneIntent(scene.id), {
-                              scene: scene.id,
-                            })
-                          }
-                          scene={scene}
-                          selected={selectedScene === scene.id}
-                        />
-                      ))}
-                      <Button
-                        aria-expanded={expandedScenes}
-                        className="min-h-touch-target shrink-0"
-                        onClick={() => setExpandedScenes((current) => !current)}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        {creation_entry_all_scenes()}
-                        {expandedScenes ? (
-                          <IconChevronUp aria-hidden="true" />
-                        ) : (
-                          <IconChevronDown aria-hidden="true" />
-                        )}
-                      </Button>
-                    </div>
-                    {expandedScenes ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        {sceneChips.expanded.map((scene) => (
-                          <SceneVisualButton
-                            className="w-full"
-                            key={scene.id}
-                            onSelect={() =>
-                              updateDraftIntent(sceneIntent(scene.id), {
-                                scene: scene.id,
-                              })
-                            }
-                            scene={scene}
-                            selected={selectedScene === scene.id}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                  </fieldset>
                   <div className="min-w-0 space-y-2">
                     <h3 className="text-sm font-medium">
                       {creation_entry_guidance_title()}

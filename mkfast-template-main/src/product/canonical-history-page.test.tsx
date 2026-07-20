@@ -204,7 +204,7 @@ test('history rows use package delivery truth and label unmapped old works hones
   const items = [
     {
       detail: '草稿 · 对象已保存，但尚未提交执行',
-      href: '/dashboard/works/work-delivered',
+      href: '/dashboard/results/work-delivered',
       id: delivered.id,
       kind: 'work' as const,
       title: '已交付作品',
@@ -212,7 +212,7 @@ test('history rows use package delivery truth and label unmapped old works hones
     },
     {
       detail: '已完成',
-      href: '/dashboard/works/work-legacy',
+      href: '/dashboard/results/work-legacy',
       id: legacy.id,
       kind: 'work' as const,
       title: '旧版作品',
@@ -258,7 +258,7 @@ test('history rows show package synchronization instead of a transient legacy la
       items: [
         {
           detail: '已完成',
-          href: '/dashboard/works/work-syncing',
+          href: '/dashboard/results/work-syncing',
           id: work.id,
           kind: 'work' as const,
           title: '刚完成的作品',

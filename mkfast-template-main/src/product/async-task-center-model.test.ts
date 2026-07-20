@@ -165,7 +165,7 @@ test('composed-video summaries reuse workflow and Tracer facts without exposing 
     summaries.every(
       (summary) =>
         summary.label === '视频任务' &&
-        summary.href === '/dashboard/works/merchant-work-a'
+        summary.href === '/dashboard/results/merchant-work-a'
     )
   );
   assert.doesNotMatch(

@@ -14,10 +14,6 @@ import {
   ordinaryOneClickAnswers,
   primaryCreationOperations,
   readCreationDraftIntent,
-  resolvePresetIdForScene,
-  sceneChipGroups,
-  sceneIntent,
-  scenePresetFamily,
   shouldLaunchAgentHarness,
   systemInlineAuthEvidence,
   writeCreationDraftIntent,
@@ -157,115 +153,8 @@ test('opening suggestions identify fallback copy as common instead of insight', 
   assert.ok(suggestions.every((item) => item.sourceLabel === '常用建议'));
 });
 
-test('scene chips produce deterministic editable intent without creating work', () => {
-  assert.equal(
-    sceneIntent('retention-nail'),
-    '为美甲门店写一条真实克制的老客复购内容，先回顾上次效果，再说明本次可选项目和预约方式。'
-  );
-});
 
-test('scene chips expose labels plus presetFamily/contextTag from a single descriptor source', () => {
-  assert.deepEqual(sceneChipGroups('zh'), {
-    expanded: [
-      {
-        contextTag: 'lead-gen-hair',
-        id: 'lead-gen-hair',
-        imageUrl: '/seed/scene/scene-lead-gen-hair.webp',
-        label: '引流 · 美发',
-        presetFamily: 'package_explainer',
-      },
-      {
-        contextTag: 'seeding-hair',
-        id: 'seeding-hair',
-        imageUrl: '/seed/scene/scene-seeding-hair.webp',
-        label: '种草 · 美发',
-        presetFamily: 'before_after',
-      },
-      {
-        contextTag: 'lead-gen-skin',
-        id: 'lead-gen-skin',
-        imageUrl: '/seed/scene/scene-lead-gen-skin.webp',
-        label: '引流 · 皮肤管理',
-        presetFamily: 'package_explainer',
-      },
-      {
-        contextTag: 'seeding-skin',
-        id: 'seeding-skin',
-        imageUrl: '/seed/scene/scene-seeding-skin.webp',
-        label: '种草 · 皮肤管理',
-        presetFamily: 'before_after',
-      },
-    ],
-    primary: [
-      {
-        contextTag: 'lead-gen-nail',
-        id: 'lead-gen-nail',
-        imageUrl: '/seed/scene/scene-lead-gen-nail.webp',
-        label: '引流 · 美甲',
-        presetFamily: 'package_explainer',
-      },
-      {
-        contextTag: 'seeding-nail',
-        id: 'seeding-nail',
-        imageUrl: '/seed/scene/scene-seeding-nail.webp',
-        label: '种草 · 美甲',
-        presetFamily: 'before_after',
-      },
-      {
-        contextTag: 'promotion-nail',
-        id: 'promotion-nail',
-        imageUrl: '/seed/scene/scene-promo-nail.webp',
-        label: '促销 · 美甲',
-        presetFamily: 'price_card',
-      },
-      {
-        contextTag: 'retention-nail',
-        id: 'retention-nail',
-        imageUrl: '/seed/scene/scene-retention-nail.webp',
-        label: '复购 · 美甲',
-        presetFamily: 'package_explainer',
-      },
-    ],
-  });
-  assert.deepEqual(
-    sceneChipGroups('en').primary.map((scene) => scene.label),
-    [
-      'Lead gen · Nails',
-      'Seeding · Nails',
-      'Promotion · Nails',
-      'Retention · Nails',
-    ]
-  );
-});
 
-test('scene selection resolves namedPresets by family without inventing a second catalog', () => {
-  assert.equal(scenePresetFamily('promotion-nail'), 'price_card');
-  assert.equal(scenePresetFamily('seeding-nail'), 'before_after');
-  assert.equal(scenePresetFamily('lead-gen-nail'), 'package_explainer');
-  const presets = [
-    { family: 'price_card', id: 'preset-price' },
-    { family: 'before_after', id: 'preset-ba' },
-    { family: 'package_explainer', id: 'preset-pkg' },
-  ];
-  assert.equal(
-    resolvePresetIdForScene('promotion-nail', presets),
-    'preset-price'
-  );
-  assert.equal(resolvePresetIdForScene('seeding-hair', presets), 'preset-ba');
-  assert.equal(
-    resolvePresetIdForScene('retention-nail', presets),
-    'preset-pkg'
-  );
-  assert.equal(
-    resolvePresetIdForScene(
-      'promotion-nail',
-      [{ family: 'before_after', id: 'x' }],
-      'preset-current'
-    ),
-    'preset-current',
-    'an unavailable family keeps the current preset instead of clearing it'
-  );
-});
 
 test('example store waits for every successful real query and exits on any fact', () => {
   const empty = {
@@ -550,4 +439,15 @@ test('restricted public marketing still requires platforms and expiry; evidence 
       rightsValidUntil: undefined,
     }
   );
+});
+
+test('Z1 retirement: scene chip groups API is gone from creation-entry-model', () => {
+  const source = readFileSync(
+    new URL('./creation-entry-model.ts', import.meta.url),
+    'utf8'
+  );
+  assert.equal(source.includes('export function sceneChip' + 'Groups'), false);
+  assert.equal(source.includes('export interface Scene' + 'Chip'), false);
+  assert.equal(source.includes('export function scene' + 'Intent'), false);
+  assert.equal(source.includes('resolvePresetIdFor' + 'Scene'), false);
 });

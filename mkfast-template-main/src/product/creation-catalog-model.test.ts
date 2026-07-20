@@ -125,21 +125,8 @@ describe('creation catalog projection', () => {
     assert.equal(work?.unavailableReason, '当前创作不能作为自身的来源。');
   });
 
-  it('projects a named preset Work without exposing its internal intent', () => {
+  it('Z1: catalog templates no longer carry internalIntent contracts', () => {
     const preset = projectCreationCatalog(catalog)[0]?.template;
-    assert.ok(preset?.internalIntent);
-    const entries = projectCreationCatalog(catalog, {
-      ...history,
-      creativeWorks: [
-        {
-          ...history.creativeWorks[0]!,
-          intent: preset.internalIntent,
-          sourceReferences: [{ id: preset.id, kind: 'template' }],
-        },
-      ],
-    });
-
-    assert.equal(entries.at(-1)?.label, preset.name);
-    assert.doesNotMatch(entries.at(-1)?.label ?? '', /真实克制/);
+    assert.equal(preset?.internalIntent, undefined);
   });
 });

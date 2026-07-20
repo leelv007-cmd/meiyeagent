@@ -3,22 +3,6 @@ import {
   creation_entry_example_remix_intent,
   creation_entry_platform_douyin,
   creation_entry_platform_xiaohongshu,
-  creation_entry_scene_lead_gen_hair_chip,
-  creation_entry_scene_lead_gen_hair_intent,
-  creation_entry_scene_lead_gen_nail_chip,
-  creation_entry_scene_lead_gen_nail_intent,
-  creation_entry_scene_lead_gen_skin_chip,
-  creation_entry_scene_lead_gen_skin_intent,
-  creation_entry_scene_promotion_nail_chip,
-  creation_entry_scene_promotion_nail_intent,
-  creation_entry_scene_retention_nail_chip,
-  creation_entry_scene_retention_nail_intent,
-  creation_entry_scene_seeding_hair_chip,
-  creation_entry_scene_seeding_hair_intent,
-  creation_entry_scene_seeding_nail_chip,
-  creation_entry_scene_seeding_nail_intent,
-  creation_entry_scene_seeding_skin_chip,
-  creation_entry_scene_seeding_skin_intent,
   creation_entry_suggestion_asset_source,
   creation_entry_suggestion_common_source,
   creation_entry_suggestion_local_intent,
@@ -142,6 +126,7 @@ export function openingSuggestions(input: {
     .slice(0, 3);
 }
 
+/** Historical scene id tokens retained for marketing secondary map typing only. */
 export type SceneId =
   | 'lead-gen-nail'
   | 'seeding-nail'
@@ -152,155 +137,8 @@ export type SceneId =
   | 'lead-gen-skin'
   | 'seeding-skin';
 
-/** Named-preset family used by desktop to resolve a matching catalog preset. */
-export type ScenePresetFamily =
-  | 'before_after'
-  | 'package_explainer'
-  | 'price_card';
-
-export interface SceneChip {
-  contextTag: string;
-  id: SceneId;
-  imageUrl: string;
-  label: string;
-  presetFamily: ScenePresetFamily;
-}
-
-type SceneDescriptor = {
-  contextTag: string;
-  id: SceneId;
-  imageUrl: string;
-  intent: () => string;
-  label: (locale: Locale) => string;
-  presetFamily: ScenePresetFamily;
-};
-
-const SCENE_DESCRIPTORS: Record<SceneId, SceneDescriptor> = {
-  'lead-gen-hair': {
-    contextTag: 'lead-gen-hair',
-    id: 'lead-gen-hair',
-    imageUrl: '/seed/scene/scene-lead-gen-hair.webp',
-    intent: creation_entry_scene_lead_gen_hair_intent,
-    label: (locale) =>
-      creation_entry_scene_lead_gen_hair_chip(undefined, { locale }),
-    presetFamily: 'package_explainer',
-  },
-  'lead-gen-nail': {
-    contextTag: 'lead-gen-nail',
-    id: 'lead-gen-nail',
-    imageUrl: '/seed/scene/scene-lead-gen-nail.webp',
-    intent: creation_entry_scene_lead_gen_nail_intent,
-    label: (locale) =>
-      creation_entry_scene_lead_gen_nail_chip(undefined, { locale }),
-    presetFamily: 'package_explainer',
-  },
-  'lead-gen-skin': {
-    contextTag: 'lead-gen-skin',
-    id: 'lead-gen-skin',
-    imageUrl: '/seed/scene/scene-lead-gen-skin.webp',
-    intent: creation_entry_scene_lead_gen_skin_intent,
-    label: (locale) =>
-      creation_entry_scene_lead_gen_skin_chip(undefined, { locale }),
-    presetFamily: 'package_explainer',
-  },
-  'promotion-nail': {
-    contextTag: 'promotion-nail',
-    id: 'promotion-nail',
-    imageUrl: '/seed/scene/scene-promo-nail.webp',
-    intent: creation_entry_scene_promotion_nail_intent,
-    label: (locale) =>
-      creation_entry_scene_promotion_nail_chip(undefined, { locale }),
-    presetFamily: 'price_card',
-  },
-  'retention-nail': {
-    contextTag: 'retention-nail',
-    id: 'retention-nail',
-    imageUrl: '/seed/scene/scene-retention-nail.webp',
-    intent: creation_entry_scene_retention_nail_intent,
-    label: (locale) =>
-      creation_entry_scene_retention_nail_chip(undefined, { locale }),
-    presetFamily: 'package_explainer',
-  },
-  'seeding-hair': {
-    contextTag: 'seeding-hair',
-    id: 'seeding-hair',
-    imageUrl: '/seed/scene/scene-seeding-hair.webp',
-    intent: creation_entry_scene_seeding_hair_intent,
-    label: (locale) =>
-      creation_entry_scene_seeding_hair_chip(undefined, { locale }),
-    presetFamily: 'before_after',
-  },
-  'seeding-nail': {
-    contextTag: 'seeding-nail',
-    id: 'seeding-nail',
-    imageUrl: '/seed/scene/scene-seeding-nail.webp',
-    intent: creation_entry_scene_seeding_nail_intent,
-    label: (locale) =>
-      creation_entry_scene_seeding_nail_chip(undefined, { locale }),
-    presetFamily: 'before_after',
-  },
-  'seeding-skin': {
-    contextTag: 'seeding-skin',
-    id: 'seeding-skin',
-    imageUrl: '/seed/scene/scene-seeding-skin.webp',
-    intent: creation_entry_scene_seeding_skin_intent,
-    label: (locale) =>
-      creation_entry_scene_seeding_skin_chip(undefined, { locale }),
-    presetFamily: 'before_after',
-  },
-};
-
-const PRIMARY_SCENE_IDS = [
-  'lead-gen-nail',
-  'seeding-nail',
-  'promotion-nail',
-  'retention-nail',
-] as const satisfies readonly SceneId[];
-
-const EXPANDED_SCENE_IDS = [
-  'lead-gen-hair',
-  'seeding-hair',
-  'lead-gen-skin',
-  'seeding-skin',
-] as const satisfies readonly SceneId[];
-
-function toSceneChip(scene: SceneId, locale: Locale): SceneChip {
-  const descriptor = SCENE_DESCRIPTORS[scene];
-  return {
-    contextTag: descriptor.contextTag,
-    id: descriptor.id,
-    imageUrl: descriptor.imageUrl,
-    label: descriptor.label(locale),
-    presetFamily: descriptor.presetFamily,
-  };
-}
-
-export function sceneChipGroups(locale: Locale) {
-  return {
-    expanded: EXPANDED_SCENE_IDS.map((id) => toSceneChip(id, locale)),
-    primary: PRIMARY_SCENE_IDS.map((id) => toSceneChip(id, locale)),
-  };
-}
-
-export function sceneIntent(scene: SceneId) {
-  return SCENE_DESCRIPTORS[scene].intent();
-}
-
-export function scenePresetFamily(scene: SceneId): ScenePresetFamily {
-  return SCENE_DESCRIPTORS[scene].presetFamily;
-}
-
-/** Resolve the first named preset matching the scene's family (single data source). */
-export function resolvePresetIdForScene(
-  scene: SceneId,
-  presets: ReadonlyArray<{ family: string; id: string }>,
-  currentPresetId?: string
-): string | undefined {
-  const family = scenePresetFamily(scene);
-  return (
-    presets.find((preset) => preset.family === family)?.id ?? currentPresetId
-  );
-}
+// Z1/#105: T6 scene chips + named-preset resolve path physically retired.
+// Composer Recipe cards own cold-start entry.
 
 export function exampleStoreBrowsingMessage(locale: Locale) {
   return example_store_browsing_no_allowance(undefined, { locale });

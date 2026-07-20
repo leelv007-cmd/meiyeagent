@@ -516,7 +516,7 @@ export function ContentPackageDetail({
         key={workflowId ?? workId}
         mode="progress"
         recoveryHref={getPathWithLocale(
-          `/dashboard?workId=${encodeURIComponent(workId)}`
+          `/dashboard/results/${encodeURIComponent(workId)}`
         )}
         workId={workId}
         {...(workflowId ? { workflowId } : {})}
@@ -692,82 +692,25 @@ export function ContentPackageDetail({
           key={currentVersion.id}
           onSubmit={submitEdit}
         >
-          <section className="space-y-3 rounded-md border bg-surface-2 p-3">
+                    <section
+            className="space-y-3 rounded-md border bg-surface-2 p-3"
+            data-testid="content-package-detail-result-handoff"
+          >
             <div>
-              <h3 className="font-medium">
-                {content_package_quick_edit_title()}
-              </h3>
+              <h3 className="font-medium">继续调整与交付</h3>
               <p className="text-sm text-muted-foreground">
-                {content_package_quick_edit_description()}
+                生成结果的主动作（调整 / 采用 / 交付）已收敛到结果中心。
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {CONTENT_PACKAGE_QUICK_EDIT_REWRITE_ACTIONS.map((action) => (
-                <Button
-                  data-export-use={
-                    CONTENT_PACKAGE_QUICK_EDIT_ACTION_CONFIG[action].exportUse
-                  }
-                  data-quick-edit-target={
-                    CONTENT_PACKAGE_QUICK_EDIT_ACTION_CONFIG[action].target
-                  }
-                  disabled={
-                    pending ||
-                    (action === 'platform_variant' && variant === undefined)
-                  }
-                  key={action}
-                  onClick={() => runQuickEditAction(action)}
-                  size="sm"
-                  type="button"
-                  variant={quickEditAction === action ? 'secondary' : 'outline'}
-                >
-                  {QUICK_EDIT_LABELS[action]()}
-                </Button>
-              ))}
-            </div>
-            <details className="rounded-md border bg-surface-1 p-2">
-              <summary className="cursor-pointer select-none text-sm font-medium">
-                {content_package_quick_edit_export_group()}
-              </summary>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {CONTENT_PACKAGE_QUICK_EDIT_EXPORT_ACTIONS.map((action) => (
-                  <Button
-                    data-export-use={
-                      CONTENT_PACKAGE_QUICK_EDIT_ACTION_CONFIG[action].exportUse
-                    }
-                    data-quick-edit-target={
-                      CONTENT_PACKAGE_QUICK_EDIT_ACTION_CONFIG[action].target
-                    }
-                    disabled={pending}
-                    key={action}
-                    onClick={() => runQuickEditAction(action)}
-                    size="sm"
-                    type="button"
-                    variant={
-                      quickEditAction === action ? 'secondary' : 'outline'
-                    }
-                  >
-                    {QUICK_EDIT_LABELS[action]()}
-                  </Button>
-                ))}
-              </div>
-            </details>
-            <div className="space-y-2">
-              <Label htmlFor="content-package-quick-edit-instruction">
-                {content_package_quick_edit_instruction()}
-              </Label>
-              <Textarea
-                id="content-package-quick-edit-instruction"
-                onChange={(event) => {
-                  setQuickEditAction('natural_language');
-                  setQuickEditInstruction(event.currentTarget.value);
-                }}
-                placeholder={content_package_quick_edit_placeholder()}
-                value={quickEditInstruction}
-              />
-              <p className="text-xs text-muted-foreground">
-                {content_package_quick_edit_scope()}
-              </p>
-            </div>
+            {contentPackage.source?.workId ? (
+              <a
+                className="inline-flex min-h-touch-target items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+                data-testid="content-package-open-result-center"
+                href={`/dashboard/results/${encodeURIComponent(contentPackage.source.workId)}`}
+              >
+                打开结果中心
+              </a>
+            ) : null}
           </section>
           <div className="space-y-2">
             <Label htmlFor="content-package-title">
@@ -885,7 +828,7 @@ export function ContentPackageDetail({
                 className={buttonVariants({ variant: 'outline' })}
                 href={getPathWithLocale(
                   contentPackage.source.workId
-                    ? `/dashboard?workId=${encodeURIComponent(contentPackage.source.workId)}`
+                    ? `/dashboard/results/${encodeURIComponent(contentPackage.source.workId)}`
                     : '/dashboard'
                 )}
               >

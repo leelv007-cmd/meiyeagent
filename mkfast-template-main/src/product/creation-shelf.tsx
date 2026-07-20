@@ -342,7 +342,7 @@ export function CreationShelf({
     },
     onSuccess: (work) =>
       window.location.assign(
-        getPathWithLocale(`/dashboard/works/${encodeURIComponent(work.id)}`)
+        getPathWithLocale(`/dashboard/results/${encodeURIComponent(work.id)}`)
       ),
     onError: () => toast.error(creation_shelf_canvas_create_failed()),
   });

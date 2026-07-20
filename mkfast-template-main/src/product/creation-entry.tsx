@@ -1,8 +1,6 @@
 import {
   IconArrowRight,
   IconCheck,
-  IconChevronDown,
-  IconChevronUp,
   IconFileText,
   IconSparkles,
   IconVideo,
@@ -14,7 +12,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import {
   common_more,
-  creation_entry_all_scenes,
   creation_entry_change_pending,
   creation_entry_guidance_title,
   creation_entry_input_guide,
@@ -29,7 +26,6 @@ import {
   creation_entry_marketing_project_exposure,
   creation_entry_marketing_promotion_conversion,
   creation_entry_marketing_promotional_material,
-  creation_entry_marketing_secondary,
   creation_entry_mode_agent,
   creation_entry_mode_direct,
   creation_entry_mode_label,
@@ -38,7 +34,6 @@ import {
   creation_entry_pending_tool_description,
   creation_entry_preset_input_hidden,
   creation_entry_preset_preview_alt,
-  creation_entry_scene_legend,
   creation_entry_selected_preset,
   creation_entry_skip,
   creation_entry_source_legend,
@@ -48,7 +43,6 @@ import {
   workbench_create_video,
   workbench_quick_start_legend,
 } from '@/locale/paraglide/messages';
-import { getLocale } from '@/lib/locale';
 import type { TemplateCatalogItemView } from '@/p1/types';
 import type {
   AssetIntakeBatch,
@@ -58,7 +52,6 @@ import type {
 import {
   marketingEntryContext,
   releasedMarketingEntries,
-  secondaryScenesForEntry,
   type MarketingEntryCapabilities,
   type MarketingEntryId,
 } from '@/product/marketing-entry-model';
@@ -71,13 +64,8 @@ import { AssistedAssetIntake } from '@/product/assisted-asset-intake';
 import {
   isComposerSubmitShortcut,
   openingSuggestions,
-  resolvePresetIdForScene,
-  sceneChipGroups,
-  sceneIntent,
   type ConfirmedAssetFacts,
-  type SceneId,
 } from '@/product/creation-entry-model';
-import { SceneVisualButton } from '@/product/scene-visual-button';
 import { useGlobalCommand } from '@/product/global-command-palette';
 
 interface SourceOption {
@@ -108,26 +96,19 @@ const MARKETING_ENTRY_LABELS: Record<MarketingEntryId, () => string> = {
 
 export function MarketingEntryContextPicker({
   onSelectEntry,
-  onSelectScene,
   releasedEntries,
   selectedMarketingEntry,
-  selectedScene,
 }: {
   onSelectEntry: (context: ReturnType<typeof marketingEntryContext>) => void;
-  onSelectScene: (sceneId: SceneId) => void;
+  /** @deprecated Z1: scene secondary chips retired with scene-visual-button. */
+  onSelectScene?: (sceneId: string) => void;
   releasedEntries: MarketingEntryId[];
   selectedMarketingEntry?: MarketingEntryId;
-  selectedScene?: SceneId;
+  /** @deprecated Z1: scene secondary chips retired. */
+  selectedScene?: string;
 }) {
-  const sceneChips = sceneChipGroups(getLocale());
-  const secondarySceneIds = selectedMarketingEntry
-    ? new Set(secondaryScenesForEntry(selectedMarketingEntry))
-    : new Set<SceneId>();
-  const secondaryScenes = [
-    ...sceneChips.primary,
-    ...sceneChips.expanded,
-  ].filter((scene) => secondarySceneIds.has(scene.id));
-
+  // Z1/#105: T6 scene-chip-groups / scene-visual-button retired — marketing entry
+  // chips remain; secondary scene strip removed.
   return (
     <>
       {releasedEntries.length > 0 ? (
@@ -149,29 +130,6 @@ export function MarketingEntryContextPicker({
                 }
               >
                 {MARKETING_ENTRY_LABELS[entryId]()}
-              </Button>
-            ))}
-          </div>
-        </fieldset>
-      ) : null}
-
-      {selectedMarketingEntry && secondaryScenes.length > 0 ? (
-        <fieldset className="space-y-2">
-          <legend className="text-xs font-medium text-muted-foreground">
-            {creation_entry_marketing_secondary()}
-          </legend>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {secondaryScenes.map((scene) => (
-              <Button
-                aria-pressed={selectedScene === scene.id}
-                className="shrink-0"
-                key={scene.id}
-                onClick={() => onSelectScene(scene.id)}
-                size="sm"
-                type="button"
-                variant={selectedScene === scene.id ? 'secondary' : 'outline'}
-              >
-                {scene.label}
               </Button>
             ))}
           </div>
@@ -313,18 +271,14 @@ export function CreationEntry({
   uploadsReady: boolean;
 }) {
   const [showMoreStarts, setShowMoreStarts] = useState(false);
-  const [expandedScenes, setExpandedScenes] = useState(false);
   const [selectedGuidanceId, setSelectedGuidanceId] = useState<string>();
   const [selectedMarketingEntry, setSelectedMarketingEntry] =
     useState<MarketingEntryId>();
-  // UI-only context tag; not persisted on Work (T6 boundary).
-  const [selectedScene, setSelectedScene] = useState<SceneId>();
   const materialEntryRef = useRef<HTMLElement>(null);
   const { openPalette, pendingAction } = useGlobalCommand();
   const selectedPreset = presets.find(
     (preset) => preset.id === selectedPresetId
   );
-  const sceneChips = sceneChipGroups(getLocale());
   const releasedEntries = releasedMarketingEntries(marketingEntryCapabilities);
   const selectedMarketingContext = selectedMarketingEntry
     ? marketingEntryContext(selectedMarketingEntry)
@@ -346,29 +300,13 @@ export function CreationEntry({
     source: {
       guidanceId?: string;
       marketingEntry?: MarketingEntryId;
-      scene?: SceneId;
     }
   ) => {
-    // Scene chips resolve namedPresets by family; other starters clear preset.
-    if (source.scene) {
-      onPresetChange(
-        resolvePresetIdForScene(source.scene, presets, selectedPresetId)
-      );
-    } else {
-      onPresetChange(undefined);
-    }
+    onPresetChange(undefined);
     onIntentChange(nextIntent);
     setSelectedGuidanceId(source.guidanceId);
     setSelectedMarketingEntry(source.marketingEntry);
-    setSelectedScene(source.scene);
     window.requestAnimationFrame(() => intentRef.current?.focus());
-  };
-
-  const selectScene = (sceneId: SceneId) => {
-    fillEditableIntent(sceneIntent(sceneId), {
-      marketingEntry: selectedMarketingEntry,
-      scene: sceneId,
-    });
   };
 
   const createDisabled =
@@ -411,51 +349,6 @@ export function CreationEntry({
           onChange={onOperationChange}
           operation={operation}
         />
-
-        <fieldset className="min-w-0 space-y-2">
-          <legend className="text-sm font-medium">
-            {creation_entry_scene_legend()}
-          </legend>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {sceneChips.primary.map((scene) => (
-              <SceneVisualButton
-                className="w-48 shrink-0"
-                key={scene.id}
-                onSelect={() => selectScene(scene.id)}
-                scene={scene}
-                selected={selectedScene === scene.id}
-              />
-            ))}
-            <Button
-              aria-expanded={expandedScenes}
-              className="shrink-0 self-center"
-              onClick={() => setExpandedScenes((current) => !current)}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              {creation_entry_all_scenes()}
-              {expandedScenes ? (
-                <IconChevronUp aria-hidden="true" />
-              ) : (
-                <IconChevronDown aria-hidden="true" />
-              )}
-            </Button>
-          </div>
-          {expandedScenes ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {sceneChips.expanded.map((scene) => (
-                <SceneVisualButton
-                  className="w-full"
-                  key={scene.id}
-                  onSelect={() => selectScene(scene.id)}
-                  scene={scene}
-                  selected={selectedScene === scene.id}
-                />
-              ))}
-            </div>
-          ) : null}
-        </fieldset>
 
         <ComposerImageInput
           focusRef={materialEntryRef}
@@ -554,10 +447,8 @@ export function CreationEntry({
                 marketingEntry: context.entryId,
               })
             }
-            onSelectScene={selectScene}
             releasedEntries={releasedEntries}
             selectedMarketingEntry={selectedMarketingEntry}
-            selectedScene={selectedScene}
           />
 
           <fieldset className="min-w-0 space-y-2">

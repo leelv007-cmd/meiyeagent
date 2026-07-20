@@ -1,21 +1,18 @@
 /**
- * Composer product surface (WT-C / #95 + #96 + #97 + #98).
+ * Composer product surface (WT-C / #95 + #96 + #97 + #98 + Z1 / #105 host).
  *
- * Pure models + thin components. Frozen workbench containers are not touched;
- * these modules are the replacement seam for dashboard shell integration.
+ * Pure models + thin components + ComposerHome host (cutover mount point).
  *
  * #96: six-card grid, RecipePatchPreview surface, reuse panel, apply tip,
  * T1 brief chips re-hang (no expand-four-card path).
  * #97: mobile two-col layout, fullscreen dual-tab catalog, single bottom sheet,
  * home tools strip + Pro Studio gate, typed ToolHandoff.
  * #98: conditional Brief surface + GL-23 quota blocking card with inline redeem.
- *
- * Integration wiring (Z / host):
- * - Mount RecipeCardsPanel + ComposerToolsStrip under dashboard home.
- * - Route `/dashboard/catalog` (see routes/dashboard/catalog.tsx).
- * - Navigation constants in composer-nav.ts (lib/routes.ts freeze-listed).
- * - Replace legacy Scene/Suggestion + default copy.generate in host cutover.
+ * #105: ComposerHome is the dashboard primary creation entry; legacy
+ * T6 scene chips / ?workId= bridge retired.
  */
+
+export { ComposerHome, type ComposerHomeProps } from './composer-home';
 
 export {
   FORBIDDEN_BROWSER_COMPOSER_KEYS,

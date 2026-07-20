@@ -197,6 +197,22 @@ import {
   VideoWorkflowEventSource,
   WorkflowEventApplicationService,
 } from './p1/workflow-events.js';
+import {
+  CreationExperienceCatalogService,
+  CreationExperienceFoundationModule,
+  MemoryCreationExperienceCatalogRepository,
+  publishLaunchCatalog,
+} from './p1/creation-experience/index.js';
+import {
+  ProductBillingFoundationModule,
+  ProductQuoteService,
+} from './p1/product-billing/index.js';
+import {
+  MemoryFirstAdoptPort,
+  MemoryVisualAdoptionStore,
+  ResultDeliveryFoundationModule,
+  VisualAdoptionService,
+} from './p1/result-delivery/index.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const serviceToken = process.env.CORE_SERVICE_TOKEN;
@@ -897,6 +913,22 @@ await operationsService.seedOfficialTemplateFamilies({
   userId: 'system-template-admin',
   workspaceId: '__system__',
 });
+
+// Z1/#105 thin wiring — independent FoundationModules (S1 freeze discipline).
+// Memory-backed until AP/MP pack adds durable repos (document residual as Z2-WIRING).
+const creationExperienceRepository =
+  new MemoryCreationExperienceCatalogRepository();
+const creationExperienceCatalog = new CreationExperienceCatalogService(
+  creationExperienceRepository,
+);
+await publishLaunchCatalog(creationExperienceCatalog);
+const productQuoteService = new ProductQuoteService();
+const visualAdoptionStore = new MemoryVisualAdoptionStore();
+const visualAdoptionService = new VisualAdoptionService(
+  visualAdoptionStore,
+  new MemoryFirstAdoptPort(visualAdoptionStore),
+);
+
 const p1ApplicationService = new P1ApplicationService(foundationRepository, {
   // K1 authorizer port — internal executeModule/queryModule default-deny (Z2-WIRING).
   authorizer: permissionAuthorizer,
@@ -904,6 +936,12 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     new AdvancedCanvasAdoptionFoundationModule(
       new PostgresAdvancedCanvasAdoptionService(pool)
     ),
+    new CreationExperienceFoundationModule(
+      creationExperienceRepository,
+      creationExperienceCatalog,
+    ),
+    new ProductBillingFoundationModule(productQuoteService),
+    new ResultDeliveryFoundationModule(visualAdoptionService),
     new AdminConfigFoundationModule(adminConfigRepository, {
       activationEvidenceStatus: modelRuntime.activation,
       adminActorIds: modelAdminActorIds,

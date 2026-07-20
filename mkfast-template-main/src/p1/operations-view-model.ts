@@ -42,20 +42,6 @@ import {
   p1_image_job_running,
   p1_image_job_unknown,
   p1_image_job_waiting,
-  p1_named_preset_before_after_input,
-  p1_named_preset_before_after_intent,
-  p1_named_preset_package_input,
-  p1_named_preset_package_intent,
-  p1_named_preset_price_input,
-  p1_named_preset_price_intent,
-  p1_named_preset_review_input,
-  p1_named_preset_review_intent,
-  p1_named_preset_shooting_input,
-  p1_named_preset_shooting_intent,
-  p1_named_preset_social_cover_input,
-  p1_named_preset_social_cover_intent,
-  p1_named_preset_store_intro_input,
-  p1_named_preset_store_intro_intent,
   p1_retrieval_match_bigram,
   p1_retrieval_match_full_text,
   p1_retrieval_match_structured,
@@ -337,70 +323,6 @@ function safeTemplateThumbnailUrl(value: string | undefined) {
   }
 }
 
-const NAMED_PRESET_CONTRACTS: Partial<
-  Record<
-    string,
-    Pick<
-      TemplateCatalogItemView,
-      | 'availableContentModules'
-      | 'defaultContentModules'
-      | 'inputGuide'
-      | 'internalIntent'
-    >
-  >
-> = {
-  before_after: {
-    availableContentModules: ['before_after', 'social_cover', 'review_card'],
-    defaultContentModules: ['before_after', 'social_cover'],
-    inputGuide: p1_named_preset_before_after_input(),
-    internalIntent: p1_named_preset_before_after_intent(),
-  },
-  package_explainer: {
-    availableContentModules: [
-      'package_explainer',
-      'price_card',
-      'social_cover',
-    ],
-    defaultContentModules: ['package_explainer', 'price_card'],
-    inputGuide: p1_named_preset_package_input(),
-    internalIntent: p1_named_preset_package_intent(),
-  },
-  price_card: {
-    availableContentModules: ['price_card', 'social_cover'],
-    defaultContentModules: ['price_card'],
-    inputGuide: p1_named_preset_price_input(),
-    internalIntent: p1_named_preset_price_intent(),
-  },
-  review_card: {
-    availableContentModules: ['review_card', 'social_cover'],
-    defaultContentModules: ['review_card'],
-    inputGuide: p1_named_preset_review_input(),
-    internalIntent: p1_named_preset_review_intent(),
-  },
-  shooting_checklist: {
-    availableContentModules: ['shooting_checklist', 'social_cover'],
-    defaultContentModules: ['shooting_checklist'],
-    inputGuide: p1_named_preset_shooting_input(),
-    internalIntent: p1_named_preset_shooting_intent(),
-  },
-  social_cover: {
-    availableContentModules: ['social_cover', 'store_intro'],
-    defaultContentModules: ['social_cover'],
-    inputGuide: p1_named_preset_social_cover_input(),
-    internalIntent: p1_named_preset_social_cover_intent(),
-  },
-  store_intro: {
-    availableContentModules: [
-      'store_intro',
-      'social_cover',
-      'shooting_checklist',
-    ],
-    defaultContentModules: ['store_intro', 'social_cover'],
-    inputGuide: p1_named_preset_store_intro_input(),
-    internalIntent: p1_named_preset_store_intro_intent(),
-  },
-};
-
 function taskActions(task: RawTask): ContentTaskAction[] {
   if (task.status === 'archived' || task.status === 'done') {
     return task.status === 'done' ? ['archive'] : [];
@@ -552,7 +474,7 @@ export function templateViews(
   return [
     ...templates.map((template): TemplateCatalogItemView => {
       const shortcut = shortcutById.get(template.id);
-      const preset = NAMED_PRESET_CONTRACTS[template.family];
+      // Z1/#105: frontend named-preset contracts retired — Recipe catalog owns presentation.
       const thumbnailUrl = safeTemplateThumbnailUrl(template.thumbnailUrl);
       return {
         canCreate:
@@ -573,7 +495,6 @@ export function templateViews(
         ...(template.previewVersionId
           ? { previewVersionId: template.previewVersionId }
           : {}),
-        ...(preset ?? {}),
         ownerKind: 'official',
         published:
           template.publicationStatus === 'published' ||

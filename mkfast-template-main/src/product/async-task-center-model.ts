@@ -191,7 +191,7 @@ export function composedVideoAsyncTaskSummaries(
       return [
         {
           createdAt: workflow.createdAt,
-          href: `/dashboard/works/${encodeURIComponent(workflow.workId)}`,
+          href: `/dashboard/results/${encodeURIComponent(workflow.workId)}`,
           id: `video-workflow:${workflow.id}`,
           kind: 'video',
           label: async_task_kind_video(),

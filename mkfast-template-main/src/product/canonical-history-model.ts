@@ -406,7 +406,7 @@ export function canonicalHistoryItems(
             ? creative_object_mode_agent()
             : creative_object_mode_direct()
         } · ${productStatusView(work.status).label}`,
-        href: `/dashboard/works/${work.id}`,
+        href: `/dashboard/results/${work.id}`,
         id: work.id,
         kind: 'work',
         ...(workMedia.length > 0 ? { media: workMedia } : {}),
@@ -419,7 +419,7 @@ export function canonicalHistoryItems(
         detail: canonical_history_canvas_work_detail({
           count: work.revisions.length,
         }),
-        href: `/dashboard/works/${work.id}`,
+        href: `/dashboard/results/${work.id}`,
         id: work.id,
         kind: 'work',
         title: canvasName(work.name),

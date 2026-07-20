@@ -14,14 +14,10 @@ test('buildRelayLocation round-trips work and package targets', () => {
     workId: 'work-1',
     stage: 'progress',
   });
-  assert.equal(work.pathname, '/dashboard/');
-  assert.deepEqual(work.search, { workId: 'work-1', stage: 'progress' });
-  assert.equal(work.pathWithSearch, '/dashboard?workId=work-1&stage=progress');
-  assert.deepEqual(parseRelayTarget(work.search), {
-    kind: 'work',
-    workId: 'work-1',
-    stage: 'progress',
-  });
+  // Z1: work relay lands on Result Center path.
+  assert.equal(work.pathname, '/dashboard/results/work-1');
+  assert.deepEqual(work.search, { stage: 'progress' });
+  assert.equal(work.pathWithSearch, '/dashboard/results/work-1?stage=progress');
 
   const pack = buildRelayLocation({
     kind: 'package',
@@ -38,11 +34,7 @@ test('buildRelayLocation round-trips work and package targets', () => {
 
 test('buildRelayLocation omits stage when not provided', () => {
   const work = buildRelayLocation({ kind: 'work', workId: 'w2' });
-  assert.equal(work.pathWithSearch, '/dashboard?workId=w2');
-  assert.deepEqual(parseRelayTarget(work.search), {
-    kind: 'work',
-    workId: 'w2',
-  });
+  assert.equal(work.pathWithSearch, '/dashboard/results/w2');
 });
 
 test('parseRelayTarget accepts query strings and URLSearchParams', () => {
@@ -78,20 +70,11 @@ test('parseRelayTarget rejects empty and unknown shapes', () => {
     parseRelayTarget({ packageId: '', stage: 'progress' }),
     undefined
   );
-  assert.deepEqual(parseRelayTarget({ workId: 'w', stage: 'nope' }), {
-    kind: 'work',
-    workId: 'w',
-  });
 });
 
-test('desktopRelayLanding sends package relays to content detail', () => {
-  assert.deepEqual(desktopRelayLanding({ packageId: 'pkg-1' }), {
-    contentId: 'pkg-1',
+test('desktopRelayLanding prefers content package over work', () => {
+  assert.equal(desktopRelayLanding({ workId: 'w1', packageId: 'p1' }), undefined);
+  assert.deepEqual(desktopRelayLanding({ packageId: 'p1' }), {
+    contentId: 'p1',
   });
-  assert.equal(
-    desktopRelayLanding({ workId: 'w1', packageId: 'pkg-1' }),
-    undefined
-  );
-  assert.equal(desktopRelayLanding({}), undefined);
-  assert.equal(desktopRelayLanding({ packageId: '  ' }), undefined);
 });

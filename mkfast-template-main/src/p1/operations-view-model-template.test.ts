@@ -14,20 +14,17 @@ function template(family: string): RawTemplate {
   };
 }
 
-test('official named presets have one deterministic input contract', () => {
+test('Z1: official templates no longer inject named-preset contracts', () => {
   const [storeIntro, beforeAfter, unknown] = templateViews(
     [template('store_intro'), template('before_after'), template('unknown')],
     [],
     []
   );
 
-  assert.match(storeIntro?.inputGuide ?? '', /1 张.*店/);
-  assert.match(beforeAfter?.inputGuide ?? '', /前.*后.*各 1 张/);
-  assert.ok(storeIntro?.internalIntent);
-  assert.deepEqual(storeIntro?.defaultContentModules, [
-    'store_intro',
-    'social_cover',
-  ]);
+  assert.equal(storeIntro?.inputGuide, undefined);
+  assert.equal(storeIntro?.internalIntent, undefined);
+  assert.equal(storeIntro?.defaultContentModules, undefined);
+  assert.equal(beforeAfter?.internalIntent, undefined);
   assert.equal(unknown?.inputGuide, undefined);
   assert.equal(unknown?.internalIntent, undefined);
   assert.deepEqual(storeIntro?.tags, ['官方', '门店']);

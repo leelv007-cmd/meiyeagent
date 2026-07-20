@@ -1,16 +1,24 @@
-import { UnifiedCreationWorkbench } from '@/product/unified-creation-workbench';
-import { MobileActionBook } from '@/product/mobile-action-book';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { ComposerHome } from '@/product/composer/composer-home';
 import { CanonicalHistoryPage } from '@/product/canonical-history-page';
 import { desktopRelayLanding } from '@/product/device-relay';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect } from 'react';
+
+/**
+ * Dashboard home — Z1 / #105 cutover.
+ *
+ * - Primary creation entry = Composer surface (`src/product/composer/**`)
+ * - Legacy `?workId=` result bridge UNHOOKED: redirects to Result Center
+ * - recent/content/tasks/notifications resolve via same deep link path
+ */
 
 interface DashboardSearch {
   entry?: 'feishu' | 'notification';
   packageId?: string;
   stage?: 'action' | 'progress' | 'handoff';
   view?: 'recent' | 'works';
+  /** @deprecated Z1: accepted only to redirect → /dashboard/results/$workId */
   workId?: string;
 }
 
@@ -41,8 +49,19 @@ function DashboardHome() {
   const isMobile = useIsMobile();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  // 桌面端打开 package 接力链接时落内容详情（工作台只消费 workId）。
-  // 只在客户端 effect 里跳转：SSR 阶段不知道视口，不能误伤手机扫码。
+
+  // Z1: unhook legacy ?workId= result bridge → canonical Result Center.
+  useEffect(() => {
+    if (!search.workId) return;
+    void navigate({
+      to: '/dashboard/results/$workId',
+      params: { workId: search.workId },
+      search: {},
+      replace: true,
+    });
+  }, [navigate, search.workId]);
+
+  // Desktop package relay landing still goes to content detail.
   const relayLanding = isMobile ? undefined : desktopRelayLanding(search);
   const relayContentId = relayLanding?.contentId;
   useEffect(() => {
@@ -53,25 +72,18 @@ function DashboardHome() {
       to: '/dashboard/content/$contentId',
     });
   }, [navigate, relayContentId]);
+
+  if (search.workId) {
+    return null;
+  }
+
   if (!isMobile && search.view) {
     return <CanonicalHistoryPage mode={search.view} />;
   }
+
   if (relayContentId) {
     return null;
   }
-  return isMobile ? (
-    <MobileActionBook
-      {...search}
-      onWorkIdChange={(workId) =>
-        navigate({ replace: true, search: { ...search, workId } })
-      }
-    />
-  ) : (
-    <UnifiedCreationWorkbench
-      workId={search.workId}
-      onWorkIdChange={(workId) =>
-        navigate({ replace: true, search: { ...search, workId } })
-      }
-    />
-  );
+
+  return <ComposerHome />;
 }

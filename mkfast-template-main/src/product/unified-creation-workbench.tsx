@@ -335,7 +335,7 @@ import {
   quoteFor,
 } from '@/product/creative-quote';
 import { creativeWorkDisplay } from '@/product/creative-work-display';
-import { VideoWorkflowPanel } from '@/product/video-workflow-panel';
+import { resultCenterPath } from '@meiye/contracts';
 import {
   autoConfirmedCreativeBrief,
   compactDeliveredCopyResult,
@@ -1209,16 +1209,10 @@ export function UnifiedCreationWorkbench({
     creationCatalogQuery.data?.userTemplates ?? [],
     creationCatalogQuery.data?.shortcuts ?? []
   );
+  // Z1: named presets no longer carry internalIntent; keep create-capable templates only.
   const namedPresets = templateItems.filter(
-    (
-      template
-    ): template is TemplateCatalogItemView & {
-      inputGuide: string;
-      internalIntent: string;
-    } =>
-      Boolean(
-        template.inputGuide && template.internalIntent && template.canCreate
-      )
+    (template): template is TemplateCatalogItemView & { inputGuide?: string } =>
+      Boolean(template.canCreate)
   );
   const selectedPreset = namedPresets.find(
     (template) => template.id === selectedPresetId
@@ -1812,7 +1806,7 @@ export function UnifiedCreationWorkbench({
                 : creative_brief_safe_tone_draft(),
           }),
           contentModules: nextModules,
-          intent: selectedPreset?.internalIntent ?? intent,
+          intent, // Z1: never overwrite user intent with preset internalIntent
           mode,
           operation,
           sessionId: sessionId(),
@@ -2751,115 +2745,19 @@ export function UnifiedCreationWorkbench({
               (harnessPrimaryCandidate || harnessStreaming) ? (
                 <RecordSection
                   hero
-                  roseGlow={
-                    !harnessAwaitingUser &&
-                    harnessWorkflowStream.transportStatus !== 'closed'
-                  }
                   testId="workbench-result-stream"
                   title={workbench_section_results()}
                 >
-                  <p
-                    aria-live="polite"
-                    className="mb-4 text-sm text-muted-foreground"
-                  >
-                    {harnessCopyStreamLabel}
+                  <p className="text-sm text-muted-foreground">
+                    运行态已迁移至结果中心。
                   </p>
-                  <div className="space-y-3">
-                    <div
-                      data-has-token={
-                        candidateHasToken(harnessPrimaryCandidate)
-                          ? 'true'
-                          : 'false'
-                      }
-                      data-testid="harness-primary-candidate"
-                    >
-                      <p className="mb-2 text-xs font-medium text-muted-foreground">
-                        {copy_stream_candidate({ number: 1 })}
-                      </p>
-                      <Card size="sm">
-                        <CardHeader>
-                          <CardTitle className="text-base">
-                            {harnessPrimaryCandidate?.title ||
-                              harnessCopyStreamLabel}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          {harnessPrimaryCandidate?.body ? (
-                            <AiMarkdown
-                              className="prose prose-sm max-w-none dark:prose-invert"
-                              content={harnessPrimaryCandidate.body}
-                            />
-                          ) : (
-                            <p className="text-sm text-muted-foreground">
-                              {harnessCopyStreamLabel}
-                            </p>
-                          )}
-                          {harnessPrimaryCandidate?.conversionHook ? (
-                            <p className="rounded-md bg-muted px-3 py-2 text-sm">
-                              {copy_candidate_conversion_hook_label()}
-                              {harnessPrimaryCandidate.conversionHook}
-                            </p>
-                          ) : null}
-                        </CardContent>
-                      </Card>
-                    </div>
-                    {harnessAlternativeCandidates.length > 0 ? (
-                      <Collapsible>
-                        <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-3 rounded-md bg-surface-2 px-4 text-left text-sm font-medium">
-                          <span>
-                            {workbench_harness_alternatives()}
-                            {` · ${harnessAlternativeCandidates.length}`}
-                          </span>
-                          <IconChevronDown
-                            aria-hidden="true"
-                            className="size-4"
-                          />
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-3 grid gap-3 lg:grid-cols-2">
-                          {harnessAlternativeCandidates.map((candidate) => (
-                            <Card
-                              data-has-token={
-                                candidateHasToken(candidate) ? 'true' : 'false'
-                              }
-                              data-testid="harness-alternative-candidate"
-                              key={candidate.candidateId}
-                              size="sm"
-                            >
-                              <CardHeader>
-                                <CardTitle className="text-base">
-                                  {candidate.title || harnessCopyStreamLabel}
-                                </CardTitle>
-                              </CardHeader>
-                              <CardContent className="space-y-3">
-                                {candidate.body ? (
-                                  <AiMarkdown
-                                    className="prose prose-sm max-w-none dark:prose-invert"
-                                    content={candidate.body}
-                                  />
-                                ) : (
-                                  <p className="text-sm text-muted-foreground">
-                                    {harnessCopyStreamLabel}
-                                  </p>
-                                )}
-                                {candidate.conversionHook ? (
-                                  <p className="rounded-md bg-muted px-3 py-2 text-sm">
-                                    {copy_candidate_conversion_hook_label()}
-                                    {candidate.conversionHook}
-                                  </p>
-                                ) : null}
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </CollapsibleContent>
-                      </Collapsible>
-                    ) : null}
-                    {harnessStreaming &&
-                    harnessWorkflowStream.transportStatus !== 'closed' ? (
-                      <p className="text-xs text-muted-foreground">
-                        {workbench_harness_stop_unavailable()}
-                      </p>
-                    ) : null}
-                  </div>
+                  <a
+                    className="inline-flex min-h-touch-target items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    data-testid="workbench-open-result-center-stream"
+                    href={resultCenterPath(currentWork.id)}
+                  >
+                    打开结果中心
+                  </a>
                 </RecordSection>
               ) : null}
 
@@ -3075,229 +2973,23 @@ export function UnifiedCreationWorkbench({
                 </RecordSection>
               ) : null}
 
-              {hasHarnessResult && currentHarnessPackage ? (
+              {workbenchStage === 'result' || workbenchStage === 'running' ? (
                 <RecordSection
                   hero
-                  testId="workbench-result-hero"
+                  testId="workbench-result-retired"
                   title={workbench_section_results()}
                 >
-                  <MarketingEvidenceChips
-                    evidence={currentHarnessPackage.marketing}
-                  />
-                  {harnessCandidateResult ? (
-                    <div
-                      className="space-y-3"
-                      data-testid="harness-candidate-results"
+                  <p className="text-sm text-muted-foreground">
+                    结果已迁移至结果中心。
+                  </p>
+                  {currentWork ? (
+                    <a
+                      className="inline-flex min-h-touch-target items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      data-testid="workbench-open-result-center"
+                      href={resultCenterPath(currentWork.id)}
                     >
-                      <HarnessCandidateResultCard
-                        adoptedCandidateId={
-                          harnessCandidateResult.adoptedCandidateId
-                        }
-                        busy={command.isPending}
-                        candidate={harnessCandidateResult.primary}
-                        label={workbench_harness_primary()}
-                        onAdopt={(candidateId) =>
-                          command.mutate({
-                            action: 'adopt_harness_candidate',
-                            key: `adopt-harness-candidate-${currentHarnessPackage.id}-${currentHarnessPackage.revision}`,
-                            payload: {
-                              candidateId,
-                              expectedRevision: currentHarnessPackage.revision,
-                              packageId: currentHarnessPackage.id,
-                            },
-                          })
-                        }
-                        primary
-                      />
-                      {harnessCandidateResult.alternatives.length > 0 ? (
-                        <Collapsible>
-                          <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-3 rounded-md bg-surface-2 px-4 text-left text-sm font-medium">
-                            <span>
-                              {workbench_harness_alternatives()}
-                              {` · ${harnessCandidateResult.alternatives.length}`}
-                            </span>
-                            <IconChevronDown
-                              aria-hidden="true"
-                              className="size-4"
-                            />
-                          </CollapsibleTrigger>
-                          <CollapsibleContent className="mt-3 grid gap-3 lg:grid-cols-2">
-                            {harnessCandidateResult.alternatives.map(
-                              (candidate) => (
-                                <HarnessCandidateResultCard
-                                  adoptedCandidateId={
-                                    harnessCandidateResult.adoptedCandidateId
-                                  }
-                                  busy={command.isPending}
-                                  candidate={candidate}
-                                  key={candidate.candidateId}
-                                  label={workbench_harness_alternatives()}
-                                  onAdopt={(candidateId) =>
-                                    command.mutate({
-                                      action: 'adopt_harness_candidate',
-                                      key: `adopt-harness-candidate-${currentHarnessPackage.id}-${currentHarnessPackage.revision}`,
-                                      payload: {
-                                        candidateId,
-                                        expectedRevision:
-                                          currentHarnessPackage.revision,
-                                        packageId: currentHarnessPackage.id,
-                                      },
-                                    })
-                                  }
-                                />
-                              )
-                            )}
-                          </CollapsibleContent>
-                        </Collapsible>
-                      ) : null}
-                    </div>
-                  ) : compactHarnessResult ? (
-                    <Card data-testid="workbench-compact-copy-result" size="sm">
-                      <CardHeader>
-                        <CardTitle className="text-base">
-                          {compactHarnessResult.title}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <AiMarkdown
-                          className="prose prose-sm max-w-none dark:prose-invert"
-                          content={compactHarnessResult.body}
-                        />
-                        {compactHarnessResult.conversionHook ? (
-                          <p className="rounded-md bg-muted px-3 py-2 text-sm">
-                            {copy_candidate_conversion_hook_label()}
-                            {compactHarnessResult.conversionHook}
-                          </p>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <ContentPackageCard
-                      contentPackage={{
-                        ...currentHarnessPackage,
-                        ...contentPackageVisibleStatus(
-                          currentHarnessPackage.status
-                        ),
-                      }}
-                    />
-                  )}
-                </RecordSection>
-              ) : hasPersistedResult &&
-                currentJob?.contract.operation === 'copy.generate' ? (
-                <RecordSection
-                  hero
-                  testId="workbench-result-hero"
-                  title={workbench_section_results()}
-                >
-                  <ResultProvenance job={currentJob} />
-                  <CopyCandidateSelector
-                    assets={currentSessionAssets}
-                    contents={currentContents}
-                    job={currentJob}
-                    onChanged={refreshProjection}
-                    packages={contentPackages}
-                    productVisualAssets={(currentWork.sourceReferences ?? [])
-                      .flatMap((source) =>
-                        source.kind === 'asset'
-                          ? (productQuery.data?.assets ?? []).filter(
-                              (asset) =>
-                                asset.id === source.id &&
-                                asset.mediaType === 'image' &&
-                                isContentPackageEligibleAsset(asset)
-                            )
-                          : []
-                      )
-                      .map((asset) => ({
-                        id: asset.id,
-                        title: asset.tags.at(-1) ?? workbench_uploaded_image(),
-                      }))}
-                  />
-                </RecordSection>
-              ) : hasPersistedResult && currentAssets.length > 0 ? (
-                <RecordSection
-                  hero
-                  testId="workbench-result-hero"
-                  title={workbench_section_results()}
-                >
-                  <ResultProvenance job={currentJob} />
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {currentAssets.map((asset) => {
-                      return (
-                        <Card key={asset.id}>
-                          <CardHeader>
-                            <CardTitle className="text-base">
-                              {asset.title}
-                            </CardTitle>
-                            <CardDescription>
-                              {asset.kind === 'video'
-                                ? workbench_video_result()
-                                : workbench_image_result()}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                            <CanonicalMediaGallery
-                              media={canonicalMediaForAssetIds(
-                                projection.assets,
-                                productQuery.data?.assets ?? [],
-                                [asset.id]
-                              )}
-                              presentation="hero"
-                            />
-                            {asset.body ? (
-                              <AiMarkdown
-                                className="prose prose-sm max-w-none dark:prose-invert"
-                                content={asset.body}
-                              />
-                            ) : (
-                              <p className="text-sm text-muted-foreground">
-                                {workbench_result_saved_description()}
-                              </p>
-                            )}
-                            <Badge variant="secondary">
-                              {workbench_result_saved_as_asset()}
-                            </Badge>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                  {imageAttachmentTarget ? (
-                    <div
-                      className="flex flex-wrap items-center gap-3 border-t pt-4"
-                      data-testid="content-package-generation-attachment"
-                    >
-                      {imageAttachmentCompleted ? (
-                        <>
-                          <Badge variant="secondary">
-                            {workbench_result_attached_to_content()}
-                          </Badge>
-                          <a
-                            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-                            href={getPathWithLocale(
-                              `/dashboard/content/${encodeURIComponent(imageAttachmentTarget.id)}?from=workbench`
-                            )}
-                          >
-                            {workbench_result_view_content()}
-                          </a>
-                        </>
-                      ) : imageAttachmentCommand ? (
-                        <Button
-                          disabled={command.isPending}
-                          onClick={() =>
-                            command.mutate({
-                              action: imageAttachmentCommand.action,
-                              key: imageAttachmentCommand.idempotencyKey,
-                              payload: imageAttachmentCommand.payload,
-                            })
-                          }
-                          type="button"
-                        >
-                          {command.isPending
-                            ? workbench_result_attaching_to_content()
-                            : workbench_result_attach_to_content()}
-                        </Button>
-                      ) : null}
-                    </div>
+                      打开结果中心
+                    </a>
                   ) : null}
                 </RecordSection>
               ) : null}
@@ -3814,30 +3506,7 @@ export function UnifiedCreationWorkbench({
                     videoApprovalReceiptId &&
                     currentWork.brief?.confirmedAt &&
                     groundingMissing.length === 0 ? (
-                      <VideoWorkflowPanel
-                        approvalReceiptId={videoApprovalReceiptId}
-                        aigcLabelEnabled={aigcLabelEnabled}
-                        brandWatermarkText={
-                          watermarkEnabled
-                            ? productQuery.data?.store?.name.trim() ||
-                              p1_canvas_export_brand_fallback()
-                            : undefined
-                        }
-                        catalogModelId={selectedModel.id}
-                        catalogModelNames={Object.fromEntries(
-                          catalog.models.map((model) => [
-                            model.id,
-                            model.displayName,
-                          ])
-                        )}
-                        catalogModelName={selectedModel.displayName}
-                        dataClass={videoDataClass}
-                        executionContract={creativeContract().contract}
-                        intent={currentWork.intent}
-                        key={currentWork.id}
-                        referenceAssetIds={videoReferenceAssetIds}
-                        workId={currentWork.id}
-                      />
+                      {null /* Z1 video result face retired */}
                     ) : selectedModel?.available &&
                       selectedModel.unitPrice &&
                       currentWork.brief?.confirmedAt &&

@@ -34,12 +34,15 @@ export function buildRelayLocation(target: RelayTarget): {
     if (!workId) {
       throw new Error('Relay work target requires a non-empty workId.');
     }
-    const search: Record<string, string> = { workId };
+    // Z1/#105: work relay lands on Result Center (legacy ?workId= bridge unhooked).
+    const pathname = `/dashboard/results/${encodeURIComponent(workId)}`;
+    const search: Record<string, string> = {};
     if (target.stage) search.stage = target.stage;
+    const query = new URLSearchParams(search).toString();
     return {
-      pathname: '/dashboard/',
+      pathname,
       search,
-      pathWithSearch: serializeDashboardSearch(search),
+      pathWithSearch: query ? `${pathname}?${query}` : pathname,
     };
   }
   if (target.kind === 'package') {

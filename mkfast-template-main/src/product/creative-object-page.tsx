@@ -328,7 +328,7 @@ export function CreativeObjectProjection({
                     <a
                       className="font-medium text-primary underline-offset-4 hover:underline"
                       href={getPathWithLocale(
-                        `/dashboard/works/${encodeURIComponent(work.id)}`
+                        `/dashboard/results/${encodeURIComponent(work.id)}`
                       )}
                     >
                       {legacy_projection_open_work()}
