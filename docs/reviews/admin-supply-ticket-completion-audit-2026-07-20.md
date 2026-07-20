@@ -16,7 +16,7 @@ D-080 > spec #106 > #107~#128 票面。票有提交、recorded/fixture 测试为
 | 票 | 状态 | 当前直接证据 | 未闭环项 |
 |---|---|---|---|
 | #107 S2a | proved | 版本化 capability inventory、抽取合同与兼容测试；Contracts 52/52 | 无 |
-| #108 S2b | partial | 字段规范 + 四形双向 adapter、回放/冻结合同；CanonicalRouteSnapshot 为证据视图，**并非唯一持久化类型**（foundation checkpoint / model-supply rich / strict BYOK 仍多形落库） | multi-shape adapters 并存；Canonical 不 sole 落库（F-S2-04 / F-S2-03 round-trip 已补 top-level dataPolicy/sourceKind） |
+| #108 S2b | complete | 字段规范 + 四形双向 adapter、回放/冻结合同；F-S2-05 生产缺 revision fail-closed；CanonicalRouteSnapshot=证据视图 + foundation 持久化形（F-S2-04 DOC 有意分层，非缺口） | multi-shape adapters 并存属设计；F-S2-06 Deployment 双套类型归 G1 SSOT，不挡 S2b 验收 |
 | #109 G1 | proved | PostgreSQL 关系化 registry、迁移、双读/CAS/重启测试 3/3 | 无 |
 | #110 G2 | proved | PostgreSQL CredentialAccount 是 HTTP/Worker/request-time broker 唯一运行真相；轮换后 pending，专用 probe 按 exact version CAS 验证并激活；一次性 receipt issuer 可达 | F-G-01 已修：`pending`/`draining` 下 `frozenVersion` 命中 `versionHistory` 时允许装配历史版本（head-only 仍硬拒）；in-flight frozen assembly 单测已补 |
 | #111 G3 | proved | HTTP/Worker 共读 effective revision；新库默认 pool 使用真实账号 ID；隔离/停新/排空真实阻断 provider I/O；LLM/Ark/Tuzi/TTS 使用热发布 adapter config 与请求期凭据 | 无 |

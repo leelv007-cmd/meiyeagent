@@ -174,7 +174,7 @@
 | ID | 状态 | 域 | 问题 | 修复指令 |
 |---|---|---|---|---|
 | **F-S2-04** | DOC | S2 | 「#108 单一 RouteSnapshot proved」过宣称 | 审计改 **partial**；措辞改为「字段规范 + 双向 adapter，Canonical 不落库」 |
-| **F-S2-05** | OPEN | S2 | adapter 缺字段注入 `recorded-*-v1` 伪装完整 | 生产缺关键 revision throw；recorded 仅 harness |
+| **F-S2-05** | FIXED | S2 | adapter 缺字段注入 `recorded-*-v1` 伪装完整 | 生产缺关键 revision throw；recorded 仅 harness（`revisionMode` / `P1_ROUTE_REVISION_MODE`） |
 | **F-S2-06** | OPEN | S2 | contracts `SupplyDeployment` vs model-supply `ModelDeployment` 双套类型 | 收敛 SSOT + 单向 adapter |
 | **F-G-05** | FIXED | G | recorded adapter 私有 MemoryHealthOverlay | 注入共享 HealthOverlayPort |
 | **F-G-06** | OPEN | G | catalog revision report 进程本地；`supportsDeployment` 无 head 时 true | catalog head 共读；生产无 head fail-closed |

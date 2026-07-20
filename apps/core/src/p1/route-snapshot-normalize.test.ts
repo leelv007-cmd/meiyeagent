@@ -6,6 +6,8 @@ import type { StrictByokRouteSnapshot } from './integrations/contracts.js';
 import type { RouteSnapshot as ModelSupplyRouteSnapshot } from './model-supply/route-contracts.js';
 import type { ModelDeployment } from './model-supply/supply-contracts.js';
 import {
+  IncompleteRouteRevisionError,
+  RECORDED_REVISION_DEFAULTS,
   fromFoundationRouteSnapshot,
   fromModelSupplyRouteSnapshot,
   fromStrictByokRouteSnapshot,
@@ -471,6 +473,76 @@ describe('RouteSnapshot four-shape normalization (S2b)', () => {
       'seedance-pro-direct',
       'seedance-pro-managed',
     ]);
+  });
+
+  it('F-S2-05 production mode fails closed on missing revisions; harness keeps recorded defaults', () => {
+    const incomplete: ModelDeployment = {
+      id: 'dep-incomplete',
+      catalogModelId: 'model-x',
+      apiFamily: 'openai',
+      channel: 'direct',
+      region: 'domestic',
+      status: 'active',
+      // no policyRevision / priceRevision / credentialVersion
+    };
+
+    assert.throws(
+      () =>
+        modelSupplyCheckpointToFoundationRoute({
+          snapshot: {
+            id: 'route-incomplete',
+            catalogRevisionId: 'catalog-ok',
+            requestedSelection: { mode: 'fixed', catalogModelId: 'model-x' },
+            candidateCatalogModelIds: ['model-x'],
+            actualCatalogModelId: 'model-x',
+            deploymentId: 'dep-incomplete',
+            reason: 'fixed_selection',
+            dataClass: [],
+            createdAt: CREATED_AT,
+          },
+          model: { id: 'model-x' },
+          deployment: incomplete,
+          submission: {
+            selection: { mode: 'fixed', catalogModelId: 'model-x' },
+            dataClass: [],
+          },
+          ordinal: 1,
+          revisionMode: 'production',
+        }),
+      (error: unknown) =>
+        error instanceof IncompleteRouteRevisionError &&
+        (error.field === 'policyRevision' ||
+          error.field === 'priceRevision' ||
+          error.field === 'credentialVersion'),
+    );
+
+    const harness = modelSupplyCheckpointToFoundationRoute({
+      snapshot: {
+        id: 'route-incomplete-harness',
+        catalogRevisionId: 'catalog-ok',
+        requestedSelection: { mode: 'fixed', catalogModelId: 'model-x' },
+        candidateCatalogModelIds: ['model-x'],
+        actualCatalogModelId: 'model-x',
+        deploymentId: 'dep-incomplete',
+        reason: 'fixed_selection',
+        dataClass: [],
+        createdAt: CREATED_AT,
+      },
+      model: { id: 'model-x' },
+      deployment: incomplete,
+      submission: {
+        selection: { mode: 'fixed', catalogModelId: 'model-x' },
+        dataClass: [],
+      },
+      ordinal: 1,
+      revisionMode: 'recorded_harness',
+    });
+    assert.equal(harness.policyRevision, RECORDED_REVISION_DEFAULTS.policy);
+    assert.equal(harness.priceRevision, RECORDED_REVISION_DEFAULTS.price);
+    assert.equal(
+      harness.allowedCandidates[0]?.credentialVersion,
+      RECORDED_REVISION_DEFAULTS.credential,
+    );
   });
 
   it('toCanonicalRouteSnapshot dispatches all three public shapes', () => {
