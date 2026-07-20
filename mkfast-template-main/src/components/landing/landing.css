@@ -14,20 +14,21 @@
 }
 
 .meiye-landing {
-  --background: #f7f0e4;
-  --foreground: #2a1b10;
-  --muted: #efe5d3;
-  --muted-foreground: #8a7a66;
-  --border: #e4d6bf;
-  --ring: #c98f3f;
-  --accent: #c98f3f;
-  --accent-light: #e8c98f;
-  --accent-foreground: #ffffff;
-  --l-gradient-from: #8a5a2b;
-  --l-gradient-to: #d4a155;
-  --l-glow: #e8965a;
+  /* high-key pearl-champagne (ref: 风格参考图/huaban-5406234642.jpg) */
+  --background: #faf5ec;
+  --foreground: #4a3826;
+  --muted: #f3ecdd;
+  --muted-foreground: #8a7862;
+  --border: #eaddc6;
+  --ring: #c09649;
+  --accent: #c09649;
+  --accent-light: #efdcb2;
+  --accent-foreground: #3f2f1b;
+  --l-gradient-from: #c39a5e;
+  --l-gradient-to: #ead3a2;
+  --l-glow: #f4ce96;
   --l-rose: #e96b5f;
-  --l-card: #fbf7ef;
+  --l-card: #fdfbf5;
 
   background-color: var(--background);
   color: var(--foreground);
@@ -55,7 +56,7 @@
 
 .meiye-landing ::selection {
   background-color: var(--accent);
-  color: #ffffff;
+  color: #3f2f1b;
 }
 
 .meiye-landing .landing-display {

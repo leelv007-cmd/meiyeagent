@@ -50,8 +50,8 @@ export function Hero(): ReactNode {
   const cursorColor = useMemo(
     () =>
       resolvedTheme === 'dark'
-        ? { r: 0.91, g: 0.66, b: 0.35 }
-        : { r: 0.66, g: 0.44, b: 0.18 },
+        ? { r: 0.86, g: 0.7, b: 0.46 }
+        : { r: 0.84, g: 0.7, b: 0.48 },
     [resolvedTheme]
   );
 
@@ -79,14 +79,19 @@ export function Hero(): ReactNode {
         <img
           src="/landing/gradient-fade.svg"
           alt=""
-          className="absolute inset-0 h-full w-full object-cover object-top dark:-scale-y-100"
+          className="absolute inset-0 h-full w-full object-cover object-top dark:hidden"
+        />
+        <img
+          src="/landing/gradient-fade-dark.svg"
+          alt=""
+          className="absolute inset-0 hidden h-full w-full -scale-y-100 object-cover object-top dark:block"
         />
         <div className="from-background absolute inset-x-0 bottom-0 h-1/3 bg-linear-to-t to-transparent" />
       </motion.div>
 
       <div className="mx-auto flex min-h-dvh max-w-4xl flex-col items-start justify-center gap-6 px-4 py-20 sm:justify-start sm:gap-0 sm:py-0 sm:pt-40 lg:px-8 lg:pt-68">
         <motion.p
-          className="landing-display text-background/70 mb-3 text-xs tracking-[0.3em] uppercase sm:mb-5"
+          className="landing-display text-foreground/70 dark:text-background/70 mb-3 text-xs tracking-[0.3em] uppercase sm:mb-5"
           initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
           transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
@@ -95,21 +100,21 @@ export function Hero(): ReactNode {
         </motion.p>
 
         <motion.h1
-          className="text-background dark:text-background text-4xl font-medium tracking-tight sm:text-5xl md:text-6xl lg:text-7xl"
+          className="text-foreground dark:text-background text-4xl font-medium tracking-tight sm:text-5xl md:text-6xl lg:text-7xl"
           initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
           transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
         >
           <span className="block">
             {landing_hero_h1_line1_lead()}
-            <em className="text-background/80 dark:text-background/80 italic">
+            <em className="text-foreground/80 dark:text-background/80 italic">
               {landing_hero_h1_line1_em()}
             </em>
             {landing_hero_h1_sep()}
           </span>
           <span className="block">
             {landing_hero_h1_line2_lead()}
-            <em className="text-background/80 dark:text-background/80 italic">
+            <em className="text-foreground/80 dark:text-background/80 italic">
               {landing_hero_h1_line2_em()}
             </em>
           </span>
@@ -129,7 +134,7 @@ export function Hero(): ReactNode {
             className="relative rounded-4xl rounded-b-[2.3rem] border border-border bg-[var(--l-card)] p-3"
             style={{
               boxShadow:
-                '0 8px 32px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(201, 143, 63, 0.12)',
+                '0 8px 32px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(192, 150, 73, 0.1)',
             }}
           >
             <div className="flex items-start gap-3">
@@ -196,7 +201,7 @@ export function Hero(): ReactNode {
             </div>
           </div>
 
-          <p className="text-background/85 mt-6 text-center text-xs">
+          <p className="text-foreground/85 dark:text-background/85 mt-6 text-center text-xs">
             {landing_hero_free_note()}
           </p>
         </motion.div>

@@ -56,25 +56,22 @@ export function Header(): ReactNode {
   const closeMenu = () => setIsOpen(false);
 
   // mix-blend-difference turns blue over the amber backdrop, so the header
-  // adapts by scroll state instead: hero-top rides text-background (like the
-  // H1), scrolled gets a glass bar with text-foreground, open menu is always
-  // dark bronze so text goes white.
+  // adapts by scroll state instead: hero-top rides the same tones as the H1
+  // (foreground on the high-key light hero, background-dark on the flipped
+  // dark hero), scrolled gets a glass bar with text-foreground, open menu is
+  // always dark bronze so text goes white.
   const overHero = !isScrolled && !isOpen;
   const textTone = isOpen
     ? 'text-white'
     : overHero
-      ? 'text-background'
+      ? 'text-foreground dark:text-background'
       : 'text-foreground';
   const hoverTone = isOpen
     ? 'hover:bg-white/10'
     : overHero
-      ? 'hover:bg-background/10'
+      ? 'hover:bg-foreground/10 dark:hover:bg-background/10'
       : 'hover:bg-foreground/10';
-  const logoFilter = isOpen
-    ? ''
-    : overHero
-      ? 'dark:invert'
-      : 'invert dark:invert-0';
+  const logoFilter = isOpen ? '' : overHero ? 'invert' : 'invert dark:invert-0';
   const barTone =
     isScrolled && !isOpen
       ? 'border-b border-border/50 bg-background/70 backdrop-blur-md'

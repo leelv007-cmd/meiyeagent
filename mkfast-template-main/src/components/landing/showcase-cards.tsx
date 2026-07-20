@@ -177,7 +177,7 @@ function SafariCard({
       <div
         className="pointer-events-none absolute inset-0 mix-blend-color"
         style={{
-          background: 'linear-gradient(135deg, #8A5A2B 0%, #D4A155 100%)',
+          background: 'linear-gradient(135deg, #C39A5E 0%, #EAD3A2 100%)',
         }}
         aria-hidden="true"
       />
@@ -425,7 +425,7 @@ function BulgeCard({
       <div
         className="pointer-events-none absolute inset-0 mix-blend-color"
         style={{
-          background: 'linear-gradient(135deg, #8A5A2B 0%, #D4A155 100%)',
+          background: 'linear-gradient(135deg, #C39A5E 0%, #EAD3A2 100%)',
         }}
         aria-hidden="true"
       />

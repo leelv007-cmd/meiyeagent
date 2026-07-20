@@ -68,7 +68,7 @@ function BarChart({ benchmark }: { benchmark: Benchmark }) {
                   <motion.div
                     className={`absolute inset-y-0 left-0 rounded-sm ${
                       bar.isOurs
-                        ? 'bg-linear-to-r from-[#8A5A2B] to-[#D4A155]'
+                        ? 'bg-linear-to-r from-[#C39A5E] to-[#EAD3A2]'
                         : 'bg-muted/75'
                     }`}
                     initial={{ width: 0 }}

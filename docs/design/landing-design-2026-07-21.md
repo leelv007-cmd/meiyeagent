@@ -4,40 +4,43 @@
 > 结构基底：`references/ai-saas` 模板（12 区，结构/动效 1:1 保留）；色调来源：`references/风格参考图/` 5 张图共性提取。
 > 文案唯一事实源：`landing-copy-2026-07-21.md`。
 
-## 1. 色彩系统「暖香槟金 · 琥珀丝绒」
+## 1. 色彩系统「珍珠香槟 · 高调透亮」（2026-07-21 提亮修订，哥拍板）
 
-参考图共性（5 张逐张目验）：暖香槟金/琥珀橘丝绒渐变、奶油米白底、少量珊瑚玫瑰、深古铜暗部、白色高对比衬线字、颗粒感与光斑。
+> 修订记录：初版按 5 张图定「暖香槟金·琥珀丝绒」（深琥珀/古铜端较重）；哥反馈整体偏深，补充第 6 张参考图 `huaban-5406234642.jpg`（骨叶脉络·珍珠香槟高调）为**光感基准**——浅色主题全面提亮为高调（high-key）珍珠香槟系，深端不低于中金 `#C7A263`；暗色主题保持熔金古铜不变。
+
+参考图共性：珍珠象牙底、浅金香槟渐变、白色光斑 bokeh、通透柔焦；深古铜只保留给暗色主题。
 
 ### 1.1 语义 token（`.meiye-landing` 作用域）
 
 | token | light（默认） | dark（`.dark .meiye-landing`） | 用途 |
 |---|---|---|---|
-| `--background` | `#F7F0E4` 奶油米白 | `#2A1B10` 熔金深棕 | 页面底 |
-| `--foreground` | `#2A1B10` | `#F3E9DC` | 正文 |
-| `--muted` | `#EFE5D3` | `#3E2A18` | 弱底 |
-| `--muted-foreground` | `#8A7A66`（AA 加深） | `#C4B39E` | 次级文字 |
-| `--border` | `#E4D6BF` | `#5C3A1E` | 发丝线 |
-| `--accent` / `--ring` | `#C98F3F` 香槟金 | `#D4A155` | 品牌强调/焦点 |
-| `--accent-light` | `#E8C98F` | `#E8C98F` | 强调浅档 |
-| `--accent-foreground` | `#FFFFFF` | `#2A1B10` | 强调上文字 |
-| `--l-gradient-from → --l-gradient-to` | `#8A5A2B → #D4A155` | 同 | 品牌渐变（替换模板 `#333DA7→#7388DF` 全部出现点） |
-| `--l-glow` | `#E8965A` 杏橘光晕 | `#F0A868` | 光斑/呼吸微光 |
+| `--background` | `#FAF5EC` 珍珠象牙 | `#2A1B10` 熔金深棕 | 页面底 |
+| `--foreground` | `#4A3826` 软咖啡 | `#F3E9DC` | 正文 |
+| `--muted` | `#F3ECDD` | `#3E2A18` | 弱底 |
+| `--muted-foreground` | `#8A7862`（AA） | `#C4B39E` | 次级文字 |
+| `--border` | `#EADDC6` | `#5C3A1E` | 发丝线 |
+| `--accent` / `--ring` | `#C09649` 浅香槟金 | `#D4A155` | 品牌强调/焦点 |
+| `--accent-light` | `#EFDCB2` | `#E8C98F` | 强调浅档 |
+| `--accent-foreground` | `#3F2F1B`（金底配深字，高调奢感） | `#2A1B10` | 强调上文字 |
+| `--l-gradient-from → --l-gradient-to` | `#C39A5E → #EAD3A2` | 同 | 品牌渐变（替换模板 `#333DA7→#7388DF` 全部出现点） |
+| `--l-glow` | `#F4CE96` 浅金光晕 | `#F0A868` | 光斑/呼吸微光 |
 | `--l-rose` | `#E96B5F` 珊瑚点缀 | `#E77F87` | ≤5% 面积点缀（星形/角标） |
-| `--l-card` | `#FBF7EF` | `#33221372`（暖玻璃） | Hero 提示卡等实体卡 |
+| `--l-card` | `#FDFBF5` | 同 light（卡恒浅，模板机制） | Hero 提示卡等实体卡 |
 
 ### 1.2 硬编码色换算表（模板 7 文件逐处替换）
 
 | 模板原值 | 新值 | 出现点 |
 |---|---|---|
-| `#6366F1` / `#A5B4FC`（token） | `#C98F3F` / `#E8C98F` | globals token 层 |
-| `#333DA7`（渐变起） | `#8A5A2B` | image-reveal×3、showcase×2、stats、bottom-cta、footer(rgba) |
-| `#7388DF`（渐变止） | `#D4A155` | 同上 |
+| `#6366F1` / `#A5B4FC`（token） | `#C09649` / `#EFDCB2` | globals token 层 |
+| `#333DA7`（渐变起） | `#C39A5E` | image-reveal×3、showcase×2、stats、bottom-cta、footer(rgba 浅化五档) |
+| `#7388DF`（渐变止） | `#EAD3A2` | 同上 |
 | hero 卡 `#f8f8fa` | `var(--l-card)` | hero.tsx |
-| 紫影 `rgba(124,58,237,.08)` | `rgba(201,143,63,.12)` | hero.tsx |
+| 紫影 `rgba(124,58,237,.08)` | `rgba(192,150,73,.10)` | hero.tsx |
 | hero `text-gray-*`/`border-gray-*` | 暖中性（`--muted-foreground`/`--border` 系） | hero.tsx |
-| fluid RGB `{r:.21,g:.18,b:.51}` | light `{r:.66,g:.44,b:.18}` / dark `{r:.91,g:.66,b:.35}`（useTheme 感知） | fluid-cursor.tsx |
-| gradient-fade.svg 烧色 `#7388DF/#333DA7/#0C0E21/#030409` | `#E8C98F/#C98F3F/#5C3A1E/#2A1B10`（白底 rect→`#F7F0E4`） | public/landing/gradient-fade.svg |
-| favicon `#0066FF` | `#C98F3F` | 不改产品 favicon（范围外），仅 landing 资产内不引入旧蓝 |
+| fluid RGB `{r:.21,g:.18,b:.51}` | light `{r:.84,g:.7,b:.48}` / dark `{r:.86,g:.7,b:.46}`（useTheme 感知；暗色降饱和避免 multiply 出红斑） | fluid-cursor.tsx |
+| gradient-fade.svg 烧色 `#7388DF/#333DA7/#0C0E21/#030409` | light 版 `#F3E4C6/#E9D3A8/#D9BC86/#C7A263`（rect→`#FAF5EC`，全浅无深端）；dark 专用 `gradient-fade-dark.svg`（初版深端色降饱和：`#E6D2AC/#B08A50/#4E3A22/#2E2115`，rect `#F2E9D8`），hero 双 img 按 `dark:hidden`/`hidden dark:block -scale-y-100` 切换 | public/landing/gradient-fade{,-dark}.svg |
+| hero/header 文字机制 | 模板 `text-background` 压深端 → 高调化后浅色改 `text-foreground`（软咖啡压浅金），dark 保留 `dark:text-background`（深字压翻转后的浅顶） | hero.tsx / header.tsx |
+| favicon `#0066FF` | `#C09649` | 不改产品 favicon（范围外），仅 landing 资产内不引入旧蓝 |
 
 ## 2. 质感语言
 

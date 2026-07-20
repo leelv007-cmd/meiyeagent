@@ -74,7 +74,7 @@ export function BottomCTA(): ReactNode {
         <div
           className="pointer-events-none absolute inset-y-0 right-0 w-2/3 opacity-25 sm:opacity-25"
           style={{
-            background: 'linear-gradient(to left, #8A5A2B, transparent)',
+            background: 'linear-gradient(to left, #C39A5E, transparent)',
             maskImage:
               'linear-gradient(to left, black 0%, black 40%, transparent 100%)',
             WebkitMaskImage:

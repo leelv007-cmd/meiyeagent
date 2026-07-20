@@ -67,7 +67,7 @@ export function Footer(): ReactNode {
         className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 opacity-60"
         style={{
           background:
-            'linear-gradient(to top, rgba(138,90,43,0.8) 0%, rgba(170,117,53,0.5) 20%, rgba(201,143,63,0.3) 40%, rgba(217,172,103,0.15) 60%, rgba(232,201,143,0.05) 80%, transparent 100%)',
+            'linear-gradient(to top, rgba(195,154,94,0.55) 0%, rgba(214,178,120,0.35) 20%, rgba(228,199,148,0.25) 40%, rgba(238,216,172,0.12) 60%, rgba(245,230,198,0.05) 80%, transparent 100%)',
           maskImage:
             'linear-gradient(to top, black 0%, black 20%, transparent 100%)',
           WebkitMaskImage:
