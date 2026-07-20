@@ -108,12 +108,6 @@ export class RequestTimeSecretBroker
         `CredentialAccount scope=${account.scope} cannot serve requiredScope=${request.requiredScope}.`,
       );
     }
-    if (account.status === 'pending') {
-      throw new SecretBrokerError(
-        'ACCOUNT_PENDING',
-        `CredentialAccount ${account.id} is pending verification.`,
-      );
-    }
     if (account.status === 'retired') {
       throw new SecretBrokerError(
         'ACCOUNT_RETIRED',
@@ -127,6 +121,19 @@ export class RequestTimeSecretBroker
       throw new SecretBrokerError(
         'ACCOUNT_EXPIRED',
         `CredentialAccount ${account.id} expired at ${account.expiresAt}.`,
+      );
+    }
+
+    // F-G-01: pending (post-rotate) / draining must not starve in-flight tasks
+    // that froze a historical version. Only head / unbound requests hard-reject.
+    const headAssemblyBlocked =
+      account.status === 'pending' || account.drainSubstate === 'draining';
+    if (headAssemblyBlocked && !request.frozenVersion) {
+      throw new SecretBrokerError(
+        'ACCOUNT_PENDING',
+        `CredentialAccount ${account.id} is ${
+          account.status === 'pending' ? 'pending' : 'draining'
+        }; new head assembly is blocked until re-activation.`,
       );
     }
 

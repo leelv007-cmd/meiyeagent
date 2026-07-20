@@ -450,6 +450,104 @@ test('secret broker assembles by frozen version and product projection never ech
   assert.equal(JSON.stringify(publicMeta).includes('sk-live-secret'), false);
 });
 
+test('secret broker pending/drain allow frozen history but reject head assembly', async () => {
+  const secrets = new FakeKmsSecretStore();
+  const put1 = await putCredentialSecret({
+    secrets,
+    workspaceId: '__global__',
+    credentialId: 'cred-model-direct',
+    secretVersion: 1,
+    provider: 'model',
+    value: 'sk-live-secret-version-one',
+  });
+  const put2 = await putCredentialSecret({
+    secrets,
+    workspaceId: '__global__',
+    credentialId: 'cred-model-direct',
+    secretVersion: 2,
+    provider: 'model',
+    value: 'sk-live-secret-version-two',
+  });
+
+  let account = createCredentialAccount({
+    id: 'credential-account:platform:model.direct',
+    label: 'Platform model.direct',
+    providerProfileId: 'provider-tu-zi',
+    type: 'model.direct',
+    scope: 'platform',
+    secretReference: put1.secretReference,
+    version: '1',
+    secretVersion: 1,
+    credentialId: 'cred-model-direct',
+    connectionId: 'platform:model.direct',
+    workspaceId: '__global__',
+    provider: 'model',
+    status: 'active',
+    now: '2026-07-18T00:00:00.000Z',
+  });
+  account = transitionCredentialLifecycle(
+    account,
+    {
+      kind: 'rotate',
+      next: {
+        version: '2',
+        secretReference: put2.secretReference,
+        secretVersion: 2,
+      },
+    },
+    { now: '2026-07-18T01:00:00.000Z' },
+  );
+  assert.equal(account.status, 'pending');
+
+  let current = account;
+  const broker = new RequestTimeSecretBroker(
+    { get: (id) => (id === current.id ? current : null) },
+    secrets,
+  );
+
+  // F-G-01: in-flight frozen v1 must still assemble while pending.
+  const inflight = await broker.assembleForRequest({
+    credentialAccountId: current.id,
+    frozenVersion: '1',
+    requiredScope: 'platform',
+  });
+  assert.equal(inflight.version, '1');
+  assert.equal(inflight.secret, 'sk-live-secret-version-one');
+
+  // New head assembly without freeze is rejected while pending.
+  await assert.rejects(
+    () =>
+      broker.assembleForRequest({
+        credentialAccountId: current.id,
+        requiredScope: 'platform',
+      }),
+    (err: unknown) =>
+      err instanceof SecretBrokerError && err.code === 'ACCOUNT_PENDING',
+  );
+
+  // Drain sub-state: same rule for frozen history vs head.
+  current = {
+    ...current,
+    status: 'active',
+    drainSubstate: 'draining',
+  };
+  const drainFrozen = await broker.assembleForRequest({
+    credentialAccountId: current.id,
+    frozenVersion: '1',
+    requiredScope: 'platform',
+  });
+  assert.equal(drainFrozen.version, '1');
+  await assert.rejects(
+    () =>
+      broker.assembleForRequest({
+        credentialAccountId: current.id,
+        requiredScope: 'platform',
+      }),
+    (err: unknown) =>
+      err instanceof SecretBrokerError && err.code === 'ACCOUNT_PENDING',
+  );
+});
+
 test('secret broker rejects retired accounts including frozen versions', async () => {
   const account = activeAccount({ status: 'retired' });
   const broker = new RequestTimeSecretBroker(

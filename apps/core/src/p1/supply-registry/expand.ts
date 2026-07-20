@@ -125,8 +125,13 @@ export function expandDeployment(
       ? { endpointRevision: deployment.endpointRevision }
       : {}),
     lifecycleStatus,
-    ...(deployment.policyRevision
-      ? { dataPolicyRevisionId: deployment.policyRevision }
+    // F-S2-02: never alias deployment/route policyRevision as dataPolicy.
+    // Only set dataPolicyRevisionId when a real DataPolicy binding exists.
+    ...((deployment as { dataPolicyRevisionId?: string }).dataPolicyRevisionId
+      ? {
+          dataPolicyRevisionId: (deployment as { dataPolicyRevisionId?: string })
+            .dataPolicyRevisionId,
+        }
       : {}),
     ...(deployment.priceRevision
       ? { priceRevisionId: deployment.priceRevision }

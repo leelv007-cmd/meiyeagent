@@ -122,6 +122,26 @@ export function fromFoundationRouteSnapshot(
   };
 }
 
+/**
+ * F-S2-01: shared resolution for route-level policy revision.
+ * Prefer request-level routePolicyRevisionId, then snapshot policyRevision,
+ * then primary candidate deployment policy. Ledger + adapter must share this.
+ */
+export function resolveRoutePolicyRevisionId(
+  snapshot: {
+    routePolicyRevisionId?: string | null;
+    policyRevision?: string | null;
+  },
+  primary?: { policyRevision?: string | null } | null,
+): string | undefined {
+  return (
+    snapshot.routePolicyRevisionId ??
+    snapshot.policyRevision ??
+    primary?.policyRevision ??
+    undefined
+  );
+}
+
 export function fromModelSupplyRouteSnapshot(
   snapshot: ModelSupplyRouteSnapshot,
   options?: {
@@ -165,10 +185,7 @@ export function fromModelSupplyRouteSnapshot(
     credentialAccountVersion:
       snapshot.credentialVersion ?? primary.credentialVersion,
     credentialMode: snapshot.credentialMode ?? primary.credentialMode,
-    policyRevisionId:
-      snapshot.routePolicyRevisionId ??
-      snapshot.policyRevision ??
-      primary.policyRevision,
+    policyRevisionId: resolveRoutePolicyRevisionId(snapshot, primary),
     priceRevisionId: snapshot.priceRevision ?? primary.priceRevision,
     endpointRevisionId: snapshot.endpointRevision ?? primary.endpointRevision,
     catalogRevisionId: snapshot.catalogRevisionId,
@@ -370,10 +387,11 @@ export function modelSupplyCheckpointToFoundationRoute(
         ),
       ];
 
+  // F-S2-01: share resolveRoutePolicyRevisionId with adapter (route > policy > primary).
   const policyRevision =
-    input.snapshot.policyRevision ??
-    input.deployment.policyRevision ??
-    'recorded-policy-v1';
+    resolveRoutePolicyRevisionId(input.snapshot, {
+      policyRevision: input.deployment.policyRevision,
+    }) ?? 'recorded-policy-v1';
   const priceRevision =
     input.snapshot.priceRevision ??
     input.deployment.priceRevision ??

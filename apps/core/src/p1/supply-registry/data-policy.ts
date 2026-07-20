@@ -266,11 +266,9 @@ export function evaluateDataPolicyHardFilter(input: {
 
   const policy = input.dataPolicy ?? null;
   if (!policy) {
-    // Thin path: preserve characterized regional + allowedDataClasses filter.
-    // When the caller explicitly passes dataPolicy: null for a restricted
-    // request (opt-in DataPolicy evaluation without a bound revision), fail
-    // closed instead of riding regional defaults alone.
-    if (hasRestricted && input.dataPolicy === null) {
+    // F-G-03: restricted data classes fail closed without a bound DataPolicy
+    // (null or undefined). Thin regional filter alone is not sufficient.
+    if (hasRestricted) {
       reasons.push('data_policy_missing_for_restricted_class');
       return {
         allowed: false,

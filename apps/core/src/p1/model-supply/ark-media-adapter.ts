@@ -302,8 +302,23 @@ export class ArkMediaExecutionPort<
         ],
       });
     this.now = options.now ?? (() => new Date());
-    this.receiptStore =
-      options.receiptStore ?? new InMemoryMediaProviderReceiptStore();
+    // F-I-03: production/staging must inject durable FS/PG receipt store;
+    // InMemory is harness-only and cannot recover across process restarts.
+    if (options.receiptStore) {
+      this.receiptStore = options.receiptStore;
+    } else {
+      const appEnv = process.env.APP_ENV ?? '';
+      const strict =
+        appEnv === 'production' ||
+        appEnv === 'staging' ||
+        (!appEnv && process.env.NODE_ENV === 'production');
+      if (strict) {
+        throw new Error(
+          'Ark media adapter requires an explicit durable receiptStore in production/staging (FileSystemMediaProviderReceiptStore or equivalent).',
+        );
+      }
+      this.receiptStore = new InMemoryMediaProviderReceiptStore();
+    }
     this.lastHealth = {
       state: 'healthy',
       reason: 'adapter_ready',

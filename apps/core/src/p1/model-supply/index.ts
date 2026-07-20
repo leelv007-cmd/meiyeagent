@@ -1742,12 +1742,22 @@ export class ModelSupplyApplicationService {
         selected,
         catalog.revisionId,
       );
+    // F-G-02: frozen credential account requires frozen version — no silent head.
+    if (
+      submission.frozenRouteSnapshot?.credentialAccountId &&
+      !submission.frozenRouteSnapshot.credentialVersion
+    ) {
+      throw new Error(
+        'Frozen RouteSnapshot has credentialAccountId without credentialVersion; refusing head assembly.',
+      );
+    }
     const runtimeBinding = await this.runtimeBindingFor(
       request.deployment,
       snapshot,
       {
         useFrozenCredentialVersion: Boolean(
-          submission.frozenRouteSnapshot?.credentialAccountId,
+          submission.frozenRouteSnapshot?.credentialAccountId &&
+            submission.frozenRouteSnapshot.credentialVersion,
         ),
       },
     );
@@ -2148,12 +2158,21 @@ export class ModelSupplyApplicationService {
         previousAttempts: structuredClone(attemptChain),
         previousProviderCosts: structuredClone(providerCostChain),
       };
+      if (
+        attemptSubmission.frozenRouteSnapshot?.credentialAccountId &&
+        !attemptSubmission.frozenRouteSnapshot.credentialVersion
+      ) {
+        throw new Error(
+          'Frozen RouteSnapshot has credentialAccountId without credentialVersion; refusing head assembly.',
+        );
+      }
       const runtimeBinding = await this.runtimeBindingFor(
         candidate.deployment,
         snapshot,
         {
           useFrozenCredentialVersion: Boolean(
-            attemptSubmission.frozenRouteSnapshot?.credentialAccountId,
+            attemptSubmission.frozenRouteSnapshot?.credentialAccountId &&
+              attemptSubmission.frozenRouteSnapshot.credentialVersion,
           ),
         },
       );
@@ -2920,6 +2939,8 @@ export class ModelSupplyApplicationService {
     frozen.dataPolicyRevisionId = candidate.dataPolicyRevisionId ?? undefined;
     frozen.credentialMode = candidate.credentialMode;
     frozen.credentialVersion = candidate.credentialVersion;
+    // F-S2-01: update deployment-level policyRevision only; keep request-level
+    // routePolicyRevisionId unchanged so adapter/ledger resolve consistently.
     frozen.policyRevision = candidate.policyRevision;
     frozen.priceRevision = candidate.priceRevision;
     frozen.reason = ordinal > 1
@@ -3353,6 +3374,12 @@ export class ModelSupplyApplicationService {
     options: { useFrozenCredentialVersion: boolean },
   ): Promise<ProviderRuntimeBinding | undefined> {
     if (!this.capabilityHotAssembly) return undefined;
+    // F-G-02: when freeze is requested, credentialVersion is mandatory.
+    if (options.useFrozenCredentialVersion && !snapshot.credentialVersion) {
+      throw new Error(
+        `Runtime binding for ${deployment.id} requires frozen credentialVersion; refusing silent head.`,
+      );
+    }
     const binding = await this.capabilityHotAssembly.assembleForRequest({
       deploymentId: deployment.id,
       ...(snapshot.capabilityRevisionId

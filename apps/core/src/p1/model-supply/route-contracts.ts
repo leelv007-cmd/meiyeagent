@@ -96,6 +96,8 @@ export type RouteCandidateExclusionReason =
   | 'capacity_headroom_exhausted'
   | 'recorded_placeholder_ignored_for_sort'
   | 'risk_discount_applied'
+  /** F-G-04: ranking inputs omitted — do not synthesize perfect scores. */
+  | 'missing_ranking_evidence'
   | `critical_evidence_missing:${string}`
   | `critical_evidence_stale:${string}`
   | `below_sample_threshold:${string}`

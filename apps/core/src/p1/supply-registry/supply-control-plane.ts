@@ -52,6 +52,7 @@ import {
 import {
   evaluateDataPolicyHardFilter,
   failClosedWithoutCompliantCandidate,
+  isRestrictedDataClass,
   type ContentSensitivityDataClass,
   type DataPolicyPayload,
   type DualApprovalEvidence,
@@ -414,7 +415,30 @@ export function planModelSupplyCandidatesWithDataPolicy(
     [];
   const policyMap = input.dataPolicyByDeploymentId;
 
-  if (policyMap && policyMap.size > 0) {
+  // F-G-03: restricted classes with no/empty binding map fail closed globally.
+  const hasRestrictedRequest = input.dataClass.some((dc) =>
+    isRestrictedDataClass(dc as ContentSensitivityDataClass),
+  );
+  if ((!policyMap || policyMap.size === 0) && hasRestrictedRequest) {
+    for (const evaluation of base.candidateEvaluations) {
+      if (!evaluation.eligible) continue;
+      evaluation.eligible = false;
+      if (
+        !evaluation.exclusionReasons.includes(
+          'data_policy_missing_for_restricted_class',
+        )
+      ) {
+        evaluation.exclusionReasons.push(
+          'data_policy_missing_for_restricted_class',
+        );
+      }
+      dataPolicyExcluded.push({
+        deploymentId: evaluation.deploymentId,
+        reasons: ['data_policy_missing_for_restricted_class'],
+      });
+    }
+    base.candidates = [];
+  } else if (policyMap && policyMap.size > 0) {
     for (const evaluation of base.candidateEvaluations) {
       const binding = policyMap.get(evaluation.deploymentId);
       const deployment = input.catalog.deployments.find(
@@ -459,38 +483,6 @@ export function planModelSupplyCandidatesWithDataPolicy(
       evaluation.exclusionReasons.push('content_safety_no_vendor_switch');
     }
     base.candidates = [];
-  } else if (input.dataClass.includes('medical-health')) {
-    // medical-health without bindings: alias to medical thin filter.
-    for (const evaluation of base.candidateEvaluations) {
-      if (!evaluation.eligible) continue;
-      const deployment = input.catalog.deployments.find(
-        (d) => d.id === evaluation.deploymentId,
-      );
-      if (!deployment) continue;
-      const result = evaluateDataPolicyHardFilter({
-        deployment,
-        requestedDataClasses: input.dataClass,
-        // undefined policy → thin path with medical alias
-      });
-      if (!result.allowed) {
-        evaluation.eligible = false;
-        for (const reason of result.reasons) {
-          evaluation.exclusionReasons.push(
-            reason as RouteCandidateExclusionReason,
-          );
-        }
-        dataPolicyExcluded.push({
-          deploymentId: evaluation.deploymentId,
-          reasons: [...result.reasons],
-        });
-      }
-    }
-    base.candidates = base.candidates.filter((candidate) => {
-      const evaluation = base.candidateEvaluations.find(
-        (e) => e.deploymentId === candidate.deployment.id,
-      );
-      return evaluation?.eligible === true;
-    });
   }
 
   const closed = failClosedWithoutCompliantCandidate({
@@ -505,116 +497,69 @@ export function planModelSupplyCandidatesWithDataPolicy(
       input.rankingInputsByDeploymentId.size > 0);
 
   if (shouldRank && base.candidates.length > 0) {
-    const rankingInputs: RankingCandidateInput[] = base.candidates.map(
-      (candidate) => {
-        const provided = input.rankingInputsByDeploymentId?.get(
-          candidate.deployment.id,
-        );
-        if (provided) return provided;
-        // Minimal default evidence for deterministic ranking when omitted.
-        return {
-          deploymentId: candidate.deployment.id,
-          deployment: candidate.deployment,
-          quality: {
-            activationEvidence: {
-              kind: 'activation_evidence',
-              status: 'fresh',
-              observedAt: new Date().toISOString(),
-              sampleSize: 20,
-            },
-            conformance: {
-              kind: 'conformance',
-              status: 'fresh',
-              observedAt: new Date().toISOString(),
-              sampleSize: 20,
-            },
-            mappingTrust: {
-              kind: 'mapping_trust',
-              status: 'fresh',
-              observedAt: new Date().toISOString(),
-              sampleSize: 20,
-            },
-            versionedQualityBaseline: {
-              kind: 'versioned_quality_baseline',
-              status: 'fresh',
-              observedAt: new Date().toISOString(),
-              sampleSize: 20,
-            },
-            successRate: {
-              kind: 'success_rate',
-              status: 'fresh',
-              observedAt: new Date().toISOString(),
-              sampleSize: 20,
-              value: 0.9,
-            },
-            p95: {
-              kind: 'p95',
-              status: 'fresh',
-              observedAt: new Date().toISOString(),
-              sampleSize: 20,
-              value: 1_000,
-            },
-            acceptanceCompleteness: {
-              kind: 'acceptance_completeness',
-              status: 'fresh',
-              observedAt: new Date().toISOString(),
-              sampleSize: 20,
-              value: 1,
-            },
-          },
-          health: {
-            healthState: 'healthy',
-            capacityHeadroom: 1,
-          },
-          cost: {
-            source: 'gateway_estimate',
-            amountMicros:
-              base.candidateEvaluations.find(
-                (e) => e.deploymentId === candidate.deployment.id,
-              )?.costEstimate.amountMicros ?? 0,
-            currency:
-              base.candidateEvaluations.find(
-                (e) => e.deploymentId === candidate.deployment.id,
-              )?.costEstimate.currency ?? 'USD',
-            isRecordedPlaceholder:
-              base.candidateEvaluations.find(
-                (e) => e.deploymentId === candidate.deployment.id,
-              )?.costEstimate.source === 'recorded_estimate',
-          },
-        };
-      },
-    );
-    ranking = rankCandidatesThreeLayer(rankingInputs);
-
-    // Reorder plan.candidates: production then canary by rank; drop excluded.
-    const order = new Map(
-      ranking.ranked
-        .filter((c) => c.band !== 'excluded' && c.rank !== null)
-        .map((c) => [c.deploymentId, c.rank as number]),
-    );
-    const excludedIds = new Set(
-      ranking.excluded.map((c) => c.deploymentId),
-    );
-    for (const evaluation of base.candidateEvaluations) {
-      if (excludedIds.has(evaluation.deploymentId) && evaluation.eligible) {
+    // F-G-04: never synthesize perfect fresh evidence. Missing inputs → exclude.
+    const rankingInputs: RankingCandidateInput[] = [];
+    for (const candidate of base.candidates) {
+      const provided = input.rankingInputsByDeploymentId?.get(
+        candidate.deployment.id,
+      );
+      if (provided) {
+        rankingInputs.push(provided);
+        continue;
+      }
+      const evaluation = base.candidateEvaluations.find(
+        (e) => e.deploymentId === candidate.deployment.id,
+      );
+      if (evaluation) {
         evaluation.eligible = false;
-        const reasons =
-          ranking.excluded.find((c) => c.deploymentId === evaluation.deploymentId)
-            ?.exclusionReasons ?? [];
-        for (const reason of reasons) {
-          evaluation.exclusionReasons.push(
-            reason as RouteCandidateExclusionReason,
-          );
+        if (!evaluation.exclusionReasons.includes('missing_ranking_evidence')) {
+          evaluation.exclusionReasons.push('missing_ranking_evidence');
         }
       }
     }
-    base.candidates = base.candidates
-      .filter((c) => order.has(c.deployment.id))
-      .sort(
-        (left, right) =>
-          (order.get(left.deployment.id) ?? Number.MAX_SAFE_INTEGER) -
-          (order.get(right.deployment.id) ?? Number.MAX_SAFE_INTEGER),
+    base.candidates = base.candidates.filter((candidate) => {
+      const evaluation = base.candidateEvaluations.find(
+        (e) => e.deploymentId === candidate.deployment.id,
       );
+      return evaluation?.eligible === true;
+    });
+    ranking =
+      rankingInputs.length > 0
+        ? rankCandidatesThreeLayer(rankingInputs)
+        : null;
+
+    if (ranking) {
+      // Reorder plan.candidates: production then canary by rank; drop excluded.
+      const order = new Map(
+        ranking.ranked
+          .filter((c) => c.band !== 'excluded' && c.rank !== null)
+          .map((c) => [c.deploymentId, c.rank as number]),
+      );
+      const excludedIds = new Set(
+        ranking.excluded.map((c) => c.deploymentId),
+      );
+      for (const evaluation of base.candidateEvaluations) {
+        if (excludedIds.has(evaluation.deploymentId) && evaluation.eligible) {
+          evaluation.eligible = false;
+          const reasons =
+            ranking.excluded.find(
+              (c) => c.deploymentId === evaluation.deploymentId,
+            )?.exclusionReasons ?? [];
+          for (const reason of reasons) {
+            evaluation.exclusionReasons.push(
+              reason as RouteCandidateExclusionReason,
+            );
+          }
+        }
+      }
+      base.candidates = base.candidates
+        .filter((c) => order.has(c.deployment.id))
+        .sort(
+          (left, right) =>
+            (order.get(left.deployment.id) ?? Number.MAX_SAFE_INTEGER) -
+            (order.get(right.deployment.id) ?? Number.MAX_SAFE_INTEGER),
+        );
+    }
   }
 
   const closedAfterRank = failClosedWithoutCompliantCandidate({
@@ -659,7 +604,8 @@ export function explainPlanDecision(input: {
     r === 'concurrency_exhausted' ||
     r === 'capacity_headroom_exhausted' ||
     r === 'recorded_placeholder_ignored_for_sort' ||
-    r === 'risk_discount_applied';
+    r === 'risk_discount_applied' ||
+    r === 'missing_ranking_evidence';
 
   const isHardFilterReason = (r: string): boolean =>
     r === 'catalog_model_missing' ||
