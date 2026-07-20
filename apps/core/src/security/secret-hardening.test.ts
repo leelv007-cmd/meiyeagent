@@ -26,7 +26,13 @@ test('isWeakSecretValue recognizes known placeholders', () => {
   assert.equal(isWeakSecretValue('change-me'), true);
   assert.equal(isWeakSecretValue('local-core-service-token'), true);
   assert.equal(isWeakSecretValue('local-canvas-service-token'), true);
-  assert.equal(isWeakSecretValue('dev-token'), false);
+  assert.equal(isWeakSecretValue('dev-token'), true);
+  assert.equal(isWeakSecretValue('test-token'), true);
+  assert.equal(isWeakSecretValue('test-service-token'), true);
+  assert.equal(isWeakSecretValue('secret'), true);
+  assert.equal(isWeakSecretValue('password'), true);
+  assert.equal(isWeakSecretValue('token'), true);
+  assert.equal(isWeakSecretValue('prod-strong-token-ok'), false);
 });
 
 test('assertStrongSecret allows weak values only outside production/staging', () => {
@@ -45,10 +51,24 @@ test('assertStrongSecret allows weak values only outside production/staging', ()
   );
   assert.throws(
     () =>
+      assertStrongSecret('CORE_SERVICE_TOKEN', 'dev-token', {
+        APP_ENV: 'production',
+      }),
+    /rejects weak placeholder/
+  );
+  assert.throws(
+    () =>
       assertStrongSecret('CORE_SERVICE_TOKEN', undefined, {
         APP_ENV: 'staging',
       }),
     /is required/
+  );
+  assert.throws(
+    () =>
+      assertStrongSecret('CORE_SERVICE_TOKEN', 'short-but-ok!', {
+        APP_ENV: 'production',
+      }),
+    /at least 16 characters/
   );
   assert.doesNotThrow(() =>
     assertStrongSecret('CORE_SERVICE_TOKEN', 'prod-strong-token', {

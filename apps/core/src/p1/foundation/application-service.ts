@@ -20,6 +20,7 @@ import type {
   FoundationStore,
   P1OperationModule,
 } from './ports.js';
+import { createPermissionAuthorizer } from '../capability-permission/authorizer.js';
 import {
   PermissionDeniedError,
   type PermissionAuthorizerPort,
@@ -129,7 +130,7 @@ export interface ProviderOutcomeSettlement {
 export class P1ApplicationService {
   private readonly operations: Map<string, P1OperationModule>;
   private readonly moduleCommandHeartbeatMs: number;
-  private readonly authorizer?: PermissionAuthorizerPort;
+  private readonly authorizer: PermissionAuthorizerPort;
 
   constructor(
     private readonly repository: FoundationRepository,
@@ -137,8 +138,9 @@ export class P1ApplicationService {
       operations?: P1OperationModule[];
       moduleCommandHeartbeatMs?: number;
       /**
-       * K1 PermissionAuthorizerPort (Z2-WIRING). When present, executeModule /
-       * queryModule enforce the same default-deny registry as HTTP authorize.
+       * K1 PermissionAuthorizerPort (Z2-WIRING). Defaults to
+       * createPermissionAuthorizer() — never silently bypass.
+       * Tests that need bypass must pass an explicit no-op authorizer.
        */
       authorizer?: PermissionAuthorizerPort;
       writeOwnershipReader?: (
@@ -148,7 +150,7 @@ export class P1ApplicationService {
   ) {
     this.operations = new Map();
     this.moduleCommandHeartbeatMs = options.moduleCommandHeartbeatMs ?? 60_000;
-    this.authorizer = options.authorizer;
+    this.authorizer = options.authorizer ?? createPermissionAuthorizer();
     this.writeOwnershipReader = options.writeOwnershipReader;
     for (const operation of options.operations ?? []) {
       if (this.operations.has(operation.name)) {
@@ -168,7 +170,6 @@ export class P1ApplicationService {
     name: string,
     input: Record<string, unknown>
   ) {
-    if (!this.authorizer) return;
     const action = typeof input.action === 'string' ? input.action : '';
     try {
       this.authorizer.authorize({

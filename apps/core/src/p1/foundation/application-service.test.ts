@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { PermissionAuthorizerPort } from '../capability-permission/port.js';
 import { P1ApplicationService } from './application-service.js';
 import { P1DomainError } from './domain.js';
 import { MemoryFoundationRepository } from './memory-repository.js';
@@ -8,7 +9,14 @@ const owner = {
   workspaceId: 'workspace-a',
   userId: 'owner-a',
   correlationId: 'corr-a',
+  actor: 'owner' as const,
 } as const;
+
+/** Explicit no-op for seam tests that use unregistered probe modules. */
+const allowAllAuthorizer: PermissionAuthorizerPort = {
+  decide: () => ({ allow: true, required: null, reason: 'capability_granted' }),
+  authorize: () => undefined,
+};
 
 function createService() {
   const repository = new MemoryFoundationRepository();
@@ -198,6 +206,7 @@ describe('P1ApplicationService foundation seam', () => {
     const repository = new MemoryFoundationRepository();
     repository.grantOwner(owner.workspaceId, owner.userId);
     const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
       operations: [{
         name: 'task.create',
         async execute({ context, input }) {
@@ -229,6 +238,7 @@ describe('P1ApplicationService foundation seam', () => {
     let writeOwner: 'legacy' | 'frozen' | 'p1' | null = 'p1';
     const executedActions: string[] = [];
     const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
       operations: [
         {
           name: 'operations',
@@ -317,6 +327,7 @@ describe('P1ApplicationService foundation seam', () => {
     repository.grantMembership('workspace-a', 'operator-a', 'operator');
     repository.grantMembership('workspace-a', 'reviewer-a', 'reviewer');
     const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
       operations: [
         {
           name: 'role.probe',
@@ -381,6 +392,7 @@ describe('P1ApplicationService foundation seam', () => {
     repository.grantOwner(owner.workspaceId, owner.userId);
     let attempts = 0;
     const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
       operations: [
         {
           name: 'recoverable.external',
@@ -464,6 +476,7 @@ describe('P1ApplicationService foundation seam', () => {
     repository.grantOwner(owner.workspaceId, owner.userId);
     let attempts = 0;
     const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
       operations: [
         {
           name: 'quota.external',
@@ -517,6 +530,7 @@ describe('P1ApplicationService foundation seam', () => {
       releaseOperation = resolve;
     });
     const service = new P1ApplicationService(repository, {
+      authorizer: allowAllAuthorizer,
       moduleCommandHeartbeatMs: 5,
       operations: [
         {

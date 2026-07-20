@@ -9,17 +9,24 @@ export const WEAK_SECRET_VALUES = [
   'change-me',
   'change-me-callback',
   'change-me-canvas',
+  'dev-token',
   'local-core-service-token',
   'local-canvas-service-token',
+  'password',
+  'secret',
+  'test-service-token',
+  'test-token',
+  'token',
 ] as const;
 
 export const ALL_ZERO_INTEGRATION_SECRET_STORE_KEY = '0'.repeat(64);
 
 const STRICT_APP_ENVS = new Set(['production', 'staging']);
 const WEAK_SECRET_SET = new Set<string>(WEAK_SECRET_VALUES);
+const MIN_STRICT_SECRET_LENGTH = 16;
 
 const REJECTED_SET_HINT =
-  'Rejected set: better-auth-secret, change-me, change-me-callback, change-me-canvas, local-core-service-token, local-canvas-service-token, all-zero INTEGRATION_SECRET_STORE_KEY.';
+  'Rejected set: better-auth-secret, change-me, change-me-callback, change-me-canvas, dev-token, local-core-service-token, local-canvas-service-token, password, secret, test-service-token, test-token, token, all-zero INTEGRATION_SECRET_STORE_KEY, length < 16 in production/staging.';
 
 type EnvLike = Readonly<Record<string, string | undefined>>;
 
@@ -61,6 +68,11 @@ export function assertStrongSecret(
   if (isWeakSecretValue(value)) {
     throw new Error(
       `${name} rejects weak placeholder ${JSON.stringify(value)} in production/staging. ${REJECTED_SET_HINT}`
+    );
+  }
+  if (value.length < MIN_STRICT_SECRET_LENGTH) {
+    throw new Error(
+      `${name} must be at least ${MIN_STRICT_SECRET_LENGTH} characters in production/staging. ${REJECTED_SET_HINT}`
     );
   }
 }

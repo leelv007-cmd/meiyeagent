@@ -19,6 +19,7 @@ const owner = {
   workspaceId: 'workspace-entitlement-module',
   userId: 'owner-entitlement-module',
   correlationId: 'corr-entitlement-module',
+  actor: 'owner' as const,
 };
 
 function setup(recordedCommerceEnabled = true) {
@@ -313,7 +314,12 @@ describe('ProductEntitlementFoundationModule', () => {
         },
         'forged-owner-entitlement',
       ),
-      /Unknown entitlements command/,
+      (error: unknown) =>
+        error instanceof Error &&
+        // Authorizer default-deny for unregistered action (preferred path).
+        (/not registered for authorization/i.test(error.message) ||
+          // Module-level guard if authorizer is bypassed in a test harness.
+          /Unknown entitlements command/.test(error.message)),
     );
   });
 

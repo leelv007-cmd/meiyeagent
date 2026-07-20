@@ -95,6 +95,46 @@ function trustedCallbackToken(
   );
 }
 
+/** Constant-time service token compare (length-check first to avoid throw). */
+function matchesServiceToken(
+  provided: string | string[] | undefined,
+  expected: string
+): boolean {
+  if (typeof provided !== 'string') return false;
+  const providedBytes = Buffer.from(provided);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    providedBytes.byteLength === expectedBytes.byteLength &&
+    timingSafeEqual(providedBytes, expectedBytes)
+  );
+}
+
+/** Elevated service actors only via explicit allowlist (after valid service token). */
+type ElevatedServiceActor = 'admin' | 'worker' | 'payment';
+
+function elevatedServiceActor(
+  actorHeader: string | string[] | undefined
+): ElevatedServiceActor | undefined {
+  if (typeof actorHeader !== 'string') return undefined;
+  if (
+    actorHeader === 'admin' ||
+    actorHeader === 'worker' ||
+    actorHeader === 'payment'
+  ) {
+    return actorHeader;
+  }
+  return undefined;
+}
+
+/** Worker-only product commands that skip workspace role capability checks. */
+const WORKER_VIDEO_LIFECYCLE_COMMANDS = new Set<ProductCommand['type']>([
+  'claim_video',
+  'complete_video',
+  'heartbeat_video',
+  'record_video_render',
+  'transition_video',
+]);
+
 interface ErrorPayload {
   code: string;
   message: string;
@@ -262,17 +302,19 @@ function productIdentity(
       404
     );
   }
-  const actorHeader = request.headers['x-core-actor'];
-  const actor =
-    actorHeader === 'payment' || actorHeader === 'worker'
-      ? actorHeader
-      : 'user';
-  if (actor !== 'user') {
-    return { actor, userId, workspaceId, correlationId: requestCorrelationId };
+  // Elevated actors only via explicit allowlist (service token already validated).
+  const elevated = elevatedServiceActor(request.headers['x-core-actor']);
+  if (elevated === 'payment' || elevated === 'worker') {
+    return {
+      actor: elevated,
+      userId,
+      workspaceId,
+      correlationId: requestCorrelationId,
+    };
   }
   const roleHeader = request.headers['x-workspace-role'];
   const role: ProductRole | undefined =
-    actorHeader === 'admin'
+    elevated === 'admin'
       ? 'admin'
       : roleHeader === 'owner' ||
           roleHeader === 'operator' ||
@@ -287,7 +329,7 @@ function productIdentity(
     );
   }
   return {
-    actor,
+    actor: 'user',
     role,
     userId,
     workspaceId,
@@ -301,7 +343,13 @@ function authorizeProductCommand(
 ) {
   const required = requiredProductCommandCapability(command.type);
   if (!required) {
-    if (context.actor === 'payment' || context.actor === 'worker') return;
+    // Default-deny: only known worker video lifecycle commands (no payment blanket).
+    if (
+      context.actor === 'worker' &&
+      WORKER_VIDEO_LIFECYCLE_COMMANDS.has(command.type)
+    ) {
+      return;
+    }
     throw new DomainError(
       'COMMAND_ACTOR_FORBIDDEN',
       'A trusted service actor is required for this command.',
@@ -323,16 +371,13 @@ function p1Identity(
   requestCorrelationId: string
 ): P1Context {
   const identity = productIdentity(request, workspaceId, requestCorrelationId);
-  const actorHeader = request.headers['x-core-actor'];
   const roleHeader = request.headers['x-workspace-role'];
+  // Elevated actors only via explicit allowlist after valid service token.
   // payment = trusted webhook/internal service for entitlements.payment_grant (Tc-2)
+  const elevated = elevatedServiceActor(request.headers['x-core-actor']);
   let actor: ProductRole | 'worker' | 'payment';
-  if (
-    actorHeader === 'admin' ||
-    actorHeader === 'worker' ||
-    actorHeader === 'payment'
-  ) {
-    actor = actorHeader;
+  if (elevated) {
+    actor = elevated;
   } else if (
     roleHeader === 'owner' ||
     roleHeader === 'operator' ||
@@ -539,7 +584,7 @@ export function createCoreServer({
       return;
     }
 
-    if (request.headers['x-service-token'] !== serviceToken) {
+    if (!matchesServiceToken(request.headers['x-service-token'], serviceToken)) {
       sendError(
         response,
         401,
