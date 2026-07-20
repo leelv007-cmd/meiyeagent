@@ -180,7 +180,18 @@ export interface FaultInjectionMatrixReport {
   modality: FaultInjectionModality;
   scenarios: FaultInjectionScenarioResult[];
   allPassed: boolean;
+  /**
+   * True only when primary/fallback share the same CatalogModel AND use
+   * distinct channel kinds. Misaligned dual-channel matrices (text/image
+   * official vs reseller using different catalog models) report false even
+   * when every scenario passes.
+   */
   dualChannelReady: boolean;
+  /**
+   * primary.catalogModelId === fallback.catalogModelId with distinct channel
+   * kinds. Independent of scenario pass/fail — surfaces channel_matrix_misaligned.
+   */
+  channelMatrixAligned: boolean;
   observedAt: string;
   evidenceKind: 'recorded' | 'live_provider';
 }

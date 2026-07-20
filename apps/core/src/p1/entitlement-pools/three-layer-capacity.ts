@@ -116,16 +116,26 @@ export function normalizeThreeLayerLimits(
   };
 }
 
+const RPM_WINDOW_MS = 60_000;
+
 /**
  * In-memory three-layer capacity gate for a single supply account scope.
  * Negative invariant: sum(product-account in-use) ≤ supply-account limit
  * and ≤ system-total limit, regardless of how many product accounts stack.
+ *
+ * When supplyAccount.rpm is set, enforces a 60s sliding-window request rate
+ * in addition to concurrency. Optional supplyAccount.tpm is enforced when
+ * tryAcquire receives a tokens estimate.
  */
 export class ThreeLayerCapacityGate {
   private readonly leases = new Map<string, CapacityLease>();
   private seq = 0;
   private readonly limits: ThreeLayerCapacityLimits;
   private readonly productLimits = new Map<string, number>();
+  /** Admit timestamps for sliding-window RPM (ms epoch). */
+  private readonly admitTimestamps: number[] = [];
+  /** Token admits for sliding-window TPM: { atMs, tokens }. */
+  private readonly tokenAdmits: Array<{ atMs: number; tokens: number }> = [];
 
   constructor(
     private readonly supplyAccountId: string,
@@ -149,6 +159,8 @@ export class ThreeLayerCapacityGate {
     productAccountId: string;
     workspaceId: string;
     leaseId?: string;
+    /** Optional token estimate for TPM enforcement when supplyAccount.tpm is set. */
+    tokens?: number;
   }): CapacityAdmissionDecision {
     if (!input.productAccountId.trim() || !input.workspaceId.trim()) {
       throw new P1DomainError(
@@ -169,6 +181,50 @@ export class ThreeLayerCapacityGate {
         inUse: supplyInUse,
         limit: this.limits.supplyAccount.concurrency,
       };
+    }
+
+    const nowMs = this.clock().getTime();
+    const rpmLimit = this.limits.supplyAccount.rpm;
+    if (typeof rpmLimit === 'number') {
+      this.pruneRateWindows(nowMs);
+      const rpmInUse = this.admitTimestamps.length;
+      if (rpmInUse >= rpmLimit) {
+        return {
+          status: 'rejected',
+          layer: 'supply_account',
+          code: 'CAPACITY_EXHAUSTED',
+          message:
+            `Supply-account ${this.supplyAccountId} RPM exhausted ` +
+            `(${rpmInUse}/${rpmLimit} in 60s).`,
+          inUse: rpmInUse,
+          limit: rpmLimit,
+        };
+      }
+    }
+
+    const tpmLimit = this.limits.supplyAccount.tpm;
+    const requestTokens =
+      typeof input.tokens === 'number' && Number.isFinite(input.tokens)
+        ? Math.max(0, Math.floor(input.tokens))
+        : undefined;
+    if (typeof tpmLimit === 'number' && requestTokens !== undefined) {
+      this.pruneRateWindows(nowMs);
+      const tokensInUse = this.tokenAdmits.reduce(
+        (sum, entry) => sum + entry.tokens,
+        0
+      );
+      if (tokensInUse + requestTokens > tpmLimit) {
+        return {
+          status: 'rejected',
+          layer: 'supply_account',
+          code: 'CAPACITY_EXHAUSTED',
+          message:
+            `Supply-account ${this.supplyAccountId} TPM exhausted ` +
+            `(${tokensInUse}+${requestTokens}/${tpmLimit} in 60s).`,
+          inUse: tokensInUse,
+          limit: tpmLimit,
+        };
+      }
     }
 
     const systemInUse = this.leases.size;
@@ -216,6 +272,12 @@ export class ThreeLayerCapacityGate {
       );
     }
     this.leases.set(lease.leaseId, lease);
+    if (typeof rpmLimit === 'number') {
+      this.admitTimestamps.push(nowMs);
+    }
+    if (typeof tpmLimit === 'number' && requestTokens !== undefined) {
+      this.tokenAdmits.push({ atMs: nowMs, tokens: requestTokens });
+    }
     return { status: 'admitted', lease: structuredClone(lease) };
   }
 
@@ -270,5 +332,22 @@ export class ThreeLayerCapacityGate {
       if (lease.productAccountId === productAccountId) count += 1;
     }
     return count;
+  }
+
+  /** Drop admit/token samples older than the 60s sliding window. */
+  private pruneRateWindows(nowMs: number) {
+    const cutoff = nowMs - RPM_WINDOW_MS;
+    while (
+      this.admitTimestamps.length > 0 &&
+      (this.admitTimestamps[0] as number) <= cutoff
+    ) {
+      this.admitTimestamps.shift();
+    }
+    while (
+      this.tokenAdmits.length > 0 &&
+      (this.tokenAdmits[0] as { atMs: number }).atMs <= cutoff
+    ) {
+      this.tokenAdmits.shift();
+    }
   }
 }

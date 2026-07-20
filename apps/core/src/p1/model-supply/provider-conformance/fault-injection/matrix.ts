@@ -60,10 +60,19 @@ export async function runFaultInjectionMatrix(
     );
   }
 
-  const dualChannelReady =
+  // dualChannelReady requires same CatalogModel across both channels.
+  // Text/image official vs reseller use different catalog models → misaligned.
+  // Video (seedance-1-5-pro) shares catalog → can be dual-channel ready.
+  const sameCatalogModel =
+    harness.primary.candidate.catalogModelId ===
+      harness.fallback.candidate.catalogModelId &&
+    harness.primary.candidate.catalogModelId === harness.catalogModelId;
+  const distinctChannelKinds =
     harness.primary.candidate.channelKind !==
-      harness.fallback.candidate.channelKind &&
-    scenarios.every((s) => s.passed);
+    harness.fallback.candidate.channelKind;
+  const channelMatrixAligned = sameCatalogModel && distinctChannelKinds;
+  const dualChannelReady =
+    channelMatrixAligned && scenarios.every((s) => s.passed);
 
   const id = createHash('sha256')
     .update(
@@ -86,6 +95,7 @@ export async function runFaultInjectionMatrix(
     scenarios,
     allPassed: scenarios.every((s) => s.passed),
     dualChannelReady,
+    channelMatrixAligned,
     observedAt,
     evidenceKind,
   };

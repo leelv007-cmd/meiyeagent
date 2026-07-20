@@ -1200,6 +1200,16 @@ export class PostgresCapacityLeaseStore {
           return decision;
         }
         lastRejection = decision;
+        // Product-account rejection is terminal for this wait: release selected
+        // so peers can claim the turn. Supply/system rejections may keep
+        // selected and retry until the deadline.
+        if (
+          decision.status === 'rejected' &&
+          decision.layer === 'product_account'
+        ) {
+          await this.fairQueue.requeue(input.queueRequestId);
+          return decision;
+        }
       }
       if (Date.now() >= deadline) break;
       await new Promise<void>((resolve) => {

@@ -782,7 +782,9 @@ function sanitizeTransportMatrixReport(
       observedAt: scenario.observedAt,
     })),
     allPassed: true,
+    // Live dual-channel evidence is only accepted after catalog_model_alignment.
     dualChannelReady: true,
+    channelMatrixAligned: true,
     observedAt: report.observedAt,
     evidenceKind: 'live_provider',
   };

@@ -406,28 +406,29 @@ export function createImageFaultInjectionHarness(
 export function createVideoFaultInjectionHarness(
   operation: FaultInjectionOperation = 'video.generate',
 ): FaultInjectionHarness {
+  // Both sides share seedance-1-5-pro CatalogModel → channel_matrix_aligned.
   const official = new FakeVideoChannelPort({
     channelId: 'channel-ark-seedance-official',
     channelKind: 'official_direct',
-    catalogModelId: 'seedance-2',
+    catalogModelId: 'seedance-1-5-pro',
     receiptStore: new VideoMemoryReceiptStore(),
   });
   const reseller = new FakeVideoChannelPort({
     channelId: 'channel-tuzi-seedance-reseller',
     channelKind: 'upstream_reseller',
-    catalogModelId: 'veo-latest',
+    catalogModelId: 'seedance-1-5-pro',
     receiptStore: new VideoMemoryReceiptStore(),
   });
   return {
     operation,
     modality: 'video',
-    catalogModelId: 'seedance-2',
+    catalogModelId: 'seedance-1-5-pro',
     primary: createVideoChannelControl(
       official,
       baseCandidate(
         {
           deploymentId: 'dep-video-ark-official',
-          catalogModelId: 'seedance-2',
+          catalogModelId: 'seedance-1-5-pro',
           providerProfileId: 'pp-volcengine-ark',
           executionChannelId: official.channelId,
           channelKind: 'official_direct',
@@ -440,7 +441,7 @@ export function createVideoFaultInjectionHarness(
       baseCandidate(
         {
           deploymentId: 'dep-video-tuzi-reseller',
-          catalogModelId: 'veo-latest',
+          catalogModelId: 'seedance-1-5-pro',
           providerProfileId: 'pp-tuzi-upstream',
           executionChannelId: reseller.channelId,
           channelKind: 'upstream_reseller',

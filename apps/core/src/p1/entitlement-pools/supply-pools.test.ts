@@ -255,9 +255,9 @@ test('three-layer capacity admits within supply/product/system limits', () => {
 });
 
 test('negative: multiple product accounts cannot bypass upstream shared limits', () => {
-  // Each product account is allowed 10 concurrency, but supply-account only 3.
+  // Pure concurrency ceiling — no rpm so this test only asserts concurrency.
   const gate = new ThreeLayerCapacityGate('cred-shared-upstream', {
-    supplyAccount: { concurrency: 3, rpm: 60 },
+    supplyAccount: { concurrency: 3 },
     productAccount: { concurrency: 10 },
     systemTotal: { concurrency: 100 },
   });
@@ -319,6 +319,55 @@ test('negative: multiple product accounts cannot bypass upstream shared limits',
   if (blocked.status === 'rejected') {
     assert.equal(blocked.layer, 'system_total');
   }
+});
+
+test('supply-account sliding-window RPM rejects after rate limit within 60s', () => {
+  let nowMs = Date.parse('2026-07-20T12:00:00.000Z');
+  const gate = new ThreeLayerCapacityGate(
+    'cred-rpm',
+    {
+      // High concurrency so only RPM can reject.
+      supplyAccount: { concurrency: 50, rpm: 3 },
+      productAccount: { concurrency: 50 },
+      systemTotal: { concurrency: 50 },
+    },
+    () => new Date(nowMs)
+  );
+
+  for (let i = 0; i < 3; i += 1) {
+    const decision = gate.tryAcquire({
+      productAccountId: 'acct-rpm',
+      workspaceId: 'ws-rpm',
+      leaseId: `rpm-${i}`,
+    });
+    assert.equal(decision.status, 'admitted', `rpm admit ${i}`);
+    // Release concurrency so only rate limit remains binding.
+    if (decision.status === 'admitted') {
+      gate.release(decision.lease.leaseId);
+    }
+  }
+
+  const rejected = gate.tryAcquire({
+    productAccountId: 'acct-rpm',
+    workspaceId: 'ws-rpm',
+    leaseId: 'rpm-overflow',
+  });
+  assert.equal(rejected.status, 'rejected');
+  if (rejected.status === 'rejected') {
+    assert.equal(rejected.layer, 'supply_account');
+    assert.equal(rejected.limit, 3);
+    assert.equal(rejected.inUse, 3);
+    assert.match(rejected.message, /RPM exhausted/);
+  }
+
+  // After the 60s window slides past the first admits, RPM allows again.
+  nowMs += 60_001;
+  const afterWindow = gate.tryAcquire({
+    productAccountId: 'acct-rpm',
+    workspaceId: 'ws-rpm',
+    leaseId: 'rpm-after-window',
+  });
+  assert.equal(afterWindow.status, 'admitted');
 });
 
 // ---------------------------------------------------------------------------

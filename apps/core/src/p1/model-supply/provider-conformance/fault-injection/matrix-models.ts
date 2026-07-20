@@ -25,10 +25,20 @@ export interface DualChannelMatrixModel {
    * manufacturer_level: distinct manufacturers across dual channels.
    */
   independenceClaim: 'channel_level' | 'manufacturer_level';
+  /**
+   * channel_matrix_aligned: official + reseller share the same CatalogModel
+   *   (video seedance-1-5-pro) → dualChannelReady may be true when scenarios pass.
+   * channel_matrix_misaligned: official vs reseller use different CatalogModels
+   *   (text llm-doubao-seed-mini vs llm-gemini-flash; image seedream-5-pro vs
+   *   gpt-image-2) → dualChannelReady stays false even if scenarios pass.
+   * Live gate blocks misaligned pairs via catalog_model_alignment.
+   */
+  catalogAlignment: 'channel_matrix_aligned' | 'channel_matrix_misaligned';
 }
 
 export const DUAL_CHANNEL_MATRIX_MODELS: readonly DualChannelMatrixModel[] = [
   // Text — official_direct (Ark) + upstream_reseller (tuzi)
+  // channel_matrix_misaligned: different CatalogModels across channels
   {
     modality: 'llm',
     operation: 'copy.generate',
@@ -40,6 +50,7 @@ export const DUAL_CHANNEL_MATRIX_MODELS: readonly DualChannelMatrixModel[] = [
     providerProfileId: 'pp-volcengine-ark',
     manufacturer: 'volcengine',
     independenceClaim: 'manufacturer_level',
+    catalogAlignment: 'channel_matrix_misaligned',
   },
   {
     modality: 'llm',
@@ -52,8 +63,9 @@ export const DUAL_CHANNEL_MATRIX_MODELS: readonly DualChannelMatrixModel[] = [
     providerProfileId: 'pp-tuzi-upstream',
     manufacturer: 'google',
     independenceClaim: 'manufacturer_level',
+    catalogAlignment: 'channel_matrix_misaligned',
   },
-  // Image
+  // Image — channel_matrix_misaligned: seedream-5-pro vs gpt-image-2
   {
     modality: 'image',
     operation: 'image.generate',
@@ -65,6 +77,7 @@ export const DUAL_CHANNEL_MATRIX_MODELS: readonly DualChannelMatrixModel[] = [
     providerProfileId: 'pp-volcengine-ark',
     manufacturer: 'bytedance',
     independenceClaim: 'channel_level',
+    catalogAlignment: 'channel_matrix_misaligned',
   },
   {
     modality: 'image',
@@ -77,8 +90,9 @@ export const DUAL_CHANNEL_MATRIX_MODELS: readonly DualChannelMatrixModel[] = [
     providerProfileId: 'pp-tuzi-upstream',
     manufacturer: 'bytedance',
     independenceClaim: 'channel_level',
+    catalogAlignment: 'channel_matrix_misaligned',
   },
-  // Video — shared Seedance manufacturer → channel-level only
+  // Video — shared seedance-1-5-pro CatalogModel → channel_matrix_aligned
   {
     modality: 'video',
     operation: 'video.generate',
@@ -90,6 +104,7 @@ export const DUAL_CHANNEL_MATRIX_MODELS: readonly DualChannelMatrixModel[] = [
     providerProfileId: 'pp-volcengine-ark',
     manufacturer: 'bytedance',
     independenceClaim: 'channel_level',
+    catalogAlignment: 'channel_matrix_aligned',
   },
   {
     modality: 'video',
@@ -102,6 +117,7 @@ export const DUAL_CHANNEL_MATRIX_MODELS: readonly DualChannelMatrixModel[] = [
     providerProfileId: 'pp-tuzi-upstream',
     manufacturer: 'bytedance',
     independenceClaim: 'channel_level',
+    catalogAlignment: 'channel_matrix_aligned',
   },
 ] as const;
 

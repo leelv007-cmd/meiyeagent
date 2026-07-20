@@ -310,6 +310,7 @@ function transportFaultEvidenceFor(
       scenarios,
       allPassed: true,
       dualChannelReady: true,
+      channelMatrixAligned: true,
       observedAt,
       evidenceKind: 'live_provider',
     };

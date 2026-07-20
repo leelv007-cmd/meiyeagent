@@ -34,7 +34,10 @@ for (const modality of ['llm', 'image', 'video'] as const) {
     assert.equal(report.modality, modality);
     assert.equal(report.scenarios.length, FAULT_INJECTION_SCENARIOS.length);
     assert.equal(report.allPassed, true, summarizeFailures(report));
-    assert.equal(report.dualChannelReady, true);
+    // Video shares seedance-1-5-pro → dualChannelReady; text/image are misaligned.
+    const expectDualReady = modality === 'video';
+    assert.equal(report.channelMatrixAligned, expectDualReady);
+    assert.equal(report.dualChannelReady, expectDualReady);
     assert.equal(report.evidenceKind, 'recorded');
 
     for (const scenarioId of FAULT_INJECTION_SCENARIOS) {
@@ -95,9 +98,28 @@ test('core operations map to dual-channel matrix models with official + reseller
     assert.ok(kinds.has('upstream_reseller'), operation);
   }
   assert.ok(DUAL_CHANNEL_MATRIX_MODELS.length >= 6);
-  // Video is channel-level only (shared Seedance manufacturer).
+  // Video is channel-level only (shared Seedance manufacturer) and aligned.
   const video = matrixModelsForOperation('video.generate');
   assert.ok(video.every((m) => m.independenceClaim === 'channel_level'));
+  assert.ok(video.every((m) => m.catalogAlignment === 'channel_matrix_aligned'));
+  assert.equal(
+    new Set(video.map((m) => m.catalogModelId)).size,
+    1,
+    'video dual channels must share CatalogModel',
+  );
+  // Text/image official vs reseller use different CatalogModels.
+  for (const operation of ['copy.generate', 'image.generate'] as const) {
+    const models = matrixModelsForOperation(operation);
+    assert.ok(
+      models.every((m) => m.catalogAlignment === 'channel_matrix_misaligned'),
+      operation,
+    );
+    assert.equal(
+      new Set(models.map((m) => m.catalogModelId)).size,
+      2,
+      `${operation} must stay channel_matrix_misaligned`,
+    );
+  }
 });
 
 test('secondary ops are labeled single-channel/no-fallback', () => {
@@ -128,7 +150,10 @@ test('image and video harnesses expose dual source kinds', () => {
 test('admin and user labels distinguish multi-channel vs single-channel', async () => {
   const harness = createTextFaultInjectionHarness();
   const report = await runFaultInjectionMatrix(harness);
-  assert.equal(report.dualChannelReady, true);
+  // Text official vs reseller use different CatalogModels → not dual-channel ready.
+  assert.equal(report.channelMatrixAligned, false);
+  assert.equal(report.dualChannelReady, false);
+  assert.equal(report.allPassed, true, summarizeFailures(report));
   // Labels for single-channel secondary surface.
   assert.equal(
     CHANNEL_LABEL.singleChannelNoFallback,
