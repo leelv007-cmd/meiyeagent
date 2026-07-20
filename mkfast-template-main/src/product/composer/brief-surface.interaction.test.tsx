@@ -2,8 +2,13 @@
  * RTL: conditional Brief surface show / cancel restore / evidence drawer.
  */
 import { useState } from 'react';
-import { cleanup, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { BriefTriggerConditionCode } from '@meiye/contracts';
 
@@ -105,8 +110,7 @@ function BriefHarness({
 
 describe('Brief surface UI — seven triggers show / cancel restore', () => {
   for (const code of BRIEF_TRIGGER_CODES) {
-    it(`renders trigger ${code} and cancel restores composer input`, async () => {
-      const user = userEvent.setup();
+    it(`renders trigger ${code} and cancel restores composer input`, () => {
       const lensId = code === 'any_video' ? 'video' : 'copy';
       render(<BriefHarness codes={[code]} lensId={lensId} />);
 
@@ -124,7 +128,14 @@ describe('Brief surface UI — seven triggers show / cancel restore', () => {
         screen.queryByTestId('composer-brief-evidence-drawer')
       ).not.toBeInTheDocument();
 
-      await user.click(screen.getByTestId('composer-brief-cancel'));
+      if (code === 'any_video') {
+        expect(
+          screen.getByTestId('composer-brief-video-confirm')
+        ).toBeInTheDocument();
+      }
+
+      // fireEvent avoids userEvent pointer delays under cold/slow CI.
+      fireEvent.click(screen.getByTestId('composer-brief-cancel'));
       expect(screen.getByTestId('brief-phase')).toHaveTextContent('cancelled');
       expect(screen.getByTestId('restored-text')).toHaveTextContent(
         SNAPSHOT.userText
@@ -150,10 +161,9 @@ describe('Brief surface UI — seven triggers show / cancel restore', () => {
     expect(screen.getByTestId('brief-phase')).toHaveTextContent('idle');
   });
 
-  it('confirm binds exact draft revision', async () => {
-    const user = userEvent.setup();
+  it('confirm binds exact draft revision', () => {
     render(<BriefHarness codes={['images_over_four']} />);
-    await user.click(screen.getByTestId('composer-brief-confirm'));
+    fireEvent.click(screen.getByTestId('composer-brief-confirm'));
     expect(screen.getByTestId('brief-phase')).toHaveTextContent('confirmed');
     expect(screen.getByTestId('confirmed-rev')).toHaveTextContent(
       'draft-rev-fixture'
@@ -187,15 +197,14 @@ describe('evidence drawer — no evidence = not shown', () => {
 });
 
 describe('video confirm zone embedded in Brief', () => {
-  it('uses one Brief CTA to accept billing and start', async () => {
-    const user = userEvent.setup();
+  it('uses one Brief CTA to accept billing and start', () => {
     render(<BriefHarness codes={['any_video']} lensId="video" />);
 
     const zone = screen.getByTestId('composer-brief-video-confirm');
     expect(zone).toBeInTheDocument();
     expect(screen.getByTestId('composer-brief-confirm')).not.toBeDisabled();
 
-    await user.click(screen.getByTestId('composer-brief-confirm'));
+    fireEvent.click(screen.getByTestId('composer-brief-confirm'));
     expect(screen.getByTestId('brief-phase')).toHaveTextContent('confirmed');
   });
 });

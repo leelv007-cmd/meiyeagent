@@ -2,10 +2,14 @@
  * RTL: GL-23 blocking card — redemption success unlocks continue creation.
  */
 import { useState } from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
 import {
   QuotaBlockingCard,
   type QuotaBlockingCardProps,
@@ -14,6 +18,13 @@ import {
 afterEach(() => {
   cleanup();
 });
+
+/** Controlled uppercase input fights per-key user.type; set value in one change. */
+function setRedeemCode(code: string) {
+  const input = screen.getByTestId('composer-quota-redemption-code');
+  fireEvent.change(input, { target: { value: code } });
+  return input;
+}
 
 function UnlockHarness({
   redeemImpl,
@@ -59,7 +70,6 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
   });
 
   it('successful redeem unlocks continue creation in place', async () => {
-    const user = userEvent.setup();
     const redeem = vi.fn(async (code: string) => {
       expect(code).toBe('GIFT99');
       return { ok: true as const };
@@ -67,13 +77,12 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
 
     render(<UnlockHarness redeemImpl={redeem} />);
 
-    const input = screen.getByTestId('composer-quota-redemption-code');
-    await user.type(input, 'gift99');
+    const input = setRedeemCode('gift99');
     expect(input).toHaveValue('GIFT99');
 
     const submit = screen.getByTestId('composer-quota-redeem-submit');
     expect(submit).not.toBeDisabled();
-    await user.click(submit);
+    fireEvent.click(submit);
 
     await waitFor(() => {
       expect(screen.getByTestId('composer-quota-unlock-success')).toBeInTheDocument();
@@ -87,15 +96,14 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
   });
 
   it('failed redeem keeps blocked and shows error', async () => {
-    const user = userEvent.setup();
     render(
       <UnlockHarness
         redeemImpl={async () => ({ ok: false, message: '兑换码已使用' })}
       />
     );
 
-    await user.type(screen.getByTestId('composer-quota-redemption-code'), 'USED01');
-    await user.click(screen.getByTestId('composer-quota-redeem-submit'));
+    setRedeemCode('USED01');
+    fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
 
     await waitFor(() => {
       expect(screen.getByTestId('composer-quota-redeem-error')).toHaveTextContent(
@@ -108,7 +116,6 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
   });
 
   it('passes redemptions CAS command shape to onRedeem', async () => {
-    const user = userEvent.setup();
     const redeem = vi.fn<QuotaBlockingCardProps['onRedeem']>(async () => ({
       ok: true as const,
     }));
@@ -119,8 +126,8 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
       />
     );
 
-    await user.type(screen.getByTestId('composer-quota-redemption-code'), 'CAS-01');
-    await user.click(screen.getByTestId('composer-quota-redeem-submit'));
+    setRedeemCode('CAS-01');
+    fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
 
     await waitFor(() => expect(redeem).toHaveBeenCalled());
     const arg = redeem.mock.calls[0]?.[0];
