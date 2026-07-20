@@ -14,7 +14,7 @@ describe('payment entitlement resolution', () => {
     const configured = configuredGrowthPriceIds({
       PRO_STUDIO_PRICE_ID: 'price-pro-studio',
       VITE_STRIPE_PRICE_PRO_MONTHLY: 'price-growth',
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
 
     assert.deepEqual([...configured], ['price-growth']);
     assert.equal(configured.has('price-pro-studio'), false);
@@ -24,7 +24,7 @@ describe('payment entitlement resolution', () => {
     const pro = configuredProPriceIds({
       VITE_STRIPE_PRICE_LIFETIME: 'price-life',
       VITE_CREEM_PRODUCT_LIFETIME: 'creem-life',
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
     assert.equal(pro.has('price-life'), true);
     assert.equal(
       resolvePaidPlanTier({
@@ -32,7 +32,7 @@ describe('payment entitlement resolution', () => {
         interval: 'lifetime',
         env: {
           VITE_STRIPE_PRICE_LIFETIME: 'price-life',
-        } as NodeJS.ProcessEnv,
+        } as unknown as NodeJS.ProcessEnv,
       }),
       'pro'
     );
@@ -42,7 +42,7 @@ describe('payment entitlement resolution', () => {
         interval: 'month',
         env: {
           VITE_STRIPE_PRICE_PRO_MONTHLY: 'price-growth',
-        } as NodeJS.ProcessEnv,
+        } as unknown as NodeJS.ProcessEnv,
       }),
       'growth'
     );

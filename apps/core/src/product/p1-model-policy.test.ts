@@ -185,6 +185,12 @@ test('creative grounding exposes only confirmed store facts and requested real a
     false
   );
 
+  const textOnly = await resolver.resolve('workspace-a', []);
+  assert.equal(textOnly.status, 'ready');
+  if (textOnly.status === 'ready') {
+    assert.deepEqual(textOnly.snapshot.assets, []);
+  }
+
   assert.deepEqual(await resolver.resolve('workspace-a', ['asset-ai-a']), {
     missing: ['real_authorized_asset'],
     status: 'missing',

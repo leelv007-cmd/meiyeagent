@@ -94,8 +94,8 @@ test('creation commands keep localized display strings out of persisted facts', 
   const sources = [
     'src/product/creation-shelf.tsx',
     'src/product/canvas-work-page.tsx',
-    'src/product/unified-creation-workbench.tsx',
-    'src/product/mobile-action-book.tsx',
+    'src/product/composer/composer-home.tsx',
+    'src/product/results/result-center-page.tsx',
   ].map((file) => readFileSync(resolve(process.cwd(), file), 'utf8'));
   const combined = sources.join('\n');
 

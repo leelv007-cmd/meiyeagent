@@ -59,13 +59,19 @@ import {
   MediaActivationProbeExecutor,
   OwnedAssetReferenceResolver,
   PersistentContentWorkflowRunner,
-  PostgresDurableVideoWorkflowStore,
+  PostgresCanonicalVideoRunStore,
+  PostgresCanonicalVideoWorkflowSchema,
+  PostgresVideoRegenerationRepository,
   PostgresModelSupplyRepository,
   ProductReferenceAssetResolver,
+  RecordedFixtureVideoQualityScorer,
   VersionedHumanCalibratedVideoQualityScorer,
   MODEL_MEDIA_GENERATION_JOB_KIND,
   ModelMediaGenerationEffect,
   createComposedVideoJobHandler,
+  createVideoRegenerationTerminalObserver,
+  createInitialVideoTerminalObserver,
+  composeVideoTerminalObservers,
   createMediaGenerationJobHandler,
   createModelSupplyRuntime,
   modelMediaExecutionMode,
@@ -73,7 +79,10 @@ import {
   videoCompositionRuntimeFromEnv,
 } from './p1/model-supply/index.js';
 import { SupplyPoolRegistry } from './p1/entitlement-pools/index.js';
-import { MemoryProductUsageLedger } from './p1/product-billing/index.js';
+import {
+  DurableProductBillingService,
+  PostgresProductBillingRepository,
+} from './p1/product-billing/index.js';
 import {
   ModelSupplyImageGenerationAdapter,
   ContentPackageZipExportAdapter,
@@ -167,6 +176,12 @@ const referenceAssets = new CompositeReferenceAssetResolver([
 const foundationRepository = new PostgresFoundationRepository(pool);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
 const operationsRepository = new PostgresOperationsRepository(pool);
+const productBillingRepository = new PostgresProductBillingRepository(pool);
+const billingLifecycle = new DurableProductBillingService(
+  productBillingRepository,
+);
+const videoRegenerationRepository = new PostgresVideoRegenerationRepository(pool);
+const canonicalVideoWorkflowSchema = new PostgresCanonicalVideoWorkflowSchema(pool);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
 const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
@@ -211,6 +226,9 @@ await migratePostgresSchema(pool, [
   grantLotLedger,
   adminConfigRepository,
   operationsRepository,
+  productBillingRepository,
+  canonicalVideoWorkflowSchema,
+  videoRegenerationRepository,
   storeFactLedger,
   contextBundleRepository,
   contextSourceRevisions,
@@ -256,7 +274,6 @@ supplyPoolRegistry.registerShared({
   deploymentIds: bootDeploymentIds,
   revisionId: 'boot-pool-shared-default',
 });
-const productUsageLedger = new MemoryProductUsageLedger();
 const mediaExecutionMode = modelMediaExecutionMode(modelRuntime);
 const gatedModelExecution = new ModeGateExecutionPort(
   modelRuntime.execution,
@@ -280,7 +297,7 @@ const modelSupplyRuntime = createModelSupplyRuntime({
       executionEntitlementPolicy,
       grantLotLedger,
       {
-        productUsage: productUsageLedger,
+        billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
       },
     ),
@@ -336,8 +353,10 @@ const videoRunnerForWorkspace = async (workspaceId: string) => {
   return new PersistentContentWorkflowRunner(
     modelSupply,
     videoComposition,
-    new PostgresDurableVideoWorkflowStore(pool, workspaceId),
-    new VersionedHumanCalibratedVideoQualityScorer()
+    new PostgresCanonicalVideoRunStore(pool, workspaceId),
+    modelRuntime.mode === 'fixture'
+      ? new RecordedFixtureVideoQualityScorer()
+      : new VersionedHumanCalibratedVideoQualityScorer()
   );
 };
 let operations: OperationsApplicationService;
@@ -353,7 +372,17 @@ const tracer = new DurableTracerWorker(
 );
 const composedVideo = new DurableTracerWorker(
   repository,
-  new ComposedVideoJobEffect(videoRunnerForWorkspace, videoContentPackages)
+  new ComposedVideoJobEffect(
+    videoRunnerForWorkspace,
+    videoContentPackages,
+    composeVideoTerminalObservers(
+      createInitialVideoTerminalObserver({ billing: billingLifecycle }),
+      createVideoRegenerationTerminalObserver({
+        billing: billingLifecycle,
+        repository: videoRegenerationRepository,
+      }),
+    ),
+  )
 );
 const mediaGenerationWorker = gatedMediaExecution
   ? new DurableTracerWorker(
@@ -411,6 +440,7 @@ const batchExecutor = new ProductOperationsBatchExecutionAdapter(
   () => operations
 );
 operations = new OperationsApplicationService(operationsRepository, {
+  billingLifecycle,
   contentPackageExporter: new ContentPackageZipExportAdapter(
     assetStorage,
     new OperationsContentPackageExportAssetReader(

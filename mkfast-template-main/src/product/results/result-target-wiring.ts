@@ -275,25 +275,16 @@ export function assertNoLatestResultFallback(
   catalogWorkIds: readonly string[],
 ): void {
   if (outcome.kind === 'ok') return;
-  // Error path: requested workId (when present) must stay as requested.
-  if ('requested' in outcome && outcome.requested.workId) {
-    // Never silently change requested.workId to another catalog entry.
-    const rewritten = catalogWorkIds.find(
-      (id) =>
-        id !== outcome.requested.workId &&
-        outcome.kind === 'ok', // unreachable — documents the invariant
-    );
-    void rewritten;
-  }
+  // Error outcomes are terminal. Catalog presence never rewrites them to ok.
+  void catalogWorkIds;
 }
 
 /**
  * Route entry resolver.
  *
- * When a live works catalog is available, full lineage validation runs and
- * unknown workIds become not_found (never "latest"). Until the catalog is
- * wired (empty), the route workId is treated as a provisional ok target for
- * that same workId only — never rewritten to another work.
+ * Runs full lineage validation against the loaded canonical works catalog.
+ * Empty or unknown workIds are not_found; callers own the separate query
+ * loading state and must never invent a provisional Result shell.
  */
 export function resolveRouteResultTarget(input: {
   target: ResultTarget;
@@ -304,26 +295,6 @@ export function resolveRouteResultTarget(input: {
 }): ResultTargetResolveOutcome {
   const workspaceId = input.workspaceId ?? 'session';
   const hasMembership = input.hasMembership ?? true;
-
-  if (input.works.length === 0) {
-    if (!input.target.workId || input.target.workId.trim() === '') {
-      return resolveResultTargetClient({
-        request: input.target,
-        viewer: { userId: 'session', workspaceId },
-        hasMembership,
-        works: input.works,
-        ...(input.legacyPackages
-          ? { legacyPackages: input.legacyPackages }
-          : {}),
-      });
-    }
-    return {
-      kind: 'ok',
-      target: input.target,
-      mode: 'active',
-      workspaceId,
-    };
-  }
 
   return resolveResultTargetClient({
     request: input.target,

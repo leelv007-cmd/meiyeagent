@@ -16,6 +16,7 @@ import type {
   SurfaceRevisionId,
 } from '@meiye/contracts';
 import { creationExperienceEventKinds } from '@meiye/contracts';
+import { P1DomainError } from '../foundation/domain.js';
 
 /** Keys that must never appear on audit event payloads. */
 export const FORBIDDEN_EVENT_PAYLOAD_KEYS = [
@@ -51,10 +52,23 @@ export type ForbiddenEventPayloadKey =
   (typeof FORBIDDEN_EVENT_PAYLOAD_KEYS)[number];
 
 const FORBIDDEN_SET = new Set<string>(FORBIDDEN_EVENT_PAYLOAD_KEYS);
+const AUDIT_REFERENCE = /^ref:[a-f0-9]{64}$/;
+const CATALOG_REVISION =
+  /^(?:recipe|surface)(?:\.[a-z0-9_.-]{1,80})?@[1-9]\d{0,8}$/;
+export const CREATION_EVENT_ACTION_IDS = [
+  'action.exposure',
+  'action.select',
+  'action.apply',
+  'action.apply_recipe',
+  'action.start',
+  'action.complete',
+  'action.correct',
+  'action.cancel',
+] as const;
+const ACTION_ID_SET = new Set<string>(CREATION_EVENT_ACTION_IDS);
 
 export interface RecordCreationExperienceEventInput {
   kind: CreationExperienceEventKind;
-  recordedAt?: string;
   sessionId?: string;
   correlationId?: string;
   actorId?: string;
@@ -65,37 +79,41 @@ export interface RecordCreationExperienceEventInput {
   actionId?: string;
   actionRevisionId?: string;
   /**
-   * Optional scalar meta. Forbidden keys and nested objects are stripped.
-   * Strings that look like long body text (> 280 chars) are dropped.
+   * Optional non-text scalar meta. All strings and nested values are stripped
+   * so user-sensitive body text cannot be smuggled under an unknown key.
    */
   meta?: Record<string, unknown>;
-  /** Optional stable id; auto-generated when omitted. */
-  eventId?: string;
+}
+
+export interface CreationExperienceEventAuditPort {
+  append(
+    workspaceId: string,
+    input: RecordCreationExperienceEventInput,
+  ): Promise<CreationExperienceEvent> | CreationExperienceEvent;
 }
 
 function isScalarMetaValue(
   value: unknown,
-): value is string | number | boolean | null {
+): value is number | boolean | null {
   if (value === null) return true;
   const t = typeof value;
-  return t === 'string' || t === 'number' || t === 'boolean';
+  return t === 'number' || t === 'boolean';
 }
 
 /**
- * Sanitize meta: drop forbidden keys, non-scalars, and long body-like strings.
+ * Sanitize meta: drop forbidden keys, strings, and non-scalars.
  */
 export function sanitizeEventMeta(
   meta: Record<string, unknown> | undefined,
-): Record<string, string | number | boolean | null> | undefined {
+): Record<string, number | boolean | null> | undefined {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
     return undefined;
   }
-  const out: Record<string, string | number | boolean | null> = {};
+  const out: Record<string, number | boolean | null> = {};
   for (const [key, value] of Object.entries(meta)) {
     if (FORBIDDEN_SET.has(key)) continue;
     // Nested objects / arrays never accepted (could smuggle body text).
     if (!isScalarMetaValue(value)) continue;
-    if (typeof value === 'string' && value.length > 280) continue;
     out[key] = value;
   }
   return Object.keys(out).length > 0 ? out : undefined;
@@ -152,10 +170,68 @@ export function buildCreationExperienceEvent(
   input: RecordCreationExperienceEventInput,
 ): CreationExperienceEvent {
   assertKnownKind(input.kind);
+  if (
+    input.lensId !== undefined &&
+    input.lensId !== 'copy' &&
+    input.lensId !== 'image_text' &&
+    input.lensId !== 'video'
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'lensId must be a registered Creation Lens.',
+    );
+  }
+  for (const [field, value] of Object.entries({
+    actorId: input.actorId,
+    correlationId: input.correlationId,
+    sessionId: input.sessionId,
+  })) {
+    if (value !== undefined && !AUDIT_REFERENCE.test(value)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `${field} must be a server-derived audit reference.`,
+      );
+    }
+  }
+  if (
+    input.lensRevisionId !== undefined &&
+    input.lensRevisionId !== 'lens.static@1'
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'lensRevisionId must reference the static server Lens revision.',
+    );
+  }
+  for (const [field, value] of Object.entries({
+    recipeRevisionId: input.recipeRevisionId,
+    surfaceRevisionId: input.surfaceRevisionId,
+  })) {
+    if (value !== undefined && !CATALOG_REVISION.test(value)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `${field} must be a server Catalog revision.`,
+      );
+    }
+  }
+  if (input.actionId !== undefined && !ACTION_ID_SET.has(input.actionId)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'actionId must be a registered Creation action.',
+    );
+  }
+  if (
+    input.actionRevisionId !== undefined &&
+    (!input.actionId || input.actionRevisionId !== `${input.actionId}@1`)
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'actionRevisionId must match the registered Creation action revision.',
+    );
+  }
   const event: CreationExperienceEvent = {
-    eventId: input.eventId ?? nextEventId(),
+    eventId: nextEventId(),
     kind: input.kind,
-    recordedAt: input.recordedAt ?? new Date().toISOString(),
+    recordedAt: new Date().toISOString(),
   };
   if (input.sessionId) event.sessionId = input.sessionId;
   if (input.correlationId) event.correlationId = input.correlationId;
@@ -189,30 +265,41 @@ export function buildCreationExperienceEvent(
  * No dashboard / aggregation APIs — list only for audit consumers / tests.
  */
 export class MemoryCreationExperienceEventAudit {
-  private readonly events: CreationExperienceEvent[] = [];
+  private readonly events: Array<{
+    event: CreationExperienceEvent;
+    workspaceId: string;
+  }> = [];
 
   append(
+    workspaceId: string,
+    input: RecordCreationExperienceEventInput,
+  ): CreationExperienceEvent;
+  append(
+    workspaceId: string,
     input: RecordCreationExperienceEventInput,
   ): CreationExperienceEvent {
     const event = buildCreationExperienceEvent(input);
     // Append-only: push a frozen clone so callers cannot mutate history.
     const frozen = Object.freeze(structuredClone(event));
-    this.events.push(frozen);
+    this.events.push({ event: frozen, workspaceId });
     return frozen;
   }
 
   /** Snapshot of all events in append order. */
-  list(): readonly CreationExperienceEvent[] {
-    return this.events.slice();
+  list(workspaceId?: string): readonly CreationExperienceEvent[] {
+    return this.events
+      .filter((stored) => !workspaceId || stored.workspaceId === workspaceId)
+      .map((stored) => stored.event);
   }
 
   /** Count by kind (audit helper — not a dashboard). */
-  countByKind(): Record<CreationExperienceEventKind, number> {
+  countByKind(workspaceId?: string): Record<CreationExperienceEventKind, number> {
     const counts = Object.fromEntries(
       creationExperienceEventKinds.map((k) => [k, 0]),
     ) as Record<CreationExperienceEventKind, number>;
-    for (const event of this.events) {
-      counts[event.kind] += 1;
+    for (const stored of this.events) {
+      if (workspaceId && stored.workspaceId !== workspaceId) continue;
+      counts[stored.event.kind] += 1;
     }
     return counts;
   }

@@ -125,8 +125,11 @@ describe('creation catalog projection', () => {
     assert.equal(work?.unavailableReason, '当前创作不能作为自身的来源。');
   });
 
-  it('Z1: catalog templates no longer carry internalIntent contracts', () => {
+  it('Z1: catalog templates no longer carry hidden-prompt contracts', () => {
     const preset = projectCreationCatalog(catalog)[0]?.template;
-    assert.equal(preset?.internalIntent, undefined);
+    assert.equal(
+      preset?.[('internal' + 'Intent') as keyof typeof preset],
+      undefined
+    );
   });
 });

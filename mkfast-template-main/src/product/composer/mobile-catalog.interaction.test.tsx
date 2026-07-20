@@ -26,6 +26,7 @@ import { resolveComposerCardGridLayout } from './mobile-layout';
 import { RecipeCardGrid } from './recipe-card-grid';
 import { listColdCardsFromSeeds } from './recipe-cards';
 import { ComposerToolsStrip } from './composer-tools-strip';
+import { COMPOSER_TOOL_ENTRY_SEEDS } from './tool-entry-seeds';
 
 afterEach(() => {
   cleanup();
@@ -206,9 +207,11 @@ describe('catalog search gate + return restore', () => {
   function CatalogHarness({
     recipeCount,
     includeDrafts = 0,
+    withVerifiedTool = false,
   }: {
     recipeCount: number;
     includeDrafts?: number;
+    withVerifiedTool?: boolean;
   }) {
     const [state, setState] = useState<CatalogUiState>(() =>
       createCatalogUiState({ tab: 'templates' })
@@ -226,7 +229,18 @@ describe('catalog search gate + return restore', () => {
         <FullscreenCatalogPanel
           state={state}
           onStateChange={setState}
-          source={{ recipes }}
+          source={{
+            recipes,
+            ...(withVerifiedTool
+              ? {
+                  tools: COMPOSER_TOOL_ENTRY_SEEDS.map((tool) =>
+                    tool.id === 'tool.multi_size'
+                      ? { ...tool, capabilityPublished: true }
+                      : tool
+                  ),
+                }
+              : {}),
+          }}
           onBack={(snap) => setBackSnap(JSON.stringify(snap))}
         />
         <div data-testid="back-snap">{backSnap}</div>
@@ -256,7 +270,7 @@ describe('catalog search gate + return restore', () => {
 
   it('back captures tab/filter/scroll/focus for restore', async () => {
     const user = userEvent.setup();
-    render(<CatalogHarness recipeCount={6} />);
+    render(<CatalogHarness recipeCount={6} withVerifiedTool />);
 
     await user.click(screen.getByTestId('composer-catalog-tab-tools'));
     expect(screen.getByTestId('composer-fullscreen-catalog')).toHaveAttribute(
@@ -286,7 +300,7 @@ describe('catalog search gate + return restore', () => {
 });
 
 describe('tools strip caps + Pro Studio banner', () => {
-  it('mobile shows ≤2 ordinary tools and Pro Studio full-width banner', () => {
+  it('mobile hides unverified ordinary tools and shows Pro Studio banner', () => {
     const opens: string[] = [];
     render(
       <ComposerToolsStrip
@@ -297,7 +311,7 @@ describe('tools strip caps + Pro Studio banner', () => {
     );
     const strip = screen.getByTestId('composer-tools-strip');
     expect(strip).toHaveAttribute('data-ordinary-cap', '2');
-    expect(strip).toHaveAttribute('data-ordinary-count', '2');
+    expect(strip).toHaveAttribute('data-ordinary-count', '0');
 
     const banner = screen.getByTestId('composer-pro-studio-banner');
     expect(banner).toHaveAttribute('data-status', 'active');

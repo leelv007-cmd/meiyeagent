@@ -2628,9 +2628,51 @@ export class VersionedHumanCalibratedVideoQualityScorer implements VideoQualityS
   }
 }
 
+/**
+ * E2E-only scorer for the recorded media runtime. Its ordered scores represent
+ * the checked-in fixture evaluation set; production never selects this scorer.
+ */
+export class RecordedFixtureVideoQualityScorer implements VideoQualityScoringPort {
+  private readonly fallback = new VersionedHumanCalibratedVideoQualityScorer();
+
+  async score(input: Parameters<VideoQualityScoringPort['score']>[0]) {
+    if (
+      !input.asset.sourceTaskRef?.startsWith('recorded-task-')
+    ) {
+      return this.fallback.score(input);
+    }
+    return {
+      score: 0.8 - input.candidateIndex * 0.02,
+      dimensions: {
+        humanAnatomy: 0.82 - input.candidateIndex * 0.02,
+        sourceConsistency: 0.8 - input.candidateIndex * 0.02,
+        crossShotContinuity: 0.79 - input.candidateIndex * 0.02,
+        subtitleOcclusion: 0.78 - input.candidateIndex * 0.02,
+        publishRisk: 0.76 - input.candidateIndex * 0.02,
+      },
+      publishWarnings: ['recorded_fixture_requires_live_provider_review'],
+      scorerRevision: 'recorded-fixture-video-quality-v1',
+      calibration: 'recorded_human_fixture' as const,
+      calibrationEvidence: {
+        datasetRevision: 'recorded-e2e-video-quality-v1',
+        sampleId: `recorded-candidate-${input.candidateIndex + 1}`,
+        raterCount: 4,
+        annotatedAt: '2026-07-20T00:00:00.000Z',
+        assetFingerprint: input.asset.sha256.slice(0, 16),
+        priorAssetFingerprints: input.priorSelectedAssets.map((asset) =>
+          asset.sha256.slice(0, 16)
+        ),
+        peerCandidateFingerprints: input.peerCandidateAssets.map((asset) =>
+          asset.sha256.slice(0, 16)
+        ),
+      },
+    };
+  }
+}
+
 // Pure video-workflow contract types (S1 / #87) — re-export for back-compat.
 // Runtime store/runner implementations remain below.
-// WT-E / #102: write authority is CanonicalVideoRun; VideoWorkflow is derived.
+// WT-E / #102: generic Task/Job/Asset records are authority; VideoWorkflow is derived.
 export type {
   CreateVideoWorkflowInput,
   DurableVideoCandidate,
@@ -2638,6 +2680,7 @@ export type {
   DurableVideoWorkflow,
   DurableVideoWorkflowSaveOptions,
   DurableVideoWorkflowStore,
+  EditVideoWorkflowInput,
   SelectVideoCandidateInput,
   VideoExecutionContract,
   VideoWorkflowShotInput,
@@ -2648,6 +2691,7 @@ export {
 } from './video-workflow-contract.js';
 export type {
   CanonicalVideoAssets,
+  AsyncCanonicalVideoRunStore,
   CanonicalVideoJob,
   CanonicalVideoRun,
   CanonicalVideoRunStatus,
@@ -2675,6 +2719,7 @@ import type {
   DurableVideoWorkflow,
   DurableVideoWorkflowSaveOptions,
   DurableVideoWorkflowStore,
+  EditVideoWorkflowInput,
   SelectVideoCandidateInput,
   VideoExecutionContract,
   VideoWorkflowShotInput,
@@ -2751,6 +2796,10 @@ export class InMemoryDurableVideoWorkflowStore implements DurableVideoWorkflowSt
     return this.commands.requestCancel(id, workspaceId, requestedAt);
   }
 
+  edit(input: EditVideoWorkflowInput, editedAt: string) {
+    return this.commands.edit(input, () => Date.parse(editedAt));
+  }
+
   assertRunnable(
     id: string,
     workspaceId: string,
@@ -2803,6 +2852,22 @@ export class ContentWorkflowRunner {
       ...(input.workId
         ? { workId: requireVideoWorkflowText(input.workId, 'workId') }
         : {}),
+      ...(input.billingTaskId
+        ? {
+            billingTaskId: requireVideoWorkflowText(
+              input.billingTaskId,
+              'billingTaskId',
+            ),
+          }
+        : {}),
+      ...(input.billingQuoteRevision
+        ? {
+            billingQuoteRevision: requireVideoWorkflowText(
+              input.billingQuoteRevision,
+              'billingQuoteRevision',
+            ),
+          }
+        : {}),
       ...(input.approvalReceiptId
         ? {
             approvalReceiptId: requireVideoWorkflowText(
@@ -2812,6 +2877,7 @@ export class ContentWorkflowRunner {
           }
         : {}),
       ...(sourceWorkflow ? { derivedFromWorkflowId: sourceWorkflow.id } : {}),
+      ...(input.deliveryMode ? { deliveryMode: input.deliveryMode } : {}),
       storyboardVersion: sourceWorkflow
         ? sourceWorkflow.storyboardVersion + 1
         : 1,
@@ -2923,6 +2989,16 @@ export class ContentWorkflowRunner {
     workflow.clipAssets[shotIndex] = structuredClone(candidate.asset);
     workflow.updatedAt = selectedAt;
     return this.workflows.save(workflow, { expectedRevision });
+  }
+
+  editVideoWorkflow(input: EditVideoWorkflowInput) {
+    if (!this.workflows.edit) {
+      throw new Error('Canonical video editing is not configured.');
+    }
+    return this.workflows.edit(
+      input,
+      new Date(this.clock()).toISOString(),
+    );
   }
 
   async runVideoWorkflow(id: string, workspaceId?: string) {
@@ -3830,8 +3906,11 @@ function assertSameWorkflowDraft(
     workspaceId: input.workspaceId,
     actorId: input.actorId,
     workId: input.workId,
+    billingTaskId: input.billingTaskId,
+    billingQuoteRevision: input.billingQuoteRevision,
     approvalReceiptId: input.approvalReceiptId,
     derivedFromWorkflowId: input.derivedFromWorkflowId,
+    deliveryMode: input.deliveryMode,
     dataClass: normalizeDataClass(input.dataClass),
     aigcLabelEnabled: input.aigcLabelEnabled === true,
     brandWatermarkText: input.brandWatermarkText?.trim() || undefined,
@@ -3849,8 +3928,11 @@ function assertSameWorkflowDraft(
     workspaceId: existing.workspaceId,
     actorId: existing.actorId,
     workId: existing.workId,
+    billingTaskId: existing.billingTaskId,
+    billingQuoteRevision: existing.billingQuoteRevision,
     approvalReceiptId: existing.approvalReceiptId,
     derivedFromWorkflowId: existing.derivedFromWorkflowId,
+    deliveryMode: existing.deliveryMode,
     dataClass: existing.dataClass,
     aigcLabelEnabled: existing.aigcLabelEnabled,
     brandWatermarkText: existing.brandWatermarkText,
@@ -3979,9 +4061,15 @@ export * from './postgres-repository.js';
 export * from './reference-asset-resolver.js';
 export * from './runtime-config.js';
 export * from './runtime-assembly.js';
+export * from './video-workflow-billing.js';
 export * from './tuzi-media-adapter.js';
 export * from './volcengine-tts-adapter.js';
 export * from './volcengine-tts-lifecycle.js';
 export * from './volcengine-tts-node-socket.js';
 export * from './volcengine-tts-protocol.js';
 export * from './video-regeneration.js';
+export * from './video-regeneration-foundation.js';
+export * from './video-regeneration-postgres.js';
+export * from './video-regeneration-runtime.js';
+export * from './video-workflow-canonical-postgres.js';
+export * from './video-workflow-canonical.js';

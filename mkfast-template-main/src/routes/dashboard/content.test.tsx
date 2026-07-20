@@ -21,13 +21,7 @@ registerHooks({
   },
 });
 
-const {
-  clearContentPackageVariantSubmissionIdentity,
-  ContentPackageVariantsStatus,
-  createContentPackageVariantSubmissionIdentity,
-  LegacyContentBody,
-  writeTextToClipboard,
-} = await import('./content');
+const { LegacyContentBody, writeTextToClipboard } = await import('./content');
 
 type ActionElement = ReactElement<{
   children?: ReactNode;
@@ -59,100 +53,6 @@ function findAction(node: ReactNode, label: string): ActionElement | undefined {
   }
   return undefined;
 }
-
-function memoryStorage() {
-  const values = new Map<string, string>();
-  return {
-    getItem(key: string) {
-      return values.get(key) ?? null;
-    },
-    removeItem(key: string) {
-      values.delete(key);
-    },
-    setItem(key: string, value: string) {
-      values.set(key, value);
-    },
-  };
-}
-
-test('shows the unified creating state while three-platform variants are pending', () => {
-  const html = renderToStaticMarkup(<ContentPackageVariantsStatus pending />);
-
-  assert.match(html, /三平台版本创作中…/u);
-});
-
-test('reuses one variant intent across response loss and refresh', () => {
-  const storage = memoryStorage();
-  const times = [
-    new Date('2026-07-17T01:00:00.000Z'),
-    new Date('2026-07-17T01:00:01.000Z'),
-  ];
-  const intentIds = ['intent-1', 'intent-2'];
-  const nextSubmission = () =>
-    createContentPackageVariantSubmissionIdentity('package-1', 'version-1', {
-      createIntentId: () => intentIds.shift()!,
-      now: () => times.shift()!,
-      storage,
-    });
-  const initialSubmission = nextSubmission();
-  let retrySubmission:
-    | ReturnType<typeof createContentPackageVariantSubmissionIdentity>
-    | undefined;
-  const status = ContentPackageVariantsStatus({
-    failed: true,
-    onRetry: () => {
-      retrySubmission = nextSubmission();
-    },
-    pending: false,
-  });
-  const html = renderToStaticMarkup(status);
-
-  assert.match(html, /三平台版本生成未完成，需处理/u);
-  assert.match(html, /重试生成/u);
-  const retry = findAction(status, '重试生成');
-  assert.ok(retry?.props.onClick);
-  retry.props.onClick();
-  assert.equal(retrySubmission?.submissionKey, initialSubmission.submissionKey);
-  assert.equal(
-    retrySubmission?.quoteAcceptedAt,
-    initialSubmission.quoteAcceptedAt
-  );
-});
-
-test('rotates the variant intent only after success or an input version change', () => {
-  const storage = memoryStorage();
-  const intentIds = ['intent-1', 'intent-2', 'intent-3'];
-  const options = {
-    createIntentId: () => intentIds.shift()!,
-    now: () => new Date('2026-07-17T01:00:00.000Z'),
-    storage,
-  };
-  const first = createContentPackageVariantSubmissionIdentity(
-    'package-1',
-    'version-1',
-    options
-  );
-  const changedInput = createContentPackageVariantSubmissionIdentity(
-    'package-1',
-    'version-2',
-    options
-  );
-
-  assert.notEqual(changedInput.submissionKey, first.submissionKey);
-
-  clearContentPackageVariantSubmissionIdentity(
-    'package-1',
-    'version-2',
-    storage
-  );
-  const afterSuccess = createContentPackageVariantSubmissionIdentity(
-    'package-1',
-    'version-2',
-    options
-  );
-
-  assert.notEqual(afterSuccess.submissionKey, changedInput.submissionKey);
-});
 
 test('expands and collapses the full body of read-only legacy content', () => {
   const body = '第一段。\n第二段。\n第三段。\n第四段仍然必须可见。';

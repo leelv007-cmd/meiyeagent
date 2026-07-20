@@ -512,9 +512,7 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     const unrelatedPackage = await createUnrelatedContentPackage(page);
     expect(unrelatedPackage.id).not.toBe(videoPackage.id);
     await page.setViewportSize({ height: 844, width: 390 });
-    await page.goto(
-      `/dashboard?stage=handoff&workId=${encodeURIComponent(workId)}`
-    );
+    await page.goto(`/dashboard/results/${encodeURIComponent(workId)}`);
     await expect(page.getByText(/^已采用内容 · 视频成片/)).toBeVisible();
     await expect(
       page

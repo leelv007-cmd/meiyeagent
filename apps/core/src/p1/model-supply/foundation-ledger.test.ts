@@ -10,6 +10,11 @@ import {
   MemoryGrantLotLedger,
 } from '../foundation/index.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import {
+  MemoryProductUsageLedger,
+  ProductBillingLifecycle,
+  ProductQuoteService,
+} from '../product-billing/index.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
 import {
   ModelSupplyApplicationService,
@@ -73,6 +78,81 @@ async function fixture() {
     ledger: new FoundationModelSupplyLedger(foundation),
   };
 }
+
+test('uses the Operations billing task as the single ProductUsage and ProviderCost lifecycle', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner(context.workspaceId, context.userId);
+  const foundation = new P1ApplicationService(repository);
+  await foundation.appendUsageEvent(
+    context,
+    {
+      action: 'adjust',
+      amount: 10,
+      id: 'single-ledger-image-entitlement',
+      reason: 'opening entitlement',
+      resource: 'image',
+    },
+    'single-ledger-image-entitlement',
+  );
+  const productUsage = new MemoryProductUsageLedger();
+  const quotes = new ProductQuoteService({ usageLedger: productUsage });
+  const quote = quotes.buildQuote({
+    billingMode: 'per_request',
+    catalogModelId: model.id,
+    frozenCandidateDeploymentIds: [deployment.id],
+    quoteId: 'operations-quote-1',
+    quotePolicyRevision: 'product-policy-1',
+    unitRate: 1,
+    workspaceId: context.workspaceId,
+  });
+  quotes.confirm({ quoteId: quote.quoteId, taskId: 'creative-work-1' });
+  const billingLifecycle = new ProductBillingLifecycle(quotes);
+  billingLifecycle.beforeSubmit({
+    quoteRevision: quote.revision,
+    resource: 'image',
+    taskId: 'creative-work-1',
+    workspaceId: context.workspaceId,
+  });
+  const ledger = new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    { billingLifecycle, productUsage },
+  );
+  const application = new ModelSupplyApplicationService({
+    deployments: [deployment],
+    execution: new RecordedProviderExecutionPort(),
+    ledger,
+    models: [model],
+  });
+  const submission = {
+    actorId: context.userId,
+    billingQuoteRevision: quote.revision,
+    billingTaskId: 'creative-work-1',
+    dataClass: [],
+    idempotencyKey: 'single-product-ledger-submit',
+    operation: 'image.generate' as const,
+    prompt: '单一账本生成',
+    selection: { catalogModelId: model.id, mode: 'fixed' as const },
+    workspaceId: context.workspaceId,
+  };
+
+  const first = await application.submit(submission);
+  const replay = await application.submit(submission);
+
+  assert.equal(replay.jobId, first.jobId);
+  assert.equal(productUsage.listByWorkspace(context.workspaceId).length, 1);
+  assert.equal(productUsage.getByTask('creative-work-1')?.status, 'committed');
+  assert.equal(quotes.getQuoteByTask('creative-work-1')?.lifecycleStatus, 'settled');
+  assert.deepEqual(
+    quotes.listProviderCosts('creative-work-1').map((cost) => cost.attemptId),
+    [first.attempt.id],
+  );
+  assert.equal(
+    ledger.getSupplyFreeze('creative-work-1')?.productUsageTaskId,
+    'creative-work-1',
+  );
+});
 
 test('rejects a permanently invalid route before consuming a grant lot', async () => {
   const repository = new MemoryFoundationRepository();

@@ -1,7 +1,7 @@
 import type {
   ApprovalReceipt,
-  ContentPackage,
   PendingAction,
+  PublicContentPackage,
 } from '@meiye/contracts';
 import { contentPackageDeliveryAttemptId } from '@meiye/contracts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +23,7 @@ import {
 } from '@/locale/paraglide/messages';
 import { operationsCommand, operationsQuery } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import { ContentPackageApprovalCard } from '@/p1/content-package-detail';
+import { ContentPackageApprovalCard } from '@/p1/content-package-approval-card';
 import { HarnessQuestionCard } from '@/product/harness-question-card';
 
 export function createPendingApprovalSubmissionGuard() {
@@ -79,14 +79,14 @@ interface PendingApprovalDependencies {
 
 type PendingApprovalAction = Extract<PendingAction, { kind: 'approval' }>;
 type PendingDeliveryPackage = Pick<
-  ContentPackage,
+  PublicContentPackage,
   'approvalReceipts' | 'deliveryEvents' | 'revision'
 >;
 
 const defaultPendingApprovalDependencies: PendingApprovalDependencies = {
   command: operationsCommand,
   readPackage: (packageId) =>
-    operationsQuery<ContentPackage>('content_package', { packageId }),
+    operationsQuery<PublicContentPackage>('content_package', { packageId }),
 };
 
 export class PendingDeliveryRetryError extends Error {

@@ -358,12 +358,11 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
 ];
 
 /**
- * First-ship standalone tools on Surface (D-077 / D-098 C3).
- * Two ordinary tools + Pro Studio banner — static registry ids only.
+ * Capability-verified standalone tools on the first-ship Surface.
+ * Ordinary tools are intentionally absent until their complete execution chain
+ * is wired and acceptance-tested; a registry row alone is not publishable.
  */
 export const LAUNCH_TOOL_ENTRY_REFS: readonly SurfaceToolRef[] = [
-  { toolEntryId: 'tool.multi_size', order: 1, visible: true },
-  { toolEntryId: 'tool.batch_bg_remove', order: 2, visible: true },
   { toolEntryId: 'tool.pro_studio', order: 10, visible: true },
 ];
 

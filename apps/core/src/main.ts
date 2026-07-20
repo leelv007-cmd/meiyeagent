@@ -99,10 +99,15 @@ import {
   OwnedAssetReferenceResolver,
   OpenAiCompatibleAiSdkRunner,
   PersistentContentWorkflowRunner,
-  PostgresDurableVideoWorkflowStore,
+  PostgresCanonicalVideoRunStore,
+  PostgresCanonicalVideoWorkflowSchema,
   ProductCopyProviderBridge,
   PostgresModelSupplyRepository,
+  PostgresVideoRegenerationRepository,
   ProductReferenceAssetResolver,
+  RecordedFixtureVideoQualityScorer,
+  VideoRegenerationApplicationService,
+  VideoRegenerationFoundationModule,
   VersionedHumanCalibratedVideoQualityScorer,
   createModelSupplyRuntime,
   modelMediaExecutionMode,
@@ -111,7 +116,6 @@ import {
 } from './p1/model-supply/index.js';
 import { createPermissionAuthorizer } from './p1/capability-permission/index.js';
 import { SupplyPoolRegistry } from './p1/entitlement-pools/index.js';
-import { MemoryProductUsageLedger } from './p1/product-billing/index.js';
 import {
   ModelSupplyStructuredNodeRunner,
 } from './p1/model-supply/structured-node-runner.js';
@@ -198,21 +202,22 @@ import {
   WorkflowEventApplicationService,
 } from './p1/workflow-events.js';
 import {
-  CreationExperienceCatalogService,
-  CreationExperienceFoundationModule,
-  MemoryCreationExperienceCatalogRepository,
-  publishLaunchCatalog,
+  createDurableCreationExperienceRuntime,
 } from './p1/creation-experience/index.js';
 import {
+  CatalogProductQuoteAuthority,
+  DurableProductBillingService,
+  PostgresProductBillingRepository,
   ProductBillingFoundationModule,
-  ProductQuoteService,
 } from './p1/product-billing/index.js';
 import {
-  MemoryFirstAdoptPort,
-  MemoryVisualAdoptionStore,
+  createDurableResultDeliveryRuntime,
   ResultDeliveryFoundationModule,
-  VisualAdoptionService,
 } from './p1/result-delivery/index.js';
+import {
+  OperationsResultCommandPort,
+  OperationsVisualAdoptionPort,
+} from './p1/result-delivery/operations-visual-adoption.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const serviceToken = process.env.CORE_SERVICE_TOKEN;
@@ -263,6 +268,7 @@ const foundationRepository = new PostgresFoundationRepository(pool);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
 const redemptionStore = new PostgresRedemptionStore(pool);
 const operationsRepository = new PostgresOperationsRepository(pool);
+const productBillingRepository = new PostgresProductBillingRepository(pool);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
 const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
@@ -313,6 +319,10 @@ const providerCredentialRuntime = await providerCredentialEnvFromVault(
   process.env,
 );
 const modelSupplyRepository = new PostgresModelSupplyRepository(pool);
+const videoRegenerationRepository =
+  new PostgresVideoRegenerationRepository(pool);
+const canonicalVideoWorkflowSchema =
+  new PostgresCanonicalVideoWorkflowSchema(pool);
 const cutoverExecution = new P1CutoverExecutionService(pool);
 const legacyInFlightDecisions = new PostgresLegacyInFlightDecisionPort(pool);
 
@@ -358,8 +368,12 @@ supplyPoolRegistry.registerShared({
   deploymentIds: bootDeploymentIds,
   revisionId: 'boot-pool-shared-default',
 });
-// #92 ProductUsage memory ledger for bilateral foundation-ledger bridge.
-const productUsageLedger = new MemoryProductUsageLedger();
+// #92 one durable ProductQuote/ProductUsage/ProviderCost lifecycle shared by
+// HTTP, Operations, and model-supply across process restarts.
+const productQuoteService = new DurableProductBillingService(
+  productBillingRepository,
+);
+const billingLifecycle = productQuoteService;
 const permissionAuthorizer = createPermissionAuthorizer();
 const mediaExecutionMode = modelMediaExecutionMode(modelRuntime);
 const gatedModelExecution = new ModeGateExecutionPort(
@@ -443,7 +457,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       executionEntitlementPolicy,
       grantLotLedger,
       {
-        productUsage: productUsageLedger,
+        billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
       },
     ),
@@ -469,6 +483,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
 });
 const p1ModelSupplyService = p1ModelSupplyRuntime.application;
 const modelControlPlane = p1ModelSupplyRuntime.controlPlane;
+const productQuoteAuthority = new CatalogProductQuoteAuthority(modelControlPlane);
 {
   const view = capabilityHotAssembly.report('http');
   console.log(
@@ -554,6 +569,7 @@ await migratePostgresSchema(pool, [
   redemptionStore,
   adminConfigRepository,
   operationsRepository,
+  productBillingRepository,
   storeFactLedger,
   contextBundleRepository,
   contextSourceRevisions,
@@ -563,6 +579,8 @@ await migratePostgresSchema(pool, [
   contentPackageWriteOwnership,
   contentPackageMigrationRuns,
   modelSupplyRepository,
+  canonicalVideoWorkflowSchema,
+  videoRegenerationRepository,
   integrationRepository,
   cutoverExecution,
   tracerJobRepository,
@@ -593,8 +611,10 @@ const videoRunnerForWorkspace = async (workspaceId: string) => {
   return new PersistentContentWorkflowRunner(
     p1ModelSupplyService,
     videoComposition,
-    new PostgresDurableVideoWorkflowStore(pool, workspaceId),
-    new VersionedHumanCalibratedVideoQualityScorer()
+    new PostgresCanonicalVideoRunStore(pool, workspaceId),
+    modelRuntime.mode === 'fixture'
+      ? new RecordedFixtureVideoQualityScorer()
+      : new VersionedHumanCalibratedVideoQualityScorer()
   );
 };
 let operationsService: OperationsApplicationService;
@@ -609,19 +629,26 @@ const composedVideo = new DurableComposedVideoApplicationService({
   jobs: tracerJobs,
   runnerForWorkspace: videoRunnerForWorkspace,
 });
+const videoRegeneration = new VideoRegenerationApplicationService({
+  billing: productQuoteService,
+  quoteAuthority: productQuoteAuthority,
+  repository: videoRegenerationRepository,
+  workflows: composedVideo,
+});
 const videoWorkflowEventSource = new VideoWorkflowEventSource({
-    async owns(workspaceId, workflowId) {
-      const result = await pool.query(
-        `SELECT 1 FROM model_video_workflows
-          WHERE workspace_id = $1 AND workflow_id = $2`,
-        [workspaceId, workflowId]
-      );
-      return result.rowCount === 1;
-    },
-    readSnapshot(workspaceId, workflowId) {
-      return composedVideo.query({ workspaceId, workflowId });
-    },
-  });
+  async owns(workspaceId, workflowId) {
+    const result = await pool.query(
+      `SELECT 1 FROM p1_creative_jobs
+        WHERE workspace_id = $1
+          AND payload->>'videoWorkflowId' = $2`,
+      [workspaceId, workflowId]
+    );
+    return result.rowCount === 1;
+  },
+  readSnapshot(workspaceId, workflowId) {
+    return composedVideo.query({ workspaceId, workflowId });
+  },
+});
 
 const feishuMcp = feishuMcpAdapterFromEnv(process.env);
 const integrationService = new IntegrationApplicationService({
@@ -775,6 +802,7 @@ const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
   relationalProductRepository
 );
 operationsService = new OperationsApplicationService(operationsRepository, {
+  billingLifecycle,
   contentPackageExporter: new ContentPackageZipExportAdapter(
     assetStorage,
     new OperationsContentPackageExportAssetReader(
@@ -794,7 +822,8 @@ operationsService = new OperationsApplicationService(operationsRepository, {
   creationExecutor: new ModelSupplyCreationExecutor(
     modelControlPlane,
     aiStreamingRunner,
-    referenceAssets
+    referenceAssets,
+    composedVideo
   ),
   groundingResolver: new ProductCreativeGroundingResolver(
     relationalProductRepository
@@ -860,6 +889,11 @@ const pendingActions: PendingActionsService = new PendingActionsService(
   pendingActionsQuestionStore,
   operationsRepository
 );
+const resultDeliveryRuntime = await createDurableResultDeliveryRuntime({
+  operations: operationsRepository,
+  pendingActions,
+  pool,
+});
 const reuseTaskHarnessAdapter = new ReuseTaskHarnessAdapter(
   () => harnessService
 );
@@ -915,18 +949,21 @@ await operationsService.seedOfficialTemplateFamilies({
 });
 
 // Z1/#105 thin wiring — independent FoundationModules (S1 freeze discipline).
-// Memory-backed until AP/MP pack adds durable repos (document residual as Z2-WIRING).
-const creationExperienceRepository =
-  new MemoryCreationExperienceCatalogRepository();
-const creationExperienceCatalog = new CreationExperienceCatalogService(
-  creationExperienceRepository,
+const creationExperienceRuntime =
+  await createDurableCreationExperienceRuntime({
+    modelCatalog: modelSupplyRepository,
+    pool,
+    productQuotes: productBillingRepository,
+  });
+operationsService.attachBriefSubmissionGate(
+  creationExperienceRuntime.briefSubmissionGate,
 );
-await publishLaunchCatalog(creationExperienceCatalog);
-const productQuoteService = new ProductQuoteService();
-const visualAdoptionStore = new MemoryVisualAdoptionStore();
-const visualAdoptionService = new VisualAdoptionService(
-  visualAdoptionStore,
-  new MemoryFirstAdoptPort(visualAdoptionStore),
+const visualAdoptionService = new OperationsVisualAdoptionPort(
+  operationsService,
+);
+const resultCommands = new OperationsResultCommandPort(
+  operationsService,
+  productQuoteService,
 );
 
 const p1ApplicationService = new P1ApplicationService(foundationRepository, {
@@ -936,12 +973,15 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     new AdvancedCanvasAdoptionFoundationModule(
       new PostgresAdvancedCanvasAdoptionService(pool)
     ),
-    new CreationExperienceFoundationModule(
-      creationExperienceRepository,
-      creationExperienceCatalog,
+    creationExperienceRuntime.foundationModule,
+    new ProductBillingFoundationModule(
+      productQuoteService,
+      productQuoteAuthority,
     ),
-    new ProductBillingFoundationModule(productQuoteService),
-    new ResultDeliveryFoundationModule(visualAdoptionService),
+    new ResultDeliveryFoundationModule(
+      visualAdoptionService,
+      { ...resultDeliveryRuntime, commands: resultCommands },
+    ),
     new AdminConfigFoundationModule(adminConfigRepository, {
       activationEvidenceStatus: modelRuntime.activation,
       adminActorIds: modelAdminActorIds,
@@ -1110,6 +1150,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       adminActorIds: modelAdminActorIds,
       composedVideo,
     }),
+    new VideoRegenerationFoundationModule(videoRegeneration),
     new MarketingIdentityFoundationModule(marketingIdentities),
     new AssetMemoryFoundationModule(
       assetIntakeService,

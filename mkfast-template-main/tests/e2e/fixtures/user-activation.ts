@@ -148,15 +148,11 @@ export function composerSubmitButton(page: Page) {
  * Required mode select is a mode selector — NOT a forbidden pre-form — and
  * occupies one of the two-click Day-0 budget slots.
  */
-export function creationModeChip(
+export function composerLensOption(
   page: Page,
   mode: 'image_text' | 'video' | 'copy'
 ) {
-  if (mode === 'video') {
-    return page.getByRole('button', { name: /^做视频/ });
-  }
-  // image_text / copy: prefer 做图文; fall back to 做文案 when new Composer lands.
-  return page.getByRole('button', { name: /^做图文|^做文案/ });
+  return page.getByTestId(`composer-lens-option-${mode}`);
 }
 
 /**
@@ -164,18 +160,13 @@ export function creationModeChip(
  * Per D-098 C6 the card click is dual-purpose (select lens + apply recipe) and
  * counts as exactly 1 activation toward the 2-click budget.
  */
-export function sceneTemplateCard(
-  page: Page,
-  name: string | RegExp = /引流 · 美甲|Lead gen · Nails/
-) {
-  return page.getByRole('button', { name });
+export function composerRecipeCard(page: Page) {
+  return page.getByTestId('composer-recipe-card-recipe.project_intro');
 }
 
 /** D-094 / D-043 decision ③ conditional Brief confirm (video / high-cost). */
 export function briefConfirmButton(page: Page) {
-  return page.getByRole('button', {
-    name: /采用并确认 Brief|Adopt and confirm Brief/,
-  });
+  return page.getByTestId('composer-brief-confirm');
 }
 
 export function skipOnboardingButton(page: Page) {

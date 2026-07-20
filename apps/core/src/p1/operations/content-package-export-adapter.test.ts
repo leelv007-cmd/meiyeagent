@@ -794,7 +794,7 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
     contentType: 'video/mp4',
     workspaceId: 'workspace-video-full',
   });
-  const cover = await storage.persistGeneratedAsset({
+  const cover = await storage.persistOwnedAsset!({
     bytes: coverBytes,
     contentType: 'image/jpeg',
     workspaceId: 'workspace-video-full',

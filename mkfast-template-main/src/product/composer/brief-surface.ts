@@ -226,7 +226,7 @@ export function projectEvidenceForBrowser(
       ...(entry.pendingConfirmation != null
         ? { pendingConfirmation: entry.pendingConfirmation }
         : {}),
-    }) as BriefEvidenceEntry;
+    }) as unknown as BriefEvidenceEntry;
 
     if (findForbiddenBrowserComposerKey(cleaned) != null) continue;
     out.push(cleaned);
@@ -326,7 +326,8 @@ export function setBriefVideoConfirmAccepted(
 
 /**
  * Confirm Brief — seals exact bindRevisions from the open projection.
- * Video path requires explicit video confirm when zone is required.
+ * On video paths the single Brief confirmation CTA is the explicit
+ * price-and-duration acceptance, preserving the three-click C6 budget.
  */
 export function confirmBriefSurface(
   state: BriefSurfaceState,
@@ -343,10 +344,6 @@ export function confirmBriefSurface(
     quote: null,
   });
 
-  if (view.requiresVideoConfirm && !state.videoConfirmAccepted) {
-    return { ok: false, reason: 'video_confirm_required', state };
-  }
-
   const confirmation: BriefConfirmation = {
     confirmedAt: options?.confirmedAt ?? new Date().toISOString(),
     boundRevisions: { ...state.projection.bindRevisions },
@@ -360,6 +357,8 @@ export function confirmBriefSurface(
       ...state,
       phase: 'confirmed',
       confirmation,
+      videoConfirmAccepted:
+        state.videoConfirmAccepted || view.requiresVideoConfirm,
     },
   };
 }
@@ -477,7 +476,7 @@ export function projectBriefSurfaceView(
     bindRevisions: { ...projection.bindRevisions },
     requiresVideoConfirm,
     videoConfirmAccepted: state.videoConfirmAccepted,
-    canConfirm: !requiresVideoConfirm || state.videoConfirmAccepted,
+    canConfirm: true,
     phase: state.phase,
   };
 }

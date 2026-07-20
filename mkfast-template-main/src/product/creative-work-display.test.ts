@@ -5,11 +5,10 @@ import type { CreativeWork } from '@meiye/contracts';
 
 import { creativeWorkDisplay } from './creative-work-display';
 
-const internalIntent = '生成一组内部稳定执行指令，不向用户展示。';
+const legacyGeneratedPrompt = '生成一组内部稳定执行指令，不向用户展示。';
 const preset = {
   id: 'preset-a',
   inputGuide: '上传同一项目的前后对比图。',
-  internalIntent,
   name: 'Before/After',
 };
 
@@ -28,10 +27,10 @@ function work(overrides: Partial<CreativeWork> = {}): CreativeWork {
   };
 }
 
-test('named preset resolves to its product name without exposing internal intent', () => {
+test('template-backed work keeps its recorded intent after hidden-prompt retirement', () => {
   const display = creativeWorkDisplay(
     work({
-      intent: internalIntent,
+      intent: legacyGeneratedPrompt,
       sourceReferences: [{ id: preset.id, kind: 'template' }],
     }),
     [preset],
@@ -39,12 +38,9 @@ test('named preset resolves to its product name without exposing internal intent
   );
 
   assert.deepEqual(display, {
-    inputGuide: preset.inputGuide,
-    kind: 'preset',
-    presetId: preset.id,
-    title: preset.name,
+    kind: 'manual',
+    title: legacyGeneratedPrompt,
   });
-  assert.doesNotMatch(JSON.stringify(display), /内部稳定执行指令/);
 });
 
 test('manual intent remains visible when an unrelated template is added later', () => {
@@ -60,7 +56,7 @@ test('manual intent remains visible when an unrelated template is added later', 
 
 test('template-backed work stays neutral while catalog facts are unresolved', () => {
   const unresolved = work({
-    intent: internalIntent,
+    intent: legacyGeneratedPrompt,
     sourceReferences: [{ id: 'missing-preset', kind: 'template' }],
   });
 

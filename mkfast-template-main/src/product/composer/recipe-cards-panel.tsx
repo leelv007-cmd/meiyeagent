@@ -12,6 +12,7 @@ import type {
   BrowserSurfaceProjection,
   CreationLensId,
   CreativeBrief,
+  RecipePatchPreview,
 } from '@meiye/contracts';
 
 import { ComposerBriefChips } from './brief-chips';
@@ -40,6 +41,7 @@ import {
   listVisibleRecipeCards,
   type RecipeCardView,
 } from './recipe-cards';
+import type { RecipeCardTarget } from './launch-card-seeds';
 import { RecipePatchPreviewSurface } from './recipe-patch-preview-surface';
 import {
   ReuseContentPanel,
@@ -71,6 +73,11 @@ export type RecipeCardsPanelProps = {
   /** Optional focus key restored when the sheet dismisses. */
   sheetFocusKey?: string | null;
   onSheetRestore?: (restore: ComposerSheetRestoreSnapshot) => void;
+  /** Production host fetches the authoritative server patch preview. */
+  requestServerPreview?: (input: {
+    lensState: ComposerLensState;
+    recipe: RecipeCardTarget;
+  }) => Promise<RecipePatchPreview>;
 };
 
 export function RecipeCardsPanel({
@@ -87,6 +94,7 @@ export function RecipeCardsPanel({
   useBottomSheet = false,
   sheetFocusKey = null,
   onSheetRestore,
+  requestServerPreview,
 }: RecipeCardsPanelProps) {
   const [session, setSession] = useState<RecipeApplySession>(() =>
     createRecipeApplySession(
@@ -99,6 +107,7 @@ export function RecipeCardsPanel({
   const [sheet, setSheet] = useState<ComposerBottomSheetState>(() =>
     createComposerBottomSheetState()
   );
+  const [previewError, setPreviewError] = useState(false);
 
   // Keep session lens in sync when parent drives lens radiogroup.
   const activeSession = useMemo(() => {
@@ -129,14 +138,29 @@ export function RecipeCardsPanel({
     );
   }, [activeSession.phase, useBottomSheet, sheetFocusKey]);
 
-  const handleSelectCard = (card: RecipeCardView) => {
+  const handleSelectCard = async (card: RecipeCardView) => {
     if (card.kind === 'reuse_collection') {
       setReuseSelection(emptyReuseSelection());
       publish(openReusePanel(activeSession));
       return;
     }
     if (!card.recipe) return;
-    const result = requestApplyRecipe(activeSession, card.recipe);
+    setPreviewError(false);
+    let serverPreview: RecipePatchPreview | undefined;
+    if (requestServerPreview) {
+      try {
+        serverPreview = await requestServerPreview({
+          lensState: activeSession.lensState,
+          recipe: card.recipe,
+        });
+      } catch {
+        setPreviewError(true);
+        return;
+      }
+    }
+    const result = requestApplyRecipe(activeSession, card.recipe, {
+      serverPreview,
+    });
     publish(result.session);
   };
 
@@ -277,6 +301,12 @@ export function RecipeCardsPanel({
       />
 
       <RecipeApplyTip session={activeSession} onUndo={handleUndo} />
+
+      {previewError ? (
+        <p className="text-sm text-destructive" role="alert">
+          模板预览暂不可用，请稍后重试
+        </p>
+      ) : null}
 
       {showInlineOverlay ? overlayBody : null}
 

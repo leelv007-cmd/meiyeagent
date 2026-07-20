@@ -18,8 +18,8 @@ C/D/E pure models + routes (#95–#104) landed on main as dual-read. Z1 is the o
 | Path | Freeze origin | Unfreeze reason |
 |---|---|---|
 | `apps/core/src/main.ts` | S1 shared freeze | Thin registration of `creation-experience` / `product-billing` / `result-delivery` FoundationModules (no new methods on `OperationsApplicationService`) |
-| `mkfast-template-main/src/product/unified-creation-workbench.tsx` | S1 container freeze | Physical retire of result hero / stream / video face branches → Result Center handoff links; remove internalIntent overwrite on create |
-| `mkfast-template-main/src/product/mobile-action-book.tsx` | S1 container freeze | Physical retire of T6 `SceneVisualButton` / scene chip strip |
+| `mkfast-template-main/src/product/unified-creation-workbench.tsx` | S1 container freeze | Deleted after import-graph audit proved zero production callers; Composer + Result Center replace its creation/result branches |
+| `mkfast-template-main/src/product/mobile-action-book.tsx` | S1 container freeze | Deleted after import-graph audit proved zero production callers; responsive Composer replaces its mobile entry |
 | `mkfast-template-main/src/routes/dashboard/index.tsx` | WT-C owner (Z integrates) | Mount `ComposerHome`; unhook `?workId=` → redirect `/dashboard/results/$workId` |
 | `mkfast-template-main/src/p1/operations-view-model.ts` | T6 named-preset surface | Delete `NAMED_PRESET_CONTRACTS` injection into template views |
 | `mkfast-template-main/src/p1/content-package-detail.tsx` | WT-D duplicate actions | Retire quick-edit rewrite/export primary actions; hand off to Result Center |
@@ -48,13 +48,13 @@ C/D/E pure models + routes (#95–#104) landed on main as dual-read. Z1 is the o
 ## Retirement greps (acceptance)
 
 ```bash
-rg -n 'SceneVisualButton|NAMED_PRESET_CONTRACTS|selectedPreset\.internalIntent' \
+rg -n 'SceneVisualButton|sceneChipGroups|NAMED_PRESET_CONTRACTS|internalIntent' \
   mkfast-template-main/src apps --glob '!**/docs/**' --glob '!**/migration-matrix.md'
 # expect: zero runtime hits (tests use split tokens)
 ```
 
 ## V1 / C6 gate
 
-- Day-0 Playwright hard gate remains `tests/e2e/specs/uiux-day0-contract.spec.ts` (will need selector updates to Composer lens/cards in a follow-up if still red on old chips).
+- Day-0 Playwright hard gate `tests/e2e/specs/uiux-day0-contract.spec.ts` uses Composer lens and Recipe-card selectors; old scene/mode/Harness selectors are statically rejected.
 - Fixture journey: `src/product/composer/z1-three-modal-journey.test.ts` (copy / image_text / video + C6 budget 2/2/3).
 - Static retirement: `src/product/composer/z1-cutover-retirement.static.test.ts`.

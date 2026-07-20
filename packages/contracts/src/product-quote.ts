@@ -70,7 +70,13 @@ export interface ProductQuoteSnapshot {
   catalogModelRevision?: string;
   /** Product QuotePolicy revision (not SupplierPriceRevision). */
   quotePolicyRevision: string;
+  /** Server-resolved extra-confirm threshold frozen from quotePolicyRevision. */
+  extraConfirmThreshold?: number;
   billingMode: ProductBillingMode;
+  /** Server-priced deliverable count frozen into this quote revision. */
+  outputCount?: number;
+  /** Server-owned merchant-facing deliverable label bound to outputCount. */
+  outputLabel?: string;
   formula: ProductQuoteFormula;
   /**
    * Target / requested duration seconds when billingMode is per_output_second.
@@ -175,6 +181,8 @@ export interface BuildProductQuoteInput {
   catalogModelRevision?: string;
   quotePolicyRevision: string;
   billingMode: ProductBillingMode;
+  outputCount?: number;
+  outputLabel?: string;
   unitRate: number;
   currency?: string;
   formulaExpression?: string;

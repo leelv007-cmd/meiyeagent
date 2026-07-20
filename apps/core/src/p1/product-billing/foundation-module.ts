@@ -7,24 +7,17 @@
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
+import type { ConfirmQuoteInput } from './quote-service.js';
+import type { ProductBillingApplicationPort } from './durable-service.js';
+import type { ProductQuoteSnapshot } from '@meiye/contracts';
 import {
-  adaptCanvasPersistedQuote,
-  adaptClientQuoteFor,
-  adaptCreativeExecutionQuote,
-  type CanvasPersistedQuoteSource,
-  type ClientQuoteForSource,
-  type CreativeExecutionQuoteSource,
-} from './canvas-quote-adapter.js';
-import {
-  ProductQuoteService,
-  type ConfirmQuoteInput,
-  type DispatchQuoteInput,
-  type FallbackDispatchInput,
-  type ReserveQuoteInput,
-  type SettleQuoteInput,
-  type TrustedUsageEvidence,
-} from './quote-service.js';
-import type { BuildProductQuoteInput, ProductBillingMode } from '@meiye/contracts';
+  publicProductQuoteOperations,
+  type ProductQuoteAuthority,
+  type PublicProductQuoteIntent,
+  toPublicProductQuoteSnapshot,
+} from './server-quote-authority.js';
+
+export type { ProductQuoteAuthority } from './server-quote-authority.js';
 
 function actionName(input: Record<string, unknown>) {
   if (typeof input.action !== 'string' || input.action.trim().length === 0) {
@@ -79,217 +72,73 @@ function numberField(
   return value;
 }
 
-function billingModeField(source: Record<string, unknown>): ProductBillingMode {
-  const value = stringField(source, 'billingMode');
-  if (value !== 'per_request' && value !== 'per_output_second') {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'billingMode must be per_request or per_output_second.',
-    );
-  }
-  return value;
-}
+const SERVER_AUTHORITATIVE_QUOTE_FIELDS = [
+  'authorizedCeiling',
+  'billingMode',
+  'catalogModelRevision',
+  'canvasQuote',
+  'clientQuote',
+  'contract',
+  'currency',
+  'formulaExpression',
+  'frozenCandidateDeploymentIds',
+  'minChargeSeconds',
+  'quotePolicyRevision',
+  'roundingStepSeconds',
+  'routeSnapshotRef',
+  'source',
+  'taskId',
+  'unitRate',
+] as const;
 
-function buildInputFromPayload(
+function publicQuoteIntent(
   value: Record<string, unknown>,
   context: P1Context,
-): BuildProductQuoteInput {
-  const source = stringField(value, 'source', { optional: true }) || 'direct';
-
-  if (source === 'creative_execution') {
-    const contract = value.contract;
-    if (!contract || typeof contract !== 'object' || Array.isArray(contract)) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'creative_execution source requires contract object.',
-      );
-    }
-    return adaptCreativeExecutionQuote(
-      contract as CreativeExecutionQuoteSource,
-      {
-        quoteId: stringField(value, 'quoteId'),
-        ...(value.billingMode
-          ? { billingMode: billingModeField(value) }
-          : {}),
-        ...(numberField(value, 'minChargeSeconds', { optional: true }) !==
-        undefined
-          ? {
-              minChargeSeconds: numberField(value, 'minChargeSeconds', {
-                optional: true,
-              }),
-            }
-          : {}),
-        ...(numberField(value, 'roundingStepSeconds', { optional: true }) !==
-        undefined
-          ? {
-              roundingStepSeconds: numberField(value, 'roundingStepSeconds', {
-                optional: true,
-              }),
-            }
-          : {}),
-        ...(value.routeSnapshotRef
-          ? { routeSnapshotRef: stringField(value, 'routeSnapshotRef') }
-          : {}),
-        ...(Array.isArray(value.frozenCandidateDeploymentIds)
-          ? {
-              frozenCandidateDeploymentIds:
-                value.frozenCandidateDeploymentIds as string[],
-            }
-          : {}),
-        ...(value.taskId ? { taskId: stringField(value, 'taskId') } : {}),
-        workspaceId: context.workspaceId,
-      },
+): PublicProductQuoteIntent {
+  const forged = SERVER_AUTHORITATIVE_QUOTE_FIELDS.find(
+    (field) => value[field] !== undefined,
+  );
+  if (forged) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      `${forged} is server-authoritative and cannot be supplied by browsers.`,
     );
   }
-
-  if (source === 'canvas') {
-    const canvas = value.canvasQuote;
-    if (!canvas || typeof canvas !== 'object' || Array.isArray(canvas)) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'canvas source requires canvasQuote object.',
-      );
-    }
-    return adaptCanvasPersistedQuote(canvas as CanvasPersistedQuoteSource, {
-      ...(numberField(value, 'targetSeconds', { optional: true }) !== undefined
-        ? {
-            targetSeconds: numberField(value, 'targetSeconds', {
-              optional: true,
-            }),
-          }
-        : {}),
-      ...(numberField(value, 'minChargeSeconds', { optional: true }) !==
-      undefined
-        ? {
-            minChargeSeconds: numberField(value, 'minChargeSeconds', {
-              optional: true,
-            }),
-          }
-        : {}),
-      ...(numberField(value, 'roundingStepSeconds', { optional: true }) !==
-      undefined
-        ? {
-            roundingStepSeconds: numberField(value, 'roundingStepSeconds', {
-              optional: true,
-            }),
-          }
-        : {}),
-      ...(value.billingMode ? { billingMode: billingModeField(value) } : {}),
-      ...(numberField(value, 'unitRate', { optional: true }) !== undefined
-        ? { unitRate: numberField(value, 'unitRate', { optional: true }) }
-        : {}),
-      ...(value.taskId ? { taskId: stringField(value, 'taskId') } : {}),
-    });
+  const operation = stringField(value, 'operation');
+  if (!publicProductQuoteOperations.includes(operation as never)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'operation must be copy.generate, image.generate, or video.generate.',
+    );
   }
-
-  if (source === 'client_quote_for') {
-    const client = value.clientQuote;
-    if (!client || typeof client !== 'object' || Array.isArray(client)) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'client_quote_for source requires clientQuote object.',
-      );
-    }
-    return adaptClientQuoteFor(client as ClientQuoteForSource, {
-      quoteId: stringField(value, 'quoteId'),
-      ...(numberField(value, 'minChargeSeconds', { optional: true }) !==
-      undefined
-        ? {
-            minChargeSeconds: numberField(value, 'minChargeSeconds', {
-              optional: true,
-            }),
-          }
-        : {}),
-      ...(numberField(value, 'roundingStepSeconds', { optional: true }) !==
-      undefined
-        ? {
-            roundingStepSeconds: numberField(value, 'roundingStepSeconds', {
-              optional: true,
-            }),
-          }
-        : {}),
-      ...(value.routeSnapshotRef
-        ? { routeSnapshotRef: stringField(value, 'routeSnapshotRef') }
-        : {}),
-      workspaceId: context.workspaceId,
-    });
-  }
-
-  // Direct BuildProductQuoteInput
-  return {
-    quoteId: stringField(value, 'quoteId'),
-    catalogModelId: stringField(value, 'catalogModelId'),
-    ...(value.catalogModelRevision
-      ? { catalogModelRevision: stringField(value, 'catalogModelRevision') }
-      : {}),
-    quotePolicyRevision: stringField(value, 'quotePolicyRevision'),
-    billingMode: billingModeField(value),
-    unitRate: numberField(value, 'unitRate') as number,
-    ...(value.currency ? { currency: stringField(value, 'currency') } : {}),
-    ...(value.formulaExpression
-      ? { formulaExpression: stringField(value, 'formulaExpression') }
-      : {}),
-    ...(numberField(value, 'targetSeconds', { optional: true }) !== undefined
-      ? { targetSeconds: numberField(value, 'targetSeconds', { optional: true }) }
-      : {}),
-    ...(numberField(value, 'minChargeSeconds', { optional: true }) !== undefined
-      ? {
-          minChargeSeconds: numberField(value, 'minChargeSeconds', {
-            optional: true,
-          }),
-        }
-      : {}),
-    ...(numberField(value, 'roundingStepSeconds', { optional: true }) !==
-    undefined
-      ? {
-          roundingStepSeconds: numberField(value, 'roundingStepSeconds', {
-            optional: true,
-          }),
-        }
-      : {}),
-    ...(value.routeSnapshotRef
-      ? { routeSnapshotRef: stringField(value, 'routeSnapshotRef') }
-      : {}),
-    ...(Array.isArray(value.frozenCandidateDeploymentIds)
-      ? {
-          frozenCandidateDeploymentIds:
-            value.frozenCandidateDeploymentIds as string[],
-        }
-      : {}),
-    workspaceId: context.workspaceId,
-    ...(value.taskId ? { taskId: stringField(value, 'taskId') } : {}),
-    ...(numberField(value, 'authorizedCeiling', { optional: true }) !==
-    undefined
-      ? {
-          authorizedCeiling: numberField(value, 'authorizedCeiling', {
-            optional: true,
-          }),
-        }
-      : {}),
-  };
-}
-
-function trustedUsageFrom(
-  value: Record<string, unknown> | undefined,
-): TrustedUsageEvidence | undefined {
-  if (!value) return undefined;
-  const kind = stringField(value, 'kind');
+  const aspectRatio = value.aspectRatio
+    ? stringField(value, 'aspectRatio')
+    : undefined;
   if (
-    kind !== 'provider_usage' &&
-    kind !== 'provider_bill' &&
-    kind !== 'media_duration'
+    aspectRatio !== undefined &&
+    aspectRatio !== '1:1' &&
+    aspectRatio !== '3:4' &&
+    aspectRatio !== '9:16'
   ) {
     throw new P1DomainError(
       'INVALID_STATE',
-      'trustedUsage.kind must be provider_usage, provider_bill, or media_duration.',
+      'aspectRatio must be 1:1, 3:4, or 9:16.',
     );
   }
   return {
-    kind,
-    actualSeconds: numberField(value, 'actualSeconds') as number,
-    ...(value.evidenceRef
-      ? { evidenceRef: stringField(value, 'evidenceRef') }
+    ...(aspectRatio
+      ? { aspectRatio }
       : {}),
+    catalogModelId: stringField(value, 'catalogModelId'),
+    operation: operation as PublicProductQuoteIntent['operation'],
+    ...(numberField(value, 'quantity', { optional: true }) !== undefined
+      ? { quantity: numberField(value, 'quantity', { optional: true }) }
+      : {}),
+    quoteId: stringField(value, 'quoteId'),
+    ...(numberField(value, 'targetSeconds', { optional: true }) !== undefined
+      ? { targetSeconds: numberField(value, 'targetSeconds', { optional: true }) }
+      : {}),
+    workspaceId: context.workspaceId,
   };
 }
 
@@ -300,7 +149,45 @@ function trustedUsageFrom(
 export class ProductBillingFoundationModule implements P1OperationModule {
   readonly name = 'product-billing';
 
-  constructor(private readonly quotes: ProductQuoteService) {}
+  constructor(
+    private readonly quotes: ProductBillingApplicationPort,
+    private readonly authority: ProductQuoteAuthority,
+  ) {}
+
+  private assertWorkspaceQuote(
+    context: P1Context,
+    quote: ProductQuoteSnapshot,
+  ) {
+    if (!quote.workspaceId) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Quote ${quote.quoteId} is missing workspace ownership.`,
+      );
+    }
+    if (quote.workspaceId !== context.workspaceId) {
+      throw new P1DomainError(
+        'FORBIDDEN',
+        'Quote belongs to another workspace.',
+      );
+    }
+    return quote;
+  }
+
+  private async requireWorkspaceQuote(context: P1Context, quoteId: string) {
+    const quote = await this.quotes.getQuote(quoteId, context.workspaceId);
+    if (!quote) {
+      throw new P1DomainError('NOT_FOUND', `Quote ${quoteId} was not found.`);
+    }
+    return this.assertWorkspaceQuote(context, quote);
+  }
+
+  private async requireWorkspaceQuoteByTask(context: P1Context, taskId: string) {
+    const quote = await this.quotes.getQuoteByTask(taskId, context.workspaceId);
+    if (!quote) {
+      throw new P1DomainError('NOT_FOUND', `No quote for task ${taskId}.`);
+    }
+    return this.assertWorkspaceQuote(context, quote);
+  }
 
   async execute(args: {
     context: P1Context;
@@ -312,126 +199,40 @@ export class ProductBillingFoundationModule implements P1OperationModule {
 
     switch (action) {
       case 'quote': {
-        const buildInput = buildInputFromPayload(value, args.context);
-        if (!buildInput.workspaceId) {
-          buildInput.workspaceId = args.context.workspaceId;
+        const buildInput = await this.authority.resolve(
+          publicQuoteIntent(value, args.context),
+        );
+        const existing = await this.quotes.getQuote(
+          buildInput.quoteId,
+          args.context.workspaceId,
+        );
+        if (existing) {
+          this.assertWorkspaceQuote(args.context, existing);
         }
-        return this.quotes.buildQuote(buildInput);
+        buildInput.workspaceId = args.context.workspaceId;
+        return toPublicProductQuoteSnapshot(
+          await this.quotes.buildQuote(buildInput),
+        );
       }
       case 'confirm': {
+        if (value.authorizedCeiling !== undefined) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'authorizedCeiling is server-authoritative and cannot be supplied by browsers.',
+          );
+        }
+        const quoteId = stringField(value, 'quoteId');
+        await this.requireWorkspaceQuote(args.context, quoteId);
         const input: ConfirmQuoteInput = {
-          quoteId: stringField(value, 'quoteId'),
+          quoteId,
           taskId: stringField(value, 'taskId'),
-          ...(numberField(value, 'authorizedCeiling', { optional: true }) !==
-          undefined
-            ? {
-                authorizedCeiling: numberField(value, 'authorizedCeiling', {
-                  optional: true,
-                }),
-              }
-            : {}),
         };
-        return this.quotes.confirm(input);
-      }
-      case 'reserve': {
-        const input: ReserveQuoteInput = {
-          quoteId: stringField(value, 'quoteId'),
-          ...(value.usageId ? { usageId: stringField(value, 'usageId') } : {}),
-          ...(value.resource
-            ? {
-                resource: stringField(value, 'resource') as
-                  | 'copy'
-                  | 'image'
-                  | 'video'
-                  | 'audio',
-              }
-            : {}),
-        };
-        return this.quotes.reserve(input);
-      }
-      case 'dispatch': {
-        const input: DispatchQuoteInput = {
-          quoteId: stringField(value, 'quoteId'),
-          deploymentId: stringField(value, 'deploymentId'),
-          attemptId: stringField(value, 'attemptId'),
-          ...(value.providerCost &&
-          typeof value.providerCost === 'object' &&
-          !Array.isArray(value.providerCost)
-            ? {
-                providerCost: value.providerCost as NonNullable<
-                  DispatchQuoteInput['providerCost']
-                >,
-              }
-            : {}),
-        };
-        return this.quotes.dispatch(input);
-      }
-      case 'fallback_dispatch': {
-        const input: FallbackDispatchInput = {
-          quoteId: stringField(value, 'quoteId'),
-          deploymentId: stringField(value, 'deploymentId'),
-          attemptId: stringField(value, 'attemptId'),
-          ...(value.providerCost &&
-          typeof value.providerCost === 'object' &&
-          !Array.isArray(value.providerCost)
-            ? {
-                providerCost: value.providerCost as NonNullable<
-                  FallbackDispatchInput['providerCost']
-                >,
-              }
-            : {}),
-          ...(numberField(value, 'supplyCostDeltaMicros', { optional: true }) !==
-          undefined
-            ? {
-                supplyCostDeltaMicros: numberField(
-                  value,
-                  'supplyCostDeltaMicros',
-                  { optional: true },
-                ),
-              }
-            : {}),
-        };
-        return this.quotes.fallbackDispatch(input);
-      }
-      case 'settle': {
-        const trustedRaw =
-          value.trustedUsage &&
-          typeof value.trustedUsage === 'object' &&
-          !Array.isArray(value.trustedUsage)
-            ? (value.trustedUsage as Record<string, unknown>)
-            : undefined;
-        const input: SettleQuoteInput = {
-          quoteId: stringField(value, 'quoteId'),
-          ...(trustedRaw ? { trustedUsage: trustedUsageFrom(trustedRaw) } : {}),
-          ...(value.attemptId
-            ? { attemptId: stringField(value, 'attemptId') }
-            : {}),
-          ...(numberField(value, 'overproductionUnitCostMicros', {
-            optional: true,
-          }) !== undefined
-            ? {
-                overproductionUnitCostMicros: numberField(
-                  value,
-                  'overproductionUnitCostMicros',
-                  { optional: true },
-                ),
-              }
-            : {}),
-        };
-        return this.quotes.settle(input);
-      }
-      case 'fail_and_refund': {
-        const trustedRaw =
-          value.trustedUsage &&
-          typeof value.trustedUsage === 'object' &&
-          !Array.isArray(value.trustedUsage)
-            ? (value.trustedUsage as Record<string, unknown>)
-            : undefined;
-        return this.quotes.failAndRefund({
-          quoteId: stringField(value, 'quoteId'),
-          ...(trustedRaw ? { trustedUsage: trustedUsageFrom(trustedRaw) } : {}),
-          ...(value.reason ? { reason: stringField(value, 'reason') } : {}),
-        });
+        return toPublicProductQuoteSnapshot(
+          await this.quotes.confirm({
+            ...input,
+            workspaceId: args.context.workspaceId,
+          }),
+        );
       }
       default:
         throw new P1DomainError(
@@ -451,32 +252,23 @@ export class ProductBillingFoundationModule implements P1OperationModule {
     switch (action) {
       case 'get_quote': {
         const quoteId = stringField(value, 'quoteId');
-        const quote = this.quotes.getQuote(quoteId);
-        if (!quote) {
-          throw new P1DomainError('NOT_FOUND', `Quote ${quoteId} was not found.`);
-        }
-        if (
-          quote.workspaceId &&
-          quote.workspaceId !== args.context.workspaceId
-        ) {
-          throw new P1DomainError('FORBIDDEN', 'Quote belongs to another workspace.');
-        }
-        return quote;
+        return toPublicProductQuoteSnapshot(
+          await this.requireWorkspaceQuote(args.context, quoteId),
+        );
       }
       case 'get_quote_by_task': {
         const taskId = stringField(value, 'taskId');
-        const quote = this.quotes.getQuoteByTask(taskId);
-        if (!quote) {
-          throw new P1DomainError(
-            'NOT_FOUND',
-            `No quote for task ${taskId}.`,
-          );
-        }
-        return quote;
+        return toPublicProductQuoteSnapshot(
+          await this.requireWorkspaceQuoteByTask(args.context, taskId),
+        );
       }
       case 'get_usage': {
         const taskId = stringField(value, 'taskId');
-        const usage = this.quotes.getUsage(taskId);
+        await this.requireWorkspaceQuoteByTask(args.context, taskId);
+        const usage = await this.quotes.getUsage(
+          taskId,
+          args.context.workspaceId,
+        );
         if (!usage) {
           throw new P1DomainError(
             'NOT_FOUND',
@@ -484,10 +276,6 @@ export class ProductBillingFoundationModule implements P1OperationModule {
           );
         }
         return usage;
-      }
-      case 'list_provider_costs': {
-        const taskId = stringField(value, 'taskId');
-        return this.quotes.listProviderCosts(taskId);
       }
       default:
         throw new P1DomainError(

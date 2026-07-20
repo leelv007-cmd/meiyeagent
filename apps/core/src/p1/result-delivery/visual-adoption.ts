@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import {
   contentPackageSchema,
   contentPackageVisibleStatus,
+  toPublicContentPackage,
   type ContentPackage,
   type ContentPackageVersion,
+  type PublicContentPackage,
   type ReviseContentPackageVisualsCommand,
 } from '@meiye/contracts';
 
@@ -58,14 +60,14 @@ export interface VisualAdoptionStore {
   savePackage(contentPackage: ContentPackage): Promise<void>;
 }
 
-export type VisualAdoptionResult = ContentPackage & {
+export type VisualAdoptionResult = PublicContentPackage & {
   statusGroup: ReturnType<typeof contentPackageVisibleStatus>['statusGroup'];
   statusLabel: ReturnType<typeof contentPackageVisibleStatus>['statusLabel'];
 };
 
 function withVisible(contentPackage: ContentPackage): VisualAdoptionResult {
   return {
-    ...contentPackage,
+    ...toPublicContentPackage(contentPackage),
     ...contentPackageVisibleStatus(contentPackage.status),
   };
 }

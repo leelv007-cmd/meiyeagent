@@ -408,6 +408,22 @@ Implements D-043 Day-0 contract + V1 复审修订七条计数口径. Metric name
 | 4 | T5 independent: upload → inline one-question → evidence → continue | On `/dashboard`, set composer gallery file, assert one inline authorization question (no library evidence form), confirm public marketing, require URL stays on dashboard (no `/dashboard/assets/:id` hop), and observe the actual `add_asset` metadata plus `authorize_asset` command with `rightsEvidence=system:inline-auth:…`. Then submit from the same composer and require a real first token. |
 | 5 | Capture layer survives navigation and ignores child frames | Begin measurement on authenticated dashboard, click a trusted control inside a child frame and require count 0, then use two real top-level links that perform full document navigations. Require `page.exposeBinding` to preserve exactly two captured activations across both documents. |
 
+## 29. Live Creation Catalog Capability Gate
+
+**File:** `specs/catalog-live-navigation.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Server catalog hides ordinary tools without a verified execution chain | Open the authenticated full-screen catalog and require both `surface_browser` and `tool_list`; select an exact published Recipe revision and verify Composer adopts its lens; verify unverified ordinary tools are absent from the tools tab and a direct `/dashboard/tools/:toolEntryId` request renders unavailable instead of an empty tool workspace. |
+
+## 30. Recipe / Surface Admin Lifecycle
+
+**File:** `specs/admin-creation-experience-lifecycle.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Admin visually publishes and rolls back Recipe and Surface revisions | Sign in as an admin, use the `/admin/templates` visual editor to draft, preview, publish, revise, and roll back a Recipe; compose a Surface from the published Recipe revision, verify only capability-approved Pro Studio is offered, then draft, preview, publish, revise, and roll back the Surface through the real Creation Experience API. |
+
 ## Deferred Coverage
 
 These flows should be added after their dependencies are made deterministic:
@@ -421,3 +437,15 @@ These flows should be added after their dependencies are made deterministic:
 - `p0-golden-journey.spec.ts` verifies the authenticated, workspace-scoped merchant outcome: confirmed store facts, authorized real-asset metadata, three copy candidates, selected/versioned content, AIDA confirmation, durable video states and quota, an explicitly disabled creation-time AIGC label reflected consistently in the artifact and handoff, a real Product publish snapshot flowing through Douyin contract authorization and independent Owner capability activation, rejected-before-accept fallback to `manual_required`, L3 handoff, manual publication, platform variant, finite weekly set, refresh persistence, and a manually linked lead without causal-attribution language.
 - `product-asset-upload.spec.ts` verifies that a real image crosses the authenticated workspace upload adapter into R2, receives Core rights metadata, keeps public authorization disabled until consent evidence is recorded, becomes publicly usable only after explicit consent, and remains downloadable through the authorized same-origin storage proxy.
 - `mobile-product-shell.spec.ts` verifies the five-slot mobile shell exposes only the four merchant destinations (creation, content, assets, and store) around the central create action, keeps the lead ledger reachable from the store context, preserves the camera capture contract, and prevents horizontal overflow at the representative 390×844 viewport.
+## UI journey three-modal Day-0
+
+`specs/ui-journey-three-modal.spec.ts` is the Z1 / #105 browser hard gate. It
+boots the real four-service Playwright stack and covers copy, image-text, and
+video in desktop/light and mobile/dark profiles. Every path must discover the
+three modalities, submit with the exact C6 activation budget, visibly pass
+through the running/first-token state, use the modality-specific Result Center
+workspace, send real adjust and adopt mutations, enter canonical delivery,
+download a real non-empty package for the expected platform (小红书 ZIP、抖音
+ZIP、朋友圈分段文本), and preserve the same work/adoption/delivery state after
+reload. Missing wiring is a hard failure; the spec has no fixture-submit or
+soft-skip branch.

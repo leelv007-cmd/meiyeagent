@@ -287,6 +287,7 @@ function CreativeTaskObserver({ task }: { task: AsyncTaskSummary }) {
     operation: task.operation,
     providerJobId: task.providerJobId,
     status: task.status,
+    workId: task.workId!,
   });
   return null;
 }

@@ -11,9 +11,12 @@ import {
   type CreativeGroundingSnapshot,
   type CreativeBrief,
   type CreativeInheritanceContext,
+  type CreativeOperation,
   type CreativeSourceReference,
   type OperationContext,
 } from './index.js';
+import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
+import type { ProductQuoteSnapshot } from '@meiye/contracts';
 
 const owner: OperationContext = {
   actor: 'owner',
@@ -36,6 +39,33 @@ const contract: CreativeExecutionContract = {
   quoteRevision: 'quote-live-v1',
   watermarkEnabled: false,
 };
+
+function acceptedProductQuote(input: {
+  quoteId?: string;
+  taskId?: string;
+  executionContract?: CreativeExecutionContract;
+} = {}): ProductQuoteSnapshot {
+  const executionContract = input.executionContract ?? contract;
+  return {
+    billingMode: 'per_request',
+    catalogModelId: executionContract.catalogModelId,
+    catalogModelRevision: executionContract.catalogRevision,
+    confirmedAmount: executionContract.estimatedAmount,
+    formula: {
+      currency: executionContract.currency,
+      expression: 'server accepted product quote',
+      unitRate: executionContract.estimatedAmount,
+    },
+    lifecycleStatus: 'confirmed',
+    outputCount: executionContract.outputCount,
+    outputLabel: executionContract.outputLabel,
+    quoteId: input.quoteId ?? 'quote-accepted',
+    quotePolicyRevision: 'quote-policy-r1',
+    revision: executionContract.quoteRevision,
+    taskId: input.taskId,
+    workspaceId: owner.workspaceId,
+  };
+}
 
 function threeCandidates(title = '真实到店记录', body = '按已确认事实写成的内容。') {
   return [
@@ -65,6 +95,9 @@ class RecordedCreationExecutor implements CreationExecutorPort {
   streamInheritanceContexts: Array<CreativeInheritanceContext | undefined> = [];
   verifyCalls: string[] = [];
   productUsageQuantities: Array<0 | 1 | undefined> = [];
+  billingTasks: Array<{ taskId?: string; quoteRevision?: string }> = [];
+  inspectionAuthorities: unknown[] = [];
+  inspectionEvents?: string[];
   qualityEvents: Array<{ rerollKind: 'paid' | 'quality'; targetJobId: string }> = [];
   qualityErrors: Error[] = [];
   available = true;
@@ -74,7 +107,13 @@ class RecordedCreationExecutor implements CreationExecutorPort {
     CreationExecutionResult | Promise<CreationExecutionResult>
   > = [];
 
-  async inspect() {
+  async inspect(
+    _workspaceId?: string,
+    _contract?: CreativeExecutionContract,
+    authority?: Parameters<CreationExecutorPort['inspect']>[2],
+  ) {
+    this.inspectionAuthorities.push(authority);
+    this.inspectionEvents?.push('inspect');
     if (!this.available) {
       throw new OperationsError(
         'MODEL_NOT_LIVE_VERIFIED',
@@ -91,6 +130,10 @@ class RecordedCreationExecutor implements CreationExecutorPort {
     this.groundingSnapshots.push(structuredClone(input.groundingSnapshot));
     this.inheritanceContexts.push(structuredClone(input.inheritanceContext));
     this.productUsageQuantities.push(input.productUsageQuantity);
+    this.billingTasks.push({
+      taskId: input.billingTaskId,
+      quoteRevision: input.billingQuoteRevision,
+    });
     const error = this.submissionErrors.shift();
     if (error) throw error;
     return (
@@ -160,12 +203,25 @@ function setup(
   groundingResolver?: CreativeGroundingResolverPort,
   contentWriteOwnership?: {
     get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
-  }
+  },
+  billingLifecycle?: BillingLifecyclePort,
 ) {
   const repository = new MemoryOperationsRepository();
   repository.grantMembership(owner.userId, owner.workspaceId);
+  const defaultBillingLifecycle: BillingLifecyclePort = {
+    assertAcceptedQuote(input) {
+      return acceptedProductQuote({
+        quoteId: input.quoteId,
+        taskId: input.taskId,
+      });
+    },
+    beforeSubmit() {},
+    dispatchAttempt() {},
+    settleTask() {},
+  };
   const service = new OperationsApplicationService(repository, {
     assetDataClassResolver,
+    billingLifecycle: billingLifecycle ?? defaultBillingLifecycle,
     canvasExporter: {
       async export() {
         throw new Error('not used');
@@ -185,6 +241,343 @@ function setup(
 }
 
 describe('creative work lifecycle', () => {
+  it('enforces the server Brief gate at Composer create and submit', async () => {
+    const { service } = setup();
+    const checks: Array<{
+      briefConfirmationId?: string;
+      briefContextId: string;
+      operation: CreativeOperation;
+      workspaceId: string;
+    }> = [];
+    service.attachBriefSubmissionGate({
+      async assertCurrent(input) {
+        checks.push(input);
+      },
+    });
+    await assert.rejects(
+      () =>
+        service.createCreativeWork(owner, {
+          autoConfirmBrief: true,
+          intent: '为门店写三条内容',
+          mode: 'direct',
+          operation: 'video.generate',
+          sessionId: 'plain-session-cannot-bypass',
+          sourceReferences: [],
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof OperationsError);
+        assert.equal(error.code, 'BRIEF_CONTEXT_REQUIRED');
+        return true;
+      },
+    );
+    const work = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      briefConfirmationId: 'brief-confirm-1',
+      briefContextId: 'brief-context-1',
+      intent: '为门店写三条内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'composer:server-gated',
+      sourceReferences: [],
+    });
+    await service.submitCreativeWork(
+      owner,
+      work.id,
+      contract,
+      'server-gated-submit',
+    );
+    assert.deepEqual(checks, [
+      {
+        briefConfirmationId: 'brief-confirm-1',
+        briefContextId: 'brief-context-1',
+        intent: '为门店写三条内容',
+        operation: 'copy.generate',
+        sourceReferenceIds: [],
+        workspaceId: owner.workspaceId,
+      },
+      {
+        briefConfirmationId: 'brief-confirm-1',
+        briefContextId: 'brief-context-1',
+        catalogModelId: 'llm-live',
+        catalogRevision: 'catalog-live-v1',
+        intent: '为门店写三条内容',
+        operation: 'copy.generate',
+        outputCount: 3,
+        quoteRevision: 'quote-live-v1',
+        sourceReferenceIds: [],
+        workspaceId: owner.workspaceId,
+      },
+    ]);
+  });
+
+  it('keeps the Work Brief context and operation immutable at submit', async () => {
+    const { service } = setup();
+    service.attachBriefSubmissionGate({ async assertCurrent() {} });
+    const work = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      briefConfirmationId: 'brief-confirm-a',
+      briefContextId: 'brief-context-a',
+      intent: '为门店写三条内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'immutable-brief-binding',
+      sourceReferences: [],
+    });
+    await assert.rejects(
+      () =>
+        service.submitCreativeWork(
+          owner,
+          work.id,
+          contract,
+          'replace-context',
+          undefined,
+          undefined,
+          'brief-context-b',
+          'brief-confirm-b',
+        ),
+      /Brief context cannot be replaced/,
+    );
+    await assert.rejects(
+      () =>
+        service.submitCreativeWork(
+          owner,
+          work.id,
+          { ...contract, operation: 'video.generate' },
+          'replace-operation',
+        ),
+      /execution operation must match/,
+    );
+  });
+
+  it('reserves the accepted Work quote before forwarding its billing task to provider dispatch', async () => {
+    const order: string[] = [];
+    const executor = new RecordedCreationExecutor();
+    const originalSubmit = executor.submit.bind(executor);
+    executor.submit = async (input) => {
+      order.push(`dispatch:${input.billingTaskId}`);
+      return originalSubmit(input);
+    };
+    const billingLifecycle: BillingLifecyclePort = {
+      beforeSubmit(input) {
+        order.push(`reserve:${input.taskId}`);
+        assert.equal(input.quoteRevision, contract.quoteRevision);
+        assert.equal(input.workspaceId, owner.workspaceId);
+      },
+      dispatchAttempt() {},
+      settleTask() {},
+    };
+    const { service } = setup(
+      executor,
+      undefined,
+      undefined,
+      undefined,
+      billingLifecycle,
+    );
+    const work = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      intent: '为门店写三条内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'session-billing-lifecycle',
+      sourceReferences: [],
+    });
+
+    await service.submitCreativeWork(
+      owner,
+      work.id,
+      contract,
+      'billing-lifecycle-submit',
+    );
+
+    assert.deepEqual(order, [`reserve:${work.id}`, `dispatch:${work.id}`]);
+    assert.deepEqual(executor.billingTasks, [
+      { quoteRevision: contract.quoteRevision, taskId: work.id },
+    ]);
+  });
+
+  it('binds an explicitly confirmed workspace quote to the submitted Job', async () => {
+    const order: string[] = [];
+    const executor = new RecordedCreationExecutor();
+    executor.inspectionEvents = order;
+    const validated: Array<{
+      quoteId: string;
+      quoteRevision: string;
+      taskId: string;
+      workspaceId: string;
+    }> = [];
+    const billingLifecycle: BillingLifecyclePort = {
+      assertAcceptedQuote(input) {
+        order.push('validate');
+        validated.push(input);
+        return acceptedProductQuote({
+          quoteId: input.quoteId,
+          taskId: input.taskId,
+        });
+      },
+      beforeSubmit() {},
+      dispatchAttempt() {},
+      settleTask() {},
+    };
+    const { service } = setup(
+      executor,
+      undefined,
+      undefined,
+      undefined,
+      billingLifecycle,
+    );
+    const work = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      intent: '为已确认报价创建调整任务',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'explicit-confirmed-quote',
+      sourceReferences: [],
+    });
+    const result = await service.submitCreativeWork(
+      owner,
+      work.id,
+      contract,
+      'explicit-confirmed-quote-submit',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'quote-explicit-confirmed',
+    );
+
+    assert.equal(result.job.billingQuoteId, 'quote-explicit-confirmed');
+    assert.deepEqual(order, ['validate', 'inspect']);
+    assert.deepEqual(executor.inspectionAuthorities, [
+      {
+        catalogModelId: contract.catalogModelId,
+        catalogModelRevision: contract.catalogRevision,
+        confirmedAmount: contract.estimatedAmount,
+        currency: contract.currency,
+        kind: 'accepted_product_quote',
+        outputCount: contract.outputCount,
+        outputLabel: contract.outputLabel,
+        quoteId: 'quote-explicit-confirmed',
+        quoteRevision: contract.quoteRevision,
+      },
+    ]);
+    assert.deepEqual(validated, [
+      {
+        quoteId: 'quote-explicit-confirmed',
+        quoteRevision: contract.quoteRevision,
+        taskId: work.id,
+        workspaceId: owner.workspaceId,
+      },
+    ]);
+  });
+
+  it('rejects a Product quote whose server-accepted amount or output facts do not match the contract', async () => {
+    const executor = new RecordedCreationExecutor();
+    const billingLifecycle: BillingLifecyclePort = {
+      assertAcceptedQuote(input) {
+        return {
+          ...acceptedProductQuote({
+            quoteId: input.quoteId,
+            taskId: input.taskId,
+          }),
+          confirmedAmount: contract.estimatedAmount + 1,
+          outputCount: 1,
+          outputLabel: '1 条内容候选',
+        };
+      },
+      beforeSubmit() {},
+      dispatchAttempt() {},
+      settleTask() {},
+    };
+    const { service } = setup(
+      executor,
+      undefined,
+      undefined,
+      undefined,
+      billingLifecycle,
+    );
+    const work = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      intent: '拒绝被篡改的已确认报价',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'mismatched-confirmed-quote',
+      sourceReferences: [],
+    });
+
+    await assert.rejects(
+      service.submitCreativeWork(
+        owner,
+        work.id,
+        contract,
+        'mismatched-confirmed-quote-submit',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'quote-mismatched-confirmed',
+      ),
+      /accepted Product quote no longer matches/i,
+    );
+    assert.deepEqual(executor.inspectionAuthorities, []);
+  });
+
+  it('binds a paid reroll to a fresh quote and its new Job billing task', async () => {
+    const reservations: Array<{
+      quoteId: string | undefined;
+      taskId: string;
+    }> = [];
+    const billingLifecycle: BillingLifecyclePort = {
+      assertAcceptedQuote(input) {
+        return acceptedProductQuote({
+          quoteId: input.quoteId,
+          taskId: input.taskId,
+        });
+      },
+      beforeSubmit(input) {
+        reservations.push({ quoteId: input.quoteId, taskId: input.taskId });
+      },
+      dispatchAttempt() {},
+      settleTask() {},
+    };
+    const { service } = setup(
+      new RecordedCreationExecutor(),
+      undefined,
+      undefined,
+      undefined,
+      billingLifecycle,
+    );
+    const work = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      intent: '为门店写三条内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'session-paid-reroll-billing',
+      sourceReferences: [],
+    });
+    const original = await service.submitCreativeWork(
+      owner,
+      work.id,
+      contract,
+      'paid-reroll-original',
+    );
+    const rerolled = await service.rerollCreativeJob(
+      owner,
+      original.job.id,
+      'paid-reroll-new-job',
+      'fresh-paid-reroll-quote',
+    );
+
+    assert.deepEqual(reservations, [
+      { quoteId: undefined, taskId: work.id },
+      {
+        quoteId: 'fresh-paid-reroll-quote',
+        taskId: rerolled.job.id,
+      },
+    ]);
+    assert.equal(rerolled.job.billingTaskId, rerolled.job.id);
+    assert.equal(rerolled.job.billingQuoteId, 'fresh-paid-reroll-quote');
+  });
+
   it('persists the chosen operation before a creative work is executed', async () => {
     const { service } = setup();
     const work = await service.createCreativeWork(owner, {
@@ -989,7 +1382,8 @@ describe('creative work lifecycle', () => {
     const rerolled = await service.rerollCreativeJob(
       owner,
       original.job.id,
-      'reroll-original-template-snapshot'
+      'reroll-original-template-snapshot',
+      'reroll-template-quote'
     );
     assert.deepEqual(
       rerolled.job.inheritanceContext,
@@ -1081,7 +1475,7 @@ describe('creative work lifecycle', () => {
     });
   });
 
-  it('rejects non-live models before Job creation and persists Work to Job to Assets to accepted Content', async () => {
+  it('rejects non-live models before Job creation and persists Work to Job to Assets', async () => {
     const { executor, service } = setup();
     const work = await service.createCreativeWork(owner, {
       intent: '写一条真实的门店项目介绍',
@@ -1122,110 +1516,6 @@ describe('creative work lifecycle', () => {
       ['first_work_created', 'first_job_submitted', 'first_assets_visible']
     );
 
-    const accepted = await service.acceptCreativeAsset(
-      owner,
-      result.assets[0]!.id
-    );
-    assert.equal(accepted.status, 'accepted');
-    assert.deepEqual(accepted.assetIds, [result.assets[0]!.id]);
-    assert.equal(
-      (await service.getCreativeWorkbench(owner)).works[0]?.status,
-      'accepted'
-    );
-    assert.equal(
-      (await service.acceptCreativeAsset(owner, result.assets[0]!.id)).id,
-      accepted.id
-    );
-    await assert.rejects(
-      service.acceptCreativeAsset(owner, result.assets[1]!.id),
-      (error: unknown) =>
-        error instanceof OperationsError &&
-        error.code === 'COPY_CANDIDATE_ALREADY_ACCEPTED' &&
-        error.status === 409
-    );
-    assert.equal(
-      (await service.getCreativeWorkbench(owner)).contents.length,
-      1
-    );
-    const events = (await service.getCreativeWorkbench(owner)).events;
-    assert.deepEqual(
-      events.map((event) => event.type),
-      [
-        'first_work_created',
-        'first_job_submitted',
-        'first_assets_visible',
-        'first_content_accepted',
-      ]
-    );
-    assert.ok(
-      events.every(
-        (event) =>
-          event.correlationId === owner.correlationId &&
-          event.schemaVersion === 'uiux-activation-v1'
-      )
-    );
-  });
-
-  it('rechecks ContentPackage ownership inside the lock before accepting legacy content', async () => {
-    let contentOwner: 'legacy' | 'frozen' | 'contentpackage' = 'legacy';
-    let markInitialOwnerRead = () => {};
-    const initialOwnerRead = new Promise<void>((resolve) => {
-      markInitialOwnerRead = resolve;
-    });
-    let ownerReads = 0;
-    const { repository, service } = setup(
-      new RecordedCreationExecutor(),
-      undefined,
-      undefined,
-      {
-        async get() {
-          ownerReads += 1;
-          if (ownerReads === 1) markInitialOwnerRead();
-          return contentOwner;
-        },
-      }
-    );
-    const work = await service.createCreativeWork(owner, {
-      intent: '验证迁移切换窗口',
-      mode: 'agent',
-      sessionId: 'session-content-owner-race',
-      sourceReferences: [],
-    });
-    const result = await service.submitCreativeWork(
-      owner,
-      work.id,
-      contract,
-      'submit-content-owner-race'
-    );
-    let releaseLock = () => {};
-    let markLockAcquired = () => {};
-    const lockAcquired = new Promise<void>((resolve) => {
-      markLockAcquired = resolve;
-    });
-    const lockGate = new Promise<void>((resolve) => {
-      releaseLock = resolve;
-    });
-    const holding = repository.withWorkspaceLock(
-      owner.workspaceId,
-      async () => {
-        markLockAcquired();
-        await lockGate;
-      }
-    );
-    await lockAcquired;
-
-    const accepting = service.acceptCreativeAsset(owner, result.assets[0]!.id);
-    await initialOwnerRead;
-    contentOwner = 'frozen';
-    releaseLock();
-    await holding;
-
-    await assert.rejects(
-      accepting,
-      (error) =>
-        error instanceof OperationsError &&
-        error.code === 'CONTENT_COMMANDS_FROZEN'
-    );
     assert.equal((await service.getCreativeWorkbench(owner)).contents.length, 0);
   });
 
@@ -1358,7 +1648,8 @@ describe('creative work lifecycle', () => {
     const paid = await service.rerollCreativeJob(
       owner,
       root.job.id,
-      'copy-paid-reroll'
+      'copy-paid-reroll',
+      'copy-paid-reroll-quote'
     );
     assert.equal(paid.job.rerollOf, root.job.id);
     assert.equal(paid.job.rerollKind, 'paid');
@@ -1374,7 +1665,8 @@ describe('creative work lifecycle', () => {
     const replayedPaid = await service.rerollCreativeJob(
       owner,
       root.job.id,
-      'copy-paid-reroll'
+      'copy-paid-reroll',
+      'copy-paid-reroll-quote'
     );
     assert.equal(replayedPaid.job.id, paid.job.id);
     assert.equal(executor.calls.length, 2);
@@ -1419,78 +1711,6 @@ describe('creative work lifecycle', () => {
         error.status === 409
     );
     assert.equal(executor.calls.length, 4);
-  });
-
-  it('accepts only one copy candidate across a quality-retry batch family', async () => {
-    const { service } = setup();
-    const work = await service.createCreativeWork(owner, {
-      intent: '生成可选优的门店文案',
-      mode: 'agent',
-      sessionId: 'session-copy-quality-family',
-      sourceReferences: [],
-    });
-    const root = await service.submitCreativeWork(
-      owner,
-      work.id,
-      contract,
-      'quality-family-root'
-    );
-    const paid = await service.rerollCreativeJob(
-      owner,
-      root.job.id,
-      'quality-family-paid'
-    );
-    const quality = await service.qualityRetryCreativeJob(
-      owner,
-      paid.job.id,
-      'quality-family-retry'
-    );
-    await service.acceptCreativeAsset(owner, paid.assets[0]!.id);
-
-    await assert.rejects(
-      service.acceptCreativeAsset(owner, quality.assets[0]!.id),
-      (error: unknown) =>
-        error instanceof OperationsError &&
-        error.code === 'COPY_CANDIDATE_ALREADY_ACCEPTED' &&
-        error.status === 409
-    );
-  });
-
-  it('accepts only one copy candidate across paid reroll batches in one Work', async () => {
-    const { service } = setup();
-    const work = await service.createCreativeWork(owner, {
-      intent: '生成可选优的门店文案',
-      mode: 'agent',
-      sessionId: 'session-copy-paid-batches',
-      sourceReferences: [],
-    });
-    const root = await service.submitCreativeWork(
-      owner,
-      work.id,
-      contract,
-      'paid-batches-root'
-    );
-    const paid = await service.rerollCreativeJob(
-      owner,
-      root.job.id,
-      'paid-batches-reroll'
-    );
-    const accepted = await service.acceptCreativeAsset(
-      owner,
-      root.assets[0]!.id
-    );
-    assert.equal(
-      (await service.acceptCreativeAsset(owner, root.assets[0]!.id)).id,
-      accepted.id
-    );
-
-    await assert.rejects(
-      service.acceptCreativeAsset(owner, paid.assets[0]!.id),
-      (error: unknown) =>
-        error instanceof OperationsError &&
-        error.code === 'COPY_CANDIDATE_ALREADY_ACCEPTED' &&
-        error.status === 409
-    );
   });
 
   it('rejects a submission key replayed for a different creative action', async () => {

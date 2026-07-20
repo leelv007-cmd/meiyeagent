@@ -65,16 +65,36 @@ export async function consumeWorkspaceProvisioning(
   dependencies: {
     outbox: WorkspaceProvisioningOutboxPort;
     provisioner: CoreWorkspaceProvisioner;
+    processingPoll?: { attempts: number; intervalMs: number };
   }
 ) {
-  const claim = await dependencies.outbox.claim(input);
-  if (!claim) {
+  const processingPoll = dependencies.processingPoll ?? {
+    attempts: 100,
+    intervalMs: 100,
+  };
+  let claim: WorkspaceProvisioningRecord | null = null;
+  for (let attempt = 0; attempt < processingPoll.attempts; attempt += 1) {
+    claim = await dependencies.outbox.claim(input);
+    if (claim) break;
     const current = await dependencies.outbox.get(
       input.workspaceId,
       input.ownerUserId
     );
     // A genuinely legacy database may have no outbox row. Never synthesize a
     // pending gift here because it could replace an existing paid plan.
+    if (!current) return null;
+    if (current.status === 'completed') return current;
+    if (attempt + 1 < processingPoll.attempts) {
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, processingPoll.intervalMs)
+      );
+    }
+  }
+  if (!claim) {
+    const current = await dependencies.outbox.get(
+      input.workspaceId,
+      input.ownerUserId
+    );
     if (!current) return null;
     if (current.status !== 'completed') {
       throw new Error('Verified workspace provisioning is still processing.');

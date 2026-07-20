@@ -17,6 +17,7 @@ export type AdjustPromptProps = {
   onSubmit?: (instruction: string) => void;
   /** Optional scope chips (image: 调整这张 / 调整整组). */
   scopeActions?: { id: string; label: string }[];
+  selectedScopeId?: string;
   onScopeAction?: (id: string) => void;
 };
 
@@ -42,6 +43,9 @@ export function AdjustPrompt(props: AdjustPromptProps) {
               size="sm"
               variant="outline"
               data-testid={`result-adjust-scope-${action.id}`}
+              data-active={
+                props.selectedScopeId === action.id ? 'true' : 'false'
+              }
               onClick={() => props.onScopeAction?.(action.id)}
             >
               {action.label}

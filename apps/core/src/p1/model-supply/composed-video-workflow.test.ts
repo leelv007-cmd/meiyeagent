@@ -2418,6 +2418,35 @@ describe('durable composed-video application seam', () => {
     })) as { workflow: { id: string }; job: { kind: string } };
     assert.equal(latest.workflow.id, 'foundation-video');
     assert.equal(latest.job.kind, COMPOSED_VIDEO_JOB_KIND);
+    const publicLatest = (await module.query({
+      context,
+      input: {
+        action: 'video_workflow_public_latest',
+        payload: { workId: 'creative-work-video-a' },
+      },
+    })) as {
+      workflowId: string;
+      workId?: string;
+      confirmed: boolean;
+      shots: Array<{ shotId: string }>;
+    };
+    assert.equal(publicLatest.workflowId, 'foundation-video');
+    assert.equal(publicLatest.workId, 'creative-work-video-a');
+    assert.equal(publicLatest.confirmed, true);
+    assert.deepEqual(publicLatest.shots.map(({ shotId }) => shotId), ['shot-a']);
+    assert.equal('job' in publicLatest, false);
+    assert.equal('attempts' in publicLatest, false);
+    assert.equal('routeSnapshot' in publicLatest, false);
+    assert.equal(
+      await module.query({
+        context,
+        input: {
+          action: 'video_workflow_public_latest',
+          payload: { workId: 'creative-work-video-b' },
+        },
+      }),
+      null,
+    );
     assert.equal(
       await module.query({
         context,
@@ -2632,5 +2661,158 @@ describe('durable composed-video application seam', () => {
     assert.equal(selected.job.jobId, confirmed.job.jobId);
     assert.equal((await setupResult.worker.handle(envelope)).status, 'completed');
     assert.equal(setupResult.executions(), 2);
+  });
+
+  it('edits a completed workflow through the public Foundation command with OCC and sanitized response', async () => {
+    const setupResult = setup();
+    const module = new ModelSupplyFoundationModule(
+      new ModelSupplyControlPlaneService({
+        application: setupResult.models,
+        repository: new MemoryModelSupplyControlPlaneRepository(),
+      }),
+      { composedVideo: setupResult.application },
+    );
+    const context = {
+      workspaceId: 'workspace-a',
+      userId: 'owner-a',
+      correlationId: 'corr-public-video-edit',
+    };
+    await module.execute({
+      context,
+      idempotencyKey: 'create-public-edit-video',
+      input: {
+        action: 'video_workflow_create_draft',
+        payload: {
+          workId: 'work-public-edit-video',
+          workflowId: 'public-edit-video',
+          storyboardRevision: 'story-public-edit-v1',
+          catalogModelId: 'seedance-2',
+          executionContract: frozenVideoContract(),
+          shots: [
+            {
+              id: 'opening',
+              prompt: '门店开场',
+              candidatesPerShot: 1,
+              durationSeconds: 15,
+              height: 1280,
+              width: 720,
+            },
+          ],
+        },
+      },
+    });
+    const confirmed = (await module.execute({
+      context,
+      idempotencyKey: 'confirm-public-edit-video',
+      input: {
+        action: 'video_workflow_confirm',
+        payload: { workflowId: 'public-edit-video' },
+      },
+    })) as { job: { jobId: string } };
+    const envelope = makeDurableJobEnvelope(
+      {
+        jobId: confirmed.job.jobId,
+        workspaceId: context.workspaceId,
+        kind: COMPOSED_VIDEO_JOB_KIND,
+        payload: { workflowId: 'public-edit-video' },
+      },
+      new Date('2026-07-20T00:00:00.000Z'),
+    );
+    assert.equal((await setupResult.worker.handle(envelope)).status, 'completed');
+    const before = (await module.query({
+      context,
+      input: {
+        action: 'video_workflow_public_latest',
+        payload: { workId: 'work-public-edit-video' },
+      },
+    })) as { revision: number };
+
+    const edited = (await module.execute({
+      context,
+      idempotencyKey: 'edit-public-video-subtitle',
+      input: {
+        action: 'video_workflow_edit',
+        payload: {
+          workflowId: 'public-edit-video',
+          expectedRevision: before.revision,
+          edit: { kind: 'set_subtitle', text: '今天也要好好爱自己' },
+        },
+      },
+    })) as {
+      revision: number;
+      subtitleText: string;
+      workflowId: string;
+    };
+    assert.equal(edited.workflowId, 'public-edit-video');
+    assert.equal(edited.revision, before.revision + 1);
+    assert.equal(edited.subtitleText, '今天也要好好爱自己');
+    assert.doesNotMatch(
+      JSON.stringify(edited),
+      /provider|credential|routeSnapshot|clipAssets|composedAsset/i,
+    );
+
+    const selected = (await module.execute({
+      context,
+      idempotencyKey: 'edit-public-video-selection',
+      input: {
+        action: 'video_workflow_edit',
+        payload: {
+          workflowId: 'public-edit-video',
+          expectedRevision: edited.revision,
+          edit: {
+            kind: 'select_candidate',
+            shotId: 'opening',
+            candidateIndex: 0,
+          },
+        },
+      },
+    })) as { revision: number };
+    const internal = (await module.query({
+      context,
+      input: {
+        action: 'video_workflow',
+        payload: { workflowId: 'public-edit-video' },
+      },
+    })) as { workflow: DurableVideoWorkflow };
+    assert.equal(selected.revision, edited.revision + 1);
+    assert.equal(
+      internal.workflow.shots[0]?.selectionAudit?.selectedBy,
+      context.userId,
+    );
+    assert.equal(
+      internal.workflow.shots[0]?.selectionAudit?.correlationId,
+      context.correlationId,
+    );
+
+    await assert.rejects(
+      module.execute({
+        context,
+        idempotencyKey: 'edit-public-video-stale',
+        input: {
+          action: 'video_workflow_edit',
+          payload: {
+            workflowId: 'public-edit-video',
+            expectedRevision: before.revision,
+            edit: { kind: 'set_subtitle', text: '过期写入' },
+          },
+        },
+      }),
+      /revision is stale/,
+    );
+    await assert.rejects(
+      module.execute({
+        context: { ...context, workspaceId: 'workspace-b' },
+        idempotencyKey: 'edit-public-video-cross-workspace',
+        input: {
+          action: 'video_workflow_edit',
+          payload: {
+            workflowId: 'public-edit-video',
+            expectedRevision: selected.revision,
+            edit: { kind: 'set_subtitle', text: '跨工作区' },
+          },
+        },
+      }),
+      /Unknown workflow|another workspace/,
+    );
   });
 });

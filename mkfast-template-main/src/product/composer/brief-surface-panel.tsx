@@ -19,7 +19,6 @@ export type BriefSurfaceProps = {
   view: BriefSurfaceView;
   onConfirm: () => void;
   onCancel: () => void;
-  onAcceptVideoConfirm?: (accepted: boolean) => void;
   disabled?: boolean;
   className?: string;
 };
@@ -28,7 +27,6 @@ export function BriefSurface({
   view,
   onConfirm,
   onCancel,
-  onAcceptVideoConfirm,
   disabled = false,
   className,
 }: BriefSurfaceProps) {
@@ -163,18 +161,9 @@ export function BriefSurface({
               成片时长上限 {view.videoConfirm.quotedSeconds} 秒（按生成成片秒数计费）
             </p>
           ) : null}
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input
-              type="checkbox"
-              data-testid="composer-brief-video-confirm-checkbox"
-              checked={view.videoConfirmAccepted}
-              disabled={disabled}
-              onChange={(event) =>
-                onAcceptVideoConfirm?.(event.target.checked)
-              }
-            />
-            我已确认视频生成费用与时长
-          </label>
+          <p className="text-sm text-foreground">
+            点击“{view.confirmLabel}”即确认本次视频生成费用与时长。
+          </p>
         </div>
       ) : null}
 

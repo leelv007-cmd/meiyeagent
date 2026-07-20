@@ -23,6 +23,7 @@ import {
 import {
   isResultTargetMissing,
   resolveResultTargetClient,
+  type ClientResolverWorkRecord,
 } from './result-target-wiring';
 import { navigateAfterSubmitSuccess } from './result-center-navigation';
 
@@ -150,7 +151,7 @@ test('drift three-way: restore / compare / discard', () => {
 // ---------------------------------------------------------------------------
 
 test('invalid workId resolves not_found and shell stays error (no latest)', () => {
-  const works = [
+  const works: ClientResolverWorkRecord[] = [
     {
       workId: 'work-latest',
       workspaceId: 'ws-1',
@@ -183,7 +184,7 @@ test('invalid workId resolves not_found and shell stays error (no latest)', () =
 });
 
 test('lineage mismatch is recoverable and does not fall back', () => {
-  const works = [
+  const works: ClientResolverWorkRecord[] = [
     {
       workId: 'work-a',
       workspaceId: 'ws-1',

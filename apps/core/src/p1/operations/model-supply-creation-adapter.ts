@@ -3,12 +3,14 @@ import type { P1Context } from '../foundation/domain.js';
 import type { ModelSupplyControlPlaneService } from '../model-supply/foundation-module.js';
 import type {
   AiStreamingRunner,
+  DurableVideoWorkflow,
   DurableMediaGenerationJobView,
   ModelSupplyResult,
   ReferenceAssetResolverPort,
 } from '../model-supply/index.js';
 import { OperationsError } from './application-service.js';
 import type {
+  AcceptedProductQuoteInspectionAuthority,
   CreationExecutionResult,
   CreationExecutorPort,
   CreativeBrief,
@@ -17,6 +19,48 @@ import type {
   CreativeInheritanceContext,
   CreativeInheritanceFact,
 } from './types.js';
+
+interface ComposedVideoCreationPort {
+  createDraft(input: {
+    actorId: string;
+    aigcLabelEnabled?: boolean;
+    catalogModelId: string;
+    dataClass: CreativeExecutionContract['dataClass'];
+    deliveryMode: 'candidate_only';
+    executionContract: CreativeExecutionContract & {
+      aspectRatio: NonNullable<CreativeExecutionContract['aspectRatio']>;
+      durationSeconds: number;
+      operation: 'video.generate';
+    };
+    referenceAssetIds?: string[];
+    shots: Array<{
+      candidatesPerShot: number;
+      durationSeconds: number;
+      height: number;
+      id: string;
+      prompt: string;
+      width: number;
+    }>;
+    storyboardRevision: string;
+    workId: string;
+    billingTaskId?: string;
+    billingQuoteRevision?: string;
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<DurableVideoWorkflow>;
+  confirmAndSubmit(input: {
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<{ workflow: DurableVideoWorkflow }>;
+  query(input: {
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<{ workflow: DurableVideoWorkflow }>;
+  cancel?(input: {
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<{ workflow: DurableVideoWorkflow }>;
+}
 
 const CONTENT_MODULE_LABELS = {
   before_after: 'Before / After',
@@ -217,16 +261,91 @@ function structuredCreativeIntent(
     .join('\n\n');
 }
 
+const VIDEO_STORYBOARD_STAGES = [
+  ['aida-attention', '用真实场景的第一眼细节吸引注意'],
+  ['aida-interest', '展示服务过程和专业细节建立兴趣'],
+  ['aida-desire', '呈现真实效果和顾客可感知价值'],
+  ['aida-action', '以克制、清晰的到店或预约动作收束'],
+] as const;
+
+function videoFrameDimensions(
+  aspectRatio: NonNullable<CreativeExecutionContract['aspectRatio']>
+) {
+  switch (aspectRatio) {
+    case '1:1':
+      return { height: 720, width: 720 };
+    case '3:4':
+      return { height: 960, width: 720 };
+    case '9:16':
+      return { height: 1280, width: 720 };
+  }
+}
+
+function composedVideoDraft(input: {
+  contract: CreativeExecutionContract;
+  intent: string;
+  idempotencyKey: string;
+  workId: string;
+  workspaceId: string;
+}) {
+  const { contract } = input;
+  if (
+    contract.operation !== 'video.generate' ||
+    !contract.aspectRatio ||
+    !Number.isInteger(contract.durationSeconds) ||
+    (contract.durationSeconds ?? 0) < VIDEO_STORYBOARD_STAGES.length
+  ) {
+    throw new OperationsError(
+      'VIDEO_EXECUTION_CONTRACT_INVALID',
+      'Video generation requires a frozen aspect ratio and enough duration for the four-shot storyboard.',
+      409
+    );
+  }
+  const durationSeconds = contract.durationSeconds!;
+  const perShot = Math.floor(durationSeconds / VIDEO_STORYBOARD_STAGES.length);
+  const remainder = durationSeconds % VIDEO_STORYBOARD_STAGES.length;
+  const dimensions = videoFrameDimensions(contract.aspectRatio);
+  const shots = VIDEO_STORYBOARD_STAGES.map(([id, direction], index) => ({
+    candidatesPerShot: 2,
+    durationSeconds: perShot + (index < remainder ? 1 : 0),
+    ...dimensions,
+    id,
+    prompt: `${input.intent}\n\n${direction}。`,
+  }));
+  const storyboardRevision = `storyboard-${createHash('sha256')
+    .update(JSON.stringify(shots))
+    .digest('hex')
+    .slice(0, 24)}`;
+  const workflowId = `video-workflow-${createHash('sha256')
+    .update(
+      `${input.workspaceId}:${input.workId}:${input.idempotencyKey}:${storyboardRevision}`
+    )
+    .digest('hex')
+    .slice(0, 24)}`;
+  return {
+    executionContract: structuredClone(contract) as CreativeExecutionContract & {
+      aspectRatio: NonNullable<CreativeExecutionContract['aspectRatio']>;
+      durationSeconds: number;
+      operation: 'video.generate';
+    },
+    shots,
+    storyboardRevision,
+    workflowId,
+  };
+}
+
 export class ModelSupplyCreationExecutor implements CreationExecutorPort {
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
     private readonly streamingRunner?: AiStreamingRunner,
-    private readonly referenceAssets?: ReferenceAssetResolverPort
+    private readonly referenceAssets?: ReferenceAssetResolverPort,
+    private readonly composedVideo?: ComposedVideoCreationPort
   ) {}
 
   async inspect(
     workspaceId: string,
-    contract: CreativeExecutionContract
+    contract: CreativeExecutionContract,
+    authority?: AcceptedProductQuoteInspectionAuthority,
   ) {
     const catalog = await this.controlPlane.getCatalog(
       workspaceId,
@@ -255,6 +374,24 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
         'Only active and live-verified deployments can submit.',
         409
       );
+    }
+    if (authority) {
+      if (
+        authority.quoteRevision !== contract.quoteRevision ||
+        authority.catalogModelId !== contract.catalogModelId ||
+        authority.catalogModelRevision !== contract.catalogRevision ||
+        authority.confirmedAmount !== contract.estimatedAmount ||
+        authority.currency !== contract.currency ||
+        authority.outputCount !== contract.outputCount ||
+        authority.outputLabel !== contract.outputLabel
+      ) {
+        throw new OperationsError(
+          'CREATIVE_QUOTE_CHANGED',
+          'The accepted Product quote no longer matches the execution contract.',
+          409,
+        );
+      }
+      return;
     }
     const unitPrice = model.unitPrice;
     const outputCount = contract.operation.startsWith('copy.') ? 3 : 1;
@@ -353,9 +490,63 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
         );
       }
     }
+    if (input.contract.operation === 'video.generate') {
+      if (!this.composedVideo || !input.workId) {
+        throw new OperationsError(
+          'COMPOSED_VIDEO_UNAVAILABLE',
+          'The canonical composed-video workflow is not configured.',
+          503
+        );
+      }
+      const intent = structuredCreativeIntent(
+        input.intent,
+        input.contract,
+        input.inheritanceContext,
+        input.briefSnapshot,
+        input.groundingSnapshot
+      );
+      const draft = composedVideoDraft({
+        contract: input.contract,
+        idempotencyKey: input.idempotencyKey,
+        intent,
+        workId: input.workId,
+        workspaceId: input.context.workspaceId,
+      });
+      await this.composedVideo.createDraft({
+        actorId: input.context.userId,
+        aigcLabelEnabled: input.contract.aigcLabelEnabled,
+        catalogModelId: input.contract.catalogModelId,
+        dataClass: input.contract.dataClass,
+        deliveryMode: 'candidate_only',
+        executionContract: draft.executionContract,
+        ...(referenceAssetIds.length ? { referenceAssetIds } : {}),
+        shots: draft.shots,
+        storyboardRevision: draft.storyboardRevision,
+        workId: input.workId,
+        ...(input.billingTaskId && input.billingQuoteRevision
+          ? {
+              billingTaskId: input.billingTaskId,
+              billingQuoteRevision: input.billingQuoteRevision,
+            }
+          : {}),
+        workflowId: draft.workflowId,
+        workspaceId: input.context.workspaceId,
+      });
+      const submitted = await this.composedVideo.confirmAndSubmit({
+        workflowId: draft.workflowId,
+        workspaceId: input.context.workspaceId,
+      });
+      return this.composedVideoResult(submitted.workflow);
+    }
     const result = await this.controlPlane.submitGeneration(
       context,
       {
+        ...(input.billingTaskId && input.billingQuoteRevision
+          ? {
+              billingQuoteRevision: input.billingQuoteRevision,
+              billingTaskId: input.billingTaskId,
+            }
+          : {}),
         dataClass: input.contract.dataClass,
         input: {
           ...dimensions,
@@ -423,6 +614,12 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
     const started = await this.controlPlane.startCopyStream(
       context,
       {
+        ...(input.billingTaskId && input.billingQuoteRevision
+          ? {
+              billingQuoteRevision: input.billingQuoteRevision,
+              billingTaskId: input.billingTaskId,
+            }
+          : {}),
         dataClass: input.contract.dataClass,
         input: {
           ...(input.groundingSnapshot?.assets.length
@@ -462,6 +659,24 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
   }
 
   async verify(input: Parameters<CreationExecutorPort['verify']>[0]) {
+    if (
+      input.contract.operation === 'video.generate' &&
+      input.providerJobId.startsWith('video-workflow-')
+    ) {
+      const composedVideo = this.composedVideo;
+      if (!composedVideo) {
+        throw new OperationsError(
+          'COMPOSED_VIDEO_UNAVAILABLE',
+          'The canonical composed-video workflow is not configured.',
+          503
+        );
+      }
+      const current = await composedVideo.query({
+        workflowId: input.providerJobId,
+        workspaceId: input.context.workspaceId,
+      });
+      return this.composedVideoResult(current.workflow);
+    }
     const job = await this.controlPlane.getJob(
       input.context.workspaceId,
       input.providerJobId
@@ -470,6 +685,100 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
       'result' in job ? job.result : job,
       'result' in job ? job.status : undefined
     );
+  }
+
+  async cancel(input: Parameters<NonNullable<CreationExecutorPort['cancel']>>[0]) {
+    if (
+      input.contract.operation === 'video.generate' &&
+      input.providerJobId.startsWith('video-workflow-')
+    ) {
+      const composedVideo = this.composedVideo;
+      if (!composedVideo?.cancel) {
+        throw new OperationsError(
+          'COMPOSED_VIDEO_UNAVAILABLE',
+          'The canonical composed-video workflow is not configured.',
+          503,
+        );
+      }
+      const cancelled = await composedVideo.cancel({
+        workflowId: input.providerJobId,
+        workspaceId: input.context.workspaceId,
+      });
+      return this.composedVideoResult(cancelled.workflow);
+    }
+    const cancelled = await this.controlPlane.cancelGeneration(
+      {
+        actor: input.context.actor,
+        correlationId: input.context.correlationId,
+        userId: input.context.userId,
+        workspaceId: input.context.workspaceId,
+      },
+      input.providerJobId,
+    );
+    return this.executionResult(cancelled.result, cancelled.status);
+  }
+
+  private composedVideoResult(
+    workflow: DurableVideoWorkflow
+  ): CreationExecutionResult {
+    if (!workflow.routeSnapshot) {
+      throw new Error(
+        `Confirmed video workflow ${workflow.id} is missing its RouteSnapshot.`
+      );
+    }
+    const snapshot = workflow.routeSnapshot;
+    const selectedCandidate = snapshot.allowedCandidates?.find(
+      (candidate) => candidate.catalogModelId === snapshot.actualCatalogModelId
+    );
+    const failed =
+      workflow.status === 'failed' || workflow.status === 'cancelled';
+    const completed = workflow.status === 'completed';
+    return {
+      ...(completed && workflow.composedAsset
+        ? {
+            asset: {
+              contentType: 'video/mp4' as const,
+              id: workflow.composedAsset.id,
+              objectKey: workflow.composedAsset.objectKey,
+              sha256: workflow.composedAsset.sha256,
+              ...(typeof workflow.composedAsset.sizeBytes === 'number'
+                ? { sizeBytes: workflow.composedAsset.sizeBytes }
+                : {}),
+            },
+          }
+        : {}),
+      ...(failed
+        ? {
+            failureCode:
+              workflow.failureCode ??
+              (workflow.status === 'cancelled'
+                ? 'PROVIDER_CANCELLED'
+                : 'VIDEO_WORKFLOW_FAILED'),
+          }
+        : {}),
+      executionProvenance: {
+        actualCatalogModelId: snapshot.actualCatalogModelId,
+        ...(selectedCandidate?.activationStatus
+          ? { activationStatus: selectedCandidate.activationStatus }
+          : {}),
+        ...(snapshot.apiCounterparty
+          ? { apiCounterparty: snapshot.apiCounterparty }
+          : {}),
+        ...(selectedCandidate?.modelDisplayName
+          ? { modelDisplayName: selectedCandidate.modelDisplayName }
+          : {}),
+        ...(snapshot.providerModel ?? selectedCandidate?.providerModel
+          ? {
+              providerModel:
+                snapshot.providerModel ?? selectedCandidate?.providerModel!,
+            }
+          : {}),
+      },
+      providerJobId: workflow.id,
+      retryable: false,
+      routeSnapshotId: snapshot.id,
+      status: completed ? 'completed' : failed ? 'failed' : 'running',
+    };
   }
 
   async recordReroll(

@@ -7,6 +7,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react';
 
 import { AdjustPrompt } from './adjust-prompt';
 import {
@@ -22,16 +23,49 @@ export type CopyImageTextWorksurfaceProps = {
   facts: CopyImageTextWorksurfaceFacts;
   onFieldChange?: (
     field: 'title' | 'body' | 'conversionHook',
-    value: string,
+    value: string
   ) => void;
   onSelectionRewrite?: (action: SelectionRewriteAction) => void;
   onCarrierChange?: (carrier: CopyPreviewCarrier) => void;
   onAdjust?: (instruction: string) => void;
-  onAdopt?: () => void;
+  onAdopt?: () => void | Promise<void>;
+  onHandEdit?: (changes: {
+    body: string;
+    conversionHook: string;
+    title: string;
+  }) => void | Promise<void>;
 };
 
 export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
-  const view = projectCopyImageTextWorksurface(props.facts);
+  const [selectedCarrier, setSelectedCarrier] = useState<CopyPreviewCarrier>(
+    props.facts.selectedCarrier ?? 'xiaohongshu'
+  );
+  const view = projectCopyImageTextWorksurface({
+    ...props.facts,
+    selectedCarrier,
+  });
+  const [draft, setDraft] = useState(() => ({
+    body: view.document.body,
+    conversionHook: view.document.conversionHook,
+    title: view.document.title,
+  }));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setDraft({
+      body: view.document.body,
+      conversionHook: view.document.conversionHook,
+      title: view.document.title,
+    });
+  }, [
+    props.facts.baseRevisionId,
+    view.document.body,
+    view.document.conversionHook,
+    view.document.title,
+  ]);
+  const dirty =
+    draft.body !== view.document.body ||
+    draft.conversionHook !== view.document.conversionHook ||
+    draft.title !== view.document.title;
 
   return (
     <div
@@ -39,17 +73,24 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       data-testid="copy-image-text-worksurface"
       data-lifecycle={props.facts.lifecycle}
     >
-      <section className="space-y-3 rounded-lg border p-4" data-testid="copy-edit-panel">
+      <section
+        className="space-y-3 rounded-lg border p-4"
+        data-testid="copy-edit-panel"
+      >
         <h3 className="text-sm font-medium">编辑</h3>
         <label className="block space-y-1 text-sm">
           <span className="text-muted-foreground">标题</span>
           <input
             className="w-full rounded-md border bg-background px-3 py-2"
             data-testid="copy-field-title"
-            value={view.document.title}
-            onChange={(event) =>
-              props.onFieldChange?.('title', event.target.value)
-            }
+            value={draft.title}
+            onChange={(event) => {
+              setDraft((current) => ({
+                ...current,
+                title: event.target.value,
+              }));
+              props.onFieldChange?.('title', event.target.value);
+            }}
           />
         </label>
         <label className="block space-y-1 text-sm">
@@ -57,10 +98,14 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           <textarea
             className="min-h-28 w-full rounded-md border bg-background px-3 py-2"
             data-testid="copy-field-body"
-            value={view.document.body}
-            onChange={(event) =>
-              props.onFieldChange?.('body', event.target.value)
-            }
+            value={draft.body}
+            onChange={(event) => {
+              setDraft((current) => ({
+                ...current,
+                body: event.target.value,
+              }));
+              props.onFieldChange?.('body', event.target.value);
+            }}
           />
         </label>
         <label className="block space-y-1 text-sm">
@@ -68,10 +113,14 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           <input
             className="w-full rounded-md border bg-background px-3 py-2"
             data-testid="copy-field-hook"
-            value={view.document.conversionHook}
-            onChange={(event) =>
-              props.onFieldChange?.('conversionHook', event.target.value)
-            }
+            value={draft.conversionHook}
+            onChange={(event) => {
+              setDraft((current) => ({
+                ...current,
+                conversionHook: event.target.value,
+              }));
+              props.onFieldChange?.('conversionHook', event.target.value);
+            }}
           />
         </label>
         {view.document.topics.length > 0 ? (
@@ -83,6 +132,23 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
             ))}
           </div>
         ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          data-testid="copy-save-hand-edit"
+          disabled={!dirty || saving || !props.onHandEdit}
+          onClick={async () => {
+            if (!props.onHandEdit) return;
+            setSaving(true);
+            try {
+              await props.onHandEdit(draft);
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          {saving ? '保存中…' : '保存修改'}
+        </Button>
       </section>
 
       <section
@@ -98,6 +164,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
               size="sm"
               variant="outline"
               data-testid={`copy-rewrite-${item.action}`}
+              disabled={!props.onSelectionRewrite}
               onClick={() => props.onSelectionRewrite?.(item.action)}
             >
               {item.label}
@@ -149,13 +216,13 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
               key={carrier}
               type="button"
               size="sm"
-              variant={
-                (props.facts.selectedCarrier ?? 'xiaohongshu') === carrier
-                  ? 'default'
-                  : 'outline'
-              }
+              variant={selectedCarrier === carrier ? 'default' : 'outline'}
               data-testid={`copy-carrier-${carrier}`}
-              onClick={() => props.onCarrierChange?.(carrier)}
+              data-active={selectedCarrier === carrier ? 'true' : 'false'}
+              onClick={() => {
+                setSelectedCarrier(carrier);
+                props.onCarrierChange?.(carrier);
+              }}
             >
               {COPY_PREVIEW_CARRIER_LABELS[carrier]}
             </Button>
@@ -198,7 +265,8 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         <Button
           type="button"
           data-testid="copy-adopt-action"
-          onClick={() => props.onAdopt?.()}
+          disabled={!props.onAdopt}
+          onClick={() => void props.onAdopt?.()}
         >
           采用此版本
         </Button>

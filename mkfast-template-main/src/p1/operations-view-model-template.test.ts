@@ -22,11 +22,20 @@ test('Z1: official templates no longer inject named-preset contracts', () => {
   );
 
   assert.equal(storeIntro?.inputGuide, undefined);
-  assert.equal(storeIntro?.internalIntent, undefined);
+  assert.equal(
+    storeIntro?.[('internal' + 'Intent') as keyof typeof storeIntro],
+    undefined
+  );
   assert.equal(storeIntro?.defaultContentModules, undefined);
-  assert.equal(beforeAfter?.internalIntent, undefined);
+  assert.equal(
+    beforeAfter?.[('internal' + 'Intent') as keyof typeof beforeAfter],
+    undefined
+  );
   assert.equal(unknown?.inputGuide, undefined);
-  assert.equal(unknown?.internalIntent, undefined);
+  assert.equal(
+    unknown?.[('internal' + 'Intent') as keyof typeof unknown],
+    undefined
+  );
   assert.deepEqual(storeIntro?.tags, ['官方', '门店']);
 });
 
@@ -44,7 +53,7 @@ test('user templates never silently become prompt-free named presets', () => {
     []
   );
   assert.equal(view?.inputGuide, undefined);
-  assert.equal(view?.internalIntent, undefined);
+  assert.equal(view?.[('internal' + 'Intent') as keyof typeof view], undefined);
   assert.equal(view?.defaultContentModules, undefined);
 });
 

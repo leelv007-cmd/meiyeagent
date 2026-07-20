@@ -5,12 +5,12 @@
  * Uses in-memory domain services + recorded/fake ports only.
  * Live provider matrix is env-gated and tracked in the gap file.
  */
-import { createCredentialAccount } from '../supply-registry/credential-account.js';
 import {
-  transitionCredentialLifecycle,
+  assertNoSecretEcho,
+  createCredentialAccount,
   type CredentialTestEvidence,
-} from '../supply-registry/credential-lifecycle.js';
-import { assertNoSecretEcho } from '../supply-registry/credential-account.js';
+} from '../supply-registry/credential-account.js';
+import { transitionCredentialLifecycle } from '../supply-registry/credential-lifecycle.js';
 import { RoutePolicyRegistry } from '../supply-registry/route-policy.js';
 import { AccountAllocationStore } from '../entitlement-pools/account-allocation.js';
 import { SupplyPoolRegistry } from '../entitlement-pools/supply-pool.js';

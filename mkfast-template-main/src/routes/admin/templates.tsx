@@ -1,6 +1,7 @@
 import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { AdminTemplateControl } from '@/p1/admin-template-control';
+import { AdminCreationExperienceControl } from '@/p1/admin-creation-experience-control';
 import { createFileRoute } from '@tanstack/react-router';
 import {
   admin_templates_description,
@@ -19,6 +20,7 @@ export function TemplatesPage() {
     >
       <div className="space-y-4">
         <CapabilityDrilldownBanner pageId="templates" />
+        <AdminCreationExperienceControl />
         <AdminTemplateControl />
       </div>
     </AdminRoutePage>

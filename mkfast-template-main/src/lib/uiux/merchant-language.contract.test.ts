@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const messagesDirectory = new URL(
@@ -58,23 +58,26 @@ test('Chinese admin copy uses merchant language for creation records', () => {
   }
 });
 
-test('workbench stacking and mobile title use one product-shell contract', () => {
-  const workbench = readFileSync(
-    new URL('../../product/unified-creation-workbench.tsx', import.meta.url),
-    'utf8'
+test('Z1 removes legacy entries and keeps Composer + Result Center contracts', () => {
+  const oldDesktop = new URL(
+    '../../product/unified-creation-workbench.tsx',
+    import.meta.url
   );
-  const mobile = readFileSync(
-    new URL('../../product/mobile-action-book.tsx', import.meta.url),
-    'utf8'
+  const oldMobile = new URL(
+    '../../product/mobile-action-book.tsx',
+    import.meta.url
   );
+  assert.equal(existsSync(oldDesktop), false);
+  assert.equal(existsSync(oldMobile), false);
 
-  assert.doesNotMatch(
-    workbench,
-    /heroVisible\s*\?\s*'relative z-10 max-w-3xl/u
+  const composer = readFileSync(
+    new URL('../../product/composer/composer-home.tsx', import.meta.url),
+    'utf8'
   );
-  assert.match(
-    workbench,
-    /data-layer=\{heroVisible \? 'sticky' : undefined\}/u
+  const resultCenter = readFileSync(
+    new URL('../../product/results/result-center-page.tsx', import.meta.url),
+    'utf8'
   );
-  assert.equal(mobile.match(/mobile_action_title\(\)/gu)?.length, 1);
+  assert.match(composer, /data-testid="composer-home"/u);
+  assert.match(resultCenter, /data-testid="result-center-shell"/u);
 });

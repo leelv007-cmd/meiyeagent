@@ -174,9 +174,21 @@ export interface CreativeWork {
   contentModules?: CreativeContentModuleId[];
   /** Missing only on historical rows and drafts not yet compiled by AI. */
   brief?: CreativeBrief;
+  /** Conditional Brief gate binding for server-side submit validation. */
+  briefContextId?: string;
+  briefConfirmationId?: string;
   status: 'draft' | 'running' | 'completed' | 'accepted' | 'failed';
   currentJobId?: string;
   derivedFrom?: string;
+  workingSelectionDraft?: {
+    baseRevisionId: string;
+    orderedAssetIds: string[];
+    coverAssetId: string | null;
+    surfaceVersion: string;
+    revision: number;
+    savedAt: string;
+    savedBy: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -248,6 +260,9 @@ export interface CreativeAssetProjection {
     | 'audio/ogg'
     | 'audio/mp4';
   sha256?: string;
+  savedToLibraryAt?: string;
+  savedToLibraryBy?: string;
+  libraryRevisionId?: string;
   createdAt: string;
 }
 
@@ -303,4 +318,3 @@ export {
   requiredP1Capability,
   requiredProductCommandCapability,
 } from './capability-permission.js';
-

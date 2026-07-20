@@ -6,9 +6,13 @@ import test from 'node:test';
 
 import {
   LEGACY_ARCHIVE_LABEL,
+  resultAdjustConfirmCommandSchema,
+  resultAdjustCommandSchema,
   resultActionIds,
+  resultAdoptCommandSchema,
   resultCenterPath,
   resultCenterSearchParams,
+  resultExportCommandSchema,
   resultPanels,
   resultRevisionDriftChoices,
   type ResultCenterNavigation,
@@ -50,6 +54,74 @@ test('resultCenterSearchParams only emits shareable keys', () => {
     },
   );
   assert.deepEqual(resultCenterSearchParams({}), {});
+});
+
+test('canonical result commands keep adoption OCC and adjustment contract server-owned', () => {
+  assert.deepEqual(
+    resultAdoptCommandSchema.parse({
+      expectedRevision: 3,
+      selection: {
+        kind: 'image_text',
+        copyAssetId: 'copy-1',
+        orderedAssetIds: ['image-2', 'image-1'],
+      },
+      workId: 'work-1',
+    }).selection,
+    {
+      kind: 'image_text',
+      copyAssetId: 'copy-1',
+      orderedAssetIds: ['image-2', 'image-1'],
+    },
+  );
+  assert.equal(
+    resultAdjustCommandSchema.safeParse({
+      baseJobId: 'job-1',
+      contract: { quoteRevision: 'client-controlled' },
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '更突出价值感',
+      workId: 'work-1',
+    }).success,
+    false,
+  );
+  assert.deepEqual(
+    resultAdjustCommandSchema.parse({
+      baseJobId: 'job-1',
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '换成夏日风格',
+      scope: { kind: 'set', assetIds: ['image-1', 'image-2'] },
+      workId: 'work-1',
+    }).scope,
+    { kind: 'set', assetIds: ['image-1', 'image-2'] },
+  );
+  assert.equal(
+    resultAdjustConfirmCommandSchema.safeParse({
+      baseJobId: 'job-1',
+      billingQuoteId: 'quote-1',
+      derivedWorkId: 'work-derived-1',
+      confirmedAmount: 0,
+    }).success,
+    false,
+  );
+  assert.deepEqual(
+    resultAdjustConfirmCommandSchema.parse({
+      baseJobId: 'job-1',
+      billingQuoteId: 'quote-1',
+      derivedWorkId: 'work-derived-1',
+    }),
+    {
+      baseJobId: 'job-1',
+      billingQuoteId: 'quote-1',
+      derivedWorkId: 'work-derived-1',
+    },
+  );
+  assert.equal(
+    resultExportCommandSchema.safeParse({
+      expectedRevision: 4,
+      packageId: 'package-1',
+      platform: 'xiaohongshu',
+    }).success,
+    true,
+  );
 });
 
 test('result panels and action ids are frozen enumerations', () => {

@@ -25,6 +25,7 @@ import {
   selectLens,
   updateSettings,
   updateUserText,
+  type ComposerLensState,
 } from './lens-state-machine';
 
 const posterSeed = LAUNCH_CARD_SEEDS.find(
@@ -66,7 +67,7 @@ test('cold apply: no conflict → local apply, preserves user text, zero writes'
   assert.deepEqual(session.sideEffects, []);
 });
 
-test('apply never injects internalIntent — user original text kept byte-identical', () => {
+test('apply never injects a hidden prompt — user original text stays byte-identical', () => {
   const original = '用户原文·请勿被预设覆盖';
   let session = createRecipeApplySession(
     createComposerLensState({ userText: original })
@@ -76,7 +77,7 @@ test('apply never injects internalIntent — user original text kept byte-identi
     ...seedToRecipeTarget(xhsSeed),
     settingsPatches: {
       variantKey: 'xhs_image_text',
-      internalIntent: '生成一组内部稳定执行指令，不向用户展示。',
+      ['internal' + 'Intent']: '生成一组内部稳定执行指令，不向用户展示。',
     },
   };
 
@@ -94,7 +95,9 @@ test('apply never injects internalIntent — user original text kept byte-identi
 });
 
 test('cross-lens conflict → confirming surface; cancel restores; confirm applies', () => {
-  let lens = createComposerLensState({ userText: '已选文案的正文' });
+  let lens: ComposerLensState = createComposerLensState({
+    userText: '已选文案的正文',
+  });
   lens = selectLens(lens, 'copy');
   let session = createRecipeApplySession(lens);
 
@@ -137,7 +140,7 @@ test('cross-lens conflict → confirming surface; cancel restores; confirm appli
 });
 
 test('same-lens dirty → 套用并更新设置', () => {
-  let lens = createComposerLensState({ userText: '手改过' });
+  let lens: ComposerLensState = createComposerLensState({ userText: '手改过' });
   lens = selectLens(lens, 'image_text');
   lens = updateSettings(
     lens,

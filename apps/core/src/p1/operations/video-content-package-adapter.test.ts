@@ -429,6 +429,65 @@ describe('video ContentPackage lifecycle adapter', () => {
     );
   });
 
+  it('keeps a canonical Work video review-ready until result_adopt writes its first version', async () => {
+    const { adapter, context, service } = setup();
+    const work = await service.createCreativeWork(context, {
+      autoConfirmBrief: true,
+      intent: '生成一支门店介绍视频',
+      mode: 'direct',
+      operation: 'video.generate',
+      sessionId: 'video-result-adopt-session',
+      sourceReferences: [],
+    });
+    const workflowId = 'workflow-video-result-adopt';
+    await adapter.confirm({
+      ...confirmation,
+      executionContract: undefined,
+      workflowId,
+      workId: work.id,
+    });
+    await adapter.reconcile({
+      actorId: confirmation.actorId,
+      clipAssetIds: ['owned-clip-opening'],
+      composedAsset: {
+        contentType: 'video/mp4',
+        id: 'owned-result-video',
+        objectKey: `${confirmation.workspaceId}/generated/result-video.mp4`,
+        sha256: 'a'.repeat(64),
+        sizeBytes: 1_024,
+        compositionEvidence: {
+          ...recordedCompositionEvidence,
+          outputSha256: 'a'.repeat(64),
+          outputSizeBytes: 1_024,
+        },
+      },
+      ...recordedCompletionProvenance,
+      shots: confirmation.shots,
+      status: 'completed',
+      storyboardRevision: confirmation.storyboardRevision,
+      workflowId,
+      workspaceId: confirmation.workspaceId,
+    });
+
+    const reviewReady = (await service.listContentPackages(context)).find(
+      (item) => item.source.workflowId === workflowId,
+    );
+    assert.ok(reviewReady);
+    assert.equal(reviewReady.status, 'review_ready');
+    assert.equal(reviewReady.versions.length, 0);
+
+    const adopted = await service.adoptResult(context, {
+      expectedRevision: reviewReady.revision,
+      selection: { kind: 'video', videoAssetId: 'owned-result-video' },
+      workId: work.id,
+    });
+    assert.equal(adopted.status, 'accepted');
+    assert.equal(adopted.revision, reviewReady.revision + 1);
+    assert.deepEqual(adopted.versions[0]?.orderedAssetIds, [
+      'owned-result-video',
+    ]);
+  });
+
   it('cancels without creating a playable version and rejects temporary provider URLs', async () => {
     const { adapter, context, service } = setup();
     await adapter.confirm({ ...confirmation, workflowId: 'workflow-cancelled' });

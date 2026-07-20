@@ -203,7 +203,10 @@ export function projectToolHandoff(raw: unknown): ToolHandoffValidation {
   if (typeof bag.focusKey === 'string' && bag.focusKey.trim()) {
     handoff.focusKey = bag.focusKey.trim();
   }
-  if (typeof bag.surfaceRevisionId === 'string' && bag.surfaceRevisionId.trim()) {
+  if (
+    typeof bag.surfaceRevisionId === 'string' &&
+    bag.surfaceRevisionId.trim()
+  ) {
     handoff.surfaceRevisionId = bag.surfaceRevisionId.trim();
   }
 
@@ -298,13 +301,12 @@ export function parseToolHandoffFromSearchParams(
       return { ok: false, reason: 'minimalSettings is not valid JSON' };
     }
   }
-  // Reject any extra query keys that look sensitive.
+  // The URL boundary is whitelist-only: reject every unknown key.
   for (const key of params.keys()) {
-    if (key === 'minimalSettings') continue;
-    if (!ALLOWED_SET.has(key) && FORBIDDEN_SET.has(key.toLowerCase())) {
+    if (!ALLOWED_SET.has(key)) {
       return {
         ok: false,
-        reason: `forbidden query key: ${key}`,
+        reason: `query key not on whitelist: ${key}`,
         forbiddenKey: key,
       };
     }

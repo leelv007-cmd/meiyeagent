@@ -1,7 +1,8 @@
 /**
  * Pure VideoWorkflow projection (WT-E / #102).
  *
- * CanonicalVideoRun is write authority. These functions only derive read models:
+ * CanonicalVideoRun assembles generic Task/Job/Asset facts in memory. These
+ * functions only derive read models:
  * - DurableVideoWorkflow — internal execution/audit projection (compat shape)
  * - VideoWorkflowPublicProjection — cross-lane consumer contract (no provider detail)
  *
@@ -9,7 +10,22 @@
  */
 
 import type { VideoWorkflowPublicProjection } from '@meiye/contracts';
-import type { DurableVideoWorkflow } from './video-workflow-contract.js';
+import type {
+  DurableVideoCandidate,
+  DurableVideoShot,
+  DurableVideoWorkflow,
+  VideoWorkflowDeliveryMode,
+} from './video-workflow-contract.js';
+import type { OwnedAsset } from './supply-contracts.js';
+
+export type CanonicalVideoShotPlan = Omit<DurableVideoShot, 'candidates'>;
+
+export type CanonicalVideoCandidateRecord = Omit<
+  DurableVideoCandidate,
+  'asset'
+> & {
+  assetId?: string;
+};
 
 /** Task-shaped plan: storyboard intent and shot plan (+ candidate results). */
 export interface CanonicalVideoTask {
@@ -24,7 +40,11 @@ export interface CanonicalVideoTask {
   executionContract?: DurableVideoWorkflow['executionContract'];
   approvalReceiptId?: string;
   derivedFromRunId?: string;
-  shots: DurableVideoWorkflow['shots'];
+  deliveryMode?: VideoWorkflowDeliveryMode;
+  billingTaskId?: string;
+  billingQuoteRevision?: string;
+  shots: CanonicalVideoShotPlan[];
+  subtitleText?: string;
 }
 
 /** Job-shaped lifecycle + OCC. */
@@ -34,19 +54,21 @@ export interface CanonicalVideoJob {
   revision: number;
   failureCode?: string;
   cancelRequestedAt?: string;
+  candidatesByShot: Record<string, CanonicalVideoCandidateRecord[]>;
+  attempts: DurableVideoWorkflow['attempts'];
+  routeSnapshot?: DurableVideoWorkflow['routeSnapshot'];
   createdAt: string;
   updatedAt: string;
 }
 
 /** Asset-shaped generation outputs and routing audit. */
 export interface CanonicalVideoAssets {
-  attempts: DurableVideoWorkflow['attempts'];
-  clipAssets: DurableVideoWorkflow['clipAssets'];
-  composedAsset?: DurableVideoWorkflow['composedAsset'];
-  routeSnapshot?: DurableVideoWorkflow['routeSnapshot'];
+  byId: Record<string, OwnedAsset>;
+  clipAssetIds: string[];
+  composedAssetId?: string;
 }
 
-/** Sole durable truth shape for a composed video run. */
+/** In-process assembly of the existing generic canonical records. */
 export interface CanonicalVideoRun {
   runId: string;
   workspaceId: string;
@@ -68,11 +90,20 @@ export function projectDurableVideoWorkflow(
     workspaceId: run.workspaceId,
     actorId: run.actorId,
     ...(run.workId ? { workId: run.workId } : {}),
+    ...(run.task.billingTaskId
+      ? { billingTaskId: run.task.billingTaskId }
+      : {}),
+    ...(run.task.billingQuoteRevision
+      ? { billingQuoteRevision: run.task.billingQuoteRevision }
+      : {}),
     ...(run.task.approvalReceiptId
       ? { approvalReceiptId: run.task.approvalReceiptId }
       : {}),
     ...(run.task.derivedFromRunId
       ? { derivedFromWorkflowId: run.task.derivedFromRunId }
+      : {}),
+    ...(run.task.deliveryMode
+      ? { deliveryMode: run.task.deliveryMode }
       : {}),
     storyboardVersion: run.task.storyboardVersion,
     dataClass: structuredClone(run.task.dataClass),
@@ -89,16 +120,38 @@ export function projectDurableVideoWorkflow(
     ...(run.task.executionContract
       ? { executionContract: structuredClone(run.task.executionContract) }
       : {}),
-    shots: structuredClone(run.task.shots),
-    attempts: structuredClone(run.assets.attempts),
-    clipAssets: structuredClone(run.assets.clipAssets),
+    shots: run.task.shots.map((shot) => ({
+      ...structuredClone(shot),
+      candidates: (run.job.candidatesByShot[shot.id] ?? []).map(
+        ({ assetId, ...candidate }) => ({
+          ...structuredClone(candidate),
+          ...(assetId && run.assets.byId[assetId]
+            ? { asset: structuredClone(run.assets.byId[assetId]) }
+            : {}),
+        }),
+      ),
+    })),
+    ...(run.task.subtitleText !== undefined
+      ? { subtitleText: run.task.subtitleText }
+      : {}),
+    attempts: structuredClone(run.job.attempts),
+    clipAssets: run.assets.clipAssetIds.flatMap((assetId) =>
+      run.assets.byId[assetId]
+        ? [structuredClone(run.assets.byId[assetId])]
+        : [],
+    ),
     status: run.job.status,
     ...(run.job.failureCode ? { failureCode: run.job.failureCode } : {}),
-    ...(run.assets.composedAsset
-      ? { composedAsset: structuredClone(run.assets.composedAsset) }
+    ...(run.assets.composedAssetId &&
+    run.assets.byId[run.assets.composedAssetId]
+      ? {
+          composedAsset: structuredClone(
+            run.assets.byId[run.assets.composedAssetId],
+          ),
+        }
       : {}),
-    ...(run.assets.routeSnapshot
-      ? { routeSnapshot: structuredClone(run.assets.routeSnapshot) }
+    ...(run.job.routeSnapshot
+      ? { routeSnapshot: structuredClone(run.job.routeSnapshot) }
       : {}),
     revision: run.job.revision,
     ...(run.job.cancelRequestedAt
@@ -143,6 +196,9 @@ export function projectVideoWorkflowPublic(
       candidateCount: shot.candidates.length,
     })),
     ...(durable.failureCode ? { failureCode: durable.failureCode } : {}),
+    ...(durable.subtitleText !== undefined
+      ? { subtitleText: durable.subtitleText }
+      : {}),
     revision: durable.revision,
     updatedAt: durable.updatedAt,
   };
@@ -155,6 +211,16 @@ export function projectVideoWorkflowPublic(
 export function liftDurableToCanonical(
   workflow: DurableVideoWorkflow
 ): CanonicalVideoRun {
+  const assets = new Map<string, OwnedAsset>();
+  for (const shot of workflow.shots) {
+    for (const candidate of shot.candidates) {
+      if (candidate.asset) assets.set(candidate.asset.id, candidate.asset);
+    }
+  }
+  for (const asset of workflow.clipAssets) assets.set(asset.id, asset);
+  if (workflow.composedAsset) {
+    assets.set(workflow.composedAsset.id, workflow.composedAsset);
+  }
   return {
     runId: workflow.id,
     workspaceId: workflow.workspaceId,
@@ -182,7 +248,21 @@ export function liftDurableToCanonical(
       ...(workflow.derivedFromWorkflowId
         ? { derivedFromRunId: workflow.derivedFromWorkflowId }
         : {}),
-      shots: structuredClone(workflow.shots),
+      ...(workflow.deliveryMode
+        ? { deliveryMode: workflow.deliveryMode }
+        : {}),
+      ...(workflow.billingTaskId
+        ? { billingTaskId: workflow.billingTaskId }
+        : {}),
+      ...(workflow.billingQuoteRevision
+        ? { billingQuoteRevision: workflow.billingQuoteRevision }
+        : {}),
+      shots: workflow.shots.map(({ candidates: _candidates, ...shot }) =>
+        structuredClone(shot),
+      ),
+      ...(workflow.subtitleText !== undefined
+        ? { subtitleText: workflow.subtitleText }
+        : {}),
     },
     job: {
       status: workflow.status,
@@ -192,17 +272,32 @@ export function liftDurableToCanonical(
       ...(workflow.cancelRequestedAt
         ? { cancelRequestedAt: workflow.cancelRequestedAt }
         : {}),
+      candidatesByShot: Object.fromEntries(
+        workflow.shots.map((shot) => [
+          shot.id,
+          shot.candidates.map(({ asset, ...candidate }) => ({
+            ...structuredClone(candidate),
+            ...(asset ? { assetId: asset.id } : {}),
+          })),
+        ]),
+      ),
+      attempts: structuredClone(workflow.attempts),
+      ...(workflow.routeSnapshot
+        ? { routeSnapshot: structuredClone(workflow.routeSnapshot) }
+        : {}),
       createdAt: workflow.createdAt,
       updatedAt: workflow.updatedAt,
     },
     assets: {
-      attempts: structuredClone(workflow.attempts),
-      clipAssets: structuredClone(workflow.clipAssets),
+      byId: Object.fromEntries(
+        [...assets.entries()].map(([id, asset]) => [
+          id,
+          structuredClone(asset),
+        ]),
+      ),
+      clipAssetIds: workflow.clipAssets.map((asset) => asset.id),
       ...(workflow.composedAsset
-        ? { composedAsset: structuredClone(workflow.composedAsset) }
-        : {}),
-      ...(workflow.routeSnapshot
-        ? { routeSnapshot: structuredClone(workflow.routeSnapshot) }
+        ? { composedAssetId: workflow.composedAsset.id }
         : {}),
     },
   };

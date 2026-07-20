@@ -35,31 +35,21 @@ test('product chrome consumes the floating glass and ambient shell tokens', () =
   );
 });
 
-test('workbench top-level states keep ambient copy readable and entry cards thematic', () => {
+test('Composer and Result Center keep the product shell contract', () => {
   const styles = readSource('src/styles.css');
-  const workbench = readSource('src/product/unified-creation-workbench.tsx');
+  const composer = readSource('src/product/composer/composer-home.tsx');
+  const resultCenter = readSource('src/product/results/result-center-page.tsx');
   const dashboardLayout = readSource(
     'src/components/layout/dashboard-layout.tsx'
   );
   const recommendation = readSource(
     'src/product/today-recommendation-card.tsx'
   );
-  const creationEntry = readSource('src/product/creation-entry.tsx');
   const button = readSource('src/components/ui/button.tsx');
 
-  assert.match(
-    workbench,
-    /heroVisible[\s\S]*?<h1[^>]*text-white[\s\S]*?workbench_greeting/u
-  );
-  assert.match(
-    workbench,
-    /recordVisible[\s\S]*?<Button[\s\S]*?variant="outline"[\s\S]*?workbench_new_creation/u
-  );
+  assert.match(composer, /data-testid="composer-home"/u);
+  assert.match(resultCenter, /data-testid="result-center-shell"/u);
   assert.match(button, /outline:\s*"bg-surface-2/u);
-  assert.match(
-    workbench,
-    /className="meiye-ambient-copy"[\s\S]*?meiye-type-title[\s\S]*?meiye-type-aux/u
-  );
   assert.match(
     dashboardLayout,
     /className="meiye-ambient-copy"[\s\S]*?meiye-type-title[\s\S]*?meiye-type-aux/u
@@ -69,7 +59,7 @@ test('workbench top-level states keep ambient copy readable and entry cards them
     /\.meiye-ambient-copy[\s\S]*?\.meiye-type-title[\s\S]*?color:\s*var\(--ambient-text\)[\s\S]*?\.meiye-ambient-copy[\s\S]*?\.meiye-type-aux[\s\S]*?color:\s*var\(--ambient-text\)/u
   );
   assert.match(recommendation, /meiye-entry-card/u);
-  assert.match(creationEntry, /meiye-entry-card/u);
+  assert.match(composer, /meiye-entry-card/u);
   assert.match(
     styles,
     /\.light \.meiye-product-shell\[data-shell-mode="product"\][\s\S]*?\.meiye-entry-card\s*\{[\s\S]*?background:\s*var\(--paper\)\s*!important;[\s\S]*?color:\s*var\(--ink-90\)/u

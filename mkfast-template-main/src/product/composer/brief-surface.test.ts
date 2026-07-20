@@ -18,7 +18,6 @@ import {
   projectBriefSurfaceView,
   projectEvidenceForBrowser,
   serializeBriefSurfaceForBrowser,
-  setBriefVideoConfirmAccepted,
   shouldShowEvidenceDrawer,
   type ComposerInputSnapshot,
 } from './brief-surface';
@@ -40,10 +39,9 @@ function openWith(
   }
 ) {
   const projection = fixtureBriefProjection({
-    requiresBrief: true,
+    ...extras,
     triggerCodes: codes,
     lensId: codes.includes('any_video') ? 'video' : 'copy',
-    ...extras,
   });
   let state = createBriefSurfaceState();
   state = openBriefSurface(state, {
@@ -271,8 +269,7 @@ describe('video confirm zone embedded in Brief', () => {
       lensId: 'video',
     });
 
-    let opened = setBriefVideoConfirmAccepted(state, false);
-    const view = projectBriefSurfaceView(opened, {
+    const view = projectBriefSurfaceView(state, {
       lensId: 'video',
       quote,
     });
@@ -280,29 +277,25 @@ describe('video confirm zone embedded in Brief', () => {
     assert.ok(view.videoConfirm?.visible);
     assert.equal(view.videoConfirm?.billingNote, '按生成成片 15 秒计费');
     assert.equal(view.requiresVideoConfirm, true);
-    assert.equal(view.canConfirm, false);
+    assert.equal(view.canConfirm, true);
 
-    opened = setBriefVideoConfirmAccepted(opened, true);
-    const accepted = projectBriefSurfaceView(opened, {
-      lensId: 'video',
-      quote,
-    });
-    assert.equal(accepted.canConfirm, true);
-
-    const confirmed = confirmBriefSurface(opened);
+    const confirmed = confirmBriefSurface(state);
     assert.equal(confirmed.ok, true);
+    if (confirmed.ok) {
+      assert.equal(confirmed.state.videoConfirmAccepted, true);
+    }
   });
 
-  it('blocks confirm when video confirm not accepted', () => {
+  it('uses the single Brief CTA as the explicit video acceptance', () => {
     const { state } = openWith(['any_video'], {
       requiresBrief: true,
       triggerCodes: ['any_video'],
       lensId: 'video',
     });
     const result = confirmBriefSurface(state);
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.reason, 'video_confirm_required');
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.state.videoConfirmAccepted, true);
     }
   });
 });

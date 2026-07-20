@@ -23,10 +23,7 @@ import type {
   VideoWorkflowPublicProjection,
   VideoWorkflowPublicStatus,
 } from '@meiye/contracts';
-import {
-  resultCenterPath,
-  resultCenterSearchParams,
-} from '@meiye/contracts';
+import { resultCenterPath, resultCenterSearchParams } from '@meiye/contracts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -161,6 +158,7 @@ export type VideoUncommittedAdjustments = {
 export type VideoWorksurfaceState = {
   workId: string;
   workflowId: string;
+  workflowRevision: number;
   workflowStatus: VideoWorkflowPublicStatus;
   catalogModelId: string;
   storyboardRevision: string;
@@ -186,22 +184,26 @@ export type VideoWorksurfaceState = {
 // Fee classification
 // ---------------------------------------------------------------------------
 
+export type VideoFreeEditFeeDecision = {
+  fee: 'none';
+  freeAction: VideoWorksurfaceFreeAction;
+  createsProductUsage: false;
+  requiresFullRecomposeQuote: false;
+};
+
+export type VideoBillableEditFeeDecision = {
+  fee: 'billable';
+  scope: VideoBillableScope;
+  freeAction: null;
+  createsProductUsage: true;
+  requiresFullRecomposeQuote: boolean;
+  actionLabel: string;
+  reason: string;
+};
+
 export type VideoEditFeeDecision =
-  | {
-      fee: 'none';
-      freeAction: VideoWorksurfaceFreeAction;
-      createsProductUsage: false;
-      requiresFullRecomposeQuote: false;
-    }
-  | {
-      fee: 'billable';
-      scope: VideoBillableScope;
-      freeAction: null;
-      createsProductUsage: true;
-      requiresFullRecomposeQuote: boolean;
-      actionLabel: string;
-      reason: string;
-    };
+  | VideoFreeEditFeeDecision
+  | VideoBillableEditFeeDecision;
 
 export function classifyCoverSelect(): VideoEditFeeDecision {
   return {
@@ -253,6 +255,18 @@ export function classifyAdoptCandidate(): VideoEditFeeDecision {
  * Burned-in subtitle change requires full recompose + independent quote.
  */
 export function classifySubtitleEdit(input: {
+  mode: 'independent_asset';
+  change: 'text' | 'toggle' | 'style' | 'replace_asset';
+}): VideoFreeEditFeeDecision;
+export function classifySubtitleEdit(input: {
+  mode: 'burned_in';
+  change: 'text' | 'toggle' | 'style' | 'replace_asset';
+}): VideoBillableEditFeeDecision;
+export function classifySubtitleEdit(input: {
+  mode: VideoSubtitleMode;
+  change: 'text' | 'toggle' | 'style' | 'replace_asset';
+}): VideoEditFeeDecision;
+export function classifySubtitleEdit(input: {
   mode: VideoSubtitleMode;
   change: 'text' | 'toggle' | 'style' | 'replace_asset';
 }): VideoEditFeeDecision {
@@ -275,12 +289,13 @@ export function classifySubtitleEdit(input: {
     createsProductUsage: true,
     requiresFullRecomposeQuote: true,
     actionLabel: '重新合成整段',
-    reason:
-      '烧录字幕改动需要媒体重渲染，须走整段重新合成并独立报价',
+    reason: '烧录字幕改动需要媒体重渲染，须走整段重新合成并独立报价',
   };
 }
 
-export function classifyShotRegen(shotId: string): VideoEditFeeDecision {
+export function classifyShotRegen(
+  shotId: string
+): VideoBillableEditFeeDecision {
   if (!shotId.trim()) {
     throw new Error('classifyShotRegen requires shotId');
   }
@@ -295,7 +310,7 @@ export function classifyShotRegen(shotId: string): VideoEditFeeDecision {
   };
 }
 
-export function classifyFullRecompose(): VideoEditFeeDecision {
+export function classifyFullRecompose(): VideoBillableEditFeeDecision {
   return {
     fee: 'billable',
     scope: 'full_compose',
@@ -331,9 +346,7 @@ export type BuildVideoWorksurfaceInput = {
   uncommitted?: VideoUncommittedAdjustments;
 };
 
-function shotsFromPublic(
-  shots: VideoShotSummary[],
-): VideoStoryboardShot[] {
+function shotsFromPublic(shots: VideoShotSummary[]): VideoStoryboardShot[] {
   return shots.map((shot, order) => {
     const selected = shot.selectedCandidateIndex;
     const candidateCount = Math.max(shot.candidateCount, 0);
@@ -343,7 +356,7 @@ function shotsFromPublic(
         index,
         assetId: `shot-asset-${shot.shotId}-${index}`,
         selected: selected === index,
-      }),
+      })
     );
     return {
       shotId: shot.shotId,
@@ -385,14 +398,14 @@ function deriveLoopPhase(input: {
 
 /** Build worksurface state from public projection + local facts. */
 export function buildVideoWorksurfaceState(
-  input: BuildVideoWorksurfaceInput,
+  input: BuildVideoWorksurfaceInput
 ): VideoWorksurfaceState {
   if (!input.workId.trim()) {
     throw new Error('VideoWorksurface requires non-empty workId');
   }
 
   const subtitleMode = input.subtitleMode ?? 'independent_asset';
-  const subtitleText = input.subtitleText ?? '';
+  const subtitleText = input.subtitleText ?? input.workflow.subtitleText ?? '';
   const adoption: VideoAdoptionState = {
     status: 'none',
     contentPackageId: null,
@@ -411,6 +424,7 @@ export function buildVideoWorksurfaceState(
   const state: VideoWorksurfaceState = {
     workId: input.workId,
     workflowId: input.workflow.workflowId,
+    workflowRevision: input.workflow.revision,
     workflowStatus: input.workflow.status,
     catalogModelId: input.workflow.catalogModelId,
     storyboardRevision: input.workflow.storyboardRevision,
@@ -471,7 +485,7 @@ export function buildVideoWorksurfaceState(
  * No live Provider — pure projection data.
  */
 export function videoWorksurfaceFixture(
-  overrides: Partial<BuildVideoWorksurfaceInput> = {},
+  overrides: Partial<BuildVideoWorksurfaceInput> = {}
 ): VideoWorksurfaceState {
   const workflow: VideoWorkflowPublicProjection = {
     workflowId: 'wf-video-fixture-1',
@@ -527,8 +541,7 @@ export function videoWorksurfaceFixture(
           }
         : overrides.composedCandidate,
     subtitleMode: overrides.subtitleMode ?? 'independent_asset',
-    subtitleText:
-      overrides.subtitleText ?? '欢迎到店体验 · 夏季护理套餐',
+    subtitleText: overrides.subtitleText ?? '欢迎到店体验 · 夏季护理套餐',
     subtitleAssetId: overrides.subtitleAssetId ?? 'sub-asset-1',
     subtitleEnabled: overrides.subtitleEnabled ?? true,
     transcript:
@@ -547,7 +560,7 @@ export function videoWorksurfaceFixture(
 // ---------------------------------------------------------------------------
 
 export function togglePlay(
-  state: VideoWorksurfaceState,
+  state: VideoWorksurfaceState
 ): VideoWorksurfaceState {
   classifyPlayControl(); // fee assert side-document
   return {
@@ -558,11 +571,11 @@ export function togglePlay(
 
 export function seekPlayer(
   state: VideoWorksurfaceState,
-  timeSeconds: number,
+  timeSeconds: number
 ): VideoWorksurfaceState {
   const clamped = Math.max(
     0,
-    Math.min(timeSeconds, state.player.durationSeconds),
+    Math.min(timeSeconds, state.player.durationSeconds)
   );
   return {
     ...state,
@@ -572,7 +585,7 @@ export function seekPlayer(
 
 export function setFullscreen(
   state: VideoWorksurfaceState,
-  fullscreen: boolean,
+  fullscreen: boolean
 ): VideoWorksurfaceState {
   return {
     ...state,
@@ -582,7 +595,7 @@ export function setFullscreen(
 
 export function setCoverFromFrame(
   state: VideoWorksurfaceState,
-  frameTimeSeconds: number,
+  frameTimeSeconds: number
 ): { state: VideoWorksurfaceState; fee: VideoEditFeeDecision } {
   const fee = classifyCoverSelect();
   const nextCover: VideoCoverState = {
@@ -600,7 +613,8 @@ export function setCoverFromFrame(
         ...state.uncommitted,
         coverDraft: nextCover,
       },
-      selectedObjectId: state.composedCandidate?.assetId ?? state.selectedObjectId,
+      selectedObjectId:
+        state.composedCandidate?.assetId ?? state.selectedObjectId,
     },
   };
 }
@@ -608,7 +622,7 @@ export function setCoverFromFrame(
 export function setCoverFromAuthorizedImage(
   state: VideoWorksurfaceState,
   assetId: string,
-  posterUrl?: string,
+  posterUrl?: string
 ): { state: VideoWorksurfaceState; fee: VideoEditFeeDecision } {
   const fee = classifyCoverSelect();
   const nextCover: VideoCoverState = {
@@ -637,7 +651,7 @@ export function setCoverFromAuthorizedImage(
  */
 export function editSubtitleText(
   state: VideoWorksurfaceState,
-  nextText: string,
+  nextText: string
 ): {
   state: VideoWorksurfaceState;
   fee: VideoEditFeeDecision;
@@ -685,9 +699,7 @@ export function editSubtitleText(
   };
 }
 
-export function toggleSubtitleEnabled(
-  state: VideoWorksurfaceState,
-): {
+export function toggleSubtitleEnabled(state: VideoWorksurfaceState): {
   state: VideoWorksurfaceState;
   fee: VideoEditFeeDecision;
   pendingQuote: VideoPendingQuote | null;
@@ -737,7 +749,7 @@ export function toggleSubtitleEnabled(
 export function selectShotCandidate(
   state: VideoWorksurfaceState,
   shotId: string,
-  candidateIndex: number,
+  candidateIndex: number
 ): { state: VideoWorksurfaceState; fee: VideoEditFeeDecision } {
   const fee = classifyShotCandidateSelect();
   const storyboard = state.storyboard.map((shot) => {
@@ -769,7 +781,7 @@ export function selectShotCandidate(
 /** Deterministic reorder — free, no generation fee. */
 export function reorderShots(
   state: VideoWorksurfaceState,
-  orderedShotIds: string[],
+  orderedShotIds: string[]
 ): { state: VideoWorksurfaceState; fee: VideoEditFeeDecision } {
   const fee = classifyDeterministicSort();
   const byId = new Map(state.storyboard.map((s) => [s.shotId, s]));
@@ -796,8 +808,8 @@ export function reorderShots(
 /** Request single-shot regen — opens billable shot quote (E2 confirm). */
 export function requestShotRegen(
   state: VideoWorksurfaceState,
-  shotId: string,
-): { state: VideoWorksurfaceState; fee: VideoEditFeeDecision } {
+  shotId: string
+): { state: VideoWorksurfaceState; fee: VideoBillableEditFeeDecision } {
   if (!state.storyboard.some((s) => s.shotId === shotId)) {
     throw new Error(`Unknown shotId: ${shotId}`);
   }
@@ -820,9 +832,10 @@ export function requestShotRegen(
 }
 
 /** Request full recompose — opens billable full_compose quote (E2 confirm). */
-export function requestFullRecompose(
-  state: VideoWorksurfaceState,
-): { state: VideoWorksurfaceState; fee: VideoEditFeeDecision } {
+export function requestFullRecompose(state: VideoWorksurfaceState): {
+  state: VideoWorksurfaceState;
+  fee: VideoBillableEditFeeDecision;
+} {
   const fee = classifyFullRecompose();
   const pendingQuote: VideoPendingQuote = {
     scope: 'full_compose',
@@ -845,7 +858,7 @@ export function adoptComposedFilm(
   input: {
     contentPackageId: string;
     now?: string;
-  },
+  }
 ): {
   state: VideoWorksurfaceState;
   fee: VideoEditFeeDecision;
@@ -888,7 +901,7 @@ export function adoptComposedFilm(
 
 /** Delivery capability entry after adopt — free shell action. */
 export function markDelivered(
-  state: VideoWorksurfaceState,
+  state: VideoWorksurfaceState
 ): VideoWorksurfaceState {
   if (state.adoption.status !== 'adopted') {
     throw new Error('Deliver requires an adopted film');
@@ -901,7 +914,7 @@ export function markDelivered(
 }
 
 export function markDeliveryInProgress(
-  state: VideoWorksurfaceState,
+  state: VideoWorksurfaceState
 ): VideoWorksurfaceState {
   if (state.adoption.status !== 'adopted') {
     throw new Error('Deliver requires an adopted film');
@@ -927,9 +940,7 @@ export type VideoWorksurfaceAction = {
  * Project primary/secondary/overflow from loop phase using shared
  * ResultActionId semantics. Labels follow D-085 video column.
  */
-export function projectVideoWorksurfaceActions(
-  state: VideoWorksurfaceState,
-): {
+export function projectVideoWorksurfaceActions(state: VideoWorksurfaceState): {
   primaryAction: VideoWorksurfaceAction | null;
   secondaryActions: VideoWorksurfaceAction[];
   overflowActions: VideoWorksurfaceAction[];
@@ -1095,9 +1106,7 @@ export type VideoMobileP0Action = {
  * Mobile P0: play / light cover / subtitle proof + shared result actions.
  * Must not collapse to "请到桌面继续" for these basics (D-085 §8).
  */
-export function projectVideoMobileP0Actions(
-  state: VideoWorksurfaceState,
-): {
+export function projectVideoMobileP0Actions(state: VideoWorksurfaceState): {
   mediaActions: VideoMobileP0Action[];
   primaryResult: VideoMobileP0Action | null;
   moreResult: VideoMobileP0Action[];
@@ -1184,7 +1193,7 @@ export type VideoProStudioRefineHandoff = {
  */
 export function buildVideoProStudioRefineHandoff(
   state: VideoWorksurfaceState,
-  options?: { returnToDraftKey?: string; focusKey?: string },
+  options?: { returnToDraftKey?: string; focusKey?: string }
 ): VideoProStudioRefineHandoff {
   const focusKey = options?.focusKey ?? state.selectedObjectId;
   const uncommittedEditKey: ResultUncommittedEditKey = {
@@ -1246,7 +1255,7 @@ export type VideoLoopStep = {
  * Asserts shared action ids and that adopt/deliver are free of gen fees.
  */
 export function runCandidateAdoptDeliverLoop(
-  initial: VideoWorksurfaceState = videoWorksurfaceFixture(),
+  initial: VideoWorksurfaceState = videoWorksurfaceFixture()
 ): {
   steps: VideoLoopStep[];
   final: VideoWorksurfaceState;
@@ -1270,7 +1279,7 @@ export function runCandidateAdoptDeliverLoop(
   snap('candidate_ready', false);
   if (state.loopPhase !== 'candidate_ready') {
     throw new Error(
-      `Loop expects candidate_ready start, got ${state.loopPhase}`,
+      `Loop expects candidate_ready start, got ${state.loopPhase}`
     );
   }
 

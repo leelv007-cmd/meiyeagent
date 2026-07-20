@@ -3,6 +3,8 @@
  * Mirrors admin-config MemoryAdminConfigRepository patterns (D-037 reuse).
  */
 
+import { isDeepStrictEqual } from 'node:util';
+
 import { P1DomainError } from '../foundation/domain.js';
 import type {
   CatalogSessionFreeze,
@@ -53,6 +55,7 @@ export interface CreationExperienceCatalogRepository {
 
   putSessionFreeze(freeze: CatalogSessionFreeze): Promise<CatalogSessionFreeze>;
   getSessionFreeze(
+    workspaceId: string,
     sessionId: CatalogSessionId,
   ): Promise<CatalogSessionFreeze | null>;
 }
@@ -75,7 +78,7 @@ export class MemoryCreationExperienceCatalogRepository
 {
   private readonly recipes = new Map<RecipeId, ServerRecipeRecord[]>();
   private readonly surfaces = new Map<SurfaceId, ServerSurfaceRecord[]>();
-  private readonly sessions = new Map<CatalogSessionId, CatalogSessionFreeze>();
+  private readonly sessions = new Map<string, CatalogSessionFreeze>();
 
   async appendRecipe(
     record: ServerRecipeRecord,
@@ -169,13 +172,24 @@ export class MemoryCreationExperienceCatalogRepository
   }
 
   async putSessionFreeze(freeze: CatalogSessionFreeze) {
+    const key = `${freeze.workspaceId}:${freeze.sessionId}`;
+    const existing = this.sessions.get(key);
+    if (existing) {
+      if (isDeepStrictEqual(existing, freeze)) {
+        return structuredClone(existing);
+      }
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Creation session is already frozen to a different catalog snapshot.',
+      );
+    }
     const next = structuredClone(freeze);
-    this.sessions.set(freeze.sessionId, next);
+    this.sessions.set(key, next);
     return structuredClone(next);
   }
 
-  async getSessionFreeze(sessionId: CatalogSessionId) {
-    const found = this.sessions.get(sessionId);
+  async getSessionFreeze(workspaceId: string, sessionId: CatalogSessionId) {
+    const found = this.sessions.get(`${workspaceId}:${sessionId}`);
     return found ? structuredClone(found) : null;
   }
 }

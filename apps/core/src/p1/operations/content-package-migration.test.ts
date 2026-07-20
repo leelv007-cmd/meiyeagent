@@ -14,7 +14,6 @@ import {
 import { runContentPackageMigrationCli } from './content-package-migration-cli.js';
 import {
   OperationsApplicationService,
-  OperationsError,
   RecordedCanvasExportAdapter,
   RecordedImageGenerationAdapter,
 } from './index.js';
@@ -1168,31 +1167,4 @@ test('re-backfill syncs legacy publication only before a package gains new facts
     'accepted'
   );
   assert.equal(preserved.report.differences.statuses.length, 1);
-});
-
-test('CreativeContent acceptance obeys the same migration ownership switch', async () => {
-  const repository = new MemoryOperationsRepository();
-  const ownership = new MemoryContentPackageWriteOwnership();
-  repository.grantMembership('owner-a', 'workspace-a');
-  const service = new OperationsApplicationService(repository, {
-    canvasExporter: new RecordedCanvasExportAdapter(),
-    contentWriteOwnership: ownership,
-    imageGenerator: new RecordedImageGenerationAdapter(),
-    notifier: { async send() {} },
-  });
-  const context = {
-    actor: 'owner' as const,
-    correlationId: 'corr-legacy-creative',
-    userId: 'owner-a',
-    workspaceId: 'workspace-a',
-  };
-
-  await ownership.set('workspace-a', 'contentpackage');
-  await assert.rejects(
-    service.acceptCreativeAsset(context, 'legacy-asset'),
-    (error) =>
-      error instanceof OperationsError &&
-      error.code === 'LEGACY_CONTENT_READ_ONLY' &&
-      error.status === 409
-  );
 });

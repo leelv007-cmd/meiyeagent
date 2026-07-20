@@ -7,45 +7,42 @@
 
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { dashboard_content_mobile_handoff } from '@/locale/paraglide/messages';
 import { CanonicalHandoffPage } from '@/product/results/canonical-handoff-page';
 import {
-  resolveCanonicalHandoffByToken,
-  type CanonicalDeliveryHandoff,
-} from '@/product/results/delivery-handoff-canonical';
+  loadCanonicalHandoff,
+  reportCanonicalHandoff,
+  shareCanonicalHandoff,
+} from '@/product/results/delivery-handoff-live';
+import { commandP1 } from '@/p1/client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { useMemo } from 'react';
 
 export const Route = createFileRoute('/dashboard/handoff/$token')({
   component: MobileHandoffPage,
 });
 
-/**
- * Canonical delivery handoff index for this page.
- * Production wiring supplies assisted-receipt-backed records.
- * Legacy ProductState.handoffPackages is intentionally NOT read.
- */
-function useCanonicalHandoffIndex(): readonly CanonicalDeliveryHandoff[] {
-  // Integration port: empty until product state exposes canonical delivery.
-  // Page fails closed (unavailable) rather than falling back to legacy.
-  return useMemo(() => [], []);
-}
-
 function MobileHandoffPage() {
   const { token } = Route.useParams();
-  const index = useCanonicalHandoffIndex();
-  // Loading skeleton kept for future async index fetch.
-  const loading = false;
+  const queryClient = useQueryClient();
+  const queryKey = ['result-delivery', 'canonical-handoff', token] as const;
+  const handoff = useQuery({
+    queryKey,
+    queryFn: () =>
+      loadCanonicalHandoff(
+        token,
+        (action, payload) =>
+          commandP1('result-delivery', { action, payload }),
+        {
+          nowIso: new Date().toISOString(),
+          origin: window.location.origin,
+          canShareFiles: typeof navigator.canShare === 'function',
+        }
+      ),
+    retry: false,
+  });
 
-  const resolve = useMemo(
-    () =>
-      resolveCanonicalHandoffByToken(token, index, {
-        nowIso: new Date().toISOString(),
-        canShareFiles: false,
-      }),
-    [token, index],
-  );
-
-  if (loading) {
+  if (handoff.isPending) {
     return (
       <div className="space-y-4 p-4">
         <Skeleton className="h-12" />
@@ -54,12 +51,14 @@ function MobileHandoffPage() {
     );
   }
 
+  const resolve = handoff.data?.resolve ?? { kind: 'not_found' as const };
+
   return (
     <>
       <DashboardHeader
         breadcrumbs={[
           {
-            label: '交接包',
+            label: dashboard_content_mobile_handoff(),
             isCurrentPage: true,
           },
         ]}
@@ -77,20 +76,50 @@ function MobileHandoffPage() {
           // Browser download via anchor href; outcome recorded in page state.
         }}
         onShare={async () => {
-          if (!navigator.share) return 'unsupported';
-          if (resolve.kind !== 'ready') return 'failed';
-          try {
-            await navigator.share({
-              title: resolve.heading,
-              url: resolve.sections.share.shareUrl,
-            });
-            return 'shared';
-          } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') {
-              return 'cancelled';
-            }
-            return 'failed';
+          const source = handoff.data?.serverRecord;
+          if (!source) return 'failed';
+          return shareCanonicalHandoff(source, {
+            canShare: (payload) =>
+              typeof navigator.canShare === 'function' &&
+              navigator.canShare(payload),
+            download: (href) => {
+              const anchor = document.createElement('a');
+              anchor.href = href;
+              anchor.download = '';
+              anchor.click();
+            },
+            fetchFile: async (media) => {
+              const response = await fetch(media.downloadUrl, {
+                credentials: 'same-origin',
+              });
+              if (!response.ok) throw new Error('Handoff media fetch failed.');
+              return new File([await response.blob()], media.id, {
+                type: media.contentType,
+              });
+            },
+            origin: window.location.origin,
+            share:
+              typeof navigator.share === 'function'
+                ? (payload) => navigator.share(payload)
+                : undefined,
+          });
+        }}
+        onReport={async (input) => {
+          const receiptRevision = handoff.data?.receiptRevision;
+          if (receiptRevision === undefined || resolve.kind !== 'ready') {
+            throw new Error('Canonical handoff receipt is unavailable.');
           }
+          await reportCanonicalHandoff(
+            {
+              ...input,
+              receiptId: resolve.assistedReceiptId,
+              receiptRevision,
+              recordedAt: new Date().toISOString(),
+            },
+            (action, payload) =>
+              commandP1('result-delivery', { action, payload })
+          );
+          await queryClient.invalidateQueries({ queryKey });
         }}
       />
     </>

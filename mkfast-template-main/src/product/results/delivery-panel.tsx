@@ -8,6 +8,8 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   IconCheck,
   IconCopy,
@@ -18,10 +20,19 @@ import {
 import type { DeliveryActionId } from './delivery-capability-groups';
 import type { DeliveryPanelView } from './delivery-panel-model';
 import type { DeliveryOutcome } from './delivery-outcomes-a11y';
+import { projectDeliveryOutcome } from './delivery-outcomes-a11y';
+import { useState } from 'react';
+import type { AssistedResponsibilityRole } from './delivery-b3-types';
 
 export type DeliveryPanelProps = {
   view: DeliveryPanelView;
-  onAction?: (actionId: DeliveryActionId) => void;
+  onAction?: (
+    actionId: DeliveryActionId,
+    assisted?: {
+      ownerId?: string;
+      responsibilityRole: AssistedResponsibilityRole;
+    }
+  ) => DeliveryOutcome | undefined | Promise<DeliveryOutcome | undefined>;
   /** Optional controlled outcome override for live region. */
   outcomeOverride?: DeliveryOutcome;
 };
@@ -42,9 +53,27 @@ function actionIcon(id: DeliveryActionId) {
   }
 }
 
-export function DeliveryPanel({ view, onAction }: DeliveryPanelProps) {
+export function DeliveryPanel({
+  view,
+  onAction,
+  outcomeOverride,
+}: DeliveryPanelProps) {
+  const [completedOutcome, setCompletedOutcome] =
+    useState<DeliveryOutcome | null>(null);
+  const [pendingAction, setPendingAction] = useState<DeliveryActionId | null>(
+    null
+  );
+  const [responsibilityRole, setResponsibilityRole] =
+    useState<AssistedResponsibilityRole>(
+      view.assisted?.responsibilityRole ?? 'self_publish'
+    );
+  const [externalOwnerId, setExternalOwnerId] = useState('');
   const fullHeight = view.surface.fullHeight;
-  const outcome = view.outcome;
+  const outcome = outcomeOverride
+    ? projectDeliveryOutcome(outcomeOverride)
+    : completedOutcome
+      ? projectDeliveryOutcome(completedOutcome)
+      : view.outcome;
 
   return (
     <section
@@ -70,32 +99,28 @@ export function DeliveryPanel({ view, onAction }: DeliveryPanelProps) {
       </header>
 
       {/* Live region for four distinct outcomes */}
-      <div
+      <output
         id={view.liveRegionId}
-        role="status"
         aria-live="polite"
         aria-atomic="true"
         className="sr-only"
         data-testid="delivery-panel-live"
       >
         {outcome?.announcement ?? ''}
-      </div>
+      </output>
 
       {outcome ? (
-        <div
+        <output
           id={outcome.focusId}
           tabIndex={-1}
-          role="status"
           data-testid={outcome.testId}
           data-outcome={outcome.outcome}
-          data-platform-published={
-            outcome.platformPublished ? 'true' : 'false'
-          }
+          data-platform-published={outcome.platformPublished ? 'true' : 'false'}
           className="rounded-md border bg-muted/40 px-3 py-2 text-sm"
         >
           <IconCheck className="mr-1 inline size-4 text-emerald-700" />
           {outcome.announcement}
-        </div>
+        </output>
       ) : null}
 
       {view.visibleGroups.map((group) => (
@@ -109,23 +134,104 @@ export function DeliveryPanel({ view, onAction }: DeliveryPanelProps) {
             <CardTitle className="text-sm">{group.label}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
+            {group.id === 'handoff_to_platform' ? (
+              <div
+                className="mb-2 space-y-2 rounded-md border p-3"
+                data-testid="delivery-assisted-setup"
+              >
+                <p className="text-sm font-medium">发布责任人</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      responsibilityRole === 'self_publish'
+                        ? 'default'
+                        : 'outline'
+                    }
+                    data-testid="delivery-assisted-role-self_publish"
+                    onClick={() => setResponsibilityRole('self_publish')}
+                  >
+                    本人发布
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      responsibilityRole === 'external_owner'
+                        ? 'default'
+                        : 'outline'
+                    }
+                    data-testid="delivery-assisted-role-external_owner"
+                    onClick={() => setResponsibilityRole('external_owner')}
+                  >
+                    外部责任人
+                  </Button>
+                </div>
+                {responsibilityRole === 'external_owner' ? (
+                  <div className="space-y-1">
+                    <Label htmlFor="delivery-assisted-owner-id">
+                      外部责任人
+                    </Label>
+                    <Input
+                      id="delivery-assisted-owner-id"
+                      data-testid="delivery-assisted-owner-id"
+                      value={externalOwnerId}
+                      onChange={(event) =>
+                        setExternalOwnerId(event.target.value)
+                      }
+                      placeholder="姓名或责任人标识"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {group.actions.map((action) => (
               <div key={action.id} className="flex flex-col gap-1">
                 <Button
                   type="button"
                   variant={action.id === 'full_package' ? 'default' : 'outline'}
-                  disabled={!action.enabled}
+                  disabled={
+                    !action.enabled ||
+                    pendingAction !== null ||
+                    (action.id === 'assisted' &&
+                      responsibilityRole === 'external_owner' &&
+                      externalOwnerId.trim().length === 0)
+                  }
                   data-testid={`delivery-action-${action.id}`}
                   data-action-id={action.id}
                   data-enabled={action.enabled ? 'true' : 'false'}
-                  onClick={() => onAction?.(action.id)}
+                  onClick={async () => {
+                    if (!onAction) return;
+                    setPendingAction(action.id);
+                    try {
+                      const next = await onAction(
+                        action.id,
+                        action.id === 'assisted'
+                          ? {
+                              ...(responsibilityRole === 'external_owner'
+                                ? { ownerId: externalOwnerId.trim() }
+                                : {}),
+                              responsibilityRole,
+                            }
+                          : undefined
+                      );
+                      if (next) setCompletedOutcome(next);
+                    } catch {
+                      // Keep the panel retryable without claiming completion.
+                    } finally {
+                      setPendingAction(null);
+                    }
+                  }}
                   className="justify-start"
                 >
                   {actionIcon(action.id)}
                   {action.label}
                 </Button>
                 {action.reason ? (
-                  <p className="text-xs text-muted-foreground">{action.reason}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {action.reason}
+                  </p>
                 ) : null}
               </div>
             ))}
@@ -202,7 +308,14 @@ export function DeliveryPanel({ view, onAction }: DeliveryPanelProps) {
               disabled={!view.assisted.primaryCta.enabled}
               data-testid="delivery-assisted-cta"
               data-cta-id={view.assisted.primaryCta.id}
-              onClick={() => onAction?.('assisted')}
+              onClick={() =>
+                onAction?.('assisted', {
+                  ...(responsibilityRole === 'external_owner'
+                    ? { ownerId: externalOwnerId.trim() }
+                    : {}),
+                  responsibilityRole,
+                })
+              }
             >
               {view.assisted.primaryCta.label}
             </Button>

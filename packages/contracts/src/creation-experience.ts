@@ -195,6 +195,7 @@ export interface CreationLensSeed {
  */
 export interface CatalogSessionFreeze {
   sessionId: CatalogSessionId;
+  workspaceId: string;
   surfaceRevisionId: SurfaceRevisionId;
   frozenAt: string;
   surface: BrowserSurfaceProjection;
@@ -379,6 +380,7 @@ export interface BriefHighRiskFactSignal {
 
 /** Quote signal vs QuotePolicy extra-confirm threshold. */
 export interface BriefQuoteSignal {
+  catalogModelId?: string;
   quoteRevisionId: string;
   amount: number;
   /**
@@ -394,6 +396,10 @@ export interface BriefQuoteSignal {
  * Pure signal bag — no hidden prompts, no user body text.
  */
 export interface BriefTriggerInput {
+  /** Server-owned revision context key created by brief_context_sync. */
+  briefContextId?: string;
+  /** Durable server confirmation key used for revalidation. */
+  confirmationId?: string;
   lensId?: CreationLensId | null;
   /** Deliverable kind (video_* also fires any_video). */
   deliverableKind?: string | null;

@@ -16,7 +16,6 @@ import {
   fixtureBriefProjection,
   openBriefSurface,
   projectBriefSurfaceView,
-  setBriefVideoConfirmAccepted,
   type BriefSurfaceState,
   type ComposerInputSnapshot,
 } from './brief-surface';
@@ -82,9 +81,6 @@ function BriefHarness({
       {view.visible ? (
         <BriefSurface
           view={view}
-          onAcceptVideoConfirm={(accepted) =>
-            setState((prev) => setBriefVideoConfirmAccepted(prev, accepted))
-          }
           onCancel={() => {
             const { state: next, restored } = cancelBriefSurface(state);
             setState(next);
@@ -97,8 +93,6 @@ function BriefHarness({
             if (result.ok) {
               setState(result.state);
               setConfirmedRev(result.confirmation.boundRevisions.draftRevisionId);
-            } else if (result.reason === 'video_confirm_required') {
-              // leave open
             }
           }}
         />
@@ -129,14 +123,6 @@ describe('Brief surface UI — seven triggers show / cancel restore', () => {
       expect(
         screen.queryByTestId('composer-brief-evidence-drawer')
       ).not.toBeInTheDocument();
-
-      if (code === 'any_video') {
-        // Must accept video confirm before confirm is enabled
-        const confirmBtn = screen.getByTestId('composer-brief-confirm');
-        expect(confirmBtn).toBeDisabled();
-        await user.click(screen.getByTestId('composer-brief-video-confirm-checkbox'));
-        expect(confirmBtn).not.toBeDisabled();
-      }
 
       await user.click(screen.getByTestId('composer-brief-cancel'));
       expect(screen.getByTestId('brief-phase')).toHaveTextContent('cancelled');
@@ -201,15 +187,12 @@ describe('evidence drawer — no evidence = not shown', () => {
 });
 
 describe('video confirm zone embedded in Brief', () => {
-  it('shows billing checkbox and gates confirm', async () => {
+  it('uses one Brief CTA to accept billing and start', async () => {
     const user = userEvent.setup();
     render(<BriefHarness codes={['any_video']} lensId="video" />);
 
     const zone = screen.getByTestId('composer-brief-video-confirm');
     expect(zone).toBeInTheDocument();
-    expect(screen.getByTestId('composer-brief-confirm')).toBeDisabled();
-
-    await user.click(screen.getByTestId('composer-brief-video-confirm-checkbox'));
     expect(screen.getByTestId('composer-brief-confirm')).not.toBeDisabled();
 
     await user.click(screen.getByTestId('composer-brief-confirm'));

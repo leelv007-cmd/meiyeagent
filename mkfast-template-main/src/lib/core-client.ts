@@ -208,6 +208,13 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
   });
   const contentLength = upstream.headers.get('content-length');
   if (contentLength) responseHeaders.set('content-length', contentLength);
+  if (new URL(request.url).searchParams.get('download') === '1') {
+    const fileName = objectKey.split('/').at(-1) ?? 'download';
+    responseHeaders.set(
+      'content-disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
+  }
   return new Response(upstream.body, {
     status: upstream.status,
     headers: responseHeaders,

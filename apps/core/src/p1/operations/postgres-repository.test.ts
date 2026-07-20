@@ -7,6 +7,8 @@ import {
 	MemoryFoundationRepository,
 	P1ApplicationService,
 } from "../foundation/index.js";
+import { ResultDeliveryFoundationModule } from "../result-delivery/foundation-module.js";
+import { OperationsVisualAdoptionPort } from "../result-delivery/operations-visual-adoption.js";
 import {
 	OperationsApplicationService,
 	OperationsFoundationModule,
@@ -220,7 +222,7 @@ describe(
 			assert.deepEqual(tableCounts.rows[0], { events: "2", tasks: "1" });
 		});
 
-		it("persists the creative Work, Job, Asset, and accepted Content graph", async () => {
+			it("persists the creative Work, Job, and Asset graph without new legacy Content", async () => {
 			const work = await service.createCreativeWork(context, {
 				intent: "持久化一条可恢复的创作记录",
 				mode: "agent",
@@ -245,10 +247,6 @@ describe(
 					watermarkEnabled: false,
 				},
 				"submit-pg-creative",
-			);
-			const content = await service.acceptCreativeAsset(
-				context,
-				generated.assets[0]!.id,
 			);
 			const reloaded = new OperationsApplicationService(
 				new PostgresOperationsRepository(pool),
@@ -275,11 +273,46 @@ describe(
 					.map((asset) => asset.id),
 				generated.assets.map((asset) => asset.id),
 			);
-			assert.equal(projection.contents[0]?.id, content.id);
-			assert.equal(projection.contents[0]?.workspaceId, workspaceId);
-			assert.deepEqual(projection.contents[0]?.assetIds, [
-				generated.assets[0]?.id,
-			]);
+				assert.deepEqual(projection.contents, []);
+		});
+
+		it("persists video approval receipts across Operations transactions", async () => {
+			const work = await service.createCreativeWork(context, {
+				autoConfirmBrief: true,
+				intent: "验证视频确认凭证持久化",
+				mode: "direct",
+				operation: "video.generate",
+				sessionId: `session-video-approval-${randomUUID()}`,
+				sourceReferences: [],
+			});
+			const receipt = await service.approveCreativeGeneration(context, {
+				approvalKey: `approve-video-${randomUUID()}`,
+				contract: {
+					aigcLabelEnabled: true,
+					aspectRatio: "9:16",
+					catalogModelId: "video-pg-live",
+					catalogRevision: "catalog-video-pg-live",
+					currency: "CNY",
+					dataClass: [],
+					durationSeconds: 15,
+					estimatedAmount: 1,
+					operation: "video.generate",
+					outputCount: 1,
+					outputLabel: "1 段竖屏视频",
+					quoteAcceptedAt: "2026-07-20T12:00:00.000Z",
+					quoteRevision: "quote-video-pg-live",
+					watermarkEnabled: true,
+				},
+				workId: work.id,
+			});
+
+			const reloaded = await new PostgresOperationsRepository(
+				pool,
+			).loadWorkspace(workspaceId);
+			assert.equal(
+				reloaded?.creativeGenerationApprovalReceipts?.[0]?.id,
+				receipt.id,
+			);
 		});
 
 		it("persists ContentPackage aggregates in a workspace-scoped transaction", async () => {
@@ -315,6 +348,213 @@ describe(
 				[workspaceId],
 			);
 			assert.equal(count.rows[0]?.count, "1");
+		});
+
+		it("persists public visual adoption and revision idempotency across service restarts", async () => {
+			const suffix = randomUUID();
+			const sessionId = `session-visual-adoption-${suffix}`;
+			const sourceWork = await service.createCreativeWork(context, {
+				intent: "生成图文成品",
+				mode: "agent",
+				sessionId,
+				sourceReferences: [],
+			});
+			const visualWork = await service.createCreativeWork(context, {
+				intent: "生成配套图片",
+				mode: "agent",
+				sessionId,
+				sourceReferences: [],
+			});
+			const copyJobId = `copy-job-${suffix}`;
+			const copyAssetIds = [0, 1, 2].map(
+				(index) => `copy-${index + 1}-${suffix}`,
+			);
+			const visualAssetIds = [0, 1].map(
+				(index) => `visual-${index + 1}-${suffix}`,
+			);
+			const now = "2026-07-20T09:00:00.000Z";
+			const contract = {
+				aigcLabelEnabled: true,
+				catalogModelId: "model-postgres-adoption",
+				catalogRevision: "catalog-v1",
+				currency: "CNY" as const,
+				dataClass: [],
+				estimatedAmount: 1,
+				operation: "copy.generate" as const,
+				outputCount: 3,
+				outputLabel: "3 条内容候选",
+				quoteAcceptedAt: now,
+				quoteRevision: "quote-v1",
+				watermarkEnabled: false,
+			};
+			const state = await repository.loadWorkspace(workspaceId);
+			assert.ok(state);
+			state.creativeJobs.push(
+				{
+					contract,
+					createdAt: now,
+					id: copyJobId,
+					outputAssetIds: copyAssetIds,
+					outputContentIds: [],
+					status: "completed",
+					submissionKey: `copy-submit-${suffix}`,
+					updatedAt: now,
+					workId: sourceWork.id,
+					workspaceId,
+				},
+				...visualAssetIds.map((assetId, index) => ({
+					contract: {
+						...contract,
+						operation: "image.generate" as const,
+						outputCount: 1,
+						outputLabel: "1 张图片",
+					},
+					createdAt: now,
+					id: `image-job-${index + 1}-${suffix}`,
+					outputAssetIds: [assetId],
+					outputContentIds: [],
+					status: "completed" as const,
+					submissionKey: `image-submit-${index + 1}-${suffix}`,
+					updatedAt: now,
+					workId: visualWork.id,
+					workspaceId,
+				})),
+			);
+			state.creativeAssets.push(
+				...copyAssetIds.map((id, candidateIndex) => ({
+					body: `正文 ${candidateIndex + 1}`,
+					candidateIndex,
+					createdAt: now,
+					id,
+					jobId: copyJobId,
+					kind: "text" as const,
+					title: `候选 ${candidateIndex + 1}`,
+					workId: sourceWork.id,
+					workspaceId,
+				})),
+				...visualAssetIds.map((id, index) => ({
+					contentType: "image/png" as const,
+					createdAt: now,
+					id,
+					jobId: `image-job-${index + 1}-${suffix}`,
+					kind: "image" as const,
+					objectKey: `${workspaceId}/generated/${id}.png`,
+					ownedAssetId: `owned-${id}`,
+					sha256: `${index + 1}`.repeat(64),
+					sizeBytes: 100 + index,
+					title: `图片 ${index + 1}`,
+					workId: visualWork.id,
+					workspaceId,
+				})),
+			);
+			const storedSourceWork = state.creativeWorks.find(
+				(work) => work.id === sourceWork.id,
+			);
+			assert.ok(storedSourceWork);
+			storedSourceWork.currentJobId = copyJobId;
+			storedSourceWork.status = "completed";
+			await repository.saveWorkspace(state);
+
+			const command = {
+				action: "adopt_into_content_package",
+				payload: {
+					copyCandidateAssetId: copyAssetIds[1]!,
+					visualAssetIds,
+					workId: sourceWork.id,
+				},
+			};
+			const module = new ResultDeliveryFoundationModule(
+				new OperationsVisualAdoptionPort(service),
+			);
+			const adopted = (await module.execute({
+				context,
+				idempotencyKey: `adopt-${suffix}`,
+				input: command,
+			})) as {
+				currentVersionId: string;
+				id: string;
+				revision: number;
+				versions: Array<{ id: string; orderedAssetIds: string[] }>;
+			};
+
+			const restartedService = new OperationsApplicationService(
+				new PostgresOperationsRepository(pool),
+				{
+					canvasExporter: new RecordedCanvasExportAdapter(),
+					creationExecutor,
+					imageGenerator: new RecordedImageGenerationAdapter(),
+					notifier: { async send() {} },
+				},
+			);
+			const restartedModule = new ResultDeliveryFoundationModule(
+				new OperationsVisualAdoptionPort(restartedService),
+			);
+			const replay = (await restartedModule.execute({
+				context: { ...context, correlationId: `replay-${suffix}` },
+				idempotencyKey: `adopt-${suffix}`,
+				input: command,
+			})) as typeof adopted;
+			const reviseCommand = {
+				action: "revise_content_package_visuals",
+				payload: {
+					baseVersionId: adopted.currentVersionId,
+					expectedRevision: adopted.revision,
+					orderedVisualAssetIds: [...visualAssetIds].reverse(),
+					packageId: adopted.id,
+					roleAction: "replace_set" as const,
+				},
+			};
+			const revised = (await restartedModule.execute({
+				context: { ...context, correlationId: `revise-${suffix}` },
+				idempotencyKey: `revise-${suffix}`,
+				input: reviseCommand,
+			})) as typeof adopted;
+			const secondRestart = new OperationsApplicationService(
+				new PostgresOperationsRepository(pool),
+				{
+					canvasExporter: new RecordedCanvasExportAdapter(),
+					creationExecutor,
+					imageGenerator: new RecordedImageGenerationAdapter(),
+					notifier: { async send() {} },
+				},
+			);
+			const replayedRevision = (await new ResultDeliveryFoundationModule(
+				new OperationsVisualAdoptionPort(secondRestart),
+			).execute({
+				context: { ...context, correlationId: `revise-replay-${suffix}` },
+				idempotencyKey: `revise-${suffix}`,
+				input: reviseCommand,
+			})) as typeof adopted;
+			const persisted = await secondRestart.getContentPackage(
+				{ ...context, actor: "owner" },
+				adopted.id,
+			);
+
+			assert.equal(replay.id, adopted.id);
+			assert.equal(replay.revision, adopted.revision);
+			assert.equal(revised.revision, adopted.revision + 1);
+			assert.equal(replayedRevision.revision, revised.revision);
+			assert.equal(persisted.revision, revised.revision);
+			assert.equal(persisted.currentVersionId, revised.currentVersionId);
+			assert.deepEqual(
+				persisted.versions.at(-1)?.orderedAssetIds.map(
+					(ownedAssetId) =>
+						persisted.generated.ownedAssets?.find(
+							(asset) => asset.id === ownedAssetId,
+						)?.sourceAssetId,
+				),
+				[...visualAssetIds].reverse(),
+			);
+			const receiptCount = await pool.query<{ count: string }>(
+				`SELECT count(*) FILTER (
+				          WHERE payload->>'status' = 'completed'
+				        )::text AS count
+				   FROM p1_operations_command_receipts
+				  WHERE workspace_id = $1
+				    AND payload->>'idempotencyKey' = ANY($2::text[])`,
+				[workspaceId, [`adopt-${suffix}`, `revise-${suffix}`]],
+			);
+			assert.equal(receiptCount.rows[0]?.count, "2");
 		});
 
 		it("backfills legacy revision payloads and keeps the entity column consistent", async () => {

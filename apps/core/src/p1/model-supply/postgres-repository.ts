@@ -6,15 +6,14 @@ import {
   ContentWorkflowRunner,
   InMemoryDurableVideoWorkflowStore,
   VersionedHumanCalibratedVideoQualityScorer,
-  VideoWorkflowCancellationError,
-  VideoWorkflowConcurrencyError,
-  assertVideoWorkflowMutationAllowed,
-  assertVideoWorkflowRunnable,
-  normalizeStoredVideoWorkflow,
+  liftDurableToCanonical,
+  projectDurableVideoWorkflow,
   runDurableVideoWorkflow,
   type CreateVideoWorkflowInput,
+  type AsyncCanonicalVideoRunStore,
   type DurableVideoWorkflow,
   type DurableVideoWorkflowSaveOptions,
+  type EditVideoWorkflowInput,
   type ModelSupplyApplicationService,
   type ModelSupplyResult,
   type QualityEvent,
@@ -940,315 +939,21 @@ export interface AsyncDurableVideoWorkflowStore {
   ): Promise<void>;
 }
 
-interface DurableVideoWorkflowRow {
-  workflow: DurableVideoWorkflow;
-  revision: string | number;
-  run_lease_token: string | null;
-}
-
-export class PostgresDurableVideoWorkflowStore implements AsyncDurableVideoWorkflowStore {
-  constructor(
-    private readonly pool: Pool,
-    private readonly workspaceId: string
-  ) {}
-
-  async get(id: string) {
-    const result = await this.pool.query<DurableVideoWorkflowRow>(
-      `SELECT workflow, revision, run_lease_token FROM model_video_workflows
-        WHERE workspace_id = $1 AND workflow_id = $2`,
-      [this.workspaceId, id]
-    );
-    return result.rows[0] ? workflowFromRow(result.rows[0]) : undefined;
-  }
-
-  async list(workspaceId: string, actorId: string) {
-    if (workspaceId !== this.workspaceId) {
-      throw new Error('Video workflow workspace does not match its durable store.');
-    }
-    const result = await this.pool.query<DurableVideoWorkflowRow>(
-      `SELECT workflow, revision, run_lease_token FROM model_video_workflows
-        WHERE workspace_id = $1 AND workflow->>'actorId' = $2
-        ORDER BY workflow->>'updatedAt' DESC, workflow_id DESC`,
-      [workspaceId, actorId],
-    );
-    return result.rows.map(workflowFromRow);
-  }
-
-  async findLatest(workspaceId: string, actorId: string, workId?: string) {
-    if (workspaceId !== this.workspaceId) {
-      throw new Error('Video workflow workspace does not match its durable store.');
-    }
-    const result = await this.pool.query<DurableVideoWorkflowRow>(
-      `SELECT workflow, revision, run_lease_token FROM model_video_workflows
-        WHERE workspace_id = $1 AND workflow->>'actorId' = $2
-          AND ($3::text IS NULL OR workflow->>'workId' = $3)
-        ORDER BY
-          CASE
-            WHEN $3::text IS NOT NULL
-              AND workflow->>'storyboardVersion' ~ '^[1-9][0-9]*$'
-              THEN (workflow->>'storyboardVersion')::integer
-            ELSE 0
-          END DESC,
-          CASE WHEN workflow->>'status' IN ('completed', 'cancelled', 'failed')
-            THEN 1 ELSE 0 END ASC,
-          CASE
-            WHEN $3::text IS NULL
-              AND workflow->>'storyboardVersion' ~ '^[1-9][0-9]*$'
-              THEN (workflow->>'storyboardVersion')::integer
-            ELSE 0
-          END DESC,
-          workflow->>'updatedAt' DESC,
-          workflow_id DESC
-        LIMIT 1`,
-      [workspaceId, actorId, workId ?? null],
-    );
-    return result.rows[0] ? workflowFromRow(result.rows[0]) : undefined;
-  }
-
-  async save(
-    workflow: DurableVideoWorkflow,
-    options: DurableVideoWorkflowSaveOptions = {},
-  ) {
-    if (workflow.workspaceId !== this.workspaceId) {
-      throw new Error('Video workflow workspace does not match its durable store.');
-    }
-    const candidate = normalizeStoredVideoWorkflow(workflow);
-    return this.withWorkflowLock(candidate.id, async (client, row) => {
-      if (!row) {
-        if ((options.expectedRevision ?? candidate.revision) !== 0) {
-          throw new VideoWorkflowConcurrencyError(
-            'Video workflow creation used a stale revision.',
-          );
-        }
-        await client.query(
-          `INSERT INTO model_video_workflows
-             (workspace_id, workflow_id, workflow, revision, run_lease_token, updated_at)
-           VALUES ($1, $2, $3::jsonb, 0, NULL, now())`,
-          [this.workspaceId, candidate.id, JSON.stringify(candidate)],
-        );
-        return structuredClone(candidate);
-      }
-      const current = workflowFromRow(row);
-      const expectedRevision = options.expectedRevision ?? candidate.revision;
-      assertVideoWorkflowMutationAllowed(
-        current,
-        candidate,
-        expectedRevision,
-        row.run_lease_token ?? undefined,
-        options,
-      );
-      if (JSON.stringify(current) === JSON.stringify(candidate)) {
-        return current;
-      }
-      const saved = {
-        ...structuredClone(candidate),
-        revision: current.revision + 1,
-      };
-      const releaseRunLease =
-        saved.status === 'completed' ||
-        saved.status === 'cancelled' ||
-        saved.status === 'failed' ||
-        saved.status === 'awaiting_quality_review';
-      const updated = await client.query<DurableVideoWorkflowRow>(
-        `UPDATE model_video_workflows
-            SET workflow = $3::jsonb,
-                revision = $4,
-                run_lease_token = CASE WHEN $5 THEN NULL ELSE run_lease_token END,
-                updated_at = now()
-          WHERE workspace_id = $1 AND workflow_id = $2
-            AND revision = $6
-            AND ($7::text IS NULL OR run_lease_token = $7)
-          RETURNING workflow, revision, run_lease_token`,
-        [
-          this.workspaceId,
-          saved.id,
-          JSON.stringify(saved),
-          saved.revision,
-          releaseRunLease,
-          expectedRevision,
-          options.runLeaseToken ?? null,
-        ],
-      );
-      if (!updated.rows[0]) {
-        throw new VideoWorkflowConcurrencyError(
-          'Video workflow result belongs to a stale run lease.',
-        );
-      }
-      return workflowFromRow(updated.rows[0]);
-    });
-  }
-
-  async claimRun(id: string, workspaceId: string, leaseToken: string) {
-    this.assertWorkspace(workspaceId);
-    return this.withWorkflowLock(id, async (client, row) => {
-      if (!row) throw new Error(`Unknown durable video workflow ${id}.`);
-      const current = workflowFromRow(row);
-      if (
-        current.status === 'cancel_requested' ||
-        current.status === 'cancelled'
-      ) {
-        throw new VideoWorkflowCancellationError(
-          'Video workflow cancellation was requested.',
-        );
-      }
-      if (current.status === 'completed' || current.status === 'failed') {
-        return current;
-      }
-      if (!current.confirmed) {
-        throw new Error(
-          'Storyboard must be confirmed before clip attempts are created.',
-        );
-      }
-      const claimed = {
-        ...structuredClone(current),
-        status: 'running' as const,
-        revision: current.revision + 1,
-      };
-      const updated = await client.query<DurableVideoWorkflowRow>(
-        `UPDATE model_video_workflows
-            SET workflow = $3::jsonb, revision = $4,
-                run_lease_token = $5, updated_at = now()
-          WHERE workspace_id = $1 AND workflow_id = $2 AND revision = $6
-          RETURNING workflow, revision, run_lease_token`,
-        [
-          this.workspaceId,
-          id,
-          JSON.stringify(claimed),
-          claimed.revision,
-          leaseToken,
-          current.revision,
-        ],
-      );
-      if (!updated.rows[0]) {
-        throw new VideoWorkflowConcurrencyError(
-          'Video workflow run claim is stale.',
-        );
-      }
-      return workflowFromRow(updated.rows[0]);
-    });
-  }
-
-  async requestCancel(id: string, workspaceId: string, requestedAt: string) {
-    this.assertWorkspace(workspaceId);
-    return this.withWorkflowLock(id, async (client, row) => {
-      if (!row) throw new Error(`Unknown durable video workflow ${id}.`);
-      const current = workflowFromRow(row);
-      if (current.status === 'completed' || current.status === 'failed') {
-        throw new Error('A terminal video workflow cannot be cancelled.');
-      }
-      if (
-        current.status === 'cancel_requested' ||
-        current.status === 'cancelled'
-      ) {
-        return current;
-      }
-      const requested: DurableVideoWorkflow = {
-        ...structuredClone(current),
-        status: 'cancel_requested',
-        cancelRequestedAt: requestedAt,
-        revision: current.revision + 1,
-        updatedAt: requestedAt,
-      };
-      const updated = await client.query<DurableVideoWorkflowRow>(
-        `UPDATE model_video_workflows
-            SET workflow = $3::jsonb, revision = $4,
-                run_lease_token = NULL, updated_at = now()
-          WHERE workspace_id = $1 AND workflow_id = $2 AND revision = $5
-          RETURNING workflow, revision, run_lease_token`,
-        [
-          this.workspaceId,
-          id,
-          JSON.stringify(requested),
-          requested.revision,
-          current.revision,
-        ],
-      );
-      if (!updated.rows[0]) {
-        throw new VideoWorkflowConcurrencyError(
-          'Video workflow cancellation used a stale revision.',
-        );
-      }
-      return workflowFromRow(updated.rows[0]);
-    });
-  }
-
-  async assertRunnable(
-    id: string,
-    workspaceId: string,
-    revision: number,
-    leaseToken: string,
-  ) {
-    this.assertWorkspace(workspaceId);
-    const result = await this.pool.query<DurableVideoWorkflowRow>(
-      `SELECT workflow, revision, run_lease_token
-         FROM model_video_workflows
-        WHERE workspace_id = $1 AND workflow_id = $2`,
-      [this.workspaceId, id],
-    );
-    if (!result.rows[0]) throw new Error(`Unknown durable video workflow ${id}.`);
-    assertVideoWorkflowRunnable(
-      workflowFromRow(result.rows[0]),
-      revision,
-      result.rows[0].run_lease_token ?? undefined,
-      leaseToken,
-    );
-  }
-
-  private assertWorkspace(workspaceId: string) {
-    if (workspaceId !== this.workspaceId) {
-      throw new Error('Video workflow workspace does not match its durable store.');
-    }
-  }
-
-  private async withWorkflowLock<T>(
-    id: string,
-    action: (
-      client: PoolClient,
-      row: DurableVideoWorkflowRow | undefined,
-    ) => Promise<T>,
-  ) {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const result = await client.query<DurableVideoWorkflowRow>(
-        `SELECT workflow, revision, run_lease_token
-           FROM model_video_workflows
-          WHERE workspace_id = $1 AND workflow_id = $2
-          FOR UPDATE`,
-        [this.workspaceId, id],
-      );
-      const value = await action(client, result.rows[0]);
-      await client.query('COMMIT');
-      return value;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-}
-
-function workflowFromRow(row: DurableVideoWorkflowRow) {
-  return normalizeStoredVideoWorkflow({
-    ...row.workflow,
-    revision: Number(row.revision),
-  });
-}
-
 /** Async wrapper that persists every runner checkpoint and restores after restart. */
 export class PersistentContentWorkflowRunner {
   constructor(
     private readonly models: ModelSupplyApplicationService,
     private readonly composer: VideoCompositionPort,
-    private readonly workflows: AsyncDurableVideoWorkflowStore,
+    private readonly workflows:
+      | AsyncDurableVideoWorkflowStore
+      | AsyncCanonicalVideoRunStore,
     private readonly qualityScorer: VideoQualityScoringPort = new VersionedHumanCalibratedVideoQualityScorer(),
     private readonly clock: () => number = () => Date.now(),
   ) {}
 
   async createVideoWorkflow(input: CreateVideoWorkflowInput) {
     if (input.workflowId) {
-      const existing = await this.workflows.get(input.workflowId);
+      const existing = await this.getStored(input.workflowId);
       if (existing) {
         const memory = new InMemoryDurableVideoWorkflowStore();
         memory.restore(existing);
@@ -1263,7 +968,7 @@ export class PersistentContentWorkflowRunner {
     }
     const memory = new InMemoryDurableVideoWorkflowStore();
     if (input.derivedFromWorkflowId) {
-      const source = await this.workflows.get(input.derivedFromWorkflowId);
+      const source = await this.getStored(input.derivedFromWorkflowId);
       if (!source) {
         throw new Error(`Unknown workflow ${input.derivedFromWorkflowId}.`);
       }
@@ -1276,11 +981,11 @@ export class PersistentContentWorkflowRunner {
       this.qualityScorer,
       this.clock,
     ).createVideoWorkflow(input);
-    return this.workflows.save(workflow);
+    return this.saveStored(workflow);
   }
 
   async getVideoWorkflow(id: string, workspaceId?: string) {
-    const workflow = await this.workflows.get(id);
+    const workflow = await this.getStored(id);
     if (!workflow) throw new Error(`Unknown durable video workflow ${id}.`);
     if (workspaceId && workflow.workspaceId !== workspaceId) {
       throw new Error('Video workflow belongs to another workspace.');
@@ -1289,7 +994,7 @@ export class PersistentContentWorkflowRunner {
   }
 
   listVideoWorkflows(workspaceId: string, actorId: string) {
-    return this.workflows.list(workspaceId, actorId);
+    return this.listStored(workspaceId, actorId);
   }
 
   async findLatestVideoWorkflow(
@@ -1297,13 +1002,13 @@ export class PersistentContentWorkflowRunner {
     actorId: string,
     workId?: string,
   ) {
-    return this.workflows.findLatest(workspaceId, actorId, workId);
+    return this.findLatestStored(workspaceId, actorId, workId);
   }
 
   async confirmVideoWorkflow(id: string, workspaceId?: string) {
     const { runner, workflow: current } = await this.restore(id);
     const workflow = runner.confirmVideoWorkflow(id, workspaceId);
-    return this.workflows.save(workflow, {
+    return this.saveStored(workflow, {
       expectedRevision: current.revision,
     });
   }
@@ -1311,9 +1016,23 @@ export class PersistentContentWorkflowRunner {
   async selectVideoCandidate(input: SelectVideoCandidateInput) {
     const { runner, workflow: current } = await this.restore(input.workflowId);
     const workflow = runner.selectVideoCandidate(input);
-    return this.workflows.save(workflow, {
+    return this.saveStored(workflow, {
       expectedRevision: current.revision,
     });
+  }
+
+  async editVideoWorkflow(input: EditVideoWorkflowInput) {
+    const canonical = this.canonicalStore();
+    if (!canonical) {
+      throw new Error(
+        'Canonical video editing requires the generic Task/Job/Asset store.',
+      );
+    }
+    const edited = await canonical.editRun(
+      input,
+      new Date(this.clock()).toISOString(),
+    );
+    return projectDurableVideoWorkflow(edited);
   }
 
   async runVideoWorkflow(id: string, workspaceId?: string) {
@@ -1326,7 +1045,7 @@ export class PersistentContentWorkflowRunner {
       return current;
     }
     const leaseToken = randomUUID();
-    const workflow = await this.workflows.claimRun(
+    const workflow = await this.claimStored(
       id,
       current.workspaceId,
       leaseToken,
@@ -1345,17 +1064,18 @@ export class PersistentContentWorkflowRunner {
           leaseToken,
         ),
       checkpoint: async (checkpoint) =>
-        this.workflows.save(checkpoint, { runLeaseToken: leaseToken }),
+        this.saveStored(checkpoint, { runLeaseToken: leaseToken }),
     });
   }
 
   async requestVideoWorkflowCancel(id: string, workspaceId?: string) {
     const current = await this.getVideoWorkflow(id, workspaceId);
-    return this.workflows.requestCancel(
+    const cancelled = await this.requestCancelStored(
       id,
       current.workspaceId,
       new Date(this.clock()).toISOString(),
     );
+    return this.projectStored(cancelled);
   }
 
   async cancelVideoWorkflow(id: string, workspaceId?: string) {
@@ -1370,14 +1090,97 @@ export class PersistentContentWorkflowRunner {
       this.qualityScorer,
       this.clock,
     ).cancelVideoWorkflow(id, workspaceId);
-    return this.workflows.save(workflow, {
+    return this.saveStored(workflow, {
       completeCancellation: true,
       expectedRevision: requested.revision,
     });
   }
 
+  private canonicalStore(): AsyncCanonicalVideoRunStore | null {
+    return 'getRun' in this.workflows ? this.workflows : null;
+  }
+
+  private durableStore(): AsyncDurableVideoWorkflowStore | null {
+    return 'get' in this.workflows ? this.workflows : null;
+  }
+
+  private projectStored(
+    value: DurableVideoWorkflow | ReturnType<typeof liftDurableToCanonical>,
+  ): DurableVideoWorkflow {
+    return 'runId' in value
+      ? projectDurableVideoWorkflow(value)
+      : structuredClone(value);
+  }
+
+  private async getStored(id: string) {
+    const canonical = this.canonicalStore();
+    if (!canonical) return this.durableStore()!.get(id);
+    const run = await canonical.getRun(id);
+    return run ? projectDurableVideoWorkflow(run) : undefined;
+  }
+
+  private async listStored(workspaceId: string, actorId: string) {
+    const canonical = this.canonicalStore();
+    return canonical
+      ? (await canonical.listRuns(workspaceId, actorId)).map(
+          projectDurableVideoWorkflow,
+        )
+      : this.durableStore()!.list(workspaceId, actorId);
+  }
+
+  private async findLatestStored(
+    workspaceId: string,
+    actorId: string,
+    workId?: string,
+  ) {
+    const canonical = this.canonicalStore();
+    if (!canonical) {
+      return this.durableStore()!.findLatest(workspaceId, actorId, workId);
+    }
+    const run = await canonical.findLatestRun(workspaceId, actorId, workId);
+    return run ? projectDurableVideoWorkflow(run) : undefined;
+  }
+
+  private async saveStored(
+    workflow: DurableVideoWorkflow,
+    options: DurableVideoWorkflowSaveOptions = {},
+  ) {
+    const canonical = this.canonicalStore();
+    return canonical
+      ? projectDurableVideoWorkflow(
+          await canonical.putRun(liftDurableToCanonical(workflow), options),
+        )
+      : this.durableStore()!.save(workflow, options);
+  }
+
+  private async claimStored(
+    id: string,
+    workspaceId: string,
+    leaseToken: string,
+  ): Promise<DurableVideoWorkflow> {
+    const canonical = this.canonicalStore();
+    return canonical
+      ? projectDurableVideoWorkflow(
+          await canonical.claimRun(id, workspaceId, leaseToken),
+        )
+      : this.durableStore()!.claimRun(id, workspaceId, leaseToken);
+  }
+
+  private async requestCancelStored(
+    id: string,
+    workspaceId: string,
+    requestedAt: string,
+  ): Promise<DurableVideoWorkflow> {
+    const canonical = this.canonicalStore();
+    return canonical
+      ? projectDurableVideoWorkflow(
+          await canonical.requestCancel(id, workspaceId, requestedAt),
+        )
+      : this.durableStore()!.requestCancel(id, workspaceId, requestedAt);
+  }
+
   private async restore(id: string) {
-    const workflow = await this.workflows.get(id);
+    const workflow = await this.getStored(id);
     if (!workflow) throw new Error(`Unknown durable video workflow ${id}.`);
     const memory = new InMemoryDurableVideoWorkflowStore();
     memory.restore(workflow);

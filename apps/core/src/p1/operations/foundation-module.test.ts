@@ -16,6 +16,27 @@ import {
 import { OperationsError } from './application-service.js';
 
 describe('operations foundation module', () => {
+  it('retires the public CreativeContent acceptance command after cutover', async () => {
+    const module = new OperationsFoundationModule(
+      {} as OperationsApplicationService,
+    );
+
+    await assert.rejects(
+      module.execute({
+        context: {
+          correlationId: 'corr-z1-retirement',
+          userId: 'owner-z1-retirement',
+          workspaceId: 'workspace-z1-retirement',
+        },
+        input: {
+          action: 'accept_creative_asset',
+          payload: { assetId: 'legacy-asset' },
+        },
+      }),
+      /Unknown operations command/u,
+    );
+  });
+
   it('keeps ContentPackage migration commands and reports behind the admin gate', async () => {
     const calls: string[] = [];
     const module = new OperationsFoundationModule(
@@ -220,15 +241,17 @@ describe('operations foundation module', () => {
     const calls: Array<{
       action: 'paid' | 'quality';
       jobId: string;
+      quoteId?: string;
       submissionKey: string;
     }> = [];
     const module = new OperationsFoundationModule({
       async rerollCreativeJob(
         _context: unknown,
         jobId: string,
-        submissionKey: string
+        submissionKey: string,
+        quoteId: string,
       ) {
-        calls.push({ action: 'paid', jobId, submissionKey });
+        calls.push({ action: 'paid', jobId, quoteId, submissionKey });
         return { action: 'paid' };
       },
       async qualityRetryCreativeJob(
@@ -246,11 +269,30 @@ describe('operations foundation module', () => {
       workspaceId: 'workspace-reroll-module',
     };
 
+    await assert.rejects(
+      module.execute({
+        context,
+        input: {
+          action: 'reroll_creative_job',
+          payload: {
+            jobId: 'job-paid',
+            submissionKey: 'paid-key',
+          },
+        },
+      }),
+      /quoteId is required/,
+    );
+    assert.deepEqual(calls, []);
+
     await module.execute({
       context,
       input: {
         action: 'reroll_creative_job',
-        payload: { jobId: 'job-paid', submissionKey: 'paid-key' },
+        payload: {
+          jobId: 'job-paid',
+          quoteId: 'quote-paid-new',
+          submissionKey: 'paid-key',
+        },
       },
     });
     await module.execute({
@@ -262,7 +304,12 @@ describe('operations foundation module', () => {
     });
 
     assert.deepEqual(calls, [
-      { action: 'paid', jobId: 'job-paid', submissionKey: 'paid-key' },
+      {
+        action: 'paid',
+        jobId: 'job-paid',
+        quoteId: 'quote-paid-new',
+        submissionKey: 'paid-key',
+      },
       {
         action: 'quality',
         jobId: 'job-quality',

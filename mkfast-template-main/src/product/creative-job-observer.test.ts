@@ -5,6 +5,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   creativeJobObservation,
+  isComposedVideoObservation,
   mergeVideoWorkflowList,
   providerTerminalResumeKey,
   refreshCreativeJobCanonicalState,
@@ -49,6 +50,7 @@ test('only active image and video jobs with provider ids are observed', () => {
     operation: 'image.generate',
     providerJobId: 'provider-job-1',
     status: 'running',
+    workId: 'work-1',
   });
   assert.equal(
     creativeJobObservation(
@@ -61,6 +63,28 @@ test('only active image and video jobs with provider ids are observed', () => {
     undefined
   );
   assert.equal(creativeJobObservation(job({ status: 'completed' })), undefined);
+});
+
+test('recognizes only canonical composed-video workflow observations', () => {
+  assert.equal(
+    isComposedVideoObservation({
+      creativeJobId: 'creative-job-video-1',
+      operation: 'video.generate',
+      providerJobId: 'video-workflow-canonical-1',
+      status: 'running',
+      workId: 'work-video-1',
+    }),
+    true
+  );
+  assert.equal(
+    isComposedVideoObservation({
+      operation: 'image.generate',
+      providerJobId: 'video-workflow-canonical-1',
+      status: 'running',
+      workId: 'work-image-1',
+    }),
+    false
+  );
 });
 
 test('terminal resume keys are stable and exclude active provider states', () => {

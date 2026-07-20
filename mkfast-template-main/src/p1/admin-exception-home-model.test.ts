@@ -270,7 +270,7 @@ test('sort: severity × scope × duration × recent change', () => {
 test('handoff link redaction strips secrets / tokens / sql / env dumps', () => {
   const redacted = redactHandoffContext({
     domain: 'task_orchestration',
-    apiKey: 'sk-live-should-not-leak',
+    apiKey: 'fixture-secret',
     password: 'hunter2',
     authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload',
     note: 'safe operator note',

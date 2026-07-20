@@ -72,7 +72,7 @@ export class ProductCreativeGroundingResolver
       missing.add('confirmed_qualification');
     }
     if (
-      requestedAssetIds.length === 0 ||
+      requestedAssetIds.length > 0 &&
       realAuthorizedAssets.length !== requestedAssetIds.length
     ) {
       missing.add('real_authorized_asset');

@@ -301,6 +301,36 @@ export const RECORDED_MEDIA_ADAPTER_CONTRACTS = {
     ]),
     cost: { amount: 0.06, currency: 'USD', unit: 'recorded_media_unit' },
   },
+  'seedance-1-5-pro': {
+    catalogModelId: 'seedance-1-5-pro',
+    adapterRevision: 'seedance-1-5-pro-adapter-v1',
+    capabilityRevision: 'seedance-1-5-pro:video-v1',
+    priceRevision: 'seedance-1-5-pro:price-v1',
+    modality: 'video',
+    operations: ['video.generate'],
+    durationSeconds: { min: 1, max: 15 },
+    outputContentType: 'video/mp4',
+    submissionMode: 'async',
+    assetTtlSeconds: 3600,
+    logicalTimeoutSeconds: 900,
+    errorCodes: [
+      'whitelist_required',
+      'rate_limited',
+      'acceptance_unknown',
+      'logical_timeout',
+      'download_failed',
+      'cancel_pending',
+    ],
+    errorContracts: recordedMediaErrorContracts([
+      'whitelist_required',
+      'rate_limited',
+      'acceptance_unknown',
+      'logical_timeout',
+      'download_failed',
+      'cancel_pending',
+    ]),
+    cost: { amount: 0.45, currency: 'USD', unit: 'recorded_media_unit' },
+  },
   'seedance-2': {
     catalogModelId: 'seedance-2',
     adapterRevision: 'seedance-2-adapter-v1',
@@ -1074,6 +1104,10 @@ abstract class VideoRecordedAdapter implements ProviderExecutionPort {
   }
 }
 
+export class Seedance15ProRecordedAdapter extends VideoRecordedAdapter {
+  readonly catalogModelId = 'seedance-1-5-pro';
+  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['seedance-1-5-pro'];
+}
 export class Seedance2RecordedAdapter extends VideoRecordedAdapter {
   readonly catalogModelId = 'seedance-2';
   readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['seedance-2'];
@@ -1274,6 +1308,7 @@ export function defaultRecordedMediaAdapters(): ProviderExecutionPort[] {
     new NanoBananaProRecordedAdapter(),
     new Seedream45RecordedAdapter(),
     new Seedream5ProRecordedAdapter(),
+    new Seedance15ProRecordedAdapter(),
     new Seedance2RecordedAdapter(),
     new KlingLatestRecordedAdapter(),
     new GrokLatestVideoRecordedAdapter(),

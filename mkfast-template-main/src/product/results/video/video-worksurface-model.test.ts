@@ -66,6 +66,46 @@ describe('video worksurface fixture + projection marker', () => {
     assert.equal(opening.candidates[1]?.selected, false);
   });
 
+  it('restores canonical revision, shot order and subtitle text from the public projection', () => {
+    const state = buildVideoWorksurfaceState({
+      workId: 'work-video-restore',
+      baseRevisionId: 'base-rev-restore',
+      workflow: {
+        workflowId: 'workflow-video-restore',
+        status: 'completed',
+        storyboardVersion: 2,
+        storyboardRevision: 'storyboard-rev-2',
+        catalogModelId: 'seedance-2',
+        confirmed: true,
+        revision: 7,
+        updatedAt: '2026-07-20T12:00:00.000Z',
+        subtitleText: '服务端字幕',
+        shots: [
+          {
+            shotId: 'shot-service',
+            candidatesPerShot: 2,
+            selectedCandidateIndex: 0,
+            candidateCount: 2,
+          },
+          {
+            shotId: 'shot-opening',
+            candidatesPerShot: 2,
+            selectedCandidateIndex: 1,
+            candidateCount: 2,
+          },
+        ],
+      },
+    });
+
+    assert.equal(state.workflowRevision, 7);
+    assert.equal(state.subtitle.text, '服务端字幕');
+    assert.deepEqual(
+      state.storyboard.map((shot) => shot.shotId),
+      ['shot-service', 'shot-opening']
+    );
+    assert.equal(state.storyboard[1]?.selectedCandidateIndex, 1);
+  });
+
   it('requires workId', () => {
     const fixture = videoWorksurfaceFixture();
     assert.throws(
@@ -85,7 +125,7 @@ describe('video worksurface fixture + projection marker', () => {
           },
           baseRevisionId: 'r1',
         }),
-      /workId/,
+      /workId/
     );
   });
 });
@@ -122,7 +162,7 @@ describe('player / cover', () => {
     const fromImage = setCoverFromAuthorizedImage(
       base,
       'auth-img-9',
-      '/v1/assets/auth-img-9',
+      '/v1/assets/auth-img-9'
     );
     assert.equal(fromImage.fee.createsProductUsage, false);
     assert.equal(fromImage.state.cover.source, 'authorized_image');
@@ -139,13 +179,13 @@ describe('storyboard selection / reorder / regen intents', () => {
     assert.equal(selected.fee.fee, 'none');
     assert.equal(selected.fee.freeAction, 'select_shot_candidate');
     const opening = selected.state.storyboard.find(
-      (s) => s.shotId === 'shot-opening',
+      (s) => s.shotId === 'shot-opening'
     );
     assert.equal(opening?.selectedCandidateIndex, 1);
     assert.equal(opening?.candidates[1]?.selected, true);
     assert.equal(
       selected.state.uncommitted.shotSelections?.['shot-opening'],
-      1,
+      1
     );
 
     const reordered = reorderShots(selected.state, [
@@ -157,7 +197,7 @@ describe('storyboard selection / reorder / regen intents', () => {
     assert.equal(reordered.fee.createsProductUsage, false);
     assert.deepEqual(
       reordered.state.storyboard.map((s) => s.shotId),
-      ['shot-cta', 'shot-opening', 'shot-service'],
+      ['shot-cta', 'shot-opening', 'shot-service']
     );
     assert.deepEqual(reordered.state.uncommitted.shotOrder, [
       'shot-cta',
@@ -176,7 +216,10 @@ describe('storyboard selection / reorder / regen intents', () => {
     assert.equal(shot.fee.actionLabel, '重新生成此镜头');
     assert.equal(shot.state.pendingQuote?.scope, 'shot');
     assert.equal(shot.state.pendingQuote?.shotId, 'shot-service');
-    assert.equal(shot.state.pendingQuote?.createsNewTaskAndIndependentQuote, true);
+    assert.equal(
+      shot.state.pendingQuote?.createsNewTaskAndIndependentQuote,
+      true
+    );
 
     const full = requestFullRecompose(base);
     assert.equal(full.fee.scope, 'full_compose');
@@ -199,7 +242,7 @@ describe('action matrix (contracts ResultActionId, video labels)', () => {
   });
 
   it('adopted primary is deliver; delivered primary is create_from_this', () => {
-    let state = videoWorksurfaceFixture();
+    const state = videoWorksurfaceFixture();
     const adopted = adoptComposedFilm(state, {
       contentPackageId: 'cp-video-1',
       now: '2026-07-20T12:05:00.000Z',
@@ -257,7 +300,7 @@ describe('Pro Studio refine handoff', () => {
     assert.equal(handoff.uncommittedEditKey.workId, 'work-video-1');
     assert.equal(
       handoff.uncommittedEditKey.baseRevisionId,
-      state.baseRevisionId,
+      state.baseRevisionId
     );
     assert.equal(handoff.uncommitted.subtitleDraftText, '校对后的字幕');
     assert.equal(handoff.uncommitted.coverDraft?.source, 'frame');
