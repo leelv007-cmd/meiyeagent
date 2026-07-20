@@ -1,0 +1,8 @@
+{
+  "version": "copy-quality-v1",
+  "dimensions": {
+    "grounding": "All critical claims cite supplied current sources.",
+    "usefulness": "The copy gives the merchant a complete usable message and CTA.",
+    "platformFit": "The structure and expression fit the requested platform."
+  }
+}

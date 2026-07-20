@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import {
+  billingPeriodFromProvider,
+  defaultPriceCatalogFromEnv,
+  defaultTierForInterval,
+  resolvePaymentTier,
+} from './payment-mapping.js';
+
+describe('payment-mapping', () => {
+  it('defaults monthly/yearly to growth and lifetime to pro', () => {
+    assert.equal(defaultTierForInterval('month'), 'growth');
+    assert.equal(defaultTierForInterval('year'), 'growth');
+    assert.equal(defaultTierForInterval('lifetime'), 'pro');
+    assert.equal(defaultTierForInterval('one_time'), 'pro');
+  });
+
+  it('resolves admin-config exact and any mappings first', () => {
+    const config = {
+      mappings: [
+        {
+          paymentProductId: 'price_month',
+          interval: 'month' as const,
+          tier: 'pro' as const,
+        },
+        {
+          paymentProductId: 'price_any',
+          interval: 'any' as const,
+          tier: 'growth' as const,
+        },
+      ],
+    };
+    assert.equal(
+      resolvePaymentTier({
+        paymentProductId: 'price_month',
+        interval: 'month',
+        config,
+      }),
+      'pro'
+    );
+    assert.equal(
+      resolvePaymentTier({
+        paymentProductId: 'price_any',
+        interval: 'year',
+        config,
+      }),
+      'growth'
+    );
+  });
+
+  it('falls back to env price catalog then interval defaults', () => {
+    const catalog = defaultPriceCatalogFromEnv({
+      monthly: 'price_m',
+      yearly: 'price_y',
+      lifetime: 'price_life',
+    });
+    assert.equal(
+      resolvePaymentTier({
+        paymentProductId: 'price_m',
+        interval: 'month',
+        defaultPriceCatalog: catalog,
+      }),
+      'growth'
+    );
+    assert.equal(
+      resolvePaymentTier({
+        paymentProductId: 'price_life',
+        interval: 'lifetime',
+        defaultPriceCatalog: catalog,
+      }),
+      'pro'
+    );
+    assert.equal(
+      resolvePaymentTier({
+        paymentProductId: 'unknown_price',
+        interval: 'lifetime',
+      }),
+      'pro'
+    );
+  });
+
+  it('prefers provider billing period over calendar month', () => {
+    const period = billingPeriodFromProvider({
+      interval: 'year',
+      periodStartsAt: '2026-03-15T12:00:00.000Z',
+      periodEndsAt: '2027-03-15T12:00:00.000Z',
+    });
+    assert.equal(period.periodStartsAt, '2026-03-15T12:00:00.000Z');
+    assert.equal(period.periodEndsAt, '2027-03-15T12:00:00.000Z');
+    assert.equal(period.periodStrategy, 'provider_period');
+    assert.match(period.periodId, /^provider-/);
+  });
+
+  it('derives year/lifetime ends when provider omits periodEnd', () => {
+    const year = billingPeriodFromProvider({
+      interval: 'year',
+      periodStartsAt: '2026-01-01T00:00:00.000Z',
+    });
+    assert.equal(year.periodEndsAt, '2027-01-01T00:00:00.000Z');
+
+    const life = billingPeriodFromProvider({
+      interval: 'lifetime',
+      periodStartsAt: '2026-01-01T00:00:00.000Z',
+    });
+    assert.equal(life.periodEndsAt.startsWith('2126-'), true);
+  });
+});

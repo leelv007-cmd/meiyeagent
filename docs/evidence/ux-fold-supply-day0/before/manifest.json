@@ -1,0 +1,59 @@
+{
+  "baseUrl": "http://localhost:3511",
+  "label": "before",
+  "out": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before",
+  "stations": [
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before/01-register.png",
+      "name": "01-register",
+      "note": "Register surface",
+      "url": "http://localhost:3511/auth/register"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before/02-dashboard-empty.png",
+      "name": "02-dashboard-empty",
+      "note": "Post-login dashboard (Day-0 shell)",
+      "url": "http://localhost:3511/dashboard"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before/03-seed-store.png",
+      "name": "03-seed-store",
+      "note": "Store facts seeded",
+      "url": "http://localhost:3511/dashboard"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before/04-inline-authorize.png",
+      "name": "04-inline-authorize",
+      "note": "Baseline multi-field asset authorization before the one-click fold",
+      "url": "http://localhost:3511/dashboard"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before/05-create-stream.png",
+      "name": "05-create-stream",
+      "note": "Create → stream surface",
+      "url": "http://localhost:3511/dashboard?workId=479cc238-1d28-45fd-9b35-093e98b1eb75"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before/06-first-token.png",
+      "name": "06-first-token",
+      "note": "Baseline draft surface visible (base predates the token marker)",
+      "url": "http://localhost:3511/dashboard?workId=479cc238-1d28-45fd-9b35-093e98b1eb75"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before/07-assets.png",
+      "name": "07-assets",
+      "note": "Assets library",
+      "url": "http://localhost:3511/dashboard/assets"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/before/08-mobile-dashboard.png",
+      "name": "08-mobile-dashboard",
+      "note": "Mobile dashboard 390×844",
+      "url": "http://localhost:3511/dashboard"
+    }
+  ],
+  "user": {
+    "email": "e2e-day0-tour-1784450188142@example.test"
+  },
+  "generatedAt": "2026-07-19T08:36:45.529Z"
+}

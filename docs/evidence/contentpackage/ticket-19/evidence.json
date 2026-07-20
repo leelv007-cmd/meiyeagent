@@ -1,0 +1,1555 @@
+{
+  "acceptance": {
+    "adminManagedCredentialWithoutCodeOrEnvEdit": true,
+    "douyinRemainedHonestlyRecorded": true,
+    "merchantCouldNotAccessPlatformCredentials": true,
+    "merchantGenerationUsedRotatedVersion": true,
+    "queryNeverReturnedPlaintext": true,
+    "realConnectionTestPassed": true,
+    "vaultBecameEffectiveAfterColdRestart": true,
+    "versionIncrementedAndOldVersionRevoked": true,
+    "writeOnlyInputCleared": true
+  },
+  "activationRuns": [
+    {
+      "configurationRevision": "a2883c6d8efb981363d4909fae24e9d812d270a1b5abbdbc42cb8d1e0d6c8e97",
+      "correlationId": "corr-3a56a7c8-8631-4270-8410-68f79035dbc8",
+      "deploymentId": "openai-direct-recorded",
+      "id": "activation-probe-27cdb8700c63d0d4f1b8f3541b07",
+      "operation": "copy.generate",
+      "outcome": "passed",
+      "providerCost": {
+        "usage": {
+          "inputTokens": 43,
+          "outputTokens": 857
+        },
+        "amount": 0,
+        "status": "observed",
+        "currency": "USD"
+      }
+    },
+    {
+      "configurationRevision": "a2883c6d8efb981363d4909fae24e9d812d270a1b5abbdbc42cb8d1e0d6c8e97",
+      "correlationId": "corr-521ac944-ff4f-4493-82e9-89ecd34c2b8d",
+      "deploymentId": "openai-direct-recorded",
+      "id": "activation-probe-c8d4c8184078466ff40fa79bff3c",
+      "operation": "copy.adapt",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0,
+        "currency": "USD",
+        "status": "observed",
+        "usage": {
+          "inputTokens": 76,
+          "outputTokens": 1467
+        }
+      }
+    },
+    {
+      "configurationRevision": "a2883c6d8efb981363d4909fae24e9d812d270a1b5abbdbc42cb8d1e0d6c8e97",
+      "correlationId": "corr-6a611cbd-bdcc-454e-b12d-5422d4ac75d1",
+      "deploymentId": "openai-direct-recorded",
+      "id": "activation-probe-f27cdd8e2033bcd899dfe34d9342",
+      "operation": "text.respond",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0,
+        "currency": "USD",
+        "status": "observed",
+        "usage": {
+          "inputTokens": 35,
+          "outputTokens": 225
+        }
+      }
+    },
+    {
+      "configurationRevision": "a2883c6d8efb981363d4909fae24e9d812d270a1b5abbdbc42cb8d1e0d6c8e97",
+      "correlationId": "corr-8cff1c6a-0744-46c4-b8c1-6f1765efaeb8",
+      "deploymentId": "openai-direct-recorded",
+      "id": "activation-probe-8ef34b66b0d8ef184ccb9c0b79b7",
+      "operation": "copy.generate",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0,
+        "currency": "USD",
+        "status": "observed",
+        "usage": {
+          "inputTokens": 43,
+          "outputTokens": 899
+        }
+      }
+    },
+    {
+      "configurationRevision": "a2883c6d8efb981363d4909fae24e9d812d270a1b5abbdbc42cb8d1e0d6c8e97",
+      "correlationId": "corr-143795a9-cb71-4cf8-9965-43b5694e780b",
+      "deploymentId": "openai-direct-recorded",
+      "id": "activation-probe-d85f344a7ae097a981216322bc10",
+      "operation": "copy.adapt",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0,
+        "currency": "USD",
+        "status": "observed",
+        "usage": {
+          "inputTokens": 76,
+          "outputTokens": 1495
+        }
+      }
+    },
+    {
+      "configurationRevision": "a2883c6d8efb981363d4909fae24e9d812d270a1b5abbdbc42cb8d1e0d6c8e97",
+      "correlationId": "corr-2f552657-2ea4-4c50-a63b-06e983e1a6b6",
+      "deploymentId": "openai-direct-recorded",
+      "id": "activation-probe-7099472ca209e1e50c89b454ae98",
+      "operation": "text.respond",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0,
+        "currency": "USD",
+        "status": "observed",
+        "usage": {
+          "inputTokens": 35,
+          "outputTokens": 163
+        }
+      }
+    },
+    {
+      "configurationRevision": "a019aded98a1563b8dea7646b1077c582457065be24eb8198795fe8453215a61",
+      "correlationId": "corr-4fe347f8-18a7-4158-941f-27939bb1d0ab",
+      "deploymentId": "seedream-4-5-tuzi-relay",
+      "id": "activation-probe-e80297cb8e441ce34162d2f7fddf",
+      "operation": "image.generate",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0.05,
+        "currency": "CNY",
+        "status": "observed",
+        "usage": {
+          "mediaUnits": 1,
+          "outputTokens": 16384
+        }
+      }
+    },
+    {
+      "configurationRevision": "a019aded98a1563b8dea7646b1077c582457065be24eb8198795fe8453215a61",
+      "correlationId": "corr-260a2dfc-3e0b-4985-a980-c98ec4667192",
+      "deploymentId": "seedream-4-5-tuzi-relay",
+      "id": "activation-probe-7c4bbe3d2ee4ac63e2cc38e4a96e",
+      "operation": "image.edit",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0.05,
+        "currency": "CNY",
+        "status": "observed",
+        "usage": {
+          "mediaUnits": 1,
+          "outputTokens": 16384
+        }
+      }
+    }
+  ],
+  "catalogRevision": {
+    "id": "83e10db8-3b7c-4732-96c6-c9c53e7b6bb8",
+    "stage": "published"
+  },
+  "completedAt": "2026-07-17T01:44:08.374Z",
+  "credential": {
+    "afterProbeRestart": {
+      "credential": {
+        "mask": "••••••••",
+        "scope": [
+          "provider.connect"
+        ],
+        "status": "active",
+        "testedAt": "2026-07-17T01:38:05.426Z",
+        "testStatus": "passed",
+        "version": 2
+      },
+      "effectiveSource": "vault",
+      "id": "platform:model.direct",
+      "status": "available",
+      "updatedAt": "2026-07-17T01:38:05.427Z"
+    },
+    "afterVaultRestart": {
+      "credential": {
+        "mask": "••••••••",
+        "scope": [
+          "provider.connect"
+        ],
+        "status": "active",
+        "testedAt": "2026-07-17T01:38:05.426Z",
+        "testStatus": "passed",
+        "version": 2
+      },
+      "effectiveSource": "vault",
+      "id": "platform:model.direct",
+      "status": "available",
+      "updatedAt": "2026-07-17T01:38:05.427Z"
+    },
+    "beforeRestart": {
+      "credential": {
+        "mask": "••••••••",
+        "scope": [
+          "provider.connect"
+        ],
+        "status": "active",
+        "testedAt": "2026-07-17T01:38:05.426Z",
+        "testStatus": "passed",
+        "version": 2
+      },
+      "effectiveSource": "env_fallback",
+      "id": "platform:model.direct",
+      "status": "available",
+      "updatedAt": "2026-07-17T01:38:05.427Z"
+    }
+  },
+  "merchantJob": {
+    "actualCatalogModelId": "llm-openai",
+    "credentialVersion": "2",
+    "operation": "copy.generate",
+    "providerModel": "gemini-3-flash-preview",
+    "routeSnapshotId": "model-route-cb24c03b7daa5196cd8da78d16d6",
+    "status": "completed"
+  },
+  "providerAudit": [
+    {
+      "action": "connection.created",
+      "actorId": "6yda9o0RHxeOGZ9faPmlF0YKIqlrccA7",
+      "correlationId": "corr-aa857158-dfbf-4a3f-a7c5-d90d914bf183",
+      "createdAt": "2026-07-17T01:38:03.992Z",
+      "details": {
+        "provider": "model",
+        "credentialVersion": 1,
+        "grantedCapabilities": [
+          "model.direct"
+        ]
+      }
+    },
+    {
+      "action": "provider.connection_tested",
+      "actorId": "6yda9o0RHxeOGZ9faPmlF0YKIqlrccA7",
+      "correlationId": "corr-b173671b-b76a-4098-9786-bf119730505d",
+      "createdAt": "2026-07-17T01:38:04.626Z",
+      "details": {
+        "status": "passed",
+        "credentialVersion": 1
+      }
+    },
+    {
+      "action": "credential.rotated",
+      "actorId": "6yda9o0RHxeOGZ9faPmlF0YKIqlrccA7",
+      "correlationId": "corr-a1b146bf-0292-4d4a-af65-67660c59c72f",
+      "createdAt": "2026-07-17T01:38:05.088Z",
+      "details": {
+        "scope": [
+          "provider.connect"
+        ],
+        "provider": "model",
+        "previousVersion": 1,
+        "credentialVersion": 2
+      }
+    },
+    {
+      "action": "provider.connection_tested",
+      "actorId": "6yda9o0RHxeOGZ9faPmlF0YKIqlrccA7",
+      "correlationId": "corr-a27f6d18-f6b5-436b-927c-da3659cb7d71",
+      "createdAt": "2026-07-17T01:38:05.426Z",
+      "details": {
+        "status": "passed",
+        "credentialVersion": 2
+      }
+    }
+  ],
+  "redaction": "Credentials, cookies, workspace ids, secret references, and raw generated copy are omitted. Only the fixed mask, credential version, status, and route provenance are retained.",
+  "runId": "ticket-19-1784252276283",
+  "timeline": [
+    {
+      "at": "2026-07-17T01:38:03.399Z",
+      "correlationId": "corr-ebad0ab9-e8e0-4678-bfde-9ccfe783d1a1",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:03.432Z",
+      "correlationId": "corr-ca2a7394-250b-41dc-8c6f-906909225392",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:03.432Z",
+      "correlationId": "corr-1aace1d6-5c87-4f96-b574-d25460771d9a",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:03.432Z",
+      "correlationId": "corr-01d1117a-83d9-401b-b24a-1f26b652e658",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.004Z",
+      "correlationId": "corr-aa857158-dfbf-4a3f-a7c5-d90d914bf183",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.037Z",
+      "correlationId": "corr-9e754d98-bf5e-4f08-add2-73222559c671",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.037Z",
+      "correlationId": "corr-7b48bbbe-819b-456a-94f1-b837fbd11c01",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.037Z",
+      "correlationId": "corr-adb284a4-40bf-42a8-bdb0-7a11fde31b3c",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.052Z",
+      "correlationId": "corr-1d6b9b45-2980-40c4-8f62-f3586becd924",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.660Z",
+      "correlationId": "corr-b173671b-b76a-4098-9786-bf119730505d",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.686Z",
+      "correlationId": "corr-c4fe9719-28cc-40eb-9300-c535387b5e8b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.686Z",
+      "correlationId": "corr-8e3fa8ab-bd0c-44e1-bc50-93aaef2549f9",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.693Z",
+      "correlationId": "corr-56eeddf9-39f2-4ce3-bda2-c5a4c40815b9",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:04.697Z",
+      "correlationId": "corr-01a6f25e-11b6-467a-ade6-0e81eeb0219b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.110Z",
+      "correlationId": "corr-a1b146bf-0292-4d4a-af65-67660c59c72f",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.130Z",
+      "correlationId": "corr-21735c67-2729-45bd-99b0-6653480c59ce",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.130Z",
+      "correlationId": "corr-efbc6afa-ada8-4bb3-9b39-49d03f64bc9b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.131Z",
+      "correlationId": "corr-a1428e21-73f5-4963-ae39-8b1e146893c5",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.145Z",
+      "correlationId": "corr-12b28631-1a69-4a8a-9c7e-ac381cf79655",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.444Z",
+      "correlationId": "corr-a27f6d18-f6b5-436b-927c-da3659cb7d71",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.475Z",
+      "correlationId": "corr-4f0223a2-6841-4d64-a88a-aecf45c08836",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.475Z",
+      "correlationId": "corr-70af66c6-aab0-4f4f-a113-f024f1c02ee8",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.475Z",
+      "correlationId": "corr-f0596f42-8305-4260-bfdd-44f469a8fbf9",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.489Z",
+      "correlationId": "corr-fe9be084-bf2d-41fd-b0c5-d35b12b6bd95",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:05.996Z",
+      "correlationId": "corr-74e99e0a-9b1d-4261-8ecf-92d9ce67952e",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:38:06.015Z",
+      "correlationId": "corr-115edaf2-6c39-48f6-b3c0-d0fa2d7a5d19",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:35.173Z",
+      "correlationId": "corr-c88b4fba-11d3-40c1-aa8d-904fba673d46",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:35.183Z",
+      "correlationId": "corr-618568c8-c8dc-452d-97fc-b3e063c406ad",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:35.189Z",
+      "correlationId": "corr-69b935f9-655f-4fe6-b84a-540a773f0145",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:35.189Z",
+      "correlationId": "corr-fd58acf4-fc38-4aaa-804b-754ddce2eace",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:35.719Z",
+      "correlationId": "corr-a866d086-2b7e-46be-a0ea-ce1b2b869cbf",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:36.905Z",
+      "correlationId": "corr-fb85f4d7-fac6-4ef5-8e44-6583c421e575",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:36.905Z",
+      "correlationId": "corr-dd94d2a6-01e6-4f3f-b30e-4082b81ea311",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:36.906Z",
+      "correlationId": "corr-63cee376-da02-4572-bba7-3eeffeb300a0",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:36.972Z",
+      "correlationId": "corr-95eaaf44-2b7a-479b-97a0-a10dcc5bd56b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.051Z",
+      "correlationId": "corr-8b755388-4327-4399-bd1c-697b7b1309d5",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.052Z",
+      "correlationId": "corr-942a3541-1d1b-4f01-97aa-546962bd8156",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.052Z",
+      "correlationId": "corr-572f4676-a33d-4f22-b834-6b667d9ca63f",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.052Z",
+      "correlationId": "corr-b9676c37-9d5f-460f-89d0-c34b0c0eeb7e",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.052Z",
+      "correlationId": "corr-a56025d8-3f93-4935-956b-ec982398ad64",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.052Z",
+      "correlationId": "corr-572098b6-93cd-4a65-b812-62f4499e6108",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.052Z",
+      "correlationId": "corr-7dd52336-5ada-496c-a586-c48bc5154f9b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.052Z",
+      "correlationId": "corr-ce3f0eed-30ee-4133-8ace-7fa8a276a3b3",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.136Z",
+      "correlationId": "corr-34bf36d7-c18e-45e3-9163-c44076bf3337",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.137Z",
+      "correlationId": "corr-5a875d1e-f753-492f-bca3-971fabe86bf6",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.699Z",
+      "correlationId": "corr-3388ae8e-0d16-401e-b3dc-2fe6968c73bf",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:37.729Z",
+      "correlationId": "corr-e52a9826-d81e-4d45-b8b3-de413a1e80c1",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:38.047Z",
+      "correlationId": "corr-38139de8-0a49-47b2-a837-ec995f432a5a",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:38.576Z",
+      "correlationId": "corr-456487ef-11b3-459a-8ef6-ef073db31140",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:39.106Z",
+      "correlationId": "corr-39e5e2a6-bc52-498e-a927-69244608dee3",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:39.632Z",
+      "correlationId": "corr-02f11c4c-003f-41d5-88c3-f894bd01051b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:40.161Z",
+      "correlationId": "corr-16a52c45-89a2-4345-b619-ed916587560b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:40.707Z",
+      "correlationId": "corr-2487317e-914f-402e-99c5-781e412e3005",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.260Z",
+      "correlationId": "corr-06dd3eda-009e-455d-aec7-e9d1309d7139",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.625Z",
+      "correlationId": "corr-3a56a7c8-8631-4270-8410-68f79035dbc8",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.735Z",
+      "correlationId": "corr-f73c71f9-eeb3-4371-8a8e-7e81a968777d",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.736Z",
+      "correlationId": "corr-9a875fed-4032-494e-bdd6-0bb72ef93cd7",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.736Z",
+      "correlationId": "corr-578ccf69-3ece-4044-9eea-dbc59757d7a7",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.736Z",
+      "correlationId": "corr-1f4ca78d-d467-4d96-ae8a-ec58bb1810a6",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.736Z",
+      "correlationId": "corr-4eb417d7-d505-4883-ae7c-30e24d5f6729",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.737Z",
+      "correlationId": "corr-c0cb126a-b340-4c98-a272-57453420461a",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.821Z",
+      "correlationId": "corr-4277a47a-bfeb-49f1-9525-70698651a21f",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.821Z",
+      "correlationId": "corr-3edbf483-04d2-4d01-b72a-a4063445fc90",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.821Z",
+      "correlationId": "corr-05c79d83-2f69-45af-8717-7bb2d8a94cb3",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.821Z",
+      "correlationId": "corr-7429cbd9-92c5-4841-9471-74b2a5f47ee5",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.821Z",
+      "correlationId": "corr-aaae3049-c002-4137-b796-9c37bce65226",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.821Z",
+      "correlationId": "corr-8b9dd16c-c86a-4688-a0af-683d687964ff",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:41.854Z",
+      "correlationId": "corr-d9b2beef-ec32-4755-a054-2e7d3e9cde9c",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:46.775Z",
+      "correlationId": "corr-521ac944-ff4f-4493-82e9-89ecd34c2b8d",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:39:48.742Z",
+      "correlationId": "corr-6a611cbd-bdcc-454e-b12d-5422d4ac75d1",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.406Z",
+      "correlationId": "corr-ace24f79-c6b2-4be4-9119-c1bec8ab407d",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.443Z",
+      "correlationId": "corr-fdf775f1-a8ab-44d1-9ecd-64f34acdd5a9",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.443Z",
+      "correlationId": "corr-45d59d7e-523f-4b08-9c51-0257852232fb",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.500Z",
+      "correlationId": "corr-ec0bb595-5a82-408d-bed1-a9c5e5304ddf",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.500Z",
+      "correlationId": "corr-675935dc-4a4d-4d1a-b310-49c48a2fa5a6",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.562Z",
+      "correlationId": "corr-fd775913-9c8e-4245-9140-b0ff42835be1",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.562Z",
+      "correlationId": "corr-d36dfac7-46c2-4c21-98b4-e582822d2853",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.562Z",
+      "correlationId": "corr-c093d0f2-e439-4d6e-8537-e9c782770b5a",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.563Z",
+      "correlationId": "corr-4031dab1-045a-4b2e-8cbf-3e19ea80169c",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.640Z",
+      "correlationId": "corr-b85d3029-39b6-4b76-a4bf-f5870b317fdf",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.640Z",
+      "correlationId": "corr-ed431aac-d3b9-47e4-9296-89d05f8cc372",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.640Z",
+      "correlationId": "corr-cf378ee1-d6e6-443a-ad31-7de7402df748",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.640Z",
+      "correlationId": "corr-743bd47e-22ef-43c3-9153-a21b5de4a6bb",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:53.640Z",
+      "correlationId": "corr-f2589b3a-0585-4569-91e4-bb55a0da5da2",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:54.185Z",
+      "correlationId": "corr-338dca5b-d772-4464-9f56-86a3757a7f64",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:54.210Z",
+      "correlationId": "corr-ba2af7c7-6f2b-4a64-9252-f69fbd0dd14f",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:42:58.546Z",
+      "correlationId": "corr-8cff1c6a-0744-46c4-b8c1-6f1765efaeb8",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:04.803Z",
+      "correlationId": "corr-143795a9-cb71-4cf8-9965-43b5694e780b",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:06.643Z",
+      "correlationId": "corr-2f552657-2ea4-4c50-a63b-06e983e1a6b6",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:20.903Z",
+      "correlationId": "corr-4fe347f8-18a7-4158-941f-27939bb1d0ab",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:36.146Z",
+      "correlationId": "corr-260a2dfc-3e0b-4985-a980-c98ec4667192",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:36.189Z",
+      "correlationId": "corr-8a7d73ed-bd28-492d-bd12-9651de757653",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.213Z",
+      "correlationId": "corr-5e3de69e-cbd9-45e0-9d66-42d79c5c6fc5",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.330Z",
+      "correlationId": "corr-f0a404bd-a708-4399-a706-b38d7031a632",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.342Z",
+      "correlationId": "corr-f85f6ffd-8824-4b02-abca-0c1051c01be2",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.342Z",
+      "correlationId": "corr-6a48425a-b411-4c2a-a808-932a21f2d83a",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.342Z",
+      "correlationId": "corr-1c5dd144-2fcf-499e-add3-ceb3b89c6f54",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.342Z",
+      "correlationId": "corr-ded9d88f-87ab-4d79-9a52-68ad63f1bd07",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.344Z",
+      "correlationId": "corr-08246d30-efc2-4383-a39a-9865bae60ea8",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.356Z",
+      "correlationId": "corr-b963887f-68df-44a2-b40d-0e843eab058e",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.356Z",
+      "correlationId": "corr-9b1f6d33-5692-4c72-ae4a-ddd512b3b455",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.356Z",
+      "correlationId": "corr-2cb12854-952c-49c2-92dc-55e941e97e97",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.356Z",
+      "correlationId": "corr-7e4f2287-d6e0-4207-af89-e3a9f629696a",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.372Z",
+      "correlationId": "corr-86a33106-3519-4c74-95a8-5bbdd9246a1b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:42.372Z",
+      "correlationId": "corr-cc04b332-c8b9-49c8-9b4e-1a151b943784",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:45.978Z",
+      "correlationId": "corr-ae7cc6d7-e624-42a8-8705-094fd3918c1a",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:45.992Z",
+      "correlationId": "corr-1c6c5e1e-1667-4800-a4b8-748cebb38ba1",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.029Z",
+      "correlationId": "corr-56d0ba0d-4491-4ee4-9ff2-5413d2eb441b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.029Z",
+      "correlationId": "corr-ff078638-1520-4d7a-b9a9-054999a8ad40",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.029Z",
+      "correlationId": "corr-ab21edb0-a373-4570-bced-825a0d018a9e",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.042Z",
+      "correlationId": "corr-baaa3734-1a71-4e47-9880-c885ae60c661",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.044Z",
+      "correlationId": "corr-af0bccf8-252f-499b-9685-a0b15417bf54",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.057Z",
+      "correlationId": "corr-26c5a30c-eb40-4cc7-9c8a-d7df95de4688",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.119Z",
+      "correlationId": "corr-5f547d45-f075-47ff-b6b5-0fb592d8c186",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.119Z",
+      "correlationId": "corr-7bb1d1aa-5419-40ce-8ee4-4389ff84aef8",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.119Z",
+      "correlationId": "corr-ee6e61ff-1513-452c-afb3-0ab111c2e436",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.120Z",
+      "correlationId": "corr-58642825-73d5-4cf8-bda4-5eaaa3b6d606",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:46.120Z",
+      "correlationId": "corr-3aa4950a-d6c7-4963-861d-25ddc94a41ed",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.696Z",
+      "correlationId": "corr-3fa0d27c-8d74-41ea-a8d1-905638149f64",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.748Z",
+      "correlationId": "corr-330b0cc0-acec-447a-9963-3cb97c9bbd17",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.762Z",
+      "correlationId": "corr-11e411a4-4d0a-4a51-86e0-f462f92601cd",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.773Z",
+      "correlationId": "corr-1a08ae96-ccf4-4982-9a34-5f44ea0bf6ec",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.775Z",
+      "correlationId": "corr-3a4a4bbe-e7df-4568-bdfb-cc384e4c12ef",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.775Z",
+      "correlationId": "corr-bee59562-ffb9-49f1-9782-17d7f02c5a22",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.776Z",
+      "correlationId": "corr-e33f440b-71af-423f-85a3-c3cf35972c88",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.804Z",
+      "correlationId": "corr-9d0bb0db-9071-4e16-9e98-637ff7ac36ff",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.868Z",
+      "correlationId": "corr-d56c6ee9-efc0-4c64-add7-a0c9944d4f14",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.868Z",
+      "correlationId": "corr-5169fa0d-a839-4d44-bbba-4fe95f35de97",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.868Z",
+      "correlationId": "corr-3d39cb01-56af-46ae-9e68-f58b8e2d2f5a",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.868Z",
+      "correlationId": "corr-eb1129a6-6429-421b-8b29-34c56b7ef78e",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:47.868Z",
+      "correlationId": "corr-52cdba82-a75c-433c-a015-ad21b4c7d83c",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:53.599Z",
+      "correlationId": "corr-9396808a-4c35-40b6-bb4e-68e3cf5baf78",
+      "errorCode": "FORBIDDEN",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 403
+    },
+    {
+      "at": "2026-07-17T01:43:53.674Z",
+      "correlationId": "corr-9b3b354e-84ae-4f89-86c9-ec070105ad61",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:54.447Z",
+      "correlationId": "corr-9d646850-45a4-4123-af2d-2e40d1c79c72",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:54.447Z",
+      "correlationId": "corr-59307aa9-c695-440a-afae-e3919b50bfed",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:54.475Z",
+      "correlationId": "corr-e4fab61d-175f-4cd6-9c4b-bdc87b234de1",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:56.044Z",
+      "correlationId": "corr-5344316b-3f4e-429a-9439-ee8e81728acf",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:56.065Z",
+      "correlationId": "corr-717af206-fc90-4a1d-b992-a6cb528a20c8",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:56.085Z",
+      "correlationId": "corr-4ac8c788-82d1-4ba8-aad6-339b04f4b55d",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:57.826Z",
+      "correlationId": "corr-ed6746e7-76a6-479f-942a-6178c57fc990",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:57.840Z",
+      "correlationId": "corr-f9092c21-cc62-4721-b178-61ae29765c9e",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.160Z",
+      "correlationId": "corr-e65a776c-cf8d-4d0c-988a-3419c2c0dc62",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.161Z",
+      "correlationId": "corr-ad80df5b-367a-4c73-959e-a2d0b659cbff",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.169Z",
+      "correlationId": "corr-3d3c9b6b-d06d-4ce0-a630-36c8ec6b0db9",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.176Z",
+      "correlationId": "corr-0c58491d-1001-4954-a59f-2135e964362f",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.191Z",
+      "correlationId": "corr-2274d60b-753c-4fa2-a036-4072cbfb42b6",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.191Z",
+      "correlationId": "corr-a15a3ed7-9805-49c4-a0a3-625667bdc0e5",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.210Z",
+      "correlationId": "corr-b0d607e8-e064-4360-afbd-90a8da0e7395",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.923Z",
+      "correlationId": "corr-6460c463-c992-4026-a12e-54e685f893cc",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:43:59.966Z",
+      "correlationId": "corr-f30dcfeb-1688-49c9-ab43-775b0c70b042",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.123Z",
+      "correlationId": "corr-7c711412-924b-436f-b487-b250179b7f3a",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.123Z",
+      "correlationId": "corr-d047d820-641d-44d9-b520-8c46c052c3ca",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.146Z",
+      "correlationId": "corr-20467956-140d-47dc-b551-b0314372cf51",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.189Z",
+      "correlationId": "corr-769b88a4-bcdc-45e8-8e8a-b9ed68c1800b",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.191Z",
+      "correlationId": "corr-5cdb66dd-4e55-44ec-8dbc-653c1e9388ec",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.192Z",
+      "correlationId": "corr-73a6bd67-b21a-4594-b89b-feac835691ab",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.192Z",
+      "correlationId": "corr-f6541273-2a11-4e06-9e2f-e231e19cab17",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.192Z",
+      "correlationId": "corr-cb0c1635-cba2-475b-ad2f-3494d0cc2426",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.361Z",
+      "correlationId": "corr-559daf82-99c6-47db-8df5-b25b7fe1b8de",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.401Z",
+      "correlationId": "corr-be74a482-99e4-4f6a-81dc-336744144338",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.406Z",
+      "correlationId": "corr-52458c17-cef7-4897-9ff7-b350d21008b0",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.406Z",
+      "correlationId": "corr-7ec8e0b2-1991-4840-b471-a088d409b911",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.461Z",
+      "correlationId": "corr-d25f30c4-6429-4475-ac6a-a097eb1b4707",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.501Z",
+      "correlationId": "corr-eb6351e4-7a3d-484e-b144-3902d18e170c",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.507Z",
+      "correlationId": "corr-8327e728-0645-4371-a260-9631466c5764",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.507Z",
+      "correlationId": "corr-e10be63f-4183-4119-b3f5-803a92bcbb65",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.568Z",
+      "correlationId": "corr-77592484-5cd1-413a-a3c2-31e8b8d78154",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.607Z",
+      "correlationId": "corr-345f64ce-16d7-40e8-b687-b1c354c3fe7d",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.613Z",
+      "correlationId": "corr-00f5adc6-2e9c-4f09-abe0-1d2030916c35",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.613Z",
+      "correlationId": "corr-7959d860-6a8e-4c33-b1f0-d1accbb598ef",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.664Z",
+      "correlationId": "corr-afa5d63a-d606-4df4-aaf7-d1208dd975a6",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.712Z",
+      "correlationId": "corr-c8d9d1f0-c1a2-4cf5-bfe0-560407346940",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.712Z",
+      "correlationId": "corr-34ee701d-010b-46ba-8064-8265b8c96fd6",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.718Z",
+      "correlationId": "corr-e2006f37-30b2-4507-9ace-b6305c3696cc",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.776Z",
+      "correlationId": "corr-bc3cdae9-8659-4ae7-8cc2-f19d602782da",
+      "method": "POST",
+      "path": "/api/core/p1/commands",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.842Z",
+      "correlationId": "corr-b7f31499-b716-433e-b70a-e98519d58d58",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.865Z",
+      "correlationId": "corr-19eaf48b-27a2-4da2-805b-a27f6821c38e",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:00.894Z",
+      "correlationId": "corr-97507102-4c8a-48c8-b9df-90abdceb6c43",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:01.206Z",
+      "correlationId": "corr-c69955fa-ce18-4036-866b-e8019ff81bac",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:07.916Z",
+      "method": "POST",
+      "path": "/api/core/p1/copy/stream",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:08.001Z",
+      "correlationId": "corr-0b7fb3b2-a81c-4f64-b346-d3cc34395d1f",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:08.003Z",
+      "correlationId": "corr-0506394e-55c7-4cec-becd-06f380ab4b2d",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:08.137Z",
+      "correlationId": "corr-03982b4f-a708-40d1-8c92-d8735c6e7049",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    },
+    {
+      "at": "2026-07-17T01:44:08.364Z",
+      "correlationId": "corr-befde719-29d9-495d-af32-a4e98f09b3e0",
+      "method": "POST",
+      "path": "/api/core/p1/query",
+      "status": 200
+    }
+  ]
+}

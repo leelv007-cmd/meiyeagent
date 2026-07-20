@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783624730129,
+      "tag": "0000_aberrant_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783657811823,
+      "tag": "0001_misty_monster_badoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784151000000,
+      "tag": "0002_last_admin_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784164248733,
+      "tag": "0003_stiff_kree",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784446803000,
+      "tag": "0004_plan_checkout_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784451000000,
+      "tag": "0005_workspace_provisioning_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784453000000,
+      "tag": "0006_workspace_provision_claim_fencing",
+      "breakpoints": true
+    }
+  ]
+}

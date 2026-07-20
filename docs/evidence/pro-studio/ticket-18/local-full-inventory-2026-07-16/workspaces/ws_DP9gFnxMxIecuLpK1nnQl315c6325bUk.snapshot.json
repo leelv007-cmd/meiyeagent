@@ -1,0 +1,210 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "1a1b66c4-ddfd-45bc-9f61-eba9f3633e5a",
+      "31ac24b4-3d6b-4950-8377-15eedbbb9f9a"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "759617b3-246b-4593-84b0-9cee7b26cacc"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk",
+  "works": [
+    {
+      "currentRevisionId": "31ac24b4-3d6b-4950-8377-15eedbbb9f9a",
+      "id": "759617b3-246b-4593-84b0-9cee7b26cacc",
+      "revisions": [
+        {
+          "id": "1a1b66c4-ddfd-45bc-9f61-eba9f3633e5a",
+          "workId": "759617b3-246b-4593-84b0-9cee7b26cacc",
+          "document": {
+            "pages": [
+              {
+                "id": "74c6c384-fbc6-42d0-92c9-6f5ff555a816",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T06:32:15.664Z",
+          "createdBy": "DP9gFnxMxIecuLpK1nnQl315c6325bUk"
+        },
+        {
+          "id": "31ac24b4-3d6b-4950-8377-15eedbbb9f9a",
+          "workId": "759617b3-246b-4593-84b0-9cee7b26cacc",
+          "document": {
+            "dpi": 72,
+            "unit": "px",
+            "fonts": [],
+            "pages": [
+              {
+                "id": "74c6c384-fbc6-42d0-92c9-6f5ff555a816",
+                "bleed": 0,
+                "width": "auto",
+                "height": "auto",
+                "children": [
+                  {
+                    "x": 40,
+                    "y": 40,
+                    "id": "EQ_7mybU6p",
+                    "src": "/api/storage/file?key=ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk%2Fassets%2FDP9gFnxMxIecuLpK1nnQl315c6325bUk%2F3021fd97-0485-46f9-8c5c-419829555a7f-meiye-pwa-proof-image.png",
+                    "name": "猫眼",
+                    "type": "image",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "flipX": false,
+                    "flipY": false,
+                    "width": 640,
+                    "custom": {
+                      "productAssetId": "asset-51128330-ff4d-4b14-9e3a-790e1954c809",
+                      "productAssetObjectKey": "ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk/assets/DP9gFnxMxIecuLpK1nnQl315c6325bUk/3021fd97-0485-46f9-8c5c-419829555a7f-meiye-pwa-proof-image.png",
+                      "productAssetSourceType": "real"
+                    },
+                    "height": 640,
+                    "clipSrc": "",
+                    "filters": {},
+                    "opacity": 1,
+                    "visible": true,
+                    "rotation": 0,
+                    "cropWidth": 1,
+                    "draggable": true,
+                    "keepRatio": false,
+                    "removable": true,
+                    "resizable": true,
+                    "animations": [],
+                    "blurRadius": 10,
+                    "borderSize": 0,
+                    "brightness": 0,
+                    "cropHeight": 1,
+                    "selectable": true,
+                    "shadowBlur": 5,
+                    "alwaysOnTop": false,
+                    "blurEnabled": false,
+                    "borderColor": "black",
+                    "shadowColor": "black",
+                    "cornerRadius": 0,
+                    "sepiaEnabled": false,
+                    "showInExport": true,
+                    "shadowEnabled": false,
+                    "shadowOffsetX": 0,
+                    "shadowOffsetY": 0,
+                    "shadowOpacity": 1,
+                    "styleEditable": true,
+                    "stretchEnabled": false,
+                    "contentEditable": true,
+                    "grayscaleEnabled": false,
+                    "brightnessEnabled": false
+                  }
+                ],
+                "duration": 5000,
+                "elements": [
+                  {
+                    "x": 40,
+                    "y": 40,
+                    "id": "EQ_7mybU6p",
+                    "src": "/api/storage/file?key=ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk%2Fassets%2FDP9gFnxMxIecuLpK1nnQl315c6325bUk%2F3021fd97-0485-46f9-8c5c-419829555a7f-meiye-pwa-proof-image.png",
+                    "kind": "image",
+                    "name": "猫眼",
+                    "type": "image",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "flipX": false,
+                    "flipY": false,
+                    "width": 640,
+                    "custom": {
+                      "productAssetId": "asset-51128330-ff4d-4b14-9e3a-790e1954c809",
+                      "productAssetObjectKey": "ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk/assets/DP9gFnxMxIecuLpK1nnQl315c6325bUk/3021fd97-0485-46f9-8c5c-419829555a7f-meiye-pwa-proof-image.png",
+                      "productAssetSourceType": "real"
+                    },
+                    "height": 640,
+                    "assetId": "asset-51128330-ff4d-4b14-9e3a-790e1954c809",
+                    "clipSrc": "",
+                    "filters": {},
+                    "opacity": 1,
+                    "visible": true,
+                    "rotation": 0,
+                    "cropWidth": 1,
+                    "draggable": true,
+                    "keepRatio": false,
+                    "removable": true,
+                    "resizable": true,
+                    "animations": [],
+                    "blurRadius": 10,
+                    "borderSize": 0,
+                    "brightness": 0,
+                    "cropHeight": 1,
+                    "selectable": true,
+                    "shadowBlur": 5,
+                    "alwaysOnTop": false,
+                    "blurEnabled": false,
+                    "borderColor": "black",
+                    "shadowColor": "black",
+                    "cornerRadius": 0,
+                    "sepiaEnabled": false,
+                    "showInExport": true,
+                    "shadowEnabled": false,
+                    "shadowOffsetX": 0,
+                    "shadowOffsetY": 0,
+                    "shadowOpacity": 1,
+                    "styleEditable": true,
+                    "stretchEnabled": false,
+                    "contentEditable": true,
+                    "grayscaleEnabled": false,
+                    "brightnessEnabled": false
+                  }
+                ],
+                "background": "white"
+              }
+            ],
+            "width": 1080,
+            "audios": [],
+            "height": 1350,
+            "schemaVersion": 4
+          },
+          "revision": 2,
+          "createdAt": "2026-07-12T06:32:16.960Z",
+          "createdBy": "DP9gFnxMxIecuLpK1nnQl315c6325bUk"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.680Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "6bf74528f5608090f992761659725247ca2a4be297f21d7847a5a840751d6f70",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 2,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 2,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "21029739110d9e9703b2bc8ee905628408d28bc36d50fd138d15b9cbfe4577ea"
+  }
+}

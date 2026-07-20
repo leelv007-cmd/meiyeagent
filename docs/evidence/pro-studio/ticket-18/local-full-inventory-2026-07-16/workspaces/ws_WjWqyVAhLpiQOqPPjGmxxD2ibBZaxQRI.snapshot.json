@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "57d5168d-02c6-47fc-952f-4ac51005db69"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "cf47449c-20a4-458b-9b67-9703313f34d4"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI",
+  "works": [
+    {
+      "currentRevisionId": "57d5168d-02c6-47fc-952f-4ac51005db69",
+      "id": "cf47449c-20a4-458b-9b67-9703313f34d4",
+      "revisions": [
+        {
+          "id": "57d5168d-02c6-47fc-952f-4ac51005db69",
+          "workId": "cf47449c-20a4-458b-9b67-9703313f34d4",
+          "document": {
+            "pages": [
+              {
+                "id": "10f3a173-f96c-4f8a-ba9b-9c7975d226b4",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-13T15:13:11.771Z",
+          "createdBy": "WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.733Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "c5fe7ade5fd430a235b3f028d8e06c215bdd236b12d3d329881239c12d8994d1",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "d8710781d0fa038bfa2bf32ec4e6365db22384310c6aa3e55db3df99f13bf94e"
+  }
+}

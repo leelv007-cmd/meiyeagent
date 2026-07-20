@@ -1,0 +1,42 @@
+[
+  {
+    "at": "2026-07-17T01:48:50.015Z",
+    "name": "login"
+  },
+  {
+    "at": "2026-07-17T01:48:54.154Z",
+    "name": "ticket-13:owned-export-version-prepared",
+    "durableAssetCount": 1
+  },
+  {
+    "at": "2026-07-17T01:49:00.254Z",
+    "name": "ticket-13:ui-export-downloaded",
+    "archiveSha256": "22ab29ad5905e0e293c00c3b31ebd22ec6e10cae6cb7c7eab9cffe0169f4267d",
+    "entries": 2
+  },
+  {
+    "at": "2026-07-17T01:49:02.325Z",
+    "name": "ticket-13:idempotent-replay",
+    "receiptDelta": 1
+  },
+  {
+    "at": "2026-07-17T01:49:04.036Z",
+    "name": "ticket-13:cross-session-receipt-and-bytes"
+  },
+  {
+    "at": "2026-07-17T01:49:04.217Z",
+    "name": "ticket-13:platform-version-restored"
+  },
+  {
+    "at": "2026-07-17T01:49:11.272Z",
+    "name": "ticket-14:a-to-b-to-c-lineage",
+    "packageBId": "96d0bcdd-3554-4907-a361-e4d7de1cafb0",
+    "packageCId": "8c78ac8f-c11f-42a6-8821-0ddf226536d9"
+  },
+  {
+    "at": "2026-07-17T01:49:18.657Z",
+    "name": "ticket-16:desktop-mobile-same-package",
+    "packageCId": "8c78ac8f-c11f-42a6-8821-0ddf226536d9",
+    "versionDelta": 1
+  }
+]

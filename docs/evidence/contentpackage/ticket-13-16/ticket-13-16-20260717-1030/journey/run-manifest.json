@@ -1,0 +1,103 @@
+{
+  "acceptance": {
+    "ticket13": {
+      "crossSessionPersistence": true,
+      "downloadedArtifactMatchesReceipt": true,
+      "idempotentReplay": true,
+      "uiExport": true
+    },
+    "ticket14": {
+      "bidirectionalLineage": true,
+      "chainDepth": 3,
+      "cleanV1": true,
+      "uiReuse": true
+    },
+    "ticket15": {
+      "imageComplianceArtifactCaptured": true,
+      "rightsRevocationJourney": false,
+      "unlabeledControlArtifact": false,
+      "videoBurnIn": false
+    },
+    "ticket16": {
+      "coarsePointerSimulation": true,
+      "samePackageAcrossViewports": true,
+      "stableDesktopAddress": true,
+      "trueDeviceRecording": false
+    },
+    "ticket17": {
+      "browserMigrationJourney": false
+    }
+  },
+  "completedAt": "2026-07-17T01:49:18.919Z",
+  "files": {
+    "journey/artifact/01.png": {
+      "bytes": 5441390,
+      "sha256": "070a1ce03fadb18c0b72bf5c712751a8f4849296d952b944aa6b57b194167452"
+    },
+    "journey/artifact/content.json": {
+      "bytes": 1512,
+      "sha256": "2b3d94f600c1f8c35d934ed7ba188d48fa55f130240e42e0506380adcb90f56a"
+    },
+    "journey/artifact/ticket-13-export.zip": {
+      "bytes": 5343552,
+      "sha256": "22ab29ad5905e0e293c00c3b31ebd22ec6e10cae6cb7c7eab9cffe0169f4267d"
+    },
+    "journey/continuous-journey.webm": {
+      "bytes": 5535007,
+      "sha256": "18104715653b736746e0f2a3f3e35d38a5d2d3312f6b91ca232046a4241624e6"
+    },
+    "journey/keyframes/01-source-package-before-export.png": {
+      "bytes": 1763907,
+      "sha256": "93b0ada22e3b624d2bf04f4d6cc9d43f55dd5bf4cf07ba77773d4446b925ee37"
+    },
+    "journey/keyframes/01b-owned-export-version.png": {
+      "bytes": 26934,
+      "sha256": "76dc2a10cd0ee9a02c28c8614901f380a3ce3d5a43e7c530e8f9595038564d36"
+    },
+    "journey/keyframes/02-export-receipt-and-download.png": {
+      "bytes": 1819718,
+      "sha256": "b36443a618b1a9a20398f4a94a510c74760a7acf66f9f136219a87a0e94bd749"
+    },
+    "journey/keyframes/03-exported-images-contact-sheet.png": {
+      "bytes": 305786,
+      "sha256": "0c8908a2efc61b2a6295942118dfa2e39029e0a1acc0a9ff57f1e021b0b4a424"
+    },
+    "journey/keyframes/04-reuse-b-visible-with-source.png": {
+      "bytes": 873956,
+      "sha256": "1aa2bc6ff5f53764ec0d1f77808c7b8c46788cd836864b00f14b8f0597d9e097"
+    },
+    "journey/keyframes/05-reuse-c-visible-with-two-hop-lineage.png": {
+      "bytes": 1040363,
+      "sha256": "f6c8f8a7481b421a665fe3f154c5d5816e7178020ce1701c1376f4ca7e08d961"
+    },
+    "journey/keyframes/06-reuse-b-bidirectional-lineage.png": {
+      "bytes": 1013479,
+      "sha256": "3b6bd934c6b6495a98d8acfd01aac51ea54aff449de489f04997204840bf6924"
+    },
+    "journey/keyframes/07-mobile-same-package-edited.png": {
+      "bytes": 154341,
+      "sha256": "da172e9b7a2616ca8cbab8bbfed9ac90c64b3342b27a48d1858c195084ae2a6c"
+    },
+    "journey/keyframes/08-desktop-sees-mobile-version.png": {
+      "bytes": 1195074,
+      "sha256": "501edc307652904bea777f01c6a7bddc91b3e32365e13bdca11cc3cc13282e39"
+    },
+    "journey/keyframes/09-coarse-pointer-same-package.png": {
+      "bytes": 150370,
+      "sha256": "df16bfab73946f1b8d3bbd61c33e1ab8dc88ff0b9deead14e2f433fe97ab8528"
+    },
+    "journey/network-log.jsonl": {
+      "bytes": 14572,
+      "sha256": "ad29370b045d862d96221af75f0f3c4a72afeb27e1551a1e6565f0c777b093e4"
+    },
+    "journey/package-evidence.json": {
+      "bytes": 1484,
+      "sha256": "06b6625e79d52700542a94c122ec45be0d0d91cdfcb1c27e6779d2584f9d18fd"
+    },
+    "journey/steps.json": {
+      "bytes": 1097,
+      "sha256": "10a4397ce790b349f7a68903ed0eb803c7a5709be3a0789a786f43dbbfb796d2"
+    }
+  },
+  "runId": "ticket-13-16-20260717-1030"
+}

@@ -1,0 +1,42 @@
+{
+  "artifacts": {
+    "01-custom-live-verified-admin.png": {
+      "bytes": 6972773,
+      "sha256": "75bb90f674fd78500fc889eade0b79812276be7d8d3a9af9a4044fd0f01f00ca"
+    },
+    "02-custom-catalog-published.png": {
+      "bytes": 7155875,
+      "sha256": "f052743176c7771c1904206d96f4e6fa6466619eb7c4e7db48aed3677a291df9"
+    },
+    "03-custom-fixed-before-submit.png": {
+      "bytes": 732458,
+      "sha256": "4aff2416c05ffbd8eb359605713fa9e03f93c9d0b5ad7fee6bdd3b2ef2a5bf55"
+    },
+    "04-custom-real-three-candidates.png": {
+      "bytes": 324617,
+      "sha256": "c7ea3070917b99f55a8acae5aca7c1cacc7111130497bceebbe05d717f3e09fc"
+    },
+    "README.md": {
+      "bytes": 1682,
+      "sha256": "1746c4cbbfbaf32ee5f20723ece215548f570a8a089dbde5ad100c1db9679f26"
+    },
+    "continuous-custom-provider-journey.webm": {
+      "bytes": 9012939,
+      "sha256": "27b83b8783ac0fdfb08a811ee582f9cda411d92b10d44aff893597bef6d8972f"
+    },
+    "evidence.json": {
+      "bytes": 30745,
+      "sha256": "14e35510ade05921ff74435a44585289db3c13a444e2e8b2e7c5938bd5479d66"
+    },
+    "probe-restart-checkpoint.json": {
+      "bytes": 164,
+      "sha256": "581dc596ce5938dde8dd2c1ffdc27fa5a126df7035dad6d30ed40507e08d9f0f"
+    },
+    "resume-after-probe-restart": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "runId": "ticket-02-1784248612272",
+  "status": "accepted"
+}

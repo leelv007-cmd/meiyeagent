@@ -1,0 +1,6 @@
+{
+  "configKey": "byok.adapter.assembly",
+  "expectedEffectiveValue": "live",
+  "storedRevision": 9,
+  "status": "restart_required"
+}

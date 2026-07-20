@@ -1,0 +1,85 @@
+{
+  "runId": "real-run-0003-1784239833734",
+  "capturedAt": "2026-07-16T22:11:47.293Z",
+  "package": {
+    "id": "content-package-b0aa589eb050a9211762969c",
+    "kind": "image_text",
+    "status": "accepted",
+    "statusGroup": "usable",
+    "statusLabel": "可使用",
+    "rights": "authorized",
+    "authorizedSourcePhotoCount": 2,
+    "generatedAssetCount": 1,
+    "ownedAssetCount": 1,
+    "currentVersionOrderedAssetCount": 3,
+    "currentVersionContainsGeneratedAsset": true,
+    "generatedChildRunAttached": true,
+    "generatedOwnedReceipt": {
+      "contentType": "image/png",
+      "sha256": "1e8f00b2fca1a2a78904863b5f520e2691e77d303c08227452f7b55bf823ffd5",
+      "sizeBytes": 5361184
+    }
+  },
+  "variants": [
+    {
+      "platform": "xiaohongshu",
+      "versionCount": 1,
+      "orderedAssetCount": 3,
+      "inheritsGeneratedAsset": true,
+      "completeCopyCanonicalBytes": 1187,
+      "completeCopySha256": "516051a4b11513ba620ce9de2a877a0c00a044a96dbd8f725377727b4c2fc455"
+    },
+    {
+      "platform": "douyin",
+      "versionCount": 1,
+      "orderedAssetCount": 3,
+      "inheritsGeneratedAsset": true,
+      "completeCopyCanonicalBytes": 1003,
+      "completeCopySha256": "f63c3795ea02651b43e55e7bcc2d80ac1b8b17269c37ff722e95e9609763faa3"
+    },
+    {
+      "platform": "video_account",
+      "versionCount": 1,
+      "orderedAssetCount": 3,
+      "inheritsGeneratedAsset": true,
+      "completeCopyCanonicalBytes": 1072,
+      "completeCopySha256": "ecdc35dc00ac2814364a6aab46e5dd6eb3e4d6f16fab3cd0a07c3e03914b20b6"
+    }
+  ],
+  "jobs": [
+    {
+      "operation": "copy.generate",
+      "status": "completed",
+      "catalogModelId": "llm-openai",
+      "actualCatalogModelId": "llm-openai",
+      "providerModel": "gemini-3-flash-preview",
+      "outputAssetCount": 3
+    },
+    {
+      "operation": "image.generate",
+      "status": "completed",
+      "catalogModelId": "seedream-4-5",
+      "actualCatalogModelId": "seedream-4-5",
+      "providerModel": "doubao-seedream-4-5-251128",
+      "outputAssetCount": 1
+    },
+    {
+      "operation": "copy.adapt",
+      "status": "completed",
+      "catalogModelId": "llm-openai",
+      "actualCatalogModelId": "llm-openai",
+      "providerModel": "gemini-3-flash-preview",
+      "outputVariantCount": 3
+    }
+  ],
+  "fixedModelCheck": {
+    "selectedCatalogModelId": "seedream-4-5",
+    "frozenCatalogModelId": "seedream-4-5",
+    "actualCatalogModelId": "seedream-4-5",
+    "deploymentId": "seedream-4-5-tuzi-relay",
+    "providerModel": "doubao-seedream-4-5-251128",
+    "silentFallback": false,
+    "crossBrandSwitch": false
+  },
+  "redaction": "Workspace, user, raw copy, object keys, provider task references, signed URLs, and credentials are omitted."
+}

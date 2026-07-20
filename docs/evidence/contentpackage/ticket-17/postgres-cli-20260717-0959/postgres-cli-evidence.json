@@ -1,0 +1,42 @@
+{
+  "capturedAt": "2026-07-17T01:59:23Z",
+  "command": "TEST_DATABASE_URL=\"$DATABASE_URL\" pnpm --filter @meiye/core exec tsx --test src/p1/operations/content-package-migration-cli.postgres.test.ts",
+  "environment": {
+    "credentialsCaptured": false,
+    "database": "PostgreSQL",
+    "fixture": false,
+    "isolatedWorkspace": true,
+    "storage": "temporary filesystem asset store"
+  },
+  "result": {
+    "durationMs": 2932.304834,
+    "failed": 0,
+    "passed": 1,
+    "skipped": 0
+  },
+  "scenario": {
+    "acceptedLegacyCreativeSeeded": true,
+    "activeRunRollbackSucceeded": true,
+    "activateSucceeded": true,
+    "arbitraryRunRollbackBlocked": true,
+    "backfillSucceeded": true,
+    "cleanupSucceeded": true,
+    "dryRunSucceeded": true,
+    "expectedPackages": 2,
+    "freezeBackupVerified": true,
+    "historicalVideoBytesVerified": true,
+    "historicalVideoSeeded": true,
+    "inspectSucceeded": true,
+    "rollbackStage": "rolled_back"
+  },
+  "testFile": {
+    "path": "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts",
+    "sha256": "635001054fedeb2fbdb505f4901fcc78853816ff174ed1170fc3b9686519e92e"
+  },
+  "unmetBrowserAcceptance": [
+    "real merchant pre/post migration inventory",
+    "playable historical video in browser",
+    "activation and new package creation in browser",
+    "post-rollback UI verification"
+  ]
+}

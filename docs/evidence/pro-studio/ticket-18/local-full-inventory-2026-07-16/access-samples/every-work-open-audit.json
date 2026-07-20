@@ -1,0 +1,813 @@
+{
+  "summary": {
+    "label": "LOCAL_EVERY_WORK_OPEN_AUDIT_NOT_PRODUCTION",
+    "totalWorks": 86,
+    "openOk": 85,
+    "exportOk": 0,
+    "openRate": 0.9883720930232558,
+    "exportRate": 0,
+    "byDisposition": {
+      "convertible": {
+        "total": 69,
+        "openOk": 69,
+        "exportOk": 0
+      },
+      "read_only": {
+        "total": 16,
+        "openOk": 16,
+        "exportOk": 0
+      },
+      "raster_fallback": {
+        "total": 1,
+        "openOk": 0,
+        "exportOk": 0
+      }
+    },
+    "openFailures": [
+      {
+        "workspaceId": "ws_t18_local_rehearsal",
+        "workId": "work-raster-fallback",
+        "disposition": "raster_fallback",
+        "openOk": false,
+        "exportOk": false,
+        "error": "Historical Canvas target has no existing managed raster.; export: Historical Canvas target has no existing managed raster."
+      }
+    ],
+    "exportFailuresCount": 85
+  },
+  "rows": [
+    {
+      "workspaceId": "ws_0bXEAAhlmp9Amg1Hin34WT09FN83cd4p",
+      "workId": "2af0bfdd-113c-4f8a-9510-c6128792ba1e",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_1Iw7ZzAfPsAMoLAHakiuDw2XlYDzGyjf",
+      "workId": "e9ff8f45-d4eb-4656-bc68-fd6e02fb07f9",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_1ghwmEZd8nKZqJH9XsLEWXiAejHneHdO",
+      "workId": "636ffb7d-5f3e-4e4c-bfa7-9af32c0dbe74",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_2LRsirFlFasnbj1ZGUbHK22rbY9Em6Ot",
+      "workId": "2c1872e9-31dd-496b-9efe-0aba70d65fdc",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_2pVqEPORpFcbpcPepX5paxvP87MeUmnF",
+      "workId": "581288b7-fd95-4c70-9e91-55cfa3fb6e06",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_36vU1jAz5e5ITJljEZPF0EmGCTi6Xp0N",
+      "workId": "65a58953-8bdd-442c-ace6-ef3ac9c2d5d0",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT",
+      "workId": "4ba08c95-8a2f-459f-b5db-92f0acbf7ace",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_3eKdZqrLHRsl6O6SJPR6BWzN4Kh9qK5S",
+      "workId": "b0f5efcf-03bd-44b1-af51-97caf37da1b0",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_3noiJ0N1gXBdn4jFUdqIKqusXd9wnwj0",
+      "workId": "e7689f2d-8961-4584-9cbd-39a16edb17f4",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_3zo7eOVKH3j24e9fxLFWc60DZJ8L7PiQ",
+      "workId": "71599062-93bf-4817-879b-215bcbc86e94",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_4aRu9iPUwUh8vXnot5dJHiuVtIXQxlLu",
+      "workId": "f5a8d3c7-2bd5-4527-ad5b-5b6a5c67e0f0",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_5eZiKU1xA4XstiCo0iv1ttjrgAZQSX4o",
+      "workId": "6d74782a-df7d-460a-acca-001d50190518",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_7UcU9nvGOYvBPEYlyWs6bCdajsNVOF0m",
+      "workId": "f0a69ff9-7482-4127-b406-d81c4f95da95",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_7brd7wnBRxnGkHWQMqafZaEYfIZo1KHV",
+      "workId": "497a0f61-e4c6-440e-8810-99f3095f4407",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_8T7wt2aaLPrwfU6XJIw81vs45cmMTo3r",
+      "workId": "734562f1-5b22-4228-b50f-eab63f30946d",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI",
+      "workId": "5fc93865-9ba6-41f7-92e3-6d69541e57d7",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_953LLKdqBWAZquXwMEu1dui5xXWE3kZb",
+      "workId": "d9757f1b-37e1-4f95-8985-5345e2b28296",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_9F8OM7pmPywdfaYwVetMLRfYXiCZTH1i",
+      "workId": "7761295b-d0db-4cf4-97ef-5417476cc6c1",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_A1J6uweCNInZl0OqRQ7NyBbJxk3mpDcU",
+      "workId": "e0d31d6c-46e6-4ade-b8b5-b4543f4f6a8e",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_A6VqXpckwxHUl6FCTnkyUjp8vs3U3vq0",
+      "workId": "25b7c079-1263-42aa-af77-4fc822b07f40",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_AJ3UykyDW9swGwe2d0q1ogg3X0NBIkDh",
+      "workId": "e69fdb00-9ddb-4153-8d37-b1ea0e3fa8d3",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_AOB4yWkjAap8hyk2pq3BuVAMX4qoxmL0",
+      "workId": "e97e25fc-007b-489f-bb24-1077aede156a",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_ARpYasGGTcOH643oAALGOSxxHuazCjPq",
+      "workId": "03595802-c0c5-4e99-ad2d-ce8d43a06f2b",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_Atvav5g1beqjuuYEhVlWPttUaTfHv3yt",
+      "workId": "b68a123b-92c0-4365-9dd0-4455ca1115f4",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_AuM19zOP4hH2XPCulj1VZQ0nf5xrUGyD",
+      "workId": "df8aa931-cc05-442d-8c8c-4246600882ba",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_Cx48ZyFBy9WhrAPSEGsv7RhInaZRTgQ1",
+      "workId": "d1e7cd8c-9d31-4fc6-ae84-f843c8a2385e",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_DP9gFnxMxIecuLpK1nnQl315c6325bUk",
+      "workId": "759617b3-246b-4593-84b0-9cee7b26cacc",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_EGLMhNdlIyUIjkMeoAuLbEyNFL4zE37r",
+      "workId": "d80455bd-39f3-4d24-9d09-c6ecd69705f5",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_EXC9mVBOLNBFalrI9D5ci6gwkdIPfDE4",
+      "workId": "0ce7cc3d-8313-4574-90c9-48a17a9f338f",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_EbkhzCSLYVal4QCYVHOp9ds1i8lR552M",
+      "workId": "74d48fd3-e67e-44ac-aec8-0519e9ded31f",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_F6004pNaqYt5w5XsHOEHeLJbSDvDLjE9",
+      "workId": "a42bf232-bfb9-4f82-a7d5-bedc71a0583c",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_FRyS9DBuZwYuY1OL4Egkt6iWqNWKD4sS",
+      "workId": "197514fe-2c8e-412e-92b2-0b7aef2c12c3",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_FTUzIJCPdyDSj3MEblkdoIR3RwHaPpeQ",
+      "workId": "2892312e-eded-4834-ba33-62d491d7bd0c",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_H83cJvWqsga9O1BbmDb3NMlU2fgCoTOn",
+      "workId": "c61fe545-921b-47ad-8a5e-25a5ac62b554",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_HmvRwVpIVJPgKqk2aUz8dQ5djZrBC7JX",
+      "workId": "be665aca-6834-43ca-9b60-3bcf50a7f103",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_HxXdspfquNoP2EGaecGGuRpSJQBtF31e",
+      "workId": "6de547f5-e6c1-42be-a10c-2598ac6e115f",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_IxCWqm0kp8OvSayMmUQ5C1aUEsojZiNp",
+      "workId": "30421872-3804-4163-af7d-4898e456f2e6",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_JT4ycoQDJAtoKhT1vVfANhl5Ui4ij3Zu",
+      "workId": "44b8321c-769c-4e2d-97a7-46ed00f12904",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_JXw6ug2S3K6yHBkTJLsSwjRkx7JV4Ttv",
+      "workId": "093dabef-625c-4a83-9cc4-37a5edf3ad38",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_JrizNBry4F0X1XaTVjVhZgnm1vARkLOA",
+      "workId": "f6c01d99-91ba-465c-af1a-75400ef39614",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_K7c3gDfwc1LCY52ViHxhjI6eF21C7P89",
+      "workId": "3daaf76c-6e2f-4ab1-be0a-5bbd20a8c68b",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_K7c3gDfwc1LCY52ViHxhjI6eF21C7P89",
+      "workId": "57136455-8bca-4024-a43a-9606d709ec03",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_QOyf0q7velTgOm4p4bbbu0pZd5rVGW8L",
+      "workId": "1a583239-9597-4402-9a5e-15a573ccba63",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_S5RO8NQJwUZjthpN5WoHPkpm9X2MXAQo",
+      "workId": "9f25b57b-8ee6-4dbc-81a8-329eb228a3c2",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_SH89uHoIli12yhEmn7Pa3a9objWBwHrS",
+      "workId": "306d118b-4572-4ccd-b8cb-b374c9cb0f4b",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb",
+      "workId": "561f9347-eae4-4dcd-846b-157f8af20270",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_ScjsH4Bj8xtmcxTdU07tJ2RkfLKtatbb",
+      "workId": "b9bdb636-f51c-41fb-86fc-5b8c41950529",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_T7jZtTPCKZh2fuyxdvSoy6bVUHfvm9T0",
+      "workId": "51f5d088-b676-486f-b5d8-06259c70208b",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_Ug80UAOxg7ZQwumanMiBXWE3WRkMi6Xv",
+      "workId": "2203fcf5-28a4-4e81-910e-a565f8b2b64a",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_V2zcMUfRnLoalVWmDWk2o1Dx8WN7R9fE",
+      "workId": "06bd2573-84e3-4131-95f5-fcad485f5bec",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y",
+      "workId": "abd181ce-cd5c-4dd6-aac3-7e6c876b8e91",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_WjWqyVAhLpiQOqPPjGmxxD2ibBZaxQRI",
+      "workId": "cf47449c-20a4-458b-9b67-9703313f34d4",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_WlILuDu28PVSoWk6TGA8YT9tfdmJQKWh",
+      "workId": "79ed6267-b1d8-4e4f-818b-c611273cfc10",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_Y5nwLXjSlyoaSloR7NBJrolWx1xo5xY0",
+      "workId": "271aa458-f9a0-41fd-bd60-fa347bfcfa44",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_YkVGDY9mGihXG80c7ll0WTlfUkzGL4a6",
+      "workId": "0d0f7ccc-e87e-48a5-b1e8-8126eb388eb4",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe",
+      "workId": "a99b9946-d94d-4b6b-b849-92408d4c7379",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_eCgCevaLwjWzk8PfaCcC2wTcNHmmZFG9",
+      "workId": "1a3170db-3aad-466f-a098-65c52dc42217",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_eRoY2hwdGoNAGP17SO9sjKL8m0tKZ8pF",
+      "workId": "6926afe5-7c4e-4dcf-852c-d49b1b9a0d8e",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_er2yYF77GNbA8pwrevDaIUcnmTtIWau6",
+      "workId": "c7200ef1-6b8b-4bac-81fc-9b134dcb5626",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_gMjv1IfK8tKE8vJto830CjLSstKxnRmB",
+      "workId": "7d211228-a318-496e-81bc-cccdc31b8502",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_hXs9yfm4txCbJBOY7886ZrVpUJMv62rX",
+      "workId": "8682e9e6-da21-41bf-b85a-cf3d6dc91cd1",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_ixi8mrbQLHNnDOJP6p7EHdPtBBw604om",
+      "workId": "58205fe2-d40b-4968-94bb-28f593c1d9fd",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_j9JXpLRhnlf43V6EgHDe25wZGIMTbl3Z",
+      "workId": "d887965b-9440-4848-b4d3-b43c019b61b0",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_jIChsZZykSV8okhtgqCx0otwe61CktsQ",
+      "workId": "cff82dfc-d5e1-4a0a-88f7-8a9e62fc071a",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_jutaAQZ5awYKHj93ZOy0Qep4omYK5hDy",
+      "workId": "f44fe7e1-42d4-45cd-a2cf-b92f27026b83",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_l29wpqEn8qOUXPJXAUXc1Nx527ooeddB",
+      "workId": "34b864fe-78cd-4715-b48e-8da88b68e861",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_mx8KHCOqdw29GZeBF9xkXXxkUgmUVxH5",
+      "workId": "405d73ff-8927-49fc-8386-06a24355e027",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_myvIqbbdUtAevsAg42tA7leqnBkRrBOW",
+      "workId": "602f3918-9899-44d8-b254-312a9961565b",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_nDZOShSuotm5wljruI41KICh53xDwhrx",
+      "workId": "38760afe-4d6e-4d1e-a8c2-e8249f3d870b",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_nNpDHfQomMiMoqghWI3PfjJimqhwjAvs",
+      "workId": "c3145f6a-9e9e-48f6-8de6-a786a2086446",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_nlazA0Q1gf0JgtVi2s6iUukox1mSaSgB",
+      "workId": "a70c2551-e1c5-49ef-8e65-61a8e3520b20",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_oJ9JJq8s3dE0wknAcYhhgt1hN5KnYEzd",
+      "workId": "a0eb76f1-d47b-49a7-9d4c-459845d83550",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_pWrlDutY7O0CVUyEnzXupfcczvNFrzqY",
+      "workId": "dbfe40ee-9f78-4e0f-91d1-4730b864166d",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_pXoAuARcoAdBmtiAGAEEsLVsOZOWmrRM",
+      "workId": "4fbf78dd-401e-4dc9-adb7-0f8c48249048",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_qYvUfhcE5jdlKnvpSWA2QD3bqBeFEROV",
+      "workId": "51fa9192-f4a0-4472-8c6b-303b752fd93e",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_rlLCdli4ZWTvdtdIV8cqCGepQuv5kkXy",
+      "workId": "51843601-d370-4a29-986d-fc2301ea2496",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_t18_local_rehearsal",
+      "workId": "work-convertible",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_t18_local_rehearsal",
+      "workId": "work-raster-fallback",
+      "disposition": "raster_fallback",
+      "openOk": false,
+      "exportOk": false,
+      "error": "Historical Canvas target has no existing managed raster.; export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_t18_local_rehearsal",
+      "workId": "work-read-only",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr",
+      "workId": "3a80bb8d-7509-4099-bf0b-24aca6255e6d",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_uSC5XicIHZt8EFAY0ZSfekLIbNrhfkIr",
+      "workId": "8bd4d042-1d5e-498a-9183-e07ef1017bc6",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_wKX0NNZJuFjaZhsEknsnWzfTBfDZyeGj",
+      "workId": "1f4888de-f56c-49b6-b5cb-e2717db17727",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT",
+      "workId": "3d95a048-eb81-4615-937c-455fef8542f7",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0",
+      "workId": "d72c3d9a-cb67-4dc6-a5e0-779191365b6c",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    },
+    {
+      "workspaceId": "ws_xj4Isl5ZNYBO8qKop4Wk2ezqfNTaJJQp",
+      "workId": "7a577581-d100-4345-b765-9517771a894e",
+      "disposition": "read_only",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "read_only_document",
+      "error": "export: Historical Canvas managed raster was not found."
+    },
+    {
+      "workspaceId": "ws_yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt",
+      "workId": "6f8d6195-3236-435d-af28-aebef5b66956",
+      "disposition": "convertible",
+      "openOk": true,
+      "exportOk": false,
+      "openMode": "light_composer",
+      "error": "export: Historical Canvas target has no existing managed raster."
+    }
+  ]
+}

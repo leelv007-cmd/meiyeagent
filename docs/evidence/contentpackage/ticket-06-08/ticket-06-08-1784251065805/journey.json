@@ -1,0 +1,48 @@
+{
+  "accountRef": "e90440a4f857f8193fa368ee77e562015eecf9b84730c06be99c6e40e2a7fa1b",
+  "imagePackageId": "content-package-877a91cef91351f95a6d0335",
+  "runId": "ticket-06-08-1784251065805",
+  "steps": [
+    {
+      "at": "2026-07-17T01:17:49.928Z",
+      "name": "account:authenticated"
+    },
+    {
+      "at": "2026-07-17T01:17:50.124Z",
+      "name": "plan:growth-active",
+      "correlationId": "corr-29c9a9d0-75d2-4704-a635-f02ee678e0d7"
+    },
+    {
+      "at": "2026-07-17T01:17:54.250Z",
+      "name": "store:confirmed"
+    },
+    {
+      "at": "2026-07-17T01:17:58.295Z",
+      "name": "asset:1:authorized"
+    },
+    {
+      "at": "2026-07-17T01:18:02.407Z",
+      "name": "asset:2:authorized"
+    },
+    {
+      "at": "2026-07-17T01:18:19.344Z",
+      "name": "copy:adopted",
+      "orderedAssetIds": [
+        "asset-a6b2f1c3-a6df-4724-ab5b-027e5360d0b2",
+        "asset-6c01b4f1-e193-4e1e-a7ba-9dae4314ec0a"
+      ],
+      "packageId": "content-package-877a91cef91351f95a6d0335",
+      "selectedCandidate": "B"
+    },
+    {
+      "at": "2026-07-17T01:18:26.037Z",
+      "name": "library:image-and-navigation-verified",
+      "firstLevelNavigation": [
+        "创作",
+        "内容",
+        "素材",
+        "门店"
+      ]
+    }
+  ]
+}

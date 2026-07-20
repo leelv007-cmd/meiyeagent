@@ -1,0 +1,58 @@
+{
+  "runId": "real-run-0002-1784236289412",
+  "capturedAt": "2026-07-16T21:12:34.025Z",
+  "package": {
+    "id": "content-package-5f75c81790ceb090a397c975",
+    "kind": "image_text",
+    "status": "accepted",
+    "statusGroup": "usable",
+    "statusLabel": "可使用",
+    "rights": "authorized",
+    "authorizedSourcePhotoCount": 2,
+    "generatedAssetCount": 1,
+    "ownedAssetCount": 1,
+    "currentVersionOrderedAssetCount": 3,
+    "currentVersionContainsGeneratedAsset": true,
+    "generatedChildRunAttached": true,
+    "generatedOwnedReceipt": {
+      "contentType": "image/png",
+      "sha256": "044fb8de142bc27f53b42f5c3e2cfef704c87e1b5cd2bac0077c5d72c0fb5dec",
+      "sizeBytes": 5077701
+    }
+  },
+  "variants": [
+    {
+      "platform": "xiaohongshu",
+      "versionCount": 1,
+      "orderedAssetCount": 3,
+      "inheritsGeneratedAsset": true
+    },
+    {
+      "platform": "douyin",
+      "versionCount": 1,
+      "orderedAssetCount": 3,
+      "inheritsGeneratedAsset": true
+    },
+    {
+      "platform": "video_account",
+      "versionCount": 1,
+      "orderedAssetCount": 3,
+      "inheritsGeneratedAsset": true
+    }
+  ],
+  "jobs": [
+    {
+      "operation": "copy.generate",
+      "status": "completed",
+      "catalogModelId": "llm-openai",
+      "outputAssetCount": 3
+    },
+    {
+      "operation": "image.generate",
+      "status": "completed",
+      "catalogModelId": "gpt-image-2",
+      "outputAssetCount": 1
+    }
+  ],
+  "redaction": "Workspace, user, raw copy, object keys, provider task references, signed URLs, and credentials are omitted."
+}

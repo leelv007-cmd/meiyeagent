@@ -1,0 +1,43 @@
+{
+  "runId": "ticket-15-rights-20260717-1050",
+  "packageId": "content-package-b0aa589eb050a9211762969c",
+  "assetId": "asset-52117022-03f7-4fc7-b95d-dab36a748d7c",
+  "before": {
+    "assetAuthorization": "authorized",
+    "packageStatus": "accepted",
+    "rights": "authorized",
+    "baseVersions": 2,
+    "exportReceipts": 13
+  },
+  "after": {
+    "assetAuthorization": "withdrawn",
+    "packageStatus": "needs_replacement",
+    "rights": "revoked",
+    "rightsReason": "asset_withdrawn:<redacted-asset-id>",
+    "baseVersions": 2,
+    "exportReceipts": 13
+  },
+  "blockedCommands": {
+    "export": {
+      "status": 409,
+      "errorCode": "RIGHTS_REVOKED"
+    },
+    "reuse": {
+      "status": 409,
+      "errorCode": "REUSE_SOURCE_REVOKED"
+    }
+  },
+  "checks": {
+    "browserWithdrawal": true,
+    "immediateNeedsAttentionProjection": true,
+    "exportSideEffectsBlocked": true,
+    "reuseSideEffectsBlocked": true,
+    "priorReceiptsPreserved": true,
+    "priorVersionsPreserved": true
+  },
+  "redaction": {
+    "credentials": false,
+    "cookies": false,
+    "objectKeys": false
+  }
+}

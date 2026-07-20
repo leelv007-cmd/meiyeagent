@@ -1,0 +1,5 @@
+{
+  "expectedCredentialVersion": 2,
+  "expectedEffectiveSource": "vault",
+  "status": "restart_required"
+}

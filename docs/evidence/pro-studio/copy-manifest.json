@@ -1,0 +1,369 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/csyqlz/vozeb",
+    "commit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
+    "tag": "v1.0.0"
+  },
+  "authorization": {
+    "status": "written_instrument_recorded",
+    "recordedAt": "2026-07-19",
+    "channel": "written_git_repo_dev_authorization",
+    "grantors": [
+      "csyqlz",
+      "basketikun"
+    ],
+    "grantee": "leelv007-cmd",
+    "recordedBy": "product_owner",
+    "scope": "pro_studio_canvas_render_retouch_core_at_pinned_commit",
+    "instrument": {
+      "sourcePath": "docs/design/# Git 仓库开发授权书.md",
+      "evidenceCopyPath": "docs/evidence/pro-studio/git-repo-dev-authorization-instrument.md",
+      "sha256": "6858087ea56a8bf54ae1f88dacf2deb831bb18eeb11c88b3999458508805e40d",
+      "purpose": "商业开发及复制"
+    },
+    "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+    "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md",
+    "note": "Both grantors confirmed. Written instrument archived with content hash. Exact-copy rows still required for conformance; A3 third-party assets not auto-cleared."
+  },
+  "copies": [
+    {
+      "source": "web/src/app/(user)/canvas/[id]/page.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/[id]/page.tsx",
+      "sha256": "7e7eaee972eb26f5cedf020c1e4c01a51d0b6be280bc72db23f471d81503a516",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/asset-picker-modal.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/asset-picker-modal.tsx",
+      "sha256": "79336cde4402f77d09326c7829ec5e37da8622edac787f78507fb10f43c1b44a",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-agent-chat-ui.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-agent-chat-ui.tsx",
+      "sha256": "2f83302640356ad8152407213ad826e2ffae7afdcfd4588e3cb3587571a98056",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-agent-panel-motion.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-agent-panel-motion.ts",
+      "sha256": "23e2f3de810b6f2b63717fa3524e29368c7438527790928cfb86927417b199cd",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-config-composer.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-config-composer.tsx",
+      "sha256": "e384e8bf04f3075a58516ae23655201bc281af9ccc51ef0a1f572973db73514d",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-connections.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-connections.tsx",
+      "sha256": "9d6dd28cacef0a7efc9611b04d421300f8d463052c38a655693bf1fde2eda30a",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-context-menu.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-context-menu.tsx",
+      "sha256": "b8ee7ce7603e1299970b7ffccc0f6b382b67b04d65c36a037738e5d82605642f",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx",
+      "sha256": "33bf87acf284aa7a8f23d43a6b662def2568e8dc0c7bc64753b87b8539924c21",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx",
+      "sha256": "ef85ef1c1f5d3cb3838dbf72ca6b68879829ec1f64908d58c9059ee5dc8829d7",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-tools.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-image-toolbar-tools.tsx",
+      "sha256": "d11c586d1ccf80ec2d0a3f9b3871d6255b2306b7a64e7c7fe339c6b578f75dc7",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-mini-map.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-mini-map.tsx",
+      "sha256": "3405282cbf8eb11b3226500f5fdb075b3c178dfd084b5f25018407d48fcd24a7",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-angle-dialog.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node-angle-dialog.tsx",
+      "sha256": "6154c9f8206d569235e006386f75b7ab8a66a08b8eff344a52caaf5fd08dc8fb",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-crop-dialog.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node-crop-dialog.tsx",
+      "sha256": "27ba0bd45aca16af45a4db994877bdfc8ccf98fd044daa6abf725bef2894d2ac",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-hover-toolbar.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node-hover-toolbar.tsx",
+      "sha256": "3f5a17c3bf26da7cc511d00b77d8f1992e2458d04d6e23369ec28eb33b1581e2",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-mask-edit-dialog.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node-mask-edit-dialog.tsx",
+      "sha256": "e6272180419cbd90ea575a327ced604264f56e4a3971b54c4923ed21604cd4d6",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-split-dialog.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node-split-dialog.tsx",
+      "sha256": "6cac9c7b6e14633e61e7ef880b274896f6a374c02edddb8c6a120a5c332cc836",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-upscale-dialog.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node-upscale-dialog.tsx",
+      "sha256": "c0a6f35212f8917e3b20265ec340f9395f1caea77d0f851cd4c503b9f985eea5",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx",
+      "sha256": "d700c4e8742167390ef3e421272f1fa61ec04cefbd0d7240cf863a4a97438ffa",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-project-card.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-project-card.tsx",
+      "sha256": "37176f47276f8038a6cb1f1f2aacbef4d5808ac57ef2e733e8dc1aedf73f072f",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-prompt-library.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-prompt-library.tsx",
+      "sha256": "93b068bf949102e10a09fdbd99c60eba07301bac5203e9ab64bd966c5e228d96",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx",
+      "sha256": "dc1b7675af859bd7ccd0abef3e1fe1ce107cb6379b27f7621bc8fab710d5fc0e",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-size-picker.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-size-picker.tsx",
+      "sha256": "d175bf58ff9109afeba6b60abf53292fe11e1bbd7d1676a26a9fb3fcb121c7a4",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-toolbar.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-toolbar.tsx",
+      "sha256": "fbd48c133f60025857fb1a0bfb3655a5089e9d26744b6213615b5c64432c52f5",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-zoom-controls.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-zoom-controls.tsx",
+      "sha256": "e87aee53a4c12b4792671c8add54ff713cf1384230c60df0b7ba8b2dc5843e1b",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/vozeb-canvas.tsx",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas.tsx",
+      "sha256": "f9819da5fd11ac8f8a993e23a368939b758ac83de4943d7954523a69784c161f",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/constants.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/constants.ts",
+      "sha256": "630e5a6af5bd33da2376390469b382e583f68079d19294c83e6aefa0432fb04c",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/export-types.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/export-types.ts",
+      "sha256": "3cde40da1ed704847cb6b8fbce9bf770c769bfe6de8433629059e814bc3836d5",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/stores/use-canvas-store.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/stores/use-canvas-store.ts",
+      "sha256": "5463916e2d91aaf1cafb7de8404066e5b0e2e451b66475bdb9f40261af79e428",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/stores/use-canvas-ui-store.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/stores/use-canvas-ui-store.ts",
+      "sha256": "ce6ca88828354ddccb77a9a0e89b79503b78e3e5eaf94ea0eb709bea0c137003",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/types.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/types.ts",
+      "sha256": "5c43a1977199325f2ef83b8e85bc5157c6276af47be7b95cdde5020467347777",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/utils/canvas-agent-ops.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/utils/canvas-agent-ops.ts",
+      "sha256": "b3cd8c7620fa9256123c2ab6018e97a48bc685ff86277cf959121b8c609c3854",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/utils/canvas-image-data.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/utils/canvas-image-data.ts",
+      "sha256": "63be5c0fe8e37393e56d599e633f390c7dfecdb18fa6c7c8e50babd01b276b26",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/utils/canvas-node-size.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/utils/canvas-node-size.ts",
+      "sha256": "14b680ddf369bf1b1e0bc84ca025a27c766d555bc02d1f18558d20a49cc2ec38",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/utils/canvas-resource-references.ts",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/utils/canvas-resource-references.ts",
+      "sha256": "57d3dad721c7c0d6532b927b71f86b7494b428a8eba49993f9fe2072687d1703",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/lib/audio-generation.ts",
+      "target": "apps/canvas/src/vendor/vozeb/lib/audio-generation.ts",
+      "sha256": "d84b7f4eb645e5572b071dc478025e9d5afe989b6b705c4ab18b152b249e7413",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/lib/canvas-theme.ts",
+      "target": "apps/canvas/src/vendor/vozeb/lib/canvas-theme.ts",
+      "sha256": "5dd1a6fcffe72b5f1853b50e63cd7725bdc7470efdd3648d06dcb93ec2a7424a",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/lib/file-drop.ts",
+      "target": "apps/canvas/src/vendor/vozeb/lib/file-drop.ts",
+      "sha256": "825d692f6b1f5e60315ead7a85e940f2327a8f6c5b2e6207d42947df569e72f1",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/lib/image-reference-prompt.ts",
+      "target": "apps/canvas/src/vendor/vozeb/lib/image-reference-prompt.ts",
+      "sha256": "e8b9208d1b3e1d6c4bb2a34b642a1a765ae4125a2ac618048696be541a241e1f",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/lib/image-utils.ts",
+      "target": "apps/canvas/src/vendor/vozeb/lib/image-utils.ts",
+      "sha256": "2474f99cc1c9520bb9ff46e28d96c553fa440ecbfe4612135ae557f695dde58d",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/lib/storage-keys.ts",
+      "target": "apps/canvas/src/vendor/vozeb/lib/storage-keys.ts",
+      "sha256": "b7eed87e46e09876d75d10f217aea6d472be7f12ca27d2674663b9b85e1f1ccc",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/lib/utils.ts",
+      "target": "apps/canvas/src/vendor/vozeb/lib/utils.ts",
+      "sha256": "cc70ffce2eb2e8f359e603e894ca538a852d15c0dcae85586656c024bd6e9e96",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    },
+    {
+      "source": "web/src/lib/zip.ts",
+      "target": "apps/canvas/src/vendor/vozeb/lib/zip.ts",
+      "sha256": "8ed892dc82adc60d37bd82dd86a71b59e9ac9dea08ffe6aceb600bfd61156595",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
+    }
+  ],
+  "status": "authorized_with_exact_copies",
+  "note": "A2/A3 written authorization on file. Exact-copy rows frozen at pinned commit via scripts/pro-studio/apply-exact-copies.mjs."
+}

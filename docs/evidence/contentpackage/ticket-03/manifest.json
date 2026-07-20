@@ -1,0 +1,50 @@
+{
+  "artifacts": {
+    "01-admin-byok-live-restart-pending.png": {
+      "bytes": 7115766,
+      "sha256": "2c28f5293206e00be4efc8b27a10fdbd7356e528b77109c13db71d87b8648b21"
+    },
+    "02-admin-byok-live-effective.png": {
+      "bytes": 7109967,
+      "sha256": "c45ad2c1c1a1185f44874a9d4a8e5f36ece965e1f296ff35630a259db0d23471"
+    },
+    "03-merchant-write-only-live-connection.png": {
+      "bytes": 349091,
+      "sha256": "9ec6ed8f1cad259a19702ed6f7effda47d66f862c2a51ef4b4492743611dcd8d"
+    },
+    "04-merchant-live-byok-before-submit.png": {
+      "bytes": 355001,
+      "sha256": "8dd9f7ae69cb0f5bc647e137d9b0f456ef1080452e25aa7b98aae5c152176ae3"
+    },
+    "05-merchant-real-chinese-output.png": {
+      "bytes": 383275,
+      "sha256": "beef748a683f38af20fe36f82a59960ae3114ef263f24dc53978c6c6fe9a56ed"
+    },
+    "06-invalid-key-refunded-needs-attention.png": {
+      "bytes": 371698,
+      "sha256": "a4abf3880db7ec2e04d888cb8fe88e47b493316734e30eed2d8ffe0e06c0b1d4"
+    },
+    "README.md": {
+      "bytes": 2118,
+      "sha256": "ed0b4c2fa73657da657c6ebce0aaab7741a9651dcd53554e16f53ee6e2cdaa9e"
+    },
+    "continuous-byok-live-journey.webm": {
+      "bytes": 4096617,
+      "sha256": "70bbd5524de08642e3840f9185c85f63563ffc44981468701ec0241829f805bb"
+    },
+    "evidence.json": {
+      "bytes": 18312,
+      "sha256": "be7f851042c92cae012aaccb4f50f6fc2c003a21af85313d813eb07630b750af"
+    },
+    "restart-checkpoint.json": {
+      "bytes": 134,
+      "sha256": "29f3ce695777ef25c74c1c941a96b7856b745294fa46e69fc05edec574661923"
+    },
+    "resume-after-byok-restart": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "runId": "ticket-03-1784250078617",
+  "status": "accepted"
+}

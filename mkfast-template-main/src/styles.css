@@ -1,0 +1,708 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "./custom.css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --layer-base: 0;
+  --layer-sticky: 10;
+  --layer-sidebar: 20;
+  --layer-popover: 40;
+  --layer-overlay: 50;
+  --layer-toast: 60;
+  --surface-0: oklch(0.975 0.002 286);
+  --surface-1: oklch(0.99 0.001 286);
+  --surface-2: oklch(1 0 0);
+  --surface-divider: oklch(0.91 0.002 286);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.553 0.195 38.402);
+  --primary-foreground: oklch(0.98 0.016 73.684);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.837 0.128 66.29);
+  --chart-2: oklch(0.705 0.213 47.604);
+  --chart-3: oklch(0.646 0.222 41.116);
+  --chart-4: oklch(0.553 0.195 38.402);
+  --chart-5: oklch(0.47 0.157 37.304);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.646 0.222 41.116);
+  --sidebar-primary-foreground: oklch(0.98 0.016 73.684);
+  --sidebar-accent: oklch(0.93 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --surface-0: oklch(0.145 0 0);
+  --surface-1: oklch(0.205 0 0);
+  --surface-2: oklch(0.245 0 0);
+  --surface-divider: oklch(1 0 0 / 12%);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.553 0.195 38.402);
+  --primary-foreground: oklch(0.98 0.016 73.684);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.371 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.837 0.128 66.29);
+  --chart-2: oklch(0.705 0.213 47.604);
+  --chart-3: oklch(0.646 0.222 41.116);
+  --chart-4: oklch(0.553 0.195 38.402);
+  --chart-5: oklch(0.47 0.157 37.304);
+  --sidebar: oklch(0.185 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.705 0.213 47.604);
+  --sidebar-primary-foreground: oklch(0.98 0.016 73.684);
+  --sidebar-accent: oklch(0.31 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+  --font-brand: Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-custom: var(--font-brand);
+  --spacing-touch-target: 48px;
+  --border-width: 1px;
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-divider: var(--surface-divider);
+  --color-spark: var(--spark, oklch(0.63 0.13 18));
+  --color-spark-wash: var(--spark-wash, oklch(0.95 0.025 18));
+  --color-spark-deep: var(--spark-deep, oklch(0.45 0.1 18));
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply antialiased bg-surface-0 text-foreground;
+    font-family: var(--font-brand);
+    font-weight: 400;
+  }
+  html {
+    @apply scroll-smooth;
+    font-family: var(--font-brand);
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .meiye-product-shell {
+    /* 门店橱窗 tokens (DESIGN.md): neutral ink controls, rose-gold spark only */
+    --product-brand: oklch(0.63 0.13 18);
+    --product-brand-ink: oklch(0.98 0.008 18);
+    --product-guide: oklch(0 0 0 / 0.6);
+    --product-focus: oklch(0.22 0 0);
+    --ink: oklch(0.22 0 0);
+    --ink-90: oklch(0 0 0 / 0.9);
+    --ink-60: oklch(0 0 0 / 0.6);
+    --ink-40: oklch(0 0 0 / 0.4);
+    --paper: oklch(1 0 0);
+    --canvas: oklch(0.965 0 0);
+    --glass-80: oklch(1 0 0 / 0.8);
+    --glass-50: oklch(1 0 0 / 0.5);
+    --glass-35: oklch(1 0 0 / 0.35);
+    --glass-edge: oklch(1 0 0 / 0.55);
+    --tint-active: oklch(0.42 0 0 / 0.08);
+    --tint-hover: oklch(0.42 0 0 / 0.04);
+    --hairline: oklch(0 0 0 / 0.04);
+    --mask-scrim: oklch(0 0 0 / 0.4);
+    --spark: oklch(0.63 0.13 18);
+    --spark-wash: oklch(0.95 0.025 18);
+    --spark-deep: oklch(0.45 0.1 18);
+    --status-success: oklch(0.53 0.14 150);
+    --status-progress: oklch(0.5 0.19 262);
+    --status-warning: oklch(0.55 0.13 85);
+    --status-danger: oklch(0.55 0.2 27);
+    --shadow-ambient: 0 2px 20px oklch(0 0 0 / 0.03);
+    --shadow-overlay: 0 4px 20px oklch(0 0 0 / 0.12);
+    --shadow-rose-glow: 0 6px 16px oklch(0.63 0.13 18 / 0.24);
+    --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+    --ambient-image: url("/seed/store/store-artist-working.webp");
+    --ambient-scrim-top: oklch(0 0 0 / 0.62);
+    --ambient-scrim-mid: oklch(0 0 0 / 0.28);
+    --ambient-text: oklch(1 0 0 / 0.96);
+    --surface-0: var(--canvas);
+    --surface-1: oklch(0.985 0 0);
+    --surface-2: var(--paper);
+    --surface-divider: var(--hairline);
+    --background: var(--canvas);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
+    --popover: var(--paper);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--paper);
+    --secondary: var(--tint-active);
+    --secondary-foreground: var(--ink-90);
+    --muted: var(--tint-hover);
+    --muted-foreground: var(--ink-60);
+    --accent: var(--tint-hover);
+    --accent-foreground: var(--ink-90);
+    --border: oklch(0 0 0 / 0.08);
+    --input: oklch(0 0 0 / 0.12);
+    --ring: var(--product-focus);
+    --radius: 0.75rem;
+    --sidebar: var(--glass-80);
+    --sidebar-foreground: var(--ink-90);
+    --sidebar-primary: var(--ink);
+    --sidebar-primary-foreground: var(--paper);
+    --sidebar-accent: var(--tint-active);
+    --sidebar-accent-foreground: var(--ink-90);
+    --sidebar-border: var(--hairline);
+    --sidebar-ring: var(--ink);
+    background: var(--canvas);
+    color: var(--ink);
+    font-family:
+      Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
+      ui-sans-serif, system-ui, sans-serif;
+  }
+
+  /* 玻璃三档 + 白瓷 */
+  .meiye-glass-shell {
+    background: var(--glass-80);
+    -webkit-backdrop-filter: blur(64px);
+    backdrop-filter: blur(64px);
+    border: 1px solid var(--glass-edge);
+  }
+  .meiye-glass-piece {
+    background: var(--glass-50);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-edge);
+  }
+  .meiye-glass-trace {
+    background: var(--glass-35);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-edge);
+  }
+  .meiye-porcelain {
+    background: var(--paper);
+    border: 1px solid oklch(1 0 0 / 0.9);
+    box-shadow: var(--shadow-ambient);
+  }
+
+  /* 首屏氛围属于壳层，工作台内容与白瓷件浮在其上 */
+  .meiye-product-shell[data-shell-mode="product"][data-slot="sidebar-wrapper"] {
+    position: relative;
+    isolation: isolate;
+    padding: 0;
+    background: var(--canvas) !important;
+  }
+  .meiye-product-shell[data-shell-mode="product"][data-slot="sidebar-wrapper"]::before {
+    position: absolute;
+    inset: 0 0 auto;
+    height: max(100svh, 720px);
+    background:
+      linear-gradient(
+        to bottom,
+        var(--ambient-scrim-top) 0%,
+        var(--ambient-scrim-mid) 46%,
+        var(--canvas) 100%
+      ),
+      var(--ambient-image) center 36% / cover no-repeat;
+    content: "";
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  /* 工作台旧的短氛围带退为壳层的对比遮罩，不再另起一张背景。 */
+  .meiye-product-shell[data-shell-mode="product"] [data-slot="sidebar-inset"]
+    > section:first-child
+    > div[aria-hidden="true"]:first-child {
+    background: transparent !important;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar-inset"]
+    > section:first-child
+    > div[aria-hidden="true"]:nth-child(2) {
+    background: linear-gradient(
+      to bottom,
+      oklch(0 0 0 / 0.12),
+      transparent 70%
+    ) !important;
+  }
+
+  /* 玻璃侧栏：距屏缘 12px，inner 是浮空壳级玻璃 */
+  .meiye-product-shell [data-slot="sidebar"] {
+    background: transparent;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar-container"] {
+    padding: 12px !important;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar"][data-collapsible="icon"]
+    [data-slot="sidebar-gap"],
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar"][data-collapsible="icon"]
+    [data-slot="sidebar-container"] {
+    width: 74px !important;
+  }
+  .meiye-product-shell [data-slot="sidebar-inner"] {
+    -webkit-backdrop-filter: blur(64px);
+    backdrop-filter: blur(64px);
+    background: var(--glass-80);
+    border: 1px solid var(--glass-edge);
+    border-radius: 24px;
+    box-shadow: none;
+    overflow: hidden;
+  }
+  .meiye-product-shell[data-shell-mode="product"] [data-slot="sidebar-inset"] {
+    background: transparent !important;
+  }
+
+  /* 药丸导航（创作/内容/素材/门店） */
+  .meiye-product-shell[data-shell-mode="product"]
+  [data-slot="sidebar-menu-button"] {
+    min-height: 44px;
+    border-radius: 999px !important;
+    font-weight: 500;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar-menu-button"][data-active="true"] {
+    background: var(--tint-active);
+    color: var(--ink-90);
+    font-weight: 500;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar-menu-button"]:hover {
+    background: var(--tint-hover);
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    [data-slot="sidebar-menu-button"]:focus-visible {
+    outline: 2px solid var(--ink) !important;
+    outline-offset: 2px;
+  }
+
+  /* Admin：同源高密度，无氛围玻璃抢戏 */
+  .meiye-product-shell[data-shell-mode="admin"] {
+    --surface-0: oklch(0.97 0 0);
+    --background: oklch(0.97 0 0);
+    --sidebar: oklch(1 0 0);
+  }
+  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-wrapper"] {
+    padding: 0;
+  }
+  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-inner"] {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--paper);
+    border: none;
+    border-right: 1px solid var(--hairline);
+    border-radius: 0;
+  }
+  .meiye-product-shell[data-shell-mode="admin"]
+    [data-slot="sidebar-menu-button"] {
+    min-height: 36px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+  }
+  .meiye-product-shell[data-shell-mode="admin"] [data-slot="sidebar-inset"] {
+    background: var(--surface-0);
+  }
+
+  /* Settings：白瓷中密度 */
+  .meiye-product-shell[data-shell-mode="settings"] [data-slot="sidebar-inner"] {
+    -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
+    border-radius: 20px;
+  }
+
+  .meiye-product-shell .meiye-type-display {
+    color: var(--paper);
+    font-size: clamp(1.75rem, 3.5vw, 2.75rem);
+    font-weight: 200;
+    line-height: 1.2;
+  }
+
+  .meiye-product-shell .meiye-type-title {
+    color: var(--ink-90);
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .meiye-product-shell .meiye-type-body {
+    color: var(--ink-90);
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.55;
+  }
+
+  .meiye-product-shell .meiye-type-aux {
+    color: var(--ink-60);
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.45;
+  }
+
+  .meiye-product-shell[data-shell-mode="product"]
+    .meiye-ambient-copy
+    .meiye-type-title {
+    color: var(--ambient-text);
+    text-shadow: 0 1px 2px oklch(0 0 0 / 0.35);
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    .meiye-ambient-copy
+    .meiye-type-aux {
+    color: var(--ambient-text);
+    text-shadow: 0 1px 2px oklch(0 0 0 / 0.35);
+  }
+
+  .meiye-product-shell .meiye-type-label {
+    color: var(--ink-90);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  /* 主按钮一屏一墨丸 */
+  .meiye-product-shell
+  [data-slot="button"]:not([class*="variant"]):where(.bg-primary),
+  .meiye-product-shell button.bg-primary {
+    min-height: 44px;
+    border-radius: 999px;
+    padding-inline: 20px;
+  }
+  .meiye-product-shell button.bg-primary:hover {
+    background: oklch(0.32 0 0);
+  }
+
+  /* Composer 白瓷签名 */
+  .meiye-composer {
+    border-radius: 32px;
+    background: var(--paper);
+    border: 1px solid oklch(1 0 0 / 0.95);
+    box-shadow: var(--shadow-ambient);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+  }
+  .light .meiye-product-shell[data-shell-mode="product"] .meiye-entry-card {
+    background: var(--paper) !important;
+    color: var(--ink-90);
+  }
+
+  /* 媒体卡遮罩托字 */
+  .meiye-media-mask {
+    background: linear-gradient(0deg, var(--mask-scrim), transparent 55%);
+  }
+
+  /* 生成中玫瑰辉光 */
+  .meiye-rose-glow {
+    box-shadow: var(--shadow-rose-glow);
+    border: 1px solid oklch(0.63 0.13 18 / 0.35);
+    animation: meiye-rose-breathe 4s ease-in-out infinite;
+  }
+  @keyframes meiye-rose-breathe {
+    0%,
+    100% {
+      box-shadow: 0 6px 16px oklch(0.63 0.13 18 / 0.18);
+    }
+    50% {
+      box-shadow: 0 8px 22px oklch(0.63 0.13 18 / 0.32);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .meiye-rose-glow {
+      animation: none;
+      box-shadow: none;
+      border-color: oklch(0.63 0.13 18 / 0.55);
+    }
+  }
+
+  /* 产品顶栏：件级玻璃痕迹 */
+  .meiye-product-shell[data-shell-mode="product"] .meiye-topbar {
+    background: transparent;
+    border-bottom-color: transparent;
+    color: var(--ambient-text);
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    .meiye-topbar
+    [data-slot^="breadcrumb"] {
+    color: var(--ambient-text) !important;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    .meiye-topbar
+    [data-slot="sidebar-trigger"] {
+    min-width: 44px;
+    min-height: 44px;
+    background: var(--glass-50) !important;
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    color: var(--ink-90);
+  }
+  .meiye-product-shell .meiye-topbar-capsule {
+    padding: 4px 8px 4px 12px;
+  }
+  .meiye-product-shell[data-shell-mode="product"] .meiye-topbar-capsule {
+    background: var(--glass-50);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    color: var(--ink-90);
+    padding: 0 4px 0 10px;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    .meiye-topbar-capsule
+    [data-slot="dropdown-menu-trigger"] {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .meiye-product-shell[data-shell-mode="product"]
+    .meiye-topbar-capsule
+    [data-slot="badge"] {
+    height: 24px !important;
+    background: transparent !important;
+    border-color: var(--hairline) !important;
+    color: var(--ink-60) !important;
+    font-weight: 400 !important;
+  }
+  .meiye-product-shell .meiye-product-subscription-entry {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 0 12px;
+    color: var(--ink-90);
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition:
+      background-color 180ms var(--ease-out-expo),
+      color 180ms var(--ease-out-expo);
+  }
+  .meiye-product-shell .meiye-product-subscription-entry:hover {
+    background: var(--tint-hover);
+  }
+  .meiye-product-shell .meiye-product-subscription-entry:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .light
+    .meiye-product-shell[data-shell-mode="product"]
+    .meiye-product-subscription-entry {
+    background: var(--paper);
+    color: var(--ink-90);
+    box-shadow: var(--shadow-ambient);
+  }
+
+  .dark .meiye-product-shell {
+    --product-focus: oklch(0.85 0.08 18);
+    --ink: oklch(0.94 0 0);
+    --ink-90: oklch(1 0 0 / 0.92);
+    --ink-60: oklch(1 0 0 / 0.66);
+    --ink-40: oklch(1 0 0 / 0.4);
+    --paper: oklch(0.21 0 0);
+    --canvas: oklch(0.17 0 0);
+    --glass-80: oklch(0.19 0 0 / 0.85);
+    --glass-50: oklch(1 0 0 / 0.08);
+    --glass-35: oklch(1 0 0 / 0.05);
+    --glass-edge: oklch(1 0 0 / 0.18);
+    --tint-active: oklch(1 0 0 / 0.1);
+    --tint-hover: oklch(1 0 0 / 0.06);
+    --hairline: oklch(1 0 0 / 0.1);
+    --mask-scrim: oklch(0 0 0 / 0.55);
+    --spark: oklch(0.72 0.11 18);
+    --spark-wash: oklch(0.3 0.045 18);
+    --spark-deep: oklch(0.88 0.05 18);
+    --ambient-scrim-top: oklch(0 0 0 / 0.72);
+    --ambient-scrim-mid: oklch(0 0 0 / 0.5);
+    --surface-0: var(--canvas);
+    --surface-1: oklch(0.21 0 0);
+    --surface-2: oklch(0.25 0 0);
+    --surface-divider: var(--hairline);
+    --background: var(--canvas);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
+    --popover: oklch(0.22 0 0);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--canvas);
+    --secondary: var(--tint-active);
+    --secondary-foreground: var(--ink-90);
+    --muted: var(--tint-hover);
+    --muted-foreground: var(--ink-60);
+    --accent: var(--tint-hover);
+    --accent-foreground: var(--ink-90);
+    --border: oklch(1 0 0 / 0.1);
+    --input: oklch(1 0 0 / 0.14);
+    --sidebar: var(--glass-80);
+    --sidebar-foreground: var(--ink-90);
+    --sidebar-accent: var(--tint-active);
+    --sidebar-accent-foreground: var(--ink-90);
+    --sidebar-border: var(--hairline);
+    --sidebar-ring: oklch(0.85 0.08 18);
+  }
+
+  /* Auth / legals：浅色白瓷，无氛围层；主色走墨丸而非营销橙 */
+  .meiye-auth-shell {
+    --primary: oklch(0.22 0 0);
+    --primary-foreground: oklch(1 0 0);
+    --ring: oklch(0.22 0 0);
+    --muted-foreground: oklch(0 0 0 / 0.6);
+    --background: oklch(0.965 0 0);
+    --foreground: oklch(0.22 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.22 0 0);
+    --border: oklch(0 0 0 / 0.08);
+    --surface-0: oklch(0.965 0 0);
+    --surface-1: oklch(0.985 0 0);
+    --surface-2: oklch(1 0 0);
+    --surface-divider: oklch(0 0 0 / 0.04);
+    min-height: 100svh;
+    background: oklch(0.965 0 0);
+    color: oklch(0.22 0 0);
+    font-family:
+      Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
+      ui-sans-serif, system-ui, sans-serif;
+  }
+  .meiye-auth-shell [data-slot="button"].bg-primary,
+  .meiye-auth-shell button.bg-primary {
+    background: oklch(0.22 0 0);
+    color: oklch(1 0 0);
+    border-radius: 999px;
+  }
+  .meiye-auth-shell [data-slot="button"].bg-primary:hover,
+  .meiye-auth-shell button.bg-primary:hover {
+    background: oklch(0.32 0 0);
+  }
+
+  /* Pro Studio：独立深色影棚，只共享圆角/字体/火花语义 */
+  .meiye-pro-studio {
+    --spark: oklch(0.72 0.11 18);
+    --spark-wash: oklch(0.3 0.045 18);
+    --spark-deep: oklch(0.88 0.05 18);
+    min-height: 100svh;
+    background: oklch(0.16 0.01 260);
+    color: oklch(0.95 0.01 90);
+    font-family:
+      Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
+      ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meiye-product-shell,
+  .meiye-product-shell *,
+  .meiye-product-shell *::before,
+  .meiye-product-shell *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Shared product stacking scale. Portalled surfaces escape local contexts. */
+[data-layer="base"] {
+  z-index: var(--layer-base);
+}
+
+[data-layer="sticky"] {
+  z-index: var(--layer-sticky);
+}
+
+[data-layer="sidebar"] {
+  z-index: var(--layer-sidebar);
+}
+
+[data-layer="popover"] {
+  z-index: var(--layer-popover);
+}
+
+[data-layer="overlay"] {
+  z-index: var(--layer-overlay);
+}
+
+.meiye-product-shell [data-slot="sidebar-container"] {
+  z-index: var(--layer-sidebar);
+  pointer-events: none;
+}
+
+.meiye-product-shell [data-slot="sidebar-inner"],
+.meiye-product-shell [data-slot="sidebar-rail"] {
+  pointer-events: auto;
+}
+
+[data-sonner-toaster] {
+  z-index: var(--layer-toast) !important;
+}

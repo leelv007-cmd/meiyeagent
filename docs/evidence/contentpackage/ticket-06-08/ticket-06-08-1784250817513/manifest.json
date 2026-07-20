@@ -1,0 +1,83 @@
+{
+  "acceptance": {
+    "candidateCount": 3,
+    "cancelledVideoHasNoPlayableVersion": false,
+    "desktopAndMobileSameVideoPackage": false,
+    "imageAndVideoShareLibrary": false,
+    "imagePackageImmediatelyVisible": true,
+    "orderedVisualCount": 2,
+    "videoPackageCreatingOnConfirm": false
+  },
+  "completedAt": "2026-07-17T01:14:53.521Z",
+  "failure": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '做视频' })\u001b[22m\n",
+  "limitations": [
+    "This run intentionally cancels the video after proving the creating state; it does not claim completed-provider playback.",
+    "The current-vs-before and external benchmark comparison remain governance evidence outside this harness."
+  ],
+  "ok": false,
+  "runId": "ticket-06-08-1784250817513",
+  "runtime": {
+    "baseUrl": "http://localhost:3000",
+    "browser": "chromium",
+    "mobileViewport": {
+      "height": 844,
+      "width": 390
+    },
+    "viewport": {
+      "height": 900,
+      "width": 1440
+    }
+  },
+  "artifacts": [
+    {
+      "bytes": 149829,
+      "name": "01-store-confirmed.png",
+      "sha256": "a7b913a1017e8a8fbe2699a892317930fa3e1e1a92c8cb94196f81d23f12b76e"
+    },
+    {
+      "bytes": 661558,
+      "name": "01b-two-assets-authorized.png",
+      "sha256": "6b8d48c2c64d6aa937f35cf861806184d8ad20c9e6862956f35e8f4702922b52"
+    },
+    {
+      "bytes": 540392,
+      "name": "02-copy-ready.png",
+      "sha256": "1ad286674688ab6b9db9c9a92774ad924011eacf308fd1c8956dd6b97d9bf049"
+    },
+    {
+      "bytes": 338605,
+      "name": "03-three-copy-candidates.png",
+      "sha256": "1223c68c8c20ec3fe724ba196722f023ab3d41431382885015dbe09725962c61"
+    },
+    {
+      "bytes": 339295,
+      "name": "04-candidate-b-two-assets-selected.png",
+      "sha256": "2db6cd4097129ef1c90761c16130d7302ead21915c7a2a6a0d43547ae0887ca1"
+    },
+    {
+      "bytes": 328989,
+      "name": "05-image-package-immediately-visible.png",
+      "sha256": "c6f1e6e31071ee92819a8a8a5d87f595dd39f6e83c9172d490197f8de73bbc59"
+    },
+    {
+      "bytes": 6180964,
+      "name": "continuous-journey.webm",
+      "sha256": "74d38414cd0fdccbdd361b9b0821e5c7d214c13526ee2d46a31ef6cd7af0bf23"
+    },
+    {
+      "bytes": 435200,
+      "name": "failure.png",
+      "sha256": "e54b15ee03fe4b60000c61afaa938fb1113055761f82ed92674ad8f84c4d96fd"
+    },
+    {
+      "bytes": 1178,
+      "name": "journey.json",
+      "sha256": "648dbf5fcc2068d6f65d880f716e1b16ff76e50eaa70be4c3d4091a0037900ac"
+    },
+    {
+      "bytes": 14164,
+      "name": "network-log.jsonl",
+      "sha256": "161be39146c4baf080eb0f9b51b1f99409eba6c98eaec31975784509ba195c90"
+    }
+  ]
+}

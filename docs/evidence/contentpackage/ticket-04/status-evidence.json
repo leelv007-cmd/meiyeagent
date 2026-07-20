@@ -1,0 +1,21 @@
+{
+  "status": "accepted",
+  "capturedAt": "2026-07-17T00:08:29Z",
+  "backend": {
+    "provider": "douyin",
+    "integrated": false,
+    "executionMode": "recorded",
+    "correlationId": "corr-c2f9b2b8-d321-42e5-bd76-35361159985c"
+  },
+  "surfaces": {
+    "admin": "not_integrated_hardcoded_recorded",
+    "merchantDesktop": "not_integrated_l3_manual_available",
+    "merchantMobile": "not_integrated_no_false_live_action"
+  },
+  "video": {
+    "file": "continuous-douyin-honest-labeling.webm",
+    "durationSeconds": 73.52,
+    "bytes": 1614468,
+    "sha256": "63086404ed18250bcbcc88ba975c3324b23bd7f7d4ecaa3244819c386ffe24d6"
+  }
+}

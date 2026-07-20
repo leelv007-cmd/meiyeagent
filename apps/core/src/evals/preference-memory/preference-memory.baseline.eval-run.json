@@ -1,0 +1,278 @@
+{
+  "schemaVersion": "eval-run/v1",
+  "runId": "beauty-preference-memory-canonical-v1",
+  "suiteId": "beauty-preference-memory",
+  "suiteRevision": "preference-dialogues-v1",
+  "mode": "recorded_fixture",
+  "createdAt": "2026-07-18T09:30:00.000Z",
+  "passed": true,
+  "results": [
+    {
+      "caseId": "temporary-correction-does-not-persist",
+      "gateId": null,
+      "promptRevision": "preference-dialogues-v1",
+      "scorerRevision": "beauty-preference-memory-v1",
+      "passed": true,
+      "reason": "The one-off correction created no candidate or preference.",
+      "memoryDiff": {
+        "before": {
+          "signals": [],
+          "candidates": [],
+          "preferences": [],
+          "activePreferences": []
+        },
+        "after": {
+          "signals": [
+            {
+              "signalId": "signal-temporary",
+              "taskId": "task-temporary",
+              "semanticKey": "tone.less-promotional",
+              "value": true,
+              "kind": "modified"
+            }
+          ],
+          "candidates": [],
+          "preferences": [],
+          "activePreferences": []
+        },
+        "changes": [
+          {
+            "path": "/signals",
+            "before": [],
+            "after": [
+              {
+                "signalId": "signal-temporary",
+                "taskId": "task-temporary",
+                "semanticKey": "tone.less-promotional",
+                "value": true,
+                "kind": "modified"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "uncertain-language-abstains",
+      "gateId": null,
+      "promptRevision": "preference-dialogues-v1",
+      "scorerRevision": "beauty-preference-memory-v1",
+      "passed": true,
+      "reason": "Uncertain dialogue created no signal, candidate, or preference.",
+      "memoryDiff": {
+        "before": {
+          "signals": [],
+          "candidates": [],
+          "preferences": [],
+          "activePreferences": []
+        },
+        "after": {
+          "signals": [],
+          "candidates": [],
+          "preferences": [],
+          "activePreferences": []
+        },
+        "changes": []
+      }
+    },
+    {
+      "caseId": "repeated-pattern-stays-pending",
+      "gateId": null,
+      "promptRevision": "preference-dialogues-v1",
+      "scorerRevision": "beauty-preference-memory-v1",
+      "passed": true,
+      "reason": "Repeated modifications created one pending candidate and no preference.",
+      "memoryDiff": {
+        "before": {
+          "signals": [],
+          "candidates": [],
+          "preferences": [],
+          "activePreferences": []
+        },
+        "after": {
+          "signals": [
+            {
+              "signalId": "signal-repeated-a",
+              "taskId": "task-repeated-a",
+              "semanticKey": "tone.less-promotional",
+              "value": true,
+              "kind": "modified"
+            },
+            {
+              "signalId": "signal-repeated-b",
+              "taskId": "task-repeated-b",
+              "semanticKey": "tone.less-promotional",
+              "value": true,
+              "kind": "modified"
+            },
+            {
+              "signalId": "signal-repeated-c",
+              "taskId": "task-repeated-c",
+              "semanticKey": "tone.less-promotional",
+              "value": true,
+              "kind": "modified"
+            }
+          ],
+          "candidates": [
+            {
+              "candidateId": "preference-candidate-287b1d7b99b05890b48299d5",
+              "semanticKey": "tone.less-promotional",
+              "proposedValue": true,
+              "status": "pending"
+            }
+          ],
+          "preferences": [],
+          "activePreferences": []
+        },
+        "changes": [
+          {
+            "path": "/signals",
+            "before": [],
+            "after": [
+              {
+                "signalId": "signal-repeated-a",
+                "taskId": "task-repeated-a",
+                "semanticKey": "tone.less-promotional",
+                "value": true,
+                "kind": "modified"
+              },
+              {
+                "signalId": "signal-repeated-b",
+                "taskId": "task-repeated-b",
+                "semanticKey": "tone.less-promotional",
+                "value": true,
+                "kind": "modified"
+              },
+              {
+                "signalId": "signal-repeated-c",
+                "taskId": "task-repeated-c",
+                "semanticKey": "tone.less-promotional",
+                "value": true,
+                "kind": "modified"
+              }
+            ]
+          },
+          {
+            "path": "/candidates",
+            "before": [],
+            "after": [
+              {
+                "candidateId": "preference-candidate-287b1d7b99b05890b48299d5",
+                "semanticKey": "tone.less-promotional",
+                "proposedValue": true,
+                "status": "pending"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "supersede-removes-old-active-value",
+      "gateId": null,
+      "promptRevision": "preference-dialogues-v1",
+      "scorerRevision": "beauty-preference-memory-v1",
+      "passed": true,
+      "reason": "Only the explicitly confirmed replacement remains active.",
+      "memoryDiff": {
+        "before": {
+          "signals": [],
+          "candidates": [],
+          "preferences": [],
+          "activePreferences": []
+        },
+        "after": {
+          "signals": [],
+          "candidates": [
+            {
+              "candidateId": "candidate-tone-minimal",
+              "semanticKey": "tone.style",
+              "proposedValue": "minimal",
+              "status": "confirmed"
+            },
+            {
+              "candidateId": "candidate-tone-warm",
+              "semanticKey": "tone.style",
+              "proposedValue": "warm",
+              "status": "confirmed"
+            }
+          ],
+          "preferences": [
+            {
+              "preferenceId": "preference-tone-minimal",
+              "revision": 1,
+              "semanticKey": "tone.style",
+              "value": "minimal",
+              "recordState": "current"
+            },
+            {
+              "preferenceId": "preference-tone-warm",
+              "revision": 2,
+              "semanticKey": "tone.style",
+              "value": "warm",
+              "recordState": "revoked"
+            }
+          ],
+          "activePreferences": [
+            {
+              "preferenceId": "preference-tone-minimal",
+              "semanticKey": "tone.style",
+              "value": "minimal"
+            }
+          ]
+        },
+        "changes": [
+          {
+            "path": "/candidates",
+            "before": [],
+            "after": [
+              {
+                "candidateId": "candidate-tone-minimal",
+                "semanticKey": "tone.style",
+                "proposedValue": "minimal",
+                "status": "confirmed"
+              },
+              {
+                "candidateId": "candidate-tone-warm",
+                "semanticKey": "tone.style",
+                "proposedValue": "warm",
+                "status": "confirmed"
+              }
+            ]
+          },
+          {
+            "path": "/preferences",
+            "before": [],
+            "after": [
+              {
+                "preferenceId": "preference-tone-minimal",
+                "revision": 1,
+                "semanticKey": "tone.style",
+                "value": "minimal",
+                "recordState": "current"
+              },
+              {
+                "preferenceId": "preference-tone-warm",
+                "revision": 2,
+                "semanticKey": "tone.style",
+                "value": "warm",
+                "recordState": "revoked"
+              }
+            ]
+          },
+          {
+            "path": "/activePreferences",
+            "before": [],
+            "after": [
+              {
+                "preferenceId": "preference-tone-minimal",
+                "semanticKey": "tone.style",
+                "value": "minimal"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "236a057d-3a64-4966-96b4-58a7fddeaaa6"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "4ba08c95-8a2f-459f-b5db-92f0acbf7ace"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT",
+  "works": [
+    {
+      "currentRevisionId": "236a057d-3a64-4966-96b4-58a7fddeaaa6",
+      "id": "4ba08c95-8a2f-459f-b5db-92f0acbf7ace",
+      "revisions": [
+        {
+          "id": "236a057d-3a64-4966-96b4-58a7fddeaaa6",
+          "workId": "4ba08c95-8a2f-459f-b5db-92f0acbf7ace",
+          "document": {
+            "pages": [
+              {
+                "id": "3e71b9eb-29d3-4f94-af75-19800944e1bd",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T11:52:46.277Z",
+          "createdBy": "3dzIqTfGRlZD5FqYm3WFNeQxVHKg0uxT"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.626Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "bcbd8831f6538e628a48cfaf4478b8da31326a8a760f719a1d62208c97e50782",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "04eb6d83ef2afb0ab6e79c5279bae64b416efa1b6b43b7bde78b5cf39491a699"
+  }
+}

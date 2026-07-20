@@ -1,0 +1,440 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  runHarnessWorkflow,
+  type HarnessStagePorts,
+  type HarnessWorkflowRuntime,
+} from './workflow-core.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
+
+test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
+  const calls: string[] = [];
+  const progress: Array<{ stage: string; state: string; message: string }> = [];
+  const traces: string[] = [];
+  const runtime: HarnessWorkflowRuntime = {
+    runStep: async (effectIdempotencyKey, operation) => {
+      calls.push(effectIdempotencyKey);
+      return operation();
+    },
+    progress: async (event) => {
+      progress.push(event);
+    },
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace(input) {
+      traces.push(input.stage);
+    },
+  };
+
+  const result = await runHarnessWorkflow(
+    'task-35',
+    taskInput(),
+    fixtureStages(),
+    runtime
+  );
+
+  assert.deepEqual(calls, [
+    'wf:task-35:s1:intent:0',
+    'wf:task-35:s2:context:0',
+    'wf:task-35:s3:copy:0',
+    'wf:task-35:s4:copy:selection',
+    'wf:task-35:s2:fence:r1',
+    'wf:task-35:s5:package:0',
+  ]);
+  assert.deepEqual(
+    progress.map(({ stage, state }) => ({ stage, state })),
+    [
+      { stage: 'intent_naming', state: 'success' },
+      { stage: 'context_injection', state: 'success' },
+      { stage: 'brief_compilation', state: 'success' },
+      { stage: 'execution_selection', state: 'success' },
+      { stage: 'assembly_delivery', state: 'success' },
+    ]
+  );
+  assert.deepEqual(
+    progress.map(({ message }) => message),
+    [
+      '已确认这次的创作方向',
+      '已整理本次创作资料',
+      '已整理本次创作要求',
+      '已选出本次推荐文案',
+      '已生成第 3 版，等待你采用',
+    ]
+  );
+  for (const { message } of progress) {
+    assert.doesNotMatch(
+      message,
+      /Harness|revision|candidate|workflow|direct mode|直接模式|排查与详情/iu
+    );
+  }
+  assert.deepEqual(result.delivery, {
+    packageId: 'package-1',
+    versionId: 'version-3',
+    revision: 3,
+  });
+  assert.equal(result.deliveryLayer, 'copy');
+  assert.deepEqual(result.recommendation, {
+    recommendedCandidateId: 'c01',
+    decisionTrace: {
+      whyPost: 'promotion_groupbuy_conversion',
+      expressionIdentity: 'identity-1',
+      factReferences: ['fact-1'],
+      platforms: ['xiaohongshu'],
+      customerAction: '私信预约',
+      complianceStatus: 'seven_gates_passed',
+      deliverables: ['copy_revision:3'],
+    },
+  });
+  assert.deepEqual(traces, [
+    'intent_naming',
+    'context_injection',
+    'brief_compilation',
+    'execution_selection',
+    'assembly_delivery',
+  ]);
+});
+
+test('one blocking question suspends and resumes before context injection', async () => {
+  const stages = fixtureStages();
+  stages.nameIntent = async () => ({
+    declaration: {
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      implicitConstraints: [],
+    },
+    blockingQuestion: {
+      questionId: 'question-1',
+      workflowId: 'task-35',
+      workflowRevision: 4,
+      question: '本次团购的当前价格是多少？',
+      options: [],
+      freeText: { enabled: true },
+      response: {
+        field: 'offer_price',
+        reason: '补充当前任务所需的权威事实',
+      },
+      scope: 'current_task',
+    },
+  });
+  const order: string[] = [];
+  let injectedRequest: HarnessWorkflowInput | undefined;
+  const originalInjectContext = stages.injectContext;
+  stages.injectContext = async (input) => {
+    injectedRequest = input.request;
+    return originalInjectContext(input);
+  };
+  const runtime: HarnessWorkflowRuntime = {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress(event) {
+      order.push(`${event.stage}:${event.state}`);
+    },
+    async token() {},
+    async awaitDecision(question) {
+      order.push(`decision:${question.questionId}`);
+      return {
+        idempotencyKey: 'decision-1',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: 'intent',
+          value: '当前团购价 398 元',
+          reason: '补充当前任务信息',
+        },
+        decision: { state: 'accepted', value: '当前团购价 398 元' },
+      };
+    },
+    async recordTrace() {},
+  };
+
+  await runHarnessWorkflow('task-35', taskInput(), stages, runtime);
+
+  assert.deepEqual(order.slice(0, 3), [
+    'intent_naming:suspended',
+    'decision:question-1',
+    'intent_naming:success',
+  ]);
+  assert.equal(injectedRequest?.intent.context.intent, '当前团购价 398 元');
+  assert.deepEqual(injectedRequest?.intent.context.sourceSummaries, [
+    'Merchant decision (intent): 当前团购价 398 元',
+  ]);
+  assert.deepEqual(injectedRequest?.decisionReferences, [
+    {
+      id: 'decision:question-1:decision-1',
+      field: 'intent',
+      value: '当前团购价 398 元',
+      revision: 4,
+    },
+  ]);
+});
+
+test('fallback prompt version and hash enter stage traces without prompt content', async () => {
+  const traces: Array<{ stage: string; payload: unknown }> = [];
+  const request = {
+    ...taskInput(),
+    prompts: {
+      intentNaming: fallbackPrompt('harness/intent-naming'),
+      briefCompilation: fallbackPrompt('harness/brief-copy'),
+    },
+  };
+
+  await runHarnessWorkflow('task-prompt-fallback', request, fixtureStages(), {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace(input) {
+      traces.push({ stage: input.stage, payload: input.payload });
+    },
+  });
+
+  const promptTraces = traces.filter(({ stage }) =>
+    ['intent_naming', 'brief_compilation'].includes(stage),
+  );
+  for (const trace of promptTraces) {
+    const prompt = (trace.payload as { prompt: Record<string, unknown> }).prompt;
+    assert.deepEqual(prompt, {
+      name:
+        trace.stage === 'intent_naming'
+          ? 'harness/intent-naming'
+          : 'harness/brief-copy',
+      version: 'builtin-v1',
+      contentHash: 'f'.repeat(64),
+      label: 'production',
+      source: 'builtin',
+      isFallback: true,
+      fallbackReason: 'http_503',
+    });
+    assert.equal('content' in prompt, false);
+  }
+});
+
+test('source revision fence recompiles brief and selection with new effect keys', async () => {
+  const stages = fixtureStages();
+  let executions = 0;
+  stages.fenceContext = async (input) => ({
+    ...input.context,
+    bundle: {
+      ...input.context.bundle,
+      revision: 2,
+      previousRevision: 1,
+      hash: 'b'.repeat(64),
+      sourceRevisions: {
+        ...input.context.bundle.sourceRevisions,
+        facts: 3,
+      },
+    },
+  });
+  stages.executeAndSelect = async () => {
+    executions += 1;
+    const candidateId = executions === 1 ? 'c01' : 'c02';
+    return {
+      candidates: [
+        {
+          candidateId,
+          title: `候选 ${candidateId}`,
+          body: '正文',
+          conversionHook: '私信预约',
+          score: 90,
+        },
+      ],
+      winner: {
+        candidateId,
+        title: `候选 ${candidateId}`,
+        body: '正文',
+        conversionHook: '私信预约',
+      },
+      trace: {
+        stage: 'execution_selection',
+        winnerCandidateId: candidateId,
+        candidateScores: [],
+        blockedCandidates: [],
+        rubricVersion: 'copy-quality-v1',
+        rubricHash: 'rubric-hash',
+      },
+    };
+  };
+  let deliveredCandidateId = '';
+  stages.assembleAndDeliver = async (input) => {
+    deliveredCandidateId = input.selection.winner.candidateId;
+    return { packageId: 'package-1', versionId: 'version-3', revision: 3 };
+  };
+  const keys: string[] = [];
+  const traceIds: string[] = [];
+  const progressMessages: string[] = [];
+
+  await runHarnessWorkflow('task-35', taskInput(), stages, {
+    async runStep(key, operation) {
+      keys.push(key);
+      return operation();
+    },
+    async progress(event) {
+      progressMessages.push(event.message);
+    },
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace(input) {
+      traceIds.push(input.id);
+    },
+  });
+
+  assert.equal(deliveredCandidateId, 'c02');
+  assert.ok(keys.includes('wf:task-35:s3:copy-r2:0'));
+  assert.ok(keys.includes('wf:task-35:s4:copy-r2:selection'));
+  assert.ok(traceIds.includes('trace-task-35-execution_selection-r1'));
+  assert.ok(traceIds.includes('trace-task-35-execution_selection-r2'));
+  assert.ok(
+    progressMessages.includes('资料有更新，已同步到本次创作')
+  );
+  assert.ok(
+    progressMessages.includes('已按最新资料更新推荐文案')
+  );
+  for (const message of progressMessages) {
+    assert.doesNotMatch(
+      message,
+      /Harness|revision|candidate|workflow|direct mode|直接模式|排查与详情/iu
+    );
+  }
+});
+
+function fixtureStages(): HarnessStagePorts {
+  return {
+    async nameIntent() {
+      return {
+        declaration: {
+          taskType: 'promotion_groupbuy_conversion',
+          deliveryLayer: 'copy',
+          implicitConstraints: ['不得编造价格'],
+        },
+        blockingQuestion: null,
+      };
+    },
+    async injectContext() {
+      return {
+        bundle: {
+          bundleId: 'bundle-1',
+          revision: 1,
+          hash: 'a'.repeat(64),
+          serializerVersion: 'context-bundle-c14n-v1',
+          workspaceId: 'workspace-1',
+          taskId: 'task-35',
+          frozenAt: '2026-07-18T00:00:00.000Z',
+          frozenBy: 'owner-1',
+          previousRevision: null,
+          referencedFactRevisions: [],
+          sourceRevisions: {
+            facts: 2,
+            assets: 1,
+            identity: 1,
+            rights: 1,
+            preferences: 1,
+            recipe: 1,
+            platformRules: 1,
+            currentSignal: 1,
+          },
+          dimensions: {
+            promotion_task: {},
+            traffic_opportunity: {},
+            expression_identity: {},
+            platform_mechanism: {},
+            store_facts_assets: {},
+            conversion_action: {},
+          },
+        },
+        policyReferences: { sourceRefs: [], rightsRefs: [], identityRefs: [] },
+      };
+    },
+    async fenceContext(input) {
+      return input.context;
+    },
+    async compileBrief() {
+      return {
+        kind: 'copy',
+        instructions:
+          '请基于当前有效团购事实，面向目标顾客生成一条可直接发布的文案，保留事实引用、表达身份、平台结构和明确行动号召，不得编造价格与效果。',
+        platform: 'xiaohongshu',
+        cta: '私信预约',
+        factRefs: ['fact-1'],
+        assetRefs: [],
+        identityRefs: ['identity-1'],
+        constraints: ['不得编造价格'],
+      };
+    },
+    async executeAndSelect() {
+      return {
+        candidates: [
+          {
+            candidateId: 'c01',
+            title: '新团购上线',
+            body: '已确认的团购信息。',
+            conversionHook: '私信预约',
+            score: 90,
+          },
+        ],
+        winner: {
+          candidateId: 'c01',
+          title: '新团购上线',
+          body: '已确认的团购信息。',
+          conversionHook: '私信预约',
+        },
+        trace: {
+          stage: 'execution_selection',
+          winnerCandidateId: 'c01',
+          candidateScores: [],
+          blockedCandidates: [],
+          rubricVersion: 'copy-quality-v1',
+          rubricHash: 'rubric-hash',
+        },
+      };
+    },
+    async assembleAndDeliver() {
+      return {
+        packageId: 'package-1',
+        versionId: 'version-3',
+        revision: 3,
+      };
+    },
+  };
+}
+
+function taskInput() {
+  return {
+    actorId: 'owner-1',
+    workspaceId: 'workspace-1',
+    packageId: 'package-1',
+    expectedRevision: 2,
+    workflowRevision: 4,
+    rawInput: '把新团购做一套能发的',
+    intent: {
+      context: {
+        workId: 'work-1',
+        intent: '把新团购做一套能发的',
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+  };
+}
+
+function fallbackPrompt(name: string) {
+  return {
+    name,
+    version: 'builtin-v1',
+    content: 'Built-in content must not enter the observability payload.',
+    contentHash: 'f'.repeat(64),
+    label: 'production',
+    source: 'builtin' as const,
+    isFallback: true,
+    fallbackReason: 'http_503',
+  };
+}

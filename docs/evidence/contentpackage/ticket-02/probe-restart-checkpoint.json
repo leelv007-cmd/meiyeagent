@@ -1,0 +1,9 @@
+{
+  "deploymentId": "custom-llm-direct-recorded",
+  "operations": [
+    "copy.generate",
+    "copy.adapt",
+    "text.respond"
+  ],
+  "status": "restart_required"
+}

@@ -1,0 +1,53 @@
+{
+  "archive": {
+    "contentType": "application/zip",
+    "entries": [
+      {
+        "bytes": 1512,
+        "name": "content.json",
+        "sha256": "2b3d94f600c1f8c35d934ed7ba188d48fa55f130240e42e0506380adcb90f56a"
+      },
+      {
+        "bytes": 5441390,
+        "name": "01.png",
+        "sha256": "070a1ce03fadb18c0b72bf5c712751a8f4849296d952b944aa6b57b194167452"
+      }
+    ],
+    "receiptMatchesDownloadedBytes": true,
+    "sha256": "22ab29ad5905e0e293c00c3b31ebd22ec6e10cae6cb7c7eab9cffe0169f4267d",
+    "sizeBytes": 5343552
+  },
+  "preparation": {
+    "durableAssetCount": 1,
+    "platformVersionRestoredThroughRollback": true
+  },
+  "compliance": {
+    "receiptMatchesPackage": true,
+    "source": {
+      "watermarkText": "润复丝·泽发防脱头皮管理（D5世纪城店）",
+      "aigcLabelEnabled": true,
+      "watermarkEnabled": true
+    }
+  },
+  "lineage": {
+    "a": "content-package-b0aa589eb050a9211762969c",
+    "b": "96d0bcdd-3554-4907-a361-e4d7de1cafb0",
+    "c": "8c78ac8f-c11f-42a6-8821-0ddf226536d9",
+    "cAncestors": [
+      "96d0bcdd-3554-4907-a361-e4d7de1cafb0",
+      "content-package-b0aa589eb050a9211762969c"
+    ]
+  },
+  "mobile": {
+    "coarsePointerVerified": true,
+    "desktopStableAddressVerified": true,
+    "packageId": "8c78ac8f-c11f-42a6-8821-0ddf226536d9",
+    "versionCountAfter": 2,
+    "versionCountBefore": 1
+  },
+  "replay": {
+    "responseStable": true,
+    "receiptDelta": 1
+  },
+  "runId": "ticket-13-16-20260717-1030"
+}

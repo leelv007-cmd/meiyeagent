@@ -1,0 +1,517 @@
+/**
+ * First-ship Surface revision + eight Recipe variants (A2 / #89, D-082/D-083).
+ *
+ * Six user-visible cards → eight single-lens Recipe revisions:
+ *   five single-lens cards + "旧内容换平台" familyId with three variants.
+ * Cold reuse card has NO default lens — Surface holds three ordered refs.
+ *
+ * Marked as first published revision defaults; later adjustments ship as new
+ * revisions only (never rewrite history).
+ */
+
+import type {
+  CreationLensId,
+  RecipeDeliveryDefaults,
+  RecipeId,
+  RecipePresentation,
+  RecipeSourceRequirement,
+  SurfaceId,
+  SurfaceRecipeRef,
+  SurfaceToolRef,
+} from '@meiye/contracts';
+import { CreationExperienceCatalogService } from './catalog-service.js';
+import type { CreationExperienceCatalogRepository } from './memory-repository.js';
+import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
+import type {
+  RecipeBodyInput,
+  ServerRecipeRecord,
+  ServerSurfaceRecord,
+} from './types.js';
+
+/** Global first-ship surface id (Composer cold-start six cards). */
+export const LAUNCH_SURFACE_ID: SurfaceId = 'surface.home.launch';
+
+/** Shared family for the three "旧内容换平台" variants (D-082). */
+export const REUSE_CONTENT_FAMILY_ID = 'reuse_content';
+
+export const LAUNCH_ACTOR = {
+  actorId: 'system.launch-seed',
+  reason: 'A2 first-ship Surface/Recipe seeds (D-082/D-083)',
+  correlationId: 'launch-seed.a2',
+} as const;
+
+export const LENS_LABELS: Record<CreationLensId, string> = {
+  copy: '文案',
+  image_text: '图文',
+  video: '视频',
+};
+
+/** Action labels locked to D-083 wording. */
+export function actionLabelForLens(lensId: CreationLensId): string {
+  return `选择${LENS_LABELS[lensId]}并套用`;
+}
+
+/** Reuse-family cold action — no lens preselection (D-083). */
+export const REUSE_CONTENT_ACTION_LABEL = '选择创作形式';
+
+export interface LaunchRecipeSeedSpec {
+  recipeId: RecipeId;
+  familyId: string;
+  /** Stable variant key within family (design D-082 table). */
+  variantKey: string;
+  lensId: CreationLensId;
+  presentation: RecipePresentation;
+  delivery: RecipeDeliveryDefaults;
+  sourceRequirements: RecipeSourceRequirement[];
+  contextPatches?: Record<string, unknown>;
+  settingsPatches?: Record<string, unknown>;
+  outputContractRef?: string;
+  workflowRevisionRef?: string;
+  promptRevisionRef: string;
+  quotePolicyRevisionRef?: string;
+  /**
+   * Featured cold-start card order (0..5 for six cards).
+   * The three reuse variants share cardOrder 5.
+   */
+  cardOrder: number;
+  /** True for cold-start six-card featured set. */
+  featured: boolean;
+}
+
+/**
+ * Eight Recipe seeds matching D-082/D-083 field table.
+ *
+ * Deviations (documented):
+ * - `variantKey` is carried in settingsPatches (contracts have no top-level field).
+ * - Friends-circle uses distributionTarget `wechat_moments` (export target, not
+ *   auto-publish ContentPackagePlatform — D-082).
+ * - Reuse variants share presentation title/summary; cold action is
+ *   「选择创作形式」rather than lens-specific apply (D-083).
+ */
+export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
+  {
+    recipeId: 'recipe.case_to_xhs_note',
+    familyId: 'case_to_xhs_note',
+    variantKey: 'xhs_image_text',
+    lensId: 'image_text',
+    presentation: {
+      title: '从案例图写小红书',
+      summary: '用案例图生成笔记与封面',
+      actionLabel: '选择图文并套用',
+    },
+    delivery: {
+      platform: 'xiaohongshu',
+      deliverableKind: 'note',
+      quantity: 1,
+      aspectRatio: '3:4',
+    },
+    sourceRequirements: [
+      {
+        slot: 'case_image',
+        required: true,
+        kinds: ['image'],
+      },
+    ],
+    contextPatches: {
+      reuseCaseImages: true,
+      coverAspectRatio: '3:4',
+      noteCount: 1,
+    },
+    settingsPatches: { variantKey: 'xhs_image_text' },
+    outputContractRef: 'output.xhs_note.v1',
+    workflowRevisionRef: 'workflow.image_text@1',
+    promptRevisionRef: 'prompt.case_to_xhs_note@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 0,
+    featured: true,
+  },
+  {
+    recipeId: 'recipe.project_intro',
+    familyId: 'project_intro',
+    variantKey: 'wechat_copy',
+    lensId: 'copy',
+    presentation: {
+      title: '朋友圈项目介绍',
+      summary: '用项目资料生成朋友圈文案',
+      actionLabel: '选择文案并套用',
+    },
+    delivery: {
+      platform: 'wechat_moments',
+      deliverableKind: 'copy_document',
+      quantity: 1,
+    },
+    sourceRequirements: [
+      { slot: 'project_facts', required: true, kinds: ['text'] },
+    ],
+    contextPatches: {
+      distributionTarget: 'wechat_moments',
+      lengthHint: '80-180',
+    },
+    settingsPatches: { variantKey: 'wechat_copy' },
+    outputContractRef: 'output.wechat_copy.v1',
+    workflowRevisionRef: 'workflow.copy@1',
+    promptRevisionRef: 'prompt.project_intro@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 1,
+    featured: true,
+  },
+  {
+    recipeId: 'recipe.campaign_visual_set',
+    familyId: 'campaign_visual_set',
+    variantKey: 'image_set',
+    lensId: 'image_text',
+    presentation: {
+      title: '项目/活动套图',
+      summary: '用项目或活动信息生成 4 张套图',
+      actionLabel: '选择图文并套用',
+    },
+    delivery: {
+      deliverableKind: 'image_set',
+      quantity: 4,
+      aspectRatio: '3:4',
+    },
+    sourceRequirements: [
+      { slot: 'campaign_facts', required: true, kinds: ['text'] },
+      { slot: 'campaign_asset', required: false, kinds: ['image'] },
+    ],
+    contextPatches: {
+      setLayout: ['cover', 'highlights', 'details', 'cta'],
+      subjectKindField: 'subject_kind',
+    },
+    settingsPatches: { variantKey: 'image_set' },
+    outputContractRef: 'output.image_set.v1',
+    workflowRevisionRef: 'workflow.image_text@1',
+    promptRevisionRef: 'prompt.campaign_visual_set@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 2,
+    featured: true,
+  },
+  {
+    recipeId: 'recipe.promotion_poster',
+    familyId: 'promotion_poster',
+    variantKey: 'poster',
+    lensId: 'image_text',
+    presentation: {
+      title: '促销海报',
+      summary: '用优惠和期限生成活动海报',
+      actionLabel: '选择图文并套用',
+    },
+    delivery: {
+      deliverableKind: 'poster',
+      quantity: 1,
+      aspectRatio: '3:4',
+    },
+    sourceRequirements: [
+      { slot: 'promotion_facts', required: true, kinds: ['text'] },
+      { slot: 'hero_visual', required: false, kinds: ['image'] },
+    ],
+    contextPatches: {
+      editableAspectRatios: ['3:4', '1:1', '9:16'],
+    },
+    settingsPatches: {
+      variantKey: 'poster',
+      editableAspectRatios: ['3:4', '1:1', '9:16'],
+    },
+    outputContractRef: 'output.poster.v1',
+    workflowRevisionRef: 'workflow.image_text@1',
+    promptRevisionRef: 'prompt.promotion_poster@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 3,
+    featured: true,
+  },
+  {
+    recipeId: 'recipe.douyin_project_video',
+    familyId: 'douyin_project_video',
+    variantKey: 'douyin_video',
+    lensId: 'video',
+    presentation: {
+      title: '抖音项目成片',
+      summary: '用案例素材生成 15 秒竖版成片',
+      actionLabel: '选择视频并套用',
+    },
+    delivery: {
+      platform: 'douyin',
+      deliverableKind: 'video_package',
+      quantity: 1,
+      aspectRatio: '9:16',
+      durationSeconds: 15,
+    },
+    sourceRequirements: [
+      {
+        slot: 'case_media',
+        required: true,
+        kinds: ['image', 'video'],
+      },
+    ],
+    contextPatches: {
+      includeCover: true,
+      includePublishCopy: true,
+    },
+    settingsPatches: { variantKey: 'douyin_video' },
+    outputContractRef: 'output.douyin_video.v1',
+    workflowRevisionRef: 'workflow.video.15s@1',
+    promptRevisionRef: 'prompt.douyin_project_video@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 4,
+    featured: true,
+  },
+  // —— 旧内容换平台：same familyId, three variants, cold NO default lens ——
+  {
+    recipeId: 'recipe.reuse_content.copy_adapt',
+    familyId: REUSE_CONTENT_FAMILY_ID,
+    variantKey: 'copy_adapt',
+    lensId: 'copy',
+    presentation: {
+      title: '旧内容换平台',
+      summary: '选择旧内容，再决定改成哪种形式',
+      actionLabel: REUSE_CONTENT_ACTION_LABEL,
+    },
+    delivery: {
+      deliverableKind: 'copy_document',
+      quantity: 1,
+    },
+    sourceRequirements: [
+      {
+        slot: 'source_content',
+        required: true,
+        kinds: ['content', 'work', 'content_package'],
+      },
+    ],
+    contextPatches: {
+      requiresUserLensChoice: true,
+      coldDefaultLens: null,
+    },
+    settingsPatches: { variantKey: 'copy_adapt' },
+    outputContractRef: 'output.reuse_copy.v1',
+    workflowRevisionRef: 'workflow.copy.adapt@1',
+    promptRevisionRef: 'prompt.reuse_content.copy@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 5,
+    featured: true,
+  },
+  {
+    recipeId: 'recipe.reuse_content.image_text_adapt',
+    familyId: REUSE_CONTENT_FAMILY_ID,
+    variantKey: 'image_text_adapt',
+    lensId: 'image_text',
+    presentation: {
+      title: '旧内容换平台',
+      summary: '选择旧内容，再决定改成哪种形式',
+      actionLabel: REUSE_CONTENT_ACTION_LABEL,
+    },
+    delivery: {
+      deliverableKind: 'image_text_package',
+      quantity: 1,
+    },
+    sourceRequirements: [
+      {
+        slot: 'source_content',
+        required: true,
+        kinds: ['content', 'work', 'content_package'],
+      },
+    ],
+    contextPatches: {
+      requiresUserLensChoice: true,
+      coldDefaultLens: null,
+    },
+    settingsPatches: { variantKey: 'image_text_adapt' },
+    outputContractRef: 'output.reuse_image_text.v1',
+    workflowRevisionRef: 'workflow.image_text.adapt@1',
+    promptRevisionRef: 'prompt.reuse_content.image_text@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 5,
+    featured: true,
+  },
+  {
+    recipeId: 'recipe.reuse_content.video_adapt',
+    familyId: REUSE_CONTENT_FAMILY_ID,
+    variantKey: 'video_adapt',
+    lensId: 'video',
+    presentation: {
+      title: '旧内容换平台',
+      summary: '选择旧内容，再决定改成哪种形式',
+      actionLabel: REUSE_CONTENT_ACTION_LABEL,
+    },
+    delivery: {
+      deliverableKind: 'video_package',
+      quantity: 1,
+    },
+    sourceRequirements: [
+      {
+        slot: 'source_content',
+        required: true,
+        kinds: ['content', 'work', 'content_package'],
+      },
+    ],
+    contextPatches: {
+      requiresUserLensChoice: true,
+      coldDefaultLens: null,
+    },
+    settingsPatches: { variantKey: 'video_adapt' },
+    outputContractRef: 'output.reuse_video.v1',
+    workflowRevisionRef: 'workflow.video.adapt@1',
+    promptRevisionRef: 'prompt.reuse_content.video@1',
+    quotePolicyRevisionRef: 'quote.policy@1',
+    cardOrder: 5,
+    featured: true,
+  },
+];
+
+/**
+ * First-ship standalone tools on Surface (D-077 / D-098 C3).
+ * Two ordinary tools + Pro Studio banner — static registry ids only.
+ */
+export const LAUNCH_TOOL_ENTRY_REFS: readonly SurfaceToolRef[] = [
+  { toolEntryId: 'tool.multi_size', order: 1, visible: true },
+  { toolEntryId: 'tool.batch_bg_remove', order: 2, visible: true },
+  { toolEntryId: 'tool.pro_studio', order: 10, visible: true },
+];
+
+export function recipeBodyFromSpec(spec: LaunchRecipeSeedSpec): RecipeBodyInput {
+  return {
+    lensId: spec.lensId,
+    familyId: spec.familyId,
+    presentation: { ...spec.presentation },
+    delivery: { ...spec.delivery },
+    contextPatches: { ...(spec.contextPatches ?? {}) },
+    sourceRequirements: spec.sourceRequirements.map((slot) => ({ ...slot })),
+    modelPolicy: { mode: 'auto' },
+    settingsPatches: { ...(spec.settingsPatches ?? {}) },
+    ...(spec.outputContractRef
+      ? { outputContractRef: spec.outputContractRef }
+      : {}),
+    ...(spec.quotePolicyRevisionRef
+      ? { quotePolicyRevisionRef: spec.quotePolicyRevisionRef }
+      : {}),
+    ...(spec.workflowRevisionRef
+      ? { workflowRevisionRef: spec.workflowRevisionRef }
+      : {}),
+    promptRevisionRef: spec.promptRevisionRef,
+    targetWorkspaceKind: spec.lensId,
+  };
+}
+
+export function listLaunchRecipeSpecs(): LaunchRecipeSeedSpec[] {
+  return LAUNCH_RECIPE_SPECS.map((spec) => ({
+    ...spec,
+    presentation: { ...spec.presentation },
+    delivery: { ...spec.delivery },
+    sourceRequirements: spec.sourceRequirements.map((slot) => ({ ...slot })),
+    contextPatches: { ...(spec.contextPatches ?? {}) },
+    settingsPatches: { ...(spec.settingsPatches ?? {}) },
+  }));
+}
+
+export function listReuseContentVariants(): LaunchRecipeSeedSpec[] {
+  return listLaunchRecipeSpecs().filter(
+    (spec) => spec.familyId === REUSE_CONTENT_FAMILY_ID,
+  );
+}
+
+/** Cold-start card count after grouping reuse family (always 6). */
+export function listLaunchCardFamilies(): string[] {
+  const seen: string[] = [];
+  for (const spec of LAUNCH_RECIPE_SPECS) {
+    if (!seen.includes(spec.familyId)) seen.push(spec.familyId);
+  }
+  return seen;
+}
+
+export interface PublishLaunchCatalogResult {
+  recipes: ServerRecipeRecord[];
+  surface: ServerSurfaceRecord;
+}
+
+/**
+ * Draft → preview → publish all eight Recipes, then the launch Surface.
+ * Surface recipeRefs pin the published revision ids (session freeze later).
+ */
+export async function publishLaunchCatalog(
+  service: CreationExperienceCatalogService,
+  options: {
+    surfaceId?: SurfaceId;
+    actorId?: string;
+    reason?: string;
+    correlationId?: string;
+  } = {},
+): Promise<PublishLaunchCatalogResult> {
+  const audit = {
+    actorId: options.actorId ?? LAUNCH_ACTOR.actorId,
+    reason: options.reason ?? LAUNCH_ACTOR.reason,
+    correlationId: options.correlationId ?? LAUNCH_ACTOR.correlationId,
+  };
+  const surfaceId = options.surfaceId ?? LAUNCH_SURFACE_ID;
+  const recipes: ServerRecipeRecord[] = [];
+
+  for (const spec of LAUNCH_RECIPE_SPECS) {
+    const draft = await service.draftRecipe({
+      recipeId: spec.recipeId,
+      expectedRevision: null,
+      body: recipeBodyFromSpec(spec),
+      ...audit,
+    });
+    const preview = await service.previewRecipe({
+      recipeId: spec.recipeId,
+      expectedRevision: draft.revision,
+      ...audit,
+    });
+    const published = await service.publishRecipe({
+      recipeId: spec.recipeId,
+      expectedRevision: preview.revision,
+      ...audit,
+    });
+    recipes.push(published);
+  }
+
+  const recipeRefs: SurfaceRecipeRef[] = LAUNCH_RECIPE_SPECS.map((spec, index) => {
+    const published = recipes[index]!;
+    return {
+      recipeRevisionId: published.revisionId,
+      lensId: spec.lensId,
+      order: spec.cardOrder,
+      featured: spec.featured,
+      visible: true,
+    };
+  });
+
+  const surfaceDraft = await service.draftSurface({
+    surfaceId,
+    expectedRevision: null,
+    body: {
+      recipeRefs,
+      toolEntryRefs: LAUNCH_TOOL_ENTRY_REFS.map((ref) => ({ ...ref })),
+    },
+    ...audit,
+  });
+  const surfacePreview = await service.previewSurface({
+    surfaceId,
+    expectedRevision: surfaceDraft.revision,
+    ...audit,
+  });
+  const surface = await service.publishSurface({
+    surfaceId,
+    expectedRevision: surfacePreview.revision,
+    ...audit,
+  });
+
+  return { recipes, surface };
+}
+
+/** Convenience: memory repo + service + publish first-ship catalog. */
+export async function seedLaunchCatalogInMemory(options?: {
+  now?: () => string;
+  id?: () => string;
+}): Promise<{
+  repository: CreationExperienceCatalogRepository;
+  service: CreationExperienceCatalogService;
+  result: PublishLaunchCatalogResult;
+}> {
+  const repository = new MemoryCreationExperienceCatalogRepository();
+  const service = new CreationExperienceCatalogService(
+    repository,
+    options?.now ?? (() => '2026-07-20T12:00:00.000Z'),
+    options?.id ?? (() => 'session-launch-1'),
+  );
+  const result = await publishLaunchCatalog(service);
+  return { repository, service, result };
+}

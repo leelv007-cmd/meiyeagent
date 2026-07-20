@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "8337237b-40da-42a9-aedd-76a114ff3cd4"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "a99b9946-d94d-4b6b-b849-92408d4c7379"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe",
+  "works": [
+    {
+      "currentRevisionId": "8337237b-40da-42a9-aedd-76a114ff3cd4",
+      "id": "a99b9946-d94d-4b6b-b849-92408d4c7379",
+      "revisions": [
+        {
+          "id": "8337237b-40da-42a9-aedd-76a114ff3cd4",
+          "workId": "a99b9946-d94d-4b6b-b849-92408d4c7379",
+          "document": {
+            "pages": [
+              {
+                "id": "02d3f3d9-4778-416c-84e2-20613c2caf4a",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T11:59:27.996Z",
+          "createdBy": "Za76ewlE9eKEOd2Ie7UFxbJLIx0gXzDe"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.742Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "531f3435658b4db9c7f5e8f4f935cab27f393b172ecb5c35a38108fb83b32693",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "fda3659b99ce513ff689a4596759b6262c0a31801d10ee065676d26cbe603913"
+  }
+}

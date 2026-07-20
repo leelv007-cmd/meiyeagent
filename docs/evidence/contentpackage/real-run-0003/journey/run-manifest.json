@@ -1,0 +1,119 @@
+{
+  "runId": "real-run-0003-1784239833734",
+  "status": "accepted",
+  "counted": false,
+  "countingReason": "Corrective rerun of the already-counted must-have journey; it strengthens the same north-star item without incrementing it.",
+  "formalTicket22Closure": false,
+  "completedAt": "2026-07-16T22:11:47.293Z",
+  "northStar": {
+    "metric": "真实跑通链路数",
+    "previous": 1,
+    "next": 1,
+    "evidenceRoot": "docs/evidence/contentpackage/real-run-0003/journey/"
+  },
+  "environment": {
+    "web": "http://localhost:3000 (vite --mode e2e; email verification helper only)",
+    "core": "http://localhost:4100",
+    "postgres": "localhost:54329",
+    "llm": "direct OpenAI-compatible route using gemini-3-flash-preview",
+    "media": "Tuzi seedream-4-5-tuzi-relay / doubao-seedream-4-5-251128"
+  },
+  "package": {
+    "id": "content-package-b0aa589eb050a9211762969c",
+    "status": "accepted",
+    "statusGroup": "usable",
+    "kind": "image_text",
+    "authorizedSourcePhotoCount": 2,
+    "generatedAssetCount": 1,
+    "ownedAssetCount": 1,
+    "currentVersionOrderedAssetCount": 3,
+    "variantPlatforms": ["xiaohongshu", "douyin", "video_account"],
+    "allVariantsInheritGeneratedMedia": true,
+    "allVariantCopiesMateriallyDistinct": true
+  },
+  "fixedModel": {
+    "selectedCatalogModelId": "seedream-4-5",
+    "frozenCatalogModelId": "seedream-4-5",
+    "actualCatalogModelId": "seedream-4-5",
+    "deploymentId": "seedream-4-5-tuzi-relay",
+    "providerModel": "doubao-seedream-4-5-251128",
+    "silentFallback": false,
+    "crossBrandSwitch": false,
+    "evidence": "route-snapshot-evidence.json"
+  },
+  "usage": {
+    "copyCommitted": 2,
+    "imageCommitted": 1,
+    "videoCommitted": 0,
+    "evidence": "ledger-evidence.json"
+  },
+  "providerCost": {
+    "status": "observed",
+    "totalsByCurrency": { "CNY": 0.05, "USD": 0 },
+    "evidence": "ledger-evidence.json"
+  },
+  "artifacts": {
+    "continuous-journey.webm": { "bytes": 6490988, "sha256": "5d26a4d7590ee99a2db893a594eedd7278d57ad696094a95a74dc94a08bcd18f" },
+    "generated-image.png": { "bytes": 5361184, "sha256": "1e8f00b2fca1a2a78904863b5f520e2691e77d303c08227452f7b55bf823ffd5" },
+    "keyframes/kf1-store-confirmed.png": { "bytes": 181852, "sha256": "1ecd0a9a9419a8f97efdb298b3ad5545c2825db30d9210db70cb06accceeb8c0" },
+    "keyframes/kf2-assets-authorized.png": { "bytes": 407438, "sha256": "14d8c77caa0f325b913325961a407c272bb6c9b687825038d82ab2b7de8f3f92" },
+    "keyframes/kf3-first-tokens-streaming.png": { "bytes": 238742, "sha256": "0a4458893e1718a334761bccc7347b2e98cbe7243fc93629d24a33881b673c02" },
+    "keyframes/kf3b-streaming-progress.png": { "bytes": 240553, "sha256": "42954a1f8eeda0f1abf5f1620e521aa38bbe618190769eb26df89470b2aa97f3" },
+    "keyframes/kf4-three-candidates.png": { "bytes": 391310, "sha256": "d0101ed89fe5dbadfbc651f64ba1a6557340ef6716dee605eb543135ce4de4cf" },
+    "keyframes/kf5-adopted-into-package.png": { "bytes": 394856, "sha256": "461a041fb64e66b6ff56036579ab583e930cb0fa1c06d3699418e7ef92cd9dae" },
+    "keyframes/kf6-real-photo-reference-image.png": { "bytes": 568719, "sha256": "ffbb61bd5d0e1ad6652999199d36fd0be270d17403bfa6c610da2865201631c4" },
+    "keyframes/kf6b-real-image-attached-to-package.png": { "bytes": 535684, "sha256": "2d3dca77dc38e794403b9f90f63227ca7893fa9aebfa1cfa9bd8a4f04fc49d3a" },
+    "keyframes/kf7-three-platform-variants.png": { "bytes": 541619, "sha256": "75001c2738e03815b498b2b4a54cca2d229cc998e3463b9a61d5cce53c22a51f" },
+    "keyframes/kf8-library-usable.png": { "bytes": 225657, "sha256": "0b985c59d132e25c393b6cfc2e78e4efdca4e9dcbba18a1dc84b646201e3e018" },
+    "keyframes/kf9-result-card-model-usage.png": { "bytes": 6406, "sha256": "1479de771a6389c98db39e6d887689d3a1346ac4159c5649e7f5f445189774af" },
+    "before-after-comparison.md": { "bytes": 2492, "sha256": "bb3f582ec3392d8e523336f71cd6230b70051f8f6d276cb988a819efd7241c10" },
+    "network-log.jsonl": { "bytes": 28140, "sha256": "d7eabdb4430a2b48e35b0f56a2ec53e1f88cad56602678dd92ed8d6d05131111" },
+    "package-evidence.json": { "bytes": 2735, "sha256": "bc38f785645d8d873e6ca51fc1e6eca6ff152ce27cd3285aea9d3108a5b1132a" },
+    "route-snapshot-evidence.json": { "bytes": 1217, "sha256": "facb7f25e5cb7edcc96e85090bc16390c3a7eb341f3137e2050b8b3b125e1451" },
+    "ledger-evidence.json": { "bytes": 2271, "sha256": "5e76f4024e6e9ba12eb9161b9999301902b6712a45c6d3071136dbdb9db9cfb0" }
+  },
+  "acceptanceChecklist": {
+    "continuousBrowserJourney": true,
+    "realLlmCopyStream": true,
+    "threeCandidateSingleAdopt": true,
+    "realAuthorizedMerchantPhotos": true,
+    "realReferenceImageGenerate": true,
+    "generatedMediaAttachedToAdoptedContentPackage": true,
+    "currentVersionContainsGeneratedOwnedAsset": true,
+    "fixedModelMatchesFrozenAndActualRoute": true,
+    "noCrossBrandSwitch": true,
+    "threePlatformVariants": true,
+    "allVariantCopiesMateriallyDistinct": true,
+    "allVariantsInheritGeneratedOwnedAsset": true,
+    "libraryUsable": true,
+    "dualLedgerEvidence": true,
+    "realActivationGenerateAndEditCoverage": true,
+    "notSplicedFromProbes": true,
+    "beforeAfterComparisonBundle": true,
+    "merchantVisibleResultCardModelAndCost": true,
+    "finalFullSuiteZeroRegression": true
+  },
+  "knownClosureGaps": [],
+  "zeroRegression": {
+    "completedAt": "2026-07-17T07:46:06+08:00",
+    "command": "pnpm check; full Core, Web, Canvas, and repository test commands; opt-in PostgreSQL migration integration test",
+    "check": {
+      "status": "passed",
+      "secretScanFiles": 2223,
+      "secretFindings": 0,
+      "decisionTicketGuards": 2
+    },
+    "test": {
+      "status": "passed",
+      "core": { "tests": 872, "passed": 837, "skipped": 35 },
+      "web": { "tests": 379, "passed": 378, "skipped": 1 },
+      "canvas": { "tests": 69, "passed": 68, "skipped": 1 },
+      "scripts": { "tests": 67, "passed": 67, "skipped": 0 }
+    }
+  },
+  "redaction": [
+    "No API keys, cookies, provider task references, or provider signed URLs stored.",
+    "Workspace/user ids, object keys, and full generated copy are omitted from curated JSON evidence.",
+    "The network log contains only request method, status, path without query, and correlation evidence."
+  ]
+}

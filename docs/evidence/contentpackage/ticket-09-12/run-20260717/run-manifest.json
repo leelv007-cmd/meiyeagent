@@ -1,0 +1,126 @@
+{
+  "artifacts": {
+    "continuous-journey.webm": {
+      "bytes": 4534223,
+      "sha256": "b9e3099e29998de670263781c92fdf24f631cf3a657bd77530c5abcdc1f439e7"
+    },
+    "network-log.jsonl": {
+      "bytes": 15048,
+      "sha256": "dfe6239e58a88765a4c757840566da7689d29fe2ac0274d90decbbdd2c08bb4d"
+    },
+    "keyframes/01-three-real-llm-candidates.png": {
+      "bytes": 351972,
+      "sha256": "f5ad65924f59d6ce285f715510204b3e735ef52ef76be1233395e303273936bc"
+    },
+    "keyframes/02-three-platform-variants.png": {
+      "bytes": 232396,
+      "sha256": "053af5e0c8c79e543f27e327bbf928d1ffc86c9e2e8e88751b074d34595c38ce"
+    },
+    "keyframes/03-edit-history-compare.png": {
+      "bytes": 389007,
+      "sha256": "57e609eff9bf92c90dd00dc1fb0d9ed50530d949496734cc464508780ca7ea8e"
+    },
+    "keyframes/04-rollback-created-new-version.png": {
+      "bytes": 427065,
+      "sha256": "f02e4f4cc16a5707ca87fcb72d586fcff9d0e53e22377c6b763788f2d06baa6b"
+    },
+    "keyframes/05-optimistic-conflict-visible.png": {
+      "bytes": 546329,
+      "sha256": "17900ba4c980128dd05c020ab933e570cf92bea5c16ed3170f97ccd8448d497a"
+    }
+  },
+  "completedAt": "2026-07-17T01:17:04.065Z",
+  "environment": {
+    "core": "http://localhost:4100",
+    "postgres": "localhost:54329",
+    "web": "http://localhost:3000"
+  },
+  "evidenceLinks": {
+    "ticket09": "docs/evidence/contentpackage/real-run-0003/journey/run-manifest.json",
+    "ticket10": "docs/evidence/contentpackage/real-run-0001/provider-probe/README.md",
+    "ticket11And12": "."
+  },
+  "package": {
+    "id": "content-package-0db887d81ab751ce3b37f1b9",
+    "kind": "image_text",
+    "statusAfter": "accepted",
+    "statusBefore": "accepted"
+  },
+  "ticket11": {
+    "copyDigests": [
+      "c7d57a50a0046ea9959809f5a7d9c1370b6a58612a98a4911c9c1fa97d0e8c51",
+      "9108160b162a2a4970cd1463fbde9602d759701a9cd32ff1347347b6d99b7395",
+      "add2e43de5b168eea99f6926083e8e9342d0dbe18b05496216e77f32677a9d2a"
+    ],
+    "platformVersionCounts": {
+      "xiaohongshu": 1,
+      "douyin": 1,
+      "video_account": 1
+    },
+    "platforms": [
+      "xiaohongshu",
+      "douyin",
+      "video_account"
+    ]
+  },
+  "ticket12": {
+    "finalXiaohongshuSources": [
+      "ai_generated",
+      "merchant_edited",
+      "rollback_restored",
+      "merchant_edited"
+    ],
+    "optimisticConflictCode": "CONTENT_PACKAGE_VERSION_CONFLICT",
+    "otherPlatformHistoriesUnchanged": true,
+    "rollbackCreatedNewVersion": true,
+    "statusUnchanged": true,
+    "usageUnchanged": true
+  },
+  "redaction": [
+    "No credentials, cookies, provider task references, signed URLs, workspace ids, or raw generated copy are stored.",
+    "The network log stores only method, status, path without query, correlation id, and error code."
+  ],
+  "runId": "ticket-09-12-1784250985238",
+  "status": "accepted",
+  "steps": [
+    {
+      "at": "2026-07-17T01:16:25.785Z",
+      "name": "register:start"
+    },
+    {
+      "at": "2026-07-17T01:16:29.943Z",
+      "name": "login:done"
+    },
+    {
+      "at": "2026-07-17T01:16:40.030Z",
+      "name": "merchant-foundation:ready"
+    },
+    {
+      "at": "2026-07-17T01:16:51.266Z",
+      "name": "copy:adopted",
+      "packageId": "content-package-0db887d81ab751ce3b37f1b9"
+    },
+    {
+      "at": "2026-07-17T01:17:00.458Z",
+      "name": "variants:ready"
+    },
+    {
+      "at": "2026-07-17T01:17:02.199Z",
+      "name": "version:edited-and-compared"
+    },
+    {
+      "at": "2026-07-17T01:17:03.293Z",
+      "name": "version:rollback-created-new-version"
+    },
+    {
+      "at": "2026-07-17T01:17:03.709Z",
+      "name": "version:optimistic-conflict-visible"
+    }
+  ],
+  "ticketStatus": {
+    "10": "provider-real bytes accepted; merchant browser video journey remains a separate gap",
+    "11": "accepted by this continuous real-LLM browser journey",
+    "12": "accepted by this continuous edit, compare, rollback, and conflict browser journey",
+    "09": "accepted by linked real-run-0003 plus deterministic rights rejection tests"
+  }
+}

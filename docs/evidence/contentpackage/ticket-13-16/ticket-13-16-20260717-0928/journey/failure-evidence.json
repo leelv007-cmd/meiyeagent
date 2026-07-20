@@ -1,0 +1,50 @@
+{
+  "runId": "ticket-13-16-20260717-0928",
+  "packageId": "content-package-b0aa589eb050a9211762969c",
+  "runtime": {
+    "database": "postgres",
+    "storage": "filesystem",
+    "browserJourney": true,
+    "fixture": false
+  },
+  "before": {
+    "kind": "image_text",
+    "platformVariants": 3,
+    "baseVersions": 2,
+    "rights": "authorized",
+    "compliance": {
+      "aigcLabelEnabled": true,
+      "watermarkEnabled": true
+    }
+  },
+  "failure": {
+    "platform": "xiaohongshu",
+    "receiptStatus": "failed",
+    "failureCategory": "export_adapter_failed",
+    "packageStatus": "export_failed",
+    "visibleStatusGroup": "needs_attention",
+    "newArtifactCreated": false
+  },
+  "afterRollback": {
+    "currentOrderedAssetCount": 3,
+    "xiaohongshuVersionCount": 3,
+    "baseVersions": 2,
+    "platformVariants": 3,
+    "rights": "authorized",
+    "failedReceiptsPreserved": 2
+  },
+  "diagnosis": {
+    "code": "cwd_dependent_default_asset_storage_root",
+    "historicalRoot": "apps/core/.data/p1-assets",
+    "listeningProcessRoot": ".data/p1-assets",
+    "regressionTest": "default asset storage stays anchored to the core package across launch directories",
+    "fixedOnDisk": true,
+    "loadedByListeningCore": false
+  },
+  "redaction": {
+    "containsCredentials": false,
+    "containsCookies": false,
+    "containsObjectKeys": false,
+    "containsWorkspaceOrUserIds": false
+  }
+}

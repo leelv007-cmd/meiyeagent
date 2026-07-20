@@ -1,0 +1,96 @@
+{
+  "coverage": {
+    "revisionPercent": 100,
+    "templatePercent": 100,
+    "templateVersionPercent": 100,
+    "workPercent": 100
+  },
+  "elementKinds": {
+    "text": 2,
+    "image": 2,
+    "edge": 1
+  },
+  "generatedAt": "2026-07-16T09:46:49.329Z",
+  "totals": {
+    "exportRecords": 1,
+    "pages": 4,
+    "revisions": 3,
+    "templateVersions": 1,
+    "templates": 1,
+    "works": 3
+  },
+  "templates": [
+    {
+      "currentVersionId": "template:template-convertible:revision:rev-convertible",
+      "disposition": "convertible",
+      "id": "template-convertible",
+      "versionCount": 1,
+      "versions": [
+        {
+          "disposition": "convertible",
+          "id": "template:template-convertible:revision:rev-convertible",
+          "managedRasterAvailable": true
+        }
+      ]
+    }
+  ],
+  "unknownFields": {
+    "document.dpi": 1,
+    "document.unit": 1,
+    "document.fonts": 1,
+    "document.audios": 1,
+    "document.schemaVersion": 1,
+    "page.background": 1
+  },
+  "works": [
+    {
+      "disposition": "convertible",
+      "exportRecordCount": 1,
+      "id": "work-convertible",
+      "lastEditedAt": "2026-07-16T10:00:00.000Z",
+      "lastExportedAt": "2026-07-16T10:40:00.000Z",
+      "currentRevisionId": "rev-convertible",
+      "revisionCount": 1,
+      "revisions": [
+        {
+          "disposition": "convertible",
+          "id": "rev-convertible",
+          "managedRasterAvailable": true,
+          "createdAt": "2026-07-16T10:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "disposition": "raster_fallback",
+      "exportRecordCount": 0,
+      "id": "work-raster-fallback",
+      "lastEditedAt": "2026-07-16T10:20:00.000Z",
+      "currentRevisionId": "rev-raster-fallback",
+      "revisionCount": 1,
+      "revisions": [
+        {
+          "disposition": "raster_fallback",
+          "id": "rev-raster-fallback",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T10:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "disposition": "read_only",
+      "exportRecordCount": 0,
+      "id": "work-read-only",
+      "lastEditedAt": "2026-07-16T10:10:00.000Z",
+      "currentRevisionId": "rev-read-only",
+      "revisionCount": 1,
+      "revisions": [
+        {
+          "disposition": "read_only",
+          "id": "rev-read-only",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T10:10:00.000Z"
+        }
+      ]
+    }
+  ]
+}

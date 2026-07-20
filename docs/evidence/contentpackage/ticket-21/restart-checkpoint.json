@@ -1,0 +1,10 @@
+{
+  "expectedConfigRevisions": {
+    "plan.allowances.growth": 7,
+    "plan.addons": 7,
+    "compliance.watermark.default": 6,
+    "compliance.aigc_label.default": 6,
+    "compliance.regulated_mode.default": 6
+  },
+  "status": "restart_required"
+}

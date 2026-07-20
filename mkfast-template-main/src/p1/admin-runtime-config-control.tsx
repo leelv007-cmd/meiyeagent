@@ -1,0 +1,911 @@
+import { IconRefresh, IconRestore, IconSettings } from '@tabler/icons-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+
+import {
+  ImpactReviewDialog,
+  type ImpactReviewRequest,
+} from '@/components/admin/impact-review-dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  admin_runtime_assembly_byok_live_description,
+  admin_runtime_assembly_byok_recorded_description,
+  admin_runtime_assembly_byok_title,
+  admin_runtime_assembly_douyin_live_unavailable,
+  admin_runtime_assembly_douyin_recorded_description,
+  admin_runtime_assembly_douyin_title,
+  admin_runtime_assembly_live_label,
+  admin_runtime_assembly_recorded_label,
+  admin_runtime_config_activation,
+  admin_runtime_config_activation_configured,
+  admin_runtime_config_activation_disabled,
+  admin_runtime_config_activation_fixture,
+  admin_runtime_config_activation_live,
+  admin_runtime_config_activation_recorded,
+  admin_runtime_config_activation_unknown,
+  admin_runtime_config_actor,
+  admin_runtime_config_apply_change,
+  admin_runtime_config_apply_confirm,
+  admin_runtime_config_apply_description,
+  admin_runtime_config_apply_scope,
+  admin_runtime_config_apply_success,
+  admin_runtime_config_apply_title,
+  admin_runtime_config_correlation,
+  admin_runtime_config_current_effective,
+  admin_runtime_config_edit_description,
+  admin_runtime_config_edit_title,
+  admin_runtime_config_effective,
+  admin_runtime_config_history,
+  admin_runtime_config_history_empty,
+  admin_runtime_config_hot_read_description,
+  admin_runtime_config_hot_read_effective,
+  admin_runtime_config_key,
+  admin_runtime_config_legacy_fallback_notice,
+  admin_runtime_config_load_error,
+  admin_runtime_config_not_set,
+  admin_runtime_config_notice_description,
+  admin_runtime_config_notice_title,
+  admin_runtime_config_process_http,
+  admin_runtime_config_process_worker,
+  admin_runtime_config_reason,
+  admin_runtime_config_refresh,
+  admin_runtime_config_restart_pending,
+  admin_runtime_config_revision,
+  admin_runtime_config_rollback_change,
+  admin_runtime_config_rollback_confirm,
+  admin_runtime_config_rollback_description,
+  admin_runtime_config_rollback_scope,
+  admin_runtime_config_rollback_source,
+  admin_runtime_config_rollback_success,
+  admin_runtime_config_rollback_title,
+  admin_runtime_config_save,
+  admin_runtime_config_status_applied,
+  admin_runtime_config_status_rolled_back,
+  admin_runtime_config_stored,
+  admin_runtime_config_time,
+  admin_runtime_config_unwired,
+  admin_runtime_config_validation_error,
+  admin_runtime_config_value,
+  admin_runtime_mode_ark_description,
+  admin_runtime_mode_ark_label,
+  admin_runtime_mode_ark_tuzi_description,
+  admin_runtime_mode_ark_tuzi_label,
+  admin_runtime_mode_direct_description,
+  admin_runtime_mode_direct_label,
+  admin_runtime_mode_disabled_description,
+  admin_runtime_mode_disabled_label,
+  admin_runtime_mode_fixture_description,
+  admin_runtime_mode_fixture_label,
+  admin_runtime_mode_gateway_description,
+  admin_runtime_mode_gateway_label,
+  admin_runtime_mode_media_title,
+  admin_runtime_mode_missing_requirements,
+  admin_runtime_mode_model_title,
+  admin_runtime_mode_recorded_description,
+  admin_runtime_mode_recorded_label,
+  admin_runtime_mode_tuzi_description,
+  admin_runtime_mode_tuzi_label,
+} from '@/locale/paraglide/messages';
+import { formatLocaleDateTime } from '@/lib/locale';
+import {
+  formatAdminConfigValue,
+  parseAdminConfigDraft,
+  runtimeSnapshotStatus,
+} from '@/p1/admin-config-view-model';
+import { commandP1, queryP1 } from '@/p1/client';
+import { p1QueryKeys } from '@/p1/query-keys';
+
+interface AdminConfigItem {
+  key: string;
+  scope: 'global' | 'workspace';
+  storedValue: unknown;
+  effectiveValue: unknown;
+  effectiveSnapshots?: Array<{
+    bootedAt: string;
+    effectiveValue: unknown;
+    fallbackReason: string | null;
+    processKind: 'http' | 'job-worker';
+    source:
+      | { source: 'db_revision'; revision: number }
+      | { source: 'env_fallback' };
+  }>;
+  modeAvailability?: Array<{
+    assemblable: boolean;
+    missingRequirements: string[];
+    value: string;
+  }>;
+  wired: boolean;
+  activationEvidenceStatus: string | null;
+  revision: number | null;
+  status: 'applied' | 'rolled_back' | null;
+  rolledBackToRevision: number | null;
+  actorId: string | null;
+  reason: string | null;
+  correlationId: string | null;
+  createdAt: string | null;
+}
+
+const HOT_READ_KEYS = new Set([
+  'plan.addons',
+  'plan.allowances.trial',
+  'plan.allowances.starter',
+  'plan.allowances.growth',
+  'plan.allowances.pro',
+  'plan.payment-mapping',
+  'platform.defaultModel.copy',
+  'platform.defaultModel.image',
+  'platform.defaultModel.video',
+  'platform.defaultModel.audio',
+  'compliance.watermark.default',
+  'compliance.aigc_label.default',
+  'compliance.regulated_mode.default',
+]);
+
+const MODE_CONFIG_KEYS = new Set([
+  'model.execution.mode',
+  'model.media.execution.mode',
+]);
+
+const ASSEMBLY_CONFIG_KEYS = new Set([
+  'byok.adapter.assembly',
+  'douyin.adapter.assembly',
+]);
+
+interface ConfigOption {
+  description: string;
+  disabled?: boolean;
+  label: string;
+  value: string;
+}
+
+interface AssemblyMessages {
+  admin_runtime_assembly_byok_live_description?: () => string;
+  admin_runtime_assembly_byok_recorded_description?: () => string;
+  admin_runtime_assembly_byok_title?: () => string;
+  admin_runtime_assembly_douyin_live_unavailable?: () => string;
+  admin_runtime_assembly_douyin_recorded_description?: () => string;
+  admin_runtime_assembly_douyin_title?: () => string;
+  admin_runtime_assembly_live_label?: () => string;
+  admin_runtime_assembly_recorded_label?: () => string;
+}
+
+const assemblyMessages = {
+  admin_runtime_assembly_byok_live_description,
+  admin_runtime_assembly_byok_recorded_description,
+  admin_runtime_assembly_byok_title,
+  admin_runtime_assembly_douyin_live_unavailable,
+  admin_runtime_assembly_douyin_recorded_description,
+  admin_runtime_assembly_douyin_title,
+  admin_runtime_assembly_live_label,
+  admin_runtime_assembly_recorded_label,
+} satisfies AssemblyMessages;
+
+function assemblyMessage(key: keyof AssemblyMessages, fallback: string) {
+  return assemblyMessages[key]?.() ?? fallback;
+}
+
+function modeOptions(key: string): ConfigOption[] {
+  const disabled = {
+    description: admin_runtime_mode_disabled_description(),
+    label: admin_runtime_mode_disabled_label(),
+    value: 'disabled',
+  };
+  if (key === 'model.media.execution.mode') {
+    return [
+      disabled,
+      {
+        description: admin_runtime_mode_ark_description(),
+        label: admin_runtime_mode_ark_label(),
+        value: 'ark',
+      },
+      {
+        description: admin_runtime_mode_tuzi_description(),
+        label: admin_runtime_mode_tuzi_label(),
+        value: 'tuzi',
+      },
+      {
+        description: admin_runtime_mode_ark_tuzi_description(),
+        label: admin_runtime_mode_ark_tuzi_label(),
+        value: 'ark,tuzi',
+      },
+    ];
+  }
+  return [
+    disabled,
+    {
+      description: admin_runtime_mode_recorded_description(),
+      label: admin_runtime_mode_recorded_label(),
+      value: 'recorded',
+    },
+    {
+      description: admin_runtime_mode_fixture_description(),
+      label: admin_runtime_mode_fixture_label(),
+      value: 'fixture',
+    },
+    {
+      description: admin_runtime_mode_gateway_description(),
+      label: admin_runtime_mode_gateway_label(),
+      value: 'gateway',
+    },
+    {
+      description: admin_runtime_mode_direct_description(),
+      label: admin_runtime_mode_direct_label(),
+      value: 'direct',
+    },
+  ];
+}
+
+function modeTitle(key: string) {
+  return key === 'model.media.execution.mode'
+    ? admin_runtime_mode_media_title()
+    : admin_runtime_mode_model_title();
+}
+
+function assemblyOptions(key: string): ConfigOption[] {
+  const recorded = {
+    description:
+      key === 'byok.adapter.assembly'
+        ? assemblyMessage(
+            'admin_runtime_assembly_byok_recorded_description',
+            '使用录制适配器，不发起真实供应商调用。'
+          )
+        : assemblyMessage(
+            'admin_runtime_assembly_douyin_recorded_description',
+            '仅提供录制契约，不代表已接入抖音官方能力。'
+          ),
+    label: assemblyMessage('admin_runtime_assembly_recorded_label', 'Recorded'),
+    value: 'recorded',
+  };
+  if (key === 'douyin.adapter.assembly') {
+    return [
+      recorded,
+      {
+        description: assemblyMessage(
+          'admin_runtime_assembly_douyin_live_unavailable',
+          '未接入（pilot 前）'
+        ),
+        disabled: true,
+        label: assemblyMessage('admin_runtime_assembly_live_label', 'Live'),
+        value: 'live',
+      },
+    ];
+  }
+  return [
+    recorded,
+    {
+      description: assemblyMessage(
+        'admin_runtime_assembly_byok_live_description',
+        '使用已配置的真实 BYOK 适配器；保存后需重启生效。'
+      ),
+      label: assemblyMessage('admin_runtime_assembly_live_label', 'Live'),
+      value: 'live',
+    },
+  ];
+}
+
+function configOptions(key: string) {
+  return MODE_CONFIG_KEYS.has(key) ? modeOptions(key) : assemblyOptions(key);
+}
+
+function configTitle(key: string) {
+  if (MODE_CONFIG_KEYS.has(key)) return modeTitle(key);
+  return key === 'byok.adapter.assembly'
+    ? assemblyMessage('admin_runtime_assembly_byok_title', 'BYOK 适配器装配')
+    : assemblyMessage('admin_runtime_assembly_douyin_title', '抖音适配器装配');
+}
+
+export function adminConfigApplyRequest(
+  item: Pick<AdminConfigItem, 'key' | 'revision'>,
+  draft: string,
+  reason: string
+) {
+  return {
+    action: 'config_apply' as const,
+    payload: {
+      key: item.key,
+      value: parseAdminConfigDraft(item.key, draft),
+      expectedRevision: item.revision,
+      reason,
+    },
+  };
+}
+
+function isCommerceKey(key: string) {
+  return (
+    key === 'plan.addons' ||
+    key === 'plan.payment-mapping' ||
+    key.startsWith('plan.allowances.')
+  );
+}
+
+function displayValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return admin_runtime_config_not_set();
+  }
+  return formatAdminConfigValue(value).replace(/\s+/g, ' ');
+}
+
+function displayTime(value: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : formatLocaleDateTime(date);
+}
+
+function statusLabel(status: AdminConfigItem['status']) {
+  if (status === 'rolled_back') {
+    return admin_runtime_config_status_rolled_back();
+  }
+  if (status === 'applied') return admin_runtime_config_status_applied();
+  return admin_runtime_config_not_set();
+}
+
+function wiringLabel(item: AdminConfigItem) {
+  if (!item.wired) return admin_runtime_config_unwired();
+  if (
+    HOT_READ_KEYS.has(item.key) &&
+    JSON.stringify(item.storedValue) === JSON.stringify(item.effectiveValue)
+  ) {
+    return admin_runtime_config_hot_read_effective();
+  }
+  if (item.effectiveSnapshots?.length) {
+    return item.effectiveSnapshots.every(
+      (snapshot) =>
+        runtimeSnapshotStatus(item.storedValue, snapshot.effectiveValue) ===
+        'current'
+    )
+      ? admin_runtime_config_current_effective()
+      : admin_runtime_config_restart_pending();
+  }
+  return JSON.stringify(item.storedValue) ===
+    JSON.stringify(item.effectiveValue)
+    ? admin_runtime_config_current_effective()
+    : admin_runtime_config_restart_pending();
+}
+
+function processLabel(processKind: 'http' | 'job-worker') {
+  return processKind === 'http'
+    ? admin_runtime_config_process_http()
+    : admin_runtime_config_process_worker();
+}
+
+function activationEvidenceLabel(status: string | null | undefined) {
+  if (status === 'disabled') {
+    return admin_runtime_config_activation_disabled();
+  }
+  if (status === 'recorded_only') {
+    return admin_runtime_config_activation_recorded();
+  }
+  if (status === 'local_fixture_verified') {
+    return admin_runtime_config_activation_fixture();
+  }
+  if (status === 'configured_unverified') {
+    return admin_runtime_config_activation_configured();
+  }
+  if (status === 'live_verified') {
+    return admin_runtime_config_activation_live();
+  }
+  return admin_runtime_config_activation_unknown();
+}
+
+export function AdminRuntimeConfigControl({
+  keys,
+}: {
+  keys?: readonly string[];
+} = {}) {
+  const queryClient = useQueryClient();
+  const [selectedKey, setSelectedKey] = useState('');
+  const [draft, setDraft] = useState('');
+  const [validationError, setValidationError] = useState<string>();
+  const [impactReview, setImpactReview] = useState<ImpactReviewRequest>();
+  const listQuery = useQuery({
+    queryKey: p1QueryKeys.request('admin-config', 'config_list'),
+    queryFn: ({ signal }) =>
+      queryP1<AdminConfigItem[]>(
+        'admin-config',
+        { action: 'config_list', payload: {} },
+        signal
+      ),
+  });
+  const items = (listQuery.data ?? []).filter(
+    (item) => !keys || keys.includes(item.key)
+  );
+  const selectableItems = items.filter(
+    (item) =>
+      MODE_CONFIG_KEYS.has(item.key) || ASSEMBLY_CONFIG_KEYS.has(item.key)
+  );
+  const genericItems = items.filter(
+    (item) =>
+      !MODE_CONFIG_KEYS.has(item.key) && !ASSEMBLY_CONFIG_KEYS.has(item.key)
+  );
+  const activeGenericKey = genericItems.some((item) => item.key === selectedKey)
+    ? selectedKey
+    : selectableItems.length === 0
+      ? (genericItems[0]?.key ?? '')
+      : '';
+  const hasHotReadConfig = items.some((item) => HOT_READ_KEYS.has(item.key));
+  const hasCommerceConfig = items.some((item) => isCommerceKey(item.key));
+  const selectedItem = useMemo(
+    () => items.find((item) => item.key === selectedKey),
+    [items, selectedKey]
+  );
+  const activeItem = selectedItem ?? items[0];
+  const historyQuery = useQuery({
+    enabled: selectedKey.length > 0,
+    queryKey: p1QueryKeys.request('admin-config', 'config_history', {
+      key: selectedKey,
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<AdminConfigItem[]>(
+        'admin-config',
+        { action: 'config_history', payload: { key: selectedKey } },
+        signal
+      ),
+  });
+
+  useEffect(() => {
+    if (selectedKey || !items[0]) return;
+    setSelectedKey(items[0].key);
+    setDraft(
+      formatAdminConfigValue(items[0].storedValue ?? items[0].effectiveValue)
+    );
+  }, [items, selectedKey]);
+
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: p1QueryKeys.module('admin-config'),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: p1QueryKeys.module('entitlements'),
+      }),
+    ]);
+  };
+
+  const selectKey = (key: string) => {
+    const item = items.find((candidate) => candidate.key === key);
+    setSelectedKey(key);
+    setDraft(formatAdminConfigValue(item?.storedValue ?? item?.effectiveValue));
+    setValidationError(undefined);
+  };
+
+  const reviewApply = () => {
+    if (!activeItem) return;
+    try {
+      const sourceDraft =
+        selectedKey.length > 0
+          ? draft
+          : formatAdminConfigValue(
+              activeItem.storedValue ?? activeItem.effectiveValue
+            );
+      const value = parseAdminConfigDraft(activeItem.key, sourceDraft);
+      setValidationError(undefined);
+      setImpactReview({
+        title: admin_runtime_config_apply_title(),
+        description: HOT_READ_KEYS.has(activeItem.key)
+          ? admin_runtime_config_hot_read_description()
+          : admin_runtime_config_apply_description(),
+        scope: admin_runtime_config_apply_scope({ key: activeItem.key }),
+        changes: [
+          admin_runtime_config_apply_change({
+            before: displayValue(activeItem.storedValue),
+            after: displayValue(value),
+          }),
+          wiringLabel(activeItem),
+        ],
+        confirmLabel: admin_runtime_config_apply_confirm(),
+        onConfirm: async (reason) => {
+          const result = await commandP1<AdminConfigItem>(
+            'admin-config',
+            adminConfigApplyRequest(activeItem, sourceDraft, reason)
+          );
+          setDraft(formatAdminConfigValue(result.storedValue));
+          await refresh();
+          toast.success(admin_runtime_config_apply_success());
+        },
+      });
+    } catch {
+      setValidationError(admin_runtime_config_validation_error());
+    }
+  };
+
+  const reviewRollback = (target: AdminConfigItem) => {
+    if (!selectedItem?.revision || !target.revision) return;
+    setImpactReview({
+      title: admin_runtime_config_rollback_title(),
+      description: admin_runtime_config_rollback_description(),
+      scope: admin_runtime_config_rollback_scope({
+        key: selectedItem.key,
+        revision: target.revision,
+      }),
+      changes: [
+        admin_runtime_config_rollback_change({
+          revision: target.revision,
+        }),
+        wiringLabel(selectedItem),
+      ],
+      confirmLabel: admin_runtime_config_rollback_confirm(),
+      onConfirm: async (reason) => {
+        const result = await commandP1<AdminConfigItem>('admin-config', {
+          action: 'config_rollback',
+          payload: {
+            key: selectedItem.key,
+            targetRevision: target.revision,
+            expectedRevision: selectedItem.revision,
+            reason,
+          },
+        });
+        setDraft(formatAdminConfigValue(result.storedValue));
+        await refresh();
+        toast.success(admin_runtime_config_rollback_success());
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Alert>
+        <IconSettings />
+        <AlertTitle>{admin_runtime_config_notice_title()}</AlertTitle>
+        <AlertDescription>
+          <div className="space-y-2">
+            <p>{admin_runtime_config_notice_description()}</p>
+            {hasHotReadConfig ? (
+              <p>{admin_runtime_config_hot_read_description()}</p>
+            ) : null}
+            {hasCommerceConfig ? (
+              <p>{admin_runtime_config_legacy_fallback_notice()}</p>
+            ) : null}
+            <Badge variant="outline">
+              {admin_runtime_config_activation({
+                status: activationEvidenceLabel(
+                  items[0]?.activationEvidenceStatus
+                ),
+              })}
+            </Badge>
+          </div>
+        </AlertDescription>
+      </Alert>
+      {listQuery.error ? (
+        <Alert variant="destructive">
+          <AlertTitle>{admin_runtime_config_load_error()}</AlertTitle>
+        </Alert>
+      ) : null}
+      <div className="flex justify-end">
+        <Button
+          disabled={listQuery.isFetching}
+          onClick={() => void refresh()}
+          variant="outline"
+        >
+          <IconRefresh />
+          {admin_runtime_config_refresh()}
+        </Button>
+      </div>
+      <Card>
+        <CardContent className="pt-6">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{admin_runtime_config_key()}</TableHead>
+                <TableHead>{admin_runtime_config_stored()}</TableHead>
+                <TableHead>{admin_runtime_config_effective()}</TableHead>
+                <TableHead>{admin_runtime_config_revision()}</TableHead>
+                <TableHead>{admin_runtime_config_actor()}</TableHead>
+                <TableHead>{admin_runtime_config_time()}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={item.key}>
+                  <TableCell className="font-mono text-xs">
+                    {item.key}
+                  </TableCell>
+                  <TableCell className="max-w-64 truncate font-mono text-xs">
+                    {displayValue(item.storedValue)}
+                  </TableCell>
+                  <TableCell className="max-w-64 truncate font-mono text-xs">
+                    {item.effectiveSnapshots?.length ? (
+                      <div className="flex flex-col items-start gap-1 font-sans">
+                        {item.effectiveSnapshots.map((snapshot) => (
+                          <div
+                            className="flex flex-wrap items-center gap-1"
+                            key={snapshot.processKind}
+                          >
+                            <Badge variant="outline">
+                              {processLabel(snapshot.processKind)}
+                            </Badge>
+                            <span className="font-mono">
+                              {displayValue(snapshot.effectiveValue)}
+                            </span>
+                            <Badge variant="secondary">
+                              {runtimeSnapshotStatus(
+                                item.storedValue,
+                                snapshot.effectiveValue
+                              ) === 'current'
+                                ? admin_runtime_config_current_effective()
+                                : admin_runtime_config_restart_pending()}
+                            </Badge>
+                            {snapshot.fallbackReason ? (
+                              <span className="whitespace-normal text-destructive">
+                                {snapshot.fallbackReason}
+                              </span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      displayValue(item.effectiveValue)
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col items-start gap-1">
+                      <span>{item.revision ?? '—'}</span>
+                      <Badge variant="outline">
+                        {statusLabel(item.status)}
+                      </Badge>
+                      <Badge variant="secondary">{wiringLabel(item)}</Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell>{item.actorId ?? '—'}</TableCell>
+                  <TableCell>{displayTime(item.createdAt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{admin_runtime_config_edit_title()}</CardTitle>
+          <CardDescription>
+            {admin_runtime_config_edit_description()}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {selectableItems.length > 0 ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {selectableItems.map((item) => {
+                const storedMode =
+                  selectedKey === item.key
+                    ? (() => {
+                        try {
+                          return String(parseAdminConfigDraft(item.key, draft));
+                        } catch {
+                          return String(
+                            item.storedValue ?? item.effectiveValue ?? ''
+                          );
+                        }
+                      })()
+                    : String(item.storedValue ?? item.effectiveValue ?? '');
+                return (
+                  <fieldset
+                    className="space-y-3 rounded-lg border p-4"
+                    key={item.key}
+                  >
+                    <legend className="px-1 font-medium">
+                      {configTitle(item.key)}
+                    </legend>
+                    <RadioGroup
+                      aria-label={configTitle(item.key)}
+                      onValueChange={(value) => {
+                        setSelectedKey(item.key);
+                        setDraft(formatAdminConfigValue(value));
+                        setValidationError(undefined);
+                      }}
+                      value={storedMode}
+                    >
+                      {configOptions(item.key).map((option) => {
+                        const availability = item.modeAvailability?.find(
+                          (candidate) => candidate.value === option.value
+                        );
+                        const effectiveProcesses =
+                          item.effectiveSnapshots?.filter(
+                            (snapshot) =>
+                              snapshot.effectiveValue === option.value
+                          ) ?? [];
+                        const isEffective =
+                          effectiveProcesses.length === 0 &&
+                          item.effectiveValue === option.value;
+                        return (
+                          <label
+                            className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
+                            htmlFor={`${item.key}-${option.value}`}
+                            key={option.value}
+                          >
+                            <RadioGroupItem
+                              className="mt-0.5"
+                              disabled={
+                                option.disabled ||
+                                availability?.assemblable === false
+                              }
+                              id={`${item.key}-${option.value}`}
+                              value={option.value}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="flex flex-wrap items-center gap-2 font-medium">
+                                {option.label}
+                                {isEffective ? (
+                                  <Badge variant="secondary">
+                                    {admin_runtime_config_current_effective()}
+                                  </Badge>
+                                ) : null}
+                                {effectiveProcesses.map((snapshot) => (
+                                  <Badge
+                                    key={snapshot.processKind}
+                                    variant="secondary"
+                                  >
+                                    {processLabel(snapshot.processKind)} ·{' '}
+                                    {admin_runtime_config_current_effective()}
+                                  </Badge>
+                                ))}
+                              </span>
+                              <span className="mt-1 block text-xs text-muted-foreground">
+                                {option.description}
+                              </span>
+                              {availability?.assemblable === false ? (
+                                <span className="mt-1 block text-xs text-destructive">
+                                  {admin_runtime_mode_missing_requirements({
+                                    requirements:
+                                      availability.missingRequirements.join(
+                                        ', '
+                                      ),
+                                  })}
+                                </span>
+                              ) : null}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </RadioGroup>
+                  </fieldset>
+                );
+              })}
+            </div>
+          ) : null}
+          {genericItems.length > 0 ? (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="admin-runtime-config-key">
+                  {admin_runtime_config_key()}
+                </Label>
+                <select
+                  className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
+                  id="admin-runtime-config-key"
+                  onChange={(event) => selectKey(event.target.value)}
+                  value={activeGenericKey}
+                >
+                  <option disabled value="" />
+                  {genericItems.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.key}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {activeGenericKey ? (
+                <div className="space-y-2">
+                  <Label htmlFor="admin-runtime-config-value">
+                    {admin_runtime_config_value()}
+                  </Label>
+                  <Textarea
+                    aria-invalid={Boolean(validationError)}
+                    className="min-h-32 font-mono"
+                    id="admin-runtime-config-value"
+                    onChange={(event) => {
+                      setDraft(event.target.value);
+                      setValidationError(undefined);
+                    }}
+                    value={draft}
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : null}
+          {validationError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {validationError}
+            </p>
+          ) : null}
+          <Button disabled={!activeItem} onClick={reviewApply}>
+            {admin_runtime_config_save()}
+          </Button>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>{admin_runtime_config_history()}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(historyQuery.data?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {admin_runtime_config_history_empty()}
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{admin_runtime_config_revision()}</TableHead>
+                  <TableHead>{admin_runtime_config_stored()}</TableHead>
+                  <TableHead>{admin_runtime_config_actor()}</TableHead>
+                  <TableHead>{admin_runtime_config_reason()}</TableHead>
+                  <TableHead>{admin_runtime_config_correlation()}</TableHead>
+                  <TableHead>{admin_runtime_config_time()}</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {historyQuery.data?.map((item) => (
+                  <TableRow key={item.revision}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span>{item.revision}</span>
+                        <Badge variant="outline">
+                          {statusLabel(item.status)}
+                        </Badge>
+                        {item.rolledBackToRevision ? (
+                          <span className="text-xs text-muted-foreground">
+                            {admin_runtime_config_rollback_source({
+                              revision: item.rolledBackToRevision,
+                            })}
+                          </span>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-96 truncate font-mono text-xs">
+                      {displayValue(item.storedValue)}
+                    </TableCell>
+                    <TableCell>{item.actorId ?? '—'}</TableCell>
+                    <TableCell className="max-w-64 whitespace-normal">
+                      {item.reason ?? '—'}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {item.correlationId ?? '—'}
+                    </TableCell>
+                    <TableCell>{displayTime(item.createdAt)}</TableCell>
+                    <TableCell className="text-right">
+                      {item.revision !== selectedItem?.revision ? (
+                        <Button
+                          onClick={() => reviewRollback(item)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          <IconRestore />
+                          {admin_runtime_config_rollback_title()}
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+      <ImpactReviewDialog
+        onOpenChange={(open) => !open && setImpactReview(undefined)}
+        open={Boolean(impactReview)}
+        request={impactReview}
+      />
+    </div>
+  );
+}

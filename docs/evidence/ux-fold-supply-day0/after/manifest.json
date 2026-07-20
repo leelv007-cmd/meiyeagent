@@ -1,0 +1,59 @@
+{
+  "baseUrl": "http://127.0.0.1:3371",
+  "label": "after",
+  "out": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after",
+  "stations": [
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after/01-register.png",
+      "name": "01-register",
+      "note": "Register surface",
+      "url": "http://127.0.0.1:3371/auth/register"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after/02-dashboard-empty.png",
+      "name": "02-dashboard-empty",
+      "note": "Post-login dashboard (Day-0 shell)",
+      "url": "http://127.0.0.1:3371/dashboard"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after/03-seed-store.png",
+      "name": "03-seed-store",
+      "note": "Store facts seeded",
+      "url": "http://127.0.0.1:3371/dashboard"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after/04-inline-authorize.png",
+      "name": "04-inline-authorize",
+      "note": "Composer inline one-click authorize",
+      "url": "http://127.0.0.1:3371/dashboard"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after/05-create-stream.png",
+      "name": "05-create-stream",
+      "note": "Create → stream surface",
+      "url": "http://127.0.0.1:3371/dashboard?workId=1ddc5d6c-75a6-4686-be30-f70e7af552cc"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after/06-first-token.png",
+      "name": "06-first-token",
+      "note": "First usable draft token visible",
+      "url": "http://127.0.0.1:3371/dashboard?workId=1ddc5d6c-75a6-4686-be30-f70e7af552cc"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after/07-assets.png",
+      "name": "07-assets",
+      "note": "Assets library",
+      "url": "http://127.0.0.1:3371/dashboard/assets"
+    },
+    {
+      "file": "/Users/bin/Desktop/开发/内容无人区/美业内容2-ux-fold-supply-review/docs/evidence/ux-fold-supply-day0/after/08-mobile-dashboard.png",
+      "name": "08-mobile-dashboard",
+      "note": "Mobile dashboard 390×844",
+      "url": "http://127.0.0.1:3371/dashboard"
+    }
+  ],
+  "user": {
+    "email": "e2e-day0-tour-1784461878195@example.test"
+  },
+  "generatedAt": "2026-07-19T11:51:32.134Z"
+}

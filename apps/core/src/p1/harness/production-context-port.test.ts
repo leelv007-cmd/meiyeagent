@@ -1,0 +1,557 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
+import { MemoryContextSourceRevisionRepository } from '../operations/context-source-revisions.js';
+import { MemoryMarketingIdentityRepository } from '../operations/marketing-identity.js';
+import { MemoryStoreFactLedger } from '../operations/store-fact-ledger.js';
+import { briefContextBundleSchema } from './structured-nodes.js';
+import { LedgerBackedHarnessContextPort } from './production-context-port.js';
+import { createHarnessCandidateValidator } from './policy-gates.js';
+
+test('production context port freezes the real #32 bundle and fact references', async () => {
+  const facts = new MemoryStoreFactLedger();
+  await facts.append({
+    workspaceId: 'workspace-1',
+    factId: 'price-1',
+    kind: 'price',
+    key: 'group_buy_price',
+    value: 398,
+    scope: { storeId: 'workspace-1', serviceId: 'scalp-clean' },
+    source: {
+      kind: 'user_confirmation',
+      referenceId: 'decision-1',
+      capturedAt: '2026-07-18T00:00:00.000Z',
+    },
+    effectiveFrom: '2026-07-18T00:00:00.000Z',
+    expiresAt: null,
+    expectedRevision: 0,
+    recordedAt: '2026-07-18T00:00:00.000Z',
+    recordedBy: 'owner-1',
+  });
+  const bundles = new MemoryContextBundleRepository();
+  const port = new LedgerBackedHarnessContextPort(
+    facts,
+    bundles,
+    () => '2026-07-18T00:01:00.000Z',
+  );
+  const input = {
+    workflowId: 'task-context-1',
+    request: taskInput(),
+    declaration: {
+      taskType: 'promotion_groupbuy_conversion' as const,
+      deliveryLayer: 'copy' as const,
+      implicitConstraints: ['不得编造价格'],
+    },
+  };
+
+  const first = await port.compileAndFreeze(input);
+  const replay = await port.compileAndFreeze(input);
+
+  assert.deepEqual(replay, first);
+  assert.equal(first.bundle.revision, 1);
+  assert.equal(first.bundle.workspaceId, 'workspace-1');
+  const firstFactsRevision = first.bundle.sourceRevisions.facts;
+  assert.equal(typeof firstFactsRevision, 'string');
+  assert.deepEqual(first.bundle.referencedFactRevisions, [
+    { factId: 'price-1', revision: 1 },
+  ]);
+  assert.equal(briefContextBundleSchema.safeParse(first.bundle).success, true);
+  assert.equal(
+    first.bundle.dimensions.promotion_task.requested_intent?.value,
+    '把新团购做一套能发的',
+  );
+  assert.deepEqual(first.policyReferences.sourceRefs, [
+    {
+      id: 'store_fact:price-1:1',
+      workspaceId: 'workspace-1',
+      revision: 1,
+      status: 'current',
+    },
+    {
+      id: 'decision:question-1:decision-1',
+      workspaceId: 'workspace-1',
+      revision: 1,
+      status: 'current',
+    },
+  ]);
+  const validation = createHarnessCandidateValidator({
+    phase: 'execution',
+    bundle: { workspaceId: 'workspace-1', revision: first.bundle.revision },
+    brief: {},
+    ...first.policyReferences,
+  }).validate({
+    candidateId: 'c01',
+    workspaceId: 'workspace-1',
+    intendedUse: 'public_content',
+    factClaims: [
+      {
+        kind: 'price',
+        value: '当前团购价 398 元',
+        sourceRef: 'decision:question-1:decision-1',
+      },
+    ],
+    assetRefs: [],
+  });
+  assert.equal(validation.passed, true);
+
+  await facts.append({
+    workspaceId: 'workspace-1',
+    factId: 'price-1',
+    kind: 'price',
+    key: 'group_buy_price',
+    value: 368,
+    scope: { storeId: 'workspace-1', serviceId: 'scalp-clean' },
+    source: {
+      kind: 'user_confirmation',
+      referenceId: 'decision-2',
+      capturedAt: '2026-07-18T00:02:00.000Z',
+    },
+    effectiveFrom: '2026-07-18T00:00:00.000Z',
+    expiresAt: null,
+    expectedRevision: 1,
+    recordedAt: '2026-07-18T00:02:00.000Z',
+    recordedBy: 'owner-1',
+  });
+  const recompiled = await port.fence({ ...input, context: first });
+  assert.equal(recompiled.bundle.revision, 2);
+  assert.equal(recompiled.bundle.previousRevision, 1);
+  assert.notEqual(recompiled.bundle.sourceRevisions.facts, firstFactsRevision);
+  assert.deepEqual(recompiled.bundle.referencedFactRevisions, [
+    { factId: 'price-1', revision: 2 },
+  ]);
+});
+
+test('production context preserves pre-fold references for same-scope fact conflicts', async () => {
+  const facts = new MemoryStoreFactLedger();
+  for (const [factId, amount] of [
+    ['price-old', 199],
+    ['price-new', 239],
+  ] as const) {
+    await facts.append({
+      workspaceId: 'workspace-1',
+      factId,
+      kind: 'price',
+      key: 'offer.price',
+      value: { amount, currency: 'CNY' },
+      scope: { storeId: 'workspace-1', serviceId: 'scalp-clean' },
+      source: {
+        kind: 'user_confirmation',
+        referenceId: `decision-${factId}`,
+        capturedAt: '2026-07-18T00:00:00.000Z',
+      },
+      effectiveFrom: '2026-07-18T00:00:00.000Z',
+      expiresAt: null,
+      expectedRevision: 0,
+      recordedAt: '2026-07-18T00:00:00.000Z',
+      recordedBy: 'owner-1',
+    });
+  }
+  const snapshot = await new LedgerBackedHarnessContextPort(
+    facts,
+    new MemoryContextBundleRepository(),
+    () => '2026-07-18T00:01:00.000Z',
+  ).compileAndFreeze({
+    workflowId: 'task-conflicting-facts',
+    request: taskInput(),
+    declaration: {
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      implicitConstraints: ['价格必须唯一'],
+    },
+  });
+
+  assert.equal(
+    Object.keys(snapshot.bundle.dimensions.store_facts_assets).length,
+    1,
+  );
+  assert.deepEqual(snapshot.activeFactReferences, [
+    { key: 'offer.price', sourceRef: 'store_fact:price-new:1' },
+    { key: 'offer.price', sourceRef: 'store_fact:price-old:1' },
+  ]);
+});
+
+test('a decision accepted after the preflight freeze creates a new exact bundle revision', async () => {
+  const bundles = new MemoryContextBundleRepository();
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    bundles,
+    () => '2026-07-18T00:01:00.000Z',
+  );
+  const { decisionReferences: _decisions, ...requestWithoutDecision } =
+    taskInput();
+  const input = {
+    workflowId: 'task-decision-refreeze',
+    request: requestWithoutDecision,
+    declaration: {
+      taskType: 'promotion_groupbuy_conversion' as const,
+      deliveryLayer: 'copy' as const,
+      implicitConstraints: [],
+    },
+  };
+  const preflight = await port.compileAndFreeze(input);
+  assert.equal(preflight.bundle.revision, 1);
+
+  // Simulate a suspended workflow resuming after process-local state is lost.
+  const decided = await port.compileAndFreeze({
+    ...input,
+    request: { ...requestWithoutDecision, decisionReferences: taskInput().decisionReferences },
+  });
+
+  assert.equal(decided.bundle.revision, 2);
+  assert.equal(decided.bundle.previousRevision, 1);
+  assert.equal(
+    decided.bundle.dimensions.promotion_task.confirmed_intent?.sourceRef,
+    'decision:question-1:decision-1',
+  );
+  assert.deepEqual(
+    (await bundles.history('workspace-1', 'context-task-decision-refreeze')).map(
+      (bundle) => bundle.revision,
+    ),
+    [1, 2],
+  );
+});
+
+test('production context fence compares every mutable source head and carries reuse structure only', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const bundles = new MemoryContextBundleRepository();
+  const heads = new MemoryContextSourceRevisionRepository();
+  await heads.advance({
+    workspaceId: 'workspace-1',
+    key: 'assets',
+    expectedRevision: 0,
+  });
+  const seed = {
+    assetId: 'series-a',
+    assetRevision: 1,
+    sourcePackageId: 'package-source',
+    sourceVersionId: 'version-source',
+    sourcePackageRevision: 2,
+    assetRevisionId: 'series-a:1',
+    fixedItemKeys: ['structure.three-part'],
+    variableSlotKeys: ['offer.price'],
+  };
+  const port = new LedgerBackedHarnessContextPort(
+    facts,
+    bundles,
+    () => '2026-07-18T00:01:00.000Z',
+    heads,
+    undefined,
+    {
+      async verifyReuseTaskSeed() {
+        return {
+          assetId: 'series-a',
+          revisionId: 'series-a:1',
+          candidateId: 'candidate-a',
+          revision: 1,
+          workspaceId: 'workspace-1',
+          kind: 'series' as const,
+          name: '三段式系列',
+          fixedItems: [
+            {
+              key: 'structure.three-part',
+              value: ['experience', 'evidence', 'cta'],
+              sourceRef: 'package-source:version-source',
+            },
+          ],
+          variableSlots: [
+            {
+              key: 'offer.price',
+              source: 'current_fact' as const,
+              required: true,
+            },
+          ],
+          defaultScope: { storeId: 'workspace-1' },
+          finalScope: { storeId: 'workspace-1' },
+          scopeDecision: {
+            mode: 'accepted_default' as const,
+            decisionId: 'decision-a',
+            decidedBy: 'owner-1',
+            decidedAt: '2026-07-18T00:00:00.000Z',
+          },
+          provenance: {
+            sourcePackageId: 'package-source',
+            sourceVersionId: 'version-source',
+            sourcePackageRevision: 2,
+            contextBundleId: 'bundle-source',
+            contextBundleRevision: 1,
+          },
+          rights: { assetIds: ['asset-a'], status: 'authorized' as const },
+          nextSuggestions: [],
+          createdAt: '2026-07-18T00:00:00.000Z',
+          createdBy: 'owner-1',
+        };
+      },
+    },
+    {
+      async resolve({ assetIds }) {
+        assert.deepEqual(assetIds, ['asset-current']);
+        return {
+          knownAssetIds: ['asset-current'],
+          unauthorizedAssetIds: [],
+        };
+      },
+    },
+  );
+  const baseTask = taskInput();
+  const input = {
+    workflowId: 'task-reuse-context',
+    request: {
+      ...baseTask,
+      reuseSeed: seed,
+      intent: { ...baseTask.intent, assetReferences: ['asset-current'] },
+    },
+    declaration: {
+      taskType: 'promotion_groupbuy_conversion' as const,
+      deliveryLayer: 'copy' as const,
+      implicitConstraints: [],
+    },
+  };
+  const first = await port.compileAndFreeze(input);
+  assert.equal(first.bundle.sourceRevisions.assets, 1);
+  assert.deepEqual(
+    first.bundle.dimensions.promotion_task['reuse_structure.three-part']?.value,
+    ['experience', 'evidence', 'cta'],
+  );
+  assert.equal('body' in first.bundle.dimensions.promotion_task, false);
+  assert.deepEqual(first.policyReferences.rightsRefs, [
+    {
+      assetId: 'asset-current',
+      workspaceId: 'workspace-1',
+      status: 'authorized',
+      allowedUses: ['public_content'],
+    },
+  ]);
+
+  await heads.advance({
+    workspaceId: 'workspace-1',
+    key: 'rights',
+    expectedRevision: 0,
+  });
+  const fenced = await port.fence({ ...input, context: first });
+  assert.equal(fenced.bundle.revision, 2);
+  assert.equal(fenced.bundle.sourceRevisions.rights, 1);
+});
+
+test('production context rejects forged free-form copy in reusable fixed items', async () => {
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    new MemoryContextBundleRepository(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    {
+      async verifyReuseTaskSeed() {
+        return {
+          assetId: 'series-a',
+          revisionId: 'series-a:1',
+          candidateId: 'candidate-a',
+          revision: 1,
+          workspaceId: 'workspace-1',
+          kind: 'series' as const,
+          name: 'forged series',
+          fixedItems: [
+            {
+              key: 'structure.body',
+              value: '旧正文，旧价格 199，顾客张三，7月18日活动',
+              sourceRef: 'package-source:version-source',
+            },
+          ],
+          variableSlots: [
+            { key: 'offer.price', source: 'current_fact' as const, required: true },
+          ],
+          defaultScope: { storeId: 'workspace-1' },
+          finalScope: { storeId: 'workspace-1' },
+          scopeDecision: {
+            mode: 'accepted_default' as const,
+            decisionId: 'decision-a',
+            decidedBy: 'owner-1',
+            decidedAt: '2026-07-18T00:00:00.000Z',
+          },
+          provenance: {
+            sourcePackageId: 'package-source',
+            sourceVersionId: 'version-source',
+            sourcePackageRevision: 2,
+            contextBundleId: 'bundle-source',
+            contextBundleRevision: 1,
+          },
+          rights: { assetIds: [], status: 'authorized' as const },
+          nextSuggestions: [],
+          createdAt: '2026-07-18T00:00:00.000Z',
+          createdBy: 'owner-1',
+        } as never;
+      },
+    },
+  );
+  const request = taskInput();
+  await assert.rejects(
+    port.compileAndFreeze({
+      workflowId: 'task-forged-reuse',
+      request: {
+        ...request,
+        reuseSeed: {
+          assetId: 'series-a',
+          assetRevision: 1,
+          sourcePackageId: 'package-source',
+          sourceVersionId: 'version-source',
+          sourcePackageRevision: 2,
+          assetRevisionId: 'series-a:1',
+          fixedItemKeys: ['structure.body'],
+          variableSlotKeys: ['offer.price'],
+        },
+      },
+      declaration: {
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        implicitConstraints: [],
+      },
+    }),
+  );
+});
+
+test('production context hydrates complete active brand and person identities for generation', async () => {
+  const identities = new MemoryMarketingIdentityRepository();
+  await identities.register({
+    workspaceId: 'workspace-1',
+    actorId: 'owner-1',
+    occurredAt: '2026-07-18T00:00:00.000Z',
+    command: {
+      identityId: 'brand-1',
+      kind: 'brand',
+      expectedVersion: 0,
+      displayName: '门店官方',
+      owner: '门店',
+      professionalBoundaries: ['只表达已核验项目与品牌主张'],
+      allowedPlatforms: ['xiaohongshu'],
+      allowedScenes: ['brand_personal_ip'],
+      expressionSamples: ['用专业和克制的方式说明项目价值。'],
+      effectiveFrom: '2026-07-18T00:00:00.000Z',
+      expiresAt: null,
+      departureHandling: '品牌停用后停止生成新内容。',
+      sourceRef: 'brand-policy-1',
+      brandClaims: ['专注染发与护发'],
+      forbiddenClaims: ['疗效保证'],
+      visualPrinciples: ['真实发丝细节'],
+      seriesAnchors: ['发色选择指南'],
+    },
+  });
+  await identities.register({
+    workspaceId: 'workspace-1',
+    actorId: 'owner-1',
+    occurredAt: '2026-07-18T00:00:00.000Z',
+    command: {
+      identityId: 'person-1',
+      kind: 'person',
+      expectedVersion: 0,
+      displayName: '小林老师',
+      owner: '林晓',
+      professionalBoundaries: ['只分享真实从业经验'],
+      allowedPlatforms: ['xiaohongshu'],
+      allowedScenes: ['brand_personal_ip'],
+      expressionSamples: ['先判断发质，再讨论适合的发色。'],
+      effectiveFrom: '2026-07-18T00:00:00.000Z',
+      expiresAt: null,
+      departureHandling: '离职后停止生成新内容。',
+      sourceRef: 'person-authorization-1',
+      realWorldRole: '染发师',
+      portraitAuthorization: 'authorized',
+      voiceAuthorization: 'not_authorized',
+      historicalContentPermission: 'review_required',
+    },
+  });
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    new MemoryContextBundleRepository(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    identities,
+  );
+  const snapshot = await port.compileAndFreeze({
+    workflowId: 'task-brand-identity',
+    request: taskInput(),
+    declaration: {
+      taskType: 'brand_personal_ip',
+      deliveryLayer: 'copy',
+      implicitConstraints: [],
+    },
+  });
+
+  assert.deepEqual(snapshot.policyReferences.identityRefs, [
+    {
+      id: 'marketing_identity:brand-1:1',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+    {
+      id: 'marketing_identity:person-1:1',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+  ]);
+  assert.deepEqual(
+    snapshot.bundle.dimensions.expression_identity['identity_brand-1']?.value,
+    {
+      identityId: 'brand-1',
+      kind: 'brand',
+      version: 1,
+      displayName: '门店官方',
+      professionalBoundaries: ['只表达已核验项目与品牌主张'],
+      allowedPlatforms: ['xiaohongshu'],
+      allowedScenes: ['brand_personal_ip'],
+      expressionSamples: ['用专业和克制的方式说明项目价值。'],
+      brandClaims: ['专注染发与护发'],
+      forbiddenClaims: ['疗效保证'],
+      visualPrinciples: ['真实发丝细节'],
+      seriesAnchors: ['发色选择指南'],
+    },
+  );
+  assert.deepEqual(
+    snapshot.bundle.dimensions.expression_identity['identity_person-1']
+      ?.value,
+    {
+      identityId: 'person-1',
+      kind: 'person',
+      version: 1,
+      displayName: '小林老师',
+      professionalBoundaries: ['只分享真实从业经验'],
+      allowedPlatforms: ['xiaohongshu'],
+      allowedScenes: ['brand_personal_ip'],
+      expressionSamples: ['先判断发质，再讨论适合的发色。'],
+      realWorldRole: '染发师',
+      portraitAuthorization: 'authorized',
+      voiceAuthorization: 'not_authorized',
+      historicalContentPermission: 'review_required',
+    },
+  );
+});
+
+function taskInput() {
+  return {
+    actorId: 'owner-1',
+    workspaceId: 'workspace-1',
+    packageId: 'package-1',
+    expectedRevision: 0,
+    workflowRevision: 1,
+    rawInput: '把新团购做一套能发的',
+    factScope: { storeId: 'workspace-1', serviceId: 'scalp-clean' },
+    intent: {
+      context: {
+        workId: 'work-1',
+        intent: '把新团购做一套能发的',
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+    decisionReferences: [
+      {
+        id: 'decision:question-1:decision-1',
+        field: 'intent' as const,
+        value: '当前团购价 398 元',
+        revision: 1,
+      },
+    ],
+  };
+}

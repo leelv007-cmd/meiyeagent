@@ -1,0 +1,58 @@
+{
+  "artifacts": {
+    "01-provider-v1-masked-and-tested.png": {
+      "bytes": 283606,
+      "sha256": "c14628b41925599b8c1700ba9c4961db3b0e79bce10f61f8b82bd4ab8ba2c278"
+    },
+    "02-provider-v2-tested-restart-pending.png": {
+      "bytes": 284384,
+      "sha256": "d6cb56ffc2dd538820a68ef835ad45206bdaa316f1f2c8e0b583b1d9cacb3305"
+    },
+    "03-provider-v2-effective-from-vault.png": {
+      "bytes": 279807,
+      "sha256": "bef503af7d17ee65a831f6b25bbfa5156f014a8c7967964c2884634831730ba0"
+    },
+    "04-vault-backed-real-probe-passed.png": {
+      "bytes": 7119771,
+      "sha256": "7063892fee9d5ed8f55fcbb6b4aebe92e2e8afe65dd5e47db2b103d7ea85cfd8"
+    },
+    "05-vault-backed-catalog-published.png": {
+      "bytes": 7340370,
+      "sha256": "7cc587c1d4e697b847c32dcafdc5f65f6531f582dba7c40b98d53a4a3b71eb52"
+    },
+    "06-merchant-real-generation-with-vault-v2.png": {
+      "bytes": 338062,
+      "sha256": "d808533a84e3193ae38ddaf01f78a25c6dfec65a2ef77c2c4edb2b1c839047b4"
+    },
+    "continuous-provider-vault-journey.webm": {
+      "bytes": 22069879,
+      "sha256": "92403acdd9b18551fd3d74b71b81a6420a09e4996b62385814473b5b59ed84c8"
+    },
+    "evidence.json": {
+      "bytes": 45337,
+      "sha256": "9e9d4f61dbb409211a775773592adfe00b2abb94b5bf173a49eb8e3093d0bedd"
+    },
+    "probe-restart-checkpoint.json": {
+      "bytes": 160,
+      "sha256": "d7b0dda25c9d76bfeeaff58e5ee51e895efb91ecc91ff662468e1382a8188a27"
+    },
+    "resume-after-probe-restart": {
+      "bytes": 8,
+      "sha256": "535fd952fb9473150fd21218d3bdacd1eae57d613c3ffc561cbd595da558631b"
+    },
+    "resume-after-vault-restart": {
+      "bytes": 8,
+      "sha256": "535fd952fb9473150fd21218d3bdacd1eae57d613c3ffc561cbd595da558631b"
+    },
+    "sql-provider-version-chain.json": {
+      "bytes": 2467,
+      "sha256": "56d0f7c2f8efc80915590105b06932d1807b3375231a99f1cfef8dcf54fea432"
+    },
+    "vault-restart-checkpoint.json": {
+      "bytes": 107,
+      "sha256": "b4d688e0a37f0511dd1e0e9e7e60ef9d71f195519c52ea1e7e3ad3da80bc918d"
+    }
+  },
+  "runId": "ticket-19-1784252276283",
+  "status": "accepted"
+}

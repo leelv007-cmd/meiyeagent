@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Recorded seven-redline regression gate
+
+prompts:
+  - '{{caseId}}'
+
+providers:
+  - id: file://apps/core/src/evals/redlines/promptfoo-provider.ts
+    label: canonical-harness-policy-gates
+
+tests:
+  - file://apps/core/src/evals/redlines/cases.ts
+
+evaluateOptions:
+  maxConcurrency: 1

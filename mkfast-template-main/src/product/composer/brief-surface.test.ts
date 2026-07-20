@@ -1,0 +1,331 @@
+/**
+ * Conditional Brief surface — seven trigger show/cancel restore,
+ * simple-task direct submit contrast, evidence "no evidence = not shown".
+ */
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import type { BriefTriggerConditionCode } from '@meiye/contracts';
+
+import {
+  BRIEF_TRIGGER_CODES,
+  cancelBriefSurface,
+  confirmBriefSurface,
+  createBriefSurfaceState,
+  decideSubmitPath,
+  fixtureBriefProjection,
+  openBriefSurface,
+  projectBriefSurfaceView,
+  projectEvidenceForBrowser,
+  serializeBriefSurfaceForBrowser,
+  setBriefVideoConfirmAccepted,
+  shouldShowEvidenceDrawer,
+  type ComposerInputSnapshot,
+} from './brief-surface';
+import { findForbiddenBrowserComposerKey } from './browser-contract';
+import type { ComposerQuoteView } from './quote-wiring';
+
+const SNAPSHOT: ComposerInputSnapshot = {
+  userText: '本周美甲活动文案，强调安全卸甲',
+  sources: [{ id: 'src-1', kind: 'asset' }],
+  lensId: 'copy',
+  draftRevisionId: 'draft-r1',
+  hostState: { quantity: 3, catalogModelId: 'model.copy.basic' },
+};
+
+function openWith(
+  codes: BriefTriggerConditionCode[],
+  extras: Parameters<typeof fixtureBriefProjection>[0] = {
+    requiresBrief: true,
+  }
+) {
+  const projection = fixtureBriefProjection({
+    requiresBrief: true,
+    triggerCodes: codes,
+    lensId: codes.includes('any_video') ? 'video' : 'copy',
+    ...extras,
+  });
+  let state = createBriefSurfaceState();
+  state = openBriefSurface(state, {
+    projection,
+    composerSnapshot: {
+      ...SNAPSHOT,
+      lensId: codes.includes('any_video') ? 'video' : SNAPSHOT.lensId,
+    },
+  });
+  return { state, projection };
+}
+
+describe('seven Brief trigger UI show / cancel restore', () => {
+  it('exposes exactly the seven D-094 safety codes', () => {
+    assert.deepEqual([...BRIEF_TRIGGER_CODES], [
+      'any_video',
+      'multi_deliverable_or_cross_platform',
+      'images_over_four',
+      'restricted_assets',
+      'high_risk_fact_missing_or_conflict',
+      'quote_policy_threshold',
+      'confirmation_invalid',
+    ]);
+  });
+
+  for (const code of BRIEF_TRIGGER_CODES) {
+    it(`shows Brief for trigger ${code} and cancel restores Composer input`, () => {
+      const { state: opened } = openWith([code]);
+      const view = projectBriefSurfaceView(opened, {
+        lensId: opened.composerSnapshot?.lensId ?? null,
+      });
+
+      assert.equal(view.visible, true);
+      assert.equal(view.phase, 'open');
+      assert.ok(view.triggers.some((t) => t.code === code));
+      assert.ok(view.summaryRows.length > 0);
+      assert.equal(view.bindRevisions?.draftRevisionId, 'draft-rev-fixture');
+
+      // Cancel returns to Composer without losing input
+      const { state: cancelled, restored } = cancelBriefSurface(opened);
+      assert.equal(cancelled.phase, 'cancelled');
+      assert.equal(cancelled.projection, null);
+      assert.ok(restored);
+      assert.equal(restored.userText, SNAPSHOT.userText);
+      assert.deepEqual(restored.sources, SNAPSHOT.sources);
+      assert.equal(restored.draftRevisionId, SNAPSHOT.draftRevisionId);
+      assert.equal(restored.hostState?.quantity, 3);
+      assert.equal(restored.hostState?.catalogModelId, 'model.copy.basic');
+
+      const hidden = projectBriefSurfaceView(cancelled);
+      assert.equal(hidden.visible, false);
+    });
+  }
+
+  it('confirm seals exact bindRevisions from the open projection', () => {
+    const { state: opened, projection } = openWith(['quote_policy_threshold'], {
+      requiresBrief: true,
+      triggerCodes: ['quote_policy_threshold'],
+      bindRevisions: {
+        draftRevisionId: 'draft-exact',
+        recipeRevisionId: 'recipe-r2',
+        modelRevisionId: 'model-r3',
+        quoteRevisionId: 'quote-r4',
+        sourceRevisionId: 'source-r5',
+        surfaceRevisionId: 'surface-r6',
+        lensId: 'image_text',
+      },
+    });
+
+    const result = confirmBriefSurface(opened, {
+      confirmedAt: '2026-07-20T12:00:00.000Z',
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+
+    assert.equal(result.state.phase, 'confirmed');
+    assert.deepEqual(result.confirmation.boundRevisions, projection.bindRevisions);
+    assert.deepEqual(result.confirmation.triggerCodes, ['quote_policy_threshold']);
+    assert.equal(result.confirmation.confirmedAt, '2026-07-20T12:00:00.000Z');
+  });
+});
+
+describe('simple task — no Brief, direct submit contrast', () => {
+  it('decideSubmitPath returns direct_submit when requiresBrief is false', () => {
+    const projection = fixtureBriefProjection({
+      requiresBrief: false,
+      triggerCodes: [],
+      summary: {},
+    });
+    const decision = decideSubmitPath({ projection });
+    assert.equal(decision.path, 'direct_submit');
+    assert.equal(decision.reason, 'no_brief_required');
+  });
+
+  it('openBriefSurface is a no-op when requiresBrief is false', () => {
+    const projection = fixtureBriefProjection({ requiresBrief: false });
+    const state = openBriefSurface(createBriefSurfaceState(), {
+      projection,
+      composerSnapshot: SNAPSHOT,
+    });
+    assert.equal(state.phase, 'idle');
+    assert.equal(state.projection, null);
+    const view = projectBriefSurfaceView(state);
+    assert.equal(view.visible, false);
+  });
+
+  it('requiresBrief true routes to open_brief', () => {
+    const projection = fixtureBriefProjection({
+      requiresBrief: true,
+      triggerCodes: ['images_over_four'],
+    });
+    const decision = decideSubmitPath({ projection });
+    assert.equal(decision.path, 'open_brief');
+    if (decision.path === 'open_brief') {
+      assert.equal(decision.projection.triggers[0]?.code, 'images_over_four');
+    }
+  });
+
+  it('quota exhausted blocks before brief', () => {
+    const projection = fixtureBriefProjection({
+      requiresBrief: true,
+      triggerCodes: ['any_video'],
+    });
+    const decision = decideSubmitPath({
+      projection,
+      quotaExhausted: true,
+    });
+    assert.equal(decision.path, 'blocked_quota');
+  });
+});
+
+describe('evidence drawer — no evidence = not shown', () => {
+  it('shouldShowEvidenceDrawer is false for empty / missing', () => {
+    assert.equal(shouldShowEvidenceDrawer([]), false);
+    assert.equal(shouldShowEvidenceDrawer(null), false);
+    assert.equal(shouldShowEvidenceDrawer(undefined), false);
+  });
+
+  it('view.showEvidenceDrawer is false when projection has no evidence', () => {
+    const { state } = openWith(['restricted_assets'], {
+      requiresBrief: true,
+      triggerCodes: ['restricted_assets'],
+      evidenceDrawer: [],
+    });
+    const view = projectBriefSurfaceView(state);
+    assert.equal(view.showEvidenceDrawer, false);
+    assert.equal(view.evidenceEntries.length, 0);
+  });
+
+  it('view.showEvidenceDrawer is true only with real participating evidence', () => {
+    const { state } = openWith(['high_risk_fact_missing_or_conflict'], {
+      requiresBrief: true,
+      triggerCodes: ['high_risk_fact_missing_or_conflict'],
+      evidenceDrawer: [
+        {
+          sourceName: '门店价目表',
+          sourceType: 'source_extracted',
+          factKind: 'price',
+          factSummary: '卸甲 99 元',
+          appliedLocation: '正文价格',
+          freshness: '本周更新',
+          rightsStatus: '本店自有',
+          uncertaintyOrConflict: '事实冲突',
+          pendingConfirmation: true,
+        },
+      ],
+    });
+    const view = projectBriefSurfaceView(state);
+    assert.equal(view.showEvidenceDrawer, true);
+    assert.equal(view.evidenceEntries.length, 1);
+    assert.equal(view.evidenceEntries[0]?.sourceName, '门店价目表');
+    assert.equal(view.evidenceEntries[0]?.pendingConfirmation, true);
+  });
+
+  it('projectEvidenceForBrowser strips forbidden keys and empty shells', () => {
+    const cleaned = projectEvidenceForBrowser([
+      {
+        sourceName: '',
+        sourceType: 'system_suggested',
+        factKind: 'price',
+      },
+      {
+        sourceName: '系统建议',
+        sourceType: 'system_suggested',
+        factKind: 'term',
+        factSummary: '活动截止周五',
+        provider: 'openai',
+      } as import('@meiye/contracts').BriefEvidenceEntry & {
+        provider: string;
+      },
+    ]);
+    // empty sourceName dropped; remaining stripped of provider
+    assert.equal(cleaned.length, 1);
+    assert.equal(cleaned[0]?.sourceName, '系统建议');
+    assert.equal(
+      findForbiddenBrowserComposerKey(cleaned as unknown as Record<string, unknown>),
+      null
+    );
+    assert.equal(
+      'provider' in (cleaned[0] as unknown as Record<string, unknown>),
+      false
+    );
+  });
+});
+
+describe('video confirm zone embedded in Brief', () => {
+  it('embeds per-second billing note for video trigger', () => {
+    const quote: ComposerQuoteView = {
+      quoteId: 'q-v',
+      revision: 'qr-1',
+      catalogModelId: 'model.video.std',
+      billingMode: 'per_output_second',
+      amount: 30,
+      quantity: 1,
+      quotedSeconds: 15,
+      targetSeconds: 15,
+      billingNote: '按生成成片 15 秒计费',
+      lifecycleStatus: 'quoted',
+      formulaExpression: '2 × 15s',
+    };
+
+    const { state } = openWith(['any_video'], {
+      requiresBrief: true,
+      triggerCodes: ['any_video'],
+      lensId: 'video',
+    });
+
+    let opened = setBriefVideoConfirmAccepted(state, false);
+    const view = projectBriefSurfaceView(opened, {
+      lensId: 'video',
+      quote,
+    });
+
+    assert.ok(view.videoConfirm?.visible);
+    assert.equal(view.videoConfirm?.billingNote, '按生成成片 15 秒计费');
+    assert.equal(view.requiresVideoConfirm, true);
+    assert.equal(view.canConfirm, false);
+
+    opened = setBriefVideoConfirmAccepted(opened, true);
+    const accepted = projectBriefSurfaceView(opened, {
+      lensId: 'video',
+      quote,
+    });
+    assert.equal(accepted.canConfirm, true);
+
+    const confirmed = confirmBriefSurface(opened);
+    assert.equal(confirmed.ok, true);
+  });
+
+  it('blocks confirm when video confirm not accepted', () => {
+    const { state } = openWith(['any_video'], {
+      requiresBrief: true,
+      triggerCodes: ['any_video'],
+      lensId: 'video',
+    });
+    const result = confirmBriefSurface(state);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.reason, 'video_confirm_required');
+    }
+  });
+});
+
+describe('browser contract for Brief surface', () => {
+  it('serialized view never embeds Provider / credential / route', () => {
+    const { state } = openWith(['any_video'], {
+      requiresBrief: true,
+      triggerCodes: ['any_video'],
+      evidenceDrawer: [
+        {
+          sourceName: '案例库',
+          sourceType: 'source_extracted',
+          factKind: 'effect',
+          factSummary: '前后对比已授权',
+        },
+      ],
+    });
+    const view = projectBriefSurfaceView(state, { lensId: 'video' });
+    const json = serializeBriefSurfaceForBrowser(view);
+    assert.equal(findForbiddenBrowserComposerKey(JSON.parse(json)), null);
+    assert.doesNotMatch(json, /provider/i);
+    assert.doesNotMatch(json, /hidden.?prompt/i);
+    assert.doesNotMatch(json, /credential/i);
+  });
+});

@@ -1,0 +1,22 @@
+-- PostgreSQL localhost:54329 / database meiye
+-- Captured 2026-07-17 Asia/Shanghai after the second two-process restart.
+
+SELECT config_key, revision, status, rolled_back_to_revision, reason,
+       correlation_id, created_at
+  FROM admin_config_revisions
+ WHERE scope = 'global' AND config_key = 'model.execution.mode'
+ ORDER BY revision;
+
+config_key	revision	status	rolled_back_to_revision	reason	correlation_id	created_at_cst
+model.execution.mode	1	applied		Activate verified direct execution for Ticket 22	activate-direct-v5-20260715	2026-07-15 06:34:04
+model.execution.mode	2	applied		Ticket 05 restart persistence evidence	corr-e18f258a-c036-4341-831f-3a9213c9343a	2026-07-17 08:01:35
+model.execution.mode	3	rolled_back	1	Ticket 05 verified rollback to direct	corr-2d20f110-4c89-48fc-8f98-0b98775e2865	2026-07-17 08:03:33
+
+SELECT process_kind, execution_mode, media_mode, execution_source,
+       media_source, booted_at
+  FROM admin_config_effective_snapshots
+ ORDER BY process_kind;
+
+process_kind	execution_mode	media_mode	execution_source	media_source	booted_at_cst
+http	direct	tuzi	{"source":"db_revision","revision":3}	{"source":"db_revision","revision":1}	2026-07-17 08:03:54
+job-worker	direct	tuzi	{"source":"db_revision","revision":3}	{"source":"db_revision","revision":1}	2026-07-17 08:04:02

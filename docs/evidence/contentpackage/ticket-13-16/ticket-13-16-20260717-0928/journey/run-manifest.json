@@ -1,0 +1,37 @@
+{
+  "runId": "ticket-13-16-20260717-0928",
+  "status": "blocked_pending_core_reload",
+  "acceptance": {
+    "realBrowserExportAttempt": true,
+    "failedReceiptVisible": true,
+    "priorFactsAndReceiptsPreserved": true,
+    "platformVersionRestoredThroughRollback": true,
+    "successfulDownload": false,
+    "ticket14Journey": false,
+    "ticket15BurnInArtifact": false,
+    "ticket16CrossViewportJourney": false,
+    "ticket17MigrationJourney": false
+  },
+  "files": {
+    "journey/a27d05e34bca412482be64ced2ad2eea.webm": {
+      "bytes": 1500009,
+      "sha256": "173cc57370cdf15fd9dea16fab59ddc974d08715fa45e0a14e4fed36d6390aa0"
+    },
+    "journey/keyframes/01-source-package-before-export.png": {
+      "bytes": 306555,
+      "sha256": "7e776507d7fe2039592369480e2775d77eff4e7939bfa274699f88b0269bbaf4"
+    },
+    "journey/keyframes/01b-owned-export-version.png": {
+      "bytes": 483370,
+      "sha256": "e1b7b16127be5ea5fd9a011cb0815898a832d5dd5248fd3209aacb76676d7a25"
+    },
+    "journey/keyframes/02-export-receipt-and-download.png": {
+      "bytes": 506312,
+      "sha256": "dc559ce8e3e00edd540045119b89daf5a4bb87d11a9ba3fb2443530d1c12a3ab"
+    },
+    "journey/keyframes/03-platform-version-restored.png": {
+      "bytes": 627078,
+      "sha256": "895580223296a268f651fef690893da2b79e7d9aff94a5fddb5b03ab8251e48f"
+    }
+  }
+}

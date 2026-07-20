@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "3051ccb4-512f-46ce-83d9-9d79b9022af1"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "6f8d6195-3236-435d-af28-aebef5b66956"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt",
+  "works": [
+    {
+      "currentRevisionId": "3051ccb4-512f-46ce-83d9-9d79b9022af1",
+      "id": "6f8d6195-3236-435d-af28-aebef5b66956",
+      "revisions": [
+        {
+          "id": "3051ccb4-512f-46ce-83d9-9d79b9022af1",
+          "workId": "6f8d6195-3236-435d-af28-aebef5b66956",
+          "document": {
+            "pages": [
+              {
+                "id": "9f721938-1193-4ad1-9b0b-6aa170117b69",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-13T13:41:58.298Z",
+          "createdBy": "yK0YAH9WXbK018cW8XmAH0c75W5rM6Nt"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.804Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "a307ca7ec0d43e845f1e8983a072967dd930653e3fb0f3c61856593169a16589",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "2d7d792f6ef9c1fab1e525a51e29f2e2a66081f4cb8ba22c554887a568a2c3a5"
+  }
+}

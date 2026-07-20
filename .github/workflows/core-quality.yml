@@ -1,0 +1,208 @@
+name: Core quality
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  redline-evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run recorded gate parity and provider tests
+        run: pnpm eval:redlines
+      - name: Run BeautyPreferenceMemoryEval
+        run: pnpm eval:preference-memory
+      - name: Write recorded EvalRun artifact
+        run: >-
+          pnpm --filter @meiye/core eval:redlines:artifact
+          "$GITHUB_WORKSPACE/output/evals/redlines.eval-run.json"
+      - name: Write preference-memory EvalRun artifact
+        run: >-
+          pnpm --filter @meiye/core eval:preference-memory:artifact
+          "$GITHUB_WORKSPACE/output/evals/preference-memory.eval-run.json"
+      - name: Run pinned promptfoo recorded fixtures
+        env:
+          PROMPTFOO_DISABLE_REMOTE_GENERATION: true
+        run: >-
+          pnpm dlx promptfoo@0.121.19 eval
+          -c promptfooconfig.redlines.yaml
+          --no-cache
+          -o output/evals/promptfoo-redlines.json
+      - name: Prove promptfoo assertions reject false output without provider errors
+        env:
+          PROMPTFOO_DISABLE_REMOTE_GENERATION: true
+        run: |
+          if pnpm dlx promptfoo@0.121.19 eval \
+            -c promptfooconfig.redlines.assertion-control.yaml \
+            --no-cache; then
+            echo "Promptfoo assertion control unexpectedly passed." >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recorded-redline-evals
+          path: output/evals
+          if-no-files-found: error
+
+  live-redteam:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run opt-in Volcengine red-team
+        continue-on-error: true
+        env:
+          PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION: true
+          VOLCENGINE_API_BASE_URL: ${{ secrets.VOLCENGINE_API_BASE_URL }}
+          VOLCENGINE_API_KEY: ${{ secrets.VOLCENGINE_API_KEY }}
+          VOLCENGINE_MODEL: ${{ secrets.VOLCENGINE_MODEL }}
+        run: >-
+          pnpm dlx promptfoo@0.121.19 redteam run
+          -c promptfooconfig.redteam.yaml
+          -o output/evals/live-redteam.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-redteam-results
+          path: output/evals
+          if-no-files-found: warn
+
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meiye/contracts typecheck
+      - run: pnpm --filter @meiye/core typecheck
+      # pnpm appends extra script arguments after the test glob; NODE_OPTIONS
+      # makes Node's test runner consume --test-reporter=spec directly.
+      - run: pnpm --filter @meiye/core test
+        env:
+          NODE_OPTIONS: --test-reporter=spec
+
+  core-persistence:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: meiye
+          POSTGRES_USER: meiye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meiye -d postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_test
+      TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_dbos_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+      - run: pnpm install --frozen-lockfile
+      - name: Provision business and DBOS test databases
+        run: ./scripts/ci/provision-test-db.sh
+      # The full command is intentional: this job proves the normal Core suite
+      # executes its env-gated PostgreSQL and DBOS tests instead of silently
+      # reporting the persistence-free default as green. NODE_OPTIONS ensures
+      # --test-reporter=spec reaches Node rather than becoming a glob argument.
+      - name: Run Core with persistence gates enabled
+        shell: bash
+        env:
+          NODE_OPTIONS: --test-reporter=spec
+        run: |
+          set -o pipefail
+          pnpm --filter @meiye/core test 2>&1 | tee core-persistence-test.log
+          node scripts/ci/assert-core-persistence-ran.mjs core-persistence-test.log
+
+  # Full Playwright acceptance boots Main, Core, Worker, and Canvas and installs
+  # Chromium. Keep it opt-in via workflow_dispatch or the run-e2e PR label so
+  # ordinary PRs retain a fast required signal while release/handoff checks run
+  # the real multi-service browser harness.
+  e2e:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'run-e2e'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: meiye
+          POSTGRES_USER: meiye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meiye -d postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CI: true
+      TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_e2e
+      TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_e2e_dbos
+      HARNESS_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_e2e_dbos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
+      - name: Provision E2E business and DBOS databases
+        run: ./scripts/ci/provision-test-db.sh
+      - name: Run Playwright acceptance
+        run: pnpm --filter @meiye/web e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-failure-artifacts
+          path: mkfast-template-main/test-results
+          if-no-files-found: ignore

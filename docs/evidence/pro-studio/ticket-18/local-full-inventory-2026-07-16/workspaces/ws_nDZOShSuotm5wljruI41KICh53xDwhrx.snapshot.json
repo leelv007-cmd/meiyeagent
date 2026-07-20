@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "73972281-067f-45b1-a40f-fc96db7330e9"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "38760afe-4d6e-4d1e-a8c2-e8249f3d870b"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_nDZOShSuotm5wljruI41KICh53xDwhrx",
+  "works": [
+    {
+      "currentRevisionId": "73972281-067f-45b1-a40f-fc96db7330e9",
+      "id": "38760afe-4d6e-4d1e-a8c2-e8249f3d870b",
+      "revisions": [
+        {
+          "id": "73972281-067f-45b1-a40f-fc96db7330e9",
+          "workId": "38760afe-4d6e-4d1e-a8c2-e8249f3d870b",
+          "document": {
+            "pages": [
+              {
+                "id": "9040c620-31ec-4f1a-8eff-92898c28edde",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T13:26:37.420Z",
+          "createdBy": "nDZOShSuotm5wljruI41KICh53xDwhrx"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.772Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "14b557ee0643eab0affea822f206d3bca90caba0411fba3b6acefb059b2dd5db",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "a68638d8c839a1887a63b9f9aeb0b5c4040342aad473a82e791e618b904a26f9"
+  }
+}

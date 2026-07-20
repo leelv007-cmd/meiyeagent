@@ -1,0 +1,53 @@
+{
+  "status": "published",
+  "completedAt": "2026-07-16T23:09:21.514Z",
+  "currentRevisionId": "f68b2980-636e-4186-ba76-500ce26aae0a",
+  "transitions": [
+    {
+      "id": "828e0677-f2aa-4d3a-ae3e-b727ac246e07",
+      "number": 15,
+      "stage": "draft"
+    },
+    {
+      "id": "79c5114d-bf94-4a6e-8c50-2df648a1d1c2",
+      "number": 16,
+      "previousRevisionId": "828e0677-f2aa-4d3a-ae3e-b727ac246e07",
+      "stage": "enabled"
+    },
+    {
+      "id": "f68b2980-636e-4186-ba76-500ce26aae0a",
+      "number": 17,
+      "previousRevisionId": "79c5114d-bf94-4a6e-8c50-2df648a1d1c2",
+      "reason": "Publish the live-verified ContentPackage catalog revision.",
+      "stage": "published"
+    }
+  ],
+  "activationCoverage": [
+    {
+      "deploymentId": "openai-direct-recorded",
+      "operations": ["copy.generate", "copy.adapt", "text.respond"],
+      "outcomes": ["passed", "passed", "passed"],
+      "configurationRevision": "b376945b8739658266cfe94b7051ab71c1c9cdd4c53f28492c92fcacaaffcaee"
+    },
+    {
+      "deploymentId": "seedream-4-5-tuzi-relay",
+      "operations": ["image.generate", "image.edit"],
+      "outcomes": ["passed", "passed"],
+      "configurationRevision": "a019aded98a1563b8dea7646b1077c582457065be24eb8198795fe8453215a61"
+    }
+  ],
+  "artifacts": {
+    "admin-publication.webm": {
+      "bytes": 1706739,
+      "sha256": "73da3bb199af486c409a09af3a2a58362b84318cdcd2ea3926d2ab45aa94d2fd"
+    },
+    "published-catalog.png": {
+      "bytes": 7065086,
+      "sha256": "bfffa543b27b4c215a81621eda9d7d5e1cfe8cc0694b768bb37a084f846ed1c7"
+    }
+  },
+  "redaction": [
+    "No credentials, cookies, provider task references, or signed URLs are stored.",
+    "Workspace and user identifiers are omitted from this curated summary."
+  ]
+}

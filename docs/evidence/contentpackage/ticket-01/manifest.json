@@ -1,0 +1,22 @@
+{
+  "artifacts": {
+    "01-merchant-dashboard-before.png": {
+      "bytes": 36720,
+      "sha256": "1d735194cf037805d89abd834119e8c895701eef66be9cb74648a0eb97aa4f3c"
+    },
+    "02-content-library-after.png": {
+      "bytes": 57783,
+      "sha256": "0e60b532e75ff9c721a37e14d18c5280b17cd368289fda4e615a737d3eb40b07"
+    },
+    "continuous-seam-journey.webm": {
+      "bytes": 377225,
+      "sha256": "2bf8565364981595ee129d607227479e5ea50b12b56020311518f1f576f7b563"
+    },
+    "seam-evidence.json": {
+      "bytes": 3600,
+      "sha256": "92d3d7ba27cce84b2a74eac950dff927666ecde61145af8cbe0e31c961464fcc"
+    }
+  },
+  "runId": "ticket-01-1784246230244",
+  "status": "accepted"
+}

@@ -1,0 +1,407 @@
+/**
+ * Composer product surface (WT-C / #95 + #96 + #97 + #98).
+ *
+ * Pure models + thin components. Frozen workbench containers are not touched;
+ * these modules are the replacement seam for dashboard shell integration.
+ *
+ * #96: six-card grid, RecipePatchPreview surface, reuse panel, apply tip,
+ * T1 brief chips re-hang (no expand-four-card path).
+ * #97: mobile two-col layout, fullscreen dual-tab catalog, single bottom sheet,
+ * home tools strip + Pro Studio gate, typed ToolHandoff.
+ * #98: conditional Brief surface + GL-23 quota blocking card with inline redeem.
+ *
+ * Integration wiring (Z / host):
+ * - Mount RecipeCardsPanel + ComposerToolsStrip under dashboard home.
+ * - Route `/dashboard/catalog` (see routes/dashboard/catalog.tsx).
+ * - Navigation constants in composer-nav.ts (lib/routes.ts freeze-listed).
+ * - Replace legacy Scene/Suggestion + default copy.generate in host cutover.
+ */
+
+export {
+  FORBIDDEN_BROWSER_COMPOSER_KEYS,
+  findForbiddenBrowserComposerKey,
+  projectBrowserComposerPayload,
+  serializeBrowserComposerPayload,
+} from './browser-contract';
+
+export {
+  COMPOSER_LENS_LABELS,
+  COMPOSER_LENS_OPTIONS,
+  LENS_GROUP_LABEL,
+  LENS_REQUIRED_SUBMIT_HINT,
+  lensLabel,
+} from './lens-labels';
+
+export {
+  PROTECTED_FIELD_KEYS,
+  bindQuoteSnapshotRevision,
+  bindQuoteView,
+  buildLensSwitchPreview,
+  canSubmit,
+  cancelSwitch,
+  confirmSwitch,
+  createComposerLensState,
+  defaultSettingsForLens,
+  emptyComposerDraft,
+  emptyComposerSettings,
+  lensStateView,
+  requestSwitchLens,
+  selectLens,
+  submitComposer,
+  switchRequiresConfirmation,
+  undoChange,
+  updateAssetRights,
+  updateDeliverySuggestion,
+  updateSelectedTools,
+  updateSettings,
+  updateSources,
+  updateUserText,
+  videoConfirmForState,
+  type ComposerDraft,
+  type ComposerLensPhase,
+  type ComposerLensState,
+  type ComposerSettings,
+  type ConflictAction,
+  type ConflictDiff,
+  type DeliverySuggestion,
+  type FieldMeta,
+  type FieldOwnership,
+  type FrozenRevisions,
+  type LensSelectionSource,
+  type ProtectedFieldKey,
+  type SelectedState,
+  type SettingsPatch,
+  type SwitchPreview,
+  type SwitchPreviewState,
+  type UndoEntry,
+  type UnselectedState,
+  type FrozenState,
+} from './lens-state-machine';
+
+export { LensRadiogroup, type LensRadiogroupProps } from './lens-radiogroup';
+
+export {
+  assertSettingsRowContract,
+  buildDynamicSettingsRow,
+  type CatalogModelOption,
+  type DynamicSettingsFieldValue,
+  type DynamicSettingsRowInput,
+  type SettingsFieldDef,
+  type SettingsFieldKey,
+  type SettingsFieldKind,
+} from './settings-row';
+
+export {
+  buildComposerQuote,
+  composerRequestFromBuildInput,
+  composeQuoteRevision,
+  confirmQuotePrice,
+  projectComposerQuoteView,
+  requoteOnParamChange,
+  serializeComposerQuoteForBrowser,
+  type ComposerQuoteRequest,
+  type ComposerQuoteView,
+} from './quote-wiring';
+
+export {
+  buildVideoConfirmZone,
+  evaluateSubmitGate,
+  type SubmitGateResult,
+  type VideoConfirmZone,
+} from './video-confirm-zone';
+
+// —— #96 six cards + RecipePatchPreview ——
+export {
+  CTA_APPLY_AND_UPDATE_SETTINGS,
+  CTA_CANCEL,
+  COLD_CARD_TITLES,
+  LAUNCH_CARD_SEEDS,
+  P0_CARD_CAP,
+  REUSE_CONTENT_ACTION_LABEL,
+  REUSE_CONTENT_FAMILY_ID,
+  REUSE_INCOMPLETE_CTA,
+  UNDO_LABEL,
+  actionLabelForLens,
+  appliedTipLabel,
+  browserRecipeToTarget,
+  ctaSwitchToLensAndApply,
+  seedToRecipeTarget,
+  switchedTipLabel,
+  type LaunchCardSeedSpec,
+  type RecipeCardTarget,
+} from './launch-card-seeds';
+
+export {
+  listColdCardsFromRecipes,
+  listColdCardsFromSeeds,
+  listColdCardsFromSurface,
+  listP0CardsForLens,
+  listVisibleRecipeCards,
+  type RecipeCardKind,
+  type RecipeCardView,
+} from './recipe-cards';
+
+export {
+  buildClientRecipePatchPreview,
+  composerDraftToRecipeFields,
+  type BuildClientPatchPreviewInput,
+} from './recipe-patch-preview-client';
+
+export {
+  FORBIDDEN_APPLY_SIDE_EFFECTS,
+  applyRecipeToLensState,
+  assertZeroBusinessWrites,
+  bindLensState,
+  cancelApply,
+  clearAnnouncement,
+  confirmApply,
+  confirmReusePanel,
+  createRecipeApplySession,
+  firstMissingInput,
+  listMissingRequiredInputs,
+  openReusePanel,
+  requestApplyRecipe,
+  reusePanelReady,
+  undoApply,
+  type ForbiddenApplySideEffect,
+  type MissingInputFocus,
+  type RecipeApplyPhase,
+  type RecipeApplySession,
+  type RequestApplyResult,
+  type ReusePanelSelection,
+} from './recipe-apply';
+
+export {
+  RecipeCardButton,
+  RecipeCardGrid,
+  type RecipeCardButtonProps,
+  type RecipeCardGridProps,
+} from './recipe-card-grid';
+
+export {
+  RecipePatchPreviewSurface,
+  type RecipePatchPreviewSurfaceProps,
+} from './recipe-patch-preview-surface';
+
+export {
+  ReuseContentPanel,
+  emptyReuseSelection,
+  type ReuseCarrierOption,
+  type ReuseContentPanelProps,
+  type ReuseSourceOption,
+} from './reuse-content-panel';
+
+export {
+  RecipeApplyTip,
+  type RecipeApplyTipProps,
+} from './recipe-apply-tip';
+
+export {
+  ComposerBriefChips,
+  projectComposerBriefChips,
+  type ComposerBriefChip,
+  type ComposerBriefChipsProps,
+} from './brief-chips';
+
+export {
+  RecipeCardsPanel,
+  type RecipeCardsPanelProps,
+} from './recipe-cards-panel';
+
+// —— #98 conditional Brief + GL-23 ——
+export {
+  BRIEF_CONFIRM_LABEL,
+  BRIEF_CANCEL_LABEL,
+  BRIEF_EVIDENCE_TITLE,
+  BRIEF_SUMMARY_FIELD_LABELS,
+  BRIEF_SUMMARY_TITLE,
+  BRIEF_SURFACE_TITLE,
+  BRIEF_TRIGGER_CODES,
+  BRIEF_TRIGGERS_TITLE,
+  buildBriefSummaryRows,
+  cancelBriefSurface,
+  confirmBriefSurface,
+  createBriefSurfaceState,
+  decideSubmitPath,
+  fixtureBriefProjection,
+  openBriefSurface,
+  projectBriefSurfaceView,
+  projectEvidenceForBrowser,
+  serializeBriefSurfaceForBrowser,
+  setBriefVideoConfirmAccepted,
+  shouldShowEvidenceDrawer,
+  type BriefSurfacePhase,
+  type BriefSurfaceState,
+  type BriefSurfaceView,
+  type BriefSummaryFieldKey,
+  type BriefSummaryRow,
+  type ComposerInputSnapshot,
+  type SubmitPathDecision,
+} from './brief-surface';
+
+export {
+  BriefSurface,
+  type BriefSurfaceProps,
+} from './brief-surface-panel';
+
+export {
+  QUOTA_BLOCK_CODE_LABEL,
+  QUOTA_BLOCK_CODE_PLACEHOLDER,
+  QUOTA_BLOCK_DESCRIPTION,
+  QUOTA_BLOCK_FAILED_LABEL,
+  QUOTA_BLOCK_OPEN_PLANS_LABEL,
+  QUOTA_BLOCK_SUBMIT_LABEL,
+  QUOTA_BLOCK_SUCCESS_LABEL,
+  QUOTA_BLOCK_TITLE,
+  beginQuotaRedeem,
+  buildQuotaRedeemCommand,
+  completeQuotaRedeem,
+  createQuotaBlockingState,
+  dismissQuotaUnlock,
+  isQuotaRedeemCodeValid,
+  projectQuotaBlockingView,
+  setQuotaRedeemCode,
+  showQuotaBlocking,
+  type QuotaBlockingState,
+  type QuotaBlockingView,
+  type QuotaRedeemStatus,
+} from './quota-blocking';
+
+export {
+  QuotaBlockingCard,
+  type QuotaBlockingCardProps,
+} from './quota-blocking-card';
+
+// —— #97 mobile + fullscreen catalog + tool entry ——
+export {
+  COMPOSER_CARD_TEXT_CLASS,
+  COMPOSER_SINGLE_COLUMN_MAX_WIDTH,
+  COMPOSER_VIEWPORT_FIXTURES,
+  isTwoColumnMobileViewport,
+  resolveComposerCardGridLayout,
+  type ComposerCardGridLayout,
+  type ComposerViewport,
+} from './mobile-layout';
+
+export {
+  COMPOSER_CATALOG_PATH,
+  COMPOSER_HOME_PATH,
+  PRO_STUDIO_CANONICAL_PATH,
+  buildComposerCatalogHref,
+  parseComposerCatalogSearch,
+  type ComposerCatalogSearchParams,
+} from './composer-nav';
+
+export {
+  FORBIDDEN_TOOL_HANDOFF_KEYS,
+  STANDALONE_TOOL_ENTRY_IDS,
+  TOOL_HANDOFF_ALLOWED_KEYS,
+  TOOL_HANDOFF_FORBIDDEN_WRITES,
+  TOOL_SOURCE_KINDS,
+  assertToolHandoffUrlSafe,
+  buildToolOpenHref,
+  findForbiddenToolHandoffKey,
+  openToolWithHandoff,
+  parseToolHandoffFromSearchParams,
+  projectToolHandoff,
+  returnFromToolHandoff,
+  serializeToolHandoffToSearchParams,
+  type StandaloneToolEntryId,
+  type ToolHandoff,
+  type ToolHandoffAllowedKey,
+  type ToolHandoffOpenResult,
+  type ToolHandoffValidation,
+  type ToolHandoffWriteKind,
+  type ToolSourceKind,
+} from './tool-handoff';
+
+export {
+  COMPOSER_TOOL_ENTRY_SEEDS,
+  TOOL_CATALOG_CATEGORIES,
+  TOOL_CATALOG_CATEGORY_LABELS,
+  getComposerToolEntrySeed,
+  listComposerToolEntrySeeds,
+  type ComposerToolEntrySeed,
+  type ToolCatalogCategory,
+} from './tool-entry-seeds';
+
+export {
+  ORDINARY_TOOL_CAP,
+  assertProStudioCanonicalHref,
+  listOrdinaryHomeTools,
+  openComposerTool,
+  projectComposerToolsStrip,
+  projectProStudioBanner,
+  type ComposerToolChipView,
+  type ComposerToolsStripInput,
+  type ComposerToolsStripView,
+  type ComposerViewportKind,
+  type ProStudioBannerView,
+  type ProStudioGateStatus,
+} from './composer-tools';
+
+export {
+  ComposerToolsStrip,
+  type ComposerToolsStripProps,
+} from './composer-tools-strip';
+
+export {
+  CATALOG_SEARCH_GATE,
+  CATALOG_TABS,
+  CATALOG_TAB_LABELS,
+  TEMPLATE_CATALOG_CATEGORIES,
+  TEMPLATE_CATALOG_CATEGORY_LABELS,
+  VIEW_ALL_TEMPLATES_LABEL,
+  VIEW_ALL_TOOLS_LABEL,
+  buildViewAllTemplatesHref,
+  buildViewAllToolsHref,
+  captureCatalogReturnSnapshot,
+  catalogStateFromSearch,
+  catalogStateToHref,
+  countPublishedVisible,
+  createCatalogUiState,
+  filterCatalogItems,
+  listCatalogItems,
+  listCategoriesForTab,
+  projectFullscreenCatalogView,
+  restoreCatalogUiState,
+  setCatalogCategory,
+  setCatalogFocus,
+  setCatalogQuery,
+  setCatalogScroll,
+  setCatalogTab,
+  shouldShowCatalogSearch,
+  type CatalogItemKind,
+  type CatalogItemSource,
+  type CatalogItemView,
+  type CatalogReturnRestoreSnapshot,
+  type CatalogTab,
+  type CatalogUiState,
+  type FullscreenCatalogView,
+  type TemplateCatalogCategory,
+} from './fullscreen-catalog';
+
+export {
+  FullscreenCatalogPanel,
+  type FullscreenCatalogPanelProps,
+} from './fullscreen-catalog-panel';
+
+export {
+  COMPOSER_SHEET_KINDS,
+  assertSingleSheetMutex,
+  createComposerBottomSheetState,
+  dismissComposerSheet,
+  isComposerSheetOpen,
+  openComposerSheet,
+  sheetKindForApplyPhase,
+  syncSheetWithApplyPhase,
+  type ComposerBottomSheetState,
+  type ComposerSheetKind,
+  type ComposerSheetRestoreSnapshot,
+  type OpenSheetInput,
+} from './composer-bottom-sheet';
+
+export {
+  ComposerBottomSheet,
+  type ComposerBottomSheetProps,
+} from './composer-bottom-sheet-ui';

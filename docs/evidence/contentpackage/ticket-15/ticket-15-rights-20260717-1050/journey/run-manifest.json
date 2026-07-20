@@ -1,0 +1,36 @@
+{
+  "runId": "ticket-15-rights-20260717-1050",
+  "status": "accepted",
+  "acceptance": {
+    "realAuthorizedAsset": true,
+    "browserWithdrawal": true,
+    "packageImmediatelyNeedsAttention": true,
+    "visibleWithdrawalReason": true,
+    "exportCommandBlocked": true,
+    "reuseCommandBlocked": true,
+    "priorReceiptsPreserved": true,
+    "priorVersionsPreserved": true
+  },
+  "files": {
+    "journey/continuous-rights-journey.webm": {
+      "bytes": 2241426,
+      "sha256": "718859a229ddfd28396557fef1b2c1b19d2857db892836a8dbbe8ca795c9f429"
+    },
+    "journey/keyframes/01-new-asset-authorized.png": {
+      "bytes": 684386,
+      "sha256": "ad41c814b2b5488c40fe61ebcdc834fac22284413e016c56fb4428123e57219b"
+    },
+    "journey/keyframes/02-package-before-withdrawal.png": {
+      "bytes": 2120392,
+      "sha256": "2d6d81a3428f64d6f58b02ad5788968666da58cdbe478f9a1f7c55bd87ddc48f"
+    },
+    "journey/keyframes/03-asset-withdrawn.png": {
+      "bytes": 703412,
+      "sha256": "ea17ecd380d0ac30b3b73b3d2e49fb699f528b8141fa76af3f4676ef74df9c0b"
+    },
+    "journey/keyframes/04-package-blocked-after-withdrawal.png": {
+      "bytes": 1981162,
+      "sha256": "097d46e8bec8b0e4b382086171de9b4323daf5345a1d4057b10ff37a68cf2c3f"
+    }
+  }
+}

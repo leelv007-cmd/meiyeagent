@@ -1,0 +1,83 @@
+{
+  "acceptance": {
+    "candidateCount": 3,
+    "cancelledVideoHasNoPlayableVersion": false,
+    "desktopAndMobileSameVideoPackage": false,
+    "imageAndVideoShareLibrary": false,
+    "imagePackageImmediatelyVisible": true,
+    "orderedVisualCount": 2,
+    "videoPackageCreatingOnConfirm": false
+  },
+  "completedAt": "2026-07-17T01:19:03.227Z",
+  "failure": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('radiogroup', { name: '执行模型' }).getByRole('radio').filter({ hasNot: locator(':disabled') }).first()\u001b[22m\n\u001b[2m    - locator resolved to <span role=\"radio\" tabindex=\"0\" data-disabled=\"\" data-unchecked=\"\" id=\"base-ui-_r_33_\" aria-disabled=\"true\" aria-checked=\"false\" data-slot=\"radio-group-item\" aria-label=\"tu-zi · doubao-seedance-1-5-pro_720p\" aria-labelledby=\"creative-model-seedance-1-5-pro-label\" class=\"group/radio-group-item peer relative flex aspect-square size-4 shrink-0 rounded-full border border-input outline-none after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-…></span>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n",
+  "limitations": [
+    "The current catalog exposes no live-verified video model, so the user-visible confirm lifecycle is blocked without an administrator runtime change.",
+    "The current-vs-before and external benchmark comparison remain governance evidence outside this harness."
+  ],
+  "ok": false,
+  "runId": "ticket-06-08-1784251065805",
+  "runtime": {
+    "baseUrl": "http://localhost:3000",
+    "browser": "chromium",
+    "mobileViewport": {
+      "height": 844,
+      "width": 390
+    },
+    "viewport": {
+      "height": 900,
+      "width": 1440
+    }
+  },
+  "artifacts": [
+    {
+      "bytes": 149423,
+      "name": "01-store-confirmed.png",
+      "sha256": "4d871fd51689f9a30c56868e840fc91edfe777aaff18de1ec7ce33b5463ff244"
+    },
+    {
+      "bytes": 661516,
+      "name": "01b-two-assets-authorized.png",
+      "sha256": "6d521b0f5872e46d965b382ec12185a36263482499a7043299fe6b8f9c6d4feb"
+    },
+    {
+      "bytes": 540300,
+      "name": "02-copy-ready.png",
+      "sha256": "684af21892a712adc78f00541b957e04f2744b436a9a70909e4c31a4503bba43"
+    },
+    {
+      "bytes": 330358,
+      "name": "03-three-copy-candidates.png",
+      "sha256": "4baf70f14194ac8f444630b8ccdbb4df41468bf33aa0b284925045a4a4c1738c"
+    },
+    {
+      "bytes": 330728,
+      "name": "04-candidate-b-two-assets-selected.png",
+      "sha256": "b66b2a1da5a5bca7f847a9d8aa9b7b9280a6c68f5c590e4c8155127eb96710cd"
+    },
+    {
+      "bytes": 317266,
+      "name": "05-image-package-immediately-visible.png",
+      "sha256": "41fd508cf6620d937662b64358d01601d3ff6794fbfc4c4ab809353fb8392154"
+    },
+    {
+      "bytes": 5678281,
+      "name": "continuous-journey.webm",
+      "sha256": "b2d7ca710f8d0de7076d55414ac7f03f247297f29d7f506288e960e75867a6be"
+    },
+    {
+      "bytes": 702737,
+      "name": "failure.png",
+      "sha256": "36f9857544443f820dc70c0c555b6ebd20412a1ec4a5262d7c335c03d830dfb1"
+    },
+    {
+      "bytes": 1256,
+      "name": "journey.json",
+      "sha256": "fbebbaa6143c1c425a961ddf8d0df81a5c29a684f07674446ccbc27e2e17c281"
+    },
+    {
+      "bytes": 20071,
+      "name": "network-log.jsonl",
+      "sha256": "ab0e48a7cafd36b539265c166c511be84865fe4c0eb0797c898ccdd6e0119e21"
+    }
+  ]
+}

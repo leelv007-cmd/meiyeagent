@@ -1,0 +1,235 @@
+/**
+ * Admin Cloudflare deep-link builder (J6 / D-052).
+ *
+ * Product admin never calls Cloudflare APIs. This pure builder assembles a
+ * redacted handoff envelope (time range / script-deployment / correlation /
+ * capability context) for server resolution into an official Dashboard URL.
+ *
+ * Sensitive fields (token, secret, IP, UA, prompt, user content, raw logs)
+ * are rejected.
+ */
+
+export const ADMIN_CF_DEEP_LINK_RESOURCE_KINDS = [
+  'worker_observability',
+  'worker_deployments',
+  'worker_versions',
+  'worker_logs',
+  'worker_traces',
+  'r2_bucket',
+  'hyperdrive',
+  'zone_dns',
+  'security_events',
+  'billing',
+] as const;
+
+export type AdminCfDeepLinkResourceKind =
+  (typeof ADMIN_CF_DEEP_LINK_RESOURCE_KINDS)[number];
+
+const SENSITIVE_KEYS = new Set([
+  'token',
+  'apiToken',
+  'api_token',
+  'secret',
+  'password',
+  'authorization',
+  'ip',
+  'userAgent',
+  'user_agent',
+  'prompt',
+  'userContent',
+  'user_content',
+  'rawLog',
+  'raw_log',
+  'path',
+  'query',
+  'fullUrl',
+  'full_url',
+]);
+
+export class AdminCfDeepLinkError extends Error {
+  constructor(
+    message: string,
+    readonly code:
+      | 'resource_kind_not_allowed'
+      | 'resource_ref_required'
+      | 'sensitive_context_rejected'
+      | 'time_range_invalid',
+  ) {
+    super(message);
+    this.name = 'AdminCfDeepLinkError';
+  }
+}
+
+export interface AdminCfDeepLinkInput {
+  resourceKind: string;
+  /** Internal mapped ref (server resolves account/script/zone). */
+  resourceRef: string;
+  from?: string;
+  to?: string;
+  signal?: string;
+  incidentRef?: string;
+  snapshotAt?: string;
+  capabilityId?: string;
+  capabilityLabel?: string;
+  scriptRef?: string;
+  deploymentRef?: string;
+  versionRef?: string;
+  correlationId?: string;
+  traceHint?: string;
+  returnTo?: string;
+}
+
+export interface AdminCfDeepLinkEnvelope {
+  provider: 'cloudflare';
+  resourceKind: AdminCfDeepLinkResourceKind;
+  resourceRef: string;
+  from?: string;
+  to?: string;
+  signal?: string;
+  incidentRef?: string;
+  snapshotAt: string;
+  capabilityContext?: {
+    capabilityId?: string;
+    capabilityLabel?: string;
+  };
+  scriptDeployment?: {
+    scriptRef?: string;
+    deploymentRef?: string;
+    versionRef?: string;
+  };
+  correlation?: {
+    correlationId?: string;
+    traceHint?: string;
+  };
+  returnTo?: string;
+  /** Always false — deep-link is handoff, not a one-click CF write. */
+  mutatesCloudflare: false;
+  /** Operator-facing next step. */
+  operatorAction: 'open_cloudflare_dashboard';
+}
+
+export function isAdminCfDeepLinkResourceKind(
+  kind: string,
+): kind is AdminCfDeepLinkResourceKind {
+  return (ADMIN_CF_DEEP_LINK_RESOURCE_KINDS as readonly string[]).includes(kind);
+}
+
+function rejectSensitive(record: Record<string, unknown> | undefined): void {
+  if (!record) return;
+  for (const key of Object.keys(record)) {
+    if (SENSITIVE_KEYS.has(key) && record[key] != null && record[key] !== '') {
+      throw new AdminCfDeepLinkError(
+        `Sensitive field "${key}" is not allowed in deep-link envelope`,
+        'sensitive_context_rejected',
+      );
+    }
+  }
+}
+
+/**
+ * Build a redacted Cloudflare handoff envelope for the admin UI.
+ * Server adapter resolves this into a short-lived Dashboard URL.
+ */
+export function buildAdminCloudflareDeepLink(
+  input: AdminCfDeepLinkInput,
+): AdminCfDeepLinkEnvelope {
+  if (!isAdminCfDeepLinkResourceKind(input.resourceKind)) {
+    throw new AdminCfDeepLinkError(
+      `resourceKind "${input.resourceKind}" is not allowed`,
+      'resource_kind_not_allowed',
+    );
+  }
+  if (!input.resourceRef?.trim()) {
+    throw new AdminCfDeepLinkError(
+      'resourceRef is required',
+      'resource_ref_required',
+    );
+  }
+  if (input.from && Number.isNaN(Date.parse(input.from))) {
+    throw new AdminCfDeepLinkError('Invalid from', 'time_range_invalid');
+  }
+  if (input.to && Number.isNaN(Date.parse(input.to))) {
+    throw new AdminCfDeepLinkError('Invalid to', 'time_range_invalid');
+  }
+  if (input.from && input.to && Date.parse(input.from) > Date.parse(input.to)) {
+    throw new AdminCfDeepLinkError('from must be <= to', 'time_range_invalid');
+  }
+
+  rejectSensitive(input as unknown as Record<string, unknown>);
+
+  return {
+    provider: 'cloudflare',
+    resourceKind: input.resourceKind,
+    resourceRef: input.resourceRef.trim(),
+    ...(input.from ? { from: input.from } : {}),
+    ...(input.to ? { to: input.to } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
+    ...(input.incidentRef ? { incidentRef: input.incidentRef } : {}),
+    snapshotAt: input.snapshotAt ?? new Date().toISOString(),
+    ...(input.capabilityId || input.capabilityLabel
+      ? {
+          capabilityContext: {
+            ...(input.capabilityId ? { capabilityId: input.capabilityId } : {}),
+            ...(input.capabilityLabel
+              ? { capabilityLabel: input.capabilityLabel }
+              : {}),
+          },
+        }
+      : {}),
+    ...(input.scriptRef || input.deploymentRef || input.versionRef
+      ? {
+          scriptDeployment: {
+            ...(input.scriptRef ? { scriptRef: input.scriptRef } : {}),
+            ...(input.deploymentRef
+              ? { deploymentRef: input.deploymentRef }
+              : {}),
+            ...(input.versionRef ? { versionRef: input.versionRef } : {}),
+          },
+        }
+      : {}),
+    ...(input.correlationId || input.traceHint
+      ? {
+          correlation: {
+            ...(input.correlationId
+              ? { correlationId: input.correlationId }
+              : {}),
+            ...(input.traceHint ? { traceHint: input.traceHint } : {}),
+          },
+        }
+      : {}),
+    ...(input.returnTo ? { returnTo: input.returnTo } : {}),
+    mutatesCloudflare: false,
+    operatorAction: 'open_cloudflare_dashboard',
+  };
+}
+
+/** Human label for deep-link target (operator language). */
+export function adminCfDeepLinkLabel(
+  kind: AdminCfDeepLinkResourceKind,
+): string {
+  switch (kind) {
+    case 'worker_observability':
+      return '到 Cloudflare 查看 Worker 观测';
+    case 'worker_deployments':
+    case 'worker_versions':
+      return '到 Cloudflare 查看部署与版本';
+    case 'worker_logs':
+      return '到 Cloudflare 查看日志明细';
+    case 'worker_traces':
+      return '到 Cloudflare 查看 Trace 明细';
+    case 'r2_bucket':
+      return '到 Cloudflare 查看 R2';
+    case 'hyperdrive':
+      return '到 Cloudflare 查看 Hyperdrive';
+    case 'zone_dns':
+      return '到 Cloudflare 查看 DNS';
+    case 'security_events':
+      return '到 Cloudflare 查看安全事件';
+    case 'billing':
+      return '到 Cloudflare 查看账单';
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}

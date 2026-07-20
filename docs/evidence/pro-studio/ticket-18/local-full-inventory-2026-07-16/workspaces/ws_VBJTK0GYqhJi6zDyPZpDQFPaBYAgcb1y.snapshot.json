@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "5121fc19-36f7-4478-82de-366a10af765f"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "abd181ce-cd5c-4dd6-aac3-7e6c876b8e91"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y",
+  "works": [
+    {
+      "currentRevisionId": "5121fc19-36f7-4478-82de-366a10af765f",
+      "id": "abd181ce-cd5c-4dd6-aac3-7e6c876b8e91",
+      "revisions": [
+        {
+          "id": "5121fc19-36f7-4478-82de-366a10af765f",
+          "workId": "abd181ce-cd5c-4dd6-aac3-7e6c876b8e91",
+          "document": {
+            "pages": [
+              {
+                "id": "1a32eb06-3d05-4824-897d-e5243695da65",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-13T15:15:56.347Z",
+          "createdBy": "VBJTK0GYqhJi6zDyPZpDQFPaBYAgcb1y"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.731Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "b0235351d767f7d8f171e488c0d7062cc9d31a535419543d3748880c088b9a52",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "b72f7d57e4d519584e2a845e4b6032ae1f864ef6181ca302757674daf06c963e"
+  }
+}

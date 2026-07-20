@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+  "capturedAt": "2026-07-16T10:00:00.000Z",
+  "deployment": "local-postgres-dev",
+  "workspaceId": "ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI",
+  "objects": [
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_8lzPQ6YGDBkyz6n8rqeqbMvjS26E2GDI/owned/6ac32caf23f412d35c4f18131606c9690b45f96583b49b9843be294065ec97ff.png",
+      "sha256": "6ac32caf23f412d35c4f18131606c9690b45f96583b49b9843be294065ec97ff",
+      "sizeBytes": 47720
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "runId": "real-run-0001-1784228421812",
+  "capturedAt": "2026-07-16T19:25:53.948576Z",
+  "source": {
+    "primary": "Product Core seam transcript captured in the same browser session",
+    "crossCheck": "Read-only PostgreSQL ledger query against the retained real-run workspace",
+    "redaction": "Workspace/user ids, provider task refs, signed URLs, credentials, and generated copy are omitted"
+  },
+  "productUsage": {
+    "plan": {
+      "tier": "growth",
+      "periodId": "2026-07",
+      "revision": "recorded-growth-2026-07"
+    },
+    "finalProjection": {
+      "copy": {
+        "allowance": 100,
+        "reserved": 0,
+        "committed": 2,
+        "released": 0,
+        "available": 98
+      },
+      "image": {
+        "allowance": 40,
+        "reserved": 0,
+        "committed": 1,
+        "released": 0,
+        "available": 39
+      },
+      "video": {
+        "allowance": 20,
+        "reserved": 0,
+        "committed": 0,
+        "released": 0,
+        "available": 20
+      }
+    },
+    "journeyEvents": [
+      {
+        "operation": "copy.generate",
+        "modelJobId": "model-0df1966a63903fe759d2b12e7fca0879",
+        "resource": "copy",
+        "reserved": 1,
+        "committed": 1,
+        "correlationId": "model:model-0df1966a63903fe759d2b12e7fca0879"
+      },
+      {
+        "operation": "image.generate",
+        "modelJobId": "model-b70324feb234402437e9b5fe7486bdc3",
+        "resource": "image",
+        "reserved": 1,
+        "committed": 1,
+        "correlationId": "model:model-b70324feb234402437e9b5fe7486bdc3"
+      },
+      {
+        "operation": "copy.adapt",
+        "modelJobId": "model-a62b9004f6a6bd79e90b525e33d51f1e",
+        "resource": "copy",
+        "reserved": 1,
+        "committed": 1,
+        "correlationId": "model:model-a62b9004f6a6bd79e90b525e33d51f1e"
+      }
+    ]
+  },
+  "providerCost": {
+    "observedTotalsByCurrency": {
+      "CNY": 0.05,
+      "USD": 0
+    },
+    "events": [
+      {
+        "operation": "copy.generate",
+        "modelJobId": "model-0df1966a63903fe759d2b12e7fca0879",
+        "status": "observed",
+        "amount": 0,
+        "currency": "USD",
+        "usage": {
+          "inputTokens": 737,
+          "outputTokens": 1058
+        },
+        "correlationId": "model:model-0df1966a63903fe759d2b12e7fca0879"
+      },
+      {
+        "operation": "image.generate",
+        "modelJobId": "model-b70324feb234402437e9b5fe7486bdc3",
+        "status": "observed",
+        "amount": 0.05,
+        "currency": "CNY",
+        "usage": {
+          "mediaUnits": 1,
+          "outputTokens": 16384
+        },
+        "correlationId": "model:model-b70324feb234402437e9b5fe7486bdc3"
+      },
+      {
+        "operation": "copy.adapt",
+        "modelJobId": "model-a62b9004f6a6bd79e90b525e33d51f1e",
+        "status": "observed",
+        "amount": 0,
+        "currency": "USD",
+        "usage": {
+          "inputTokens": 284,
+          "outputTokens": 2863
+        },
+        "correlationId": "model:model-a62b9004f6a6bd79e90b525e33d51f1e"
+      }
+    ]
+  }
+}

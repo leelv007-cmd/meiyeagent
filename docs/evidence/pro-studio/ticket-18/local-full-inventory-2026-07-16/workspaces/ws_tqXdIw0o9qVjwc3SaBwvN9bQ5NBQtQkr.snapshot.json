@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "070add1b-5381-41d6-88af-30810a4c41f6"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "3a80bb8d-7509-4099-bf0b-24aca6255e6d"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr",
+  "works": [
+    {
+      "currentRevisionId": "070add1b-5381-41d6-88af-30810a4c41f6",
+      "id": "3a80bb8d-7509-4099-bf0b-24aca6255e6d",
+      "revisions": [
+        {
+          "id": "070add1b-5381-41d6-88af-30810a4c41f6",
+          "workId": "3a80bb8d-7509-4099-bf0b-24aca6255e6d",
+          "document": {
+            "pages": [
+              {
+                "id": "843474f3-088d-4ec8-9359-36e68d4ff6b6",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-16T04:06:32.645Z",
+          "createdBy": "tqXdIw0o9qVjwc3SaBwvN9bQ5NBQtQkr"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.791Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "b9a1c2247b359d50cba0cb7d13c2dde75541a13c9adcec3290d24f00d0f54380",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "b675ac094e9add296c9e289163ad7fa8949dbe7d1753375b9d6c93e6328420f3"
+  }
+}

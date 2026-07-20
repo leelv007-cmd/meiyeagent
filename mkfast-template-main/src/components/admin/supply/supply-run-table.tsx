@@ -1,0 +1,158 @@
+/**
+ * High-density supply run table (J4 / D-070).
+ * Facets + pagination/sort reflected via URL state helpers (pure props).
+ */
+import { Badge } from '@/components/ui/badge';
+import type { SupplyRunTablePage } from '@/p1/admin-supply-run-table-model';
+import { runTableStateToSearchString } from '@/p1/admin-supply-run-table-model';
+
+export function SupplyRunTable({
+  page,
+  basePath = '/admin/supply',
+}: {
+  page: SupplyRunTablePage;
+  basePath?: string;
+}) {
+  const sharePath = `${basePath}${runTableStateToSearchString(page.state)}`;
+
+  return (
+    <section
+      data-testid="supply-run-table"
+      data-page={page.state.page}
+      data-page-size={page.state.pageSize}
+      data-sort={page.state.sort}
+      data-dir={page.state.dir}
+      data-total={page.total}
+      className="space-y-3"
+    >
+      <header className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold">运行表</h2>
+          <p className="text-xs text-muted-foreground">
+            faceted 筛选 · 服务端分页排序 · URL 状态同步（刷新/分享保持筛选态）
+          </p>
+        </div>
+        <a
+          href={sharePath}
+          data-testid="supply-run-table-share-link"
+          data-share-path={sharePath}
+          className="font-mono text-xs text-primary underline-offset-2 hover:underline"
+        >
+          {sharePath}
+        </a>
+      </header>
+
+      <div
+        data-testid="supply-run-table-facets"
+        className="flex flex-wrap gap-2 text-xs"
+      >
+        {page.state.operation ? (
+          <Badge variant="secondary" data-facet="operation">
+            op={page.state.operation}
+          </Badge>
+        ) : null}
+        {page.state.status ? (
+          <Badge variant="secondary" data-facet="status">
+            status={page.state.status}
+          </Badge>
+        ) : null}
+        {page.state.modality ? (
+          <Badge variant="secondary" data-facet="modality">
+            modality={page.state.modality}
+          </Badge>
+        ) : null}
+        {page.state.channelKind ? (
+          <Badge variant="secondary" data-facet="channelKind">
+            channel={page.state.channelKind}
+          </Badge>
+        ) : null}
+        {page.state.q ? (
+          <Badge variant="secondary" data-facet="q">
+            q={page.state.q}
+          </Badge>
+        ) : null}
+        <span className="text-muted-foreground">
+          facets ops[{page.facets.operations.join('|')}] status[
+          {page.facets.statuses.join('|')}]
+        </span>
+      </div>
+
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-left text-xs" data-testid="supply-run-table-grid">
+          <thead className="border-b bg-muted/40">
+            <tr>
+              <th className="p-2">任务</th>
+              <th className="p-2">操作</th>
+              <th className="p-2">状态</th>
+              <th className="p-2">渠道</th>
+              <th className="p-2">延迟</th>
+              <th className="p-2">生命周期</th>
+              <th className="p-2">错误</th>
+            </tr>
+          </thead>
+          <tbody>
+            {page.rows.map((row) => (
+              <tr
+                key={row.id}
+                data-testid="supply-run-row"
+                data-run-id={row.id}
+                data-task-id={row.taskId}
+                data-status={row.status}
+                className="border-b last:border-0"
+              >
+                <td className="p-2">
+                  <a
+                    href={`/admin/supply/tasks/${row.taskId}`}
+                    data-testid="supply-run-task-link"
+                    className="font-mono text-primary underline-offset-2 hover:underline"
+                  >
+                    {row.taskId}
+                  </a>
+                </td>
+                <td className="p-2">
+                  {row.operation}
+                  <br />
+                  <span className="text-muted-foreground">{row.modality}</span>
+                </td>
+                <td className="p-2">
+                  <Badge variant="outline">{row.status}</Badge>
+                </td>
+                <td className="p-2 font-mono">
+                  {row.channelKind}
+                  <br />
+                  {row.deploymentId}
+                </td>
+                <td className="p-2">
+                  {row.latencyMs != null ? `${row.latencyMs}ms` : '—'}
+                </td>
+                <td className="p-2">{row.lifecycle}</td>
+                <td className="p-2">
+                  {row.errorCode ? (
+                    <span data-testid="supply-run-error-badge">
+                      {row.errorCode}
+                    </span>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <footer
+        data-testid="supply-run-table-pagination"
+        className="flex flex-wrap gap-3 text-xs text-muted-foreground"
+      >
+        <span>
+          第 {page.state.page}/{page.totalPages} 页 · 共 {page.total} 条 · 每页{' '}
+          {page.state.pageSize}
+        </span>
+        <span>
+          排序 {page.state.sort} {page.state.dir}
+        </span>
+      </footer>
+    </section>
+  );
+}

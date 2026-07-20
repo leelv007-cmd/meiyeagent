@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+  "capturedAt": "2026-07-16T10:00:00.000Z",
+  "deployment": "local-postgres-dev",
+  "workspaceId": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT",
+  "objects": [
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT/owned/448376e7efbe524405d854cba02b05ad6865daec90cfa84d5df85e7c945852f7.png",
+      "sha256": "448376e7efbe524405d854cba02b05ad6865daec90cfa84d5df85e7c945852f7",
+      "sizeBytes": 83478
+    },
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT/owned/5b6e32a83de0ab411e6e21b9afb125563d6326c2dfe35e1f82eaa7212c9dab6e.png",
+      "sha256": "5b6e32a83de0ab411e6e21b9afb125563d6326c2dfe35e1f82eaa7212c9dab6e",
+      "sizeBytes": 81442
+    },
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT/owned/9d862c6596ca515cf17767aeae05ecb20987f226a6c0b1d47c64ef3f84ad6661.png",
+      "sha256": "9d862c6596ca515cf17767aeae05ecb20987f226a6c0b1d47c64ef3f84ad6661",
+      "sizeBytes": 87133
+    },
+    {
+      "contentType": "image/png",
+      "objectKey": "ws_wc4PqDBgmsZEMYnZE8RG80pzaiRXnGrT/owned/fbd3164f130080f2a0faa1e10b5b4c3267be0e1c67c27b7d7fa34a0eb9f12445.png",
+      "sha256": "fbd3164f130080f2a0faa1e10b5b4c3267be0e1c67c27b7d7fa34a0eb9f12445",
+      "sizeBytes": 84811
+    }
+  ]
+}

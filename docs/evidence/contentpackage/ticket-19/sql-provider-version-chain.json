@@ -1,0 +1,70 @@
+{
+  "providerAudit": [
+    {
+      "id": "connection-create:015a4c2e35c03a5a132398e972561762e1d1df1dae9a815264167e4db8485298:connection-created",
+      "action": "connection.created",
+      "actorId": "6yda9o0RHxeOGZ9faPmlF0YKIqlrccA7",
+      "details": {
+        "provider": "model",
+        "credentialVersion": 1,
+        "grantedCapabilities": [
+          "model.direct"
+        ]
+      },
+      "createdAt": "2026-07-17T01:38:03.992Z",
+      "workspaceId": "__global__",
+      "connectionId": "platform:model.direct",
+      "correlationId": "corr-aa857158-dfbf-4a3f-a7c5-d90d914bf183"
+    },
+    {
+      "id": "provider-connectivity:platform:model.direct:121c1b4d68bf7cff9b55f941b1044111aae9fa31a1da84e3d0b85fa3f094c116",
+      "action": "provider.connection_tested",
+      "actorId": "6yda9o0RHxeOGZ9faPmlF0YKIqlrccA7",
+      "details": {
+        "status": "passed",
+        "credentialVersion": 1
+      },
+      "createdAt": "2026-07-17T01:38:04.626Z",
+      "workspaceId": "__global__",
+      "connectionId": "platform:model.direct",
+      "correlationId": "corr-b173671b-b76a-4098-9786-bf119730505d"
+    },
+    {
+      "id": "0c845fde73490f3f3ddce1c3d370b8ff5cd2481434d21cd38bcc02c5032b9fd1:credential-rotated:2",
+      "action": "credential.rotated",
+      "actorId": "6yda9o0RHxeOGZ9faPmlF0YKIqlrccA7",
+      "details": {
+        "scope": [
+          "provider.connect"
+        ],
+        "provider": "model",
+        "previousVersion": 1,
+        "credentialVersion": 2
+      },
+      "createdAt": "2026-07-17T01:38:05.088Z",
+      "workspaceId": "__global__",
+      "connectionId": "platform:model.direct",
+      "correlationId": "corr-a1b146bf-0292-4d4a-af65-67660c59c72f"
+    },
+    {
+      "id": "provider-connectivity:platform:model.direct:14dad1bd3996fdf5688eb4ca6c012750b1cd26a59df69f9e15480e6d26a65ff7",
+      "action": "provider.connection_tested",
+      "actorId": "6yda9o0RHxeOGZ9faPmlF0YKIqlrccA7",
+      "details": {
+        "status": "passed",
+        "credentialVersion": 2
+      },
+      "createdAt": "2026-07-17T01:38:05.426Z",
+      "workspaceId": "__global__",
+      "connectionId": "platform:model.direct",
+      "correlationId": "corr-a27f6d18-f6b5-436b-927c-da3659cb7d71"
+    }
+  ],
+  "route": {
+    "actualCatalogModelId": "llm-openai",
+    "credentialVersion": "2",
+    "deploymentId": "openai-direct-recorded",
+    "providerModel": "gemini-3-flash-preview",
+    "routeSnapshotId": "model-route-cb24c03b7daa5196cd8da78d16d6"
+  }
+}

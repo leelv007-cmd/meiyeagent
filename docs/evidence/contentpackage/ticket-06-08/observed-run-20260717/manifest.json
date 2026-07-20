@@ -1,0 +1,65 @@
+{
+  "runId": "ticket-06-08-1784251065805",
+  "observedAt": "2026-07-17T01:19:00+08:00",
+  "status": "partial_runtime_blocked",
+  "continuousBrowserSession": true,
+  "acceptance": {
+    "ticket06": {
+      "threeCopyCandidatesVisible": true,
+      "selectedCandidate": "B",
+      "orderedVisualCount": 2,
+      "singleContentPackageCreated": true,
+      "contentPackageId": "content-package-877a91cef91351f95a6d0335",
+      "libraryImmediatelyVisible": true,
+      "visibleStatus": "可使用"
+    },
+    "ticket07": {
+      "contentPackageIsPrimaryLibraryObject": true,
+      "firstLevelNavigation": ["创作", "内容", "素材", "门店"],
+      "tasksDirectRouteReachable": true,
+      "leadsDirectRouteReachable": true
+    },
+    "ticket08": {
+      "userVisibleConfirmJourneyCompleted": false,
+      "desktopAndMobileJourneyCompleted": false,
+      "completedVideoPlayable": false,
+      "runtimeBlockerObserved": true
+    }
+  },
+  "blocker": {
+    "code": "NO_LIVE_VERIFIED_VIDEO_MODEL",
+    "detail": "All video model controls were aria-disabled/data-disabled and the product displayed that availability verification was incomplete.",
+    "runtimeMutationAttempted": false
+  },
+  "notes": [
+    "This curated partial run comes from the last continuous session that reached the video model selector.",
+    "The reusable harness now detects the Base UI aria-disabled/data-disabled state and records this blocker without timing out.",
+    "No administrator runtime configuration was changed."
+  ],
+  "artifacts": [
+    {
+      "name": "01-three-copy-candidates.png",
+      "sha256": "4baf70f14194ac8f444630b8ccdbb4df41468bf33aa0b284925045a4a4c1738c"
+    },
+    {
+      "name": "02-candidate-b-two-assets-selected.png",
+      "sha256": "b66b2a1da5a5bca7f847a9d8aa9b7b9280a6c68f5c590e4c8155127eb96710cd"
+    },
+    {
+      "name": "03-image-package-immediately-visible.png",
+      "sha256": "41fd508cf6620d937662b64358d01601d3ff6794fbfc4c4ab809353fb8392154"
+    },
+    {
+      "name": "04-video-model-unavailable.png",
+      "sha256": "36f9857544443f820dc70c0c555b6ebd20412a1ec4a5262d7c335c03d830dfb1"
+    },
+    {
+      "name": "continuous-journey.webm",
+      "sha256": "b2d7ca710f8d0de7076d55414ac7f03f247297f29d7f506288e960e75867a6be"
+    },
+    {
+      "name": "network-log.jsonl",
+      "sha256": "ab0e48a7cafd36b539265c166c511be84865fe4c0eb0797c898ccdd6e0119e21"
+    }
+  ]
+}

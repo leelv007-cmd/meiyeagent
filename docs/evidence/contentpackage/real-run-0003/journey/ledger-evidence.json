@@ -1,0 +1,68 @@
+{
+  "runId": "real-run-0003-1784239833734",
+  "capturedAt": "2026-07-16T22:14:00.000Z",
+  "source": {
+    "primary": "Product Core seam projection captured in the continuous browser session",
+    "crossCheck": "Read-only PostgreSQL p1_usage_events and p1_provider_cost_events queries",
+    "redaction": "Workspace/user ids, provider task references, signed URLs, credentials, and generated copy are omitted"
+  },
+  "productUsage": {
+    "finalProjection": {
+      "copy": { "allowance": 100, "reserved": 0, "committed": 2, "released": 0, "available": 98 },
+      "image": { "allowance": 40, "reserved": 0, "committed": 1, "released": 0, "available": 39 },
+      "video": { "allowance": 20, "reserved": 0, "committed": 0, "released": 0, "available": 20 }
+    },
+    "journeyEvents": [
+      {
+        "operation": "copy.generate",
+        "resource": "copy",
+        "reserved": 1,
+        "committed": 1,
+        "correlationId": "model:model-649ba030591195a2473c332157d1225c"
+      },
+      {
+        "operation": "image.generate",
+        "resource": "image",
+        "reserved": 1,
+        "committed": 1,
+        "correlationId": "model:model-fc4354b2dccad1ccd052022b33513675"
+      },
+      {
+        "operation": "copy.adapt",
+        "resource": "copy",
+        "reserved": 1,
+        "committed": 1,
+        "correlationId": "model:model-57771a66233bbd0cb7f7857b421fd5b8"
+      }
+    ]
+  },
+  "providerCost": {
+    "observedTotalsByCurrency": { "CNY": 0.05, "USD": 0 },
+    "events": [
+      {
+        "operation": "copy.generate",
+        "status": "observed",
+        "amount": 0,
+        "currency": "USD",
+        "evidence": "provider_response",
+        "correlationId": "model:model-649ba030591195a2473c332157d1225c"
+      },
+      {
+        "operation": "image.generate",
+        "status": "observed",
+        "amount": 0.05,
+        "currency": "CNY",
+        "evidence": "provider_poll_completed_with_storage_receipt",
+        "correlationId": "model:model-fc4354b2dccad1ccd052022b33513675"
+      },
+      {
+        "operation": "copy.adapt",
+        "status": "observed",
+        "amount": 0,
+        "currency": "USD",
+        "evidence": "provider_response",
+        "correlationId": "model:model-57771a66233bbd0cb7f7857b421fd5b8"
+      }
+    ]
+  }
+}

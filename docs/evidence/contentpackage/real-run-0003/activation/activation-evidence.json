@@ -1,0 +1,52 @@
+{
+  "completedAt": "2026-07-16T22:08:43.913Z",
+  "deployment": {
+    "catalogModelId": "seedream-4-5",
+    "deploymentId": "seedream-4-5-tuzi-relay",
+    "evidenceRef": "activation-probe-e8553d7eebfa30d4a92a5930a9d0",
+    "stale": false,
+    "status": "live_verified",
+    "verifiedOperations": [
+      "image.edit",
+      "image.generate"
+    ]
+  },
+  "runs": [
+    {
+      "catalogModelId": "seedream-4-5",
+      "correlationId": "corr-ed3616bb-eafb-4ed5-8d8a-6543673ca875",
+      "deploymentId": "seedream-4-5-tuzi-relay",
+      "id": "activation-probe-0c14d11901eb921dfc4054f3700c",
+      "latencyMs": 10186,
+      "operation": "image.generate",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0.05,
+        "currency": "CNY",
+        "status": "observed",
+        "usage": {
+          "mediaUnits": 1,
+          "outputTokens": 16384
+        }
+      }
+    },
+    {
+      "catalogModelId": "seedream-4-5",
+      "correlationId": "corr-84b155c6-641d-47fe-9d63-1369db574c62",
+      "deploymentId": "seedream-4-5-tuzi-relay",
+      "id": "activation-probe-e8553d7eebfa30d4a92a5930a9d0",
+      "latencyMs": 13739,
+      "operation": "image.edit",
+      "outcome": "passed",
+      "providerCost": {
+        "amount": 0.05,
+        "currency": "CNY",
+        "status": "observed",
+        "usage": {
+          "mediaUnits": 1,
+          "outputTokens": 16384
+        }
+      }
+    }
+  ]
+}

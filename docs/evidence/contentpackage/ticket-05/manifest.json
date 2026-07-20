@@ -1,0 +1,22 @@
+{
+  "status": "accepted",
+  "environment": {
+    "web": "http://localhost:3000",
+    "core": "http://localhost:4100",
+    "database": "PostgreSQL localhost:54329"
+  },
+  "acceptance": {
+    "uiApplyRecorded": true,
+    "restartPendingVisible": true,
+    "httpAndWorkerRecordedAfterRestart": true,
+    "uiRollbackAppendedRevision": true,
+    "httpAndWorkerDirectAfterRollbackRestart": true,
+    "immutableVersionChainCaptured": true
+  },
+  "video": {
+    "file": "continuous-config-restart-rollback.webm",
+    "durationSeconds": 192,
+    "bytes": 4035914,
+    "sha256": "62c7dbc7c7a73b1180a70c47d027fc1fdd54f37c5b895991dfad57ae09f69447"
+  }
+}

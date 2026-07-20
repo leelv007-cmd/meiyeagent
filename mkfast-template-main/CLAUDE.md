@@ -1,0 +1,116 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**TanStarter** (mkfast-template) — a full-stack SaaS boilerplate built with TanStack Start + React 19, deployed on Cloudflare Workers. Includes auth (Better Auth), payments (Stripe / Creem), email (Resend / Cloudflare Email), storage (Cloudflare R2), database (managed PostgreSQL via Hyperdrive + Drizzle ORM — per repo-root docs/adr/0006-p0-runtime-topology.md, D1 carries no auth or business data), and admin dashboard. This fork is the 美业内容2 Workers App Shell; product facts live in the separate Core service. Template blog/changelog/roadmap/waitlist/AI-playground routes are retired (404).
+
+## Commands
+
+```bash
+pnpm dev                    # Dev server on port 3000
+pnpm build                  # Production build
+pnpm deploy                 # Build + deploy to Cloudflare Workers
+pnpm e2e                    # Run local Playwright E2E tests
+pnpm e2e:ui                 # Run Playwright E2E in UI mode
+pnpm e2e:install            # Install Playwright browser binaries
+
+pnpm lint                   # Biome lint + format with auto-fix
+pnpm check                  # Biome lint (read-only, no auto-fix)
+pnpm format                 # Biome format only
+pnpm knip                   # Find unused exports/dependencies
+
+pnpm db:generate            # Generate Drizzle migrations from schema
+pnpm db:migrate:local       # Apply migrations (local Postgres, drizzle.config.local.ts)
+pnpm db:migrate:remote      # Apply migrations (remote Postgres, drizzle.config.ts)
+pnpm db:studio:local        # Open Drizzle Studio (local Postgres)
+pnpm db:studio:remote       # Open Drizzle Studio (remote Postgres)
+
+pnpm auth:schema:generate   # Regenerate Better Auth schema → src/db/auth.schema.ts
+pnpm email:dev              # React Email preview on port 3333
+pnpm cf-typegen             # Generate Cloudflare Worker types (also runs on postinstall)
+```
+
+Playwright E2E is configured under `tests/e2e/`. E2E is local-first: use it for feature completion, release checks, and large refactors; keep CI focused on fast checks unless a dedicated E2E environment is provisioned.
+
+### E2E Workflow
+
+Follow `Spec → Code → Verify → Test → Green` for user-facing changes:
+
+1. **Spec**: update `tests/e2e/TEST-CATALOG.md` with the acceptance journey.
+2. **Code**: implement the feature.
+3. **Verify**: run the app and walk the real UI in a browser.
+4. **Test**: add/update the relevant Playwright spec in `tests/e2e/specs/`.
+5. **Green**: run the related spec locally; run full `pnpm e2e` before releases or large refactors.
+
+The test-only helper route `src/routes/api/e2e/users.ts` is disabled unless Vite runs locally with `import.meta.env.DEV === true`, `MODE=e2e`, and a matching `x-e2e-secret`. Keep E2E test accounts scoped to `e2e-*@example.test`.
+
+## Architecture
+
+### Request Flow
+Incoming request → Cloudflare Worker (`src/server.ts`) → TanStack Start handler → server functions execute (auth, DB, email) → React SSR → response with hydration state → client-side React hydration via TanStack Router.
+
+### Key Architectural Patterns
+
+- **File-based routing**: `src/routes/` maps to URL paths. `[param]` for dynamic segments, `$` for catch-all, `(group)` for layout-only groups, `__root.tsx` for root layout. Route tree auto-generates into `src/routeTree.gen.ts` — never edit this file.
+
+- **Server functions**: Defined with `createServerFn()` from `@tanstack/react-start`. Located in `src/api/`. Support `.inputValidator()` (Zod) and `.middleware()` chains. Called directly from client code.
+
+- **Provider pattern**: Mail, storage, newsletter, notification, and payment each use a provider abstraction (`src/*/provider/`) so implementations can be swapped (e.g., `src/mail/provider/resend.ts`, `src/storage/provider/r2.ts`).
+
+- **Middleware**: `src/middlewares/auth-middleware.ts` (requires login) and `src/middlewares/admin-middleware.ts` (requires admin role) used with server functions.
+
+- **Environment variables**: Client-side uses `VITE_` prefix (build-time, via `src/env/client.ts`). Server-side uses Cloudflare Worker bindings/secrets (runtime, via `src/env/server.ts`). Both validated with Zod via `@t3-oss/env-core`.
+
+### Key Source Directories
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/routes/` | File-based routes (pages, API handlers, webhooks) |
+| `src/api/` | Server functions (payment, users, contact, newsletter, files) |
+| `src/auth/` | Better Auth config (`auth.ts` server, `client.ts` client) |
+| `src/db/` | Drizzle schemas (`auth.schema.ts` auto-generated, `app.schema.ts` app tables), migrations, types |
+| `src/payment/` | Stripe / Creem integration (checkout, portal, webhooks) |
+| `src/mail/` | Resend / Cloudflare Email — provider, templates (React components), rendering |
+| `src/storage/` | Cloudflare R2 file storage |
+| `src/newsletter/` | Resend and Beehiiv newsletter via API |
+| `src/notification/` | Discord/Feishu webhook notifications |
+| `src/components/ui/` | shadcn/ui components (auto-generated, excluded from linting) |
+| `src/config/` | Site configuration (website.ts is the main config for features, pricing, metadata) |
+| `src/lib/` | Utilities (routes, SEO, formatters, markdown parsing) |
+| `src/hooks/` | React hooks (auth, payment, files, etc.) |
+| `content/` | Markdown content (legal pages) for Content Collections |
+| `docs/` | Module-specific documentation (auth, db, payment, mail, storage, env, design) |
+
+### Database
+
+Two schema files merged in `src/db/schema.ts`:
+- `auth.schema.ts` — auto-generated by Better Auth (user, session, account, verification, apiKey)
+- `app.schema.ts` — application tables (userFiles, payment, etc.)
+
+Types inferred from tables in `src/db/types.ts`. Access via `getDb()` from `src/db/index.ts`.
+
+### Cloudflare Bindings (wrangler.jsonc)
+- `HYPERDRIVE` — Hyperdrive binding to the managed PostgreSQL (single source of truth incl. Better Auth tables)
+- `BUCKET` — R2 storage binding
+
+## Code Style
+
+Enforced by Biome (`biome.json`):
+- 2-space indent, 80-char line width, single quotes, semicolons always, ES5 trailing commas
+- Files excluded from linting: `src/components/ui/`, `src/components/data-table/`, `src/db/`, `src/routeTree.gen.ts`, type definition files
+
+### Conventions
+- **File names**: kebab-case (`use-auth.ts`, `data-table.tsx`)
+- **Components**: PascalCase (`DataTable`, `LoginForm`)
+- **Hooks**: camelCase with `use` prefix
+- **Constants**: SCREAMING_SNAKE_CASE
+- **Imports**: Use `@/` path alias for all src imports. Order: external → internal (`@/`) → relative
+- **Forms**: `react-hook-form` + `@hookform/resolvers` + Zod
+- **State**: TanStack Query for server state (query key factory pattern)
+- **Styling**: Tailwind CSS v4 with `cn()` from `src/lib/utils.ts`, class-based dark mode
+- **Icons**: `@tabler/icons-react`
+
+### Cloudflare Workers Constraint
+Avoid Node.js-specific APIs — this runs on Cloudflare Workers runtime, not Node.js.

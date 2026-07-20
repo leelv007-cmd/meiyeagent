@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "c5a76205-b00d-4283-b301-2ad360924003"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "58205fe2-d40b-4968-94bb-28f593c1d9fd"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_ixi8mrbQLHNnDOJP6p7EHdPtBBw604om",
+  "works": [
+    {
+      "currentRevisionId": "c5a76205-b00d-4283-b301-2ad360924003",
+      "id": "58205fe2-d40b-4968-94bb-28f593c1d9fd",
+      "revisions": [
+        {
+          "id": "c5a76205-b00d-4283-b301-2ad360924003",
+          "workId": "58205fe2-d40b-4968-94bb-28f593c1d9fd",
+          "document": {
+            "pages": [
+              {
+                "id": "435739a3-cff9-4285-80ba-d58e78f14937",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T11:41:45.839Z",
+          "createdBy": "ixi8mrbQLHNnDOJP6p7EHdPtBBw604om"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.756Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "b9ab329bf27be3ccb02391d39d120a2f4d7cccd48fca6ca9cce3609e6fb08ba3",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "f110135ca2b291614ab17b2179598c6ec7e6eb24678f7ab5301921a07ad8ef54"
+  }
+}

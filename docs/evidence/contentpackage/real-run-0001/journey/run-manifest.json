@@ -1,0 +1,483 @@
+{
+  "runId": "real-run-0001-1784228421812",
+  "status": "rejected_same_aggregate_contradiction",
+  "counted": false,
+  "completedAt": "2026-07-16T19:01:25.957Z",
+  "northStar": {
+    "metric": "真实跑通链路数",
+    "previous": 0,
+    "next": 0,
+    "evidenceRoot": "docs/evidence/contentpackage/real-run-0001/journey/"
+  },
+  "environment": {
+    "web": "http://localhost:3000 (vite --mode e2e)",
+    "core": "http://localhost:4100",
+    "postgres": "localhost:54329",
+    "llm": "direct via tuzi (openai-compat / gemini-3-flash-preview path)",
+    "media": "tuzi gpt-image-2-tuzi-relay (doubao-seedream-4-5-251128)",
+    "emailVerification": "PATCH /api/e2e/users (MODE=e2e only; documented)",
+    "hostsNote": "temporary /etc/hosts for TOS+tuzi (meiye-real-run-0001 temp); remove after ops"
+  },
+  "merchant": {
+    "storeName": "润复丝·泽发防脱头皮管理（D5世纪城店）",
+    "city": "成都",
+    "source": "public Dianping shop facts + user-authorized album photos",
+    "authorization": "user-confirmed 2026-07-16 (点评相册图，已确认授权)",
+    "photos": [
+      "full-8530089748.jpg (store photo A)",
+      "merchant-photo-8529060001.jpg (store photo B, primary reference)"
+    ]
+  },
+  "user": {
+    "emailPattern": "e2e-real-run-0001-<ts>@example.test",
+    "name": "润复丝泽发 D5世纪城店"
+  },
+  "package": {
+    "id": "content-package-430806b82280ee8754fe9393",
+    "status": "accepted",
+    "statusGroup": "usable",
+    "kind": "image_text",
+    "variantPlatforms": [
+      "xiaohongshu",
+      "douyin",
+      "video_account"
+    ],
+    "variants": [
+      {
+        "platform": "xiaohongshu",
+        "id": "content-package-430806b82280ee8754fe9393-xiaohongshu",
+        "versionCount": 1
+      },
+      {
+        "platform": "douyin",
+        "id": "content-package-430806b82280ee8754fe9393-douyin",
+        "versionCount": 1
+      },
+      {
+        "platform": "video_account",
+        "id": "content-package-430806b82280ee8754fe9393-video_account",
+        "versionCount": 1
+      }
+    ],
+    "currentVersionId": "content-package-430806b82280ee8754fe9393-v1"
+  },
+  "works": [
+    {
+      "id": "61120a27-7ac7-4782-a7ca-9c512ff00a48",
+      "status": "accepted",
+      "assetRefCount": 2
+    },
+    {
+      "id": "06688ff9-03cf-4ff8-93a4-de83cb5767b1",
+      "status": "completed",
+      "assetRefCount": 2
+    }
+  ],
+  "jobs": [
+    {
+      "id": "creative-job-61a91f1963fd5605a57ab9b2",
+      "status": "completed",
+      "operation": "copy.generate",
+      "catalogModelId": "llm-openai"
+    },
+    {
+      "id": "creative-job-a6b3ff1eea1c91b1a0a19baf",
+      "status": "completed",
+      "operation": "image.generate",
+      "catalogModelId": "gpt-image-2"
+    }
+  ],
+  "usage": {
+    "planId": "growth",
+    "periodId": "2026-07",
+    "planRevision": "recorded-growth-2026-07",
+    "usage": {
+      "copy": {
+        "used": 2,
+        "limit": 100
+      },
+      "image": {
+        "used": 1,
+        "limit": 40
+      },
+      "video": {
+        "used": 0,
+        "limit": 20
+      }
+    },
+    "evidence": "ledger-evidence.json"
+  },
+  "providerCost": {
+    "status": "observed",
+    "totalsByCurrency": {
+      "CNY": 0.05,
+      "USD": 0
+    },
+    "evidence": "ledger-evidence.json"
+  },
+  "steps": [
+    {
+      "at": "2026-07-16T19:00:22.997Z",
+      "name": "register:start",
+      "email": "e2e-real-run-0001-1784228421812@example.test"
+    },
+    {
+      "at": "2026-07-16T19:00:24.475Z",
+      "name": "register:verified-via-e2e-helper"
+    },
+    {
+      "at": "2026-07-16T19:00:25.971Z",
+      "name": "login:done"
+    },
+    {
+      "at": "2026-07-16T19:00:26.123Z",
+      "name": "plan:growth-active",
+      "correlationId": "corr-421decc2-ed0c-489a-ad72-9c75d5b45e5f",
+      "allowance": {
+        "copy": 100,
+        "audio": 0,
+        "image": 40,
+        "video": 20
+      }
+    },
+    {
+      "at": "2026-07-16T19:00:28.658Z",
+      "name": "store:confirmed"
+    },
+    {
+      "at": "2026-07-16T19:00:31.641Z",
+      "name": "asset:authorized:1"
+    },
+    {
+      "at": "2026-07-16T19:00:34.327Z",
+      "name": "asset:authorized:2"
+    },
+    {
+      "at": "2026-07-16T19:00:35.986Z",
+      "name": "workbench:sources-attached",
+      "chips": 2
+    },
+    {
+      "at": "2026-07-16T19:00:38.647Z",
+      "name": "copy:submit"
+    },
+    {
+      "at": "2026-07-16T19:00:38.916Z",
+      "name": "copy:streaming-visible"
+    },
+    {
+      "at": "2026-07-16T19:00:47.516Z",
+      "name": "copy:three-candidates"
+    },
+    {
+      "at": "2026-07-16T19:00:48.071Z",
+      "name": "adopt:done",
+      "packageId": "content-package-430806b82280ee8754fe9393"
+    },
+    {
+      "at": "2026-07-16T19:00:48.172Z",
+      "name": "image:sources-attached",
+      "chips": 2,
+      "pressed": 2
+    },
+    {
+      "at": "2026-07-16T19:00:48.463Z",
+      "name": "image:work-has-references"
+    },
+    {
+      "at": "2026-07-16T19:00:50.644Z",
+      "name": "image:submit-click"
+    },
+    {
+      "at": "2026-07-16T19:00:50.854Z",
+      "name": "image:submit-command-ok",
+      "status": 200,
+      "correlationId": "corr-5f66cd7f-ea65-4616-971d-092f245651a4"
+    },
+    {
+      "at": "2026-07-16T19:00:50.941Z",
+      "name": "image:job-seen",
+      "jobId": "creative-job-a6b3ff1eea1c91b1a0a19baf",
+      "status": "running"
+    },
+    {
+      "at": "2026-07-16T19:01:12.411Z",
+      "name": "image:completed",
+      "jobId": "creative-job-a6b3ff1eea1c91b1a0a19baf"
+    },
+    {
+      "at": "2026-07-16T19:01:13.660Z",
+      "name": "image:saved-as-asset"
+    },
+    {
+      "at": "2026-07-16T19:01:15.386Z",
+      "name": "variants:submit"
+    },
+    {
+      "at": "2026-07-16T19:01:24.441Z",
+      "name": "variants:ready"
+    },
+    {
+      "at": "2026-07-16T19:01:25.912Z",
+      "name": "library:usable",
+      "packageId": "content-package-430806b82280ee8754fe9393"
+    }
+  ],
+  "correlationIds": [
+    "corr-08059242-2c76-4f88-b79f-4c9c25ee9817",
+    "corr-0917ddce-e836-48af-ab5b-f0cdd20e5ca5",
+    "corr-0b50f491-872f-4f1f-81e9-4e6505d97ba8",
+    "corr-0cb079bf-2c0c-44aa-99ea-a5fd8d8dd9b6",
+    "corr-0d9c6d7a-87da-4573-a395-fe27f10d250b",
+    "corr-100c2fa4-5713-4931-b08b-e5ef4c6c45f6",
+    "corr-1329f28d-3637-4b61-bd94-201cb7f9eb82",
+    "corr-1844af2f-15da-4b32-a8f4-6eafa1bdeba7",
+    "corr-1a22ad9d-ca62-4e9b-a248-391d01960386",
+    "corr-1a6cf514-7e69-440b-aac0-e395df823d5e",
+    "corr-1b603ddf-a267-47b3-aed8-d00b97c5eeac",
+    "corr-1f9ee207-4ac1-4c6c-b244-656e5e40809f",
+    "corr-2031fe13-5809-4ad3-9ffb-fd6cd93ec08a",
+    "corr-2481eef4-0661-43b6-a4f7-5cc791ad2f16",
+    "corr-26698221-e5ad-49d2-aef1-c14c0d452565",
+    "corr-276c3ea6-eb5b-44ad-a754-c44ce837574e",
+    "corr-295db6d7-49d2-4721-8e23-0260de67e96f",
+    "corr-2a984f21-867c-42ae-ba57-41d4f1fbbcaf",
+    "corr-2beac9fa-e3c8-438f-a05f-9787e2bc3cf1",
+    "corr-2ce18167-d466-470f-8b51-24274d9ec3d5",
+    "corr-2e6b7671-2ee5-44cc-8c8b-7ce2b425a3aa",
+    "corr-3037920d-7c79-4cd9-9ebd-d331bb2b8076",
+    "corr-30f66d7a-92d3-47c9-94c5-73c56f7cd7eb",
+    "corr-3412e17b-9a44-4783-9be8-fa1db0e0f0d8",
+    "corr-34abeb24-d42e-42bb-88aa-3c8bfedbe4bb",
+    "corr-36925f0c-4ba1-49eb-b152-4606fb59ba28",
+    "corr-36f17aa6-1618-41d5-86f8-acd41982d934",
+    "corr-371cf4dc-2b65-4295-8648-ea9b5b147468",
+    "corr-3b1d7688-ded4-4139-b78b-8270dc9f7905",
+    "corr-3c0b57fe-73ec-4c3f-85ca-623a4f6a3053",
+    "corr-3f243d9a-b458-4ae6-9d14-b6fc34c1aabc",
+    "corr-421decc2-ed0c-489a-ad72-9c75d5b45e5f",
+    "corr-4380a9d6-0b63-41b3-ad11-02c9ed6da1ce",
+    "corr-4395621f-02c7-4df2-a584-a87318506fc7",
+    "corr-45136a82-22c2-4339-abd0-2b6ff4ba9195",
+    "corr-453f2366-e324-470b-9c56-39911339475c",
+    "corr-466c2c51-d64f-498e-90ea-581db7d9f60c",
+    "corr-4b06b15b-a7c3-4ef1-ba8e-1c970669d317",
+    "corr-4e01666d-64f0-42a7-aadf-9c33a3282074",
+    "corr-4eab3e95-0cc8-45ea-a404-e963a9189b51",
+    "corr-525146c9-8ec5-4896-8283-a5e4751adb71",
+    "corr-53aee7a7-db4b-47d4-9a6f-d7afd3cecd82",
+    "corr-572a03fd-705d-4a2e-973d-c294c41ca673",
+    "corr-581a9a13-625b-4b0b-8e22-18275c0871aa",
+    "corr-58335ed5-41a8-4587-914d-416bdcb26a71",
+    "corr-5929b83c-40de-40e1-8079-7b9b7407a291",
+    "corr-5b83d023-a34e-4b7d-8021-ad997ab56bb1",
+    "corr-5d2c2533-854f-4da4-b9cb-f8317e60ef78",
+    "corr-5e4d7090-5cf1-45e5-bcad-d3accbfafe6b",
+    "corr-5f66cd7f-ea65-4616-971d-092f245651a4",
+    "corr-620e5c4b-ad51-446c-90b5-518cfb254267",
+    "corr-64e789ce-ceab-4af8-91f3-f78f8cbaec09",
+    "corr-6652331d-c61f-4049-a6c8-b175bb04f72e",
+    "corr-66543f89-7df9-4bd7-80a0-0e3262d8b6de",
+    "corr-67778d24-59ce-4b61-9093-5b66370e8b31",
+    "corr-68fe3fea-50ab-43ca-b67d-9805b00ed026",
+    "corr-69ecc324-3320-470d-bd6d-c67b40874db1",
+    "corr-6a1d02f5-2b3e-482d-b43e-1b6ded68c2aa",
+    "corr-6a2aab9c-170b-40ce-872d-cde4ef7c0419",
+    "corr-6ac6c19d-c68d-4d0f-bd5a-33cf592ad73a",
+    "corr-6f82f98d-3a04-40eb-9508-fd370f30c298",
+    "corr-6fe62cac-d1be-4385-b141-86c189a0212a",
+    "corr-7048b2a7-1dca-46a0-95e6-ac39fa826283",
+    "corr-72819a0f-9e7a-4bbe-920b-7061e11f3398",
+    "corr-730d1578-a2cb-45fa-9c60-2f0a3337da12",
+    "corr-73d1fc36-cacd-4985-8689-dcd4ca85faa7",
+    "corr-73ede20d-bf42-4782-a6ae-128462af5b04",
+    "corr-749ddae0-c213-4e88-b0fa-6bf75b918eb4",
+    "corr-76238c89-96e3-4d29-8f1b-75457499aa85",
+    "corr-7650ebbe-47fe-4388-9e9f-a492a311ea40",
+    "corr-775d9593-eb64-41e9-8e05-72a057bf2c73",
+    "corr-785f18d1-6033-403e-93bd-c2f1e373f197",
+    "corr-789adab8-d9f1-4dd1-995b-938d5dd50461",
+    "corr-78de3e2e-9e91-4d6d-bc32-d6640eaf4ffd",
+    "corr-799005bd-afa8-496e-87dd-df8845d4587e",
+    "corr-7ab9258c-918d-4c73-91e9-b61e82a7ae14",
+    "corr-7c9f4d42-8e33-4748-be90-41a74582bb78",
+    "corr-7f1cb75b-32b3-4423-b53f-30987d42a477",
+    "corr-7f230d74-bd38-4310-90d0-fd0a80a0a0c9",
+    "corr-7faab370-8fae-44e1-92fc-052e5aba2627",
+    "corr-80767ab1-8bdf-45c4-985b-32b68496dab7",
+    "corr-81d7c64c-7448-44ab-9bdc-545fac4334cc",
+    "corr-8205cbab-5571-4175-b84c-9b720cdf3327",
+    "corr-82220d3b-466d-4c6c-9d22-e8c2ef46214e",
+    "corr-8299b2a8-14e0-49a4-92bd-495642333b45",
+    "corr-82d5f94f-3886-41be-bc3e-71d27fc23549",
+    "corr-8338d99d-a705-430d-b032-e970cca35c93",
+    "corr-85a88c5c-4181-48b7-93ca-3ac8a9ae9531",
+    "corr-8603caee-9259-4d39-86ac-a8de22e8602c",
+    "corr-873db72e-2bee-4b01-b3fa-e45fd8e7b7e7",
+    "corr-8823998b-e9a8-48d3-94e2-232531e0b5bf",
+    "corr-8826eea3-9851-4ead-bfd2-f12a9d25ff5c",
+    "corr-891f0720-1cfc-4299-87ee-d20a6a8589d8",
+    "corr-8c6b0ca8-6aff-49c2-b538-60861d49622b",
+    "corr-8cc7a6ca-c227-47cc-8d2c-24d50f9d94bd",
+    "corr-8df3870e-14fe-46f6-87f8-7ef068824c97",
+    "corr-915c48ab-cdc9-4b12-a2f0-4c23b8a499eb",
+    "corr-94b872f5-8a2c-4bc6-b219-6853df9a6e0c",
+    "corr-958d21b4-6500-444b-b57d-47f6d479151d",
+    "corr-98282a07-4ed4-4a6a-a48d-062034c9b078",
+    "corr-9b7274e8-ba3d-42e3-a793-e15eee2f06ec",
+    "corr-9e6418de-3c5c-49c3-aff5-ac5cf992d63b",
+    "corr-9f83577a-3cf3-42ef-a416-f48e753d7a6a",
+    "corr-a6a8dff8-bb8a-47e3-bc57-7fc9febea3e3",
+    "corr-a7670768-d27b-4175-8deb-df76626dc9ae",
+    "corr-a801fd0d-6460-4913-9798-dbd542f40145",
+    "corr-ab1d7bc8-1102-43f5-be25-d348b6e9eaa5",
+    "corr-ab577e2a-f6ef-450f-a8d5-532fb23f3d19",
+    "corr-acce1607-c0b9-4408-86c1-f8c18eb84e66",
+    "corr-ae11dedb-de62-4b01-b364-99875b9245eb",
+    "corr-ae745429-2e6e-40f1-b3e1-c058d78e5568",
+    "corr-af4ed373-9c8f-44b6-be22-94d708fe5001",
+    "corr-b00b0f0a-a119-47b6-a872-b7b10f74ea36",
+    "corr-b443559b-e0a3-4a1c-9323-532a64c34e0c",
+    "corr-b57bd065-14d9-4f55-9e27-7a0799ebb22d",
+    "corr-b68e80ea-b8df-4e3f-96f7-3ea0569a799c",
+    "corr-b84c97da-c49b-4e45-93cc-24b14c961a03",
+    "corr-bc189002-2029-4dc0-a16a-ec57b1175255",
+    "corr-c1d307e6-f2fb-41a6-8b56-378b7c3f42a9",
+    "corr-c2da8547-da06-4351-b4a4-61497b0d5f78",
+    "corr-c329590d-dff1-4a4c-a426-08ac42d085b1",
+    "corr-c617e100-aa51-4188-928c-868c553419ab",
+    "corr-c9b53387-a998-4aef-b620-79e33e9949c5",
+    "corr-cb423cd7-a2cc-4e12-b9e9-e2b31d2cdb8d",
+    "corr-cbc4c24b-dfde-40b4-8a3e-ecfdb8fbe1f0",
+    "corr-ccc30cb4-c549-4970-a178-feab290e4796",
+    "corr-cf455167-266e-4fd5-ae12-247c879c22d7",
+    "corr-d04254ae-7168-451c-958e-fd8a535da941",
+    "corr-d124486e-8349-44c2-90e6-a019a1cef81b",
+    "corr-d2c503bf-4950-4156-b394-9f36b08b04d7",
+    "corr-d56e3bcc-87de-4a2e-a685-3ffd80ce35a5",
+    "corr-d6f5dcde-8e95-4465-b200-ad74de480963",
+    "corr-d6ff04c2-73d9-49a3-bc5d-2e3fde723d40",
+    "corr-d736f6bc-5316-4083-a49b-7e553a7a7bfa",
+    "corr-d810e9da-8394-4cca-91d7-74925f403769",
+    "corr-d8e0c082-9153-43bc-853c-ff328b32b366",
+    "corr-dc6d135c-6171-48e1-b8b5-d1849fc865cf",
+    "corr-dcb91470-3fc1-4105-bf29-3553aecafaaf",
+    "corr-dec6deef-fb1d-49fb-9475-15679ed9d6b9",
+    "corr-df76c914-3e1b-410c-a040-4e2de8bc0027",
+    "corr-e00d9aa7-9d3b-4258-862d-05087fb1f45f",
+    "corr-e09f2583-d3fb-4482-b966-f8d64feb1ffe",
+    "corr-e347dd47-0298-4433-a096-9cbb4a6053ea",
+    "corr-e435199b-180e-4742-b00e-70de59f8a534",
+    "corr-e5646fc2-477a-4cdb-8c18-e14fc784f209",
+    "corr-e5daeca8-1d00-43aa-9166-2aa770f6c429",
+    "corr-e6304bdb-39c9-47f8-952f-2d33b775891d",
+    "corr-e673e767-825a-4ed1-bc0d-94feb290e44d",
+    "corr-e90bece7-cdf7-4d45-b890-2231dbade0c6",
+    "corr-ea0aee4f-acc4-48cb-8078-a88097102d0d",
+    "corr-ea9d7a2a-082f-45b7-8b8b-b2ddc222de96",
+    "corr-eb54a6c4-aa66-4077-a3d0-14cccdc2d27b",
+    "corr-edc43a6a-cf70-4fcd-957a-5653f49ba6c8",
+    "corr-ee4a113c-510b-4a9f-adce-09b370380af6",
+    "corr-ef865901-2b25-44c9-8ab2-cb2f40d74cd0",
+    "corr-efd15ce8-d68d-46ac-b3b9-69c7a54fba67",
+    "corr-f00f6d07-fb54-47fd-aa0b-18cfc0ee4dc2",
+    "corr-f3749bce-4580-4fec-b37b-23e1b88d9bc8",
+    "corr-f3c0f8d8-e014-48ba-97a6-ffbe056f8db0",
+    "corr-f3d76be4-ccb0-4126-86c4-c745396ee2a7",
+    "corr-f436dab9-3f24-49d1-8d18-35b0561eb6d8",
+    "corr-f85b09a3-63df-40ca-bf3b-06e4e8a549ac",
+    "corr-f93ff30d-c39c-43b3-8aee-61479936e69f",
+    "corr-f9cba265-b142-4842-8631-42fec993a40d",
+    "corr-fabe7eeb-9af1-4036-aa93-61b9fa9f4e98",
+    "corr-fac04106-e716-4444-97d9-41ad6ce81679",
+    "corr-fb5f0209-d421-4e2e-9558-c7447d92ab3b",
+    "corr-fba3de60-e779-4807-bf2c-8b71c44527cd",
+    "corr-fcbd6d9e-cfb3-4926-ada4-04725a2df61c",
+    "corr-ff2c5552-6a41-47c9-b6aa-42d565b929ae",
+    "corr-ff7550dc-de35-40c9-8a98-1b501371856d"
+  ],
+  "artifacts": {
+    "continuous-journey.webm": {
+      "bytes": 5497902,
+      "sha256": "dab960778bb41041a52ef8cb366363ab8f637cb02ce8ae987b4ee548b415d5f8"
+    },
+    "keyframes/01a-register-filled.png": {
+      "bytes": 46442,
+      "sha256": "2058a3f756a788df9de42f4366223bd6c874bbb8001a3e8ca681169264dfc44b"
+    },
+    "keyframes/01b-login-success.png": {
+      "bytes": 36721,
+      "sha256": "f111bc4499b414e2becd7f6f5a8271252a36eb60c72b119a8da8c054f0224d93"
+    },
+    "keyframes/05a-image-ready-to-submit.png": {
+      "bytes": 688756,
+      "sha256": "ae0d2e8a5d5ec85d5910cd0d879477b1d456e2461d058196530618bbecf6016c"
+    },
+    "keyframes/06a-before-variants.png": {
+      "bytes": 344320,
+      "sha256": "8bc1f18f99c14015ff393eef41863914072161d9d74960236e8498c3be8824a8"
+    },
+    "keyframes/kf1-store-confirmed.png": {
+      "bytes": 181902,
+      "sha256": "cbe2fb6d73dc26adf3190210a39c630f1e656a1ea9dd2173c3ed5c0fc7cf6a22"
+    },
+    "keyframes/kf2-assets-authorized.png": {
+      "bytes": 403174,
+      "sha256": "ad68ff2604127cd62140a651de263475eac15e634ebbee2a7fd47d09b6b5301c"
+    },
+    "keyframes/kf3-first-tokens-streaming.png": {
+      "bytes": 238578,
+      "sha256": "8b379478fa5adaabadaa3abeb189922000c59536c517c9dd531fef7b7bdf632f"
+    },
+    "keyframes/kf3b-streaming-progress.png": {
+      "bytes": 240303,
+      "sha256": "6ee2c968384388302745e57c4eed09263586ea0e450a32acc017fe8caf943a45"
+    },
+    "keyframes/kf4-three-candidates.png": {
+      "bytes": 383754,
+      "sha256": "96d60f37ba3a47e1d6355dc9e8657168fc884862f645baf5c149db403186b675"
+    },
+    "keyframes/kf5-adopted-into-package.png": {
+      "bytes": 387374,
+      "sha256": "4a16b7aa2291a36ef4d2a3b5929236be7ade4dc012351605c8ff1e7572f43763"
+    },
+    "keyframes/kf6-real-photo-reference-image.png": {
+      "bytes": 546912,
+      "sha256": "f483abb2d7e5cd5ee0a10bcca7196df31e3f2d8346783fe87ea4d0f0201b7095"
+    },
+    "keyframes/kf7-three-platform-variants.png": {
+      "bytes": 363370,
+      "sha256": "ab30af34d88d7bc643b9603de740d48df37ab2a3868101bf9b9f137df3d14fce"
+    },
+    "keyframes/kf8-library-usable.png": {
+      "bytes": 217288,
+      "sha256": "3f2b969e6dee9c6a81a59e521770af4edbead022e4b1a73b0ad9c9ef0684b59c"
+    },
+    "network-log.jsonl": {
+      "bytes": 26975,
+      "sha256": "ab6fabf8c83f74ef32f579c66fdc9e86d3524f06ce9291b6e59f03b513c69681"
+    },
+    "ledger-evidence.json": {
+      "bytes": 3040,
+      "sha256": "998497c5358b87bc80fa5c63c20f70a395683af2ac8c574280db9bb6d4a9efec"
+    }
+  },
+  "redaction": [
+    "Full ContentPackage variant body/title text omitted from this manifest (see UI keyframes).",
+    "No API keys, cookies, or provider signed URLs stored.",
+    "E2E email kept as pattern only.",
+    "Seam projection reduced to ids/status/operation only."
+  ],
+  "acceptanceChecklist": {
+    "continuousBrowserJourney": true,
+    "realLlmCopyStream": true,
+    "threeCandidateAdopt": true,
+    "realAuthorizedMerchantPhotos": true,
+    "realReferenceImageGenerate": true,
+    "threePlatformVariants": true,
+    "libraryUsable": true,
+    "dualLedgerEvidence": true,
+    "generatedMediaAttachedToAdoptedContentPackage": false,
+    "notSplicedFromProbes": true
+  }
+}

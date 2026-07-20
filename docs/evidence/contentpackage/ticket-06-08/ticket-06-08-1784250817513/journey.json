@@ -1,0 +1,43 @@
+{
+  "accountRef": "fb207f9b7b3444791e13deddcfdced16bcabda2d7291d33237ac7f233f45c6f1",
+  "imagePackageId": "content-package-91d2bc1895e02c814fba2286",
+  "runId": "ticket-06-08-1784250817513",
+  "steps": [
+    {
+      "at": "2026-07-17T01:13:42.174Z",
+      "name": "account:authenticated"
+    },
+    {
+      "at": "2026-07-17T01:13:42.372Z",
+      "name": "plan:growth-active",
+      "correlationId": "corr-e9906ad9-109e-49ec-b429-1b4a7abe90d3"
+    },
+    {
+      "at": "2026-07-17T01:13:46.526Z",
+      "name": "store:confirmed"
+    },
+    {
+      "at": "2026-07-17T01:13:51.218Z",
+      "name": "asset:1:authorized"
+    },
+    {
+      "at": "2026-07-17T01:13:56.096Z",
+      "name": "asset:2:authorized"
+    },
+    {
+      "at": "2026-07-17T01:14:10.748Z",
+      "name": "copy:adopted",
+      "orderedAssetIds": [
+        "asset-991f5aed-b668-4178-9142-8affb3ece38e",
+        "asset-d706f98b-b3bc-4ddb-9456-d300015bf05a"
+      ],
+      "packageId": "content-package-91d2bc1895e02c814fba2286",
+      "selectedCandidate": "B"
+    },
+    {
+      "at": "2026-07-17T01:14:17.923Z",
+      "name": "library:image-and-navigation-verified",
+      "firstLevelNavigation": []
+    }
+  ]
+}

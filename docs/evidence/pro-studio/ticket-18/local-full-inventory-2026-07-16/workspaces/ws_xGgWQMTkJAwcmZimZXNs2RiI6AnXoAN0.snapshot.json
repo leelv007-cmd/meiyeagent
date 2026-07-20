@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "02fd386d-32ce-4a88-8e28-4538b24c15b9"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "d72c3d9a-cb67-4dc6-a5e0-779191365b6c"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0",
+  "works": [
+    {
+      "currentRevisionId": "02fd386d-32ce-4a88-8e28-4538b24c15b9",
+      "id": "d72c3d9a-cb67-4dc6-a5e0-779191365b6c",
+      "revisions": [
+        {
+          "id": "02fd386d-32ce-4a88-8e28-4538b24c15b9",
+          "workId": "d72c3d9a-cb67-4dc6-a5e0-779191365b6c",
+          "document": {
+            "pages": [
+              {
+                "id": "dee81a33-4f1d-42fa-92fe-d66410adadb3",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-12T09:09:10.840Z",
+          "createdBy": "xGgWQMTkJAwcmZimZXNs2RiI6AnXoAN0"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.800Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "3b6d1b1bc59b77b137568ef7ede8ad557646b3697a46180740a723fa6792ed80",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "f7de60049fbf1e1049ba6f20fb49816ace2941628dc88afa185afe39a94a4131"
+  }
+}

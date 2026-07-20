@@ -1,0 +1,52 @@
+{
+  "acceptance": {
+    "candidateCount": 0,
+    "cancelledVideoHasNoPlayableVersion": false,
+    "desktopAndMobileSameVideoPackage": false,
+    "imageAndVideoShareLibrary": false,
+    "imagePackageImmediatelyVisible": false,
+    "videoPackageCreatingOnConfirm": false
+  },
+  "completedAt": "2026-07-17T01:19:57.787Z",
+  "failure": "locator.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('input[name=\"name\"]')\u001b[22m\n",
+  "limitations": [
+    "The current catalog exposes no live-verified video model, so the user-visible confirm lifecycle is blocked without an administrator runtime change.",
+    "The current-vs-before and external benchmark comparison remain governance evidence outside this harness."
+  ],
+  "ok": false,
+  "runId": "ticket-06-08-1784251164923",
+  "runtime": {
+    "baseUrl": "http://localhost:3000",
+    "browser": "chromium",
+    "mobileViewport": {
+      "height": 844,
+      "width": 390
+    },
+    "viewport": {
+      "height": 900,
+      "width": 1440
+    }
+  },
+  "artifacts": [
+    {
+      "bytes": 456000,
+      "name": "continuous-journey.webm",
+      "sha256": "f363af8f3dd40146bb364f02f080221d60dd96e77a73fd66f859d756ed45495d"
+    },
+    {
+      "bytes": 37383,
+      "name": "failure.png",
+      "sha256": "205262bc0275cc7bb217063a1ca3eaebda4106656bf73114034c360040d582c0"
+    },
+    {
+      "bytes": 143,
+      "name": "journey.json",
+      "sha256": "de480585b760f046d960a38905c30fdd23632631d4360c54d6b8b6ecc32df210"
+    },
+    {
+      "bytes": 1,
+      "name": "network-log.jsonl",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    }
+  ]
+}

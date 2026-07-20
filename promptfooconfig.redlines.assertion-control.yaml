@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Control proving explicit redline assertions fail without provider errors
+
+prompts:
+  - '{{caseId}}'
+
+providers:
+  - id: file://apps/core/src/evals/redlines/promptfoo-false-control-provider.ts
+    label: false-output-without-provider-error
+
+tests:
+  - file://apps/core/src/evals/redlines/promptfoo-assertion-control-case.ts
+
+evaluateOptions:
+  maxConcurrency: 1

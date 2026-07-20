@@ -1,0 +1,73 @@
+{
+  "expectedInventory": {
+    "exportReceiptIds": [],
+    "revisionIds": [
+      "54eb6bae-75c9-44db-9854-2d62f170d18f"
+    ],
+    "templateIds": [],
+    "templateVersionIds": [],
+    "workIds": [
+      "74d48fd3-e67e-44ac-aec8-0519e9ded31f"
+    ]
+  },
+  "exportReceipts": [],
+  "managedRasters": [],
+  "templates": [],
+  "workspaceId": "ws_EbkhzCSLYVal4QCYVHOp9ds1i8lR552M",
+  "works": [
+    {
+      "currentRevisionId": "54eb6bae-75c9-44db-9854-2d62f170d18f",
+      "id": "74d48fd3-e67e-44ac-aec8-0519e9ded31f",
+      "revisions": [
+        {
+          "id": "54eb6bae-75c9-44db-9854-2d62f170d18f",
+          "workId": "74d48fd3-e67e-44ac-aec8-0519e9ded31f",
+          "document": {
+            "pages": [
+              {
+                "id": "4985cf07-f907-4aee-aab0-53237e026312",
+                "elements": []
+              }
+            ],
+            "width": 1080,
+            "height": 1350
+          },
+          "revision": 1,
+          "createdAt": "2026-07-11T02:52:57.598Z",
+          "createdBy": "EbkhzCSLYVal4QCYVHOp9ds1i8lR552M"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "captureId": "local-full-inventory-2026-07-16T10-00-00Z",
+    "capturedAt": "2026-07-16T10:01:11.688Z",
+    "database": {
+      "lsn": "1/86410A80",
+      "transactionSnapshot": "2265575:2265575:"
+    },
+    "deployment": "local-postgres-dev",
+    "objectInventory": {
+      "capturedAt": "2026-07-16T10:00:00.000Z",
+      "sha256": "aa0f5a8e59c313cf5f0e196fdbb37a25469e739ca107c5c16e25f3dba5cec6be",
+      "totalObjects": 0
+    },
+    "snapshotCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1,
+      "managedRasters": 0,
+      "objectInventoryEntries": 0
+    },
+    "sourceCounts": {
+      "exportReceipts": 0,
+      "revisions": 1,
+      "templates": 0,
+      "templateVersions": 0,
+      "works": 1
+    },
+    "snapshotSha256": "14254bbf4cd6babc18135b272c7c20455a9ad721af02fc61a4342ef251249795"
+  }
+}

@@ -1,0 +1,128 @@
+/**
+ * RTL: GL-23 blocking card — redemption success unlocks continue creation.
+ */
+import { useState } from 'react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { QuotaBlockingCard } from './quota-blocking-card';
+
+afterEach(() => {
+  cleanup();
+});
+
+function UnlockHarness({
+  redeemImpl,
+}: {
+  redeemImpl: (code: string) => Promise<{ ok: true } | { ok: false; message?: string }>;
+}) {
+  const [canContinue, setCanContinue] = useState(false);
+
+  return (
+    <div>
+      <output data-testid="continue-creation">
+        {canContinue ? 'ready' : 'blocked'}
+      </output>
+      {/* Keep card mounted after unlock so success + continue CTA are both visible. */}
+      <QuotaBlockingCard
+        blocked={!canContinue}
+        onRedeem={async ({ code }) => redeemImpl(code)}
+        onUnlocked={() => {
+          setCanContinue(true);
+        }}
+      />
+      {canContinue ? (
+        <button type="button" data-testid="continue-create-cta">
+          继续创作
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+describe('GL-23 quota blocking card — redeem unlocks continue', () => {
+  it('renders inline code input when quota exhausted', () => {
+    render(
+      <UnlockHarness
+        redeemImpl={async () => ({ ok: true })}
+      />
+    );
+    expect(screen.getByTestId('composer-quota-blocking-card')).toBeInTheDocument();
+    expect(screen.getByTestId('composer-quota-redemption-code')).toBeInTheDocument();
+    expect(screen.getByTestId('composer-quota-redeem-submit')).toBeDisabled();
+    expect(screen.getByTestId('continue-creation')).toHaveTextContent('blocked');
+    expect(screen.queryByTestId('continue-create-cta')).not.toBeInTheDocument();
+  });
+
+  it('successful redeem unlocks continue creation in place', async () => {
+    const user = userEvent.setup();
+    const redeem = vi.fn(async (code: string) => {
+      expect(code).toBe('GIFT99');
+      return { ok: true as const };
+    });
+
+    render(<UnlockHarness redeemImpl={redeem} />);
+
+    const input = screen.getByTestId('composer-quota-redemption-code');
+    await user.type(input, 'gift99');
+    expect(input).toHaveValue('GIFT99');
+
+    const submit = screen.getByTestId('composer-quota-redeem-submit');
+    expect(submit).not.toBeDisabled();
+    await user.click(submit);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('composer-quota-unlock-success')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('composer-quota-continue-ready')).toHaveTextContent(
+      '已解锁，可继续创作'
+    );
+    expect(screen.getByTestId('continue-creation')).toHaveTextContent('ready');
+    expect(screen.getByTestId('continue-create-cta')).toBeInTheDocument();
+    expect(redeem).toHaveBeenCalledTimes(1);
+  });
+
+  it('failed redeem keeps blocked and shows error', async () => {
+    const user = userEvent.setup();
+    render(
+      <UnlockHarness
+        redeemImpl={async () => ({ ok: false, message: '兑换码已使用' })}
+      />
+    );
+
+    await user.type(screen.getByTestId('composer-quota-redemption-code'), 'USED01');
+    await user.click(screen.getByTestId('composer-quota-redeem-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('composer-quota-redeem-error')).toHaveTextContent(
+        '兑换码已使用'
+      );
+    });
+    expect(screen.getByTestId('continue-creation')).toHaveTextContent('blocked');
+    expect(screen.queryByTestId('continue-create-cta')).not.toBeInTheDocument();
+    expect(screen.getByTestId('composer-quota-redemption-code')).toBeInTheDocument();
+  });
+
+  it('passes redemptions CAS command shape to onRedeem', async () => {
+    const user = userEvent.setup();
+    const redeem = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <QuotaBlockingCard
+        blocked
+        onRedeem={redeem}
+      />
+    );
+
+    await user.type(screen.getByTestId('composer-quota-redemption-code'), 'CAS-01');
+    await user.click(screen.getByTestId('composer-quota-redeem-submit'));
+
+    await waitFor(() => expect(redeem).toHaveBeenCalled());
+    const arg = redeem.mock.calls[0]?.[0];
+    expect(arg?.command).toEqual({
+      action: 'redeem',
+      payload: { code: 'CAS-01' },
+    });
+    expect(arg?.idempotencyKey).toMatch(/^redeem-code-/);
+  });
+});

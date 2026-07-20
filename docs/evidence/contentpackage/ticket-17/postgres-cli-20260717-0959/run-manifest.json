@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-07-17T01:59:23Z",
+  "files": {
+    "README.md": {
+      "bytes": 1682,
+      "sha256": "fda4789eccc3bc24b062cbd404dfe1dea6fa7dff90f6d2e25a1ad4e5ebc36c8a"
+    },
+    "postgres-cli-evidence.json": {
+      "bytes": 1373,
+      "sha256": "73c45a92928cb63d676710cb17ba30c4854beed61461854aec93353838860d31"
+    }
+  },
+  "result": "passed",
+  "ticket": 17
+}

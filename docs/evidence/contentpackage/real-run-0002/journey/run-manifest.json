@@ -1,0 +1,80 @@
+{
+  "runId": "real-run-0002-1784236289412",
+  "status": "accepted",
+  "counted": true,
+  "formalTicket22Closure": false,
+  "completedAt": "2026-07-16T21:12:34.025Z",
+  "northStar": {
+    "metric": "真实跑通链路数",
+    "previous": 0,
+    "next": 1,
+    "evidenceRoot": "docs/evidence/contentpackage/real-run-0002/journey/"
+  },
+  "environment": {
+    "web": "http://localhost:3000 (vite --mode e2e; email verification helper only)",
+    "core": "http://localhost:4100",
+    "postgres": "localhost:54329",
+    "llm": "direct Tuzi OpenAI-compatible route",
+    "media": "Tuzi gpt-image-2-tuzi-relay / Seedream reference-image route"
+  },
+  "package": {
+    "id": "content-package-5f75c81790ceb090a397c975",
+    "status": "accepted",
+    "statusGroup": "usable",
+    "kind": "image_text",
+    "authorizedSourcePhotoCount": 2,
+    "generatedAssetCount": 1,
+    "ownedAssetCount": 1,
+    "currentVersionOrderedAssetCount": 3,
+    "variantPlatforms": ["xiaohongshu", "douyin", "video_account"],
+    "allVariantsInheritGeneratedMedia": true
+  },
+  "usage": {
+    "copyCommitted": 2,
+    "imageCommitted": 1,
+    "videoCommitted": 0,
+    "evidence": "ledger-evidence.json"
+  },
+  "providerCost": {
+    "status": "observed",
+    "totalsByCurrency": { "CNY": 0.05, "USD": 0 },
+    "evidence": "ledger-evidence.json"
+  },
+  "artifacts": {
+    "continuous-journey.webm": { "bytes": 6101414, "sha256": "28c16d4749eedc5abd5a6704f3b987f4eb896a3e3caacfbcf010294c8c60d885" },
+    "generated-image.png": { "bytes": 5077701, "sha256": "044fb8de142bc27f53b42f5c3e2cfef704c87e1b5cd2bac0077c5d72c0fb5dec" },
+    "keyframes/kf1-store-confirmed.png": { "bytes": 181808, "sha256": "8fd3bece6989f597165788e04155ceecd42256abe3bae90674aed7fa8e0359b8" },
+    "keyframes/kf2-assets-authorized.png": { "bytes": 405806, "sha256": "e6099951e2eb862e3651b785a9d1c7a2f2aa7d123e4c2460c2293bc84f4aa7cb" },
+    "keyframes/kf3-first-tokens-streaming.png": { "bytes": 238608, "sha256": "d469b7ed37ba460ea212dc7e90123c182b0641c88e726827f6011264d532b169" },
+    "keyframes/kf4-three-candidates.png": { "bytes": 439745, "sha256": "caafa6c732983db9762531cb3d9666b57583c763e276ce4a8512bac57f8be726" },
+    "keyframes/kf5-adopted-into-package.png": { "bytes": 448570, "sha256": "93fc8509a46ce9400cb9058e7bcb627cf11b7c3a1f7f82424055112814d90312" },
+    "keyframes/kf6-real-photo-reference-image.png": { "bytes": 545450, "sha256": "5c45ccf5c9d8807efc9a93001165f3d97bf378e068ef138a1e5e7e50a4d9a5f6" },
+    "keyframes/kf6b-real-image-attached-to-package.png": { "bytes": 518464, "sha256": "98c7bc3e574552a15367a21e34eb4fec2c32457a1cc750eb7ea0e5e7b8b5ab79" },
+    "keyframes/kf7-three-platform-variants.png": { "bytes": 591073, "sha256": "5a036cb9ab811805fa1b43cb0882df5ccde59ce821b6ad7c419cf3101f105eda" },
+    "keyframes/kf8-library-usable.png": { "bytes": 214493, "sha256": "cad56d7fc219c7581b62041f319e5b475cd958f45c4c73a22a58cbb3bab433b9" },
+    "network-log.jsonl": { "bytes": 27089, "sha256": "1a5c56ae0b22a03248056cbbc75ddcd0601320b9dd1cbd8ef078c8da2a0fa43a" }
+  },
+  "acceptanceChecklist": {
+    "continuousBrowserJourney": true,
+    "realLlmCopyStream": true,
+    "threeCandidateSingleAdopt": true,
+    "realAuthorizedMerchantPhotos": true,
+    "realReferenceImageGenerate": true,
+    "generatedMediaAttachedToAdoptedContentPackage": true,
+    "currentVersionContainsGeneratedOwnedAsset": true,
+    "threePlatformVariants": true,
+    "allVariantsInheritGeneratedOwnedAsset": true,
+    "libraryUsable": true,
+    "dualLedgerEvidence": true,
+    "notSplicedFromProbes": true
+  },
+  "knownClosureGaps": [
+    "The pre-submit selector labeled GPT Image 2 while the actual provider model was Seedream 4.5; fixed-model/no-cross-brand-switch is not satisfied.",
+    "Ticket 22 still requires the remaining before/after, Result Card, variant-copy, and zero-regression closure evidence."
+  ],
+  "redaction": [
+    "No API keys, cookies, provider task references, or provider signed URLs stored.",
+    "Workspace/user ids, object keys, and full generated copy are omitted from curated JSON evidence.",
+    "The network log is retained as request method/status/path/correlation evidence only."
+  ]
+}

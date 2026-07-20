@@ -1,0 +1,73 @@
+{
+  "coverage": {
+    "revisionPercent": 100,
+    "templatePercent": 100,
+    "templateVersionPercent": 100,
+    "workPercent": 100
+  },
+  "elementKinds": {
+    "text": 4,
+    "image": 4
+  },
+  "generatedAt": "2026-07-16T10:01:11.710Z",
+  "totals": {
+    "exportRecords": 0,
+    "pages": 5,
+    "revisions": 4,
+    "templateVersions": 1,
+    "templates": 1,
+    "works": 1
+  },
+  "templates": [
+    {
+      "currentVersionId": "template:42555b12-edeb-4b40-a86f-603bd1bfb8bd:revision:6d3e11b2-b75d-4583-b43b-0ab4260c03ce",
+      "disposition": "convertible",
+      "id": "42555b12-edeb-4b40-a86f-603bd1bfb8bd",
+      "versionCount": 1,
+      "versions": [
+        {
+          "disposition": "convertible",
+          "id": "template:42555b12-edeb-4b40-a86f-603bd1bfb8bd:revision:6d3e11b2-b75d-4583-b43b-0ab4260c03ce",
+          "managedRasterAvailable": false
+        }
+      ]
+    }
+  ],
+  "unknownFields": {},
+  "works": [
+    {
+      "disposition": "convertible",
+      "exportRecordCount": 0,
+      "id": "44b8321c-769c-4e2d-97a7-46ed00f12904",
+      "lastEditedAt": "2026-07-16T04:09:04.565Z",
+      "currentRevisionId": "6d3e11b2-b75d-4583-b43b-0ab4260c03ce",
+      "revisionCount": 4,
+      "revisions": [
+        {
+          "disposition": "convertible",
+          "id": "45da1e2e-a5df-41f6-b673-7e6841b9a7b3",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T04:09:01.451Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "be2a02a6-3fcf-4122-be49-50f9ed0c035f",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T04:09:02.887Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "a7cd0bcc-8f78-4e41-b655-7944e454b52f",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T04:09:04.438Z"
+        },
+        {
+          "disposition": "convertible",
+          "id": "6d3e11b2-b75d-4583-b43b-0ab4260c03ce",
+          "managedRasterAvailable": false,
+          "createdAt": "2026-07-16T04:09:04.565Z"
+        }
+      ]
+    }
+  ]
+}

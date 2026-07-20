@@ -1,0 +1,116 @@
+# MP-08 provider live gate (I4 / D-069 / D-080 C5).
+# Protected, manual/scheduled, provider secrets + cost cap.
+# Does NOT reuse core-persistence — live provider spend stays isolated.
+name: Provider live gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_destructive:
+        description: 'Also run destructive live inject (force reject on primary)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      cost_cap_usd:
+        description: 'Hard cost ceiling in USD for this run'
+        required: false
+        default: '1.0'
+        type: string
+  schedule:
+    # Weekly off-peak (Sunday 16:00 UTC)
+    - cron: '0 16 * * 0'
+
+concurrency:
+  group: provider-live-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  provider-live-matrix:
+    name: MP-08 fault-injection live matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: provider-live
+    env:
+      RUN_PROVIDER_LIVE_FAULT_INJECTION: '1'
+      PROVIDER_LIVE_COST_CAP_USD: ${{ github.event.inputs.cost_cap_usd || '1.0' }}
+      RUN_PROVIDER_LIVE_DESTRUCTIVE: ${{ github.event.inputs.run_destructive || 'false' }}
+      # Text dual-channel (handoff matrix)
+      ARK_TEXT_API_KEY: ${{ secrets.ARK_TEXT_API_KEY }}
+      ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
+      ARK_TEXT_MODEL: ${{ secrets.ARK_TEXT_MODEL }}
+      ARK_TEXT_BASE_URL: ${{ secrets.ARK_TEXT_BASE_URL }}
+      ARK_BASE_URL: ${{ secrets.ARK_BASE_URL }}
+      MODEL_DIRECT_API_KEY: ${{ secrets.MODEL_DIRECT_API_KEY }}
+      MODEL_DIRECT_BASE_URL: ${{ secrets.MODEL_DIRECT_BASE_URL }}
+      MODEL_DIRECT_MODEL: ${{ secrets.MODEL_DIRECT_MODEL }}
+      MODEL_DIRECT_CATALOG_MODEL_ID: ${{ secrets.MODEL_DIRECT_CATALOG_MODEL_ID }}
+      # Image / video
+      ARK_SEEDREAM_MODEL: ${{ secrets.ARK_SEEDREAM_MODEL }}
+      ARK_SEEDANCE_MODEL: ${{ secrets.ARK_SEEDANCE_MODEL }}
+      TUZI_API_KEY: ${{ secrets.TUZI_API_KEY }}
+      TUZI_BASE_URL: ${{ secrets.TUZI_BASE_URL }}
+      TUZI_GPT_IMAGE_2_MODEL: ${{ secrets.TUZI_GPT_IMAGE_2_MODEL }}
+      TUZI_SEEDANCE_MODEL: ${{ secrets.TUZI_SEEDANCE_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck contracts + core
+        run: |
+          pnpm --filter @meiye/contracts typecheck
+          pnpm --filter @meiye/core typecheck
+
+      - name: Cost cap guard
+        shell: bash
+        run: |
+          CAP="${PROVIDER_LIVE_COST_CAP_USD:-1.0}"
+          # Refuse runaway caps in CI even if dispatch input is raised.
+          node -e "
+            const cap = Number(process.env.PROVIDER_LIVE_COST_CAP_USD);
+            if (!Number.isFinite(cap) || cap <= 0 || cap > 5) {
+              console.error('PROVIDER_LIVE_COST_CAP_USD out of allowed range (0, 5]:', process.env.PROVIDER_LIVE_COST_CAP_USD);
+              process.exit(1);
+            }
+            console.log('provider-live cost cap USD =', cap);
+          "
+
+      - name: Run MP-08 unit matrix (always, free)
+        env:
+          NODE_OPTIONS: --test-reporter=spec
+        run: >-
+          pnpm --filter @meiye/core exec tsx --test --test-concurrency=1
+          src/p1/model-supply/provider-conformance/fault-injection/fault-injection.matrix.test.ts
+          src/p1/model-supply/provider-conformance/fault-injection/publish-gate.test.ts
+
+      - name: Run env-gated live fault-injection gate
+        env:
+          NODE_OPTIONS: --test-reporter=spec
+        run: >-
+          pnpm --filter @meiye/core exec tsx --test --test-concurrency=1
+          src/p1/model-supply/provider-conformance/live-fault-injection.integration.test.ts
+
+      - name: Upload live gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-live-matrix
+          path: |
+            apps/core/**/*.log
+          if-no-files-found: ignore
