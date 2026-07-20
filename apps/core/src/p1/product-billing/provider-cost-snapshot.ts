@@ -156,6 +156,12 @@ export class MemoryProviderCostSnapshotStore {
         ...(snapshot.usageQuantity !== undefined
           ? { usageQuantity: snapshot.usageQuantity }
           : {}),
+        ...(snapshot.usageUnit !== undefined
+          ? { usageUnit: snapshot.usageUnit }
+          : {}),
+        ...(snapshot.evidence !== undefined
+          ? { evidence: snapshot.evidence }
+          : {}),
         ...(snapshot.supplyCostDeltaMicros !== undefined
           ? { supplyCostDeltaMicros: snapshot.supplyCostDeltaMicros }
           : {}),

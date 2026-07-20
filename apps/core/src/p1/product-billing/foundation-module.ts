@@ -16,7 +16,6 @@ import {
   type CreativeExecutionQuoteSource,
 } from './canvas-quote-adapter.js';
 import {
-  ProductQuoteService,
   type ConfirmQuoteInput,
   type DispatchQuoteInput,
   type FallbackDispatchInput,
@@ -24,6 +23,7 @@ import {
   type SettleQuoteInput,
   type TrustedUsageEvidence,
 } from './quote-service.js';
+import type { ProductBillingApplicationPort } from './durable-service.js';
 import type { BuildProductQuoteInput, ProductBillingMode } from '@meiye/contracts';
 
 function actionName(input: Record<string, unknown>) {
@@ -300,7 +300,7 @@ function trustedUsageFrom(
 export class ProductBillingFoundationModule implements P1OperationModule {
   readonly name = 'product-billing';
 
-  constructor(private readonly quotes: ProductQuoteService) {}
+  constructor(private readonly quotes: ProductBillingApplicationPort) {}
 
   async execute(args: {
     context: P1Context;
@@ -331,7 +331,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
               }
             : {}),
         };
-        return this.quotes.confirm(input);
+        return this.quotes.confirm({ ...input, workspaceId: args.context.workspaceId });
       }
       case 'reserve': {
         const input: ReserveQuoteInput = {
@@ -347,7 +347,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
               }
             : {}),
         };
-        return this.quotes.reserve(input);
+        return this.quotes.reserve({ ...input, workspaceId: args.context.workspaceId });
       }
       case 'dispatch': {
         const input: DispatchQuoteInput = {
@@ -364,7 +364,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
               }
             : {}),
         };
-        return this.quotes.dispatch(input);
+        return this.quotes.dispatch({ ...input, workspaceId: args.context.workspaceId });
       }
       case 'fallback_dispatch': {
         const input: FallbackDispatchInput = {
@@ -391,7 +391,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
               }
             : {}),
         };
-        return this.quotes.fallbackDispatch(input);
+        return this.quotes.fallbackDispatch({ ...input, workspaceId: args.context.workspaceId });
       }
       case 'settle': {
         const trustedRaw =
@@ -418,7 +418,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
               }
             : {}),
         };
-        return this.quotes.settle(input);
+        return this.quotes.settle({ ...input, workspaceId: args.context.workspaceId });
       }
       case 'fail_and_refund': {
         const trustedRaw =
@@ -431,6 +431,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
           quoteId: stringField(value, 'quoteId'),
           ...(trustedRaw ? { trustedUsage: trustedUsageFrom(trustedRaw) } : {}),
           ...(value.reason ? { reason: stringField(value, 'reason') } : {}),
+          workspaceId: args.context.workspaceId,
         });
       }
       default:
@@ -451,7 +452,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
     switch (action) {
       case 'get_quote': {
         const quoteId = stringField(value, 'quoteId');
-        const quote = this.quotes.getQuote(quoteId);
+        const quote = await this.quotes.getQuote(quoteId, args.context.workspaceId);
         if (!quote) {
           throw new P1DomainError('NOT_FOUND', `Quote ${quoteId} was not found.`);
         }
@@ -465,7 +466,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
       }
       case 'get_quote_by_task': {
         const taskId = stringField(value, 'taskId');
-        const quote = this.quotes.getQuoteByTask(taskId);
+        const quote = await this.quotes.getQuoteByTask(taskId, args.context.workspaceId);
         if (!quote) {
           throw new P1DomainError(
             'NOT_FOUND',
@@ -476,7 +477,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
       }
       case 'get_usage': {
         const taskId = stringField(value, 'taskId');
-        const usage = this.quotes.getUsage(taskId);
+        const usage = await this.quotes.getUsage(taskId, args.context.workspaceId);
         if (!usage) {
           throw new P1DomainError(
             'NOT_FOUND',
@@ -487,7 +488,7 @@ export class ProductBillingFoundationModule implements P1OperationModule {
       }
       case 'list_provider_costs': {
         const taskId = stringField(value, 'taskId');
-        return this.quotes.listProviderCosts(taskId);
+        return this.quotes.listProviderCosts(taskId, args.context.workspaceId);
       }
       default:
         throw new P1DomainError(

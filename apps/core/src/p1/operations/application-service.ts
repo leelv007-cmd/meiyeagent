@@ -17,6 +17,7 @@ import {
   promotionalMaterialReceiptSchema,
   creativeGenerationApprovalReceiptSchema,
 } from '@meiye/contracts';
+import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import { appendPendingApprovalRequest } from './content-package-approval.js';
 import {
   buildContentPackage,
@@ -252,6 +253,7 @@ function canonicalTemplateDefaultName(
 interface OperationsDependencies {
   assetDataClassResolver?: AssetDataClassResolverPort;
   batchExecutor?: BatchExecutionPort;
+  billingLifecycle?: BillingLifecyclePort;
   canvasExporter: CanvasExportPort;
   creationExecutor?: import('./types.js').CreationExecutorPort;
   contentPackageExporter?: ContentPackageExportPort;
@@ -280,6 +282,7 @@ interface OperationsDependencies {
 
 interface CreativeJobPreparationOptions {
   approvalReceiptId?: string;
+  billingQuoteId?: string;
   retryOf?: string;
   reroll?: {
     kind: CreativeRerollKind;
@@ -319,6 +322,15 @@ const CONTENT_MODULE_IDS = new Set<CreativeContentModuleId>([
   'shooting_checklist',
 ]);
 const DEFAULT_CONTENT_MODULES: CreativeContentModuleId[] = ['social_cover'];
+
+function creativeBillingResource(
+  operation: CreativeExecutionContract['operation'],
+): 'copy' | 'image' | 'video' | 'audio' {
+  if (operation.startsWith('copy.')) return 'copy';
+  if (operation.startsWith('audio.')) return 'audio';
+  if (operation === 'video.generate') return 'video';
+  return 'image';
+}
 const INHERITANCE_FIELD_IDS = new Set<CreativeInheritanceFieldId>([
   'content_structure',
   'layout_slots',
@@ -4916,6 +4928,7 @@ export class OperationsApplicationService {
       existing.retryOf !== options.retryOf ||
       existing.rerollOf !== options.reroll?.sourceJobId ||
       existing.rerollKind !== options.reroll?.kind ||
+      existing.billingQuoteId !== options.billingQuoteId ||
       JSON.stringify(stableValue(existing.contract)) !==
         JSON.stringify(stableValue(contract))
     ) {
@@ -5728,7 +5741,31 @@ export class OperationsApplicationService {
       job.inheritanceContext ??
       (await this.creativeInheritanceContext(context, work.id));
 
+    const billingTaskId = job.billingTaskId ?? work.id;
+    if ((job.productUsageQuantity ?? 1) > 0 && job.billingQuoteId) {
+      if (!this.dependencies.billingLifecycle) {
+        throw new OperationsError(
+          'BILLING_LIFECYCLE_UNAVAILABLE',
+          'Product billing is unavailable for a paid creative submission.',
+          503,
+        );
+      }
+      await this.dependencies.billingLifecycle.beforeSubmit({
+        quoteId: job.billingQuoteId,
+        quoteRevision: job.contract.quoteRevision,
+        resource: creativeBillingResource(job.contract.operation),
+        taskId: billingTaskId,
+        workspaceId: context.workspaceId,
+      });
+    }
+
     const outcome = await executor.submit({
+      ...((job.productUsageQuantity ?? 1) > 0 && job.billingQuoteId
+        ? {
+            billingQuoteRevision: job.contract.quoteRevision,
+            billingTaskId,
+          }
+        : {}),
       briefSnapshot: structuredClone(job.briefSnapshot),
       context,
       contract: structuredClone(job.contract),
@@ -5769,6 +5806,7 @@ export class OperationsApplicationService {
       );
     }
     const jobId = this.creativeJobId(workId, submissionKey);
+    const billingTaskId = options.reroll?.kind === 'paid' ? jobId : workId;
     const snapshotState = await this.read(context);
     const existingJob = snapshotState.creativeJobs.find(
       (job) => job.id === jobId
@@ -5861,6 +5899,37 @@ export class OperationsApplicationService {
     }
     if (!existingJob) {
       await executor.inspect(context.workspaceId, resolvedContract);
+    }
+    if (options.billingQuoteId) {
+      const assertAcceptedQuote =
+        this.dependencies.billingLifecycle?.assertAcceptedQuote;
+      if (!assertAcceptedQuote) {
+        throw new OperationsError(
+          'BILLING_QUOTE_VALIDATOR_UNAVAILABLE',
+          'Confirmed Product quote validation is unavailable.',
+          503,
+        );
+      }
+      const acceptedQuote = await assertAcceptedQuote.call(
+        this.dependencies.billingLifecycle,
+        {
+          quoteId: options.billingQuoteId,
+          quoteRevision: resolvedContract.quoteRevision,
+          taskId: billingTaskId,
+          workspaceId: context.workspaceId,
+        },
+      );
+      if (
+        acceptedQuote.catalogModelId !== resolvedContract.catalogModelId ||
+        acceptedQuote.confirmedAmount !== resolvedContract.estimatedAmount ||
+        acceptedQuote.formula.currency !== resolvedContract.currency
+      ) {
+        throw new OperationsError(
+          'CREATIVE_QUOTE_CHANGED',
+          'The accepted Product quote no longer matches the execution contract.',
+          409,
+        );
+      }
     }
     const prepared = await this.mutate(context, (state) => {
       const existing = state.creativeJobs.find((job) => job.id === jobId);
@@ -6045,6 +6114,10 @@ export class OperationsApplicationService {
           ? { briefSnapshot: structuredClone(briefSnapshot) }
           : {}),
         contract: structuredClone(resolvedContract),
+        billingTaskId,
+        ...(options.billingQuoteId
+          ? { billingQuoteId: options.billingQuoteId }
+          : {}),
         createdAt: timestamp,
         ...(groundingSnapshot
           ? { groundingSnapshot: structuredClone(groundingSnapshot) }
@@ -6096,6 +6169,7 @@ export class OperationsApplicationService {
       ),
       intent: work.intent,
       jobId: prepared.job.id,
+      billingTaskId: prepared.job.billingTaskId ?? work.id,
       replayed: prepared.replayed,
     };
   }
@@ -6107,14 +6181,16 @@ export class OperationsApplicationService {
     submissionKey: string,
     retryOf?: string,
     approvalReceiptId?: string,
+    billingQuoteId?: string,
   ) {
     const prepared = await this.prepareCreativeJob(
       context,
       workId,
       contract,
       submissionKey,
-      retryOf || approvalReceiptId
+      retryOf || approvalReceiptId || billingQuoteId
         ? {
+            ...(billingQuoteId ? { billingQuoteId } : {}),
             ...(retryOf ? { retryOf } : {}),
             ...(approvalReceiptId ? { approvalReceiptId } : {}),
           }
@@ -6231,6 +6307,7 @@ export class OperationsApplicationService {
     workId: string,
     contract: CreativeExecutionContract,
     submissionKey: string,
+    billingQuoteId?: string,
     abortSignal?: AbortSignal
   ) {
     const executor = this.dependencies.creationExecutor;
@@ -6245,7 +6322,8 @@ export class OperationsApplicationService {
       context,
       workId,
       contract,
-      submissionKey
+      submissionKey,
+      billingQuoteId ? { billingQuoteId } : undefined,
     );
     if (prepared.replayed) {
       throw new OperationsError(
@@ -6254,8 +6332,30 @@ export class OperationsApplicationService {
         409
       );
     }
+    if (billingQuoteId && !this.dependencies.billingLifecycle) {
+      throw new OperationsError(
+        'BILLING_LIFECYCLE_UNAVAILABLE',
+        'Product billing is unavailable for a paid creative submission.',
+        503,
+      );
+    }
+    if (billingQuoteId) {
+      await this.dependencies.billingLifecycle!.beforeSubmit({
+        quoteId: billingQuoteId,
+        quoteRevision: prepared.contract.quoteRevision,
+        resource: creativeBillingResource(prepared.contract.operation),
+        taskId: prepared.billingTaskId,
+        workspaceId: context.workspaceId,
+      });
+    }
     const started = await executor.startCopyStream({
       abortSignal,
+      ...(billingQuoteId
+        ? {
+            billingQuoteRevision: prepared.contract.quoteRevision,
+            billingTaskId: prepared.billingTaskId,
+          }
+        : {}),
       briefSnapshot: structuredClone(prepared.briefSnapshot),
       context,
       contract: structuredClone(prepared.contract),
@@ -6405,7 +6505,8 @@ export class OperationsApplicationService {
     context: OperationContext,
     sourceJobId: string,
     submissionKey: string,
-    kind: CreativeRerollKind
+    kind: CreativeRerollKind,
+    billingQuoteId?: string,
   ) {
     const state = await this.read(context);
     const source = state.creativeJobs.find((job) => job.id === sourceJobId);
@@ -6421,7 +6522,10 @@ export class OperationsApplicationService {
       source.workId,
       source.contract,
       submissionKey,
-      { reroll: { kind, sourceJobId } }
+      {
+        ...(billingQuoteId ? { billingQuoteId } : {}),
+        reroll: { kind, sourceJobId },
+      },
     );
     const result = await this.executeCreativeJob(context, prepared.jobId);
     if (result.job.status === 'completed') {
@@ -6442,13 +6546,15 @@ export class OperationsApplicationService {
   async rerollCreativeJob(
     context: OperationContext,
     sourceJobId: string,
-    submissionKey: string
+    submissionKey: string,
+    billingQuoteId?: string,
   ) {
     return this.rerollCompletedCreativeJob(
       context,
       sourceJobId,
       submissionKey,
-      'paid'
+      'paid',
+      billingQuoteId,
     );
   }
 

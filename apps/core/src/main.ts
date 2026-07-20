@@ -140,7 +140,6 @@ import {
   PostgresSupplyPlanningControlPlane,
   PostgresSupplyPlanningMigration,
 } from './p1/supply-registry/index.js';
-import { MemoryProductUsageLedger } from './p1/product-billing/index.js';
 import {
   ModelSupplyStructuredNodeRunner,
 } from './p1/model-supply/structured-node-runner.js';
@@ -233,8 +232,9 @@ import {
   publishLaunchCatalog,
 } from './p1/creation-experience/index.js';
 import {
+  DurableProductBillingService,
+  PostgresProductBillingRepository,
   ProductBillingFoundationModule,
-  ProductQuoteService,
 } from './p1/product-billing/index.js';
 import {
   MemoryFirstAdoptPort,
@@ -292,6 +292,7 @@ const foundationRepository = new PostgresFoundationRepository(pool);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
 const redemptionStore = new PostgresRedemptionStore(pool);
 const operationsRepository = new PostgresOperationsRepository(pool);
+const productBillingRepository = new PostgresProductBillingRepository(pool);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
 const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
@@ -440,8 +441,10 @@ const bootDeploymentIds =
     ? deployments.map((deployment) => deployment.id)
     : ['boot-placeholder-deployment'];
 await ensureDefaultRuntimeSupplyPool(supplyPoolStore, bootDeploymentIds);
-// #92 ProductUsage memory ledger for bilateral foundation-ledger bridge.
-const productUsageLedger = new MemoryProductUsageLedger();
+const productQuoteService = new DurableProductBillingService(
+  productBillingRepository,
+);
+const billingLifecycle = productQuoteService;
 const permissionAuthorizer = createPermissionAuthorizer();
 const mediaExecutionMode = modelMediaExecutionMode(modelRuntime);
 const gatedModelExecution = new ModeGateExecutionPort(
@@ -533,7 +536,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       executionEntitlementPolicy,
       grantLotLedger,
       {
-        productUsage: productUsageLedger,
+        billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
         supplyFreezes: supplyFreezeStore,
       },
@@ -677,6 +680,7 @@ await migratePostgresSchema(pool, [
   redemptionStore,
   adminConfigRepository,
   operationsRepository,
+  productBillingRepository,
   storeFactLedger,
   contextBundleRepository,
   contextSourceRevisions,
@@ -896,6 +900,7 @@ const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
   relationalProductRepository
 );
 operationsService = new OperationsApplicationService(operationsRepository, {
+  billingLifecycle,
   contentPackageExporter: new ContentPackageZipExportAdapter(
     assetStorage,
     new OperationsContentPackageExportAssetReader(
@@ -1044,7 +1049,6 @@ const creationExperienceCatalog = new CreationExperienceCatalogService(
   creationExperienceRepository,
 );
 await publishLaunchCatalog(creationExperienceCatalog);
-const productQuoteService = new ProductQuoteService();
 const visualAdoptionStore = new MemoryVisualAdoptionStore();
 const visualAdoptionService = new VisualAdoptionService(
   visualAdoptionStore,

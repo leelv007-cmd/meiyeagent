@@ -93,11 +93,17 @@ function revisionFor(input: BuildProductQuoteInput): string {
         billingMode: input.billingMode,
         catalogModelId: input.catalogModelId,
         catalogModelRevision: input.catalogModelRevision,
+        currency: input.currency,
+        formulaExpression: input.formulaExpression,
+        frozenCandidateDeploymentIds: input.frozenCandidateDeploymentIds,
         minChargeSeconds: input.minChargeSeconds,
         quotePolicyRevision: input.quotePolicyRevision,
         roundingStepSeconds: input.roundingStepSeconds,
+        routeSnapshotRef: input.routeSnapshotRef,
         targetSeconds: input.targetSeconds,
         unitRate: input.unitRate,
+        authorizedCeiling: input.authorizedCeiling,
+        workspaceId: input.workspaceId,
       }),
     )
     .digest('hex')
@@ -262,6 +268,30 @@ export class ProductQuoteService {
     const quoteId = this.taskIndex.get(taskId);
     if (!quoteId) return null;
     return this.getQuote(quoteId);
+  }
+
+  /** Hydrates a transaction-local service from one durable repository snapshot. */
+  restoreState(input: {
+    quote: ProductQuoteSnapshot;
+    usage?: ProductUsageRecord | null;
+    providerCosts?: ProviderCostSnapshot[];
+  }) {
+    this.quotes.set(input.quote.quoteId, structuredClone(input.quote));
+    if (input.quote.taskId) {
+      this.taskIndex.set(input.quote.taskId, input.quote.quoteId);
+    }
+    if (input.usage) {
+      if (!this.usage.restore) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'The configured ProductUsage ledger cannot restore durable state.',
+        );
+      }
+      this.usage.restore(structuredClone(input.usage));
+    }
+    for (const cost of input.providerCosts ?? []) {
+      this.providerCosts.save(structuredClone(cost));
+    }
   }
 
   confirm(input: ConfirmQuoteInput): ProductQuoteSnapshot {
@@ -710,8 +740,10 @@ export class ProductQuoteService {
   ) {
     const frozen = quote.frozenCandidateDeploymentIds;
     if (!frozen || frozen.length === 0) {
-      // No frozen set recorded — allow but do not invent candidates.
-      return;
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Quote ${quote.quoteId} has no frozen fallback candidate set.`,
+      );
     }
     if (!frozen.includes(deploymentId)) {
       throw new P1DomainError(

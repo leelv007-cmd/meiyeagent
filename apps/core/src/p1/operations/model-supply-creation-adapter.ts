@@ -356,6 +356,12 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
     const result = await this.controlPlane.submitGeneration(
       context,
       {
+        ...(input.billingTaskId && input.billingQuoteRevision
+          ? {
+              billingQuoteRevision: input.billingQuoteRevision,
+              billingTaskId: input.billingTaskId,
+            }
+          : {}),
         dataClass: input.contract.dataClass,
         input: {
           ...dimensions,
@@ -423,6 +429,12 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
     const started = await this.controlPlane.startCopyStream(
       context,
       {
+        ...(input.billingTaskId && input.billingQuoteRevision
+          ? {
+              billingQuoteRevision: input.billingQuoteRevision,
+              billingTaskId: input.billingTaskId,
+            }
+          : {}),
         dataClass: input.contract.dataClass,
         input: {
           ...(input.groundingSnapshot?.assets.length

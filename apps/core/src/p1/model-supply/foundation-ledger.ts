@@ -26,6 +26,7 @@ import {
   type SupplyRequestFreeze,
 } from '../entitlement-pools/supply-ledger-fields.js';
 import type { ProductUsageLedger } from '../product-billing/product-usage-ledger.js';
+import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import { modelSupplyCheckpointToFoundationRoute } from '../route-snapshot-normalize.js';
 import type {
   ModelSupplyLedgerCheckpointInput,
@@ -43,6 +44,7 @@ import type {
  */
 export interface FoundationModelSupplyLedgerBilateral {
   productUsage?: ProductUsageLedger;
+  billingLifecycle?: BillingLifecyclePort;
   /** Default shared pool id when freeze is synthesized from route snapshot. */
   defaultSupplyPoolId?: string;
   /** Durable H2 store shared by HTTP and Worker processes. */
@@ -54,6 +56,7 @@ export interface FoundationModelSupplyLedgerBilateral {
 
 export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
   private readonly productUsageBridge?: SupplySideProductUsageBridge;
+  private readonly billingLifecycle?: BillingLifecyclePort;
   private readonly defaultSupplyPoolId: string;
   private readonly supplyFreezes?: FoundationModelSupplyLedgerBilateral['supplyFreezes'];
 
@@ -81,6 +84,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     },
     bilateral: FoundationModelSupplyLedgerBilateral = {},
   ) {
+    this.billingLifecycle = bilateral.billingLifecycle;
     this.productUsageBridge = bilateral.productUsage
       ? new SupplySideProductUsageBridge(bilateral.productUsage)
       : undefined;
@@ -187,6 +191,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       replayed = checkpoint.replayed;
     }
 
+    await this.checkpointProductBilling(input);
     if (!replayed) return { replayed: false };
 
     const job = await this.foundation.getGenerationJob(context, input.jobId);
@@ -201,6 +206,10 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
           refundOperationId: `model-failure:${recoveredResult.jobId}`,
         });
       }
+      await this.settleProductBilling({
+        submission: input.submission,
+        result: recoveredResult,
+      });
       return {
         replayed: true,
         recoveredResult,
@@ -357,6 +366,113 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
         refundOperationId: `model-failure:${input.result.jobId}`,
       });
     }
+    await this.settleProductBilling(input);
+  }
+
+  private async checkpointProductBilling(input: ModelSupplyLedgerCheckpointInput) {
+    const taskId = input.submission.billingTaskId;
+    if (!taskId) return;
+    if (!this.billingLifecycle) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Product billing lifecycle is required for a billed model submission.',
+      );
+    }
+    const candidate = input.snapshot.allowedCandidates?.find(
+      (row) => row.deploymentId === input.deployment.id,
+    );
+    const unitPriceMicros =
+      candidate?.unitPriceMicros ?? input.deployment.unitPrice?.amountMicros ?? 0;
+    await this.billingLifecycle.dispatchAttempt({
+      attemptId: input.attemptId,
+      deploymentId: input.deployment.id,
+      providerCost: {
+        currency: candidate?.currency ?? input.deployment.unitPrice?.currency ?? 'CNY',
+        estimatedCostMicros: unitPriceMicros,
+        evidence: `routeSnapshotRef=${input.snapshot.id}`,
+        evidenceKind: 'estimated',
+        payer: input.snapshot.credentialMode === 'byok_strict' ? 'workspace_byok' : 'platform',
+        supplierPriceRevision:
+          candidate?.priceRevision ?? input.deployment.priceRevision ?? input.snapshot.priceRevision ?? 'unknown',
+        unit: candidate?.unit ?? input.deployment.unitPrice?.unit ?? 'request',
+        unitPriceMicros,
+      },
+      taskId,
+      workspaceId: input.submission.workspaceId,
+    });
+  }
+
+  private async settleProductBilling(input: {
+    submission: ModelSupplyLedgerCheckpointInput['submission'];
+    result: ModelSupplyResult;
+  }) {
+    const taskId = input.submission.billingTaskId;
+    if (!taskId || input.result.status === 'unknown') return;
+    if (!this.billingLifecycle) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Product billing lifecycle is required for a billed model submission.',
+      );
+    }
+    const snapshot = input.result.snapshot;
+    const attempt = input.result.attempt;
+    const candidate = snapshot.allowedCandidates?.find(
+      (row) => row.deploymentId === attempt.deploymentId,
+    );
+    const canFallback =
+      input.result.status === 'failed' &&
+      attempt.acceptance === 'rejected_before_accept' &&
+      snapshot.fallbackConsent === true &&
+      input.result.attempts.length < (snapshot.allowedCandidates?.length ?? 1);
+    const cost = input.result.providerCost;
+    const measuredDuration =
+      input.result.asset?.technicalValidation?.evidenceKind === 'measured' &&
+      Number.isFinite(input.result.asset.technicalValidation.durationSeconds) &&
+      input.result.asset.technicalValidation.durationSeconds >= 0
+        ? input.result.asset.technicalValidation.durationSeconds
+        : undefined;
+    const providerCost = {
+      currency: cost.currency,
+      ...(cost.status === 'observed'
+        ? { observedCostMicros: Math.max(0, Math.round(cost.amount * 1_000_000)) }
+        : { estimatedCostMicros: Math.max(0, Math.round(cost.amount * 1_000_000)) }),
+      evidence: `modelSupplyProviderCost=${cost.id}`,
+      evidenceKind: cost.status === 'observed' ? ('provider_bill' as const) : ('estimated' as const),
+      payer: snapshot.credentialMode === 'byok_strict' ? ('workspace_byok' as const) : ('platform' as const),
+      supplierPriceRevision: candidate?.priceRevision ?? snapshot.priceRevision ?? 'unknown',
+      unit: candidate?.unit ?? providerCostUnit(cost),
+      unitPriceMicros: candidate?.unitPriceMicros ?? 0,
+      ...(cost.usage.mediaUnits !== undefined
+        ? { usageQuantity: cost.usage.mediaUnits, usageUnit: 'media_unit' }
+        : {}),
+    };
+    if (canFallback) {
+      await this.billingLifecycle.dispatchAttempt({
+        attemptId: attempt.id,
+        deploymentId: attempt.deploymentId,
+        providerCost,
+        taskId,
+        workspaceId: input.submission.workspaceId,
+      });
+      return;
+    }
+    await this.billingLifecycle.settleTask({
+      attemptId: attempt.id,
+      deploymentId: attempt.deploymentId,
+      providerCost,
+      status: input.result.status,
+      taskId,
+      ...(measuredDuration !== undefined
+        ? {
+            trustedUsage: {
+              actualSeconds: measuredDuration,
+              evidenceRef: input.result.asset!.id,
+              kind: 'media_duration' as const,
+            },
+          }
+        : {}),
+      workspaceId: input.submission.workspaceId,
+    });
   }
 
   async freezeAttempt(input: ModelSupplyLedgerCheckpointInput) {
@@ -415,7 +531,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       },
       supplyPoolId: snapshot.supplyPoolId ?? this.defaultSupplyPoolId,
       providerCostAttemptId: input.result.attempt.id,
-      productUsageTaskId: input.result.jobId,
+      productUsageTaskId: input.submission.billingTaskId ?? input.result.jobId,
       frozenAt: snapshot.createdAt,
     });
 
@@ -423,7 +539,10 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       try {
         // ProductUsage must already be reserved via #92 for attach to stick;
         // missing reserve is non-fatal so model-supply settlement stays primary.
-        return this.productUsageBridge.attachFreeze(input.result.jobId, freeze);
+        return this.productUsageBridge.attachFreeze(
+          input.submission.billingTaskId ?? input.result.jobId,
+          freeze,
+        );
       } catch (error) {
         if (error instanceof P1DomainError && error.code === 'NOT_FOUND') {
           return freeze;

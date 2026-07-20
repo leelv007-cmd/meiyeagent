@@ -680,6 +680,10 @@ export interface CreativeJob {
   workId: string;
   status: CreativeJobStatus;
   contract: CreativeExecutionContract;
+  /** ProductBilling task; a paid reroll uses its new Job id. */
+  billingTaskId?: string;
+  /** Accepted ProductQuote bound to this billed execution. */
+  billingQuoteId?: string;
   submissionKey: string;
   providerJobId?: string;
   routeSnapshotId?: string;
@@ -828,6 +832,8 @@ export interface CreationExecutorPort {
     inheritanceContext?: CreativeInheritanceContext;
     intent: string;
     idempotencyKey: string;
+    billingTaskId?: string;
+    billingQuoteRevision?: string;
     productUsageQuantity: 0 | 1;
   }): Promise<CreationExecutionResult>;
   startCopyStream?(input: {
@@ -838,6 +844,8 @@ export interface CreationExecutorPort {
     inheritanceContext?: CreativeInheritanceContext;
     intent: string;
     idempotencyKey: string;
+    billingTaskId?: string;
+    billingQuoteRevision?: string;
     productUsageQuantity: 0 | 1;
     abortSignal?: AbortSignal;
   }): Promise<{

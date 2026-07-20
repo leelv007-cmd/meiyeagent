@@ -108,6 +108,7 @@ export const assistantStreamRequestSchema = z.object({
 });
 
 export const copyStreamRequestSchema = z.object({
+  billingQuoteId: z.string().trim().min(1).optional(),
   catalogModelId: z.string().trim().min(1),
   workId: z.string().trim().min(1),
   submissionKey: z.string().trim().min(1).max(200),

@@ -46,6 +46,8 @@ export interface ProductUsageLedger {
   refund(input: RefundProductUsageInput): ProductUsageRecord;
   getByTask(taskId: string): ProductUsageRecord | null;
   listByWorkspace(workspaceId: string): ProductUsageRecord[];
+  /** Repository adapters may hydrate one transaction-local memory ledger. */
+  restore?(record: ProductUsageRecord): void;
 }
 
 function assertNonNegativeQuantity(quantity: number, field: string) {
@@ -241,5 +243,10 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
     return [...this.byTask.values()]
       .filter((record) => record.workspaceId === workspaceId)
       .map((record) => structuredClone(record));
+  }
+
+  restore(record: ProductUsageRecord) {
+    this.byTask.set(record.taskId, structuredClone(record));
+    this.byId.set(record.id, structuredClone(record));
   }
 }

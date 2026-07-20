@@ -10,6 +10,12 @@ import {
   MemoryGrantLotLedger,
 } from '../foundation/index.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import {
+  MemoryProductUsageLedger,
+  ProductBillingLifecycle,
+  ProductQuoteService,
+  type BillingLifecyclePort,
+} from '../product-billing/index.js';
 import type { SupplyRequestFreeze } from '../entitlement-pools/supply-ledger-fields.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
 import {
@@ -74,6 +80,94 @@ async function fixture() {
     ledger: new FoundationModelSupplyLedger(foundation),
   };
 }
+
+test('uses the Operations billing task as the single ProductUsage and ProviderCost lifecycle', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner(context.workspaceId, context.userId);
+  const foundation = new P1ApplicationService(repository);
+  await foundation.appendUsageEvent(
+    context,
+    {
+      action: 'adjust',
+      amount: 10,
+      id: 'single-ledger-image-entitlement',
+      reason: 'opening entitlement',
+      resource: 'image',
+    },
+    'single-ledger-image-entitlement',
+  );
+  const productUsage = new MemoryProductUsageLedger();
+  const quotes = new ProductQuoteService({ usageLedger: productUsage });
+  const quote = quotes.buildQuote({
+    billingMode: 'per_request',
+    catalogModelId: model.id,
+    frozenCandidateDeploymentIds: [deployment.id],
+    quoteId: 'operations-quote-1',
+    quotePolicyRevision: 'product-policy-1',
+    unitRate: 1,
+    workspaceId: context.workspaceId,
+  });
+  quotes.confirm({ quoteId: quote.quoteId, taskId: 'creative-work-1' });
+  const canonicalBilling = new ProductBillingLifecycle(quotes);
+  canonicalBilling.beforeSubmit({
+    quoteRevision: quote.revision,
+    resource: 'image',
+    taskId: 'creative-work-1',
+    workspaceId: context.workspaceId,
+  });
+  let settleAttempts = 0;
+  const billingLifecycle: BillingLifecyclePort = {
+    beforeSubmit: (input) => canonicalBilling.beforeSubmit(input),
+    dispatchAttempt: (input) => canonicalBilling.dispatchAttempt(input),
+    settleTask(input) {
+      settleAttempts += 1;
+      if (settleAttempts === 1) throw new Error('billing settle response lost');
+      return canonicalBilling.settleTask(input);
+    },
+  };
+  const ledger = new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    { billingLifecycle, productUsage },
+  );
+  const application = new ModelSupplyApplicationService({
+    deployments: [deployment],
+    execution: new RecordedProviderExecutionPort(),
+    ledger,
+    models: [model],
+  });
+  const submission = {
+    actorId: context.userId,
+    billingQuoteRevision: quote.revision,
+    billingTaskId: 'creative-work-1',
+    dataClass: [],
+    idempotencyKey: 'single-product-ledger-submit',
+    operation: 'image.generate' as const,
+    prompt: '单一账本生成',
+    selection: { catalogModelId: model.id, mode: 'fixed' as const },
+    workspaceId: context.workspaceId,
+  };
+
+  await assert.rejects(
+    application.submit(submission),
+    /billing settle response lost/,
+  );
+  const replay = await application.submit(submission);
+
+  assert.equal(productUsage.listByWorkspace(context.workspaceId).length, 1);
+  assert.equal(productUsage.getByTask('creative-work-1')?.status, 'committed');
+  assert.equal(quotes.getQuoteByTask('creative-work-1')?.lifecycleStatus, 'settled');
+  assert.deepEqual(
+    quotes.listProviderCosts('creative-work-1').map((cost) => cost.attemptId),
+    [replay.attempt.id],
+  );
+  assert.equal(settleAttempts, 2);
+  assert.equal(
+    ledger.getSupplyFreeze('creative-work-1')?.productUsageTaskId,
+    'creative-work-1',
+  );
+});
 
 test('rejects a permanently invalid route before consuming a grant lot', async () => {
   const repository = new MemoryFoundationRepository();

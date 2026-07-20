@@ -1014,6 +1014,7 @@ export function createCoreServer({
           parsed.data.workId,
           parsed.data.contract,
           parsed.data.submissionKey,
+          parsed.data.billingQuoteId,
           abortController.signal
         );
         const settlement = started.completion.catch((error) => {

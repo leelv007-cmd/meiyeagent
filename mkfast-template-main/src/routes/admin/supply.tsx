@@ -13,7 +13,9 @@ export const Route = createFileRoute('/admin/supply')({
       Object.fromEntries(
         Object.entries(search).map(([key, value]) => [
           key,
-          typeof value === 'string' ? value : null,
+          typeof value === 'string' || typeof value === 'number'
+            ? String(value)
+            : null,
         ])
       )
     ),

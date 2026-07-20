@@ -841,6 +841,7 @@ export class OperationsFoundationModule implements P1OperationModule {
           requiredString(payload, 'submissionKey'),
           undefined,
           optionalString(payload.approvalReceiptId),
+          optionalString(payload.billingQuoteId),
         );
       case 'approve_creative_generation':
         return this.operations.approveCreativeGeneration(context, {
@@ -863,7 +864,8 @@ export class OperationsFoundationModule implements P1OperationModule {
         return this.operations.rerollCreativeJob(
           context,
           requiredString(payload, 'jobId'),
-          requiredString(payload, 'submissionKey')
+          requiredString(payload, 'submissionKey'),
+          optionalString(payload.billingQuoteId),
         );
       case 'quality_retry_creative_job':
         return this.operations.qualityRetryCreativeJob(

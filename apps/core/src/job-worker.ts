@@ -95,7 +95,10 @@ import {
   PostgresSupplyPlanningControlPlane,
   PostgresSupplyPlanningMigration,
 } from './p1/supply-registry/index.js';
-import { MemoryProductUsageLedger } from './p1/product-billing/index.js';
+import {
+  DurableProductBillingService,
+  PostgresProductBillingRepository,
+} from './p1/product-billing/index.js';
 import {
   ModelSupplyImageGenerationAdapter,
   ContentPackageZipExportAdapter,
@@ -189,6 +192,10 @@ const referenceAssets = new CompositeReferenceAssetResolver([
 const foundationRepository = new PostgresFoundationRepository(pool);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
 const operationsRepository = new PostgresOperationsRepository(pool);
+const productBillingRepository = new PostgresProductBillingRepository(pool);
+const billingLifecycle = new DurableProductBillingService(
+  productBillingRepository,
+);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
 const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
@@ -238,6 +245,7 @@ await migratePostgresSchema(pool, [
   grantLotLedger,
   adminConfigRepository,
   operationsRepository,
+  productBillingRepository,
   storeFactLedger,
   contextBundleRepository,
   contextSourceRevisions,
@@ -316,7 +324,6 @@ const modelSupplyProviderAdmission =
     supplyPools: supplyPoolStore,
     capacityLeases: capacityLeaseStore,
   });
-const productUsageLedger = new MemoryProductUsageLedger();
 const mediaExecutionMode = modelMediaExecutionMode(modelRuntime);
 const gatedModelExecution = new ModeGateExecutionPort(
   modelRuntime.execution,
@@ -340,7 +347,7 @@ const modelSupplyRuntime = createModelSupplyRuntime({
       executionEntitlementPolicy,
       grantLotLedger,
       {
-        productUsage: productUsageLedger,
+        billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
         supplyFreezes: supplyFreezeStore,
       },
@@ -477,6 +484,7 @@ const batchExecutor = new ProductOperationsBatchExecutionAdapter(
   () => operations
 );
 operations = new OperationsApplicationService(operationsRepository, {
+  billingLifecycle,
   contentPackageExporter: new ContentPackageZipExportAdapter(
     assetStorage,
     new OperationsContentPackageExportAssetReader(

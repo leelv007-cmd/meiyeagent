@@ -27,6 +27,10 @@ export interface ModelSupplySubmission {
   actorId: string;
   correlationId?: string;
   idempotencyKey: string;
+  /** Canonical ProductUsage task owned by the outer Operations lifecycle. */
+  billingTaskId?: string;
+  /** Accepted ProductQuote revision checked before provider dispatch. */
+  billingQuoteRevision?: string;
   operation: ModelOperation;
   selection: RequestedSelection;
   dataClass: DataClass[];

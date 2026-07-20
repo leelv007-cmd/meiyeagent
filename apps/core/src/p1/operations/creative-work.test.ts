@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { BillingLifecyclePort } from '../product-billing/index.js';
 import {
   MemoryOperationsRepository,
   OperationsApplicationService,
@@ -160,12 +161,18 @@ function setup(
   groundingResolver?: CreativeGroundingResolverPort,
   contentWriteOwnership?: {
     get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
-  }
+  },
+  billingLifecycle: BillingLifecyclePort = {
+    beforeSubmit() {},
+    dispatchAttempt() {},
+    settleTask() {},
+  },
 ) {
   const repository = new MemoryOperationsRepository();
   repository.grantMembership(owner.userId, owner.workspaceId);
   const service = new OperationsApplicationService(repository, {
     assetDataClassResolver,
+    billingLifecycle,
     canvasExporter: {
       async export() {
         throw new Error('not used');
@@ -185,6 +192,74 @@ function setup(
 }
 
 describe('creative work lifecycle', () => {
+  it('validates and reserves an explicit ProductQuote before provider dispatch', async () => {
+    const order: string[] = [];
+    const executor = new RecordedCreationExecutor();
+    const originalSubmit = executor.submit.bind(executor);
+    executor.submit = async (input) => {
+      order.push(`dispatch:${input.billingTaskId}`);
+      return originalSubmit(input);
+    };
+    const billingLifecycle: BillingLifecyclePort = {
+      assertAcceptedQuote(input) {
+        order.push(`validate:${input.taskId}`);
+        return {
+          billingMode: 'per_request',
+          catalogModelId: contract.catalogModelId,
+          confirmedAmount: contract.estimatedAmount,
+          formula: {
+            currency: contract.currency,
+            expression: 'per_request',
+            unitRate: contract.estimatedAmount,
+          },
+          lifecycleStatus: 'confirmed',
+          quoteId: input.quoteId,
+          quotePolicyRevision: 'policy-1',
+          revision: input.quoteRevision,
+          taskId: input.taskId,
+          workspaceId: input.workspaceId,
+        };
+      },
+      beforeSubmit(input) {
+        order.push(`reserve:${input.taskId}`);
+      },
+      dispatchAttempt() {},
+      settleTask() {},
+    };
+    const { service } = setup(
+      executor,
+      undefined,
+      undefined,
+      undefined,
+      billingLifecycle,
+    );
+    const work = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      intent: '为门店写三条内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'explicit-product-quote',
+      sourceReferences: [],
+    });
+
+    const result = await service.submitCreativeWork(
+      owner,
+      work.id,
+      contract,
+      'explicit-product-quote-submit',
+      undefined,
+      undefined,
+      'quote-explicit',
+    );
+
+    assert.equal(result.job.billingQuoteId, 'quote-explicit');
+    assert.deepEqual(order, [
+      `validate:${work.id}`,
+      `reserve:${work.id}`,
+      `dispatch:${work.id}`,
+    ]);
+  });
+
   it('persists the chosen operation before a creative work is executed', async () => {
     const { service } = setup();
     const work = await service.createCreativeWork(owner, {
