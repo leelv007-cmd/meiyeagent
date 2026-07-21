@@ -656,6 +656,114 @@ test(
       assert.equal((await resumed).status, 'admitted');
     });
 
+    await t.test(
+      'service_turns retain only a sliding window after complete (F-H-05)',
+      async () => {
+        const { FAIR_QUEUE_SERVICE_TURN_WINDOW } = await import(
+          './fair-queue.js'
+        );
+        const queue = new PostgresSupplyAccountFairQueue(pool);
+        const supplyAccountId = 'supply-service-window';
+        // Insert more turns than the window via the same complete path (enqueue→claim→complete).
+        const total = FAIR_QUEUE_SERVICE_TURN_WINDOW + 12;
+        for (let i = 0; i < total; i += 1) {
+          const requestId = `window-req-${i}`;
+          await queue.enqueue({
+            supplyAccountId,
+            requestId,
+            productAccountId: i % 2 === 0 ? 'acct-even' : 'acct-odd',
+            workspaceId: 'ws-window',
+            queuePriority: 1,
+            enqueuedAt: new Date().toISOString(),
+          });
+          assert.equal(
+            await queue.claimTurn(supplyAccountId, requestId),
+            true,
+            `expected claimTurn for ${requestId}`,
+          );
+          await queue.complete(
+            supplyAccountId,
+            requestId,
+            i % 2 === 0 ? 'acct-even' : 'acct-odd',
+            new Date().toISOString(),
+          );
+        }
+        const retained = await pool.query<{ n: string }>(
+          `SELECT count(*)::text AS n
+             FROM p1_supply_capacity_service_turns
+            WHERE supply_account_id = $1`,
+          [supplyAccountId],
+        );
+        assert.equal(
+          Number(retained.rows[0]?.n ?? 0),
+          FAIR_QUEUE_SERVICE_TURN_WINDOW,
+          'service_turns must purge down to the sliding window',
+        );
+      },
+    );
+
+    await t.test(
+      'distinct supply accounts admit in parallel under per-account locks (F-H-04)',
+      async () => {
+        const first = new PostgresCapacityLeaseStore(pool);
+        const second = new PostgresCapacityLeaseStore(pool);
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 60_000).toISOString();
+        const acquiredAt = now.toISOString();
+        const limits = {
+          supplyAccount: { concurrency: 1 },
+          productAccount: { concurrency: 4 },
+          systemTotal: { concurrency: 8 },
+        };
+        // Two different supply accounts must both admit without a global lock serializing them.
+        const [a, b] = await Promise.all([
+          first.tryAcquire({
+            leaseId: 'fh04-supply-a',
+            supplyAccountId: 'supply-fh04-a',
+            productAccountId: 'acct-fh04-a',
+            workspaceId: 'ws-fh04-a',
+            limits,
+            acquiredAt,
+            expiresAt,
+            now: acquiredAt,
+          }),
+          second.tryAcquire({
+            leaseId: 'fh04-supply-b',
+            supplyAccountId: 'supply-fh04-b',
+            productAccountId: 'acct-fh04-b',
+            workspaceId: 'ws-fh04-b',
+            limits,
+            acquiredAt,
+            expiresAt,
+            now: acquiredAt,
+          }),
+        ]);
+        assert.equal(a.status, 'admitted');
+        assert.equal(b.status, 'admitted');
+
+        // System-total independent counter still enforces the global ceiling.
+        const systemTight = {
+          supplyAccount: { concurrency: 4 },
+          productAccount: { concurrency: 4 },
+          systemTotal: { concurrency: 2 },
+        };
+        const overflow = await first.tryAcquire({
+          leaseId: 'fh04-system-overflow',
+          supplyAccountId: 'supply-fh04-c',
+          productAccountId: 'acct-fh04-c',
+          workspaceId: 'ws-fh04-c',
+          limits: systemTight,
+          acquiredAt,
+          expiresAt,
+          now: acquiredAt,
+        });
+        assert.equal(overflow.status, 'rejected');
+        if (overflow.status === 'rejected') {
+          assert.equal(overflow.layer, 'system_total');
+        }
+      },
+    );
+
     await t.test('supply freezes are immutable and only reference the three ledgers', async () => {
       const store = new PostgresSupplyFreezeStore(pool);
       const freeze = buildSupplyRequestFreeze({

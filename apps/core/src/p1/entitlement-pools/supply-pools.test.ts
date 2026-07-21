@@ -17,6 +17,10 @@ import { MemoryProductUsageLedger } from '../product-billing/product-usage-ledge
 import { AccountAllocationStore } from './account-allocation.js';
 import { SupplyAccountFairQueue } from './fair-queue.js';
 import {
+  capacitySupplyAccountLockKey,
+  capacitySystemLockKey,
+} from './postgres-repository.js';
+import {
   SupplierVarianceLedger,
   SupplySideProductUsageBridge,
   assertGrantConsumeIdempotencySeparation,
@@ -468,6 +472,70 @@ test('fair queue contract: peers share supply slots; priority still orders bands
     ),
     'weighted priority must admit the waiting low-priority account by turn 12',
   );
+});
+
+test('fair queue service counts use a sliding window (F-H-05)', () => {
+  const window = 4;
+  const queue = new SupplyAccountFairQueue('cred-window', {
+    maxRecentServed: window,
+  });
+  const t0 = '2026-07-20T00:00:00.000Z';
+
+  // Serve 6 turns for acct-a only — window retains 4, not 6.
+  for (let i = 0; i < 6; i += 1) {
+    queue.enqueue({
+      requestId: `a-${i}`,
+      productAccountId: 'acct-a',
+      workspaceId: 'ws-a',
+      queuePriority: 1,
+      enqueuedAt: t0,
+    });
+    const dequeued = queue.dequeue();
+    assert.equal(dequeued.status, 'dequeued');
+  }
+  assert.equal(queue.recentServiceSampleSize(), window);
+  assert.equal(queue.snapshotServiceCounts().get('acct-a'), window);
+
+  // Serve 4 more for acct-b — window is all acct-b; acct-a weight fully decays.
+  for (let i = 0; i < window; i += 1) {
+    queue.enqueue({
+      requestId: `b-${i}`,
+      productAccountId: 'acct-b',
+      workspaceId: 'ws-b',
+      queuePriority: 1,
+      enqueuedAt: t0,
+    });
+    assert.equal(queue.dequeue().status, 'dequeued');
+  }
+  assert.equal(queue.recentServiceSampleSize(), window);
+  assert.equal(queue.snapshotServiceCounts().get('acct-a'), undefined);
+  assert.equal(queue.snapshotServiceCounts().get('acct-b'), window);
+});
+
+test('capacity lock keys are supply-scoped with independent system key (F-H-04)', () => {
+  assert.equal(
+    capacitySupplyAccountLockKey('cred-a'),
+    'p1:capacity-leases:supply:cred-a',
+  );
+  assert.equal(
+    capacitySupplyAccountLockKey('cred-b'),
+    'p1:capacity-leases:supply:cred-b',
+  );
+  assert.notEqual(
+    capacitySupplyAccountLockKey('cred-a'),
+    capacitySupplyAccountLockKey('cred-b'),
+  );
+  assert.equal(capacitySystemLockKey(), 'p1:capacity-leases:system');
+  assert.notEqual(
+    capacitySupplyAccountLockKey('cred-a'),
+    capacitySystemLockKey(),
+  );
+  // Former global hotspot must not reappear as the supply key.
+  assert.notEqual(
+    capacitySupplyAccountLockKey('any'),
+    'p1:capacity-leases:global',
+  );
+  assert.notEqual(capacitySystemLockKey(), 'p1:capacity-leases:global');
 });
 
 // ---------------------------------------------------------------------------

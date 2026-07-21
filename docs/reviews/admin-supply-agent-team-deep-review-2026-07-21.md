@@ -179,8 +179,8 @@
 | **F-G-05** | FIXED | G | recorded adapter 私有 MemoryHealthOverlay | 注入共享 HealthOverlayPort |
 | **F-G-06** | OPEN | G | catalog revision report 进程本地；`supportsDeployment` 无 head 时 true | catalog head 共读；生产无 head fail-closed |
 | **F-G-07** | OPEN | G | PG RoutePolicy publish 抛裸 Error | 统一 `P1DomainError('IDEMPOTENCY_CONFLICT')` |
-| **F-H-04** | OPEN | H | 全局 capacity advisory lock 热点 | 锁粒度改 supply_account + 独立 system 计数 |
-| **F-H-05** | OPEN | H | service_turns 无限增长 | 滑动窗口 / purge |
+| **F-H-04** | FIXED | H | 全局 capacity advisory lock 热点 | 锁粒度改 supply_account + 独立 system 计数 |
+| **F-H-05** | FIXED | H | service_turns 无限增长 | 滑动窗口 / purge |
 | **F-I-03** | FIXED | I | 默认 InMemory receipt store | 生产 media adapter 强制 durable store |
 | **F-J-03** | FIXED | J | `/admin` `/admin/supply` i18n 硬编码 | paraglide keys |
 | **F-J-04** | FIXED | J | exception home 加载态静默 | 显式 loading/error |
@@ -306,6 +306,7 @@ pnpm --filter @meiye/web exec tsx --test src/p1/z2-accept-ap.test.tsx
 | 2026-07-21 | Wave 0/1 core 落地 (`a8f8e17`) | **FIXED**: F-G-01, F-G-02, F-G-03, F-G-04, F-S2-01, F-S2-02, F-I-03 |
 | 2026-07-21 | Wave P2 + docs (`aa044e3`) | **FIXED**: F-S2-03（foundation `dataPolicyRevisionId`/`sourceKind` round-trip）、F-G-05（recorded adapters 改用 `getSharedRecordedHealthOverlay`）；**DOC**: F-S2-04（#108 审计降 partial） |
 | 2026-07-21 | Wave 1 I/H (`1dd60ba`) | **FIXED**: F-I-01 dualChannelReady 同 CatalogModel + channelMatrixAligned；F-H-01 product 拒后立即 requeue；F-H-02 滑动窗口 RPM/TPM |
+| 2026-07-21 | Wave 1 H follow-up (#115) | **FIXED**: F-H-04 capacity 锁改 supply_account + 独立 system lock；F-H-05 service_turns 滑动窗口（`FAIR_QUEUE_SERVICE_TURN_WINDOW`）+ complete 时 purge |
 | 2026-07-21 | Wave 1 KZ (`8ca86f5`) | **FIXED**: F-KZ-01 timing-safe token + elevation allowlist；F-KZ-02 authorizer 默认强制；F-KZ-03 weak secrets；F-KZ-04 product command default-deny |
 | 2026-07-21 | Wave 1/2 J (`724cc1b`) | **FIXED**: F-J-02 live 路由模拟器；F-J-03/04 i18n + loading；F-J-05 WIRING-DIFF；**PARTIAL**: F-J-01 model-settings badge（composer 全量 ModelCardPicker deferred） |
 | 2026-07-21 | Wave 2 外部门禁（保持 OPEN/KNOWN） | **OPEN/KNOWN 未动**: F-I-02 live matrix、F-H-03/#92 ProductUsage、F-I-04 Playwright D-048；#128 仍 external_blocked，严禁宣称整包完成 |
