@@ -97,6 +97,10 @@ test('composer home submits to Result Center navigation helpers', () => {
   );
   assert.match(home, /navigateAfterSubmitSuccess/);
   assert.match(home, /\/dashboard\/results\/\$workId/);
+  assert.match(
+    home,
+    /submissionKey:\s*`composer-submit:\$\{created\.id\}:\$\{input\.quote\.revision\}`/
+  );
   assert.doesNotMatch(home, new RegExp('selectedPreset\\.internal' + 'Intent'));
   assert.doesNotMatch(home, /\?workId=/);
 });

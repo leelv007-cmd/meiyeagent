@@ -602,7 +602,7 @@ export function ComposerHome({
           workId: created.id,
           contract,
           billingQuoteId: input.quote.quoteId,
-          submissionKey: `composer-submit:${input.quote.revision}`,
+          submissionKey: `composer-submit:${created.id}:${input.quote.revision}`,
           ...(input.briefConfirmationId
             ? { briefConfirmationId: input.briefConfirmationId }
             : {}),
