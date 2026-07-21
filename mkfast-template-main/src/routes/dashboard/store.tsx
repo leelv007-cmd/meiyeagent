@@ -65,6 +65,10 @@ import { Routes } from '@/lib/routes';
 import { optionalSourceId } from '@/p1/source-object-navigation';
 import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import { useProductState } from '@/product/client';
+import {
+  missingStoreProfileFields,
+  type StoreProfileForm,
+} from '@/product/store-profile-form';
 import type { ProductCommand } from '@meiye/contracts';
 import {
   IconAlertTriangle,
@@ -112,7 +116,7 @@ function StoreProfilePage() {
   const regulatedDefaultApplied = useRef(false);
   const regulatedTouched = useRef(false);
   const [pastedFacts, setPastedFacts] = useState('');
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<StoreProfileForm>({
     name: '',
     city: '',
     district: '',
@@ -134,6 +138,7 @@ function StoreProfilePage() {
   const [extraProjects, setExtraProjects] = useState<
     Array<{ id: string; name: string; price: string; durationMinutes: string }>
   >([]);
+  const missingRequiredFields = missingStoreProfileFields(form);
 
   useEffect(() => {
     if (
@@ -383,30 +388,35 @@ function StoreProfilePage() {
                   <Field
                     id="store-name"
                     label={dashboard_store_name_label()}
+                    required
                     value={form.name}
                     onChange={(name) => setForm({ ...form, name })}
                   />
                   <Field
                     id="store-city"
                     label={dashboard_store_city_label()}
+                    required
                     value={form.city}
                     onChange={(city) => setForm({ ...form, city })}
                   />
                   <Field
                     id="store-district"
                     label={dashboard_store_district_label()}
+                    required
                     value={form.district}
                     onChange={(district) => setForm({ ...form, district })}
                   />
                   <Field
                     id="store-address"
                     label={dashboard_store_address_label()}
+                    required
                     value={form.address}
                     onChange={(address) => setForm({ ...form, address })}
                   />
                   <Field
                     id="store-booking"
                     label={dashboard_store_booking_label()}
+                    required
                     value={form.booking}
                     onChange={(booking) => setForm({ ...form, booking })}
                   />
@@ -500,6 +510,7 @@ function StoreProfilePage() {
                   <Field
                     id="store-project-name"
                     label={dashboard_store_project_name_label()}
+                    required
                     value={form.projectName}
                     onChange={(projectName) =>
                       setForm({ ...form, projectName })
@@ -508,7 +519,8 @@ function StoreProfilePage() {
                   <div>
                     <div className="flex items-center justify-between gap-2">
                       <Label htmlFor="project-price">
-                        {dashboard_store_project_price_label()}
+                        {dashboard_store_project_price_label()}{' '}
+                        <span aria-hidden="true">*</span>
                       </Label>
                       <Badge variant="outline">
                         {dashboard_store_manual_confirmation_required()}
@@ -617,7 +629,7 @@ function StoreProfilePage() {
                 </h2>
                 <div>
                   <Label htmlFor="brand-voice">
-                    {dashboard_store_brand_voice_label()}
+                    {dashboard_store_brand_voice_label()} <span aria-hidden="true">*</span>
                   </Label>
                   <Textarea
                     id="brand-voice"
@@ -634,9 +646,7 @@ function StoreProfilePage() {
               <Button
                 disabled={
                   pending ||
-                  !form.name ||
-                  !form.projectName ||
-                  !Number(form.projectPrice)
+                  missingRequiredFields.length > 0
                 }
                 onClick={() => void confirmStore()}
               >
@@ -683,21 +693,26 @@ function StoreProfilePage() {
 function Field({
   id: explicitId,
   label,
+  required = false,
   value,
   onChange,
 }: {
   id?: string;
   label: string;
+  required?: boolean;
   value: string;
   onChange: (value: string) => void;
 }) {
   const id = explicitId ?? label.replaceAll('/', '-');
   return (
     <div>
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id}>
+        {label} {required ? <span aria-hidden="true">*</span> : null}
+      </Label>
       <Input
         id={id}
         className="mt-2"
+        required={required}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
