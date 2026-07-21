@@ -20,6 +20,7 @@ import type {
 import type {
   CopyImageTextWorksurfaceFacts,
   CopyPreviewCarrier,
+  FactSourceItem,
   PlatformPreviewVariant,
 } from './copy-image-text-worksurface-model';
 import type { ImageWorksurfaceFacts } from './image-worksurface-model';
@@ -193,6 +194,33 @@ function candidateLifecycle(
   return contents.length > 0 ? 'adopted' : 'candidate';
 }
 
+function factSourcesFromGroundingSnapshot(
+  work: CreativeWork,
+  job: CreativeJob | null
+): FactSourceItem[] {
+  const store = job?.groundingSnapshot?.store;
+  if (!store || !job) return [];
+  const namedProjects = store.projects.filter((project) =>
+    work.intent.includes(project.name)
+  );
+  const projects =
+    namedProjects.length > 0
+      ? namedProjects
+      : store.projects.length === 1
+        ? store.projects
+        : [];
+  return projects
+    .filter((project) => Number.isFinite(project.price) && project.price >= 0)
+    .map((project) => ({
+      id: `grounding:${job.id}:project:${project.id}:price`,
+      kind: 'price' as const,
+      label: `${project.name}价格`,
+      summary: `${project.price} 元 · ${store.name}已确认`,
+      status: 'confirmed' as const,
+      sourceRef: `grounding:${job.id}:project:${project.id}`,
+    }));
+}
+
 function copyFacts(input: {
   work: CreativeWork;
   job: CreativeJob | null;
@@ -217,6 +245,7 @@ function copyFacts(input: {
         .filter((asset) => asset.kind === 'image')
         .map((asset) => asset.id),
     },
+    factSources: factSourcesFromGroundingSnapshot(input.work, input.job),
     lifecycle: candidateLifecycle(input.contents),
   };
 }

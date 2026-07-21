@@ -83,6 +83,29 @@ const projection: CreativeWorkbenchProjection = {
       submissionKey: 'submit-copy',
       outputAssetIds: ['asset-copy'],
       outputContentIds: [],
+      groundingSnapshot: {
+        capturedAt: '2026-07-20T08:00:00.000Z',
+        store: {
+          name: '测试门店',
+          city: '上海',
+          district: '静安区',
+          address: '测试路 1 号',
+          booking: '请提前预约',
+          brandVoice: '真实克制',
+          prohibitions: [],
+          regulated: false,
+          confirmedAt: '2026-07-20T08:00:00.000Z',
+          projects: [
+            {
+              id: 'project-copy',
+              name: '夏日猫眼美甲',
+              price: 128,
+              durationMinutes: 90,
+            },
+          ],
+        },
+        assets: [],
+      },
       createdAt: '2026-07-20T08:00:00.000Z',
       updatedAt: '2026-07-20T08:10:00.000Z',
     },
@@ -230,6 +253,16 @@ test('projects copy facts from the exact recommended/current job asset', () => {
     '不得回退到这条最新结果'
   );
   assert.equal(result.selected?.copyWorksurface?.lifecycle, 'candidate');
+  assert.deepEqual(result.selected?.copyWorksurface?.factSources, [
+    {
+      id: 'grounding:job-copy-old:project:project-copy:price',
+      kind: 'price',
+      label: '夏日猫眼美甲价格',
+      summary: '128 元 · 测试门店已确认',
+      status: 'confirmed',
+      sourceRef: 'grounding:job-copy-old:project:project-copy',
+    },
+  ]);
   assert.equal(result.selected?.imageWorksurface, undefined);
 });
 
