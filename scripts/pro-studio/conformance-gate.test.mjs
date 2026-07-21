@@ -23,7 +23,7 @@ import {
   validateReleaseEvidence,
 } from './conformance-gate.mjs';
 
-test('local live development sends Canvas session validation to the Vite listener', () => {
+test('local live development keeps browser launch and Main auth on localhost', () => {
   const rootPackage = JSON.parse(
     readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
   );
@@ -31,6 +31,10 @@ test('local live development sends Canvas session validation to the Vite listene
   assert.match(
     rootPackage.scripts['dev:live'],
     /MAIN_APP_ORIGIN=http:\/\/localhost:3000/
+  );
+  assert.match(
+    rootPackage.scripts['dev:live'],
+    /CANVAS_ORIGIN=http:\/\/localhost:4200/
   );
 });
 
