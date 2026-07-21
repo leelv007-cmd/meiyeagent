@@ -6249,7 +6249,8 @@ export class OperationsApplicationService {
         throw new OperationsError(
           'CREATIVE_GROUNDING_INCOMPLETE',
           `Confirmed Product grounding is incomplete: ${resolution.missing.join(', ')}.`,
-          409
+          409,
+          { missing: resolution.missing }
         );
       }
       groundingSnapshot = resolution.snapshot;

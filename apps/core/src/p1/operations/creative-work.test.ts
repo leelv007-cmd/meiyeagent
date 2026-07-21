@@ -900,7 +900,9 @@ describe('creative work lifecycle', () => {
       (error: unknown) =>
         error instanceof OperationsError &&
         error.code === 'CREATIVE_GROUNDING_INCOMPLETE' &&
-        error.status === 409
+        error.status === 409 &&
+        JSON.stringify(error.details?.missing) ===
+          JSON.stringify(['confirmed_store', 'real_authorized_asset'])
     );
 
     assert.equal((await service.getCreativeWorkbench(owner)).jobs.length, 0);

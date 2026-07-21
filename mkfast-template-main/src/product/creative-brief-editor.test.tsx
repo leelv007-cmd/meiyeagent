@@ -206,4 +206,5 @@ test('grounding readiness requires confirmed store, project, qualification and e
     ]),
     []
   );
+  assert.deepEqual(missingCreativeGrounding(product, []), []);
 });

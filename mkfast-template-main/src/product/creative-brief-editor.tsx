@@ -77,7 +77,9 @@ export function missingCreativeGrounding(
       );
       return Boolean(asset && isContentPackageEligibleAsset(asset));
     });
-  if (!allAssetsReady) missing.push('real_authorized_asset');
+  if (assetIds.length > 0 && !allAssetsReady) {
+    missing.push('real_authorized_asset');
+  }
   return missing;
 }
 
