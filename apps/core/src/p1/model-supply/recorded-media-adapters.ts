@@ -33,7 +33,7 @@ import {
 } from '../supply-registry/health-overlay.js';
 
 const execFileAsync = promisify(execFile);
-let recordedVideoFixture: Promise<Buffer> | undefined;
+const recordedVideoFixtures = new Map<string, Promise<Buffer>>();
 const recordedAudioFixtures = new Map<'mp3' | 'wav', Promise<Buffer>>();
 
 function digest(value: string | Uint8Array) {
@@ -1599,15 +1599,42 @@ const RECORDED_PNG = Buffer.from(
   'base64'
 );
 
-function recordedH264Video() {
-  recordedVideoFixture ??= createRecordedH264Video().catch((error) => {
-    recordedVideoFixture = undefined;
-    throw error;
-  });
-  return recordedVideoFixture;
+export function recordedH264Video(options: {
+  durationSeconds?: number;
+  height?: number;
+  width?: number;
+} = {}) {
+  const durationSeconds =
+    typeof options.durationSeconds === 'number' && options.durationSeconds > 0
+      ? options.durationSeconds
+      : 1;
+  const width =
+    typeof options.width === 'number' && options.width > 0
+      ? options.width
+      : 320;
+  const height =
+    typeof options.height === 'number' && options.height > 0
+      ? options.height
+      : 568;
+  const key = `${width}x${height}:${durationSeconds}`;
+  let fixture = recordedVideoFixtures.get(key);
+  if (!fixture) {
+    fixture = createRecordedH264Video({ durationSeconds, height, width }).catch(
+      (error) => {
+        recordedVideoFixtures.delete(key);
+        throw error;
+      }
+    );
+    recordedVideoFixtures.set(key, fixture);
+  }
+  return fixture;
 }
 
-async function createRecordedH264Video() {
+async function createRecordedH264Video(input: {
+  durationSeconds: number;
+  height: number;
+  width: number;
+}) {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-recorded-video-'));
   const outputPath = join(directory, 'fixture.mp4');
   try {
@@ -1621,9 +1648,9 @@ async function createRecordedH264Video() {
         '-f',
         'lavfi',
         '-i',
-        'color=c=#d8b4ae:s=320x568:r=24',
+        `color=c=#d8b4ae:s=${input.width}x${input.height}:r=24`,
         '-t',
-        '1',
+        String(input.durationSeconds),
         '-an',
         '-c:v',
         'libx264',

@@ -103,6 +103,7 @@ export type ResultCenterPageProps = {
   onVideoCanonicalEdit?: (command: VideoCanonicalEditCommand) => Promise<void>;
   onVideoProStudio?: (handoff: VideoProStudioRefineHandoff) => void;
   onCopyAdopt?: () => void | Promise<void>;
+  onCopyGeneratePlatformVariants?: CopyImageTextWorksurfaceProps['onGeneratePlatformVariants'];
   onCopyHandEdit?: CopyImageTextWorksurfaceProps['onHandEdit'];
   onImageAdopt?: (
     actionKind: string,
@@ -119,6 +120,8 @@ export type ResultCenterPageProps = {
     }
   ) => DeliveryOutcome | undefined | Promise<DeliveryOutcome | undefined>;
   onAction?: (action: ResultAction, shell: ResultShellModel) => void;
+  actionBusy?: boolean;
+  actionError?: string;
   supportedActionIds?: readonly ResultAction['id'][];
   adjustConfirmation?: ReactNode;
   onDriftChoice?: (choice: ResultRevisionDriftChoice) => void;
@@ -171,6 +174,7 @@ function WorkspaceBody(props: {
   onVideoCanonicalEdit?: ResultCenterPageProps['onVideoCanonicalEdit'];
   onVideoProStudio?: ResultCenterPageProps['onVideoProStudio'];
   onCopyAdopt?: ResultCenterPageProps['onCopyAdopt'];
+  onCopyGeneratePlatformVariants?: ResultCenterPageProps['onCopyGeneratePlatformVariants'];
   onCopyHandEdit?: ResultCenterPageProps['onCopyHandEdit'];
   onImageAdopt?: ResultCenterPageProps['onImageAdopt'];
   onImageSaveLibrary?: ResultCenterPageProps['onImageSaveLibrary'];
@@ -235,6 +239,7 @@ function WorkspaceBody(props: {
         facts={copyFacts}
         onAdjust={props.onAdjust}
         onAdopt={props.onCopyAdopt}
+        onGeneratePlatformVariants={props.onCopyGeneratePlatformVariants}
         onHandEdit={props.onCopyHandEdit}
       />
     );
@@ -305,6 +310,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
   const { view, tokenStream, drift } = projectResultCenterPageView(props);
   const actionEnabled = (action: ResultAction) =>
     action.enabled &&
+    !props.actionBusy &&
     Boolean(props.onAction) &&
     (props.supportedActionIds?.includes(action.id) ?? true);
 
@@ -424,6 +430,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
         <div
           className="flex flex-wrap gap-2"
           data-testid="result-shell-actions"
+          aria-busy={props.actionBusy ? 'true' : undefined}
         >
           {actions.primary ? (
             <Button
@@ -473,6 +480,16 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             </details>
           ) : null}
         </div>
+
+        {props.actionError ? (
+          <p
+            className="text-sm text-destructive"
+            data-testid="result-shell-action-error"
+            role="alert"
+          >
+            {props.actionError}
+          </p>
+        ) : null}
 
         {showCopyStream ? (
           <section
@@ -526,6 +543,9 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             onVideoCanonicalEdit={props.onVideoCanonicalEdit}
             onVideoProStudio={props.onVideoProStudio}
             onCopyAdopt={props.onCopyAdopt}
+            onCopyGeneratePlatformVariants={
+              props.onCopyGeneratePlatformVariants
+            }
             onCopyHandEdit={props.onCopyHandEdit}
             onImageAdopt={props.onImageAdopt}
             onImageSaveLibrary={props.onImageSaveLibrary}

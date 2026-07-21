@@ -12,11 +12,17 @@ import type {
   CreativeJob,
   CreativeWorkbenchProjection,
   CreativeWork,
+  PublicContentPackage,
   ResultWorkspaceKind,
   VideoWorkflowPublicProjection,
 } from '@meiye/contracts';
 
-import type { CopyImageTextWorksurfaceFacts } from './copy-image-text-worksurface-model';
+import type {
+  CopyImageTextWorksurfaceFacts,
+  CopyPreviewCarrier,
+  FactSourceItem,
+  PlatformPreviewVariant,
+} from './copy-image-text-worksurface-model';
 import type { ImageWorksurfaceFacts } from './image-worksurface-model';
 import type { ResultShellProgressState } from './result-shell-model';
 import type { ClientResolverWorkRecord } from './result-target-wiring';
@@ -52,6 +58,49 @@ export function latestContentPackageForWork<
   TPackage extends { source: { workId?: string } },
 >(packages: TPackage[] | undefined, workId: string) {
   return packages?.find((candidate) => candidate.source.workId === workId);
+}
+
+/** Stable client-side marker for detecting an asynchronously refreshed package. */
+export function contentPackageRefreshToken(
+  contentPackage:
+    | Pick<PublicContentPackage, 'id' | 'revision' | 'updatedAt'>
+    | undefined
+) {
+  return contentPackage
+    ? `${contentPackage.id}:${contentPackage.revision}:${contentPackage.updatedAt}`
+    : null;
+}
+
+/**
+ * Only expose a platform preview after the canonical ContentPackage records
+ * the server-produced copy.adapt output. Acceptance seed shells are export
+ * scaffolding, not a platform rewrite.
+ */
+export function platformPreviewsFromContentPackage(
+  contentPackage: Pick<PublicContentPackage, 'variants'> | undefined
+): PlatformPreviewVariant[] {
+  return (contentPackage?.variants ?? []).flatMap((variant) => {
+    const current = variant.versions.find(
+      (version) => version.id === variant.currentVersionId
+    );
+    if (
+      !current ||
+      (current.source !== 'ai_generated' &&
+        current.source !== 'merchant_edited')
+    ) {
+      return [];
+    }
+    return [
+      {
+        carrier: variant.platform as CopyPreviewCarrier,
+        title: current.title,
+        body: current.body,
+        conversionHook: current.conversionHook ?? '',
+        topics: [...current.topics],
+        source: 'copy.adapt' as const,
+      },
+    ];
+  });
 }
 
 function workspaceKindForWork(work: CreativeWork): ResultWorkspaceKind {
@@ -156,6 +205,33 @@ function candidateLifecycle(
   return contents.length > 0 ? 'adopted' : 'candidate';
 }
 
+function factSourcesFromGroundingSnapshot(
+  work: CreativeWork,
+  job: CreativeJob | null
+): FactSourceItem[] {
+  const store = job?.groundingSnapshot?.store;
+  if (!store || !job) return [];
+  const namedProjects = store.projects.filter((project) =>
+    work.intent.includes(project.name)
+  );
+  const projects =
+    namedProjects.length > 0
+      ? namedProjects
+      : store.projects.length === 1
+        ? store.projects
+        : [];
+  return projects
+    .filter((project) => Number.isFinite(project.price) && project.price >= 0)
+    .map((project) => ({
+      id: `grounding:${job.id}:project:${project.id}:price`,
+      kind: 'price' as const,
+      label: `${project.name}价格`,
+      summary: `${project.price} 元 · ${store.name}已确认`,
+      status: 'confirmed' as const,
+      sourceRef: `grounding:${job.id}:project:${project.id}`,
+    }));
+}
+
 function copyFacts(input: {
   work: CreativeWork;
   job: CreativeJob | null;
@@ -180,6 +256,7 @@ function copyFacts(input: {
         .filter((asset) => asset.kind === 'image')
         .map((asset) => asset.id),
     },
+    factSources: factSourcesFromGroundingSnapshot(input.work, input.job),
     lifecycle: candidateLifecycle(input.contents),
   };
 }
@@ -206,8 +283,10 @@ function imageFacts(input: {
     lifecycle: candidateLifecycle(input.contents),
     candidates: images.map((asset, index) => ({
       assetId: asset.id,
-      ...(asset.ownedAssetId
-        ? { previewUrl: `/v1/assets/${asset.ownedAssetId}` }
+      ...(asset.objectKey
+        ? {
+            previewUrl: `/api/core/p1/assets?objectKey=${encodeURIComponent(asset.objectKey)}`,
+          }
         : {}),
       persisted: Boolean(asset.ownedAssetId || asset.objectKey),
       rightsOk: true,
@@ -289,6 +368,13 @@ export function buildLiveVideoWorksurface(
   const videoAsset = selection.videoAsset;
   const content = selection.contents[0];
   const baseRevisionId = content?.id ?? selection.job?.id ?? selection.work.id;
+  const composedCandidate = videoAsset?.objectKey
+    ? {
+        assetId: videoAsset.id,
+        playableUrl: `/api/core/p1/assets?objectKey=${encodeURIComponent(videoAsset.objectKey)}`,
+        durationSeconds: selection.job?.contract.durationSeconds ?? 0,
+      }
+    : null;
 
   return buildVideoWorksurfaceState({
     workId: selection.work.id,
@@ -296,13 +382,7 @@ export function buildLiveVideoWorksurface(
     baseRevisionId,
     ...(content ? { contentId: content.id, versionId: content.id } : {}),
     ...(videoAsset ? { selectedObjectId: videoAsset.id } : {}),
-    composedCandidate: videoAsset
-      ? {
-          assetId: videoAsset.id,
-          playableUrl: `/v1/assets/${videoAsset.ownedAssetId ?? videoAsset.id}`,
-          durationSeconds: selection.job?.contract.durationSeconds ?? 0,
-        }
-      : null,
+    composedCandidate,
     adoption: content
       ? {
           status: 'adopted',
@@ -311,6 +391,6 @@ export function buildLiveVideoWorksurface(
           composedAssetId: videoAsset?.id ?? null,
           adoptedAt: content.acceptedAt ?? content.createdAt,
         }
-      : { status: videoAsset ? 'candidate_ready' : 'none' },
+      : { status: composedCandidate ? 'candidate_ready' : 'none' },
   });
 }

@@ -7,6 +7,7 @@ import type {
 } from '@meiye/contracts';
 import type { ZodType } from 'zod';
 import { VideoLabelValidationError } from '../../video/validation.js';
+import { recordedH264Video } from './recorded-media-adapters.js';
 import type { AiStreamingRunner } from './ai-sdk-runner.js';
 import type {
   ReferenceAssetResolverPort,
@@ -3732,9 +3733,7 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
   }): Promise<OwnedAsset> {
     const durationSeconds =
       input.subtitles?.at(-1)?.endSeconds ?? input.clips.length * 15;
-    const bytes = Buffer.from(
-      `${input.clips.map((clip) => clip.sha256).join(':')}:aigc-label-${input.aigcLabelEnabled ? 'on' : 'off'}:watermark-${input.brandWatermarkText ?? 'off'}`
-    );
+    const bytes = await recordedH264Video({ durationSeconds });
     const sha256 = hash(bytes);
     const cover = await this.storage?.persistVideoCover?.({
       bytes: Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=', 'base64'),
@@ -3799,8 +3798,8 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
       playable: true,
       codec: 'h264',
       durationSeconds,
-      width: 720,
-      height: 1280,
+      width: 320,
+      height: 568,
       hashVerified: true,
       evidenceKind: 'recorded_synthetic',
     };

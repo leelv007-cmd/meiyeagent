@@ -136,6 +136,25 @@ export class OperationsError extends Error {
   }
 }
 
+/**
+ * Result adoption seeds three export shells from the accepted base version.
+ * They are not formal copy.adapt output and must stay replaceable once the
+ * real platform rewrite is requested.
+ */
+export function hasOnlySeededPlatformVariantShells(
+  contentPackage: Pick<ContentPackage, 'variants'>,
+  currentVersion: Pick<ContentPackage['versions'][number], 'id'>
+): boolean {
+  return (
+    contentPackage.variants.length === 3 &&
+    contentPackage.variants.every((variant) =>
+      variant.versions.length === 1 &&
+      variant.versions[0]?.id === variant.currentVersionId &&
+      variant.currentVersionId === `${currentVersion.id}:${variant.platform}`
+    )
+  );
+}
+
 const exportPromotionalMaterialReceiptSchema =
   promotionalMaterialReceiptSchema
     .pick({
@@ -6230,7 +6249,8 @@ export class OperationsApplicationService {
         throw new OperationsError(
           'CREATIVE_GROUNDING_INCOMPLETE',
           `Confirmed Product grounding is incomplete: ${resolution.missing.join(', ')}.`,
-          409
+          409,
+          { missing: resolution.missing }
         );
       }
       groundingSnapshot = resolution.snapshot;
@@ -8893,6 +8913,8 @@ export class OperationsApplicationService {
   async generateContentPackageVariants(
     context: OperationContext,
     input: {
+      billingQuoteId?: string;
+      billingTaskId?: string;
       contract: CreativeExecutionContract & {
         operation: 'copy.adapt';
         outputCount: 3;
@@ -8926,13 +8948,6 @@ export class OperationsApplicationService {
         409
       );
     }
-    if (contentPackage.variants.length > 0) {
-      throw new OperationsError(
-        'CONTENT_PACKAGE_VARIANTS_EXIST',
-        'Platform variants already exist for this ContentPackage.',
-        409
-      );
-    }
     const currentVersion = contentPackage.versions.find(
       (version) => version.id === contentPackage.currentVersionId
     );
@@ -8940,6 +8955,16 @@ export class OperationsApplicationService {
       throw new OperationsError(
         'CONTENT_PACKAGE_VERSION_NOT_FOUND',
         'The current ContentPackage version was not found.',
+        409
+      );
+    }
+    if (
+      contentPackage.variants.length > 0 &&
+      !hasOnlySeededPlatformVariantShells(contentPackage, currentVersion)
+    ) {
+      throw new OperationsError(
+        'CONTENT_PACKAGE_VARIANTS_EXIST',
+        'Platform variants already exist for this ContentPackage.',
         409
       );
     }
@@ -8968,8 +8993,84 @@ export class OperationsApplicationService {
         409
       );
     }
-    await executor.inspect(context.workspaceId, input.contract);
+    let acceptedQuoteAuthority:
+      | import('./types.js').AcceptedProductQuoteInspectionAuthority
+      | undefined;
+    if (input.billingQuoteId || input.billingTaskId) {
+      if (!input.billingQuoteId || !input.billingTaskId) {
+        throw new OperationsError(
+          'INVALID_CONTENT_PACKAGE',
+          'A ContentPackage variant quote requires both quote and task identifiers.',
+          400,
+        );
+      }
+      const assertAcceptedQuote =
+        this.dependencies.billingLifecycle?.assertAcceptedQuote;
+      if (!assertAcceptedQuote) {
+        throw new OperationsError(
+          'BILLING_QUOTE_VALIDATOR_UNAVAILABLE',
+          'Confirmed Product quote validation is unavailable.',
+          503,
+        );
+      }
+      const acceptedQuote = await assertAcceptedQuote.call(
+        this.dependencies.billingLifecycle,
+        {
+          quoteId: input.billingQuoteId,
+          quoteRevision: input.contract.quoteRevision,
+          taskId: input.billingTaskId,
+          workspaceId: context.workspaceId,
+        },
+      );
+      if (
+        acceptedQuote.quoteId !== input.billingQuoteId ||
+        acceptedQuote.revision !== input.contract.quoteRevision ||
+        acceptedQuote.catalogModelId !== input.contract.catalogModelId ||
+        acceptedQuote.catalogModelRevision !== input.contract.catalogRevision ||
+        acceptedQuote.confirmedAmount !== input.contract.estimatedAmount ||
+        acceptedQuote.formula.currency !== input.contract.currency ||
+        acceptedQuote.outputCount !== input.contract.outputCount ||
+        acceptedQuote.outputLabel !== input.contract.outputLabel
+      ) {
+        throw new OperationsError(
+          'CREATIVE_QUOTE_CHANGED',
+          'The accepted Product quote no longer matches the execution contract.',
+          409,
+        );
+      }
+      acceptedQuoteAuthority = {
+        kind: 'accepted_product_quote',
+        quoteId: acceptedQuote.quoteId,
+        quoteRevision: acceptedQuote.revision,
+        catalogModelId: acceptedQuote.catalogModelId,
+        catalogModelRevision: acceptedQuote.catalogModelRevision,
+        confirmedAmount: acceptedQuote.confirmedAmount,
+        currency: acceptedQuote.formula.currency,
+        outputCount: acceptedQuote.outputCount,
+        outputLabel: acceptedQuote.outputLabel,
+      };
+    }
+    await executor.inspect(
+      context.workspaceId,
+      input.contract,
+      acceptedQuoteAuthority,
+    );
+    if (input.billingQuoteId && input.billingTaskId) {
+      await this.dependencies.billingLifecycle?.beforeSubmit({
+        quoteId: input.billingQuoteId,
+        quoteRevision: input.contract.quoteRevision,
+        resource: 'copy',
+        taskId: input.billingTaskId,
+        workspaceId: context.workspaceId,
+      });
+    }
     const outcome = await executor.submit({
+      ...(input.billingTaskId
+        ? {
+            billingQuoteRevision: input.contract.quoteRevision,
+            billingTaskId: input.billingTaskId,
+          }
+        : {}),
       context,
       contract: input.contract,
       intent: JSON.stringify({
@@ -9017,7 +9118,10 @@ export class OperationsApplicationService {
           409
         );
       }
-      if (stored.variants.length > 0) {
+      if (
+        stored.variants.length > 0 &&
+        !hasOnlySeededPlatformVariantShells(stored, currentVersion)
+      ) {
         throw new OperationsError(
           'CONTENT_PACKAGE_VARIANTS_EXIST',
           'Platform variants already exist for this ContentPackage.',

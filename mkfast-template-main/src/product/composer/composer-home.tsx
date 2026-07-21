@@ -6,8 +6,12 @@
  * via typed ResultCenterNavigation (never the legacy query-string work bridge).
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -21,6 +25,9 @@ import {
   creation_entry_submit,
   model_card_channel_multi,
   model_card_channel_single,
+  workbench_grounding_go_to_store,
+  workbench_grounding_source_required,
+  workbench_grounding_store_required,
   workbench_operation_failed,
   workbench_work_create_failed,
   workbench_work_created,
@@ -28,6 +35,7 @@ import {
 import {
   commandP1,
   operationsCommand,
+  P1RequestError,
   p1ErrorCode,
   queryP1,
 } from '@/p1/client';
@@ -50,8 +58,12 @@ import {
   ComposerImageInput,
   type ComposerImageIdentity,
 } from '@/product/composer-image-input';
-import { executeProductCommand } from '@/product/client';
+import { executeProductCommand, useProductState } from '@/product/client';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
+import {
+  missingCreativeGrounding,
+  type CreativeGroundingRequirement,
+} from '@/product/creative-brief-editor';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
 
 import { BriefSurface } from './brief-surface-panel';
@@ -130,6 +142,46 @@ function briefSourcesFromDraft(sources: unknown[]): BriefSourceSignal[] {
   });
 }
 
+type ComposerGroundingBlocker = 'source' | 'store';
+
+function sourceReferencesFromDraft(sources: unknown[]) {
+  return sources.flatMap((source) => {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      return [];
+    }
+    const id = (source as Record<string, unknown>).id;
+    return typeof id === 'string' ? [{ id, kind: 'asset' as const }] : [];
+  });
+}
+
+function groundingBlockerFromMissing(
+  missing: readonly CreativeGroundingRequirement[]
+): ComposerGroundingBlocker | null {
+  if (
+    missing.includes('confirmed_store') ||
+    missing.includes('confirmed_project') ||
+    missing.includes('confirmed_qualification')
+  ) {
+    return 'store';
+  }
+  return missing.includes('real_authorized_asset') ? 'source' : null;
+}
+
+function groundingBlockerFromError(error: unknown) {
+  if (!(error instanceof P1RequestError)) return null;
+  const missing = error.details?.missing;
+  if (!Array.isArray(missing)) return null;
+  return groundingBlockerFromMissing(
+    missing.filter(
+      (value): value is CreativeGroundingRequirement =>
+        value === 'confirmed_store' ||
+        value === 'confirmed_project' ||
+        value === 'confirmed_qualification' ||
+        value === 'real_authorized_asset'
+    )
+  );
+}
+
 function sameBriefRevisions(
   left: BriefBoundRevisions,
   right: BriefBoundRevisions
@@ -163,6 +215,7 @@ export function ComposerHome({
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const product = useProductState();
   const intentRef = useRef<HTMLTextAreaElement | null>(null);
   const sourcePickerRef = useRef<HTMLElement | null>(null);
   const sourceFactsRef = useRef(new Map<string, ConfirmedAssetFacts>());
@@ -183,6 +236,8 @@ export function ComposerHome({
   );
   const [briefPending, setBriefPending] = useState(false);
   const [submissionQuotaBlocked, setSubmissionQuotaBlocked] = useState(false);
+  const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
+    useState<ComposerGroundingBlocker | null>(null);
   const [uploadsReady, setUploadsReady] = useState(true);
 
   const width =
@@ -193,6 +248,14 @@ export function ComposerHome({
   const lensId = lensState.phase === 'unselected' ? null : lensState.lensId;
   const userText = lensState.draft.userText;
   const quoteView = lensState.draft.quoteView;
+  const sourceReferences = useMemo(
+    () => sourceReferencesFromDraft(lensState.draft.sources),
+    [lensState.draft.sources]
+  );
+  const missingGrounding = useMemo(
+    () => missingCreativeGrounding(product.state, sourceReferences),
+    [product.state, sourceReferences]
+  );
 
   const surfaceQuery = useQuery({
     queryKey: p1QueryKeys.request('creation-experience', 'surface_browser', {
@@ -502,19 +565,7 @@ export function ComposerHome({
           operation: COMPOSER_OPERATION_BY_LENS[input.lensId],
           contentModules: ['social_cover'],
           sessionId: `composer:${sessionIdRef.current}`,
-          sourceReferences: lensState.draft.sources.flatMap((source) => {
-            if (
-              !source ||
-              typeof source !== 'object' ||
-              Array.isArray(source)
-            ) {
-              return [];
-            }
-            const value = source as Record<string, unknown>;
-            return typeof value.id === 'string'
-              ? [{ id: value.id, kind: 'asset' as const }]
-              : [];
-          }),
+          sourceReferences,
           ...(input.briefConfirmationId
             ? { briefConfirmationId: input.briefConfirmationId }
             : {}),
@@ -595,7 +646,7 @@ export function ComposerHome({
           workId: created.id,
           contract,
           billingQuoteId: input.quote.quoteId,
-          submissionKey: `composer-submit:${input.quote.revision}`,
+          submissionKey: `composer-submit:${created.id}:${input.quote.revision}`,
           ...(input.briefConfirmationId
             ? { briefConfirmationId: input.briefConfirmationId }
             : {}),
@@ -632,7 +683,22 @@ export function ComposerHome({
         replace: false,
       });
     },
+    onMutate: () => setSubmissionGroundingBlocked(null),
     onError: (error) => {
+      if (p1ErrorCode(error) === 'CREATIVE_GROUNDING_INCOMPLETE') {
+        const blocker =
+          groundingBlockerFromError(error) ??
+          groundingBlockerFromMissing(missingGrounding);
+        if (blocker) {
+          setSubmissionGroundingBlocked(blocker);
+          toast.error(
+            blocker === 'store'
+              ? workbench_grounding_store_required()
+              : workbench_grounding_source_required()
+          );
+          return;
+        }
+      }
       if (
         p1ErrorCode(error) === 'INSUFFICIENT_ENTITLEMENT' ||
         p1ErrorCode(error) === 'ENTITLEMENT_INSUFFICIENT'
@@ -674,10 +740,12 @@ export function ComposerHome({
 
   const handleLensChange = (next: CreationLensId) => {
     setShowRequiredHint(false);
+    setSubmissionGroundingBlocked(null);
     setLensState(selectLens(lensState, next));
   };
 
   const handleIntentChange = (value: string) => {
+    setSubmissionGroundingBlocked(null);
     setLensState(updateUserText(lensState, value));
   };
 
@@ -704,6 +772,14 @@ export function ComposerHome({
       setShowRequiredHint(true);
       return;
     }
+    const groundingBlocker =
+      product.state && !product.loading && !product.error
+        ? groundingBlockerFromMissing(missingGrounding)
+        : null;
+    if (groundingBlocker) {
+      setSubmissionGroundingBlocked(groundingBlocker);
+      return;
+    }
 
     setBriefPending(true);
     let projection: BriefTriggerProjection | undefined;
@@ -722,13 +798,7 @@ export function ComposerHome({
         lensId: lensState.lensId,
         quoteId: quoteQuery.data.quoteId,
         recipeRevisionId: recipeRevisionId ?? null,
-        sourceIds: lensState.draft.sources.flatMap((source) => {
-          if (!source || typeof source !== 'object' || Array.isArray(source)) {
-            return [];
-          }
-          const id = (source as Record<string, unknown>).id;
-          return typeof id === 'string' ? [id] : [];
-        }),
+        sourceIds: sourceReferences.map((source) => source.id),
         surfaceRevisionId:
           surfaceQuery.data?.revisionId ?? initialSurfaceRevisionId ?? null,
       });
@@ -828,13 +898,7 @@ export function ComposerHome({
       lensId: lensState.lensId,
       quoteId: quoteQuery.data!.quoteId,
       recipeRevisionId: lensState.draft.recipeRevisionId ?? null,
-      sourceIds: lensState.draft.sources.flatMap((source) => {
-        if (!source || typeof source !== 'object' || Array.isArray(source)) {
-          return [];
-        }
-        const id = (source as Record<string, unknown>).id;
-        return typeof id === 'string' ? [id] : [];
-      }),
+      sourceIds: sourceReferences.map((source) => source.id),
       surfaceRevisionId:
         surfaceQuery.data?.revisionId ?? initialSurfaceRevisionId ?? null,
     }).catch(() => null);
@@ -1170,7 +1234,29 @@ export function ComposerHome({
             >
               {creation_entry_submit()}
             </Button>
-            {createWork.isError ? (
+            {submissionGroundingBlocked === 'store' ? (
+              <p
+                className="text-sm text-destructive"
+                data-testid="composer-grounding-blocker"
+                role="alert"
+              >
+                {workbench_grounding_store_required()}{' '}
+                <Link
+                  className="font-medium underline underline-offset-4"
+                  to="/dashboard/store"
+                >
+                  {workbench_grounding_go_to_store()}
+                </Link>
+              </p>
+            ) : submissionGroundingBlocked === 'source' ? (
+              <p
+                className="text-sm text-destructive"
+                data-testid="composer-grounding-blocker"
+                role="alert"
+              >
+                {workbench_grounding_source_required()}
+              </p>
+            ) : createWork.isError ? (
               <p className="text-sm text-destructive" role="alert">
                 {workbench_operation_failed()}
               </p>

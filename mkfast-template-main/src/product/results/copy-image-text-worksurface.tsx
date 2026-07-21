@@ -12,6 +12,8 @@ import { useEffect, useState } from 'react';
 import { AdjustPrompt } from './adjust-prompt';
 import {
   COPY_PREVIEW_CARRIER_LABELS,
+  COPY_PREVIEW_EXPORT_CARRIERS,
+  COPY_PREVIEW_PLATFORM_CARRIERS,
   FACT_SOURCE_KIND_LABELS,
   projectCopyImageTextWorksurface,
   type CopyImageTextWorksurfaceFacts,
@@ -27,6 +29,7 @@ export type CopyImageTextWorksurfaceProps = {
   ) => void;
   onSelectionRewrite?: (action: SelectionRewriteAction) => void;
   onCarrierChange?: (carrier: CopyPreviewCarrier) => void;
+  onGeneratePlatformVariants?: () => Promise<void>;
   onAdjust?: (instruction: string) => void;
   onAdopt?: () => void | Promise<void>;
   onHandEdit?: (changes: {
@@ -50,6 +53,13 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     title: view.document.title,
   }));
   const [saving, setSaving] = useState(false);
+  const [generatingPlatformVariants, setGeneratingPlatformVariants] =
+    useState(false);
+  const [platformGenerationError, setPlatformGenerationError] = useState<
+    string | undefined
+  >();
+  const [adopting, setAdopting] = useState(false);
+  const [adoptionError, setAdoptionError] = useState<string | undefined>();
   useEffect(() => {
     setDraft({
       body: view.document.body,
@@ -66,6 +76,13 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     draft.body !== view.document.body ||
     draft.conversionHook !== view.document.conversionHook ||
     draft.title !== view.document.title;
+  const hasAllFormalPlatformVariants = COPY_PREVIEW_PLATFORM_CARRIERS.every(
+    (carrier) =>
+      props.facts.platformPreviews?.some(
+        (variant) =>
+          variant.carrier === carrier && variant.source === 'copy.adapt'
+      )
+  );
 
   return (
     <div
@@ -209,9 +226,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       >
         <h3 className="text-sm font-medium">平台预览</h3>
         <div className="flex flex-wrap gap-2">
-          {(
-            Object.keys(COPY_PREVIEW_CARRIER_LABELS) as CopyPreviewCarrier[]
-          ).map((carrier) => (
+          {COPY_PREVIEW_PLATFORM_CARRIERS.map((carrier) => (
             <Button
               key={carrier}
               type="button"
@@ -228,7 +243,33 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
             </Button>
           ))}
         </div>
-        {view.platformPreview?.kind === 'ready' ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">导出用途</span>
+          {COPY_PREVIEW_EXPORT_CARRIERS.map((carrier) => (
+            <Button
+              key={carrier}
+              type="button"
+              size="sm"
+              variant={selectedCarrier === carrier ? 'default' : 'outline'}
+              data-testid={`copy-carrier-${carrier}`}
+              data-active={selectedCarrier === carrier ? 'true' : 'false'}
+              onClick={() => {
+                setSelectedCarrier(carrier);
+                props.onCarrierChange?.(carrier);
+              }}
+            >
+              {COPY_PREVIEW_CARRIER_LABELS[carrier]}
+            </Button>
+          ))}
+        </div>
+        {generatingPlatformVariants ? (
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="copy-platform-preview-pending"
+          >
+            正在生成三平台正式版本…
+          </p>
+        ) : view.platformPreview?.kind === 'ready' ? (
           <div
             className="rounded-md bg-muted p-3 text-sm"
             data-testid="copy-platform-preview-body"
@@ -257,19 +298,75 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
               : '选择平台查看正式适配预览'}
           </p>
         )}
+        {props.facts.lifecycle === 'adopted' &&
+        !hasAllFormalPlatformVariants &&
+        props.onGeneratePlatformVariants ? (
+          <div className="space-y-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="copy-generate-platform-variants"
+              disabled={generatingPlatformVariants}
+              onClick={async () => {
+                setGeneratingPlatformVariants(true);
+                setPlatformGenerationError(undefined);
+                try {
+                  await props.onGeneratePlatformVariants?.();
+                } catch (error) {
+                  setPlatformGenerationError(
+                    error instanceof Error
+                      ? error.message
+                      : '平台版本生成失败，请重试。'
+                  );
+                } finally {
+                  setGeneratingPlatformVariants(false);
+                }
+              }}
+            >
+              生成正式平台版本
+            </Button>
+            {platformGenerationError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {platformGenerationError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <AdjustPrompt onSubmit={props.onAdjust} />
 
       {props.facts.lifecycle === 'candidate' ? (
-        <Button
-          type="button"
-          data-testid="copy-adopt-action"
-          disabled={!props.onAdopt}
-          onClick={() => void props.onAdopt?.()}
-        >
-          采用此版本
-        </Button>
+        <div className="space-y-2">
+          <Button
+            type="button"
+            data-testid="copy-adopt-action"
+            disabled={!props.onAdopt || adopting}
+            onClick={async () => {
+              setAdopting(true);
+              setAdoptionError(undefined);
+              try {
+                await props.onAdopt?.();
+              } catch (error) {
+                setAdoptionError(
+                  error instanceof Error
+                    ? error.message
+                    : '采用版本失败，请重试。'
+                );
+              } finally {
+                setAdopting(false);
+              }
+            }}
+          >
+            {adopting ? '采用中…' : '采用此版本'}
+          </Button>
+          {adoptionError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {adoptionError}
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {/* Explicit: mobile never gates to desktop. */}

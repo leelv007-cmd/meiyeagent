@@ -9,6 +9,7 @@ import { P1DomainError } from '../foundation/domain.js';
 
 export const publicProductQuoteOperations = [
   'copy.generate',
+  'copy.adapt',
   'image.generate',
   'video.generate',
 ] as const;
@@ -109,6 +110,8 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
     const outputLabel =
       input.operation === 'copy.generate'
         ? `${quantity} 条内容候选`
+        : input.operation === 'copy.adapt'
+          ? '三平台版本'
         : input.operation === 'image.generate'
           ? `${quantity} 张 ${input.aspectRatio ?? '3:4'} 图片`
           : '1 段竖屏视频';

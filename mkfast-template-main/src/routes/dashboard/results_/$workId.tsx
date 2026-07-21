@@ -21,7 +21,9 @@ import {
 } from '@/product/creative-job-observer';
 import {
   buildLiveVideoWorksurface,
+  contentPackageRefreshToken,
   latestContentPackageForWork,
+  platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
 } from '@/product/results/result-live-projection';
 import { ResultCenterPage } from '@/product/results/result-center-page';
@@ -115,6 +117,14 @@ function ResultCenterRoutePage() {
     useState<PendingImageAdjust | null>(null);
   const [adjustBusy, setAdjustBusy] = useState(false);
   const [adjustError, setAdjustError] = useState<string | undefined>();
+  const [shellActionBusy, setShellActionBusy] = useState(false);
+  const [shellActionError, setShellActionError] = useState<
+    string | undefined
+  >();
+  const [
+    videoRegenerationPackageBaseline,
+    setVideoRegenerationPackageBaseline,
+  ] = useState<string | null | undefined>(undefined);
   const deliveryViewport = useDeliveryViewport();
   const target = parseResultCenterSearch(workId, search);
   // ADR-0007 token stream — live partials for copy / image_text running phase.
@@ -186,6 +196,8 @@ function ResultCenterRoutePage() {
     queryFn: ({ signal }) =>
       operationsQuery<PublicContentPackage[]>('content_packages', {}, signal),
     retry: false,
+    refetchInterval:
+      videoRegenerationPackageBaseline === undefined ? false : 1_000,
   });
   const assistedReceiptsQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'assisted_list'),
@@ -240,6 +252,15 @@ function ResultCenterRoutePage() {
     contentPackagesQuery.data,
     workId
   );
+  const contentPackageToken = contentPackageRefreshToken(contentPackage);
+  useEffect(() => {
+    if (
+      videoRegenerationPackageBaseline !== undefined &&
+      contentPackageToken !== videoRegenerationPackageBaseline
+    ) {
+      setVideoRegenerationPackageBaseline(undefined);
+    }
+  }, [contentPackageToken, videoRegenerationPackageBaseline]);
   const currentPackageVersion = contentPackage?.versions.find(
     (version) => version.id === contentPackage.currentVersionId
   );
@@ -396,6 +417,7 @@ function ResultCenterRoutePage() {
             topics: [...currentPackageVersion.topics],
           },
           lifecycle: 'adopted' as const,
+          platformPreviews: platformPreviewsFromContentPackage(contentPackage),
         }
       : selected?.copyWorksurface;
   const imageWorksurface =
@@ -453,10 +475,81 @@ function ResultCenterRoutePage() {
   };
   const adopt = async (selection: Record<string, unknown>) => {
     const expectedRevision = contentPackage?.revision ?? 0;
-    await executeIntent(
+    const adopted = await executeIntent<PublicContentPackage>(
       `adopt:${workId}:${expectedRevision}:${JSON.stringify(selection)}`,
       'result_adopt',
       { expectedRevision, selection, workId }
+    );
+    await refreshCanonicalResult();
+    return adopted;
+  };
+  const generateCopyPlatformVariants = async (
+    packageToAdapt: PublicContentPackage | undefined = contentPackage
+  ) => {
+    if (
+      !packageToAdapt ||
+      !selected?.job ||
+      selected.job.contract.operation !== 'copy.generate'
+    ) {
+      throw new Error('当前结果暂不支持生成正式平台版本。');
+    }
+    const submissionKey = crypto.randomUUID();
+    const billingTaskId = `content-package-variants:${packageToAdapt.id}:${submissionKey}`;
+    const quoteId = `content-package-variants:${packageToAdapt.id}:${packageToAdapt.revision}:${submissionKey}`;
+    const quote = await commandP1<ProductQuoteSnapshot>(
+      'product-billing',
+      {
+        action: 'quote',
+        payload: {
+          catalogModelId: selected.job.contract.catalogModelId,
+          operation: 'copy.adapt',
+          quantity: 3,
+          quoteId,
+        },
+      },
+      `content-package-variants-quote:${quoteId}`
+    );
+    const confirmedQuote = await commandP1<ProductQuoteSnapshot>(
+      'product-billing',
+      {
+        action: 'confirm',
+        payload: {
+          quoteId: quote.quoteId,
+          taskId: billingTaskId,
+        },
+      },
+      `content-package-variants-confirm:${quote.quoteId}:${billingTaskId}`
+    );
+    await commandP1(
+      'operations',
+      {
+        action: 'generate_content_package_variants',
+        payload: {
+          billingQuoteId: confirmedQuote.quoteId,
+          billingTaskId,
+          contract: {
+            ...selected.job.contract,
+            aigcLabelEnabled: selected.job.contract.aigcLabelEnabled,
+            catalogModelId: confirmedQuote.catalogModelId,
+            catalogRevision:
+              confirmedQuote.catalogModelRevision ??
+              selected.job.contract.catalogRevision,
+            currency: confirmedQuote.formula.currency ?? 'CNY',
+            estimatedAmount: confirmedQuote.confirmedAmount ?? 0,
+            operation: 'copy.adapt',
+            outputCount: confirmedQuote.outputCount ?? 3,
+            outputLabel: confirmedQuote.outputLabel ?? '三平台版本',
+            quoteAcceptedAt:
+              confirmedQuote.confirmedAt ?? new Date().toISOString(),
+            quoteRevision: confirmedQuote.revision,
+            watermarkEnabled: selected.job.contract.watermarkEnabled,
+          },
+          expectedRevision: packageToAdapt.revision,
+          packageId: packageToAdapt.id,
+          submissionKey,
+        },
+      },
+      `content-package-variants:${packageToAdapt.id}:${submissionKey}`
     );
     await refreshCanonicalResult();
   };
@@ -578,17 +671,30 @@ function ResultCenterRoutePage() {
     await refreshCanonicalResult();
     return created;
   };
+  const adoptCopyCandidate = async () => {
+    if (!copyAsset) return;
+    const adopted = await adopt(
+      imageAssetIds.length > 0
+        ? {
+            copyAssetId: copyAsset.id,
+            kind: 'image_text',
+            orderedAssetIds: imageAssetIds,
+          }
+        : { copyAssetId: copyAsset.id, kind: 'copy' }
+    );
+    try {
+      await generateCopyPlatformVariants(adopted);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : '正式平台版本生成失败，请重试。';
+      throw new Error(`已采用当前版本，但${message}`);
+    }
+  };
   const adoptCurrentCandidate = async () => {
-    if (workspaceKind === 'copy' && copyAsset) {
-      await adopt(
-        imageAssetIds.length > 0
-          ? {
-              copyAssetId: copyAsset.id,
-              kind: 'image_text',
-              orderedAssetIds: imageAssetIds,
-            }
-          : { copyAssetId: copyAsset.id, kind: 'copy' }
-      );
+    if (workspaceKind === 'copy') {
+      await adoptCopyCandidate();
       return;
     }
     if (workspaceKind === 'image' && imageAssetIds.length > 0) {
@@ -765,6 +871,8 @@ function ResultCenterRoutePage() {
       videoWorksurface={videoWorksurface}
       restoreStore={returnRestore.store}
       currentRevisionId={currentRevisionId}
+      actionBusy={shellActionBusy}
+      actionError={shellActionError}
       supportedActionIds={supportedActionIds}
       adjustConfirmation={
         pendingImageAdjust ? (
@@ -786,22 +894,23 @@ function ResultCenterRoutePage() {
           </p>
         ) : undefined
       }
-      onAction={(action) => void handleShellAction(action)}
+      onAction={(action) => {
+        if (shellActionBusy) return;
+        setShellActionBusy(true);
+        setShellActionError(undefined);
+        void handleShellAction(action)
+          .catch((error) => {
+            setShellActionError(
+              error instanceof Error ? error.message : '操作失败，请重试。'
+            );
+          })
+          .finally(() => {
+            setShellActionBusy(false);
+          });
+      }}
       onDriftChoice={(choice) => returnRestore.applyDriftChoice(choice)}
-      onCopyAdopt={
-        copyAsset
-          ? () =>
-              adopt(
-                imageAssetIds.length > 0
-                  ? {
-                      copyAssetId: copyAsset.id,
-                      kind: 'image_text',
-                      orderedAssetIds: imageAssetIds,
-                    }
-                  : { copyAssetId: copyAsset.id, kind: 'copy' }
-              )
-          : undefined
-      }
+      onCopyAdopt={copyAsset ? adoptCopyCandidate : undefined}
+      onCopyGeneratePlatformVariants={() => generateCopyPlatformVariants()}
       onCopyHandEdit={
         contentPackage?.currentVersionId
           ? async (changes) => {
@@ -819,9 +928,9 @@ function ResultCenterRoutePage() {
             }
           : undefined
       }
-      onImageAdopt={(_actionKind, orderedAssetIds) =>
-        adopt({ kind: 'image', orderedAssetIds })
-      }
+      onImageAdopt={async (_actionKind, orderedAssetIds) => {
+        await adopt({ kind: 'image', orderedAssetIds });
+      }}
       onImageSaveDraft={async (selection) => {
         await commandP1(
           'operations',
@@ -909,11 +1018,12 @@ function ResultCenterRoutePage() {
       }}
       onVideoAdopt={
         videoWorksurface?.composedCandidate
-          ? () =>
-              adopt({
+          ? async () => {
+              await adopt({
                 kind: 'video',
                 videoAssetId: videoWorksurface.composedCandidate!.assetId,
-              })
+              });
+            }
           : undefined
       }
       onVideoDeliver={() =>
@@ -939,11 +1049,17 @@ function ResultCenterRoutePage() {
         const fingerprint = `video-regen-confirm:${quoteId}:${taskId}`;
         const key = intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
         intentKeys.current.set(fingerprint, key);
-        await commandP1(
-          'video-regeneration',
-          { action: 'confirm', payload: { quoteId, taskId } },
-          key
-        );
+        setVideoRegenerationPackageBaseline(contentPackageToken);
+        try {
+          await commandP1(
+            'video-regeneration',
+            { action: 'confirm', payload: { quoteId, taskId } },
+            key
+          );
+        } catch (error) {
+          setVideoRegenerationPackageBaseline(undefined);
+          throw error;
+        }
         intentKeys.current.delete(fingerprint);
         await refreshCanonicalVideo();
       }}

@@ -97,6 +97,13 @@ test('composer home submits to Result Center navigation helpers', () => {
   );
   assert.match(home, /navigateAfterSubmitSuccess/);
   assert.match(home, /\/dashboard\/results\/\$workId/);
+  assert.match(
+    home,
+    /submissionKey:\s*`composer-submit:\$\{created\.id\}:\$\{input\.quote\.revision\}`/
+  );
+  assert.match(home, /CREATIVE_GROUNDING_INCOMPLETE/);
+  assert.match(home, /data-testid="composer-grounding-blocker"/);
+  assert.match(home, /to="\/dashboard\/store"/);
   assert.doesNotMatch(home, new RegExp('selectedPreset\\.internal' + 'Intent'));
   assert.doesNotMatch(home, /\?workId=/);
 });

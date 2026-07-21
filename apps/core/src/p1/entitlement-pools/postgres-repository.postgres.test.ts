@@ -530,6 +530,72 @@ test(
       const secondAdmitted = await secondWaiting;
       assert.equal(secondAdmitted.status, 'admitted');
       assert.equal(await secondProcess.release('fair-account-b'), true);
+      const releasedQueueRows = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM p1_supply_capacity_queue
+          WHERE request_id IN ('fair-request-a', 'fair-request-b')`,
+      );
+      assert.equal(Number(releasedQueueRows.rows[0]?.count ?? 0), 0);
+
+      const rejectedNow = new Date();
+      const rejectedExpiry = new Date(rejectedNow.getTime() + 60_000).toISOString();
+      const rejectedHolder = await firstProcess.tryAcquire({
+        leaseId: 'terminal-holder',
+        supplyAccountId: 'supply-terminal-cleanup',
+        productAccountId: 'account-terminal-holder',
+        workspaceId: 'workspace-terminal-holder',
+        limits: concurrentLimits,
+        acquiredAt: rejectedNow.toISOString(),
+        expiresAt: rejectedExpiry,
+        now: rejectedNow.toISOString(),
+      });
+      assert.equal(rejectedHolder.status, 'admitted');
+      const rejectedFairRequest = await secondProcess.tryAcquireFair({
+        leaseId: 'terminal-waiter',
+        queueRequestId: 'terminal-waiter-request',
+        supplyAccountId: 'supply-terminal-cleanup',
+        productAccountId: 'account-terminal-waiter',
+        workspaceId: 'workspace-terminal-waiter',
+        limits: concurrentLimits,
+        queuePriority: 5,
+        acquiredAt: rejectedNow.toISOString(),
+        expiresAt: rejectedExpiry,
+        maxWaitMs: 0,
+        pollIntervalMs: 10,
+      });
+      assert.equal(rejectedFairRequest.status, 'rejected');
+      const terminalQueue = new PostgresSupplyAccountFairQueue(pool);
+      assert.equal(await terminalQueue.status('terminal-waiter-request'), null);
+      assert.equal(await firstProcess.release('terminal-holder'), true);
+
+      const staleQueue = new PostgresSupplyAccountFairQueue(pool);
+      const staleNow = new Date();
+      const staleSupplyAccountId = 'supply-stale-queue-cleanup';
+      await staleQueue.enqueue({
+        supplyAccountId: staleSupplyAccountId,
+        requestId: 'stale-waiter-request',
+        productAccountId: 'account-stale-waiter',
+        workspaceId: 'workspace-stale-waiter',
+        queuePriority: 5,
+        enqueuedAt: new Date(staleNow.getTime() - 120_000).toISOString(),
+      });
+      await staleQueue.enqueue({
+        supplyAccountId: staleSupplyAccountId,
+        requestId: 'fresh-waiter-request',
+        productAccountId: 'account-fresh-waiter',
+        workspaceId: 'workspace-fresh-waiter',
+        queuePriority: 5,
+        enqueuedAt: staleNow.toISOString(),
+      });
+      assert.equal(
+        await staleQueue.claimTurn(
+          staleSupplyAccountId,
+          'fresh-waiter-request',
+          staleNow.toISOString(),
+        ),
+        true,
+      );
+      assert.equal(await staleQueue.status('stale-waiter-request'), null);
 
       const weightedSupplyAccountId = 'supply-weighted-runtime';
       const weightedQueues = [

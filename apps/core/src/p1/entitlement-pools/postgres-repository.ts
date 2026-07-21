@@ -979,6 +979,28 @@ export class PostgresSupplyAccountFairQueue {
             AND selected_at < $2::timestamptz - interval '1 minute'`,
         [supplyAccountId, now]
       );
+      await client.query(
+        `DELETE FROM p1_supply_capacity_queue AS queue
+          USING p1_capacity_leases AS lease
+         WHERE queue.supply_account_id = $1
+           AND queue.lease_id = lease.lease_id
+           AND lease.released_at IS NOT NULL`,
+        [supplyAccountId]
+      );
+      await client.query(
+        `DELETE FROM p1_supply_capacity_queue AS queue
+         WHERE queue.supply_account_id = $1
+           AND queue.status = 'waiting'
+           AND queue.enqueued_at < $2::timestamptz - interval '1 minute'
+           AND NOT EXISTS (
+             SELECT 1
+               FROM p1_capacity_leases AS lease
+              WHERE lease.lease_id = queue.lease_id
+                AND lease.released_at IS NULL
+                AND lease.expires_at > $2::timestamptz
+           )`,
+        [supplyAccountId, now]
+      );
       const current = await client.query<Pick<FairQueueRow, 'status'>>(
         `SELECT status
            FROM p1_supply_capacity_queue
@@ -1054,6 +1076,13 @@ export class PostgresSupplyAccountFairQueue {
       `UPDATE p1_supply_capacity_queue
           SET status = 'waiting', selected_at = NULL
         WHERE request_id = $1 AND status = 'selected'`,
+      [requestId]
+    );
+  }
+
+  async cancel(requestId: string): Promise<void> {
+    await this.pool.query(
+      `DELETE FROM p1_supply_capacity_queue WHERE request_id = $1`,
       [requestId]
     );
   }
@@ -1252,7 +1281,7 @@ export class PostgresCapacityLeaseStore {
           decision.status === 'rejected' &&
           decision.layer === 'product_account'
         ) {
-          await this.fairQueue.requeue(input.queueRequestId);
+          await this.fairQueue.cancel(input.queueRequestId);
           return decision;
         }
       }
@@ -1262,7 +1291,7 @@ export class PostgresCapacityLeaseStore {
       });
     }
 
-    await this.fairQueue.requeue(input.queueRequestId);
+    await this.fairQueue.cancel(input.queueRequestId);
     return (
       lastRejection ?? {
         status: 'rejected',
@@ -1503,13 +1532,20 @@ export class PostgresCapacityLeaseStore {
     leaseId: string,
     releasedAt = new Date().toISOString()
   ): Promise<boolean> {
-    const result = await this.pool.query(
-      `UPDATE p1_capacity_leases
-          SET released_at = $2
-        WHERE lease_id = $1 AND released_at IS NULL`,
-      [leaseId, releasedAt]
-    );
-    return result.rowCount === 1;
+    return inTransaction(this.pool, async (client) => {
+      const result = await client.query(
+        `UPDATE p1_capacity_leases
+            SET released_at = $2
+          WHERE lease_id = $1 AND released_at IS NULL`,
+        [leaseId, releasedAt]
+      );
+      if (result.rowCount !== 1) return false;
+      await client.query(
+        `DELETE FROM p1_supply_capacity_queue WHERE lease_id = $1`,
+        [leaseId]
+      );
+      return true;
+    });
   }
 
   async renew(

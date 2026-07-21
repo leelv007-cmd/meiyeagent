@@ -5,6 +5,7 @@ import type { CreativeWorkbenchProjection } from '@meiye/contracts';
 
 import {
   buildLiveVideoWorksurface,
+  contentPackageRefreshToken,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
 } from './result-live-projection';
@@ -29,6 +30,22 @@ test('uses the newest same-Work ContentPackage instead of locking the original w
     latestContentPackageForWork(packages, 'work-video-target')?.id,
     'package-derived'
   );
+});
+
+test('changes the package refresh token when an asynchronous video rerun arrives', () => {
+  const baseline = contentPackageRefreshToken({
+    id: 'package-original',
+    revision: 1,
+    updatedAt: '2026-07-22T00:00:00.000Z',
+  });
+  const rerun = contentPackageRefreshToken({
+    id: 'package-derived',
+    revision: 1,
+    updatedAt: '2026-07-22T00:00:05.000Z',
+  });
+
+  assert.notEqual(rerun, baseline);
+  assert.equal(contentPackageRefreshToken(undefined), null);
 });
 
 const projection: CreativeWorkbenchProjection = {
@@ -83,6 +100,29 @@ const projection: CreativeWorkbenchProjection = {
       submissionKey: 'submit-copy',
       outputAssetIds: ['asset-copy'],
       outputContentIds: [],
+      groundingSnapshot: {
+        capturedAt: '2026-07-20T08:00:00.000Z',
+        store: {
+          name: '测试门店',
+          city: '上海',
+          district: '静安区',
+          address: '测试路 1 号',
+          booking: '请提前预约',
+          brandVoice: '真实克制',
+          prohibitions: [],
+          regulated: false,
+          confirmedAt: '2026-07-20T08:00:00.000Z',
+          projects: [
+            {
+              id: 'project-copy',
+              name: '夏日猫眼美甲',
+              price: 128,
+              durationMinutes: 90,
+            },
+          ],
+        },
+        assets: [],
+      },
       createdAt: '2026-07-20T08:00:00.000Z',
       updatedAt: '2026-07-20T08:10:00.000Z',
     },
@@ -230,6 +270,16 @@ test('projects copy facts from the exact recommended/current job asset', () => {
     '不得回退到这条最新结果'
   );
   assert.equal(result.selected?.copyWorksurface?.lifecycle, 'candidate');
+  assert.deepEqual(result.selected?.copyWorksurface?.factSources, [
+    {
+      id: 'grounding:job-copy-old:project:project-copy:price',
+      kind: 'price',
+      label: '夏日猫眼美甲价格',
+      summary: '128 元 · 测试门店已确认',
+      status: 'confirmed',
+      sourceRef: 'grounding:job-copy-old:project:project-copy',
+    },
+  ]);
   assert.equal(result.selected?.imageWorksurface, undefined);
 });
 
@@ -250,7 +300,7 @@ test('projects persisted image candidates without inventing adoption', () => {
   assert.deepEqual(result.selected?.imageWorksurface?.candidates, [
     {
       assetId: 'asset-copy',
-      previewUrl: '/v1/assets/owned-image-1',
+      previewUrl: '/api/core/p1/assets?objectKey=images%2Fowned-image-1.png',
       persisted: true,
       rightsOk: true,
       generationOk: true,
@@ -282,7 +332,7 @@ test('joins only the public video workflow with the exact canonical asset', () =
   assert.equal(state?.composedCandidate?.assetId, 'asset-video');
   assert.equal(
     state?.composedCandidate?.playableUrl,
-    '/v1/assets/owned-video-1'
+    '/api/core/p1/assets?objectKey=video%2Fowned-video-1.mp4'
   );
   assert.equal(state?.loopPhase, 'adopted');
 });

@@ -65,57 +65,69 @@ export async function modelRuntimeAssemblyFromSources(
     return modelRuntimeAssemblyFromEnv(sourcedEnv, evidence);
   };
   const assemble = async () => {
-  try {
-    const [execution, media] = await Promise.all([
-      repository.get('global', GLOBAL_WORKSPACE_ID, 'model.execution.mode'),
-      repository.get(
-        'global',
-        GLOBAL_WORKSPACE_ID,
-        'model.media.execution.mode',
-      ),
-    ]);
-    const sourcedEnv = {
-      ...env,
-      ...(execution
-        ? { MODEL_EXECUTION_MODE: String(execution.value) }
-        : {}),
-      ...(media ? { MODEL_MEDIA_EXECUTION_MODE: String(media.value) } : {}),
-    };
     try {
-      return {
-        assembly: await assembleFromEnvAndEvidence(sourcedEnv),
-        sources: {
-          execution: execution
-            ? ({ source: 'db_revision', revision: execution.revision } as const)
-            : ({ source: 'env_fallback' } as const),
-          media: media
-            ? ({ source: 'db_revision', revision: media.revision } as const)
-            : ({ source: 'env_fallback' } as const),
-        },
-        fallbackReason: null,
+      const fixtureRuntime =
+        env.APP_ENV === 'e2e' && env.MODEL_EXECUTION_MODE === 'fixture';
+      const [execution, media] = await Promise.all([
+        fixtureRuntime
+          ? Promise.resolve(undefined)
+          : repository.get(
+              'global',
+              GLOBAL_WORKSPACE_ID,
+              'model.execution.mode'
+            ),
+        fixtureRuntime
+          ? Promise.resolve(undefined)
+          : repository.get(
+              'global',
+              GLOBAL_WORKSPACE_ID,
+              'model.media.execution.mode'
+            ),
+      ]);
+      const sourcedEnv = {
+        ...env,
+        ...(execution
+          ? { MODEL_EXECUTION_MODE: String(execution.value) }
+          : {}),
+        ...(media ? { MODEL_MEDIA_EXECUTION_MODE: String(media.value) } : {}),
       };
+      try {
+        return {
+          assembly: await assembleFromEnvAndEvidence(sourcedEnv),
+          sources: {
+            execution: execution
+              ? ({ source: 'db_revision', revision: execution.revision } as const)
+              : ({ source: 'env_fallback' } as const),
+            media: media
+              ? ({ source: 'db_revision', revision: media.revision } as const)
+              : ({ source: 'env_fallback' } as const),
+          },
+          fallbackReason: null,
+        };
+      } catch (error) {
+        return {
+          assembly: await assembleFromEnvAndEvidence(env),
+          sources: {
+            execution: { source: 'env_fallback' } as const,
+            media: { source: 'env_fallback' } as const,
+          },
+          fallbackReason:
+            error instanceof Error
+              ? error.message
+              : 'Stored runtime config is invalid.',
+        };
+      }
     } catch (error) {
       return {
-        assembly: await assembleFromEnvAndEvidence(env),
+        assembly: modelRuntimeAssemblyFromEnv(env),
         sources: {
           execution: { source: 'env_fallback' } as const,
           media: { source: 'env_fallback' } as const,
         },
         fallbackReason:
-          error instanceof Error ? error.message : 'Stored runtime config is invalid.',
+          error instanceof Error ? error.message : 'Config repository is unavailable.',
       };
     }
-  } catch (error) {
-    return {
-      assembly: modelRuntimeAssemblyFromEnv(env),
-      sources: {
-        execution: { source: 'env_fallback' } as const,
-        media: { source: 'env_fallback' } as const,
-      },
-      fallbackReason:
-        error instanceof Error ? error.message : 'Config repository is unavailable.',
-    };
-  }
   };
   const result = await assemble();
   if (options.processKind) {
@@ -139,6 +151,13 @@ export async function integrationAdapterEnvFromSources(
   repository: AdminConfigRepository,
   env: NodeJS.ProcessEnv,
 ) {
+  if (env.APP_ENV === 'e2e' && env.MODEL_EXECUTION_MODE === 'fixture') {
+    return {
+      env: { ...env, BYOK_EXECUTION_MODE: 'recorded' },
+      byokSource: { source: 'env_fallback' } as const,
+      douyinMode: 'recorded' as const,
+    };
+  }
   try {
     const byok = await repository.get(
       'global',

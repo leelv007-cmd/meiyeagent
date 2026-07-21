@@ -217,13 +217,29 @@ export function projectFactSources(items: readonly FactSourceItem[]): {
 // Platform preview — formal copy.adapt only (dual-track convergence)
 // ---------------------------------------------------------------------------
 
-/** P0 preview carriers for copy / image_text (D-085). */
-export type CopyPreviewCarrier = 'xiaohongshu' | 'wechat_moments';
+/** Locked public platforms plus the export-only moments destination (D-023). */
+export type CopyPreviewCarrier =
+  | 'xiaohongshu'
+  | 'douyin'
+  | 'video_account'
+  | 'wechat_moments';
 
 export const COPY_PREVIEW_CARRIER_LABELS: Record<CopyPreviewCarrier, string> = {
   xiaohongshu: '小红书',
-  wechat_moments: '朋友圈',
+  douyin: '抖音',
+  video_account: '微信视频号',
+  wechat_moments: '朋友圈导出',
 };
+
+export const COPY_PREVIEW_PLATFORM_CARRIERS = [
+  'xiaohongshu',
+  'douyin',
+  'video_account',
+] as const satisfies readonly CopyPreviewCarrier[];
+
+export const COPY_PREVIEW_EXPORT_CARRIERS = [
+  'wechat_moments',
+] as const satisfies readonly CopyPreviewCarrier[];
 
 /**
  * Platform preview payload produced by formal `copy.adapt` (server).
@@ -281,6 +297,13 @@ export function projectPlatformPreview(input: {
   /** Server-produced variant when formal adapt completed. */
   formalVariant?: PlatformPreviewVariant | null;
 }): PlatformPreviewProjection {
+  if (input.request.carrier === 'wechat_moments') {
+    return {
+      kind: 'rejected',
+      code: 'MISSING_VARIANT',
+      message: '朋友圈仅作为导出成品，不生成或暗示自动发布版本。',
+    };
+  }
   if (input.request.kind === 'client_concat') {
     return {
       kind: 'rejected',
@@ -293,7 +316,7 @@ export function projectPlatformPreview(input: {
     return {
       kind: 'pending',
       carrier: input.request.carrier,
-      message: `正在生成${COPY_PREVIEW_CARRIER_LABELS[input.request.carrier]}版本…`,
+      message: `采用此版本后即可生成${COPY_PREVIEW_CARRIER_LABELS[input.request.carrier]}正式平台版本。`,
     };
   }
   if (input.formalVariant.source !== 'copy.adapt') {
