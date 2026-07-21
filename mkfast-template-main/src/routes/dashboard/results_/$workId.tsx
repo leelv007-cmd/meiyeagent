@@ -315,29 +315,19 @@ function ResultCenterRoutePage() {
     );
   }
 
-  if (selected?.workspaceKind === 'video' && workflowQuery.isError) {
-    return (
-      <DashboardLayout
-        breadcrumbs={[]}
-        description="视频结果读取失败"
-        title="结果中心"
-      >
-        <StatePanel
-          kind="error"
-          title="暂时无法读取视频结果"
-          description="视频工作流读取失败，请稍后重试。"
-        />
-      </DashboardLayout>
-    );
-  }
+  // Soft-degrade: keep Result Center shell usable when video_workflow_public is
+  // missing or fails (fixture jobs may complete without a durable workflow id).
+  // Video worksurface simply omits workflow-derived panels instead of hard-failing.
 
   const workspaceKind = selected?.workspaceKind ?? 'copy';
-  // Token stream is live for copy (incl. image_text copy path) and image
-  // workspaces while Job progress is still running/waiting.
+  // ADR-0007 token stream is only for copy.generate jobs (workspace "copy").
+  // image.generate / video never feed copy-stream slots — do not mark them
+  // streamActive or e2e will wait forever for tokens that cannot arrive.
   const streamActive =
-    (workspaceKind === 'copy' || workspaceKind === 'image') &&
+    workspaceKind === 'copy' &&
     (selected?.progressState === 'running' ||
-      selected?.progressState === 'waiting');
+      selected?.progressState === 'waiting') &&
+    selected?.job?.contract.operation === 'copy.generate';
   const partialCandidates = streamActive
     ? copyCandidateStream.object?.candidates
     : undefined;

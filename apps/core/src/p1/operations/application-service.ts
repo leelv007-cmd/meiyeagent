@@ -5205,7 +5205,14 @@ export class OperationsApplicationService {
         'Creative operation is required when the server Brief gate is enabled.',
       );
     }
-    if (this.dependencies.briefSubmissionGate && !input.briefContextId) {
+    // Primary creates still require a server Brief context when the gate is on.
+    // D-046 / result_adjust derived Works may auto-confirm a local Brief without
+    // minting a new creation-experience context (intent already changed on revise).
+    if (
+      this.dependencies.briefSubmissionGate &&
+      !input.briefContextId &&
+      !(autoConfirmBrief && Boolean(input.derivedFrom))
+    ) {
       throw new OperationsError(
         'BRIEF_CONTEXT_REQUIRED',
         'Creative submissions require a server Brief context.',
@@ -6178,42 +6185,47 @@ export class OperationsApplicationService {
       const briefConfirmationId =
         options.briefConfirmationId ?? snapshotWork.briefConfirmationId;
       let briefContextRevision: number | undefined;
+      const derivedAutoConfirmedBrief =
+        Boolean(snapshotWork.derivedFrom) &&
+        Boolean(snapshotWork.brief?.confirmedAt);
       if (this.dependencies.briefSubmissionGate) {
-        if (!briefContextId) {
+        if (!briefContextId && !derivedAutoConfirmedBrief) {
           throw new OperationsError(
             'BRIEF_CONTEXT_REQUIRED',
             'Creative submissions require a server Brief context.',
           );
         }
-        briefContextRevision = await this.assertBriefCurrentForWrite(
-          repository,
-          {
-            ...(briefConfirmationId ? { briefConfirmationId } : {}),
-            briefContextId,
-            ...(resolvedContract.aspectRatio
-              ? { aspectRatio: resolvedContract.aspectRatio }
-              : {}),
-            catalogModelId: resolvedContract.catalogModelId,
-            catalogRevision: resolvedContract.catalogRevision,
-            ...(resolvedContract.durationSeconds !== undefined
-              ? { durationSeconds: resolvedContract.durationSeconds }
-              : {}),
-            ...(snapshotWork.briefContextRevision === undefined
-              ? {}
-              : {
-                  expectedContextRevision:
-                    snapshotWork.briefContextRevision,
-                }),
-            intent: snapshotWork.intent,
-            operation: resolvedContract.operation,
-            outputCount: resolvedContract.outputCount,
-            quoteRevision: resolvedContract.quoteRevision,
-            sourceReferenceIds: snapshotWork.sourceReferences.map(
-              (source) => source.id,
-            ),
-            workspaceId: context.workspaceId,
-          },
-        );
+        if (briefContextId) {
+          briefContextRevision = await this.assertBriefCurrentForWrite(
+            repository,
+            {
+              ...(briefConfirmationId ? { briefConfirmationId } : {}),
+              briefContextId,
+              ...(resolvedContract.aspectRatio
+                ? { aspectRatio: resolvedContract.aspectRatio }
+                : {}),
+              catalogModelId: resolvedContract.catalogModelId,
+              catalogRevision: resolvedContract.catalogRevision,
+              ...(resolvedContract.durationSeconds !== undefined
+                ? { durationSeconds: resolvedContract.durationSeconds }
+                : {}),
+              ...(snapshotWork.briefContextRevision === undefined
+                ? {}
+                : {
+                    expectedContextRevision:
+                      snapshotWork.briefContextRevision,
+                  }),
+              intent: snapshotWork.intent,
+              operation: resolvedContract.operation,
+              outputCount: resolvedContract.outputCount,
+              quoteRevision: resolvedContract.quoteRevision,
+              sourceReferenceIds: snapshotWork.sourceReferences.map(
+                (source) => source.id,
+              ),
+              workspaceId: context.workspaceId,
+            },
+          );
+        }
       }
       const existing = state.creativeJobs.find((job) => job.id === jobId);
       if (existing) {
@@ -6508,7 +6520,15 @@ export class OperationsApplicationService {
     const effectiveBriefContextId = work?.briefContextId ?? briefContextId;
     const effectiveBriefConfirmationId =
       work?.briefConfirmationId ?? briefConfirmationId;
-    if (this.dependencies.briefSubmissionGate && !effectiveBriefContextId) {
+    // Derived revise Works created with autoConfirmBrief may lack a server
+    // briefContextId; local confirmed Brief + derivedFrom is the D-046 path.
+    const derivedAutoConfirmedBrief =
+      Boolean(work?.derivedFrom) && Boolean(work?.brief?.confirmedAt);
+    if (
+      this.dependencies.briefSubmissionGate &&
+      !effectiveBriefContextId &&
+      !derivedAutoConfirmedBrief
+    ) {
       throw new OperationsError(
         'BRIEF_CONTEXT_REQUIRED',
         'Creative submissions require a server Brief context.',
@@ -7650,9 +7670,43 @@ export class OperationsApplicationService {
           409,
         );
       }
-      const persisted = current
+      let persisted = current
         ? this.incrementContentPackageRevision(current, adopted)
         : adopted;
+      // Day-0 / Result Center: first accept seeds platform variant shells so
+      // full-package export unlocks without a separate variants generation hop.
+      // Real platform rewrite still goes through generate_content_package_variants.
+      if (
+        persisted.status === 'accepted' &&
+        persisted.variants.length === 0 &&
+        persisted.currentVersionId
+      ) {
+        const baseVersion =
+          persisted.versions.find(
+            (candidate) => candidate.id === persisted.currentVersionId,
+          ) ?? version;
+        const platforms =
+          packageKind === 'video'
+            ? (['douyin'] as const)
+            : (['xiaohongshu', 'douyin', 'video_account'] as const);
+        persisted = {
+          ...persisted,
+          variants: platforms.map((platform) => {
+            const variantVersionId = `${baseVersion.id}:${platform}`;
+            return {
+              currentVersionId: variantVersionId,
+              id: `${persisted.id}:${platform}`,
+              platform,
+              versions: [
+                {
+                  ...structuredClone(baseVersion),
+                  id: variantVersionId,
+                },
+              ],
+            };
+          }),
+        };
+      }
       if (current) state.contentPackages[packageIndex] = persisted;
       else state.contentPackages.push(persisted);
       work.status = 'accepted';

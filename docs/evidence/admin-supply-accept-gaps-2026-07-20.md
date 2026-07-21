@@ -56,9 +56,11 @@
 
 | Field | Value |
 |-------|--------|
-| Status | **open** |
-| Why | Spec Testing §5 calls for Playwright e2e: exception home → drilldown → safe action → audit loop with D-048 ban. Current gate 4 is SSR/unit HTML scan of catalog, exception home, and supply control (sufficient for pure-model ban). |
-| Claim allowed today | Unit/SSR D-048 ban **green**; full interactive e2e still pending harness time + four-service boot. |
+| Status | **partial** — 2026-07-21 Agent Team thickened asserts; re-run pending |
+| Why | Spec Testing §5 calls for Playwright e2e: exception home → drilldown → safe action → audit loop with D-048 ban. Unit/SSR gate 4 already green. |
+| Landed | `admin-supply-ops.spec.ts` now asserts exact D048 testids + `data-ops-control` + one-click-repair on exception/supply/dialog/audit surfaces (aligned with catalog-model SSOT). |
+| Remaining | Re-run `pnpm --filter @meiye/web exec playwright test tests/e2e/specs/admin-supply-ops.spec.ts` and mark closed only if 3/3 green. |
+| Claim allowed today | Unit/SSR D-048 ban **green**; interactive e2e **thickened but not re-proved** this wave. |
 
 ### G-J5 — credentials simulator / governed shortcuts UI
 

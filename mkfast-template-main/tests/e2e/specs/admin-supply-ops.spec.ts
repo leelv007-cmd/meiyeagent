@@ -17,6 +17,22 @@ const DAILY_OPERATOR_PATHS = [
 const FORBIDDEN_CONTROL_NAME =
   /(?:^|[\s:/_-])(?:code|sql|env|raw\s*json|json|cli|shell|terminal|代码|环境变量|原始\s*json|命令行|终端)(?:$|[\s:/_-])/iu;
 
+/** Align with admin-capability-catalog-model D048_BANNED_OPS_CONTROLS SSOT. */
+const D048_BANNED_TESTIDS = [
+  'code-editor',
+  'sql-console',
+  'env-editor',
+  'raw-json-editor',
+  'cli-console',
+] as const;
+const D048_BANNED_OPS_CONTROL = [
+  'code',
+  'sql',
+  'env',
+  'raw-json',
+  'cli',
+] as const;
+
 async function loginAsAdmin(
   page: Page,
   request: Parameters<typeof registerE2EUser>[0]
@@ -25,7 +41,25 @@ async function loginAsAdmin(
   await loginByForm(page, admin);
 }
 
+/** G-E2E-PLAYWRIGHT-D048: exact banned control attributes on a surface. */
+async function expectD048BanOnSurface(surface: Locator) {
+  for (const id of D048_BANNED_TESTIDS) {
+    await expect(
+      surface.getByTestId(id),
+      `D-048 forbids data-testid=${id} on ops surfaces`
+    ).toHaveCount(0);
+  }
+  for (const kind of D048_BANNED_OPS_CONTROL) {
+    await expect(
+      surface.locator(`[data-ops-control="${kind}"]`),
+      `D-048 forbids data-ops-control=${kind} on ops surfaces`
+    ).toHaveCount(0);
+  }
+  await expect(surface.getByTestId('one-click-repair')).toHaveCount(0);
+}
+
 async function expectNoUnsafeDailyOperationControls(surface: Locator) {
+  await expectD048BanOnSurface(surface);
   const descriptors = await surface
     .locator(
       [
@@ -122,6 +156,7 @@ test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
       'false'
     );
     await expectNoExceptionWorkflowControls(exceptionHome);
+    await expectD048BanOnSurface(exceptionHome);
 
     const supplyDrilldown = page.locator('a[href="/admin/supply"]').first();
     await expect(
@@ -131,7 +166,9 @@ test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
     await supplyDrilldown.click();
 
     await expect(page).toHaveURL((url) => url.pathname === '/admin/supply');
-    await expect(page.getByTestId('supply-control-center-panel')).toBeVisible();
+    const supplyPanel = page.getByTestId('supply-control-center-panel');
+    await expect(supplyPanel).toBeVisible();
+    await expectD048BanOnSurface(supplyPanel);
   });
 
   test('governed channel isolation requires impact review and reaches audit evidence', async ({
@@ -145,6 +182,7 @@ test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
     await expect(page).toHaveURL((url) => url.pathname === '/admin/supply');
     const actions = page.getByTestId('supply-governed-actions-panel');
     await expect(actions).toBeVisible({ timeout: 30_000 });
+    await expectD048BanOnSurface(actions);
     const isolate = actions.locator(
       '[data-testid="supply-governed-action-row"][data-action-id="channel_isolate"]'
     );
@@ -164,6 +202,7 @@ test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
 
     const review = page.getByRole('dialog', { name: '渠道隔离' });
     await expect(review).toBeVisible();
+    await expectD048BanOnSurface(review);
     await expect(review.getByText(/影响范围/u)).toBeVisible();
     await expect(review.getByText(/可恢复|可逆/u)).toBeVisible();
     await expect(review.locator('#impact-review-reason')).toHaveValue(reason);
@@ -182,6 +221,7 @@ test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
     await expect(page.getByText(reason, { exact: true })).toBeVisible({
       timeout: 30_000,
     });
+    await expectD048BanOnSurface(page.locator('main'));
   });
 
   test('daily operator surfaces expose no technical editors or exception ownership workflow', async ({

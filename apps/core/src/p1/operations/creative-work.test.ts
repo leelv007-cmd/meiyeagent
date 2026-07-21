@@ -310,6 +310,36 @@ describe('creative work lifecycle', () => {
     ]);
   });
 
+
+  it('allows D-046 derived autoConfirmBrief revise without a new server Brief context under the gate', async () => {
+    const { service } = setup();
+    service.attachBriefSubmissionGate({ async assertCurrent() {} });
+    const source = await service.createCreativeWork(owner, {
+      autoConfirmBrief: true,
+      briefConfirmationId: 'brief-confirm-source',
+      briefContextId: 'brief-context-source',
+      intent: '为门店写三条内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'composer:revise-source',
+      sourceReferences: [],
+    });
+    const revised = await service.deriveCreativeWork(owner, source.id, {
+      autoConfirmBrief: true,
+      intent: '为门店写三条内容\n\n调整要求：语气更柔和',
+      sessionId: 'composer:revise-source',
+    });
+    assert.equal(revised.derivedFrom, source.id);
+    assert.ok(revised.brief?.confirmedAt);
+    assert.equal(revised.briefContextId, undefined);
+    await service.submitCreativeWork(
+      owner,
+      revised.id,
+      contract,
+      'derived-revise-submit',
+    );
+  });
+
   it('keeps the Work Brief context and operation immutable at submit', async () => {
     const { service } = setup();
     service.attachBriefSubmissionGate({ async assertCurrent() {} });

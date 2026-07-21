@@ -73,10 +73,18 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
         await assertThreeModalDiscovery(page);
 
         activationCounter.beginMeasurement();
+        // Intent must name the distribution target for delivery package labels:
+        // copy → 朋友圈分段包; image_text → 小红书 ZIP; video → 抖音 ZIP.
+        const intentSeed =
+          contract.modality === 'copy'
+            ? '朋友圈项目介绍'
+            : contract.modality === 'image_text'
+              ? '小红书套图'
+              : '抖音项目成片';
         const workId = await submitComposerJourney(
           page,
           contract,
-          `Z1 ${contract.modality} ${surface.name} ${crypto.randomUUID()}`
+          `Z1 ${intentSeed} ${contract.modality} ${surface.name} ${crypto.randomUUID()}`
         );
         await waitForResultJourney(page, contract, workId);
         activationCounter.stop();
