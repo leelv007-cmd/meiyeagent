@@ -242,12 +242,35 @@ const quoteAuthority = {
   },
 };
 
+function approvalHarness() {
+  const approvals: Array<{
+    approvalKey: string;
+    contract: NonNullable<Parameters<VideoRegenerationWorkflowPort['createDraft']>[0]['executionContract']>;
+    workId: string;
+  }> = [];
+  return {
+    approvals,
+    authority: {
+      async approve(input: {
+        approvalKey: string;
+        contract: NonNullable<Parameters<VideoRegenerationWorkflowPort['createDraft']>[0]['executionContract']>;
+        workId: string;
+      }) {
+        approvals.push(structuredClone(input));
+        return { id: `approval:${input.approvalKey}` };
+      },
+    },
+  };
+}
+
 describe('durable video regeneration application', () => {
   it('uses one quote lifecycle for shot/full scopes and persists canonical derived workflows', async () => {
+    const approval = approvalHarness();
     const billing = new BillingHarness();
     const repository = new MemoryRegenerationRepository();
     const workflows = new WorkflowHarness();
     const service = new VideoRegenerationApplicationService({
+      approvalAuthority: approval.authority,
       billing,
       quoteAuthority,
       repository,
@@ -282,6 +305,21 @@ describe('durable video regeneration application', () => {
         (draft) => draft.derivedFromWorkflowId === 'source-run',
       ),
     );
+    assert.equal(approval.approvals.length, 1);
+    const approvalKey = approval.approvals[0]?.approvalKey;
+    assert.match(
+      approvalKey ?? '',
+      /^video-regeneration:regen-full_compose:[a-f0-9]+$/,
+    );
+    assert.equal(
+      workflows.drafts[1]?.approvalReceiptId,
+      `approval:${approvalKey}`,
+    );
+    assert.equal(
+      approval.approvals[0]?.contract.quoteRevision,
+      workflows.drafts[1]?.executionContract?.quoteRevision,
+    );
+    assert.equal(workflows.drafts[0]?.approvalReceiptId, undefined);
   });
 
   it('recovers the same supplier task for free and settles exactly once from trusted media duration', async () => {
@@ -289,6 +327,7 @@ describe('durable video regeneration application', () => {
     const repository = new MemoryRegenerationRepository();
     const workflows = new WorkflowHarness();
     const service = new VideoRegenerationApplicationService({
+      approvalAuthority: approvalHarness().authority,
       billing,
       quoteAuthority,
       repository,
@@ -381,6 +420,7 @@ describe('durable video regeneration application', () => {
     const repository = new MemoryRegenerationRepository();
     const workflows = new WorkflowHarness();
     const service = new VideoRegenerationApplicationService({
+      approvalAuthority: approvalHarness().authority,
       billing,
       quoteAuthority,
       repository,
@@ -416,6 +456,7 @@ describe('durable video regeneration application', () => {
     const repository = new MemoryRegenerationRepository();
     const workflows = new WorkflowHarness();
     const service = new VideoRegenerationApplicationService({
+      approvalAuthority: approvalHarness().authority,
       billing,
       quoteAuthority,
       repository,
@@ -454,6 +495,7 @@ describe('durable video regeneration application', () => {
     const repository = new MemoryRegenerationRepository();
     const workflows = new WorkflowHarness();
     const service = new VideoRegenerationApplicationService({
+      approvalAuthority: approvalHarness().authority,
       billing,
       quoteAuthority,
       repository,

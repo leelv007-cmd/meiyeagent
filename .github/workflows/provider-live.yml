@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       cost_cap_usd:
-        description: 'Hard cost ceiling in USD for this run'
+        description: 'Pre-call reservation ceiling in USD; actual spend is reconciled after calls'
         required: false
         default: '1.0'
         type: string
@@ -38,8 +38,14 @@ jobs:
       PROVIDER_LIVE_COST_CAP_USD: ${{ github.event.inputs.cost_cap_usd || '1.0' }}
       PROVIDER_LIVE_EVIDENCE_DIR: apps/core/provider-live-evidence
       PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH: apps/core/provider-live-evidence/external-conformance.json
-      PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND: ${{ secrets.PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND }}
+      PROVIDER_LIVE_RUN_NONCE: ${{ github.run_id }}-${{ github.run_attempt }}
+      PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND: node scripts/provider-live/run-conformance.mjs
+      PROVIDER_LIVE_CONFORMANCE_HOOK_SHA256: ${{ secrets.PROVIDER_LIVE_CONFORMANCE_HOOK_SHA256 }}
+      PROVIDER_LIVE_CONFORMANCE_ENDPOINT: ${{ secrets.PROVIDER_LIVE_CONFORMANCE_ENDPOINT }}
+      PROVIDER_LIVE_CONFORMANCE_TOKEN: ${{ secrets.PROVIDER_LIVE_CONFORMANCE_TOKEN }}
       PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD: ${{ secrets.PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD }}
+      PROVIDER_LIVE_CNY_PER_USD: ${{ secrets.PROVIDER_LIVE_CNY_PER_USD }}
+      PROVIDER_LIVE_FX_EVIDENCE_REF: ${{ secrets.PROVIDER_LIVE_FX_EVIDENCE_REF }}
       # Text dual-channel (handoff matrix)
       ARK_TEXT_API_KEY: ${{ secrets.ARK_TEXT_API_KEY }}
       ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
@@ -49,6 +55,8 @@ jobs:
       ARK_BASE_URL: ${{ secrets.ARK_BASE_URL }}
       ARK_PROVIDER_ACCOUNT_IDENTITY: ${{ secrets.ARK_PROVIDER_ACCOUNT_IDENTITY }}
       ARK_TEXT_MAX_PROBE_COST_USD: ${{ secrets.ARK_TEXT_MAX_PROBE_COST_USD }}
+      ARK_TEXT_INPUT_COST_PER_MILLION: ${{ secrets.ARK_TEXT_INPUT_COST_PER_MILLION }}
+      ARK_TEXT_OUTPUT_COST_PER_MILLION: ${{ secrets.ARK_TEXT_OUTPUT_COST_PER_MILLION }}
       # Public official TOS origins (Seedream v2, Seedance, combined ACG).
       # Keep explicit: ProviderSafeFetch never trusts a provider-returned host.
       ARK_MEDIA_ASSET_SOURCE_HOSTS: >-
@@ -61,6 +69,8 @@ jobs:
       MODEL_DIRECT_CATALOG_MODEL_ID: ${{ secrets.MODEL_DIRECT_CATALOG_MODEL_ID }}
       MODEL_DIRECT_PROVIDER_ACCOUNT_IDENTITY: ${{ secrets.MODEL_DIRECT_PROVIDER_ACCOUNT_IDENTITY }}
       MODEL_DIRECT_MAX_PROBE_COST_USD: ${{ secrets.MODEL_DIRECT_MAX_PROBE_COST_USD }}
+      MODEL_DIRECT_INPUT_COST_PER_MILLION: ${{ secrets.MODEL_DIRECT_INPUT_COST_PER_MILLION }}
+      MODEL_DIRECT_OUTPUT_COST_PER_MILLION: ${{ secrets.MODEL_DIRECT_OUTPUT_COST_PER_MILLION }}
       # Image / video
       ARK_SEEDREAM_MODEL: ${{ secrets.ARK_SEEDREAM_MODEL }}
       ARK_SEEDANCE_MODEL: ${{ secrets.ARK_SEEDANCE_MODEL }}
@@ -69,6 +79,8 @@ jobs:
       ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: ${{ secrets.ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND }}
       ARK_IMAGE_MAX_PROBE_COST_USD: ${{ secrets.ARK_IMAGE_MAX_PROBE_COST_USD }}
       ARK_VIDEO_MAX_PROBE_COST_USD: ${{ secrets.ARK_VIDEO_MAX_PROBE_COST_USD }}
+      ARK_SEEDREAM_COST_PER_IMAGE_CNY: ${{ secrets.ARK_SEEDREAM_COST_PER_IMAGE_CNY }}
+      ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: ${{ secrets.ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY }}
       TUZI_API_KEY: ${{ secrets.TUZI_API_KEY }}
       TUZI_BASE_URL: ${{ secrets.TUZI_BASE_URL }}
       TUZI_PROVIDER_ACCOUNT_IDENTITY: ${{ secrets.TUZI_PROVIDER_ACCOUNT_IDENTITY }}
@@ -80,6 +92,8 @@ jobs:
       TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: ${{ secrets.TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND }}
       TUZI_IMAGE_MAX_PROBE_COST_USD: ${{ secrets.TUZI_IMAGE_MAX_PROBE_COST_USD }}
       TUZI_VIDEO_MAX_PROBE_COST_USD: ${{ secrets.TUZI_VIDEO_MAX_PROBE_COST_USD }}
+      TUZI_IMAGE_COST_PER_IMAGE_USD: ${{ secrets.TUZI_IMAGE_COST_PER_IMAGE_USD }}
+      TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_USD: ${{ secrets.TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_USD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -100,14 +114,102 @@ jobs:
           pnpm --filter @meiye/contracts typecheck
           pnpm --filter @meiye/core typecheck
 
-      - name: Cost cap guard
+      - name: Provider live preflight
         shell: bash
         run: |
           node <<'NODE'
+            const { createHash } = require('node:crypto');
+            const { existsSync, readFileSync } = require('node:fs');
             const cap = Number(process.env.PROVIDER_LIVE_COST_CAP_USD);
             if (!Number.isFinite(cap) || cap <= 0 || cap > 5) {
               console.error('PROVIDER_LIVE_COST_CAP_USD out of allowed range (0, 5]:', process.env.PROVIDER_LIVE_COST_CAP_USD);
               process.exit(1);
+            }
+            if (!process.env.PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND?.trim()) {
+              console.error('PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND is required by the protected live gate.');
+              process.exit(1);
+            }
+            const hookCommand = process.env.PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND.trim();
+            const hookSha256 = process.env.PROVIDER_LIVE_CONFORMANCE_HOOK_SHA256?.trim();
+            const hookMatch = hookCommand.match(
+              /^(?:node|pnpm exec tsx) (scripts\/provider-live\/[A-Za-z0-9_./-]+)(?: [A-Za-z0-9_./:-]+)*$/,
+            );
+            const hookPathSafe = hookMatch && !hookMatch[1].includes('..');
+            const hookExists = hookPathSafe && existsSync(hookMatch[1]);
+            const calculatedHookSha256 = hookExists
+              ? createHash('sha256').update(readFileSync(hookMatch[1])).digest('hex')
+              : '';
+            if (
+              !hookMatch ||
+              !hookPathSafe ||
+              !hookExists ||
+              !/^[a-f0-9]{64}$/.test(hookSha256 ?? '') ||
+              calculatedHookSha256 !== hookSha256
+            ) {
+              console.error('Provider live hook must be a pinned checked-in scripts/provider-live runner.');
+              process.exit(1);
+            }
+            const requiredGroups = [
+              ['ARK_TEXT_API_KEY', 'ARK_API_KEY'],
+              ['ARK_API_KEY'],
+              ['ARK_TEXT_MODEL'],
+              ['ARK_TEXT_CATALOG_MODEL_ID'],
+              ['ARK_PROVIDER_ACCOUNT_IDENTITY'],
+              ['PROVIDER_LIVE_CONFORMANCE_ENDPOINT'],
+              ['PROVIDER_LIVE_CONFORMANCE_TOKEN'],
+              ['MODEL_DIRECT_API_KEY'],
+              ['MODEL_DIRECT_BASE_URL'],
+              ['MODEL_DIRECT_MODEL'],
+              ['MODEL_DIRECT_CATALOG_MODEL_ID'],
+              ['MODEL_DIRECT_PROVIDER_ACCOUNT_IDENTITY'],
+              ['ARK_MEDIA_ASSET_SOURCE_HOSTS'],
+              ['ARK_SEEDREAM_MODEL'],
+              ['ARK_IMAGE_CATALOG_MODEL_ID'],
+              ['ARK_SEEDANCE_MODEL'],
+              ['ARK_VIDEO_CATALOG_MODEL_ID'],
+              ['TUZI_API_KEY'],
+              ['TUZI_BASE_URL'],
+              ['TUZI_PROVIDER_ACCOUNT_IDENTITY'],
+              ['TUZI_MEDIA_ASSET_SOURCE_HOSTS'],
+              ['TUZI_GPT_IMAGE_2_MODEL'],
+              ['TUZI_IMAGE_CATALOG_MODEL_ID'],
+              ['TUZI_SEEDANCE_MODEL'],
+              ['TUZI_VIDEO_CATALOG_MODEL_ID'],
+              ['PROVIDER_LIVE_CNY_PER_USD'],
+              ['PROVIDER_LIVE_FX_EVIDENCE_REF'],
+            ];
+            const missingGroups = requiredGroups.filter(
+              (names) => !names.some((name) => process.env[name]?.trim()),
+            );
+            if (missingGroups.length > 0) {
+              console.error(
+                `provider-live configuration missing: ${missingGroups.map((names) => names.join('|')).join(', ')}`,
+              );
+              process.exit(1);
+            }
+            const cnyPerUsd = Number(process.env.PROVIDER_LIVE_CNY_PER_USD);
+            if (!Number.isFinite(cnyPerUsd) || cnyPerUsd <= 0) {
+              console.error('PROVIDER_LIVE_CNY_PER_USD must be finite and positive.');
+              process.exit(1);
+            }
+            const priceNames = [
+              'ARK_TEXT_INPUT_COST_PER_MILLION',
+              'ARK_TEXT_OUTPUT_COST_PER_MILLION',
+              'MODEL_DIRECT_INPUT_COST_PER_MILLION',
+              'MODEL_DIRECT_OUTPUT_COST_PER_MILLION',
+              'ARK_SEEDREAM_COST_PER_IMAGE_CNY',
+              'ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY',
+              'ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND',
+              'TUZI_IMAGE_COST_PER_IMAGE_USD',
+              'TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_USD',
+              'TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND',
+            ];
+            for (const name of priceNames) {
+              const value = Number(process.env[name]);
+              if (!Number.isFinite(value) || value <= 0) {
+                console.error(`${name} must be a finite positive price.`);
+                process.exit(1);
+              }
             }
             const reservations = [
               'ARK_TEXT_MAX_PROBE_COST_USD',
@@ -116,10 +218,8 @@ jobs:
               'TUZI_IMAGE_MAX_PROBE_COST_USD',
               'ARK_VIDEO_MAX_PROBE_COST_USD',
               'TUZI_VIDEO_MAX_PROBE_COST_USD',
+              'PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD',
             ];
-            if (process.env.PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND) {
-              reservations.push('PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD');
-            }
             const values = reservations.map((name) => {
               const value = Number(process.env[name]);
               if (!Number.isFinite(value) || value <= 0) {
@@ -133,7 +233,7 @@ jobs:
               console.error(`Provider live reservations ${reserved} exceed cap ${cap}.`);
               process.exit(1);
             }
-            console.log('provider-live cost cap validated');
+            console.log('provider-live hook and cost cap validated');
           NODE
 
       - name: Run MP-08 unit matrix (always, free)
@@ -144,8 +244,7 @@ jobs:
           src/p1/model-supply/provider-conformance/fault-injection/fault-injection.matrix.test.ts
           src/p1/model-supply/provider-conformance/fault-injection/publish-gate.test.ts
 
-      - name: Run optional real transport conformance injector
-        if: ${{ env.PROVIDER_LIVE_CONFORMANCE_HOOK_COMMAND != '' }}
+      - name: Run real transport conformance injector
         shell: bash
         run: |
           mkdir -p "${PROVIDER_LIVE_EVIDENCE_DIR}"

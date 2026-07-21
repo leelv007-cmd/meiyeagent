@@ -103,7 +103,7 @@ test('composed-video summaries use public projections without exposing internal 
     catalogModelId: 'seedance-2',
     confirmed: true,
     revision: 2,
-    shots: [] as const,
+    shots: [],
     storyboardRevision: 'storyboard-a',
     storyboardVersion: 1,
     workId: 'merchant-work-a',

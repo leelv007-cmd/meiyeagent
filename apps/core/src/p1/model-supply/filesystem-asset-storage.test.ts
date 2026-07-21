@@ -342,6 +342,8 @@ test('recorded video bytes pass ffprobe, materialize, compose with ffmpeg, and p
       compositionKey: 'real-ffmpeg-composition',
       workflowId: 'workflow-real-ffmpeg',
       workspaceId: 'workspace-a',
+      storyboardRevision: 'storyboard-real-ffmpeg',
+      subtitles: [{ startSeconds: 0, endSeconds: 1, text: '门店介绍' }],
     });
     assert.equal(composed.technicalValidation?.playable, true);
     assert.equal(composed.technicalValidation?.hashVerified, true);

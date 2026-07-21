@@ -13,7 +13,14 @@ export function videoCompositionRuntimeFromEnv(
   storage: CompositionAssetStoragePort,
 ): VideoCompositionPort {
   const mode = env.P1_VIDEO_COMPOSITION_MODE ?? 'ffmpeg';
-  if (mode === 'recorded') return new RecordedVideoCompositionPort();
+  if (mode === 'recorded') {
+    if (env.APP_ENV !== 'e2e') {
+      throw new Error(
+        'P1_VIDEO_COMPOSITION_MODE=recorded is restricted to APP_ENV=e2e.',
+      );
+    }
+    return new RecordedVideoCompositionPort(storage);
+  }
   if (mode !== 'ffmpeg') {
     throw new Error('P1_VIDEO_COMPOSITION_MODE must be ffmpeg or recorded.');
   }

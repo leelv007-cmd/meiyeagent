@@ -126,7 +126,11 @@ export class PostgresFoundationRepository implements FoundationRepository {
         data_class text NOT NULL,
         data_classes jsonb NOT NULL DEFAULT '["public"]'::jsonb,
         fallback_consent boolean NOT NULL,
+        max_attempts integer,
+        fallback_authorized boolean,
         allowed_candidates jsonb NOT NULL,
+        data_policy_revision_id text,
+        source_kind text,
         retry_owner text NOT NULL DEFAULT 'product',
         provider_retry_disabled boolean NOT NULL DEFAULT true,
         created_at timestamptz NOT NULL,
@@ -246,6 +250,10 @@ export class PostgresFoundationRepository implements FoundationRepository {
       );
       ALTER TABLE p1_route_snapshots
         ADD COLUMN IF NOT EXISTS data_classes jsonb NOT NULL DEFAULT '["public"]'::jsonb,
+        ADD COLUMN IF NOT EXISTS max_attempts integer,
+        ADD COLUMN IF NOT EXISTS fallback_authorized boolean,
+        ADD COLUMN IF NOT EXISTS data_policy_revision_id text,
+        ADD COLUMN IF NOT EXISTS source_kind text,
         ADD COLUMN IF NOT EXISTS retry_owner text NOT NULL DEFAULT 'product',
         ADD COLUMN IF NOT EXISTS provider_retry_disabled boolean NOT NULL DEFAULT true;
       ALTER TABLE p1_generation_jobs
@@ -636,31 +644,58 @@ export class PostgresFoundationRepository implements FoundationRepository {
     await this.database.query(
       `INSERT INTO p1_route_snapshots
        (workspace_id,id,catalog_revision,policy_revision,price_revision,requested_catalog_model_id,
-        selection_mode,data_class,data_classes,fallback_consent,allowed_candidates,retry_owner,
+        selection_mode,data_class,data_classes,fallback_consent,max_attempts,fallback_authorized,
+        allowed_candidates,data_policy_revision_id,source_kind,retry_owner,
         provider_retry_disabled,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11::jsonb,$12,$13,$14::timestamptz)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13::jsonb,$14,$15,$16,$17,$18::timestamptz)`,
       [snapshot.workspaceId, snapshot.id, snapshot.catalogRevision, snapshot.policyRevision,
         snapshot.priceRevision, snapshot.requestedCatalogModelId, snapshot.selectionMode,
         snapshot.dataClass, JSON.stringify(snapshot.dataClasses ?? [snapshot.dataClass]),
-        snapshot.fallbackConsent, JSON.stringify(snapshot.allowedCandidates),
+        snapshot.fallbackConsent, snapshot.maxAttempts ?? null,
+        snapshot.fallbackAuthorized ?? null, JSON.stringify(snapshot.allowedCandidates),
+        snapshot.dataPolicyRevisionId ?? null, snapshot.sourceKind ?? null,
         snapshot.retryOwner ?? 'product', snapshot.providerRetryDisabled ?? true,
         snapshot.createdAt]
     );
   }
 
   async getRouteSnapshot(workspaceId: string, snapshotId: string) {
-    const result = await this.database.query<RouteSnapshot>(
+    const result = await this.database.query<
+      RouteSnapshot & {
+        maxAttempts: number | null;
+        fallbackAuthorized: boolean | null;
+        dataPolicyRevisionId: string | null;
+        sourceKind: RouteSnapshot['sourceKind'] | null;
+      }
+    >(
       `SELECT id, workspace_id AS "workspaceId", catalog_revision AS "catalogRevision",
               policy_revision AS "policyRevision", price_revision AS "priceRevision",
               requested_catalog_model_id AS "requestedCatalogModelId", selection_mode AS "selectionMode",
               data_class AS "dataClass", data_classes AS "dataClasses",
-              fallback_consent AS "fallbackConsent", allowed_candidates AS "allowedCandidates",
+              fallback_consent AS "fallbackConsent", max_attempts AS "maxAttempts",
+              fallback_authorized AS "fallbackAuthorized", allowed_candidates AS "allowedCandidates",
+              data_policy_revision_id AS "dataPolicyRevisionId", source_kind AS "sourceKind",
               retry_owner AS "retryOwner", provider_retry_disabled AS "providerRetryDisabled",
               created_at::text AS "createdAt"
          FROM p1_route_snapshots WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, snapshotId]
     );
-    return result.rows[0] ?? null;
+    const snapshot = result.rows[0];
+    if (!snapshot) return null;
+    const {
+      maxAttempts,
+      fallbackAuthorized,
+      dataPolicyRevisionId,
+      sourceKind,
+      ...required
+    } = snapshot;
+    return {
+      ...required,
+      ...(maxAttempts === null ? {} : { maxAttempts }),
+      ...(fallbackAuthorized === null ? {} : { fallbackAuthorized }),
+      ...(dataPolicyRevisionId === null ? {} : { dataPolicyRevisionId }),
+      ...(sourceKind === null ? {} : { sourceKind }),
+    };
   }
 
   async insertGenerationJob(job: GenerationJob) {

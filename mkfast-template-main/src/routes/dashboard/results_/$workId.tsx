@@ -21,6 +21,7 @@ import {
 } from '@/product/creative-job-observer';
 import {
   buildLiveVideoWorksurface,
+  latestContentPackageForWork,
   projectResultCenterLiveProjection,
 } from '@/product/results/result-live-projection';
 import { ResultCenterPage } from '@/product/results/result-center-page';
@@ -149,10 +150,7 @@ function ResultCenterRoutePage() {
   // Hook wiring alone is not enough — useObject only streams after submit().
   useEffect(() => {
     if (!workbenchQuery.data) return;
-    const live = projectResultCenterLiveProjection(
-      workbenchQuery.data,
-      workId
-    );
+    const live = projectResultCenterLiveProjection(workbenchQuery.data, workId);
     const selected = live.selected;
     if (!selected?.job) return;
     const streamActive =
@@ -210,11 +208,9 @@ function ResultCenterRoutePage() {
       : undefined;
   const workflowQuery = useQuery({
     enabled: Boolean(selectedVideoWorkflowId),
-    queryKey: p1QueryKeys.request(
-      'model-supply',
-      'video_workflow_public',
-      { workflowId: selectedVideoWorkflowId }
-    ),
+    queryKey: p1QueryKeys.request('model-supply', 'video_workflow_public', {
+      workflowId: selectedVideoWorkflowId,
+    }),
     queryFn: ({ signal }) =>
       queryP1<VideoWorkflowPublicProjection | null>(
         'model-supply',
@@ -236,8 +232,13 @@ function ResultCenterRoutePage() {
     },
     retry: false,
   });
-  const contentPackage = contentPackagesQuery.data?.find(
-    (candidate) => candidate.source.workId === workId
+  // `content_packages` is ordered by updatedAt DESC. A full-compose rerun
+  // creates a derived workflow/package while the selected CreativeJob still
+  // points at the original provider workflow, so the newest Work package is
+  // the canonical result surface.
+  const contentPackage = latestContentPackageForWork(
+    contentPackagesQuery.data,
+    workId
   );
   const currentPackageVersion = contentPackage?.versions.find(
     (version) => version.id === contentPackage.currentVersionId
@@ -329,7 +330,10 @@ function ResultCenterRoutePage() {
       selected?.progressState === 'waiting') &&
     selected?.job?.contract.operation === 'copy.generate';
   const partialCandidates = streamActive
-    ? copyCandidateStream.object?.candidates
+    ? copyCandidateStream.object?.candidates?.filter(
+        (candidate): candidate is NonNullable<typeof candidate> =>
+          candidate !== undefined
+      )
     : undefined;
   const streamLoading = streamActive
     ? Boolean(copyCandidateStream.isLoading) ||
@@ -345,12 +349,27 @@ function ResultCenterRoutePage() {
   const baseVideoWorksurface = selected
     ? buildLiveVideoWorksurface(selected, workflowQuery.data)
     : undefined;
+  const packageComposedAsset = contentPackage?.generated.ownedAssets
+    ?.filter((asset) => asset.contentType === 'video/mp4')
+    .at(-1);
+  const packageBackedVideoWorksurface =
+    baseVideoWorksurface && packageComposedAsset
+      ? {
+          ...baseVideoWorksurface,
+          composedCandidate: {
+            assetId: packageComposedAsset.id,
+            durationSeconds:
+              baseVideoWorksurface.composedCandidate?.durationSeconds ?? 0,
+            playableUrl: `/api/core/p1/assets?objectKey=${encodeURIComponent(packageComposedAsset.objectKey)}`,
+          },
+        }
+      : baseVideoWorksurface;
   const videoWorksurface =
-    baseVideoWorksurface &&
+    packageBackedVideoWorksurface &&
     contentPackage?.status === 'accepted' &&
     currentPackageVersion
       ? {
-          ...baseVideoWorksurface,
+          ...packageBackedVideoWorksurface,
           adoption: {
             adoptedAt: contentPackage.updatedAt,
             composedAssetId: currentPackageVersion.orderedAssetIds[0] ?? null,
@@ -363,7 +382,7 @@ function ResultCenterRoutePage() {
           loopPhase: 'adopted' as const,
           versionId: currentPackageVersion.id,
         }
-      : baseVideoWorksurface;
+      : packageBackedVideoWorksurface;
   const copyWorksurface =
     selected?.copyWorksurface && currentPackageVersion
       ? {
@@ -426,11 +445,9 @@ function ResultCenterRoutePage() {
     await Promise.all([
       refreshCanonicalResult(),
       queryClient.invalidateQueries({
-        queryKey: p1QueryKeys.request(
-          'model-supply',
-          'video_workflow_public',
-          { workflowId: selectedVideoWorkflowId }
-        ),
+        queryKey: p1QueryKeys.request('model-supply', 'video_workflow_public', {
+          workflowId: selectedVideoWorkflowId,
+        }),
       }),
     ]);
   };

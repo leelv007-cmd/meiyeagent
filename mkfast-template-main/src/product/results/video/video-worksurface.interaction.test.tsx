@@ -48,7 +48,10 @@ describe('video result worksurface', () => {
     const onSubtitleChange = vi.fn();
     const { rerender } = render(
       <VideoWorksurface
-        initialState={videoWorksurfaceFixture()}
+        initialState={{
+          ...videoWorksurfaceFixture(),
+          workflowStatus: 'awaiting_quality_review',
+        }}
         onSubtitleChange={onSubtitleChange}
       />
     );
@@ -246,7 +249,10 @@ describe('video result worksurface', () => {
     const onCanonicalEdit = vi.fn().mockResolvedValue(undefined);
     render(
       <VideoWorksurface
-        initialState={videoWorksurfaceFixture()}
+        initialState={{
+          ...videoWorksurfaceFixture(),
+          workflowStatus: 'awaiting_quality_review',
+        }}
         onCanonicalEdit={onCanonicalEdit}
       />
     );
@@ -278,5 +284,25 @@ describe('video result worksurface', () => {
       text: '已持久化字幕',
       workflowId: 'wf-video-fixture-1',
     });
+  });
+
+  it('locks canonical edits for a terminal workflow while keeping regeneration available', () => {
+    render(
+      <VideoWorksurface
+        initialState={videoWorksurfaceFixture()}
+        onCanonicalEdit={vi.fn()}
+        onRequestRegenerationQuote={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('video-worksurface')).toHaveAttribute(
+      'data-canonical-edits-locked',
+      'true'
+    );
+    expect(screen.getByTestId('video-subtitle-input')).toBeDisabled();
+    expect(screen.getByTestId('video-subtitle-save')).toBeDisabled();
+    expect(screen.getAllByTestId('video-shot-candidate')[1]).toBeDisabled();
+    expect(screen.getByLabelText('后移镜头 1')).toBeDisabled();
+    expect(screen.getAllByTestId('video-shot-regenerate')[0]).toBeEnabled();
   });
 });

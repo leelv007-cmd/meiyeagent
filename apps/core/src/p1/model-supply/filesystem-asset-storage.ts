@@ -174,6 +174,69 @@ export class FileSystemAssetStorage
     };
   }
 
+  async persistRecordedComposedVideo(input: {
+    bytes: Uint8Array;
+    compositionEvidence: NonNullable<OwnedAsset['compositionEvidence']>;
+    compositionKey: string;
+    technicalValidation: NonNullable<OwnedAsset['technicalValidation']>;
+    workflowId: string;
+    workspaceId: string;
+  }) {
+    const asset = await this.persistBytes({
+      workspaceId: input.workspaceId,
+      bytes: input.bytes,
+      contentType: 'video/mp4',
+      namespace: 'composed',
+      idPrefix: `composition-${safeSegment(input.compositionKey).slice(0, 24)}`,
+      sourceTaskRef: `recorded-composition:${input.workflowId}:${input.compositionKey}`,
+      technicalValidation: input.technicalValidation,
+    });
+    if (
+      input.compositionEvidence.outputSha256 !== asset.sha256 ||
+      input.compositionEvidence.outputSizeBytes !== asset.sizeBytes
+    ) {
+      throw new Error(
+        'Recorded composition evidence does not match the persisted video bytes.'
+      );
+    }
+    const lineagePath = `${this.pathFor(asset.objectKey)}.json`;
+    const lineage = JSON.stringify({
+      compositionKey: input.compositionKey,
+      compositionEvidence: structuredClone(input.compositionEvidence),
+      workflowId: input.workflowId,
+    });
+    try {
+      await writeFile(lineagePath, lineage, { flag: 'wx' });
+    } catch (error) {
+      if (!isAlreadyExists(error)) throw error;
+      if ((await readFile(lineagePath, 'utf8')) !== lineage) {
+        throw new Error(
+          'Recorded composition lineage conflicts with the immutable receipt.',
+        );
+      }
+    }
+    return {
+      ...asset,
+      compositionEvidence: structuredClone(input.compositionEvidence),
+    };
+  }
+
+  async persistVideoCover(input: {
+    bytes: Uint8Array;
+    compositionKey: string;
+    workflowId: string;
+    workspaceId: string;
+  }) {
+    return this.persistBytes({
+      workspaceId: input.workspaceId,
+      bytes: input.bytes,
+      contentType: 'image/jpeg',
+      namespace: 'generated',
+      idPrefix: 'video-cover',
+      sourceTaskRef: `video-cover:${input.workflowId}:${input.compositionKey}`,
+    });
+  }
+
   async releaseMaterialized(_paths: string[]) {
     // Local objects are already materialized and remain durable by design.
   }
@@ -251,6 +314,7 @@ export class FileSystemAssetStorage
     idPrefix: string;
     sourceTaskRef?: string;
     sourceExpiresAt?: string;
+    technicalValidation?: OwnedAsset['technicalValidation'];
   }): Promise<Omit<OwnedAsset, 'contentType'> & { contentType: T }> {
     const workspaceId = safeSegment(input.workspaceId);
     if (input.bytes.byteLength === 0) {
@@ -285,9 +349,11 @@ export class FileSystemAssetStorage
     const technicalValidation =
       input.contentType === 'video/mp4'
         ? {
-            ...(await this.videoProbe(path)),
+            ...(input.technicalValidation ?? (await this.videoProbe(path))),
             hashVerified: true,
-            evidenceKind: 'measured' as const,
+            evidenceKind:
+              input.technicalValidation?.evidenceKind ??
+              ('measured' as const),
           }
         : undefined;
     return {

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { it } from 'node:test';
-import { contentPackageExportReceiptSchema } from '@meiye/contracts';
+import {
+  contentPackageExportReceiptSchema,
+  type VideoCompositionEvidence,
+} from '@meiye/contracts';
 import { unzipSync } from 'fflate';
 import sharp from 'sharp';
 import { MemoryModelAssetStorage } from '../model-supply/index.js';
@@ -10,6 +13,46 @@ import {
   OperationsContentPackageExportAssetReader,
 } from './content-package-export-adapter.js';
 import type { OperationsRepository } from './repository.js';
+
+const videoCoverBytes = Uint8Array.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 255, 217]);
+const videoCoverSha = createHash('sha256').update(videoCoverBytes).digest('hex');
+
+function deliveryEvidence(input: {
+  outputVideoSha256: string;
+  storyboardRevision: string;
+  workspaceId: string;
+  durationSeconds?: number;
+}) {
+  return {
+    compositionRevision: `composition-${input.storyboardRevision}`,
+    storyboardRevision: input.storyboardRevision,
+    workflowId: `workflow-${input.storyboardRevision}`,
+    outputVideoSha256: input.outputVideoSha256,
+    cover: {
+      contentType: 'image/jpeg' as const,
+      id: `cover-${input.storyboardRevision}`,
+      objectKey: `${input.workspaceId}/generated/${videoCoverSha}.jpg`,
+      sha256: videoCoverSha,
+      sizeBytes: videoCoverBytes.byteLength,
+      validationMethod: 'ffmpeg_frame_extract' as const,
+    },
+    subtitles: {
+      durationSeconds: input.durationSeconds ?? 15,
+      format: 'srt' as const,
+      text: '1\n00:00:00,000 --> 00:00:15,000\n门店介绍\n',
+      validationMethod: 'composition_manifest' as const,
+    },
+  };
+}
+
+function coverReadResult(
+  delivery: NonNullable<VideoCompositionEvidence['delivery']>,
+) {
+  return {
+    asset: { ...delivery.cover },
+    bytes: videoCoverBytes,
+  };
+}
 
 function repositoryWithOwnedAsset(asset: {
   contentType: string;
@@ -274,6 +317,7 @@ it('rejects a labeled video export before persisting without verifiable burn-in 
   await assert.rejects(
     adapter.export({
       compliance: { aigcLabelEnabled: true, watermarkEnabled: false },
+      contentPackageRevision: 1,
       kind: 'video',
       packageId: 'package-video-unverified-compliance',
       platform: 'douyin',
@@ -292,6 +336,179 @@ it('rejects a labeled video export before persisting without verifiable burn-in 
   assert.equal(persisted, false);
 });
 
+it('accepts recorded synthetic video compliance only with the explicit E2E override', async () => {
+  const storage = new MemoryModelAssetStorage();
+  const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
+  const video = await storage.persistGeneratedAsset({
+    bytes: videoBytes,
+    contentType: 'video/mp4',
+    workspaceId: 'workspace-video-verified-export',
+  });
+  const canonicalDelivery = deliveryEvidence({
+    outputVideoSha256: video.sha256,
+    storyboardRevision: 'story-recorded',
+    workspaceId: 'workspace-video-verified-export',
+  });
+  const delivery = {
+    ...canonicalDelivery,
+    cover: {
+      ...canonicalDelivery.cover,
+      validationMethod: 'recorded_synthetic' as const,
+    },
+    subtitles: {
+      ...canonicalDelivery.subtitles,
+      validationMethod: 'recorded_synthetic' as const,
+    },
+  };
+  const compositionEvidence = {
+    aigc: {
+      requested: true,
+      visibleLabel: { actual: true, validated: true },
+      implicitMetadata: { actual: true, validated: true },
+      validationMethod: 'recorded_synthetic' as const,
+    },
+    brandWatermark: {
+      actual: true,
+      requested: true,
+      text: '美业内容',
+      validated: true,
+      validationMethod: 'recorded_synthetic' as const,
+    },
+    clipCount: 1,
+    durationSeconds: 15,
+    outputSha256: video.sha256,
+    outputSizeBytes: video.sizeBytes,
+    rendererRevision: 'recorded-video-composition-v1',
+    sourceAssetIds: ['clip-1'],
+    delivery,
+  };
+  let activeCompositionEvidence: VideoCompositionEvidence =
+    compositionEvidence;
+  const reader = {
+    async readOwnedAsset(input: { assetId: string }) {
+      if (input.assetId === delivery.cover.id) return coverReadResult(delivery);
+      return {
+        asset: {
+          ...video,
+          compositionEvidence: activeCompositionEvidence,
+          contentType: 'video/mp4' as const,
+        },
+        bytes: videoBytes,
+      };
+    },
+  };
+  const input = {
+    compliance: {
+      aigcLabelEnabled: true,
+      watermarkEnabled: true,
+      watermarkText: '美业内容',
+    },
+    contentPackageRevision: 1,
+    kind: 'video' as const,
+    packageId: 'package-video-verified-export',
+    platform: 'douyin' as const,
+    version: {
+      body: '',
+      createdAt: '2026-07-15T09:00:00.000Z',
+      id: 'version-video-verified-export',
+      orderedAssetIds: [video.id],
+      title: '视频成片',
+      topics: [],
+    },
+    videoDeliveryDurationSeconds: 15,
+    videoDeliveryCompositionRevision: delivery.compositionRevision,
+    videoDeliveryRevision: 'story-recorded',
+    videoDeliveryWorkflowId: delivery.workflowId,
+    workspaceId: 'workspace-video-verified-export',
+  };
+
+  await assert.rejects(
+    new ContentPackageZipExportAdapter(storage, reader).export(input),
+    /video compliance burn-in cannot be verified/i,
+  );
+  const productionEvidence: VideoCompositionEvidence = {
+    ...compositionEvidence,
+    aigc: {
+      ...compositionEvidence.aigc,
+      validationMethod: 'composition_manifest',
+    },
+    brandWatermark: {
+      ...compositionEvidence.brandWatermark,
+      validationMethod: 'composition_manifest',
+    },
+    delivery: canonicalDelivery,
+  };
+  for (const isolatedSyntheticEvidence of [
+    {
+      ...productionEvidence,
+      aigc: {
+        ...productionEvidence.aigc,
+        validationMethod: 'recorded_synthetic' as const,
+      },
+    },
+    {
+      ...productionEvidence,
+      delivery: {
+        ...productionEvidence.delivery!,
+        cover: {
+          ...productionEvidence.delivery!.cover,
+          validationMethod: 'recorded_synthetic' as const,
+        },
+      },
+    },
+    {
+      ...productionEvidence,
+      delivery: {
+        ...productionEvidence.delivery!,
+        subtitles: {
+          ...productionEvidence.delivery!.subtitles,
+          validationMethod: 'recorded_synthetic' as const,
+        },
+      },
+    },
+  ]) {
+    activeCompositionEvidence = isolatedSyntheticEvidence;
+    await assert.rejects(
+      new ContentPackageZipExportAdapter(storage, reader).export({
+        ...input,
+        compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+      }),
+      /video compliance burn-in cannot be verified/i,
+    );
+  }
+  activeCompositionEvidence = compositionEvidence;
+  await assert.rejects(
+    new ContentPackageZipExportAdapter(storage, reader).export({
+      ...input,
+      compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    }),
+    /video compliance burn-in cannot be verified/i,
+  );
+  await assert.rejects(
+    new ContentPackageZipExportAdapter(storage, reader, {
+      allowRecordedSyntheticVideoCompliance: true,
+    }).export(input),
+    /video compliance burn-in cannot be verified/i,
+  );
+
+  const adapter = new ContentPackageZipExportAdapter(storage, reader, {
+    allowRecordedSyntheticVideoCompliance: true,
+    appEnv: 'e2e',
+  });
+  await assert.rejects(
+    adapter.export({
+      ...input,
+      compliance: { ...input.compliance, watermarkText: '其他品牌' },
+    }),
+    /video compliance burn-in cannot be verified/i,
+  );
+
+  const artifact = await adapter.export(input);
+
+  assert.equal(artifact.contentType, 'application/zip');
+  assert.ok(artifact.sizeBytes > videoBytes.byteLength);
+});
+
 it('exports an unlabeled video package as a full delivery ZIP with manifest revision', async () => {
   const storage = new MemoryModelAssetStorage();
   const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
@@ -300,13 +517,43 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
     contentType: 'video/mp4',
     workspaceId: 'workspace-video-export',
   });
+  const delivery = deliveryEvidence({
+    outputVideoSha256: video.sha256,
+    storyboardRevision: 'story-unlabeled',
+    workspaceId: 'workspace-video-export',
+  });
   const adapter = new ContentPackageZipExportAdapter(storage, {
     async readOwnedAsset(input) {
+      if (input.assetId === delivery.cover.id) return coverReadResult(delivery);
       assert.equal(input.assetId, video.id);
       const bytes = storage.read(video.objectKey);
       assert.ok(bytes);
       return {
-        asset: { ...video, contentType: 'video/mp4' as const },
+        asset: {
+          ...video,
+          compositionEvidence: {
+            aigc: {
+              requested: false,
+              visibleLabel: { actual: false, validated: true },
+              implicitMetadata: { actual: false, validated: true },
+              validationMethod: 'composition_manifest' as const,
+            },
+            brandWatermark: {
+              actual: false,
+              requested: false,
+              validated: true,
+              validationMethod: 'composition_manifest' as const,
+            },
+            clipCount: 1,
+            durationSeconds: 15,
+            outputSha256: video.sha256,
+            outputSizeBytes: video.sizeBytes,
+            rendererRevision: 'renderer-1',
+            sourceAssetIds: ['clip-1'],
+            delivery,
+          },
+          contentType: 'video/mp4' as const,
+        },
         bytes,
       };
     },
@@ -327,6 +574,10 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
       title: '抖音版标题',
       topics: ['同城美业', '护肤'],
     },
+    videoDeliveryDurationSeconds: 15,
+    videoDeliveryCompositionRevision: delivery.compositionRevision,
+    videoDeliveryRevision: 'story-unlabeled',
+    videoDeliveryWorkflowId: delivery.workflowId,
     workspaceId: 'workspace-video-export',
   };
   const artifact = await adapter.export(input);
@@ -339,12 +590,20 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
   const files = unzipSync(archiveBytes);
   assert.ok(files['video.mp4']);
   assert.deepEqual(files['video.mp4'], videoBytes);
+  assert.ok(files['cover.jpg']);
+  assert.ok(files['subtitles.srt']);
   assert.ok(files['manifest.json']);
   assert.ok(files['caption.txt']);
   assert.ok(files['platform-checklist.md']);
   const manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']));
   assert.equal(manifest.schema, 'beauty-delivery-manifest/v1');
   assert.equal(manifest.kind, 'video');
+  assert.ok(manifest.files.some(({ path }: { path: string }) => path === 'cover.jpg'));
+  assert.ok(
+    manifest.files.some(
+      ({ path }: { path: string }) => path === 'subtitles.srt',
+    ),
+  );
   assert.equal(manifest.contentPackageRevision, 4);
   const replayed = await adapter.export(input);
   assert.equal(replayed.artifactObjectKey, artifact.artifactObjectKey);
@@ -361,6 +620,80 @@ it('exports an unlabeled video package as a full delivery ZIP with manifest revi
   assert.equal(
     contentPackageExportReceiptSchema.safeParse(receipt).success,
     true
+  );
+});
+
+it('fails closed for missing or mismatched canonical video delivery evidence', async () => {
+  const storage = new MemoryModelAssetStorage();
+  const bytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
+  const video = await storage.persistGeneratedAsset({
+    bytes,
+    contentType: 'video/mp4',
+    workspaceId: 'workspace-video-evidence-negative',
+  });
+  const delivery = deliveryEvidence({
+    durationSeconds: 15,
+    outputVideoSha256: video.sha256,
+    storyboardRevision: 'story-evidence',
+    workspaceId: 'workspace-video-evidence-negative',
+  });
+  const evidence = {
+    aigc: { requested: false, visibleLabel: { actual: false, validated: true }, implicitMetadata: { actual: false, validated: true }, validationMethod: 'composition_manifest' as const },
+    brandWatermark: { actual: false, requested: false, validated: true, validationMethod: 'composition_manifest' as const },
+    clipCount: 1,
+    durationSeconds: 15,
+    outputSha256: video.sha256,
+    outputSizeBytes: video.sizeBytes,
+    rendererRevision: 'renderer-evidence',
+    sourceAssetIds: ['clip-evidence'],
+    delivery,
+  };
+  let activeEvidence: typeof evidence | undefined = evidence;
+  const adapter = new ContentPackageZipExportAdapter(storage, {
+    async readOwnedAsset({ assetId }) {
+      if (assetId === delivery.cover.id) return coverReadResult(delivery);
+      return { asset: { ...video, ...(activeEvidence ? { compositionEvidence: activeEvidence } : {}), contentType: 'video/mp4' as const }, bytes };
+    },
+  });
+  const input = {
+    compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    contentPackageRevision: 1,
+    kind: 'video' as const,
+    packageId: 'package-evidence-negative',
+    platform: 'douyin' as const,
+    version: { body: '', createdAt: '2026-07-15T09:00:00.000Z', id: 'version-evidence-negative', orderedAssetIds: [video.id], title: '视频', topics: [] },
+    videoDeliveryDurationSeconds: 15,
+    videoDeliveryCompositionRevision: delivery.compositionRevision,
+    videoDeliveryRevision: 'story-evidence',
+    videoDeliveryWorkflowId: delivery.workflowId,
+    workspaceId: 'workspace-video-evidence-negative',
+  };
+  activeEvidence = undefined;
+  await assert.rejects(adapter.export(input), /delivery evidence is unavailable/i);
+  activeEvidence = evidence;
+  await assert.rejects(
+    adapter.export({ ...input, videoDeliveryRevision: 'story-other' }),
+    /delivery evidence is unavailable/i,
+  );
+  await assert.rejects(
+    adapter.export({
+      ...input,
+      videoDeliveryCompositionRevision: 'composition-other',
+    }),
+    /delivery evidence is unavailable/i,
+  );
+  await assert.rejects(
+    adapter.export({ ...input, videoDeliveryWorkflowId: 'workflow-other' }),
+    /delivery evidence is unavailable/i,
+  );
+  await assert.rejects(
+    adapter.export({ ...input, videoDeliveryDurationSeconds: 14 }),
+    /delivery evidence is unavailable/i,
+  );
+  activeEvidence = { ...evidence, durationSeconds: 14 };
+  await assert.rejects(
+    adapter.export(input),
+    /delivery evidence is unavailable/i,
   );
 });
 
@@ -810,6 +1143,35 @@ it('reads a migrated Product video from its verified legacy videos namespace', a
   assert.equal(resolved.asset.sizeBytes, bytes.byteLength);
 });
 
+it('reads a composed video from its workflow-scoped receipt key', async () => {
+  const bytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const objectKey =
+    `workspace-composed-video/composed/video-workflow-abc123-${sha256}.mp4`;
+  const reader = new OperationsContentPackageExportAssetReader(
+    repositoryWithOwnedAsset({
+      contentType: 'video/mp4',
+      id: 'composed-video-artifact',
+      objectKey,
+      sha256,
+      sizeBytes: bytes.byteLength,
+    }),
+    {
+      read(requestedObjectKey) {
+        assert.equal(requestedObjectKey, objectKey);
+        return { bytes, contentType: 'video/mp4' };
+      },
+    },
+  );
+
+  const resolved = await reader.readOwnedAsset({
+    assetId: 'composed-video-artifact',
+    workspaceId: 'workspace-composed-video',
+  });
+
+  assert.deepEqual(resolved.bytes, bytes);
+});
+
 it('rejects a cross-workspace owned object key before reading storage', async () => {
   let storageRead = false;
   const reader = new OperationsContentPackageExportAssetReader(
@@ -908,13 +1270,46 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
     contentType: 'image/jpeg',
     workspaceId: 'workspace-video-full',
   });
+  const fullDelivery = {
+    ...deliveryEvidence({
+      durationSeconds: 1,
+      outputVideoSha256: video.sha256,
+      storyboardRevision: 'story-full',
+      workspaceId: 'workspace-video-full',
+    }),
+    cover: {
+      ...cover,
+      contentType: 'image/jpeg' as const,
+      validationMethod: 'ffmpeg_frame_extract' as const,
+    },
+    subtitles: {
+      durationSeconds: 1,
+      format: 'srt' as const,
+      text: '1\n00:00:00,000 --> 00:00:01,000\n你好\n',
+      validationMethod: 'composition_manifest' as const,
+    },
+  };
   const adapter = new ContentPackageZipExportAdapter(
     storage,
     {
       async readOwnedAsset({ assetId }) {
         if (assetId === video.id) {
           return {
-            asset: { ...video, contentType: 'video/mp4' as const },
+            asset: {
+              ...video,
+              compositionEvidence: {
+                aigc: { requested: false, visibleLabel: { actual: false, validated: true }, implicitMetadata: { actual: false, validated: true }, validationMethod: 'composition_manifest' as const },
+                brandWatermark: { actual: false, requested: false, validated: true, validationMethod: 'composition_manifest' as const },
+                clipCount: 1,
+                durationSeconds: 1,
+                outputSha256: video.sha256,
+                outputSizeBytes: video.sizeBytes,
+                rendererRevision: 'renderer-full',
+                sourceAssetIds: ['clip-full'],
+                delivery: fullDelivery,
+              },
+              contentType: 'video/mp4' as const,
+            },
             bytes: videoBytes,
           };
         }
@@ -951,6 +1346,10 @@ it('builds a video full delivery ZIP with manifest/v1 and deterministic replay',
       title: '视频标题',
       topics: ['美业'],
     },
+    videoDeliveryDurationSeconds: 1,
+    videoDeliveryCompositionRevision: fullDelivery.compositionRevision,
+    videoDeliveryRevision: 'story-full',
+    videoDeliveryWorkflowId: fullDelivery.workflowId,
     workspaceId: 'workspace-video-full',
   };
 

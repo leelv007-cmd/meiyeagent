@@ -4,17 +4,20 @@ import type { DeliveryPanelTarget } from './delivery-b3-types';
 
 export type DeliveryWorkspaceKind = 'copy' | 'image' | 'video';
 
-export function deliveryViewportFromWidth(
-  width: number,
-): 'desktop' | 'mobile' {
+export function deliveryViewportFromWidth(width: number): 'desktop' | 'mobile' {
   return width < 768 ? 'mobile' : 'desktop';
 }
 
 export function deliveryTargetForIntent(
   workspaceKind: DeliveryWorkspaceKind,
-  intent: string,
+  intent: string
 ): DeliveryPanelTarget {
-  if (workspaceKind === 'video') return 'douyin';
+  if (workspaceKind === 'video') {
+    if (/视频号|video\s*account|wechat\s*channels/iu.test(intent)) {
+      return 'video_account';
+    }
+    return 'douyin';
+  }
   if (/朋友圈|wechat\s*moments/iu.test(intent)) return 'wechat_moments';
   return 'xiaohongshu';
 }
@@ -32,5 +35,9 @@ function browserViewport(): 'desktop' | 'mobile' {
 }
 
 export function useDeliveryViewport(): 'desktop' | 'mobile' {
-  return useSyncExternalStore(subscribeViewport, browserViewport, () => 'desktop');
+  return useSyncExternalStore(
+    subscribeViewport,
+    browserViewport,
+    () => 'desktop'
+  );
 }

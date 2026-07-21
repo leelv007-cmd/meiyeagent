@@ -3,7 +3,7 @@
 **Date:** 2026-07-20  
 **Ticket:** #128 / `ticket/128-z2-accept`  
 **Discipline:** honest gaps only — no silent degrade of acceptance claims.  
-**Recorded/fake gates in this commit are green; items below remain env-gated or not yet landed.**
+**Recorded/fake gates and D-048 Playwright are green; only G-LIVE-* remains env-gated.**
 
 ## Five gates status
 
@@ -12,7 +12,7 @@
 | 1 | Capability skeleton completion (inventory + D-051 six-question + drilldown + exceptions aggregable) | **GREEN** — `packages/contracts` inventory + `mkfast-template-main/src/p1/z2-accept-ap.test.tsx` | N/A (pure projection) |
 | 2 | Tri-modal dual-channel + story 30 main chain (procurement→publish→allocate→task→ledger→audit) | **GREEN** — `apps/core/src/p1/z2-accept/z2-accept.test.ts` recorded/fake | **GREEN** unit matrix on main; **GAP** live env-gated (see below) |
 | 3 | Publish gate: <2 qualified Deployments cannot mark multi-channel ready; single-channel no-fallback labeled | **GREEN** — core `publish-gate.ts` + admin supply overview SSR + composer merchant select labels | **GREEN** dual-end label projection (admin + composer); not a live C5 claim |
-| 4 | D-048 interaction ban on ops main paths (no code/SQL/env/raw JSON/CLI) | **GREEN** — catalog / exception home / supply SSR unit assertions | **GAP** Playwright four-service e2e (see below) |
+| 4 | D-048 interaction ban on ops main paths (no code/SQL/env/raw JSON/CLI) | **GREEN** — catalog / exception home / supply SSR unit assertions | **GREEN** — four-service Playwright 3/3 (2026-07-21; see below) |
 | 5 | Gap list on disk (this file) | **GREEN** | — |
 
 **Same-increment rule (D-080 C3):** AP skeleton and MP vertical are not separately claimable. Recorded gates green ≠ live C5 claim.
@@ -56,11 +56,12 @@
 
 | Field | Value |
 |-------|--------|
-| Status | **partial** — 2026-07-21 Agent Team thickened asserts; re-run pending |
+| Status | **closed / verified** — 2026-07-21 Agent Team four-service Playwright 3/3 |
 | Why | Spec Testing §5 calls for Playwright e2e: exception home → drilldown → safe action → audit loop with D-048 ban. Unit/SSR gate 4 already green. |
-| Landed | `admin-supply-ops.spec.ts` now asserts exact D048 testids + `data-ops-control` + one-click-repair on exception/supply/dialog/audit surfaces (aligned with catalog-model SSOT). |
-| Remaining | Re-run `pnpm --filter @meiye/web exec playwright test tests/e2e/specs/admin-supply-ops.spec.ts` and mark closed only if 3/3 green. |
-| Claim allowed today | Unit/SSR D-048 ban **green**; interactive e2e **thickened but not re-proved** this wave. |
+| Landed | `admin-supply-ops.spec.ts` asserts exact D048 testids + `data-ops-control` + one-click-repair on exception/supply/dialog/audit surfaces (aligned with catalog-model SSOT). The exception-first home wait now allows its two live sources to settle without weakening any product assertion. |
+| Proof | `PORT=30128 PLAYWRIGHT_CORE_PORT=41128 PLAYWRIGHT_CANVAS_PORT=42128 TEST_DATABASE_URL=postgres://meiye:meiye@127.0.0.1:54329/meiye_issue128 pnpm --filter @meiye/web exec playwright test tests/e2e/specs/admin-supply-ops.spec.ts --project=chromium --workers=1` → **3 passed (59.2s)**. |
+| Remaining | None for G-E2E-PLAYWRIGHT-D048. This does not clear G-LIVE-*. |
+| Claim allowed today | D-048 unit/SSR and four-service interactive ops-path acceptance **green**. |
 
 ### G-J5 — credentials simulator / governed shortcuts UI
 
@@ -77,7 +78,9 @@
 - Wave 0/1 + P2 code fixes landed on branch `fix/admin-supply-review-findings-2026-07-21` (F-G-01..05, F-S2-01..03, F-I-03). These do **not** close any G-LIVE-* item.
 - F-I-01 (`dualChannelReady` same-CatalogModel unit honesty) is **FIXED** in code (`fault-injection/matrix.ts` same-CatalogModel gate).
 - G-UI-MERCHANT-NO-FALLBACK **closed (code)** — composer primary model select projects channel readiness (2026-07-21 Agent Team).
-- **G-LIVE-\*** and G-E2E-PLAYWRIGHT-D048 remain **open**. #128 must not be claimed complete.
+- G-E2E-PLAYWRIGHT-D048 is **closed / verified** (four-service Playwright 3/3).
+- ProductUsage bilateral bridge residual is **closed / code + PostgreSQL verified** — durable reserve → freeze → fresh-instance read/replay evidence is recorded in `docs/evidence/product-usage-residual-2026-07-21.md`.
+- **G-LIVE-\*** remains the only open blocker for whole-package #128 completion.
 
 ## What is explicitly **not** a gap
 
@@ -98,6 +101,10 @@ pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
 # Web AP gates (skeleton + D-048 + dual-end admin labels)
 pnpm --filter @meiye/web exec tsx --test src/p1/z2-accept-ap.test.tsx
 
+# Four-service interactive D-048 gate
+pnpm --filter @meiye/web exec playwright test \
+  tests/e2e/specs/admin-supply-ops.spec.ts --project=chromium --workers=1
+
 # Optional live (requires secrets; not default green)
 # PROVIDER_LIVE=1 pnpm --filter @meiye/core test -- live-text-conformance...
 ```
@@ -105,4 +112,4 @@ pnpm --filter @meiye/web exec tsx --test src/p1/z2-accept-ap.test.tsx
 ## Sign-off rule
 
 - **May claim:** same-increment **recorded acceptance harness** complete for #128.
-- **May not claim:** production C5 live dual-channel multi-channel ready; dual-end merchant no-fallback label; Playwright four-service D-048 e2e — until corresponding gaps close and this file is updated.
+- **May not claim:** production C5 live dual-channel multi-channel ready or whole-package #128 complete while G-LIVE-* remains open.

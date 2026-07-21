@@ -164,6 +164,10 @@ function resolveChannel(
     Boolean(maxProbeCostRaw) &&
     Number.isFinite(maxProbeCostUsd) &&
     maxProbeCostUsd > 0;
+  const priceNames = priceEnvNames(model);
+  const prices = Object.fromEntries(
+    priceNames.map((name) => [name, positiveNumberEnv(source, name)]),
+  );
   let endpointOrigin: string | undefined;
   if (baseUrl) {
     try {
@@ -178,6 +182,7 @@ function resolveChannel(
     ...(providerModel ? [] : [model.modelEnv]),
     ...(accountIdentity ? [] : [accountIdentityLabel(model)]),
     ...(hasValidMaxProbeCost ? [] : [maxProbeCostName]),
+    ...priceNames.filter((name) => prices[name] === undefined),
     ...(endpointOrigin ? [] : [`${baseUrlLabel(model)} (valid URL required)`]),
     ...(model.modality !== 'llm' && !assetSourceHostValue
       ? [
@@ -199,40 +204,35 @@ function resolveChannel(
     baseUrl: baseUrl!,
     providerModel: providerModel!,
     assetSourceHosts: hosts(assetSourceHostValue),
-    inputCostPerMillion: numberEnv(
-      source,
+    inputCostPerMillion: price(
+      prices,
       isOfficial
-        ? ['ARK_TEXT_INPUT_COST_PER_MILLION']
-        : ['MODEL_DIRECT_INPUT_COST_PER_MILLION'],
-      0,
+        ? 'ARK_TEXT_INPUT_COST_PER_MILLION'
+        : 'MODEL_DIRECT_INPUT_COST_PER_MILLION',
     ),
-    outputCostPerMillion: numberEnv(
-      source,
+    outputCostPerMillion: price(
+      prices,
       isOfficial
-        ? ['ARK_TEXT_OUTPUT_COST_PER_MILLION']
-        : ['MODEL_DIRECT_OUTPUT_COST_PER_MILLION'],
-      0,
+        ? 'ARK_TEXT_OUTPUT_COST_PER_MILLION'
+        : 'MODEL_DIRECT_OUTPUT_COST_PER_MILLION',
     ),
-    mediaUnitCost: numberEnv(
-      source,
+    mediaUnitCost: price(
+      prices,
       isOfficial
-        ? ['ARK_SEEDREAM_COST_PER_IMAGE_CNY']
-        : ['TUZI_IMAGE_COST_PER_IMAGE_USD'],
-      0,
+        ? 'ARK_SEEDREAM_COST_PER_IMAGE_CNY'
+        : 'TUZI_IMAGE_COST_PER_IMAGE_USD',
     ),
-    videoCostPerMillionTokens: numberEnv(
-      source,
+    videoCostPerMillionTokens: price(
+      prices,
       isOfficial
-        ? ['ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY']
-        : ['TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_USD'],
-      0,
+        ? 'ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY'
+        : 'TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_USD',
     ),
-    videoEstimatedTokensPerSecond: numberEnv(
-      source,
+    videoEstimatedTokensPerSecond: price(
+      prices,
       isOfficial
-        ? ['ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND']
-        : ['TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND'],
-      0,
+        ? 'ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND'
+        : 'TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND',
     ),
     sourceUrlTtlSeconds: numberEnv(
       source,
@@ -256,6 +256,51 @@ function resolveChannel(
           : 'TUZI_MEDIA_ENDPOINT_REVISION',
       ) ?? `${adapterKind}:provider-live-v1`,
   };
+}
+
+function priceEnvNames(model: DualChannelMatrixModel): string[] {
+  const official = model.channelKind === 'official_direct';
+  if (model.modality === 'llm') {
+    return official
+      ? [
+          'ARK_TEXT_INPUT_COST_PER_MILLION',
+          'ARK_TEXT_OUTPUT_COST_PER_MILLION',
+        ]
+      : [
+          'MODEL_DIRECT_INPUT_COST_PER_MILLION',
+          'MODEL_DIRECT_OUTPUT_COST_PER_MILLION',
+        ];
+  }
+  if (model.modality === 'image') {
+    return [
+      official
+        ? 'ARK_SEEDREAM_COST_PER_IMAGE_CNY'
+        : 'TUZI_IMAGE_COST_PER_IMAGE_USD',
+    ];
+  }
+  return [
+    official
+      ? 'ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY'
+      : 'TUZI_SEEDANCE_COST_PER_MILLION_TOKENS_USD',
+    official
+      ? 'ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND'
+      : 'TUZI_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND',
+  ];
+}
+
+function positiveNumberEnv(
+  source: Environment,
+  name: string,
+): number | undefined {
+  const value = Number(env(source, name));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function price(
+  prices: Readonly<Record<string, number | undefined>>,
+  name: string,
+): number {
+  return prices[name] ?? 0;
 }
 
 function catalogModelEnvName(model: DualChannelMatrixModel): string {
@@ -345,7 +390,7 @@ async function probeLiveTextChannel(
       adapterExecuted: true,
       providerCallSucceeded: Boolean(response.providerTaskRef),
       providerTaskRef: response.providerTaskRef,
-      providerCost: response.providerCost,
+      providerCost: providerCostEvidence(response.providerCost),
       lifecycle: {
         submitted: true,
         recovered: true,
@@ -450,7 +495,7 @@ async function probeLiveMediaChannel(
       adapterExecuted: true,
       providerCallSucceeded,
       providerTaskRef: receipt.taskRef,
-      providerCost: terminal.providerCost,
+      providerCost: providerCostEvidence(terminal.providerCost),
       lifecycle: {
         submitted: true,
         recovered: recoveredMatches,
@@ -636,7 +681,7 @@ function createProviderRequest(
       stableModelName: channel.providerModel,
     },
     deployment: {
-      id: `live-${channel.model.modality}-${channel.model.channelKind}`,
+      id: deploymentId(channel),
       catalogModelId: channel.model.catalogModelId,
       providerProfileId: channel.model.providerProfileId,
       executionChannelId: `live-${channel.model.channelKind}`,
@@ -701,13 +746,20 @@ function baseEvidence(
     channelKind: channel.model.channelKind,
     catalogModelId: channel.model.catalogModelId,
     providerProfileId: channel.model.providerProfileId,
-    deploymentId: `live-${channel.model.modality}-${channel.model.channelKind}`,
+    deploymentId: deploymentId(channel),
     adapterKind: channel.adapterKind,
     accountIdentityFingerprint: channel.accountIdentityFingerprint,
     endpointFingerprint: channel.endpointFingerprint,
     evidenceRef: `provider-live:${channel.model.operation}:${channel.model.channelKind}:${randomUUID()}`,
     observedAt,
   };
+}
+
+function deploymentId(channel: ResolvedLiveProviderChannel): string {
+  return (
+    channel.deploymentId ??
+    `live-${channel.model.modality}-${channel.model.channelKind}`
+  );
 }
 
 function failedEvidence(
@@ -729,11 +781,13 @@ function failedEvidence(
     adapterExecuted: detail.adapterExecuted,
     providerCallSucceeded: false,
     providerTaskRef: detail.providerTaskRef,
-    providerCost: detail.providerCost ?? {
-      amount: 0,
-      currency:
-        channel.model.channelKind === 'official_direct' ? 'CNY' : 'USD',
-    },
+    providerCost: providerCostEvidence(
+      detail.providerCost ?? {
+        amount: 0,
+        currency:
+          channel.model.channelKind === 'official_direct' ? 'CNY' : 'USD',
+      },
+    ),
     lifecycle: detail.lifecycle ?? {
       submitted: false,
       recovered: false,
@@ -748,6 +802,31 @@ function failedEvidence(
             .digest('hex'),
         }
       : {}),
+  };
+}
+
+function providerCostEvidence(
+  cost: LiveProviderProbeEvidence['providerCost'],
+): LiveProviderProbeEvidence['providerCost'] {
+  if (cost.currency === 'USD') return { ...cost, amountUsd: cost.amount };
+  if (cost.amount === 0) return { ...cost, amountUsd: 0 };
+  const cnyPerUsd = Number(process.env.PROVIDER_LIVE_CNY_PER_USD);
+  const evidenceRef = process.env.PROVIDER_LIVE_FX_EVIDENCE_REF?.trim();
+  if (
+    !Number.isFinite(cnyPerUsd) ||
+    cnyPerUsd <= 0 ||
+    !evidenceRef
+  ) {
+    return cost;
+  }
+  return {
+    ...cost,
+    amountUsd: cost.amount / cnyPerUsd,
+    fx: {
+      cnyPerUsd,
+      evidenceRef,
+      observedAt: new Date().toISOString(),
+    },
   };
 }
 

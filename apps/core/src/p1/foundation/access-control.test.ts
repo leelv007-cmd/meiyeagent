@@ -243,8 +243,20 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     requiredP1Capability(
       'query',
       'model-supply',
+      'video_workflow_public',
+    ),
+    'workspace.read',
+  );
+  assert.equal(
+    requiredP1Capability(
+      'query',
+      'model-supply',
       'video_workflow_public_latest',
     ),
+    'workspace.read',
+  );
+  assert.equal(
+    requiredP1Capability('query', 'model-supply', 'video_workflows'),
     'workspace.read',
   );
   assert.equal(

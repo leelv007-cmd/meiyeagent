@@ -18,12 +18,20 @@ import {
 } from './live-provider-adapters.js';
 import {
   runLiveProviderGate,
+  type LiveExternalCostEvidence,
   type LiveProviderLifecycleEvidence,
+  type LiveProviderProbeEvidence,
   type LiveTransportFaultEvidence,
 } from './live-provider-gate.js';
+import {
+  CORE_FAULT_INJECTION_OPERATIONS,
+  SECONDARY_FAULT_INJECTION_OPERATIONS,
+} from './fault-injection/types.js';
 
 interface ExternalEvidenceBundle {
+  costEvidence?: LiveExternalCostEvidence;
   lifecycleEvidence?: LiveProviderLifecycleEvidence[];
+  secondaryProbes?: LiveProviderProbeEvidence[];
   transportFaultEvidence?: LiveTransportFaultEvidence[];
 }
 
@@ -35,6 +43,7 @@ function env(name: string): string | undefined {
 const liveEnabled = env('RUN_PROVIDER_LIVE_FAULT_INJECTION') === '1';
 const requireAll = env('PROVIDER_LIVE_REQUIRE_ALL') === '1';
 const costCap = Number(env('PROVIDER_LIVE_COST_CAP_USD') ?? '1');
+const runNonce = env('PROVIDER_LIVE_RUN_NONCE');
 const resolution = resolveLiveProviderChannels();
 const missingSummary = resolution.missingByChannel
   .map(
@@ -82,6 +91,9 @@ test(
       channels: resolution.channels,
       costCapUsd: costCap,
       externalEvidenceCostReservationUsd,
+      externalCostEvidence: externalEvidence.costEvidence,
+      runNonce,
+      secondaryProbes: externalEvidence.secondaryProbes,
       lifecycleEvidence: externalEvidence.lifecycleEvidence,
       transportFaultEvidence: externalEvidence.transportFaultEvidence,
       probe: async (channel) =>
@@ -101,7 +113,21 @@ test(
     // `if: always()`, so a red gate still leaves truthful, redacted evidence.
     if (evidencePath) await writeEvidence(evidencePath, report);
 
-    assert.equal(report.probes.length, 6);
+    assert.equal(
+      report.probes.filter((probe) =>
+        CORE_FAULT_INJECTION_OPERATIONS.includes(
+          probe.operation as (typeof CORE_FAULT_INJECTION_OPERATIONS)[number],
+        ),
+      ).length,
+      6,
+    );
+    for (const operation of SECONDARY_FAULT_INJECTION_OPERATIONS) {
+      assert.ok(
+        report.probes.filter((probe) => probe.operation === operation).length >=
+          1,
+        operation,
+      );
+    }
     for (const probe of report.probes) {
       assert.equal(probe.adapterExecuted, true, probe.evidenceRef);
       assert.equal(
@@ -129,7 +155,7 @@ test(
       }
     }
 
-    assert.equal(report.activationEvidence.length, 6);
+    assert.equal(report.activationEvidence.length, report.probes.length);
     assert.ok(
       report.activationEvidence.every(
         (evidence) => evidence.activationStatus === 'live_verified',
@@ -140,8 +166,31 @@ test(
       [],
       `provider-live gate remains blocked: ${JSON.stringify(report.blockedChecks)}`,
     );
-    assert.equal(report.publishGates.length, 3);
-    assert.ok(report.publishGates.every((gate) => gate.multiChannelReady));
+    assert.equal(report.publishGates.length, 6);
+    assert.ok(
+      report.publishGates
+        .filter((gate) =>
+          CORE_FAULT_INJECTION_OPERATIONS.includes(
+            gate.operation as (typeof CORE_FAULT_INJECTION_OPERATIONS)[number],
+          ),
+        )
+        .every((gate) => gate.multiChannelReady),
+    );
+    assert.ok(
+      report.publishGates
+        .filter((gate) =>
+          SECONDARY_FAULT_INJECTION_OPERATIONS.includes(
+            gate.operation as (typeof SECONDARY_FAULT_INJECTION_OPERATIONS)[number],
+          ),
+        )
+        .every(
+          (gate) =>
+            gate.status === 'single_channel' &&
+            gate.publishAllowed &&
+            !gate.multiChannelReady &&
+            gate.channelLabel === 'single-channel/no-fallback',
+        ),
+    );
     assert.deepEqual(report.skippedOperations, []);
     assert.equal(report.liveMatrixReports.length, 3);
     assert.ok(
@@ -154,6 +203,7 @@ test(
       ),
     );
     assert.ok(report.externalEvidenceRefs.length > 0);
+    assert.ok(report.actualCost.totalUsd <= report.actualCost.capUsd);
   },
 );
 
@@ -176,8 +226,249 @@ async function loadExternalEvidence(
     throw error;
   }
   const parsed: unknown = JSON.parse(source);
+  return parseExternalEvidence(parsed);
+}
+
+function parseExternalEvidence(parsed: unknown): ExternalEvidenceBundle {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Provider live external evidence must be a JSON object.');
   }
-  return parsed as ExternalEvidenceBundle;
+  const record = parsed as Record<string, unknown>;
+  const allowed = new Set([
+    'costEvidence',
+    'lifecycleEvidence',
+    'secondaryProbes',
+    'transportFaultEvidence',
+  ]);
+  const unknownKeys = Object.keys(record).filter((key) => !allowed.has(key));
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `Provider live external evidence has unknown top-level fields: ${unknownKeys.join(', ')}`,
+    );
+  }
+  return {
+    ...(record.costEvidence
+      ? { costEvidence: stripCostEvidence(record.costEvidence) }
+      : {}),
+    ...(record.lifecycleEvidence
+      ? {
+          lifecycleEvidence: requireArray(record.lifecycleEvidence).map(
+            (value) => stripLifecycleEvidence(value),
+          ),
+        }
+      : {}),
+    ...(record.secondaryProbes
+      ? {
+          secondaryProbes: requireArray(record.secondaryProbes).map((value) =>
+            stripSecondaryProbe(value),
+          ),
+        }
+      : {}),
+    ...(record.transportFaultEvidence
+      ? {
+          transportFaultEvidence: requireArray(
+            record.transportFaultEvidence,
+          ).map((value) => stripTransportEvidence(value)),
+        }
+      : {}),
+  };
 }
+
+function stripCostEvidence(value: unknown): LiveExternalCostEvidence {
+  const record = requireRecord(value);
+  return {
+    ...pick(record, [
+      'source',
+      'runNonce',
+      'evidenceRef',
+      'observedAt',
+      'amountUsd',
+      'currency',
+    ]),
+    components: requireArray(record.components).map((component) => {
+      return pick(requireRecord(component), [
+        'kind',
+        'amountUsd',
+        'evidenceRef',
+      ]);
+    }),
+  } as LiveExternalCostEvidence;
+}
+
+function stripSecondaryProbe(value: unknown): LiveProviderProbeEvidence {
+  const record = requireRecord(value);
+  const providerCost = requireRecord(record.providerCost);
+  const usage = recordOrEmpty(providerCost.usage);
+  const fx = recordOrEmpty(providerCost.fx);
+  const lifecycle = requireRecord(record.lifecycle);
+  const operationEvidence = requireRecord(record.operationEvidence);
+  return {
+    ...pick(record, [
+      'operation',
+      'modality',
+      'channelKind',
+      'catalogModelId',
+      'providerProfileId',
+      'deploymentId',
+      'adapterKind',
+      'accountIdentityFingerprint',
+      'endpointFingerprint',
+      'adapterExecuted',
+      'providerCallSucceeded',
+      'acceptance',
+      'providerTaskRef',
+      'evidenceRef',
+      'observedAt',
+    ]),
+    providerCost: {
+      ...pick(providerCost, ['amount', 'currency', 'amountUsd']),
+      usage: pick(usage, ['inputTokens', 'outputTokens', 'mediaUnits']),
+      ...(Object.keys(fx).length > 0
+        ? {
+            fx: pick(fx, ['cnyPerUsd', 'evidenceRef', 'observedAt']),
+          }
+        : {}),
+    },
+    lifecycle: pick(lifecycle, [
+      'submitted',
+      'recovered',
+      'pollStatus',
+      'downloaded',
+      'downloadedBytes',
+      'contentType',
+      'assetSha256',
+    ]),
+    operationEvidence: pick(operationEvidence, [
+      'operation',
+      'runNonce',
+      'requestIdempotencyKeySha256',
+      'requestPayloadSha256',
+      'resultPayloadSha256',
+    ]),
+  } as LiveProviderProbeEvidence;
+}
+
+function stripLifecycleEvidence(value: unknown): LiveProviderLifecycleEvidence {
+  const record = requireRecord(value);
+  return {
+    ...pick(record, [
+      'source',
+      'runNonce',
+      'evidenceRef',
+      'observedAt',
+      'operation',
+      'modality',
+      'channelKind',
+      'catalogModelId',
+      'providerProfileId',
+      'deploymentId',
+      'adapterKind',
+      'accountIdentityFingerprint',
+      'endpointFingerprint',
+    ]),
+    checks: requireArray(record.checks).map((check) => {
+      return pick(requireRecord(check), [
+        'checkId',
+        'passed',
+        'evidenceRef',
+      ]);
+    }),
+  } as LiveProviderLifecycleEvidence;
+}
+
+function stripTransportEvidence(value: unknown): LiveTransportFaultEvidence {
+  const record = requireRecord(value);
+  return {
+    ...pick(record, [
+      'source',
+      'runNonce',
+      'evidenceRef',
+      'observedAt',
+      'operation',
+      'catalogModelId',
+      'officialDeploymentId',
+      'resellerDeploymentId',
+      'officialAccountIdentityFingerprint',
+      'officialEndpointFingerprint',
+      'resellerAccountIdentityFingerprint',
+      'resellerEndpointFingerprint',
+    ]),
+    scenarios: requireArray(record.scenarios).map((scenario) => {
+      const item = requireRecord(scenario);
+      return {
+        ...pick(item, ['scenarioId', 'transportInjectorExecuted']),
+        evidenceRefs: requireArray(item.evidenceRefs),
+      };
+    }),
+    matrixReport: record.matrixReport,
+  } as LiveTransportFaultEvidence;
+}
+
+function requireArray(value: unknown): unknown[] {
+  if (!Array.isArray(value)) throw new Error('Expected provider evidence array.');
+  return value;
+}
+
+function requireRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Expected provider evidence object.');
+  }
+  return value as Record<string, unknown>;
+}
+
+function recordOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function pick(
+  record: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  return Object.fromEntries(
+    keys.filter((key) => key in record).map((key) => [key, record[key]]),
+  );
+}
+
+test('external evidence parser rejects unknown top-level fields and strips nested extras', () => {
+  assert.throws(
+    () => parseExternalEvidence({ unexpected: 'never-serialize-me' }),
+    /unknown top-level fields/,
+  );
+  const parsed = parseExternalEvidence({
+    secondaryProbes: [
+      {
+        operation: 'copy.adapt',
+        modality: 'llm',
+        channelKind: 'upstream_reseller',
+        catalogModelId: 'model',
+        providerProfileId: 'profile',
+        deploymentId: 'deployment',
+        adapterKind: 'openai_compatible_llm',
+        accountIdentityFingerprint: fingerprintForParser,
+        endpointFingerprint: fingerprintForParser,
+        adapterExecuted: true,
+        providerCallSucceeded: true,
+        acceptance: 'accepted',
+        providerTaskRef: 'provider-task-ref',
+        providerCost: { amount: 0, currency: 'USD', usage: {} },
+        lifecycle: { submitted: true, recovered: true, downloaded: false },
+        evidenceRef: 'provider-live:secondary:test',
+        observedAt: new Date().toISOString(),
+        operationEvidence: {
+          operation: 'copy.adapt',
+          runNonce: 'provider-live-parser-run',
+          requestIdempotencyKeySha256: fingerprintForParser,
+          requestPayloadSha256: fingerprintForParser,
+          resultPayloadSha256: fingerprintForParser,
+          rawSecret: 'never-serialize-me',
+        },
+        rawSecret: 'never-serialize-me',
+      },
+    ],
+  });
+  assert.equal(JSON.stringify(parsed).includes('never-serialize-me'), false);
+});
+
+const fingerprintForParser = 'a'.repeat(64);

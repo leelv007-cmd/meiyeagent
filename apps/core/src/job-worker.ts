@@ -360,6 +360,7 @@ const modelSupplyRuntime = createModelSupplyRuntime({
       {
         billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
+        productUsage: billingLifecycle,
         supplyFreezes: supplyFreezeStore,
       },
     ),
@@ -514,7 +515,11 @@ operations = new OperationsApplicationService(operationsRepository, {
       operationsRepository,
       assetStorage,
       referenceAssets
-    )
+    ),
+    {
+      allowRecordedSyntheticVideoCompliance: process.env.APP_ENV === 'e2e',
+      appEnv: process.env.APP_ENV,
+    },
   ),
   contentPackageRightsResolver: new ProductContentPackageRightsResolver(
     relationalProductRepository

@@ -81,7 +81,50 @@ async function fixture() {
   };
 }
 
-test('uses the Operations billing task as the single ProductUsage and ProviderCost lifecycle', async () => {
+function createStrictSupplyFreezeStore(
+  initial: readonly SupplyRequestFreeze[] = [],
+) {
+  const freezes = new Map(
+    initial.map((freeze) => [freeze.id, structuredClone(freeze)]),
+  );
+  const supplyFreezes = {
+    async append(freeze: SupplyRequestFreeze) {
+      const existing = freezes.get(freeze.id);
+      if (existing) {
+        assert.deepEqual(freeze, existing);
+        return structuredClone(existing);
+      }
+      const linked = freeze.productUsageTaskId
+        ? [...freezes.values()].find(
+            (candidate) =>
+              candidate.workspaceId === freeze.workspaceId &&
+              candidate.productUsageTaskId === freeze.productUsageTaskId,
+          )
+        : undefined;
+      if (linked) {
+        assert.deepEqual(freeze, linked);
+        return structuredClone(linked);
+      }
+      freezes.set(freeze.id, structuredClone(freeze));
+      return structuredClone(freeze);
+    },
+    async get(freezeId: string) {
+      const freeze = freezes.get(freezeId);
+      return freeze ? structuredClone(freeze) : null;
+    },
+    async getByProductUsageTask(workspaceId: string, taskId: string) {
+      const freeze = [...freezes.values()].find(
+        (candidate) =>
+          candidate.workspaceId === workspaceId &&
+          candidate.productUsageTaskId === taskId,
+      );
+      return freeze ? structuredClone(freeze) : null;
+    },
+  };
+  return { freezes, supplyFreezes };
+}
+
+test('persists a settlement fallback freeze for fresh-process ProductUsage lookup', async () => {
   const repository = new MemoryFoundationRepository();
   repository.grantOwner(context.workspaceId, context.userId);
   const foundation = new P1ApplicationService(repository);
@@ -125,16 +168,30 @@ test('uses the Operations billing task as the single ProductUsage and ProviderCo
       return canonicalBilling.settleTask(input);
     },
   };
+  const { freezes, supplyFreezes } = createStrictSupplyFreezeStore();
+  const durableProductUsage = {
+    async getUsage(taskId: string, workspaceId: string) {
+      assert.equal(workspaceId, context.workspaceId);
+      return productUsage.getByTask(taskId);
+    },
+  };
   const ledger = new FoundationModelSupplyLedger(
     foundation,
     undefined,
     undefined,
-    { billingLifecycle, productUsage },
+    {
+      billingLifecycle,
+      productUsage: durableProductUsage,
+      supplyFreezes,
+    },
   );
   const application = new ModelSupplyApplicationService({
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
-    ledger,
+    ledger: {
+      checkpointAttempt: (input) => ledger.checkpointAttempt(input),
+      settleAttempt: (input) => ledger.settleAttempt(input),
+    },
     models: [model],
   });
   const submission = {
@@ -163,10 +220,262 @@ test('uses the Operations billing task as the single ProductUsage and ProviderCo
     [replay.attempt.id],
   );
   assert.equal(settleAttempts, 2);
+  const workerLedger = new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    {
+      productUsage: durableProductUsage,
+      supplyFreezes,
+    },
+  );
+  assert.deepEqual(
+    await workerLedger.freezeAttempt({
+      attemptId: replay.attempt.id,
+      deployment,
+      jobId: replay.jobId,
+      model,
+      ordinal: 1,
+      previousAttempts: [],
+      previousProviderCosts: [],
+      snapshot: replay.snapshot,
+      submission,
+    }),
+    [...freezes.values()][0],
+  );
   assert.equal(
-    ledger.getSupplyFreeze('creative-work-1')?.productUsageTaskId,
+    (
+      await workerLedger.getSupplyFreeze(
+        context.workspaceId,
+        'creative-work-1',
+      )
+    )?.productUsageTaskId,
     'creative-work-1',
   );
+});
+
+test('replays a pre-upgrade job-linked freeze without mutating immutable facts', async () => {
+  const { foundation } = await fixture();
+  const productUsage = new MemoryProductUsageLedger();
+  productUsage.reserve({
+    billingMode: 'per_request',
+    createdAt: '2026-07-21T00:00:00.000Z',
+    id: 'legacy-rollout-usage',
+    quantity: 1,
+    quoteId: 'legacy-rollout-quote',
+    resource: 'image',
+    taskId: 'legacy-rollout-task',
+    workspaceId: context.workspaceId,
+  });
+  const { freezes, supplyFreezes } = createStrictSupplyFreezeStore();
+  const bilateral = {
+    productUsage: {
+      getUsage(taskId: string, workspaceId: string) {
+        const usage = productUsage.getByTask(taskId);
+        return usage?.workspaceId === workspaceId ? usage : null;
+      },
+    },
+    supplyFreezes,
+  };
+  const ledger = new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    bilateral,
+  );
+  const submission = {
+    actorId: context.userId,
+    billingTaskId: 'legacy-rollout-task',
+    dataClass: [],
+    idempotencyKey: 'legacy-rollout-submit',
+    operation: 'image.generate' as const,
+    prompt: '滚动升级重放',
+    selection: { catalogModelId: model.id, mode: 'fixed' as const },
+    workspaceId: context.workspaceId,
+  };
+  const preview = new ModelSupplyApplicationService({
+    deployments: [deployment],
+    execution: new RecordedProviderExecutionPort(),
+    models: [model],
+  }).previewMediaSubmission(submission);
+  const checkpoint = {
+    attemptId: preview.attempt.id,
+    deployment,
+    jobId: preview.jobId,
+    model,
+    ordinal: 1,
+    previousAttempts: [],
+    previousProviderCosts: [],
+    snapshot: preview.snapshot,
+    submission,
+  };
+  const current = await ledger.freezeAttempt(checkpoint);
+  assert.ok(current);
+  const legacy = {
+    ...current,
+    productUsageTaskId: preview.jobId,
+  };
+  freezes.set(legacy.id, structuredClone(legacy));
+
+  const replay = await new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    bilateral,
+  ).freezeAttempt(checkpoint);
+
+  assert.deepEqual(replay, legacy);
+  assert.equal(
+    await supplyFreezes.getByProductUsageTask(
+      context.workspaceId,
+      'legacy-rollout-task',
+    ),
+    null,
+  );
+});
+
+test('re-reads a competing durable freeze when ProductUsage settles after a miss', async () => {
+  const { foundation } = await fixture();
+  const productUsage = new MemoryProductUsageLedger();
+  const reserved = productUsage.reserve({
+    billingMode: 'per_request',
+    createdAt: '2026-07-21T00:00:00.000Z',
+    id: 'freeze-race-usage',
+    quantity: 1,
+    quoteId: 'freeze-race-quote',
+    resource: 'image',
+    taskId: 'freeze-race-task',
+    workspaceId: context.workspaceId,
+  });
+  const submission = {
+    actorId: context.userId,
+    billingTaskId: reserved.taskId,
+    dataClass: [],
+    idempotencyKey: 'freeze-race-submit',
+    operation: 'image.generate' as const,
+    prompt: '冻结竞争重放',
+    selection: { catalogModelId: model.id, mode: 'fixed' as const },
+    workspaceId: context.workspaceId,
+  };
+  const preview = await new ModelSupplyApplicationService({
+    deployments: [deployment],
+    execution: new RecordedProviderExecutionPort(),
+    models: [model],
+  }).submit(submission);
+  const checkpoint = {
+    attemptId: preview.attempt.id,
+    deployment,
+    jobId: preview.jobId,
+    model,
+    ordinal: 1,
+    previousAttempts: [],
+    previousProviderCosts: [],
+    snapshot: preview.snapshot,
+    submission,
+  };
+  let captured: SupplyRequestFreeze | null = null;
+  await new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    {
+      productUsage: {
+        getUsage() {
+          return reserved;
+        },
+      },
+      supplyFreezes: {
+        async append(freeze) {
+          captured = structuredClone(freeze);
+          return structuredClone(freeze);
+        },
+        async get() {
+          return null;
+        },
+        async getByProductUsageTask() {
+          return null;
+        },
+      },
+    },
+  ).freezeAttempt(checkpoint);
+  assert.ok(captured);
+  const competingFreeze = captured as SupplyRequestFreeze;
+
+  function racingStore(competing: SupplyRequestFreeze) {
+    let reads = 0;
+    return {
+      async append(freeze: SupplyRequestFreeze) {
+        if (freeze.routeSnapshotRef !== competing.routeSnapshotRef) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'Competing freeze has different immutable facts.',
+          );
+        }
+        return structuredClone(competing);
+      },
+      async get() {
+        reads += 1;
+        return reads === 1 ? null : structuredClone(competing);
+      },
+      async getByProductUsageTask() {
+        return structuredClone(competing);
+      },
+    };
+  }
+  const committedLookup = {
+    getUsage() {
+      return { ...reserved, status: 'committed' as const };
+    },
+  };
+  const replay = await new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    {
+      productUsage: committedLookup,
+      supplyFreezes: racingStore(competingFreeze),
+    },
+  ).freezeAttempt(checkpoint);
+  assert.deepEqual(replay, competingFreeze);
+
+  await assert.rejects(
+    new FoundationModelSupplyLedger(
+      foundation,
+      undefined,
+      undefined,
+      {
+        productUsage: committedLookup,
+        supplyFreezes: racingStore({
+          ...competingFreeze,
+          routeSnapshotRef: 'competing-route-snapshot',
+        }),
+      },
+    ).freezeAttempt(checkpoint),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+
+  const settlementLedger = new FoundationModelSupplyLedger(
+    foundation,
+    undefined,
+    undefined,
+    {
+      billingLifecycle: {
+        beforeSubmit() {},
+        dispatchAttempt() {},
+        settleTask() {},
+      },
+      productUsage: committedLookup,
+      supplyFreezes: racingStore(competingFreeze),
+    },
+  );
+  await settlementLedger.checkpointAttempt(checkpoint);
+  await settlementLedger.settleAttempt({
+    evidence: 'settlement_freeze_race',
+    result: preview,
+    submission,
+  });
 });
 
 test('rejects a permanently invalid route before consuming a grant lot', async () => {
@@ -223,22 +532,7 @@ test('rejects a permanently invalid route before consuming a grant lot', async (
 
 test('persists one immutable supply freeze before provider I/O and links settlement cost', async () => {
   const { repository, foundation } = await fixture();
-  const freezes = new Map<string, SupplyRequestFreeze>();
-  const supplyFreezes = {
-    async append(freeze: SupplyRequestFreeze) {
-      const existing = freezes.get(freeze.id);
-      if (existing) {
-        assert.deepEqual(freeze, existing);
-        return structuredClone(existing);
-      }
-      freezes.set(freeze.id, structuredClone(freeze));
-      return structuredClone(freeze);
-    },
-    async get(freezeId: string) {
-      const freeze = freezes.get(freezeId);
-      return freeze ? structuredClone(freeze) : null;
-    },
-  };
+  const { freezes, supplyFreezes } = createStrictSupplyFreezeStore();
   let freezeObservedBeforeProvider = false;
   const ledger = new FoundationModelSupplyLedger(
     foundation,
@@ -259,7 +553,7 @@ test('persists one immutable supply freeze before provider I/O and links settlem
         freezeObservedBeforeProvider =
           freeze?.workspaceId === request.submission.workspaceId &&
           freeze.providerCostAttemptId?.startsWith('model-attempt-') === true &&
-          freeze.productUsageTaskId === request.jobId;
+          freeze.productUsageTaskId === undefined;
         return new RecordedProviderExecutionPort().execute(request);
       },
     },

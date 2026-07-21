@@ -37,6 +37,7 @@ import {
   InMemoryDurableVideoWorkflowStore,
   MemoryModelAssetStorage,
   ModelSupplyApplicationService,
+  type OwnedAsset,
   RecordedProviderExecutionPort,
   runDurableVideoWorkflow,
   VersionedHumanCalibratedVideoQualityScorer,
@@ -568,6 +569,19 @@ async function setupOuterVideoFailure(input: {
 describe('durable composed-video application seam', () => {
   const internalFailureDetail = 'sensitive-internal-video-stage-detail';
   const recordedComposition = new RecordedVideoCompositionPort();
+  const invalidRecordedProvenanceComposer = (
+    mutate: (
+      evidence: NonNullable<OwnedAsset['compositionEvidence']>,
+    ) => NonNullable<OwnedAsset['compositionEvidence']>,
+  ): VideoCompositionPort => ({
+    async compose(input) {
+      const asset = await recordedComposition.compose(input);
+      return {
+        ...asset,
+        compositionEvidence: mutate(asset.compositionEvidence!),
+      };
+    },
+  });
   const deterministicStageFailures = [
     {
       code: 'COMPOSED_VIDEO_AIGC_VALIDATION_FAILED',
@@ -729,6 +743,61 @@ describe('durable composed-video application seam', () => {
           };
         },
       },
+    },
+    {
+      code: 'COMPOSED_VIDEO_PROVENANCE_VALIDATION_FAILED',
+      id: 'delivery-workflow',
+      composer: invalidRecordedProvenanceComposer((evidence) => ({
+        ...evidence,
+        delivery: { ...evidence.delivery!, workflowId: 'workflow-other' },
+      })),
+    },
+    {
+      code: 'COMPOSED_VIDEO_PROVENANCE_VALIDATION_FAILED',
+      id: 'delivery-storyboard',
+      composer: invalidRecordedProvenanceComposer((evidence) => ({
+        ...evidence,
+        delivery: {
+          ...evidence.delivery!,
+          storyboardRevision: 'storyboard-other',
+        },
+      })),
+    },
+    {
+      code: 'COMPOSED_VIDEO_PROVENANCE_VALIDATION_FAILED',
+      id: 'delivery-composition',
+      composer: invalidRecordedProvenanceComposer((evidence) => ({
+        ...evidence,
+        delivery: {
+          ...evidence.delivery!,
+          compositionRevision: 'composition-other',
+        },
+      })),
+    },
+    {
+      code: 'COMPOSED_VIDEO_PROVENANCE_VALIDATION_FAILED',
+      id: 'delivery-duration',
+      composer: invalidRecordedProvenanceComposer((evidence) => ({
+        ...evidence,
+        delivery: {
+          ...evidence.delivery!,
+          subtitles: {
+            ...evidence.delivery!.subtitles,
+            durationSeconds: evidence.delivery!.subtitles.durationSeconds - 1,
+          },
+        },
+      })),
+    },
+    {
+      code: 'COMPOSED_VIDEO_PROVENANCE_VALIDATION_FAILED',
+      id: 'delivery-cover',
+      composer: invalidRecordedProvenanceComposer((evidence) => ({
+        ...evidence,
+        delivery: {
+          ...evidence.delivery!,
+          cover: { ...evidence.delivery!.cover, objectKey: '../cover.jpg' },
+        },
+      })),
     },
   ] as const;
 
@@ -2699,7 +2768,7 @@ describe('durable composed-video application seam', () => {
     assert.equal(setupResult.executions(), 2);
   });
 
-  it('edits a completed workflow through the public Foundation command with OCC and sanitized response', async () => {
+  it('rejects edits to a completed workflow through the public Foundation command', async () => {
     const setupResult = setup();
     const module = new ModelSupplyFoundationModule(
       new ModelSupplyControlPlaneService({
@@ -2763,91 +2832,20 @@ describe('durable composed-video application seam', () => {
       },
     })) as { revision: number };
 
-    const edited = (await module.execute({
-      context,
-      idempotencyKey: 'edit-public-video-subtitle',
-      input: {
-        action: 'video_workflow_edit',
-        payload: {
-          workflowId: 'public-edit-video',
-          expectedRevision: before.revision,
-          edit: { kind: 'set_subtitle', text: '今天也要好好爱自己' },
-        },
-      },
-    })) as {
-      revision: number;
-      subtitleText: string;
-      workflowId: string;
-    };
-    assert.equal(edited.workflowId, 'public-edit-video');
-    assert.equal(edited.revision, before.revision + 1);
-    assert.equal(edited.subtitleText, '今天也要好好爱自己');
-    assert.doesNotMatch(
-      JSON.stringify(edited),
-      /provider|credential|routeSnapshot|clipAssets|composedAsset/i,
-    );
-
-    const selected = (await module.execute({
-      context,
-      idempotencyKey: 'edit-public-video-selection',
-      input: {
-        action: 'video_workflow_edit',
-        payload: {
-          workflowId: 'public-edit-video',
-          expectedRevision: edited.revision,
-          edit: {
-            kind: 'select_candidate',
-            shotId: 'opening',
-            candidateIndex: 0,
-          },
-        },
-      },
-    })) as { revision: number };
-    const publicQueried = (await module.query({
-      context,
-      input: {
-        action: 'video_workflow',
-        payload: { workflowId: 'public-edit-video' },
-      },
-    })) as {
-      revision: number;
-      workflowId: string;
-      shots: Array<{ selectedCandidateIndex?: number }>;
-    };
-    assert.equal(selected.revision, edited.revision + 1);
-    assert.equal(publicQueried.workflowId, 'public-edit-video');
-    assert.equal(publicQueried.revision, selected.revision);
-    assert.equal(publicQueried.shots[0]?.selectedCandidateIndex, 0);
-    assert.equal('job' in publicQueried, false);
-    assert.equal('attempts' in publicQueried, false);
-    assert.equal('routeSnapshot' in publicQueried, false);
-    const internal = await setupResult.application.query({
-      workspaceId: context.workspaceId,
-      workflowId: 'public-edit-video',
-    });
-    assert.equal(
-      internal.workflow.shots[0]?.selectionAudit?.selectedBy,
-      context.userId,
-    );
-    assert.equal(
-      internal.workflow.shots[0]?.selectionAudit?.correlationId,
-      context.correlationId,
-    );
-
     await assert.rejects(
       module.execute({
         context,
-        idempotencyKey: 'edit-public-video-stale',
+        idempotencyKey: 'edit-public-video-terminal',
         input: {
           action: 'video_workflow_edit',
           payload: {
             workflowId: 'public-edit-video',
             expectedRevision: before.revision,
-            edit: { kind: 'set_subtitle', text: '过期写入' },
+            edit: { kind: 'set_subtitle', text: '终态写入' },
           },
         },
       }),
-      /revision is stale/,
+      /terminal workflows require a derived regeneration task/,
     );
     await assert.rejects(
       module.execute({
@@ -2857,7 +2855,7 @@ describe('durable composed-video application seam', () => {
           action: 'video_workflow_edit',
           payload: {
             workflowId: 'public-edit-video',
-            expectedRevision: selected.revision,
+            expectedRevision: before.revision,
             edit: { kind: 'set_subtitle', text: '跨工作区' },
           },
         },

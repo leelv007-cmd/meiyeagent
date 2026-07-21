@@ -22,7 +22,10 @@ test('result route resolves exact lineage on the server before rendering canonic
   );
   assert.match(route, /['"]video_workflow_public['"]/);
   assert.match(route, /payload: \{ workflowId: selectedVideoWorkflowId \}/);
-  assert.match(route, /refetchInterval:[\s\S]*status === ['"]awaiting_quality_review['"]/);
+  assert.match(
+    route,
+    /refetchInterval:[\s\S]*status === ['"]awaiting_quality_review['"]/
+  );
   assert.match(route, /projectResultCenterLiveProjection/);
   assert.doesNotMatch(route, /resolveRouteResultTarget/);
   assert.doesNotMatch(route, /未找到视频工作流/);
@@ -42,6 +45,11 @@ test('result route sends adopt and export through canonical public commands', ()
   assert.match(route, /['"]result_adopt['"]/);
   assert.match(route, /['"]result_export['"]/);
   assert.match(route, /['"]content_packages['"]/);
+  assert.match(route, /latestContentPackageForWork\(/);
+  assert.doesNotMatch(
+    route,
+    /contentPackagesQuery\.data\?\.find\([\s\S]*source\.workflowId/
+  );
   assert.match(route, /download=1/);
   assert.match(route, /onAction=/);
   assert.match(route, /derive_creative_work/);

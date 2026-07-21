@@ -448,6 +448,23 @@ describe('RouteSnapshot four-shape normalization (S2b)', () => {
       },
       ordinal: 1,
     });
+    const fallbackCheckpoint = modelSupplyCheckpointToFoundationRoute({
+      snapshot,
+      model: { id: 'seedance-pro' },
+      deployment: {
+        ...deployment,
+        id: 'seedance-pro-managed',
+        providerProfileId: 'pp-gateway',
+        executionChannelId: 'ch-gateway',
+        endpointRevision: 'ep-ms-gw',
+        channel: 'managed',
+      },
+      submission: {
+        selection: { mode: 'fixed', catalogModelId: 'seedance-pro' },
+        dataClass: [],
+      },
+      ordinal: 2,
+    });
 
     assert.equal(checkpoint.id, 'route-ms-1');
     assert.equal(checkpoint.catalogRevision, 'catalog-ms-9');
@@ -459,6 +476,7 @@ describe('RouteSnapshot four-shape normalization (S2b)', () => {
     assert.equal(checkpoint.allowedCandidates[0]?.deploymentId, 'seedance-pro-direct');
     assert.equal(checkpoint.allowedCandidates[0]?.region, 'cn');
     assert.equal(checkpoint.allowedCandidates[0]?.fallbackRank, 1);
+    assert.deepEqual(fallbackCheckpoint, checkpoint);
 
     const canonical = fromFoundationRouteSnapshot({
       ...checkpoint,

@@ -551,6 +551,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       {
         billingLifecycle,
         defaultSupplyPoolId: 'pool-shared-default',
+        productUsage: billingLifecycle,
         supplyFreezes: supplyFreezeStore,
       },
     ),
@@ -755,6 +756,41 @@ const composedVideo = new DurableComposedVideoApplicationService({
   runnerForWorkspace: videoRunnerForWorkspace,
 });
 const videoRegeneration = new VideoRegenerationApplicationService({
+  approvalAuthority: {
+    async approve(input) {
+      const membership = await pool.query<{ role: string }>(
+        `SELECT role
+           FROM workspace_memberships
+          WHERE workspace_id = $1
+            AND user_id = $2`,
+        [input.workspaceId, input.actorId],
+      );
+      const actor = membership.rows[0]?.role;
+      if (
+        actor !== 'admin' &&
+        actor !== 'owner' &&
+        actor !== 'operator' &&
+        actor !== 'reviewer'
+      ) {
+        throw new Error(
+          'Video regeneration approval requires an active workspace membership.',
+        );
+      }
+      return operationsService.approveCreativeGeneration(
+        {
+          actor,
+          correlationId: input.approvalKey,
+          userId: input.actorId,
+          workspaceId: input.workspaceId,
+        },
+        {
+          approvalKey: input.approvalKey,
+          contract: input.contract,
+          workId: input.workId,
+        },
+      );
+    },
+  },
   billing: productQuoteService,
   quoteAuthority: productQuoteAuthority,
   repository: videoRegenerationRepository,
@@ -934,7 +970,11 @@ operationsService = new OperationsApplicationService(operationsRepository, {
       operationsRepository,
       assetStorage,
       referenceAssets
-    )
+    ),
+    {
+      allowRecordedSyntheticVideoCompliance: process.env.APP_ENV === 'e2e',
+      appEnv: process.env.APP_ENV,
+    },
   ),
   contentPackageRightsResolver,
   contentPackageMigration,

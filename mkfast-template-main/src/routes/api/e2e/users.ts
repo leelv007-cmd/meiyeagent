@@ -12,6 +12,7 @@ import { waitForE2ERuntimeDrain } from '@/lib/e2e-runtime-drain';
 
 const TEST_EMAIL_PATTERN = 'e2e-%@example.test';
 const TEST_API_SECRET = 'mkfast-e2e-secret';
+const P1_JOB_QUEUE_NAME = `${process.env.JOB_QUEUE_PREFIX ?? 'meiye-p1'}-jobs`;
 
 function assertE2EAccess(request: Request) {
   const requestSecret = request.headers.get('x-e2e-secret');
@@ -35,7 +36,7 @@ async function cleanupE2ERuntime(
 ) {
   await db.execute(sql`
     DELETE FROM pgboss.job AS jobs
-    WHERE jobs.name = 'meiye-p1-jobs'
+    WHERE jobs.name = ${P1_JOB_QUEUE_NAME}
       AND jobs.state <> 'completed'
       AND NOT EXISTS (
         SELECT 1 FROM workspaces
@@ -52,6 +53,8 @@ async function cleanupE2ERuntime(
   `);
 
   for (const table of [
+    'p1_supply_capacity_queue',
+    'p1_capacity_leases',
     'model_quality_evaluation_cases',
     'model_quality_evaluation_runs',
     'model_revision_rollback_audits',
@@ -76,13 +79,15 @@ async function cleanupE2ERuntime(
   for (const workspaceId of workspaceIds) {
     await db.execute(sql`
       DELETE FROM pgboss.job
-      WHERE name = 'meiye-p1-jobs'
+      WHERE name = ${P1_JOB_QUEUE_NAME}
         AND data ->> 'workspaceId' = ${workspaceId}
     `);
     await db.execute(sql`
       DELETE FROM p1_job_tracer WHERE workspace_id = ${workspaceId}
     `);
     for (const table of [
+      'p1_supply_capacity_queue',
+      'p1_capacity_leases',
       'model_quality_evaluation_cases',
       'model_quality_evaluation_runs',
       'model_revision_rollback_audits',
@@ -191,19 +196,34 @@ export const Route = createFileRoute('/api/e2e/users')({
           ...new Set(membershipRows.map((row) => row.workspaceId)),
         ];
 
+        await cleanupE2ERuntime(db, workspaceIds);
         await waitForE2ERuntimeDrain({
+          quiescenceMs: 3_000,
+          timeoutMs: 30_000,
           pendingCount: async () => {
-            let count = 0;
+            // Force-delete retry carriers on every poll. A handler that was
+            // already active may race the first cleanup and append one last
+            // child job; the quiet window proves it can no longer do so.
+            await cleanupE2ERuntime(db, workspaceIds);
+            let pending = 0;
             for (const workspaceId of workspaceIds) {
               const rows = await db.execute<{ count: number }>(sql`
-                SELECT count(*)::int AS count
-                FROM p1_generation_jobs
-                WHERE workspace_id = ${workspaceId}
-                  AND status NOT IN ('completed', 'failed', 'cancelled', 'unknown')
+                SELECT (
+                  SELECT count(*)::int
+                  FROM p1_job_tracer
+                  WHERE workspace_id = ${workspaceId}
+                    AND status NOT IN ('completed', 'failed', 'cancelled')
+                ) + (
+                  SELECT count(*)::int
+                  FROM pgboss.job
+                  WHERE name = ${P1_JOB_QUEUE_NAME}
+                    AND data ->> 'workspaceId' = ${workspaceId}
+                    AND state <> 'completed'
+                ) AS count
               `);
-              count += rows[0]?.count ?? 0;
+              pending += rows[0]?.count ?? 0;
             }
-            return count;
+            return pending;
           },
         });
 

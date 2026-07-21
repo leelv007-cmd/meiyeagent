@@ -382,8 +382,12 @@ export interface ModelSupplyLedgerRouteInput {
 export function modelSupplyCheckpointToFoundationRoute(
   input: ModelSupplyLedgerRouteInput,
 ): FoundationRouteCheckpoint {
-  const sourceKind = channelToSourceKind(input.deployment.channel);
-  const base = fromModelSupplyRouteSnapshot(input.snapshot, { sourceKind });
+  const base = fromModelSupplyRouteSnapshot(input.snapshot);
+  // Every provider attempt for one frozen route reuses the same Foundation
+  // snapshot id. Keep route-level evidence anchored to the frozen candidate
+  // order instead of rewriting it to the current attempt channel.
+  const sourceKind =
+    base.sourceKind ?? channelToSourceKind(input.deployment.channel);
 
   // Match prior ledger behavior: prefer frozen allowedCandidates; otherwise
   // synthesize a single candidate from the live deployment binding.

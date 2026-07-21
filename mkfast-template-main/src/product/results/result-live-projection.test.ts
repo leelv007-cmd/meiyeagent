@@ -5,8 +5,31 @@ import type { CreativeWorkbenchProjection } from '@meiye/contracts';
 
 import {
   buildLiveVideoWorksurface,
+  latestContentPackageForWork,
   projectResultCenterLiveProjection,
 } from './result-live-projection';
+
+test('uses the newest same-Work ContentPackage instead of locking the original workflow package', () => {
+  const packages = [
+    {
+      id: 'package-derived',
+      source: { workId: 'work-video-target', workflowId: 'workflow-derived' },
+    },
+    {
+      id: 'package-original',
+      source: { workId: 'work-video-target', workflowId: 'workflow-original' },
+    },
+    {
+      id: 'package-other',
+      source: { workId: 'work-other', workflowId: 'workflow-other' },
+    },
+  ];
+
+  assert.equal(
+    latestContentPackageForWork(packages, 'work-video-target')?.id,
+    'package-derived'
+  );
+});
 
 const projection: CreativeWorkbenchProjection = {
   works: [

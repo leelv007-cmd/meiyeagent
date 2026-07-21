@@ -44,6 +44,15 @@ it('delegates technical composition to the existing ffmpeg seam and persists one
         },
       };
     },
+    async persistVideoCover(input) {
+      return {
+        contentType: 'image/jpeg',
+        id: 'cover-asset',
+        objectKey: `${input.workspaceId}/generated/cover.jpg`,
+        sha256: 'c'.repeat(64),
+        sizeBytes: input.bytes.byteLength,
+      };
+    },
     async releaseMaterialized(paths) {
       events.push(`release:${paths.length}`);
     },
@@ -54,6 +63,9 @@ it('delegates technical composition to the existing ffmpeg seam and persists one
       assert.equal(options.aigcLabelEnabled, true);
       assert.equal(options.brandWatermarkText, '清风美学');
       assert.equal(options.implicitLabel?.contentId, 'workflow-a');
+    },
+    async extractCoverFunction() {
+      return Uint8Array.from([255, 216, 255, 217]);
     },
     async validateFunction({ sourceAssetIds }) {
       return {
@@ -86,6 +98,8 @@ it('delegates technical composition to the existing ffmpeg seam and persists one
     clips: [clip('clip-1'), clip('clip-2')],
     aigcLabelEnabled: true,
     brandWatermarkText: '清风美学',
+    storyboardRevision: 'storyboard-a',
+    subtitles: [{ startSeconds: 0, endSeconds: 20, text: '清风美学' }],
   });
   assert.equal(result.id, 'composed-asset');
   assert.equal(
@@ -143,10 +157,22 @@ it('keeps AIGC visible and implicit labels off when the workflow switch is off',
         objectKey: `${input.workspaceId}/composed/${input.workflowId}.mp4`,
       };
     },
+    async persistVideoCover(input) {
+      return {
+        contentType: 'image/jpeg',
+        id: 'cover-off',
+        objectKey: `${input.workspaceId}/generated/cover-off.jpg`,
+        sha256: 'c'.repeat(64),
+        sizeBytes: input.bytes.byteLength,
+      };
+    },
   };
   const port = new FfmpegVideoCompositionPort(storage, {
     async composeFunction(options) {
       composeOptions = options;
+    },
+    async extractCoverFunction() {
+      return Uint8Array.from([255, 216, 255, 217]);
     },
     async validateFunction({ sourceAssetIds }) {
       return {
@@ -168,6 +194,8 @@ it('keeps AIGC visible and implicit labels off when the workflow switch is off',
     compositionKey: 'stable-off-key',
     clips: [clip('clip-off')],
     aigcLabelEnabled: false,
+    storyboardRevision: 'storyboard-off',
+    subtitles: [{ startSeconds: 0, endSeconds: 10, text: '门店介绍' }],
   });
 
   assert.equal(composeOptions?.aigcLabelEnabled, false);
@@ -191,9 +219,21 @@ it('fails before persistence when requested AIGC metadata is missing or mismatch
       persisted = true;
       return clip('must-not-persist');
     },
+    async persistVideoCover(input) {
+      return {
+        contentType: 'image/jpeg',
+        id: 'cover-must-not-persist',
+        objectKey: `${input.workspaceId}/generated/cover-must-not-persist.jpg`,
+        sha256: 'c'.repeat(64),
+        sizeBytes: input.bytes.byteLength,
+      };
+    },
   };
   const port = new FfmpegVideoCompositionPort(storage, {
     async composeFunction() {},
+    async extractCoverFunction() {
+      return Uint8Array.from([255, 216, 255, 217]);
+    },
     async validateFunction({ sourceAssetIds }) {
       return {
         rendererRevision: 'product-renderer-validation-v1',
@@ -218,6 +258,8 @@ it('fails before persistence when requested AIGC metadata is missing or mismatch
       compositionKey: 'label-missing-key',
       clips: [clip('clip-a')],
       aigcLabelEnabled: true,
+      storyboardRevision: 'storyboard-label-missing',
+      subtitles: [{ startSeconds: 0, endSeconds: 10, text: '门店介绍' }],
     }),
     /incomplete implicit AIGC metadata/
   );

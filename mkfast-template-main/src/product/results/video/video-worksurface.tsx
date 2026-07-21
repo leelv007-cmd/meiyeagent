@@ -98,6 +98,10 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
   const [commandError, setCommandError] = useState<string | null>(null);
   const playerRef = useRef<HTMLVideoElement>(null);
   const regenerationTaskIds = useRef(new Map<string, string>());
+  const canonicalEditsLocked =
+    state.workflowStatus === 'completed' ||
+    state.workflowStatus === 'cancelled' ||
+    state.workflowStatus === 'failed';
 
   useEffect(() => setState(props.initialState), [props.initialState]);
 
@@ -151,7 +155,13 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
       data-testid="video-worksurface"
       data-phase={state.loopPhase}
       data-work-id={state.workId}
+      data-workflow-id={state.workflowId}
       data-workflow-revision={state.workflowRevision}
+      data-composed-asset-id={state.composedCandidate?.assetId}
+      data-adopted-composed-asset-id={
+        state.adoption.composedAssetId ?? undefined
+      }
+      data-canonical-edits-locked={canonicalEditsLocked}
     >
       <div className="flex flex-wrap items-center gap-2">
         <Badge data-testid="video-loop-phase">{state.loopPhase}</Badge>
@@ -259,6 +269,9 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
         </div>
         <textarea
           className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+          disabled={
+            canonicalEditsLocked && state.subtitle.mode === 'independent_asset'
+          }
           value={state.subtitle.text}
           data-testid="video-subtitle-input"
           onChange={(event) => {
@@ -282,6 +295,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
           size="sm"
           disabled={
             commandPending ||
+            canonicalEditsLocked ||
             state.subtitle.mode !== 'independent_asset' ||
             state.subtitle.draftText === null ||
             !props.onCanonicalEdit
@@ -375,7 +389,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
                     aria-pressed={candidate.selected}
                     data-testid="video-shot-candidate"
                     data-candidate-index={candidate.index}
-                    disabled={commandPending}
+                    disabled={commandPending || canonicalEditsLocked}
                     onClick={() => {
                       const result = selectShotCandidate(
                         state,
@@ -403,7 +417,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
                   type="button"
                   size="sm"
                   variant="ghost"
-                  disabled={shotIndex === 0}
+                  disabled={canonicalEditsLocked || shotIndex === 0}
                   aria-label={`前移镜头 ${shotIndex + 1}`}
                   onClick={() => {
                     const ids = state.storyboard.map((item) => item.shotId);
@@ -429,7 +443,10 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
                   type="button"
                   size="sm"
                   variant="ghost"
-                  disabled={shotIndex === state.storyboard.length - 1}
+                  disabled={
+                    canonicalEditsLocked ||
+                    shotIndex === state.storyboard.length - 1
+                  }
                   aria-label={`后移镜头 ${shotIndex + 1}`}
                   onClick={() => {
                     const ids = state.storyboard.map((item) => item.shotId);

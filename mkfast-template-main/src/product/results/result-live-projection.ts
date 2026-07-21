@@ -47,6 +47,13 @@ export type ResultCenterLiveProjection = {
   selected: ResultCenterLiveSelection | null;
 };
 
+/** Operations returns ContentPackages in updatedAt DESC order. */
+export function latestContentPackageForWork<
+  TPackage extends { source: { workId?: string } },
+>(packages: TPackage[] | undefined, workId: string) {
+  return packages?.find((candidate) => candidate.source.workId === workId);
+}
+
 function workspaceKindForWork(work: CreativeWork): ResultWorkspaceKind {
   switch (work.operation) {
     case 'image.generate':
@@ -280,7 +287,6 @@ export function buildLiveVideoWorksurface(
     return undefined;
   }
   const videoAsset = selection.videoAsset;
-  const ownedAssetId = videoAsset?.ownedAssetId ?? videoAsset?.id;
   const content = selection.contents[0];
   const baseRevisionId = content?.id ?? selection.job?.id ?? selection.work.id;
 
@@ -290,10 +296,10 @@ export function buildLiveVideoWorksurface(
     baseRevisionId,
     ...(content ? { contentId: content.id, versionId: content.id } : {}),
     ...(videoAsset ? { selectedObjectId: videoAsset.id } : {}),
-    composedCandidate: ownedAssetId
+    composedCandidate: videoAsset
       ? {
-          assetId: videoAsset?.id ?? ownedAssetId,
-          playableUrl: `/v1/assets/${ownedAssetId}`,
+          assetId: videoAsset.id,
+          playableUrl: `/v1/assets/${videoAsset.ownedAssetId ?? videoAsset.id}`,
           durationSeconds: selection.job?.contract.durationSeconds ?? 0,
         }
       : null,

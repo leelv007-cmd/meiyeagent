@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -6,7 +6,9 @@ import {
   DEFAULT_AIGC_VISIBLE_LABEL,
   type ComposeVideoOptions,
   type ImplicitVideoLabel,
+  type TimedSubtitle,
 } from '../../video/composer.js';
+import { runMediaCommand } from '../../video/media-tools.js';
 import { validateProductComposedOutput } from '../../video/product-renderer.js';
 import { validateVideoLabels } from '../../video/validation.js';
 import type {
@@ -27,16 +29,36 @@ export interface CompositionAssetStoragePort {
     sourceAssetIds: string[];
     compositionEvidence: NonNullable<OwnedAsset['compositionEvidence']>;
   }): Promise<OwnedAsset>;
+  persistRecordedComposedVideo?(input: {
+    bytes: Uint8Array;
+    compositionEvidence: NonNullable<OwnedAsset['compositionEvidence']>;
+    compositionKey: string;
+    technicalValidation: NonNullable<OwnedAsset['technicalValidation']>;
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<OwnedAsset>;
+  persistVideoCover?(input: {
+    bytes: Uint8Array;
+    compositionKey: string;
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<{ id: string; objectKey: string; sha256: string; sizeBytes: number; contentType: 'image/jpeg' }>;
   releaseMaterialized?(paths: string[]): Promise<void>;
 }
 
 type ComposeFunction = (options: ComposeVideoOptions) => Promise<void>;
+type ExtractCoverFunction = (input: {
+  coverPath: string;
+  ffmpegPath: string;
+  outputPath: string;
+}) => Promise<Uint8Array>;
 type ValidateFunction = typeof validateProductComposedOutput;
 type ValidateLabelsFunction = typeof validateVideoLabels;
 
 /** Thin adapter: durable business state stays in the workflow store. */
 export class FfmpegVideoCompositionPort implements VideoCompositionPort {
   private readonly composeFunction: ComposeFunction;
+  private readonly extractCoverFunction: ExtractCoverFunction;
   private readonly ffmpegPath?: string;
   private readonly fontFilePath?: string;
   private readonly ffprobePath?: string;
@@ -47,6 +69,7 @@ export class FfmpegVideoCompositionPort implements VideoCompositionPort {
     private readonly assets: CompositionAssetStoragePort,
     options: {
       composeFunction?: ComposeFunction;
+      extractCoverFunction?: ExtractCoverFunction;
       ffmpegPath?: string;
       ffprobePath?: string;
       fontFilePath?: string;
@@ -55,6 +78,7 @@ export class FfmpegVideoCompositionPort implements VideoCompositionPort {
     } = {},
   ) {
     this.composeFunction = options.composeFunction ?? composeVideo;
+    this.extractCoverFunction = options.extractCoverFunction ?? extractVideoCover;
     this.ffmpegPath = options.ffmpegPath;
     this.ffprobePath = options.ffprobePath;
     this.fontFilePath = options.fontFilePath;
@@ -71,9 +95,14 @@ export class FfmpegVideoCompositionPort implements VideoCompositionPort {
     clips: OwnedAsset[];
     aigcLabelEnabled: boolean;
     brandWatermarkText?: string;
+    storyboardRevision?: string;
+    subtitles?: TimedSubtitle[];
   }) {
     if (input.clips.length === 0) {
       throw new Error('At least one selected clip is required for composition.');
+    }
+    if (!this.assets.persistVideoCover || !input.storyboardRevision || !input.subtitles?.length) {
+      throw new Error('Canonical cover and subtitle evidence is required.');
     }
     const materialized = await Promise.all(
       input.clips.map((asset) =>
@@ -92,7 +121,7 @@ export class FfmpegVideoCompositionPort implements VideoCompositionPort {
       await this.composeFunction({
         clipPaths,
         outputPath,
-        subtitles: [],
+        subtitles: input.subtitles ?? [],
         aigcLabelEnabled: input.aigcLabelEnabled,
         ...(input.brandWatermarkText
           ? { brandWatermarkText: input.brandWatermarkText }
@@ -120,6 +149,17 @@ export class FfmpegVideoCompositionPort implements VideoCompositionPort {
             ...(this.ffprobePath ? { ffprobePath: this.ffprobePath } : {}),
           })
         : undefined;
+      const coverPath = join(workDirectory, 'cover.jpg');
+      const cover = await this.assets.persistVideoCover({
+        bytes: await this.extractCoverFunction({
+          coverPath,
+          ffmpegPath: this.ffmpegPath ?? 'ffmpeg',
+          outputPath,
+        }),
+        compositionKey: input.compositionKey,
+        workflowId: input.workflowId,
+        workspaceId: input.workspaceId,
+      });
       const compositionEvidence: NonNullable<
         OwnedAsset['compositionEvidence']
       > = {
@@ -154,6 +194,19 @@ export class FfmpegVideoCompositionPort implements VideoCompositionPort {
             ? { text: input.brandWatermarkText }
             : {}),
         },
+        delivery: {
+          compositionRevision: input.compositionKey,
+          storyboardRevision: input.storyboardRevision,
+          workflowId: input.workflowId,
+          outputVideoSha256: rendererEvidence.outputSha256,
+          cover: { ...cover, validationMethod: 'ffmpeg_frame_extract' },
+          subtitles: {
+            durationSeconds: input.subtitles.at(-1)?.endSeconds ?? 0,
+            format: 'srt',
+            text: serializeSrt(input.subtitles),
+            validationMethod: 'composition_manifest',
+          },
+        },
       };
       const owned = await this.assets.persistComposedVideo({
         workspaceId: input.workspaceId,
@@ -186,4 +239,26 @@ export class FfmpegVideoCompositionPort implements VideoCompositionPort {
       await rm(workDirectory, { recursive: true, force: true });
     }
   }
+}
+
+async function extractVideoCover(input: {
+  coverPath: string;
+  ffmpegPath: string;
+  outputPath: string;
+}) {
+  await runMediaCommand(input.ffmpegPath, [
+    '-y', '-i', input.outputPath, '-frames:v', '1', '-q:v', '2', input.coverPath,
+  ]);
+  return readFile(input.coverPath);
+}
+
+function serializeSrt(subtitles: TimedSubtitle[]) {
+  const time = (seconds: number) => {
+    const ms = Math.round(seconds * 1000);
+    const date = new Date(ms).toISOString().slice(11, 23).replace('.', ',');
+    return date;
+  };
+  return subtitles.map((item, index) =>
+    `${index + 1}\n${time(item.startSeconds)} --> ${time(item.endSeconds)}\n${item.text}\n`,
+  ).join('\n');
 }

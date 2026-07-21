@@ -75,6 +75,26 @@ export const videoCompositionEvidenceSchema = z
     rendererRevision: z.string().trim().min(1),
     sourceAssetIds: z.array(contentPackageIdSchema).min(1),
     width: z.number().int().positive().optional(),
+    delivery: z.object({
+      compositionRevision: contentPackageIdSchema,
+      storyboardRevision: contentPackageIdSchema,
+      workflowId: contentPackageIdSchema,
+      outputVideoSha256: z.string().regex(/^[a-f0-9]{64}$/),
+      cover: z.object({
+        id: contentPackageIdSchema,
+        objectKey: contentPackageIdSchema,
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        sizeBytes: z.number().int().positive(),
+        contentType: z.literal('image/jpeg'),
+        validationMethod: z.enum(['ffmpeg_frame_extract', 'recorded_synthetic']),
+      }),
+      subtitles: z.object({
+        format: z.literal('srt'),
+        text: z.string().trim().min(1),
+        durationSeconds: z.number().positive(),
+        validationMethod: z.enum(['composition_manifest', 'recorded_synthetic']),
+      }),
+    }).optional(),
   })
   .superRefine((evidence, context) => {
     const aigcMatchesRequest = evidence.aigc.requested
@@ -278,6 +298,7 @@ export const contentPackageSourceSchema = z.object({
   catalogModelId: contentPackageIdSchema.optional(),
   dataClass: z.array(z.string().trim().min(1)).optional(),
   executionContract: creativeExecutionContractSchema.optional(),
+  compositionRevision: contentPackageIdSchema.optional(),
   groundingId: contentPackageIdSchema.optional(),
   layoutCanvas: z
     .object({

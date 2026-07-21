@@ -3,6 +3,7 @@ import type {
   CreativeGenerationApprovalReceipt,
   PromotionalMaterialReceipt,
   PromotionalMaterialSpec,
+  VideoCompositionEvidence,
 } from '@meiye/contracts';
 
 export type OperationActor =
@@ -760,6 +761,7 @@ export interface CreativeAssetProjection {
     | 'audio/mp4';
   sha256?: string;
   sizeBytes?: number;
+  compositionEvidence?: VideoCompositionEvidence;
   savedToLibraryAt?: string;
   savedToLibraryBy?: string;
   libraryRevisionId?: string;
@@ -820,6 +822,7 @@ export interface CreationExecutionResult {
       | 'audio/mp4';
     sha256: string;
     sizeBytes?: number;
+    compositionEvidence?: VideoCompositionEvidence;
   };
   copyCandidates?: Array<{
     title: string;
@@ -925,6 +928,10 @@ export interface ContentPackageExportPort {
     packageId: string;
     platform: ContentPackage['variants'][number]['platform'];
     version: ContentPackage['versions'][number];
+    videoDeliveryCompositionRevision?: string;
+    videoDeliveryWorkflowId?: string;
+    videoDeliveryRevision?: string;
+    videoDeliveryDurationSeconds?: number;
     workspaceId: string;
   }): Promise<ContentPackageExportArtifact>;
 }

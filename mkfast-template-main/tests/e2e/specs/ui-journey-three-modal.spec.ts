@@ -54,11 +54,11 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
 
   for (const contract of JOURNEY_CONTRACTS) {
     for (const surface of SURFACE_PROFILES) {
-      test(`${contract.modality} · ${surface.name}: discover → submit → wait → result → adjust → adopt → download → restore`, async ({
+      test(`${contract.modality}:${contract.deliveryTarget} · ${surface.name}: discover → submit → wait → result → adjust → adopt → download → restore`, async ({
         page,
         request,
       }) => {
-        test.setTimeout(360_000);
+        test.setTimeout(contract.modality === 'video' ? 600_000 : 360_000);
         await page.setViewportSize(surface.viewport);
         await setTheme(page, surface.theme);
         const activationCounter = await installUserActivationCounter(page);
@@ -76,11 +76,13 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
         // Intent must name the distribution target for delivery package labels:
         // copy → 朋友圈分段包; image_text → 小红书 ZIP; video → 抖音 ZIP.
         const intentSeed =
-          contract.modality === 'copy'
+          contract.deliveryTarget === 'wechat_moments'
             ? '朋友圈项目介绍'
-            : contract.modality === 'image_text'
+            : contract.deliveryTarget === 'xiaohongshu'
               ? '小红书套图'
-              : '抖音项目成片';
+              : contract.deliveryTarget === 'video_account'
+                ? '微信视频号项目成片'
+                : '抖音项目成片';
         const workId = await submitComposerJourney(
           page,
           contract,

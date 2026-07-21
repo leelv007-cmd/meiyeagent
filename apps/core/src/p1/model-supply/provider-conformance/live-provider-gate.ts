@@ -6,6 +6,7 @@ import type {
 import {
   CORE_FAULT_INJECTION_OPERATIONS,
   FAULT_INJECTION_SCENARIOS,
+  SECONDARY_FAULT_INJECTION_OPERATIONS,
   type FaultInjectionMatrixReport,
   type FaultInjectionModality,
   type FaultInjectionScenarioResult,
@@ -26,6 +27,8 @@ export type LiveProviderAdapterKind =
 export interface LiveProviderChannel {
   model: DualChannelMatrixModel;
   adapterKind: LiveProviderAdapterKind;
+  /** Required when more than one channel shares the same modality/kind. */
+  deploymentId?: string;
   accountIdentityFingerprint: string;
   endpointFingerprint: string;
   maxProbeCostUsd: number;
@@ -53,6 +56,12 @@ export interface LiveProviderProbeEvidence {
   providerCost: {
     amount: number;
     currency: 'CNY' | 'USD';
+    amountUsd?: number;
+    fx?: {
+      cnyPerUsd: number;
+      evidenceRef: string;
+      observedAt: string;
+    };
     usage?: {
       inputTokens?: number;
       outputTokens?: number;
@@ -70,6 +79,13 @@ export interface LiveProviderProbeEvidence {
   };
   evidenceRef: string;
   observedAt: string;
+  operationEvidence?: {
+    operation: SupplyOperation;
+    runNonce: string;
+    requestIdempotencyKeySha256: string;
+    requestPayloadSha256: string;
+    resultPayloadSha256: string;
+  };
   failureCode?: string;
   failureMessage?: string;
   failureDetailSha256?: string;
@@ -98,9 +114,28 @@ export interface LiveProviderBlockedCheck {
     | 'catalog_model_alignment'
     | 'fault_domain_independence'
     | 'real_fault_injection'
-    | 'complete_lifecycle_conformance';
+    | 'complete_lifecycle_conformance'
+    | 'secondary_live_verification';
   status: 'blocked';
   reason: string;
+}
+
+export interface LiveExternalCostEvidence {
+  source: 'provider_live_cost_ledger';
+  runNonce: string;
+  evidenceRef: string;
+  observedAt: string;
+  amountUsd: number;
+  currency: 'USD';
+  components: Array<{
+    kind:
+      | 'secondary_probe'
+      | 'lifecycle_probe'
+      | 'fault_injection'
+      | 'infrastructure';
+    amountUsd: number;
+    evidenceRef: string;
+  }>;
 }
 
 export type LiveLifecycleCheckId =
@@ -119,6 +154,7 @@ export type LiveLifecycleCheckId =
 
 export interface LiveProviderLifecycleEvidence {
   source: 'provider_lifecycle_injector';
+  runNonce: string;
   evidenceRef: string;
   observedAt: string;
   operation: SupplyOperation;
@@ -139,6 +175,7 @@ export interface LiveProviderLifecycleEvidence {
 
 export interface LiveTransportFaultEvidence {
   source: 'provider_transport_injector';
+  runNonce: string;
   evidenceRef: string;
   observedAt: string;
   operation: SupplyOperation;
@@ -166,6 +203,12 @@ export interface LiveProviderGateReport {
   skippedOperations: SupplyOperation[];
   blockedChecks: LiveProviderBlockedCheck[];
   externalEvidenceRefs: string[];
+  actualCost: {
+    providerProbeUsd: number;
+    externalEvidenceUsd: number;
+    totalUsd: number;
+    capUsd: number;
+  };
 }
 
 export async function runLiveProviderGate(input: {
@@ -174,13 +217,16 @@ export async function runLiveProviderGate(input: {
   onProbe?: (probes: readonly LiveProviderProbeEvidence[]) => Promise<void>;
   costCapUsd: number;
   externalEvidenceCostReservationUsd?: number;
+  externalCostEvidence?: LiveExternalCostEvidence;
+  runNonce?: string;
+  secondaryProbes?: readonly LiveProviderProbeEvidence[];
   lifecycleEvidence?: readonly LiveProviderLifecycleEvidence[];
   transportFaultEvidence?: readonly LiveTransportFaultEvidence[];
 }): Promise<LiveProviderGateReport> {
   const observedAt = new Date().toISOString();
   const probes: LiveProviderProbeEvidence[] = [];
-  // Keep paid calls serial so the workflow cost cap remains observable and
-  // providers are not burst-tested by the conformance gate.
+  // Keep paid calls serial so reservations and reported actual spend remain
+  // observable; provider billing is reconciled after each completed call.
   const externalEvidenceCostReservationUsd =
     input.externalEvidenceCostReservationUsd ?? 0;
   const lifecycleEvidence = Array.isArray(input.lifecycleEvidence)
@@ -189,8 +235,17 @@ export async function runLiveProviderGate(input: {
   const transportFaultEvidence = Array.isArray(input.transportFaultEvidence)
     ? input.transportFaultEvidence
     : [];
+  const secondaryProbes = Array.isArray(input.secondaryProbes)
+    ? input.secondaryProbes
+    : [];
   const hasExternalEvidence =
-    lifecycleEvidence.length > 0 || transportFaultEvidence.length > 0;
+    lifecycleEvidence.length > 0 ||
+    transportFaultEvidence.length > 0 ||
+    secondaryProbes.length > 0;
+  const externalEvidenceRequired =
+    input.runNonce !== undefined ||
+    input.externalCostEvidence !== undefined ||
+    externalEvidenceCostReservationUsd > 0;
   const reservedCostUsd =
     input.channels.reduce(
       (sum, channel) => sum + channel.maxProbeCostUsd,
@@ -204,7 +259,8 @@ export async function runLiveProviderGate(input: {
   const invalidExternalEvidenceBudget =
     !Number.isFinite(externalEvidenceCostReservationUsd) ||
     externalEvidenceCostReservationUsd < 0 ||
-    (hasExternalEvidence && externalEvidenceCostReservationUsd <= 0);
+    ((hasExternalEvidence || externalEvidenceRequired) &&
+      externalEvidenceCostReservationUsd <= 0);
   if (
     !Number.isFinite(input.costCapUsd) ||
     input.costCapUsd <= 0 ||
@@ -216,14 +272,60 @@ export async function runLiveProviderGate(input: {
       `provider_live_cost_cap_exceeded:reserved=${reservedCostUsd.toFixed(4)}:cap=${input.costCapUsd}`,
     );
   }
+  const externalCostEvidence = validateExternalCostEvidence(
+    input.externalCostEvidence,
+    input.runNonce,
+    observedAt,
+  );
+  if (
+    (hasExternalEvidence || externalEvidenceRequired) &&
+    !externalCostEvidence
+  ) {
+    throw new Error('provider_live_external_cost_unverifiable');
+  }
+  const externalEvidenceUsd = externalCostEvidence?.amountUsd ?? 0;
+  if (externalEvidenceUsd > externalEvidenceCostReservationUsd) {
+    throw new Error('provider_live_external_cost_reservation_exceeded');
+  }
+  if (hasExternalEvidence || externalEvidenceRequired) {
+    preflightExternalEvidence({
+      channels: input.channels,
+      lifecycleEvidence,
+      transportFaultEvidence,
+      secondaryProbes,
+      externalCostEvidence: externalCostEvidence!,
+      runNonce: input.runNonce,
+      observedAt,
+    });
+  }
   for (const channel of input.channels) {
     probes.push(await input.probe(channel));
     await input.onProbe?.([...probes]);
   }
+  const providerProbeUsd = validateProviderProbeCosts(probes, input.channels);
+  const actualTotalUsd = providerProbeUsd + externalEvidenceUsd;
+  if (actualTotalUsd > input.costCapUsd) {
+    throw new Error(
+      `provider_live_actual_cost_cap_exceeded:actual=${actualTotalUsd.toFixed(4)}:cap=${input.costCapUsd}`,
+    );
+  }
+  const validSecondaryProbes = validateSecondaryProbes({
+    probes: secondaryProbes,
+    channels: input.channels,
+    primaryProbes: probes,
+    runNonce: input.runNonce,
+    observedAt,
+  });
+  probes.push(...secondaryProbes);
   const activationEvidence = probes.map((probe) =>
     toLiveProviderActivationEvidence(
       probe,
-      input.channels.some((channel) => probeMatchesChannel(probe, channel)),
+      input.channels.some(
+        (channel) =>
+          probeMatchesChannel(probe, channel) ||
+          (validSecondaryProbes.has(probe) &&
+            secondaryEvidenceMatchesChannel(probe, channel)),
+      ),
     ),
   );
   const publishGates: MultiChannelPublishGateResult[] = [];
@@ -231,16 +333,25 @@ export async function runLiveProviderGate(input: {
   const skippedOperations: SupplyOperation[] = [];
   const blockedChecks: LiveProviderBlockedCheck[] = [];
   const externalEvidenceRefs = new Set<string>();
+  if (externalCostEvidence) {
+    externalEvidenceRefs.add(externalCostEvidence.evidenceRef);
+    for (const component of externalCostEvidence.components) {
+      externalEvidenceRefs.add(component.evidenceRef);
+    }
+  }
 
   for (const operation of CORE_FAULT_INJECTION_OPERATIONS) {
     let operationBlocked = false;
     const configured = input.channels.filter(
       (channel) => channel.model.operation === operation,
     );
+    const alignedChannels = selectAlignedChannels(configured);
+    const alignedCatalogModelId =
+      alignedChannels[0]?.model.catalogModelId ?? null;
     const operationEvidence = activationEvidence.filter(
       (evidence) => evidence.operation === operation,
     );
-    const deployments = configured.map((channel) =>
+    const deployments = alignedChannels.map((channel) =>
       deploymentEvidence(
         channel,
         operationEvidence.find(
@@ -248,31 +359,19 @@ export async function runLiveProviderGate(input: {
         ),
       ),
     );
-    const catalogModelIds = new Set(
-      configured.map((channel) => channel.model.catalogModelId),
-    );
-    const alignedCatalogModelId =
-      catalogModelIds.size === 1
-        ? configured[0]?.model.catalogModelId ?? null
-        : null;
-    if (catalogModelIds.size > 1) {
+    if (!alignedCatalogModelId) {
       operationBlocked = true;
       blockedChecks.push({
         operation,
         check: 'catalog_model_alignment',
         status: 'blocked',
         reason:
-          'Official and reseller probes do not represent the same CatalogModel.',
+          'Official and reseller probes do not represent one declared, aligned CatalogModel.',
       });
     }
     const identitiesIndependent =
-      configured.length >= 2 &&
-      new Set(
-        configured.map((channel) => channel.accountIdentityFingerprint),
-      ).size === configured.length &&
-      new Set(configured.map((channel) => channel.endpointFingerprint)).size ===
-        configured.length;
-    if (configured.length >= 2 && !identitiesIndependent) {
+      hasIndependentOfficialResellerPair(alignedChannels);
+    if (alignedChannels.length >= 2 && !identitiesIndependent) {
       operationBlocked = true;
       blockedChecks.push({
         operation,
@@ -285,16 +384,29 @@ export async function runLiveProviderGate(input: {
     const gate = evaluateMultiChannelPublishGate({
       operation,
       catalogModelId: alignedCatalogModelId,
-      deployments:
-        alignedCatalogModelId && identitiesIndependent ? deployments : [],
+      deployments: alignedCatalogModelId ? deployments : [],
       requireLiveVerified: true,
     });
     publishGates.push(gate);
-    const matchedLifecycleEvidence = configured.map((channel) =>
-      findCompleteLifecycleEvidence(lifecycleEvidence, channel),
+    const lifecycleChannels = alignedChannels.filter((channel) =>
+      findCompleteLifecycleEvidence(
+        lifecycleEvidence,
+        channel,
+        input.runNonce,
+        observedAt,
+      ),
     );
+    const matchedLifecycleEvidence = lifecycleChannels.flatMap((channel) => {
+      const evidence = findCompleteLifecycleEvidence(
+        lifecycleEvidence,
+        channel,
+        input.runNonce,
+        observedAt,
+      );
+      return evidence ? [evidence] : [];
+    });
     const lifecycleComplete =
-      configured.length === 2 && matchedLifecycleEvidence.every(Boolean);
+      hasIndependentOfficialResellerPair(lifecycleChannels);
     if (lifecycleComplete) {
       for (const evidence of matchedLifecycleEvidence) {
         if (!evidence) continue;
@@ -315,24 +427,23 @@ export async function runLiveProviderGate(input: {
       });
     }
 
-    const official = configured.find(
-      (channel) => channel.model.channelKind === 'official_direct',
+    const liveLifecycleChannels = lifecycleChannels.filter((channel) =>
+      operationEvidence.some(
+        (evidence) =>
+          evidence.activationStatus === 'live_verified' &&
+          activationMatchesChannel(evidence, channel),
+      ),
     );
-    const reseller = configured.find(
-      (channel) => channel.model.channelKind === 'upstream_reseller',
-    );
-    const transportEvidence =
-      alignedCatalogModelId && official && reseller
-        ? transportFaultEvidence.find((evidence) =>
-            isValidTransportFaultEvidence(
-              evidence,
-              operation,
-              alignedCatalogModelId,
-              official,
-              reseller,
-            ),
-          )
-        : undefined;
+    const transportEvidence = alignedCatalogModelId
+      ? findValidTransportFaultEvidence({
+          allEvidence: transportFaultEvidence,
+          channels: liveLifecycleChannels,
+          operation,
+          catalogModelId: alignedCatalogModelId,
+          runNonce: input.runNonce,
+          observedAt,
+        })
+      : undefined;
     if (!transportEvidence) {
       operationBlocked = true;
       blockedChecks.push({
@@ -364,6 +475,43 @@ export async function runLiveProviderGate(input: {
     }
   }
 
+  for (const operation of SECONDARY_FAULT_INJECTION_OPERATIONS) {
+    const evidence = activationEvidence.find(
+      (candidate) =>
+        candidate.operation === operation &&
+        candidate.activationStatus === 'live_verified',
+    );
+    const channel = evidence
+      ? input.channels.find((candidate) =>
+          secondaryEvidenceMatchesChannel(evidence, candidate),
+        )
+      : undefined;
+    const gate = evaluateMultiChannelPublishGate({
+      operation,
+      catalogModelId: channel?.model.catalogModelId ?? null,
+      deployments:
+        channel && evidence ? [deploymentEvidence(channel, evidence)] : [],
+      requireLiveVerified: true,
+    });
+    publishGates.push(gate);
+    if (
+      gate.status !== 'single_channel' ||
+      !gate.publishAllowed ||
+      gate.multiChannelReady
+    ) {
+      blockedChecks.push({
+        operation,
+        check: 'secondary_live_verification',
+        status: 'blocked',
+        reason:
+          'One channel-bound live_verified probe is required for the secondary operation.',
+      });
+      skippedOperations.push(operation);
+    } else if (evidence) {
+      externalEvidenceRefs.add(evidence.evidenceRef);
+    }
+  }
+
   return {
     observedAt,
     probes,
@@ -373,7 +521,101 @@ export async function runLiveProviderGate(input: {
     skippedOperations,
     blockedChecks,
     externalEvidenceRefs: [...externalEvidenceRefs],
+    actualCost: {
+      providerProbeUsd,
+      externalEvidenceUsd,
+      totalUsd: actualTotalUsd,
+      capUsd: input.costCapUsd,
+    },
   };
+}
+
+function selectAlignedChannels(
+  channels: readonly LiveProviderChannel[],
+): LiveProviderChannel[] {
+  const groups = new Map<string, LiveProviderChannel[]>();
+  for (const channel of channels) {
+    if (channel.model.catalogAlignment !== 'channel_matrix_aligned') continue;
+    const group = groups.get(channel.model.catalogModelId) ?? [];
+    group.push(channel);
+    groups.set(channel.model.catalogModelId, group);
+  }
+  return [...groups.values()]
+    .filter(
+      (group) =>
+        group.length >= 2 &&
+        group.some(
+          (channel) => channel.model.channelKind === 'official_direct',
+        ) &&
+        group.some(
+          (channel) => channel.model.channelKind === 'upstream_reseller',
+        ),
+    )
+    .sort(
+      (left, right) =>
+        Number(hasIndependentOfficialResellerPair(right)) -
+          Number(hasIndependentOfficialResellerPair(left)) ||
+        right.length - left.length,
+    )[0] ?? [];
+}
+
+function hasIndependentOfficialResellerPair(
+  channels: readonly LiveProviderChannel[],
+): boolean {
+  return channels.some(
+    (official) =>
+      official.model.channelKind === 'official_direct' &&
+      channels.some(
+        (reseller) =>
+          reseller.model.channelKind === 'upstream_reseller' &&
+          reseller.accountIdentityFingerprint !==
+            official.accountIdentityFingerprint &&
+          reseller.endpointFingerprint !== official.endpointFingerprint,
+      ),
+  );
+}
+
+function findValidTransportFaultEvidence(input: {
+  allEvidence: readonly LiveTransportFaultEvidence[];
+  channels: readonly LiveProviderChannel[];
+  operation: SupplyOperation;
+  catalogModelId: string;
+  runNonce: string | undefined;
+  observedAt: string;
+}): LiveTransportFaultEvidence | undefined {
+  for (const official of input.channels) {
+    if (official.model.channelKind !== 'official_direct') continue;
+    for (const reseller of input.channels) {
+      if (
+        reseller.model.channelKind !== 'upstream_reseller' ||
+        reseller.accountIdentityFingerprint ===
+          official.accountIdentityFingerprint ||
+        reseller.endpointFingerprint === official.endpointFingerprint
+      ) {
+        continue;
+      }
+      const evidence = input.allEvidence.find((candidate) =>
+        isValidTransportFaultEvidence(
+          candidate,
+          input.operation,
+          input.catalogModelId,
+          official,
+          reseller,
+          input.runNonce,
+          input.observedAt,
+        ),
+      );
+      if (evidence) return evidence;
+    }
+  }
+  return undefined;
+}
+
+function channelDeploymentId(channel: LiveProviderChannel): string {
+  return (
+    channel.deploymentId ??
+    `live-${channel.model.modality}-${channel.model.channelKind}`
+  );
 }
 
 function probeMatchesChannel(
@@ -386,11 +628,46 @@ function probeMatchesChannel(
     probe.channelKind === channel.model.channelKind &&
     probe.catalogModelId === channel.model.catalogModelId &&
     probe.providerProfileId === channel.model.providerProfileId &&
-    probe.deploymentId ===
-      `live-${channel.model.modality}-${channel.model.channelKind}` &&
+    probe.deploymentId === channelDeploymentId(channel) &&
     probe.adapterKind === channel.adapterKind &&
     probe.accountIdentityFingerprint === channel.accountIdentityFingerprint &&
     probe.endpointFingerprint === channel.endpointFingerprint
+  );
+}
+
+function secondaryEvidenceMatchesChannel(
+  evidence: Pick<
+    LiveProviderProbeEvidence,
+    | 'operation'
+    | 'modality'
+    | 'channelKind'
+    | 'catalogModelId'
+    | 'providerProfileId'
+    | 'deploymentId'
+    | 'adapterKind'
+    | 'accountIdentityFingerprint'
+    | 'endpointFingerprint'
+  >,
+  channel: LiveProviderChannel,
+): boolean {
+  const expectedModality =
+    evidence.operation === 'copy.adapt' || evidence.operation === 'text.respond'
+      ? 'llm'
+      : evidence.operation === 'image.edit'
+        ? 'image'
+        : null;
+  return (
+    expectedModality !== null &&
+    channel.model.modality === expectedModality &&
+    evidence.modality === channel.model.modality &&
+    evidence.channelKind === channel.model.channelKind &&
+    evidence.catalogModelId === channel.model.catalogModelId &&
+    evidence.providerProfileId === channel.model.providerProfileId &&
+    evidence.deploymentId === channelDeploymentId(channel) &&
+    evidence.adapterKind === channel.adapterKind &&
+    evidence.accountIdentityFingerprint ===
+      channel.accountIdentityFingerprint &&
+    evidence.endpointFingerprint === channel.endpointFingerprint
   );
 }
 
@@ -405,8 +682,7 @@ function activationMatchesChannel(
     evidence.catalogModelId === channel.model.catalogModelId &&
     evidence.providerProfileId === channel.model.providerProfileId &&
     evidence.adapterKind === channel.adapterKind &&
-    evidence.deploymentId ===
-      `live-${channel.model.modality}-${channel.model.channelKind}` &&
+    evidence.deploymentId === channelDeploymentId(channel) &&
     evidence.accountIdentityFingerprint ===
       channel.accountIdentityFingerprint &&
     evidence.endpointFingerprint === channel.endpointFingerprint
@@ -434,24 +710,27 @@ const MEDIA_LIFECYCLE_CHECKS: readonly LiveLifecycleCheckId[] = [
 function findCompleteLifecycleEvidence(
   allEvidence: readonly LiveProviderLifecycleEvidence[],
   channel: LiveProviderChannel,
+  runNonce: string | undefined,
+  observedAt: string,
 ): LiveProviderLifecycleEvidence | undefined {
   const evidence = allEvidence.find(
     (candidate) =>
       isRecord(candidate) &&
       candidate.source === 'provider_lifecycle_injector' &&
+      isRunNonce(runNonce) &&
+      candidate.runNonce === runNonce &&
       candidate.operation === channel.model.operation &&
       candidate.modality === channel.model.modality &&
       candidate.channelKind === channel.model.channelKind &&
       candidate.catalogModelId === channel.model.catalogModelId &&
       candidate.providerProfileId === channel.model.providerProfileId &&
-      candidate.deploymentId ===
-        `live-${channel.model.modality}-${channel.model.channelKind}` &&
+      candidate.deploymentId === channelDeploymentId(channel) &&
       candidate.adapterKind === channel.adapterKind &&
       candidate.accountIdentityFingerprint ===
         channel.accountIdentityFingerprint &&
       candidate.endpointFingerprint === channel.endpointFingerprint &&
       isEvidenceRef(candidate.evidenceRef) &&
-      isObservedAt(candidate.observedAt) &&
+      isFreshObservedAt(candidate.observedAt, observedAt) &&
       Array.isArray(candidate.checks),
   );
   if (!evidence) return undefined;
@@ -485,16 +764,18 @@ function isValidTransportFaultEvidence(
   catalogModelId: string,
   official: LiveProviderChannel,
   reseller: LiveProviderChannel,
+  runNonce: string | undefined,
+  observedAt: string,
 ): boolean {
   if (
     !isRecord(evidence) ||
     evidence.source !== 'provider_transport_injector' ||
+    !isRunNonce(runNonce) ||
+    evidence.runNonce !== runNonce ||
     evidence.operation !== operation ||
     evidence.catalogModelId !== catalogModelId ||
-    evidence.officialDeploymentId !==
-      `live-${official.model.modality}-${official.model.channelKind}` ||
-    evidence.resellerDeploymentId !==
-      `live-${reseller.model.modality}-${reseller.model.channelKind}` ||
+    evidence.officialDeploymentId !== channelDeploymentId(official) ||
+    evidence.resellerDeploymentId !== channelDeploymentId(reseller) ||
     evidence.officialAccountIdentityFingerprint !==
       official.accountIdentityFingerprint ||
     evidence.officialEndpointFingerprint !== official.endpointFingerprint ||
@@ -502,7 +783,7 @@ function isValidTransportFaultEvidence(
       reseller.accountIdentityFingerprint ||
     evidence.resellerEndpointFingerprint !== reseller.endpointFingerprint ||
     !isEvidenceRef(evidence.evidenceRef) ||
-    !isObservedAt(evidence.observedAt) ||
+    !isFreshObservedAt(evidence.observedAt, observedAt) ||
     !Array.isArray(evidence.scenarios) ||
     !evidence.scenarios.every(isRecord) ||
     !isRecord(evidence.matrixReport)
@@ -515,7 +796,7 @@ function isValidTransportFaultEvidence(
     report.modality !== official.model.modality ||
     report.evidenceKind !== 'live_provider' ||
     !isEvidenceRef(report.id) ||
-    !isObservedAt(report.observedAt) ||
+    !isFreshObservedAt(report.observedAt, observedAt) ||
     report.allPassed !== true ||
     report.dualChannelReady !== true ||
     !Array.isArray(report.scenarios) ||
@@ -527,7 +808,7 @@ function isValidTransportFaultEvidence(
         scenario.operation === operation &&
         scenario.modality === official.model.modality &&
         scenario.evidenceKind === 'live_provider' &&
-        isObservedAt(scenario.observedAt),
+        isFreshObservedAt(scenario.observedAt, observedAt),
     )
   ) {
     return false;
@@ -790,6 +1071,296 @@ function sanitizeTransportMatrixReport(
   };
 }
 
+function validateProviderProbeCosts(
+  probes: readonly LiveProviderProbeEvidence[],
+  channels: readonly LiveProviderChannel[],
+): number {
+  let totalUsd = 0;
+  for (const probe of probes) {
+    const channel = channels.find((candidate) =>
+      probeMatchesChannelForCost(probe, candidate),
+    );
+    if (!channel) throw new Error('provider_live_probe_cost_unbound');
+    const amountUsd = verifiedProviderCostUsd(probe.providerCost);
+    if (amountUsd === null) {
+      throw new Error('provider_live_probe_cost_unverifiable');
+    }
+    if (amountUsd > channel.maxProbeCostUsd) {
+      throw new Error(
+        `provider_live_probe_reservation_exceeded:${channelDeploymentId(channel)}`,
+      );
+    }
+    totalUsd += amountUsd;
+  }
+  return totalUsd;
+}
+
+function preflightExternalEvidence(input: {
+  channels: readonly LiveProviderChannel[];
+  lifecycleEvidence: readonly LiveProviderLifecycleEvidence[];
+  transportFaultEvidence: readonly LiveTransportFaultEvidence[];
+  secondaryProbes: readonly LiveProviderProbeEvidence[];
+  externalCostEvidence: LiveExternalCostEvidence;
+  runNonce: string | undefined;
+  observedAt: string;
+}): void {
+  const validSecondary = validateSecondaryProbes({
+    probes: input.secondaryProbes,
+    channels: input.channels,
+    primaryProbes: [],
+    runNonce: input.runNonce,
+    observedAt: input.observedAt,
+  });
+  const secondaryComplete = SECONDARY_FAULT_INJECTION_OPERATIONS.every(
+    (operation) =>
+      [...validSecondary].some((probe) => probe.operation === operation),
+  );
+  const secondaryProbeUsd = validateSecondaryProbeCosts(input.secondaryProbes);
+  const secondaryCostReconciled = approximatelyEqual(
+    costComponentTotal(input.externalCostEvidence, 'secondary_probe'),
+    secondaryProbeUsd,
+  );
+  const coreComplete = CORE_FAULT_INJECTION_OPERATIONS.every((operation) => {
+    const aligned = selectAlignedChannels(
+      input.channels.filter((channel) => channel.model.operation === operation),
+    );
+    const lifecycleChannels = aligned.filter((channel) =>
+      findCompleteLifecycleEvidence(
+        input.lifecycleEvidence,
+        channel,
+        input.runNonce,
+        input.observedAt,
+      ),
+    );
+    return (
+      hasIndependentOfficialResellerPair(lifecycleChannels) &&
+      Boolean(
+        aligned[0] &&
+          findValidTransportFaultEvidence({
+            allEvidence: input.transportFaultEvidence,
+            channels: lifecycleChannels,
+            operation,
+            catalogModelId: aligned[0].model.catalogModelId,
+            runNonce: input.runNonce,
+            observedAt: input.observedAt,
+          }),
+      )
+    );
+  });
+  if (!secondaryCostReconciled) {
+    throw new Error('provider_live_secondary_cost_reconciliation_failed');
+  }
+  if (!secondaryComplete || !coreComplete) {
+    throw new Error('provider_live_external_evidence_incomplete');
+  }
+}
+
+function validateSecondaryProbeCosts(
+  probes: readonly LiveProviderProbeEvidence[],
+): number {
+  return probes.reduce((sum, probe) => {
+    const amountUsd = verifiedProviderCostUsd(probe.providerCost);
+    if (amountUsd === null) {
+      throw new Error('provider_live_secondary_probe_cost_unverifiable');
+    }
+    return sum + amountUsd;
+  }, 0);
+}
+
+function costComponentTotal(
+  evidence: LiveExternalCostEvidence,
+  kind: LiveExternalCostEvidence['components'][number]['kind'],
+): number {
+  return evidence.components
+    .filter((component) => component.kind === kind)
+    .reduce((sum, component) => sum + component.amountUsd, 0);
+}
+
+function probeMatchesChannelForCost(
+  probe: LiveProviderProbeEvidence,
+  channel: LiveProviderChannel,
+): boolean {
+  return (
+    probe.operation === channel.model.operation &&
+    probe.modality === channel.model.modality &&
+    probe.channelKind === channel.model.channelKind &&
+    probe.deploymentId === channelDeploymentId(channel) &&
+    probe.adapterKind === channel.adapterKind
+  );
+}
+
+function verifiedProviderCostUsd(
+  cost: LiveProviderProbeEvidence['providerCost'],
+): number | null {
+  if (!Number.isFinite(cost.amount) || cost.amount < 0) return null;
+  if (cost.currency === 'USD') {
+    return cost.amountUsd === undefined ||
+      (Number.isFinite(cost.amountUsd) &&
+        cost.amountUsd >= 0 &&
+        approximatelyEqual(cost.amountUsd, cost.amount))
+      ? cost.amount
+      : null;
+  }
+  if (cost.amount === 0 && (cost.amountUsd === undefined || cost.amountUsd === 0)) {
+    return 0;
+  }
+  if (!Number.isFinite(cost.amountUsd) || (cost.amountUsd ?? -1) < 0) {
+    return null;
+  }
+  const fx = cost.fx;
+  if (
+    !fx ||
+    !Number.isFinite(fx.cnyPerUsd) ||
+    fx.cnyPerUsd <= 0 ||
+    !isEvidenceRef(fx.evidenceRef) ||
+    !isObservedAt(fx.observedAt)
+  ) {
+    return null;
+  }
+  const calculated = cost.amount / fx.cnyPerUsd;
+  return approximatelyEqual(cost.amountUsd!, calculated)
+    ? cost.amountUsd!
+    : null;
+}
+
+function validateExternalCostEvidence(
+  evidence: LiveExternalCostEvidence | undefined,
+  runNonce: string | undefined,
+  observedAt: string,
+): LiveExternalCostEvidence | undefined {
+  if (!evidence) return undefined;
+  if (
+    evidence.source !== 'provider_live_cost_ledger' ||
+    evidence.currency !== 'USD' ||
+    !isRunNonce(runNonce) ||
+    evidence.runNonce !== runNonce ||
+    !isEvidenceRef(evidence.evidenceRef) ||
+    !isFreshObservedAt(evidence.observedAt, observedAt) ||
+    !Number.isFinite(evidence.amountUsd) ||
+    evidence.amountUsd < 0 ||
+    !Array.isArray(evidence.components) ||
+    evidence.components.length < 3
+  ) {
+    return undefined;
+  }
+  const requiredKinds = new Set([
+    'secondary_probe',
+    'lifecycle_probe',
+    'fault_injection',
+  ]);
+  const refs = new Set<string>();
+  let componentTotal = 0;
+  for (const component of evidence.components) {
+    if (
+      !isRecord(component) ||
+      ![
+        'secondary_probe',
+        'lifecycle_probe',
+        'fault_injection',
+        'infrastructure',
+      ].includes(component.kind as string) ||
+      !Number.isFinite(component.amountUsd) ||
+      (component.amountUsd as number) < 0 ||
+      !isEvidenceRef(component.evidenceRef) ||
+      refs.has(component.evidenceRef)
+    ) {
+      return undefined;
+    }
+    requiredKinds.delete(component.kind as string);
+    refs.add(component.evidenceRef);
+    componentTotal += component.amountUsd as number;
+  }
+  return requiredKinds.size === 0 &&
+    approximatelyEqual(componentTotal, evidence.amountUsd)
+    ? evidence
+    : undefined;
+}
+
+function validateSecondaryProbes(input: {
+  probes: readonly LiveProviderProbeEvidence[];
+  channels: readonly LiveProviderChannel[];
+  primaryProbes: readonly LiveProviderProbeEvidence[];
+  runNonce: string | undefined;
+  observedAt: string;
+}): Set<LiveProviderProbeEvidence> {
+  const valid = new Set<LiveProviderProbeEvidence>();
+  if (!isRunNonce(input.runNonce)) return valid;
+  const primaryTaskRefs = new Set(
+    input.primaryProbes.flatMap((probe) =>
+      probe.providerTaskRef ? [probe.providerTaskRef] : [],
+    ),
+  );
+  const primaryEvidenceRefs = new Set(
+    input.primaryProbes.map((probe) => probe.evidenceRef),
+  );
+  const taskRefs = new Set<string>();
+  const evidenceRefs = new Set<string>();
+  const requestHashes = new Set<string>();
+  const idempotencyHashes = new Set<string>();
+  const resultHashes = new Set<string>();
+  for (const operation of SECONDARY_FAULT_INJECTION_OPERATIONS) {
+    const operationProbes = input.probes.filter(
+      (probe) => probe.operation === operation,
+    );
+    for (const probe of operationProbes) {
+      const operationEvidence = probe.operationEvidence;
+      const bound = input.channels.some((channel) =>
+        secondaryEvidenceMatchesChannel(probe, channel),
+      );
+      if (
+        !bound ||
+        !isLiveVerifiedProbe(probe) ||
+        !isFreshObservedAt(probe.observedAt, input.observedAt) ||
+        !probe.providerTaskRef ||
+        !isEvidenceRef(probe.providerTaskRef) ||
+        primaryTaskRefs.has(probe.providerTaskRef) ||
+        taskRefs.has(probe.providerTaskRef) ||
+        primaryEvidenceRefs.has(probe.evidenceRef) ||
+        evidenceRefs.has(probe.evidenceRef) ||
+        !operationEvidence ||
+        operationEvidence.operation !== operation ||
+        operationEvidence.runNonce !== input.runNonce ||
+        !isSha256(operationEvidence.requestIdempotencyKeySha256) ||
+        !isSha256(operationEvidence.requestPayloadSha256) ||
+        !isSha256(operationEvidence.resultPayloadSha256) ||
+        idempotencyHashes.has(operationEvidence.requestIdempotencyKeySha256) ||
+        requestHashes.has(operationEvidence.requestPayloadSha256) ||
+        resultHashes.has(operationEvidence.resultPayloadSha256)
+      ) {
+        continue;
+      }
+      taskRefs.add(probe.providerTaskRef);
+      evidenceRefs.add(probe.evidenceRef);
+      idempotencyHashes.add(operationEvidence.requestIdempotencyKeySha256);
+      requestHashes.add(operationEvidence.requestPayloadSha256);
+      resultHashes.add(operationEvidence.resultPayloadSha256);
+      valid.add(probe);
+    }
+  }
+  return valid;
+}
+
+function isRunNonce(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u.test(value)
+  );
+}
+
+function isFreshObservedAt(value: unknown, now: string): boolean {
+  if (!isObservedAt(value)) return false;
+  const delta = Date.parse(now) - Date.parse(value);
+  return delta >= -5 * 60_000 && delta <= 60 * 60_000;
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
+}
+
+function approximatelyEqual(left: number, right: number): boolean {
+  return Math.abs(left - right) <= Math.max(1e-9, Math.abs(right) * 1e-6);
+}
+
 function isEvidenceRef(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -827,6 +1398,8 @@ export function isLiveVerifiedProbe(
     evidence.acceptance === 'accepted' &&
     Boolean(evidence.providerTaskRef) &&
     evidence.lifecycle.submitted &&
+    isEvidenceRef(evidence.evidenceRef) &&
+    isObservedAt(evidence.observedAt) &&
     /^[a-f0-9]{64}$/u.test(evidence.accountIdentityFingerprint) &&
     /^[a-f0-9]{64}$/u.test(evidence.endpointFingerprint) &&
     lifecycleVerified

@@ -331,7 +331,7 @@ test('routes video submission and recovery through the Work-bound composed-video
       userId: 'owner-a',
       workspaceId: 'workspace-a',
     },
-    contract: videoContract,
+    contract: { ...videoContract, watermarkEnabled: true },
     idempotencyKey: 'submit-video-composed',
     intent: '介绍真实门店服务',
     productUsageQuantity: 1,
@@ -345,6 +345,7 @@ test('routes video submission and recovery through the Work-bound composed-video
     ['create', 'confirm']
   );
   const create = calls[0]?.input as {
+    brandWatermarkText?: string;
     deliveryMode: string;
     executionContract: CreativeExecutionContract;
     shots: Array<{
@@ -355,6 +356,7 @@ test('routes video submission and recovery through the Work-bound composed-video
     workId: string;
   };
   assert.equal(create.deliveryMode, 'candidate_only');
+  assert.equal(create.brandWatermarkText, '美业内容');
   assert.equal(create.workId, 'creative-work-video-1');
   assert.equal(create.executionContract.operation, 'video.generate');
   assert.deepEqual(

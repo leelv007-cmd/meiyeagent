@@ -21,7 +21,6 @@ import type {
 } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
 import type { ProviderCostEvent } from '../foundation/domain.js';
-import type { ProductUsageLedger } from '../product-billing/product-usage-ledger.js';
 import {
   GRANT_IDEMPOTENCY_KEY_PREFIX,
   assertIndependentGrantConsumeIdempotencyKeys,
@@ -213,16 +212,28 @@ export function buildProviderCostEventFromFreeze(input: {
 }
 
 /**
- * Attach supply freeze refs onto a reserved ProductUsage (#92) without
- * owning the ProductUsage schema — store is a side map keyed by taskId.
+ * Durable ProductUsage lookup shared by HTTP and Worker assemblies.
+ */
+export interface SupplySideProductUsageLookup {
+  getUsage(
+    taskId: string,
+    workspaceId: string,
+  ): ProductUsageRecord | null | Promise<ProductUsageRecord | null>;
+}
+
+/**
+ * Validate and link a supply freeze to an already-reserved ProductUsage (#92).
+ * Persistence belongs to the injected SupplyRequestFreeze store so the link is
+ * visible across processes; this bridge deliberately owns no process-local map.
  */
 export class SupplySideProductUsageBridge {
-  private readonly freezesByTask = new Map<string, SupplyRequestFreeze>();
+  constructor(private readonly productUsage: SupplySideProductUsageLookup) {}
 
-  constructor(private readonly productUsage: ProductUsageLedger) {}
-
-  attachFreeze(taskId: string, freeze: SupplyRequestFreeze): SupplyRequestFreeze {
-    const usage = this.productUsage.getByTask(taskId);
+  async attachFreeze(
+    taskId: string,
+    freeze: SupplyRequestFreeze,
+  ): Promise<SupplyRequestFreeze> {
+    const usage = await this.productUsage.getUsage(taskId, freeze.workspaceId);
     if (!usage) {
       throw new P1DomainError(
         'NOT_FOUND',
@@ -235,31 +246,20 @@ export class SupplySideProductUsageBridge {
         'Supply freeze workspace must match ProductUsage workspace.'
       );
     }
-    const existing = this.freezesByTask.get(taskId);
-    if (existing) {
-      if (existing.id !== freeze.id || existing.routeSnapshotRef !== freeze.routeSnapshotRef) {
-        throw new P1DomainError(
-          'IDEMPOTENCY_CONFLICT',
-          `Supply freeze for task ${taskId} already attached with different facts.`
-        );
-      }
-      return structuredClone(existing);
+    if (usage.status !== 'reserved') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `ProductUsage for task ${taskId} must be reserved before supplier dispatch.`,
+      );
     }
-    const linked = buildSupplyRequestFreeze({
+    return buildSupplyRequestFreeze({
       ...freeze,
       productUsageTaskId: taskId,
     });
-    this.freezesByTask.set(taskId, linked);
-    return structuredClone(linked);
   }
 
-  getFreeze(taskId: string): SupplyRequestFreeze | null {
-    const freeze = this.freezesByTask.get(taskId);
-    return freeze ? structuredClone(freeze) : null;
-  }
-
-  getProductUsage(taskId: string): ProductUsageRecord | null {
-    return this.productUsage.getByTask(taskId);
+  getProductUsage(taskId: string, workspaceId: string) {
+    return this.productUsage.getUsage(taskId, workspaceId);
   }
 }
 

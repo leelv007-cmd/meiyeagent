@@ -148,7 +148,7 @@ test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
 
     await expect(page).toHaveURL(/\/admin\/?$/u);
     const exceptionHome = page.getByTestId('exception-home-panel');
-    await expect(exceptionHome).toBeVisible();
+    await expect(exceptionHome).toBeVisible({ timeout: 30_000 });
     await expect(exceptionHome).toHaveAttribute('data-read-only', 'true');
     await expect(exceptionHome).toHaveAttribute('data-supports-ack', 'false');
     await expect(exceptionHome).toHaveAttribute(

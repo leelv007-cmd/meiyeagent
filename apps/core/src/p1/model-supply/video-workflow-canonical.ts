@@ -685,11 +685,10 @@ export function applyCanonicalVideoEdit(
   if (current.job.revision !== input.expectedRevision) {
     throw new VideoWorkflowConcurrencyError('Video workflow revision is stale.');
   }
-  if (
-    current.job.status !== 'completed' &&
-    current.job.status !== 'awaiting_quality_review'
-  ) {
-    throw new Error('Only reviewable or completed video workflows can be edited.');
+  if (current.job.status !== 'awaiting_quality_review') {
+    throw new Error(
+      'Only a reviewable video workflow can be edited; terminal workflows require a derived regeneration task.',
+    );
   }
   const edited = cloneRun(current);
   const edit = input.edit;

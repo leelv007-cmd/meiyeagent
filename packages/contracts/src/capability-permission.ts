@@ -170,7 +170,10 @@ const modelWorkspaceReadQueries = new Set([
   'job',
   'preferences',
   'video_workflow',
+  'video_workflow_latest',
+  'video_workflow_public',
   'video_workflow_public_latest',
+  'video_workflows',
 ]);
 const integrationUseActions = new Set([
   'confirm_douyin_publish',

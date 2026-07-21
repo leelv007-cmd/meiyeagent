@@ -87,6 +87,10 @@ test('Postgres foundation adapter preserves the P1ApplicationService contract', 
       selectionMode: 'fixed' as const,
       dataClass: 'public' as const,
       fallbackConsent: false,
+      maxAttempts: 2,
+      fallbackAuthorized: true,
+      dataPolicyRevisionId: 'data-policy-r1',
+      sourceKind: 'official_direct' as const,
       allowedCandidates: [
         {
           catalogModelId: 'copy-model',
@@ -111,6 +115,14 @@ test('Postgres foundation adapter preserves the P1ApplicationService contract', 
 
   assert.deepEqual(replayed, created);
   assert.deepEqual(replayedGeneration, generation);
+  const persistedRoute = await service.getRouteSnapshot(
+    context,
+    'route-generation-1'
+  );
+  assert.equal(persistedRoute.maxAttempts, 2);
+  assert.equal(persistedRoute.fallbackAuthorized, true);
+  assert.equal(persistedRoute.dataPolicyRevisionId, 'data-policy-r1');
+  assert.equal(persistedRoute.sourceKind, 'official_direct');
   assert.equal((await service.getRelationFact(context, 'store-1')).data.name, 'Postgres 门店');
   assert.deepEqual(await service.getUsageProjection(context, 'copy'), {
     allowance: 4, reserved: 1, committed: 0, released: 0, available: 3,

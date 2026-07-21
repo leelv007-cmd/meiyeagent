@@ -120,6 +120,10 @@ import type {
   VideoContentPackageConfirmation,
   VideoContentPackageOutcome,
 } from '../video-content-package-port.js';
+import {
+  isExportableOwnedAssetObjectKey,
+  UnverifiedVideoComplianceError,
+} from './content-package-export-adapter.js';
 
 export class OperationsError extends Error {
   constructor(
@@ -452,6 +456,112 @@ function creativeContractFingerprint(contract: CreativeExecutionContract) {
   return createHash('sha256')
     .update(JSON.stringify(stableValue(contract)))
     .digest('hex');
+}
+
+function isWorkspaceSafeVideoObjectKey(
+  workspaceId: string,
+  objectKey: string | undefined,
+) {
+  return Boolean(
+    objectKey &&
+      isExportableOwnedAssetObjectKey(workspaceId, objectKey, 'video/mp4')
+  );
+}
+
+function hasCanonicalVideoDeliveryEvidence(
+  asset: Pick<
+    CreativeAssetProjection,
+    'compositionEvidence' | 'sha256' | 'sizeBytes'
+  >,
+  expected: {
+    compositionRevision?: string;
+    durationSeconds: number;
+    storyboardRevision?: string;
+    workflowId: string;
+    workspaceId: string;
+  },
+) {
+  const evidence = asset.compositionEvidence;
+  const delivery = evidence?.delivery;
+  return Boolean(
+    evidence &&
+      delivery &&
+      evidence.outputSha256 === asset.sha256 &&
+      evidence.outputSizeBytes === asset.sizeBytes &&
+      typeof asset.sha256 === 'string' &&
+      /^[a-f0-9]{64}$/u.test(asset.sha256) &&
+      delivery.outputVideoSha256 === asset.sha256 &&
+      delivery.workflowId === expected.workflowId &&
+      delivery.workflowId.trim().length > 0 &&
+      delivery.storyboardRevision.trim().length > 0 &&
+      (!expected.storyboardRevision ||
+        delivery.storyboardRevision === expected.storyboardRevision) &&
+      delivery.compositionRevision.trim().length > 0 &&
+      (!expected.compositionRevision ||
+        delivery.compositionRevision === expected.compositionRevision) &&
+      Number.isFinite(evidence.durationSeconds) &&
+      evidence.durationSeconds === expected.durationSeconds &&
+      delivery.subtitles.durationSeconds === evidence.durationSeconds &&
+      delivery.subtitles.text.trim().length > 0 &&
+      delivery.cover.contentType === 'image/jpeg' &&
+      delivery.cover.id.trim().length > 0 &&
+      /^[a-f0-9]{64}$/u.test(delivery.cover.sha256) &&
+      Number.isSafeInteger(delivery.cover.sizeBytes) &&
+      delivery.cover.sizeBytes > 0 &&
+      isExportableOwnedAssetObjectKey(
+        expected.workspaceId,
+        delivery.cover.objectKey,
+        delivery.cover.contentType,
+      )
+  );
+}
+
+function isVerifiedFirstVideoResult(
+  asset: CreativeAssetProjection | undefined,
+  job: CreativeJob | undefined,
+  context: { workId: string; workspaceId: string },
+) {
+  const evidence = asset?.compositionEvidence;
+  const aigcEnabled = job?.contract.aigcLabelEnabled;
+  const watermarkEnabled = job?.contract.watermarkEnabled;
+  const durationSeconds = job?.contract.durationSeconds;
+  return Boolean(
+    asset &&
+      job &&
+      asset.kind === 'video' &&
+      asset.contentType === 'video/mp4' &&
+      asset.workspaceId === context.workspaceId &&
+      asset.workId === context.workId &&
+      asset.ownedAssetId &&
+      isWorkspaceSafeVideoObjectKey(context.workspaceId, asset.objectKey) &&
+      typeof asset.sha256 === 'string' &&
+      /^[a-f0-9]{64}$/u.test(asset.sha256) &&
+      Number.isSafeInteger(asset.sizeBytes) &&
+      (asset.sizeBytes ?? 0) > 0 &&
+      job.workspaceId === context.workspaceId &&
+      job.workId === context.workId &&
+      job.status === 'completed' &&
+      job.outputAssetIds.includes(asset.id) &&
+      evidence &&
+      evidence.outputSha256 === asset.sha256 &&
+      evidence.outputSizeBytes === asset.sizeBytes &&
+      evidence.aigc.requested === aigcEnabled &&
+      evidence.aigc.visibleLabel.actual === aigcEnabled &&
+      evidence.aigc.visibleLabel.validated &&
+      evidence.aigc.implicitMetadata.actual === aigcEnabled &&
+      evidence.aigc.implicitMetadata.validated &&
+      evidence.brandWatermark.requested === watermarkEnabled &&
+      evidence.brandWatermark.actual === watermarkEnabled &&
+      evidence.brandWatermark.validated &&
+      (!watermarkEnabled || Boolean(evidence.brandWatermark.text?.trim())) &&
+      job.providerJobId &&
+      typeof durationSeconds === 'number' &&
+      hasCanonicalVideoDeliveryEvidence(asset, {
+        durationSeconds,
+        workflowId: job.providerJobId,
+        workspaceId: context.workspaceId,
+      })
+  );
 }
 
 function templateRolloutBucket(workspaceId: string, templateId: string) {
@@ -5789,6 +5899,13 @@ export class OperationsApplicationService {
             objectKey: appliedOutcome.asset.objectKey,
             ownedAssetId: appliedOutcome.asset.id,
             sha256: appliedOutcome.asset.sha256,
+            ...(appliedOutcome.asset.compositionEvidence
+              ? {
+                  compositionEvidence: structuredClone(
+                    appliedOutcome.asset.compositionEvidence,
+                  ),
+                }
+              : {}),
             ...(typeof appliedOutcome.asset.sizeBytes === 'number'
               ? { sizeBytes: appliedOutcome.asset.sizeBytes }
               : {}),
@@ -7375,13 +7492,44 @@ export class OperationsApplicationService {
           404,
         );
       }
+      const selection = input.selection;
       const packageKind =
-        input.selection.kind === 'video' ? 'video' : 'image_text';
-      const packageIndex = state.contentPackages.findIndex(
-        (candidate) =>
-          candidate.kind === packageKind &&
-          candidate.source.workId === work.id,
-      );
+        selection.kind === 'video' ? 'video' : 'image_text';
+      const matchingPackageIndexes = state.contentPackages
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(
+          ({ candidate }) =>
+            candidate.kind === packageKind &&
+            candidate.source.workId === work.id,
+        )
+        .map(({ index }) => index);
+      let matchingVideoPackageIndex: number | undefined;
+      if (selection.kind === 'video') {
+        for (
+          let position = matchingPackageIndexes.length - 1;
+          position >= 0;
+          position -= 1
+        ) {
+          const index = matchingPackageIndexes[position]!;
+          const candidate = state.contentPackages[index];
+          if (
+            candidate?.generated.assetIds.includes(selection.videoAssetId) ||
+            candidate?.generated.ownedAssets?.some(
+              ({ id }) => id === selection.videoAssetId,
+            )
+          ) {
+            matchingVideoPackageIndex = index;
+            break;
+          }
+        }
+      }
+      // A full-compose regeneration appends a second package for the same
+      // Work. Resolve the package that actually owns the selected video so
+      // OCC and idempotent re-adoption stay scoped to that exact package.
+      const packageIndex =
+        selection.kind === 'video'
+          ? (matchingVideoPackageIndex ?? -1)
+          : (matchingPackageIndexes[0] ?? -1);
       const current = state.contentPackages[packageIndex];
       if (current) {
         await this.requireContentPackageRevision(
@@ -7397,7 +7545,6 @@ export class OperationsApplicationService {
         );
       }
 
-      const selection = input.selection;
       const copyAssetId =
         selection.kind === 'copy' || selection.kind === 'image_text'
           ? selection.copyAssetId
@@ -7476,15 +7623,27 @@ export class OperationsApplicationService {
         }
       }
       if (selection.kind === 'video') {
-        const ownedVideo = current?.generated.ownedAssets?.find(
+        const creativeVideo = mediaAssets[0];
+        const creativeVideoJob = creativeVideo
+          ? state.creativeJobs.find(({ id }) => id === creativeVideo.jobId)
+          : undefined;
+        const existingOwnedVideo = current?.generated.ownedAssets?.find(
           ({ id }) => id === selection.videoAssetId,
         );
-        if (
-          !current ||
-          !ownedVideo ||
-          ownedVideo.contentType !== 'video/mp4' ||
-          !current.generated.assetIds.includes(selection.videoAssetId)
-        ) {
+        const validExistingSelection = Boolean(
+          current &&
+            existingOwnedVideo?.contentType === 'video/mp4' &&
+            current.generated.assetIds.includes(selection.videoAssetId),
+        );
+        const validFirstSelection =
+          !current &&
+          matchingPackageIndexes.length === 0 &&
+          creativeVideo?.id === selection.videoAssetId &&
+          isVerifiedFirstVideoResult(creativeVideo, creativeVideoJob, {
+            workId: work.id,
+            workspaceId: context.workspaceId,
+          });
+        if (!validExistingSelection && !validFirstSelection) {
           throw new OperationsError(
             'INVALID_VIDEO_RESULT_ASSET',
             'The selected video must be the owned completed Result.',
@@ -7550,15 +7709,23 @@ export class OperationsApplicationService {
             ({ id }) => id === deliveredAssets[0]?.jobId,
           )
         : undefined;
-      const deliveredOwnedAssets = deliveredAssets.map((asset) => ({
-        contentType: asset.contentType!,
-        id: asset.id,
-        objectKey: asset.objectKey!,
-        sha256: asset.sha256!,
-        ...(typeof asset.sizeBytes === 'number'
-          ? { sizeBytes: asset.sizeBytes }
-          : {}),
-      }));
+      const deliveredOwnedAssets = deliveredAssets.flatMap((asset) => [
+        {
+          ...(asset.compositionEvidence
+            ? { compositionEvidence: structuredClone(asset.compositionEvidence) }
+            : {}),
+          contentType: asset.contentType!,
+          id: asset.id,
+          objectKey: asset.objectKey!,
+          sha256: asset.sha256!,
+          ...(typeof asset.sizeBytes === 'number'
+            ? { sizeBytes: asset.sizeBytes }
+            : {}),
+        },
+        ...(asset.compositionEvidence?.delivery?.cover
+          ? [structuredClone(asset.compositionEvidence.delivery.cover)]
+          : []),
+      ]);
       const deliveredRunIds = [
         ...new Set(
           [copyJob?.id, ...deliveredAssets.map(({ jobId }) => jobId)].filter(
@@ -7624,6 +7791,24 @@ export class OperationsApplicationService {
                 ...(copyAsset ? [copyAsset.id] : []),
                 ...orderedAssetIds,
               ],
+              ...(selection.kind === 'video' && primaryMediaJob
+                ? {
+                    executionContract: structuredClone(primaryMediaJob.contract),
+                    ...(deliveredAssets[0]?.compositionEvidence?.delivery
+                      ? {
+                          compositionRevision:
+                            deliveredAssets[0].compositionEvidence.delivery
+                              .compositionRevision,
+                          storyboardRevision:
+                            deliveredAssets[0].compositionEvidence.delivery
+                              .storyboardRevision,
+                          workflowId:
+                            deliveredAssets[0].compositionEvidence.delivery
+                              .workflowId,
+                        }
+                      : {}),
+                  }
+                : {}),
               workId: work.id,
             },
             timestamp,
@@ -7638,6 +7823,13 @@ export class OperationsApplicationService {
               copyJob?.contract.watermarkEnabled ??
               primaryMediaJob?.contract.watermarkEnabled ??
               false,
+            ...(primaryMediaJob?.contract.watermarkEnabled &&
+            deliveredAssets[0]?.compositionEvidence?.brandWatermark.text
+              ? {
+                  watermarkText:
+                    deliveredAssets[0].compositionEvidence.brandWatermark.text,
+                }
+              : {}),
           },
           generated: {
             assetIds: deliveredAssets.map(({ id }) => id),
@@ -7685,10 +7877,11 @@ export class OperationsApplicationService {
           persisted.versions.find(
             (candidate) => candidate.id === persisted.currentVersionId,
           ) ?? version;
-        const platforms =
-          packageKind === 'video'
-            ? (['douyin'] as const)
-            : (['xiaohongshu', 'douyin', 'video_account'] as const);
+        const platforms = [
+          'xiaohongshu',
+          'douyin',
+          'video_account',
+        ] as const;
         persisted = {
           ...persisted,
           variants: platforms.map((platform) => {
@@ -8216,6 +8409,28 @@ export class OperationsApplicationService {
             409
           );
         }
+        const deliveryDuration =
+          current.source.executionContract?.durationSeconds;
+        if (
+          !deliveryDuration ||
+          !hasCanonicalVideoDeliveryEvidence(input.composedAsset, {
+            ...(current.source.compositionRevision
+              ? { compositionRevision: current.source.compositionRevision }
+              : {}),
+            durationSeconds: deliveryDuration,
+            storyboardRevision: input.storyboardRevision,
+            workflowId: input.workflowId,
+            workspaceId: context.workspaceId,
+          }) ||
+          current.source.workflowId !== input.workflowId ||
+          current.source.storyboardRevision !== input.storyboardRevision
+        ) {
+          throw new OperationsError(
+            'VIDEO_CONTENT_PACKAGE_DELIVERY_EVIDENCE_INVALID',
+            'Completed video delivery evidence does not match the confirmed workflow.',
+            409
+          );
+        }
         const existingOwnedVideo = current.generated.ownedAssets?.find(
           (asset) =>
             asset.id === input.composedAsset.id &&
@@ -8237,6 +8452,12 @@ export class OperationsApplicationService {
         if (!current.versions.some((version) => version.id === versionId)) {
           const delivered = {
             ...current,
+            source: {
+              ...current.source,
+              compositionRevision:
+                input.composedAsset.compositionEvidence.delivery!
+                  .compositionRevision,
+            },
             generated: {
               assetIds: [input.composedAsset.id],
               childRuns: current.generated.childRuns.map((run) =>
@@ -8289,7 +8510,16 @@ export class OperationsApplicationService {
                     }
                   : run
               ),
-              ownedAssets: [structuredClone(input.composedAsset)],
+              ownedAssets: [
+                structuredClone(input.composedAsset),
+                ...(input.composedAsset.compositionEvidence?.delivery?.cover
+                  ? [
+                      structuredClone(
+                        input.composedAsset.compositionEvidence.delivery.cover,
+                      ),
+                    ]
+                  : []),
+              ],
             },
           };
           const reviewReady = transitionContentPackage(
@@ -9021,51 +9251,6 @@ export class OperationsApplicationService {
       );
     }
     const timestamp = this.timestamp();
-    if (
-      contentPackage.kind === 'video' &&
-      (contentPackage.compliance.aigcLabelEnabled ||
-        contentPackage.compliance.watermarkEnabled)
-    ) {
-      return this.mutate(context, async (current) => {
-        await this.requireContentPackageWrite(context);
-        current.contentPackages ??= [];
-        const index = current.contentPackages.findIndex(
-          (candidate) => candidate.id === input.packageId
-        );
-        const stored = current.contentPackages[index];
-        if (!stored) {
-          throw new OperationsError(
-            'CONTENT_PACKAGE_NOT_FOUND',
-            'The ContentPackage was not found.',
-            404
-          );
-        }
-        await this.requireContentPackageRevision(
-          context,
-          stored,
-          input.expectedRevision
-        );
-        const updated = {
-          ...stored,
-          status: 'needs_replacement' as const,
-          updatedAt: timestamp,
-        };
-        const revised = this.incrementContentPackageRevision(stored, updated);
-        current.contentPackages[index] = revised;
-        this.audit(
-          current,
-          context,
-          'content_package.compliance_unverified',
-          'content_package',
-          stored.id,
-          { platform: input.platform }
-        );
-        return {
-          ...revised,
-          ...contentPackageVisibleStatus(revised.status),
-        };
-      });
-    }
     try {
       const artifact = await exporter.export({
         compliance: contentPackage.compliance,
@@ -9074,6 +9259,25 @@ export class OperationsApplicationService {
         packageId: contentPackage.id,
         platform: input.platform,
         version,
+        ...(contentPackage.kind === 'video' && contentPackage.source.storyboardRevision
+          ? { videoDeliveryRevision: contentPackage.source.storyboardRevision }
+          : {}),
+        ...(contentPackage.kind === 'video' && contentPackage.source.compositionRevision
+          ? {
+              videoDeliveryCompositionRevision:
+                contentPackage.source.compositionRevision,
+            }
+          : {}),
+        ...(contentPackage.kind === 'video' && contentPackage.source.workflowId
+          ? { videoDeliveryWorkflowId: contentPackage.source.workflowId }
+          : {}),
+        ...(contentPackage.kind === 'video' &&
+        contentPackage.source.executionContract?.durationSeconds
+          ? {
+              videoDeliveryDurationSeconds:
+                contentPackage.source.executionContract.durationSeconds,
+            }
+          : {}),
         workspaceId: context.workspaceId,
       });
       return this.mutate(context, async (current, repository) => {
@@ -9170,6 +9374,47 @@ export class OperationsApplicationService {
         error instanceof TaskBlockingNodeConflictError
       ) {
         throw error;
+      }
+      if (error instanceof UnverifiedVideoComplianceError) {
+        return this.mutate(context, async (current) => {
+          await this.requireContentPackageWrite(context);
+          current.contentPackages ??= [];
+          const index = current.contentPackages.findIndex(
+            (candidate) => candidate.id === input.packageId
+          );
+          const stored = current.contentPackages[index];
+          if (!stored) {
+            throw new OperationsError(
+              'CONTENT_PACKAGE_NOT_FOUND',
+              'The ContentPackage was not found.',
+              404
+            );
+          }
+          await this.requireContentPackageRevision(
+            context,
+            stored,
+            input.expectedRevision
+          );
+          const updated = {
+            ...stored,
+            status: 'needs_replacement' as const,
+            updatedAt: timestamp,
+          };
+          const revised = this.incrementContentPackageRevision(stored, updated);
+          current.contentPackages[index] = revised;
+          this.audit(
+            current,
+            context,
+            'content_package.compliance_unverified',
+            'content_package',
+            stored.id,
+            { platform: input.platform }
+          );
+          return {
+            ...revised,
+            ...contentPackageVisibleStatus(revised.status),
+          };
+        });
       }
       return this.mutate(context, async (current) => {
         await this.requireContentPackageWrite(context);

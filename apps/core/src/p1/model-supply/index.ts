@@ -284,6 +284,42 @@ export class MemoryModelAssetStorage implements ModelAssetStoragePort {
     };
   }
 
+  async persistVideoCover(input: {
+    bytes: Uint8Array;
+    compositionKey: string;
+    workflowId: string;
+    workspaceId: string;
+  }) {
+    const receipt = await this.persistOwnedAsset({
+      bytes: input.bytes,
+      contentType: 'image/jpeg',
+      workspaceId: input.workspaceId,
+    });
+    return { ...receipt, contentType: 'image/jpeg' as const };
+  }
+
+  async persistRecordedComposedVideo(input: {
+    bytes: Uint8Array;
+    compositionEvidence: NonNullable<OwnedAsset['compositionEvidence']>;
+    compositionKey: string;
+    technicalValidation: NonNullable<OwnedAsset['technicalValidation']>;
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<OwnedAsset> {
+    const sha256 = hash(input.bytes);
+    const objectKey = `${input.workspaceId}/composed/${sha256}.mp4`;
+    this.objects.set(objectKey, Uint8Array.from(input.bytes));
+    return {
+      id: `composition-${hash(input.compositionKey).slice(0, 24)}`,
+      objectKey,
+      sha256,
+      sizeBytes: input.bytes.byteLength,
+      contentType: 'video/mp4',
+      compositionEvidence: structuredClone(input.compositionEvidence),
+      technicalValidation: structuredClone(input.technicalValidation),
+    };
+  }
+
   async inspectOwnedAsset(input: {
     workspaceId: string;
     objectKey: string;
@@ -3643,10 +3679,31 @@ export interface VideoCompositionPort {
     clips: OwnedAsset[];
     aigcLabelEnabled: boolean;
     brandWatermarkText?: string;
+    storyboardRevision?: string;
+    subtitles?: import('../../video/composer.js').TimedSubtitle[];
   }): Promise<OwnedAsset>;
 }
 
 export class RecordedVideoCompositionPort implements VideoCompositionPort {
+  constructor(
+    private readonly storage: {
+      persistRecordedComposedVideo?(input: {
+        bytes: Uint8Array;
+        compositionEvidence: NonNullable<OwnedAsset['compositionEvidence']>;
+        compositionKey: string;
+        technicalValidation: NonNullable<OwnedAsset['technicalValidation']>;
+        workflowId: string;
+        workspaceId: string;
+      }): Promise<OwnedAsset>;
+      persistVideoCover?(input: {
+        bytes: Uint8Array;
+        compositionKey: string;
+        workflowId: string;
+        workspaceId: string;
+      }): Promise<{ id: string; objectKey: string; sha256: string; sizeBytes: number; contentType: 'image/jpeg' }>;
+    } = new MemoryModelAssetStorage(),
+  ) {}
+
   async compose(input: {
     workspaceId: string;
     workflowId: string;
@@ -3654,67 +3711,119 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
     clips: OwnedAsset[];
     aigcLabelEnabled: boolean;
     brandWatermarkText?: string;
+    storyboardRevision?: string;
+    subtitles?: import('../../video/composer.js').TimedSubtitle[];
   }): Promise<OwnedAsset> {
+    const durationSeconds =
+      input.subtitles?.at(-1)?.endSeconds ?? input.clips.length * 15;
     const bytes = Buffer.from(
       `${input.clips.map((clip) => clip.sha256).join(':')}:aigc-label-${input.aigcLabelEnabled ? 'on' : 'off'}:watermark-${input.brandWatermarkText ?? 'off'}`
     );
     const sha256 = hash(bytes);
-    return {
+    const cover = await this.storage?.persistVideoCover?.({
+      bytes: Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxB//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPxB//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxB//9k=', 'base64'),
+      compositionKey: input.compositionKey,
+      workflowId: input.workflowId,
+      workspaceId: input.workspaceId,
+    });
+    const compositionEvidence: NonNullable<
+      OwnedAsset['compositionEvidence']
+    > = {
+      aigc: {
+        requested: input.aigcLabelEnabled,
+        visibleLabel: {
+          actual: input.aigcLabelEnabled,
+          validated: true,
+          ...(input.aigcLabelEnabled ? { value: '内容由 AI 生成' } : {}),
+        },
+        implicitMetadata: {
+          actual: input.aigcLabelEnabled,
+          validated: true,
+          ...(input.aigcLabelEnabled
+            ? {
+                contentId: input.workflowId,
+                contentType: 'ai_generated',
+                serviceCode: 'recorded-compose-v1',
+                serviceProvider: 'recorded-video-composition',
+              }
+            : {}),
+        },
+        validationMethod: 'recorded_synthetic',
+      },
+      brandWatermark: {
+        actual: Boolean(input.brandWatermarkText),
+        requested: Boolean(input.brandWatermarkText),
+        validated: true,
+        validationMethod: 'recorded_synthetic',
+        ...(input.brandWatermarkText ? { text: input.brandWatermarkText } : {}),
+      },
+      rendererRevision: 'recorded-video-composition-v1',
+      clipCount: input.clips.length,
+      sourceAssetIds: input.clips.map((clip) => clip.id),
+      outputSha256: sha256,
+      outputSizeBytes: bytes.byteLength,
+      durationSeconds,
+      ...(cover ? { delivery: {
+        compositionRevision: input.compositionKey,
+        storyboardRevision: input.storyboardRevision ?? 'legacy-recorded-storyboard',
+        workflowId: input.workflowId,
+        outputVideoSha256: sha256,
+        cover: { ...cover, validationMethod: 'recorded_synthetic' as const },
+        subtitles: {
+          durationSeconds,
+          format: 'srt' as const,
+          text: serializeRecordedSrt(input.subtitles ?? [{ text: 'Recorded composition', startSeconds: 0, endSeconds: input.clips.length * 15 }]),
+          validationMethod: 'recorded_synthetic' as const,
+        },
+      }} : {}),
+    };
+    const technicalValidation: NonNullable<
+      OwnedAsset['technicalValidation']
+    > = {
+      playable: true,
+      codec: 'h264',
+      durationSeconds,
+      width: 720,
+      height: 1280,
+      hashVerified: true,
+      evidenceKind: 'recorded_synthetic',
+    };
+    const recorded: OwnedAsset = {
       id: `composition-${hash(Buffer.from(input.compositionKey)).slice(0, 24)}`,
       objectKey: `${input.workspaceId}/composed/${input.workflowId}-${sha256}.mp4`,
       sha256,
       sizeBytes: bytes.byteLength,
       contentType: 'video/mp4',
-      compositionEvidence: {
-        aigc: {
-          requested: input.aigcLabelEnabled,
-          visibleLabel: {
-            actual: input.aigcLabelEnabled,
-            validated: true,
-            ...(input.aigcLabelEnabled
-              ? { value: '内容由 AI 生成' }
-              : {}),
-          },
-          implicitMetadata: {
-            actual: input.aigcLabelEnabled,
-            validated: true,
-            ...(input.aigcLabelEnabled
-              ? {
-                  contentId: input.workflowId,
-                  contentType: 'ai_generated' as const,
-                  serviceCode: 'recorded-compose-v1',
-                  serviceProvider: 'recorded-video-composition',
-                }
-              : {}),
-          },
-          validationMethod: 'recorded_synthetic',
-        },
-        brandWatermark: {
-          actual: Boolean(input.brandWatermarkText),
-          requested: Boolean(input.brandWatermarkText),
-          validated: true,
-          validationMethod: 'recorded_synthetic',
-          ...(input.brandWatermarkText
-            ? { text: input.brandWatermarkText }
-            : {}),
-        },
-        rendererRevision: 'recorded-video-composition-v1',
-        clipCount: input.clips.length,
-        sourceAssetIds: input.clips.map((clip) => clip.id),
-        outputSha256: sha256,
-        outputSizeBytes: bytes.byteLength,
-      },
-      technicalValidation: {
-        playable: true,
-        codec: 'h264',
-        durationSeconds: input.clips.length * 15,
-        width: 720,
-        height: 1280,
-        hashVerified: true,
-        evidenceKind: 'recorded_synthetic',
-      },
+      compositionEvidence,
+      technicalValidation,
     };
+    return this.storage?.persistRecordedComposedVideo
+      ? this.storage.persistRecordedComposedVideo({
+          bytes,
+          compositionEvidence,
+          compositionKey: input.compositionKey,
+          technicalValidation,
+          workflowId: input.workflowId,
+          workspaceId: input.workspaceId,
+        })
+      : recorded;
   }
+}
+
+function serializeRecordedSrt(
+  subtitles: import('../../video/composer.js').TimedSubtitle[],
+) {
+  const time = (seconds: number) =>
+    new Date(Math.round(seconds * 1000))
+      .toISOString()
+      .slice(11, 23)
+      .replace('.', ',');
+  return subtitles
+    .map(
+      (item, index) =>
+        `${index + 1}\n${time(item.startSeconds)} --> ${time(item.endSeconds)}\n${item.text}\n`,
+    )
+    .join('\n');
 }
 
 export interface VideoQualityDimensions {
@@ -4786,6 +4895,7 @@ export async function runDurableVideoWorkflow(input: {
 
   if (!workflow.composedAsset) {
     const compositionKey = videoCompositionKey(workflow);
+    const subtitles = videoWorkflowSubtitles(workflow);
     await guardVideoWorkflowRun(workflow, input.guard);
     let composedAsset: OwnedAsset;
     try {
@@ -4798,6 +4908,8 @@ export async function runDurableVideoWorkflow(input: {
         ...(workflow.brandWatermarkText
           ? { brandWatermarkText: workflow.brandWatermarkText }
           : {}),
+        storyboardRevision: workflow.storyboardRevision,
+        subtitles,
       });
     } catch (error) {
       if (error instanceof VideoLabelValidationError) {
@@ -4919,10 +5031,32 @@ function hasValidComposedVideoProvenance(
   workflow: DurableVideoWorkflow
 ) {
   const evidence = asset.compositionEvidence;
+  const delivery = evidence?.delivery;
+  const expectedDuration = workflow.executionContract?.durationSeconds;
   if (
     !evidence ||
+    !delivery ||
     evidence.outputSha256 !== asset.sha256 ||
     evidence.outputSizeBytes !== asset.sizeBytes ||
+    delivery.outputVideoSha256 !== asset.sha256 ||
+    delivery.workflowId !== workflow.id ||
+    delivery.storyboardRevision !== workflow.storyboardRevision ||
+    delivery.compositionRevision !== videoCompositionKey(workflow) ||
+    !Number.isFinite(evidence.durationSeconds) ||
+    evidence.durationSeconds !== delivery.subtitles.durationSeconds ||
+    (expectedDuration !== undefined &&
+      evidence.durationSeconds !== expectedDuration) ||
+    delivery.subtitles.text.trim().length === 0 ||
+    delivery.cover.contentType !== 'image/jpeg' ||
+    delivery.cover.id.trim().length === 0 ||
+    !delivery.cover.objectKey.startsWith(`${workflow.workspaceId}/`) ||
+    delivery.cover.objectKey.includes('://') ||
+    delivery.cover.objectKey
+      .split('/')
+      .some((segment) => !segment || segment === '.' || segment === '..') ||
+    !/^[a-f0-9]{64}$/u.test(delivery.cover.sha256) ||
+    !Number.isSafeInteger(delivery.cover.sizeBytes) ||
+    delivery.cover.sizeBytes < 1 ||
     evidence.clipCount !== workflow.clipAssets.length ||
     JSON.stringify(evidence.sourceAssetIds) !==
       JSON.stringify(workflow.clipAssets.map((clip) => clip.id)) ||
@@ -5202,6 +5336,27 @@ function videoCompositionKey(workflow: DurableVideoWorkflow) {
       })
     )
   );
+}
+
+function videoWorkflowSubtitles(workflow: DurableVideoWorkflow) {
+  const frozenTotal = workflow.executionContract?.durationSeconds;
+  const explicitTotal = workflow.shots.reduce(
+    (sum, shot) => sum + (shot.durationSeconds ?? 0),
+    0,
+  );
+  const total =
+    frozenTotal ?? (explicitTotal > 0 ? explicitTotal : workflow.shots.length * 15);
+  if (workflow.subtitleText?.trim()) {
+    return [{ text: workflow.subtitleText.trim(), startSeconds: 0, endSeconds: total }];
+  }
+  let cursor = 0;
+  return workflow.shots.map((shot, index) => {
+    const startSeconds = cursor;
+    const remaining = total - cursor;
+    const remainingShots = workflow.shots.length - index;
+    cursor += shot.durationSeconds ?? remaining / remainingShots;
+    return { text: shot.prompt, startSeconds, endSeconds: cursor };
+  });
 }
 
 async function saveWorkflowCheckpoint(

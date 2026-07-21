@@ -24,6 +24,7 @@ interface ComposedVideoCreationPort {
   createDraft(input: {
     actorId: string;
     aigcLabelEnabled?: boolean;
+    brandWatermarkText?: string;
     catalogModelId: string;
     dataClass: CreativeExecutionContract['dataClass'];
     deliveryMode: 'candidate_only';
@@ -515,6 +516,12 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
       await this.composedVideo.createDraft({
         actorId: input.context.userId,
         aigcLabelEnabled: input.contract.aigcLabelEnabled,
+        ...(input.contract.watermarkEnabled
+          ? {
+              brandWatermarkText:
+                input.groundingSnapshot?.store.name ?? '美业内容',
+            }
+          : {}),
         catalogModelId: input.contract.catalogModelId,
         dataClass: input.contract.dataClass,
         deliveryMode: 'candidate_only',
@@ -741,6 +748,13 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
               id: workflow.composedAsset.id,
               objectKey: workflow.composedAsset.objectKey,
               sha256: workflow.composedAsset.sha256,
+              ...(workflow.composedAsset.compositionEvidence
+                ? {
+                    compositionEvidence: structuredClone(
+                      workflow.composedAsset.compositionEvidence,
+                    ),
+                  }
+                : {}),
               ...(typeof workflow.composedAsset.sizeBytes === 'number'
                 ? { sizeBytes: workflow.composedAsset.sizeBytes }
                 : {}),

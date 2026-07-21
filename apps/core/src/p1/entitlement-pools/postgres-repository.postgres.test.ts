@@ -11,6 +11,8 @@ import {
   ModelSupplyApplicationService,
   RecordedProviderExecutionPort,
 } from '../model-supply/index.js';
+import { DurableProductBillingService } from '../product-billing/durable-service.js';
+import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import type {
   AccountAllocation,
   EntitlementPolicyBody,
@@ -862,9 +864,141 @@ test(
       const persistedFreeze = await supplyFreezes.get(
         `supply-freeze:${result.jobId}:${result.attempt.id}`,
       );
-      assert.equal(persistedFreeze?.productUsageTaskId, result.jobId);
+      assert.equal(persistedFreeze?.productUsageTaskId, undefined);
       assert.equal(persistedFreeze?.providerCostAttemptId, result.attempt.id);
       assert.equal(persistedFreeze?.supplyPoolId, 'pool-shared');
+    });
+
+    await t.test('reserved Postgres ProductUsage links to a freeze readable and replayable by a new ledger', async () => {
+      const workspaceId = `workspace-billing-bridge-${randomUUID()}`;
+      const actorId = 'account-billing-bridge';
+      const billingTaskId = `billing-task-${randomUUID()}`;
+      const billingRepository = new PostgresProductBillingRepository(pool);
+      await billingRepository.migrate();
+      const billing = new DurableProductBillingService(billingRepository);
+      const quote = await billing.buildQuote({
+        billingMode: 'per_request',
+        catalogModelId: 'catalog-billing-image',
+        frozenCandidateDeploymentIds: ['deployment-billing-image'],
+        quoteId: `quote-${randomUUID()}`,
+        quotePolicyRevision: 'product-policy-billing-r1',
+        unitRate: 1,
+        workspaceId,
+      });
+      await billing.confirm({
+        quoteId: quote.quoteId,
+        taskId: billingTaskId,
+        workspaceId,
+      });
+      await billing.beforeSubmit({
+        quoteId: quote.quoteId,
+        quoteRevision: quote.revision,
+        resource: 'image',
+        taskId: billingTaskId,
+        workspaceId,
+      });
+      assert.equal(
+        (await billing.getUsage(billingTaskId, workspaceId))?.status,
+        'reserved',
+      );
+
+      const foundationRepository = new MemoryFoundationRepository();
+      foundationRepository.grantOwner(workspaceId, actorId);
+      const foundation = new P1ApplicationService(foundationRepository);
+      await foundation.appendUsageEvent(
+        { workspaceId, userId: actorId, correlationId: 'billing-bridge' },
+        {
+          action: 'adjust',
+          amount: 1,
+          id: `entitlement-${randomUUID()}`,
+          reason: 'billing bridge integration fixture',
+          resource: 'image',
+        },
+        `entitlement-${randomUUID()}`,
+      );
+      const supplyFreezes = new PostgresSupplyFreezeStore(pool);
+      const model = {
+        id: 'catalog-billing-image',
+        modality: 'image' as const,
+        operations: ['image.generate' as const],
+        displayName: 'Billing image',
+        qualityRank: 90,
+      };
+      const deployment = {
+        id: 'deployment-billing-image',
+        catalogModelId: model.id,
+        apiFamily: 'image' as const,
+        channel: 'managed' as const,
+        region: 'domestic' as const,
+        status: 'active' as const,
+        credentialVersion: 'credential-billing-v1',
+        priceRevision: 'supplier-price-billing-r1',
+        unitPrice: {
+          amountMicros: 1_000,
+          currency: 'CNY' as const,
+          unit: 'image',
+        },
+      };
+      const ledger = new FoundationModelSupplyLedger(
+        foundation,
+        undefined,
+        undefined,
+        {
+          billingLifecycle: billing,
+          productUsage: billing,
+          supplyFreezes,
+        },
+      );
+      const submission = {
+        actorId,
+        billingQuoteRevision: quote.revision,
+        billingTaskId,
+        dataClass: [],
+        idempotencyKey: `submit-${randomUUID()}`,
+        operation: 'image.generate' as const,
+        prompt: '真实 PostgreSQL 双侧账本',
+        selection: { catalogModelId: model.id, mode: 'fixed' as const },
+        workspaceId,
+      };
+      const result = await new ModelSupplyApplicationService({
+        deployments: [deployment],
+        execution: new RecordedProviderExecutionPort(),
+        ledger,
+        models: [model],
+      }).submit(submission);
+
+      const restartedBilling = new DurableProductBillingService(
+        billingRepository,
+      );
+      const restartedLedger = new FoundationModelSupplyLedger(
+        foundation,
+        undefined,
+        undefined,
+        {
+          productUsage: restartedBilling,
+          supplyFreezes: new PostgresSupplyFreezeStore(pool),
+        },
+      );
+      const persisted = await restartedLedger.getSupplyFreeze(
+        workspaceId,
+        billingTaskId,
+      );
+      assert.equal(persisted?.productUsageTaskId, billingTaskId);
+      assert.equal(persisted?.providerCostAttemptId, result.attempt.id);
+      assert.deepEqual(
+        await restartedLedger.freezeAttempt({
+          attemptId: result.attempt.id,
+          deployment,
+          jobId: result.jobId,
+          model,
+          ordinal: 1,
+          previousAttempts: [],
+          previousProviderCosts: [],
+          snapshot: result.snapshot,
+          submission,
+        }),
+        persisted,
+      );
     });
   },
 );

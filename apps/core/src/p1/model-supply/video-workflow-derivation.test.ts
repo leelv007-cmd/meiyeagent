@@ -415,7 +415,7 @@ describe('VideoWorkflow derivation (#102)', () => {
     assert.equal(adapter.get('wf-shared-1')?.revision, viaCommand.revision);
   });
 
-  it('edits completed shot selection, order, and subtitle through one OCC canonical command', async () => {
+  it('edits a reviewable workflow but rejects completed, cancelled, and failed terminal writes', async () => {
     const { runner, draftInput } = setupRunner();
     const draft = runner.createVideoWorkflow({
       ...draftInput,
@@ -424,7 +424,9 @@ describe('VideoWorkflow derivation (#102)', () => {
     runner.confirmVideoWorkflow(draft.id, draft.workspaceId);
     const completed = await runner.runVideoWorkflow(draft.id, draft.workspaceId);
     const store = new InMemoryCanonicalVideoRunStore();
-    store.restore(liftDurableToCanonical(completed));
+    const reviewable = liftDurableToCanonical(completed);
+    reviewable.job.status = 'awaiting_quality_review';
+    store.restore(reviewable);
     const commands = new VideoWorkflowCanonicalCommands(store);
     const base = completed.revision;
 
@@ -489,5 +491,30 @@ describe('VideoWorkflow derivation (#102)', () => {
         ),
       /revision is stale/,
     );
+
+    for (const status of ['completed', 'cancelled', 'failed'] as const) {
+      const terminal = liftDurableToCanonical(completed);
+      terminal.job.status = status;
+      const terminalStore = new InMemoryCanonicalVideoRunStore();
+      terminalStore.restore(terminal);
+      const terminalCommands = new VideoWorkflowCanonicalCommands(
+        terminalStore,
+      );
+      assert.throws(
+        () =>
+          terminalCommands.edit(
+            {
+              actorId: 'actor-a',
+              correlationId: `corr-terminal-${status}`,
+              edit: { kind: 'set_subtitle', text: '不应写入' },
+              expectedRevision: terminal.job.revision,
+              workflowId: completed.id,
+              workspaceId: completed.workspaceId,
+            },
+            () => Date.parse('2026-07-20T08:00:04.000Z'),
+          ),
+        /terminal workflows require a derived regeneration task/,
+      );
+    }
   });
 });

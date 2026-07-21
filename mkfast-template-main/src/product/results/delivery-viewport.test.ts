@@ -14,8 +14,12 @@ test('real mobile width selects the full-height mobile delivery surface', () => 
 test('朋友圈 intent exposes the wechat_moments distribution target', () => {
   assert.equal(
     deliveryTargetForIntent('copy', '朋友圈项目介绍，分段发布'),
-    'wechat_moments',
+    'wechat_moments'
   );
   assert.equal(deliveryTargetForIntent('video', '抖音项目成片'), 'douyin');
+  assert.equal(
+    deliveryTargetForIntent('video', '微信视频号项目成片'),
+    'video_account'
+  );
   assert.equal(deliveryTargetForIntent('image', '小红书封面'), 'xiaohongshu');
 });

@@ -619,7 +619,7 @@ test('GrantLot FIFO expirationDate ASC NULLS LAST and independent grant/consume 
 // Supply-side ledger freeze fields + ProductUsage #92 consume + ProviderCost
 // ---------------------------------------------------------------------------
 
-test('supply request freezes RouteSnapshot/CredentialAccountVersion/price evidence fields', () => {
+test('supply request freezes RouteSnapshot/CredentialAccountVersion/price evidence fields', async () => {
   const freeze = buildSupplyRequestFreeze({
     id: 'freeze-1',
     workspaceId: 'ws-a',
@@ -668,10 +668,15 @@ test('supply request freezes RouteSnapshot/CredentialAccountVersion/price eviden
     resource: 'image',
     createdAt: '2026-07-20T12:00:00.000Z',
   });
-  const bridge = new SupplySideProductUsageBridge(productUsage);
-  const linked = bridge.attachFreeze('task-1', freeze);
+  const bridge = new SupplySideProductUsageBridge({
+    getUsage(taskId, workspaceId) {
+      const usage = productUsage.getByTask(taskId);
+      return usage?.workspaceId === workspaceId ? usage : null;
+    },
+  });
+  const linked = await bridge.attachFreeze('task-1', freeze);
   assert.equal(linked.productUsageTaskId, 'task-1');
-  assert.equal(bridge.getProductUsage('task-1')?.quoteId, 'quote-1');
+  assert.equal((await bridge.getProductUsage('task-1', 'ws-a'))?.quoteId, 'quote-1');
 });
 
 // ---------------------------------------------------------------------------

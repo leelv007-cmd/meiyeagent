@@ -36,6 +36,7 @@ import {
   OperationsFoundationModule,
   RecordedCanvasExportAdapter,
   RecordedImageGenerationAdapter,
+  UnverifiedVideoComplianceError,
 } from './index.js';
 
 const NOW = '2026-07-15T09:00:00.000Z';
@@ -807,19 +808,13 @@ describe('ContentPackage application service contract', () => {
     assert.equal(internalRun?.routeSnapshotId, 'internal-route');
   });
 
-  it('moves a labeled video without verified burn-in to needs replacement without an export receipt', async () => {
+  it('moves a labeled video rejected by the verified exporter to needs replacement without a receipt', async () => {
     let exportEffects = 0;
     const { context, operations, operationsService } = setup({
       contentPackageExporter: {
         async export() {
           exportEffects += 1;
-          return {
-            artifactAssetId: 'must-not-be-created',
-            artifactObjectKey: 'workspace-content-package/generated/must-not-exist.mp4',
-            contentType: 'video/mp4',
-            sha256: 'b'.repeat(64),
-            sizeBytes: 8,
-          };
+          throw new UnverifiedVideoComplianceError();
         },
       },
     });
@@ -873,7 +868,7 @@ describe('ContentPackage application service contract', () => {
     assert.equal(result.status, 'needs_replacement');
     assert.equal(result.statusGroup, 'needs_attention');
     assert.deepEqual(result.exportReceipts, []);
-    assert.equal(exportEffects, 0);
+    assert.equal(exportEffects, 1);
     const persisted = await operations.loadWorkspace(context.workspaceId);
     const persistedPackage = persisted?.contentPackages.find(
       (item) => item.id === stored.id,

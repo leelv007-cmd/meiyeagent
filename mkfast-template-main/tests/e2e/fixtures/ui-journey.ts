@@ -5,10 +5,12 @@ import {
   type Page,
 } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { unzipSync } from 'fflate';
 
 export type JourneyModality = 'copy' | 'image_text' | 'video';
 
 export type JourneyContract = {
+  deliveryTarget: 'wechat_moments' | 'xiaohongshu' | 'douyin' | 'video_account';
   modality: JourneyModality;
   workspace: 'copy' | 'image' | 'video';
   expectedActivations: 2 | 3;
@@ -23,6 +25,7 @@ export type JourneyContract = {
 
 export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
   {
+    deliveryTarget: 'wechat_moments',
     modality: 'copy',
     workspace: 'copy',
     expectedActivations: 2,
@@ -33,6 +36,7 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     resultSurfaceTestId: 'copy-image-text-worksurface',
   },
   {
+    deliveryTarget: 'xiaohongshu',
     modality: 'image_text',
     workspace: 'image',
     expectedActivations: 2,
@@ -43,12 +47,24 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     resultSurfaceTestId: 'image-worksurface',
   },
   {
+    deliveryTarget: 'douyin',
     modality: 'video',
     workspace: 'video',
     expectedActivations: 3,
     packageFormat: 'zip',
     packageButtonName: /完整发布包（抖音）/u,
     packageFileName: /(?:抖音|douyin|[a-f0-9]{32,}).*\.zip$/iu,
+    resultSurfaceTestId: 'video-worksurface',
+  },
+  {
+    deliveryTarget: 'video_account',
+    modality: 'video',
+    workspace: 'video',
+    expectedActivations: 3,
+    packageFormat: 'zip',
+    packageButtonName: /完整发布包（视频号）/u,
+    packageFileName:
+      /(?:视频号|video-account|video_account|[a-f0-9]{32,}).*\.zip$/iu,
     resultSurfaceTestId: 'video-worksurface',
   },
 ] as const;
@@ -285,9 +301,146 @@ function mutationResponse(page: Page, actionPattern: RegExp) {
   );
 }
 
+type VideoRegenerationTask = {
+  quoteId: string;
+  scope: 'shot' | 'full_compose';
+  shotId?: string;
+  sourceRunId: string;
+  status: 'dispatching' | 'running' | 'completed' | 'cancelled' | 'failed';
+  taskId: string;
+};
+
+async function videoRegenerationTask(page: Page, taskId: string) {
+  return page.evaluate(async (derivedTaskId) => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'get_task',
+        module: 'video-regeneration',
+        payload: { taskId: derivedTaskId },
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: VideoRegenerationTask;
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data) {
+      throw new Error(
+        envelope.error?.message ?? 'Video regeneration task query failed'
+      );
+    }
+    return envelope.data;
+  }, taskId);
+}
+
+async function videoWorkflowStatus(page: Page, workflowId: string) {
+  return page.evaluate(async (derivedWorkflowId) => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'video_workflow_public',
+        module: 'model-supply',
+        payload: { workflowId: derivedWorkflowId },
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: { status?: string };
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data?.status) {
+      throw new Error(
+        envelope.error?.message ?? 'Derived video workflow query failed'
+      );
+    }
+    return envelope.data.status;
+  }, workflowId);
+}
+
 export async function adjustResult(page: Page, modality: JourneyModality) {
-  const input = page.getByTestId('result-adjust-input').first();
   const instruction = `e2e-${modality}-adjust-${crypto.randomUUID()}`;
+  if (modality === 'video') {
+    const worksurface = page.getByTestId('video-worksurface');
+    const sourceRunId = await worksurface.getAttribute('data-workflow-id');
+    const originalAssetId = await worksurface.getAttribute(
+      'data-composed-asset-id'
+    );
+    expect(sourceRunId).toBeTruthy();
+    expect(originalAssetId).toBeTruthy();
+    await expect(worksurface).toHaveAttribute(
+      'data-canonical-edits-locked',
+      'true'
+    );
+
+    const quotePromise = mutationResponse(page, /^quote$/u);
+    await page.getByTestId('video-full-recompose').click();
+    const quoteResponse = await quotePromise;
+    expect(quoteResponse.ok(), await quoteResponse.text()).toBeTruthy();
+    const quoteRequest = quoteResponse.request().postDataJSON() as {
+      module?: string;
+      payload?: Record<string, unknown>;
+    };
+    expect(quoteRequest).toMatchObject({
+      module: 'video-regeneration',
+      payload: { scope: 'full_compose', sourceRunId },
+    });
+
+    const confirm = page.getByTestId('video-regen-confirm-action');
+    await expect(confirm).toBeEnabled();
+    const confirmPromise = mutationResponse(page, /^confirm$/u);
+    await confirm.click();
+    const confirmResponse = await confirmPromise;
+    expect(confirmResponse.ok(), await confirmResponse.text()).toBeTruthy();
+    const confirmRequest = confirmResponse.request().postDataJSON() as {
+      module?: string;
+      payload?: { quoteId?: string; taskId?: string };
+    };
+    expect(confirmRequest.module).toBe('video-regeneration');
+    expect(confirmRequest.payload?.quoteId).toBeTruthy();
+    expect(confirmRequest.payload?.taskId).toMatch(/^video-regen-/u);
+    const taskId = confirmRequest.payload!.taskId!;
+    const confirmEnvelope = (await confirmResponse.json()) as {
+      data?: { task?: VideoRegenerationTask };
+    };
+    expect(confirmEnvelope.data?.task).toMatchObject({
+      quoteId: confirmRequest.payload!.quoteId,
+      scope: 'full_compose',
+      sourceRunId,
+      taskId,
+    });
+
+    await expect
+      .poll(async () => (await videoRegenerationTask(page, taskId)).status, {
+        message: 'derived video regeneration task must recover to terminal',
+        timeout: 180_000,
+      })
+      .toBe('completed');
+    expect(await videoRegenerationTask(page, taskId)).toMatchObject({
+      quoteId: confirmRequest.payload!.quoteId,
+      scope: 'full_compose',
+      sourceRunId,
+      status: 'completed',
+      taskId,
+    });
+    expect(await videoWorkflowStatus(page, taskId)).toBe('completed');
+
+    await page.reload();
+    const refreshed = page.getByTestId('video-worksurface');
+    await expect(refreshed).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(() => refreshed.getAttribute('data-composed-asset-id'), {
+        message:
+          'full_compose must refresh ContentPackage to the derived composed asset',
+        timeout: 60_000,
+      })
+      .not.toBe(originalAssetId);
+    return instruction;
+  }
+
+  const input = page.getByTestId('result-adjust-input').first();
   await input.fill(instruction);
   const preparePromise = mutationResponse(
     page,
@@ -327,6 +480,13 @@ function adoptLocator(page: Page, modality: JourneyModality): Locator {
 
 export async function adoptResult(page: Page, contract: JourneyContract) {
   const adopt = adoptLocator(page, contract.modality);
+  const videoAssetId =
+    contract.modality === 'video'
+      ? await page
+          .getByTestId('video-worksurface')
+          .getAttribute('data-composed-asset-id')
+      : null;
+  if (contract.modality === 'video') expect(videoAssetId).toBeTruthy();
   await expect(adopt).toBeVisible();
   const responsePromise = mutationResponse(page, /adopt/u);
   await adopt.click();
@@ -340,9 +500,14 @@ export async function adoptResult(page: Page, contract: JourneyContract) {
   } else if (contract.modality === 'image_text') {
     await expect(page.getByTestId('image-adopted-badge').first()).toBeVisible();
   } else {
-    await expect(page.getByTestId('video-worksurface')).toHaveAttribute(
+    const worksurface = page.getByTestId('video-worksurface');
+    await expect(worksurface).toHaveAttribute(
       'data-phase',
       /adopted|delivery_ready|delivered/u
+    );
+    await expect(worksurface).toHaveAttribute(
+      'data-adopted-composed-asset-id',
+      videoAssetId!
     );
   }
 }
@@ -362,9 +527,12 @@ export async function openDeliveryPanel(page: Page, modality: JourneyModality) {
   );
 }
 
-async function assertZipDownload(download: Download, expectedFileName: RegExp) {
+async function assertZipDownload(
+  download: Download,
+  contract: JourneyContract
+) {
   expect(await download.failure()).toBeNull();
-  expect(download.suggestedFilename()).toMatch(expectedFileName);
+  expect(download.suggestedFilename()).toMatch(contract.packageFileName);
   const path = await download.path();
   expect(path, 'browser must persist a real downloaded ZIP').toBeTruthy();
   const bytes = await readFile(path!);
@@ -372,10 +540,81 @@ async function assertZipDownload(download: Download, expectedFileName: RegExp) {
     bytes.byteLength,
     'downloaded package must not be empty'
   ).toBeGreaterThan(22);
+  const files = unzipSync(bytes);
+  const manifestBytes = files['manifest.json'];
+  const captionBytes = files['caption.txt'];
+  const checklistBytes = files['platform-checklist.md'];
+  expect(manifestBytes, 'ZIP must contain manifest.json').toBeTruthy();
+  expect(captionBytes, 'ZIP must contain caption.txt').toBeTruthy();
   expect(
-    [...bytes.subarray(0, 4)],
-    'full package must be a ZIP payload, not a JSON/model-only fixture'
-  ).toEqual([0x50, 0x4b, 0x03, 0x04]);
+    checklistBytes,
+    'ZIP must contain the platform compliance checklist'
+  ).toBeTruthy();
+  const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as {
+    files?: Array<{
+      path?: string;
+      role?: string;
+      sizeBytes?: number;
+    }>;
+    kind?: string;
+    platform?: string;
+    rightsSummary?: {
+      aigcLabelEnabled?: boolean;
+      watermarkEnabled?: boolean;
+    };
+    schema?: string;
+  };
+  expect(manifest.schema).toBe('beauty-delivery-manifest/v1');
+  expect(manifest.kind).toBe(contract.modality);
+  expect(manifest.platform).toBe(contract.deliveryTarget);
+  expect(manifest.rightsSummary).toEqual(
+    expect.objectContaining({
+      aigcLabelEnabled: expect.any(Boolean),
+      watermarkEnabled: expect.any(Boolean),
+    })
+  );
+  expect(new TextDecoder().decode(captionBytes).trim().length).toBeGreaterThan(
+    0
+  );
+  expect(
+    new TextDecoder().decode(checklistBytes).trim().length
+  ).toBeGreaterThan(0);
+  expect(manifest.files?.length ?? 0).toBeGreaterThan(0);
+  for (const entry of manifest.files ?? []) {
+    expect(entry.path, 'every manifest file must have a path').toBeTruthy();
+    const archived = files[entry.path!];
+    expect(
+      archived,
+      `manifest path ${entry.path} must exist in ZIP`
+    ).toBeTruthy();
+    expect(archived?.byteLength).toBe(entry.sizeBytes);
+  }
+  const manifestPaths = new Set(
+    (manifest.files ?? []).map(({ path }) => path).filter(Boolean)
+  );
+  expect(manifestPaths.has('caption.txt')).toBe(true);
+  expect(manifestPaths.has('platform-checklist.md')).toBe(true);
+  if (contract.modality === 'video') {
+    expect(files['video.mp4']?.byteLength ?? 0).toBeGreaterThan(0);
+    expect(files['cover.jpg']?.byteLength ?? 0).toBeGreaterThan(0);
+    const subtitlePath = files['subtitles.srt']
+      ? 'subtitles.srt'
+      : files['subtitles.vtt']
+        ? 'subtitles.vtt'
+        : undefined;
+    expect(
+      subtitlePath,
+      'video ZIP must contain SRT or VTT subtitles'
+    ).toBeTruthy();
+    expect(files[subtitlePath!]?.byteLength ?? 0).toBeGreaterThan(0);
+    expect(manifestPaths.has('video.mp4')).toBe(true);
+    expect(manifestPaths.has('cover.jpg')).toBe(true);
+    expect(manifestPaths.has(subtitlePath!)).toBe(true);
+  } else {
+    expect(Object.keys(files).some((name) => name.startsWith('images/'))).toBe(
+      true
+    );
+  }
 }
 
 async function assertTextDownload(
@@ -412,18 +651,26 @@ export async function downloadFullPackage(
     button,
     'full package must be enabled after adopt has a downloadable revision'
   ).toBeEnabled({ timeout: 60_000 });
+  const exportPromise =
+    contract.packageFormat === 'zip'
+      ? mutationResponse(page, /^result_export$/u)
+      : null;
   const downloadPromise = page.waitForEvent('download', { timeout: 90_000 });
   await button.click();
+  if (exportPromise) {
+    const response = await exportPromise;
+    expect(response.ok(), await response.text()).toBeTruthy();
+  }
   const download = await downloadPromise;
   if (contract.packageFormat === 'zip') {
-    await assertZipDownload(download, contract.packageFileName);
+    await assertZipDownload(download, contract);
   } else {
     await assertTextDownload(download, contract.packageFileName);
   }
   // Outcome is announced via live region; focus is best-effort (tabindex=-1).
-  await expect(
-    page.getByTestId('delivery-outcome-download-done')
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('delivery-outcome-download-done')).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(
     page.getByTestId('delivery-outcome-download-done')
   ).toHaveAttribute('data-outcome', 'download_done');

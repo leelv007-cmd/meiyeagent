@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   createDefaultCapabilityRevisions,
@@ -71,6 +72,20 @@ function freshRankingInput(
     },
   };
 }
+
+test('production processes inject durable ProductUsage into the bilateral supply ledger', async () => {
+  for (const entrypoint of ['main.ts', 'job-worker.ts']) {
+    const source = await readFile(
+      new URL(`../../${entrypoint}`, import.meta.url),
+      'utf8',
+    );
+    assert.match(
+      source,
+      /new FoundationModelSupplyLedger\([\s\S]*?\{[\s\S]*?billingLifecycle,[\s\S]*?productUsage: billingLifecycle,[\s\S]*?supplyFreezes: supplyFreezeStore,/,
+      `${entrypoint} must inject the shared durable billing service as ProductUsage lookup`,
+    );
+  }
+});
 
 test('runtime assembly gives every process the complete fallback catalog', async () => {
   const catalog = modelRuntimeAssemblyFromEnv({

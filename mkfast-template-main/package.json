@@ -126,6 +126,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
     "drizzle-kit": "^0.31.9",
+    "fflate": "^0.8.2",
     "jsdom": "^29.1.1",
     "knip": "^5.84.1",
     "react-email": "5.2.5",

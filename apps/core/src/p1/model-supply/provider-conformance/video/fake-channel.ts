@@ -38,7 +38,7 @@ export class MemoryReceiptStore implements MediaProviderReceiptStore {
 export interface FakeVideoChannelOptions {
   channelId: string;
   channelKind: 'official_direct' | 'upstream_reseller';
-  catalogModelId?: 'seedance-2' | 'veo-latest';
+  catalogModelId?: 'seedance-1-5-pro' | 'seedance-2' | 'veo-latest';
   /** Cost per second of requested duration. */
   costPerSecond?: number;
   currency?: 'CNY' | 'USD';
@@ -53,7 +53,10 @@ export class FakeVideoChannelPort implements MediaProviderLifecyclePort {
   readonly channelKind: 'official_direct' | 'upstream_reseller';
   submitCount = 0;
   private readonly receiptStore: MediaProviderReceiptStore;
-  private readonly catalogModelId: 'seedance-2' | 'veo-latest';
+  private readonly catalogModelId:
+    | 'seedance-1-5-pro'
+    | 'seedance-2'
+    | 'veo-latest';
   private readonly costPerSecond: number;
   private readonly currency: 'CNY' | 'USD';
   private readonly estimatedTokensPerSecond: number;

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   P1ApplicationService,
 } from '../foundation/application-service.js';
@@ -23,9 +24,9 @@ import {
   buildProviderCostEventFromFreeze,
   buildSupplyRequestFreeze,
   SupplySideProductUsageBridge,
+  type SupplySideProductUsageLookup,
   type SupplyRequestFreeze,
 } from '../entitlement-pools/supply-ledger-fields.js';
-import type { ProductUsageLedger } from '../product-billing/product-usage-ledger.js';
 import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import { modelSupplyCheckpointToFoundationRoute } from '../route-snapshot-normalize.js';
 import type {
@@ -40,10 +41,10 @@ import type {
 /**
  * Optional bilateral ledger bridge (Z2-WIRING / #92 + H2 + G1).
  * ProductUsage (#92) and supply freeze (H2) stay domain-owned; this ledger
- * only attaches freeze refs onto ProviderCost evidence + ProductUsage side map.
+ * only attaches durable freeze refs onto ProviderCost and ProductUsage facts.
  */
 export interface FoundationModelSupplyLedgerBilateral {
-  productUsage?: ProductUsageLedger;
+  productUsage?: SupplySideProductUsageLookup;
   billingLifecycle?: BillingLifecyclePort;
   /** Default shared pool id when freeze is synthesized from route snapshot. */
   defaultSupplyPoolId?: string;
@@ -51,6 +52,10 @@ export interface FoundationModelSupplyLedgerBilateral {
   supplyFreezes?: {
     append(freeze: SupplyRequestFreeze): Promise<SupplyRequestFreeze>;
     get(freezeId: string): Promise<SupplyRequestFreeze | null>;
+    getByProductUsageTask(
+      workspaceId: string,
+      productUsageTaskId: string,
+    ): Promise<SupplyRequestFreeze | null>;
   };
 }
 
@@ -93,9 +98,12 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     this.supplyFreezes = bilateral.supplyFreezes;
   }
 
-  /** Test / audit accessor for attached supply freezes (H2 bridge). */
-  getSupplyFreeze(taskId: string): SupplyRequestFreeze | null {
-    return this.productUsageBridge?.getFreeze(taskId) ?? null;
+  /** Cross-process audit accessor for the durable ProductUsage association. */
+  async getSupplyFreeze(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<SupplyRequestFreeze | null> {
+    return this.supplyFreezes?.getByProductUsageTask(workspaceId, taskId) ?? null;
   }
 
   async checkpointAttempt(input: ModelSupplyLedgerCheckpointInput) {
@@ -287,10 +295,16 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     };
     const cost = input.result.providerCost;
     const outcome = foundationOutcome(input.result);
-    const freeze =
-      (await this.supplyFreezes?.get(
-        `supply-freeze:${input.result.jobId}:${input.result.attempt.id}`,
-      )) ?? this.attachBilateralFreeze(input);
+    let freeze = await this.supplyFreezes?.get(
+      `supply-freeze:${input.result.jobId}:${input.result.attempt.id}`,
+    );
+    if (!freeze) {
+      const fallback = await this.attachBilateralFreeze(input);
+      freeze =
+        fallback && this.supplyFreezes
+          ? await this.supplyFreezes.append(fallback)
+          : fallback;
+    }
     const stage = (
       cost.status === 'observed' ? 'observed' : 'estimated'
     ) as 'observed' | 'estimated';
@@ -509,12 +523,12 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
   /**
    * Bilateral bridge: synthesize H2 SupplyRequestFreeze from the settled
    * RouteSnapshot (G1 credential/route fields) and optionally attach it to
-   * the #92 ProductUsage task map when that ledger is assembled.
+   * the #92 ProductUsage task when that durable lookup is assembled.
    */
-  private attachBilateralFreeze(input: {
+  private async attachBilateralFreeze(input: {
     submission: ModelSupplyLedgerCheckpointInput['submission'];
     result: ModelSupplyResult;
-  }): SupplyRequestFreeze | null {
+  }): Promise<SupplyRequestFreeze | null> {
     const snapshot = input.result.snapshot;
     const credentialVersion =
       snapshot.credentialVersion ??
@@ -528,6 +542,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     );
     if (!candidate || candidate.pricingStatus === 'unknown') return null;
     const resource = usageResource(input.submission.operation);
+    const billingTaskId = input.submission.billingTaskId;
     const freeze = buildSupplyRequestFreeze({
       id: `supply-freeze:${input.result.jobId}:${input.result.attempt.id}`,
       workspaceId: input.submission.workspaceId,
@@ -553,27 +568,40 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       },
       supplyPoolId: snapshot.supplyPoolId ?? this.defaultSupplyPoolId,
       providerCostAttemptId: input.result.attempt.id,
-      productUsageTaskId:
-        input.submission.billingTaskId ?? input.result.jobId,
+      ...(billingTaskId ? { productUsageTaskId: billingTaskId } : {}),
       frozenAt: snapshot.createdAt,
     });
 
-    if (this.productUsageBridge) {
-      try {
-        // ProductUsage must already be reserved via #92 for attach to stick;
-        // missing reserve is non-fatal so model-supply settlement stays primary.
-        return this.productUsageBridge.attachFreeze(
-          input.submission.billingTaskId ?? input.result.jobId,
-          freeze,
-        );
-      } catch (error) {
-        if (error instanceof P1DomainError && error.code === 'NOT_FOUND') {
-          return freeze;
-        }
-        throw error;
-      }
+    if (this.productUsageBridge && billingTaskId) {
+      return this.attachReservedProductUsage(billingTaskId, freeze);
     }
     return freeze;
+  }
+
+  private async attachReservedProductUsage(
+    billingTaskId: string,
+    freeze: SupplyRequestFreeze,
+  ): Promise<SupplyRequestFreeze> {
+    if (!this.productUsageBridge) return freeze;
+    try {
+      return await this.productUsageBridge.attachFreeze(
+        billingTaskId,
+        freeze,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof P1DomainError) ||
+        (error.code !== 'NOT_FOUND' && error.code !== 'INVALID_STATE')
+      ) {
+        throw error;
+      }
+      // Another process may persist the freeze and settle ProductUsage between
+      // the initial freeze miss and the durable usage lookup.
+      const competing = await this.supplyFreezes?.get(freeze.id);
+      if (!competing) throw error;
+      if (sameImmutableFreeze(competing, freeze)) return competing;
+      return this.supplyFreezes!.append(freeze);
+    }
   }
 
   private async persistBilateralFreeze(
@@ -594,7 +622,8 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       return null;
     }
     const resource = usageResource(input.submission.operation);
-    const freeze = buildSupplyRequestFreeze({
+    const billingTaskId = input.submission.billingTaskId;
+    let freeze = buildSupplyRequestFreeze({
       id: `supply-freeze:${input.jobId}:${input.attemptId}`,
       workspaceId: input.submission.workspaceId,
       routeSnapshotRef: snapshot.id,
@@ -618,20 +647,26 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
         revisionId: candidate.priceRevision,
       },
       supplyPoolId: snapshot.supplyPoolId ?? this.defaultSupplyPoolId,
-      ...(input.ordinal === 1 ? { productUsageTaskId: input.jobId } : {}),
+      ...(input.ordinal === 1 && billingTaskId
+        ? { productUsageTaskId: billingTaskId }
+        : {}),
       providerCostAttemptId: input.attemptId,
       frozenAt: snapshot.createdAt,
     });
-    const persisted = await this.supplyFreezes.append(freeze);
-    if (input.ordinal === 1 && this.productUsageBridge) {
-      try {
-        return this.productUsageBridge.attachFreeze(input.jobId, persisted);
-      } catch (error) {
-        if (!(error instanceof P1DomainError && error.code === 'NOT_FOUND')) {
-          throw error;
-        }
+    const existing = await this.supplyFreezes.get(freeze.id);
+    if (existing) {
+      // Replays after settlement may observe ProductUsage as committed. Let the
+      // immutable durable store verify identical facts instead of requiring a
+      // second reserved-state validation for an already-persisted freeze.
+      if (isLegacyJobLinkedFreeze(existing, freeze, input.jobId)) {
+        return existing;
       }
+      return this.supplyFreezes.append(freeze);
     }
+    if (input.ordinal === 1 && billingTaskId && this.productUsageBridge) {
+      freeze = await this.attachReservedProductUsage(billingTaskId, freeze);
+    }
+    const persisted = await this.supplyFreezes.append(freeze);
     return persisted;
   }
 
@@ -726,6 +761,39 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       createdAt: new Date().toISOString(),
     });
   }
+}
+
+function isLegacyJobLinkedFreeze(
+  existing: SupplyRequestFreeze,
+  replayed: SupplyRequestFreeze,
+  jobId: string,
+) {
+  if (
+    existing.productUsageTaskId !== jobId ||
+    replayed.productUsageTaskId === jobId
+  ) {
+    return false;
+  }
+  const {
+    productUsageTaskId: _existingProductUsageTaskId,
+    frozenAt: _existingFrozenAt,
+    ...existingFacts
+  } = existing;
+  const {
+    productUsageTaskId: _replayedProductUsageTaskId,
+    frozenAt: _replayedFrozenAt,
+    ...replayedFacts
+  } = replayed;
+  return isDeepStrictEqual(existingFacts, replayedFacts);
+}
+
+function sameImmutableFreeze(
+  existing: SupplyRequestFreeze,
+  replayed: SupplyRequestFreeze,
+) {
+  const { frozenAt: _existingFrozenAt, ...existingFacts } = existing;
+  const { frozenAt: _replayedFrozenAt, ...replayedFacts } = replayed;
+  return isDeepStrictEqual(existingFacts, replayedFacts);
 }
 
 function usageReservationIdFor(jobId: string) {

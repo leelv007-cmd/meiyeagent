@@ -44,6 +44,10 @@ export interface ContentPackageExportAssetReader {
 }
 
 export interface ContentPackageZipExportOptions {
+  /** Runtime boundary required in addition to the explicit fixture override. */
+  appEnv?: string;
+  /** Synthetic composition evidence is accepted only by the explicit E2E runtime. */
+  allowRecordedSyntheticVideoCompliance?: boolean;
   fontFilePath?: string;
   /** Store display name used in deterministic ZIP download names. */
   storeName?: string;
@@ -156,6 +160,9 @@ export class OperationsContentPackageExportAssetReader
     }
     return {
       asset: {
+        ...(stored.compositionEvidence
+          ? { compositionEvidence: structuredClone(stored.compositionEvidence) }
+          : {}),
         contentType,
         id: stored.id,
         objectKey: stored.objectKey,
@@ -272,12 +279,10 @@ export class ContentPackageZipExportAdapter
     if (input.kind !== 'video') {
       throw new Error('exportVideoFullPackage requires kind=video.');
     }
-    if (
-      input.compliance.aigcLabelEnabled ||
-      input.compliance.watermarkEnabled
-    ) {
-      throw new UnverifiedVideoComplianceError();
-    }
+    const contentPackageRevision = resolveContentPackageRevision(
+      input,
+      this.options,
+    );
     const videoAssetId = input.version.orderedAssetIds[0];
     if (!videoAssetId) {
       throw new Error('A video full package requires a composed video asset.');
@@ -290,13 +295,49 @@ export class ContentPackageZipExportAdapter
     if (videoAsset.contentType !== 'video/mp4') {
       throw new Error('The selected video asset is not an MP4 file.');
     }
+    const allowRecordedSynthetic =
+      this.options.allowRecordedSyntheticVideoCompliance === true &&
+      this.options.appEnv === 'e2e';
+    if (
+      (input.compliance.aigcLabelEnabled ||
+        input.compliance.watermarkEnabled) &&
+      !hasVerifiedVideoCompliance(
+        videoAsset,
+        input.compliance,
+        allowRecordedSynthetic,
+      )
+    ) {
+      throw new UnverifiedVideoComplianceError();
+    }
+    const delivery = videoAsset.compositionEvidence?.delivery;
+    if (
+      !delivery ||
+      delivery.outputVideoSha256 !== videoAsset.sha256 ||
+      delivery.compositionRevision !==
+        input.videoDeliveryCompositionRevision ||
+      delivery.workflowId !== input.videoDeliveryWorkflowId ||
+      delivery.storyboardRevision !== input.videoDeliveryRevision ||
+      videoAsset.compositionEvidence?.durationSeconds !==
+        input.videoDeliveryDurationSeconds ||
+      delivery.subtitles.durationSeconds !==
+        videoAsset.compositionEvidence?.durationSeconds
+    ) {
+      throw new Error('Verified video delivery evidence is unavailable.');
+    }
+    if (
+      !hasVerifiedVideoCompliance(
+        videoAsset,
+        input.compliance,
+        allowRecordedSynthetic,
+      )
+    ) {
+      throw new UnverifiedVideoComplianceError();
+    }
 
     let cover:
       | { bytes: Uint8Array; mimeType: 'image/jpeg' | 'image/png' }
       | undefined;
-    const coverAssetId =
-      input.coverAssetId ??
-      input.version.orderedAssetIds.find((id, index) => index > 0);
+    const coverAssetId = input.coverAssetId ?? delivery.cover.id;
     if (coverAssetId) {
       const { asset, bytes } = await this.assets.readOwnedAsset({
         assetId: coverAssetId,
@@ -306,6 +347,11 @@ export class ContentPackageZipExportAdapter
         throw new Error('Video cover must be image/jpeg or image/png.');
       }
       cover = { bytes, mimeType: asset.contentType };
+      if (
+        asset.sha256 !== delivery.cover.sha256 ||
+        asset.sizeBytes !== delivery.cover.sizeBytes ||
+        asset.objectKey !== delivery.cover.objectKey
+      ) throw new Error('Video cover receipt does not match delivery evidence.');
     }
 
     const built = buildVideoFullDeliveryPackage({
@@ -318,7 +364,7 @@ export class ContentPackageZipExportAdapter
         topics: input.version.topics,
       },
       compliance: input.compliance,
-      contentPackageRevision: resolveContentPackageRevision(input, this.options),
+      contentPackageRevision,
       ...(cover ? { cover } : {}),
       factSummary: input.factSummary ?? this.options.factSummary,
       generatedAt: input.version.createdAt,
@@ -326,7 +372,10 @@ export class ContentPackageZipExportAdapter
       platform: input.platform,
       rightsState: input.rightsState ?? this.options.rightsState,
       storeName: input.storeName ?? this.options.storeName ?? '门店',
-      ...(input.subtitles ? { subtitles: input.subtitles } : {}),
+      subtitles: {
+        format: delivery.subtitles.format,
+        text: delivery.subtitles.text,
+      },
       variantVersionId: input.version.id,
       video: { bytes: videoBytes },
     });
@@ -348,6 +397,46 @@ export class ContentPackageZipExportAdapter
       sizeBytes: artifact.sizeBytes,
     };
   }
+}
+
+function hasVerifiedVideoCompliance(
+  asset: ContentPackageExportAsset,
+  compliance: Parameters<ContentPackageExportPort['export']>[0]['compliance'],
+  allowRecordedSynthetic: boolean,
+) {
+  const evidence = asset.compositionEvidence;
+  if (
+    !evidence ||
+    evidence.outputSha256 !== asset.sha256 ||
+    evidence.outputSizeBytes !== asset.sizeBytes
+  ) {
+    return false;
+  }
+  if (
+    !allowRecordedSynthetic &&
+    (evidence.aigc.validationMethod === 'recorded_synthetic' ||
+      evidence.brandWatermark.validationMethod === 'recorded_synthetic' ||
+      evidence.delivery?.cover.validationMethod === 'recorded_synthetic' ||
+      evidence.delivery?.subtitles.validationMethod === 'recorded_synthetic')
+  ) {
+    return false;
+  }
+  if (!compliance.aigcLabelEnabled && !compliance.watermarkEnabled) return true;
+  const aigcVerified =
+    !compliance.aigcLabelEnabled ||
+    (evidence.aigc.requested &&
+      evidence.aigc.visibleLabel.actual &&
+      evidence.aigc.visibleLabel.validated &&
+      evidence.aigc.implicitMetadata.actual &&
+      evidence.aigc.implicitMetadata.validated);
+  const watermarkVerified =
+    !compliance.watermarkEnabled ||
+    (evidence.brandWatermark.requested &&
+      evidence.brandWatermark.actual &&
+      evidence.brandWatermark.validated &&
+      typeof compliance.watermarkText === 'string' &&
+      evidence.brandWatermark.text === compliance.watermarkText);
+  return aigcVerified && watermarkVerified;
 }
 
 /**
@@ -387,6 +476,20 @@ function assertOwnedAssetObjectKey(
       'The ContentPackage owned asset belongs to another workspace.'
     );
   }
+  if (!isExportableOwnedAssetObjectKey(workspaceId, objectKey, contentType)) {
+    throw new Error(
+      'The ContentPackage owned asset object key is not exportable.'
+    );
+  }
+}
+
+export function isExportableOwnedAssetObjectKey(
+  workspaceId: string,
+  objectKey: string,
+  contentType: string,
+) {
+  const segments = objectKey.split('/');
+  if (segments[0] !== workspaceId) return false;
   const extension =
     contentType === 'image/png'
       ? 'png'
@@ -406,19 +509,24 @@ function assertOwnedAssetObjectKey(
       (segment) => segment.length > 0 && segment !== '.' && segment !== '..'
     ) &&
     legacyVideoPath.at(-1)?.endsWith('.mp4');
+  const isVerifiedComposedVideoKey =
+    contentType === 'video/mp4' &&
+    segments.length === 3 &&
+    segments[1] === 'composed' &&
+    /^video-workflow-[a-z0-9-]+-[a-f0-9]{64}\.mp4$/u.test(
+      segments[2] ?? ''
+    );
   const isReceiptAddressedKey =
     extension &&
     segments.length === 3 &&
     ['generated', 'composed', 'owned'].includes(segments[1] ?? '') &&
     new RegExp(`^[a-f0-9]{64}\\.${extension}$`).test(segments[2] ?? '');
-  if (
-    !extension ||
-    (!isReceiptAddressedKey && !isVerifiedLegacyVideoKey)
-  ) {
-    throw new Error(
-      'The ContentPackage owned asset object key is not exportable.'
-    );
-  }
+  return Boolean(
+    extension &&
+      (isReceiptAddressedKey ||
+        isVerifiedLegacyVideoKey ||
+        isVerifiedComposedVideoKey)
+  );
 }
 
 function isExportImageType(

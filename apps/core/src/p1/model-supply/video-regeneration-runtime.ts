@@ -115,6 +115,16 @@ export interface VideoRegenerationWorkflowPort {
   }): MaybePromise<unknown>;
 }
 
+export interface VideoRegenerationApprovalPort {
+  approve(input: {
+    actorId: string;
+    approvalKey: string;
+    contract: NonNullable<CreateVideoWorkflowInput['executionContract']>;
+    workId: string;
+    workspaceId: string;
+  }): MaybePromise<{ id: string }>;
+}
+
 export type DurableVideoRegenerationBilling = ProductBillingApplicationPort &
   BillingLifecyclePort;
 
@@ -208,6 +218,7 @@ export function createVideoRegenerationTerminalObserver(options: {
  * quote-to-scope binding and free-action audit facts.
  */
 export class VideoRegenerationApplicationService {
+  private readonly approvalAuthority: VideoRegenerationApprovalPort;
   private readonly billing: DurableVideoRegenerationBilling;
   private readonly clock: () => Date;
   private readonly quoteAuthority: ProductQuoteAuthority;
@@ -215,12 +226,14 @@ export class VideoRegenerationApplicationService {
   private readonly workflows: VideoRegenerationWorkflowPort;
 
   constructor(options: {
+    approvalAuthority: VideoRegenerationApprovalPort;
     billing: DurableVideoRegenerationBilling;
     clock?: () => Date;
     quoteAuthority: ProductQuoteAuthority;
     repository: VideoRegenerationRepository;
     workflows: VideoRegenerationWorkflowPort;
   }) {
+    this.approvalAuthority = options.approvalAuthority;
     this.billing = options.billing;
     this.clock = options.clock ?? (() => new Date());
     this.quoteAuthority = options.quoteAuthority;
@@ -372,6 +385,28 @@ export class VideoRegenerationApplicationService {
     }
 
     const now = this.clock().toISOString();
+    const executionContract = {
+      ...structuredClone(source.executionContract),
+      catalogModelId: quote.catalogModelId,
+      durationSeconds: binding.targetSeconds,
+      estimatedAmount:
+        quote.authorizedCeiling ?? quote.confirmedAmount ?? 0,
+      quoteAcceptedAt: now,
+      quoteRevision: quote.revision,
+    };
+    const approvalReceiptId =
+      input.approvalReceiptId ??
+      (binding.scope === 'full_compose' && source.workId
+        ? (
+            await this.approvalAuthority.approve({
+              actorId: binding.actorId,
+              approvalKey: `video-regeneration:${input.taskId}:${quote.revision}`,
+              contract: executionContract,
+              workId: source.workId,
+              workspaceId: input.workspaceId,
+            })
+          ).id
+        : undefined);
     const taskBinding: VideoRegenerationTaskBinding =
       existing ?? {
         actorId: binding.actorId,
@@ -387,8 +422,8 @@ export class VideoRegenerationApplicationService {
     await this.workflows.createDraft({
       actorId: binding.actorId,
       aigcLabelEnabled: source.aigcLabelEnabled,
-      ...(input.approvalReceiptId
-        ? { approvalReceiptId: input.approvalReceiptId }
+      ...(approvalReceiptId
+        ? { approvalReceiptId }
         : {}),
       ...(source.brandWatermarkText
         ? { brandWatermarkText: source.brandWatermarkText }
@@ -398,15 +433,7 @@ export class VideoRegenerationApplicationService {
       derivedFromWorkflowId: binding.sourceRunId,
       deliveryMode:
         binding.scope === 'shot' ? 'candidate_only' : 'content_package',
-      executionContract: {
-        ...structuredClone(source.executionContract),
-        catalogModelId: quote.catalogModelId,
-        durationSeconds: binding.targetSeconds,
-        estimatedAmount:
-          quote.authorizedCeiling ?? quote.confirmedAmount ?? 0,
-        quoteAcceptedAt: now,
-        quoteRevision: quote.revision,
-      },
+      executionContract,
       referenceAssetIds: [...(source.referenceAssetIds ?? [])],
       shots,
       storyboardRevision: `${source.storyboardRevision}:regen:${quote.revision}`,
