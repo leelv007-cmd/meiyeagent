@@ -17,7 +17,7 @@
 3. 公网 Webhook、上传入口的传输层资源边界不足；Core、Canvas 还有认证后资源耗尽风险。
 4. Web、Canvas 的本地快速门禁并非全绿，当前没有可复用的成功 CI 基线。
 5. 多项原报告结论成立，但严重级别、攻击前提、影响范围或修复方案需要收窄。
-6. 若干事项其实是产品、迁移或运行策略选择，不能伪装成唯一代码修复方案。
+6. 12 项产品、迁移和运行策略已于 2026-07-22 完成决策，实施不得再回退为开放选项。
 
 本报告把“是否采纳”和“严重级别”分开。P1/P2/P3 表示风险；“采纳/不采纳/需决策”表示处置结论。
 
@@ -91,6 +91,7 @@
 | A-18 | 第 4 节提前退出未释放响应体 | P3 | 高 | 采纳并扩大范围 |
 | A-19 | 第 4 节 ffprobe 无 timeout | P3 | 高 | 采纳 |
 | A-20 | 第 4 节 Stripe API version 治理 | P3 | 中 | 作为升级治理采纳，不作为当前安全漏洞 |
+| A-21 | 3.6 客户端可定制支付返回 URL | P3（付费上线前 P2） | 高 | 采纳，按 C-11-B 删除完整 URL 输入 |
 
 ### 3.2 不需要采纳或必须删除的原结论
 
@@ -113,22 +114,24 @@
 | B-15 | 所有 P2 都必须阻塞每个普通 PR | 不采纳。PR 门禁、发布门禁和部署门禁必须拆开 |
 | B-16 | 原报告 IPv6 正则示例可直接粘贴 | 不采纳。示例不能覆盖全部合法 IPv6 展开/压缩表示，应使用完整 IPv6 解析或 BlockList/CIDR 归一化 |
 
-### 3.3 需要用户决策
+### 3.3 已确认决策（2026-07-22）
 
-| ID | 决策 | 方案与取舍 | 推荐 |
-| --- | --- | --- | --- |
-| C-01 | Stripe 是否继续作为正式发布 Provider | A 保留并完成 ownership 修复、存量审计；B 正式移除/硬禁用 Stripe。保留代码但不治理风险最大 | 若仍有 Stripe 计划，选 A |
-| C-02 | 存量 Stripe Customer 处理 | A 审计 metadata、订阅、local mapping 后 backfill；B 未绑定用户全部新建 app-scoped Customer。B 简单但可能割裂历史账单 | 选 A，异常项人工隔离 |
-| C-03 | Webhook 结算架构 | A 同步处理 + lease/fencing/busy 503；B 验签后持久化 verified event + settlement outbox。B 迁移更多，但可把 Provider 重试与内部服务解耦 | 选 B |
-| C-04 | 请求体与 deadline 数值 | A 先采用保守默认；B 等生产样本再定。等待样本会继续暴露无界入口 | 先 A，再用样本校准 |
-| C-05 | 通用文件是否允许公开分享 | A 只允许受控 avatar 公开；B 保留受控 public_file purpose。B 需要内容白名单、owner/workspace metadata、配额、速率和清理 | 当前产品选 A |
-| C-06 | 删除一致性方案 | A transactional deletion outbox + tombstone；B 软删除 + 定期 reconciliation。A 一致性更强，代码与迁移更多 | 选 A |
-| C-07 | PR 自动质量门禁 | A 所有 PR 跑 Web/Canvas 快速门禁；B path filter。B 更省成本，但跨包影响容易漏 | 先 A；收集时长后再决定过滤 |
-| C-08 | build/E2E/Provider live 频率 | A 每 PR；B build/E2E 在 RC，Provider live 手动/周检/相关发布。A 成本高且 live 有费用 | 选 B |
-| C-09 | 多工作区产品合同 | A 主产品提供一级 switcher；B 主产品不展示 switcher，内部/管理员入口显式传递并验证 workspaceId | 选 B |
-| C-10 | 高风险动作 freshness | A 恢复全局 freshAge；B 对支付 Portal、API Key、账号删除、关键管理员写操作做 route-level step-up | 选 B，10–15 分钟窗口 |
-| C-11 | 支付返回 URL 兼容性 | A 保留完整 URL 并严格同源；B 删除完整 URL 输入，由服务端固定 canonical URL。当前正式 UI 不依赖自定义 URL | 选 B |
-| C-12 | Core/Canvas 生产入口与边缘策略 | A 只允许私网/service binding，另设 WAF/Ingress body/rate/timeout；B 允许公网直连。B 会放大 DoS 与鉴权风险 | 选 A |
+| ID | 最终选择 | 已冻结的实施边界 |
+| --- | --- | --- |
+| C-01 | B：退役 Stripe | 停止把 Stripe 作为正式发布 Provider；完成存量义务核查后硬禁用新 checkout、Customer 创建和 Portal |
+| C-02 | 退役专用方案 | 不新建 app-scoped Customer；只读审计活跃订阅、退款、发票、账单与权益义务，清零或交割后退役 |
+| C-03 | B：verified event + settlement outbox | Webhook 先验签并持久化 verified event/outbox，Worker 异步结算；Provider 重试与 Core/Canvas 故障解耦 |
+| C-04 | A：先采用保守限制 | Webhook 512 KiB、普通 JSON 1 MiB、上传 transport 约 11 MiB；session 2–3 秒、普通内部调用 5–10 秒，流式接口使用 connect/idle timeout |
+| C-05 | A：仅受控 avatar 公开 | 通用文件默认私有，不保留 generic public_file；未来若有公开分享需求，必须通过独立受控发布能力重新立项 |
+| C-06 | A：deletion outbox + tombstone | 删除意图事务落库、业务侧立即隐藏、Worker 幂等删除、成功后清理；上传仍实施即时补偿 |
+| C-07 | A：所有 PR 跑快速门禁 | 暂不使用 path filter；Web/Canvas 快速矩阵对所有 PR 自动执行，收集时长后另行评估过滤 |
+| C-08 | B：分层验证 | PR 跑快速门禁；RC 跑 build/四服务 E2E；Provider live 用于相关发布、手动或周检 |
+| C-09 | B：主产品无一级 workspace switcher | 主产品保留单工作区体验；内部/管理员下钻显式传递并鉴权 workspaceId |
+| C-10 | B：route-level step-up | 支付 Portal、API Key、账号删除和关键管理员写操作采用 10–15 分钟近期认证窗口 |
+| C-11 | B：服务端 canonical URL | 删除客户端完整 success/cancel/return URL 输入，由服务端生成固定 canonical 地址 |
+| C-12 | A：私网/service binding | Core/Canvas 不允许无保护公网直连；WAF/Ingress 另设 body、rate、connect/read timeout |
+
+以上 12 项已关闭决策，不再作为实施过程中的自由选择。任何变更必须新增 ADR 或决策记录。
 
 ## 4. 需要采纳问题的详细复核
 
@@ -167,16 +170,14 @@
 - Stripe 启用且存在同邮箱、邮箱复用、共享 Stripe 账户或并发首次结账时，可能把账单主体绑定给错误本地用户。
 - 续费路径会通过 customerId 回查 userId，错误会向后传播。
 
-最小修复：
+已确认处置（C-01-B、C-02 退役专用方案）：
 
-1. Provider 合同传入已认证 userId 与 app namespace。
-2. 停止 email lookup/rebind。
-3. 本地已有 customerId 时 retrieve 并校验 metadata ownership；Portal 使用同一 resolver。
-4. 新建 Customer 使用 app namespace + userId metadata 和幂等键。
-5. 按 user.id 且 customer_id IS NULL 条件绑定，并验证竞争后的 winner。
-6. 在唯一索引前完成远端 metadata、活跃订阅和本地映射联合审计。
-
-注意：auth.schema.ts 为生成文件，约束必须通过 generator-safe schema/migration 实施。
+1. 立即阻止新的 Stripe checkout、Customer 创建和 Portal 会话。
+2. 不为未绑定用户创建新的 app-scoped Customer。
+3. 只读导出本地 customerId、Stripe metadata、活跃订阅、退款、发票、账单和权益映射。
+4. 对仍有存量义务的账户保留受控 Webhook 生命周期处理，不能通过 payment.enable=false 直接丢弃。
+5. 所有活跃义务完成迁移、退款、取消或明确交割后，硬禁用并最终移除 Stripe Provider。
+6. 保存退役审计结果、异常项负责人和完成证据。
 
 ### A-03 [P1] Webhook 验签前 claim，busy 被 200
 
@@ -194,12 +195,13 @@
 - 不应把“猜中低熵 event ID”作为主要前提；真实并发重投、ID 泄露或可观察事件即可触发风险。
 - Pro Studio 已有持久 claim、退避和 cron 重试；真正缺 durable outbox 的重点是 plan entitlement 到 Core。
 
-无论 C-03 选择 A 或 B，都必须：
+根据 C-03-B，实施必须包含：
 
 1. 先验签和规范化，再用 canonical provider event ID claim。
-2. busy 返回可重试状态，不能 200。
-3. 使用 lease、fencing token 与稳定错误状态。
-4. payment session/subscription 业务键做真正幂等并在建唯一约束前审计。
+2. 在本地事务中持久化 verified event 与 settlement outbox。
+3. 持久化成功后快速响应；结算由 Worker 使用 lease、fencing token、重试状态处理。
+4. busy/暂态失败必须保持可重试，不能被错误确认成已完成。
+5. payment session/subscription 业务键做真正幂等并在建唯一约束前审计。
 
 ### A-04/A-05 [P1/P2] 请求体与 JSON 复杂度边界
 
@@ -271,7 +273,7 @@
 
 - session validate：2–3 秒
 - 普通 JSON：5–10 秒总 deadline
-- 支付内部结算：5–10 秒后返回可重试错误，或由 C-03 的异步 outbox 接管
+- 支付 Worker 内部调用：5–10 秒 deadline，超时后保持 settlement outbox 可重试
 - SSE/媒体：connect/header timeout + idle timeout，不使用普通短总超时
 - 合并 caller signal 与 timeout signal
 
@@ -313,7 +315,7 @@
 2. avatar 固定 prefix、大小、JPEG/PNG/WebP、MIME + magic + dimensions。
 3. 无论 public/private 都写 owner、workspace、object metadata。
 4. 读取授权以 DB isPublic 为准，路径前缀只做旧对象兼容。
-5. 是否保留 public_file 由 C-05 决定。
+5. 按 C-05-A，不保留 generic public_file；公开分享能力必须以后独立立项。
 
 ### A-10 [P2] 存储与元数据双写
 
@@ -336,7 +338,7 @@
 
 - 上传：insert 失败 best-effort delete；补偿失败记录稳定 orphan 告警。
 - Canvas storage 增加幂等 delete。
-- 删除：按 C-06 选择 outbox+tombstone 或软删除+reconciliation。
+- 删除：按 C-06-A 实施 transactional deletion outbox + tombstone。
 
 ### A-11 [P2，条件性] 日志脱敏
 
@@ -383,14 +385,15 @@
 - Canvas：check（含 tsc）、test
 - 保留 repo-level secret/decision guards
 
-Build、四服务 E2E、Provider live 频率由 C-08 决定。
+按 C-08-B：PR 不强制完整 build/E2E/live；RC 执行 build 与四服务 E2E，Provider live 用于相关发布、手动或周检。
 
-### A-17 至 A-20 [P3] 可选治理
+### A-17 至 A-21 [P3] 可选治理
 
 - Header：correlation ID 不合法可重新生成；显式 idempotency key 不合法必须 400，不能静默替换。
 - Response disposal：不仅 redirect，所有 status/size/MIME 等提前退出分支都要 cancel/drain。
 - ffprobe：增加 timeout、kill signal 与稳定错误分类测试。
 - Stripe API version：显式版本用于让未来 SDK 升级可审计；不是修复当前账户版本随机漂移。
+- Payment return URL：按 C-11-B 删除客户端完整 URL 输入，由服务端生成 canonical success/cancel/return 地址。
 
 ## 5. 需要用户确认的其他发布证据
 
@@ -448,16 +451,16 @@ Build、四服务 E2E、Provider live 频率由 C-08 决定。
 
 原报告识别了多数真实风险，但不能原样作为实施清单：
 
-- 需要采纳：20 项，其中当前明确 P1 发布阻断 4 项。
+- 需要采纳：21 项，其中当前明确 P1 发布阻断 4 项。
 - 不需要采纳或必须删除/改写：16 项原表述。
-- 需要用户决策：12 项。
+- 已确认决策：12 项，未决 0 项。
 
 最先执行的顺序：
 
 1. 修复当前 CI 红线并建立成功基线。
-2. 完成 Stripe ownership 与 Webhook 先验签/可重试 claim。
+2. 执行 Stripe 存量只读审计、停止新增并完成退役；同时实施 Webhook verified event + settlement outbox。
 3. 给公网 Webhook、上传入口增加传输层资源边界。
 4. 完成支付目录、上传策略、存储补偿与跨服务 deadline。
-5. 决策 Webhook 架构、Stripe 存量迁移、公开文件合同与 CI 策略。
+5. 按已冻结的 C-01 至 C-12 决策完成验收，不得在实施中重新开放范围。
 
 在上述 P1 与适用发布门禁完成前，状态保持：**不通过，不建议合并或发布。**
