@@ -4,7 +4,8 @@
  * Gate 1 (capability skeleton) is asserted in web suite + contracts inventory.
  * Gate 2: tri-modal dual-channel recorded story 30 chain.
  * Gate 3: publish gate rejects multi_channel_ready with <2 qualified Deployments.
- * Live I4 matrix is env-gated — see docs/evidence/admin-supply-accept-gaps-2026-07-20.md.
+ * Unit dualChannelReady same-CatalogModel honesty is F-I-01 (FIXED).
+ * Live I4 matrix remains env-gated — see docs/evidence/admin-supply-accept-gaps-2026-07-20.md.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';

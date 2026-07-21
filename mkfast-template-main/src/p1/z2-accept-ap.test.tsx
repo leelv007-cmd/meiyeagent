@@ -5,8 +5,8 @@
  * Gate 3 (UI): multi-channel ready projection + single-channel no-fallback dual-end labels.
  * Gate 4: D-048 interaction ban on ops main paths (catalog / exception home / supply).
  *
- * Live Playwright four-service e2e and merchant selection-page labels that are
- * not yet instrumented are listed in docs/evidence/admin-supply-accept-gaps-2026-07-20.md.
+ * Live Playwright four-service e2e and composer-mounted merchant picker remain
+ * honest gaps — see docs/evidence/admin-supply-accept-gaps-2026-07-20.md.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -39,6 +39,11 @@ import {
   buildSupplyOverviewView,
   projectDualChannelCoverage,
 } from './admin-supply-overview-model';
+import { modelCardView } from '@/product/model-card-picker';
+import {
+  model_card_channel_multi,
+  model_card_channel_single,
+} from '@/locale/paraglide/messages';
 import type { ActionableInboxItem } from '@meiye/contracts';
 
 const NOW = '2026-07-20T12:00:00.000Z';
@@ -229,6 +234,50 @@ test('Z2-ACCEPT gate3 UI: admin supply overview SSR surfaces single-channel / mu
     ) || /单渠道|无回退|single-channel/.test(html),
     'admin supply surface must expose single-channel / no-fallback labeling',
   );
+});
+
+test('Z2-ACCEPT gate3 UI: merchant label projection shares single-channel / no-fallback copy (F-J-01 partial)', () => {
+  // Shared paraglide keys power model-settings badge + ModelCardPicker view.
+  // Composer main path does not yet mount ModelCardPicker — see accept gaps.
+  assert.match(model_card_channel_single(), /单渠道|无回退/);
+  assert.match(model_card_channel_multi(), /双渠道|multi/i);
+
+  const single = modelCardView({
+    availabilityKind: 'production',
+    available: true,
+    capabilityLabels: ['图片生成'],
+    channelReadiness: 'single_channel',
+    displayName: 'Accept Single Channel Image',
+    id: 'accept-image-single',
+    modality: 'image',
+    qualityRank: 1,
+    unitPrice: {
+      amountMicros: 100_000,
+      currency: 'CNY',
+      revision: 'price-v1',
+      unit: 'image',
+    },
+  });
+  assert.equal(single.channelReadinessLabel, model_card_channel_single());
+  assert.match(single.channelReadinessLabel ?? '', /单渠道|无回退/);
+
+  const multi = modelCardView({
+    availabilityKind: 'production',
+    available: true,
+    capabilityLabels: ['文案生成'],
+    channelReadiness: 'multi_channel_ready',
+    displayName: 'Accept Multi Channel Copy',
+    id: 'accept-copy-multi',
+    modality: 'llm',
+    qualityRank: 1,
+    unitPrice: {
+      amountMicros: 100_000,
+      currency: 'CNY',
+      revision: 'price-v1',
+      unit: 'generation',
+    },
+  });
+  assert.equal(multi.channelReadinessLabel, model_card_channel_multi());
 });
 
 // ---------------------------------------------------------------------------

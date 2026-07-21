@@ -1,7 +1,7 @@
 # Z2-ACCEPT gap list — same-increment AP + MP (#128)
 
-**Date:** 2026-07-20  
-**Ticket:** #128 / `ticket/128-z2-accept`  
+**Date:** 2026-07-21 (refreshed after Wave 0/1 review remediations)  
+**Ticket:** #128 / `leelv007-cmd/issue-128-z2-accept-ap`  
 **Discipline:** honest gaps only — no silent degrade of acceptance claims.  
 **Recorded/fake gates and D-048 Playwright are green; only G-LIVE-* remains env-gated.**
 
@@ -15,7 +15,7 @@
 | 4 | D-048 interaction ban on ops main paths (no code/SQL/env/raw JSON/CLI) | **GREEN** — catalog / exception home / supply SSR unit assertions | **GREEN** — four-service Playwright 3/3 (2026-07-21; see below) |
 | 5 | Gap list on disk (this file) | **GREEN** | — |
 
-**Same-increment rule (D-080 C3):** AP skeleton and MP vertical are not separately claimable. Recorded gates green ≠ live C5 claim.
+**Same-increment rule (D-080 C3):** AP skeleton and MP vertical are not separately claimable. Recorded gates green ≠ live C5 claim. **#128 whole package is not claimable complete while any G-LIVE / dual-end / Playwright gap remains open.**
 
 ---
 
@@ -29,7 +29,7 @@
 | Why | I4 unit matrix + `.github/workflows/provider-live.yml` are on main; live runs still require `RUN_PROVIDER_LIVE_FAULT_INJECTION=1` + secrets + cost cap. |
 | Required for C5 claim | Per core operation: ≥2 independent fault-domain `live_verified` Deployments; four scenarios: pre-accept failover, accepted/acceptance_unknown no re-submit, isolate/drain without restart, RouteSnapshot + dual ledger replay. |
 | Evidence expected | `live-*.integration.test.ts` env-gated + manual/scheduled provider-live workflow (secrets + cost cap). |
-| Recorded substitute | Story 30 recorded chain + MP-04T/I/V fake dual-channel conformance + publish-gate negative tests. |
+| Recorded substitute | Story 30 recorded chain + MP-04T/I/V fake dual-channel conformance + publish-gate negative tests + unit matrix with same-CatalogModel honesty (F-I-01). |
 | Claim allowed today | **Recorded dual-channel readiness only** — not production multi-channel live readiness. |
 
 ### G-LIVE-TEXT / IMAGE / VIDEO — live dual-channel credentials
@@ -39,6 +39,7 @@
 | Status | **open / env-gated** |
 | Why | Live probes require ARK + tuzi secrets under `docs/_private/` / root `.env` (gitignored). CI `core-persistence` does not run provider live matrix. |
 | Models (handoff matrix) | Text: `doubao-seed-2-0-mini-260428` + `gemini-3-flash-preview`; Image: Seedream 5.0 + Seedream 4.5 via tuzi; Video: Seedance 1.5 both channels (shared manufacturer → **channel-level only**, not manufacturer-independent). |
+| Unit honesty note | F-I-01 FIXED: unit `dualChannelReady=true` now requires same `catalogModelId` + distinct channel kinds; text/image handoff cross-model pairs report honest `false` / `channelMatrixAligned=false`. |
 | Claim allowed today | Live optional when env open; default suite skips live. |
 
 ### G-UI-MERCHANT-NO-FALLBACK — user selection page single-channel label
@@ -67,9 +68,9 @@
 
 | Field | Value |
 |-------|--------|
-| Status | **partial / not independently claimed** |
-| Why | J5 (`#125`) may still be landing; accept suite does not depend on J5-only surfaces. Story 30 credential step uses domain lifecycle (create → test → activate) in core, not J5 UI. |
-| Impact on #128 | Not a silent pass — credentials UI polish is out of recorded story 30 path. |
+| Status | **landed on main (not a blocking accept red)** |
+| Why | J5 surfaces present: `admin-provider-credential-control`, supply credential panel, route simulator panel, governed actions panel. Story 30 credential step uses domain lifecycle (create → test → activate) in core; accept suite does not treat J5 polish as a silent gate pass. |
+| Impact on #128 | No longer an independent open gap for recorded harness sign-off. |
 
 ---
 
@@ -98,7 +99,7 @@
 pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
   src/p1/z2-accept/z2-accept.test.ts
 
-# Web AP gates (skeleton + D-048 + dual-end admin labels)
+# Web AP gates (skeleton + D-048 + dual-end admin/merchant labels)
 pnpm --filter @meiye/web exec tsx --test src/p1/z2-accept-ap.test.tsx
 
 # Four-service interactive D-048 gate
@@ -106,7 +107,10 @@ pnpm --filter @meiye/web exec playwright test \
   tests/e2e/specs/admin-supply-ops.spec.ts --project=chromium --workers=1
 
 # Optional live (requires secrets; not default green)
-# PROVIDER_LIVE=1 pnpm --filter @meiye/core test -- live-text-conformance...
+# RUN_PROVIDER_LIVE_FAULT_INJECTION=1 pnpm --filter @meiye/core test -- ...
+
+# Optional Playwright four-service (not default CI green)
+# pnpm --filter @meiye/web e2e -- tests/e2e/specs/admin-supply-ops.spec.ts
 ```
 
 ## Sign-off rule
