@@ -42,6 +42,52 @@ export type FoundationRouteCheckpoint = Omit<
 
 export type ModelSupplyChannel = ModelDeployment['channel'];
 
+/**
+ * F-S2-05: revision completeness mode.
+ * - production: missing catalog/policy/price/credential revisions throw
+ * - recorded_harness: inject recorded-*-v1 placeholders (tests / recorded adapters only)
+ */
+export type RouteRevisionMode = 'production' | 'recorded_harness';
+
+export const RECORDED_REVISION_DEFAULTS = {
+  catalog: 'recorded-catalog-v1',
+  policy: 'recorded-policy-v1',
+  price: 'recorded-price-v1',
+  credential: 'recorded-credential-v1',
+} as const;
+
+export class IncompleteRouteRevisionError extends Error {
+  readonly code = 'INCOMPLETE_ROUTE_REVISION' as const;
+  constructor(readonly field: string) {
+    super(
+      `RouteSnapshot missing required revision field "${field}" (production fail-closed; set P1_ROUTE_REVISION_MODE=recorded_harness only for harness).`,
+    );
+    this.name = 'IncompleteRouteRevisionError';
+  }
+}
+
+export function resolveRouteRevisionMode(
+  explicit?: RouteRevisionMode,
+): RouteRevisionMode {
+  if (explicit) return explicit;
+  const env = process.env.P1_ROUTE_REVISION_MODE;
+  if (env === 'production' || env === 'recorded_harness') return env;
+  return process.env.NODE_ENV === 'production'
+    ? 'production'
+    : 'recorded_harness';
+}
+
+export function requireRouteRevision(
+  value: string | null | undefined,
+  field: string,
+  mode: RouteRevisionMode,
+  recordedDefault: string,
+): string {
+  if (value !== undefined && value !== null && value !== '') return value;
+  if (mode === 'recorded_harness') return recordedDefault;
+  throw new IncompleteRouteRevisionError(field);
+}
+
 // ---------------------------------------------------------------------------
 // Serialize / replay (field-stable JSON)
 // ---------------------------------------------------------------------------
@@ -312,8 +358,10 @@ export function toFoundationRouteCheckpoint(
     fallbackAuthorized: boolean;
     retryOwner: 'product';
     providerRetryDisabled: true;
+    revisionMode: RouteRevisionMode;
   }>,
 ): FoundationRouteCheckpoint {
+  const revisionMode = resolveRouteRevisionMode(product?.revisionMode);
   const selectionMode =
     product?.selectionMode ??
     (canonical.selectionMode === 'auto' || canonical.selectionMode === 'llm_auto'
@@ -330,18 +378,24 @@ export function toFoundationRouteCheckpoint(
 
   return {
     id: canonical.id,
-    catalogRevision:
-      product?.catalogRevision ??
-      canonical.catalogRevisionId ??
-      'recorded-catalog-v1',
-    policyRevision:
-      product?.policyRevision ??
-      canonical.policyRevisionId ??
-      'recorded-policy-v1',
-    priceRevision:
-      product?.priceRevision ??
-      canonical.priceRevisionId ??
-      'recorded-price-v1',
+    catalogRevision: requireRouteRevision(
+      product?.catalogRevision ?? canonical.catalogRevisionId,
+      'catalogRevision',
+      revisionMode,
+      RECORDED_REVISION_DEFAULTS.catalog,
+    ),
+    policyRevision: requireRouteRevision(
+      product?.policyRevision ?? canonical.policyRevisionId,
+      'policyRevision',
+      revisionMode,
+      RECORDED_REVISION_DEFAULTS.policy,
+    ),
+    priceRevision: requireRouteRevision(
+      product?.priceRevision ?? canonical.priceRevisionId,
+      'priceRevision',
+      revisionMode,
+      RECORDED_REVISION_DEFAULTS.price,
+    ),
     requestedCatalogModelId:
       product?.requestedCatalogModelId ??
       canonical.requestedCatalogModelId ??
@@ -354,7 +408,9 @@ export function toFoundationRouteCheckpoint(
     maxAttempts: product?.maxAttempts ?? canonical.maxAttempts,
     fallbackAuthorized:
       product?.fallbackAuthorized ?? canonical.fallbackAuthorized,
-    allowedCandidates: canonical.allowedCandidates.map(toFoundationCandidate),
+    allowedCandidates: canonical.allowedCandidates.map((candidate) =>
+      toFoundationCandidate(candidate, revisionMode),
+    ),
     // F-S2-03: persist top-level dataPolicy/sourceKind on foundation checkpoint.
     dataPolicyRevisionId: canonical.dataPolicyRevisionId,
     sourceKind: canonical.sourceKind,
@@ -373,6 +429,8 @@ export interface ModelSupplyLedgerRouteInput {
   deployment: ModelDeployment;
   submission: Pick<ModelSupplySubmission, 'selection' | 'dataClass'>;
   ordinal: number;
+  /** F-S2-05: production fail-closed vs harness recorded defaults. */
+  revisionMode?: RouteRevisionMode;
 }
 
 /**
@@ -398,18 +456,25 @@ export function modelSupplyCheckpointToFoundationRoute(
           input.deployment,
           input.model.id,
           input.ordinal,
+          revisionMode,
         ),
       ];
 
   // F-S2-01: share resolveRoutePolicyRevisionId with adapter (route > policy > primary).
-  const policyRevision =
+  const policyRevision = requireRouteRevision(
     resolveRoutePolicyRevisionId(input.snapshot, {
       policyRevision: input.deployment.policyRevision,
-    }) ?? 'recorded-policy-v1';
-  const priceRevision =
-    input.snapshot.priceRevision ??
-    input.deployment.priceRevision ??
-    'recorded-price-v1';
+    }),
+    'policyRevision',
+    revisionMode,
+    RECORDED_REVISION_DEFAULTS.policy,
+  );
+  const priceRevision = requireRouteRevision(
+    input.snapshot.priceRevision ?? input.deployment.priceRevision,
+    'priceRevision',
+    revisionMode,
+    RECORDED_REVISION_DEFAULTS.price,
+  );
 
   const selectionMode =
     input.submission.selection.mode === 'auto' ? 'llm_auto' as const : 'fixed' as const;
@@ -472,6 +537,7 @@ export function modelSupplyCheckpointToFoundationRoute(
     fallbackConsent: canonical.fallbackConsent,
     retryOwner: 'product',
     providerRetryDisabled: true,
+    revisionMode,
   });
 }
 
@@ -666,6 +732,7 @@ function deploymentToCanonicalCandidate(
   deployment: ModelDeployment,
   catalogModelId: string,
   rank: number,
+  revisionMode: RouteRevisionMode = resolveRouteRevisionMode(),
 ): CanonicalRouteCandidate {
   return {
     catalogModelId,
@@ -673,8 +740,12 @@ function deploymentToCanonicalCandidate(
     rank,
     region: deployment.region === 'domestic' ? 'cn' : 'global',
     credentialMode: deployment.credentialMode ?? 'platform',
-    credentialVersion:
-      deployment.credentialVersion ?? 'recorded-credential-v1',
+    credentialVersion: requireRouteRevision(
+      deployment.credentialVersion,
+      'credentialVersion',
+      revisionMode,
+      RECORDED_REVISION_DEFAULTS.credential,
+    ),
     ...(deployment.providerProfileId
       ? { providerProfileId: deployment.providerProfileId }
       : {}),
@@ -690,8 +761,18 @@ function deploymentToCanonicalCandidate(
     ...(deployment.lifecycleRevision
       ? { lifecycleRevision: deployment.lifecycleRevision }
       : {}),
-    policyRevision: deployment.policyRevision ?? 'recorded-policy-v1',
-    priceRevision: deployment.priceRevision ?? 'recorded-price-v1',
+    policyRevision: requireRouteRevision(
+      deployment.policyRevision,
+      'policyRevision',
+      revisionMode,
+      RECORDED_REVISION_DEFAULTS.policy,
+    ),
+    priceRevision: requireRouteRevision(
+      deployment.priceRevision,
+      'priceRevision',
+      revisionMode,
+      RECORDED_REVISION_DEFAULTS.price,
+    ),
     unitPriceMicros: deployment.unitPrice?.amountMicros ?? 0,
     currency:
       deployment.unitPrice?.currency ??
@@ -706,6 +787,7 @@ function deploymentToCanonicalCandidate(
 
 function toFoundationCandidate(
   candidate: CanonicalRouteCandidate,
+  revisionMode: RouteRevisionMode = resolveRouteRevisionMode(),
 ): FoundationRouteCandidate {
   const region =
     candidate.region === 'cn' || candidate.region === 'global'
@@ -719,7 +801,12 @@ function toFoundationCandidate(
     deploymentId: candidate.deploymentId,
     region,
     credentialMode: candidate.credentialMode ?? 'platform',
-    credentialVersion: candidate.credentialVersion ?? 'recorded-credential-v1',
+    credentialVersion: requireRouteRevision(
+      candidate.credentialVersion,
+      'credentialVersion',
+      revisionMode,
+      RECORDED_REVISION_DEFAULTS.credential,
+    ),
     ...(candidate.providerModel
       ? { providerModel: candidate.providerModel }
       : {}),
