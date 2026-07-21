@@ -1643,6 +1643,19 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
 - 待验证：C1/C2/C4 后置件的解锁触发点实际到来时间（运营重启 / 首平台 live gate / 真实 pre-lineage 内容）；C6 口径在交互原型中的实测点击成本（D-074 待验证项继续有效）。
 - Supersedes：收窄 D-078 首轮配置对象范围、D-086 首轮交付状态机、D-091 首轮写路径、D-093 首轮搜索实现、D-097 浏览器通知时点；改写 D-089 首轮迁移形态（直接建+同轮退旧，灰度机器后置）；细化 D-081/D-043 的点击计数与前置门语义对账。产品边界（独立结果中心、能力感知分层交付、版本化创作配置、按需兼容锚、双 tab 目录、通知矩阵、用户显式选对口）全部不变。
 
+## D-099 Pro Studio 画布按上游对标基线重做（含三项范围拍板）
+
+- 日期：2026-07-22
+- 状态：accepted
+- 决定：Pro Studio 画布按 `docs/evidence/pro-studio/upstream-parity-gap-baseline-2026-07-22.md` 逐行重做（G01–G48 行级核销索引，全量修复或票内记录豁免；⤴8 项 SaaS 增强不得回退）。实施口径=「挂载而非重写」：优先挂载 vendor 已拷 `mount-exact` 组件，组合根等按「移植（ports）+ 适配层替换 runtime 调用」处理（本机 Agent 桥仍 ⛔），并回写 copy-manifest/ports-manifest。**功能票（K2–K7）前置一层底座票 K1**（manifest/port 治理、生产组件白名单、BackendPort vNext 合同冻结、批量账本合同拍板、宿主 UI runtime、跨包属主协调）。三项范围拍板：① 用户侧模型选择**开放**（ModelPicker 接我方 catalog，D-044 平台默认降级为缺省值而非唯一值）；② zip 数据导出**要做**（与 adoption 并存：adoption=成品出口，zip=创作过程资产带走权，走独立 `pro-studio-canvas-export/v1` manifest，媒体从对象存储服务端收集）；③ Agent 对话式外壳**拆独立票**（上游 assistant 对话式 UI 包住既有三段确认/凭据/审计内核，流式对齐 ADR-0007，不并入本次画布重做主线）。
+- 与 P0/P1 的边界：Pro Studio 继续以 `AdvancedCanvasProjectRevision + GenerationCheckpoint` 驱动节点级 GenerationJob，不进入 Composer 的 `CreationSubmissionCoordinator`、营销 `CreationExecutionSnapshot` 或五阶段 Harness；两线共享 Product Core 的 Catalog/Quote/Route/Provider/Usage/Cost/OwnedAsset/Capability/Audit 合同。batch 仅为 UI 聚合确认，每 item 一个 job/reservation；ContentPackage 仍只在显式 adoption 时通过唯一 revision port 写入。Canvas ZIP 虽使用独立 manifest，仍逐 Asset 执行工作区访问、私下取回资格与 export policy。
+- 原因：K01–K11 验收只验"import 了 VozebCanvas+若干交互可走通"，无并排对标条款，导致上游 canvas 目录 46 候选拷 34（+8 util 计 42 行 manifest）、生产仅挂载 1 个视口组件、其余 exact-copy UI 未成生产可达组件，用户可见层全为自建简版——"验收不验体验"根因复发（同 ADR-0010 五根因）。修复靠验收基线逐行核销+并排走查，不靠重申原则。
+- 影响：新发 Pro Studio 重做票包（K1 底座 → K2 组合根/交互 → K3 精修 → K4 生成 UX → K5 资源 → K6 工程管理/导出 → K7 对标验收，A1 Agent 外壳独立线）；spec=`docs/specs/pro-studio-parity-rework-spec-2026-07-22.md`（经两路 Codex 决策保真+代码现实复核与一路确认复核，3 P0+多项 P1 全采纳）；`pro-studio-kernel-integration-spec` 的 K03 结果被本条修订（其余 K 票结论不重开）；copy-manifest 扩容需按票补 A2/A3 逐文件证据，并新增 ports-manifest 与 A2/A3 derivative addendum。
+- 主线关联：`docs/specs/beauty-marketing-agent-p0-remediation-spec-2026-07-22.md` 拥有共享执行/账本/存储/ContentPackage 不变量，`docs/specs/beauty-marketing-agent-p1-productization-spec-2026-07-22.md` 拥有 adoption 后成品、Pro Studio 来源 Asset 治理与 export eligibility 投影；二者不得接管画布工程或节点级顶层编排。
+- 证据边界：基线由双路 Opus 源码盘点合成（上游 vozeb@a2c52c7 全组件 vs 当前挂载链），行级证据在基线文档内；未做真机并排走查（列为 K7 验收动作而非本条前提）。
+- 待验证：上游共享控件（ImageSettingsPanel/VideoSettingsPanel/AudioSettingsPanel/ModelPicker/PromptSelectDialog，位于 `web/src/components/`）是否全部在 A2/A3 授权范围内可拷（K1 内核清点时判定，超范围则等价重建该控件层）；批量账本 A（聚合报价）/B（宿主 fan-out）由 K1 设计拍板。
+- Supersedes：修订 `kernel-integration-v1-acceptance-2026-07-19.md` 的 K03 pass 结论（其"import 即挂载"判据作废，已取证行为事实保留为回归基线）；D-044 供给默认从"唯一供给面"收窄为"缺省值"（仅 Pro Studio 范围）。
+
 ## 当前待验证
 
 （范围说明，2026-07-20：本章仅为 2026-07-17 合并评审识别的 20 条遗留待验证集及其状态投影；D-047 起各决策的待验证项以其条内 inline 记录为权威，不重复收录于此。）
@@ -1686,7 +1699,7 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
 
 已拍板转正：视频成片首发地位 → D-027；文案/成片两层交付 → D-028；Day-0 零资产首屏 → D-029；定位边界 → D-030；前台无槽位填表、结构化输入融入对话流 → D-031；Agent Workflow 编排总纲（收编原「阻塞作用域」「沉淀检测」两项为推论一/二）→ D-032；Task 统一交互单元与 Harness 五段式 → D-033（均 2026-07-17）；Harness 实现选型四题 + 工程约束（11 号简报全案采纳，提示词承载 = Langfuse 先行）→ D-034~D-038（2026-07-17 深夜，证据 = 10 份调研 + 9 路 Codex 对抗交叉验证（r08 三次容量失败未产出，Dify 在 D-037 中仅为战术搁置项，见其证据边界与 08 号报告头部横幅），`references/analysis/harness-research-2026-07-17/`）；09 合规章义务清单去向（2026-07-18 一致性复核 escalate 项）= 并入 Week 0 预登记文档 → D-039（2026-07-18）。
 
-2026-07-17 合并评审识别的待拍板项已全部转正（即上列清单）；本行不作全局声明——2026-07-20 起新决策产生的「待继续拍板」项以各决策条内记录为权威（见 D-072 起各决策条内记录，现至 D-098；D-079 为跳号未使用）。
+2026-07-17 合并评审识别的待拍板项已全部转正（即上列清单）；本行不作全局声明——2026-07-20 起新决策产生的「待继续拍板」项以各决策条内记录为权威（见 D-072 起各决策条内记录，现至 D-099；D-079 为跳号未使用）。
 
 ## 后续记录格式
 
