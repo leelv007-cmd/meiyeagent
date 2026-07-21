@@ -36,7 +36,9 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 export function isSecretScanTextPath(path) {
-  return /^\.env(?:\.|$)/.test(basename(path)) || TEXT_EXTENSIONS.has(extname(path));
+  return (
+    /^\.env(?:\.|$)/.test(basename(path)) || TEXT_EXTENSIONS.has(extname(path))
+  );
 }
 
 const SECRET_RULES = [
@@ -50,17 +52,37 @@ const SECRET_RULES = [
   {
     rule: 'api-key',
     pattern: /\bsk-(?:proj-)?(?![xX]{20,}\b)[A-Za-z0-9_-]{20,}\b/,
+    // These are the two literal, non-provider fixture values used by the
+    // credential-account contract tests. Keep this list exact: test files and
+    // directories are never blanket-exempted from the secret scanner.
+    ignoredLiterals: new Set([
+      'sk-live-secret-version-one',
+      'sk-live-secret-version-two',
+    ]),
   },
 ];
 
 export function findSecretFindings(files) {
   return files.flatMap(({ path, text }) =>
-    text.split(/\r?\n/).flatMap((line, index) =>
-      SECRET_RULES.filter(({ pattern }) => pattern.test(line)).map(
-        ({ rule }) => ({ path, line: index + 1, rule })
+    text
+      .split(/\r?\n/)
+      .flatMap((line, index) =>
+        SECRET_RULES.filter((rule) => hasSecretMatch(line, rule)).map(
+          ({ rule }) => ({ path, line: index + 1, rule })
+        )
       )
-    )
   );
+}
+
+function hasSecretMatch(line, { pattern, ignoredLiterals }) {
+  const flags = pattern.flags.includes('g')
+    ? pattern.flags
+    : `${pattern.flags}g`;
+  const matches = line.matchAll(new RegExp(pattern.source, flags));
+  for (const match of matches) {
+    if (!ignoredLiterals?.has(match[0])) return true;
+  }
+  return false;
 }
 
 export function readExistingTextFiles(paths, readText) {
@@ -86,10 +108,7 @@ export function readSecretScanFiles({
     path,
     text: readIndexText(path),
   }));
-  const worktreeFiles = readExistingTextFiles(
-    worktreePaths,
-    readWorktreeText
-  );
+  const worktreeFiles = readExistingTextFiles(worktreePaths, readWorktreeText);
 
   return [...trackedFiles, ...worktreeFiles].sort((left, right) =>
     left.path.localeCompare(right.path)
@@ -100,13 +119,14 @@ export function analyzeBundleEntries(entries) {
   const initialJs = entries.find(({ name }) => /^main-.*\.js$/.test(name));
   const initialCss = entries.find(({ name }) => /^styles-.*\.css$/.test(name));
   if (!initialJs || !initialCss) {
-    throw new Error('Expected main JS and styles CSS production bundle entries.');
+    throw new Error(
+      'Expected main JS and styles CSS production bundle entries.'
+    );
   }
   const report = {
     initialCssGzipBytes: initialCss.gzipBytes,
     initialJsGzipBytes: initialJs.gzipBytes,
-    passed:
-      initialJs.gzipBytes <= 350_000 && initialCss.gzipBytes <= 80_000,
+    passed: initialJs.gzipBytes <= 350_000 && initialCss.gzipBytes <= 80_000,
   };
   return report;
 }
