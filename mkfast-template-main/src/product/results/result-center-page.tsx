@@ -120,6 +120,8 @@ export type ResultCenterPageProps = {
     }
   ) => DeliveryOutcome | undefined | Promise<DeliveryOutcome | undefined>;
   onAction?: (action: ResultAction, shell: ResultShellModel) => void;
+  actionBusy?: boolean;
+  actionError?: string;
   supportedActionIds?: readonly ResultAction['id'][];
   adjustConfirmation?: ReactNode;
   onDriftChoice?: (choice: ResultRevisionDriftChoice) => void;
@@ -308,6 +310,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
   const { view, tokenStream, drift } = projectResultCenterPageView(props);
   const actionEnabled = (action: ResultAction) =>
     action.enabled &&
+    !props.actionBusy &&
     Boolean(props.onAction) &&
     (props.supportedActionIds?.includes(action.id) ?? true);
 
@@ -427,6 +430,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
         <div
           className="flex flex-wrap gap-2"
           data-testid="result-shell-actions"
+          aria-busy={props.actionBusy ? 'true' : undefined}
         >
           {actions.primary ? (
             <Button
@@ -476,6 +480,16 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             </details>
           ) : null}
         </div>
+
+        {props.actionError ? (
+          <p
+            className="text-sm text-destructive"
+            data-testid="result-shell-action-error"
+            role="alert"
+          >
+            {props.actionError}
+          </p>
+        ) : null}
 
         {showCopyStream ? (
           <section

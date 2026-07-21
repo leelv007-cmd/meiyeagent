@@ -58,6 +58,8 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
   const [platformGenerationError, setPlatformGenerationError] = useState<
     string | undefined
   >();
+  const [adopting, setAdopting] = useState(false);
+  const [adoptionError, setAdoptionError] = useState<string | undefined>();
   useEffect(() => {
     setDraft({
       body: view.document.body,
@@ -336,14 +338,35 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       <AdjustPrompt onSubmit={props.onAdjust} />
 
       {props.facts.lifecycle === 'candidate' ? (
-        <Button
-          type="button"
-          data-testid="copy-adopt-action"
-          disabled={!props.onAdopt}
-          onClick={() => void props.onAdopt?.()}
-        >
-          采用此版本
-        </Button>
+        <div className="space-y-2">
+          <Button
+            type="button"
+            data-testid="copy-adopt-action"
+            disabled={!props.onAdopt || adopting}
+            onClick={async () => {
+              setAdopting(true);
+              setAdoptionError(undefined);
+              try {
+                await props.onAdopt?.();
+              } catch (error) {
+                setAdoptionError(
+                  error instanceof Error
+                    ? error.message
+                    : '采用版本失败，请重试。'
+                );
+              } finally {
+                setAdopting(false);
+              }
+            }}
+          >
+            {adopting ? '采用中…' : '采用此版本'}
+          </Button>
+          {adoptionError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {adoptionError}
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {/* Explicit: mobile never gates to desktop. */}

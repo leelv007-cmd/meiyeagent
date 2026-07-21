@@ -57,6 +57,18 @@ test('result route sends adopt and export through canonical public commands', ()
   assert.doesNotMatch(route, /accept_creative_asset/);
 });
 
+test('copy adoption generates formal platform variants from both result entry points', () => {
+  assert.match(
+    route,
+    /const adoptCopyCandidate = async \(\) => \{[\s\S]*?await generateCopyPlatformVariants\(adopted\)/
+  );
+  assert.match(
+    route,
+    /if \(workspaceKind === ['"]copy['"]\) \{[\s\S]*?await adoptCopyCandidate\(\)/
+  );
+  assert.match(route, /onCopyAdopt=\{[\s\S]*?adoptCopyCandidate/);
+});
+
 test('result route does not ship hard-coded empty works or copy workspace', () => {
   assert.doesNotMatch(route, /const works[^=]*=\s*\[\s*\]/);
   assert.doesNotMatch(

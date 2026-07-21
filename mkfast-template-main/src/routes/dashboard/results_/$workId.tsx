@@ -116,6 +116,10 @@ function ResultCenterRoutePage() {
     useState<PendingImageAdjust | null>(null);
   const [adjustBusy, setAdjustBusy] = useState(false);
   const [adjustError, setAdjustError] = useState<string | undefined>();
+  const [shellActionBusy, setShellActionBusy] = useState(false);
+  const [shellActionError, setShellActionError] = useState<
+    string | undefined
+  >();
   const deliveryViewport = useDeliveryViewport();
   const target = parseResultCenterSearch(workId, search);
   // ADR-0007 token stream — live partials for copy / image_text running phase.
@@ -651,17 +655,30 @@ function ResultCenterRoutePage() {
     await refreshCanonicalResult();
     return created;
   };
+  const adoptCopyCandidate = async () => {
+    if (!copyAsset) return;
+    const adopted = await adopt(
+      imageAssetIds.length > 0
+        ? {
+            copyAssetId: copyAsset.id,
+            kind: 'image_text',
+            orderedAssetIds: imageAssetIds,
+          }
+        : { copyAssetId: copyAsset.id, kind: 'copy' }
+    );
+    try {
+      await generateCopyPlatformVariants(adopted);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : '正式平台版本生成失败，请重试。';
+      throw new Error(`已采用当前版本，但${message}`);
+    }
+  };
   const adoptCurrentCandidate = async () => {
-    if (workspaceKind === 'copy' && copyAsset) {
-      await adopt(
-        imageAssetIds.length > 0
-          ? {
-              copyAssetId: copyAsset.id,
-              kind: 'image_text',
-              orderedAssetIds: imageAssetIds,
-            }
-          : { copyAssetId: copyAsset.id, kind: 'copy' }
-      );
+    if (workspaceKind === 'copy') {
+      await adoptCopyCandidate();
       return;
     }
     if (workspaceKind === 'image' && imageAssetIds.length > 0) {
@@ -838,6 +855,8 @@ function ResultCenterRoutePage() {
       videoWorksurface={videoWorksurface}
       restoreStore={returnRestore.store}
       currentRevisionId={currentRevisionId}
+      actionBusy={shellActionBusy}
+      actionError={shellActionError}
       supportedActionIds={supportedActionIds}
       adjustConfirmation={
         pendingImageAdjust ? (
@@ -859,24 +878,22 @@ function ResultCenterRoutePage() {
           </p>
         ) : undefined
       }
-      onAction={(action) => void handleShellAction(action)}
+      onAction={(action) => {
+        if (shellActionBusy) return;
+        setShellActionBusy(true);
+        setShellActionError(undefined);
+        void handleShellAction(action)
+          .catch((error) => {
+            setShellActionError(
+              error instanceof Error ? error.message : '操作失败，请重试。'
+            );
+          })
+          .finally(() => {
+            setShellActionBusy(false);
+          });
+      }}
       onDriftChoice={(choice) => returnRestore.applyDriftChoice(choice)}
-      onCopyAdopt={
-        copyAsset
-          ? async () => {
-              const adopted = await adopt(
-                imageAssetIds.length > 0
-                  ? {
-                      copyAssetId: copyAsset.id,
-                      kind: 'image_text',
-                      orderedAssetIds: imageAssetIds,
-                    }
-                  : { copyAssetId: copyAsset.id, kind: 'copy' }
-              );
-              await generateCopyPlatformVariants(adopted);
-            }
-          : undefined
-      }
+      onCopyAdopt={copyAsset ? adoptCopyCandidate : undefined}
       onCopyGeneratePlatformVariants={() => generateCopyPlatformVariants()}
       onCopyHandEdit={
         contentPackage?.currentVersionId

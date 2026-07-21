@@ -101,4 +101,20 @@ describe('copy / image_text worksurface', () => {
       'true',
     );
   });
+
+  it('keeps adoption failures visible and lets the user retry', async () => {
+    const user = userEvent.setup();
+    const onAdopt = vi
+      .fn()
+      .mockRejectedValue(new Error('正式平台版本生成失败'));
+    render(<CopyImageTextWorksurface facts={facts} onAdopt={onAdopt} />);
+
+    await user.click(screen.getByTestId('copy-adopt-action'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '正式平台版本生成失败'
+    );
+    expect(screen.getByTestId('copy-adopt-action')).toBeEnabled();
+    expect(onAdopt).toHaveBeenCalledTimes(1);
+  });
 });
