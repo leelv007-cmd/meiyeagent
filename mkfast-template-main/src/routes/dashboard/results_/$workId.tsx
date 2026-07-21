@@ -10,7 +10,11 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { StatePanel } from '@/components/uiux/state-panel';
 import { commandP1, operationsQuery, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import { useCopyCandidateStream } from '@/product/copy-stream';
+import {
+  buildCopyStreamRequestFromJob,
+  submitCopyCandidateStream,
+  useCopyCandidateStream,
+} from '@/product/copy-stream';
 import {
   creativeJobObservation,
   useCreativeJobObserver,
@@ -50,7 +54,7 @@ import type {
 import { resultCenterPath, resultPanels } from '@meiye/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type ResultCenterSearch = {
   contentId?: string;
@@ -114,6 +118,8 @@ function ResultCenterRoutePage() {
   const target = parseResultCenterSearch(workId, search);
   // ADR-0007 token stream — live partials for copy / image_text running phase.
   const copyCandidateStream = useCopyCandidateStream({ id: workId });
+  /** One submit per job+submissionKey; avoids replaying stream on re-render. */
+  const streamSubmitKeyRef = useRef<string | null>(null);
 
   const targetResolverQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'result_target_resolve', {
@@ -138,6 +144,45 @@ function ResultCenterRoutePage() {
       ),
     retry: false,
   });
+
+  // ADR-0007: actually start the copy token stream while Job is running/waiting.
+  // Hook wiring alone is not enough — useObject only streams after submit().
+  useEffect(() => {
+    if (!workbenchQuery.data) return;
+    const live = projectResultCenterLiveProjection(
+      workbenchQuery.data,
+      workId
+    );
+    const selected = live.selected;
+    if (!selected?.job) return;
+    const streamActive =
+      (selected.workspaceKind === 'copy' ||
+        selected.workspaceKind === 'image') &&
+      (selected.progressState === 'running' ||
+        selected.progressState === 'waiting');
+    if (!streamActive) return;
+    const request = buildCopyStreamRequestFromJob(selected.job);
+    if (!request) return;
+    const submitKey = `${selected.job.id}:${selected.job.submissionKey}`;
+    if (streamSubmitKeyRef.current === submitKey) return;
+    if (copyCandidateStream.isLoading) return;
+    if (
+      copyCandidateStream.object?.candidates &&
+      copyCandidateStream.object.candidates.length > 0
+    ) {
+      streamSubmitKeyRef.current = submitKey;
+      return;
+    }
+    streamSubmitKeyRef.current = submitKey;
+    submitCopyCandidateStream(copyCandidateStream.submit, request);
+  }, [
+    workbenchQuery.data,
+    workId,
+    copyCandidateStream.isLoading,
+    copyCandidateStream.object,
+    copyCandidateStream.submit,
+  ]);
+
   const contentPackagesQuery = useQuery({
     queryKey: p1QueryKeys.request('operations', 'content_packages'),
     queryFn: ({ signal }) =>

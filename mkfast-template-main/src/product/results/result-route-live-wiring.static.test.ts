@@ -66,6 +66,9 @@ test('result route wires live copy token stream (ADR-0007) for running phase', (
     route,
     /progressState === ['"]running['"][\s\S]*progressState === ['"]waiting['"]|progressState === ['"]waiting['"][\s\S]*progressState === ['"]running['"]/
   );
+  // Must actually submit — hook wiring alone never starts the stream.
+  assert.match(route, /submitCopyCandidateStream/);
+  assert.match(route, /buildCopyStreamRequestFromJob/);
 });
 
 test('wechat moments full-package action downloads canonical caption segments', () => {

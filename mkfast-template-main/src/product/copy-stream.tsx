@@ -81,6 +81,26 @@ export function submitCopyCandidateStream(
   submit(input);
 }
 
+/**
+ * Build a CopyStreamRequest from a running CreativeJob.
+ * Only copy.generate jobs participate in ADR-0007 token stream.
+ */
+export function buildCopyStreamRequestFromJob(job: {
+  workId: string;
+  submissionKey: string;
+  contract: CopyStreamRequest['contract'];
+}): CopyStreamRequest | null {
+  if (job.contract.operation !== 'copy.generate') return null;
+  if (!job.contract.catalogModelId?.trim()) return null;
+  if (!job.submissionKey?.trim()) return null;
+  return {
+    catalogModelId: job.contract.catalogModelId,
+    workId: job.workId,
+    submissionKey: job.submissionKey,
+    contract: job.contract,
+  };
+}
+
 export function CopyCandidateStream({
   candidates,
   streaming,

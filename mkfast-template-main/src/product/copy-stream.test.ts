@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildCopyStreamRequestFromJob,
   candidateHasToken,
   copyCandidateSlots,
   shouldShowCopyStreamPanel,
@@ -22,6 +23,52 @@ test('keeps three stable candidate slots while partial JSON arrives', () => {
       candidates: [{ title: '第一条' }, { body: '第二条正文' }],
     }),
     [{ title: '第一条' }, { body: '第二条正文' }, {}]
+  );
+});
+
+test('buildCopyStreamRequestFromJob only accepts copy.generate with full identity', () => {
+  const contract = {
+    operation: 'copy.generate' as const,
+    catalogModelId: 'llm-a',
+    catalogRevision: 'cat-1',
+    quoteRevision: 'q-1',
+    quoteAcceptedAt: '2026-07-21T00:00:00.000Z',
+    outputLabel: '文案',
+    estimatedAmount: 1,
+    currency: 'CNY',
+    outputCount: 3,
+    dataClass: [] as [],
+    watermarkEnabled: false,
+    aigcLabelEnabled: true,
+  };
+  assert.deepEqual(
+    buildCopyStreamRequestFromJob({
+      workId: 'work-1',
+      submissionKey: 'submit-1',
+      contract,
+    }),
+    {
+      catalogModelId: 'llm-a',
+      workId: 'work-1',
+      submissionKey: 'submit-1',
+      contract,
+    }
+  );
+  assert.equal(
+    buildCopyStreamRequestFromJob({
+      workId: 'work-1',
+      submissionKey: 'submit-1',
+      contract: { ...contract, operation: 'image.generate' },
+    }),
+    null
+  );
+  assert.equal(
+    buildCopyStreamRequestFromJob({
+      workId: 'work-1',
+      submissionKey: '  ',
+      contract,
+    }),
+    null
   );
 });
 

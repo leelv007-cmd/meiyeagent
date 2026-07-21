@@ -11,7 +11,7 @@
 |---|------|------------------------|-------------------|
 | 1 | Capability skeleton completion (inventory + D-051 six-question + drilldown + exceptions aggregable) | **GREEN** — `packages/contracts` inventory + `mkfast-template-main/src/p1/z2-accept-ap.test.tsx` | N/A (pure projection) |
 | 2 | Tri-modal dual-channel + story 30 main chain (procurement→publish→allocate→task→ledger→audit) | **GREEN** — `apps/core/src/p1/z2-accept/z2-accept.test.ts` recorded/fake | **GREEN** unit matrix on main; **GAP** live env-gated (see below) |
-| 3 | Publish gate: <2 qualified Deployments cannot mark multi-channel ready; single-channel no-fallback labeled | **GREEN** — core `publish-gate.ts` + admin supply overview SSR | **GAP** merchant user-selection page label (see below) |
+| 3 | Publish gate: <2 qualified Deployments cannot mark multi-channel ready; single-channel no-fallback labeled | **GREEN** — core `publish-gate.ts` + admin supply overview SSR + composer merchant select labels | **GREEN** dual-end label projection (admin + composer); not a live C5 claim |
 | 4 | D-048 interaction ban on ops main paths (no code/SQL/env/raw JSON/CLI) | **GREEN** — catalog / exception home / supply SSR unit assertions | **GAP** Playwright four-service e2e (see below) |
 | 5 | Gap list on disk (this file) | **GREEN** | — |
 
@@ -45,11 +45,12 @@
 
 | Field | Value |
 |-------|--------|
-| Status | **open** |
-| Why | Admin supply overview labels `单渠道 / 无回退` (gate 3 admin end **green**). Merchant-facing model selection / composer surface does **not** yet project `single-channel` / `no-fallback` badges from supply readiness. |
+| Status | **closed (code)** — 2026-07-21 Agent Team fix |
+| Why (was) | Admin supply overview labels `单渠道 / 无回退` (gate 3 admin end **green**). Merchant-facing model selection / composer surface did not project badges. |
 | Dual-end requirement (D-069) | User selection page **and** admin must both label single-channel / no-fallback. |
-| Mitigation | Gap explicit; do not claim dual-end complete until product selection surface wires `projectDualChannelCoverage` (or equivalent readiness projection). |
-| Related | J4 admin end done; product selection is #83 journey surface — coordinate, do not silent-fake. |
+| Landed | Admin: supply overview + model-settings badge. Merchant: Composer primary `catalogModel` select options + selected readiness line (`composer-home.tsx`, `data-channel-readiness`, same paraglide keys as ModelCardPicker). Static gate: `composer-channel-readiness.static.test.ts`. |
+| Related | F-J-01 closed on merchant select path; full ModelCardPicker card UI still optional polish. |
+| Claim allowed today | Dual-end single-channel / no-fallback **label projection** on merchant composer select + admin. Not a live C5 claim. |
 
 ### G-E2E-PLAYWRIGHT-D048 — four-service Playwright ops path
 
@@ -72,8 +73,9 @@
 ## Code-side notes (2026-07-21 review remediations)
 
 - Wave 0/1 + P2 code fixes landed on branch `fix/admin-supply-review-findings-2026-07-21` (F-G-01..05, F-S2-01..03, F-I-03). These do **not** close any G-LIVE-* item.
-- F-I-01 (`dualChannelReady` same-CatalogModel unit honesty) is **not** assumed fixed here; do not claim unit dual-channel matrix honesty until that finding is closed separately.
-- **G-LIVE-\*** and Playwright / merchant-label gaps remain **open** as above. #128 must not be claimed complete.
+- F-I-01 (`dualChannelReady` same-CatalogModel unit honesty) is **FIXED** in code (`fault-injection/matrix.ts` same-CatalogModel gate).
+- G-UI-MERCHANT-NO-FALLBACK **closed (code)** — composer primary model select projects channel readiness (2026-07-21 Agent Team).
+- **G-LIVE-\*** and G-E2E-PLAYWRIGHT-D048 remain **open**. #128 must not be claimed complete.
 
 ## What is explicitly **not** a gap
 

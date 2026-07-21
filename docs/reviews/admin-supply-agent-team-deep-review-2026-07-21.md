@@ -162,7 +162,7 @@
 | **F-H-02** | FIXED | H | RPM/TPM 死字段，测试写 rpm 却只断言 concurrency | `three-layer-capacity.ts`；`supply-pools.test.ts` | 实现滑动窗口 **或** 从契约/测试删除 rpm/tpm，避免假绿 |
 | **F-I-01** | FIXED | I | Unit `dualChannelReady` 不校验同 CatalogModel | `fault-injection/matrix.ts:63-66`；`matrix-models.ts` 跨模型 | unit 矩阵要求 `primary.catalogModelId === fallback.catalogModelId`；修正 matrix-models / fakes 对齐 handoff 或显式标 `channel_matrix_misaligned` |
 | **F-I-02** | KNOWN | I | Live C5 / fault injector 未跑 | accept-gaps G-LIVE-* | 开闸 `RUN_PROVIDER_LIVE_FAULT_INJECTION=1` + secrets + external hook；更新 gap 文件后才可宣称 |
-| **F-J-01** | PARTIAL | J/#83 | 商户端 single-channel/no-fallback 未挂主路径 | `ModelCardPicker` 仅 test 引用；gap G-UI-MERCHANT-NO-FALLBACK | model-settings ModelCard 已挂 `channelReadiness` badge；composer 全量 ModelCardPicker 仍 deferred |
+| **F-J-01** | FIXED | J/#83 | 商户端 single-channel/no-fallback 未挂主路径 | 曾：`ModelCardPicker` 仅 test 引用 | **FIXED 2026-07-21**：composer 主路径 `catalogModel` select + readiness 行（`composer-home.tsx` + static gate）；model-settings badge 保留；ModelCardPicker 全卡 UI 仍为可选 polish |
 | **F-J-02** | FIXED | J | Live 路由模拟器缺席 | `admin-supply-control.tsx:185-187` | 接 Core route simulate 命令；禁止仅 fixture 可见 |
 | **F-KZ-01** | FIXED | KZ | service-token 提权面过大 + 非 timing-safe | `server.ts` p1Identity；`authorizer` worker_bypass | timingSafeEqual；worker/payment 独立凭证或 mTLS；缩小 actor 可设范围 |
 | **F-KZ-02** | FIXED | KZ | authorizer 可选 → 内部静默全开 | `application-service.ts:171` | 生产构造 **require** authorizer 或默认 `createPermissionAuthorizer()` |

@@ -23,6 +23,8 @@ import {
   creation_entry_intent_aria,
   creation_entry_intent_placeholder,
   creation_entry_submit,
+  model_card_channel_multi,
+  model_card_channel_single,
   workbench_operation_failed,
   workbench_work_create_failed,
   workbench_work_created,
@@ -1021,37 +1023,66 @@ export function ComposerHome({
                     {field.def.label}
                   </label>
                   {field.def.key === 'catalogModel' ? (
-                    <select
-                      className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
-                      id="composer-setting-input-catalogModel"
-                      value={selectedModel?.id ?? ''}
-                      onChange={(event) => {
-                        const next = catalog.models.find(
-                          (model) => model.id === event.target.value
-                        );
-                        if (!next) return;
-                        setLensState((current) =>
-                          updateSettings(
-                            current,
-                            {
-                              catalogModelId: next.id,
-                              catalogModelName: next.displayName,
-                              catalogModelRevision: catalogRevision,
-                              modelPolicyMode: 'fixed',
-                            },
-                            'user'
-                          )
-                        );
-                      }}
-                    >
-                      {catalog.models
-                        .filter((model) => model.available)
-                        .map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.displayName}
-                          </option>
-                        ))}
-                    </select>
+                    <>
+                      <select
+                        className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
+                        data-testid="composer-catalog-model-select"
+                        id="composer-setting-input-catalogModel"
+                        value={selectedModel?.id ?? ''}
+                        onChange={(event) => {
+                          const next = catalog.models.find(
+                            (model) => model.id === event.target.value
+                          );
+                          if (!next) return;
+                          setLensState((current) =>
+                            updateSettings(
+                              current,
+                              {
+                                catalogModelId: next.id,
+                                catalogModelName: next.displayName,
+                                catalogModelRevision: catalogRevision,
+                                modelPolicyMode: 'fixed',
+                              },
+                              'user'
+                            )
+                          );
+                        }}
+                      >
+                        {catalog.models
+                          .filter((model) => model.available)
+                          .map((model) => {
+                            const channelLabel =
+                              model.channelReadiness === 'multi_channel_ready'
+                                ? model_card_channel_multi()
+                                : model.channelReadiness === 'single_channel'
+                                  ? model_card_channel_single()
+                                  : undefined;
+                            return (
+                              <option key={model.id} value={model.id}>
+                                {channelLabel
+                                  ? `${model.displayName} · ${channelLabel}`
+                                  : model.displayName}
+                              </option>
+                            );
+                          })}
+                      </select>
+                      {selectedModel?.channelReadiness === 'single_channel' ||
+                      selectedModel?.channelReadiness ===
+                        'multi_channel_ready' ? (
+                        <p
+                          className="mt-1 text-xs text-muted-foreground"
+                          data-channel-readiness={
+                            selectedModel.channelReadiness
+                          }
+                          data-testid="composer-model-channel-readiness"
+                        >
+                          {selectedModel.channelReadiness ===
+                          'multi_channel_ready'
+                            ? model_card_channel_multi()
+                            : model_card_channel_single()}
+                        </p>
+                      ) : null}
+                    </>
                   ) : field.def.key === 'aspectRatio' ? (
                     <select
                       className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
