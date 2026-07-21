@@ -44,7 +44,7 @@ describe('copy / image_text worksurface', () => {
     expect(screen.getByTestId('result-adjust-prompt')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('还想怎么改？')).toBeInTheDocument();
     expect(screen.getByTestId('copy-adopt-action')).toHaveTextContent(
-      '采用此版本',
+      '采用此版本'
     );
   });
 
@@ -52,17 +52,16 @@ describe('copy / image_text worksurface', () => {
     const user = userEvent.setup();
     const onAdjust = vi.fn();
     render(<CopyImageTextWorksurface facts={facts} onAdjust={onAdjust} />);
-    await user.type(
-      screen.getByTestId('result-adjust-input'),
-      '语气更柔和',
-    );
+    await user.type(screen.getByTestId('result-adjust-input'), '语气更柔和');
     await user.click(screen.getByTestId('result-adjust-submit'));
     expect(onAdjust).toHaveBeenCalledWith('语气更柔和');
   });
 
   it('mobile never shows 请到桌面继续', () => {
     render(<CopyImageTextWorksurface facts={facts} />);
-    expect(screen.getByTestId('copy-mobile-desktop-gate')).toBeEmptyDOMElement();
+    expect(
+      screen.getByTestId('copy-mobile-desktop-gate')
+    ).toBeEmptyDOMElement();
     expect(screen.queryByText(/请到桌面/)).toBeNull();
   });
 
@@ -83,11 +82,11 @@ describe('copy / image_text worksurface', () => {
             },
           ],
         }}
-      />,
+      />
     );
     // Body is client-concat → treated as missing formal variant (pending).
     expect(
-      screen.getByTestId('copy-platform-preview-pending'),
+      screen.getByTestId('copy-platform-preview-pending')
     ).toBeInTheDocument();
   });
 
@@ -98,7 +97,7 @@ describe('copy / image_text worksurface', () => {
     await user.click(screen.getByTestId('copy-carrier-wechat_moments'));
     expect(screen.getByTestId('copy-carrier-wechat_moments')).toHaveAttribute(
       'data-active',
-      'true',
+      'true'
     );
   });
 });

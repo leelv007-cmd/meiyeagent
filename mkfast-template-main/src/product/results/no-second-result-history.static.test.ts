@@ -44,10 +44,7 @@ function walkTsFiles(dir: string): string[] {
       out.push(...walkTsFiles(full));
       continue;
     }
-    if (
-      entry.endsWith('.ts') ||
-      entry.endsWith('.tsx')
-    ) {
+    if (entry.endsWith('.ts') || entry.endsWith('.tsx')) {
       // Skip this static test file itself (contains forbidden strings as data).
       if (entry === 'no-second-result-history.static.test.ts') continue;
       out.push(full);
@@ -69,9 +66,7 @@ test('product/results source tree has no Result table / second history', () => {
     const source = readFileSync(file, 'utf8');
     for (const pattern of FORBIDDEN_PATTERNS) {
       if (pattern.re.test(source)) {
-        violations.push(
-          `${relative(RESULTS_DIR, file)}: ${pattern.name}`,
-        );
+        violations.push(`${relative(RESULTS_DIR, file)}: ${pattern.name}`);
       }
     }
   }
@@ -79,14 +74,14 @@ test('product/results source tree has no Result table / second history', () => {
   assert.deepEqual(
     violations,
     [],
-    `Forbidden Result entity / history patterns:\n${violations.join('\n')}`,
+    `Forbidden Result entity / history patterns:\n${violations.join('\n')}`
   );
 });
 
 test('shell model module documents projection-only ownership', () => {
   const shellSource = readFileSync(
     join(RESULTS_DIR, 'result-shell-model.ts'),
-    'utf8',
+    'utf8'
   );
   assert.match(shellSource, /Projection only/i);
   assert.match(shellSource, /no Result table/i);
@@ -98,7 +93,7 @@ test('shell model module documents projection-only ownership', () => {
 test('ContentPackageResults is not remapped as Result Shell', () => {
   const shellSource = readFileSync(
     join(RESULTS_DIR, 'result-shell-model.ts'),
-    'utf8',
+    'utf8'
   );
   // Documentation must keep the semantic boundary.
   assert.match(shellSource, /ContentPackageResults/);

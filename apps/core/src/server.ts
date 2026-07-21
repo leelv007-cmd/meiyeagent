@@ -53,6 +53,10 @@ import {
 
 interface CoreServerDependencies {
   assetReader?: {
+    deleteCanvasAsset?(input: {
+      objectKey: string;
+      workspaceId: string;
+    }): Promise<void>;
     putCanvasAsset?(input: {
       bytes: Uint8Array;
       objectKey: string;
@@ -141,9 +145,33 @@ interface ErrorPayload {
   details?: Record<string, unknown>;
 }
 
+const MAX_JSON_BODY_BYTES = 1024 * 1024;
+const MAX_JSON_DEPTH = 64;
+const MAX_JSON_NODES = 50_000;
+const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/u;
+
 function correlationId(request: IncomingMessage) {
   const value = request.headers['x-correlation-id'];
-  return typeof value === 'string' && value.length > 0 ? value : randomUUID();
+  return typeof value === 'string' && SAFE_REQUEST_ID.test(value)
+    ? value
+    : randomUUID();
+}
+
+function requiredIdempotencyKey(request: IncomingMessage) {
+  const value = request.headers['idempotency-key'];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new DomainError(
+      'IDEMPOTENCY_KEY_REQUIRED',
+      'Idempotency key is required.'
+    );
+  }
+  if (!SAFE_REQUEST_ID.test(value)) {
+    throw new DomainError(
+      'INVALID_IDEMPOTENCY_KEY',
+      'Idempotency key is invalid.'
+    );
+  }
+  return value;
 }
 
 function sendJson<T>(
@@ -176,12 +204,6 @@ function sendError(
     'content-type': 'application/json; charset=utf-8',
   });
   response.end(JSON.stringify(payload));
-}
-
-async function readBody(request: IncomingMessage) {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks);
 }
 
 function readBodyUpTo(request: IncomingMessage, maxBytes: number) {
@@ -220,9 +242,53 @@ function readBodyUpTo(request: IncomingMessage, maxBytes: number) {
 }
 
 async function readJson(request: IncomingMessage) {
-  const body = await readBody(request);
+  const declaredLength = request.headers['content-length'];
+  if (
+    typeof declaredLength === 'string' &&
+    /^\d+$/u.test(declaredLength) &&
+    Number(declaredLength) > MAX_JSON_BODY_BYTES
+  ) {
+    throw requestBodyTooLarge();
+  }
+  const body = await readBodyUpTo(request, MAX_JSON_BODY_BYTES);
+  if (!body) throw requestBodyTooLarge();
   if (body.byteLength === 0) return {};
-  return JSON.parse(body.toString('utf8')) as Record<string, unknown>;
+  const value = JSON.parse(body.toString('utf8')) as unknown;
+  assertJsonComplexity(value);
+  return value as Record<string, unknown>;
+}
+
+function requestBodyTooLarge() {
+  return new DomainError(
+    'REQUEST_BODY_TOO_LARGE',
+    'JSON request body exceeds the 1 MiB limit.',
+    413
+  );
+}
+
+function assertJsonComplexity(value: unknown) {
+  const stack: Array<{ depth: number; value: unknown }> = [
+    { depth: 1, value },
+  ];
+  let nodes = 0;
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    nodes += 1;
+    if (nodes > MAX_JSON_NODES || current.depth > MAX_JSON_DEPTH) {
+      throw new DomainError(
+        'JSON_TOO_COMPLEX',
+        'JSON request body exceeds the complexity limit.',
+        400
+      );
+    }
+    if (!current.value || typeof current.value !== 'object') continue;
+    const children = Array.isArray(current.value)
+      ? current.value
+      : Object.values(current.value);
+    for (const child of children) {
+      stack.push({ depth: current.depth + 1, value: child });
+    }
+  }
 }
 
 function routeId(pathname: string, suffix: string) {
@@ -1104,7 +1170,9 @@ export function createCoreServer({
     }
 
     if (
-      (request.method === 'GET' || request.method === 'PUT') &&
+      (request.method === 'DELETE' ||
+        request.method === 'GET' ||
+        request.method === 'PUT') &&
       assetReader &&
       url.pathname.startsWith('/v1/assets/')
     ) {
@@ -1136,6 +1204,38 @@ export function createCoreServer({
           },
           requestCorrelationId
         );
+        return;
+      }
+      if (request.method === 'DELETE') {
+        if (!assetReader.deleteCanvasAsset) {
+          sendError(
+            response,
+            404,
+            {
+              code: 'ASSET_DELETE_UNAVAILABLE',
+              message: 'Asset storage does not support deletion.',
+            },
+            requestCorrelationId
+          );
+          return;
+        }
+        try {
+          await assetReader.deleteCanvasAsset({ objectKey, workspaceId });
+          response.writeHead(204, {
+            'x-correlation-id': requestCorrelationId,
+          });
+          response.end();
+        } catch {
+          sendError(
+            response,
+            500,
+            {
+              code: 'ASSET_DELETE_FAILED',
+              message: 'Asset could not be deleted.',
+            },
+            requestCorrelationId
+          );
+        }
         return;
       }
       if (request.method === 'PUT') {
@@ -1284,13 +1384,7 @@ export function createCoreServer({
     const commandWorkspaceId = workspaceRoute(url.pathname, 'commands');
     if (request.method === 'POST' && commandWorkspaceId && productService) {
       try {
-        const idempotencyKey = request.headers['idempotency-key'];
-        if (typeof idempotencyKey !== 'string' || idempotencyKey.length === 0) {
-          throw new DomainError(
-            'IDEMPOTENCY_KEY_REQUIRED',
-            'Idempotency key is required.'
-          );
-        }
+        const idempotencyKey = requiredIdempotencyKey(request);
         const parsedCommand = productCommandSchema.safeParse(
           await readJson(request)
         );
@@ -1342,13 +1436,7 @@ export function createCoreServer({
       p1ApplicationService
     ) {
       try {
-        const idempotencyKey = request.headers['idempotency-key'];
-        if (typeof idempotencyKey !== 'string' || idempotencyKey.length === 0) {
-          throw new DomainError(
-            'IDEMPOTENCY_KEY_REQUIRED',
-            'Idempotency key is required.'
-          );
-        }
+        const idempotencyKey = requiredIdempotencyKey(request);
         const parsed = p1ModuleRequestSchema.safeParse(await readJson(request));
         if (!parsed.success) {
           throw new DomainError(

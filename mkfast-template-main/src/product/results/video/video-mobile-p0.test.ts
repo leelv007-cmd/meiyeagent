@@ -48,7 +48,7 @@ describe('mobile video P0 actions', () => {
     let mobile = projectVideoMobileP0Actions(state);
     assert.equal(
       mobile.mediaActions.find((a) => a.id === 'play')?.label,
-      '暂停',
+      '暂停'
     );
 
     const adopted = adoptComposedFilm(state, {
@@ -67,7 +67,7 @@ describe('mobile video P0 actions', () => {
     // Media P0 still available post-delivery for review.
     assert.deepEqual(
       mobile.mediaActions.map((a) => a.id),
-      ['play', 'light_cover', 'subtitle_proof'],
+      ['play', 'light_cover', 'subtitle_proof']
     );
   });
 

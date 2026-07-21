@@ -131,225 +131,227 @@ const FORBIDS = {
  * Canonical action table. Permission is the product contract; when Core has
  * registered the (module, action) pair, `requiredP1Capability` must match.
  */
-export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] = [
-  {
-    id: 'connectivity_probe',
-    label: '连通探针',
-    description: '对 Deployment/凭据发起连通探针（非激活）',
-    module: 'model-supply',
-    action: 'activation_probe_run',
-    kind: 'command',
-    requiredPermission: 'platform.manage',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'conformance_probe',
-    label: 'Conformance 探针',
-    description: '运行模态 conformance 探针并记录证据',
-    module: 'model-supply',
-    action: 'activation_probe_run',
-    kind: 'command',
-    requiredPermission: 'platform.manage',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'candidate_config_save',
-    label: '候选配置保存',
-    description: '基于当前 RoutePolicy head 保存新的不可变候选 revision（不发布）',
-    module: 'model-supply',
-    action: 'admin_supply_action',
-    kind: 'command',
-    requiredPermission: 'platform.manage',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'candidate_config_validate',
-    label: '候选配置验证',
-    description: '验证候选 RoutePolicy / Deployment 配置（不发布）',
-    module: 'model-supply',
-    action: 'route_simulation',
-    kind: 'query',
-    requiredPermission: 'platform.manage',
-    requiresImpactPreview: true,
-    requiresReason: false,
-    casIdempotency: false,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'route_simulate',
-    label: '路由模拟',
-    description: '硬过滤/排序/实时排除/成本/接受态共用解释投影',
-    module: 'model-supply',
-    action: 'route_simulation',
-    kind: 'query',
-    requiredPermission: 'platform.manage',
-    requiresImpactPreview: false,
-    requiresReason: false,
-    casIdempotency: false,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'publish',
-    label: '发布',
-    description: '发布 catalog / route policy revision（经发布门）',
-    module: 'model-supply',
-    action: 'catalog_publish',
-    kind: 'command',
-    requiredPermission: 'config.publish',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'rollback',
-    label: '回滚',
-    description: '回滚到已知 revision（新 revision，不原地覆盖）',
-    module: 'model-supply',
-    action: 'catalog_rollback',
-    kind: 'command',
-    requiredPermission: 'config.publish',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'channel_isolate',
-    label: '渠道隔离',
-    description: '隔离 ExecutionChannel / Deployment，停止新流量',
-    module: 'model-supply',
-    action: 'isolate_channel',
-    kind: 'command',
-    requiredPermission: 'channel.lifecycle.manage',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: true,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'channel_recover',
-    label: '渠道恢复',
-    description: '从隔离/排空恢复渠道接收任务',
-    module: 'model-supply',
-    action: 'recover_channel',
-    kind: 'command',
-    requiredPermission: 'channel.lifecycle.manage',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: true,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'stop_new_tasks',
-    label: '停止接收新任务',
-    description: '渠道停止接单（在途任务继续；可恢复）',
-    module: 'model-supply',
-    action: 'isolate_channel',
-    kind: 'command',
-    requiredPermission: 'channel.lifecycle.manage',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: true,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'drain',
-    label: '排空',
-    description: '可逆排空：停新任务，等待异步媒体完成后退役/轮换',
-    module: 'model-supply',
-    action: 'drain_channel',
-    kind: 'command',
-    requiredPermission: 'channel.lifecycle.manage',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: true,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'credential_rotate',
-    label: '凭据轮换',
-    description: '写入新 secret reference 并追加版本（不回显密钥）',
-    module: 'integrations',
-    action: 'admin_rotate_provider_credential',
-    kind: 'command',
-    requiredPermission: 'credential.govern',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: true,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'pre_revoke_impact_check',
-    label: '撤销前影响检查',
-    description: '撤销/退役前预览受影响 Deployment、池与在途任务',
-    module: 'integrations',
-    action: 'admin_provider_credentials',
-    kind: 'query',
-    requiredPermission: 'credential.govern',
-    requiresImpactPreview: true,
-    requiresReason: true,
-    casIdempotency: false,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-  {
-    id: 'health_balance_refresh',
-    label: '健康/余额刷新',
-    description: '刷新健康 overlay 与余额/限额证据（只读副作用）',
-    module: 'model-supply',
-    action: 'activation_status',
-    kind: 'query',
-    requiredPermission: 'platform.manage',
-    requiresImpactPreview: false,
-    requiresReason: false,
-    casIdempotency: true,
-    reversibleDrain: false,
-    immutableAudit: true,
-    forbids: FORBIDS,
-  },
-] as const;
+export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
+  [
+    {
+      id: 'connectivity_probe',
+      label: '连通探针',
+      description: '对 Deployment/凭据发起连通探针（非激活）',
+      module: 'model-supply',
+      action: 'activation_probe_run',
+      kind: 'command',
+      requiredPermission: 'platform.manage',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'conformance_probe',
+      label: 'Conformance 探针',
+      description: '运行模态 conformance 探针并记录证据',
+      module: 'model-supply',
+      action: 'activation_probe_run',
+      kind: 'command',
+      requiredPermission: 'platform.manage',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'candidate_config_save',
+      label: '候选配置保存',
+      description:
+        '基于当前 RoutePolicy head 保存新的不可变候选 revision（不发布）',
+      module: 'model-supply',
+      action: 'admin_supply_action',
+      kind: 'command',
+      requiredPermission: 'platform.manage',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'candidate_config_validate',
+      label: '候选配置验证',
+      description: '验证候选 RoutePolicy / Deployment 配置（不发布）',
+      module: 'model-supply',
+      action: 'route_simulation',
+      kind: 'query',
+      requiredPermission: 'platform.manage',
+      requiresImpactPreview: true,
+      requiresReason: false,
+      casIdempotency: false,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'route_simulate',
+      label: '路由模拟',
+      description: '硬过滤/排序/实时排除/成本/接受态共用解释投影',
+      module: 'model-supply',
+      action: 'route_simulation',
+      kind: 'query',
+      requiredPermission: 'platform.manage',
+      requiresImpactPreview: false,
+      requiresReason: false,
+      casIdempotency: false,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'publish',
+      label: '发布',
+      description: '发布 catalog / route policy revision（经发布门）',
+      module: 'model-supply',
+      action: 'catalog_publish',
+      kind: 'command',
+      requiredPermission: 'config.publish',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'rollback',
+      label: '回滚',
+      description: '回滚到已知 revision（新 revision，不原地覆盖）',
+      module: 'model-supply',
+      action: 'catalog_rollback',
+      kind: 'command',
+      requiredPermission: 'config.publish',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'channel_isolate',
+      label: '渠道隔离',
+      description: '隔离 ExecutionChannel / Deployment，停止新流量',
+      module: 'model-supply',
+      action: 'isolate_channel',
+      kind: 'command',
+      requiredPermission: 'channel.lifecycle.manage',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: true,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'channel_recover',
+      label: '渠道恢复',
+      description: '从隔离/排空恢复渠道接收任务',
+      module: 'model-supply',
+      action: 'recover_channel',
+      kind: 'command',
+      requiredPermission: 'channel.lifecycle.manage',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: true,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'stop_new_tasks',
+      label: '停止接收新任务',
+      description: '渠道停止接单（在途任务继续；可恢复）',
+      module: 'model-supply',
+      action: 'isolate_channel',
+      kind: 'command',
+      requiredPermission: 'channel.lifecycle.manage',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: true,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'drain',
+      label: '排空',
+      description: '可逆排空：停新任务，等待异步媒体完成后退役/轮换',
+      module: 'model-supply',
+      action: 'drain_channel',
+      kind: 'command',
+      requiredPermission: 'channel.lifecycle.manage',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: true,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'credential_rotate',
+      label: '凭据轮换',
+      description: '写入新 secret reference 并追加版本（不回显密钥）',
+      module: 'integrations',
+      action: 'admin_rotate_provider_credential',
+      kind: 'command',
+      requiredPermission: 'credential.govern',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: true,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'pre_revoke_impact_check',
+      label: '撤销前影响检查',
+      description: '撤销/退役前预览受影响 Deployment、池与在途任务',
+      module: 'integrations',
+      action: 'admin_provider_credentials',
+      kind: 'query',
+      requiredPermission: 'credential.govern',
+      requiresImpactPreview: true,
+      requiresReason: true,
+      casIdempotency: false,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+    {
+      id: 'health_balance_refresh',
+      label: '健康/余额刷新',
+      description: '刷新健康 overlay 与余额/限额证据（只读副作用）',
+      module: 'model-supply',
+      action: 'activation_status',
+      kind: 'query',
+      requiredPermission: 'platform.manage',
+      requiresImpactPreview: false,
+      requiresReason: false,
+      casIdempotency: true,
+      reversibleDrain: false,
+      immutableAudit: true,
+      forbids: FORBIDS,
+    },
+  ] as const;
 
 const BY_ID = new Map(
-  GOVERNED_QUICK_ACTIONS.map((action) => [action.id, action]),
+  GOVERNED_QUICK_ACTIONS.map((action) => [action.id, action])
 );
 
 export function getGovernedQuickAction(
-  id: GovernedQuickActionId,
+  id: GovernedQuickActionId
 ): GovernedQuickActionDefinition {
   const action = BY_ID.get(id);
   if (!action) {
@@ -363,7 +365,7 @@ export function getGovernedQuickAction(
  * Falls back to the definition's declared permission (pre-registered contract).
  */
 export function resolveActionPermission(
-  def: GovernedQuickActionDefinition,
+  def: GovernedQuickActionDefinition
 ): ProductCapability | null {
   const fromRegistry = requiredP1Capability(def.kind, def.module, def.action);
   return fromRegistry ?? def.requiredPermission;
@@ -371,7 +373,7 @@ export function resolveActionPermission(
 
 export function buildImpactPreview(
   def: GovernedQuickActionDefinition,
-  target: GovernedActionTarget,
+  target: GovernedActionTarget
 ): GovernedImpactPreview {
   const scope = `${def.label} → ${target.resourceType}:${target.resourceId}`;
   const changes: string[] = [];
@@ -388,79 +390,79 @@ export function buildImpactPreview(
       changes.push(
         `对 ${target.resourceId} 发起探针并写入证据`,
         '探针通过 ≠ 模型激活',
-        '结果规范化，不记录上游 Authorization / 完整 endpoint',
+        '结果规范化，不记录上游 Authorization / 完整 endpoint'
       );
       break;
     case 'candidate_config_save':
       changes.push(
         '保存新的不可变 RoutePolicy 候选 revision',
-        '不改变当前生效 head，后续仍需验证和发布',
+        '不改变当前生效 head，后续仍需验证和发布'
       );
       break;
     case 'candidate_config_validate':
       changes.push(
         '验证候选配置与硬过滤/数据政策',
-        '不改变生效 RoutePolicy / Catalog head',
+        '不改变生效 RoutePolicy / Catalog head'
       );
       break;
     case 'route_simulate':
       changes.push(
         '运行路由模拟（硬过滤/排序/实时排除/成本/接受态）',
-        '与任务审计共用解释投影',
+        '与任务审计共用解释投影'
       );
       break;
     case 'publish':
       changes.push(
         `CAS 发布 revision ${target.expectedRevisionId ?? target.resourceId}`,
         '仅新执行生效；历史 revision 保留',
-        '审计写入 actor / reason / before-after',
+        '审计写入 actor / reason / before-after'
       );
       warnings.push('必须通过发布门；不足双渠道不得标 multi-channel ready');
       break;
     case 'rollback':
       changes.push(
         `回滚到已知 revision ${target.resourceId}`,
-        '通过发布新 revision 完成，不原地覆盖',
+        '通过发布新 revision 完成，不原地覆盖'
       );
       break;
     case 'channel_isolate':
     case 'stop_new_tasks':
       changes.push(
         `隔离/停新任务：${target.resourceId}`,
-        '在途任务继续；可经恢复动作撤销',
+        '在途任务继续；可经恢复动作撤销'
       );
       break;
     case 'channel_recover':
       changes.push(
         `恢复渠道 ${target.resourceId} 接收新任务`,
-        '恢复不绕过健康/激活证据门',
+        '恢复不绕过健康/激活证据门'
       );
       break;
     case 'drain':
       changes.push(
         `开始可逆排空：${target.resourceId}`,
         '停止新任务；等待异步媒体完成',
-        '排空可取消/恢复，不静默换凭据',
+        '排空可取消/恢复，不静默换凭据'
       );
       break;
     case 'credential_rotate':
       changes.push(
         `轮换凭据 ${target.resourceId}：追加版本快照`,
         'secret 只写 KMS/SecretStore，永不回显',
-        '运行中任务冻结旧版本',
+        '运行中任务冻结旧版本'
       );
       break;
     case 'pre_revoke_impact_check':
       changes.push(
         `预览撤销 ${target.resourceId} 的影响面`,
         '列出受影响 Deployment / Pool / 在途任务',
-        '本动作不执行撤销',
+        '本动作不执行撤销'
       );
       break;
     case 'health_balance_refresh':
       changes.push(
         `刷新 ${target.resourceId} 健康/余额证据`,
-        '只读刷新；失败显式 unknown/stale',
+        '只读刷新；失败显式 unknown/stale'
       );
       break;
   }
@@ -476,11 +478,11 @@ export function buildImpactPreview(
 export function buildGovernedCommand(
   def: GovernedQuickActionDefinition,
   target: GovernedActionTarget,
-  reason?: string,
+  reason?: string
 ): GovernedTypedCommand {
   if (def.requiresReason && !isValidImpactReason(reason ?? '')) {
     throw new Error(
-      'Governed action requires a concrete audit reason (≥8 chars).',
+      'Governed action requires a concrete audit reason (≥8 chars).'
     );
   }
 
@@ -511,7 +513,8 @@ export function buildGovernedCommand(
     case 'route_simulate':
     case 'candidate_config_validate':
       payload.operation = target.resourceId;
-      payload.mode = def.id === 'candidate_config_validate' ? 'validate' : 'simulate';
+      payload.mode =
+        def.id === 'candidate_config_validate' ? 'validate' : 'simulate';
       break;
     case 'publish':
     case 'rollback':
@@ -628,20 +631,22 @@ export function buildGovernedActionContractPack(input: {
   const def = getGovernedQuickAction(input.id);
   const reasonValid = isValidImpactReason(input.reason);
   if (def.requiresReason && !reasonValid) {
-    throw new Error('Governed action requires a concrete audit reason (≥8 chars).');
+    throw new Error(
+      'Governed action requires a concrete audit reason (≥8 chars).'
+    );
   }
 
   const registryPermission = requiredP1Capability(
     def.kind,
     def.module,
-    def.action,
+    def.action
   );
   const permission = registryPermission ?? def.requiredPermission;
   const preview = buildImpactPreview(def, input.target);
   const command = buildGovernedCommand(
     def,
     input.target,
-    def.requiresReason ? input.reason : input.reason || undefined,
+    def.requiresReason ? input.reason : input.reason || undefined
   );
   const audit = buildGovernedAuditProjection({
     def,

@@ -16,11 +16,7 @@ export const QUOTA_BLOCK_SUCCESS_LABEL = '兑换成功，可继续创作';
 export const QUOTA_BLOCK_FAILED_LABEL = '兑换失败，请检查兑换码';
 export const QUOTA_BLOCK_OPEN_PLANS_LABEL = '查看套餐';
 
-export type QuotaRedeemStatus =
-  | 'idle'
-  | 'pending'
-  | 'success'
-  | 'error';
+export type QuotaRedeemStatus = 'idle' | 'pending' | 'success' | 'error';
 
 export type QuotaBlockingState = {
   /** True when creation is blocked by exhausted quota. */
@@ -50,9 +46,7 @@ export type QuotaBlockingView = {
   canContinueCreation: boolean;
 };
 
-export function createQuotaBlockingState(
-  blocked = false
-): QuotaBlockingState {
+export function createQuotaBlockingState(blocked = false): QuotaBlockingState {
   return {
     blocked,
     unlocked: false,

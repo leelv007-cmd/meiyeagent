@@ -1,466 +1,174 @@
-# 项目深度代码审查复核与裁定报告
+# 项目深度代码审查复核、裁定与修复验收报告
 
 > 修订日期：2026-07-22
 > 原报告来源：Claude 深度 Review
-> 复核基线：main / 50f33ebdfeab703bfcb0b674bf147eb288278fcd
-> 复核分支：review/gptpro-0722-revalidation
-> 复核方法：Agent Team 分轴静态审查、调用链追踪、最小复现、目标测试、本地质量门禁与 GitHub Actions 实时证据核验
+> 复核基线：`main` / `50f33ebdfeab703bfcb0b674bf147eb288278fcd`
+> 修复分支：`review/gptpro-0722-revalidation`
+> 工作树：`/Users/bin/Desktop/开发/内容无人区/美业内容2-review-0722`
 
 ## 1. 当前结论
 
-**结论：当前不通过，阻断合并与生产发布。**
+**代码层修复已完成并在本地独立环境验证，可作为合并候选；生产发布仍不放行。**
 
-原因不是原报告所写的“3 个 P1、8 个 P2”这一机械计数，而是以下事实已经得到复核：
+这不是把原报告的风险“降级为文档问题”。原报告中 21 个应采纳项均已落实为代码、迁移、测试或 CI 合同；审阅过程中新增发现的支付崩溃窗口、滚动迁移兼容、旧头像断链、Canvas 孤儿对象、生产 S3 回退和 C-12 证据错绑，也已在本分支修复。
 
-1. 与基线提交完全绑定的 GitHub Core quality run 29850363565 已失败，而不是“没有可见 CI 结果”。
-2. Stripe Customer 归属与支付 Webhook claim 顺序存在两个条件性 P1。
-3. 公网 Webhook、上传入口的传输层资源边界不足；Core、Canvas 还有认证后资源耗尽风险。
-4. Web、Canvas 的本地快速门禁并非全绿，当前没有可复用的成功 CI 基线。
-5. 多项原报告结论成立，但严重级别、攻击前提、影响范围或修复方案需要收窄。
-6. 12 项产品、迁移和运行策略已于 2026-07-22 完成决策，实施不得再回退为开放选项。
+生产发布仍被以下仓库外证据阻断：GitHub required checks/保护环境尚未配置，真实 Provider Live 与生产私网/WAF/Ingress 证据未提供，生产 Stripe 存量审计与历史头像异常账户处置尚未执行。它们不能被本地测试伪装为“已通过”。
 
-本报告把“是否采纳”和“严重级别”分开。P1/P2/P3 表示风险；“采纳/不采纳/需决策”表示处置结论。
+| 层级 | 当前状态 | 含义 |
+| --- | --- | --- |
+| 代码与迁移 | 通过 | 所有已采纳修复均有本地回归、空库/真实 PostgreSQL 或构建证据。 |
+| 普通 PR 门禁代码 | 通过 | 已定义 Web + Canvas 全量快速门禁和仓库守卫，无 path filter。 |
+| 发布候选代码 | 通过 | 已定义构建、四服务 E2E、SCA、C-12 SHA 绑定契约。 |
+| 生产部署/发布 | 阻断 | 需由仓库管理员与运维完成外部配置、数据处置和真实环境证据。 |
 
 ### 严重级别
 
 | 级别 | 含义 |
 | --- | --- |
-| P0 | 已确认的立即性灾难风险，必须停止运行 |
-| P1 | 可造成账户/支付边界破坏、事件静默丢失或当前发布基线失效 |
-| P2 | 重要安全、可靠性、数据一致性或工程门禁缺陷 |
-| P3 | 防御加固、治理或可维护性优化 |
+| P1 | 可导致支付/账户边界破坏、事件静默丢失或发布基线失效。 |
+| P2 | 重要安全、可靠性、数据一致性或工程门禁缺陷。 |
+| P3 | 防御加固、治理或可维护性优化。 |
 
-## 2. 实时验证证据
+## 2. 三分类裁定
 
-### 2.1 GitHub Actions
+### 2.1 需要采纳：已完成
 
-基线 SHA 50f33eb 对应的 Core quality：
+| ID | 最终处置 | 本次闭环证据 |
+| --- | --- | --- |
+| A-01 | 采纳并修复 CI 基线 | Contracts/Core/Web/Canvas 门禁全部可执行；Core 真实双库全量 0 fail。 |
+| A-02 | 采纳 C-01/C-02 Stripe 退役 | 阻止新增 Stripe Customer、checkout、Portal；保留历史生命周期 Webhook 与只读退役审计。 |
+| A-03 | 采纳 C-03 webhook outbox | 验签后原子 inbox/outbox、lease/token fencing、checkpoint/retry；补真实 PG 崩溃重领测试。 |
+| A-04 | 采纳公网 body 上限 | Webhook 512 KiB、JSON 1 MiB、上传约 11 MiB 均在读取阶段限制。 |
+| A-05 | 采纳 JSON/Canvas 复杂度边界 | 深度、节点数和媒体预算改为非递归边界检查。 |
+| A-06 | 采纳 mapped IPv6 SSRF 修复 | 二进制归一化后拒绝私网/metadata 映射地址，并保留公网 mapped 地址。 |
+| A-07 | 采纳调用 deadline | session 约 2.5 秒、普通内部调用 10 秒、流式 connect/idle 边界均接入 caller signal。 |
+| A-08 | 采纳支付目录校验 | 服务端 canonical catalog 在 DB/provider 前拒绝未知、错配、禁用和不可售价格。 |
+| A-09 | 采纳受控公开上传 | 仅 server-owned avatar 可公开；私有文件保留 DB/workspace 授权。 |
+| A-10 | 采纳存储补偿 | Web tombstone/outbox；Canvas metadata+delete 双失败会持久化 orphan compensation。 |
+| A-11 | 采纳日志脱敏 | Auth、Newsletter、Stripe、Creem Webhook 仅输出安全码/名称/阶段，不写 payload、signature、token、邮箱或原始 cause。 |
+| A-12 | 采纳凭据传输限制 | 携带 Authorization 的 safe fetch 只允许 HTTPS；降级跳转在 transport 前拒绝。 |
+| A-13 | 采纳模型 outbox 续租 | provider effect 的 lease heartbeat、fencing、已开始/已完成持久状态和恢复合同已补齐。 |
+| A-14 | 采纳支付开关拆分 | paid launch 不再关闭存量 Stripe webhook 生命周期处理。 |
+| A-15 | 采纳生产共享对象存储 | Main/Worker 共用 S3/R2 adapter；production/staging 缺明确 HTTPS public base URL 即 fail-closed。 |
+| A-16 | 采纳 Web/Canvas PR 门禁 | 每个 PR 运行 Web/Canvas 快速门禁；RC 执行 build、E2E、SCA。 |
+| A-17 | 采纳 header 信任边界 | 非法显式 idempotency key 返回 400；不安全 correlation ID 重新生成。 |
+| A-18 | 采纳 response disposal | redirect、非 2xx、MIME/大小拒绝及流失败均取消未消费 response body。 |
+| A-19 | 采纳 ffprobe timeout | 设定 timeout、Abort/SIGKILL 与稳定错误路径。 |
+| A-20 | 采纳 Stripe API version 治理 | 历史 Provider 显式锁定 SDK 兼容 API version，并有合同测试。 |
+| A-21 | 采纳 canonical payment URL | 浏览器不再提交完整 return URL；服务端生成 success/cancel/return canonical 地址。 |
 
-- Run：https://github.com/leelv007-cmd/meiyeweb-agent/actions/runs/29850363565
-- 状态：failure
-- core：@meiye/contracts typecheck 失败；后续 Core typecheck、Core test 被跳过
-- core-persistence：1914 tests，1858 pass，47 fail，9 skip
-- redline-evals：success
-- e2e、live-redteam：按当前条件 skipped
-- Provider live：当前仓库没有可见历史运行
+### 2.2 不需要采纳或必须改写的原表述
 
-上一条可见 Core quality run 29505878363 同样失败。因此当前没有成功 CI 基线。
+下表是对原报告“结论表达”的裁定，不是否认相关防御工作。
 
-### 2.2 本地复核
+| ID | 裁定 | 原因 |
+| --- | --- | --- |
+| B-01 | 不采纳 | 基线存在精确绑定的失败 CI run；不是“没有可见 CI 结果”。 |
+| B-02 | 不采纳原 P1 定级 | mapped IPv6 绕过成立，但 HTTPS、SNI/TLS 与 host 绑定缩小了原先声称的直接 metadata 影响。 |
+| B-03 | 不采纳 | Zod 拒绝 protocol-relative URL，`//attacker.example` 不能按原说法进入。 |
+| B-04 | 不采纳确定性泄露说法 | 调用者本已获得 session ID；真实风险是托管支付后的社会工程跳转。 |
+| B-05 | 不采纳 | 没有仓库证据证明 R2 bucket 本身公开。 |
+| B-06 | 不采纳“已形成存储型 XSS” | `nosniff`/attachment 已缓解；真实问题是公开授权、审计、治理和成本滥用。 |
+| B-07 | 不采纳 | 既有 sanitize、root containment、UUID 文件名已缓解路径穿越与覆盖。 |
+| B-08 | 不采纳“当前必然泄露邮箱” | newsletter 当前关闭；应表述为启用后的潜伏日志缺陷，现已脱敏。 |
+| B-09 | 不采纳 | 未实证 Better Auth 会自动记录 Authorization/header；原始 cause 风险另行按日志脱敏处理。 |
+| B-10 | 不采纳原双写方向 | Canvas 原路径主要留下孤儿 bytes，而非已提交 metadata 指向缺失对象；两类失败现均闭环。 |
+| B-11 | 不采纳 | workflow 引用 environment 不等于 GitHub 实际受保护环境。 |
+| B-12 | 不采纳 | 固定的是自定义 conformance hook SHA，不是 Actions runner 全部固定。 |
+| B-13 | 不采纳 | 不能从仓库源码推出某 job 已被 GitHub 设为 required check。 |
+| B-14 | 不采纳“账户版本随机漂移” | lockfile 固定 SDK；真实治理风险是未来 SDK 升级时默认 API version 变化。 |
+| B-15 | 不采纳 | 普通 PR、RC、部署后的门禁应分层，不应让全部 P2 阻塞每个 PR。 |
+| B-16 | 不采纳 | 原 IPv6 正则不覆盖完整压缩/展开形式，必须做地址归一化。 |
+
+### 2.3 已冻结的 C-01 至 C-12 决策
+
+| ID | 最终决策 | 已落实的边界 |
+| --- | --- | --- |
+| C-01 | B：退役 Stripe | 不作为正式新 Provider；历史义务清零前只保留受控生命周期处理。 |
+| C-02 | 退役专用审计 | 不新建 Customer/checkout/Portal；本地提供只读历史义务审计。 |
+| C-03 | B：verified event + settlement outbox | 验签、原子持久化、异步结算、lease/fencing/重试。 |
+| C-04 | A：保守限额 | 512 KiB webhook、1 MiB JSON、约 11 MiB upload，deadline 分层。 |
+| C-05 | A：仅 controlled avatar 公开 | 无 generic public file；新 avatar 必须 DB metadata + image 验证。 |
+| C-06 | A：tombstone + deletion outbox | 业务先隐藏、worker 幂等删除；上传失败同时有即时与持久补偿。 |
+| C-07 | A：所有 PR 快速门禁 | 无 path filter，Web/Canvas/repo guards 均执行。 |
+| C-08 | B：分层验证 | PR 快速门；RC build/四服务 E2E/SCA；Provider Live release/manual/weekly。 |
+| C-09 | B：无一级 workspace switcher | 主产品用兼容默认 workspace；内部/管理入口显式 workspaceId 并鉴权。 |
+| C-10 | B：route-level step-up | Portal、API key、账号删除、关键 admin 写操作的近期认证窗口为 15 分钟。 |
+| C-11 | B：服务端 canonical URL | 删除浏览器完整 URL 输入。 |
+| C-12 | A：私网/service binding | Core/Canvas 仅 service binding；边缘/WAF/Ingress 证据独立验收。 |
+
+## 3. 修复要点与新增集成复核
+
+### 3.1 支付、Webhook 与 Stripe 退役
+
+- `payment_webhook_events` 与 settlement outbox 在验签后同一事务入库；busy 返回 `503 + Retry-After`，不再误确认。
+- Worker 对已应用 Provider 结果做 checkpoint，租约失效后的重领不会重复结算。额外的 `payment.session_id` 与 `subscription_id` 唯一业务键覆盖 `invoice_id = NULL` 的一次性 Stripe 支付。
+- 0010 迁移先检测重复的非空业务键；发现历史脏数据即失败，**不会**静默删除或合并账单。
+- outbox 外键使用 `ON DELETE RESTRICT`。旧应用在滚动期间若试图删除父 event 会失败并重试，不会 cascade 掉新版 durable outbox。
+- Webhook 数据库错误日志改为固定 provider/stage 与安全错误字段；签名、payload、消息和 cause 均不输出。
+- Stripe 入口保留历史 lifecycle webhook，但 Customer、checkout、Portal 新业务能力被硬禁用；`payment:audit-stripe-retirement` 仅做只读审计。
+
+### 3.2 请求边界、SSRF、调用时限与权限
+
+- Webhook、上传、Core JSON、Canvas action 与内部 form 都在解析前执行声明大小和流式大小限制；JSON 深度/节点计数为迭代实现。
+- Safe fetch 对每一跳 DNS/host/protocol 重验；私网 IPv4-mapped IPv6 拒绝，公开 mapped 地址仍可正常访问；未消费 body 均显式 cancel。
+- session、普通 API、stream connect/idle 均使用可取消 deadline，不替代 caller abort signal。
+- API key 插件已升级到 Better Auth 1.6 兼容的独立包，并通过 `config_id` 前向迁移保留既有 `user_id` 归属。
+- `config_get` 已被登记到 capability registry；测试 fake module 使用局部严格 seam，未给生产权限添加 allow-all。
+
+### 3.3 上传、历史头像、对象存储与 Canvas
+
+- 新上传只接受 server-controlled purpose；只有严格 JPEG/PNG/WebP avatar 在魔数、尺寸、归属 metadata 均通过后可公开。
+- 普通删除使用 tombstone + `storage_object_outbox`；Canvas 元数据落库和首次对象删除同时失败时，`pro_studio_asset_deletion_outbox` 写入 `orphan_compensation`，Worker 可 claim/fence/complete。
+- 0011 对唯一、严格旧 UUID 单段图片 key 建立 immutable legacy avatar claim。匿名读取还要匹配当前 owner image 与实际 MIME/扩展；不会恢复泛 `avatars/*` 公开。历史清洗器产生的下划线开头文件名也在严格字符集内兼容。
+- Core Main/Worker 使用同一个 S3/R2 SigV4 adapter。production/staging 必须提供非 localhost、无 credential/fragment 的 HTTPS public base URL，否则启动失败。
+
+### 3.4 CI、SCA 与 C-12
+
+- 所有 PR 的 workflow 增加 Web/Canvas check、typecheck、unit、interaction 与 repo guards；RC 标签/手动路径先 build，再跑四服务 E2E 与 production audit artifact。
+- C-12 gate 强制 deployment evidence 的 `commitSha` 与 `RELEASE_COMMIT_SHA`/`github.sha` 完整相等。没有外部 evidence 时只能输出 `contract-valid`，不能写成生产网络通过。
+- 生产依赖审计已从 `1 critical / 29 high / 49 moderate / 12 low` 降到 `0 / 0 / 3 / 2`。剩余项涉及 TanStack Start、旧 Drizzle CLI/esbuild、MCP/Hono major、Vite/Wrangler Windows dev 链；未以跨 major override 冒险掩盖风险。
+
+## 4. 本地验收证据
+
+所有命令均在本报告的 review worktree 执行，未修改用户主工作树。
 
 | 验证 | 结果 |
 | --- | --- |
-| pnpm install --frozen-lockfile | 通过 |
-| ProviderSafeFetch 既有测试 | 7/7 通过 |
-| IPv4-mapped IPv6 最小探针 | ::ffff:7f00:1 已进入 transport，确认绕过 |
-| 支付目录、Creem identity、verified event、Core client 目标测试 | 10/10 通过，但未覆盖报告指出的缺陷 |
-| Canvas/Core 存储目标测试 | 13/13 通过，但未覆盖双写补偿 |
-| 支付 normalization / Pro Studio retry | 11 通过，1 个 PostgreSQL 条件测试跳过 |
-| Web interaction tests | 17 files、91 tests 全部通过 |
-| Canvas tests | 152 通过，1 跳过 |
-| Web default tests（先执行 locale:compile） | 失败 1 项：navigation label 期望“能力目录”，实际“模型供应” |
-| Web tsc --noEmit | 失败：content-collections 模块/类型缺失 |
-| Web check | 失败：现有 Biome/格式问题 |
-| Canvas check | 失败：119 errors、20 warnings |
-
-说明：本轮没有执行四服务 E2E、真实供应商调用、生产部署验证或 SCA。不能把这些项目写成已通过。
-
-## 3. 三分类总表
-
-### 3.1 需要采纳
-
-| ID | 原报告章节/新增项 | 严重级别 | 置信度 | 裁定 |
-| --- | --- | --- | --- | --- |
-| A-01 | 新增：当前 CI 基线失败 | P1 | 高 | 采纳，当前发布阻断 |
-| A-02 | 3.2 Stripe Customer 归属 | P1（Stripe 启用时） | 高 | 采纳 |
-| A-03 | 3.3 Webhook 验签前 claim | P1 | 高 | 采纳，范围扩至 Stripe 与 Creem |
-| A-04 | 3.4 公网 Webhook/上传无传输层上限 | P1 可用性 | 高 | 采纳 |
-| A-05 | 3.4 Core/Canvas JSON 与复杂度边界 | P2 | 高 | 采纳 |
-| A-06 | 3.1 IPv4-mapped IPv6 SSRF 绕过 | P2 | 高 | 采纳，原 P1 下调 |
-| A-07 | 3.5 跨服务缺应用级 deadline | P2 | 高 | 采纳并补齐调用链 |
-| A-08 | 3.7 Creem/支付 API 服务端目录校验 | P2 | 高 | 采纳 |
-| A-09 | 3.8 公开上传策略 | P2 | 高 | 核心缺陷采纳 |
-| A-10 | 3.9 存储与元数据双写 | P2 | 高 | 采纳并扩大路径 |
-| A-11 | 3.11 Newsletter/Auth 日志脱敏 | P2（部分条件性） | 高 | 采纳并收窄现状描述 |
-| A-12 | 3.12 Safe fetch 携带凭据可走 HTTP | P2 | 高 | 采纳 |
-| A-13 | 3.12 模型 outbox 60 秒租约无续租 | P2 | 高 | 采纳 |
-| A-14 | 3.12 payment.enable=false 丢弃 Webhook | P2 | 高 | 采纳，拆分开关语义 |
-| A-15 | 3.12 生产本地资产存储偏离 ADR | P2 | 高 | 采纳 |
-| A-16 | 3.10 PR 自动 CI 缺少 Web/Canvas 快速门禁 | P2 | 高 | 缺口采纳，具体策略需决策 |
-| A-17 | 第 4 节 Header 信任边界 | P3 | 高 | 采纳并改写 |
-| A-18 | 第 4 节提前退出未释放响应体 | P3 | 高 | 采纳并扩大范围 |
-| A-19 | 第 4 节 ffprobe 无 timeout | P3 | 高 | 采纳 |
-| A-20 | 第 4 节 Stripe API version 治理 | P3 | 中 | 作为升级治理采纳，不作为当前安全漏洞 |
-| A-21 | 3.6 客户端可定制支付返回 URL | P3（付费上线前 P2） | 高 | 采纳，按 C-11-B 删除完整 URL 输入 |
-
-### 3.2 不需要采纳或必须删除的原结论
-
-| ID | 原结论 | 裁定与原因 |
-| --- | --- | --- |
-| B-01 | 当前 HEAD 无可见 CI 结果 | 不采纳。实时 run 已精确绑定 50f33eb 且失败 |
-| B-02 | IPv4-mapped 绕过当前为 P1，可直接读取常见 HTTP 云元数据 | 不采纳该级别和影响扩张。当前 Ark/Tuzi 强制 HTTPS，且保留原 hostname 做 SNI/TLS 校验 |
-| B-03 | //attacker.example 可通过当前 URL schema | 不采纳。Zod 实测拒绝 protocol-relative URL |
-| B-04 | 外域返回地址会新增泄露 Stripe session ID | 不采纳该确定性表述。调用者已获得 session ID；主要风险是托管支付域后的社会工程跳转 |
-| B-05 | R2 bucket 本身公开 | 不采纳。仓库证据只确认应用同源代理公开，不证明 R2 public bucket |
-| B-06 | 当前公开上传可直接形成存储型 XSS | 不采纳。nosniff 与非安全 MIME attachment 已形成缓解；真实问题是公开托管授权、审计、内容治理和成本滥用 |
-| B-07 | 当前上传存在路径穿越/覆盖 | 不采纳。sanitize、root 校验与 UUID 文件名已缓解 |
-| B-08 | 当前 Newsletter 一定向生产日志写完整邮箱 | 不采纳。当前 newsletter.enable=false；应改成“启用后必然触发的潜伏缺陷” |
-| B-09 | Better Auth error 自动包含请求头、Authorization 或 token | 不采纳。error 与 request context 分开传入；原始 cause 可能敏感，但未实证 |
-| B-10 | Canvas 双写失败会留下 graph/metadata 指向缺失对象 | 不采纳。当前顺序会留下孤儿 bytes，但 repository insert 未成功，不会写出对应 metadata |
-| B-11 | Provider live 已受 protected environment 保护 | 不采纳。workflow 引用了 environment 名称，但仓库实时 environments 数量为 0 |
-| B-12 | Provider live runner hash 固定 | 不采纳。固定的是自定义 conformance hook SHA256，不是所有 Actions/runner |
-| B-13 | 当前 job 是 required check | 不采纳。私有 Free 仓库的 branch protection/rulesets API 返回 upgrade-required |
-| B-14 | Stripe API version 会随账户设置随机漂移 | 不采纳。lockfile 固定 Stripe 17.7.0，SDK 自带固定 API version；真实风险是以后升级 SDK 时语义变化 |
-| B-15 | 所有 P2 都必须阻塞每个普通 PR | 不采纳。PR 门禁、发布门禁和部署门禁必须拆开 |
-| B-16 | 原报告 IPv6 正则示例可直接粘贴 | 不采纳。示例不能覆盖全部合法 IPv6 展开/压缩表示，应使用完整 IPv6 解析或 BlockList/CIDR 归一化 |
-
-### 3.3 已确认决策（2026-07-22）
-
-| ID | 最终选择 | 已冻结的实施边界 |
-| --- | --- | --- |
-| C-01 | B：退役 Stripe | 停止把 Stripe 作为正式发布 Provider；完成存量义务核查后硬禁用新 checkout、Customer 创建和 Portal |
-| C-02 | 退役专用方案 | 不新建 app-scoped Customer；只读审计活跃订阅、退款、发票、账单与权益义务，清零或交割后退役 |
-| C-03 | B：verified event + settlement outbox | Webhook 先验签并持久化 verified event/outbox，Worker 异步结算；Provider 重试与 Core/Canvas 故障解耦 |
-| C-04 | A：先采用保守限制 | Webhook 512 KiB、普通 JSON 1 MiB、上传 transport 约 11 MiB；session 2–3 秒、普通内部调用 5–10 秒，流式接口使用 connect/idle timeout |
-| C-05 | A：仅受控 avatar 公开 | 通用文件默认私有，不保留 generic public_file；未来若有公开分享需求，必须通过独立受控发布能力重新立项 |
-| C-06 | A：deletion outbox + tombstone | 删除意图事务落库、业务侧立即隐藏、Worker 幂等删除、成功后清理；上传仍实施即时补偿 |
-| C-07 | A：所有 PR 跑快速门禁 | 暂不使用 path filter；Web/Canvas 快速矩阵对所有 PR 自动执行，收集时长后另行评估过滤 |
-| C-08 | B：分层验证 | PR 跑快速门禁；RC 跑 build/四服务 E2E；Provider live 用于相关发布、手动或周检 |
-| C-09 | B：主产品无一级 workspace switcher | 主产品保留单工作区体验；内部/管理员下钻显式传递并鉴权 workspaceId |
-| C-10 | B：route-level step-up | 支付 Portal、API Key、账号删除和关键管理员写操作采用 10–15 分钟近期认证窗口 |
-| C-11 | B：服务端 canonical URL | 删除客户端完整 success/cancel/return URL 输入，由服务端生成固定 canonical 地址 |
-| C-12 | A：私网/service binding | Core/Canvas 不允许无保护公网直连；WAF/Ingress 另设 body、rate、connect/read timeout |
-
-以上 12 项已关闭决策，不再作为实施过程中的自由选择。任何变更必须新增 ADR 或决策记录。
-
-## 4. 需要采纳问题的详细复核
-
-### A-01 [P1] 当前 CI 基线失败
-
-证据：
-
-- .github/workflows/core-quality.yml:91-155 定义 Core 与 persistence 门禁。
-- Run 29850363565 精确绑定 50f33eb。
-- Contracts typecheck 失败包含缺少 Node 类型以及多个真实 narrowing/type 错误。
-- Core persistence 47 项失败。
-
-处理：
-
-1. 先修复 Contracts typecheck，使 Core typecheck/test 真正执行。
-2. 对 47 个 persistence failures 按共同根因聚类，不以重跑掩盖。
-3. 建立至少一条同 SHA 的成功 Core quality 基线后，才允许进入发布候选。
-
-验收：
-
-- Core quality 全部适用 job 绿色。
-- 跳过项有明确原因，并绑定 SHA 与 run URL。
-
-### A-02 [P1，条件性] Stripe Customer 归属错误
-
-证据：
-
-- mkfast-template-main/src/payment/provider/stripe.ts:72-108 使用 customers.list({ email, limit: 1 }) 并复用第一条。
-- 同文件 123-137 按 email 回写本地 customerId。
-- mkfast-template-main/src/payment/types.ts:118-127 的 CreateCheckoutParams 没有不可变 userId。
-- mkfast-template-main/src/db/auth.schema.ts:11-30 的 customerId 无唯一约束。
-- mkfast-template-main/src/api/payment.ts:129-149 的 Portal 完全信任本地 customerId。
-
-准确影响：
-
-- Stripe 启用且存在同邮箱、邮箱复用、共享 Stripe 账户或并发首次结账时，可能把账单主体绑定给错误本地用户。
-- 续费路径会通过 customerId 回查 userId，错误会向后传播。
-
-已确认处置（C-01-B、C-02 退役专用方案）：
-
-1. 立即阻止新的 Stripe checkout、Customer 创建和 Portal 会话。
-2. 不为未绑定用户创建新的 app-scoped Customer。
-3. 只读导出本地 customerId、Stripe metadata、活跃订阅、退款、发票、账单和权益映射。
-4. 对仍有存量义务的账户保留受控 Webhook 生命周期处理，不能通过 payment.enable=false 直接丢弃。
-5. 所有活跃义务完成迁移、退款、取消或明确交割后，硬禁用并最终移除 Stripe Provider。
-6. 保存退役审计结果、异常项负责人和完成证据。
-
-### A-03 [P1] Webhook 验签前 claim，busy 被 200
-
-证据：
-
-- mkfast-template-main/src/payment/index.ts:79-137 先解析未验证 id/type，再查询/插入 paymentWebhookEvents。
-- processing 或 insert conflict 直接 return。
-- Stripe route 26-34 与 Creem route 27-37 把 return 映射为 HTTP 200。
-- app.schema.ts:312-330 没有 lease、claim token、attempt、availableAt、lastError。
-- 真正验签与支付写入耦合在 Provider handleWebhookEvent 内。
-
-原报告需修正：
-
-- 问题同时影响 Stripe 和 Creem。
-- 不应把“猜中低熵 event ID”作为主要前提；真实并发重投、ID 泄露或可观察事件即可触发风险。
-- Pro Studio 已有持久 claim、退避和 cron 重试；真正缺 durable outbox 的重点是 plan entitlement 到 Core。
-
-根据 C-03-B，实施必须包含：
-
-1. 先验签和规范化，再用 canonical provider event ID claim。
-2. 在本地事务中持久化 verified event 与 settlement outbox。
-3. 持久化成功后快速响应；结算由 Worker 使用 lease、fencing token、重试状态处理。
-4. busy/暂态失败必须保持可重试，不能被错误确认成已完成。
-5. payment session/subscription 业务键做真正幂等并在建唯一约束前审计。
-
-### A-04/A-05 [P1/P2] 请求体与 JSON 复杂度边界
-
-公网高优先级入口：
-
-- Stripe webhook route:17 与 Creem webhook route:18 在验签前 request.text()。
-- TanStack server-function dispatcher 会先 request.formData()；user-files.ts:97 又 arrayBuffer()，而 10MB 检查直到 r2.ts:215 才发生。
-
-认证后入口：
-
-- apps/core/src/server.ts:181-225 的 readBody/readJson 无界。
-- apps/canvas/src/server/backend-port.ts:871-889 request.text() 后递归扫描。
-- Web → Core proxy 会产生重复缓冲。
-- 20,000 层 JSON 最小复现可使同构递归扫描抛出 RangeError。
-
-修复边界：
-
-1. Webhook 在读取前检查 Content-Length，并对实际流累计计数。
-2. 上传不能只在 File.size 后补救；应在 dispatcher/WAF 前设 transport limit，或使用自有上传 Route 做流式限制。
-3. 普通 JSON、Canvas graph、base64 媒体、Webhook、multipart 分别设预算。
-4. JSON 复杂度检查改为迭代式，限制深度和节点数。
-5. 字节超限返回 413；结构复杂度超限使用稳定 400/422。
-
-推荐初始值：
-
-- Webhook：512 KiB
-- 普通 JSON：1 MiB
-- 用户上传 transport：约 11 MiB
-- Canvas 35M base64 路由：按实际 payload 单独定，不套 1 MiB
-
-### A-06 [P2] IPv4-mapped IPv6 绕过
-
-证据：
-
-- reference-asset-delivery.ts:341-381 只识别点分形式 ::ffff:127.0.0.1。
-- ::ffff:7f00:1、::ffff:0a00:1、::ffff:a9fe:a9fe 均进入 transport。
-- 既有 7 个测试不覆盖 mapped IPv6。
-
-下调 P1 的原因：
-
-- 当前 Ark/Tuzi 在下载前强制 HTTPS。
-- pinned transport 保留原供应商 hostname 做 Host/SNI/TLS 校验。
-- Authorization 仅在目标 hostname 与 authorization.host 精确相同时发送。
-- 当前生产外部模型激活证据仍为 inactive/recorded。
-
-修复：
-
-- 使用完整 IPv6 二进制归一化、Node BlockList 或可靠 CIDR 判断，不使用原报告的不完整正则。
-- 测试覆盖压缩、展开、mixed dotted、mapped 私网与 mapped 公网，并断言 transport 不执行。
-
-### A-07 [P2] 跨服务调用缺应用级 deadline
-
-确认缺口：
-
-- Canvas → Main session validate
-- Web → Core diagnostics
-- Web → Core asset stream
-- 支付 → Core
-- 支付 → Canvas
-- Main → Canvas entry/launch
-- Canvas → Core command/query 与 asset put/read
-- Workspace provisioning → Core
-
-原报告错误：
-
-- 普通 workspace proxy 已传 request.signal，不能写成“完全无 AbortSignal”；真实缺口是没有总 deadline。
-
-策略：
-
-- session validate：2–3 秒
-- 普通 JSON：5–10 秒总 deadline
-- 支付 Worker 内部调用：5–10 秒 deadline，超时后保持 settlement outbox 可重试
-- SSE/媒体：connect/header timeout + idle timeout，不使用普通短总超时
-- 合并 caller signal 与 timeout signal
-
-### A-08 [P2] 支付目录校验缺失
-
-证据：
-
-- payment.ts:76-88 未拒绝 unknown price、plan/price mismatch、plan.disabled、price.disabled，且在 Provider 前创建 binding。
-- unknown price 默认当 subscription。
-- creem.ts:159-187 对普通套餐直接把 priceId 作为 productId。
-- Stripe Provider 虽拒绝 unknown/mismatch，仍没有统一 disabled 规则；API 层已经留下 failed binding 垃圾。
-
-修复：
-
-1. binding 前解析 canonical plan + price。
-2. 拒绝 unknown、mismatch、plan.disabled、price.disabled、不可售 free plan、非法 cadence。
-3. 使用 canonical price.type/interval 写 binding。
-4. 无效输入必须 DB 0 insert、Provider 0 call。
-5. Creem Provider 再做 defense-in-depth，不创建第二份目录。
-
-### A-09 [P2] 公开上传策略失控
-
-证据：
-
-- user-files.ts:66-89 接受客户端 folder 与 isPublic。
-- folder=avatars 或子目录即可清空 userId、跳过 user_files 元数据。
-- storage/file.ts:43-59、104-116 允许匿名同源读取并设置长期 public cache。
-- 未知 MIME 与任意扩展仍可通过；没有头像魔数/尺寸校验。
-
-需保留的准确边界：
-
-- 不是 R2 bucket 公网化。
-- 没有证据支持路径穿越、覆盖或直接存储型 XSS。
-- isPublic 并非触发 avatars 公开路径的必要条件。
-
-最小修复：
-
-1. 删除原始 folder 输入，改为服务端 purpose。
-2. avatar 固定 prefix、大小、JPEG/PNG/WebP、MIME + magic + dimensions。
-3. 无论 public/private 都写 owner、workspace、object metadata。
-4. 读取授权以 DB isPublic 为准，路径前缀只做旧对象兼容。
-5. 按 C-05-A，不保留 generic public_file；公开分享能力必须以后独立立项。
-
-### A-10 [P2] 存储与元数据双写
-
-确认路径：
-
-- user-files.ts:104-126：R2 put 后 DB insert，无补偿。
-- user-files.ts:62-63：先删对象再删 DB。
-- product-assets.ts:80-100：同类上传双写，原报告漏列。
-- canvas-asset-facade.ts:216-218：storage.put 后 repository.insert。
-- audio-asset-pipeline 也存在同类顺序，需纳入实施盘点。
-
-准确影响：
-
-- 上传/insert 失败会留下孤儿 bytes。
-- 删除第二步失败会留下 DB 指向缺失对象。
-- Canvas insert 失败不会留下对应 metadata，但会留下孤儿 bytes。
-- Canvas 当前默认是 Core 本地文件系统，不应把所有路径统称为 R2 对象存储。
-
-最小修复：
-
-- 上传：insert 失败 best-effort delete；补偿失败记录稳定 orphan 告警。
-- Canvas storage 增加幂等 delete。
-- 删除：按 C-06-A 实施 transactional deletion outbox + tombstone。
-
-### A-11 [P2，条件性] 日志脱敏
-
-证据：
-
-- auth.ts:150-155 直接 console.error 原始 auth error。
-- auth.ts:179-182 在 Newsletter 启用时输出完整邮箱。
-- 当前 websiteConfig.newsletter.enable=false，所以邮箱路径目前不可达。
-- Wrangler 配置启用了日志/观测持久化；但 retention、访问范围和第三方转发未验证。
-
-修复：
-
-- 只记录 userId、事件码、error name/code、correlationId。
-- 不直接序列化 SDK/auth raw error。
-- 同步盘点 Resend 与 Beehiiv Provider 的 email/raw error 日志。
-- 日志 retention、访问控制与自动 PII 扫描作为运维证据项。
-
-### A-12 至 A-15 [P2] 原 3.12 中应直接采纳的事项
-
-1. Safe fetch 凭据与 HTTP
-   reference-asset-delivery.ts:202-205、304-319 允许携带 Authorization 的同 hostname 请求走 HTTP。携带凭据必须强制 HTTPS；生产 Provider URL 建议全部 HTTPS。
-
-2. 模型 outbox 租约
-   foundation-module.ts:3166-3217 默认 60 秒租约、同步等待 Provider、无 heartbeat/renew；postgres-repository.ts 允许过期重领。增加 renewLease/heartbeat，并把 Provider effect idempotency 做成持久合同。
-
-3. payment.enable=false
-   Stripe webhook 在关闭支付时直接 200 丢弃。公开付费入口开关不应同时关闭存量订阅生命周期同步。拆分 paidLaunchEnabled 与 webhookProcessingEnabled/providerConfigured。
-
-4. 生产资产存储
-   Core Main 与 Worker 默认装配本地文件系统，而 ADR-0006 要求二进制存 R2。生产装配切换共享对象存储；本地 filesystem 只留 dev/test/recorded。
-
-### A-16 [P2] PR 自动 CI 缺少 Web/Canvas 快速门禁
-
-事实成立：
-
-- 普通 PR 自动 workflow 只覆盖 Contracts/Core 与 Core persistence。
-- E2E 仅 workflow_dispatch 或 run-e2e label。
-- Web test 默认排除 17 个 interaction files；必须另跑 test:interaction。
-- Canvas check 已包含 tsc，不需要重复 typecheck。
-
-建议 PR 快速矩阵：
-
-- Web：check、typecheck、test、test:interaction
-- Canvas：check（含 tsc）、test
-- 保留 repo-level secret/decision guards
-
-按 C-08-B：PR 不强制完整 build/E2E/live；RC 执行 build 与四服务 E2E，Provider live 用于相关发布、手动或周检。
-
-### A-17 至 A-21 [P3] 可选治理
-
-- Header：correlation ID 不合法可重新生成；显式 idempotency key 不合法必须 400，不能静默替换。
-- Response disposal：不仅 redirect，所有 status/size/MIME 等提前退出分支都要 cancel/drain。
-- ffprobe：增加 timeout、kill signal 与稳定错误分类测试。
-- Stripe API version：显式版本用于让未来 SDK 升级可审计；不是修复当前账户版本随机漂移。
-- Payment return URL：按 C-11-B 删除客户端完整 URL 输入，由服务端生成 canonical success/cancel/return 地址。
-
-## 5. 需要用户确认的其他发布证据
-
-以下不是代码漏洞，但没有证据就不能发布：
-
-- Cloudflare/WAF/Ingress 的 body limit、rate limit、connect/read timeout 与直连可达性。
-- Core/Worker/Canvas 实际副本数、共享资产存储和网络边界。
-- 依赖漏洞扫描：pnpm audit/OSV/Dependabot alerts。
-- Provider live 最近成功 run，且 SHA 与发布候选一致。
-- 数据库迁移在空库、存量库、异常重复数据上的演练。
-- Stripe Customer、payment session/subscription、checkout binding 的存量审计。
-- 发布后支付/权益对账脚本或查询。
-
-## 6. 经复核可保留的正向实践
-
-1. Core 启动密钥约束成立：强制 CORE_SERVICE_TOKEN、DOUYIN_CALLBACK_TOKEN 且不得相同。
-2. PostgreSQL migration 使用 advisory transaction lock，具备多进程保护。
-3. Canvas generation outbox 使用 SKIP LOCKED、租约、claim token 与 fenced conditional update；不应再称“文本生成 outbox”或“事务内写终态结果”。
-4. ProviderSafeFetch 已有精确 host allowlist、逐跳重验、DNS 全结果检查、pinned transport、流式大小/MIME/magic 限制。
-5. 已核查的私有文件读取与 Canvas 资产路径具备 workspace/service token 鉴权、nosniff 与 Range 支持。
-6. 文件系统路径净化与 root containment 检查合理。
-7. Core quality、persistence、redline、可选 E2E、Provider live workflow 结构具备价值，但不能掩盖当前失败、未运行和非 required 的事实。
-
-## 7. 修订后的门禁
-
-### 7.1 普通 PR 合并门禁
-
-- [ ] 变更范围对应的 check/typecheck/test 全绿
-- [ ] Web interaction tests 单独执行
-- [ ] Bug 修复有最小回归测试
-- [ ] 新迁移可前后兼容
-- [ ] 无新增 P1
-- [ ] 采纳项若延期，有 owner、期限与风险接受记录
-
-### 7.2 发布候选门禁
-
-- [ ] Core quality 同 SHA 全绿
-- [ ] Web、Canvas 快速矩阵全绿
-- [ ] 四服务 E2E 在发布候选 SHA 上执行
-- [ ] Provider live 或明确的受控不执行理由
-- [ ] SCA 结果留存
-- [ ] 网关限制、内部 deadline、共享存储拓扑留存
-- [ ] 支付、Webhook、存储补偿与重试测试通过
-- [ ] 数据迁移与回滚/前向修复演练完成
-
-### 7.3 部署与发布后门禁
-
-- [ ] Schema → 应用 → Worker 的兼容部署顺序确认
-- [ ] 新旧版本并存时 Webhook inbox/payment schema 兼容
-- [ ] Webhook retry、orphan object、SSRF reject、internal timeout 有指标与告警
-- [ ] 支付/权益对账可执行
-- [ ] 回滚不会关闭存量订阅 Webhook
-
-## 8. 最终裁定
-
-原报告识别了多数真实风险，但不能原样作为实施清单：
-
-- 需要采纳：21 项，其中当前明确 P1 发布阻断 4 项。
-- 不需要采纳或必须删除/改写：16 项原表述。
-- 已确认决策：12 项，未决 0 项。
-
-最先执行的顺序：
-
-1. 修复当前 CI 红线并建立成功基线。
-2. 执行 Stripe 存量只读审计、停止新增并完成退役；同时实施 Webhook verified event + settlement outbox。
-3. 给公网 Webhook、上传入口增加传输层资源边界。
-4. 完成支付目录、上传策略、存储补偿与跨服务 deadline。
-5. 按已冻结的 C-01 至 C-12 决策完成验收，不得在实施中重新开放范围。
-
-在上述 P1 与适用发布门禁完成前，状态保持：**不通过，不建议合并或发布。**
+| `pnpm install --frozen-lockfile` | 通过。 |
+| `pnpm typecheck` | 通过（Contracts、Core、Web、Canvas）。 |
+| `pnpm --filter @meiye/web test` | 1,102 pass、0 fail、4 skip。 |
+| `pnpm --filter @meiye/web test:interaction` | 21 files、97 pass、0 fail。 |
+| `pnpm --filter @meiye/web check` | 0 error；4 warning、3 info。 |
+| `pnpm --filter @meiye/web build` | 通过；仅既有 route-test/chunk-size warning。 |
+| `pnpm --filter @meiye/canvas check` | 0 error；16 non-blocking warning。 |
+| `pnpm --filter @meiye/canvas test` | 163 pass、0 fail、1 skip。 |
+| `TEST_DATABASE_URL=… TEST_DBOS_SYSTEM_DATABASE_URL=… pnpm --filter @meiye/core test` | 1,928 pass、0 fail、9 skip；9 项均为显式外部 Provider/配额 opt-in。 |
+| `pnpm --filter @meiye/core exec tsc --noEmit` | 通过。 |
+| 空 PostgreSQL `pnpm --dir mkfast-template-main db:migrate` | 0000–0011 共 12 条迁移全部通过；确认 payment 业务键索引、outbox `RESTRICT`、legacy avatar claim。 |
+| 支付真实 PostgreSQL回归 | crash/reclaim、stale fence、RESTRICT 父 event、NULL invoice 一次性支付均通过。 |
+| Canvas 真实 PostgreSQL回归 | metadata insert + immediate delete 双失败后 durable recovery、claim/complete、对象删除均通过。 |
+| `node --test scripts/ci/*.test.mjs scripts/production-network-boundary-gate.test.mjs` | 20/20 通过。 |
+| `pnpm security:production-boundary -- --json` | `contract-valid`，无生产 evidence 时未错误声称 deployment-valid。 |
+| `pnpm audit --prod --json` | critical 0、high 0、moderate 3、low 2。 |
+| `git diff --check` | 通过。 |
+
+## 5. 仍需在生产前完成的外部动作
+
+这些项目不是可在本分支“补一段代码”解决的事项，缺任一项都不应把本报告当作生产 Go 信号。
+
+1. **GitHub 强制门禁**：为目标分支配置 required checks/规则集；当前实测仓库没有启用 required checks。CI YAML 的存在不等于合并被拦截。
+2. **Provider Live 环境**：配置 protected environment、审批与 secrets，取得和发布候选 SHA 关联的成功 live run。现有 release/manual/weekly workflow 不能替代真实环境保护。
+3. **C-12 真实网络证据**：保存 Cloudflare/WAF/Ingress 的 body/rate/connect/read 设置、Core/Canvas 直连拒绝、服务绑定、健康探针与部署身份证据；必须与候选 SHA 完整匹配。
+4. **生产迁移顺序**：先执行 0007–0011，再发布 Web/Worker；CI deploy 必须配置 `DATABASE_URL`，缺失时应有意失败而非跳过迁移。0010 若发现重复 payment business key，先人工审计清理，再继续。
+5. **Stripe 退役审计**：在生产只读执行 `payment:audit-stripe-retirement`，处理活跃订阅、退款、发票、权益与异常映射，确认全部义务完成后才能最终移除历史 Provider。
+6. **历史头像异常账户**：0011 只自动兼容唯一引用、严格旧 key、受控 URL、对象存在且图片策略通过的记录。重复引用、非标准 URL、缺失对象或不合规图片保持 404；产品/数据负责人需决定人工重传或受控 backfill，不能为了兼容而恢复目录公开。
+7. **真实对象存储与外部 Provider**：配置生产 S3/R2 endpoint、bucket、credential、HTTPS public base URL 与 provider credentials，运行 RC E2E/Provider Live；本地未花费真实 Provider 配额。
+
+## 6. 最终裁定
+
+- 原 Claude 报告的核心风险识别大多成立，但部分严重级别、影响前提和修复方式已按代码事实修正。
+- 应采纳项：21 项，均已完成代码级闭环；审阅期间新增的 7 个集成代码阻断也已关闭。
+- 不采纳或改写项：16 项，原因见第 2.2 节。
+- 产品/架构决策：C-01 至 C-12 均已冻结并已按边界实现。
+- 当前状态：**本地代码验收通过，允许进入合并审查；生产发布保持阻断，直至第 5 节外部证据和数据处置完成。**

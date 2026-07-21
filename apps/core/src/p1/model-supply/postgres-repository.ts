@@ -188,6 +188,17 @@ export class PostgresModelSupplyRepository {
         lease_expires_at timestamptz,
         created_at timestamptz NOT NULL
       );
+      ALTER TABLE model_canvas_text_generation_outbox
+        ADD COLUMN IF NOT EXISTS provider_effect_key text;
+      ALTER TABLE model_canvas_text_generation_outbox
+        ADD COLUMN IF NOT EXISTS provider_effect_status text;
+      ALTER TABLE model_canvas_text_generation_outbox
+        ADD COLUMN IF NOT EXISTS provider_effect_result jsonb;
+      ALTER TABLE model_canvas_text_generation_outbox
+        DROP CONSTRAINT IF EXISTS model_canvas_text_generation_outbox_provider_effect_status_check;
+      ALTER TABLE model_canvas_text_generation_outbox
+        ADD CONSTRAINT model_canvas_text_generation_outbox_provider_effect_status_check
+        CHECK (provider_effect_status IS NULL OR provider_effect_status IN ('started', 'completed'));
       CREATE TABLE IF NOT EXISTS model_quality_events (
         workspace_id text NOT NULL,
         event_id text NOT NULL,
@@ -776,20 +787,25 @@ export class PostgresModelSupplyRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const completed = await client.query<{ workspace_id: string }>(
+      const completed = await client.query<{
+        provider_effect_result: ModelSupplyResult;
+        workspace_id: string;
+      }>(
         `UPDATE model_canvas_text_generation_outbox
             SET status = 'completed', claim_token = NULL,
                 lease_expires_at = NULL
           WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
-        RETURNING workspace_id`,
+            AND provider_effect_status = 'completed'
+        RETURNING workspace_id, provider_effect_result`,
         [input.id, input.claimToken],
       );
-      const workspaceId = completed.rows[0]?.workspace_id;
-      if (!workspaceId) {
+      const completedEffect = completed.rows[0];
+      if (!completedEffect) {
         await client.query('ROLLBACK');
         return false;
       }
-      const timing = terminalJobTiming(input.result);
+      const result = completedEffect.provider_effect_result;
+      const timing = terminalJobTiming(result);
       await client.query(
         `INSERT INTO model_generation_jobs
            (workspace_id, job_id, status, result, ended_at, latency_ms)
@@ -799,10 +815,10 @@ export class PostgresModelSupplyRepository {
                        ended_at = COALESCE(model_generation_jobs.ended_at, EXCLUDED.ended_at),
                        latency_ms = COALESCE(model_generation_jobs.latency_ms, EXCLUDED.latency_ms)`,
         [
-          workspaceId,
-          input.result.jobId,
-          input.result.status,
-          JSON.stringify(input.result),
+          completedEffect.workspace_id,
+          result.jobId,
+          result.status,
+          JSON.stringify(result),
           timing.endedAt,
           timing.latencyMs,
         ],
@@ -815,6 +831,87 @@ export class PostgresModelSupplyRepository {
     } finally {
       client.release();
     }
+  }
+
+  async renewCanvasTextGenerationLease(input: {
+    claimToken: string;
+    id: string;
+    leaseExpiresAt: string;
+  }) {
+    const result = await this.pool.query(
+      `UPDATE model_canvas_text_generation_outbox
+          SET lease_expires_at = $3::timestamptz
+        WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
+      RETURNING outbox_id`,
+      [input.id, input.claimToken, input.leaseExpiresAt],
+    );
+    return result.rowCount === 1;
+  }
+
+  async beginCanvasTextGenerationProviderEffect(input: {
+    claimToken: string;
+    effectKey: string;
+    id: string;
+  }) {
+    const started = await this.pool.query(
+      `UPDATE model_canvas_text_generation_outbox
+          SET provider_effect_key = $3, provider_effect_status = 'started'
+        WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
+          AND provider_effect_status IS NULL
+      RETURNING outbox_id`,
+      [input.id, input.claimToken, input.effectKey],
+    );
+    if (started.rowCount === 1) return { status: 'execute' as const };
+    const result = await this.pool.query<{
+      claim_token: string | null;
+      provider_effect_key: string | null;
+      provider_effect_result: ModelSupplyResult | null;
+      provider_effect_status: 'started' | 'completed' | null;
+      status: CanvasTextGenerationOutboxRecord['status'];
+    }>(
+      `SELECT status, claim_token, provider_effect_key,
+              provider_effect_status, provider_effect_result
+         FROM model_canvas_text_generation_outbox
+        WHERE outbox_id = $1`,
+      [input.id],
+    );
+    const row = result.rows[0];
+    if (row?.status !== 'claimed' || row.claim_token !== input.claimToken) {
+      throw new Error('Canvas text generation outbox claim was lost.');
+    }
+    if (row.provider_effect_key !== input.effectKey) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Canvas text provider effect key conflicts with the persisted effect.',
+      );
+    }
+    if (row.provider_effect_status === 'completed') {
+      if (!row.provider_effect_result) {
+        throw new Error('Completed canvas text provider effect has no result.');
+      }
+      return {
+        result: row.provider_effect_result,
+        status: 'completed' as const,
+      };
+    }
+    return { status: 'acceptance_unknown' as const };
+  }
+
+  async completeCanvasTextGenerationProviderEffect(input: {
+    claimToken: string;
+    effectKey: string;
+    id: string;
+    result: ModelSupplyResult;
+  }) {
+    const completed = await this.pool.query(
+      `UPDATE model_canvas_text_generation_outbox
+          SET provider_effect_status = 'completed', provider_effect_result = $4::jsonb
+        WHERE outbox_id = $1 AND status = 'claimed' AND claim_token = $2
+          AND provider_effect_status = 'started' AND provider_effect_key = $3
+      RETURNING outbox_id`,
+      [input.id, input.claimToken, input.effectKey, JSON.stringify(input.result)],
+    );
+    return completed.rowCount === 1;
   }
 
   async releaseCanvasTextGeneration(input: {
@@ -1087,6 +1184,7 @@ export class PostgresModelSupplyRepository {
   async deleteWorkspaceForTest(workspaceId: string) {
     for (const table of [
       'model_activation_probe_runs',
+      'model_canvas_text_generation_outbox',
       'model_quality_evaluation_cases',
       'model_quality_evaluation_runs',
       'model_revision_rollback_audits',

@@ -339,10 +339,13 @@ async function listAgentAudit(
 	);
 }
 
-export async function validateMainSession(context: LaunchCodeContext) {
+export async function validateMainSession(
+	context: LaunchCodeContext,
+	options: { fetcher?: typeof fetch; timeoutMs?: number } = {},
+) {
 	let response: Response;
 	try {
-		response = await fetch(
+		response = await (options.fetcher ?? fetch)(
 			new URL(
 				"/api/pro-studio/launch",
 				process.env.MAIN_APP_ORIGIN ?? "http://127.0.0.1:3000",
@@ -361,6 +364,7 @@ export async function validateMainSession(context: LaunchCodeContext) {
 					"x-canvas-service-token": requiredEnv("CANVAS_SERVICE_TOKEN"),
 				},
 				method: "POST",
+				signal: AbortSignal.timeout(options.timeoutMs ?? 2_500),
 			},
 		);
 	} catch (error) {

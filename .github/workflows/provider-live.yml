@@ -4,12 +4,18 @@
 name: Provider live gate
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       cost_cap_usd:
         description: 'Pre-call reservation ceiling in USD; actual spend is reconciled after calls'
         required: false
         default: '1.0'
+        type: string
+      release_ref:
+        description: 'Optional related release tag or commit; leave blank for ad hoc verification'
+        required: false
         type: string
   schedule:
     # Weekly off-peak (Sunday 16:00 UTC)
@@ -36,6 +42,7 @@ jobs:
       # adapter channels produce evidence.
       PROVIDER_LIVE_REQUIRE_ALL: '1'
       PROVIDER_LIVE_COST_CAP_USD: ${{ github.event.inputs.cost_cap_usd || '1.0' }}
+      PROVIDER_LIVE_RELEASE_REF: ${{ github.event.release.tag_name || github.event.inputs.release_ref || github.sha }}
       PROVIDER_LIVE_EVIDENCE_DIR: apps/core/provider-live-evidence
       PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH: apps/core/provider-live-evidence/external-conformance.json
       PROVIDER_LIVE_RUN_NONCE: ${{ github.run_id }}-${{ github.run_attempt }}

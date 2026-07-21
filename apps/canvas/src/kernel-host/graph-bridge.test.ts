@@ -85,7 +85,11 @@ test("fromKernelGraph strips viewport and writes x/y/width/height into data", ()
 
 	const graph = fromKernelGraph(kernel);
 	assert.equal(graph.schemaVersion, 1);
-	assert.deepEqual(Object.keys(graph).sort(), ["edges", "nodes", "schemaVersion"]);
+	assert.deepEqual(Object.keys(graph).sort(), [
+		"edges",
+		"nodes",
+		"schemaVersion",
+	]);
 	assert.equal(graph.nodes[0]?.data.x, 5);
 	assert.equal(graph.nodes[0]?.data.y, 6);
 	assert.equal(graph.nodes[0]?.data.width, 120);

@@ -145,7 +145,10 @@ test('capability metric projection includes not_verified and long stale', () => 
   assert.ok(candidates.length > 0, 'expected capability exceptions');
 
   const notVerified = candidates.filter((c) => c.severity === 'not_verified');
-  assert.ok(notVerified.length > 0, 'skeleton instrumented domains are not_verified');
+  assert.ok(
+    notVerified.length > 0,
+    'skeleton instrumented domains are not_verified'
+  );
 
   const longStale = candidates.find(
     (c) => c.capabilityId === 'job_queue_harness' && c.severity === 'stale'
@@ -385,15 +388,17 @@ test('empty state when no inbox exceptions and all capabilities available+fresh'
 });
 
 test('assertNoAckAssignOwnerUi negative patterns', () => {
-  assert.deepEqual(assertNoAckAssignOwnerUi('<div data-read-only="true" />'), []);
+  assert.deepEqual(
+    assertNoAckAssignOwnerUi('<div data-read-only="true" />'),
+    []
+  );
   assert.ok(
     assertNoAckAssignOwnerUi(
       '<button data-testid="exception-ack">确认异常</button>'
     ).length > 0
   );
   assert.ok(
-    assertNoAckAssignOwnerUi(
-      '<button data-action="assign">指派负责人</button>'
-    ).length > 0
+    assertNoAckAssignOwnerUi('<button data-action="assign">指派负责人</button>')
+      .length > 0
   );
 });

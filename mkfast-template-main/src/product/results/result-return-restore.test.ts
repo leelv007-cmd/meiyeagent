@@ -17,9 +17,7 @@ import {
   saveUncommittedDraft,
   serializeUncommittedEditKey,
 } from './result-return-restore';
-import {
-  shellViewFromResolveOutcome,
-} from './result-shell-model';
+import { shellViewFromResolveOutcome } from './result-shell-model';
 import {
   isResultTargetMissing,
   resolveResultTargetClient,
@@ -81,7 +79,7 @@ test('uncommitted edit keys isolate by workspaceKind / workId / revision / surfa
   const keyB = { ...keyA, baseRevisionId: 'rev-2' };
   assert.notEqual(
     serializeUncommittedEditKey(keyA),
-    serializeUncommittedEditKey(keyB),
+    serializeUncommittedEditKey(keyB)
   );
 
   let store = emptyReturnRestoreStore();
@@ -128,7 +126,10 @@ test('drift three-way: restore / compare / discard', () => {
   if (restored.kind === 'restored') {
     assert.equal(restored.draft?.text, '未提交套图顺序');
     // Draft still present after restore choice.
-    assert.equal(loadUncommittedDraft(restored.store, key)?.text, '未提交套图顺序');
+    assert.equal(
+      loadUncommittedDraft(restored.store, key)?.text,
+      '未提交套图顺序'
+    );
   }
 
   const compared = applyRevisionDriftChoice(store, drift!, 'compare');

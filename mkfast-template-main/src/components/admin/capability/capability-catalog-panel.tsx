@@ -32,7 +32,8 @@ export function CapabilityCatalogPanel({
       <Alert>
         <AlertTitle>能力目录（两层 IA）</AlertTitle>
         <AlertDescription>
-          一级按能力域组织（能力 / 功能 / 用户影响）；二级下钻到技术依赖与既有管理页证据。
+          一级按能力域组织（能力 / 功能 /
+          用户影响）；二级下钻到技术依赖与既有管理页证据。
           底层隔离键不进入一级信息架构。日常运营路径不提供 code / SQL / env /
           原始 JSON / CLI 编辑控件；复杂修复生成可移交脱敏上下文。
         </AlertDescription>
@@ -71,10 +72,15 @@ export function CapabilityCatalogPanel({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            <section className="space-y-2" data-testid="catalog-l2-capabilities">
+            <section
+              className="space-y-2"
+              data-testid="catalog-l2-capabilities"
+            >
               <h3 className="text-sm font-semibold">能力项</h3>
               {section.capabilities.length === 0 ? (
-                <p className="text-sm text-muted-foreground">本域暂无登记能力</p>
+                <p className="text-sm text-muted-foreground">
+                  本域暂无登记能力
+                </p>
               ) : (
                 <ul className="grid gap-2 sm:grid-cols-2">
                   {section.capabilities.map((cap) => (
@@ -101,9 +107,7 @@ export function CapabilityCatalogPanel({
               className="space-y-2"
               data-testid="catalog-l2-dependencies"
             >
-              <h3 className="text-sm font-semibold">
-                二级 · 技术依赖
-              </h3>
+              <h3 className="text-sm font-semibold">二级 · 技术依赖</h3>
               {section.technicalDependencies.length === 0 ? (
                 <p className="text-sm text-muted-foreground">无关键技术依赖</p>
               ) : (
@@ -123,13 +127,8 @@ export function CapabilityCatalogPanel({
               )}
             </section>
 
-            <section
-              className="space-y-2"
-              data-testid="catalog-l2-evidence"
-            >
-              <h3 className="text-sm font-semibold">
-                二级 · 证据下钻
-              </h3>
+            <section className="space-y-2" data-testid="catalog-l2-evidence">
+              <h3 className="text-sm font-semibold">二级 · 证据下钻</h3>
               {section.evidenceDrilldowns.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   本域暂无既有管理页下钻（后续纵向回填）

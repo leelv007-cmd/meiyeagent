@@ -6,6 +6,7 @@ import {
   MemoryFoundationRepository,
   P1ApplicationService,
 } from '../foundation/index.js';
+import type { PermissionAuthorizerPort } from '../capability-permission/port.js';
 import {
   ApprovalReceiptError,
   ContentPackageApprovalService,
@@ -266,7 +267,16 @@ test('a deterministic approval failure releases its module-command claim for an 
   const repository = new MemoryFoundationRepository();
   repository.grantOwner('workspace-a', 'owner-a');
   let attempts = 0;
+  const claimLifecycleAuthorizer: PermissionAuthorizerPort = {
+    decide: () => ({
+      allow: true,
+      reason: 'capability_granted',
+      required: null,
+    }),
+    authorize: () => undefined,
+  };
   const service = new P1ApplicationService(repository, {
+    authorizer: claimLifecycleAuthorizer,
     operations: [
       {
         name: 'approval.failure',
@@ -283,6 +293,7 @@ test('a deterministic approval failure releases its module-command claim for an 
   const execute = () =>
     service.executeModule(
       {
+        actor: 'owner',
         correlationId: 'approval-failure-claim',
         userId: 'owner-a',
         workspaceId: 'workspace-a',

@@ -23,7 +23,7 @@ export function SupplyCredentialPanel({
       data-testid="supply-credential-panel"
       data-secret-never-echoed={String(view.secretNeverEchoed)}
       data-env-fallback-risk-always-visible={String(
-        view.envFallbackRiskAlwaysVisible,
+        view.envFallbackRiskAlwaysVisible
       )}
       className="space-y-4"
     >

@@ -272,6 +272,10 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     'config.publish',
   );
   assert.equal(
+    requiredP1Capability('query', 'admin-config', 'config_get'),
+    'config.publish',
+  );
+  assert.equal(
     requiredP1Capability('query', 'admin-config', 'config_defaults'),
     'workspace.read',
   );

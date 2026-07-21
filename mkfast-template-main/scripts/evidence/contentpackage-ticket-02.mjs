@@ -13,8 +13,7 @@ import { chromium } from '@playwright/test';
 
 const baseUrl = process.env.EVIDENCE_BASE_URL ?? 'http://localhost:3000';
 const outputDir = path.resolve(
-  process.env.EVIDENCE_OUTPUT_DIR ??
-    '../docs/evidence/contentpackage/ticket-02'
+  process.env.EVIDENCE_OUTPUT_DIR ?? '../docs/evidence/contentpackage/ticket-02'
 );
 const photo = path.resolve(
   process.env.EVIDENCE_PHOTO ??
@@ -147,8 +146,7 @@ try {
   let control = await query('model-supply', 'admin_catalog_control');
   assert(control.status === 200, 'Catalog control unavailable', control);
   customDeployment = control.body.data.catalog.deployments.find(
-    (deployment) =>
-      deployment.catalogModelId === 'llm-custom'
+    (deployment) => deployment.catalogModelId === 'llm-custom'
   );
   assert(customDeployment, 'Custom deployment missing', {
     deployments: control.body.data.catalog.deployments.map((item) => ({
@@ -272,9 +270,11 @@ try {
   await page.waitForTimeout(1_500);
   const enabled = lastStage('enabled');
   await page.locator('#admin-model-revision-id').fill(enabled.id);
-  await page.getByRole('button', {
-    name: '发布 enabled revision',
-  }).click();
+  await page
+    .getByRole('button', {
+      name: '发布 enabled revision',
+    })
+    .click();
   await page
     .locator('#impact-review-reason')
     .fill('Publish live-verified custom provider evidence.');
@@ -340,7 +340,9 @@ try {
   }
   await page
     .getByLabel('描述这次想创作的内容')
-    .fill('写一条真实克制的头皮清洁项目种草文案，强调 59 元体验价，不作疗效承诺。');
+    .fill(
+      '写一条真实克制的头皮清洁项目种草文案，强调 59 元体验价，不作疗效承诺。'
+    );
   await page.getByRole('button', { name: '建立创作记录' }).click();
   const record = page.getByLabel('创作助理整理的记录');
   await record.waitFor();
@@ -402,7 +404,8 @@ try {
             run.deploymentId === customDeployment.id &&
             run.phase === 'publish_after_restart'
         ).length === 3,
-      merchantReceivedThreeCandidates: (await candidates.getByRole('radio').count()) === 3,
+      merchantReceivedThreeCandidates:
+        (await candidates.getByRole('radio').count()) === 3,
       noAutomaticCrossBrandSwitch:
         customJob.executionProvenance.actualCatalogModelId === 'llm-custom',
       publishedCustomCatalog: catalogRevision.stage === 'published',
@@ -417,15 +420,15 @@ try {
       deploymentId: customDeployment.id,
     },
     merchantJob: {
-      actualCatalogModelId:
-        customJob.executionProvenance.actualCatalogModelId,
+      actualCatalogModelId: customJob.executionProvenance.actualCatalogModelId,
       catalogModelId: customJob.contract.catalogModelId,
       operation: customJob.contract.operation,
       providerModel: customJob.executionProvenance.providerModel,
       routeSnapshotId: customJob.routeSnapshotId,
       status: customJob.status,
     },
-    redaction: 'Structured JSON omits credentials, cookies, raw generated copy, workspace ids, and provider request references. Screenshots and video retain the merchant-visible generated copy required for UI acceptance.',
+    redaction:
+      'Structured JSON omits credentials, cookies, raw generated copy, workspace ids, and provider request references. Screenshots and video retain the merchant-visible generated copy required for UI acceptance.',
     runId,
     timeline,
   };
@@ -441,8 +444,12 @@ try {
 
 for (const filename of await readdir(outputDir)) {
   if (!filename.endsWith('.webm')) continue;
-  const target = path.join(outputDir, 'continuous-custom-provider-journey.webm');
-  if (filename !== path.basename(target)) await rename(path.join(outputDir, filename), target);
+  const target = path.join(
+    outputDir,
+    'continuous-custom-provider-journey.webm'
+  );
+  if (filename !== path.basename(target))
+    await rename(path.join(outputDir, filename), target);
 }
 const artifacts = {};
 for (const filename of (await readdir(outputDir)).sort()) {

@@ -13,9 +13,7 @@ test("fileToBase64 encodes blob bytes", async () => {
 });
 
 test("persistBlobAsOwnedAsset posts bytesBase64 via callCanvas", async () => {
-	let observed:
-		| { action: string; input?: Record<string, unknown> }
-		| undefined;
+	let observed: { action: string; input?: Record<string, unknown> } | undefined;
 	const asset = await persistBlobAsOwnedAsset(
 		(async (action, input) => {
 			observed = { action, input };

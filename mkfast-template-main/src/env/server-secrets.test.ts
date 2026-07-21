@@ -15,17 +15,17 @@ test('allowsDevSecretDefaults is true outside production/staging', () => {
   assert.equal(allowsDevSecretDefaults({}), true);
   assert.equal(allowsDevSecretDefaults({ APP_ENV: 'production' }), false);
   assert.equal(allowsDevSecretDefaults({ APP_ENV: 'staging' }), false);
-  assert.equal(
-    allowsDevSecretDefaults({ NODE_ENV: 'production' }),
-    false
-  );
+  assert.equal(allowsDevSecretDefaults({ NODE_ENV: 'production' }), false);
 });
 
 test('isStrictSecretEnv only for production/staging (or bare NODE_ENV=production)', () => {
   assert.equal(isStrictSecretEnv({ APP_ENV: 'production' }), true);
   assert.equal(isStrictSecretEnv({ APP_ENV: 'staging' }), true);
   assert.equal(isStrictSecretEnv({ NODE_ENV: 'production' }), true);
-  assert.equal(isStrictSecretEnv({ APP_ENV: 'e2e', NODE_ENV: 'production' }), false);
+  assert.equal(
+    isStrictSecretEnv({ APP_ENV: 'e2e', NODE_ENV: 'production' }),
+    false
+  );
   assert.equal(isStrictSecretEnv({}), false);
 });
 

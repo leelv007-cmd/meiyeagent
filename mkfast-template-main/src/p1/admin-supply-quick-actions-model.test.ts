@@ -89,7 +89,7 @@ test('each governed action: command + permission + preview + audit contract', ()
     assert.doesNotMatch(JSON.stringify(pack.command), /sk-[A-Za-z0-9]{8,}/);
     assert.doesNotMatch(
       JSON.stringify(pack.command.payload),
-      /"(apiKey|password|authorization)"\s*:/,
+      /"(apiKey|password|authorization)"\s*:/
     );
 
     // permission (impact-review-dialog precedent + K1 registry)
@@ -97,7 +97,7 @@ test('each governed action: command + permission + preview + audit contract', ()
     const registry = requiredP1Capability(
       pack.definition.kind,
       pack.definition.module,
-      pack.definition.action,
+      pack.definition.action
     );
     if (registry !== null) {
       assert.equal(registry, pack.definition.requiredPermission);
@@ -105,7 +105,7 @@ test('each governed action: command + permission + preview + audit contract', ()
     }
     assert.equal(
       resolveActionPermission(pack.definition),
-      pack.definition.requiredPermission,
+      pack.definition.requiredPermission
     );
 
     // preview
@@ -113,19 +113,13 @@ test('each governed action: command + permission + preview + audit contract', ()
       assert.ok(pack.preview.changes.length >= 1);
       assert.ok(pack.preview.scope.includes(pack.definition.label));
     }
-    assert.ok(
-      pack.preview.warnings.some((w) => w.includes('不暴露密钥')),
-    );
-    assert.ok(
-      pack.preview.warnings.some((w) => w.includes('不直写数据库')),
-    );
-    assert.ok(
-      pack.preview.warnings.some((w) => w.includes('不绕过发布门')),
-    );
+    assert.ok(pack.preview.warnings.some((w) => w.includes('不暴露密钥')));
+    assert.ok(pack.preview.warnings.some((w) => w.includes('不直写数据库')));
+    assert.ok(pack.preview.warnings.some((w) => w.includes('不绕过发布门')));
     assert.ok(
       pack.preview.warnings.some((w) =>
-        w.includes('accepted / acceptance_unknown'),
-      ),
+        w.includes('accepted / acceptance_unknown')
+      )
     );
 
     // audit
@@ -153,12 +147,11 @@ test('impact reason schema gate (impact-review-dialog precedent)', () => {
 
   const def = getGovernedQuickAction('publish');
   assert.throws(
-    () =>
-      buildGovernedCommand(def, targetFor('publish'), 'nope'),
-    /reason|8/i,
+    () => buildGovernedCommand(def, targetFor('publish'), 'nope'),
+    /reason|8/i
   );
   assert.doesNotThrow(() =>
-    buildGovernedCommand(def, targetFor('publish'), REASON),
+    buildGovernedCommand(def, targetFor('publish'), REASON)
   );
 });
 
@@ -183,7 +176,7 @@ test('drain and isolate are reversible; publish is not', () => {
 
   const drainPreview = buildImpactPreview(
     getGovernedQuickAction('drain'),
-    targetFor('drain'),
+    targetFor('drain')
   );
   assert.equal(drainPreview.reversible, true);
   assert.ok(drainPreview.changes.some((c) => /排空|drain/i.test(c)));

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import sharp from 'sharp';
 import {
   AnthropicDirectRecordedAdapter,
@@ -25,6 +25,11 @@ import {
   recordedRequest,
 } from './adapters.js';
 import { MemoryModelAssetStorage, RecordedGatewayPocPort } from './index.js';
+import { resetSharedRecordedHealthOverlay } from '../supply-registry/health-overlay.js';
+
+beforeEach(() => {
+  resetSharedRecordedHealthOverlay();
+});
 
 test('three direct LLM families cover structured, stream and classified recorded failures', async () => {
   for (const adapter of [

@@ -98,10 +98,7 @@ test('stale / unknown / rate-limit / mapping present honestly', () => {
   assert.equal(freshnessLabel('stale'), '过期（非实时）');
   assert.equal(stale.deployments.status, 'unknown');
   assert.match(stale.deployments.businessImpact, /限流/);
-  assert.equal(
-    formatAdminCfField(stale.deployments),
-    'unknown (rate_limited)',
-  );
+  assert.equal(formatAdminCfField(stale.deployments), 'unknown (rate_limited)');
 
   const unverified = buildAdminCloudflarePresentation({ inventory: null });
   assert.equal(unverified.freshness, 'not_verified');
@@ -111,9 +108,7 @@ test('stale / unknown / rate-limit / mapping present honestly', () => {
 
 test('config risks default from repo facts; no queue card; write denials listed', () => {
   assert.ok(DEFAULT_REPO_CONFIG_RISKS.length >= 2);
-  assert.ok(
-    ADMIN_CF_DENIED_WRITE_ACTIONS.includes('cloudflare_rollback'),
-  );
+  assert.ok(ADMIN_CF_DENIED_WRITE_ACTIONS.includes('cloudflare_rollback'));
   assert.ok(ADMIN_CF_DENIED_WRITE_ACTIONS.includes('cloudflare_secret_put'));
   assert.ok(ADMIN_CF_DENIED_WRITE_ACTIONS.includes('cloudflare_dns_write'));
   assert.ok(ADMIN_CF_DENIED_WRITE_ACTIONS.includes('cloudflare_waf_write'));

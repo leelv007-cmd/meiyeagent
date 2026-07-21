@@ -57,7 +57,7 @@ import {
   CanvasTextGenerationOutboxWorker,
   CompositeReferenceAssetResolver,
   DurableMediaGenerationApplicationService,
-  fileSystemAssetStorageFromEnv,
+  modelAssetStorageFromEnv,
   FoundationModelSupplyLedger,
   MediaActivationProbeExecutor,
   OwnedAssetReferenceResolver,
@@ -127,7 +127,11 @@ import {
   createOperationsTriggerJobHandler,
 } from './p1/operations/index.js';
 import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from './pro-studio-runtime/provider-reference-policy.js';
-import { PostgresCanvasAssetRepository } from './pro-studio/index.js';
+import {
+  CanvasAssetDeletionWorker,
+  migrateProStudioSchema,
+  PostgresCanvasAssetRepository,
+} from './pro-studio/index.js';
 import { CutoverProductService } from './product/cutover-product-service.js';
 import { PostgresProductRepository } from './product/postgres-repository.js';
 import { PostgresRelationalProductRepository } from './product/relational-product-repository.js';
@@ -177,10 +181,11 @@ const jobRuntime = PgBossJobPort.connect({
 });
 const productRepository = new PostgresProductRepository(pool);
 const relationalProductRepository = new PostgresRelationalProductRepository(pool);
-const assetStorage = fileSystemAssetStorageFromEnv(process.env);
+const assetStorage = modelAssetStorageFromEnv(process.env);
+const canvasAssetRepository = new PostgresCanvasAssetRepository(pool);
 const referenceAssets = new CompositeReferenceAssetResolver([
   new OwnedAssetReferenceResolver(
-    new PostgresCanvasAssetRepository(pool),
+    canvasAssetRepository,
     {
       async head(objectKey) {
         return assetStorage.head(objectKey);
@@ -273,6 +278,7 @@ await migratePostgresSchema(pool, [
   operationalTelemetryStore,
   notifier,
 ]);
+await migrateProStudioSchema(pool);
 const integrationSecrets = integrationSecretStoreFromEnv(process.env);
 await migrateProviderCredentialAccountsFromIntegrations(
   integrationRepository,
@@ -471,6 +477,30 @@ const canvasTextGenerationWorker = new CanvasTextGenerationOutboxWorker({
     modelControlPlane.initialize(workspaceId).then(() => undefined),
   repository: modelRepository,
 });
+const canvasAssetDeletionWorker = new CanvasAssetDeletionWorker({
+  repository: canvasAssetRepository,
+  storage: {
+    delete: async (objectKey) =>
+      assetStorage.deleteCanvasAsset({
+        objectKey,
+        workspaceId: objectKey.split('/')[0] ?? '',
+      }),
+    put: async (objectKey, bytes) =>
+      assetStorage.putCanvasAsset({
+        bytes,
+        objectKey,
+        workspaceId: objectKey.split('/')[0] ?? '',
+      }),
+    read: async (objectKey) => {
+      try {
+        return (await assetStorage.read(objectKey)).bytes;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw error;
+      }
+    },
+  },
+});
 const legacyProductService = new ProductService(
   productRepository,
   notifier,
@@ -622,6 +652,12 @@ const canvasTextGenerationInterval = setInterval(() => {
   });
 }, Number(process.env.CANVAS_TEXT_GENERATION_POLL_MS ?? 250));
 canvasTextGenerationInterval.unref();
+const canvasAssetDeletionInterval = setInterval(() => {
+  void canvasAssetDeletionWorker.runOnce().catch((error) => {
+    console.error('Canvas asset deletion outbox iteration failed.', error);
+  });
+}, Number(process.env.CANVAS_ASSET_DELETION_POLL_MS ?? 500));
+canvasAssetDeletionInterval.unref();
 console.log('meiye-core P1 job worker started');
 
 let closing = false;
@@ -629,6 +665,7 @@ const shutdown = async () => {
   if (closing) return;
   closing = true;
   clearInterval(canvasTextGenerationInterval);
+  clearInterval(canvasAssetDeletionInterval);
   try {
     await worker.stop();
   } finally {

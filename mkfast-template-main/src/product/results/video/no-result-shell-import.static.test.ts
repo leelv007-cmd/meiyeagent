@@ -78,9 +78,7 @@ test('video worksurface source tree has no direct Result Shell imports', () => {
 
     // Extra explicit scan for any forbidden module name in import paths.
     for (const mod of FORBIDDEN_RELATIVE_IMPORTS) {
-      const loose = new RegExp(
-        `from\\s+['"][^'"]*${mod}['"]`,
-      );
+      const loose = new RegExp(`from\\s+['"][^'"]*${mod}['"]`);
       if (loose.test(source)) {
         violations.push(`${rel}: imports ${mod}`);
       }
@@ -90,14 +88,14 @@ test('video worksurface source tree has no direct Result Shell imports', () => {
   assert.deepEqual(
     violations,
     [],
-    `Result Shell / core direct imports forbidden in video/**:\n${violations.join('\n')}`,
+    `Result Shell / core direct imports forbidden in video/**:\n${violations.join('\n')}`
   );
 });
 
 test('video worksurface model imports contracts only for cross-lane types', () => {
   const modelSource = readFileSync(
     join(VIDEO_DIR, 'video-worksurface-model.ts'),
-    'utf8',
+    'utf8'
   );
 
   assert.match(modelSource, /from '@meiye\/contracts'/);

@@ -1194,6 +1194,22 @@ export class ModelSupplyApplicationService {
     return this.executeSubmission(submission, this.execution);
   }
 
+  submitWithProviderEffectKey(
+    submission: ModelSupplySubmission,
+    effectIdempotencyKey: string,
+  ): Promise<ModelSupplyResult> {
+    if (
+      this.mediaRuntime &&
+      !submission.operation.startsWith('copy.') &&
+      submission.operation !== 'text.respond'
+    ) {
+      throw new Error('Canvas text outbox accepts only language generation.');
+    }
+    return this.executeSubmission(submission, this.execution, {
+      effectIdempotencyKey,
+    });
+  }
+
   executeStructuredObject<Output>(
     submission: ModelSupplySubmission,
     input: {
@@ -5408,6 +5424,7 @@ export class ModelSupplyCopyProvider {
 
 export * from './adapters.js';
 export * from './activation-probe-executor.js';
+export * from './asset-storage-from-env.js';
 export * from './ai-sdk-runner.js';
 export * from './audio-activation-gate.js';
 export * from './catalog.js';
@@ -5425,6 +5442,7 @@ export * from './postgres-repository.js';
 export * from './reference-asset-resolver.js';
 export * from './runtime-config.js';
 export * from './runtime-assembly.js';
+export * from './s3-asset-storage.js';
 export * from './video-workflow-billing.js';
 export * from './tuzi-media-adapter.js';
 export * from './volcengine-tts-adapter.js';

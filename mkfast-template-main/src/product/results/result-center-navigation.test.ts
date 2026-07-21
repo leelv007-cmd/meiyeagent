@@ -30,7 +30,7 @@ test('buildResultCenterNavigation requires workId', () => {
 test('location uses /dashboard/results/$workId not ?workId= bridge', () => {
   const location = resultCenterLocationFromNavigation(
     { workId: 'work-42', returnToDraftKey: 'd1', focusKey: 'f1' },
-    { panel: 'run', sourceRoute: '/dashboard' },
+    { panel: 'run', sourceRoute: '/dashboard' }
   );
   assert.equal(location.pathname, '/dashboard/results/work-42');
   assert.match(RESULT_CENTER_PATH_PATTERN, /results\/\$workId/);
@@ -58,6 +58,6 @@ test('resultTargetFromRoute builds shareable target', () => {
       contentId: 'c',
       panel: 'history',
     }),
-    { workId: 'w', contentId: 'c', panel: 'history' },
+    { workId: 'w', contentId: 'c', panel: 'history' }
   );
 });

@@ -266,6 +266,92 @@ test("returns 404 for actions outside the frozen table", async () => {
 	assert.equal(response.status, 404);
 });
 
+test("rejects standard action bodies larger than 1 MiB", async () => {
+	const { port, sessionToken } = await fixture();
+	const body = JSON.stringify({ padding: "x".repeat(1024 * 1024) });
+	const response = await port.handle(
+		"getCatalog",
+		new Request("https://canvas.example.test/api/canvas/getCatalog", {
+			body,
+			headers: { "content-type": "application/json" },
+			method: "POST",
+		}),
+		sessionToken,
+	);
+
+	assert.equal(response.status, 413);
+	assert.equal((await response.json()).error.code, "REQUEST_BODY_TOO_LARGE");
+});
+
+test("rejects deeply nested JSON without recursive traversal", async () => {
+	const { port, sessionToken } = await fixture();
+	const body = `${'{"child":'.repeat(100)}null${"}".repeat(100)}`;
+	const response = await port.handle(
+		"getCatalog",
+		new Request("https://canvas.example.test/api/canvas/getCatalog", {
+			body,
+			headers: { "content-type": "application/json" },
+			method: "POST",
+		}),
+		sessionToken,
+	);
+
+	assert.equal(response.status, 400);
+	assert.equal((await response.json()).error.code, "JSON_TOO_COMPLEX");
+});
+
+test("keeps an independent large-body budget for local Canvas media", async () => {
+	const { port, sessionToken } = await fixture();
+	const bytes = Buffer.concat([
+		Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+		Buffer.alloc(800_000),
+	]);
+	const response = await port.handle(
+		"persistLocalCanvasArtifact",
+		request({
+			bytesBase64: bytes.toString("base64"),
+			contentType: "image/png",
+			derivation: "retouch",
+			fileName: "large.png",
+		}),
+		sessionToken,
+	);
+
+	assert.equal(response.status, 200);
+});
+
+test("rejects invalid idempotency keys instead of replacing them", async () => {
+	const { port, sessionToken } = await fixture();
+	const original = request({ projectId: "project-1" });
+	const headers = new Headers(original.headers);
+	headers.set("idempotency-key", "invalid key with spaces");
+	const response = await port.handle(
+		"deleteProject",
+		new Request(original, { headers }),
+		sessionToken,
+	);
+
+	assert.equal(response.status, 400);
+	assert.equal((await response.json()).error.code, "INVALID_IDEMPOTENCY_KEY");
+});
+
+test("regenerates unsafe correlation IDs at the Canvas boundary", async () => {
+	const { port, sessionToken } = await fixture();
+	const original = request({});
+	const headers = new Headers(original.headers);
+	headers.set("x-correlation-id", "unsafe correlation value");
+	const response = await port.handle(
+		"getCatalog",
+		new Request(original, { headers }),
+		sessionToken,
+	);
+	const correlationId = response.headers.get("x-correlation-id");
+
+	assert.equal(response.status, 200);
+	assert.notEqual(correlationId, "unsafe correlation value");
+	assert.match(correlationId ?? "", /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/u);
+});
+
 test("maps transient main-session validation failures to 503", async () => {
 	const unavailable = Object.assign(new Error("main app unavailable"), {
 		code: "MAIN_SESSION_UNAVAILABLE",

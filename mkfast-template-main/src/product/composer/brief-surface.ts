@@ -65,11 +65,7 @@ export const BRIEF_TRIGGER_CODES: readonly BriefTriggerConditionCode[] =
 // Surface state
 // ---------------------------------------------------------------------------
 
-export type BriefSurfacePhase =
-  | 'idle'
-  | 'open'
-  | 'confirmed'
-  | 'cancelled';
+export type BriefSurfacePhase = 'idle' | 'open' | 'confirmed' | 'cancelled';
 
 /**
  * Opaque Composer input snapshot frozen when Brief opens.
@@ -352,13 +348,20 @@ export function confirmBriefSurface(
   options?: { confirmedAt?: string }
 ):
   | { ok: true; state: BriefSurfaceState; confirmation: BriefConfirmation }
-  | { ok: false; reason: 'not_open' | 'video_confirm_required'; state: BriefSurfaceState } {
+  | {
+      ok: false;
+      reason: 'not_open' | 'video_confirm_required';
+      state: BriefSurfaceState;
+    } {
   if (state.phase !== 'open' || !state.projection) {
     return { ok: false, reason: 'not_open', state };
   }
 
   const view = projectBriefSurfaceView(state, {
-    lensId: state.composerSnapshot?.lensId ?? state.projection.bindRevisions.lensId ?? null,
+    lensId:
+      state.composerSnapshot?.lensId ??
+      state.projection.bindRevisions.lensId ??
+      null,
     quote: null,
   });
 
@@ -385,9 +388,7 @@ export function confirmBriefSurface(
  * Cancel Brief — return to Composer with the frozen input snapshot.
  * Does NOT clear composerSnapshot so host can restore fields.
  */
-export function cancelBriefSurface(
-  state: BriefSurfaceState
-): {
+export function cancelBriefSurface(state: BriefSurfaceState): {
   state: BriefSurfaceState;
   restored: ComposerInputSnapshot | null;
 } {
@@ -463,7 +464,9 @@ export function projectBriefSurfaceView(
   });
 
   // Embed video confirm when any_video trigger fired OR lens is video.
-  const hasVideoTrigger = projection.triggers.some((t) => t.code === 'any_video');
+  const hasVideoTrigger = projection.triggers.some(
+    (t) => t.code === 'any_video'
+  );
   const embedVideo = videoConfirm.visible || hasVideoTrigger;
   const embeddedVideo = embedVideo
     ? videoConfirm.visible
@@ -477,9 +480,7 @@ export function projectBriefSurfaceView(
     : null;
 
   const evidenceEntries = projectEvidenceForBrowser(projection.evidenceDrawer);
-  const requiresVideoConfirm = Boolean(
-    embeddedVideo?.requiresExplicitConfirm
-  );
+  const requiresVideoConfirm = Boolean(embeddedVideo?.requiresExplicitConfirm);
 
   return {
     visible: true,
@@ -538,8 +539,7 @@ export function fixtureBriefProjection(input: {
       quoteRevisionId: input.bindRevisions?.quoteRevisionId ?? null,
       sourceRevisionId: input.bindRevisions?.sourceRevisionId ?? null,
       surfaceRevisionId: input.bindRevisions?.surfaceRevisionId ?? null,
-      lensId:
-        input.bindRevisions?.lensId ?? input.lensId ?? null,
+      lensId: input.bindRevisions?.lensId ?? input.lensId ?? null,
     },
     confirmationInvalid: input.confirmationInvalid ?? false,
     confirmationValid: input.confirmationValid ?? false,
@@ -559,7 +559,9 @@ export function fixtureBriefProjection(input: {
 }
 
 /** Snapshot helper for browser contract tests. */
-export function serializeBriefSurfaceForBrowser(view: BriefSurfaceView): string {
+export function serializeBriefSurfaceForBrowser(
+  view: BriefSurfaceView
+): string {
   const payload = projectBrowserComposerPayload({
     visible: view.visible,
     title: view.title,

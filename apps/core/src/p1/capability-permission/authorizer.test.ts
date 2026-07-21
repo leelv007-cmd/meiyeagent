@@ -205,3 +205,32 @@ test('Cloudflare inventory is a registered read-only capability query', () => {
     }
   );
 });
+
+test('admin config reads require config publication capability', () => {
+  assert.deepEqual(
+    authorizer.decide({
+      actor: 'admin',
+      kind: 'query',
+      module: 'admin-config',
+      action: 'config_get',
+    }),
+    {
+      allow: true,
+      required: 'config.publish',
+      reason: 'capability_granted',
+    },
+  );
+  assert.deepEqual(
+    authorizer.decide({
+      actor: 'owner',
+      kind: 'query',
+      module: 'admin-config',
+      action: 'config_get',
+    }),
+    {
+      allow: false,
+      required: 'config.publish',
+      reason: 'capability_denied',
+    },
+  );
+});

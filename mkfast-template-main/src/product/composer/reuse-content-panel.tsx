@@ -9,14 +9,8 @@
 import type { CreationLensId } from '@meiye/contracts';
 import { cn } from '@/lib/utils';
 
-import {
-  REUSE_INCOMPLETE_CTA,
-  actionLabelForLens,
-} from './launch-card-seeds';
-import {
-  COMPOSER_LENS_OPTIONS,
-  LENS_GROUP_LABEL,
-} from './lens-labels';
+import { REUSE_INCOMPLETE_CTA, actionLabelForLens } from './launch-card-seeds';
+import { COMPOSER_LENS_OPTIONS } from './lens-labels';
 import type { ReusePanelSelection } from './recipe-apply';
 import { reusePanelReady } from './recipe-apply';
 
@@ -44,7 +38,11 @@ export type ReuseContentPanelProps = {
 };
 
 const DEFAULT_CARRIERS: ReuseCarrierOption[] = [
-  { id: 'xiaohongshu', label: '小红书', lensIds: ['image_text', 'video', 'copy'] },
+  {
+    id: 'xiaohongshu',
+    label: '小红书',
+    lensIds: ['image_text', 'video', 'copy'],
+  },
   { id: 'wechat_moments', label: '朋友圈', lensIds: ['copy', 'image_text'] },
   { id: 'douyin', label: '抖音', lensIds: ['video', 'image_text'] },
 ];
@@ -142,37 +140,41 @@ export function ReuseContentPanel({
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">这次要做成什么？</legend>
         <div
-          role="radiogroup"
-          aria-label={LENS_GROUP_LABEL}
           data-testid="composer-reuse-lens-group"
           className="flex flex-wrap gap-2"
         >
           {COMPOSER_LENS_OPTIONS.map((option) => {
             const selected = selection.lensId === option.id;
             return (
-              <button
+              <label
                 key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                data-testid={`composer-reuse-lens-${option.id}`}
                 className={cn(
-                  'inline-flex min-h-12 min-w-12 items-center justify-center rounded-full border px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  'relative inline-flex min-h-12 min-w-12 items-center justify-center rounded-full border px-4 text-sm font-medium',
                   selected
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-input bg-background'
                 )}
-                onClick={() =>
-                  onChange({
-                    ...selection,
-                    lensId: option.id,
-                    // Changing form clears carrier (no silent keep of incompatible).
-                    carrier: null,
-                  })
-                }
               >
-                {option.label}
-              </button>
+                <input
+                  type="radio"
+                  name="composer-reuse-lens"
+                  value={option.id}
+                  checked={selected}
+                  data-testid={`composer-reuse-lens-${option.id}`}
+                  className="absolute inset-0 appearance-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={() =>
+                    onChange({
+                      ...selection,
+                      lensId: option.id,
+                      // Changing form clears carrier (no silent keep of incompatible).
+                      carrier: null,
+                    })
+                  }
+                />
+                <span className="relative pointer-events-none">
+                  {option.label}
+                </span>
+              </label>
             );
           })}
         </div>
@@ -182,35 +184,39 @@ export function ReuseContentPanel({
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">准备发布到哪里？</legend>
         <div
-          role="radiogroup"
-          aria-label="目标载体"
           data-testid="composer-reuse-carrier-group"
           className="flex flex-wrap gap-2"
         >
           {carriers.map((carrier) => {
             const selected = selection.carrier === carrier.id;
             return (
-              <button
+              <label
                 key={carrier.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                data-testid={`composer-reuse-carrier-${carrier.id}`}
                 className={cn(
-                  'inline-flex min-h-12 min-w-12 items-center justify-center rounded-full border px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  'relative inline-flex min-h-12 min-w-12 items-center justify-center rounded-full border px-4 text-sm font-medium',
                   selected
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-input bg-background'
                 )}
-                onClick={() =>
-                  onChange({
-                    ...selection,
-                    carrier: carrier.id,
-                  })
-                }
               >
-                {carrier.label}
-              </button>
+                <input
+                  type="radio"
+                  name="composer-reuse-carrier"
+                  value={carrier.id}
+                  checked={selected}
+                  data-testid={`composer-reuse-carrier-${carrier.id}`}
+                  className="absolute inset-0 appearance-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={() =>
+                    onChange({
+                      ...selection,
+                      carrier: carrier.id,
+                    })
+                  }
+                />
+                <span className="relative pointer-events-none">
+                  {carrier.label}
+                </span>
+              </label>
             );
           })}
         </div>

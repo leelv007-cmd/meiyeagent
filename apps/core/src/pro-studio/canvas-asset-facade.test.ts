@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   CanvasAssetError,
+  CanvasAssetDeletionWorker,
   CanvasAssetFacade,
+  CanvasAssetPersistenceError,
   MemoryCanvasAssetRepository,
   MemoryCanvasObjectStorage,
 } from './canvas-asset-facade.js';
@@ -74,6 +76,103 @@ test('records parentless retouch uploads as original imports instead of derivati
   );
 
   assert.deepEqual(asset.source, { kind: 'local_import' });
+});
+
+test('removes uploaded bytes when the asset record cannot be committed', async () => {
+  const storage = new MemoryCanvasObjectStorage();
+  const facade = new CanvasAssetFacade({
+    repository: {
+      claimDeletion: async () => null,
+      completeDeletion: async () => false,
+      enqueueOrphanDeletion: async () => {
+        throw new Error('unexpected orphan recovery');
+      },
+      findByLegacyStorageKey: async () => null,
+      get: async () => null,
+      insert: async () => {
+        throw new Error('database unavailable');
+      },
+      list: async () => [],
+      releaseDeletion: async () => false,
+      tombstoneAndEnqueueDeletion: async () => null,
+    },
+    storage,
+    nextId: () => 'asset-orphan',
+  });
+
+  await assert.rejects(
+    facade.persistLocalCanvasArtifact(
+      { userId: 'user-1', workspaceId: 'workspace-1' },
+      {
+        bytes: png,
+        contentType: 'image/png',
+        derivation: 'retouch',
+        fileName: 'orphan.png',
+      },
+    ),
+    /database unavailable/,
+  );
+  assert.equal(
+    await storage.read('workspace-1/canvas/assets/asset-orphan.png'),
+    null,
+  );
+  await storage.delete('workspace-1/canvas/assets/asset-orphan.png');
+});
+
+test('durably queues an orphan delete when metadata insertion and immediate cleanup both fail', async () => {
+  class FailingRepository extends MemoryCanvasAssetRepository {
+    override async insert() {
+      throw new Error('metadata persistence unavailable');
+    }
+  }
+  class FailingOnceStorage extends MemoryCanvasObjectStorage {
+    private deleteAttempts = 0;
+
+    override async delete(objectKey: string) {
+      this.deleteAttempts += 1;
+      if (this.deleteAttempts === 1) {
+        throw new Error('immediate object cleanup unavailable');
+      }
+      return super.delete(objectKey);
+    }
+  }
+
+  const repository = new FailingRepository();
+  const storage = new FailingOnceStorage();
+  const facade = new CanvasAssetFacade({
+    repository,
+    storage,
+    nextId: () => 'asset-orphan-recovery',
+  });
+  const context = { userId: 'user-1', workspaceId: 'workspace-1' };
+
+  await assert.rejects(
+    facade.persistLocalCanvasArtifact(context, {
+      bytes: png,
+      contentType: 'image/png',
+      derivation: 'retouch',
+      fileName: 'orphan-recovery.png',
+    }),
+    (error: unknown) =>
+      error instanceof CanvasAssetPersistenceError &&
+      error.recoveryQueued === true
+  );
+
+  const worker = new CanvasAssetDeletionWorker({
+    claimToken: () => 'orphan-claim-1',
+    repository,
+    storage,
+  });
+  assert.deepEqual(await worker.runOnce(), {
+    assetId: 'asset-orphan-recovery',
+    status: 'completed',
+  });
+  assert.equal(
+    await storage.read(
+      'workspace-1/canvas/assets/asset-orphan-recovery.png'
+    ),
+    null
+  );
 });
 
 test('rejects derivative parents that are unknown or belong to another workspace', async () => {
@@ -210,4 +309,33 @@ test('serves private media with nosniff and bounded byte ranges', async () => {
   assert.equal(delivery.headers['x-content-type-options'], 'nosniff');
   assert.equal(delivery.headers['cache-control'], 'private, no-store');
   assert.deepEqual([...delivery.body], [...png.slice(0, 4)]);
+});
+
+test('tombstones an asset immediately and deletes its object through an idempotent outbox worker', async () => {
+  const { facade, repository, storage } = fixture();
+  const context = { userId: 'user-1', workspaceId: 'workspace-1' };
+  const asset = await facade.persistLocalCanvasArtifact(context, {
+    bytes: png,
+    contentType: 'image/png',
+    derivation: 'retouch',
+    fileName: 'delete-me.png',
+  });
+
+  await facade.deleteAsset(context, asset.id);
+  await assert.rejects(facade.getAsset(context, asset.id), /not found/i);
+  assert.equal(await storage.read(asset.objectKey) !== null, true);
+
+  const worker = new CanvasAssetDeletionWorker({
+    claimToken: () => 'delete-claim-1',
+    clock: () => new Date('2026-07-16T09:00:00.000Z'),
+    repository,
+    storage,
+  });
+  assert.deepEqual(await worker.runOnce(), {
+    assetId: asset.id,
+    status: 'completed',
+  });
+  assert.equal(await storage.read(asset.objectKey), null);
+  assert.deepEqual(await worker.runOnce(), { status: 'idle' });
+  await storage.delete(asset.objectKey);
 });

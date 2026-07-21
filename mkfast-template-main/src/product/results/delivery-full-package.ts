@@ -100,11 +100,11 @@ const MAX_ZIP_NAME_LENGTH = 120;
 
 export function sanitizeDeliveryZipSegment(
   value: string,
-  fallback: string,
+  fallback: string
 ): string {
   const cleaned = value
     .normalize('NFKC')
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/gu, '')
+    .replace(/[\\/:*?"<>|]|\p{Cc}/gu, '')
     .replace(/\s+/gu, '-')
     .replace(/-+/gu, '-')
     .replace(/^\.+|\.+$/gu, '')
@@ -212,7 +212,7 @@ export type MomentsSegmentsInput = {
 };
 
 function orderedEntries(
-  files: DeliveryPackageMediaFile[],
+  files: DeliveryPackageMediaFile[]
 ): DeliveryManifestFileEntry[] {
   return files.map((file, order) => ({
     mimeType: file.mimeType,
@@ -227,11 +227,11 @@ function orderedEntries(
  * 小红书图文完整发布包 plan (manifest/v1 layout).
  */
 export function buildXiaohongshuImageTextPackage(
-  input: ImageTextPackageInput,
+  input: ImageTextPackageInput
 ): FullPackagePlan {
   if (input.images.length === 0) {
     throw new Error(
-      'An image_text delivery package requires at least one image.',
+      'An image_text delivery package requires at least one image.'
     );
   }
   const first = input.images[0]!;
@@ -317,7 +317,7 @@ export function buildXiaohongshuImageTextPackage(
  * 抖音视频完整发布包 plan (manifest/v1 layout).
  */
 export function buildDouyinVideoPackage(
-  input: VideoPackageInput,
+  input: VideoPackageInput
 ): FullPackagePlan {
   const files: DeliveryPackageMediaFile[] = [
     {
@@ -362,7 +362,7 @@ export function buildDouyinVideoPackage(
       mimeType: 'application/json',
       path: 'evidence/rights-and-facts.json',
       role: 'rights_evidence',
-    },
+    }
   );
 
   const manifest: BeautyDeliveryManifestV1 = {
@@ -410,7 +410,7 @@ export function buildDouyinVideoPackage(
  * Sequential segments: title → body → topics/CTA → media.
  */
 export function buildWechatMomentsSegmentsPackage(
-  input: MomentsSegmentsInput,
+  input: MomentsSegmentsInput
 ): FullPackagePlan {
   const segments: MomentsSegment[] = [
     {
@@ -490,7 +490,7 @@ export function buildWechatMomentsSegmentsPackage(
  * Never projects as platform "published".
  */
 export function recordFullPackageDownload(
-  plan: FullPackagePlan,
+  plan: FullPackagePlan
 ): FullPackageDownloadOutcome {
   return {
     modality: plan.modality,
@@ -509,7 +509,7 @@ export function recordFullPackageDownload(
 // ---------------------------------------------------------------------------
 
 export function xiaohongshuPackageFixture(
-  overrides: Partial<ImageTextPackageInput> = {},
+  overrides: Partial<ImageTextPackageInput> = {}
 ): FullPackagePlan {
   return buildXiaohongshuImageTextPackage({
     caption: {
@@ -534,7 +534,7 @@ export function xiaohongshuPackageFixture(
 }
 
 export function douyinVideoPackageFixture(
-  overrides: Partial<VideoPackageInput> = {},
+  overrides: Partial<VideoPackageInput> = {}
 ): FullPackagePlan {
   return buildDouyinVideoPackage({
     caption: {
@@ -559,7 +559,7 @@ export function douyinVideoPackageFixture(
 }
 
 export function wechatMomentsSegmentsFixture(
-  overrides: Partial<MomentsSegmentsInput> = {},
+  overrides: Partial<MomentsSegmentsInput> = {}
 ): FullPackagePlan {
   return buildWechatMomentsSegmentsPackage({
     caption: {

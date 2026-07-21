@@ -11,13 +11,7 @@ import {
 } from '@/components/ui/card';
 import type { SupplyOverviewView } from '@/p1/admin-supply-overview-model';
 
-function StatusBadge({
-  status,
-  label,
-}: {
-  status: string;
-  label: string;
-}) {
+function StatusBadge({ status, label }: { status: string; label: string }) {
   return (
     <Badge
       variant="outline"
@@ -34,7 +28,7 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
     <section
       data-testid="supply-overview-panel"
       data-external-gateway-deeplink-only={String(
-        view.externalGatewayIsDeepLinkOnly,
+        view.externalGatewayIsDeepLinkOnly
       )}
       className="space-y-6"
     >
@@ -61,8 +55,7 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
                   {row.modalityLabel} · {row.operation}
                 </CardTitle>
                 <CardDescription>
-                  候选 {row.candidateCount} · 健康阻断{' '}
-                  {row.healthBlockingCount}
+                  候选 {row.candidateCount} · 健康阻断 {row.healthBlockingCount}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-xs">
@@ -105,8 +98,9 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
               <p className="mt-1 text-muted-foreground">{row.note}</p>
               <p className="mt-1 font-mono">
                 deployments:{' '}
-                {row.qualifiedDeployments.map((d) => d.deploymentId).join(', ') ||
-                  '—'}
+                {row.qualifiedDeployments
+                  .map((d) => d.deploymentId)
+                  .join(', ') || '—'}
               </p>
             </li>
           ))}
@@ -121,14 +115,8 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
               ['CatalogModel', view.sixEntityRelations.catalogModels],
               ['ProviderProfile', view.sixEntityRelations.providerProfiles],
               ['SupplyContract', view.sixEntityRelations.supplyContracts],
-              [
-                'CredentialAccount',
-                view.sixEntityRelations.credentialAccounts,
-              ],
-              [
-                'ExecutionChannel',
-                view.sixEntityRelations.executionChannels,
-              ],
+              ['CredentialAccount', view.sixEntityRelations.credentialAccounts],
+              ['ExecutionChannel', view.sixEntityRelations.executionChannels],
               ['Deployment', view.sixEntityRelations.deployments],
             ] as const
           ).map(([label, count]) => (
@@ -192,8 +180,8 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
                 data-testid="supply-capacity-row"
                 className="rounded border p-2"
               >
-                <span className="font-medium">{c.displayName}</span> ·{' '}
-                {c.kind} · rev {c.revisionId}
+                <span className="font-medium">{c.displayName}</span> · {c.kind}{' '}
+                · rev {c.revisionId}
                 <br />
                 rpm {c.rpm ?? '—'} / tpm {c.tpm ?? '—'} / 并发 s
                 {c.supplyConcurrency ?? '—'} p{c.productConcurrency ?? '—'} sys
@@ -226,8 +214,7 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
             任务 {view.affected.taskIds.join(', ') || '—'}
           </p>
           <p className="text-xs text-muted-foreground">
-            开放失败/未知{' '}
-            {view.affected.openFailureTaskIds.join(', ') || '无'}
+            开放失败/未知 {view.affected.openFailureTaskIds.join(', ') || '无'}
           </p>
         </section>
       </div>

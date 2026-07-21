@@ -60,7 +60,7 @@ export type DeliveryOutcomeProjection = {
  * Project a single outcome for a11y + focus management.
  */
 export function projectDeliveryOutcome(
-  outcome: DeliveryOutcome,
+  outcome: DeliveryOutcome
 ): DeliveryOutcomeProjection {
   return {
     outcome,
@@ -85,7 +85,7 @@ export function allDeliveryOutcomeProjections(): DeliveryOutcomeProjection[] {
  * Assert the four announcements are pairwise distinct (acceptance helper).
  */
 export function assertDistinctOutcomeAnnouncements(
-  projections: readonly DeliveryOutcomeProjection[] = allDeliveryOutcomeProjections(),
+  projections: readonly DeliveryOutcomeProjection[] = allDeliveryOutcomeProjections()
 ): boolean {
   const texts = projections.map((p) => p.announcement);
   const focusIds = projections.map((p) => p.focusId);
@@ -107,7 +107,7 @@ export function outcomeFromDeliveryEvent(
     | 'shared'
     | 'share_cancelled'
     | 'handed_over'
-    | 'published',
+    | 'published'
 ): DeliveryOutcome | null {
   switch (event) {
     case 'download_started':

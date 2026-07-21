@@ -331,7 +331,7 @@ export function VideoWorkflowPanel(props: VideoWorkflowPanelProps) {
 
   const projection =
     workflowQuery.data ??
-    (requestedWorkflowId ? undefined : latestQuery.data ?? undefined);
+    (requestedWorkflowId ? undefined : (latestQuery.data ?? undefined));
   useEffect(() => {
     const previous = previousObserved.current;
     previousObserved.current = projection ?? null;
@@ -722,7 +722,10 @@ function WorkflowState({
 
       {projection.status === 'completed' ? (
         <div className="space-y-3">
-          <a className={buttonVariants({ variant: 'outline' })} href={resultHref}>
+          <a
+            className={buttonVariants({ variant: 'outline' })}
+            href={resultHref}
+          >
             {copy_candidate_view_in_content()}
           </a>
         </div>

@@ -22,6 +22,8 @@
     "n2:recovery:verify": "node scripts/recovery/production-recovery-cli.mjs verify",
     "pro-studio:conformance": "node scripts/pro-studio/conformance-gate.mjs",
     "pro-studio:security": "node scripts/pro-studio/security-matrix.mjs",
+    "security:production-boundary": "node scripts/production-network-boundary-gate.mjs",
+    "security:production-boundary:test": "node --test scripts/production-network-boundary-gate.test.mjs",
     "test": "pnpm -r --if-present test && node --test scripts/uiux/*.test.mjs scripts/pro-studio/*.test.mjs scripts/recovery/*.test.mjs scripts/polotno-retirement-gate.test.mjs",
     "typecheck": "pnpm -r --if-present typecheck",
     "uiux:baseline": "node scripts/uiux/baseline-manifest.mjs --pre-cutover 0cba260",

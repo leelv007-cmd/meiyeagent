@@ -29,7 +29,8 @@ export const CAPABILITY_CATALOG_L1_ORDER = [
   'runtime_and_governance',
 ] as const satisfies readonly CapabilityDomainGroup[];
 
-export type CapabilityCatalogL1Id = (typeof CAPABILITY_CATALOG_L1_ORDER)[number];
+export type CapabilityCatalogL1Id =
+  (typeof CAPABILITY_CATALOG_L1_ORDER)[number];
 
 /** Stable ids for the seven existing admin drilldown routes. */
 export const ADMIN_DRILLDOWN_PAGE_IDS = [
@@ -420,7 +421,9 @@ export function getDrilldownDomainContext(pageId: AdminDrilldownPageId): {
 /**
  * L1 IA keys exposed by the catalog (must not include workspaceId).
  */
-export function listL1IaKeys(view: CapabilityCatalogView = buildCapabilityCatalog()): string[] {
+export function listL1IaKeys(
+  view: CapabilityCatalogView = buildCapabilityCatalog()
+): string[] {
   return view.domains.flatMap((section) => [
     section.domain,
     section.title,

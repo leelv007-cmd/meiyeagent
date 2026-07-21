@@ -51,7 +51,7 @@ export interface SupplyRegistryIndexes {
 
 function groupBy<T>(
   items: readonly T[],
-  keyOf: (item: T) => string,
+  keyOf: (item: T) => string
 ): Map<string, T[]> {
   const map = new Map<string, T[]>();
   for (const item of items) {
@@ -68,7 +68,7 @@ function unique<T extends string>(values: readonly T[]): T[] {
 }
 
 export function buildSupplyRegistryIndexes(
-  snapshot: SupplyControlSnapshot,
+  snapshot: SupplyControlSnapshot
 ): SupplyRegistryIndexes {
   return {
     modelById: new Map(snapshot.models.map((m) => [m.id, m])),
@@ -77,23 +77,23 @@ export function buildSupplyRegistryIndexes(
     deploymentById: new Map(snapshot.deployments.map((d) => [d.id, d])),
     deploymentsByModelId: groupBy(
       snapshot.deployments,
-      (d) => d.catalogModelId,
+      (d) => d.catalogModelId
     ),
     deploymentsByProviderId: groupBy(
       snapshot.deployments,
-      (d) => d.providerProfileId,
+      (d) => d.providerProfileId
     ),
     deploymentsByChannelId: groupBy(
       snapshot.deployments,
-      (d) => d.executionChannelId,
+      (d) => d.executionChannelId
     ),
     channelsByProviderId: groupBy(
       snapshot.executionChannels,
-      (c) => c.providerProfileId,
+      (c) => c.providerProfileId
     ),
     credentialsByProviderId: groupBy(
       snapshot.credentials,
-      (c) => c.providerProfileId,
+      (c) => c.providerProfileId
     ),
     credentialById: new Map(snapshot.credentials.map((c) => [c.id, c])),
   };
@@ -121,7 +121,7 @@ export interface ModelViewReverse {
 
 export function projectModelForward(
   indexes: SupplyRegistryIndexes,
-  catalogModelId: string,
+  catalogModelId: string
 ): ModelViewForward {
   const deployments = indexes.deploymentsByModelId.get(catalogModelId) ?? [];
   return {
@@ -137,7 +137,7 @@ export function projectModelForward(
 
 export function projectModelReverse(
   indexes: SupplyRegistryIndexes,
-  deploymentId: string,
+  deploymentId: string
 ): ModelViewReverse {
   const deployment = indexes.deploymentById.get(deploymentId);
   const catalogModelId = deployment?.catalogModelId ?? '';
@@ -147,7 +147,7 @@ export function projectModelReverse(
     deploymentId,
     catalogModelId,
     model: catalogModelId
-      ? indexes.modelById.get(catalogModelId) ?? null
+      ? (indexes.modelById.get(catalogModelId) ?? null)
       : null,
   };
 }
@@ -176,7 +176,7 @@ export interface CounterpartyChannelViewReverse {
 
 export function projectCounterpartyChannelForward(
   indexes: SupplyRegistryIndexes,
-  providerProfileId: string,
+  providerProfileId: string
 ): CounterpartyChannelViewForward {
   const channels = indexes.channelsByProviderId.get(providerProfileId) ?? [];
   const deployments =
@@ -194,13 +194,13 @@ export function projectCounterpartyChannelForward(
 
 export function projectCounterpartyChannelReverse(
   indexes: SupplyRegistryIndexes,
-  executionChannelId: string,
+  executionChannelId: string
 ): CounterpartyChannelViewReverse {
   const channel = indexes.channelById.get(executionChannelId) ?? null;
   const deployments =
     indexes.deploymentsByChannelId.get(executionChannelId) ?? [];
   const provider = channel
-    ? indexes.providerById.get(channel.providerProfileId) ?? null
+    ? (indexes.providerById.get(channel.providerProfileId) ?? null)
     : null;
   return {
     direction: 'reverse',
@@ -235,7 +235,7 @@ export interface DeploymentViewReverse {
 
 export function projectDeploymentForward(
   indexes: SupplyRegistryIndexes,
-  deploymentId: string,
+  deploymentId: string
 ): DeploymentViewForward {
   const deployment = indexes.deploymentById.get(deploymentId) ?? null;
   return {
@@ -244,13 +244,13 @@ export function projectDeploymentForward(
     deploymentId,
     deployment,
     model: deployment
-      ? indexes.modelById.get(deployment.catalogModelId) ?? null
+      ? (indexes.modelById.get(deployment.catalogModelId) ?? null)
       : null,
     provider: deployment
-      ? indexes.providerById.get(deployment.providerProfileId) ?? null
+      ? (indexes.providerById.get(deployment.providerProfileId) ?? null)
       : null,
     channel: deployment
-      ? indexes.channelById.get(deployment.executionChannelId) ?? null
+      ? (indexes.channelById.get(deployment.executionChannelId) ?? null)
       : null,
   };
 }
@@ -258,7 +258,7 @@ export function projectDeploymentForward(
 export function projectDeploymentReverse(
   indexes: SupplyRegistryIndexes,
   catalogModelId: string,
-  executionChannelId: string,
+  executionChannelId: string
 ): DeploymentViewReverse {
   const byModel = indexes.deploymentsByModelId.get(catalogModelId) ?? [];
   return {
@@ -267,7 +267,7 @@ export function projectDeploymentReverse(
     catalogModelId,
     executionChannelId,
     deployments: byModel.filter(
-      (d) => d.executionChannelId === executionChannelId,
+      (d) => d.executionChannelId === executionChannelId
     ),
   };
 }
@@ -293,7 +293,7 @@ export interface CredentialViewReverse {
 
 export function projectCredentialForward(
   indexes: SupplyRegistryIndexes,
-  credentialAccountId: string,
+  credentialAccountId: string
 ): CredentialViewForward {
   const metadata = indexes.credentialById.get(credentialAccountId) ?? null;
   if (!metadata) {
@@ -319,7 +319,7 @@ export function projectCredentialForward(
 
 export function projectCredentialReverse(
   indexes: SupplyRegistryIndexes,
-  providerProfileId: string,
+  providerProfileId: string
 ): CredentialViewReverse {
   return {
     direction: 'reverse',
@@ -354,7 +354,7 @@ export interface RouteViewReverse {
 export function projectRouteForward(
   indexes: SupplyRegistryIndexes,
   operation: SupplyOperation,
-  policies: readonly RoutePolicyRevision[],
+  policies: readonly RoutePolicyRevision[]
 ): RouteViewForward {
   const policy =
     policies.find((p) => p.operation === operation && p.publishedAt) ??
@@ -369,14 +369,12 @@ export function projectRouteForward(
     operation,
     policy,
     candidateDeployments,
-    catalogModelIds: unique(
-      candidateDeployments.map((d) => d.catalogModelId),
-    ),
+    catalogModelIds: unique(candidateDeployments.map((d) => d.catalogModelId)),
     providerProfileIds: unique(
-      candidateDeployments.map((d) => d.providerProfileId),
+      candidateDeployments.map((d) => d.providerProfileId)
     ),
     executionChannelIds: unique(
-      candidateDeployments.map((d) => d.executionChannelId),
+      candidateDeployments.map((d) => d.executionChannelId)
     ),
   };
 }
@@ -384,10 +382,10 @@ export function projectRouteForward(
 export function projectRouteReverse(
   _indexes: SupplyRegistryIndexes,
   deploymentId: string,
-  policies: readonly RoutePolicyRevision[],
+  policies: readonly RoutePolicyRevision[]
 ): RouteViewReverse {
   const matching = policies.filter((p) =>
-    p.candidateDeploymentIds.includes(deploymentId),
+    p.candidateDeploymentIds.includes(deploymentId)
   );
   return {
     direction: 'reverse',
@@ -436,15 +434,13 @@ export function buildAssociationViewPanel(
     executionChannelId?: string;
     credentialAccountId?: string;
     operation?: SupplyOperation;
-  },
+  }
 ): AssociationViewPanelModel {
   const indexes = buildSupplyRegistryIndexes(snapshot);
-  const catalogModelId =
-    seeds?.catalogModelId ?? snapshot.models[0]?.id ?? '';
+  const catalogModelId = seeds?.catalogModelId ?? snapshot.models[0]?.id ?? '';
   const providerProfileId =
     seeds?.providerProfileId ?? snapshot.providerProfiles[0]?.id ?? '';
-  const deploymentId =
-    seeds?.deploymentId ?? snapshot.deployments[0]?.id ?? '';
+  const deploymentId = seeds?.deploymentId ?? snapshot.deployments[0]?.id ?? '';
   const executionChannelId =
     seeds?.executionChannelId ?? snapshot.executionChannels[0]?.id ?? '';
   const credentialAccountId =
@@ -468,7 +464,7 @@ export function buildAssociationViewPanel(
       reverse = projectDeploymentReverse(
         indexes,
         catalogModelId,
-        executionChannelId,
+        executionChannelId
       );
       break;
     case 'credential':
@@ -476,15 +472,11 @@ export function buildAssociationViewPanel(
       reverse = projectCredentialReverse(indexes, providerProfileId);
       break;
     case 'route':
-      forward = projectRouteForward(
-        indexes,
-        operation,
-        snapshot.routePolicies,
-      );
+      forward = projectRouteForward(indexes, operation, snapshot.routePolicies);
       reverse = projectRouteReverse(
         indexes,
         deploymentId,
-        snapshot.routePolicies,
+        snapshot.routePolicies
       );
       break;
   }

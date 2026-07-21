@@ -137,7 +137,9 @@ test('runtime_and_governance hosts health block via audit drilldown only', () =>
     (section) => section.domain === 'runtime_and_governance'
   );
   assert.ok(runtime);
-  const health = runtime.evidenceDrilldowns.filter((d) => d.hostsOperationsHealth);
+  const health = runtime.evidenceDrilldowns.filter(
+    (d) => d.hostsOperationsHealth
+  );
   assert.equal(health.length, 1);
   assert.equal(health[0]?.pageId, 'audit');
   assert.equal(health[0]?.path, '/admin/audit');

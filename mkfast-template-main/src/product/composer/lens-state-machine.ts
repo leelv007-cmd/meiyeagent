@@ -468,7 +468,8 @@ function resetLensScopedSettings(draft: ComposerDraft): ComposerDraft {
     // fieldMeta for lens-scoped keys cleared; keep userText ownership
     fieldMeta: Object.fromEntries(
       Object.entries(draft.fieldMeta).filter(
-        ([key]) => key === 'userText' || key === 'sources' || key === 'assetRights'
+        ([key]) =>
+          key === 'userText' || key === 'sources' || key === 'assetRights'
       )
     ),
   };
@@ -580,7 +581,10 @@ function commitLensSwitch(
   if (restored) {
     nextDraft = cloneDraft(restored);
   } else {
-    nextDraft = applyLensDefaults(resetLensScopedSettings(cloneDraft(state.draft)), toLensId);
+    nextDraft = applyLensDefaults(
+      resetLensScopedSettings(cloneDraft(state.draft)),
+      toLensId
+    );
   }
 
   // Always preserve text / sources / rights / delivery suggestion from live draft.
@@ -798,7 +802,10 @@ export function updateSettings(
     return true;
   };
 
-  if (patch.catalogModelId !== undefined && touch('catalogModelId', patch.catalogModelId)) {
+  if (
+    patch.catalogModelId !== undefined &&
+    touch('catalogModelId', patch.catalogModelId)
+  ) {
     settings.catalogModelId = patch.catalogModelId;
   }
   if (
@@ -813,7 +820,10 @@ export function updateSettings(
   ) {
     settings.catalogModelRevision = patch.catalogModelRevision;
   }
-  if (patch.aspectRatio !== undefined && touch('aspectRatio', patch.aspectRatio)) {
+  if (
+    patch.aspectRatio !== undefined &&
+    touch('aspectRatio', patch.aspectRatio)
+  ) {
     settings.aspectRatio = patch.aspectRatio;
   }
   if (patch.quantity !== undefined && touch('quantity', patch.quantity)) {
@@ -1000,8 +1010,7 @@ export function lensStateView(state: ComposerLensState) {
       state.phase === 'unselected' ||
       state.phase === 'switch_preview' ||
       state.phase === 'frozen',
-    submitHint:
-      state.phase === 'unselected' ? LENS_REQUIRED_SUBMIT_HINT : null,
+    submitHint: state.phase === 'unselected' ? LENS_REQUIRED_SUBMIT_HINT : null,
     canUndo: state.phase === 'selected' && state.undoStack.length > 0,
     preview: state.phase === 'switch_preview' ? state.preview : null,
     delivery: state.draft.delivery,

@@ -13,7 +13,6 @@ import {
   settings_files_description_label,
   settings_files_description_placeholder,
   settings_files_file_label,
-  settings_files_is_public_label,
   settings_files_no_results,
   settings_files_open_link,
   settings_files_upload,
@@ -42,7 +41,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -95,11 +93,7 @@ interface FilesTableProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   onDelete: (id: string) => void;
-  onUpload: (params: {
-    file: File;
-    isPublic?: boolean;
-    description?: string;
-  }) => Promise<void>;
+  onUpload: (params: { file: File; description?: string }) => Promise<void>;
 }
 export function FilesTable({
   data,
@@ -116,7 +110,6 @@ export function FilesTable({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isPublic, setIsPublic] = useState(false);
   const [description, setDescription] = useState('');
   const columns: ColumnDef<UserFiles>[] = useMemo(
     () => [
@@ -278,12 +271,10 @@ export function FilesTable({
     if (!selectedFile) return;
     await onUpload({
       file: selectedFile,
-      isPublic,
       description: description || undefined,
     });
     setSelectedFile(null);
     setDescription('');
-    setIsPublic(false);
     setUploadOpen(false);
   };
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -325,16 +316,6 @@ export function FilesTable({
                     {selectedFile.name} ({formatBytes(selectedFile.size)})
                   </span>
                 )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="is-public"
-                  checked={isPublic}
-                  onCheckedChange={setIsPublic}
-                />
-                <Label htmlFor="is-public">
-                  {settings_files_is_public_label()}
-                </Label>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="description">

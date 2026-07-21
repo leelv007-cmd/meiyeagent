@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "decisionId": "C-12",
+  "releasePolicy": "blocked-without-sha-bound-external-evidence",
+  "services": {
+    "web": {
+      "publicEntry": true,
+      "requiredEdgeControls": [
+        "tls",
+        "waf",
+        "body-limit",
+        "rate-limit",
+        "connect-timeout",
+        "read-timeout"
+      ]
+    },
+    "core": {
+      "publicDirectAccess": false,
+      "allowedReachability": [
+        "cloudflare-service-binding",
+        "private-network"
+      ],
+      "health": {
+        "path": "/health",
+        "exposure": "private-only"
+      }
+    },
+    "canvas": {
+      "browserEntry": "edge-protected-route-only",
+      "originPublicDirectAccess": false,
+      "allowedReachability": [
+        "cloudflare-service-binding",
+        "private-network"
+      ],
+      "health": {
+        "path": "/api/internal/health",
+        "exposure": "private-only"
+      }
+    }
+  },
+  "serviceAuthentication": {
+    "required": true,
+    "substitutesForNetworkBoundary": false,
+    "substitutesForWafOrIngress": false
+  },
+  "limits": {
+    "bodyBytes": {
+      "webhook": 524288,
+      "json": 1048576,
+      "uploadTransport": 11534336
+    },
+    "ratePerMinute": {
+      "authPerIp": 20,
+      "webhookPerEndpoint": 120,
+      "uploadPerPrincipal": 30,
+      "expensiveActionPerWorkspace": 20
+    },
+    "timeoutsMs": {
+      "ingressConnect": 3000,
+      "requestHeaders": 5000,
+      "ordinaryRead": 30000,
+      "internalConnect": 3000,
+      "internalTotal": 10000,
+      "streamConnect": 5000,
+      "streamIdle": 45000,
+      "uploadRead": 60000
+    }
+  },
+  "requiredEvidence": [
+    "web-edge-entry-healthy",
+    "canvas-edge-entry-healthy",
+    "core-private-health",
+    "canvas-private-health",
+    "core-public-origin-denied",
+    "canvas-public-origin-denied",
+    "body-limits-enforced",
+    "rate-limits-enforced",
+    "timeouts-enforced",
+    "service-auth-not-sole-boundary"
+  ]
+}

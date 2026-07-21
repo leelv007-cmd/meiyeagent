@@ -377,7 +377,7 @@ describe(
       assert.equal(after.rows[0]?.xmin, before.rows[0]?.xmin);
     });
 
-    it('persists completed outputs as generic Asset rows and restores OCC presentation edits', async () => {
+    it('persists composed outputs as generic Asset rows and restores review-time OCC edits', async () => {
       await new PostgresCanonicalVideoWorkflowSchema(pool).migrate();
       const runId = `generic-assets-${randomUUID()}`;
       const candidateAsset = {
@@ -428,7 +428,7 @@ describe(
             selectedCandidateIndex: 0,
           },
         ],
-        status: 'completed',
+        status: 'awaiting_quality_review',
       } as unknown as DurableVideoWorkflow);
       const store = new PostgresCanonicalVideoRunStore(pool, workspaceId);
       await store.putRun(run, { expectedRevision: 0 });

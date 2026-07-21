@@ -53,10 +53,7 @@ test('cold apply: no conflict → local apply, preserves user text, zero writes'
   assert.equal(session.lensState.phase, 'selected');
   assert.equal(session.lensState.lensId, 'image_text');
   assert.equal(session.lensState.draft.userText, original);
-  assert.equal(
-    session.lensState.draft.recipeRevisionId,
-    recipe.revisionId
-  );
+  assert.equal(session.lensState.draft.recipeRevisionId, recipe.revisionId);
   assert.match(session.tip ?? '', /已选择图文并套用/);
   assert.match(session.tip ?? '', /促销海报/);
   assert.equal(session.canUndo, true);
@@ -132,10 +129,7 @@ test('cross-lens conflict → confirming surface; cancel restores; confirm appli
   assert.equal(session.phase, 'applied');
   assert.equal(session.lensState.lensId, 'image_text');
   assert.equal(session.lensState.draft.userText, '已选文案的正文');
-  assert.equal(
-    session.tip,
-    switchedTipLabel('image_text', '促销海报')
-  );
+  assert.equal(session.tip, switchedTipLabel('image_text', '促销海报'));
   assertZeroBusinessWrites(session);
 });
 
@@ -216,7 +210,7 @@ test('browse / open reuse panel / cancel never writes business entities', () => 
   assertZeroBusinessWrites(session);
 
   // Preview path without confirm.
-  let lens = selectLens(createComposerLensState({ userText: 'x' }), 'copy');
+  const lens = selectLens(createComposerLensState({ userText: 'x' }), 'copy');
   session = createRecipeApplySession(lens);
   const result = requestApplyRecipe(session, seedToRecipeTarget(posterSeed));
   assert.equal(result.kind, 'confirming');

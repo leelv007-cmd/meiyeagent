@@ -1,5 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import * as z from "zod";
+import {
+	canvasRouteBoundaryResponse,
+	readBoundedJson,
+} from "./request-boundary";
 
 const schema = z.strictObject({
 	mainSessionId: z.string().min(1),
@@ -18,7 +22,13 @@ export async function handleProStudioEntryRequest(
 	if (!trustedService(request.headers.get("x-canvas-service-token"))) {
 		return Response.json({ error: "Unauthorized" }, { status: 401 });
 	}
-	const parsed = schema.safeParse(await request.json().catch(() => null));
+	let body: unknown;
+	try {
+		body = await readBoundedJson(request);
+	} catch (error) {
+		return canvasRouteBoundaryResponse(error);
+	}
+	const parsed = schema.safeParse(body);
 	if (!parsed.success) {
 		return Response.json({ error: "Invalid input" }, { status: 400 });
 	}

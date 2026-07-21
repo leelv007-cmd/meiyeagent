@@ -45,10 +45,7 @@ export async function createCanonicalAssistedHandoff(input: {
   packageId: string;
   platform: DeliveryZipPlatform;
   responsibility: AssistedResponsibilityInput;
-  submit(
-    action: string,
-    payload: Record<string, unknown>,
-  ): Promise<unknown>;
+  submit(action: string, payload: Record<string, unknown>): Promise<unknown>;
 }): Promise<{
   downloadUrl: string;
   handoffToken: string;
@@ -61,7 +58,7 @@ export async function createCanonicalAssistedHandoff(input: {
     throw new Error('ASSISTED_CANONICAL_PACKAGE_MISMATCH');
   }
   const variant = contentPackage.variants.find(
-    ({ platform }) => platform === input.platform,
+    ({ platform }) => platform === input.platform
   );
   if (!variant) throw new Error('ASSISTED_CANONICAL_VARIANT_MISSING');
   const approval = contentPackage.approvalReceipts?.find(
@@ -70,7 +67,7 @@ export async function createCanonicalAssistedHandoff(input: {
       candidate.binding.workspaceId === contentPackage.workspaceId &&
       candidate.binding.packageId === contentPackage.id &&
       candidate.binding.platform === input.platform &&
-      candidate.binding.variantVersionId === variant.currentVersionId,
+      candidate.binding.variantVersionId === variant.currentVersionId
   );
   if (!approval) throw new Error('ASSISTED_CANONICAL_APPROVAL_MISSING');
   if (

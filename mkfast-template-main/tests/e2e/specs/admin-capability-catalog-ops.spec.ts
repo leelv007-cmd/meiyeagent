@@ -121,9 +121,7 @@ test.describe('admin capability catalog ops path (#123 J3)', () => {
       '/admin/integrations',
       '/admin/audit',
     ]) {
-      await expect(
-        catalog.locator(`a[href="${path}"]`).first()
-      ).toBeVisible();
+      await expect(catalog.locator(`a[href="${path}"]`).first()).toBeVisible();
     }
 
     await expectNoUnsafeDailyOperationControls(catalog);

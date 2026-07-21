@@ -1,6 +1,6 @@
 import { createAuth } from '@/auth/auth';
 import { websiteConfig } from '@/config/website';
-import { resolveActiveWorkspace } from '@/db/workspaces';
+import { resolveDefaultWorkspace } from '@/db/workspaces';
 import { getDb } from '@/db';
 import { getCanonicalUrl } from '@/lib/urls';
 import { findPlanByPriceId } from '@/lib/price-plan';
@@ -48,7 +48,7 @@ function defaultDependencies(): CheckoutDependencies {
         userName: current.user.name ?? '',
       };
     },
-    resolveWorkspace: resolveActiveWorkspace,
+    resolveWorkspace: resolveDefaultWorkspace,
     async start(input) {
       const providerName = websiteConfig.payment?.provider as
         | PaymentProviderName

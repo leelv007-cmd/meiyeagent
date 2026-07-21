@@ -33,6 +33,7 @@ function setup() {
   const foundation = new MemoryFoundationRepository();
   const operations = new MemoryOperationsRepository();
   const context = {
+    actor: 'owner' as const,
     correlationId: 'corr-occ-create',
     userId: 'owner-occ',
     workspaceId: 'workspace-occ',
@@ -164,6 +165,7 @@ test('the final repository CAS guard returns 409 and persists one conflict audit
   const foundation = new MemoryFoundationRepository();
   const operations = new FinalCasConflictRepository();
   const context = {
+    actor: 'owner' as const,
     correlationId: 'corr-final-cas',
     userId: 'owner-final-cas',
     workspaceId: 'workspace-final-cas',

@@ -30,6 +30,21 @@ export class CoreCanvasObjectStorage implements CanvasObjectStorage {
     }
   }
 
+  async delete(objectKey: string) {
+    const workspaceId = workspaceFromObjectKey(objectKey);
+    const response = await this.fetcher(this.assetUrl(objectKey), {
+      cache: 'no-store',
+      headers: {
+        'x-service-token': this.options.coreServiceToken,
+        'x-workspace-id': workspaceId,
+      },
+      method: 'DELETE',
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Core asset delete failed with status ${response.status}.`);
+    }
+  }
+
   async read(objectKey: string) {
     const workspaceId = workspaceFromObjectKey(objectKey);
     const response = await this.fetcher(this.assetUrl(objectKey), {
@@ -62,6 +77,10 @@ export class CompositeCanvasObjectStorage implements CanvasObjectStorage {
 
   async put(objectKey: string, bytes: Uint8Array) {
     await this.writable.put(objectKey, bytes);
+  }
+
+  async delete(objectKey: string) {
+    await this.writable.delete(objectKey);
   }
 
   async read(objectKey: string) {

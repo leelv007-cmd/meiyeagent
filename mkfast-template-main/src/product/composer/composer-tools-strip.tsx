@@ -123,15 +123,15 @@ function OrdinaryToolButton({
       className={cn(
         'flex min-h-12 w-full flex-col items-start gap-0.5 rounded-2xl border border-input bg-background p-3 text-left',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        tool.locked
-          ? 'cursor-not-allowed opacity-60'
-          : 'hover:bg-accent/40'
+        tool.locked ? 'cursor-not-allowed opacity-60' : 'hover:bg-accent/40'
       )}
       onClick={() => {
         if (!tool.locked) onOpen();
       }}
     >
-      <span className="text-sm font-semibold text-foreground">{tool.label}</span>
+      <span className="text-sm font-semibold text-foreground">
+        {tool.label}
+      </span>
       <span className="text-xs leading-5 text-muted-foreground">
         {tool.locked ? (tool.lockReason ?? '未解锁') : tool.summary}
       </span>
@@ -160,7 +160,9 @@ function ProStudioBanner({
       )}
       onClick={onOpen}
     >
-      <span className="text-sm font-semibold text-foreground">{banner.label}</span>
+      <span className="text-sm font-semibold text-foreground">
+        {banner.label}
+      </span>
       <span className="text-xs leading-5 text-muted-foreground">
         {banner.status === 'locked'
           ? (banner.lockReason ?? banner.summary)

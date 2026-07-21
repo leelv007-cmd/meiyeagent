@@ -6,6 +6,7 @@ import type {
   UnsubscribeNewsletterParams,
 } from '@/newsletter/types';
 import { BeehiivClient } from '@beehiiv/sdk';
+import { safeErrorFields } from '@/auth/safe-log';
 
 /**
  * Beehiiv newsletter provider
@@ -66,11 +67,15 @@ export class BeehiivNewsletterProvider implements NewsletterProvider {
             }
           );
 
-          console.log('Reactivated subscription', email);
+          console.info('newsletter subscription reactivated', {
+            event: 'NEWSLETTER_SUBSCRIPTION_REACTIVATED',
+          });
           return !!updateResult;
         }
 
-        console.log('Subscription already active', email);
+        console.info('newsletter subscription already active', {
+          event: 'NEWSLETTER_SUBSCRIPTION_ALREADY_ACTIVE',
+        });
         return true;
       }
 
@@ -84,14 +89,21 @@ export class BeehiivNewsletterProvider implements NewsletterProvider {
       );
 
       if (!result.data) {
-        console.error('Error creating subscription', email);
+        console.error('newsletter subscription create failed', {
+          event: 'NEWSLETTER_SUBSCRIPTION_CREATE_FAILED',
+        });
         return false;
       }
 
-      console.log('Created new subscription', email);
+      console.info('newsletter subscription created', {
+        event: 'NEWSLETTER_SUBSCRIPTION_CREATED',
+      });
       return true;
     } catch (error) {
-      console.error('Error subscribing to newsletter', error);
+      console.error('newsletter subscription provider failed', {
+        event: 'NEWSLETTER_PROVIDER_SUBSCRIBE_FAILED',
+        ...safeErrorFields(error),
+      });
       return false;
     }
   }
@@ -104,7 +116,9 @@ export class BeehiivNewsletterProvider implements NewsletterProvider {
       const subscription = await this.getSubscription(email);
 
       if (!subscription) {
-        console.log('Subscription not found for unsubscribe', email);
+        console.info('newsletter unsubscribe already absent', {
+          event: 'NEWSLETTER_UNSUBSCRIBE_ALREADY_ABSENT',
+        });
         return true;
       }
 
@@ -117,10 +131,15 @@ export class BeehiivNewsletterProvider implements NewsletterProvider {
         ],
       });
 
-      console.log('Unsubscribed from newsletter', email);
+      console.info('newsletter unsubscribed', {
+        event: 'NEWSLETTER_UNSUBSCRIBED',
+      });
       return true;
     } catch (error) {
-      console.error('Error unsubscribing from newsletter', error);
+      console.error('newsletter unsubscribe provider failed', {
+        event: 'NEWSLETTER_PROVIDER_UNSUBSCRIBE_FAILED',
+        ...safeErrorFields(error),
+      });
       return false;
     }
   }
@@ -135,15 +154,23 @@ export class BeehiivNewsletterProvider implements NewsletterProvider {
       const subscription = await this.getSubscription(email);
 
       if (!subscription) {
-        console.log('Subscription not found:', email);
+        console.info('newsletter status not found', {
+          event: 'NEWSLETTER_STATUS_NOT_FOUND',
+        });
         return false;
       }
 
       const isActive = subscription.status === 'active';
-      console.log('Check subscribe status:', { email, status: isActive });
+      console.info('newsletter status checked', {
+        event: 'NEWSLETTER_STATUS_CHECKED',
+        subscribed: isActive,
+      });
       return isActive;
     } catch (error) {
-      console.error('Error checking subscribe status:', error);
+      console.error('newsletter status provider failed', {
+        event: 'NEWSLETTER_PROVIDER_STATUS_FAILED',
+        ...safeErrorFields(error),
+      });
       return false;
     }
   }

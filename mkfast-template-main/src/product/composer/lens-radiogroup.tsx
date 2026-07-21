@@ -41,10 +41,7 @@ export function LensRadiogroup({
 }: LensRadiogroupProps) {
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <div
-        id={LABEL_ID}
-        className="text-sm font-medium text-foreground"
-      >
+      <div id={LABEL_ID} className="text-sm font-medium text-foreground">
         {LENS_GROUP_LABEL}
         <span className="text-destructive" aria-hidden="true">
           {' '}
@@ -65,70 +62,72 @@ export function LensRadiogroup({
         {COMPOSER_LENS_OPTIONS.map((option) => {
           const selected = value === option.id;
           return (
-            <button
+            <label
               key={option.id}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              tabIndex={selected || value === null ? 0 : -1}
-              disabled={disabled}
-              data-testid={`composer-lens-option-${option.id}`}
-              data-state={selected ? 'checked' : 'unchecked'}
               className={cn(
-                'inline-flex min-h-12 min-w-12 items-center justify-center rounded-full border px-4 py-2 text-sm font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'relative inline-flex min-h-12 min-w-12 items-center justify-center rounded-full border px-4 py-2 text-sm font-medium transition-colors',
                 selected
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-input bg-background text-foreground hover:bg-accent',
                 disabled && 'cursor-not-allowed opacity-50'
               )}
-              onClick={() => {
-                if (!disabled) onChange(option.id);
-              }}
-              onKeyDown={(event) => {
-                if (disabled) return;
-                const currentIndex = COMPOSER_LENS_OPTIONS.findIndex(
-                  (item) => item.id === (value ?? option.id)
-                );
-                let nextIndex = -1;
-                if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-                  event.preventDefault();
-                  nextIndex =
-                    (Math.max(currentIndex, 0) + 1) %
-                    COMPOSER_LENS_OPTIONS.length;
-                } else if (
-                  event.key === 'ArrowLeft' ||
-                  event.key === 'ArrowUp'
-                ) {
-                  event.preventDefault();
-                  nextIndex =
-                    (Math.max(currentIndex, 0) -
-                      1 +
-                      COMPOSER_LENS_OPTIONS.length) %
-                    COMPOSER_LENS_OPTIONS.length;
-                } else if (event.key === ' ' || event.key === 'Enter') {
-                  event.preventDefault();
-                  onChange(option.id);
-                  return;
-                }
-                if (nextIndex >= 0) {
-                  const next = COMPOSER_LENS_OPTIONS[nextIndex];
-                  if (next) {
-                    onChange(next.id);
-                    // Move focus to the newly selected radio.
-                    queueMicrotask(() => {
-                      document
-                        .querySelector<HTMLElement>(
-                          `[data-testid="composer-lens-option-${next.id}"]`
-                        )
-                        ?.focus();
-                    });
-                  }
-                }
-              }}
             >
-              {option.label}
-            </button>
+              <input
+                type="radio"
+                name={id}
+                value={option.id}
+                checked={selected}
+                tabIndex={selected || value === null ? 0 : -1}
+                disabled={disabled}
+                data-testid={`composer-lens-option-${option.id}`}
+                data-state={selected ? 'checked' : 'unchecked'}
+                className="absolute inset-0 appearance-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={() => onChange(option.id)}
+                onKeyDown={(event) => {
+                  if (disabled) return;
+                  const currentIndex = COMPOSER_LENS_OPTIONS.findIndex(
+                    (item) => item.id === (value ?? option.id)
+                  );
+                  let nextIndex = -1;
+                  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    nextIndex =
+                      (Math.max(currentIndex, 0) + 1) %
+                      COMPOSER_LENS_OPTIONS.length;
+                  } else if (
+                    event.key === 'ArrowLeft' ||
+                    event.key === 'ArrowUp'
+                  ) {
+                    event.preventDefault();
+                    nextIndex =
+                      (Math.max(currentIndex, 0) -
+                        1 +
+                        COMPOSER_LENS_OPTIONS.length) %
+                      COMPOSER_LENS_OPTIONS.length;
+                  } else if (event.key === ' ' || event.key === 'Enter') {
+                    event.preventDefault();
+                    onChange(option.id);
+                    return;
+                  }
+                  if (nextIndex >= 0) {
+                    const next = COMPOSER_LENS_OPTIONS[nextIndex];
+                    if (next) {
+                      onChange(next.id);
+                      queueMicrotask(() => {
+                        document
+                          .querySelector<HTMLElement>(
+                            `[data-testid="composer-lens-option-${next.id}"]`
+                          )
+                          ?.focus();
+                      });
+                    }
+                  }
+                }}
+              />
+              <span className="relative pointer-events-none">
+                {option.label}
+              </span>
+            </label>
           );
         })}
       </div>

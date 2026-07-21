@@ -25,7 +25,7 @@ test('fixture steps: first token appears before full object completes', () => {
     assert.equal(
       projection.hasFirstToken,
       step.expectHasFirstToken,
-      `step ${step.label} hasFirstToken`,
+      `step ${step.label} hasFirstToken`
     );
     assert.equal(projection.tokenStreaming, true);
     assert.equal(projection.showStreamPanel, true);
@@ -35,7 +35,7 @@ test('fixture steps: first token appears before full object completes', () => {
       assert.equal(
         projection.slots[i]?.hasToken,
         step.expectSlotTokens[i],
-        `step ${step.label} slot ${i}`,
+        `step ${step.label} slot ${i}`
       );
     }
 

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CreativeJob, VideoWorkflowPublicProjection } from '@meiye/contracts';
+import type {
+  CreativeJob,
+  VideoWorkflowPublicProjection,
+} from '@meiye/contracts';
 import { QueryClient } from '@tanstack/react-query';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {

@@ -147,7 +147,7 @@ export function assertNoSecretEcho(payload: unknown): void {
 
 export function isActivationGateSatisfied(
   probe: CredentialProbeResultView,
-  options: { now?: string; maxAgeMs?: number } = {},
+  options: { now?: string; maxAgeMs?: number } = {}
 ): boolean {
   if (probe.status !== 'passed' || !probe.testedAt) return false;
   const nowMs = Date.parse(options.now ?? new Date().toISOString());
@@ -159,7 +159,7 @@ export function isActivationGateSatisfied(
 
 function probeFromMetadata(
   meta: CredentialAccountMetadata,
-  enrichment?: CredentialAccountUiEnrichment,
+  enrichment?: CredentialAccountUiEnrichment
 ): CredentialProbeResultView {
   const status: CredentialTestStatusUi =
     enrichment?.testStatus ??
@@ -184,7 +184,7 @@ function probeFromMetadata(
 function buildRotateDrainFlow(
   status: CredentialAccountLifecycle,
   drain: CredentialDrainSubstate,
-  gateSatisfied: boolean,
+  gateSatisfied: boolean
 ): CredentialRotateDrainFlowView {
   const notes: string[] = [];
   if (status === 'retired') {
@@ -214,7 +214,7 @@ export function projectCredentialAccountUi(
     snapshot?: SupplyControlSnapshot;
     enrichment?: CredentialAccountUiEnrichment;
     now?: string;
-  } = {},
+  } = {}
 ): CredentialAccountUiView {
   const snapshot = options.snapshot;
   const provider =
@@ -224,7 +224,7 @@ export function projectCredentialAccountUi(
     snapshot?.deployments.filter(
       (d) =>
         d.credentialAccountId === meta.id ||
-        d.providerProfileId === meta.providerProfileId,
+        d.providerProfileId === meta.providerProfileId
     ) ?? [];
   const pools =
     snapshot?.pools.filter((p) => p.credentialAccountIds.includes(meta.id)) ??
@@ -234,15 +234,15 @@ export function projectCredentialAccountUi(
   const drain: CredentialDrainSubstate = meta.drainSubstate ?? 'none';
   const envFallbackRisk = meta.source === 'env_fallback';
   const mask = options.enrichment?.mask ?? '••••••••';
-  const versionHistory: CredentialVersionHistoryRow[] =
-    options.enrichment?.versionHistory ?? [
-      {
-        version: meta.version,
-        mask,
-        createdAt: meta.verifiedAt ?? 'unknown',
-        source: meta.source,
-      },
-    ];
+  const versionHistory: CredentialVersionHistoryRow[] = options.enrichment
+    ?.versionHistory ?? [
+    {
+      version: meta.version,
+      mask,
+      createdAt: meta.verifiedAt ?? 'unknown',
+      source: meta.source,
+    },
+  ];
 
   const view: CredentialAccountUiView = {
     id: meta.id,
@@ -262,9 +262,7 @@ export function projectCredentialAccountUi(
     sourceLabel: SOURCE_LABEL[meta.source],
     ...(meta.verifiedAt ? { verifiedAt: meta.verifiedAt } : {}),
     ...(meta.expiresAt ? { expiresAt: meta.expiresAt } : {}),
-    ...(meta.publicQuotaHint
-      ? { publicQuotaHint: meta.publicQuotaHint }
-      : {}),
+    ...(meta.publicQuotaHint ? { publicQuotaHint: meta.publicQuotaHint } : {}),
     activationGate: { satisfied: gateSatisfied, probe },
     binding: {
       deploymentIds: deployments.map((d) => d.id),
@@ -291,14 +289,14 @@ export function buildCredentialUiPanel(
   options: {
     enrichments?: ReadonlyMap<string, CredentialAccountUiEnrichment>;
     now?: string;
-  } = {},
+  } = {}
 ): CredentialUiPanelView {
   const accounts = snapshot.credentials.map((meta) =>
     projectCredentialAccountUi(meta, {
       snapshot,
       enrichment: options.enrichments?.get(meta.id),
       now: options.now,
-    }),
+    })
   );
   const panel: CredentialUiPanelView = {
     accounts,

@@ -77,7 +77,9 @@ async function pendingActions(page: Page) {
       error?: { message: string };
     };
     if (!response.ok || !envelope.data) {
-      throw new Error(envelope.error?.message ?? 'Pending actions query failed');
+      throw new Error(
+        envelope.error?.message ?? 'Pending actions query failed'
+      );
     }
     return envelope.data;
   });
@@ -304,22 +306,19 @@ test.describe('pending action inbox', () => {
     await page.reload();
     await page.getByRole('button', { exact: true, name: '3 项' }).click();
     const reloadedInbox = page.getByTestId('pending-actions');
-    await expect(reloadedInbox.locator('[data-pending-action-ref]')).toHaveCount(
-      3
-    );
-    await expect(reloadedInbox.locator('[data-current="true"]')).toHaveAttribute(
-      'data-pending-action-ref',
-      stableCurrentRef!
-    );
+    await expect(
+      reloadedInbox.locator('[data-pending-action-ref]')
+    ).toHaveCount(3);
+    await expect(
+      reloadedInbox.locator('[data-current="true"]')
+    ).toHaveAttribute('data-pending-action-ref', stableCurrentRef!);
 
     const approvalItem = reloadedInbox.locator('[data-current="true"]');
     await approvalItem.getByLabel('发布账号').fill('e2e-xiaohongshu-account');
     const scheduledAt = new Date(Date.now() + 60 * 60 * 1_000)
       .toISOString()
       .slice(0, 16);
-    await approvalItem
-      .getByLabel('计划发布时间')
-      .fill(scheduledAt);
+    await approvalItem.getByLabel('计划发布时间').fill(scheduledAt);
     await approvalItem.getByLabel('本次费用（CNY）').fill('0');
     await approvalItem.getByRole('button', { name: '确认并发布' }).click();
     await expect
@@ -346,9 +345,7 @@ test.describe('pending action inbox', () => {
       await currentItem
         .locator('input[placeholder="输入这次任务的答案"]')
         .fill('299 元');
-      await currentItem
-        .getByRole('button', { name: '确认并继续' })
-        .click();
+      await currentItem.getByRole('button', { name: '确认并继续' }).click();
       await expect
         .poll(
           async () =>
@@ -366,8 +363,7 @@ test.describe('pending action inbox', () => {
         .poll(
           async () =>
             (await contentPackages(page)).find(
-              (contentPackage) =>
-                contentPackage.id === matchingTask!.packageId
+              (contentPackage) => contentPackage.id === matchingTask!.packageId
             )?.status,
           { timeout: 60_000 }
         )

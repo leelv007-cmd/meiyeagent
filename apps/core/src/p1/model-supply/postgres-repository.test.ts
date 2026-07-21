@@ -168,6 +168,78 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
     assert.equal(await repository.getJob(otherWorkspaceId, result.jobId), null);
   });
 
+  it('persists provider-effect fencing and completed results across repository restarts', async () => {
+    const id = `canvas-outbox-${randomUUID()}`;
+    const result = persistedJob({
+      createdAt: '2026-07-16T10:00:00.000Z',
+      deploymentId: 'llm-domestic-direct',
+      jobId: `canvas-job-${randomUUID()}`,
+      operation: 'copy.generate',
+    });
+    await repository.enqueueCanvasTextGeneration(workspaceId, result, {
+      createdAt: '2026-07-16T10:00:00.000Z',
+      id,
+      status: 'pending',
+      submission: {
+        actorId: 'worker-a',
+        dataClass: [],
+        idempotencyKey: id,
+        operation: 'copy.generate',
+        prompt: 'Write one direction.',
+        selection: { catalogModelId: 'llm-domestic', mode: 'fixed' },
+        workspaceId,
+      },
+      workspaceId,
+    });
+    const firstClaim = await repository.claimCanvasTextGeneration({
+      claimToken: 'claim-before-restart',
+      leaseExpiresAt: '2026-07-16T10:01:00.000Z',
+      now: '2026-07-16T10:00:00.000Z',
+    });
+    assert.equal(firstClaim?.id, id);
+    assert.deepEqual(
+      await repository.beginCanvasTextGenerationProviderEffect({
+        claimToken: 'claim-before-restart',
+        effectKey: `canvas-text:${id}`,
+        id,
+      }),
+      { status: 'execute' },
+    );
+    assert.equal(
+      await repository.completeCanvasTextGenerationProviderEffect({
+        claimToken: 'claim-before-restart',
+        effectKey: `canvas-text:${id}`,
+        id,
+        result,
+      }),
+      true,
+    );
+
+    const restarted = new PostgresModelSupplyRepository(pool);
+    const recoveredClaim = await restarted.claimCanvasTextGeneration({
+      claimToken: 'claim-after-restart',
+      leaseExpiresAt: '2026-07-16T10:03:00.000Z',
+      now: '2026-07-16T10:02:00.000Z',
+    });
+    assert.equal(recoveredClaim?.id, id);
+    assert.deepEqual(
+      await restarted.beginCanvasTextGenerationProviderEffect({
+        claimToken: 'claim-after-restart',
+        effectKey: `canvas-text:${id}`,
+        id,
+      }),
+      { result, status: 'completed' },
+    );
+    assert.equal(
+      await restarted.renewCanvasTextGenerationLease({
+        claimToken: 'stale-claim',
+        id,
+        leaseExpiresAt: '2026-07-16T10:04:00.000Z',
+      }),
+      false,
+    );
+  });
+
   it('persists immutable activation probe evidence across repository restarts', async () => {
     const run = {
       actorId: 'admin-a',

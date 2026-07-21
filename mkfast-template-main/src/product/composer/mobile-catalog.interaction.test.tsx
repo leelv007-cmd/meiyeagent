@@ -60,7 +60,10 @@ function makeRecipe(
 describe('responsive card grid matrix', () => {
   it('two-col at 320/390 and single-col at 200% with no truncate attrs', () => {
     const cards = listColdCardsFromSeeds();
-    const twoCol = resolveComposerCardGridLayout({ width: 320 }, { cardCount: 6 });
+    const twoCol = resolveComposerCardGridLayout(
+      { width: 320 },
+      { cardCount: 6 }
+    );
     expect(twoCol.columns).toBe(2);
 
     const { rerender } = render(
@@ -83,7 +86,10 @@ describe('responsive card grid matrix', () => {
       expect(button.className).not.toMatch(/line-clamp|truncate/);
     }
 
-    const single = resolveComposerCardGridLayout({ width: 160 }, { cardCount: 6 });
+    const single = resolveComposerCardGridLayout(
+      { width: 160 },
+      { cardCount: 6 }
+    );
     expect(single.singleColumn).toBe(true);
     rerender(
       <RecipeCardGrid
@@ -218,7 +224,9 @@ describe('catalog search gate + return restore', () => {
     );
     const [backSnap, setBackSnap] = useState<string>('none');
     const recipes = [
-      ...Array.from({ length: recipeCount }, (_, i) => makeRecipe(i, 'published')),
+      ...Array.from({ length: recipeCount }, (_, i) =>
+        makeRecipe(i, 'published')
+      ),
       ...Array.from({ length: includeDrafts }, (_, i) =>
         makeRecipe(1000 + i, 'draft')
       ),
@@ -255,9 +263,9 @@ describe('catalog search gate + return restore', () => {
     expect(root).toHaveAttribute('data-show-search', 'false');
     expect(screen.queryByTestId('composer-catalog-search')).toBeNull();
     // Drafts are not listed.
-    expect(screen.getAllByTestId(/composer-catalog-item-recipe\.item_/)).toHaveLength(
-      11
-    );
+    expect(
+      screen.getAllByTestId(/composer-catalog-item-recipe\.item_/)
+    ).toHaveLength(11);
   });
 
   it('renders search shell when published-visible ≥ 12 (gate only)', () => {
@@ -279,7 +287,9 @@ describe('catalog search gate + return restore', () => {
     );
 
     await user.click(screen.getByTestId('composer-catalog-category-image'));
-    await user.click(screen.getByTestId('composer-catalog-item-tool.multi_size'));
+    await user.click(
+      screen.getByTestId('composer-catalog-item-tool.multi_size')
+    );
     await user.click(screen.getByTestId('composer-catalog-back'));
 
     const snap = screen.getByTestId('back-snap').textContent ?? '';
@@ -319,14 +329,12 @@ describe('tools strip caps + Pro Studio banner', () => {
   });
 
   it('desktop shows ≤3 ordinary tools', () => {
-    render(
-      <ComposerToolsStrip viewport="desktop" proStudioStatus="locked" />
-    );
+    render(<ComposerToolsStrip viewport="desktop" proStudioStatus="locked" />);
     const strip = screen.getByTestId('composer-tools-strip');
     expect(strip).toHaveAttribute('data-ordinary-cap', '3');
-    expect(Number(strip.getAttribute('data-ordinary-count'))).toBeLessThanOrEqual(
-      3
-    );
+    expect(
+      Number(strip.getAttribute('data-ordinary-count'))
+    ).toBeLessThanOrEqual(3);
     expect(screen.getByTestId('composer-pro-studio-banner')).toHaveAttribute(
       'data-status',
       'locked'

@@ -152,7 +152,7 @@ function projectDataProcessingLevel(dataClasses: readonly string[]): {
   copy: string;
 } {
   const restricted = dataClasses.some((c) =>
-    ['contains_face', 'pii', 'medical', 'medical-health'].includes(c),
+    ['contains_face', 'pii', 'medical', 'medical-health'].includes(c)
   );
   return {
     level: restricted ? 'protected' : 'standard',
@@ -167,14 +167,14 @@ function projectDataProcessingLevel(dataClasses: readonly string[]): {
  * Build the shared explanation projection used by simulator and task audit.
  */
 export function buildRouteDecisionExplanationView(
-  input: BuildRouteDecisionExplanationViewInput,
+  input: BuildRouteDecisionExplanationViewInput
 ): RouteDecisionExplanationView {
   const hardExcluded: ExplanationExclusion[] = input.hardFilterExcluded.map(
     (entry) => ({
       deploymentId: entry.deploymentId,
       reasons: [...entry.reasons],
       layer: 'hard_filter' as const,
-    }),
+    })
   );
 
   const liveExclusions: ExplanationExclusion[] = (
@@ -269,7 +269,7 @@ export function buildRouteDecisionExplanationView(
  */
 export function assertSharedExplanationProjection(
   simulator: RouteDecisionExplanationView,
-  taskAudit: RouteDecisionExplanationView,
+  taskAudit: RouteDecisionExplanationView
 ): void {
   const strip = (value: RouteDecisionExplanationView) => {
     const { surface: _surface, ...rest } = value;
@@ -279,7 +279,7 @@ export function assertSharedExplanationProjection(
   const right = JSON.stringify(strip(taskAudit));
   if (left !== right) {
     throw new Error(
-      'Simulator and task-audit explanation projections diverged.',
+      'Simulator and task-audit explanation projections diverged.'
     );
   }
 }
@@ -303,7 +303,7 @@ export type RouteSimulatorPanelView = {
 };
 
 export function projectRouteSimulatorPanel(
-  explanation: RouteDecisionExplanationView,
+  explanation: RouteDecisionExplanationView
 ): RouteSimulatorPanelView {
   return {
     surface: explanation.surface,
@@ -433,7 +433,9 @@ function asString(value: unknown): string | undefined {
 }
 
 function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function asStringList(value: unknown): string[] {
@@ -546,7 +548,9 @@ export function projectLiveRouteDecision(
           ...(asNumber(fact.sampleSize) != null
             ? { sampleSize: asNumber(fact.sampleSize) }
             : {}),
-          ...(asNumber(fact.value) != null ? { value: asNumber(fact.value) } : {}),
+          ...(asNumber(fact.value) != null
+            ? { value: asNumber(fact.value) }
+            : {}),
         },
       ];
     });
@@ -561,7 +565,8 @@ export function projectLiveRouteDecision(
     return [
       {
         deploymentId,
-        source: (asString(row.source) as ExplanationCostEvidence['source']) ?? null,
+        source:
+          (asString(row.source) as ExplanationCostEvidence['source']) ?? null,
         ...(asNumber(row.amountMicros) != null
           ? { amountMicros: asNumber(row.amountMicros) }
           : {}),
@@ -575,8 +580,9 @@ export function projectLiveRouteDecision(
   const decisionRaw = asString(acceptance.decision) ?? 'stop';
   const acceptanceBranch: ExplanationAcceptanceBranch = {
     acceptance:
-      (asString(acceptance.acceptance) as ExplanationAcceptanceBranch['acceptance']) ??
-      'acceptance_unknown',
+      (asString(
+        acceptance.acceptance
+      ) as ExplanationAcceptanceBranch['acceptance']) ?? 'acceptance_unknown',
     decision: decisionRaw as ExplanationAcceptanceDecision,
     reason: asString(acceptance.reason) ?? decisionRaw,
     ...(asString(acceptance.primaryDeploymentId)
@@ -594,7 +600,9 @@ export function projectLiveRouteDecision(
           amountMicros: asNumber(maxCostRaw.amountMicros)!,
           currency: (currencyRaw === 'USD' ? 'USD' : 'CNY') as 'CNY' | 'USD',
           evidenceSource: (asString(maxCostRaw.evidenceSource) ??
-            null) as NonNullable<RouteDecisionExplanationView['maxCost']>['evidenceSource'],
+            null) as NonNullable<
+            RouteDecisionExplanationView['maxCost']
+          >['evidenceSource'],
         }
       : null;
 

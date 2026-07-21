@@ -31,8 +31,7 @@ function MobileHandoffPage() {
     queryFn: () =>
       loadCanonicalHandoff(
         token,
-        (action, payload) =>
-          commandP1('result-delivery', { action, payload }),
+        (action, payload) => commandP1('result-delivery', { action, payload }),
         {
           nowIso: new Date().toISOString(),
           origin: window.location.origin,

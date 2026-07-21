@@ -53,7 +53,7 @@ export function billingModeLabelFromQuote(
   quote: Pick<
     ProductQuoteSnapshot,
     'billingMode' | 'quotedSeconds' | 'targetSeconds'
-  >,
+  >
 ): string {
   if (quote.billingMode === 'per_request') {
     return '本次按请求计费';

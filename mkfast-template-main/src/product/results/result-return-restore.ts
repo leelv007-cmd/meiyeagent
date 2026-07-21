@@ -30,7 +30,7 @@ export function emptyReturnRestoreStore(): ResultReturnRestoreStore {
 
 /** Stable serialization for the uncommitted edit isolation key. */
 export function serializeUncommittedEditKey(
-  key: ResultUncommittedEditKey,
+  key: ResultUncommittedEditKey
 ): string {
   return [
     key.workspaceKind,
@@ -41,7 +41,7 @@ export function serializeUncommittedEditKey(
 }
 
 export function parseUncommittedEditKey(
-  value: string,
+  value: string
 ): ResultUncommittedEditKey | null {
   const parts = value.split('::');
   if (parts.length !== 4) return null;
@@ -107,7 +107,7 @@ export function buildReturnRestoreSnapshot(input: {
 export function saveReturnRestoreSnapshot(
   store: ResultReturnRestoreStore,
   workId: string,
-  snapshot: ResultReturnRestoreSnapshot,
+  snapshot: ResultReturnRestoreSnapshot
 ): ResultReturnRestoreStore {
   return {
     ...store,
@@ -120,7 +120,7 @@ export function saveReturnRestoreSnapshot(
 
 export function loadReturnRestoreSnapshot(
   store: ResultReturnRestoreStore,
-  workId: string,
+  workId: string
 ): ResultReturnRestoreSnapshot | null {
   return store.byWorkId[workId] ?? null;
 }
@@ -129,7 +129,7 @@ export function saveUncommittedDraft(
   store: ResultReturnRestoreStore,
   key: ResultUncommittedEditKey,
   text: string,
-  updatedAt: string,
+  updatedAt: string
 ): ResultReturnRestoreStore {
   const serialized = serializeUncommittedEditKey(key);
   return {
@@ -143,14 +143,14 @@ export function saveUncommittedDraft(
 
 export function loadUncommittedDraft(
   store: ResultReturnRestoreStore,
-  key: ResultUncommittedEditKey,
+  key: ResultUncommittedEditKey
 ): { text: string; updatedAt: string } | null {
   return store.drafts[serializeUncommittedEditKey(key)] ?? null;
 }
 
 export function clearUncommittedDraft(
   store: ResultReturnRestoreStore,
-  key: ResultUncommittedEditKey,
+  key: ResultUncommittedEditKey
 ): ResultReturnRestoreStore {
   const serialized = serializeUncommittedEditKey(key);
   if (!(serialized in store.drafts)) return store;
@@ -206,7 +206,7 @@ export type ApplyDriftResult =
 export function applyRevisionDriftChoice(
   store: ResultReturnRestoreStore,
   drift: ResultRevisionDriftState,
-  choice: ResultRevisionDriftChoice,
+  choice: ResultRevisionDriftChoice
 ): ApplyDriftResult {
   const draft = loadUncommittedDraft(store, drift.uncommittedEditKey);
 

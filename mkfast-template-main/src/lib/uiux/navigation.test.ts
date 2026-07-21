@@ -38,13 +38,13 @@ test('shared navigation labels resolve in the active locale at access time', () 
   overwriteGetLocale(() => 'zh');
   assert.equal(BUSINESS_NAVIGATION[0].label, '创作');
   assert.equal(SETTINGS_SIDEBAR_ITEMS[0].label, '账户');
-  assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, '能力目录');
+  assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, '模型供应');
 
   overwriteGetLocale(() => 'en');
   assert.equal(BUSINESS_NAVIGATION[0].label, 'Create');
   assert.equal(BUSINESS_SIDEBAR_ITEMS[0].label, 'Create');
   assert.equal(SETTINGS_SIDEBAR_ITEMS[0].label, 'Account');
-  assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, 'Capability catalog');
+  assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, 'Model supply');
 
   overwriteGetLocale(() => 'zh');
 });

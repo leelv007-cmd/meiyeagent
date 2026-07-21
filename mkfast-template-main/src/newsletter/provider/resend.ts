@@ -6,6 +6,7 @@ import type {
   UnsubscribeNewsletterParams,
 } from '@/newsletter/types';
 import { Resend } from 'resend';
+import { safeErrorFields } from '@/auth/safe-log';
 
 /**
  * Resend newsletter provider
@@ -43,12 +44,18 @@ export class ResendNewsletterProvider implements NewsletterProvider {
         unsubscribed: false,
       });
       if (updateResult.error) {
-        console.error('Error updating contact', updateResult.error);
+        console.error('newsletter contact update failed', {
+          event: 'NEWSLETTER_CONTACT_UPDATE_FAILED',
+          ...safeErrorFields(updateResult.error),
+        });
         return false;
       }
       return true;
     } catch (error) {
-      console.error('Error subscribing newsletter', error);
+      console.error('newsletter subscription provider failed', {
+        event: 'NEWSLETTER_PROVIDER_SUBSCRIBE_FAILED',
+        ...safeErrorFields(error),
+      });
       return false;
     }
   }
@@ -60,12 +67,18 @@ export class ResendNewsletterProvider implements NewsletterProvider {
         unsubscribed: true,
       });
       if (result.error) {
-        console.error('Error unsubscribing newsletter', result.error);
+        console.error('newsletter unsubscribe failed', {
+          event: 'NEWSLETTER_PROVIDER_UNSUBSCRIBE_FAILED',
+          ...safeErrorFields(result.error),
+        });
         return false;
       }
       return true;
     } catch (error) {
-      console.error('Error unsubscribing newsletter', error);
+      console.error('newsletter unsubscribe provider failed', {
+        event: 'NEWSLETTER_PROVIDER_UNSUBSCRIBE_ERROR',
+        ...safeErrorFields(error),
+      });
       return false;
     }
   }
@@ -78,7 +91,10 @@ export class ResendNewsletterProvider implements NewsletterProvider {
       if (result.error) return false;
       return !result.data?.unsubscribed;
     } catch (error) {
-      console.error('Error checking subscribe status', error);
+      console.error('newsletter status provider failed', {
+        event: 'NEWSLETTER_PROVIDER_STATUS_FAILED',
+        ...safeErrorFields(error),
+      });
       return false;
     }
   }

@@ -1,7 +1,7 @@
 import { createAuth } from '@/auth/auth';
 import { websiteConfig } from '@/config/website';
 import { getDb } from '@/db';
-import { resolveActiveWorkspace } from '@/db/workspaces';
+import { resolveDefaultWorkspace } from '@/db/workspaces';
 import { serverEnv } from '@/env/server';
 import { findPlanByPriceId } from '@/lib/price-plan';
 import { isProStudioPaymentProviderReady } from '@/payment/pro-studio-commerce';
@@ -44,7 +44,7 @@ async function getEntry(request: Request) {
   if (!current?.user?.id || !current.user.emailVerified) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const workspace = await resolveActiveWorkspace(current.user.id);
+  const workspace = await resolveDefaultWorkspace(current.user.id);
   if (!workspace) {
     return Response.json({ error: 'Workspace not found' }, { status: 404 });
   }

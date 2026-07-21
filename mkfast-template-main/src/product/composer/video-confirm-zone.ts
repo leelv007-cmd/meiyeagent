@@ -59,15 +59,13 @@ export function buildVideoConfirmZone(input: {
   const billingNote =
     quote?.billingNote ??
     (quotedSeconds != null ? `按生成成片 ${quotedSeconds} 秒计费` : null);
-  const format =
-    input.amountFormatter ?? ((n: number) => `${n}`);
+  const format = input.amountFormatter ?? ((n: number) => `${n}`);
 
   return {
     visible: true,
     title: '确认视频生成',
     billingNote,
-    amountLabel:
-      quote != null ? format(quote.amount) : null,
+    amountLabel: quote != null ? format(quote.amount) : null,
     quotedSeconds,
     targetSeconds: quote?.targetSeconds ?? null,
     catalogModelId: quote?.catalogModelId ?? null,
@@ -124,5 +122,8 @@ export function evaluateSubmitGate(input: {
     };
   }
 
-  return { allowed: true, videoConfirm: videoConfirm.visible ? videoConfirm : null };
+  return {
+    allowed: true,
+    videoConfirm: videoConfirm.visible ? videoConfirm : null,
+  };
 }

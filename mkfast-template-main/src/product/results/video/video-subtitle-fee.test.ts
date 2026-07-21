@@ -36,7 +36,10 @@ describe('subtitle fee boundary', () => {
     assert.equal(edited.fee.requiresFullRecomposeQuote, false);
     assert.equal(edited.pendingQuote, null);
     assert.equal(edited.state.subtitle.text, '校对后的独立字幕');
-    assert.equal(edited.state.uncommitted.subtitleDraftText, '校对后的独立字幕');
+    assert.equal(
+      edited.state.uncommitted.subtitleDraftText,
+      '校对后的独立字幕'
+    );
   });
 
   it('independent toggle / style stay free (no re-encode)', () => {
@@ -49,7 +52,9 @@ describe('subtitle fee boundary', () => {
       assert.equal(decision.createsProductUsage, false, change);
     }
 
-    const state = videoWorksurfaceFixture({ subtitleMode: 'independent_asset' });
+    const state = videoWorksurfaceFixture({
+      subtitleMode: 'independent_asset',
+    });
     const toggled = toggleSubtitleEnabled(state);
     assert.equal(toggled.fee.createsProductUsage, false);
     assert.equal(toggled.pendingQuote, null);
@@ -97,7 +102,10 @@ describe('subtitle fee boundary', () => {
     const recompose = requestFullRecompose(state);
     const burnedEdit = editSubtitleText(state, 'x');
 
-    assert.equal(recompose.fee.scope, burnedEdit.fee.fee === 'billable' ? burnedEdit.fee.scope : null);
+    assert.equal(
+      recompose.fee.scope,
+      burnedEdit.fee.fee === 'billable' ? burnedEdit.fee.scope : null
+    );
     assert.equal(recompose.state.pendingQuote?.scope, 'full_compose');
     assert.equal(burnedEdit.pendingQuote?.scope, 'full_compose');
   });

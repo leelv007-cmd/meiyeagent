@@ -97,7 +97,7 @@ import {
   CompositeReferenceAssetResolver,
   DurableComposedVideoApplicationService,
   DurableMediaGenerationApplicationService,
-  fileSystemAssetStorageFromEnv,
+  modelAssetStorageFromEnv,
   FixtureAiStreamingRunner,
   FoundationModelSupplyLedger,
   MediaActivationProbeExecutor,
@@ -275,7 +275,7 @@ const productRepository = new PostgresProductRepository(pool);
 const relationalProductRepository = new PostgresRelationalProductRepository(
   pool
 );
-const assetStorage = fileSystemAssetStorageFromEnv(process.env);
+const assetStorage = modelAssetStorageFromEnv(process.env);
 const referenceAssets = new CompositeReferenceAssetResolver([
   new OwnedAssetReferenceResolver(
     new PostgresCanvasAssetRepository(pool),

@@ -6,6 +6,7 @@ import type {
   StorageProviderName,
   UploadFileResult,
 } from './types';
+import type { UploadPurpose } from './upload-policy';
 
 let storageProvider: StorageProvider | null = null;
 
@@ -37,16 +38,24 @@ export const uploadFile = async (
   file: Buffer | Blob | File,
   filename: string,
   contentType: string,
-  options?: { folder?: string; userId?: string; requestOrigin?: string }
+  options: {
+    folder?: string;
+    purpose: UploadPurpose;
+    requestOrigin?: string;
+    userId: string;
+    workspaceId: string;
+  }
 ): Promise<UploadFileResult> => {
   const provider = getStorageProvider();
   return provider.uploadFile({
     file,
     filename,
     contentType,
-    folder: options?.folder,
-    userId: options?.userId,
-    requestOrigin: options?.requestOrigin,
+    folder: options.folder,
+    purpose: options.purpose,
+    userId: options.userId,
+    workspaceId: options.workspaceId,
+    requestOrigin: options.requestOrigin,
   });
 };
 

@@ -68,7 +68,10 @@ export function parseComposerCatalogSearch(
   };
   const tabRaw = get('tab');
   const tab =
-    tabRaw === 'templates' || tabRaw === 'tools' || tabRaw === 'recipe' || tabRaw === 'tool'
+    tabRaw === 'templates' ||
+    tabRaw === 'tools' ||
+    tabRaw === 'recipe' ||
+    tabRaw === 'tool'
       ? tabRaw === 'recipe'
         ? 'templates'
         : tabRaw === 'tool'

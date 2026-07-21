@@ -98,7 +98,11 @@ export function SupplyAssociationViewsIndex() {
       <SupplyAssociationViewsNav />
       <ul className="space-y-1 text-xs">
         {ASSOCIATION_VIEW_IDS.map((id) => (
-          <li key={id} data-testid="supply-association-index-row" data-view-id={id}>
+          <li
+            key={id}
+            data-testid="supply-association-index-row"
+            data-view-id={id}
+          >
             <a
               href={ASSOCIATION_VIEW_PATHS[id]}
               className="font-mono text-primary underline-offset-2 hover:underline"

@@ -170,7 +170,7 @@ const BLOCKING_HEALTH: ReadonlySet<HealthOverlayState> = new Set([
 
 function isQualifiedDeployment(
   deployment: SupplyDeployment,
-  healthByTarget: Map<string, HealthOverlayState>,
+  healthByTarget: Map<string, HealthOverlayState>
 ): boolean {
   if (deployment.lifecycleStatus !== 'active') return false;
   if (deployment.activationEvidence?.status !== 'live_verified') return false;
@@ -183,7 +183,7 @@ function isQualifiedDeployment(
 
 function faultDomainKey(
   accountIdentity: string | undefined,
-  endpointFingerprint: string | undefined,
+  endpointFingerprint: string | undefined
 ): string | null {
   const account = accountIdentity?.trim();
   const endpoint = endpointFingerprint?.trim();
@@ -202,14 +202,12 @@ export function projectDualChannelCoverage(input: {
 }): DualChannelCoverageProjection {
   const { operation, catalogModelId, snapshot } = input;
   const model = catalogModelId
-    ? snapshot.models.find((m) => m.id === catalogModelId) ?? null
+    ? (snapshot.models.find((m) => m.id === catalogModelId) ?? null)
     : null;
   const healthByTarget = new Map(
-    snapshot.healthOverlays.map((h) => [h.targetId, h.state]),
+    snapshot.healthOverlays.map((h) => [h.targetId, h.state])
   );
-  const channelById = new Map(
-    snapshot.executionChannels.map((c) => [c.id, c]),
-  );
+  const channelById = new Map(snapshot.executionChannels.map((c) => [c.id, c]));
 
   if (!catalogModelId || !model) {
     return {
@@ -228,7 +226,7 @@ export function projectDualChannelCoverage(input: {
   }
 
   const candidates = snapshot.deployments.filter(
-    (d) => d.catalogModelId === catalogModelId,
+    (d) => d.catalogModelId === catalogModelId
   );
   const qualified: QualifiedDeploymentProjection[] = [];
   for (const deployment of candidates) {
@@ -249,38 +247,38 @@ export function projectDualChannelCoverage(input: {
       endpointFingerprint: deployment.endpointFingerprint,
       faultDomainKey: faultDomainKey(
         deployment.accountIdentity,
-        deployment.endpointFingerprint,
+        deployment.endpointFingerprint
       ),
     });
   }
 
   const identityVerified = qualified.filter(
-    (deployment): deployment is QualifiedDeploymentProjection & {
+    (
+      deployment
+    ): deployment is QualifiedDeploymentProjection & {
       faultDomainKey: string;
-    } => deployment.faultDomainKey !== null,
+    } => deployment.faultDomainKey !== null
   );
   const domainKeys = new Set(
-    identityVerified.map((deployment) => deployment.faultDomainKey),
+    identityVerified.map((deployment) => deployment.faultDomainKey)
   );
   const accountIdentities = new Set(
-    identityVerified.map((deployment) => deployment.accountIdentity!.trim()),
+    identityVerified.map((deployment) => deployment.accountIdentity!.trim())
   );
   const endpointIdentities = new Set(
-    identityVerified.map((deployment) =>
-      deployment.endpointFingerprint!.trim(),
-    ),
+    identityVerified.map((deployment) => deployment.endpointFingerprint!.trim())
   );
   const independentFaultDomainCount = Math.min(
     domainKeys.size,
     accountIdentities.size,
-    endpointIdentities.size,
+    endpointIdentities.size
   );
   const providers = new Set(qualified.map((q) => q.providerProfileId));
   const channelKinds = new Set(
-    identityVerified.map((deployment) => deployment.channelKind),
+    identityVerified.map((deployment) => deployment.channelKind)
   );
   const manufacturers = new Set(
-    qualified.map((q) => q.manufacturer ?? 'unknown'),
+    qualified.map((q) => q.manufacturer ?? 'unknown')
   );
 
   let faultDomainKind: FaultDomainKind | 'none' = 'none';
@@ -344,7 +342,7 @@ export function projectDualChannelCoverage(input: {
 
 export function projectOperationReadiness(
   operation: CoreSupplyOperation,
-  snapshot: SupplyControlSnapshot,
+  snapshot: SupplyControlSnapshot
 ): OperationReadinessProjection {
   const featuredId = snapshot.featuredCoreModelIds[operation] ?? null;
   const dualChannel = projectDualChannelCoverage({
@@ -354,10 +352,10 @@ export function projectOperationReadiness(
   });
   const policy =
     snapshot.routePolicies.find(
-      (p) => p.operation === operation && p.publishedAt,
+      (p) => p.operation === operation && p.publishedAt
     ) ?? snapshot.routePolicies.find((p) => p.operation === operation);
   const healthByTarget = new Map(
-    snapshot.healthOverlays.map((h) => [h.targetId, h.state]),
+    snapshot.healthOverlays.map((h) => [h.targetId, h.state])
   );
   const candidates = policy?.candidateDeploymentIds ?? [];
   const healthBlockingCount = candidates.filter((id) => {
@@ -368,7 +366,10 @@ export function projectOperationReadiness(
   let status: OperationReadinessStatus;
   if (dualChannel.status === 'blocked') status = 'blocked';
   else if (dualChannel.status === 'not_verified') status = 'not_verified';
-  else if (healthBlockingCount > 0 && dualChannel.independentFaultDomainCount < 2)
+  else if (
+    healthBlockingCount > 0 &&
+    dualChannel.independentFaultDomainCount < 2
+  )
     status = 'degraded';
   else if (dualChannel.multiChannelReady) status = 'multi_channel_ready';
   else if (dualChannel.status === 'single_channel') status = 'single_channel';
@@ -426,10 +427,10 @@ function projectLifecycle(runs: SupplyRunRecord[]): LifecycleSummaryView {
 
 /** Build full overview projection from a supply control snapshot. */
 export function buildSupplyOverviewView(
-  snapshot: SupplyControlSnapshot = buildDefaultSupplyControlSnapshot(),
+  snapshot: SupplyControlSnapshot = buildDefaultSupplyControlSnapshot()
 ): SupplyOverviewView {
   const operationReadiness = CORE_SUPPLY_OPERATIONS.map((op) =>
-    projectOperationReadiness(op, snapshot),
+    projectOperationReadiness(op, snapshot)
   );
   const dualChannelCoverage = operationReadiness.map((row) => row.dualChannel);
 
@@ -479,7 +480,7 @@ export function buildSupplyOverviewView(
       const runDeps = new Set(
         snapshot.runs
           .filter((r) => r.dataClass === dataClass)
-          .map((r) => r.deploymentId),
+          .map((r) => r.deploymentId)
       );
       const deploymentCount =
         runDeps.size > 0
@@ -492,7 +493,7 @@ export function buildSupplyOverviewView(
         deploymentCount,
         singleChannelOnly: deploymentCount === 1,
       };
-    },
+    }
   );
 
   const capacity: CapacityBalanceView[] = snapshot.pools.map((pool) => {
@@ -529,7 +530,7 @@ export function buildSupplyOverviewView(
   }
   const priceEvidenceSources = [
     ...new Set(
-      snapshot.priceRevisions.map((p) => p.evidence.source).filter(Boolean),
+      snapshot.priceRevisions.map((p) => p.evidence.source).filter(Boolean)
     ),
   ];
 
@@ -543,14 +544,14 @@ export function buildSupplyOverviewView(
           (r) =>
             r.status === 'failed' ||
             r.status === 'acceptance_unknown' ||
-            r.status === 'draining',
+            r.status === 'draining'
         )
-        .map((r) => r.taskId),
+        .map((r) => r.taskId)
     ),
   ];
 
   const blockingCount = snapshot.healthOverlays.filter((h) =>
-    BLOCKING_HEALTH.has(h.state),
+    BLOCKING_HEALTH.has(h.state)
   ).length;
 
   return {
@@ -595,7 +596,7 @@ export function buildSupplyOverviewView(
 }
 
 export function operationReadinessLabel(
-  status: OperationReadinessStatus,
+  status: OperationReadinessStatus
 ): string {
   switch (status) {
     case 'multi_channel_ready':

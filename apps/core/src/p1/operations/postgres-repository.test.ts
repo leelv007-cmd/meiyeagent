@@ -1004,10 +1004,11 @@ describe(
 					tags: ["crash"],
 				},
 			};
+			const adminContext = { ...context, actor: "admin" as const };
 			failCompletion = true;
 			await assert.rejects(
 				createModuleService().executeModule(
-					context,
+					adminContext,
 					"operations",
 					templateCommand,
 					"pg-crash-create-template",
@@ -1016,7 +1017,7 @@ describe(
 			);
 			now += 11;
 			const templateReplay = (await createModuleService().executeModule(
-				context,
+				adminContext,
 				"operations",
 				templateCommand,
 				"pg-crash-create-template",

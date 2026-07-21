@@ -4,12 +4,8 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import {
-  deleteUserFile,
-  listUserFiles,
-  uploadUserFile,
-} from '@/api/user-files';
-import { DEFAULT_AVATARS_FOLDER } from '@/storage/constants';
+import { deleteUserFile, listUserFiles } from '@/api/user-files';
+import { uploadThroughBoundedRoute } from '@/storage/upload-client';
 
 export const userFilesKeys = {
   all: ['user-files'] as const,
@@ -48,20 +44,16 @@ export function useDeleteUserFile() {
 export function useUploadUserFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (params: {
-      file: File;
-      isPublic?: boolean;
-      description?: string;
-    }) => {
+    mutationFn: async (params: { file: File; description?: string }) => {
       const form = new FormData();
       form.append('file', params.file);
-      if (params.isPublic !== undefined) {
-        form.append('isPublic', params.isPublic ? 'true' : 'false');
-      }
       if (params.description != null && params.description !== '') {
         form.append('description', params.description);
       }
-      return uploadUserFile({ data: form });
+      return uploadThroughBoundedRoute<{ key: string; url: string }>(
+        form,
+        'private_file'
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userFilesKeys.all });
@@ -77,9 +69,10 @@ export function useUploadUserAvatar() {
     mutationFn: async (file: File) => {
       const form = new FormData();
       form.append('file', file);
-      form.append('isPublic', 'true');
-      form.append('folder', DEFAULT_AVATARS_FOLDER);
-      return uploadUserFile({ data: form });
+      return uploadThroughBoundedRoute<{ key: string; url: string }>(
+        form,
+        'avatar'
+      );
     },
   });
 }

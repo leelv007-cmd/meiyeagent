@@ -1,5 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { handleWebhookEvent, isPaymentEnabled } from '@/payment';
+import { handleWebhookEvent } from '@/payment';
+import {
+  paymentWebhookErrorResponse,
+  paymentWebhookHttpResponse,
+  readPaymentWebhookPayload,
+} from '@/payment/webhook-settlement';
+import { logPaymentWebhookError } from '@/payment/webhook-logging';
 
 /**
  * Stripe webhook endpoint
@@ -11,27 +17,29 @@ export const Route = createFileRoute('/api/webhooks/stripe')({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!isPaymentEnabled()) {
-          return Response.json({ received: true }, { status: 200 });
-        }
-        const payload = await request.text();
-        const signature = request.headers.get('stripe-signature') ?? '';
-        if (!payload || !signature) {
-          console.warn('Stripe webhook: missing payload or signature');
-          return Response.json(
-            { error: 'Missing payload or signature' },
-            { status: 400 }
-          );
-        }
         try {
-          await handleWebhookEvent(payload, signature);
-          return Response.json({ received: true }, { status: 200 });
-        } catch (err) {
-          console.error('Stripe webhook error:', err);
-          return Response.json(
-            { error: 'Webhook processing failed', received: false },
-            { status: 500 }
+          const payload = await readPaymentWebhookPayload(request);
+          const signature = request.headers.get('stripe-signature') ?? '';
+          if (!payload || !signature) {
+            console.warn('Stripe webhook: missing payload or signature');
+            return Response.json(
+              { error: 'Missing payload or signature' },
+              { status: 400 }
+            );
+          }
+          const receipt = await handleWebhookEvent(
+            'stripe',
+            payload,
+            signature
           );
+          return paymentWebhookHttpResponse(receipt);
+        } catch (err) {
+          logPaymentWebhookError({
+            error: err,
+            provider: 'stripe',
+            stage: 'route',
+          });
+          return paymentWebhookErrorResponse(err);
         }
       },
     },

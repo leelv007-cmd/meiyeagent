@@ -44,8 +44,7 @@ const COPY = {
     answeredSkipped: '暂未填写',
     editAnswer: '点击修改',
     previewTitle: '确认后保存为表达身份',
-    previewDescription:
-      '保存后，之后生成的内容会按这里记下的说法和边界来用。',
+    previewDescription: '保存后，之后生成的内容会按这里记下的说法和边界来用。',
     questionKind: '这次要登记品牌身份，还是个人 IP？',
     questionDisplayName: '希望在内容里怎么称呼这个身份？',
     questionOwner: '这个身份归属于谁？',

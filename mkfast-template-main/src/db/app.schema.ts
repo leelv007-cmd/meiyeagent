@@ -6,8 +6,10 @@
 import { relations } from 'drizzle-orm';
 import {
   boolean,
+  foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -20,6 +22,7 @@ import type {
   PaymentType,
   PaymentProviderName,
   PlanInterval,
+  VerifiedPaymentWebhookEvent,
 } from '@/payment/types';
 import { session as authSession, user } from './auth.schema';
 
@@ -160,6 +163,8 @@ export const payment = pgTable(
     index('payment_customer_id_idx').on(table.customerId),
     index('payment_subscription_id_idx').on(table.subscriptionId),
     index('payment_session_id_idx').on(table.sessionId),
+    uniqueIndex('payment_subscription_id_unique').on(table.subscriptionId),
+    uniqueIndex('payment_session_id_unique').on(table.sessionId),
     index('payment_invoice_id_idx').on(table.invoiceId),
     index('payment_paid_idx').on(table.paid),
     index('payment_user_paid_idx').on(table.userId, table.paid),
@@ -315,7 +320,10 @@ export const paymentWebhookEvents = pgTable(
     provider: text('provider').notNull(),
     eventId: text('event_id').notNull(),
     eventType: text('event_type').notNull(),
-    status: text('status').notNull(),
+    status: text('status')
+      .$type<'verified' | 'processed'>()
+      .notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -327,6 +335,62 @@ export const paymentWebhookEvents = pgTable(
       name: 'payment_webhook_events_provider_event_id_pk',
     }),
     index('payment_webhook_events_status_idx').on(table.status),
+  ]
+);
+
+export type PaymentWebhookSettlementStatus =
+  | 'pending'
+  | 'processing'
+  | 'retry'
+  | 'completed';
+
+export const paymentWebhookSettlementOutbox = pgTable(
+  'payment_webhook_settlement_outbox',
+  {
+    provider: text('provider').notNull().$type<PaymentProviderName>(),
+    eventId: text('event_id').notNull(),
+    payload: text('payload').notNull(),
+    signature: text('signature').notNull(),
+    status: text('status')
+      .$type<PaymentWebhookSettlementStatus>()
+      .default('pending')
+      .notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    claimToken: text('claim_token'),
+    lastErrorCode: text('last_error_code'),
+    providerAppliedAt: timestamp('provider_applied_at', { withTimezone: true }),
+    normalizedEvent: jsonb('normalized_event').$type<
+      VerifiedPaymentWebhookEvent | null
+    >(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.provider, table.eventId],
+      name: 'payment_webhook_settlement_outbox_provider_event_id_pk',
+    }),
+    foreignKey({
+      columns: [table.provider, table.eventId],
+      foreignColumns: [
+        paymentWebhookEvents.provider,
+        paymentWebhookEvents.eventId,
+      ],
+      name: 'payment_webhook_settlement_outbox_event_fk',
+    }).onDelete('cascade'),
+    index('payment_webhook_settlement_outbox_ready_idx').on(
+      table.status,
+      table.availableAt
+    ),
   ]
 );
 
@@ -349,8 +413,10 @@ export const userFiles = pgTable(
     contentType: text('content_type').notNull(),
     size: integer('size').notNull(),
     r2Key: text('r2_key').notNull(),
+    purpose: text('purpose').default('private_file').notNull(),
     isPublic: boolean('is_public'),
     description: text('description'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -359,6 +425,74 @@ export const userFiles = pgTable(
     index('user_files_workspace_id_idx').on(table.workspaceId),
     index('user_files_r2_key_idx').on(table.r2Key),
   ]
+);
+
+/**
+ * Immutable proof captured during the storage privacy migration for a
+ * historical public avatar that had no user_files metadata row.
+ */
+export const legacyAvatarAccessClaims = pgTable(
+  'legacy_avatar_access_claims',
+  {
+    objectKey: text('object_key').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    imageUrl: text('image_url').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('legacy_avatar_access_claims_user_idx').on(table.userId),
+  ],
+);
+
+export type StorageObjectOutboxStatus =
+  | 'pending'
+  | 'processing'
+  | 'retry'
+  | 'completed';
+export type StorageObjectDeleteReason =
+  | 'upload_compensation'
+  | 'user_delete';
+
+export const storageObjectOutbox = pgTable(
+  'storage_object_outbox',
+  {
+    id: text('id').primaryKey(),
+    operation: text('operation').default('delete_object').notNull(),
+    reason: text('reason').$type<StorageObjectDeleteReason>().notNull(),
+    objectKey: text('object_key').notNull(),
+    userFileId: text('user_file_id'),
+    userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id').notNull(),
+    status: text('status')
+      .$type<StorageObjectOutboxStatus>()
+      .default('pending')
+      .notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    claimToken: text('claim_token'),
+    lastErrorCode: text('last_error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('storage_object_outbox_ready_idx').on(
+      table.status,
+      table.availableAt,
+    ),
+    uniqueIndex('storage_object_outbox_user_file_idx').on(table.userFileId),
+  ],
 );
 
 export const userFilesRelations = relations(userFiles, ({ one }) => ({

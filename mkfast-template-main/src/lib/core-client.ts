@@ -6,6 +6,11 @@ import { coreProxyResponse } from '@/lib/core-stream';
 import { isAllowedWorkspaceAssetObjectKey } from '@/lib/core-asset-path';
 import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
 import {
+  CoreRequestBoundaryError,
+  coreFetch,
+  forwardedCorrelationId,
+  forwardedIdempotencyKey,
+  readRequestText,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
   type WorkspaceHarnessTaskCollectionResource,
@@ -51,12 +56,16 @@ export async function forwardAuthenticatedCoreRequest(
   headers.set('x-service-token', serverEnv.CORE_SERVICE_TOKEN);
   headers.set(
     'x-correlation-id',
-    request.headers.get('x-correlation-id') ?? `corr-${crypto.randomUUID()}`
+    forwardedCorrelationId(request.headers.get('x-correlation-id'))
   );
-  headers.set(
-    'idempotency-key',
-    request.headers.get('idempotency-key') ?? crypto.randomUUID()
-  );
+  try {
+    headers.set(
+      'idempotency-key',
+      forwardedIdempotencyKey(request.headers.get('idempotency-key'))
+    );
+  } catch (error) {
+    return coreRequestBoundaryResponse(error);
+  }
   headers.set('x-user-id', session.user.id);
   headers.set('x-workspace-id', workspace.id);
   headers.set('x-core-actor', productRole === 'admin' ? 'admin' : 'user');
@@ -67,12 +76,24 @@ export async function forwardAuthenticatedCoreRequest(
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
 
-  const body = request.method === 'GET' ? undefined : await request.text();
-  const upstream = await fetch(`${serverEnv.CORE_SERVICE_URL}${path}`, {
-    method: request.method,
-    headers,
-    body,
-  });
+  let body: string | undefined;
+  try {
+    body =
+      request.method === 'GET' ? undefined : await readRequestText(request);
+  } catch (error) {
+    return coreRequestBoundaryResponse(error);
+  }
+  let upstream: Response;
+  try {
+    upstream = await coreFetch(
+      fetch,
+      `${serverEnv.CORE_SERVICE_URL}${path}`,
+      { body, headers, method: request.method, signal: request.signal },
+      { stream: path.endsWith('/events') }
+    );
+  } catch {
+    return coreUnavailableResponse();
+  }
   const responseHeaders = new Headers();
   const upstreamContentType = upstream.headers.get('content-type');
   if (upstreamContentType)
@@ -139,24 +160,46 @@ export async function forwardWorkspaceCoreRequest(
   );
   headers.set(
     'x-correlation-id',
-    request.headers.get('x-correlation-id') ?? `corr-${crypto.randomUUID()}`
+    forwardedCorrelationId(request.headers.get('x-correlation-id'))
   );
-  headers.set(
-    'idempotency-key',
-    request.headers.get('idempotency-key') ?? crypto.randomUUID()
-  );
+  try {
+    headers.set(
+      'idempotency-key',
+      forwardedIdempotencyKey(request.headers.get('idempotency-key'))
+    );
+  } catch (error) {
+    return coreRequestBoundaryResponse(error);
+  }
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
 
-  const body = request.method === 'GET' ? undefined : await request.text();
-  const upstream = await fetch(
-    `${serverEnv.CORE_SERVICE_URL}${workspaceCoreUpstreamPath(
-      workspace.id,
-      resource,
-      request.url
-    )}`,
-    workspaceCoreFetchInit(request, headers, body)
-  );
+  let body: string | undefined;
+  try {
+    body =
+      request.method === 'GET' ? undefined : await readRequestText(request);
+  } catch (error) {
+    return coreRequestBoundaryResponse(error);
+  }
+  let upstream: Response;
+  try {
+    upstream = await coreFetch(
+      fetch,
+      `${serverEnv.CORE_SERVICE_URL}${workspaceCoreUpstreamPath(
+        workspace.id,
+        resource,
+        request.url
+      )}`,
+      workspaceCoreFetchInit(request, headers, body),
+      {
+        stream:
+          resource === 'p1/assistant/stream' ||
+          resource === 'p1/copy/stream' ||
+          resource.endsWith('/events'),
+      }
+    );
+  } catch {
+    return coreUnavailableResponse();
+  }
   return coreProxyResponse(upstream);
 }
 
@@ -197,10 +240,17 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
   );
   headers.set('x-correlation-id', `asset-${crypto.randomUUID()}`);
   const path = objectKey.split('/').map(encodeURIComponent).join('/');
-  const upstream = await fetch(
-    `${serverEnv.CORE_SERVICE_URL}/v1/assets/${path}`,
-    { headers }
-  );
+  let upstream: Response;
+  try {
+    upstream = await coreFetch(
+      fetch,
+      `${serverEnv.CORE_SERVICE_URL}/v1/assets/${path}`,
+      { headers, signal: request.signal },
+      { stream: true }
+    );
+  } catch {
+    return coreUnavailableResponse();
+  }
   const responseHeaders = new Headers({
     'cache-control': 'private, max-age=31536000, immutable',
     'content-type':
@@ -219,4 +269,21 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
     status: upstream.status,
     headers: responseHeaders,
   });
+}
+
+function coreRequestBoundaryResponse(error: unknown) {
+  if (!(error instanceof CoreRequestBoundaryError)) throw error;
+  return Response.json(
+    { error: { code: error.code, message: error.message } },
+    { status: error.status }
+  );
+}
+
+function coreUnavailableResponse() {
+  return Response.json(
+    {
+      error: { code: 'CORE_UNAVAILABLE', message: 'Product Core unavailable.' },
+    },
+    { status: 503 }
+  );
 }

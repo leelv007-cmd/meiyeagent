@@ -173,7 +173,10 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
                         <TableCell className="font-mono text-xs">
                           {row.deploymentId}
                         </TableCell>
-                        <TableCell colSpan={2} className="text-muted-foreground">
+                        <TableCell
+                          colSpan={2}
+                          className="text-muted-foreground"
+                        >
                           —
                         </TableCell>
                       </TableRow>,
@@ -194,7 +197,7 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
                           </Badge>
                         </TableCell>
                       </TableRow>
-                    )),
+                    ))
               )}
             </TableBody>
           </Table>
@@ -208,9 +211,7 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
             <li key={`cost-${row.deploymentId}`}>
               <span className="font-mono text-xs">{row.deploymentId}</span>:{' '}
               {row.source ?? 'unknown'}
-              {row.amountMicros != null
-                ? ` · ${row.amountMicros} micros`
-                : ''}
+              {row.amountMicros != null ? ` · ${row.amountMicros} micros` : ''}
               {row.riskDiscountApplied ? ' · 风险折扣' : ''}
             </li>
           ))}
@@ -230,10 +231,7 @@ export function SupplyRouteSimulatorPanel({
   view?: RouteSimulatorPanelView | null;
 }) {
   const resolved: LiveRouteSimulatorState =
-    state ??
-    (view
-      ? { status: 'ready', view }
-      : { status: 'idle' });
+    state ?? (view ? { status: 'ready', view } : { status: 'idle' });
 
   return (
     <section
@@ -250,8 +248,8 @@ export function SupplyRouteSimulatorPanel({
       <header className="space-y-1">
         <h2 className="text-base font-semibold">路由模拟器</h2>
         <p className="text-xs text-muted-foreground">
-          与任务审计共用同一解释投影（G5）：硬过滤 / 排序 / 实时排除 / 最大成本 /
-          接受态 / 未选原因 / 证据新鲜度 / 成本证据来源。经
+          与任务审计共用同一解释投影（G5）：硬过滤 / 排序 / 实时排除 / 最大成本
+          / 接受态 / 未选原因 / 证据新鲜度 / 成本证据来源。经
           admin_supply_action_preview / admin_supply_action（route_simulate）由
           Core 生成，禁止演示数据回退。
         </p>

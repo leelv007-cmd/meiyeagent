@@ -27,7 +27,7 @@ export type CopyDocumentDraft = CopyDocumentFields & {
 
 export function createCopyDocumentDraft(
   fields: CopyDocumentFields,
-  baseRevisionId: string,
+  baseRevisionId: string
 ): CopyDocumentDraft {
   return {
     ...fields,
@@ -48,7 +48,7 @@ export type CopyFieldKey =
 export function applyCopyFieldEdit(
   draft: CopyDocumentDraft,
   field: CopyFieldKey,
-  value: string | string[],
+  value: string | string[]
 ): CopyDocumentDraft {
   if (field === 'topics' || field === 'orderedAssetIds') {
     const next = Array.isArray(value) ? [...value] : [value];
@@ -106,7 +106,7 @@ export type SelectionRewritePreview = {
  */
 export function previewSelectionRewrite(
   draft: CopyDocumentDraft,
-  request: SelectionRewriteRequest,
+  request: SelectionRewriteRequest
 ): SelectionRewritePreview | { kind: 'invalid'; message: string } {
   const source = draft[request.field];
   if (typeof source !== 'string') {
@@ -129,10 +129,11 @@ export function previewSelectionRewrite(
       after = `${before}，结合本店真实项目说明，欢迎到店了解。`;
       break;
     case 'weaker_promo':
-      after = before
-        .replace(/(?:限时|优惠|抢购|必买|冲|立即)/gu, '')
-        .replace(/\s{2,}/gu, ' ')
-        .trim() || before;
+      after =
+        before
+          .replace(/(?:限时|优惠|抢购|必买|冲|立即)/gu, '')
+          .replace(/\s{2,}/gu, ' ')
+          .trim() || before;
       break;
     case 'stronger_cta':
       after = `${before} 现在可预约到店咨询。`;
@@ -193,9 +194,7 @@ export const FACT_SOURCE_KIND_LABELS: Record<FactSourceKind, string> = {
   customer_case: '顾客案例',
 };
 
-export function projectFactSources(
-  items: readonly FactSourceItem[],
-): {
+export function projectFactSources(items: readonly FactSourceItem[]): {
   items: FactSourceItem[];
   pendingCount: number;
   hasHighRiskPending: boolean;
@@ -209,7 +208,7 @@ export function projectFactSources(
         i.kind === 'price' ||
         i.kind === 'deadline' ||
         i.kind === 'effect_claim' ||
-        i.kind === 'credential',
+        i.kind === 'credential'
     ),
   };
 }
@@ -375,9 +374,7 @@ export function routeAdjustExecution(input: {
     packageId: string;
     reason: string;
   };
-}):
-  | AdjustExecutionPath
-  | { kind: 'rejected'; code: string; message: string } {
+}): AdjustExecutionPath | { kind: 'rejected'; code: string; message: string } {
   switch (input.kind) {
     case 'free_text':
     case 'selection_rewrite': {
@@ -470,7 +467,7 @@ export type CopyImageTextWorksurfaceView = {
 };
 
 export function projectCopyImageTextWorksurface(
-  facts: CopyImageTextWorksurfaceFacts,
+  facts: CopyImageTextWorksurfaceFacts
 ): CopyImageTextWorksurfaceView {
   const draft = createCopyDocumentDraft(facts.document, facts.baseRevisionId);
   const factSources = projectFactSources(facts.factSources ?? []);

@@ -27,10 +27,7 @@ import {
   type ShareDeviceCapability,
   type SharePayload,
 } from './delivery-share-degrade';
-import type {
-  AssistedReceipt,
-  DeliveryPanelTarget,
-} from './delivery-b3-types';
+import type { AssistedReceipt, DeliveryPanelTarget } from './delivery-b3-types';
 import type { FullPackagePlan } from './delivery-full-package';
 
 export type DeliveryPanelFacts = {
@@ -77,7 +74,7 @@ export type DeliveryPanelView = {
  * Pure — no I/O.
  */
 export function projectDeliveryPanel(
-  facts: DeliveryPanelFacts,
+  facts: DeliveryPanelFacts
 ): DeliveryPanelView {
   const autoCount =
     facts.automaticVerifiedPlatformCount ?? launchAutomaticVerifiedCount();
@@ -96,10 +93,7 @@ export function projectDeliveryPanel(
 
   const groups = projectDeliveryCapabilityGroups(capabilityFacts);
   const visible = visibleDeliveryGroups(capabilityFacts);
-  const sharePlan = resolveShareDegrade(
-    facts.sharePayload,
-    facts.shareDevice,
-  );
+  const sharePlan = resolveShareDegrade(facts.sharePayload, facts.shareDevice);
   const assisted = facts.assistedReceipt
     ? projectAssistedHandoffUi(facts.assistedReceipt, facts.nowIso)
     : null;
@@ -130,7 +124,7 @@ export function projectDeliveryPanel(
 
 /** Launch defaults for capability facts (automatic_verified = 0). */
 export function launchDeliveryCapabilityDefaults(
-  target: DeliveryPanelTarget,
+  target: DeliveryPanelTarget
 ): Pick<
   DeliveryCapabilityFacts,
   | 'target'

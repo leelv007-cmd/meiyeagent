@@ -5,8 +5,14 @@ import { createAuth } from '@/auth/auth';
 import { getDb } from '@/db';
 import { workspaceMemberships } from '@/db/app.schema';
 import { session as authSession, user } from '@/db/auth.schema';
-import { resolveActiveWorkspace } from '@/db/workspaces';
+import { resolveDefaultWorkspace } from '@/db/workspaces';
 import { serverEnv } from '@/env/server';
+import {
+  CoreRequestBoundaryError,
+  coreFetch,
+  readRequestFormData,
+  readRequestText,
+} from '@/lib/core-request';
 
 export const Route = createFileRoute('/api/pro-studio/launch')({
   server: {
@@ -44,9 +50,16 @@ async function validateUpstreamSession(request: Request) {
   ) {
     return new Response(null, { status: 401 });
   }
-  const parsed = validationSchema.safeParse(
-    await request.json().catch(() => null)
-  );
+  let body: unknown;
+  try {
+    body = JSON.parse(await readRequestText(request)) as unknown;
+  } catch (error) {
+    if (error instanceof CoreRequestBoundaryError) {
+      return new Response(null, { status: error.status });
+    }
+    return new Response(null, { status: 400 });
+  }
+  const parsed = validationSchema.safeParse(body);
   if (!parsed.success) return new Response(null, { status: 400 });
   const input = parsed.data;
   const [active] = await getDb()
@@ -86,11 +99,22 @@ async function issueForBrowser(request: Request) {
   if (!current?.user?.id || !current.user.emailVerified) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const workspace = await resolveActiveWorkspace(current.user.id);
+  const workspace = await resolveDefaultWorkspace(current.user.id);
   if (!workspace) {
     return Response.json({ error: 'Workspace not found' }, { status: 404 });
   }
-  const form = await request.formData();
+  let form: FormData;
+  try {
+    form = await readRequestFormData(request);
+  } catch (error) {
+    if (error instanceof CoreRequestBoundaryError) {
+      return Response.json(
+        { error: { code: error.code, message: error.message } },
+        { status: error.status }
+      );
+    }
+    throw error;
+  }
   const browserNonce = form.get('browserNonce');
   const audienceKind = form.get('audience');
   const projectId = form.get('projectId');
@@ -110,26 +134,35 @@ async function issueForBrowser(request: Request) {
     '/api/internal/launch-codes',
     serverEnv.CANVAS_SERVICE_URL
   );
-  const upstream = await fetch(canvasServiceUrl, {
-    body: JSON.stringify({
-      audience,
-      bootstrap: {
-        locale: normalizeLocale(form.get('locale')),
-        returnTo: safeReturnTo(form.get('returnTo')),
-        theme: normalizeTheme(form.get('theme')),
+  let upstream: Response;
+  try {
+    upstream = await coreFetch(fetch, canvasServiceUrl, {
+      body: JSON.stringify({
+        audience,
+        bootstrap: {
+          locale: normalizeLocale(form.get('locale')),
+          returnTo: safeReturnTo(form.get('returnTo')),
+          theme: normalizeTheme(form.get('theme')),
+        },
+        browserNonce,
+        mainSessionId: current.session.id,
+        userId: current.user.id,
+        workspaceId: workspace.id,
+      }),
+      cache: 'no-store',
+      headers: {
+        'content-type': 'application/json',
+        'x-canvas-service-token': serverEnv.CANVAS_SERVICE_TOKEN,
       },
-      browserNonce,
-      mainSessionId: current.session.id,
-      userId: current.user.id,
-      workspaceId: workspace.id,
-    }),
-    cache: 'no-store',
-    headers: {
-      'content-type': 'application/json',
-      'x-canvas-service-token': serverEnv.CANVAS_SERVICE_TOKEN,
-    },
-    method: 'POST',
-  });
+      method: 'POST',
+      signal: request.signal,
+    });
+  } catch {
+    return Response.json(
+      { error: 'Pro Studio launch is unavailable' },
+      { status: 503 }
+    );
+  }
   if (!upstream.ok) {
     return Response.json(
       { error: 'Pro Studio launch is unavailable' },

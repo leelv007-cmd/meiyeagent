@@ -4,6 +4,11 @@ import { createMiddleware } from '@tanstack/react-start';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import { Routes } from '@/lib/routes';
 import { websiteConfig } from '@/config/website';
+import {
+  RecentAuthenticationRequiredError,
+  recentAuthenticationRequiredResponse,
+  requireRecentAuthentication,
+} from '@/auth/recent-authentication';
 
 const ADMIN_ROLE = 'admin';
 
@@ -68,5 +73,27 @@ export const adminApiMiddleware = createMiddleware().server(
         userId: session.user.id,
       },
     });
+  }
+);
+
+/** Route-level step-up for critical admin writes. */
+export const recentAdminApiMiddleware = createMiddleware().server(
+  async ({ next }) => {
+    const headers = getRequestHeaders();
+    const session = await createAuth().api.getSession({
+      headers,
+      query: { disableCookieCache: true, disableRefresh: true },
+    });
+
+    if (!session?.user) return unauthorizedResponse();
+    if (session.user.role !== ADMIN_ROLE) return forbiddenResponse();
+    try {
+      requireRecentAuthentication(session.session);
+    } catch (error) {
+      if (!(error instanceof RecentAuthenticationRequiredError)) throw error;
+      return recentAuthenticationRequiredResponse();
+    }
+
+    return await next({ context: { userId: session.user.id } });
   }
 );

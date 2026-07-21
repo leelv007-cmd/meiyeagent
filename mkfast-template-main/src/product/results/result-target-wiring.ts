@@ -44,14 +44,13 @@ export type ClientResolveResultTargetInput = {
 
 function isResultPanel(value: string | undefined): value is ResultPanel {
   return (
-    value !== undefined &&
-    (resultPanels as readonly string[]).includes(value)
+    value !== undefined && (resultPanels as readonly string[]).includes(value)
   );
 }
 
 function legacyReadonlyOutcome(
   legacy: ClientResolverLegacyPackage,
-  versionId: string | undefined,
+  versionId: string | undefined
 ): ResultTargetResolveOutcome {
   if (versionId && !legacy.versionIds.includes(versionId)) {
     return {
@@ -78,7 +77,7 @@ function legacyReadonlyOutcome(
 }
 
 function resolveLegacyReadonly(
-  input: ClientResolveResultTargetInput,
+  input: ClientResolveResultTargetInput
 ): ResultTargetResolveOutcome {
   const contentId = input.request.contentId;
   if (!contentId) {
@@ -94,7 +93,7 @@ function resolveLegacyReadonly(
   const legacy = (input.legacyPackages ?? []).find(
     (pkg) =>
       pkg.contentId === contentId &&
-      pkg.workspaceId === input.viewer.workspaceId,
+      pkg.workspaceId === input.viewer.workspaceId
   );
 
   if (!legacy) {
@@ -114,7 +113,7 @@ function resolveLegacyReadonly(
  * Pure — never rewrites request.workId to a "latest" work.
  */
 export function resolveResultTargetClient(
-  input: ClientResolveResultTargetInput,
+  input: ClientResolveResultTargetInput
 ): ResultTargetResolveOutcome {
   const { request, viewer, hasMembership } = input;
 
@@ -137,7 +136,7 @@ export function resolveResultTargetClient(
       const legacy = (input.legacyPackages ?? []).find(
         (pkg) =>
           pkg.contentId === request.contentId &&
-          pkg.workspaceId === viewer.workspaceId,
+          pkg.workspaceId === viewer.workspaceId
       );
       if (legacy) {
         return legacyReadonlyOutcome(legacy, request.versionId);
@@ -176,8 +175,7 @@ export function resolveResultTargetClient(
         kind: 'lineage_mismatch',
         code: 'LINEAGE_MISMATCH',
         recoverable: true,
-        message:
-          'contentId does not belong to the requested Work lineage.',
+        message: 'contentId does not belong to the requested Work lineage.',
         requested: request,
       };
     }
@@ -239,7 +237,7 @@ export function resolveResultTargetClient(
  */
 export function parseResultCenterSearch(
   workId: string,
-  search: Record<string, unknown>,
+  search: Record<string, unknown>
 ): ResultTarget {
   const contentId =
     typeof search.contentId === 'string' && search.contentId.length > 0
@@ -249,8 +247,7 @@ export function parseResultCenterSearch(
     typeof search.versionId === 'string' && search.versionId.length > 0
       ? search.versionId
       : undefined;
-  const panelRaw =
-    typeof search.panel === 'string' ? search.panel : undefined;
+  const panelRaw = typeof search.panel === 'string' ? search.panel : undefined;
   const panel = isResultPanel(panelRaw) ? panelRaw : undefined;
   const focusKey =
     typeof search.focusKey === 'string' && search.focusKey.length > 0
@@ -272,7 +269,7 @@ export function parseResultCenterSearch(
  */
 export function assertNoLatestResultFallback(
   outcome: ResultTargetResolveOutcome,
-  catalogWorkIds: readonly string[],
+  catalogWorkIds: readonly string[]
 ): void {
   if (outcome.kind === 'ok') return;
   // Error outcomes are terminal. Catalog presence never rewrites them to ok.
@@ -309,19 +306,19 @@ export function resolveRouteResultTarget(input: {
  * Whether the page should render not-found (no shell, no latest fallback).
  */
 export function isResultTargetMissing(
-  outcome: ResultTargetResolveOutcome,
+  outcome: ResultTargetResolveOutcome
 ): boolean {
   return outcome.kind === 'not_found';
 }
 
 export function isResultTargetForbidden(
-  outcome: ResultTargetResolveOutcome,
+  outcome: ResultTargetResolveOutcome
 ): boolean {
   return outcome.kind === 'forbidden';
 }
 
 export function isResultTargetRecoverableMismatch(
-  outcome: ResultTargetResolveOutcome,
+  outcome: ResultTargetResolveOutcome
 ): boolean {
   return outcome.kind === 'lineage_mismatch' && outcome.recoverable === true;
 }

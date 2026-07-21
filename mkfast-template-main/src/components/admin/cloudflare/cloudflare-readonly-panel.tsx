@@ -47,9 +47,14 @@ function ProbeRow({ probe }: { probe: AdminCfProbeView }) {
           {adminCfProbeStatusLabel(probe.status)}
         </span>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">{probe.businessImpact}</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {probe.businessImpact}
+      </p>
       {probe.detail ? (
-        <p className="mt-1 text-xs text-muted-foreground" data-testid="cf-probe-detail">
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          data-testid="cf-probe-detail"
+        >
           {probe.detail}
         </p>
       ) : null}
@@ -78,7 +83,10 @@ export function CloudflareReadonlyPanel({
             label={view.freshnessLabel}
           />
         </div>
-        <p className="text-sm text-muted-foreground" data-testid="cf-coverage-note">
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="cf-coverage-note"
+        >
           {view.coverageNote}
         </p>
       </header>
@@ -87,7 +95,9 @@ export function CloudflareReadonlyPanel({
         data-testid="cf-truth-layers"
         className="grid gap-2 rounded-md border p-3 text-sm"
       >
-        <p data-testid="cf-truth-native">{view.truthLayers.nativeDiagnostics}</p>
+        <p data-testid="cf-truth-native">
+          {view.truthLayers.nativeDiagnostics}
+        </p>
         <p data-testid="cf-truth-projection">
           {view.truthLayers.productProjection}
         </p>
@@ -111,7 +121,9 @@ export function CloudflareReadonlyPanel({
               <p className="text-sm text-muted-foreground">
                 {risk.businessImpact}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">{risk.evidence}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {risk.evidence}
+              </p>
             </li>
           ))}
         </ul>
@@ -121,7 +133,8 @@ export function CloudflareReadonlyPanel({
         <h3 className="text-sm font-semibold">自有健康探针</h3>
         <p className="text-xs text-muted-foreground">
           总体：{adminCfProbeStatusLabel(view.probeSummary.overall)} · 正常{' '}
-          {view.probeSummary.okCount} · 需关注 {view.probeSummary.attentionCount}
+          {view.probeSummary.okCount} · 需关注{' '}
+          {view.probeSummary.attentionCount}
         </p>
         <ul className="grid gap-2 sm:grid-cols-2">
           {view.probes.map((probe) => (
@@ -138,10 +151,12 @@ export function CloudflareReadonlyPanel({
           className="rounded-md border p-3 text-sm"
         >
           <div className="font-medium">部署</div>
-          <p className="text-muted-foreground">{view.deployments.businessImpact}</p>
+          <p className="text-muted-foreground">
+            {view.deployments.businessImpact}
+          </p>
           <p data-testid="cf-deployments-value" className="mt-1 text-xs">
             {formatAdminCfField(view.deployments, (rows) =>
-              rows.map((r) => r.deploymentId).join(', '),
+              rows.map((r) => r.deploymentId).join(', ')
             )}
           </p>
         </div>
@@ -151,10 +166,12 @@ export function CloudflareReadonlyPanel({
           className="rounded-md border p-3 text-sm"
         >
           <div className="font-medium">版本</div>
-          <p className="text-muted-foreground">{view.versions.businessImpact}</p>
+          <p className="text-muted-foreground">
+            {view.versions.businessImpact}
+          </p>
           <p data-testid="cf-versions-value" className="mt-1 text-xs">
             {formatAdminCfField(view.versions, (rows) =>
-              rows.map((r) => r.versionId).join(', '),
+              rows.map((r) => r.versionId).join(', ')
             )}
           </p>
         </div>
@@ -177,7 +194,9 @@ export function CloudflareReadonlyPanel({
       </section>
 
       <section data-testid="cf-deep-links" className="space-y-2">
-        <h3 className="text-sm font-semibold">技术台 deep-link（脱敏上下文）</h3>
+        <h3 className="text-sm font-semibold">
+          技术台 deep-link（脱敏上下文）
+        </h3>
         <ul className="flex flex-wrap gap-2">
           {view.deepLinks.map((link) => (
             <li key={link.kind}>

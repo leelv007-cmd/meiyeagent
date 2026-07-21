@@ -9,8 +9,11 @@ import { getBaseUrl } from '@/lib/urls';
 import { serverEnv } from '@/env/server';
 import { websiteConfig } from '@/config/website';
 import { resolveEmailVerificationPolicy } from '@/auth/email-verification-policy';
+import { safeErrorFields } from '@/auth/safe-log';
 import { emailHarmony } from 'better-auth-harmony';
-import { admin, apiKey } from 'better-auth/plugins';
+import { admin } from 'better-auth/plugins';
+import { recentAuthenticationHook } from '@/auth/recent-authentication-hook';
+import { apiKeyPlugin } from '@/auth/api-key-compatibility';
 
 /**
  * Better Auth Configuration
@@ -41,7 +44,8 @@ export function createAuth() {
       updateAge: 60 * 60 * 24,
       // https://www.better-auth.com/docs/concepts/session-management#session-freshness
       // https://www.better-auth.com/docs/concepts/users-accounts#authentication-requirements
-      // disable freshness check for user deletion
+      // Global freshness stays disabled. High-risk endpoints use the explicit
+      // 15-minute recentAuthenticationHook below instead.
       freshAge: 0 /* 60 * 60 * 24 */,
     },
     emailAndPassword: {
@@ -123,6 +127,9 @@ export function createAuth() {
         },
       },
     },
+    hooks: {
+      before: recentAuthenticationHook,
+    },
     plugins: [
       // https://www.better-auth.com/docs/integrations/tanstack
       tanstackStartCookies(),
@@ -137,7 +144,7 @@ export function createAuth() {
       }),
       // https://www.better-auth.com/docs/plugins/api-key
       // support API key management for user authentication
-      apiKey(),
+      apiKeyPlugin,
       // https://github.com/gekorm/better-auth-harmony
       // email normalization and validation to prevent duplicate registrations
       emailHarmony({
@@ -151,7 +158,10 @@ export function createAuth() {
       // https://www.better-auth.com/docs/reference/options#onapierror
       errorURL: '/auth/error',
       onError: (error, _ctx) => {
-        console.error('auth error:', error);
+        console.error('auth error', {
+          event: 'AUTH_API_ERROR',
+          ...safeErrorFields(error),
+        });
       },
     },
   });
@@ -176,11 +186,21 @@ async function onCreateUser(user: User) {
   try {
     const subscribed = await subscribe(user.email);
     if (!subscribed) {
-      console.error(`onCreateUser, user ${user.email} failed to subscribe`);
+      console.error('newsletter subscription failed', {
+        event: 'NEWSLETTER_SUBSCRIPTION_FAILED',
+        userId: user.id,
+      });
     } else {
-      console.log(`onCreateUser, user ${user.email} subscribed to newsletter`);
+      console.info('newsletter subscription completed', {
+        event: 'NEWSLETTER_SUBSCRIPTION_COMPLETED',
+        userId: user.id,
+      });
     }
   } catch (error) {
-    console.error('onCreateUser, newsletter subscription error:', error);
+    console.error('newsletter subscription error', {
+      event: 'NEWSLETTER_SUBSCRIPTION_ERROR',
+      userId: user.id,
+      ...safeErrorFields(error),
+    });
   }
 }

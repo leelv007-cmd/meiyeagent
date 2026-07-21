@@ -1,7 +1,7 @@
 import { createAuth } from '@/auth/auth';
 import { getDb } from '@/db';
 import { payment } from '@/db/app.schema';
-import { resolveActiveWorkspace } from '@/db/workspaces';
+import { resolveDefaultWorkspace } from '@/db/workspaces';
 import { findPlanByPriceId } from '@/lib/price-plan';
 import { settleVerifiedProStudioPurchase } from '@/payment';
 import { PostgresProStudioCommerceStore } from '@/payment/postgres-pro-studio-commerce';
@@ -52,7 +52,7 @@ async function handleFixtureWebhook(request: Request) {
   if (!current?.user?.id || !current.user.emailVerified) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const workspace = await resolveActiveWorkspace(current.user.id);
+  const workspace = await resolveDefaultWorkspace(current.user.id);
   if (!workspace || workspace.role !== 'owner') {
     return Response.json({ error: 'Owner required' }, { status: 403 });
   }

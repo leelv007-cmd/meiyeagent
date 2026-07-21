@@ -59,7 +59,10 @@ export function CanonicalHandoffPage({
 
   if (resolve.kind === 'not_found' || resolve.kind === 'expired') {
     return (
-      <div className="mx-auto max-w-lg p-5" data-testid="canonical-handoff-unavailable">
+      <div
+        className="mx-auto max-w-lg p-5"
+        data-testid="canonical-handoff-unavailable"
+      >
         <Alert variant="destructive">
           <IconAlertTriangle />
           <AlertTitle>交接包不可用</AlertTitle>
@@ -89,7 +92,7 @@ export function CanonicalHandoffPage({
           ? { kind: 'cancelled' }
           : result === 'unsupported'
             ? { kind: 'unsupported' }
-            : { kind: 'failed', reason: 'share_failed' },
+            : { kind: 'failed', reason: 'share_failed' }
     );
     if (result === 'downloaded') {
       setOutcome('download_done');
@@ -146,32 +149,32 @@ export function CanonicalHandoffPage({
       data-token={view.token}
     >
       <div>
-        <h1 className="text-xl font-semibold tracking-normal">{view.heading}</h1>
+        <h1 className="text-xl font-semibold tracking-normal">
+          {view.heading}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">{view.description}</p>
       </div>
 
-      <div
+      <output
         id={view.outcomeLiveRegionId}
-        role="status"
         aria-live="polite"
         className="sr-only"
         data-testid="handoff-outcome-live"
       >
         {outcomeProjection?.announcement ?? ''}
-      </div>
+      </output>
 
       {outcomeProjection ? (
-        <div
+        <output
           id={outcomeProjection.focusId}
           tabIndex={-1}
-          role="status"
           data-testid={outcomeProjection.testId}
           data-outcome={outcomeProjection.outcome}
           className="rounded-md border bg-muted/40 px-3 py-2 text-sm"
         >
           <IconCheck className="mr-1 inline size-4 text-emerald-700" />
           {outcomeProjection.announcement}
-        </div>
+        </output>
       ) : null}
 
       {message && !outcomeProjection ? (

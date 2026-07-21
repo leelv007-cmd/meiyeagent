@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import type { CanvasObjectStorage } from './canvas-asset-facade.js';
 
@@ -15,6 +15,14 @@ export class FileSystemCanvasObjectStorage implements CanvasObjectStorage {
     const temporary = `${target}.${crypto.randomUUID()}.tmp`;
     await writeFile(temporary, bytes, { flag: 'wx' });
     await rename(temporary, target);
+  }
+
+  async delete(objectKey: string) {
+    try {
+      await unlink(this.pathFor(objectKey));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
   }
 
   async read(objectKey: string) {

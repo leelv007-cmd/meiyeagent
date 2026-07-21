@@ -128,10 +128,18 @@ export interface CanvasTextGenerationOutboxRecord {
   createdAt: string;
   id: string;
   leaseExpiresAt?: string;
+  providerEffectKey?: string;
+  providerEffectResult?: ModelSupplyResult;
+  providerEffectStatus?: 'started' | 'completed';
   status: 'pending' | 'claimed' | 'completed';
   submission: Parameters<ModelSupplyApplicationService['submit']>[0];
   workspaceId: string;
 }
+
+export type CanvasTextGenerationProviderEffectDecision =
+  | { status: 'execute' }
+  | { status: 'completed'; result: ModelSupplyResult }
+  | { status: 'acceptance_unknown' };
 
 export type ModelSupplyJobListStatus =
   | 'succeeded'
@@ -258,6 +266,22 @@ export interface ModelSupplyControlPlaneRepository {
     leaseExpiresAt: string;
     now: string;
   }): Promise<CanvasTextGenerationOutboxRecord | null>;
+  renewCanvasTextGenerationLease(input: {
+    claimToken: string;
+    id: string;
+    leaseExpiresAt: string;
+  }): Promise<boolean>;
+  beginCanvasTextGenerationProviderEffect(input: {
+    claimToken: string;
+    effectKey: string;
+    id: string;
+  }): Promise<CanvasTextGenerationProviderEffectDecision>;
+  completeCanvasTextGenerationProviderEffect(input: {
+    claimToken: string;
+    effectKey: string;
+    id: string;
+    result: ModelSupplyResult;
+  }): Promise<boolean>;
   completeCanvasTextGeneration(input: {
     claimToken: string;
     id: string;
@@ -766,13 +790,82 @@ export class MemoryModelSupplyControlPlaneRepository
     result: ModelSupplyResult;
   }) {
     const item = this.canvasTextOutbox.get(input.id);
-    if (item?.status !== 'claimed' || item.claimToken !== input.claimToken) {
+    if (
+      item?.status !== 'claimed' ||
+      item.claimToken !== input.claimToken ||
+      item.providerEffectStatus !== 'completed'
+    ) {
       return false;
     }
-    await this.saveResult(item.workspaceId, input.result);
+    await this.saveResult(item.workspaceId, item.providerEffectResult!);
     item.status = 'completed';
     delete item.claimToken;
     delete item.leaseExpiresAt;
+    return true;
+  }
+
+  async renewCanvasTextGenerationLease(input: {
+    claimToken: string;
+    id: string;
+    leaseExpiresAt: string;
+  }) {
+    const item = this.canvasTextOutbox.get(input.id);
+    if (item?.status !== 'claimed' || item.claimToken !== input.claimToken) {
+      return false;
+    }
+    item.leaseExpiresAt = input.leaseExpiresAt;
+    return true;
+  }
+
+  async beginCanvasTextGenerationProviderEffect(input: {
+    claimToken: string;
+    effectKey: string;
+    id: string;
+  }): Promise<CanvasTextGenerationProviderEffectDecision> {
+    const item = this.canvasTextOutbox.get(input.id);
+    if (item?.status !== 'claimed' || item.claimToken !== input.claimToken) {
+      throw new Error('Canvas text generation outbox claim was lost.');
+    }
+    if (item.providerEffectKey && item.providerEffectKey !== input.effectKey) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Canvas text provider effect key conflicts with the persisted effect.',
+      );
+    }
+    if (item.providerEffectStatus === 'completed') {
+      if (!item.providerEffectResult) {
+        throw new Error('Completed canvas text provider effect has no result.');
+      }
+      return {
+        result: structuredClone(item.providerEffectResult),
+        status: 'completed',
+      };
+    }
+    if (item.providerEffectStatus === 'started') {
+      return { status: 'acceptance_unknown' };
+    }
+    item.providerEffectKey = input.effectKey;
+    item.providerEffectStatus = 'started';
+    return { status: 'execute' };
+  }
+
+  async completeCanvasTextGenerationProviderEffect(input: {
+    claimToken: string;
+    effectKey: string;
+    id: string;
+    result: ModelSupplyResult;
+  }) {
+    const item = this.canvasTextOutbox.get(input.id);
+    if (
+      item?.status !== 'claimed' ||
+      item.claimToken !== input.claimToken ||
+      item.providerEffectStatus !== 'started' ||
+      item.providerEffectKey !== input.effectKey
+    ) {
+      return false;
+    }
+    item.providerEffectResult = structuredClone(input.result);
+    item.providerEffectStatus = 'completed';
     return true;
   }
 
@@ -3167,6 +3260,7 @@ export class CanvasTextGenerationOutboxWorker {
   private readonly claimToken: () => string;
   private readonly clock: () => Date;
   private readonly leaseMs: number;
+  private readonly heartbeatMs: number;
 
   constructor(
     private readonly options: {
@@ -3175,12 +3269,14 @@ export class CanvasTextGenerationOutboxWorker {
       claimToken?: () => string;
       clock?: () => Date;
       initializeWorkspace?: (workspaceId: string) => Promise<void>;
+      heartbeatMs?: number;
       leaseMs?: number;
     },
   ) {
     this.claimToken = options.claimToken ?? randomUUID;
     this.clock = options.clock ?? (() => new Date());
     this.leaseMs = options.leaseMs ?? 60_000;
+    this.heartbeatMs = options.heartbeatMs ?? Math.max(1_000, Math.floor(this.leaseMs / 3));
   }
 
   async runOnce() {
@@ -3192,9 +3288,68 @@ export class CanvasTextGenerationOutboxWorker {
       now: now.toISOString(),
     });
     if (!item) return { status: 'idle' as const };
+    let claimLost = false;
+    let heartbeatTask: Promise<void> | undefined;
+    let heartbeatError: unknown;
+    const heartbeat = setInterval(() => {
+      if (heartbeatTask || claimLost) return;
+      const heartbeatNow = this.clock();
+      heartbeatTask = this.options.repository
+        .renewCanvasTextGenerationLease({
+          claimToken,
+          id: item.id,
+          leaseExpiresAt: new Date(
+            heartbeatNow.getTime() + this.leaseMs,
+          ).toISOString(),
+        })
+        .then((renewed) => {
+          if (!renewed) claimLost = true;
+        })
+        .catch((error: unknown) => {
+          heartbeatError = error;
+          claimLost = true;
+        })
+        .then(() => undefined)
+        .finally(() => {
+          heartbeatTask = undefined;
+        });
+    }, this.heartbeatMs);
+    heartbeat.unref();
     try {
       await this.options.initializeWorkspace?.(item.workspaceId);
-      const result = await this.options.application.submit(item.submission);
+      const effectKey = `canvas-text:${item.id}`;
+      const effect = await this.options.repository.beginCanvasTextGenerationProviderEffect({
+        claimToken,
+        effectKey,
+        id: item.id,
+      });
+      if (effect.status === 'acceptance_unknown') {
+        throw new Error(
+          'Canvas text provider acceptance is unknown; automatic replay is blocked.',
+        );
+      }
+      const result =
+        effect.status === 'completed'
+          ? effect.result
+          : await this.options.application.submitWithProviderEffectKey(
+              item.submission,
+              effectKey,
+            );
+      if (effect.status === 'execute') {
+        const recorded =
+          await this.options.repository.completeCanvasTextGenerationProviderEffect({
+            claimToken,
+            effectKey,
+            id: item.id,
+            result,
+          });
+        if (!recorded) claimLost = true;
+      }
+      await heartbeatTask;
+      if (claimLost) {
+        if (heartbeatError) throw heartbeatError;
+        throw new Error('Canvas text generation outbox claim was lost.');
+      }
       const completed = await this.options.repository.completeCanvasTextGeneration({
         claimToken,
         id: item.id,
@@ -3214,6 +3369,8 @@ export class CanvasTextGenerationOutboxWorker {
         id: item.id,
       });
       throw error;
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 }

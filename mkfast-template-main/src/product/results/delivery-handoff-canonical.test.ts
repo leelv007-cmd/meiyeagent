@@ -94,12 +94,12 @@ test('legacy handoffPackages source is refused', () => {
   };
   assert.throws(
     () => assertNotLegacyHandoffSource(legacy),
-    /LEGACY_HANDOFF_SOURCE_RETIRED/,
+    /LEGACY_HANDOFF_SOURCE_RETIRED/
   );
 
   // Canonical source passes.
   assert.doesNotThrow(() =>
-    assertNotLegacyHandoffSource(canonicalHandoffFixture()),
+    assertNotLegacyHandoffSource(canonicalHandoffFixture())
   );
 });
 

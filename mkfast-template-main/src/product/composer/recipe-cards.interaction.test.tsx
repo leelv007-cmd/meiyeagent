@@ -65,7 +65,9 @@ describe('Recipe cards cold six + a11y', () => {
     }
 
     // Action labels visible without hover (图文 appears on three cards).
-    expect(screen.getAllByText('选择图文并套用').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('选择图文并套用').length).toBeGreaterThanOrEqual(
+      3
+    );
     expect(screen.getByText('选择文案并套用')).toBeInTheDocument();
     expect(screen.getByText('选择视频并套用')).toBeInTheDocument();
     expect(screen.getByText('选择创作形式')).toBeInTheDocument();
@@ -104,7 +106,6 @@ describe('Recipe cards cold six + a11y', () => {
       screen.queryByTestId('composer-recipe-patch-preview')
     ).not.toBeInTheDocument();
   });
-
 });
 
 /**
@@ -210,10 +211,7 @@ describe('Reuse content panel', () => {
 
     // No lens preselected.
     for (const id of ['copy', 'image_text', 'video']) {
-      expect(screen.getByTestId(`composer-reuse-lens-${id}`)).toHaveAttribute(
-        'aria-checked',
-        'false'
-      );
+      expect(screen.getByTestId(`composer-reuse-lens-${id}`)).not.toBeChecked();
     }
 
     await user.click(screen.getByTestId('composer-reuse-source-w1'));
@@ -221,7 +219,9 @@ describe('Reuse content panel', () => {
     // Still incomplete without carrier.
     expect(screen.getByTestId('composer-reuse-confirm')).toBeDisabled();
 
-    await user.click(screen.getByTestId('composer-reuse-carrier-wechat_moments'));
+    await user.click(
+      screen.getByTestId('composer-reuse-carrier-wechat_moments')
+    );
     expect(screen.getByTestId('composer-reuse-confirm')).not.toBeDisabled();
     expect(screen.getByTestId('composer-reuse-confirm')).toHaveTextContent(
       '选择文案并套用'
@@ -251,8 +251,12 @@ describe('T1 brief chips re-hang', () => {
       '促销引流'
     );
     // No expand button / four-card editor.
-    expect(screen.queryByTestId('creative-brief-editor')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /展开/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('creative-brief-editor')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /展开/ })
+    ).not.toBeInTheDocument();
   });
 
   it('auto-confirming keeps core seam without expand path', () => {
@@ -260,7 +264,9 @@ describe('T1 brief chips re-hang', () => {
     expect(
       screen.getByTestId('composer-brief-auto-confirming')
     ).toBeInTheDocument();
-    expect(screen.queryByTestId('composer-brief-chips')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('composer-brief-chips')
+    ).not.toBeInTheDocument();
   });
 });
 

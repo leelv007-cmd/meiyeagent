@@ -36,7 +36,9 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
             <CardDescription>{view.summary.lifecycle}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Badge data-testid="supply-task-status">{view.summary.status}</Badge>
+            <Badge data-testid="supply-task-status">
+              {view.summary.status}
+            </Badge>
           </CardContent>
         </Card>
         <Card>
@@ -100,9 +102,12 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
               data-durable="true"
               className="text-xs"
             >
-              <span className="font-mono text-muted-foreground">{event.at}</span>
+              <span className="font-mono text-muted-foreground">
+                {event.at}
+              </span>
               <br />
-              <span className="font-medium">{event.phase}</span> · {event.summary}
+              <span className="font-medium">{event.phase}</span> ·{' '}
+              {event.summary}
             </li>
           ))}
         </ol>

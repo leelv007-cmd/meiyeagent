@@ -17,7 +17,10 @@ import {
   projectComposerQuoteView,
   requoteOnParamChange,
 } from './quote-wiring';
-import { buildDynamicSettingsRow, assertSettingsRowContract } from './settings-row';
+import {
+  buildDynamicSettingsRow,
+  assertSettingsRowContract,
+} from './settings-row';
 
 test('changing model or quantity re-quotes and updates revision', () => {
   const base = buildComposerQuote({

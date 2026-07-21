@@ -25,7 +25,8 @@ function serverRecord(): CanonicalHandoffServerRecord {
     conversionText: '私信预约',
     expiresAt: receipt.handoffLink!.expiresAt,
     exportReceiptId: 'export-1',
-    fullPackageDownloadUrl: '/api/core/p1/assets?objectKey=package.zip&download=1',
+    fullPackageDownloadUrl:
+      '/api/core/p1/assets?objectKey=package.zip&download=1',
     media: [
       {
         contentType: 'image/jpeg',
@@ -58,7 +59,7 @@ test('handoff token loads the canonical server index and keeps durable receipt r
         revision: 2,
       };
     },
-    { nowIso: '2026-07-20T10:00:00.000Z', origin: 'https://app.example' },
+    { nowIso: '2026-07-20T10:00:00.000Z', origin: 'https://app.example' }
   );
 
   assert.deepEqual(calls, [
@@ -75,7 +76,7 @@ test('handoff token loads the canonical server index and keeps durable receipt r
   if (loaded.resolve.kind === 'ready') {
     assert.equal(
       loaded.resolve.sections.share.shareUrl,
-      'https://app.example/dashboard/handoff/canonical-live-token-1234',
+      'https://app.example/dashboard/handoff/canonical-live-token-1234'
     );
   }
 });
@@ -93,10 +94,13 @@ test('handoff report is persisted through assisted_record_publish_result', async
     async (action, payload) => {
       calls.push({ action, payload });
       return { revision: 4 };
-    },
+    }
   );
 
-  assert.equal((calls[0] as { action: string }).action, 'assisted_record_publish_result');
+  assert.equal(
+    (calls[0] as { action: string }).action,
+    'assisted_record_publish_result'
+  );
   assert.deepEqual(
     (calls[0] as { payload: { result: unknown } }).payload.result,
     {
@@ -104,7 +108,7 @@ test('handoff report is persisted through assisted_record_publish_result', async
       recordedAt: '2026-07-20T11:00:00.000Z',
       source: 'manual_record',
       status: 'published',
-    },
+    }
   );
 });
 
@@ -115,7 +119,8 @@ test('system share degrades from real files to one-shot link and then download',
 
   const fileResult = await shareCanonicalHandoff(source, {
     canShare: (payload) => Boolean(payload.files?.length),
-    fetchFile: async () => new File(['image'], 'cover.jpg', { type: 'image/jpeg' }),
+    fetchFile: async () =>
+      new File(['image'], 'cover.jpg', { type: 'image/jpeg' }),
     share: async (payload) => {
       sharedPayloads.push(payload);
     },
@@ -128,7 +133,8 @@ test('system share degrades from real files to one-shot link and then download',
 
   const linkResult = await shareCanonicalHandoff(source, {
     canShare: () => false,
-    fetchFile: async () => new File(['image'], 'cover.jpg', { type: 'image/jpeg' }),
+    fetchFile: async () =>
+      new File(['image'], 'cover.jpg', { type: 'image/jpeg' }),
     share: async (payload) => {
       sharedPayloads.push(payload);
     },
@@ -138,7 +144,7 @@ test('system share degrades from real files to one-shot link and then download',
   assert.equal(linkResult, 'shared');
   assert.equal(
     sharedPayloads.at(-1)?.url,
-    'https://app.example/dashboard/handoff/canonical-live-token-1234',
+    'https://app.example/dashboard/handoff/canonical-live-token-1234'
   );
 
   const downloadResult = await shareCanonicalHandoff(
@@ -151,7 +157,7 @@ test('system share degrades from real files to one-shot link and then download',
       share: undefined,
       download: (href) => downloaded.push(href),
       origin: 'https://app.example',
-    },
+    }
   );
   assert.equal(downloadResult, 'downloaded');
   assert.equal(downloaded.at(-1), source.fullPackageDownloadUrl);

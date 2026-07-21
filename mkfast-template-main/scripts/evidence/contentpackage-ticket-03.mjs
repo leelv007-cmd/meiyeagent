@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
-import { access, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 
 import { chromium } from '@playwright/test';
@@ -155,7 +162,9 @@ try {
   });
   await assembly.getByRole('radio', { name: 'Live' }).click();
   await page.getByRole('button', { name: '审阅并记录' }).click();
-  await page.locator('#impact-review-reason').fill('Enable real BYOK evidence run.');
+  await page
+    .locator('#impact-review-reason')
+    .fill('Enable real BYOK evidence run.');
   await page.getByRole('button', { name: '确认记录配置' }).click();
   await page.waitForTimeout(1_000);
   adminPending = configItem(
@@ -163,7 +172,8 @@ try {
     'byok.adapter.assembly'
   );
   assert(
-    adminPending.storedValue === 'live' && adminPending.effectiveValue === 'recorded',
+    adminPending.storedValue === 'live' &&
+      adminPending.effectiveValue === 'recorded',
     'BYOK live assembly was not stored as restart-pending',
     adminPending
   );
@@ -186,14 +196,17 @@ try {
       2
     )}\n`
   );
-  console.log(JSON.stringify({ checkpoint: 'restart-byok-live-runtime', resumeFile }));
+  console.log(
+    JSON.stringify({ checkpoint: 'restart-byok-live-runtime', resumeFile })
+  );
   const deadline = Date.now() + 300_000;
   for (;;) {
     try {
       await access(resumeFile);
       break;
     } catch {
-      if (Date.now() > deadline) throw new Error('Timed out waiting for BYOK restart.');
+      if (Date.now() > deadline)
+        throw new Error('Timed out waiting for BYOK restart.');
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
@@ -205,7 +218,8 @@ try {
     'byok.adapter.assembly'
   );
   assert(
-    adminEffective.storedValue === 'live' && adminEffective.effectiveValue === 'live',
+    adminEffective.storedValue === 'live' &&
+      adminEffective.effectiveValue === 'live',
     'BYOK live assembly did not become effective after restart',
     adminEffective
   );
@@ -233,17 +247,31 @@ try {
   validConnection = connectionsAfterCreate.body.data.find(
     (connection) => connection.subject === '真实 BYOK 密钥'
   );
-  assert(validConnection, 'Valid BYOK connection missing', connectionsAfterCreate);
+  assert(
+    validConnection,
+    'Valid BYOK connection missing',
+    connectionsAfterCreate
+  );
   await page.locator('#byok-prompt').waitFor({ timeout: 30_000 });
-  await page.getByText('演示执行', { exact: true }).waitFor({ state: 'detached' });
+  await page
+    .getByText('演示执行', { exact: true })
+    .waitFor({ state: 'detached' });
   await page.screenshot({
     fullPage: true,
     path: path.join(outputDir, '03-merchant-write-only-live-connection.png'),
   });
 
   const optionsBefore = await query('integrations', 'strict_byok_options');
-  assert(optionsBefore.status === 200, 'BYOK options unavailable', optionsBefore);
-  assert(optionsBefore.body.data.executionMode === 'live', 'BYOK UI is not live', optionsBefore);
+  assert(
+    optionsBefore.status === 200,
+    'BYOK options unavailable',
+    optionsBefore
+  );
+  assert(
+    optionsBefore.body.data.executionMode === 'live',
+    'BYOK UI is not live',
+    optionsBefore
+  );
   assert(
     optionsBefore.body.data.profiles.some((profile) =>
       profile.permittedModels.includes('llm-custom')
@@ -255,7 +283,9 @@ try {
   await page.locator('#byok-model').selectOption('llm-custom');
   await page
     .locator('#byok-prompt')
-    .fill('为成都一家头皮护理门店写一段真实克制的中文介绍，不承诺疗效，控制在 80 字以内。');
+    .fill(
+      '为成都一家头皮护理门店写一段真实克制的中文介绍，不承诺疗效，控制在 80 字以内。'
+    );
   await page.screenshot({
     fullPage: true,
     path: path.join(outputDir, '04-merchant-live-byok-before-submit.png'),
@@ -266,7 +296,11 @@ try {
     .waitFor({ timeout: 180_000 });
   const successSummary = page.getByText(/结果：已完成 · 产品额度 已结算/);
   successOutputText =
-    (await successSummary.locator('xpath=..').locator('p').last().textContent()) ?? '';
+    (await successSummary
+      .locator('xpath=..')
+      .locator('p')
+      .last()
+      .textContent()) ?? '';
   assert(
     successOutputText.trim().length > 10 &&
       !successOutputText.includes('recorded:') &&
@@ -278,13 +312,22 @@ try {
     fullPage: true,
     path: path.join(outputDir, '05-merchant-real-chinese-output.png'),
   });
-  const optionsAfterSuccess = await query('integrations', 'strict_byok_options');
+  const optionsAfterSuccess = await query(
+    'integrations',
+    'strict_byok_options'
+  );
   usageAfterSuccess = optionsAfterSuccess.body.data.usage;
   const auditAfterSuccess = await query('integrations', 'audit');
   const completedEvent = auditAfterSuccess.body.data.find(
-    (event) => event.connectionId === validConnection.id && event.action === 'byok.completed'
+    (event) =>
+      event.connectionId === validConnection.id &&
+      event.action === 'byok.completed'
   );
-  assert(completedEvent, 'Completed BYOK audit event missing', auditAfterSuccess.body.data);
+  assert(
+    completedEvent,
+    'Completed BYOK audit event missing',
+    auditAfterSuccess.body.data
+  );
   const refreshedConnections = await query('integrations', 'connections');
   validConnection = refreshedConnections.body.data.find(
     (connection) => connection.id === validConnection.id
@@ -328,14 +371,16 @@ try {
       replayFirst.body.data.output === replaySecond.body.data.output &&
       replayFirst.body.data.usage.available ===
         replaySecond.body.data.usage.available &&
-      replayFirst.body.data.usage.status === replaySecond.body.data.usage.status &&
+      replayFirst.body.data.usage.status ===
+        replaySecond.body.data.usage.status &&
       replayFirst.body.data.routeSnapshot.id ===
         replaySecond.body.data.routeSnapshot.id,
     'BYOK idempotent replay failed',
     { firstStatus: replayFirst.status, secondStatus: replaySecond.status }
   );
   replayResult = replayFirst.body.data;
-  usageAfterReplay = (await query('integrations', 'strict_byok_options')).body.data.usage;
+  usageAfterReplay = (await query('integrations', 'strict_byok_options')).body
+    .data.usage;
   assert(
     usageAfterSuccess.available - usageAfterReplay.available === 1 &&
       usageAfterReplay.committed - usageAfterSuccess.committed === 1,
@@ -344,14 +389,16 @@ try {
   );
 
   await page.locator('#integration-subject').fill('无效 BYOK 密钥');
-  await page.locator('#integration-secret').fill('invalid-ticket-03-credential');
+  await page
+    .locator('#integration-secret')
+    .fill('invalid-ticket-03-credential');
   await page.getByRole('button', { name: '创建连接' }).click();
   await page
     .getByText('无效 BYOK 密钥', { exact: true })
     .waitFor({ state: 'attached', timeout: 30_000 });
-  invalidConnection = (await query('integrations', 'connections')).body.data.find(
-    (connection) => connection.subject === '无效 BYOK 密钥'
-  );
+  invalidConnection = (
+    await query('integrations', 'connections')
+  ).body.data.find((connection) => connection.subject === '无效 BYOK 密钥');
   assert(invalidConnection, 'Invalid BYOK connection missing');
   await page.locator('#byok-connection').selectOption(invalidConnection.id);
   await page.locator('#byok-model').selectOption('llm-custom');
@@ -364,7 +411,8 @@ try {
     fullPage: true,
     path: path.join(outputDir, '06-invalid-key-refunded-needs-attention.png'),
   });
-  usageAfterInvalid = (await query('integrations', 'strict_byok_options')).body.data.usage;
+  usageAfterInvalid = (await query('integrations', 'strict_byok_options')).body
+    .data.usage;
   const finalConnections = await query('integrations', 'connections');
   invalidConnection = finalConnections.body.data.find(
     (connection) => connection.id === invalidConnection.id
@@ -386,7 +434,9 @@ try {
   );
   assert(
     auditEvents.some(
-      (event) => event.connectionId === invalidConnection.id && event.action === 'byok.failed'
+      (event) =>
+        event.connectionId === invalidConnection.id &&
+        event.action === 'byok.failed'
     ),
     'Failed BYOK audit event missing',
     auditEvents
@@ -394,13 +444,19 @@ try {
 
   const resultParagraph = page.getByText(/结果：失败 · 产品额度 已退回/);
   invalidResult = { visibleText: await resultParagraph.textContent() };
-  const completedAudits = auditEvents.filter((event) => event.action === 'byok.completed');
+  const completedAudits = auditEvents.filter(
+    (event) => event.action === 'byok.completed'
+  );
   const replayAudits = completedAudits.filter(
     (event) => event.details.catalogModelId === 'llm-custom'
   );
-  assert(replayAudits.length === 2, 'Idempotent replay created an extra audit event', {
-    completedAuditCount: replayAudits.length,
-  });
+  assert(
+    replayAudits.length === 2,
+    'Idempotent replay created an extra audit event',
+    {
+      completedAuditCount: replayAudits.length,
+    }
+  );
 
   successResult = {
     outputDigest: digest(successOutputText),

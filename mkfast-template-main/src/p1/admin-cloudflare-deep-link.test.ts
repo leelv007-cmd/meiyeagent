@@ -35,7 +35,10 @@ test('deep-link builder carries redacted time range, script-deployment, correlat
   assert.equal(envelope.correlation?.correlationId, 'corr-abc');
   assert.equal(envelope.mutatesCloudflare, false);
   assert.equal(envelope.operatorAction, 'open_cloudflare_dashboard');
-  assert.equal(adminCfDeepLinkLabel('worker_logs'), '到 Cloudflare 查看日志明细');
+  assert.equal(
+    adminCfDeepLinkLabel('worker_logs'),
+    '到 Cloudflare 查看日志明细'
+  );
 });
 
 test('deep-link allowlist + sensitive rejection', () => {
@@ -51,7 +54,7 @@ test('deep-link allowlist + sensitive rejection', () => {
       }),
     (err: unknown) =>
       err instanceof AdminCfDeepLinkError &&
-      err.code === 'resource_kind_not_allowed',
+      err.code === 'resource_kind_not_allowed'
   );
 
   assert.throws(
@@ -62,7 +65,7 @@ test('deep-link allowlist + sensitive rejection', () => {
       }),
     (err: unknown) =>
       err instanceof AdminCfDeepLinkError &&
-      err.code === 'resource_ref_required',
+      err.code === 'resource_ref_required'
   );
 
   assert.throws(
@@ -73,6 +76,6 @@ test('deep-link allowlist + sensitive rejection', () => {
         // @ts-expect-error intentional sensitive smuggle
         token: 'cf-api-token',
       }),
-    /Sensitive field/,
+    /Sensitive field/
   );
 });

@@ -13,7 +13,7 @@ import {
 } from './delivery-capability-groups';
 
 function baseFacts(
-  overrides: Partial<DeliveryCapabilityFacts> = {},
+  overrides: Partial<DeliveryCapabilityFacts> = {}
 ): DeliveryCapabilityFacts {
   return {
     target: 'xiaohongshu',
@@ -74,35 +74,37 @@ test('floor capabilities: copy / single download / full package', () => {
 
 test('full package label varies by target modality', () => {
   const xhs = projectDeliveryCapabilityGroups(
-    baseFacts({ target: 'xiaohongshu' }),
+    baseFacts({ target: 'xiaohongshu' })
   );
   assert.match(
-    xhs.find((g) => g.id === 'get_files')!.actions.find((a) => a.id === 'full_package')!
-      .label,
-    /小红书/u,
+    xhs
+      .find((g) => g.id === 'get_files')!
+      .actions.find((a) => a.id === 'full_package')!.label,
+    /小红书/u
   );
 
   const dy = projectDeliveryCapabilityGroups(baseFacts({ target: 'douyin' }));
   assert.match(
-    dy.find((g) => g.id === 'get_files')!.actions.find((a) => a.id === 'full_package')!
-      .label,
-    /抖音/u,
+    dy
+      .find((g) => g.id === 'get_files')!
+      .actions.find((a) => a.id === 'full_package')!.label,
+    /抖音/u
   );
 
   const moments = projectDeliveryCapabilityGroups(
-    baseFacts({ target: 'wechat_moments' }),
+    baseFacts({ target: 'wechat_moments' })
   );
   assert.match(
     moments
       .find((g) => g.id === 'get_files')!
       .actions.find((a) => a.id === 'full_package')!.label,
-    /朋友圈分段/u,
+    /朋友圈分段/u
   );
 });
 
 test('direct_publish visible only when automaticVerifiedPlatformCount > 0', () => {
   const groups = projectDeliveryCapabilityGroups(
-    baseFacts({ automaticVerifiedPlatformCount: 1 }),
+    baseFacts({ automaticVerifiedPlatformCount: 1 })
   );
   const direct = groups.find((g) => g.id === 'direct_publish');
   assert.equal(direct?.visible, true);
@@ -112,13 +114,22 @@ test('direct_publish visible only when automaticVerifiedPlatformCount > 0', () =
 
 test('share and assisted require external send approval', () => {
   const groups = projectDeliveryCapabilityGroups(
-    baseFacts({ hasExternalSendApproval: false }),
+    baseFacts({ hasExternalSendApproval: false })
   );
   const handoff = groups.find((g) => g.id === 'handoff_to_platform')!;
-  assert.equal(handoff.actions.find((a) => a.id === 'system_share')?.enabled, false);
-  assert.equal(handoff.actions.find((a) => a.id === 'assisted')?.enabled, false);
+  assert.equal(
+    handoff.actions.find((a) => a.id === 'system_share')?.enabled,
+    false
+  );
+  assert.equal(
+    handoff.actions.find((a) => a.id === 'assisted')?.enabled,
+    false
+  );
   // Floor get_files still available without approval.
   const files = groups.find((g) => g.id === 'get_files')!;
   assert.equal(files.actions.find((a) => a.id === 'copy')?.enabled, true);
-  assert.equal(files.actions.find((a) => a.id === 'full_package')?.enabled, true);
+  assert.equal(
+    files.actions.find((a) => a.id === 'full_package')?.enabled,
+    true
+  );
 });

@@ -130,8 +130,7 @@ export function projectProStudioBanner(
   if (!isPublishedVisible(entry, input.capabilityGateOpen)) return null;
 
   const status: ProStudioGateStatus =
-    input.proStudioStatus ??
-    (entry.entitlementLocked ? 'locked' : 'active');
+    input.proStudioStatus ?? (entry.entitlementLocked ? 'locked' : 'active');
   const lockReason =
     status === 'locked'
       ? (input.proStudioLockReason ??

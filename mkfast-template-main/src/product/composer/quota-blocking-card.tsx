@@ -50,7 +50,9 @@ export function QuotaBlockingCard({
   className,
 }: QuotaBlockingCardProps) {
   const [state, setState] = useState<QuotaBlockingState>(() =>
-    blocked ? showQuotaBlocking(createQuotaBlockingState()) : createQuotaBlockingState()
+    blocked
+      ? showQuotaBlocking(createQuotaBlockingState())
+      : createQuotaBlockingState()
   );
   const pendingKey = useRef<string | undefined>(undefined);
 
@@ -140,7 +142,9 @@ export function QuotaBlockingCard({
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm uppercase"
               onChange={(event) => {
                 pendingKey.current = undefined;
-                setState((prev) => setQuotaRedeemCode(prev, event.target.value));
+                setState((prev) =>
+                  setQuotaRedeemCode(prev, event.target.value)
+                );
               }}
             />
           </div>

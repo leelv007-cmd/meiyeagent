@@ -48,7 +48,7 @@ test('xiaohongshu image_text full package: manifest/v1 + ordered images + ZIP na
       kind: 'image_text',
       platform: 'xiaohongshu',
       storeName: '花间美甲',
-    }),
+    })
   );
   assert.match(plan.zipFileName!, /花间美甲-图文-小红书-20260718-r3\.zip$/u);
 
@@ -145,11 +145,7 @@ test('three modalities each produce a downloadable full package outcome', () => 
   const kinds = new Set(outcomes.map((o) => o.modality));
   assert.deepEqual(
     [...kinds].sort(),
-    [
-      'douyin_video',
-      'wechat_moments_segments',
-      'xiaohongshu_image_text',
-    ].sort(),
+    ['douyin_video', 'wechat_moments_segments', 'xiaohongshu_image_text'].sort()
   );
 });
 

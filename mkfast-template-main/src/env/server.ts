@@ -1,6 +1,10 @@
 import { createEnv } from '@t3-oss/env-core';
 import * as z from 'zod';
 import {
+  canvasOriginSchema,
+  internalServiceTransportSchema,
+} from './internal-service-boundary';
+import {
   allowsDevSecretDefaults,
   isWeakSecretValue,
   REJECTED_SECRET_SET_HINT,
@@ -42,6 +46,7 @@ export const serverEnv = createEnv({
     GOOGLE_CLIENT_SECRET: z.string().optional(),
 
     // Internal Core service
+    INTERNAL_SERVICE_TRANSPORT: internalServiceTransportSchema(),
     CORE_SERVICE_URL: z.url().default('http://127.0.0.1:4100'),
     CORE_SERVICE_TOKEN: serviceSecretSchema(
       'CORE_SERVICE_TOKEN',
@@ -54,7 +59,7 @@ export const serverEnv = createEnv({
       'CANVAS_SERVICE_TOKEN',
       'local-canvas-service-token'
     ),
-    CANVAS_ORIGIN: z.url().default('http://127.0.0.1:4200'),
+    CANVAS_ORIGIN: canvasOriginSchema(),
 
     // Dedicated Pro Studio add-on catalog. Its price must not exist in the
     // free/pro/lifetime catalog; missing values keep checkout disabled.

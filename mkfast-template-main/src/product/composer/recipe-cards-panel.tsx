@@ -37,10 +37,7 @@ import {
 } from './recipe-apply';
 import { RecipeApplyTip } from './recipe-apply-tip';
 import { RecipeCardGrid } from './recipe-card-grid';
-import {
-  listVisibleRecipeCards,
-  type RecipeCardView,
-} from './recipe-cards';
+import { listVisibleRecipeCards, type RecipeCardView } from './recipe-cards';
 import type { RecipeCardTarget } from './launch-card-seeds';
 import { RecipePatchPreviewSurface } from './recipe-patch-preview-surface';
 import {
@@ -97,13 +94,10 @@ export function RecipeCardsPanel({
   requestServerPreview,
 }: RecipeCardsPanelProps) {
   const [session, setSession] = useState<RecipeApplySession>(() =>
-    createRecipeApplySession(
-      controlledLens ?? createComposerLensState()
-    )
+    createRecipeApplySession(controlledLens ?? createComposerLensState())
   );
-  const [reuseSelection, setReuseSelection] = useState<ReusePanelSelection>(
-    emptyReuseSelection
-  );
+  const [reuseSelection, setReuseSelection] =
+    useState<ReusePanelSelection>(emptyReuseSelection);
   const [sheet, setSheet] = useState<ComposerBottomSheetState>(() =>
     createComposerBottomSheetState()
   );
@@ -212,7 +206,8 @@ export function RecipeCardsPanel({
     if (!variant) {
       // Build a minimal stub so tests without surface still work.
       const stub = {
-        recipeId: `recipe.reuse_content.${reuseSelection.lensId}_adapt` as const,
+        recipeId:
+          `recipe.reuse_content.${reuseSelection.lensId}_adapt` as const,
         revisionId: `recipe.reuse_content.${reuseSelection.lensId}_adapt@1`,
         lensId: reuseSelection.lensId,
         familyId: 'reuse_content',
@@ -232,20 +227,12 @@ export function RecipeCardsPanel({
           },
         ],
       };
-      const result = confirmReusePanel(
-        activeSession,
-        reuseSelection,
-        stub
-      );
+      const result = confirmReusePanel(activeSession, reuseSelection, stub);
       publish(result.session);
       return;
     }
 
-    const result = confirmReusePanel(
-      activeSession,
-      reuseSelection,
-      variant
-    );
+    const result = confirmReusePanel(activeSession, reuseSelection, variant);
     publish(result.session);
   };
 
@@ -295,10 +282,7 @@ export function RecipeCardsPanel({
       data-sheet-open={sheet.open ?? 'none'}
       className={className}
     >
-      <ComposerBriefChips
-        brief={brief}
-        autoConfirming={autoConfirmingBrief}
-      />
+      <ComposerBriefChips brief={brief} autoConfirming={autoConfirmingBrief} />
 
       <RecipeApplyTip session={activeSession} onUndo={handleUndo} />
 

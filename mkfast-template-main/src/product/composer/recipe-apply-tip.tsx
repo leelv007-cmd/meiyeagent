@@ -21,9 +21,7 @@ export function RecipeApplyTip({
   className,
 }: RecipeApplyTipProps) {
   if (session.phase !== 'applied' || !session.tip) {
-    return (
-      <ApplyLiveRegion announcement={session.announcement} />
-    );
+    return <ApplyLiveRegion announcement={session.announcement} />;
   }
 
   return (
@@ -55,21 +53,16 @@ export function RecipeApplyTip({
   );
 }
 
-function ApplyLiveRegion({
-  announcement,
-}: {
-  announcement: string | null;
-}) {
+function ApplyLiveRegion({ announcement }: { announcement: string | null }) {
   return (
-    <div
-      role="status"
+    <output
       aria-live="polite"
       aria-atomic="true"
       data-testid="composer-recipe-apply-live"
       className="sr-only"
     >
       {announcement ?? ''}
-    </div>
+    </output>
   );
 }
 

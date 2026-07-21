@@ -22,7 +22,7 @@ afterEach(() => {
 const NOW = '2026-07-20T12:00:00.000Z';
 
 function baseFacts(
-  overrides: Partial<ImageWorksurfaceFacts> = {},
+  overrides: Partial<ImageWorksurfaceFacts> = {}
 ): ImageWorksurfaceFacts {
   return {
     workId: 'work-rtl',
@@ -73,7 +73,7 @@ describe('image role feedback (exact D-087 copy)', () => {
           explicitMode: 'single',
         })}
         onAdoptPrimary={vi.fn().mockResolvedValue(undefined)}
-      />,
+      />
     );
 
     const primary = screen.getByTestId('image-role-primary');
@@ -82,10 +82,10 @@ describe('image role feedback (exact D-087 copy)', () => {
 
     await user.click(primary);
     expect(screen.getByTestId('image-role-feedback-visible')).toHaveTextContent(
-      '已采用这张图片',
+      '已采用这张图片'
     );
     expect(screen.getByTestId('image-role-feedback')).toHaveTextContent(
-      '已采用这张图片',
+      '已采用这张图片'
     );
   });
 
@@ -114,14 +114,14 @@ describe('image role feedback (exact D-087 copy)', () => {
           ],
           focusedAssetId: 'img-1',
         })}
-      />,
+      />
     );
 
     const primary = screen.getByTestId('image-role-primary');
     expect(primary).toHaveTextContent('加入套图');
     await user.click(primary);
     expect(screen.getByTestId('image-role-feedback-visible')).toHaveTextContent(
-      '已加入套图，第 1 张',
+      '已加入套图，第 1 张'
     );
   });
 
@@ -148,7 +148,7 @@ describe('image role feedback (exact D-087 copy)', () => {
           slot: 'gallery',
           workingSelection: selection,
         })}
-      />,
+      />
     );
 
     const tray = screen.getByTestId('image-set-tray');
@@ -156,7 +156,7 @@ describe('image role feedback (exact D-087 copy)', () => {
     const second = slots[1]!;
     await user.click(within(second).getByTestId('image-set-cover'));
     expect(screen.getByTestId('image-role-feedback-visible')).toHaveTextContent(
-      '已设为本组封面，采用这组后生效',
+      '已设为本组封面，采用这组后生效'
     );
   });
 
@@ -168,12 +168,12 @@ describe('image role feedback (exact D-087 copy)', () => {
           slot: 'gallery',
           outputType: 'ordered_image_set',
         })}
-      />,
+      />
     );
     const candidates = screen.getAllByTestId('image-candidate');
     expect(candidates[0]).toHaveAttribute(
       'aria-label',
-      expect.stringMatching(/第 1 张/),
+      expect.stringMatching(/第 1 张/)
     );
     expect(candidates[0]?.getAttribute('aria-label')).toMatch(/候选|已采用/);
   });
@@ -186,9 +186,11 @@ describe('image role feedback (exact D-087 copy)', () => {
           explicitMode: 'set',
           candidates: baseFacts().candidates,
         })}
-      />,
+      />
     );
-    expect(screen.getByTestId('image-mobile-desktop-gate')).toBeEmptyDOMElement();
+    expect(
+      screen.getByTestId('image-mobile-desktop-gate')
+    ).toBeEmptyDOMElement();
     expect(screen.queryByText('请到桌面继续')).toBeNull();
     expect(screen.queryByText('请在桌面端继续')).toBeNull();
     // Adjust prompt always present
@@ -215,14 +217,14 @@ describe('image role feedback (exact D-087 copy)', () => {
           mediaVersionReady: true,
         })}
         onSaveLibrary={onSaveLibrary}
-      />,
+      />
     );
     const library = screen.getByTestId('image-library-save_one');
     expect(library).toHaveTextContent('保存到素材库');
     await user.click(library);
     expect(onSaveLibrary).toHaveBeenCalledWith('save_one', ['img-1']);
     expect(screen.getByTestId('image-role-feedback-visible')).toHaveTextContent(
-      '已在素材库',
+      '已在素材库'
     );
   });
 
@@ -252,14 +254,14 @@ describe('image role feedback (exact D-087 copy)', () => {
     const first = render(<ImageWorksurface facts={facts} />);
     await user.click(screen.getByTestId('image-role-primary'));
     expect(
-      window.localStorage.getItem(workingSelectionStorageKey('work-rtl')),
+      window.localStorage.getItem(workingSelectionStorageKey('work-rtl'))
     ).toContain('img-1');
     first.unmount();
 
     render(<ImageWorksurface facts={facts} />);
     expect(screen.getByTestId('image-set-slot')).toHaveAttribute(
       'data-asset-id',
-      'img-1',
+      'img-1'
     );
   });
 
@@ -279,7 +281,7 @@ describe('image role feedback (exact D-087 copy)', () => {
           focusedAssetId: 'img-1',
           mediaVersionReady: true,
         })}
-      />,
+      />
     );
     expect(screen.getByTestId('image-library-save_one')).toBeDisabled();
     expect(screen.queryByText('已在素材库')).toBeNull();
@@ -297,7 +299,7 @@ describe('image role feedback (exact D-087 copy)', () => {
           slot: 'gallery',
         })}
         onAdjust={onAdjust}
-      />,
+      />
     );
     await user.click(screen.getByTestId('result-adjust-scope-adjust_one'));
     await user.type(screen.getByTestId('result-adjust-input'), '换成夏日风格');
@@ -322,7 +324,7 @@ describe('image role feedback (exact D-087 copy)', () => {
     }).state;
     window.localStorage.setItem(
       workingSelectionStorageKey('work-rtl'),
-      serializeWorkingSelection(selection),
+      serializeWorkingSelection(selection)
     );
 
     render(
@@ -333,7 +335,7 @@ describe('image role feedback (exact D-087 copy)', () => {
           outputType: 'ordered_image_set',
           slot: 'gallery',
         })}
-      />,
+      />
     );
 
     const drift = screen.getByTestId('image-selection-drift');
@@ -342,14 +344,14 @@ describe('image role feedback (exact D-087 copy)', () => {
     // Local selection still hydrated under drift
     expect(screen.getByTestId('image-set-slot')).toHaveAttribute(
       'data-asset-id',
-      'img-1',
+      'img-1'
     );
 
     await user.click(screen.getByTestId('image-selection-drift-discard'));
     expect(screen.queryByTestId('image-selection-drift')).toBeNull();
     expect(screen.queryByTestId('image-set-slot')).toBeNull();
     expect(screen.getByTestId('image-role-feedback-visible')).toHaveTextContent(
-      '已丢弃本地套图草稿',
+      '已丢弃本地套图草稿'
     );
   });
 
@@ -395,7 +397,7 @@ describe('image role feedback (exact D-087 copy)', () => {
           workingSelection: selection,
         })}
         onAdoptPrimary={onAdoptPrimary}
-      />,
+      />
     );
 
     const primary = screen.getByTestId('image-role-primary');

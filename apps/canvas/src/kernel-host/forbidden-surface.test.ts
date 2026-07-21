@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { assertNoLocalAgentBridge } from "./agent-adapter";
@@ -32,10 +32,6 @@ test("kernel-host never imports vendor local agent panel", () => {
 	const root = join(process.cwd(), "src/kernel-host");
 	for (const file of walk(root)) {
 		const source = readFileSync(file, "utf8");
-		assert.equal(
-			source.includes("canvas-local-agent-panel"),
-			false,
-			file,
-		);
+		assert.equal(source.includes("canvas-local-agent-panel"), false, file);
 	}
 });

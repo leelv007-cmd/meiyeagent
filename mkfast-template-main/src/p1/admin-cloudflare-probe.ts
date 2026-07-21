@@ -73,7 +73,9 @@ export function projectAdminCfProbe(input: {
  * Default probes when server has not wired live pings yet.
  * Honest not_ready / not_verified — never fake green.
  */
-export function defaultAdminCfProbes(now: Date = new Date()): AdminCfProbeView[] {
+export function defaultAdminCfProbes(
+  now: Date = new Date()
+): AdminCfProbeView[] {
   const observedAt = now.toISOString();
   return [
     projectAdminCfProbe({

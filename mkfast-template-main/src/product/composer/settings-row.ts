@@ -174,10 +174,14 @@ export function assertSettingsRowContract(
 ): { ok: boolean; errors: string[] } {
   const errors: string[] = [];
   if (fields.length > 0 && fields.length < 3) {
-    errors.push(`settings row must have at least 3 fields, got ${fields.length}`);
+    errors.push(
+      `settings row must have at least 3 fields, got ${fields.length}`
+    );
   }
   if (fields.length > 5) {
-    errors.push(`settings row must have at most 5 fields, got ${fields.length}`);
+    errors.push(
+      `settings row must have at most 5 fields, got ${fields.length}`
+    );
   }
   if (fields.length > 0 && !fields[0]?.def.isCatalogModel) {
     errors.push('first settings field must be visible CatalogModel name (T2)');

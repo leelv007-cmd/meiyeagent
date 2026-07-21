@@ -322,6 +322,7 @@ describe('operations foundation module', () => {
     const foundation = new MemoryFoundationRepository();
     const operations = new MemoryOperationsRepository();
     const context = {
+      actor: 'owner' as const,
       correlationId: 'corr-module',
       userId: 'owner-module',
       workspaceId: 'workspace-module',
@@ -437,6 +438,7 @@ describe('operations foundation module', () => {
     };
     const operations = new MemoryOperationsRepository();
     const context = {
+      actor: 'admin' as const,
       correlationId: 'corr-module-crash',
       userId: 'owner-module-crash',
       workspaceId: 'workspace-module-crash',

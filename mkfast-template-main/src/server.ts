@@ -2,7 +2,11 @@
 // This file is a good smoke test to make sure the custom server entry is working
 import handler from '@tanstack/react-start/server-entry';
 import { localeMiddleware } from '@/locale/middleware';
-import { settlePendingProStudioPurchases } from '@/payment';
+import {
+  settlePendingPaymentWebhookEvents,
+  settlePendingProStudioPurchases,
+} from '@/payment';
+import { processStorageObjectOutbox } from '@/storage/object-outbox';
 
 /**
  * TanStack Start server entry
@@ -25,6 +29,8 @@ export default {
     _env: unknown,
     context: ExecutionContext
   ) {
+    context.waitUntil(settlePendingPaymentWebhookEvents());
     context.waitUntil(settlePendingProStudioPurchases());
+    context.waitUntil(processStorageObjectOutbox());
   },
 };

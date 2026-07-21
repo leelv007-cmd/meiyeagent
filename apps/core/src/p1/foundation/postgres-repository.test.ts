@@ -6,6 +6,7 @@ import { P1ApplicationService } from './application-service.js';
 import { ProductEntitlementApplicationService } from './entitlement-service.js';
 import { REGISTER_GIFT_GRANT_KEY } from './domain.js';
 import { PostgresFoundationRepository } from './postgres-repository.js';
+import type { PermissionAuthorizerPort } from '../capability-permission/port.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -136,7 +137,26 @@ test('Postgres foundation adapter preserves the P1ApplicationService contract', 
   const externalStarted = new Promise<void>((resolve) => {
     markStarted = resolve;
   });
+  const fakeExternalModuleAuthorizer: PermissionAuthorizerPort = {
+    decide(input) {
+      assert.equal(input.action, '');
+      assert.ok(
+        ['slow-external', 'recoverable-external'].includes(
+          String(input.module),
+        ),
+      );
+      return {
+        allow: true,
+        required: null,
+        reason: 'capability_granted',
+      };
+    },
+    authorize(input) {
+      this.decide(input);
+    },
+  };
   const moduleService = new P1ApplicationService(repository, {
+    authorizer: fakeExternalModuleAuthorizer,
     operations: [
       {
         name: 'slow-external',
@@ -189,6 +209,7 @@ test('Postgres foundation adapter preserves the P1ApplicationService contract', 
 
   let recoverAttempts = 0;
   const recoverableModule = new P1ApplicationService(repository, {
+    authorizer: fakeExternalModuleAuthorizer,
     operations: [
       {
         name: 'recoverable-external',

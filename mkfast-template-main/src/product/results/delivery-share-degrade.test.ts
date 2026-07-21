@@ -20,7 +20,7 @@ test('share degrade matrix: file → one_shot_link → download', () => {
     assert.equal(
       plan.strategy,
       row.expectStrategy,
-      `strategy for ${row.label}`,
+      `strategy for ${row.label}`
     );
     assert.equal(row.expectMarkDeliveredOnCancel, false);
 
@@ -44,7 +44,7 @@ test('file strategy preferred when canShareFiles', () => {
       hasNavigatorShare: true,
       canShareFiles: true,
       canShareText: true,
-    },
+    }
   );
   assert.equal(plan.strategy, 'file');
   assert.equal(plan.shareFields.includeFiles, true);
@@ -66,7 +66,7 @@ test('degrade to one_shot_link when files cannot be shared', () => {
       hasNavigatorShare: true,
       canShareFiles: false,
       canShareText: true,
-    },
+    }
   );
   assert.equal(plan.strategy, 'one_shot_link');
   assert.equal(plan.shareFields.url, 'https://app.example/handoff/t');

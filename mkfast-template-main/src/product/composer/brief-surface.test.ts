@@ -56,15 +56,18 @@ function openWith(
 
 describe('seven Brief trigger UI show / cancel restore', () => {
   it('exposes exactly the seven D-094 safety codes', () => {
-    assert.deepEqual([...BRIEF_TRIGGER_CODES], [
-      'any_video',
-      'multi_deliverable_or_cross_platform',
-      'images_over_four',
-      'restricted_assets',
-      'high_risk_fact_missing_or_conflict',
-      'quote_policy_threshold',
-      'confirmation_invalid',
-    ]);
+    assert.deepEqual(
+      [...BRIEF_TRIGGER_CODES],
+      [
+        'any_video',
+        'multi_deliverable_or_cross_platform',
+        'images_over_four',
+        'restricted_assets',
+        'high_risk_fact_missing_or_conflict',
+        'quote_policy_threshold',
+        'confirmation_invalid',
+      ]
+    );
   });
 
   for (const code of BRIEF_TRIGGER_CODES) {
@@ -118,8 +121,13 @@ describe('seven Brief trigger UI show / cancel restore', () => {
     if (!result.ok) return;
 
     assert.equal(result.state.phase, 'confirmed');
-    assert.deepEqual(result.confirmation.boundRevisions, projection.bindRevisions);
-    assert.deepEqual(result.confirmation.triggerCodes, ['quote_policy_threshold']);
+    assert.deepEqual(
+      result.confirmation.boundRevisions,
+      projection.bindRevisions
+    );
+    assert.deepEqual(result.confirmation.triggerCodes, [
+      'quote_policy_threshold',
+    ]);
     assert.equal(result.confirmation.confirmedAt, '2026-07-20T12:00:00.000Z');
   });
 });
@@ -278,7 +286,9 @@ describe('evidence drawer — no evidence = not shown', () => {
     assert.equal(cleaned.length, 1);
     assert.equal(cleaned[0]?.sourceName, '系统建议');
     assert.equal(
-      findForbiddenBrowserComposerKey(cleaned as unknown as Record<string, unknown>),
+      findForbiddenBrowserComposerKey(
+        cleaned as unknown as Record<string, unknown>
+      ),
       null
     );
     assert.equal(

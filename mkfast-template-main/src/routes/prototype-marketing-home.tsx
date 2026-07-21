@@ -33,7 +33,9 @@ const VARIANTS: { key: VariantKey; name: string }[] = [
 
 export const Route = createFileRoute('/prototype-marketing-home')({
   ssr: false,
-  validateSearch: (search: Record<string, unknown>): { variant: VariantKey } => ({
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { variant: VariantKey } => ({
     variant: VARIANTS.some((v) => v.key === search.variant)
       ? (search.variant as VariantKey)
       : 'A',
@@ -86,10 +88,30 @@ const mock = {
     whyUs: '用了本店「星河碎钻款」6.28 店拍素材 + 7 月价目表 + 主理人身份',
     identity: '主理人阿雅 · 亲历口吻',
     cta: '私信领「双人 30 元券」→ 预约到店',
-    deliverables: ['小红书图文 · 封面+4 图+正文', '抖音口播脚本 15s', '价格卡 1080×1440', '朋友圈海报'],
-    facts: ['价格 ¥128 · 来源 2026-07 价目表', '活动有效期至 07-31', '素材已授权 · 店拍 06-28', 'AIGC 标识将烧录'],
-    quickEdits: ['更像主理人本人', '少一点促销', '换一组素材', '换成抖音版', '做成海报', '做同款换项目'],
-    alternates: ['专业科普型 · 「甲面护理冷知识」', '体验种草型 · 「到店 45 分钟记录」'],
+    deliverables: [
+      '小红书图文 · 封面+4 图+正文',
+      '抖音口播脚本 15s',
+      '价格卡 1080×1440',
+      '朋友圈海报',
+    ],
+    facts: [
+      '价格 ¥128 · 来源 2026-07 价目表',
+      '活动有效期至 07-31',
+      '素材已授权 · 店拍 06-28',
+      'AIGC 标识将烧录',
+    ],
+    quickEdits: [
+      '更像主理人本人',
+      '少一点促销',
+      '换一组素材',
+      '换成抖音版',
+      '做成海报',
+      '做同款换项目',
+    ],
+    alternates: [
+      '专业科普型 · 「甲面护理冷知识」',
+      '体验种草型 · 「到店 45 分钟记录」',
+    ],
   },
   inbox: [
     { state: '生成中', label: '抖音口播视频渲染 62%', tone: 'progress' },
@@ -97,11 +119,24 @@ const mock = {
     { state: '已完成', label: '「招牌镜面甲」图文已入库', tone: 'success' },
   ],
   published: [
-    { title: '招牌镜面甲 · 图文', when: '周一发布', ladder: '已发布 → 获得注意 → 发生咨询', signals: '私信 ×3 · 预约 ×1' },
-    { title: '7 月新客券 · 价格卡', when: '上周五导出', ladder: '已发布 → 获得注意', signals: '加微 ×2' },
+    {
+      title: '招牌镜面甲 · 图文',
+      when: '周一发布',
+      ladder: '已发布 → 获得注意 → 发生咨询',
+      signals: '私信 ×3 · 预约 ×1',
+    },
+    {
+      title: '7 月新客券 · 价格卡',
+      when: '上周五导出',
+      ladder: '已发布 → 获得注意',
+      signals: '加微 ×2',
+    },
   ],
   reuse: [
-    { title: '「招牌镜面甲」做同款 → 换「猫眼胶」', hint: '沿用封面结构与口吻' },
+    {
+      title: '「招牌镜面甲」做同款 → 换「猫眼胶」',
+      hint: '沿用封面结构与口吻',
+    },
     { title: '「主理人小课堂」系列续写 · 第 4 期', hint: '上期采用未修改' },
   ],
 };
@@ -147,7 +182,10 @@ function GlassButton({ children }: { children: ReactNode }) {
 /** 氛围层：真实产品用商家自己的作品影像；原型用渐变占位 */
 function Ambient({ strong }: { strong?: boolean }) {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 overflow-hidden"
+    >
       <div
         className="absolute inset-0"
         style={{
@@ -170,7 +208,9 @@ function VariantA() {
     <div className="relative min-h-svh">
       <Ambient />
       <div className="relative mx-auto flex min-h-svh w-full max-w-3xl flex-col px-4 pb-32 pt-10">
-        <p className="text-xs font-medium tracking-wide text-[var(--ink-40)]">{mock.store}</p>
+        <p className="text-xs font-medium tracking-wide text-[var(--ink-40)]">
+          {mock.store}
+        </p>
         <h1 className="mt-2 text-[clamp(1.6rem,3vw,2.4rem)] font-extralight leading-tight text-[var(--ink-90)]">
           今天值得发什么
         </h1>
@@ -183,13 +223,19 @@ function VariantA() {
             <Chip>{main.expiry}</Chip>
           </div>
           <div className="px-6 pt-3">
-            <h2 className="text-xl font-semibold text-[var(--ink-90)]">{mock.pkg.title}</h2>
+            <h2 className="text-xl font-semibold text-[var(--ink-90)]">
+              {mock.pkg.title}
+            </h2>
             <p className="mt-2 text-sm leading-relaxed text-[var(--ink-60)]">
-              <span className="font-medium text-[var(--ink-90)]">为什么是现在：</span>
+              <span className="font-medium text-[var(--ink-90)]">
+                为什么是现在：
+              </span>
               {mock.pkg.whyNow}
             </p>
             <p className="mt-1 text-sm leading-relaxed text-[var(--ink-60)]">
-              <span className="font-medium text-[var(--ink-90)]">为什么是本店：</span>
+              <span className="font-medium text-[var(--ink-90)]">
+                为什么是本店：
+              </span>
               {mock.pkg.whyUs}
             </p>
           </div>
@@ -242,8 +288,12 @@ function VariantA() {
                     {o.source} · {o.expiry}
                   </span>
                 </div>
-                <p className="mt-1.5 text-sm font-medium text-[var(--ink-90)]">{o.title}</p>
-                <p className="mt-0.5 text-xs text-[var(--ink-60)]">{o.relevance}</p>
+                <p className="mt-1.5 text-sm font-medium text-[var(--ink-90)]">
+                  {o.title}
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--ink-60)]">
+                  {o.relevance}
+                </p>
               </div>
               <GlassButton>生成成品</GlassButton>
             </div>
@@ -272,7 +322,9 @@ function VariantB() {
     <div className="relative min-h-svh">
       <Ambient />
       <div className="relative mx-auto flex min-h-svh w-full max-w-4xl flex-col items-center px-4 pt-[16vh]">
-        <p className="text-xs font-medium tracking-wide text-[var(--ink-40)]">{mock.store}</p>
+        <p className="text-xs font-medium tracking-wide text-[var(--ink-40)]">
+          {mock.store}
+        </p>
         <h1 className="mt-3 text-center text-[clamp(1.75rem,3.5vw,2.75rem)] font-extralight text-[var(--ink-90)]">
           {mock.greeting}
         </h1>
@@ -282,7 +334,9 @@ function VariantB() {
           <textarea
             rows={3}
             className="w-full resize-none rounded-[20px] bg-transparent px-4 pt-3 text-[15px] leading-relaxed outline-none placeholder:text-[var(--ink-40)]"
-            placeholder={'把这个新团购做一套能发的\n用小林的口吻讲这个热点\n粘贴链接 / 上传素材也可以直接开始'}
+            placeholder={
+              '把这个新团购做一套能发的\n用小林的口吻讲这个热点\n粘贴链接 / 上传素材也可以直接开始'
+            }
           />
           <div className="flex items-center justify-between px-2 pb-1">
             <div className="flex gap-1.5">
@@ -303,20 +357,29 @@ function VariantB() {
               </span>
               今天值得发什么
             </p>
-            <span className="text-xs text-[var(--ink-40)]">来源与过期时间可解释</span>
+            <span className="text-xs text-[var(--ink-40)]">
+              来源与过期时间可解释
+            </span>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             {mock.opportunities.map((o, i) => (
-              <div key={o.id} className="flex flex-col rounded-[20px] bg-[var(--glass-80)] p-4 backdrop-blur">
+              <div
+                key={o.id}
+                className="flex flex-col rounded-[20px] bg-[var(--glass-80)] p-4 backdrop-blur"
+              >
                 <div className="flex items-center gap-2">
                   <Chip>{o.tag}</Chip>
                   {i === 0 && <Chip spark>主推荐</Chip>}
                 </div>
-                <p className="mt-2 flex-1 text-sm font-medium leading-snug text-[var(--ink-90)]">{o.title}</p>
+                <p className="mt-2 flex-1 text-sm font-medium leading-snug text-[var(--ink-90)]">
+                  {o.title}
+                </p>
                 <p className="mt-1 text-xs text-[var(--ink-40)]">
                   {o.source} · {o.expiry}
                 </p>
-                <p className="mt-2 text-xs text-[var(--ink-60)]">{o.relevance}</p>
+                <p className="mt-2 text-xs text-[var(--ink-60)]">
+                  {o.relevance}
+                </p>
                 <div className="mt-3">
                   <GlassButton>{i === 0 ? '看完整成品' : '生成'}</GlassButton>
                 </div>
@@ -340,7 +403,10 @@ function VariantC() {
     <div className="relative min-h-svh overflow-hidden">
       {/* 成品即氛围：全出血主推荐预览（原型以渐变+大字占位） */}
       <Ambient strong />
-      <div aria-hidden className="absolute inset-0 flex items-center justify-center">
+      <div
+        aria-hidden
+        className="absolute inset-0 flex items-center justify-center"
+      >
         <p className="max-w-xl text-center text-[clamp(2rem,5vw,3.5rem)] font-extralight leading-tight text-[oklch(0.35_0.05_18/0.55)]">
           星河碎钻款
           <br />
@@ -361,7 +427,9 @@ function VariantC() {
             <span
               key={o.id}
               className={`shrink-0 rounded-full px-4 py-1.5 text-xs backdrop-blur ${
-                i === 0 ? 'bg-[var(--ink)] text-white' : 'bg-[var(--glass-50)] text-[var(--ink-60)]'
+                i === 0
+                  ? 'bg-[var(--ink)] text-white'
+                  : 'bg-[var(--glass-50)] text-[var(--ink-60)]'
               }`}
             >
               {o.title}
@@ -376,8 +444,12 @@ function VariantC() {
           <Chip spark>AI 主推荐</Chip>
           <Chip>07-31 过期</Chip>
         </div>
-        <h2 className="mt-2 text-lg font-semibold text-[var(--ink-90)]">{mock.pkg.title}</h2>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--ink-60)]">{mock.pkg.whyNow}</p>
+        <h2 className="mt-2 text-lg font-semibold text-[var(--ink-90)]">
+          {mock.pkg.title}
+        </h2>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--ink-60)]">
+          {mock.pkg.whyNow}
+        </p>
         <p className="mt-1 text-xs text-[var(--ink-60)]">
           {mock.pkg.identity} · {mock.pkg.cta}
         </p>
@@ -409,7 +481,9 @@ function VariantC() {
       <div className="absolute inset-x-0 bottom-6 flex items-center justify-center gap-2 px-6">
         <span className="rounded-full bg-white/90 py-2.5 pl-5 pr-3 text-sm text-[var(--ink-40)] shadow-[0_8px_30px_oklch(0_0_0/0.1)] backdrop-blur-xl">
           一句话下任务…
-          <span className="ml-3 rounded-full bg-[var(--ink)] px-3 py-1 text-xs text-white">开始</span>
+          <span className="ml-3 rounded-full bg-[var(--ink)] px-3 py-1 text-xs text-white">
+            开始
+          </span>
         </span>
         {mock.entries.map((e) => (
           <Chip key={e}>{e}</Chip>
@@ -434,8 +508,12 @@ function VariantD() {
         {/* 顶条：问候 + Composer 同排 */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-medium tracking-wide text-[var(--ink-40)]">{mock.store}</p>
-            <h1 className="mt-1 text-2xl font-extralight text-[var(--ink-90)]">{mock.greeting}</h1>
+            <p className="text-xs font-medium tracking-wide text-[var(--ink-40)]">
+              {mock.store}
+            </p>
+            <h1 className="mt-1 text-2xl font-extralight text-[var(--ink-90)]">
+              {mock.greeting}
+            </h1>
           </div>
           <div className="flex min-w-72 flex-1 items-center gap-2 rounded-full bg-white py-1.5 pl-5 pr-1.5 shadow-[0_2px_20px_oklch(0_0_0/0.05)] sm:max-w-md">
             <input
@@ -451,12 +529,18 @@ function VariantD() {
           {/* 今天 */}
           <section className="rounded-[24px] bg-white p-5 shadow-[0_2px_20px_oklch(0_0_0/0.04)] lg:col-span-2">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[var(--ink-90)]">今天 · 值得发</h2>
+              <h2 className="text-sm font-semibold text-[var(--ink-90)]">
+                今天 · 值得发
+              </h2>
               <Chip spark>AI 主推荐</Chip>
             </div>
             <div className="mt-3 rounded-[16px] bg-[oklch(0.97_0.015_18)] p-4">
-              <p className="text-base font-semibold text-[var(--ink-90)]">{mock.pkg.title}</p>
-              <p className="mt-1 text-xs leading-relaxed text-[var(--ink-60)]">{mock.pkg.whyNow}</p>
+              <p className="text-base font-semibold text-[var(--ink-90)]">
+                {mock.pkg.title}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--ink-60)]">
+                {mock.pkg.whyNow}
+              </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {mock.pkg.facts.slice(0, 3).map((f) => (
                   <Chip key={f}>{f}</Chip>
@@ -469,11 +553,19 @@ function VariantD() {
             </div>
             <div className="mt-3 space-y-2">
               {mock.opportunities.slice(1).map((o) => (
-                <div key={o.id} className="flex items-center justify-between rounded-[12px] px-2 py-1.5 hover:bg-[var(--glass-50)]">
+                <div
+                  key={o.id}
+                  className="flex items-center justify-between rounded-[12px] px-2 py-1.5 hover:bg-[var(--glass-50)]"
+                >
                   <p className="text-xs text-[var(--ink-60)]">
-                    <span className="font-medium text-[var(--ink-90)]">{o.tag}</span> · {o.title}
+                    <span className="font-medium text-[var(--ink-90)]">
+                      {o.tag}
+                    </span>{' '}
+                    · {o.title}
                   </p>
-                  <span className="text-xs text-[var(--ink-40)]">{o.expiry}</span>
+                  <span className="text-xs text-[var(--ink-40)]">
+                    {o.expiry}
+                  </span>
                 </div>
               ))}
             </div>
@@ -486,26 +578,38 @@ function VariantD() {
 
           {/* 进行中（异步收件箱） */}
           <section className="rounded-[24px] bg-[var(--glass-80)] p-5 backdrop-blur">
-            <h2 className="text-sm font-semibold text-[var(--ink-90)]">进行中</h2>
+            <h2 className="text-sm font-semibold text-[var(--ink-90)]">
+              进行中
+            </h2>
             <div className="mt-3 space-y-3">
               {mock.inbox.map((t) => (
                 <div key={t.label} className="rounded-[16px] bg-white/70 p-3">
-                  <p className={`text-xs font-semibold ${toneCls[t.tone]}`}>{t.state}</p>
-                  <p className="mt-0.5 text-sm text-[var(--ink-90)]">{t.label}</p>
+                  <p className={`text-xs font-semibold ${toneCls[t.tone]}`}>
+                    {t.state}
+                  </p>
+                  <p className="mt-0.5 text-sm text-[var(--ink-90)]">
+                    {t.label}
+                  </p>
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-xs text-[var(--ink-40)]">离开页面不丢任务，回来可继续</p>
+            <p className="mt-3 text-xs text-[var(--ink-40)]">
+              离开页面不丢任务，回来可继续
+            </p>
           </section>
 
           {/* 已发布 + 沉淀 */}
           <section className="flex flex-col gap-4">
             <div className="rounded-[24px] bg-[var(--glass-80)] p-5 backdrop-blur">
-              <h2 className="text-sm font-semibold text-[var(--ink-90)]">已发布 · 补一笔</h2>
+              <h2 className="text-sm font-semibold text-[var(--ink-90)]">
+                已发布 · 补一笔
+              </h2>
               <div className="mt-3 space-y-3">
                 {mock.published.map((p) => (
                   <div key={p.title} className="rounded-[16px] bg-white/70 p-3">
-                    <p className="text-sm font-medium text-[var(--ink-90)]">{p.title}</p>
+                    <p className="text-sm font-medium text-[var(--ink-90)]">
+                      {p.title}
+                    </p>
                     <p className="mt-0.5 text-xs text-[var(--ink-40)]">
                       {p.when} · {p.ladder}
                     </p>
@@ -520,10 +624,15 @@ function VariantD() {
               </div>
             </div>
             <div className="rounded-[24px] bg-[var(--glass-80)] p-5 backdrop-blur">
-              <h2 className="text-sm font-semibold text-[var(--ink-90)]">沉淀 · 做同款</h2>
+              <h2 className="text-sm font-semibold text-[var(--ink-90)]">
+                沉淀 · 做同款
+              </h2>
               <div className="mt-3 space-y-2">
                 {mock.reuse.map((r) => (
-                  <div key={r.title} className="rounded-[12px] px-2 py-1.5 hover:bg-white/70">
+                  <div
+                    key={r.title}
+                    className="rounded-[12px] px-2 py-1.5 hover:bg-white/70"
+                  >
                     <p className="text-sm text-[var(--ink-90)]">{r.title}</p>
                     <p className="text-xs text-[var(--ink-40)]">{r.hint}</p>
                   </div>
@@ -552,7 +661,9 @@ function PrototypeSwitcher({ current }: { current: VariantKey }) {
       const el = document.activeElement;
       if (
         el instanceof HTMLElement &&
-        (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable)
       ) {
         return;
       }

@@ -455,7 +455,8 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
             disabled={
               (view.primaryAction.kind === 'adopt_set' &&
                 view.wholeSetAdopt?.kind === 'rejected') ||
-              (view.primaryAction.kind !== 'add_to_set' && !props.onAdoptPrimary)
+              (view.primaryAction.kind !== 'add_to_set' &&
+                !props.onAdoptPrimary)
             }
             onClick={async () => {
               const kind = view.primaryAction!.kind;

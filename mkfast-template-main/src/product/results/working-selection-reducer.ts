@@ -110,14 +110,14 @@ export type WorkingSelectionDrift = {
 function withUpdated(
   state: WorkingSelectionState,
   now: string,
-  patch: Partial<WorkingSelectionState>,
+  patch: Partial<WorkingSelectionState>
 ): WorkingSelectionState {
   return { ...state, ...patch, updatedAt: now };
 }
 
 function ensureCoverConsistency(
   orderedAssetIds: string[],
-  coverAssetId: string | null,
+  coverAssetId: string | null
 ): { orderedAssetIds: string[]; coverAssetId: string | null } {
   if (orderedAssetIds.length === 0) {
     return { orderedAssetIds: [], coverAssetId: null };
@@ -140,7 +140,7 @@ function ensureCoverConsistency(
  */
 export function reduceWorkingSelection(
   state: WorkingSelectionState,
-  intent: WorkingSelectionIntent,
+  intent: WorkingSelectionIntent
 ): WorkingSelectionReduceResult {
   switch (intent.type) {
     case 'add': {
@@ -153,7 +153,7 @@ export function reduceWorkingSelection(
         };
       }
       const removed = state.removedAssetIds.filter(
-        (id) => id !== intent.assetId,
+        (id) => id !== intent.assetId
       );
       const ordered = [...state.orderedAssetIds, intent.assetId];
       const next = ensureCoverConsistency(ordered, state.coverAssetId);
@@ -174,14 +174,14 @@ export function reduceWorkingSelection(
         return { state, feedback: null, drift: null };
       }
       const ordered = state.orderedAssetIds.filter(
-        (id) => id !== intent.assetId,
+        (id) => id !== intent.assetId
       );
       const removed = state.removedAssetIds.includes(intent.assetId)
         ? state.removedAssetIds
         : [...state.removedAssetIds, intent.assetId];
       const next = ensureCoverConsistency(
         ordered,
-        state.coverAssetId === intent.assetId ? null : state.coverAssetId,
+        state.coverAssetId === intent.assetId ? null : state.coverAssetId
       );
       return {
         state: withUpdated(state, intent.now, {
@@ -205,7 +205,7 @@ export function reduceWorkingSelection(
         return {
           state: withUpdated(state, intent.now, {
             removedAssetIds: state.removedAssetIds.filter(
-              (id) => id !== intent.assetId,
+              (id) => id !== intent.assetId
             ),
           }),
           feedback: null,
@@ -220,7 +220,7 @@ export function reduceWorkingSelection(
           orderedAssetIds: next.orderedAssetIds,
           coverAssetId: next.coverAssetId,
           removedAssetIds: state.removedAssetIds.filter(
-            (id) => id !== intent.assetId,
+            (id) => id !== intent.assetId
           ),
           focusAssetId: intent.assetId,
         }),
@@ -272,7 +272,7 @@ export function reduceWorkingSelection(
       }
       const next = ensureCoverConsistency(
         state.orderedAssetIds,
-        intent.assetId,
+        intent.assetId
       );
       return {
         state: withUpdated(state, intent.now, {
@@ -286,7 +286,7 @@ export function reduceWorkingSelection(
     }
     case 'reorder': {
       const unique = [...new Set(intent.orderedAssetIds)].filter((id) =>
-        state.orderedAssetIds.includes(id),
+        state.orderedAssetIds.includes(id)
       );
       // Preserve any missing selected ids at the end in prior relative order.
       for (const id of state.orderedAssetIds) {
@@ -389,7 +389,7 @@ export function applyWorkingSelectionDriftChoice(
   state: WorkingSelectionState,
   drift: WorkingSelectionDrift,
   choice: ResultRevisionDriftChoice,
-  now: string,
+  now: string
 ): ApplyWorkingSelectionDriftResult {
   switch (choice) {
     case 'restore':
@@ -426,7 +426,7 @@ export function applyWorkingSelectionDriftChoice(
 
 export function isWorkingSelectionExpired(
   state: WorkingSelectionState,
-  nowIso: string,
+  nowIso: string
 ): boolean {
   const updated = Date.parse(state.updatedAt);
   const now = Date.parse(nowIso);
@@ -440,13 +440,13 @@ export function workingSelectionStorageKey(workId: string): string {
 
 /** Serialize for localStorage / session store. */
 export function serializeWorkingSelection(
-  state: WorkingSelectionState,
+  state: WorkingSelectionState
 ): string {
   return JSON.stringify(state);
 }
 
 export function parseWorkingSelection(
-  raw: string,
+  raw: string
 ): WorkingSelectionState | null {
   try {
     const parsed = JSON.parse(raw) as WorkingSelectionState;
@@ -489,7 +489,7 @@ export type SaveWorkingSelectionDraftCommand = {
 };
 
 export function buildSaveWorkingSelectionDraftCommand(
-  state: WorkingSelectionState,
+  state: WorkingSelectionState
 ): SaveWorkingSelectionDraftCommand {
   return {
     kind: 'save_work_draft_selection',
@@ -521,7 +521,7 @@ export function projectWorkingSelectionSlots(state: WorkingSelectionState): {
 
 /** Ordered ids ready for whole-set adopt (atomic write input). */
 export function workingSelectionAdoptPayload(
-  state: WorkingSelectionState,
+  state: WorkingSelectionState
 ): { assetIds: string[]; coverAssetId: string | null } | null {
   if (state.orderedAssetIds.length === 0) return null;
   return {

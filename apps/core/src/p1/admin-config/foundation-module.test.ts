@@ -3,12 +3,19 @@ import { describe, it } from 'node:test';
 import { z } from 'zod';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import type { PermissionAuthorizerPort } from '../capability-permission/port.js';
 import { createDefaultDeployments } from '../model-supply/catalog.js';
 import {
   AdminConfigFoundationModule,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   MemoryAdminConfigRepository,
 } from './foundation-module.js';
+
+/** Explicit bypass for tests of AdminConfigFoundationModule's own scope rules. */
+const moduleScopeAuthorizer: PermissionAuthorizerPort = {
+  decide: () => ({ allow: true, required: null, reason: 'capability_granted' }),
+  authorize: () => undefined,
+};
 
 describe('Admin config application seam', () => {
   const context = {
@@ -624,6 +631,7 @@ describe('Admin config application seam', () => {
     foundation.grantOwner('workspace-a', 'owner-a');
     foundation.grantOwner('workspace-b', 'owner-b');
     const service = new P1ApplicationService(foundation, {
+      authorizer: moduleScopeAuthorizer,
       operations: [
         new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
           additionalDefinitions: [
@@ -693,6 +701,7 @@ describe('Admin config application seam', () => {
     );
 
     const defaultService = new P1ApplicationService(foundation, {
+      authorizer: moduleScopeAuthorizer,
       operations: [
         new AdminConfigFoundationModule(new MemoryAdminConfigRepository()),
       ],
@@ -741,6 +750,7 @@ describe('Admin config application seam', () => {
         workspaceId: 'workspace-a',
         userId: 'merchant-owner',
         correlationId: 'config-defaults-query',
+        actor: 'owner',
       },
       'admin-config',
       { action: 'config_defaults', payload: {} },
@@ -866,6 +876,7 @@ describe('Admin config application seam', () => {
           workspaceId: 'workspace-a',
           userId: 'merchant-owner',
           correlationId: 'default-compliance-query',
+          actor: 'owner',
         },
         'admin-config',
         { action: 'config_defaults', payload: {} },

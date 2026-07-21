@@ -79,9 +79,7 @@ const REDACT_VALUE_PATTERN =
 
 export type ExceptionFreshness = 'fresh' | 'stale' | 'unknown';
 
-export type ExceptionEventOrigin =
-  | 'actionable_inbox'
-  | 'capability_metric';
+export type ExceptionEventOrigin = 'actionable_inbox' | 'capability_metric';
 
 export interface RedactedTechnicalHandoffLink {
   /** Relative admin drilldown or catalog path (never raw secret). */
@@ -293,7 +291,10 @@ function drilldownPathForKey(drilldownKey: string | undefined): string {
   if (drilldownKey.includes('entitlement') || drilldownKey.includes('plan')) {
     return '/admin/plans';
   }
-  if (drilldownKey.includes('integration') || drilldownKey.includes('channel')) {
+  if (
+    drilldownKey.includes('integration') ||
+    drilldownKey.includes('channel')
+  ) {
     return '/admin/integrations';
   }
   if (drilldownKey.includes('content') || drilldownKey.includes('template')) {
@@ -322,7 +323,9 @@ function buildHandoffLink(input: {
   rawContext: Record<string, string>;
   severity: ExceptionSeverity;
 }): RedactedTechnicalHandoffLink {
-  const page = ADMIN_DRILLDOWN_PAGES.find((item) => item.domain === input.group);
+  const page = ADMIN_DRILLDOWN_PAGES.find(
+    (item) => item.domain === input.group
+  );
   const href = drilldownPathForKey(input.drilldownKey);
   const base = buildRedactedHandoffContext({
     domain: input.group,
@@ -449,7 +452,10 @@ export function projectCapabilityExceptionCandidates(
       severity = availability;
     } else if (freshnessInfo.isLongStale && availability === 'available') {
       severity = 'stale';
-    } else if (freshnessInfo.isLongStale && availability === 'not_instrumented') {
+    } else if (
+      freshnessInfo.isLongStale &&
+      availability === 'not_instrumented'
+    ) {
       // not_instrumented alone is a gap, not a home exception; long-stale
       // instrumented evidence is handled above. Skip pure not_instrumented.
       severity = null;
@@ -479,8 +485,9 @@ export function projectCapabilityExceptionCandidates(
       : `availability=${availabilityLabel(availability)}`;
 
     const nextSafe =
-      entry.allowedSafeActions?.find((action) => action !== 'open_technical_handoff') ??
-      entry.allowedSafeActions?.[0];
+      entry.allowedSafeActions?.find(
+        (action) => action !== 'open_technical_handoff'
+      ) ?? entry.allowedSafeActions?.[0];
 
     candidates.push({
       rootCauseKey,
@@ -494,9 +501,7 @@ export function projectCapabilityExceptionCandidates(
       evidenceCapturedAt: capturedAt,
       freshness: freshnessInfo.freshness,
       recentChangeSummary,
-      nextActionLabel: nextSafe
-        ? safeActionLabel(nextSafe)
-        : '打开技术台移交',
+      nextActionLabel: nextSafe ? safeActionLabel(nextSafe) : '打开技术台移交',
       origin: 'capability_metric',
       drilldownKey: entry.drilldownKey,
       group: entry.group as CapabilityCatalogL1Id,
@@ -563,7 +568,9 @@ export function dedupeExceptionCandidates(
   const rows: ExceptionHomeRow[] = [];
   for (const [rootCauseKey, group] of groups) {
     const sortedGroup = [...group].sort((a, b) => {
-      const sev = EXCEPTION_SEVERITY_RANK[a.severity] - EXCEPTION_SEVERITY_RANK[b.severity];
+      const sev =
+        EXCEPTION_SEVERITY_RANK[a.severity] -
+        EXCEPTION_SEVERITY_RANK[b.severity];
       if (sev !== 0) return sev;
       return a.capabilityId?.localeCompare(b.capabilityId ?? '') ?? 0;
     });
@@ -676,8 +683,9 @@ export function buildPanoramaStatCards(
   registry: CapabilityRegistryView
 ): PanoramaStatCard[] {
   const items = registry.inventory.items;
-  const instrumented = items.filter((item) => item.status === 'instrumented')
-    .length;
+  const instrumented = items.filter(
+    (item) => item.status === 'instrumented'
+  ).length;
   const stubOrGap = items.length - instrumented;
   const domains = new Set(items.map((item) => item.group)).size;
   const notVerified = registry.entries.filter(

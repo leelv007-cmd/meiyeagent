@@ -114,7 +114,7 @@ export function listColdCardsFromRecipes(
   const singles: RecipeCardView[] = [];
   const reuseByLens: Partial<Record<CreationLensId, RecipeCardTarget>> = {};
   let reusePresentation: BrowserRecipeProjection | null = null;
-  let reuseOrder = 5;
+  const reuseOrder = 5;
 
   for (const recipe of recipes) {
     if (isReuseFamily(recipe)) {

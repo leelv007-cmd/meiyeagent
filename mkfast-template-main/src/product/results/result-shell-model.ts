@@ -125,7 +125,7 @@ export type ResultShellView =
  * Hits upper rows first; completed must not override delivery/running failures.
  */
 export function projectResultShellPhase(
-  facts: ResultShellFacts,
+  facts: ResultShellFacts
 ): ResultShellPhase {
   const delivery = facts.deliveryAttempt ?? 'none';
 
@@ -186,7 +186,7 @@ function action(
   id: ResultActionId,
   role: ResultAction['role'],
   enabled = true,
-  labelOverride?: string,
+  labelOverride?: string
 ): ResultAction {
   return {
     id,
@@ -213,7 +213,7 @@ function adoptLabel(workspaceKind: ResultWorkspaceKind): string {
  */
 export function projectResultShellActions(
   phase: ResultShellPhase,
-  facts: ResultShellFacts,
+  facts: ResultShellFacts
 ): Pick<
   ResultShellModel,
   'primaryAction' | 'secondaryActions' | 'overflowActions'
@@ -234,7 +234,12 @@ export function projectResultShellActions(
 
   if (delivery === 'awaiting_approval') {
     return {
-      primaryAction: action('handle_current_issue', 'primary', true, '查看并批准'),
+      primaryAction: action(
+        'handle_current_issue',
+        'primary',
+        true,
+        '查看并批准'
+      ),
       secondaryActions: [action('leave_and_continue', 'secondary')],
       overflowActions: overflowBase,
     };
@@ -246,7 +251,7 @@ export function projectResultShellActions(
         'handle_current_issue',
         'primary',
         true,
-        '处理未完成交付',
+        '处理未完成交付'
       ),
       secondaryActions: [action('continue_adjust', 'secondary')],
       overflowActions: overflowBase,
@@ -265,10 +270,7 @@ export function projectResultShellActions(
     return {
       primaryAction: action('leave_and_continue', 'primary'),
       secondaryActions: [],
-      overflowActions: [
-        action('cancel_run', 'overflow'),
-        ...overflowBase,
-      ],
+      overflowActions: [action('cancel_run', 'overflow'), ...overflowBase],
     };
   }
 
@@ -281,10 +283,7 @@ export function projectResultShellActions(
       return {
         primaryAction: primary,
         secondaryActions: [],
-        overflowActions: [
-          action('cancel_run', 'overflow'),
-          ...overflowBase,
-        ],
+        overflowActions: [action('cancel_run', 'overflow'), ...overflowBase],
       };
     }
     case 'needs_input':
@@ -315,7 +314,7 @@ export function projectResultShellActions(
             'adopt_candidate',
             'primary',
             true,
-            adoptLabel(facts.workspaceKind),
+            adoptLabel(facts.workspaceKind)
           ),
           secondaryActions: [
             action('continue_adjust', 'secondary'),
@@ -352,7 +351,7 @@ export function projectResultShellActions(
 }
 
 function projectCanonicalLinks(
-  facts: ResultShellFacts,
+  facts: ResultShellFacts
 ): ResultCanonicalObjectLink[] {
   const links: ResultCanonicalObjectLink[] = [
     { kind: 'work', id: facts.target.workId },
@@ -370,7 +369,10 @@ function projectCanonicalLinks(
   return links;
 }
 
-function resolvePanel(facts: ResultShellFacts, phase: ResultShellPhase): ResultPanel {
+function resolvePanel(
+  facts: ResultShellFacts,
+  phase: ResultShellPhase
+): ResultPanel {
   if (
     facts.requestedPanel &&
     (resultPanels as readonly string[]).includes(facts.requestedPanel)
@@ -392,7 +394,7 @@ function resolvePanel(facts: ResultShellFacts, phase: ResultShellPhase): ResultP
 function a11yAnnouncementFor(
   phase: ResultShellPhase,
   facts: ResultShellFacts,
-  hasFirstToken: boolean,
+  hasFirstToken: boolean
 ): string {
   // Stage announcements only in the aggregate a11y layer — never replace
   // token-stream rendering for copy/image_text.
@@ -427,18 +429,16 @@ function a11yAnnouncementFor(
  * Project a full ResultShellModel from canonical facts.
  * Pure — no I/O, no mutation, no latest-result fallback.
  */
-export function projectResultShellModel(facts: ResultShellFacts): ResultShellModel {
+export function projectResultShellModel(
+  facts: ResultShellFacts
+): ResultShellModel {
   const phase = projectResultShellPhase(facts);
   const actions = projectResultShellActions(phase, facts);
   return {
     target: {
       workId: facts.target.workId,
-      ...(facts.target.contentId
-        ? { contentId: facts.target.contentId }
-        : {}),
-      ...(facts.target.versionId
-        ? { versionId: facts.target.versionId }
-        : {}),
+      ...(facts.target.contentId ? { contentId: facts.target.contentId } : {}),
+      ...(facts.target.versionId ? { versionId: facts.target.versionId } : {}),
       ...(facts.target.panel ? { panel: facts.target.panel } : {}),
       ...(facts.target.focusKey ? { focusKey: facts.target.focusKey } : {}),
     },
@@ -455,7 +455,9 @@ export function projectResultShellModel(facts: ResultShellFacts): ResultShellMod
 /**
  * Full shell view including composed sub-projections and a11y aggregate.
  */
-export function projectResultShellView(facts: ResultShellFacts): ResultShellView {
+export function projectResultShellView(
+  facts: ResultShellFacts
+): ResultShellView {
   const shell = projectResultShellModel(facts);
   const candidates = facts.harnessPackage
     ? harnessCandidateResultModel(facts.harnessPackage)
@@ -488,7 +490,7 @@ export function projectResultShellView(facts: ResultShellFacts): ResultShellView
  */
 export function shellViewFromResolveOutcome(
   outcome: ResultTargetResolveOutcome,
-  factsWhenOk: Omit<ResultShellFacts, 'target'> & { target?: ResultTarget },
+  factsWhenOk: Omit<ResultShellFacts, 'target'> & { target?: ResultTarget }
 ): ResultShellView {
   switch (outcome.kind) {
     case 'ok':
@@ -553,10 +555,7 @@ export function desktopVisibleActions(shell: ResultShellModel): {
   return {
     primary: shell.primaryAction,
     secondary: shell.secondaryActions.slice(0, 3),
-    more: [
-      ...shell.secondaryActions.slice(3),
-      ...shell.overflowActions,
-    ],
+    more: [...shell.secondaryActions.slice(3), ...shell.overflowActions],
   };
 }
 

@@ -63,10 +63,7 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
           </p>
         </div>
         {row.nextActionLabel ? (
-          <Badge
-            variant="secondary"
-            data-testid="exception-next-action"
-          >
+          <Badge variant="secondary" data-testid="exception-next-action">
             下一步 · {row.nextActionLabel}
           </Badge>
         ) : null}
@@ -75,10 +72,7 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
       <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         <div>
           <dt className="text-muted-foreground">证据来源</dt>
-          <dd
-            className="font-mono"
-            data-testid="exception-evidence-source"
-          >
+          <dd className="font-mono" data-testid="exception-evidence-source">
             {row.evidenceSource}
           </dd>
         </div>
@@ -137,9 +131,7 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
         data-one-click-repair="false"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-medium">
-            {row.technicalHandoff.label}
-          </p>
+          <p className="text-xs font-medium">{row.technicalHandoff.label}</p>
           <a
             href={row.technicalHandoff.href}
             className="text-xs font-medium text-primary underline-offset-4 hover:underline"
@@ -214,9 +206,7 @@ function EmptyExceptionState({ view }: { view: ExceptionHomeView }) {
 
       <Card data-testid="exception-catalog-entry">
         <CardHeader>
-          <CardTitle className="text-base">
-            {view.catalogEntry.label}
-          </CardTitle>
+          <CardTitle className="text-base">{view.catalogEntry.label}</CardTitle>
           <CardDescription>{view.catalogEntry.description}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -263,9 +253,7 @@ export function ExceptionHomePanel({ view }: { view: ExceptionHomeView }) {
         data-testid="exception-projected-at"
       >
         投影于 {view.projectedAt} ·{' '}
-        {view.empty
-          ? '无待处理异常'
-          : `${view.exceptions.length} 条主事件`}
+        {view.empty ? '无待处理异常' : `${view.exceptions.length} 条主事件`}
       </p>
 
       {view.empty ? (
@@ -283,9 +271,7 @@ export function ExceptionHomePanel({ view }: { view: ExceptionHomeView }) {
               <CardTitle className="text-base">
                 {view.catalogEntry.label}
               </CardTitle>
-              <CardDescription>
-                {view.catalogEntry.description}
-              </CardDescription>
+              <CardDescription>{view.catalogEntry.description}</CardDescription>
             </CardHeader>
             <CardContent>
               <a

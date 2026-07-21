@@ -139,11 +139,14 @@ export function projectCanonicalHandoffPage(
     nowIso: string;
     /** Device canShare for current media files. */
     canShareFiles?: boolean;
-  },
+  }
 ): CanonicalHandoffResolveResult {
   const nowMs = Date.parse(options.nowIso);
   const expiresMs = Date.parse(source.expiresAt);
-  if (!Number.isFinite(expiresMs) || (Number.isFinite(nowMs) && nowMs > expiresMs)) {
+  if (
+    !Number.isFinite(expiresMs) ||
+    (Number.isFinite(nowMs) && nowMs > expiresMs)
+  ) {
     return { kind: 'expired', token: source.token };
   }
 
@@ -207,7 +210,8 @@ export function projectCanonicalHandoffPage(
         isPublished: published,
         isHandedOver: handedOver,
         handedOverIsNotPublished: handedOver && !published,
-        awaitingReport: !published && receipt.status !== 'publish_result_recorded',
+        awaitingReport:
+          !published && receipt.status !== 'publish_result_recorded',
         ...(receipt.publishResult
           ? { publishResult: receipt.publishResult }
           : {}),
@@ -226,7 +230,7 @@ export function projectCanonicalHandoffPage(
 export function resolveCanonicalHandoffByToken(
   token: string,
   index: readonly CanonicalDeliveryHandoff[],
-  options: { nowIso: string; canShareFiles?: boolean },
+  options: { nowIso: string; canShareFiles?: boolean }
 ): CanonicalHandoffResolveResult {
   const found = index.find((item) => item.token === token);
   if (!found) return { kind: 'not_found' };
@@ -250,14 +254,14 @@ export function assertNotLegacyHandoffSource(source: unknown): void {
     (source as { route?: string }).route === 'L3_HANDOFF_PACKAGE'
   ) {
     throw new Error(
-      'LEGACY_HANDOFF_SOURCE_RETIRED: use CanonicalDeliveryHandoff instead of handoffPackages',
+      'LEGACY_HANDOFF_SOURCE_RETIRED: use CanonicalDeliveryHandoff instead of handoffPackages'
     );
   }
 }
 
 /** Build a canonical handoff fixture for page unit tests. */
 export function canonicalHandoffFixture(
-  overrides: Partial<CanonicalDeliveryHandoff> = {},
+  overrides: Partial<CanonicalDeliveryHandoff> = {}
 ): CanonicalDeliveryHandoff {
   const token = overrides.token ?? 'canonical-token-abc123def456';
   const receipt: AssistedReceipt = overrides.assistedReceipt ?? {
@@ -340,7 +344,9 @@ export function assertFourSectionParity(view: CanonicalHandoffPageView): {
   report: boolean;
 } {
   return {
-    share: view.sections.share.id === 'share' && view.sections.share.shareUrl.length > 0,
+    share:
+      view.sections.share.id === 'share' &&
+      view.sections.share.shareUrl.length > 0,
     download:
       view.sections.download.id === 'download' &&
       (view.sections.download.media.length > 0 ||
@@ -350,6 +356,7 @@ export function assertFourSectionParity(view: CanonicalHandoffPageView): {
     report:
       view.sections.report.id === 'report' &&
       view.sections.report.handedOverIsNotPublished ===
-        (view.sections.report.isHandedOver && !view.sections.report.isPublished),
+        (view.sections.report.isHandedOver &&
+          !view.sections.report.isPublished),
   };
 }

@@ -115,8 +115,7 @@ function settingsDiff(
     const to = recipeSettings[key];
     if (stableEqual(from, to)) continue;
     const isDirty = Boolean(
-      draft.dirtySettings &&
-        Object.prototype.hasOwnProperty.call(draft.dirtySettings, key)
+      draft.dirtySettings && Object.hasOwn(draft.dirtySettings, key)
     );
     diffs.push({
       field: `settings.${key}`,
@@ -220,11 +219,8 @@ export function buildClientRecipePatchPreview(
     dirty.includes('model') ||
     Boolean(
       draft.dirtySettings &&
-        (Object.prototype.hasOwnProperty.call(
-          draft.dirtySettings,
-          'modelPolicy'
-        ) ||
-          Object.prototype.hasOwnProperty.call(draft.dirtySettings, 'model'))
+        (Object.hasOwn(draft.dirtySettings, 'modelPolicy') ||
+          Object.hasOwn(draft.dirtySettings, 'model'))
     );
   const mDiff = modelPolicyDiff(
     draft.modelPolicy,
@@ -333,7 +329,8 @@ export function buildClientRecipePatchPreview(
     preview.baseSurfaceRevisionId = surfaceRevisionId;
   }
   if (baseRecipeRevisionId !== undefined) {
-    preview.baseRecipeRevisionId = baseRecipeRevisionId as RecipeRevisionId | null;
+    preview.baseRecipeRevisionId =
+      baseRecipeRevisionId as RecipeRevisionId | null;
   }
 
   return preview;

@@ -1,5 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { handleWebhookEvent, isPaymentEnabled } from '@/payment';
+import { handleWebhookEvent } from '@/payment';
+import {
+  paymentWebhookErrorResponse,
+  paymentWebhookHttpResponse,
+  readPaymentWebhookPayload,
+} from '@/payment/webhook-settlement';
+import { logPaymentWebhookError } from '@/payment/webhook-logging';
 
 /**
  * Creem webhook endpoint
@@ -12,30 +18,25 @@ export const Route = createFileRoute('/api/webhooks/creem')({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!isPaymentEnabled()) {
-          return Response.json({ received: true }, { status: 200 });
-        }
-        const payload = await request.text();
-        const signature = request.headers.get('creem-signature') ?? '';
-        if (!payload || !signature) {
-          console.warn('Creem webhook: missing payload or signature');
-          return Response.json(
-            { error: 'Missing payload or signature' },
-            { status: 400 }
-          );
-        }
         try {
-          await handleWebhookEvent(payload, signature);
-          return Response.json({ received: true }, { status: 200 });
+          const payload = await readPaymentWebhookPayload(request);
+          const signature = request.headers.get('creem-signature') ?? '';
+          if (!payload || !signature) {
+            console.warn('Creem webhook: missing payload or signature');
+            return Response.json(
+              { error: 'Missing payload or signature' },
+              { status: 400 }
+            );
+          }
+          const receipt = await handleWebhookEvent('creem', payload, signature);
+          return paymentWebhookHttpResponse(receipt);
         } catch (err) {
-          console.error('Creem webhook error:', err);
-          return Response.json(
-            {
-              error: 'Webhook processing failed',
-              received: false,
-            },
-            { status: 500 }
-          );
+          logPaymentWebhookError({
+            error: err,
+            provider: 'creem',
+            stage: 'route',
+          });
+          return paymentWebhookErrorResponse(err);
         }
       },
     },

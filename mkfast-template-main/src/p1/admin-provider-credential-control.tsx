@@ -202,9 +202,7 @@ export function AdminProviderCredentialControl() {
               </p>
               <div className="flex flex-wrap gap-1">
                 {credential?.effectiveSource ? (
-                  <Badge
-                    variant={envFallback ? 'destructive' : 'secondary'}
-                  >
+                  <Badge variant={envFallback ? 'destructive' : 'secondary'}>
                     {providerCredentialSource(credential.effectiveSource)}
                   </Badge>
                 ) : null}

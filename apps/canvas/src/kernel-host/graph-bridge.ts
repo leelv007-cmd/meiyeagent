@@ -1,4 +1,8 @@
-import type { CanvasEdge, CanvasGraph, CanvasNode } from "@meiye/core/pro-studio";
+import type {
+	CanvasEdge,
+	CanvasGraph,
+	CanvasNode,
+} from "@meiye/core/pro-studio";
 
 /** Vozeb-like session graph used by the kernel host surface (not domain fact). */
 export type KernelNode = {
@@ -29,12 +33,7 @@ const DEFAULT_W = 220;
 const DEFAULT_H = 140;
 
 /** Fields that must survive round-trips between Core and kernel graphs. */
-const PRESERVED_DATA_KEYS = [
-	"assetId",
-	"jobId",
-	"text",
-	"prompt",
-] as const;
+const PRESERVED_DATA_KEYS = ["assetId", "jobId", "text", "prompt"] as const;
 
 function asRecord(value: unknown): Record<string, unknown> {
 	if (value && typeof value === "object" && !Array.isArray(value)) {

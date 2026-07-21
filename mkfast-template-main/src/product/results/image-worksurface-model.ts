@@ -209,7 +209,7 @@ function buildRoleContext(
   facts: ImageWorksurfaceFacts,
   mode: 'single' | 'set',
   selection: WorkingSelectionState,
-  focusedAssetId: string | undefined,
+  focusedAssetId: string | undefined
 ): ImageRoleContext {
   const focusedInWorkingSelection = focusedAssetId
     ? selection.orderedAssetIds.includes(focusedAssetId)
@@ -224,12 +224,10 @@ function buildRoleContext(
       : undefined;
 
   const allGenerationOk = facts.candidates.every(
-    (c) => c.generationOk !== false && c.persisted && c.rightsOk,
+    (c) => c.generationOk !== false && c.persisted && c.rightsOk
   );
   const fullCandidateSetReady =
-    mode === 'set' &&
-    facts.candidates.length >= 2 &&
-    allGenerationOk;
+    mode === 'set' && facts.candidates.length >= 2 && allGenerationOk;
 
   return {
     outputType: facts.outputType,
@@ -252,7 +250,7 @@ function buildRoleContext(
 
 export function projectImageWorksurface(
   facts: ImageWorksurfaceFacts,
-  options?: { lastFeedback?: string | null },
+  options?: { lastFeedback?: string | null }
 ): ImageWorksurfaceView {
   const mode = defaultImageSetMode({
     outputType: facts.outputType,
@@ -275,12 +273,7 @@ export function projectImageWorksurface(
     selection.focusAssetId ??
     facts.candidates[0]?.assetId;
 
-  const roleCtx = buildRoleContext(
-    facts,
-    mode,
-    selection,
-    focusedAssetId,
-  );
+  const roleCtx = buildRoleContext(facts, mode, selection, focusedAssetId);
   const primaryAction = projectImageRolePrimaryAction(roleCtx);
 
   const libraryActions = projectImageLibraryActions({
@@ -293,7 +286,7 @@ export function projectImageWorksurface(
     (candidate, index) => {
       const order = candidate.recipeOrder ?? index + 1;
       const inWorkingSelection = selection.orderedAssetIds.includes(
-        candidate.assetId,
+        candidate.assetId
       );
       const isWorkingCover = selection.coverAssetId === candidate.assetId;
       const isAdopted =
@@ -316,15 +309,13 @@ export function projectImageWorksurface(
           pendingActionLabel: pendingLabel,
           isWorkingCover,
         }),
-        ...(candidate.previewUrl
-          ? { previewUrl: candidate.previewUrl }
-          : {}),
+        ...(candidate.previewUrl ? { previewUrl: candidate.previewUrl } : {}),
         inWorkingSelection,
         isWorkingCover,
         isFocused: focusedAssetId === candidate.assetId,
         isAdopted,
       };
-    },
+    }
   );
 
   let wholeSetAdopt: WholeSetAdoptValidation | null = null;
@@ -335,7 +326,7 @@ export function projectImageWorksurface(
         persisted: c.persisted,
         rightsOk: c.rightsOk,
         generationOk: c.generationOk,
-      }),
+      })
     );
     wholeSetAdopt = validateWholeSetAdopt({
       selection,

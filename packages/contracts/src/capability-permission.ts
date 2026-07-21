@@ -411,6 +411,7 @@ export function requiredP1Capability(
     }
     if (
       action === 'config_apply' ||
+      action === 'config_get' ||
       action === 'config_rollback' ||
       action === 'config_list' ||
       action === 'config_history'

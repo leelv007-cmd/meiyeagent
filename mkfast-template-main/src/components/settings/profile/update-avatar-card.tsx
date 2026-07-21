@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 import { IconUser } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { DEFAULT_MAX_FILE_SIZE } from '@/storage/constants';
+import { AVATAR_MAX_FILE_SIZE } from '@/storage/upload-policy';
 interface UpdateAvatarCardProps {
   className?: string;
 }
@@ -51,8 +51,7 @@ export function UpdateAvatarCard({ className }: UpdateAvatarCardProps) {
     e.target.value = '';
   };
   const handleFileUpload = (file: File) => {
-    const maxSize = websiteConfig.storage?.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
-    if (file.size > maxSize) {
+    if (file.size > AVATAR_MAX_FILE_SIZE) {
       setError(settings_profile_avatar_too_large());
       toast.error(settings_profile_avatar_too_large());
       return;

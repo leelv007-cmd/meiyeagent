@@ -6,11 +6,7 @@
  * via typed ResultCenterNavigation (never the legacy query-string work bridge).
  */
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -44,6 +40,7 @@ import type {
   BriefBoundRevisions,
   BriefSourceSignal,
   BriefTriggerInput,
+  BriefTriggerProjection,
   CreationLensId,
   ProductQuoteSnapshot,
 } from '@meiye/contracts';
@@ -189,8 +186,7 @@ export function ComposerHome({
   const [uploadsReady, setUploadsReady] = useState(true);
 
   const width =
-    viewportWidth ??
-    (typeof window !== 'undefined' ? window.innerWidth : 1280);
+    viewportWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
   const singleColumn = !isTwoColumnMobileViewport({ width });
   const viewportKind = isMobile || singleColumn ? 'mobile' : 'desktop';
 
@@ -199,11 +195,9 @@ export function ComposerHome({
   const quoteView = lensState.draft.quoteView;
 
   const surfaceQuery = useQuery({
-    queryKey: p1QueryKeys.request(
-      'creation-experience',
-      'surface_browser',
-      { surfaceId: 'surface.home.launch' }
-    ),
+    queryKey: p1QueryKeys.request('creation-experience', 'surface_browser', {
+      surfaceId: 'surface.home.launch',
+    }),
     queryFn: ({ signal }) => fetchComposerSurface(signal),
   });
   const usageQuery = useQuery({
@@ -270,11 +264,7 @@ export function ComposerHome({
   ]);
   const quoteQuery = useQuery({
     enabled: quoteInput != null,
-    queryKey: p1QueryKeys.request(
-      'product-billing',
-      'quote',
-      quoteInput ?? {}
-    ),
+    queryKey: p1QueryKeys.request('product-billing', 'quote', quoteInput ?? {}),
     queryFn: () => {
       if (!quoteInput) throw new Error('Composer quote input is required.');
       return requestComposerQuote(quoteInput);
@@ -323,13 +313,14 @@ export function ComposerHome({
       return;
     }
     catalogSelectionAppliedRef.current = true;
-    setLensState((current) =>
-      applyCatalogRecipeSelection({
-        state: current,
-        surface: surfaceQuery.data!,
-        recipeRevisionId: initialRecipeRevisionId,
-        surfaceRevisionId: initialSurfaceRevisionId,
-      }).state
+    setLensState(
+      (current) =>
+        applyCatalogRecipeSelection({
+          state: current,
+          surface: surfaceQuery.data!,
+          recipeRevisionId: initialRecipeRevisionId,
+          surfaceRevisionId: initialSurfaceRevisionId,
+        }).state
     );
   }, [initialRecipeRevisionId, initialSurfaceRevisionId, surfaceQuery.data]);
 
@@ -512,7 +503,11 @@ export function ComposerHome({
           contentModules: ['social_cover'],
           sessionId: `composer:${sessionIdRef.current}`,
           sourceReferences: lensState.draft.sources.flatMap((source) => {
-            if (!source || typeof source !== 'object' || Array.isArray(source)) {
+            if (
+              !source ||
+              typeof source !== 'object' ||
+              Array.isArray(source)
+            ) {
               return [];
             }
             const value = source as Record<string, unknown>;
@@ -547,8 +542,7 @@ export function ComposerHome({
       const contract = {
         operation: COMPOSER_OPERATION_BY_LENS[input.lensId],
         catalogModelId: input.quote.catalogModelId,
-        catalogRevision:
-          input.quote.catalogModelRevision ?? catalogRevision,
+        catalogRevision: input.quote.catalogModelRevision ?? catalogRevision,
         quoteRevision: input.quote.revision,
         quoteAcceptedAt,
         outputLabel:
@@ -571,8 +565,7 @@ export function ComposerHome({
           : {}),
         ...(input.lensId === 'video'
           ? {
-              durationSeconds:
-                lensState.draft.settings.durationSeconds ?? 15,
+              durationSeconds: lensState.draft.settings.durationSeconds ?? 15,
             }
           : {}),
         dataClass: [],
@@ -694,7 +687,9 @@ export function ComposerHome({
       setShowRequiredHint(true);
       if (gate.focusTarget === 'lens_group') {
         document
-          .querySelector<HTMLElement>('[data-testid="composer-lens-radiogroup"]')
+          .querySelector<HTMLElement>(
+            '[data-testid="composer-lens-radiogroup"]'
+          )
           ?.focus();
       }
       return;
@@ -711,7 +706,7 @@ export function ComposerHome({
     }
 
     setBriefPending(true);
-    let projection;
+    let projection: BriefTriggerProjection | undefined;
     try {
       const briefContextId = `composer:${sessionIdRef.current}`;
       const recipeRevisionId = lensState.draft.recipeRevisionId;
@@ -739,28 +734,28 @@ export function ComposerHome({
       });
       briefContextRevisionRef.current = briefContext.revision;
       const briefInput = buildLiveBriefInput({
-          briefContextId,
-          lensId: lensState.lensId,
-          quote: quoteQuery.data,
-          currentRevisions: briefContext.currentRevisions,
-          delivery: lensState.draft.delivery,
-          imageCount:
-            lensState.lensId === 'image_text'
-              ? (lensState.draft.settings.quantity ?? 1)
-              : 0,
-          sources: briefSourcesFromDraft(lensState.draft.sources),
-          highRiskFacts:
-            /价格|价目|团购|优惠|\d+\s*元/u.test(lensState.draft.userText) &&
-            !lensState.draft.sources.some(
-              (source) =>
-                source &&
-                typeof source === 'object' &&
-                !Array.isArray(source) &&
-                (source as Record<string, unknown>).category === 'price_list'
-            )
-              ? [{ kind: 'price', status: 'missing' }]
-              : [],
-        });
+        briefContextId,
+        lensId: lensState.lensId,
+        quote: quoteQuery.data,
+        currentRevisions: briefContext.currentRevisions,
+        delivery: lensState.draft.delivery,
+        imageCount:
+          lensState.lensId === 'image_text'
+            ? (lensState.draft.settings.quantity ?? 1)
+            : 0,
+        sources: briefSourcesFromDraft(lensState.draft.sources),
+        highRiskFacts:
+          /价格|价目|团购|优惠|\d+\s*元/u.test(lensState.draft.userText) &&
+          !lensState.draft.sources.some(
+            (source) =>
+              source &&
+              typeof source === 'object' &&
+              !Array.isArray(source) &&
+              (source as Record<string, unknown>).category === 'price_list'
+          )
+            ? [{ kind: 'price', status: 'missing' }]
+            : [],
+      });
       briefInputRef.current = briefInput;
       projection = await requestComposerBrief(briefInput);
     } catch {
@@ -887,8 +882,7 @@ export function ComposerHome({
             userText: lensState.draft.userText,
             sources: [...lensState.draft.sources],
             lensId: lensState.lensId,
-            draftRevisionId:
-              refreshedProjection.bindRevisions.draftRevisionId,
+            draftRevisionId: refreshedProjection.bindRevisions.draftRevisionId,
           },
         })
       );
@@ -944,10 +938,7 @@ export function ComposerHome({
             disabled={createWork.isPending || lensState.phase === 'frozen'}
           />
 
-          <LensSwitchPreviewPanel
-            state={lensState}
-            onChange={setLensState}
-          />
+          <LensSwitchPreviewPanel state={lensState} onChange={setLensState} />
 
           <Textarea
             aria-label={creation_entry_intent_aria()}
@@ -998,11 +989,11 @@ export function ComposerHome({
               {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}
             </p>
           ) : lensId ? (
-            <p className="text-sm text-muted-foreground" role="status">
+            <output className="text-sm text-muted-foreground">
               {catalogQuery.isError || quoteQuery.isError
                 ? '当前模型或报价暂不可用'
                 : '正在读取模型与报价…'}
-            </p>
+            </output>
           ) : null}
 
           {settingsFields.length > 0 ? (
@@ -1193,11 +1184,7 @@ export function ComposerHome({
           blocked
           onRedeem={async ({ command, idempotencyKey }) => {
             try {
-              await commandP1(
-                'redemptions',
-                command,
-                idempotencyKey
-              );
+              await commandP1('redemptions', command, idempotencyKey);
               await queryClient.invalidateQueries({
                 queryKey: p1QueryKeys.request('entitlements', 'projection'),
               });
@@ -1232,15 +1219,14 @@ export function ComposerHome({
           useBottomSheet={viewportKind === 'mobile'}
         />
       ) : (
-        <p
+        <output
           className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
           data-testid="composer-surface-status"
-          role="status"
         >
           {surfaceQuery.isError
             ? '创作模板暂时不可用，请稍后重试'
             : '正在读取创作模板…'}
-        </p>
+        </output>
       )}
 
       <ComposerToolsStrip
@@ -1260,9 +1246,7 @@ export function ComposerHome({
         <BriefSurface
           view={briefView}
           onConfirm={handleBriefConfirm}
-          onCancel={() =>
-            setBriefState(cancelBriefSurface(briefState).state)
-          }
+          onCancel={() => setBriefState(cancelBriefSurface(briefState).state)}
           disabled={createWork.isPending}
         />
       ) : null}

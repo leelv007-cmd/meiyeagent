@@ -3,15 +3,23 @@ import { getRequestHeaders } from '@tanstack/react-start/server';
 import { and, eq } from 'drizzle-orm';
 import { createAuth } from '@/auth/auth';
 import { getDb } from '@/db';
-import { userFiles, workspaceMemberships } from '@/db/app.schema';
+import {
+  legacyAvatarAccessClaims,
+  userFiles,
+  workspaceMemberships,
+} from '@/db/app.schema';
+import { user } from '@/db/auth.schema';
 import { getFile } from '@/storage';
-import { isPublicFolder } from '@/storage/utils';
+import {
+  hasActiveLegacyAvatarClaim,
+  isStrictLegacyAvatarKey,
+} from '@/storage/legacy-avatar';
 import { ConfigurationError } from '@/storage/types';
 import { serverEnv } from '@/env/server';
 
 /**
  * Serves a file by key via the storage provider (same-origin proxy URL).
- * Shared asset folders stay public; private user files require workspace membership.
+ * Only DB-authorized avatars are public; every other file requires authorization.
  */
 export const Route = createFileRoute('/api/storage/file')({
   server: {
@@ -40,21 +48,53 @@ async function serveFile(request: Request, headOnly: boolean) {
       ? null
       : await createAuth().api.getSession({ headers });
     const userId = session?.user?.id;
-    const isPublicKey = isPublicFolder(key);
-
     const db = getDb();
+    const legacyKey = isStrictLegacyAvatarKey(key);
+    const [legacyClaim] = legacyKey
+      ? await db
+          .select({
+            imageUrl: legacyAvatarAccessClaims.imageUrl,
+            objectKey: legacyAvatarAccessClaims.objectKey,
+            userImage: user.image,
+          })
+          .from(legacyAvatarAccessClaims)
+          .innerJoin(user, eq(legacyAvatarAccessClaims.userId, user.id))
+          .where(eq(legacyAvatarAccessClaims.objectKey, key))
+          .limit(1)
+      : [];
     const [fileRecord] = await db
       .select({
         contentType: userFiles.contentType,
+        deletedAt: userFiles.deletedAt,
         workspaceId: userFiles.workspaceId,
         isPublic: userFiles.isPublic,
+        purpose: userFiles.purpose,
         size: userFiles.size,
       })
       .from(userFiles)
       .where(eq(userFiles.r2Key, key))
       .limit(1);
 
-    if (!fileRecord && !isPublicKey) {
+    if (fileRecord?.deletedAt) {
+      return new Response('Not Found', { status: 404 });
+    }
+    if (!fileRecord && !legacyClaim) {
+      return new Response('Not Found', { status: 404 });
+    }
+
+    const legacyFile = legacyClaim ? await getFile(key) : null;
+    const legacyClaimIsActive =
+      legacyClaim && legacyFile
+        ? hasActiveLegacyAvatarClaim(legacyClaim, legacyFile.contentType)
+        : false;
+    const isMetadataAvatar =
+      fileRecord?.purpose === 'avatar' && fileRecord.isPublic === true;
+    const isPublicFile = Boolean(
+      (isMetadataAvatar && (!legacyKey || legacyClaimIsActive)) ||
+        (!fileRecord && legacyClaimIsActive)
+    );
+
+    if (!fileRecord && !isPublicFile) {
       return new Response('Not Found', { status: 404 });
     }
 
@@ -65,7 +105,7 @@ async function serveFile(request: Request, headOnly: boolean) {
       return new Response('Forbidden', { status: 403 });
     }
 
-    if (fileRecord && !fileRecord.isPublic && !serviceAuthorized) {
+    if (!isPublicFile && !serviceAuthorized) {
       if (!userId) {
         return new Response('Forbidden', { status: 403 });
       }
@@ -84,7 +124,7 @@ async function serveFile(request: Request, headOnly: boolean) {
       }
     }
 
-    const file = await getFile(key);
+    const file = legacyFile ?? (await getFile(key));
     if (!file) {
       return new Response('Not Found', { status: 404 });
     }
@@ -101,7 +141,6 @@ async function serveFile(request: Request, headOnly: boolean) {
       'application/pdf',
       'video/mp4',
     ];
-    const isPublicFile = fileRecord?.isPublic === true || isPublicKey;
     const responseHeaders: Record<string, string> = {
       'Content-Type': file.contentType,
       'Cache-Control': isPublicFile

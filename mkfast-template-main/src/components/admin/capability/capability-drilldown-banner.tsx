@@ -44,11 +44,17 @@ export function CapabilityDrilldownBanner({
           </Badge>
         ) : null}
       </div>
-      <p className="mt-2 text-muted-foreground" data-testid="drilldown-function">
+      <p
+        className="mt-2 text-muted-foreground"
+        data-testid="drilldown-function"
+      >
         <span className="font-medium text-foreground">功能：</span>
         {page.functionSummary}
       </p>
-      <p className="mt-1 text-muted-foreground" data-testid="drilldown-user-impact">
+      <p
+        className="mt-1 text-muted-foreground"
+        data-testid="drilldown-user-impact"
+      >
         <span className="font-medium text-foreground">用户影响：</span>
         {page.userImpact}
       </p>

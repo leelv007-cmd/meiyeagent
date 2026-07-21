@@ -21,9 +21,7 @@ const itemClassName =
 const activeClassName = 'font-medium text-foreground';
 
 function isDashboardPath(pathname: string) {
-  return (
-    pathname === Routes.Dashboard || pathname === `${Routes.Dashboard}/`
-  );
+  return pathname === Routes.Dashboard || pathname === `${Routes.Dashboard}/`;
 }
 
 export function ProductMobileNav() {
@@ -36,7 +34,8 @@ export function ProductMobileNav() {
 
   const onDashboard = isDashboardPath(pathname);
   const stage = search.stage;
-  const createActive = onDashboard && stage !== 'progress' && stage !== 'handoff';
+  const createActive =
+    onDashboard && stage !== 'progress' && stage !== 'handoff';
   const progressActive = onDashboard && stage === 'progress';
 
   return (

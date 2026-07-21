@@ -82,6 +82,7 @@ import { Route as DashboardContentContentIdRouteImport } from './routes/dashboar
 import { Route as DashboardAssetsAssetIdRouteImport } from './routes/dashboard/assets_/$assetId'
 import { Route as ApiWebhooksStripeRouteImport } from './routes/api/webhooks/stripe'
 import { Route as ApiWebhooksCreemRouteImport } from './routes/api/webhooks/creem'
+import { Route as ApiStorageUploadRouteImport } from './routes/api/storage/upload'
 import { Route as ApiStorageFileRouteImport } from './routes/api/storage/file'
 import { Route as ApiProStudioLaunchRouteImport } from './routes/api/pro-studio/launch'
 import { Route as ApiProStudioEntryRouteImport } from './routes/api/pro-studio/entry'
@@ -476,6 +477,11 @@ const ApiWebhooksCreemRoute = ApiWebhooksCreemRouteImport.update({
   path: '/api/webhooks/creem',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStorageUploadRoute = ApiStorageUploadRouteImport.update({
+  id: '/api/storage/upload',
+  path: '/api/storage/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiStorageFileRoute = ApiStorageFileRouteImport.update({
   id: '/api/storage/file',
   path: '/api/storage/file',
@@ -679,6 +685,7 @@ export interface FileRoutesByFullPath {
   '/api/pro-studio/entry': typeof ApiProStudioEntryRoute
   '/api/pro-studio/launch': typeof ApiProStudioLaunchRoute
   '/api/storage/file': typeof ApiStorageFileRoute
+  '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
   '/api/webhooks/stripe': typeof ApiWebhooksStripeRoute
   '/dashboard/assets/$assetId': typeof DashboardAssetsAssetIdRoute
@@ -776,6 +783,7 @@ export interface FileRoutesByTo {
   '/api/pro-studio/entry': typeof ApiProStudioEntryRoute
   '/api/pro-studio/launch': typeof ApiProStudioLaunchRoute
   '/api/storage/file': typeof ApiStorageFileRoute
+  '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
   '/api/webhooks/stripe': typeof ApiWebhooksStripeRoute
   '/dashboard/assets/$assetId': typeof DashboardAssetsAssetIdRoute
@@ -877,6 +885,7 @@ export interface FileRoutesById {
   '/api/pro-studio/entry': typeof ApiProStudioEntryRoute
   '/api/pro-studio/launch': typeof ApiProStudioLaunchRoute
   '/api/storage/file': typeof ApiStorageFileRoute
+  '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
   '/api/webhooks/stripe': typeof ApiWebhooksStripeRoute
   '/dashboard/assets_/$assetId': typeof DashboardAssetsAssetIdRoute
@@ -979,6 +988,7 @@ export interface FileRouteTypes {
     | '/api/pro-studio/entry'
     | '/api/pro-studio/launch'
     | '/api/storage/file'
+    | '/api/storage/upload'
     | '/api/webhooks/creem'
     | '/api/webhooks/stripe'
     | '/dashboard/assets/$assetId'
@@ -1076,6 +1086,7 @@ export interface FileRouteTypes {
     | '/api/pro-studio/entry'
     | '/api/pro-studio/launch'
     | '/api/storage/file'
+    | '/api/storage/upload'
     | '/api/webhooks/creem'
     | '/api/webhooks/stripe'
     | '/dashboard/assets/$assetId'
@@ -1176,6 +1187,7 @@ export interface FileRouteTypes {
     | '/api/pro-studio/entry'
     | '/api/pro-studio/launch'
     | '/api/storage/file'
+    | '/api/storage/upload'
     | '/api/webhooks/creem'
     | '/api/webhooks/stripe'
     | '/dashboard/assets_/$assetId'
@@ -1235,6 +1247,7 @@ export interface RootRouteChildren {
   ApiProStudioEntryRoute: typeof ApiProStudioEntryRoute
   ApiProStudioLaunchRoute: typeof ApiProStudioLaunchRoute
   ApiStorageFileRoute: typeof ApiStorageFileRoute
+  ApiStorageUploadRoute: typeof ApiStorageUploadRoute
   ApiWebhooksCreemRoute: typeof ApiWebhooksCreemRoute
   ApiWebhooksStripeRoute: typeof ApiWebhooksStripeRoute
   ApiCoreP1AssetsRoute: typeof ApiCoreP1AssetsRoute
@@ -1763,6 +1776,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksCreemRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/storage/upload': {
+      id: '/api/storage/upload'
+      path: '/api/storage/upload'
+      fullPath: '/api/storage/upload'
+      preLoaderRoute: typeof ApiStorageUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/storage/file': {
       id: '/api/storage/file'
       path: '/api/storage/file'
@@ -2153,6 +2173,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiProStudioEntryRoute: ApiProStudioEntryRoute,
   ApiProStudioLaunchRoute: ApiProStudioLaunchRoute,
   ApiStorageFileRoute: ApiStorageFileRoute,
+  ApiStorageUploadRoute: ApiStorageUploadRoute,
   ApiWebhooksCreemRoute: ApiWebhooksCreemRoute,
   ApiWebhooksStripeRoute: ApiWebhooksStripeRoute,
   ApiCoreP1AssetsRoute: ApiCoreP1AssetsRoute,

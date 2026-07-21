@@ -67,10 +67,10 @@ test("mapJobToNodeData projects asset, text, and pending jobs", () => {
 		}),
 		{ jobId: "job-2", status: "completed", text: "copy" },
 	);
-	assert.deepEqual(
-		mapJobToNodeData({ jobId: "job-3", status: "running" }),
-		{ jobId: "job-3", status: "running" },
-	);
+	assert.deepEqual(mapJobToNodeData({ jobId: "job-3", status: "running" }), {
+		jobId: "job-3",
+		status: "running",
+	});
 });
 
 test("isCatalogOperationActive requires active/modelId", () => {

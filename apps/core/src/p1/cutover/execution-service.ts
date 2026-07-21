@@ -111,6 +111,22 @@ interface StoredUsageLedgerSeed extends LegacyUsageLedgerSeed {
   workspaceId: string;
 }
 
+type StoredUsageLedgerRow = Omit<StoredUsageLedgerSeed, 'amount'> & {
+  amount: number | string;
+};
+
+function normalizeNumericAmount<T extends { amount: number | string }>(
+  row: T
+): Omit<T, 'amount'> & { amount: number } {
+  const amount = Number(row.amount);
+  if (!Number.isFinite(amount)) {
+    throw new Error(
+      `Invalid numeric amount returned by Postgres: ${row.amount}`
+    );
+  }
+  return { ...row, amount };
+}
+
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === 'object') {
@@ -1567,19 +1583,20 @@ export class P1CutoverExecutionService {
     const projection =
       rebuildProductStateFromRelationFacts(legacyBaseline, facts.rows) ??
       structuredClone(legacyBaseline);
-    const usage = await database.query<{
-      resource: UsageResource;
-      id: string;
-      workspaceId: string;
-      action: UsageEvent['action'];
-      amount: number;
-      reservationId: string | null;
-      reason: string;
-      actorId: string;
-      correlationId: string;
-      createdAt: string;
-    }>(
-      `SELECT resource,
+    const usageRows = (
+      await database.query<{
+        resource: UsageResource;
+        id: string;
+        workspaceId: string;
+        action: UsageEvent['action'];
+        amount: number | string;
+        reservationId: string | null;
+        reason: string;
+        actorId: string;
+        correlationId: string;
+        createdAt: string;
+      }>(
+        `SELECT resource,
               id,
               workspace_id AS "workspaceId",
               action,
@@ -1591,8 +1608,9 @@ export class P1CutoverExecutionService {
               created_at::text AS "createdAt"
          FROM p1_usage_events
         WHERE workspace_id = $1`,
-      [workspaceId]
-    );
+        [workspaceId]
+      )
+    ).rows.map(normalizeNumericAmount);
     const existingUsageIds = new Set(
       projection.usageEvents.map((event) => event.id)
     );
@@ -1612,7 +1630,7 @@ export class P1CutoverExecutionService {
       refund: 'refunded',
       reserve: 'reserved',
     };
-    for (const event of usage.rows) {
+    for (const event of usageRows) {
       if (event.resource === 'audio') continue;
       if (event.id.startsWith('legacy:usage:')) continue;
       const status = productStatus[event.action];
@@ -1636,7 +1654,7 @@ export class P1CutoverExecutionService {
       ['image', 'image'],
       ['video', 'video'],
     ] as const) {
-      const events = usage.rows
+      const events = usageRows
         .filter((event) => event.resource === resource)
         .map((event) => ({
           ...event,
@@ -1800,7 +1818,7 @@ export class P1CutoverExecutionService {
       state,
       manifest.generatedAt
     );
-    const actualLedger = await database.query<StoredUsageLedgerSeed>(
+    const actualLedger = await database.query<StoredUsageLedgerRow>(
       `SELECT workspace_id AS "workspaceId",
               id,
               resource,
@@ -1814,7 +1832,7 @@ export class P1CutoverExecutionService {
         ORDER BY created_at, id`,
       [workspaceId, expectedLedger.map((event) => event.id)]
     );
-    const fullLedger = await database.query<StoredUsageLedgerSeed>(
+    const fullLedger = await database.query<StoredUsageLedgerRow>(
       `SELECT workspace_id AS "workspaceId",
               id,
               resource,
@@ -1830,8 +1848,8 @@ export class P1CutoverExecutionService {
     );
     const ledger = reconcileUsageLedger(
       expectedLedger,
-      actualLedger.rows,
-      fullLedger.rows,
+      actualLedger.rows.map(normalizeNumericAmount),
+      fullLedger.rows.map(normalizeNumericAmount),
       manifest.quotaSnapshot
     );
     report.differenceCount += ledger.differenceCount;
@@ -1863,7 +1881,7 @@ export class P1CutoverExecutionService {
     for (const resource of ['copy', 'image', 'video'] as const) {
       const target = manifest.quotaSnapshot[resource];
       if (!target) continue;
-      const rows = await client.query<StoredUsageLedgerSeed>(
+      const rows = await client.query<StoredUsageLedgerRow>(
         `SELECT workspace_id AS "workspaceId",
                 id,
                 resource,
@@ -1877,7 +1895,10 @@ export class P1CutoverExecutionService {
           ORDER BY created_at, id`,
         [context.workspaceId, resource]
       );
-      const current = usageProjection(rows.rows, resource);
+      const current = usageProjection(
+        rows.rows.map(normalizeNumericAmount),
+        resource
+      );
       const amount = target.remaining - current.available;
       if (amount === 0) continue;
       if (priorRollback.rowCount !== 1) {

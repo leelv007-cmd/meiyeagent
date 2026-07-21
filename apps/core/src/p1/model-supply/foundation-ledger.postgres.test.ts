@@ -342,7 +342,7 @@ test(
     assert.deepEqual(
       (
         await pool.query<{ action: string; amount: number }>(
-          `SELECT action, amount FROM p1_usage_events
+          `SELECT action, amount::double precision AS amount FROM p1_usage_events
             WHERE workspace_id = $1 AND reservation_id = $2
             ORDER BY CASE action WHEN 'reserve' THEN 0 ELSE 1 END`,
           [workspaceId, zeroUsage.usage.id],
@@ -362,7 +362,7 @@ test(
               AND conname = 'p1_usage_events_amount_v2_check'`,
         )
       ).rows[0]?.definition ?? '',
-      /amount >= 0/i,
+      /amount >= \(?0\)?/i,
     );
     assert.deepEqual(
       (
@@ -523,7 +523,7 @@ test(
     assert.deepEqual(
       (
         await pool.query<{ amount: number }>(
-          `SELECT amount FROM p1_usage_events
+          `SELECT amount::double precision AS amount FROM p1_usage_events
             WHERE workspace_id = $1 AND reservation_id = $2
               AND action = 'reserve'`,
           [redemptionWorkspaceId, redeemed.usage.id],

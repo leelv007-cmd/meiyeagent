@@ -2,7 +2,17 @@ import { getDb } from '@/db';
 import { payment } from '@/db/app.schema';
 import { user } from '@/db/auth.schema';
 import { sendPaymentNotification } from '@/notification';
-import { findPlanByPriceId } from '@/lib/price-plan';
+import {
+  findPlanByPlanId,
+  findPlanByPriceId,
+  findPriceInPlan,
+} from '@/lib/price-plan';
+import { requireSellableCheckoutPrice } from '@/payment/checkout-policy';
+import {
+  PostgresPaymentRecordEffectStore,
+  persistPaymentRecordEffect,
+} from '@/payment/payment-record-effect';
+import { logPaymentWebhookError } from '@/payment/webhook-logging';
 import { Creem } from 'creem';
 import type {
   CheckoutEntity,
@@ -23,6 +33,7 @@ import type {
   PaymentStatus,
   PlanInterval,
   PortalResult,
+  Price,
   ServerCatalogOffer,
 } from '../types';
 import { PaymentScenes, PaymentTypes, PlanIntervals } from '../types';
@@ -169,17 +180,29 @@ export class CreemProvider implements PaymentProvider {
     } = params;
 
     try {
-      if (
-        serverCatalogOffer &&
-        (serverCatalogOffer.kind !== 'pro_studio_add_on' ||
+      let canonicalPrice: Price;
+      if (serverCatalogOffer) {
+        if (
+          serverCatalogOffer.kind !== 'pro_studio_add_on' ||
           serverCatalogOffer.offerId !== planId ||
           serverCatalogOffer.price.priceId !== priceId ||
-          findPlanByPriceId(priceId))
-      ) {
-        throw new Error('Invalid server-owned add-on offer');
+          findPlanByPriceId(priceId)
+        ) {
+          throw new Error('Invalid server-owned add-on offer');
+        }
+        const product = await this.client.products.get(priceId);
+        assertCreemServerCatalogOffer(serverCatalogOffer, product);
+        canonicalPrice = serverCatalogOffer.price;
+      } else {
+        canonicalPrice = requireSellableCheckoutPrice(
+          { planId, priceId },
+          { findPlanByPlanId, findPriceInPlan }
+        ).price;
+        const product = await this.client.products.get(canonicalPrice.priceId);
+        assertCreemCheckoutProduct(canonicalPrice, product);
       }
       const checkout: CheckoutEntity = await this.client.checkouts.create({
-        productId: priceId,
+        productId: canonicalPrice.priceId,
         successUrl: successUrl ?? '',
         requestId: crypto.randomUUID(),
         metadata: metadata ?? {},
@@ -313,7 +336,11 @@ export class CreemProvider implements PaymentProvider {
       }
       return normalizeCreemVerifiedPaymentEvent(raw);
     } catch (error) {
-      console.error('Creem webhook handling error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'creem',
+        stage: 'provider_effect',
+      });
       throw new Error('Failed to handle Creem webhook event');
     }
   }
@@ -781,12 +808,9 @@ export class CreemProvider implements PaymentProvider {
     console.log('>> Create Creem one-time payment record');
 
     const { object } = event;
-    const currentDate = new Date();
 
-    try {
-      const db = getDb();
-      await db.insert(payment).values({
-        id: crypto.randomUUID(),
+    const receipt = await persistPaymentRecordEffect(
+      {
         priceId: object.product.id,
         userId: userId,
         customerId: object.customer?.id ?? '',
@@ -803,33 +827,27 @@ export class CreemProvider implements PaymentProvider {
         cancelAtPeriodEnd: null,
         trialStart: null,
         trialEnd: null,
-        createdAt: currentDate,
-        updatedAt: currentDate,
-      });
-
-      // Send notification for lifetime purchase
-      const amount = object.product.price ? object.product.price / 100 : 0;
-      await sendPaymentNotification({
-        sessionId: object.id,
-        customerId: object.customer?.id ?? '',
-        userName:
-          (object.metadata?.userName as string) ??
-          object.customer?.name ??
-          'Customer',
-        amount,
-      });
-
-      console.log('<< Created Creem one-time payment record success');
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes('unique constraint')
-      ) {
-        console.log('<< One-time payment record already exists, skipping');
-        return;
-      }
-      throw error;
+      },
+      new PostgresPaymentRecordEffectStore(getDb())
+    );
+    if (receipt === 'already_applied') {
+      console.log('<< One-time payment record already exists, skipping');
+      return;
     }
+
+    // Send notification only for the first durable business effect.
+    const amount = object.product.price ? object.product.price / 100 : 0;
+    await sendPaymentNotification({
+      sessionId: object.id,
+      customerId: object.customer?.id ?? '',
+      userName:
+        (object.metadata?.userName as string) ??
+        object.customer?.name ??
+        'Customer',
+      amount,
+    });
+
+    console.log('<< Created Creem one-time payment record success');
   }
 
   /**
@@ -843,7 +861,6 @@ export class CreemProvider implements PaymentProvider {
     console.log('>> Create Creem subscription payment record (checkout)');
 
     const { object } = event;
-    const currentDate = new Date();
     const sub = object.subscription;
     const subscriptionId = sub?.id ?? null;
     const periodStart = sub?.currentPeriodStartDate ?? null;
@@ -853,10 +870,8 @@ export class CreemProvider implements PaymentProvider {
     );
     const isTrialing = statusOverride === 'trialing';
 
-    try {
-      const db = getDb();
-      await db.insert(payment).values({
-        id: crypto.randomUUID(),
+    const receipt = await persistPaymentRecordEffect(
+      {
         priceId: object.product.id,
         userId: userId,
         customerId: object.customer?.id ?? '',
@@ -874,21 +889,14 @@ export class CreemProvider implements PaymentProvider {
         // Creem has no separate trial fields; during trialing the period dates ARE the trial dates
         trialStart: isTrialing ? (periodStart ?? null) : null,
         trialEnd: isTrialing ? (periodEnd ?? null) : null,
-        createdAt: currentDate,
-        updatedAt: currentDate,
-      });
-
+      },
+      new PostgresPaymentRecordEffectStore(getDb())
+    );
+    if (receipt === 'applied') {
       console.log('<< Created Creem subscription payment record success');
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes('unique constraint')
-      ) {
-        console.log('<< Subscription payment record already exists, skipping');
-        return;
-      }
-      throw error;
+      return;
     }
+    console.log('<< Subscription payment record already exists, skipping');
   }
 
   // ─── Helpers ──────────────────────────────────────────────
@@ -938,7 +946,32 @@ export class CreemProvider implements PaymentProvider {
         .where(eq(user.id, userId));
       console.log('Updated user with Creem customer ID');
     } catch (error) {
-      console.error('Update user with Creem customer ID error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'creem',
+        stage: 'provider_effect',
+      });
     }
+  }
+}
+
+function assertCreemCheckoutProduct(price: Price, product: ProductEntity) {
+  const expectedBillingType =
+    price.type === PaymentTypes.SUBSCRIPTION ? 'recurring' : 'onetime';
+  const expectedBillingPeriod =
+    price.type === PaymentTypes.ONE_TIME
+      ? 'once'
+      : price.interval === PlanIntervals.YEAR
+        ? 'every-year'
+        : 'every-month';
+  if (
+    product.status !== 'active' ||
+    product.id !== price.priceId ||
+    product.price !== price.amount ||
+    product.currency.toUpperCase() !== price.currency.toUpperCase() ||
+    product.billingType !== expectedBillingType ||
+    product.billingPeriod !== expectedBillingPeriod
+  ) {
+    throw new Error('Creem product does not match the canonical plan catalog.');
   }
 }

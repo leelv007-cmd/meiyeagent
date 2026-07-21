@@ -73,7 +73,10 @@ test('parseRelayTarget rejects empty and unknown shapes', () => {
 });
 
 test('desktopRelayLanding prefers content package over work', () => {
-  assert.equal(desktopRelayLanding({ workId: 'w1', packageId: 'p1' }), undefined);
+  assert.equal(
+    desktopRelayLanding({ workId: 'w1', packageId: 'p1' }),
+    undefined
+  );
   assert.deepEqual(desktopRelayLanding({ packageId: 'p1' }), {
     contentId: 'p1',
   });

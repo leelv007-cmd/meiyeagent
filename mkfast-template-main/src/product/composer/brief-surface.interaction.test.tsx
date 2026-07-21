@@ -97,7 +97,9 @@ function BriefHarness({
             });
             if (result.ok) {
               setState(result.state);
-              setConfirmedRev(result.confirmation.boundRevisions.draftRevisionId);
+              setConfirmedRev(
+                result.confirmation.boundRevisions.draftRevisionId
+              );
             }
           }}
         />
@@ -116,10 +118,9 @@ describe('Brief surface UI — seven triggers show / cancel restore', () => {
 
       const surface = screen.getByTestId('composer-brief-surface');
       expect(surface).toBeInTheDocument();
-      expect(screen.getByTestId(`composer-brief-trigger-${code}`)).toHaveAttribute(
-        'data-trigger-code',
-        code
-      );
+      expect(
+        screen.getByTestId(`composer-brief-trigger-${code}`)
+      ).toHaveAttribute('data-trigger-code', code);
       expect(screen.getByTestId('composer-brief-summary')).toBeInTheDocument();
       expect(screen.getByTestId('brief-phase')).toHaveTextContent('open');
 
@@ -140,7 +141,9 @@ describe('Brief surface UI — seven triggers show / cancel restore', () => {
       expect(screen.getByTestId('restored-text')).toHaveTextContent(
         SNAPSHOT.userText
       );
-      expect(screen.queryByTestId('composer-brief-surface')).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId('composer-brief-surface')
+      ).not.toBeInTheDocument();
       expect(screen.getByTestId('composer-direct-submit')).toBeInTheDocument();
       // Composer field still present
       expect(screen.getByTestId('composer-user-text')).toHaveTextContent(
@@ -156,7 +159,9 @@ describe('Brief surface UI — seven triggers show / cancel restore', () => {
     expect(decision.path).toBe('direct_submit');
 
     render(<BriefHarness codes={[]} />);
-    expect(screen.queryByTestId('composer-brief-surface')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('composer-brief-surface')
+    ).not.toBeInTheDocument();
     expect(screen.getByTestId('composer-direct-submit')).toBeInTheDocument();
     expect(screen.getByTestId('brief-phase')).toHaveTextContent('idle');
   });

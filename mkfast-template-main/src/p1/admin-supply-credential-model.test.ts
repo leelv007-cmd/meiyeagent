@@ -71,11 +71,9 @@ test('env_fallback risk and migration entry always visible on panel', () => {
 });
 
 test('secret no-echo: raw keys and bearer tokens rejected', () => {
+  assert.throws(() => assertNoSecretEcho({ apiKey: 'fixture-secret' }));
   assert.throws(() =>
-    assertNoSecretEcho({ apiKey: 'fixture-secret' }),
-  );
-  assert.throws(() =>
-    assertNoSecretEcho({ authorization: 'Bearer abcdefghijklmnop' }),
+    assertNoSecretEcho({ authorization: 'Bearer abcdefghijklmnop' })
   );
 
   const snapshot = buildDefaultSupplyControlSnapshot();
@@ -87,12 +85,15 @@ test('secret no-echo: raw keys and bearer tokens rejected', () => {
 
 test('activation gate requires recent passed probe', () => {
   assert.equal(
-    isActivationGateSatisfied({
-      status: 'passed',
-      testedAt: '2026-07-20T11:00:00.000Z',
-      label: '探针通过',
-    }, { now: '2026-07-20T12:00:00.000Z' }),
-    true,
+    isActivationGateSatisfied(
+      {
+        status: 'passed',
+        testedAt: '2026-07-20T11:00:00.000Z',
+        label: '探针通过',
+      },
+      { now: '2026-07-20T12:00:00.000Z' }
+    ),
+    true
   );
   assert.equal(
     isActivationGateSatisfied({
@@ -100,15 +101,18 @@ test('activation gate requires recent passed probe', () => {
       testedAt: '2026-07-20T11:00:00.000Z',
       label: '鉴权失败',
     }),
-    false,
+    false
   );
   assert.equal(
-    isActivationGateSatisfied({
-      status: 'passed',
-      testedAt: '2026-06-01T00:00:00.000Z',
-      label: '探针通过',
-    }, { now: '2026-07-20T12:00:00.000Z' }),
-    false,
+    isActivationGateSatisfied(
+      {
+        status: 'passed',
+        testedAt: '2026-06-01T00:00:00.000Z',
+        label: '探针通过',
+      },
+      { now: '2026-07-20T12:00:00.000Z' }
+    ),
+    false
   );
 });
 

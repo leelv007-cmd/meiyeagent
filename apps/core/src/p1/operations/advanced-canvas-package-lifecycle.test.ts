@@ -25,6 +25,7 @@ function setup(options: { contentPackageExporter?: ContentPackageExportPort } = 
   const foundation = new MemoryFoundationRepository();
   const operations = new MemoryOperationsRepository();
   const context = {
+    actor: 'owner' as const,
     correlationId: 'corr-advanced-canvas-lifecycle',
     userId: 'owner-advanced-canvas',
     workspaceId: 'workspace-advanced-canvas',

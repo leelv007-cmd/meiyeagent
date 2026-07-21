@@ -101,7 +101,7 @@ function handedOverAtIso(receipt: AssistedReceipt): string | undefined {
  */
 export function projectPendingConfirm(
   receipt: AssistedReceipt,
-  nowIso: string,
+  nowIso: string
 ): PendingConfirmProjection | null {
   if (
     receipt.status !== 'handed_over' &&
@@ -120,7 +120,7 @@ export function projectPendingConfirm(
   if (nowMs - handedMs < PENDING_CONFIRM_AFTER_MS) return null;
 
   const pendingSince = new Date(
-    handedMs + PENDING_CONFIRM_AFTER_MS,
+    handedMs + PENDING_CONFIRM_AFTER_MS
   ).toISOString();
 
   return {
@@ -135,7 +135,7 @@ export function projectPendingConfirm(
 
 function primaryCtaFor(
   receipt: AssistedReceipt,
-  bindingComplete: boolean,
+  bindingComplete: boolean
 ): AssistedHandoffUiProjection['primaryCta'] {
   switch (receipt.status) {
     case 'materials_ready':
@@ -185,7 +185,7 @@ function publishResultLabel(receipt: AssistedReceipt): string | undefined {
  */
 export function projectAssistedHandoffUi(
   receipt: AssistedReceipt,
-  nowIso: string,
+  nowIso: string
 ): AssistedHandoffUiProjection {
   const published = isAssistedPublished(receipt);
   const handedOver = isAssistedHandedOver(receipt);
@@ -242,7 +242,7 @@ export function projectAssistedHandoffUi(
 
 /** Build a materials_ready receipt fixture for UI tests. */
 export function materialsReadyReceiptFixture(
-  overrides: Partial<AssistedReceipt> = {},
+  overrides: Partial<AssistedReceipt> = {}
 ): AssistedReceipt {
   return {
     id: 'assisted-receipt-1',
@@ -262,7 +262,7 @@ export function materialsReadyReceiptFixture(
 }
 
 export function handedOverReceiptFixture(
-  overrides: Partial<AssistedReceipt> = {},
+  overrides: Partial<AssistedReceipt> = {}
 ): AssistedReceipt {
   const binding: AssistedReceiptBinding = {
     accountId: 'acct-xhs-1',

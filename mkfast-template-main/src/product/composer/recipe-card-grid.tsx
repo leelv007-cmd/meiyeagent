@@ -90,9 +90,7 @@ export function RecipeCardButton({
         // min 48×48 touch target; no hover-only action discovery
         'flex min-h-12 w-full flex-col items-start gap-1 rounded-2xl border border-input bg-background p-3 text-left transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        card.available
-          ? 'hover:bg-accent/40'
-          : 'cursor-not-allowed opacity-60'
+        card.available ? 'hover:bg-accent/40' : 'cursor-not-allowed opacity-60'
       )}
       onClick={() => {
         if (card.available) onSelect();
@@ -110,10 +108,7 @@ export function RecipeCardButton({
         {card.title}
       </span>
       <span
-        className={cn(
-          'text-xs leading-5 text-muted-foreground',
-          textClass
-        )}
+        className={cn('text-xs leading-5 text-muted-foreground', textClass)}
       >
         {card.summary}
       </span>

@@ -98,3 +98,40 @@ test("an explicit Main authorization rejection invalidates the Canvas session", 
 		else process.env.CANVAS_SERVICE_TOKEN = originalServiceToken;
 	}
 });
+
+test("bounds Main session validation with an abort signal", async () => {
+	const originalServiceToken = process.env.CANVAS_SERVICE_TOKEN;
+	process.env.CANVAS_SERVICE_TOKEN = "service-token";
+	let observedSignal: AbortSignal | null = null;
+	try {
+		await assert.rejects(
+			validateMainSession(
+				{
+					audience: { kind: "workspace" },
+					mainSessionId: "main-session-1",
+					userId: "user-1",
+					workspaceId: "workspace-1",
+				},
+				{
+					fetcher: async (_input, init) => {
+						observedSignal = init?.signal ?? null;
+						return await new Promise<Response>((_resolve, reject) => {
+							observedSignal?.addEventListener(
+								"abort",
+								() => reject(observedSignal?.reason),
+								{ once: true },
+							);
+						});
+					},
+					timeoutMs: 10,
+				},
+			),
+			(error: unknown) => error instanceof MainSessionAvailabilityError,
+		);
+		assert.equal((observedSignal as AbortSignal | null)?.aborted, true);
+	} finally {
+		if (originalServiceToken === undefined)
+			delete process.env.CANVAS_SERVICE_TOKEN;
+		else process.env.CANVAS_SERVICE_TOKEN = originalServiceToken;
+	}
+});

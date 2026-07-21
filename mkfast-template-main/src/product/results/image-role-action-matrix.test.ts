@@ -59,7 +59,7 @@ test('set mode join → 加入套图 (local, not canonical)', () => {
       setMode: true,
       workingSelectionCount: 1,
       focusedInWorkingSelection: false,
-    }),
+    })
   );
   assert.equal(action?.kind, 'add_to_set');
   assert.equal(action?.label, '加入套图');
@@ -74,7 +74,7 @@ test('set mode with ≥2 selected → 采用这组', () => {
       workingSelectionCount: 3,
       focusedInWorkingSelection: true,
       slot: 'gallery',
-    }),
+    })
   );
   assert.equal(action?.kind, 'adopt_set');
   assert.equal(action?.label, '采用这组');
@@ -89,7 +89,7 @@ test('full candidate set ready with empty selection → 采用这组', () => {
       workingSelectionCount: 0,
       fullCandidateSetReady: true,
       fullCandidateSetCount: 4,
-    }),
+    })
   );
   assert.equal(action?.kind, 'adopt_set');
   assert.equal(action?.label, '采用这组');
@@ -101,7 +101,7 @@ test('adopted + different candidate → 替换当前图片', () => {
       lifecycle: 'adopted',
       hasContentPackage: true,
       focusedIsCurrentSlot: false,
-    }),
+    })
   );
   assert.equal(action?.kind, 'replace_item');
   assert.equal(action?.label, '替换当前图片');
@@ -110,7 +110,7 @@ test('adopted + different candidate → 替换当前图片', () => {
 test('delivered → no adopt primary', () => {
   assert.equal(
     projectImageRolePrimaryAction(ctx({ lifecycle: 'delivered' })),
-    null,
+    null
   );
 });
 
@@ -119,7 +119,11 @@ test('same situation never returns two adopt primaries (matrix is single)', () =
     ctx(),
     ctx({ slot: 'primary' }),
     ctx({ slot: 'cover' }),
-    ctx({ setMode: true, workingSelectionCount: 2, focusedInWorkingSelection: true }),
+    ctx({
+      setMode: true,
+      workingSelectionCount: 2,
+      focusedInWorkingSelection: true,
+    }),
     ctx({
       lifecycle: 'adopted',
       hasContentPackage: true,
@@ -141,12 +145,18 @@ test('feedback strings are exact D-087 copy', () => {
   assert.equal(imageRoleFeedback('adopt_one'), '已采用这张图片');
   assert.equal(imageRoleFeedback('set_primary'), '已设为主图');
   assert.equal(imageRoleFeedback('set_cover'), '已设为封面');
-  assert.equal(imageRoleFeedback('add_to_set', { position: 2 }), '已加入套图，第 2 张');
-  assert.equal(imageRoleFeedback('adopt_set', { count: 4 }), '已采用这组，共 4 张');
+  assert.equal(
+    imageRoleFeedback('add_to_set', { position: 2 }),
+    '已加入套图，第 2 张'
+  );
+  assert.equal(
+    imageRoleFeedback('adopt_set', { count: 4 }),
+    '已采用这组，共 4 张'
+  );
   assert.equal(imageRoleFeedback('replace_item'), '已替换，原版本仍可恢复');
   assert.equal(
     imageRoleFeedback('set_working_cover'),
-    '已设为本组封面，采用这组后生效',
+    '已设为本组封面，采用这组后生效'
   );
   assert.equal(IMAGE_ROLE_FEEDBACK.save_to_library, '已在素材库');
 });
@@ -163,7 +173,7 @@ test('a11y name includes order, role, and adopted state', () => {
       lifecycle: 'candidate',
       pendingActionLabel: '加入套图',
     }),
-    '第 2 张，套图，候选，加入套图',
+    '第 2 张，套图，候选，加入套图'
   );
   assert.equal(
     imageA11yName({
@@ -171,7 +181,7 @@ test('a11y name includes order, role, and adopted state', () => {
       slot: 'cover',
       lifecycle: 'adopted',
     }),
-    '第 1 张，封面，已采用',
+    '第 1 张，封面，已采用'
   );
   assert.equal(
     imageA11yName({
@@ -180,7 +190,7 @@ test('a11y name includes order, role, and adopted state', () => {
       lifecycle: 'candidate',
       isWorkingCover: true,
     }),
-    '第 1 张，本组封面，候选',
+    '第 1 张，本组封面，候选'
   );
 });
 
@@ -195,21 +205,21 @@ test('default set mode threshold is 2', () => {
       outputType: 'single_image',
       expectedOrAvailableCount: 1,
     }),
-    'single',
+    'single'
   );
   assert.equal(
     defaultImageSetMode({
       outputType: 'single_image',
       expectedOrAvailableCount: 2,
     }),
-    'set',
+    'set'
   );
   assert.equal(
     defaultImageSetMode({
       outputType: 'ordered_image_set',
       expectedOrAvailableCount: 1,
     }),
-    'set',
+    'set'
   );
   assert.equal(
     defaultImageSetMode({
@@ -217,7 +227,7 @@ test('default set mode threshold is 2', () => {
       expectedOrAvailableCount: 4,
       explicitMode: 'single',
     }),
-    'single',
+    'single'
   );
 });
 
@@ -232,7 +242,7 @@ test('library actions independent of adopt; gated on media version readiness', (
       selectedAssetIds: ['img-1', 'img-2'],
       mediaVersionReady: false,
     }),
-    [],
+    []
   );
   const ready = projectImageLibraryActions({
     focusedAssetId: 'img-1',
@@ -256,7 +266,7 @@ test('writable role actions map to B1 VisualAdoptionRoleAction', () => {
   });
   assert.deepEqual(
     toVisualAdoptionRoleAction('adopt_set', 'a1', ['a1', 'a2']),
-    { kind: 'adopt_set', assetIds: ['a1', 'a2'] },
+    { kind: 'adopt_set', assetIds: ['a1', 'a2'] }
   );
   assert.equal(toVisualAdoptionRoleAction('set_working_cover', 'a1'), null);
   assert.deepEqual(toVisualAdoptionRoleAction('add_to_set', 'a1'), {

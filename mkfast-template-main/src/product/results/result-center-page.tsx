@@ -527,10 +527,10 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             onVideoProStudio={props.onVideoProStudio}
             onCopyAdopt={props.onCopyAdopt}
             onCopyHandEdit={props.onCopyHandEdit}
-        onImageAdopt={props.onImageAdopt}
-        onImageSaveLibrary={props.onImageSaveLibrary}
-        onImageSaveDraft={props.onImageSaveDraft}
-        onImageCreateFromThis={props.onImageCreateFromThis}
+            onImageAdopt={props.onImageAdopt}
+            onImageSaveLibrary={props.onImageSaveLibrary}
+            onImageSaveDraft={props.onImageSaveDraft}
+            onImageCreateFromThis={props.onImageCreateFromThis}
             onAdjust={props.onAdjust}
           />
         )}

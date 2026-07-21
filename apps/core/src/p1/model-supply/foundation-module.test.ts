@@ -37,6 +37,7 @@ import type {
   AdminSupplyGovernedActionDispatchRequest,
   AdminSupplyGovernedActionRequest,
 } from '../supply-registry/admin-control-plane.js';
+import type { ModelSupplyResult } from './ledger-contracts.js';
 
 const owner: P1Context = {
   workspaceId: 'workspace-a',
@@ -56,6 +57,7 @@ function setup(
   referenceAssets?: ReferenceAssetResolverPort,
   activationEvidenceConfig: Pick<AdminConfigRepository, 'apply' | 'get'> =
     new MemoryAdminConfigRepository(),
+  planningControlPlane?: ModelSupplyPlanningControlPlanePort,
 ) {
   const repository = new MemoryModelSupplyControlPlaneRepository();
   const models = new ModelSupplyApplicationService({
@@ -80,6 +82,7 @@ function setup(
       'seed-tts-2-volcengine-direct': 'c'.repeat(64),
     },
     canvasProjects: canvasProjectAuthority(),
+    ...(planningControlPlane ? { planningControlPlane } : {}),
     repository,
   });
   const module = new ModelSupplyFoundationModule(controlPlane, {
@@ -858,12 +861,43 @@ describe('ModelSupplyFoundationModule', () => {
 
   it('keeps route simulation admin-only, workspace-scoped, and free of provider effects', async () => {
     let providerCalls = 0;
-    const { module, models } = setup({
-      async execute() {
-        providerCalls += 1;
-        throw new Error('route simulation must not execute a provider');
+    const planningControlPlane: ModelSupplyPlanningControlPlanePort = {
+      async readPlanningState() {
+        return {
+          dataPolicyByDeploymentId: new Map([
+            [
+              'domestic-llm-direct-recorded',
+              {
+                deploymentId: 'domestic-llm-direct-recorded',
+                dataPolicyRevisionId: 'data-policy:domestic-pii:r1',
+                dataPolicy: {
+                  sourceTrustLevel: 'platform_verified',
+                  processingRegion: 'domestic',
+                  allowedDataClasses: ['public', 'pii'],
+                },
+                dualApproval: {
+                  contractApproved: true,
+                  technicalApproved: true,
+                },
+              },
+            ],
+          ]),
+        };
       },
-    });
+    };
+    const { module, models } = setup(
+      {
+        async execute() {
+          providerCalls += 1;
+          throw new Error('route simulation must not execute a provider');
+        },
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      planningControlPlane,
+    );
 
     await assert.rejects(
       query(module, owner, 'route_simulation', {
@@ -2702,10 +2736,12 @@ describe('ModelSupplyFoundationModule', () => {
 
   it('exposes a fixed Canvas catalog, quote, submit, get, and project-list contract', async () => {
     let providerCalls = 0;
+    const providerEffectKeys: Array<string | undefined> = [];
     const { models, module, repository } = setup(
       {
         async execute(request) {
           providerCalls += 1;
+          providerEffectKeys.push(request.effectIdempotencyKey);
           return new RecordedProviderExecutionPort().execute(request);
         },
       },
@@ -2863,8 +2899,42 @@ describe('ModelSupplyFoundationModule', () => {
       now: '2026-07-16T10:00:00.000Z',
     });
     assert.ok(crashedClaim);
-    await models.submit(crashedClaim!.submission);
+    assert.equal(
+      await repository.renewCanvasTextGenerationLease({
+        claimToken: 'stale-claim',
+        id: crashedClaim!.id,
+        leaseExpiresAt: '2026-07-16T10:03:00.000Z',
+      }),
+      false,
+    );
+    assert.equal(
+      await repository.renewCanvasTextGenerationLease({
+        claimToken: 'crashed-claim',
+        id: crashedClaim!.id,
+        leaseExpiresAt: '2026-07-16T10:01:30.000Z',
+      }),
+      true,
+    );
+    assert.deepEqual(
+      await repository.beginCanvasTextGenerationProviderEffect({
+        claimToken: 'crashed-claim',
+        effectKey: `canvas-text:${crashedClaim!.id}`,
+        id: crashedClaim!.id,
+      }),
+      { status: 'execute' },
+    );
+    const crashedResult = await models.submitWithProviderEffectKey(
+      crashedClaim!.submission,
+      `canvas-text:${crashedClaim!.id}`,
+    );
+    await repository.completeCanvasTextGenerationProviderEffect({
+      claimToken: 'crashed-claim',
+      effectKey: `canvas-text:${crashedClaim!.id}`,
+      id: crashedClaim!.id,
+      result: crashedResult,
+    });
     assert.equal(providerCalls, 1);
+    assert.deepEqual(providerEffectKeys, [`canvas-text:${crashedClaim!.id}`]);
     const outboxWorker = new CanvasTextGenerationOutboxWorker({
       application: models,
       claimToken: () => 'claim-1',
@@ -3142,6 +3212,51 @@ describe('ModelSupplyFoundationModule', () => {
       1,
     );
   });
+});
+
+it('renews the canvas text lease while a slow provider effect is in flight', async () => {
+  const repository = new MemoryModelSupplyControlPlaneRepository();
+  const submission = {
+    actorId: 'worker-a',
+    dataClass: [],
+    idempotencyKey: 'slow-provider-effect',
+    operation: 'copy.generate' as const,
+    prompt: 'Write one direction.',
+    selection: { catalogModelId: 'llm-domestic', mode: 'fixed' as const },
+    workspaceId: 'workspace-a',
+  };
+  await repository.enqueueCanvasTextGeneration(
+    'workspace-a',
+    { jobId: 'queued-job' } as ModelSupplyResult,
+    {
+      createdAt: new Date().toISOString(),
+      id: 'slow-outbox',
+      status: 'pending',
+      submission,
+      workspaceId: 'workspace-a',
+    },
+  );
+  let renewals = 0;
+  const renew = repository.renewCanvasTextGenerationLease.bind(repository);
+  repository.renewCanvasTextGenerationLease = async (input) => {
+    renewals += 1;
+    return renew(input);
+  };
+  const application = {
+    async submitWithProviderEffectKey() {
+      await new Promise((resolve) => setTimeout(resolve, 35));
+      return { jobId: 'completed-job' } as ModelSupplyResult;
+    },
+  } as unknown as ModelSupplyApplicationService;
+  const worker = new CanvasTextGenerationOutboxWorker({
+    application,
+    heartbeatMs: 5,
+    leaseMs: 20,
+    repository,
+  });
+
+  assert.equal((await worker.runOnce()).status, 'completed');
+  assert.ok(renewals >= 1);
 });
 
 function canvasProjectAuthority() {

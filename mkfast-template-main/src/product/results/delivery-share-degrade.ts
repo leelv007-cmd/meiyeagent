@@ -56,15 +56,14 @@ export type ShareDegradePlan = {
  */
 export function resolveShareDegrade(
   payload: SharePayload,
-  device: ShareDeviceCapability,
+  device: ShareDeviceCapability
 ): ShareDegradePlan {
   const hasFiles = Boolean(payload.files && payload.files.length > 0);
   const hasLink = Boolean(payload.oneShotLinkUrl);
   const hasDownload = Boolean(payload.downloadHref);
   const hasText = Boolean(payload.text || payload.title);
 
-  const canFile =
-    device.hasNavigatorShare && device.canShareFiles && hasFiles;
+  const canFile = device.hasNavigatorShare && device.canShareFiles && hasFiles;
   const canLinkShare =
     device.hasNavigatorShare &&
     device.canShareText &&
@@ -88,7 +87,11 @@ export function resolveShareDegrade(
   } else if (canTextOnly) {
     // Pure text still goes through share API when available; treat as file-less
     // share — degrade target remains one_shot_link if present, else download.
-    strategy = hasLink ? 'one_shot_link' : hasDownload ? 'download' : 'download';
+    strategy = hasLink
+      ? 'one_shot_link'
+      : hasDownload
+        ? 'download'
+        : 'download';
   } else {
     strategy = hasDownload || hasFiles ? 'download' : 'download';
   }
@@ -180,7 +183,7 @@ export type ShareDeliveryRecord = {
  * Shared → markDelivered true for "已交给系统分享" only — not 已发布.
  */
 export function recordShareAttempt(
-  result: ShareAttemptResult,
+  result: ShareAttemptResult
 ): ShareDeliveryRecord {
   switch (result.kind) {
     case 'shared':

@@ -10,10 +10,7 @@ import type {
   ResultPanel,
   ResultTarget,
 } from '@meiye/contracts';
-import {
-  resultCenterPath,
-  resultCenterSearchParams,
-} from '@meiye/contracts';
+import { resultCenterPath, resultCenterSearchParams } from '@meiye/contracts';
 
 export type ResultCenterLocation = {
   pathname: string;
@@ -57,7 +54,7 @@ export function resultCenterLocationFromNavigation(
     versionId?: string;
     panel?: ResultPanel;
     sourceRoute?: string;
-  },
+  }
 ): ResultCenterLocation {
   const search = resultCenterSearchParams({
     ...(options?.contentId ? { contentId: options.contentId } : {}),

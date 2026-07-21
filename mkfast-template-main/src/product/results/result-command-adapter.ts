@@ -45,7 +45,7 @@ export function isResultActionId(value: string): value is ResultActionId {
  * Rejects unknown actions and missing workId without side effects.
  */
 export function validateResultCommandInput(
-  input: ResultCommandInput,
+  input: ResultCommandInput
 ): ResultCommandOutcome | null {
   if (!input.target.workId || input.target.workId.trim() === '') {
     return {
@@ -76,7 +76,7 @@ export function validateResultCommandInput(
  * All Result Center (and migration-era workbench) mutations must go through it.
  */
 export function createResultCommandAdapter(
-  options: ResultCommandAdapterOptions,
+  options: ResultCommandAdapterOptions
 ): ResultCommandAdapter {
   return {
     async execute(input: ResultCommandInput): Promise<ResultCommandOutcome> {

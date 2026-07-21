@@ -15,10 +15,7 @@ export function AdminCapabilityCatalog({
 }: {
   view?: CapabilityCatalogView;
 } = {}) {
-  const view = useMemo(
-    () => viewProp ?? buildCapabilityCatalog(),
-    [viewProp]
-  );
+  const view = useMemo(() => viewProp ?? buildCapabilityCatalog(), [viewProp]);
 
   return <CapabilityCatalogPanel view={view} />;
 }

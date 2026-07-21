@@ -109,6 +109,23 @@ jobs:
         env:
           NODE_OPTIONS: --test-reporter=spec
 
+  web-canvas-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify the quality-gate command contract
+        run: node --test scripts/ci/*.test.mjs
+      - name: Run Web, Canvas, and repository fast gates
+        run: bash scripts/ci/run-web-canvas-quality.sh
+
   core-persistence:
     runs-on: ubuntu-latest
     services:
@@ -154,15 +171,15 @@ jobs:
           pnpm --filter @meiye/core test 2>&1 | tee core-persistence-test.log
           node scripts/ci/assert-core-persistence-ran.mjs core-persistence-test.log
 
-  # Full Playwright acceptance boots Main, Core, Worker, and Canvas and installs
-  # Chromium. Keep it opt-in via workflow_dispatch or the run-e2e PR label so
-  # ordinary PRs retain a fast required signal while release/handoff checks run
-  # the real multi-service browser harness.
+  # Release-candidate acceptance builds every workspace, then boots Main, Core,
+  # Worker, and Canvas for the real browser harness. Keep the historical run-e2e
+  # label as an alias while release-candidate becomes the explicit RC signal.
   e2e:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
-      contains(github.event.pull_request.labels.*.name, 'run-e2e'))
+      (contains(github.event.pull_request.labels.*.name, 'release-candidate') ||
+      contains(github.event.pull_request.labels.*.name, 'run-e2e')))
     runs-on: ubuntu-latest
     timeout-minutes: 90
     services:
@@ -195,11 +212,28 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
       - run: pnpm install --frozen-lockfile
+      - name: Audit production dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p output/security
+          audit_status=0
+          pnpm audit --prod --json | tee output/security/pnpm-audit.json || audit_status=$?
+          echo "pnpm audit raw exit code: $audit_status"
+          node scripts/ci/assert-production-audit.mjs output/security/pnpm-audit.json
       - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
       - name: Provision E2E business and DBOS databases
         run: ./scripts/ci/provision-test-db.sh
-      - name: Run Playwright acceptance
-        run: pnpm --filter @meiye/web e2e
+      - name: Build and run release-candidate acceptance
+        run: bash scripts/ci/run-release-candidate-quality.sh
+        env:
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-dependency-audit
+          path: output/security/pnpm-audit.json
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

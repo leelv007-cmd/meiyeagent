@@ -97,7 +97,7 @@ export function floorCapabilitiesEnabled(
   facts: Pick<
     DeliveryCapabilityFacts,
     'hasCopyableText' | 'hasSingleDownload' | 'hasFullPackage'
-  >,
+  >
 ): {
   copy: boolean;
   single_download: boolean;
@@ -115,7 +115,7 @@ export function floorCapabilitiesEnabled(
  * Pure — no I/O. automatic_verified group is hidden when count is 0.
  */
 export function projectDeliveryCapabilityGroups(
-  facts: DeliveryCapabilityFacts,
+  facts: DeliveryCapabilityFacts
 ): DeliveryGroupProjection[] {
   const floor = floorCapabilitiesEnabled(facts);
   const assistedOk =
@@ -134,9 +134,7 @@ export function projectDeliveryCapabilityGroups(
         enabled: floor.copy,
         label: DELIVERY_ACTION_LABEL.copy,
         group: 'get_files',
-        ...(floor.copy
-          ? {}
-          : { reason: '当前没有可复制的文案，请使用下载' }),
+        ...(floor.copy ? {} : { reason: '当前没有可复制的文案，请使用下载' }),
       },
       {
         id: 'single_download',
@@ -230,7 +228,7 @@ function fullPackageLabel(target: DeliveryPanelTarget): string {
 
 /** Visible groups only — what the panel renders. */
 export function visibleDeliveryGroups(
-  facts: DeliveryCapabilityFacts,
+  facts: DeliveryCapabilityFacts
 ): DeliveryGroupProjection[] {
   return projectDeliveryCapabilityGroups(facts).filter((g) => g.visible);
 }

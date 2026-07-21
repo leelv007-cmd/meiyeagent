@@ -25,10 +25,7 @@ import {
   type ComposerLensState,
 } from './lens-state-machine';
 import { LENS_REQUIRED_SUBMIT_HINT } from './lens-labels';
-import {
-  buildComposerQuote,
-  projectComposerQuoteView,
-} from './quote-wiring';
+import { buildComposerQuote, projectComposerQuoteView } from './quote-wiring';
 import { bindQuoteView } from './lens-state-machine';
 
 // ---------------------------------------------------------------------------

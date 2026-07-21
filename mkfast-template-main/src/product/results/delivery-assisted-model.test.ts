@@ -16,24 +16,24 @@ import type { AssistedReceipt } from './delivery-b3-types';
 test('dual responsibility roles are self_publish and external_owner', () => {
   const options = assistedResponsibilityRoleOptions();
   assert.equal(options.length, 2);
-  assert.deepEqual(
-    options.map((o) => o.role).sort(),
-    ['external_owner', 'self_publish'],
-  );
+  assert.deepEqual(options.map((o) => o.role).sort(), [
+    'external_owner',
+    'self_publish',
+  ]);
   assert.equal(
     options.find((o) => o.role === 'self_publish')?.requires,
-    'accountId',
+    'accountId'
   );
   assert.equal(
     options.find((o) => o.role === 'external_owner')?.requires,
-    'ownerId',
+    'ownerId'
   );
 });
 
 test('materials_ready is not handed over and not published', () => {
   const ui = projectAssistedHandoffUi(
     materialsReadyReceiptFixture(),
-    '2026-07-20T10:00:00.000Z',
+    '2026-07-20T10:00:00.000Z'
   );
   assert.equal(ui.statusLabel, '资料已准备');
   assert.equal(ui.isHandedOver, false);
@@ -45,7 +45,7 @@ test('materials_ready is not handed over and not published', () => {
 test('已交接 ≠ 已发布 after hand over', () => {
   const ui = projectAssistedHandoffUi(
     handedOverReceiptFixture(),
-    '2026-07-20T10:00:00.000Z',
+    '2026-07-20T10:00:00.000Z'
   );
   assert.equal(ui.statusLabel, '已交接');
   assert.equal(ui.isHandedOver, true);
@@ -107,7 +107,7 @@ test('published only after publish_result_recorded with published status', () =>
 test('receipt binding fields required for hand_over CTA', () => {
   const withoutBinding = projectAssistedHandoffUi(
     materialsReadyReceiptFixture(),
-    '2026-07-20T10:00:00.000Z',
+    '2026-07-20T10:00:00.000Z'
   );
   assert.equal(withoutBinding.bindingComplete, false);
   assert.equal(withoutBinding.primaryCta.enabled, false);
@@ -116,7 +116,7 @@ test('receipt binding fields required for hand_over CTA', () => {
     materialsReadyReceiptFixture({
       binding: handedOverReceiptFixture().binding,
     }),
-    '2026-07-20T10:00:00.000Z',
+    '2026-07-20T10:00:00.000Z'
   );
   assert.equal(withBinding.bindingComplete, true);
   assert.equal(withBinding.primaryCta.enabled, true);

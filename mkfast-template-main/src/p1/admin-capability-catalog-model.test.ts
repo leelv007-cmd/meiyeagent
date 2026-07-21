@@ -56,7 +56,9 @@ test('L2 technical dependencies and evidence drilldowns are present', () => {
   const ai = getCatalogDomain(view, 'ai_supply_and_generation');
   assert.ok(ai);
   assert.ok(ai.technicalDependencies.length > 0);
-  assert.ok(ai.technicalDependencies.some((dep) => dep.id === 'job_queue_harness'));
+  assert.ok(
+    ai.technicalDependencies.some((dep) => dep.id === 'job_queue_harness')
+  );
   assert.ok(ai.evidenceDrilldowns.some((d) => d.pageId === 'models'));
 
   const commerce = getCatalogDomain(view, 'account_and_commerce');
@@ -148,7 +150,8 @@ test('D-048: ops path ban list + redacted handoff is not one-click repair', () =
   assert.ok(view.opsPathBannedControls.includes('code-editor'));
   assert.ok(view.opsPathBannedControls.includes('cli-console'));
 
-  const clean = '<div data-testid="capability-catalog-panel" data-ops-path="daily"></div>';
+  const clean =
+    '<div data-testid="capability-catalog-panel" data-ops-path="daily"></div>';
   assert.deepEqual(assertOpsPathHasNoD048BannedControls(clean), []);
 
   const dirty =

@@ -11,7 +11,11 @@
 
 import { harnessCopyStreamPhase } from '@/product/workbench-state-model';
 
-export type ResultTokenStreamWorkspace = 'copy' | 'image_text' | 'image' | 'video';
+export type ResultTokenStreamWorkspace =
+  | 'copy'
+  | 'image_text'
+  | 'image'
+  | 'video';
 
 export type PartialCopyCandidate = {
   body?: string;
@@ -62,7 +66,7 @@ export function candidateHasToken(candidate?: PartialCopyCandidate | null) {
   return Boolean(
     candidate.title?.trim() ||
       candidate.body?.trim() ||
-      candidate.conversionHook?.trim(),
+      candidate.conversionHook?.trim()
   );
 }
 
@@ -77,7 +81,7 @@ export function copyCandidateSlots(value?: {
 }
 
 function isTokenStreamWorkspace(
-  kind: ResultTokenStreamWorkspace,
+  kind: ResultTokenStreamWorkspace
 ): kind is 'copy' | 'image_text' {
   return kind === 'copy' || kind === 'image_text';
 }
@@ -87,7 +91,7 @@ function isTokenStreamWorkspace(
  * Pure — fixtures drive partial candidates without React.
  */
 export function projectResultTokenStream(
-  input: ResultTokenStreamInput,
+  input: ResultTokenStreamInput
 ): ResultTokenStreamProjection {
   if (!isTokenStreamWorkspace(input.workspaceKind)) {
     // image / video: Job-level progress only (ADR-0010 long-task path).
@@ -124,7 +128,7 @@ export function projectResultTokenStream(
   const completed = Boolean(input.completed);
   const loading = Boolean(input.loading);
   const hasObject = Boolean(
-    input.partialCandidates && input.partialCandidates.length > 0,
+    input.partialCandidates && input.partialCandidates.length > 0
   );
   const showStreamPanel =
     !completed &&

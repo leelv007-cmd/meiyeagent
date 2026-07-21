@@ -363,6 +363,24 @@ const forbiddenFields = new Set([
 	"serverUrl",
 ]);
 
+const MEBIBYTE = 1024 * 1024;
+const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/u;
+const STANDARD_BODY_BUDGET = {
+	maxBytes: MEBIBYTE,
+	maxDepth: 64,
+	maxNodes: 50_000,
+};
+const GRAPH_BODY_BUDGET = {
+	maxBytes: 8 * MEBIBYTE,
+	maxDepth: 128,
+	maxNodes: 150_000,
+};
+const MEDIA_BODY_BUDGET = {
+	maxBytes: 36 * MEBIBYTE,
+	maxDepth: 64,
+	maxNodes: 10_000,
+};
+
 export interface CanvasBackendRuntimePorts {
 	adoption: AdvancedCanvasAdoptionPort;
 	agent: {
@@ -432,6 +450,17 @@ class CanvasGenerationInputBindingError extends Error {
 	}
 }
 
+class CanvasRequestBoundaryError extends Error {
+	constructor(
+		readonly status: 400 | 413,
+		readonly code: "JSON_TOO_COMPLEX" | "REQUEST_BODY_TOO_LARGE",
+		message: string,
+	) {
+		super(message);
+		this.name = "CanvasRequestBoundaryError";
+	}
+}
+
 export class CanvasBackendPort {
 	private readonly allowedOrigin: string;
 
@@ -444,8 +473,11 @@ export class CanvasBackendPort {
 		request: Request,
 		sessionToken: string | undefined,
 	): Promise<Response> {
+		const suppliedCorrelationId = request.headers.get("x-correlation-id");
 		const correlationId =
-			request.headers.get("x-correlation-id") ?? crypto.randomUUID();
+			suppliedCorrelationId && SAFE_REQUEST_ID.test(suppliedCorrelationId)
+				? suppliedCorrelationId
+				: crypto.randomUUID();
 		const disabledGrantLookup =
 			action === "getProviderReferenceGrant" && request.method === "POST";
 		if (!isCanvasAction(action) && !disabledGrantLookup) {
@@ -501,7 +533,7 @@ export class CanvasBackendPort {
 				await this.options.entitlement.service.assertCanEnter(runtimeContext);
 				const parsed = z
 					.strictObject({ grantId: identifierSchema })
-					.safeParse(await inputFor(request));
+					.safeParse(await inputFor(request, "getCatalog"));
 				if (!parsed.success) return opaqueObjectNotFound(correlationId);
 				try {
 					await this.options.securityAudit.record(runtimeContext, {
@@ -535,7 +567,15 @@ export class CanvasBackendPort {
 					correlationId,
 				);
 			}
-			const rawInput = await inputFor(request);
+			if (idempotencyKey && !SAFE_REQUEST_ID.test(idempotencyKey)) {
+				return errorResponse(
+					400,
+					"INVALID_IDEMPOTENCY_KEY",
+					"Idempotency-Key header is invalid.",
+					correlationId,
+				);
+			}
+			const rawInput = await inputFor(request, action);
 			if (containsForbiddenField(rawInput)) {
 				return errorResponse(
 					400,
@@ -868,28 +908,119 @@ function isCanvasAction(action: string): action is CanvasM1Action {
 	return Object.hasOwn(CANVAS_ACTION_CONTRACTS, action);
 }
 
-async function inputFor(request: Request) {
+async function inputFor(request: Request, action: CanvasM1Action) {
 	if (request.method === "GET") {
 		return Object.fromEntries(new URL(request.url).searchParams.entries());
 	}
-	const text = await request.text();
+	const budget = bodyBudgetFor(action);
+	const text = await readTextUpTo(request, budget.maxBytes);
 	if (!text) return {};
 	try {
-		return JSON.parse(text) as unknown;
-	} catch {
+		const input = JSON.parse(text) as unknown;
+		assertJsonComplexity(input, budget.maxDepth, budget.maxNodes);
+		return input;
+	} catch (error) {
+		if (error instanceof CanvasRequestBoundaryError) throw error;
 		return Symbol("invalid-json");
 	}
 }
 
 function containsForbiddenField(value: unknown): boolean {
-	if (!value || typeof value !== "object") return false;
-	if (Array.isArray(value)) return value.some(containsForbiddenField);
-	return Object.entries(value).some(
-		([key, child]) => forbiddenFields.has(key) || containsForbiddenField(child),
-	);
+	const pending = [value];
+	while (pending.length > 0) {
+		const current = pending.pop();
+		if (!current || typeof current !== "object") continue;
+		if (Array.isArray(current)) {
+			pending.push(...current);
+			continue;
+		}
+		for (const [key, child] of Object.entries(current)) {
+			if (forbiddenFields.has(key)) return true;
+			pending.push(child);
+		}
+	}
+	return false;
+}
+
+function bodyBudgetFor(action: CanvasM1Action) {
+	if (action === "persistLocalCanvasArtifact") return MEDIA_BODY_BUDGET;
+	if (action === "createProject" || action === "saveProjectDraft") {
+		return GRAPH_BODY_BUDGET;
+	}
+	return STANDARD_BODY_BUDGET;
+}
+
+async function readTextUpTo(request: Request, maxBytes: number) {
+	const declaredLength = Number(request.headers.get("content-length"));
+	if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+		throw new CanvasRequestBoundaryError(
+			413,
+			"REQUEST_BODY_TOO_LARGE",
+			"Canvas request body exceeds the action limit.",
+		);
+	}
+	if (!request.body) return "";
+
+	const reader = request.body.getReader();
+	const decoder = new TextDecoder();
+	let bytesRead = 0;
+	let text = "";
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		bytesRead += value.byteLength;
+		if (bytesRead > maxBytes) {
+			await reader.cancel();
+			throw new CanvasRequestBoundaryError(
+				413,
+				"REQUEST_BODY_TOO_LARGE",
+				"Canvas request body exceeds the action limit.",
+			);
+		}
+		text += decoder.decode(value, { stream: true });
+	}
+	return text + decoder.decode();
+}
+
+function assertJsonComplexity(
+	value: unknown,
+	maxDepth: number,
+	maxNodes: number,
+) {
+	const pending: Array<{ depth: number; value: unknown }> = [
+		{ depth: 0, value },
+	];
+	let nodes = 0;
+	while (pending.length > 0) {
+		const current = pending.pop();
+		if (!current) break;
+		nodes += 1;
+		if (current.depth > maxDepth || nodes > maxNodes) {
+			throw new CanvasRequestBoundaryError(
+				400,
+				"JSON_TOO_COMPLEX",
+				"Canvas request JSON exceeds the action complexity limit.",
+			);
+		}
+		if (!current.value || typeof current.value !== "object") continue;
+		const children = Array.isArray(current.value)
+			? current.value
+			: Object.values(current.value);
+		for (const child of children) {
+			pending.push({ depth: current.depth + 1, value: child });
+		}
+	}
 }
 
 function mappedError(error: unknown, correlationId: string) {
+	if (error instanceof CanvasRequestBoundaryError) {
+		return errorResponse(
+			error.status,
+			error.code,
+			error.message,
+			correlationId,
+		);
+	}
 	if (errorCode(error) === "MAIN_SESSION_UNAVAILABLE") {
 		return errorResponse(
 			503,

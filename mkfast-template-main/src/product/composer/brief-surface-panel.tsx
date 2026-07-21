@@ -42,14 +42,19 @@ export function BriefSurface({
       aria-label={view.title}
     >
       <header className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold text-foreground">{view.title}</h2>
+        <h2 className="text-base font-semibold text-foreground">
+          {view.title}
+        </h2>
         <p className="text-sm text-muted-foreground">
           请核对摘要后确认；取消将返回编辑且不丢失已填内容。
         </p>
       </header>
 
       {view.triggers.length > 0 ? (
-        <div data-testid="composer-brief-triggers" className="flex flex-col gap-2">
+        <div
+          data-testid="composer-brief-triggers"
+          className="flex flex-col gap-2"
+        >
           <h3 className="text-sm font-medium text-foreground">
             {BRIEF_TRIGGERS_TITLE}
           </h3>
@@ -68,7 +73,10 @@ export function BriefSurface({
       ) : null}
 
       {view.summaryRows.length > 0 ? (
-        <div data-testid="composer-brief-summary" className="flex flex-col gap-2">
+        <div
+          data-testid="composer-brief-summary"
+          className="flex flex-col gap-2"
+        >
           <h3 className="text-sm font-medium text-foreground">
             {BRIEF_SUMMARY_TITLE}
           </h3>
@@ -116,7 +124,9 @@ export function BriefSurface({
                     : null}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  {entry.freshness ? <span>新鲜度：{entry.freshness}</span> : null}
+                  {entry.freshness ? (
+                    <span>新鲜度：{entry.freshness}</span>
+                  ) : null}
                   {entry.rightsStatus ? (
                     <span>权利：{entry.rightsStatus}</span>
                   ) : null}
@@ -134,15 +144,13 @@ export function BriefSurface({
       ) : null}
 
       {view.videoConfirm?.visible ? (
-        <div
+        <fieldset
           data-testid="composer-brief-video-confirm"
           className="flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3"
-          role="group"
-          aria-label={view.videoConfirm.title}
         >
-          <h3 className="text-sm font-medium text-foreground">
+          <legend className="text-sm font-medium text-foreground">
             {view.videoConfirm.title}
-          </h3>
+          </legend>
           {view.videoConfirm.billingNote ? (
             <p
               className="text-sm font-medium text-foreground"
@@ -158,13 +166,14 @@ export function BriefSurface({
           ) : null}
           {view.videoConfirm.quotedSeconds != null ? (
             <p className="text-xs text-muted-foreground">
-              成片时长上限 {view.videoConfirm.quotedSeconds} 秒（按生成成片秒数计费）
+              成片时长上限 {view.videoConfirm.quotedSeconds}{' '}
+              秒（按生成成片秒数计费）
             </p>
           ) : null}
           <p className="text-sm text-foreground">
             点击“{view.confirmLabel}”即确认本次视频生成费用与时长。
           </p>
-        </div>
+        </fieldset>
       ) : null}
 
       <footer className="flex flex-wrap items-center justify-end gap-2 pt-1">

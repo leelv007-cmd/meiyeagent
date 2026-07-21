@@ -64,11 +64,29 @@ export interface AdminCfInventoryInput {
   capturedAt: string;
   freshness: AdminCfFreshness;
   deployments:
-    | { status: 'known'; value: AdminCfDeploymentView[]; freshness?: AdminCfFreshness }
-    | { status: 'unknown'; reason: string; freshness?: AdminCfFreshness; detail?: string };
+    | {
+        status: 'known';
+        value: AdminCfDeploymentView[];
+        freshness?: AdminCfFreshness;
+      }
+    | {
+        status: 'unknown';
+        reason: string;
+        freshness?: AdminCfFreshness;
+        detail?: string;
+      };
   versions:
-    | { status: 'known'; value: Array<{ versionId: string; createdOn?: string }>; freshness?: AdminCfFreshness }
-    | { status: 'unknown'; reason: string; freshness?: AdminCfFreshness; detail?: string };
+    | {
+        status: 'known';
+        value: Array<{ versionId: string; createdOn?: string }>;
+        freshness?: AdminCfFreshness;
+      }
+    | {
+        status: 'unknown';
+        reason: string;
+        freshness?: AdminCfFreshness;
+        detail?: string;
+      };
   resources: AdminCfResourceView[];
   cloudflareQueuesEnabled: false;
   graphqlAnalyticsDeferred: true;
@@ -187,7 +205,7 @@ function unknownReasonImpact(reason: string): string {
 
 function projectDeployments(
   input: AdminCfInventoryInput['deployments'],
-  freshness: AdminCfFreshness,
+  freshness: AdminCfFreshness
 ): AdminCfFieldView<AdminCfDeploymentView[]> {
   if (input.status === 'known') {
     const value = input.value.map((d) => ({
@@ -216,7 +234,7 @@ function projectDeployments(
 
 function projectVersions(
   input: AdminCfInventoryInput['versions'],
-  freshness: AdminCfFreshness,
+  freshness: AdminCfFreshness
 ): AdminCfFieldView<Array<{ versionId: string; createdOn?: string }>> {
   if (input.status === 'known') {
     return {
@@ -252,7 +270,8 @@ export function buildAdminCloudflarePresentation(input: {
 }): AdminCfPresentationView {
   const inventory = input.inventory;
   const freshness: AdminCfFreshness = inventory?.freshness ?? 'not_verified';
-  const resourceRef = input.resourceRef ?? inventory?.mappingRef ?? 'shell-default';
+  const resourceRef =
+    input.resourceRef ?? inventory?.mappingRef ?? 'shell-default';
   const probes = input.probes ?? [];
   const configRisks = input.configRisks ?? DEFAULT_REPO_CONFIG_RISKS;
 
@@ -310,7 +329,8 @@ export function buildAdminCloudflarePresentation(input: {
     graphqlAnalyticsDeferred: true,
     writeActionsAllowed: false,
     deniedWriteActions: ADMIN_CF_DENIED_WRITE_ACTIONS,
-    capturedAt: inventory?.capturedAt ?? (input.now ?? new Date()).toISOString(),
+    capturedAt:
+      inventory?.capturedAt ?? (input.now ?? new Date()).toISOString(),
     cacheHit: inventory?.cache?.hit ?? false,
   };
 }
@@ -318,7 +338,7 @@ export function buildAdminCloudflarePresentation(input: {
 /** Honest metric text for SSR / unit tests — never invents zero health. */
 export function formatAdminCfField<T>(
   field: AdminCfFieldView<T>,
-  format: (value: T) => string = String,
+  format: (value: T) => string = String
 ): string {
   if (field.status === 'known' && field.value !== undefined) {
     return format(field.value);

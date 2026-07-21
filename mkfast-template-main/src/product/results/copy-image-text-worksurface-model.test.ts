@@ -42,7 +42,10 @@ test('selection rewrite previews diff and routes to derived_task', () => {
     start: 0,
     end: draft.body.length,
   });
-  assert.notEqual('kind' in preview && (preview as { kind: string }).kind, 'invalid');
+  assert.notEqual(
+    'kind' in preview && (preview as { kind: string }).kind,
+    'invalid'
+  );
   if (!('kind' in preview)) {
     assert.equal(preview.execution, 'derived_task');
     assert.ok(preview.after.length < preview.before.length);

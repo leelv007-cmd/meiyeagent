@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -9,6 +9,8 @@ import {
   FileSystemAssetStorage,
   fileSystemAssetStorageFromEnv,
 } from './filesystem-asset-storage.js';
+import { modelAssetStorageFromEnv } from './asset-storage-from-env.js';
+import { S3CompatibleAssetStorage } from './s3-asset-storage.js';
 import { RecordedAdapterRouter, recordedRequest } from './adapters.js';
 import { videoCompositionRuntimeFromEnv } from './composition-runtime.js';
 import { MemoryModelAssetStorage } from './index.js';
@@ -72,6 +74,120 @@ test('main and worker storage assembly share the same default public asset URL',
     storage.publicUrl(objectKey),
     `http://web.test/api/core/p1/assets?objectKey=${encodeURIComponent(objectKey)}`
   );
+});
+
+test('production refuses local-only asset storage while explicit test environments retain it', () => {
+  assert.throws(
+    () =>
+      fileSystemAssetStorageFromEnv({
+        APP_ENV: 'production',
+        P1_ASSET_STORAGE_DIR: '/tmp/production-assets',
+      }),
+    /shared object storage is required/i,
+  );
+  assert.throws(
+    () => modelAssetStorageFromEnv({ APP_ENV: 'production' }),
+    /shared object storage is required/i,
+  );
+  assert.throws(
+    () => modelAssetStorageFromEnv({}),
+    /APP_ENV explicitly selects development, test, or e2e/i,
+  );
+  assert.doesNotThrow(() => modelAssetStorageFromEnv({ APP_ENV: 'e2e' }));
+  assert.throws(
+    () =>
+      modelAssetStorageFromEnv({
+        APP_ENV: 'production',
+        P1_ASSET_STORAGE_MODE: 's3',
+      }),
+    /P1_ASSET_S3_ENDPOINT is required/,
+  );
+  const sharedStorageEnv = {
+    APP_ENV: 'production',
+    P1_ASSET_STORAGE_MODE: 's3',
+    P1_ASSET_S3_ACCESS_KEY_ID: 'access-key',
+    P1_ASSET_S3_BUCKET: 'asset-bucket',
+    P1_ASSET_S3_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+    P1_ASSET_S3_SECRET_ACCESS_KEY: 'secret-key',
+  } as const;
+  assert.throws(
+    () => modelAssetStorageFromEnv(sharedStorageEnv),
+    /P1_ASSET_PUBLIC_BASE_URL or APP_BASE_URL is required/,
+  );
+  assert.throws(
+    () =>
+      modelAssetStorageFromEnv({
+        ...sharedStorageEnv,
+        APP_BASE_URL: 'http://app.example.com',
+      }),
+    /non-local HTTPS URL/,
+  );
+  assert.throws(
+    () =>
+      modelAssetStorageFromEnv({
+        ...sharedStorageEnv,
+        APP_ENV: 'staging',
+        P1_ASSET_PUBLIC_BASE_URL:
+          'https://localhost/api/core/p1/assets?objectKey=',
+      }),
+    /non-local HTTPS URL/,
+  );
+  assert.equal(
+    modelAssetStorageFromEnv({
+      ...sharedStorageEnv,
+      APP_BASE_URL: 'https://app.example.com/',
+    }) instanceof S3CompatibleAssetStorage,
+    true,
+  );
+  const publicBaseStorage = modelAssetStorageFromEnv({
+    ...sharedStorageEnv,
+    P1_ASSET_PUBLIC_BASE_URL:
+      'https://assets.example.com/api/core/p1/assets?objectKey=',
+  });
+  assert.equal(
+    publicBaseStorage.publicUrl('workspace-a/generated/asset.png'),
+    'https://assets.example.com/api/core/p1/assets?objectKey=workspace-a%2Fgenerated%2Fasset.png',
+  );
+  assert.doesNotThrow(() =>
+    fileSystemAssetStorageFromEnv({
+      APP_ENV: 'test',
+      P1_ASSET_STORAGE_DIR: '/tmp/test-assets',
+    }),
+  );
+});
+
+test('ffprobe is killed after its configured deadline', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-ffprobe-timeout-'));
+  const ffprobePath = join(rootDirectory, 'hanging-ffprobe');
+  await writeFile(
+    ffprobePath,
+    '#!/bin/sh\nwhile true; do sleep 1; done\n',
+    'utf8',
+  );
+  await chmod(ffprobePath, 0o755);
+  const storage = new FileSystemAssetStorage({
+    ffprobePath,
+    ffprobeTimeoutMs: 25,
+    rootDirectory,
+  });
+  const mp4 = Uint8Array.from([
+    0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+  ]);
+
+  try {
+    await assert.rejects(
+      storage.persistGeneratedAsset({
+        bytes: mp4,
+        contentType: 'video/mp4',
+        workspaceId: 'workspace-a',
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        ('killed' in error || /aborted|timed out|timeout/i.test(error.message)),
+    );
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
 });
 
 test('filesystem storage keeps real bytes and restores a verified receipt after restart', async () => {

@@ -26,12 +26,8 @@ test.describe('LIKEPAGE marketing landing page', () => {
     const monitor = installPageHealthMonitor(page);
     await expectHealthyPage(page, monitor, '/', { theme: 'light' });
 
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      '美页'
-    );
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      '丽客'
-    );
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('美页');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('丽客');
 
     const anchorOffsets: number[] = [];
     for (const anchor of SECTION_ANCHORS) {
@@ -71,9 +67,10 @@ test.describe('LIKEPAGE marketing landing page', () => {
         const rect = el.getBoundingClientRect();
         return rect.top < window.innerHeight && rect.bottom > 0;
       });
-      expect(inView, `${anchor} should be in view after clicking ${label}`).toBe(
-        true
-      );
+      expect(
+        inView,
+        `${anchor} should be in view after clicking ${label}`
+      ).toBe(true);
     }
     monitor.expectNoErrors('nav anchors');
   });

@@ -24,19 +24,19 @@ test('simulator and task_audit share identical explanation projection', () => {
   assert.equal(simulator.surface, 'simulator');
   assert.equal(taskAudit.surface, 'task_audit');
   assert.doesNotThrow(() =>
-    assertSharedExplanationProjection(simulator, taskAudit),
+    assertSharedExplanationProjection(simulator, taskAudit)
   );
 });
 
 test('explanation projects hard filter, sort, live exclude, max cost, acceptance, not-selected, evidence freshness, cost source', () => {
   const explanation = buildRouteDecisionExplanationView(
-    buildDemoRouteExplanationFacts(),
+    buildDemoRouteExplanationFacts()
   );
   const panel = projectRouteSimulatorPanel(explanation);
 
   assert.ok(panel.hardFilterPassed.includes('dep-text-ark'));
   assert.ok(
-    panel.hardFilterExcluded.some((e) => e.deploymentId === 'dep-image-single'),
+    panel.hardFilterExcluded.some((e) => e.deploymentId === 'dep-image-single')
   );
   assert.deepEqual(
     [...panel.layerOrder],
@@ -44,11 +44,11 @@ test('explanation projects hard filter, sort, live exclude, max cost, acceptance
       'quality_reliability_gate',
       'health_capacity_guardrail',
       'cost_optimization',
-    ],
+    ]
   );
   assert.equal(panel.sortRanked[0]?.deploymentId, 'dep-text-ark');
   assert.ok(
-    panel.liveExclusions.some((e) => e.deploymentId === 'dep-text-tuzi'),
+    panel.liveExclusions.some((e) => e.deploymentId === 'dep-text-tuzi')
   );
   assert.ok(panel.maxCost);
   assert.equal(panel.maxCost?.evidenceSource, 'invoice');
@@ -56,12 +56,10 @@ test('explanation projects hard filter, sort, live exclude, max cost, acceptance
   assert.ok(panel.notSelectedReasons.length >= 2);
   assert.ok(
     panel.evidenceFreshness.some((row) =>
-      row.criticalEvidence.some((f) => f.kind === 'conformance'),
-    ),
+      row.criticalEvidence.some((f) => f.kind === 'conformance')
+    )
   );
-  assert.ok(
-    panel.costEvidenceSource.some((row) => row.source === 'invoice'),
-  );
+  assert.ok(panel.costEvidenceSource.some((row) => row.source === 'invoice'));
   assert.equal(panel.failClosed, false);
 });
 
@@ -99,7 +97,10 @@ test('assertSharedExplanationProjection throws on divergence', () => {
     surface: 'task_audit',
     hardFilterPassedDeploymentIds: ['only-left'],
   });
-  assert.throws(() => assertSharedExplanationProjection(left, right), /diverged/);
+  assert.throws(
+    () => assertSharedExplanationProjection(left, right),
+    /diverged/
+  );
 });
 
 test('demo panel is SSR-ready with all G5 sections', () => {

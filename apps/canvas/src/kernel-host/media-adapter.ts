@@ -56,7 +56,13 @@ export async function persistBlobAsOwnedAsset(
 
 export function buildImageNodeFromAsset(
 	assetId: string,
-	options: { height?: number; id?: string; width?: number; x?: number; y?: number } = {},
+	options: {
+		height?: number;
+		id?: string;
+		width?: number;
+		x?: number;
+		y?: number;
+	} = {},
 ) {
 	const width = options.width ?? 200;
 	const height = options.height ?? 160;

@@ -219,7 +219,7 @@ export function isAssistedHandedOver(receipt: AssistedReceipt): boolean {
  * Throws with a stable code when incomplete.
  */
 export function assertAssistedBindingComplete(
-  binding: AssistedReceiptBinding,
+  binding: AssistedReceiptBinding
 ): void {
   if (!binding.approvalReceiptId?.trim()) {
     throw new Error('ASSISTED_BINDING_MISSING_APPROVAL');

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +30,7 @@ export interface VideoProbeResult {
 }
 
 export interface FileSystemAssetStorageOptions {
+  ffprobeTimeoutMs?: number;
   rootDirectory: string;
   publicBaseUrl?: string;
   ffprobePath?: string;
@@ -37,6 +38,7 @@ export interface FileSystemAssetStorageOptions {
 }
 
 export function fileSystemAssetStorageFromEnv(env: NodeJS.ProcessEnv) {
+  assertLocalAssetStorageEnvironment(env);
   const configuredRoot = env.P1_ASSET_STORAGE_DIR;
   return new FileSystemAssetStorage({
     rootDirectory: configuredRoot
@@ -49,6 +51,19 @@ export function fileSystemAssetStorageFromEnv(env: NodeJS.ProcessEnv) {
       `${env.APP_BASE_URL ?? 'http://localhost:3000'}/api/core/p1/assets?objectKey=`,
     ...(env.FFPROBE_PATH ? { ffprobePath: resolveFfprobePath(env) } : {}),
   });
+}
+
+function assertLocalAssetStorageEnvironment(env: NodeJS.ProcessEnv) {
+  const appEnv = env.APP_ENV ?? '';
+  if (
+    appEnv === 'production' ||
+    appEnv === 'staging' ||
+    (!appEnv && env.NODE_ENV === 'production')
+  ) {
+    throw new Error(
+      'Shared object storage is required in production; filesystem asset storage is restricted to development, test, and e2e environments.',
+    );
+  }
 }
 
 /** Local durable object store used by recorded/dev runtimes and ffmpeg. */
@@ -67,7 +82,12 @@ export class FileSystemAssetStorage
     this.publicBaseUrl = options.publicBaseUrl?.replace(/\/$/, '');
     this.videoProbe =
       options.videoProbe ??
-      ((path) => probeVideo(path, options.ffprobePath ?? resolveFfprobePath()));
+      ((path) =>
+        probeVideo(
+          path,
+          options.ffprobePath ?? resolveFfprobePath(),
+          options.ffprobeTimeoutMs ?? 15_000,
+        ));
   }
 
   async persistGeneratedAsset(input: {
@@ -294,6 +314,29 @@ export class FileSystemAssetStorage
     }
   }
 
+  async deleteCanvasAsset(input: {
+    objectKey: string;
+    workspaceId: string;
+  }) {
+    assertCanvasObjectKey(input.workspaceId, input.objectKey);
+    try {
+      await unlink(this.pathFor(input.objectKey));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+
+  async deleteCachedAsset(objectKey: string) {
+    const path = this.pathFor(objectKey);
+    for (const target of [path, `${path}.json`]) {
+      try {
+        await unlink(target);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+  }
+
   publicUrl(objectKey: string) {
     assertPublicObjectKey(objectKey);
     if (!this.publicBaseUrl) {
@@ -400,8 +443,13 @@ export class FileSystemAssetStorage
 
 async function probeVideo(
   path: string,
-  ffprobePath: string
+  ffprobePath: string,
+  timeoutMs: number,
 ): Promise<VideoProbeResult> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('ffprobe timeout must be a positive integer.');
+  }
+  const abortSignal = AbortSignal.timeout(timeoutMs);
   const { stdout } = await execFileAsync(
     ffprobePath,
     [
@@ -415,7 +463,12 @@ async function probeVideo(
       'json',
       path,
     ],
-    { maxBuffer: 1024 * 1024 }
+    {
+      killSignal: 'SIGKILL',
+      maxBuffer: 1024 * 1024,
+      signal: abortSignal,
+      timeout: timeoutMs,
+    },
   );
   const value = JSON.parse(stdout) as {
     streams?: Array<{

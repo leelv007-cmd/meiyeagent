@@ -6,7 +6,10 @@
  * Two CTAs from A2: primary (套用并更新设置 / 切换到{对口}并套用) + 取消.
  */
 
-import type { RecipePatchFieldDiff, RecipePatchPreview } from '@meiye/contracts';
+import type {
+  RecipePatchFieldDiff,
+  RecipePatchPreview,
+} from '@meiye/contracts';
 import { cn } from '@/lib/utils';
 
 import { CTA_CANCEL } from './launch-card-seeds';

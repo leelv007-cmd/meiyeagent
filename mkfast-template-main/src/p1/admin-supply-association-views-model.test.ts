@@ -22,13 +22,10 @@ import {
 } from './admin-supply-association-views-model';
 
 test('five association view ids and paths are stable', () => {
-  assert.deepEqual([...ASSOCIATION_VIEW_IDS], [
-    'model',
-    'counterparty-channel',
-    'deployment',
-    'credential',
-    'route',
-  ]);
+  assert.deepEqual(
+    [...ASSOCIATION_VIEW_IDS],
+    ['model', 'counterparty-channel', 'deployment', 'credential', 'route']
+  );
   const reachability = listAssociationViewReachability();
   assert.equal(reachability.length, 5);
   for (const row of reachability) {
@@ -64,7 +61,7 @@ test('counterparty-channel view forward and reverse', () => {
 
   const reverse = projectCounterpartyChannelReverse(
     indexes,
-    'channel-tuzi-reseller',
+    'channel-tuzi-reseller'
   );
   assert.equal(reverse.provider?.id, 'provider-tuzi');
   assert.ok(reverse.deployments.length >= 1);
@@ -81,7 +78,7 @@ test('deployment view forward and reverse', () => {
   const reverse = projectDeploymentReverse(
     indexes,
     'model-image-seedream',
-    'channel-ark-direct',
+    'channel-ark-direct'
   );
   assert.ok(reverse.deployments.some((d) => d.id === 'dep-image-ark'));
 });
@@ -96,7 +93,7 @@ test('credential view forward and reverse (metadata only)', () => {
   // Secret material never appears on presentation projection.
   assert.equal(
     (forward.metadata as { secret?: string } | null)?.secret,
-    undefined,
+    undefined
   );
 
   const reverse = projectCredentialReverse(indexes, 'provider-tuzi');
@@ -109,7 +106,7 @@ test('route view forward and reverse', () => {
   const forward = projectRouteForward(
     indexes,
     'copy.generate',
-    snapshot.routePolicies,
+    snapshot.routePolicies
   );
   assert.equal(forward.policy?.revisionId, 'route-copy-generate:r3');
   assert.ok(forward.candidateDeployments.length >= 2);
@@ -117,7 +114,7 @@ test('route view forward and reverse', () => {
   const reverse = projectRouteReverse(
     indexes,
     'dep-text-ark',
-    snapshot.routePolicies,
+    snapshot.routePolicies
   );
   assert.ok(reverse.operations.includes('copy.generate'));
 });

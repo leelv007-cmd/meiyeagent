@@ -2,6 +2,7 @@ export interface CoreRemoteCallOptions {
 	coreServiceToken: string;
 	coreServiceUrl: string;
 	fetcher?: typeof fetch;
+	timeoutMs?: number;
 }
 
 export interface CoreRemoteIdentity {
@@ -70,6 +71,7 @@ export class CoreRemoteCall {
 					cache: "no-store",
 					headers,
 					method: "POST",
+					signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
 				},
 			);
 		} catch (cause) {

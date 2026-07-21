@@ -16,7 +16,7 @@ import {
 } from './result-shell-model';
 
 function baseFacts(
-  overrides: Partial<ResultShellFacts> = {},
+  overrides: Partial<ResultShellFacts> = {}
 ): ResultShellFacts {
   return {
     target: { workId: 'work-1' },
@@ -32,24 +32,24 @@ function baseFacts(
 test('phase: running progress → running', () => {
   assert.equal(
     projectResultShellPhase(baseFacts({ progressState: 'running' })),
-    'running',
+    'running'
   );
   assert.equal(
     projectResultShellPhase(baseFacts({ progressState: 'waiting' })),
-    'running',
+    'running'
   );
 });
 
 test('phase: suspended / needsUserChoice → needs_input or running', () => {
   assert.equal(
     projectResultShellPhase(
-      baseFacts({ progressState: 'suspended', needsUserChoice: true }),
+      baseFacts({ progressState: 'suspended', needsUserChoice: true })
     ),
-    'needs_input',
+    'needs_input'
   );
   assert.equal(
     projectResultShellPhase(baseFacts({ needsUserChoice: true })),
-    'needs_input',
+    'needs_input'
   );
 });
 
@@ -60,16 +60,16 @@ test('phase: acceptance_unknown wins over ready candidates', () => {
         acceptanceUnknown: true,
         hasUsableCandidate: true,
         progressState: 'success',
-      }),
+      })
     ),
-    'needs_input',
+    'needs_input'
   );
 });
 
 test('phase: failed progress → failed', () => {
   assert.equal(
     projectResultShellPhase(baseFacts({ progressState: 'failed' })),
-    'failed',
+    'failed'
   );
 });
 
@@ -80,9 +80,9 @@ test('phase: delivered attempt → delivered', () => {
         progressState: 'success',
         hasAdoptedCandidate: true,
         deliveryAttempt: 'delivered',
-      }),
+      })
     ),
-    'delivered',
+    'delivered'
   );
 });
 
@@ -92,9 +92,9 @@ test('phase: partial delivery → needs_input (not delivered)', () => {
       baseFacts({
         progressState: 'success',
         deliveryAttempt: 'partial',
-      }),
+      })
     ),
-    'needs_input',
+    'needs_input'
   );
 });
 
@@ -104,9 +104,9 @@ test('phase: success with candidates → ready', () => {
       baseFacts({
         progressState: 'success',
         hasUsableCandidate: true,
-      }),
+      })
     ),
-    'ready',
+    'ready'
   );
 });
 
@@ -116,11 +116,11 @@ test('phase: success with candidates → ready', () => {
 
 test('actions: running → leave_and_continue primary', () => {
   const phase = projectResultShellPhase(
-    baseFacts({ progressState: 'running' }),
+    baseFacts({ progressState: 'running' })
   );
   const actions = projectResultShellActions(
     phase,
-    baseFacts({ progressState: 'running' }),
+    baseFacts({ progressState: 'running' })
   );
   assert.equal(actions.primaryAction?.id, 'leave_and_continue');
 });
@@ -145,9 +145,7 @@ test('actions: ready usable candidate → adopt primary with copy label', () => 
   const actions = projectResultShellActions(phase, facts);
   assert.equal(actions.primaryAction?.id, 'adopt_candidate');
   assert.equal(actions.primaryAction?.label, '采用此版本');
-  assert.ok(
-    actions.secondaryActions.some((a) => a.id === 'continue_adjust'),
-  );
+  assert.ok(actions.secondaryActions.some((a) => a.id === 'continue_adjust'));
   assert.ok(actions.secondaryActions.some((a) => a.id === 'deliver'));
 });
 
@@ -191,7 +189,7 @@ test('actions: delivered → create_from_this primary', () => {
 test('actions: failed → retry primary', () => {
   const actions = projectResultShellActions(
     'failed',
-    baseFacts({ progressState: 'failed' }),
+    baseFacts({ progressState: 'failed' })
   );
   assert.equal(actions.primaryAction?.id, 'retry');
 });
@@ -207,7 +205,7 @@ test('actions: desktop budget ≤1 primary + ≤3 secondary', () => {
     baseFacts({
       progressState: 'success',
       hasUsableCandidate: true,
-    }),
+    })
   );
   const visible = desktopVisibleActions(shell);
   assert.ok(visible.primary);
@@ -219,7 +217,7 @@ test('actions: mobile budget 1 primary + more (no third conditional)', () => {
     baseFacts({
       progressState: 'success',
       hasUsableCandidate: true,
-    }),
+    })
   );
   const visible = mobileVisibleActions(shell);
   assert.ok(visible.primary);
@@ -260,7 +258,7 @@ test('view composes harness candidates without inventing a Result entity', () =>
           },
         ],
       },
-    }),
+    })
   );
   assert.equal(view.kind, 'ready');
   if (view.kind !== 'ready') return;
@@ -272,7 +270,7 @@ test('view composes harness candidates without inventing a Result entity', () =>
 
 test('view composes stream phase for running copy', () => {
   const drafting = projectResultShellView(
-    baseFacts({ progressState: 'running', hasFirstToken: true }),
+    baseFacts({ progressState: 'running', hasFirstToken: true })
   );
   assert.equal(drafting.kind, 'ready');
   if (drafting.kind !== 'ready') return;
@@ -284,7 +282,7 @@ test('view composes stream phase for running copy', () => {
     baseFacts({
       progressState: 'suspended',
       needsUserChoice: true,
-    }),
+    })
   );
   assert.equal(awaiting.kind, 'ready');
   if (awaiting.kind !== 'ready') return;
@@ -301,7 +299,7 @@ test('view composes delivery capability sub-projection', () => {
         platform: 'xiaohongshu',
         reason: 'no automatic adapter',
       },
-    }),
+    })
   );
   assert.equal(view.kind, 'ready');
   if (view.kind !== 'ready') return;
@@ -316,7 +314,7 @@ test('shellViewFromResolveOutcome not_found never becomes ready shell', () => {
       message: 'Work was not found for the requested workId.',
       requested: { workId: 'missing' },
     },
-    { workspaceKind: 'copy' },
+    { workspaceKind: 'copy' }
   );
   assert.equal(view.kind, 'error');
   if (view.kind !== 'error') return;
@@ -330,7 +328,7 @@ test('requested panel is honored when valid', () => {
       progressState: 'success',
       hasAdoptedCandidate: true,
       requestedPanel: 'delivery',
-    }),
+    })
   );
   assert.equal(shell.panel, 'delivery');
 });

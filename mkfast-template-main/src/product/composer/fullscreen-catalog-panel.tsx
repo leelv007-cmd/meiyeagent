@@ -119,7 +119,9 @@ export function FullscreenCatalogPanel({
                 ? 'border-b-2 border-primary text-foreground'
                 : 'text-muted-foreground'
             )}
-            onClick={() => onStateChange(setCatalogTab(state, tab as CatalogTab))}
+            onClick={() =>
+              onStateChange(setCatalogTab(state, tab as CatalogTab))
+            }
           >
             {view.tabLabels[tab]}
           </button>
@@ -164,9 +166,7 @@ export function FullscreenCatalogPanel({
             placeholder="搜索（即将支持）"
             className="min-h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
             onChange={(event) =>
-              onStateChange(
-                setCatalogQuery(state, event.target.value, source)
-              )
+              onStateChange(setCatalogQuery(state, event.target.value, source))
             }
           />
         </div>
@@ -186,7 +186,10 @@ export function FullscreenCatalogPanel({
             {view.view.emptyLabel}
           </p>
         ) : (
-          <ul data-testid="composer-catalog-list" className="flex flex-col gap-2">
+          <ul
+            data-testid="composer-catalog-list"
+            className="flex flex-col gap-2"
+          >
             {view.items.map((item) => (
               <li key={item.id}>
                 <button

@@ -30,7 +30,7 @@ function candidates(n: number): ImageCandidate[] {
 }
 
 function facts(
-  overrides: Partial<ImageWorksurfaceFacts> = {},
+  overrides: Partial<ImageWorksurfaceFacts> = {}
 ): ImageWorksurfaceFacts {
   return {
     workId: 'work-1',
@@ -46,14 +46,12 @@ function facts(
 }
 
 test('≥2 candidates default to set mode; switchable to single', () => {
-  const view = projectImageWorksurface(
-    facts({ candidates: candidates(2) }),
-  );
+  const view = projectImageWorksurface(facts({ candidates: candidates(2) }));
   assert.equal(view.mode, 'set');
   assert.equal(view.modeSwitchable, true);
 
   const single = projectImageWorksurface(
-    facts({ candidates: candidates(2), explicitMode: 'single' }),
+    facts({ candidates: candidates(2), explicitMode: 'single' })
   );
   assert.equal(single.mode, 'single');
 });
@@ -76,7 +74,7 @@ test('set mode primary is 加入套图 or 采用这组', () => {
       assetId: 'img-1',
       now: NOW,
     }).state,
-    { type: 'add', assetId: 'img-2', now: NOW },
+    { type: 'add', assetId: 'img-2', now: NOW }
   ).state;
 
   const ready = projectImageWorksurface(
@@ -85,7 +83,7 @@ test('set mode primary is 加入套图 or 采用这组', () => {
       outputType: 'ordered_image_set',
       slot: 'gallery',
       workingSelection: emptySel,
-    }),
+    })
   );
   // Full candidate set ready → direct 采用这组
   assert.equal(ready.primaryAction?.label, '采用这组');
@@ -97,7 +95,7 @@ test('set mode primary is 加入套图 or 采用这组', () => {
       slot: 'gallery',
       workingSelection: withSel,
       focusedAssetId: 'img-1',
-    }),
+    })
   );
   assert.equal(assembling.primaryAction?.label, '采用这组');
 });
@@ -110,7 +108,7 @@ test('a11y names include role order and adopted state', () => {
       hasContentPackage: true,
       adoptedOrderedAssetIds: ['img-1'],
       slot: 'gallery',
-    }),
+    })
   );
   const first = view.candidates.find((c) => c.assetId === 'img-1');
   assert.ok(first);
@@ -128,7 +126,7 @@ test('library actions independent; create_from_this reinjects store facts + quot
       productQuoteSnapshotId: 'quote-3',
       mediaVersionReady: true,
       focusedAssetId: 'img-1',
-    }),
+    })
   );
   assert.ok(view.libraryActions.some((a) => a.label === '保存到素材库'));
   assert.ok(view.createFromThis);
@@ -161,7 +159,7 @@ test('mobile P0 full actions and no desktop gate messages', () => {
     assert.ok(mobile.forbiddenMessages.includes(msg));
   }
   const view = projectImageWorksurface(
-    facts({ candidates: candidates(2), viewport: 'mobile' }),
+    facts({ candidates: candidates(2), viewport: 'mobile' })
   );
   assert.equal(view.mobileDesktopGate, null);
   assert.equal(view.adjustPrompt.placeholder, '还想怎么改？');
@@ -176,9 +174,9 @@ test('partial generation set is not adoptable', () => {
         baseRevisionId: 'rev-1',
         now: NOW,
       }),
-      { type: 'add', assetId: 'img-1', now: NOW },
+      { type: 'add', assetId: 'img-1', now: NOW }
     ).state,
-    { type: 'add', assetId: 'img-2', now: NOW },
+    { type: 'add', assetId: 'img-2', now: NOW }
   ).state;
 
   const view = projectImageWorksurface(
@@ -201,7 +199,7 @@ test('partial generation set is not adoptable', () => {
       explicitMode: 'set',
       outputType: 'ordered_image_set',
       slot: 'gallery',
-    }),
+    })
   );
   assert.equal(view.wholeSetAdopt?.kind, 'rejected');
   if (view.wholeSetAdopt?.kind === 'rejected') {

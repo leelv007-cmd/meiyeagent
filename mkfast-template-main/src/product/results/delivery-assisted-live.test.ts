@@ -72,7 +72,7 @@ test('live assisted action exports then binds and hands over the exact canonical
   });
   assert.equal(calls[1]?.action, 'assisted_hand_over');
   assert.deepEqual(
-    (calls[1]?.payload.binding as { ownerId?: string; accountId?: string }),
+    calls[1]?.payload.binding as { ownerId?: string; accountId?: string },
     {
       accountId: 'account-1',
       approvalReceiptId: 'approval-1',
@@ -86,7 +86,7 @@ test('live assisted action exports then binds and hands over the exact canonical
       scheduledAt: '2026-07-20T13:00:00.000Z',
       variantVersionId: 'version-1',
       workspaceId: 'ws-1',
-    },
+    }
   );
   assert.equal(result.handoffToken, 'handoff-token-12345678');
   assert.equal(result.downloadUrl, '/download/package.zip');

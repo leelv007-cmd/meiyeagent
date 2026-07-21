@@ -53,7 +53,7 @@ export class AdminCfDeepLinkError extends Error {
       | 'resource_kind_not_allowed'
       | 'resource_ref_required'
       | 'sensitive_context_rejected'
-      | 'time_range_invalid',
+      | 'time_range_invalid'
   ) {
     super(message);
     this.name = 'AdminCfDeepLinkError';
@@ -109,9 +109,11 @@ export interface AdminCfDeepLinkEnvelope {
 }
 
 export function isAdminCfDeepLinkResourceKind(
-  kind: string,
+  kind: string
 ): kind is AdminCfDeepLinkResourceKind {
-  return (ADMIN_CF_DEEP_LINK_RESOURCE_KINDS as readonly string[]).includes(kind);
+  return (ADMIN_CF_DEEP_LINK_RESOURCE_KINDS as readonly string[]).includes(
+    kind
+  );
 }
 
 function rejectSensitive(record: Record<string, unknown> | undefined): void {
@@ -120,7 +122,7 @@ function rejectSensitive(record: Record<string, unknown> | undefined): void {
     if (SENSITIVE_KEYS.has(key) && record[key] != null && record[key] !== '') {
       throw new AdminCfDeepLinkError(
         `Sensitive field "${key}" is not allowed in deep-link envelope`,
-        'sensitive_context_rejected',
+        'sensitive_context_rejected'
       );
     }
   }
@@ -131,18 +133,18 @@ function rejectSensitive(record: Record<string, unknown> | undefined): void {
  * Server adapter resolves this into a short-lived Dashboard URL.
  */
 export function buildAdminCloudflareDeepLink(
-  input: AdminCfDeepLinkInput,
+  input: AdminCfDeepLinkInput
 ): AdminCfDeepLinkEnvelope {
   if (!isAdminCfDeepLinkResourceKind(input.resourceKind)) {
     throw new AdminCfDeepLinkError(
       `resourceKind "${input.resourceKind}" is not allowed`,
-      'resource_kind_not_allowed',
+      'resource_kind_not_allowed'
     );
   }
   if (!input.resourceRef?.trim()) {
     throw new AdminCfDeepLinkError(
       'resourceRef is required',
-      'resource_ref_required',
+      'resource_ref_required'
     );
   }
   if (input.from && Number.isNaN(Date.parse(input.from))) {
@@ -205,7 +207,7 @@ export function buildAdminCloudflareDeepLink(
 
 /** Human label for deep-link target (operator language). */
 export function adminCfDeepLinkLabel(
-  kind: AdminCfDeepLinkResourceKind,
+  kind: AdminCfDeepLinkResourceKind
 ): string {
   switch (kind) {
     case 'worker_observability':

@@ -1,13 +1,14 @@
-"use client";
+'use client';
 
-import React, {
+import type React from 'react';
+import {
   useEffect,
   useRef,
   useState,
   useCallback,
   useDeferredValue,
-} from "react";
-import { cn } from "@/lib/utils";
+} from 'react';
+import { cn } from '@/lib/utils';
 
 type GlobeInstance = {
   globeImageUrl: (url: string) => GlobeInstance;
@@ -59,11 +60,11 @@ type GlobeInstance = {
       fn: (object: {
         geometry?: { dispose: () => void };
         material?: { dispose: () => void } | Array<{ dispose: () => void }>;
-      }) => void,
+      }) => void
     ) => void;
   };
   onGlobeClick: (
-    fn: (coords: { lat: number; lng: number }, event: MouseEvent) => void,
+    fn: (coords: { lat: number; lng: number }, event: MouseEvent) => void
   ) => GlobeInstance;
   (element: HTMLElement): GlobeInstance;
 };
@@ -77,10 +78,10 @@ declare global {
 
 export interface GlobeProps {
   /** Width of the globe container in pixels (or "auto" for parent width) */
-  width?: number | "auto";
+  width?: number | 'auto';
 
   /** Height of the globe container in pixels (or "auto" for parent width) */
-  height?: number | "auto";
+  height?: number | 'auto';
 
   /** Primary color for arcs and labels (any valid CSS color) */
   primaryColor?: string;
@@ -145,7 +146,7 @@ export interface GlobeProps {
   /** Callback when globe is clicked */
   onGlobeClick?: (
     coords: { lat: number; lng: number },
-    event: MouseEvent,
+    event: MouseEvent
   ) => void;
 }
 
@@ -228,12 +229,12 @@ function getRandomSample<T>(arr: T[], n: number): T[] {
  * ```
  */
 export const Globe: React.FC<GlobeProps> = ({
-  width = "auto",
-  height = "auto",
-  primaryColor = "rgb(59, 130, 246)",
-  neutralColor = "rgb(156, 163, 175)",
+  width = 'auto',
+  height = 'auto',
+  primaryColor = 'rgb(59, 130, 246)',
+  neutralColor = 'rgb(156, 163, 175)',
   atmosphereColor,
-  globeColor = "rgb(30, 30, 30)",
+  globeColor = 'rgb(30, 30, 30)',
   showAtmosphere = true,
   autoRotateSpeed = 0.85,
   enableZoom = false,
@@ -245,7 +246,7 @@ export const Globe: React.FC<GlobeProps> = ({
   landDotRows = 200,
   pointSize = 0.25,
   atmosphereAltitude = 0.3,
-  landMapUrl = "https://assets.ot.digital/img/map.png",
+  landMapUrl = 'https://assets.ot.digital/img/map.png',
   className,
   onReady,
   onGlobeClick,
@@ -274,7 +275,7 @@ export const Globe: React.FC<GlobeProps> = ({
   const deferredPrimaryColor = useDeferredValue(primaryColor);
   const deferredNeutralColor = useDeferredValue(neutralColor);
   const deferredAtmosphereColor = useDeferredValue(
-    atmosphereColor || neutralColor,
+    atmosphereColor || neutralColor
   );
   const deferredGlobeColor = useDeferredValue(globeColor);
 
@@ -300,13 +301,13 @@ export const Globe: React.FC<GlobeProps> = ({
             if (window.Globe) {
               resolve();
             } else {
-              reject(new Error("Globe library loaded but not available"));
+              reject(new Error('Globe library loaded but not available'));
             }
           }, 5000);
           return;
         }
 
-        const script = document.createElement("script");
+        const script = document.createElement('script');
         script.src = src;
         script.async = true;
         script.onload = () => {
@@ -321,7 +322,7 @@ export const Globe: React.FC<GlobeProps> = ({
             if (window.Globe) {
               resolve();
             } else {
-              reject(new Error("Globe library loaded but not available"));
+              reject(new Error('Globe library loaded but not available'));
             }
           }, 3000);
         };
@@ -332,10 +333,10 @@ export const Globe: React.FC<GlobeProps> = ({
 
     const loadScripts = async () => {
       try {
-        await loadScript("https://unpkg.com/globe.gl");
+        await loadScript('https://unpkg.com/globe.gl');
         setIsLoading(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load scripts");
+        setError(err instanceof Error ? err.message : 'Failed to load scripts');
         setIsLoading(false);
       }
     };
@@ -351,8 +352,8 @@ export const Globe: React.FC<GlobeProps> = ({
         return cached;
       }
 
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
       if (!ctx) return [];
 
       canvas.width = image.width;
@@ -390,7 +391,7 @@ export const Globe: React.FC<GlobeProps> = ({
 
       return dots;
     },
-    [landDotRows, landMapUrl, DEG2RAD],
+    [landDotRows, landMapUrl, DEG2RAD]
   );
 
   const cleanup = useCallback(() => {
@@ -461,11 +462,11 @@ export const Globe: React.FC<GlobeProps> = ({
                   object.material.dispose();
                 }
               }
-            },
+            }
           );
         }
       } catch (e) {
-        console.warn("Error during Three.js cleanup:", e);
+        console.warn('Error during Three.js cleanup:', e);
       }
       globeRef.current = null;
     }
@@ -499,13 +500,13 @@ export const Globe: React.FC<GlobeProps> = ({
 
       const container = containerRef.current;
       const containerWidth =
-        width === "auto"
+        width === 'auto'
           ? container.parentElement?.getBoundingClientRect().width || 600
           : width;
-      const containerHeight = height === "auto" ? containerWidth : height;
+      const containerHeight = height === 'auto' ? containerWidth : height;
 
       const landMapImage = new Image();
-      landMapImage.crossOrigin = "anonymous";
+      landMapImage.crossOrigin = 'anonymous';
       landMapImage.src = landMapUrl;
 
       landMapImage.onload = () => {
@@ -515,10 +516,10 @@ export const Globe: React.FC<GlobeProps> = ({
         if (!window.Globe) return;
 
         const createColorTexture = (color: string) => {
-          const canvas = document.createElement("canvas");
+          const canvas = document.createElement('canvas');
           canvas.width = 1;
           canvas.height = 1;
-          const ctx = canvas.getContext("2d");
+          const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.fillStyle = color;
             ctx.fillRect(0, 0, 1, 1);
@@ -529,7 +530,7 @@ export const Globe: React.FC<GlobeProps> = ({
         const world = window
           .Globe()
           .globeImageUrl(createColorTexture(deferredGlobeColor))
-          .backgroundColor("rgba(0, 0, 0, 0)")
+          .backgroundColor('rgba(0, 0, 0, 0)')
           .showAtmosphere(showAtmosphere)
           .atmosphereColor(deferredAtmosphereColor)
           .atmosphereAltitude(atmosphereAltitude)
@@ -547,7 +548,7 @@ export const Globe: React.FC<GlobeProps> = ({
           .arcDashLength(2)
           .arcDashGap(2)
           .arcDashAnimateTime(arcAnimationDuration)
-          .labelText(() => "")
+          .labelText(() => '')
           .labelColor(() => deferredPrimaryColor)
           .labelDotRadius(0.3)
           .labelAltitude(0.002)
@@ -573,7 +574,7 @@ export const Globe: React.FC<GlobeProps> = ({
             if (onGlobeClickRef.current) {
               onGlobeClickRef.current(coords, event);
             }
-          },
+          }
         );
 
         globeRef.current = world;
@@ -617,7 +618,7 @@ export const Globe: React.FC<GlobeProps> = ({
               (_, i) => ({
                 lat: selectedDots[i + arcCount].lat,
                 lng: selectedDots[i + arcCount].lng,
-              }),
+              })
             );
 
             const rings: Ring[] = Array.from({ length: arcCount }, (_, i) => ({
@@ -650,25 +651,25 @@ export const Globe: React.FC<GlobeProps> = ({
           resizeTimeout = setTimeout(() => {
             if (!globeRef.current || !container.parentElement) return;
             const newWidth =
-              width === "auto"
+              width === 'auto'
                 ? container.parentElement.getBoundingClientRect().width
                 : width;
-            const newHeight = height === "auto" ? newWidth : height;
+            const newHeight = height === 'auto' ? newWidth : height;
             globeRef.current.width(newWidth);
             globeRef.current.height(newHeight);
           }, 150);
         };
 
-        window.addEventListener("resize", handleResize);
+        window.addEventListener('resize', handleResize);
 
         let resizeObserver: ResizeObserver | null = null;
-        if ("ResizeObserver" in window && container.parentElement) {
+        if ('ResizeObserver' in window && container.parentElement) {
           resizeObserver = new ResizeObserver(handleResize);
           resizeObserver.observe(container.parentElement);
         }
 
         let observer: IntersectionObserver | null = null;
-        if ("IntersectionObserver" in window) {
+        if ('IntersectionObserver' in window) {
           observer = new IntersectionObserver(
             (entries) => {
               entries.forEach((entry) => {
@@ -679,13 +680,13 @@ export const Globe: React.FC<GlobeProps> = ({
                 }
               });
             },
-            { threshold: 0.1 },
+            { threshold: 0.1 }
           );
           observer.observe(container);
         }
 
         const localCleanup = () => {
-          window.removeEventListener("resize", handleResize);
+          window.removeEventListener('resize', handleResize);
           if (resizeTimeout) {
             clearTimeout(resizeTimeout);
           }
@@ -704,12 +705,12 @@ export const Globe: React.FC<GlobeProps> = ({
       };
 
       landMapImage.onerror = () => {
-        setError("Failed to load land map image");
+        setError('Failed to load land map image');
         isInitializingRef.current = false;
       };
     };
 
-    if ("requestIdleCallback" in window) {
+    if ('requestIdleCallback' in window) {
       requestIdleCallback(initGlobeDeferred, { timeout: 500 });
     } else {
       setTimeout(initGlobeDeferred, 0);
@@ -751,8 +752,8 @@ export const Globe: React.FC<GlobeProps> = ({
     return (
       <div
         className={cn(
-          "flex items-center justify-center rounded-lg border border-red-200 bg-red-50 p-8 text-red-600",
-          className,
+          'flex items-center justify-center rounded-lg border border-red-200 bg-red-50 p-8 text-red-600',
+          className
         )}
       >
         <p>Error loading globe: {error}</p>
@@ -768,22 +769,22 @@ export const Globe: React.FC<GlobeProps> = ({
     <div
       ref={containerRef}
       className={cn(
-        "relative overflow-hidden",
-        interactive ? "cursor-grab" : "cursor-default",
-        className,
+        'relative overflow-hidden',
+        interactive ? 'cursor-grab' : 'cursor-default',
+        className
       )}
       style={{
-        width: width === "auto" ? "100%" : width,
-        height: height === "auto" ? "auto" : height,
+        width: width === 'auto' ? '100%' : width,
+        height: height === 'auto' ? 'auto' : height,
         opacity: isGlobeVisible ? 1 : 0,
-        transform: isGlobeVisible ? "scale(1)" : "scale(0.85)",
+        transform: isGlobeVisible ? 'scale(1)' : 'scale(0.85)',
         transition:
-          "opacity 0.8s ease-out, transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)",
+          'opacity 0.8s ease-out, transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
       }}
     />
   );
 };
 
-Globe.displayName = "Globe";
+Globe.displayName = 'Globe';
 
 export default Globe;

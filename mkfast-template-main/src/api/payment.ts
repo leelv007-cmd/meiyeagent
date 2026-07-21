@@ -3,12 +3,26 @@ import { payment } from '@/db/app.schema';
 import { user } from '@/db/auth.schema';
 import { resolveActiveWorkspace } from '@/db/workspaces';
 import { getLocale } from '@/lib/locale';
-import { findPlanByPriceId, getAllPricePlans } from '@/lib/price-plan';
+import {
+  findPlanByPlanId,
+  findPlanByPriceId,
+  findPriceInPlan,
+  getAllPricePlans,
+} from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 import { getCanonicalUrl } from '@/lib/urls';
-import { authApiMiddleware } from '@/middlewares/auth-middleware';
+import {
+  authApiMiddleware,
+  recentAuthApiMiddleware,
+} from '@/middlewares/auth-middleware';
 import { projectCurrentPlan } from './payment-current-plan';
 import { createCheckout, createCustomerPortal } from '@/payment';
+import {
+  createCheckoutInputSchema,
+  portalInputSchema,
+  requireSellableCheckoutPrice,
+  StripeNewCommerceRetiredError,
+} from '@/payment/checkout-policy';
 import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
 import { requireCheckoutWorkspaceBinding } from '@/payment/plan-commerce';
 import type {
@@ -23,21 +37,21 @@ import { createServerFn } from '@tanstack/react-start';
 import { and, desc, eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 
-const checkoutSchema = z.object({
-  planId: z.string().min(1),
-  priceId: z.string().min(1),
-  successUrl: z.url().optional(),
-  cancelUrl: z.url().optional(),
-  metadata: z.record(z.string(), z.string()).optional(),
-  /** Optional explicit workspace; defaults to active owner workspace (Tc-1). */
-  workspaceId: z.string().min(1).optional(),
-});
+const checkoutCatalog = { findPlanByPlanId, findPriceInPlan };
+const checkoutInputSchema = createCheckoutInputSchema(checkoutCatalog);
 
 export const createCheckoutSession = createServerFn({ method: 'POST' })
-  .inputValidator(checkoutSchema)
+  .inputValidator(checkoutInputSchema)
   .middleware([authApiMiddleware])
   .handler(async ({ data, context }) => {
     const { userId } = context;
+    const provider = websiteConfig.payment?.provider;
+    if (!provider) throw new Error('Payment provider is required.');
+    if (provider === 'stripe') throw new StripeNewCommerceRetiredError();
+    const { price, plan: pricePlan } = requireSellableCheckoutPrice(
+      data,
+      checkoutCatalog
+    );
     const db = getDb();
     const [userRow] = await db
       .select({ email: user.email, name: user.name })
@@ -45,22 +59,12 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
       .where(eq(user.id, userId))
       .limit(1);
     if (!userRow?.email) throw new Error('User email not found');
-    const { planId, priceId, successUrl, cancelUrl, metadata } = data;
+    const { planId, metadata } = data;
+    const priceId = price.priceId;
     const locale = getLocale();
-    const isCreem = websiteConfig.payment?.provider === 'creem';
     const billingUrl = getCanonicalUrl(Routes.SettingsBilling);
-    const cancel = cancelUrl ?? billingUrl;
-
-    // For Stripe: {CHECKOUT_SESSION_ID} is replaced by Stripe on redirect,
-    // then the Payment page polls by sessionId until the webhook writes the DB record.
-    // For Creem: Creem does NOT replace URL placeholders and has its own
-    // payment confirmation page, so redirect straight to billing.
-    const success = isCreem
-      ? (successUrl ?? billingUrl)
-      : (successUrl ??
-        getCanonicalUrl(
-          `${Routes.Payment}?session_id={CHECKOUT_SESSION_ID}&callback=${Routes.SettingsBilling}`
-        ));
+    const cancel = billingUrl;
+    const success = billingUrl;
 
     // Tc-1: bind plan checkout to an owner workspace before provider session.
     const workspace =
@@ -73,16 +77,12 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
       userId,
       workspaceId: workspace.id,
     });
-    const provider = websiteConfig.payment?.provider;
-    if (!provider) throw new Error('Payment provider is required.');
-    const pricePlan = findPlanByPriceId(priceId);
-    const price = pricePlan?.prices.find((item) => item.priceId === priceId);
     const bindingStore = new PostgresPlanCheckoutBindingStore(db);
     const binding = await bindingStore.createOwnerBinding({
       provider,
       priceId,
-      paymentType: price?.type ?? PaymentTypes.SUBSCRIPTION,
-      interval: pricePlan?.isLifetime ? 'lifetime' : (price?.interval ?? null),
+      paymentType: price.type,
+      interval: pricePlan.isLifetime ? 'lifetime' : (price.interval ?? null),
       workspaceId: bound.workspaceId,
       ownerUserId: bound.userId,
     });
@@ -121,16 +121,14 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
     }
   });
 
-const portalSchema = z.object({
-  returnUrl: z.string().url().optional(),
-  locale: z.string().optional(),
-});
-
 export const createCustomerPortalSession = createServerFn({ method: 'POST' })
-  .inputValidator(portalSchema)
-  .middleware([authApiMiddleware])
+  .inputValidator(portalInputSchema)
+  .middleware([recentAuthApiMiddleware])
   .handler(async ({ data, context }) => {
     const { userId } = context;
+    if (websiteConfig.payment?.provider === 'stripe') {
+      throw new StripeNewCommerceRetiredError();
+    }
     const db = getDb();
     const [row] = await db
       .select({ customerId: user.customerId })
@@ -141,7 +139,7 @@ export const createCustomerPortalSession = createServerFn({ method: 'POST' })
       throw new Error('No customer found for user');
     }
     const locale = getLocale();
-    const returnUrl = data.returnUrl ?? getCanonicalUrl(Routes.SettingsBilling);
+    const returnUrl = getCanonicalUrl(Routes.SettingsBilling);
     const result = await createCustomerPortal({
       customerId: row.customerId,
       returnUrl,

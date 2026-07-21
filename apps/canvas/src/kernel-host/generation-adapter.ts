@@ -34,7 +34,8 @@ export function isCatalogOperationActive(
 	if (entry.activation === "inactive") return false;
 	if (entry.modelId === null || entry.modelId === "") return false;
 	if (entry.activation === "active") return Boolean(entry.modelId);
-	if (entry.active === true) return entry.modelId !== undefined ? Boolean(entry.modelId) : true;
+	if (entry.active === true)
+		return entry.modelId !== undefined ? Boolean(entry.modelId) : true;
 	// No explicit active flag: require a non-empty modelId.
 	return typeof entry.modelId === "string" && entry.modelId.length > 0;
 }

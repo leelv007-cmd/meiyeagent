@@ -22,7 +22,10 @@ test('320×720 cold six uses two columns (three rows)', () => {
   assert.equal(layout.singleColumn, false);
   assert.equal(layout.allowTruncate, false);
   assert.equal(layout.coldRows, 3);
-  assert.equal(isTwoColumnMobileViewport(COMPOSER_VIEWPORT_FIXTURES.phone320), true);
+  assert.equal(
+    isTwoColumnMobileViewport(COMPOSER_VIEWPORT_FIXTURES.phone320),
+    true
+  );
 });
 
 test('390×844 cold six uses two columns (three rows)', () => {
@@ -52,8 +55,13 @@ test('200% zoom / width <280 uses single column without truncation', () => {
   assert.equal(layout.columns, 1);
   assert.equal(layout.singleColumn, true);
   assert.equal(layout.allowTruncate, false);
-  assert.ok(COMPOSER_VIEWPORT_FIXTURES.zoom200.width < COMPOSER_SINGLE_COLUMN_MAX_WIDTH);
-  assert.equal(isTwoColumnMobileViewport(COMPOSER_VIEWPORT_FIXTURES.zoom200), false);
+  assert.ok(
+    COMPOSER_VIEWPORT_FIXTURES.zoom200.width < COMPOSER_SINGLE_COLUMN_MAX_WIDTH
+  );
+  assert.equal(
+    isTwoColumnMobileViewport(COMPOSER_VIEWPORT_FIXTURES.zoom200),
+    false
+  );
 });
 
 test('boundary: width 279 single, 280 two-col', () => {

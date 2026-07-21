@@ -1,8 +1,6 @@
 import { websiteConfig } from '@/config/website';
 import { getDb } from '@/db';
-import { paymentWebhookEvents } from '@/db/app.schema';
 import { serverEnv } from '@/env/server';
-import { and, eq } from 'drizzle-orm';
 import { CreemProvider } from './provider/creem';
 import {
   settlePendingProStudioActivations,
@@ -16,6 +14,12 @@ import {
   type PlanSettlementIntent,
 } from './plan-commerce';
 import { StripeProvider } from './provider/stripe';
+import { PostgresPaymentWebhookInbox } from './postgres-webhook-settlement';
+import {
+  receivePaymentWebhook,
+  refreshVerifiedWebhookSignature,
+  settlePendingPaymentWebhooks as consumePendingPaymentWebhooks,
+} from './webhook-settlement';
 import type {
   CheckoutResult,
   CreateCheckoutParams,
@@ -49,6 +53,12 @@ function createProvider(): PaymentProvider {
   return factory();
 }
 
+function createWebhookProvider(name: PaymentProviderName): PaymentProvider {
+  const factory = providerRegistry[name];
+  if (!factory) throw new Error(`Unsupported payment provider: ${name}.`);
+  return factory();
+}
+
 /** Whether payment (checkout/billing) is enabled */
 export function isPaymentEnabled(): boolean {
   return !!websiteConfig.payment?.enable;
@@ -77,105 +87,56 @@ export async function createCustomerPortal(
 }
 
 export async function handleWebhookEvent(
+  provider: PaymentProviderName,
   payload: string,
   signature: string
-): Promise<void> {
-  const provider = getPaymentProvider();
-  const raw = JSON.parse(payload) as Record<string, unknown>;
-  const eventId = raw.id;
-  const eventType = raw.type ?? raw.eventType;
-  const providerName = websiteConfig.payment?.provider;
-  if (
-    typeof eventId !== 'string' ||
-    typeof eventType !== 'string' ||
-    !providerName
-  ) {
-    throw new Error('Webhook event identity is missing.');
-  }
-  const [existing] = await getDb()
-    .select({
-      status: paymentWebhookEvents.status,
-      createdAt: paymentWebhookEvents.createdAt,
-    })
-    .from(paymentWebhookEvents)
-    .where(
-      and(
-        eq(paymentWebhookEvents.provider, providerName),
-        eq(paymentWebhookEvents.eventId, eventId)
-      )
-    )
-    .limit(1);
-  if (existing?.status === 'processed') return;
-  if (
-    existing?.status === 'processing' &&
-    existing.createdAt.getTime() > Date.now() - 10 * 60_000
-  ) {
-    return;
-  }
-  if (existing) {
-    await getDb()
-      .delete(paymentWebhookEvents)
-      .where(
-        and(
-          eq(paymentWebhookEvents.provider, providerName),
-          eq(paymentWebhookEvents.eventId, eventId)
-        )
-      );
-  }
-  const [claimed] = await getDb()
-    .insert(paymentWebhookEvents)
-    .values({
-      provider: providerName,
-      eventId,
-      eventType,
-      status: 'processing',
-    })
-    .onConflictDoNothing()
-    .returning({ eventId: paymentWebhookEvents.eventId });
-  if (!claimed) return;
-  try {
-    const verifiedEvent = await provider.handleWebhookEvent(payload, signature);
-    if (verifiedEvent) {
-      if (
-        verifiedEvent.provider !== providerName ||
-        verifiedEvent.providerEventId !== eventId
-      ) {
-        throw new Error('Verified webhook identity does not match payload.');
-      }
-      // Pro Studio one-time add-on claim (unchanged).
-      const proStudioSettlement =
-        await settleVerifiedProStudioPurchase(verifiedEvent);
-      // Tc: plan entitlement settlement via Foundation payment_grant.
-      const planSettlement = await settleVerifiedPlanPurchase(verifiedEvent);
-      if (proStudioSettlement.status === 'not_applicable' && !planSettlement) {
-        // Never acknowledge a verified commerce event before its durable
-        // checkout binding is visible. Deleting the local event claim in the
-        // catch block lets the provider retry instead of losing entitlement.
-        throw new Error(
-          'Verified payment event has no durable commerce binding yet.'
-        );
-      }
+) {
+  return receivePaymentWebhook(
+    { payload, provider, signature },
+    {
+      inbox: new PostgresPaymentWebhookInbox(getDb()),
+      secrets: {
+        creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
+        stripeApiKey: serverEnv.STRIPE_SECRET_KEY,
+        stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
+      },
     }
-    await getDb()
-      .update(paymentWebhookEvents)
-      .set({ status: 'processed', processedAt: new Date() })
-      .where(
-        and(
-          eq(paymentWebhookEvents.provider, providerName),
-          eq(paymentWebhookEvents.eventId, eventId)
-        )
-      );
-  } catch (error) {
-    await getDb()
-      .delete(paymentWebhookEvents)
-      .where(
-        and(
-          eq(paymentWebhookEvents.provider, providerName),
-          eq(paymentWebhookEvents.eventId, eventId)
-        )
-      );
-    throw error;
-  }
+  );
+}
+
+export async function settlePendingPaymentWebhookEvents() {
+  const inbox = new PostgresPaymentWebhookInbox(getDb());
+  return consumePendingPaymentWebhooks(
+    { limit: 25 },
+    {
+      inbox,
+      settlement: {
+        async apply(claim) {
+          const provider = createWebhookProvider(claim.provider);
+          const signature = await refreshVerifiedWebhookSignature(claim, {
+            creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
+            stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
+          });
+          return provider.handleWebhookEvent(claim.payload, signature);
+        },
+        async settle(event) {
+          const proStudioSettlement =
+            await settleVerifiedProStudioPurchase(event);
+          const planSettlement = await settleVerifiedPlanPurchase(event);
+          if (
+            proStudioSettlement.status === 'not_applicable' &&
+            !planSettlement
+          ) {
+            const error = new Error(
+              'Verified payment event has no durable commerce binding yet.'
+            ) as Error & { code: string };
+            error.code = 'PAYMENT_BINDING_NOT_READY';
+            throw error;
+          }
+        },
+      },
+    }
+  );
 }
 
 export async function settlePendingProStudioPurchases() {

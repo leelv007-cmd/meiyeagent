@@ -94,6 +94,31 @@ export class PostgresProStudioMigration implements PostgresSchemaMigrator {
       );
       CREATE INDEX IF NOT EXISTS pro_studio_owned_assets_created_idx
         ON pro_studio_owned_assets (workspace_id, created_at, id);
+      ALTER TABLE pro_studio_owned_assets
+        ADD COLUMN IF NOT EXISTS tombstoned_at timestamptz;
+      CREATE TABLE IF NOT EXISTS pro_studio_asset_deletion_outbox (
+        id text PRIMARY KEY,
+        workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        asset_id text NOT NULL,
+        object_key text NOT NULL,
+        reason text NOT NULL DEFAULT 'asset_delete'
+          CHECK (reason IN ('asset_delete', 'orphan_compensation')),
+        status text NOT NULL CHECK (status IN ('pending', 'claimed', 'completed')),
+        claim_token text,
+        lease_expires_at timestamptz,
+        created_at timestamptz NOT NULL,
+        completed_at timestamptz,
+        UNIQUE (workspace_id, asset_id)
+      );
+      CREATE INDEX IF NOT EXISTS pro_studio_asset_deletion_pending_idx
+        ON pro_studio_asset_deletion_outbox (status, created_at, id);
+      ALTER TABLE pro_studio_asset_deletion_outbox
+        ADD COLUMN IF NOT EXISTS reason text NOT NULL DEFAULT 'asset_delete';
+      ALTER TABLE pro_studio_asset_deletion_outbox
+        DROP CONSTRAINT IF EXISTS pro_studio_asset_deletion_outbox_reason_check;
+      ALTER TABLE pro_studio_asset_deletion_outbox
+        ADD CONSTRAINT pro_studio_asset_deletion_outbox_reason_check
+          CHECK (reason IN ('asset_delete', 'orphan_compensation'));
 
       CREATE TABLE IF NOT EXISTS pro_studio_audit_events (
         workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

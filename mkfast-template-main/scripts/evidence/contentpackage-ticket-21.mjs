@@ -19,11 +19,9 @@ const { Pool } = rootRequire('pg');
 
 const baseUrl = process.env.EVIDENCE_BASE_URL ?? 'http://localhost:3000';
 const databaseUrl =
-  process.env.DATABASE_URL ??
-  'postgres://meiye:meiye@127.0.0.1:54329/meiye';
+  process.env.DATABASE_URL ?? 'postgres://meiye:meiye@127.0.0.1:54329/meiye';
 const outputDir = path.resolve(
-  process.env.EVIDENCE_OUTPUT_DIR ??
-    '../docs/evidence/contentpackage/ticket-21'
+  process.env.EVIDENCE_OUTPUT_DIR ?? '../docs/evidence/contentpackage/ticket-21'
 );
 const runId = `ticket-21-${Date.now()}`;
 const admin = {
@@ -151,9 +149,7 @@ function configMap(response) {
 
 async function confirmReview(reason) {
   await page.locator('#impact-review-reason').fill(reason);
-  await page
-    .getByRole('button', { name: /确认配置变更|确认执行/ })
-    .click();
+  await page.getByRole('button', { name: /确认配置变更|确认执行/ }).click();
   await page.waitForTimeout(900);
 }
 
@@ -184,7 +180,10 @@ async function applyPlanChanges() {
   for (const [id, reason] of [
     ['#compliance-watermark-default', 'Ticket 21 watermark default evidence.'],
     ['#compliance-aigc-label-default', 'Ticket 21 AIGC default evidence.'],
-    ['#compliance-regulated-mode-default', 'Ticket 21 regulated default evidence.'],
+    [
+      '#compliance-regulated-mode-default',
+      'Ticket 21 regulated default evidence.',
+    ],
   ]) {
     await page.locator(`label[for="${id.slice(1)}"]`).click();
     await confirmReview(reason);
@@ -205,11 +204,13 @@ async function resetEvidenceBaseline() {
     ],
     [
       'plan.addons',
-      configs.get('plan.addons').storedValue.map((offer) =>
-        offer.id === 'copy-20'
-          ? { ...offer, amountMicros: 990_000, currency: 'CNY' }
-          : offer
-      ),
+      configs
+        .get('plan.addons')
+        .storedValue.map((offer) =>
+          offer.id === 'copy-20'
+            ? { ...offer, amountMicros: 990_000, currency: 'CNY' }
+            : offer
+        ),
     ],
     ['compliance.watermark.default', false],
     ['compliance.aigc_label.default', true],
@@ -269,9 +270,7 @@ try {
   await applyPlanChanges();
   await page.getByText(/120 条/).waitFor({ timeout: 30_000 });
   await page.getByText(/1\.29 CNY/).waitFor({ timeout: 30_000 });
-  configBeforeRestart = configMap(
-    await query('admin-config', 'config_list')
-  );
+  configBeforeRestart = configMap(await query('admin-config', 'config_list'));
   const storedGrowth = configBeforeRestart.get(
     'plan.allowances.growth'
   )?.storedValue;
@@ -308,14 +307,17 @@ try {
       2
     )}\n`
   );
-  console.log(JSON.stringify({ checkpoint: 'restart-ticket-21-runtime', resumeFile }));
+  console.log(
+    JSON.stringify({ checkpoint: 'restart-ticket-21-runtime', resumeFile })
+  );
   const deadline = Date.now() + 300_000;
   for (;;) {
     try {
       await access(resumeFile);
       break;
     } catch {
-      if (Date.now() > deadline) throw new Error('Timed out waiting for runtime restart.');
+      if (Date.now() > deadline)
+        throw new Error('Timed out waiting for runtime restart.');
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
@@ -329,12 +331,19 @@ try {
       configAfterRestart.get(key)?.revision ===
         configBeforeRestart.get(key)?.revision,
       'Config revision changed or disappeared after restart',
-      { after: configAfterRestart.get(key), before: configBeforeRestart.get(key), key }
+      {
+        after: configAfterRestart.get(key),
+        before: configBeforeRestart.get(key),
+        key,
+      }
     );
   }
   await page.screenshot({
     fullPage: true,
-    path: path.join(outputDir, '02-admin-plan-config-persisted-after-restart.png'),
+    path: path.join(
+      outputDir,
+      '02-admin-plan-config-persisted-after-restart.png'
+    ),
   });
 
   await login(merchant);
@@ -371,7 +380,8 @@ try {
     `${runId}-copy-addon-after-change`
   );
   assert(purchase.status === 200, 'Recorded add-on checkout failed', purchase);
-  const projectionAfterPurchase = (await query('entitlements', 'projection')).body.data;
+  const projectionAfterPurchase = (await query('entitlements', 'projection'))
+    .body.data;
   addOnPurchase = projectionAfterPurchase.addOnPurchases.find(
     (item) => item.purchaseId === purchase.body.data.purchaseId
   );
@@ -385,12 +395,21 @@ try {
   await page.goto(`${baseUrl}/dashboard/store`, { waitUntil: 'networkidle' });
   await page.getByRole('tab', { name: '资质信息' }).click();
   const regulated = page.locator('#regulated');
-  assert(await regulated.isChecked(), 'New store did not inherit regulated=true');
+  assert(
+    await regulated.isChecked(),
+    'New store did not inherit regulated=true'
+  );
   await regulated.click();
-  assert(!(await regulated.isChecked()), 'Merchant could not override regulated default');
+  assert(
+    !(await regulated.isChecked()),
+    'Merchant could not override regulated default'
+  );
   await page.screenshot({
     fullPage: true,
-    path: path.join(outputDir, '03-merchant-regulated-default-and-override.png'),
+    path: path.join(
+      outputDir,
+      '03-merchant-regulated-default-and-override.png'
+    ),
   });
 
   await page.getByRole('tab', { name: '门店资料' }).click();
@@ -424,7 +443,10 @@ try {
   const watermark = record.getByRole('switch', { name: '品牌水印' });
   const aigc = record.getByRole('switch', { name: 'AIGC 标识' });
   await watermark.waitFor();
-  assert(await watermark.isChecked(), 'New session did not inherit watermark=true');
+  assert(
+    await watermark.isChecked(),
+    'New session did not inherit watermark=true'
+  );
   assert(!(await aigc.isChecked()), 'New session did not inherit AIGC=false');
   await watermark.click();
   await aigc.click();
@@ -440,7 +462,10 @@ try {
   };
   await page.screenshot({
     fullPage: true,
-    path: path.join(outputDir, '04-merchant-compliance-defaults-and-override.png'),
+    path: path.join(
+      outputDir,
+      '04-merchant-compliance-defaults-and-override.png'
+    ),
   });
 
   const pool = new Pool({ connectionString: databaseUrl });
@@ -478,7 +503,10 @@ try {
     },
     completedAt: new Date().toISOString(),
     configRevisions: Object.fromEntries(
-      evidenceKeys.map((key) => [key, configAfterRestart.get(key)?.revision ?? null])
+      evidenceKeys.map((key) => [
+        key,
+        configAfterRestart.get(key)?.revision ?? null,
+      ])
     ),
     existingPlan: {
       afterChange: projectionAfter.plan,
@@ -503,7 +531,10 @@ try {
 
 for (const filename of await readdir(outputDir)) {
   if (!filename.endsWith('.webm')) continue;
-  const target = path.join(outputDir, 'continuous-plan-compliance-journey.webm');
+  const target = path.join(
+    outputDir,
+    'continuous-plan-compliance-journey.webm'
+  );
   if (filename !== path.basename(target)) {
     await rename(path.join(outputDir, filename), target);
   }

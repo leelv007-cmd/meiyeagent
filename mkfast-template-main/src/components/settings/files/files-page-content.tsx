@@ -18,11 +18,7 @@ export function FilesPageContent() {
   const { data, isLoading } = useUserFiles(page, pageSize);
   const uploadMutation = useUploadUserFile();
   const deleteMutation = useDeleteUserFile();
-  const handleUpload = (params: {
-    file: File;
-    isPublic?: boolean;
-    description?: string;
-  }) =>
+  const handleUpload = (params: { file: File; description?: string }) =>
     new Promise<void>((resolve, reject) => {
       uploadMutation.mutate(params, {
         onSuccess: () => {

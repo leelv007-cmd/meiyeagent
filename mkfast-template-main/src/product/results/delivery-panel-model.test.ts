@@ -13,7 +13,7 @@ import {
 } from './delivery-panel-model';
 
 function basePanelFacts(
-  overrides: Partial<DeliveryPanelFacts> = {},
+  overrides: Partial<DeliveryPanelFacts> = {}
 ): DeliveryPanelFacts {
   return {
     target: 'xiaohongshu',
@@ -54,16 +54,11 @@ test('panel hides direct_publish at launch and surfaces floor groups', () => {
 });
 
 test('mobile viewport uses full-height capability surface', () => {
-  const view = projectDeliveryPanel(
-    basePanelFacts({ viewport: 'mobile' }),
-  );
+  const view = projectDeliveryPanel(basePanelFacts({ viewport: 'mobile' }));
   assert.equal(view.surface.viewport, 'mobile');
   assert.equal(view.surface.fullHeight, true);
   assert.equal(view.surface.testId, 'delivery-panel');
-  assert.equal(
-    view.surface.mobileTestId,
-    'delivery-panel-mobile-fullheight',
-  );
+  assert.equal(view.surface.mobileTestId, 'delivery-panel-mobile-fullheight');
 });
 
 test('desktop viewport is not full-height', () => {
@@ -73,7 +68,7 @@ test('desktop viewport is not full-height', () => {
 
 test('active outcome projects distinct a11y announcement', () => {
   const view = projectDeliveryPanel(
-    basePanelFacts({ activeOutcome: 'handed_over' }),
+    basePanelFacts({ activeOutcome: 'handed_over' })
   );
   assert.ok(view.outcome);
   assert.equal(view.outcome!.announcement, '已交接');

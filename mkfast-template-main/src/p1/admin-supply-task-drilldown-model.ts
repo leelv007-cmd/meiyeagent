@@ -124,7 +124,7 @@ function buildTimeline(run: SupplyRunRecord): TimelineEventView[] {
 
 export function buildTaskDrilldownView(
   taskId: string,
-  snapshot: SupplyControlSnapshot = buildDefaultSupplyControlSnapshot(),
+  snapshot: SupplyControlSnapshot = buildDefaultSupplyControlSnapshot()
 ): TaskDrilldownView | null {
   const run = snapshot.runs.find((r) => r.taskId === taskId);
   if (!run) return null;
@@ -178,7 +178,7 @@ export function buildTaskDrilldownView(
 }
 
 export function listTaskIds(
-  snapshot: SupplyControlSnapshot = buildDefaultSupplyControlSnapshot(),
+  snapshot: SupplyControlSnapshot = buildDefaultSupplyControlSnapshot()
 ): string[] {
   return [...new Set(snapshot.runs.map((r) => r.taskId))];
 }

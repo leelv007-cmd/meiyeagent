@@ -79,7 +79,7 @@ export function validateWholeSetAdopt(input: {
       code: 'DUPLICATE_ASSET',
       message: '套图含重复图片，无法采用。',
       failedAssetIds: payload.assetIds.filter(
-        (id, i, arr) => arr.indexOf(id) !== i,
+        (id, i, arr) => arr.indexOf(id) !== i
       ),
     };
   }
@@ -136,7 +136,7 @@ export function validateWholeSetAdopt(input: {
   const roleAction = toVisualAdoptionRoleAction(
     'adopt_set',
     payload.assetIds[0]!,
-    payload.assetIds,
+    payload.assetIds
   );
   if (!roleAction || roleAction.kind !== 'adopt_set') {
     return {

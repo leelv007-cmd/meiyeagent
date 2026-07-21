@@ -67,10 +67,12 @@ describe('delivery panel command outcomes', () => {
     });
     render(<DeliveryPanel view={assistedView} onAction={onAction} />);
 
-    await user.click(screen.getByTestId('delivery-assisted-role-external_owner'));
+    await user.click(
+      screen.getByTestId('delivery-assisted-role-external_owner')
+    );
     await user.type(
       screen.getByTestId('delivery-assisted-owner-id'),
-      'publisher-li',
+      'publisher-li'
     );
     await user.click(screen.getByTestId('delivery-action-assisted'));
 

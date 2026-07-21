@@ -1,11 +1,15 @@
 import { authClient } from '@/auth/client';
-import type { ApiKey } from '@/db/types';
 import {
   keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+
+type ApiKeyListResponse = NonNullable<
+  Awaited<ReturnType<typeof authClient.apiKey.list>>['data']
+>;
+export type ApiKeyListItem = ApiKeyListResponse['apiKeys'][number];
 
 export const apiKeysKeys = {
   all: ['apikeys'] as const,
@@ -31,8 +35,10 @@ export function useApiKeys(pageIndex: number, pageSize: number) {
         throw new Error(result.error.message || 'Failed to fetch API keys');
       }
 
-      const items = (result.data ?? []) as ApiKey[];
-      return { items, total: items.length };
+      return {
+        items: result.data?.apiKeys ?? [],
+        total: result.data?.total ?? 0,
+      };
     },
     placeholderData: keepPreviousData,
   });

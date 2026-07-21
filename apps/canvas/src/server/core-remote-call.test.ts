@@ -74,6 +74,36 @@ test("reports transport outcomes without replacing domain error contracts", asyn
 	);
 });
 
+test("bounds ordinary Core calls with an abort signal", async () => {
+	let observedSignal: AbortSignal | null = null;
+	const result = await new CoreRemoteCall({
+		coreServiceToken: "service-secret",
+		coreServiceUrl: "http://core.internal:4100",
+		fetcher: async (_input, init) => {
+			observedSignal = init?.signal ?? null;
+			return await new Promise<Response>((_resolve, reject) => {
+				observedSignal?.addEventListener(
+					"abort",
+					() => reject(observedSignal?.reason),
+					{ once: true },
+				);
+			});
+		},
+		timeoutMs: 10,
+	}).request({
+		body: {},
+		identity: {
+			correlationId: "corr-1",
+			userId: "user-1",
+			workspaceId: "workspace-1",
+		},
+		kind: "query",
+	});
+
+	assert.equal(result.kind, "unreachable");
+	assert.equal((observedSignal as AbortSignal | null)?.aborted, true);
+});
+
 function requestWith(fetcher: typeof fetch) {
 	return new CoreRemoteCall({
 		coreServiceToken: "service-secret",

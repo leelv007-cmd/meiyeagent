@@ -10,6 +10,7 @@ import {
 import { AdvancedCanvasAdoptionFoundationModule } from './adoption-foundation-module.js';
 
 const context = {
+  actor: 'owner',
   correlationId: 'canvas-adoption-correlation',
   userId: 'owner-1',
   workspaceId: 'workspace-1',

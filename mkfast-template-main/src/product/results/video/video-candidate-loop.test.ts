@@ -55,10 +55,14 @@ describe('video candidate → adopt → deliver closed loop', () => {
     assert.throws(
       () =>
         adoptComposedFilm(
-          { ...noCompose, composedCandidate: null, loopPhase: 'candidate_ready' },
-          { contentPackageId: 'cp-x' },
+          {
+            ...noCompose,
+            composedCandidate: null,
+            loopPhase: 'candidate_ready',
+          },
+          { contentPackageId: 'cp-x' }
         ),
-      /composed candidate/,
+      /composed candidate/
     );
 
     const candidate = videoWorksurfaceFixture();

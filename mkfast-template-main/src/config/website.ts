@@ -24,23 +24,19 @@ import {
   DEFAULT_USER_FILES_FOLDER,
 } from '@/storage/constants';
 
-// Payment provider controlled by env var: 'stripe' | 'creem' | '' (empty means disabled)
+// Stripe is retirement-only: keep its runtime available for controlled legacy
+// webhooks, but never publish a sellable Stripe catalog or new-commerce UI.
 const paymentProvider = clientEnv.VITE_PAYMENT_PROVIDER;
-const isPaymentEnabled =
-  paymentProvider !== '' && clientEnv.VITE_PUBLIC_PAID_LAUNCH_ENABLED;
+const isStripeRetirementRuntime = paymentProvider === 'stripe';
 const isCreemPayment = paymentProvider === 'creem';
-// Resolve price/product IDs based on the active payment provider
-const priceIds = isPaymentEnabled
+const isCreemPaidLaunch =
+  isCreemPayment && clientEnv.VITE_PUBLIC_PAID_LAUNCH_ENABLED;
+const isPaymentRuntimeEnabled = isStripeRetirementRuntime || isCreemPaidLaunch;
+const priceIds = isCreemPaidLaunch
   ? {
-      proMonthly: isCreemPayment
-        ? (clientEnv.VITE_CREEM_PRODUCT_PRO_MONTHLY ?? '')
-        : (clientEnv.VITE_STRIPE_PRICE_PRO_MONTHLY ?? ''),
-      proYearly: isCreemPayment
-        ? (clientEnv.VITE_CREEM_PRODUCT_PRO_YEARLY ?? '')
-        : (clientEnv.VITE_STRIPE_PRICE_PRO_YEARLY ?? ''),
-      lifetime: isCreemPayment
-        ? (clientEnv.VITE_CREEM_PRODUCT_LIFETIME ?? '')
-        : (clientEnv.VITE_STRIPE_PRICE_LIFETIME ?? ''),
+      proMonthly: clientEnv.VITE_CREEM_PRODUCT_PRO_MONTHLY ?? '',
+      proYearly: clientEnv.VITE_CREEM_PRODUCT_PRO_YEARLY ?? '',
+      lifetime: clientEnv.VITE_CREEM_PRODUCT_LIFETIME ?? '',
     }
   : { proMonthly: '', proYearly: '', lifetime: '' };
 
@@ -97,8 +93,8 @@ export const websiteConfig: WebsiteConfig = {
     userFilesFolder: DEFAULT_USER_FILES_FOLDER,
   },
   payment: {
-    enable: isPaymentEnabled,
-    provider: isPaymentEnabled ? paymentProvider : undefined,
+    enable: isPaymentRuntimeEnabled,
+    provider: isPaymentRuntimeEnabled ? paymentProvider : undefined,
     price: {
       plans: {
         free: {

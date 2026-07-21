@@ -24,7 +24,7 @@ test('core asset storage reads and writes through the service boundary with work
         method: request.method,
         url: String(input),
       });
-      return request.method === 'PUT'
+      return request.method === 'PUT' || request.method === 'DELETE'
         ? new Response(null, { status: 204 })
         : new Response(Uint8Array.from([1, 2, 3]));
     },
@@ -38,6 +38,7 @@ test('core asset storage reads and writes through the service boundary with work
     await storage.read('workspace-a/generated/image one.png'),
     Uint8Array.from([1, 2, 3])
   );
+  await storage.delete('workspace-a/canvas/assets/local one.png');
   assert.equal(
     requests[0]?.url,
     'http://core.test/v1/assets/workspace-a%2Fcanvas%2Fassets%2Flocal%20one.png'
@@ -51,6 +52,8 @@ test('core asset storage reads and writes through the service boundary with work
   );
   assert.equal(requests[1]?.headers.get('x-service-token'), 'service-secret');
   assert.equal(requests[1]?.headers.get('x-workspace-id'), 'workspace-a');
+  assert.equal(requests[2]?.method, 'DELETE');
+  assert.equal(requests[2]?.headers.get('x-workspace-id'), 'workspace-a');
 });
 
 test('composite asset storage writes locally and falls back to Core reads', async () => {
@@ -58,6 +61,11 @@ test('composite asset storage writes locally and falls back to Core reads', asyn
   const fallback = new MemoryCanvasObjectStorage();
   await fallback.put('workspace-a/generated/core.png', Uint8Array.from([4]));
   const storage = new CompositeCanvasObjectStorage(local, fallback);
+
+  await storage.put('workspace-a/canvas/local.png', Uint8Array.from([5]));
+  await storage.delete('workspace-a/canvas/local.png');
+
+  assert.equal(await local.read('workspace-a/canvas/local.png'), null);
 
   await storage.put('workspace-a/canvas/local.png', Uint8Array.from([5]));
 

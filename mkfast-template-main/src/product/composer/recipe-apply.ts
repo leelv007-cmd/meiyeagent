@@ -157,7 +157,10 @@ export function listMissingRequiredInputs(
         // named fact slots (project_facts etc.) — keep them missing.
         return true;
       }
-      if (hasAnySource && req.kinds?.some((k) => k === 'image' || k === 'video')) {
+      if (
+        hasAnySource &&
+        req.kinds?.some((k) => k === 'image' || k === 'video')
+      ) {
         // Sources present but slot-tagged match preferred; without tags still missing.
         return !filledSlots.has(req.slot);
       }
@@ -247,8 +250,7 @@ export function applyRecipeToLensState(
       },
       settings: {
         ...draft.settings,
-        aspectRatio:
-          delivery.aspectRatio ?? draft.settings.aspectRatio,
+        aspectRatio: delivery.aspectRatio ?? draft.settings.aspectRatio,
         quantity: delivery.quantity ?? draft.settings.quantity,
         durationSeconds:
           delivery.durationSeconds ?? draft.settings.durationSeconds,
@@ -443,15 +445,15 @@ export function confirmReusePanel(
 }
 
 export function confirmApply(session: RecipeApplySession): RecipeApplySession {
-  if (session.phase !== 'confirming' || !session.pendingRecipe || !session.preview) {
+  if (
+    session.phase !== 'confirming' ||
+    !session.pendingRecipe ||
+    !session.preview
+  ) {
     return session;
   }
   const wasCrossLens = session.preview.conflictKind === 'cross_lens';
-  return commitApply(
-    session,
-    session.pendingRecipe,
-    wasCrossLens
-  );
+  return commitApply(session, session.pendingRecipe, wasCrossLens);
 }
 
 export function cancelApply(session: RecipeApplySession): RecipeApplySession {

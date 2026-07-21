@@ -6,12 +6,13 @@ import {
   PAYMENT_RECORD_RETRY_ATTEMPTS,
   PAYMENT_RECORD_RETRY_DELAY,
 } from '@/payment/constants';
-import {
-  findPlanByPlanId,
-  findPlanByPriceId,
-  findPriceInPlan,
-} from '@/lib/price-plan';
 import { sendPaymentNotification } from '@/notification';
+import {
+  PostgresPaymentRecordEffectStore,
+  persistPaymentRecordEffect,
+} from '@/payment/payment-record-effect';
+import { StripeNewCommerceRetiredError } from '@/payment/checkout-policy';
+import { logPaymentWebhookError } from '@/payment/webhook-logging';
 import { desc, eq } from 'drizzle-orm';
 import { Stripe } from 'stripe';
 import type {
@@ -25,8 +26,10 @@ import type {
   ServerCatalogOffer,
 } from '../types';
 import { PlanIntervals, PaymentScenes, PaymentTypes } from '../types';
-import { assertStripeServerCatalogOffer } from './server-catalog-validation';
 import { normalizeStripeVerifiedPaymentEvent } from '../verified-webhook-event';
+
+export const STRIPE_HISTORICAL_API_VERSION: Stripe.LatestApiVersion =
+  '2025-02-24.acacia';
 
 /**
  * Stripe payment provider implementation
@@ -49,8 +52,9 @@ export class StripeProvider implements PaymentProvider {
       throw new Error('STRIPE_WEBHOOK_SECRET environment variable is not set.');
     }
 
-    // Initialize Stripe without specifying apiVersion to use default/latest version
-    this.stripe = new Stripe(apiKey);
+    this.stripe = new Stripe(apiKey, {
+      apiVersion: STRIPE_HISTORICAL_API_VERSION,
+    });
     this.webhookSecret = webhookSecret;
   }
 
@@ -59,92 +63,8 @@ export class StripeProvider implements PaymentProvider {
   }
 
   async validateServerCatalogOffer(offer: ServerCatalogOffer) {
-    const price = await this.stripe.prices.retrieve(offer.price.priceId);
-    assertStripeServerCatalogOffer(offer, price);
-  }
-
-  /**
-   * Create a customer in Stripe if not exists
-   * @param email Customer email
-   * @param name Optional customer name
-   * @returns Stripe customer ID
-   */
-  private async createOrGetCustomer(
-    email: string,
-    name?: string
-  ): Promise<string> {
-    try {
-      // Search for existing customer
-      const customers = await this.stripe.customers.list({
-        email,
-        limit: 1,
-      });
-
-      // Find existing customer
-      if (customers.data && customers.data.length > 0) {
-        const customerId = customers.data[0].id;
-
-        // Find user id by customer id
-        const userId = await this.findUserIdByCustomerId(customerId);
-        // If no userId found, it means the user record exists (by email) but lacks customerId
-        // This can happen when user was created before Stripe integration or data got out of sync
-        // Fix the data inconsistency by updating the user's customerId field
-        if (!userId) {
-          console.log(
-            'User exists but missing customerId, fixing data inconsistency'
-          );
-          await this.updateUserWithCustomerId(customerId, email);
-        }
-        return customerId;
-      }
-
-      // Create new customer
-      const customer = await this.stripe.customers.create({
-        email,
-        name: name || undefined,
-      });
-
-      // Update user record in database with the new customer ID
-      await this.updateUserWithCustomerId(customer.id, email);
-
-      return customer.id;
-    } catch (error) {
-      console.error('Create or get customer error:', error);
-      throw new Error('Failed to create or get customer');
-    }
-  }
-
-  /**
-   * Updates a user record with a Stripe customer ID
-   * @param customerId Stripe customer ID
-   * @param email Customer email
-   * @returns Promise that resolves when the update is complete
-   */
-  private async updateUserWithCustomerId(
-    customerId: string,
-    email: string
-  ): Promise<void> {
-    try {
-      // Update user record with customer ID if email matches
-      const db = getDb();
-      const result = await db
-        .update(user)
-        .set({
-          customerId: customerId,
-          updatedAt: new Date(),
-        })
-        .where(eq(user.email, email))
-        .returning({ id: user.id });
-
-      if (result.length > 0) {
-        console.log('Updated user with customer ID (hidden)');
-      } else {
-        console.log('No user found with given email');
-      }
-    } catch (error) {
-      console.error('Update user with customer ID error:', error);
-      throw new Error('Failed to update user with customer ID');
-    }
+    void offer;
+    throw new StripeNewCommerceRetiredError();
   }
 
   /**
@@ -171,7 +91,11 @@ export class StripeProvider implements PaymentProvider {
 
       return undefined;
     } catch (error) {
-      console.error('Find user by customer ID error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'stripe',
+        stage: 'provider_effect',
+      });
       return undefined;
     }
   }
@@ -210,118 +134,8 @@ export class StripeProvider implements PaymentProvider {
   public async createCheckout(
     params: CreateCheckoutParams
   ): Promise<CheckoutResult> {
-    const {
-      planId,
-      priceId,
-      customerEmail,
-      successUrl,
-      cancelUrl,
-      metadata,
-      locale,
-      serverCatalogOffer,
-    } = params;
-
-    try {
-      // Get plan and price
-      const plan = serverCatalogOffer ? undefined : findPlanByPlanId(planId);
-      if (!serverCatalogOffer && !plan) {
-        throw new Error(`Plan with ID ${planId} not found`);
-      }
-      const price = serverCatalogOffer
-        ? serverCatalogOffer.price
-        : findPriceInPlan(planId, priceId);
-      if (!price) {
-        throw new Error(`Price ID ${priceId} not found in plan ${planId}`);
-      }
-      if (
-        serverCatalogOffer &&
-        (serverCatalogOffer.kind !== 'pro_studio_add_on' ||
-          serverCatalogOffer.offerId !== planId ||
-          serverCatalogOffer.price.priceId !== priceId ||
-          findPlanByPriceId(priceId))
-      ) {
-        throw new Error('Invalid server-owned add-on offer');
-      }
-
-      // Get userName from metadata if available
-      const userName = metadata?.userName;
-
-      // Create or get customer
-      const customerId = await this.createOrGetCustomer(
-        customerEmail,
-        userName
-      );
-
-      // Add planId and priceId to metadata, so we can get it in the webhook event
-      const customMetadata = {
-        ...metadata,
-        planId,
-        priceId,
-      };
-
-      // Set up the line items
-      const lineItems = [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ];
-
-      // Create checkout session parameters
-      const checkoutParams: Stripe.Checkout.SessionCreateParams = {
-        line_items: lineItems,
-        mode:
-          price.type === PaymentTypes.SUBSCRIPTION ? 'subscription' : 'payment',
-        success_url: successUrl ?? '',
-        cancel_url: cancelUrl ?? '',
-        metadata: customMetadata,
-        allow_promotion_codes: price.allowPromotionCode ?? false,
-      };
-
-      // Add customer to checkout session
-      checkoutParams.customer = customerId;
-
-      if (locale) {
-        checkoutParams.locale = this.mapLocaleToStripeLocale(locale);
-      }
-
-      // Add payment intent data for one-time payments
-      if (price.type === PaymentTypes.ONE_TIME) {
-        checkoutParams.payment_intent_data = {
-          metadata: customMetadata,
-        };
-        // Automatically create an invoice for the one-time payment
-        checkoutParams.invoice_creation = {
-          enabled: true,
-        };
-      }
-
-      // Add subscription data for recurring payments
-      if (price.type === PaymentTypes.SUBSCRIPTION) {
-        // Initialize subscription_data with metadata
-        checkoutParams.subscription_data = {
-          metadata: customMetadata,
-        };
-
-        // Add trial period if applicable
-        if (price.trialPeriodDays && price.trialPeriodDays > 0) {
-          checkoutParams.subscription_data.trial_period_days =
-            price.trialPeriodDays;
-        }
-      }
-
-      // Create the checkout session
-      const session =
-        await this.stripe.checkout.sessions.create(checkoutParams);
-
-      return {
-        url: session.url!,
-        id: session.id,
-      };
-    } catch (error) {
-      console.error('Create checkout session error:', error);
-      throw new Error('Failed to create checkout session');
-    }
+    void params;
+    throw new StripeNewCommerceRetiredError();
   }
 
   /**
@@ -332,22 +146,8 @@ export class StripeProvider implements PaymentProvider {
   public async createCustomerPortal(
     params: CreatePortalParams
   ): Promise<PortalResult> {
-    const { customerId, returnUrl, locale } = params;
-
-    try {
-      const session = await this.stripe.billingPortal.sessions.create({
-        customer: customerId,
-        return_url: returnUrl ?? '',
-        locale: locale ? this.mapLocaleToStripeLocale(locale) : undefined,
-      });
-
-      return {
-        url: session.url,
-      };
-    } catch (error) {
-      console.error('Create customer portal error:', error);
-      throw new Error('Failed to create customer portal');
-    }
+    void params;
+    throw new StripeNewCommerceRetiredError();
   }
 
   /**
@@ -403,7 +203,11 @@ export class StripeProvider implements PaymentProvider {
       }
       return normalizeStripeVerifiedPaymentEvent(event);
     } catch (error) {
-      console.error('handle webhook event error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'stripe',
+        stage: 'provider_effect',
+      });
       throw new Error('Failed to handle webhook event');
     }
   }
@@ -448,7 +252,11 @@ export class StripeProvider implements PaymentProvider {
       console.warn('No payment record found for invoice:', invoice.id);
       return null;
     } catch (error) {
-      console.error('Find payment record error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'stripe',
+        stage: 'provider_effect',
+      });
       return null;
     }
   }
@@ -533,7 +341,11 @@ export class StripeProvider implements PaymentProvider {
         await this.updateOneTimePayment(invoice, paymentRecord);
       }
     } catch (error) {
-      console.error('<< Handle invoice paid error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'stripe',
+        stage: 'provider_effect',
+      });
 
       // Check if it's a duplicate invoice error (database constraint violation)
       if (
@@ -642,7 +454,11 @@ export class StripeProvider implements PaymentProvider {
       // Process subscription benefits (no credits in MkFast)
       await this.processSubscriptionPurchase(userId, priceId);
     } catch (error) {
-      console.error('<< Update subscription payment error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'stripe',
+        stage: 'provider_effect',
+      });
       throw error;
     }
 
@@ -701,7 +517,11 @@ export class StripeProvider implements PaymentProvider {
         await this.processLifetimePlanPurchase(invoice, paymentRecord, session);
       }
     } catch (error) {
-      console.error('<< Update one-time payment error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'stripe',
+        stage: 'provider_effect',
+      });
       throw error;
     }
 
@@ -864,7 +684,11 @@ export class StripeProvider implements PaymentProvider {
         return;
       }
     } catch (error) {
-      console.error('<< Handle checkout session completion error:', error);
+      logPaymentWebhookError({
+        error,
+        provider: 'stripe',
+        stage: 'provider_effect',
+      });
       throw error;
     }
 
@@ -992,33 +816,22 @@ export class StripeProvider implements PaymentProvider {
     >,
     recordType: string
   ): Promise<void> {
-    const currentDate = new Date();
     const db = getDb();
-
-    try {
-      await db.insert(payment).values({
-        id: crypto.randomUUID(),
-        createdAt: currentDate,
-        updatedAt: currentDate,
-        ...paymentData,
-      });
-
-      console.log(`<< Created ${recordType} payment record success`);
-    } catch (error) {
-      // Handle duplicate key constraint violation gracefully
-      if (
-        error instanceof Error &&
-        error.message.includes('unique constraint')
-      ) {
-        console.log(
-          `<< ${recordType} payment record already exists, skipping creation`
-        );
-        return; // Don't throw - expected for duplicate webhook events
-      }
-
-      // Re-throw unexpected errors
-      throw error;
+    const sessionId = paymentData.sessionId?.trim();
+    if (!sessionId) {
+      throw new Error('Payment checkout session ID is required.');
     }
+    const receipt = await persistPaymentRecordEffect(
+      { ...paymentData, sessionId },
+      new PostgresPaymentRecordEffectStore(db)
+    );
+    if (receipt === 'applied') {
+      console.log(`<< Created ${recordType} payment record success`);
+      return;
+    }
+    console.log(
+      `<< ${recordType} payment record already exists, skipping creation`
+    );
   }
 
   /**
@@ -1170,60 +983,5 @@ export class StripeProvider implements PaymentProvider {
       s?.items?.data?.[0]?.current_period_end ??
       undefined;
     return typeof endUnix === 'number' ? new Date(endUnix * 1000) : undefined;
-  }
-
-  /**
-   * Map application locale to Stripe's supported locale values.
-   */
-  private mapLocaleToStripeLocale(
-    locale: string
-  ): Stripe.Checkout.SessionCreateParams.Locale {
-    const stripeLocales = [
-      'bg',
-      'cs',
-      'da',
-      'de',
-      'el',
-      'en',
-      'es',
-      'et',
-      'fi',
-      'fil',
-      'fr',
-      'hr',
-      'hu',
-      'id',
-      'it',
-      'ja',
-      'ko',
-      'lt',
-      'lv',
-      'ms',
-      'mt',
-      'nb',
-      'nl',
-      'pl',
-      'pt',
-      'ro',
-      'ru',
-      'sk',
-      'sl',
-      'sv',
-      'th',
-      'tr',
-      'vi',
-      'zh',
-    ] as const;
-
-    if (stripeLocales.some((supported) => supported === locale)) {
-      return locale as Stripe.Checkout.SessionCreateParams.Locale;
-    }
-
-    const baseLocale = locale.split('-')[0];
-    if (stripeLocales.some((supported) => supported === baseLocale)) {
-      return baseLocale as Stripe.Checkout.SessionCreateParams.Locale;
-    }
-
-    return 'auto';
   }
 }

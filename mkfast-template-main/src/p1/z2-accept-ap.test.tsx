@@ -71,7 +71,7 @@ test('Z2-ACCEPT gate1: registry covers every inventory item with real status or 
         'not_verified',
         'not_in_scope_for_supply_v1',
       ].includes(entry.instrumentStatus),
-      `${item.id} instrumentStatus`,
+      `${item.id} instrumentStatus`
     );
     // Availability is never a silent fake-green for stubs.
     if (
@@ -82,7 +82,7 @@ test('Z2-ACCEPT gate1: registry covers every inventory item with real status or 
       assert.ok(
         entry.availability === 'not_verified' ||
           entry.availability === 'not_instrumented',
-        `${item.id} stub must not fake available`,
+        `${item.id} stub must not fake available`
       );
     }
   }
@@ -94,13 +94,13 @@ test('Z2-ACCEPT gate1: D-051 six-question completeness + drilldown on every capa
     assert.equal(
       projection.requiredComplete,
       true,
-      `${projection.capabilityId} required six-question incomplete: ${JSON.stringify(projection.questions)}`,
+      `${projection.capabilityId} required six-question incomplete: ${JSON.stringify(projection.questions)}`
     );
     for (const key of REQUIRED_SIX_QUESTION_KEYS) {
       assert.equal(
         projection.questions[key].status,
         'complete',
-        `${projection.capabilityId}.${key}`,
+        `${projection.capabilityId}.${key}`
       );
     }
     const entry = getRegistryEntry(view, projection.capabilityId);
@@ -158,10 +158,14 @@ test('Z2-ACCEPT gate1: exceptions are aggregable by root-cause key', () => {
   const deduped = dedupeExceptionCandidates(
     [...fromInbox, ...fromCaps],
     registry,
-    nowMs,
+    nowMs
   );
   const keys = new Set(deduped.map((row) => row.rootCauseKey));
-  assert.equal(keys.size, deduped.length, 'rootCauseKey must uniquely identify rows');
+  assert.equal(
+    keys.size,
+    deduped.length,
+    'rootCauseKey must uniquely identify rows'
+  );
   assert.ok(deduped.length >= 1, 'exceptions must aggregate into rows');
 
   const home = buildExceptionHomeView({
@@ -175,7 +179,7 @@ test('Z2-ACCEPT gate1: exceptions are aggregable by root-cause key', () => {
   // Not measured by chart count — by presence of aggregable exception list or empty panorama.
   assert.ok(
     home.exceptions.length > 0 || home.panoramaStats.length >= 3,
-    'either exception rows or panorama cards must be present',
+    'either exception rows or panorama cards must be present'
   );
 });
 
@@ -230,9 +234,9 @@ test('Z2-ACCEPT gate3 UI: admin supply overview SSR surfaces single-channel / mu
       (row) =>
         row.status === 'single_channel' ||
         row.multiChannelReady === false ||
-        /单渠道|无回退/.test(row.label),
+        /单渠道|无回退/.test(row.label)
     ) || /单渠道|无回退|single-channel/.test(html),
-    'admin supply surface must expose single-channel / no-fallback labeling',
+    'admin supply surface must expose single-channel / no-fallback labeling'
   );
 });
 
@@ -293,13 +297,15 @@ test('Z2-ACCEPT gate4: D-048 ban list is complete (code/SQL/env/raw JSON/CLI)', 
       'env-editor',
       'raw-json-editor',
       'sql-console',
-    ].sort(),
+    ].sort()
   );
 });
 
 test('Z2-ACCEPT gate4: capability catalog ops path has zero banned controls', () => {
   const catalog = buildCapabilityCatalog();
-  assert.deepEqual(catalog.opsPathBannedControls, [...D048_BANNED_OPS_CONTROLS]);
+  assert.deepEqual(catalog.opsPathBannedControls, [
+    ...D048_BANNED_OPS_CONTROLS,
+  ]);
   const html = renderToStaticMarkup(<AdminCapabilityCatalog />);
   assert.deepEqual(assertOpsPathHasNoD048BannedControls(html), []);
   assert.match(html, /data-ops-path="daily"/);

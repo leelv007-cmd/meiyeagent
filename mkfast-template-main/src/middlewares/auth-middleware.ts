@@ -4,6 +4,11 @@ import { createMiddleware } from '@tanstack/react-start';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import { Routes } from '@/lib/routes';
 import { websiteConfig } from '@/config/website';
+import {
+  RecentAuthenticationRequiredError,
+  recentAuthenticationRequiredResponse,
+  requireRecentAuthentication,
+} from '@/auth/recent-authentication';
 
 /**
  * Auth Route middleware: requires authenticated user.
@@ -58,3 +63,35 @@ export const authApiMiddleware = createMiddleware().server(async ({ next }) => {
 
   return await next({ context: { userId: session.user.id } });
 });
+
+/**
+ * Sensitive API middleware: authenticated, verified, and signed in within the
+ * last 15 minutes. Use only on high-risk actions, never as a global gate.
+ */
+export const recentAuthApiMiddleware = createMiddleware().server(
+  async ({ next }) => {
+    const headers = getRequestHeaders();
+    const session = await createAuth().api.getSession({
+      headers,
+      query: { disableCookieCache: true, disableRefresh: true },
+    });
+
+    if (!session?.user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!session.user.emailVerified) {
+      return Response.json(
+        { error: 'Email not verified', code: 'email_not_verified' },
+        { status: 403 }
+      );
+    }
+    try {
+      requireRecentAuthentication(session.session);
+    } catch (error) {
+      if (!(error instanceof RecentAuthenticationRequiredError)) throw error;
+      return recentAuthenticationRequiredResponse();
+    }
+
+    return await next({ context: { userId: session.user.id } });
+  }
+);

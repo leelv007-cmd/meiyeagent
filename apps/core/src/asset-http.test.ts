@@ -77,6 +77,49 @@ test('Canvas can persist workspace-owned bytes through the authenticated Core bo
   );
 });
 
+test('Canvas can delete workspace-owned bytes through the authenticated Core boundary', async (t) => {
+  const deletes: Array<{ objectKey: string; workspaceId: string }> = [];
+  const server = createCoreServer({
+    assetReader: {
+      async deleteCanvasAsset(input) {
+        deletes.push(input);
+      },
+      async read() {
+        throw new Error('not found');
+      },
+    },
+    diagnosticRepository: diagnostics,
+    serviceToken: 'canvas-delete-token',
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  const objectKey = 'workspace-a/canvas/assets/asset-1.png';
+  const url = `http://127.0.0.1:${port}/v1/assets/${encodeURIComponent(objectKey)}`;
+
+  const unauthorized = await fetch(url, { method: 'DELETE' });
+  const crossWorkspace = await fetch(url, {
+    headers: {
+      'x-service-token': 'canvas-delete-token',
+      'x-workspace-id': 'workspace-b',
+    },
+    method: 'DELETE',
+  });
+  const deleted = await fetch(url, {
+    headers: {
+      'x-service-token': 'canvas-delete-token',
+      'x-workspace-id': 'workspace-a',
+    },
+    method: 'DELETE',
+  });
+
+  assert.equal(unauthorized.status, 401);
+  assert.equal(crossWorkspace.status, 403);
+  assert.equal(deleted.status, 204);
+  assert.deepEqual(deletes, [{ objectKey, workspaceId: 'workspace-a' }]);
+});
+
 test('Canvas asset upload rejects declared and streamed overflow before request end', async (t) => {
   let writes = 0;
   const server = createCoreServer({

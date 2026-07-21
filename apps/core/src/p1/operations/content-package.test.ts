@@ -56,11 +56,13 @@ function setup(
   const foundation = new MemoryFoundationRepository();
   const operations = new MemoryOperationsRepository();
   const context = {
+    actor: 'owner' as const,
     correlationId: 'corr-content-package',
     userId: 'owner-content-package',
     workspaceId: 'workspace-content-package',
   };
   const otherContext = {
+    actor: 'owner' as const,
     correlationId: 'corr-content-package-other',
     userId: 'owner-content-package-other',
     workspaceId: 'workspace-content-package-other',

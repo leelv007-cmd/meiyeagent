@@ -12,11 +12,9 @@ const { Pool } = rootRequire('pg');
 
 const baseUrl = process.env.EVIDENCE_BASE_URL ?? 'http://localhost:3000';
 const databaseUrl =
-  process.env.DATABASE_URL ??
-  'postgres://meiye:meiye@127.0.0.1:54329/meiye';
+  process.env.DATABASE_URL ?? 'postgres://meiye:meiye@127.0.0.1:54329/meiye';
 const outputDir = path.resolve(
-  process.env.EVIDENCE_OUTPUT_DIR ??
-    '../docs/evidence/contentpackage/ticket-18'
+  process.env.EVIDENCE_OUTPUT_DIR ?? '../docs/evidence/contentpackage/ticket-18'
 );
 const photo = path.resolve(
   process.env.EVIDENCE_PHOTO ?? 'public/seed/store/store-artist-working.webp'
@@ -144,7 +142,8 @@ async function applyMode(groupName, radioName, key, expectedValue, reason) {
   for (;;) {
     const item = configItem(await query('admin-config', 'config_list'), key);
     if (item.storedValue === expectedValue) return item;
-    if (Date.now() > deadline) throw new Error(`${key} did not become ${expectedValue}.`);
+    if (Date.now() > deadline)
+      throw new Error(`${key} did not become ${expectedValue}.`);
     await page.waitForTimeout(300);
   }
 }
@@ -168,7 +167,9 @@ async function confirmStoreAndAuthorizePhoto() {
   await page.getByText('已确认', { exact: true }).waitFor({ timeout: 20_000 });
 
   await page.goto(`${baseUrl}/dashboard/assets`, { waitUntil: 'networkidle' });
-  await page.locator('input[type="file"]#canonical-asset-upload').setInputFiles(photo);
+  await page
+    .locator('input[type="file"]#canonical-asset-upload')
+    .setInputFiles(photo);
   const reviewLink = page
     .getByRole('link', { name: '确认这张素材能否用于宣传' })
     .first();
@@ -192,20 +193,24 @@ async function createCreativeRecord(intent) {
   else await quickStart.click();
   const more = page.getByRole('button', { exact: true, name: '更多' });
   if (await more.isVisible().catch(() => false)) {
-    if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
+    if ((await more.getAttribute('aria-expanded')) !== 'true')
+      await more.click();
   }
   const sourceChips = page.getByRole('button', { name: /^素材 · / });
   await sourceChips.first().waitFor({ state: 'visible', timeout: 30_000 });
   for (let index = 0; index < (await sourceChips.count()); index += 1) {
     const chip = sourceChips.nth(index);
-    if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click();
+    if ((await chip.getAttribute('aria-pressed')) !== 'true')
+      await chip.click();
   }
   await page.getByLabel('描述这次想创作的内容').fill(intent);
   await page.getByRole('button', { name: '建立创作记录' }).click();
   const record = page.getByLabel('创作助理整理的记录');
   await record.waitFor({ state: 'visible', timeout: 30_000 });
   const after = (await query('operations', 'creative_workbench')).body.data;
-  const work = after.works.find((candidate) => !existingWorkIds.has(candidate.id));
+  const work = after.works.find(
+    (candidate) => !existingWorkIds.has(candidate.id)
+  );
   assert(work, 'New creative Work was not projected', after.works);
   await record.getByRole('button', { name: '采用并确认 Brief' }).click();
   await record.getByText('Brief 已确认', { exact: true }).waitFor();
@@ -227,7 +232,8 @@ async function submitCopyAndWaitForFailure() {
   if (!(await contract.isChecked())) await contract.check();
   const submit = record.getByTestId('execute-tool-action');
   await page.waitForFunction(
-    () => !document.querySelector('[data-testid="execute-tool-action"]')?.disabled,
+    () =>
+      !document.querySelector('[data-testid="execute-tool-action"]')?.disabled,
     undefined,
     { timeout: 30_000 }
   );
@@ -237,7 +243,8 @@ async function submitCopyAndWaitForFailure() {
       exact: true,
     })
     .waitFor({ timeout: 30_000 });
-  const projection = (await query('operations', 'creative_workbench')).body.data;
+  const projection = (await query('operations', 'creative_workbench')).body
+    .data;
   return projection.jobs.find(
     (job) => job.workId === workId && job.contract.operation === 'copy.generate'
   );
@@ -262,7 +269,8 @@ async function submitImageAndWaitForFailure() {
   if (!(await contract.isChecked())) await contract.check();
   const submit = record.getByTestId('execute-tool-action');
   await page.waitForFunction(
-    () => !document.querySelector('[data-testid="execute-tool-action"]')?.disabled,
+    () =>
+      !document.querySelector('[data-testid="execute-tool-action"]')?.disabled,
     undefined,
     { timeout: 30_000 }
   );
@@ -272,9 +280,11 @@ async function submitImageAndWaitForFailure() {
       exact: true,
     })
     .waitFor({ timeout: 30_000 });
-  const projection = (await query('operations', 'creative_workbench')).body.data;
+  const projection = (await query('operations', 'creative_workbench')).body
+    .data;
   return projection.jobs.find(
-    (job) => job.workId === workId && job.contract.operation === 'image.generate'
+    (job) =>
+      job.workId === workId && job.contract.operation === 'image.generate'
   );
 }
 
@@ -295,13 +305,22 @@ try {
   await registerAndLogin(admin, 'admin');
   await page.goto(`${baseUrl}/admin/models`, { waitUntil: 'networkidle' });
   await page.getByText('model.execution.mode').waitFor({ timeout: 30_000 });
-  const fixture = page.locator('#model\.execution\.mode-fixture');
-  const ark = page.locator('#model\.media\.execution\.mode-ark');
-  assert(await fixture.isDisabled(), 'Fixture mode was not blocked outside e2e assembly');
-  assert(await ark.isDisabled(), 'Ark mode was not blocked without Ark credentials');
+  const fixture = page.locator('#model.execution.mode-fixture');
+  const ark = page.locator('#model.media.execution.mode-ark');
+  assert(
+    await fixture.isDisabled(),
+    'Fixture mode was not blocked outside e2e assembly'
+  );
+  assert(
+    await ark.isDisabled(),
+    'Ark mode was not blocked without Ark credentials'
+  );
   await page.screenshot({
     fullPage: true,
-    path: path.join(outputDir, '01-admin-five-and-four-modes-with-disabled-reasons.png'),
+    path: path.join(
+      outputDir,
+      '01-admin-five-and-four-modes-with-disabled-reasons.png'
+    ),
   });
 
   await registerAndLogin(merchant, 'user');

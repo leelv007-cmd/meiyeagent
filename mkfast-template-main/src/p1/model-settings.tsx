@@ -142,10 +142,7 @@ function ModelStatus({ model }: { model: CatalogModelView }) {
 function ModelChannelReadinessBadge({ model }: { model: CatalogModelView }) {
   if (model.channelReadiness === 'multi_channel_ready') {
     return (
-      <Badge
-        data-channel-readiness="multi_channel_ready"
-        variant="secondary"
-      >
+      <Badge data-channel-readiness="multi_channel_ready" variant="secondary">
         {model_card_channel_multi()}
       </Badge>
     );

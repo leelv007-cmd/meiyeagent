@@ -3,6 +3,7 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { videoCompositionEvidenceSchema } from '@meiye/contracts';
 import { validateVideoLabels } from '../../video/validation.js';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryJobPort } from '../foundation/memory-job-port.js';
@@ -151,7 +152,7 @@ test('published Ark video runs once through durable ledger, ffmpeg, labels, and 
           duration?: number;
           content?: Array<{ text?: string }>;
         };
-        assert.equal(body.duration, 15);
+        assert.equal(body.duration, 1);
         assert.match(body.content?.[0]?.text ?? '', /9:16/);
         return Response.json({ id: 'ark-runtime-task-1' });
       }
@@ -161,7 +162,7 @@ test('published Ark video runs once through durable ledger, ffmpeg, labels, and 
           id: 'ark-runtime-task-1',
           status: 'succeeded',
           content: { video_url: 'https://media.example.test/runtime-video.mp4' },
-          usage: { output_tokens: 150_000 },
+          usage: { output_tokens: 10_000 },
           updated_at: '2026-07-18T00:00:10.000Z',
         });
       }
@@ -306,11 +307,11 @@ test('published Ark video runs once through durable ledger, ffmpeg, labels, and 
       catalogRevision: publishedRevision.id,
       currency: 'CNY',
       dataClass: [],
-      durationSeconds: 15,
+      durationSeconds: 1,
       estimatedAmount: 12,
       operation: 'video.generate',
       outputCount: 1,
-      outputLabel: '15 second composed video',
+      outputLabel: '1 second composed video',
       quoteAcceptedAt: '2026-07-18T00:00:00.000Z',
       quoteRevision: 'quote-video-runtime-v1',
       watermarkEnabled: false,
@@ -321,7 +322,7 @@ test('published Ark video runs once through durable ledger, ffmpeg, labels, and 
         id: 'opening',
         prompt: '干净的美业门店开场',
         candidatesPerShot: 1,
-        durationSeconds: 15,
+        durationSeconds: 1,
         height: 1280,
         width: 720,
       },
@@ -480,7 +481,9 @@ test('published Ark video runs once through durable ledger, ffmpeg, labels, and 
   );
   assert.deepEqual(
     persistedPackage.generated.ownedAssets?.[0]?.compositionEvidence,
-    completed.composedAsset?.compositionEvidence,
+    videoCompositionEvidenceSchema.parse(
+      completed.composedAsset?.compositionEvidence,
+    ),
   );
 
   const beforeReplay = {

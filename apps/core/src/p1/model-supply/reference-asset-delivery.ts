@@ -20,6 +20,7 @@ export interface SafeFetchTransportResponse {
   status: number;
   headers: Record<string, string>;
   body: AsyncIterable<Uint8Array>;
+  cancel(): void | Promise<void>;
 }
 
 export interface SafeFetchTransportPort {
@@ -96,6 +97,9 @@ export class NodePinnedHttpTransport implements SafeFetchTransportPort {
             status: response.statusCode ?? 0,
             headers,
             body: response,
+            cancel: () => {
+              response.destroy();
+            },
           });
         },
       );
@@ -192,6 +196,12 @@ export class ProviderSafeFetch implements ReferenceAssetDeliveryPort {
     redirectCount: number,
   ): Promise<SafeFetchResult> {
     const url = validateUrl(target, this.allowedHosts);
+    if (constraints.authorization && url.protocol !== 'https:') {
+      throw new ProviderSafeFetchError(
+        'SAFE_FETCH_AUTH_PROTOCOL_FORBIDDEN',
+        'Provider authorization requires HTTPS for every request hop.',
+      );
+    }
     const addresses = await this.resolve(url.hostname);
     const transport = this.options.transport ?? new NodePinnedHttpTransport();
     const response = await transport.request({
@@ -206,7 +216,14 @@ export class ProviderSafeFetch implements ReferenceAssetDeliveryPort {
       },
       timeoutMs: this.timeoutMs,
     });
+    let bodyClosed = false;
+    const cancelBody = async () => {
+      if (bodyClosed) return;
+      bodyClosed = true;
+      await response.cancel();
+    };
     if (response.status >= 300 && response.status < 400) {
+      await cancelBody();
       if (redirectCount >= this.maxRedirects) {
         throw new ProviderSafeFetchError(
           'SAFE_FETCH_REDIRECT_LIMIT',
@@ -227,6 +244,7 @@ export class ProviderSafeFetch implements ReferenceAssetDeliveryPort {
       );
     }
     if (response.status < 200 || response.status >= 300) {
+      await cancelBody();
       throw new ProviderSafeFetchError(
         'SAFE_FETCH_UPSTREAM_STATUS',
         `Provider fetch returned status ${response.status}.`,
@@ -237,6 +255,7 @@ export class ProviderSafeFetch implements ReferenceAssetDeliveryPort {
       declaredSize !== undefined &&
       (!/^\d+$/.test(declaredSize) || Number(declaredSize) > constraints.maxBytes)
     ) {
+      await cancelBody();
       throw new ProviderSafeFetchError(
         'SAFE_FETCH_TOO_LARGE',
         'Provider response exceeds the declared byte limit.',
@@ -247,6 +266,7 @@ export class ProviderSafeFetch implements ReferenceAssetDeliveryPort {
       ?.trim()
       .toLowerCase();
     if (!mimeType || !constraints.allowedMimeTypes.includes(mimeType)) {
+      await cancelBody();
       throw new ProviderSafeFetchError(
         'SAFE_FETCH_MIME_FORBIDDEN',
         'Provider response MIME type is not allowed.',
@@ -254,15 +274,21 @@ export class ProviderSafeFetch implements ReferenceAssetDeliveryPort {
     }
     const chunks: Uint8Array[] = [];
     let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.byteLength;
-      if (size > constraints.maxBytes) {
-        throw new ProviderSafeFetchError(
-          'SAFE_FETCH_TOO_LARGE',
-          'Provider response exceeded the streamed byte limit.',
-        );
+    try {
+      for await (const chunk of response.body) {
+        size += chunk.byteLength;
+        if (size > constraints.maxBytes) {
+          throw new ProviderSafeFetchError(
+            'SAFE_FETCH_TOO_LARGE',
+            'Provider response exceeded the streamed byte limit.',
+          );
+        }
+        chunks.push(new Uint8Array(chunk));
       }
-      chunks.push(new Uint8Array(chunk));
+      bodyClosed = true;
+    } catch (error) {
+      await cancelBody();
+      throw error;
     }
     const bytes = concat(chunks, size);
     if (!matchesMagic(bytes, mimeType)) {
@@ -362,6 +388,8 @@ function isPublicIpv4(address: string) {
 }
 
 function isPublicIpv6(address: string) {
+  const mappedIpv4 = mappedIpv4FromIpv6(address);
+  if (mappedIpv4) return isPublicIpv4(mappedIpv4);
   const normalized = address.toLowerCase();
   if (
     normalized === '::' ||
@@ -377,8 +405,20 @@ function isPublicIpv6(address: string) {
   ) {
     return false;
   }
-  const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  return mapped ? isPublicIpv4(mapped[1] ?? '') : true;
+  return true;
+}
+
+function mappedIpv4FromIpv6(address: string) {
+  // URL canonicalization collapses valid compressed, expanded, dotted, and
+  // hexadecimal IPv6 spellings before the mapped prefix is inspected.
+  const canonical = new URL(`http://[${address}]/`).hostname;
+  const mapped = /^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/u.exec(
+    canonical,
+  );
+  if (!mapped) return null;
+  const high = Number.parseInt(mapped[1] ?? '', 16);
+  const low = Number.parseInt(mapped[2] ?? '', 16);
+  return [high >>> 8, high & 0xff, low >>> 8, low & 0xff].join('.');
 }
 
 function matchesMagic(bytes: Uint8Array, mimeType: string) {

@@ -239,5 +239,8 @@ test('J5: three-state trunk, tested gate, draining, env_fallback migration entry
   assert.match(html, /激活门：满足/);
   assert.match(html, /data-testid="provider-credential-migration-entry"/);
   assert.match(html, /迁移到保险箱/);
-  assert.doesNotMatch(html, /sk-[A-Za-z0-9]{8,}|provider-test-secret|secretRef/);
+  assert.doesNotMatch(
+    html,
+    /sk-[A-Za-z0-9]{8,}|provider-test-secret|secretRef/
+  );
 });

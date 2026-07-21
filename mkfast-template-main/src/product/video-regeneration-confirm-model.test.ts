@@ -11,7 +11,7 @@ import {
 } from './video-regeneration-confirm-model';
 
 function baseQuote(
-  overrides: Partial<ProductQuoteSnapshot> = {},
+  overrides: Partial<ProductQuoteSnapshot> = {}
 ): ProductQuoteSnapshot {
   return {
     quoteId: 'quote-1',
@@ -47,7 +47,7 @@ describe('video regeneration confirm model (pure)', () => {
         quotedSeconds: undefined,
         targetSeconds: 6,
       }),
-      '本次按请求计费',
+      '本次按请求计费'
     );
   });
 

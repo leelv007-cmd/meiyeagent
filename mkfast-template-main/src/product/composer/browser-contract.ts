@@ -79,9 +79,9 @@ export function findForbiddenBrowserComposerKey(
  * Project a settings / draft bag into a browser-safe payload by stripping
  * forbidden keys. CatalogModel product fields are kept.
  */
-export function projectBrowserComposerPayload<T extends Record<string, unknown>>(
-  source: T
-): Record<string, unknown> {
+export function projectBrowserComposerPayload<
+  T extends Record<string, unknown>,
+>(source: T): Record<string, unknown> {
   return stripForbidden(source) as Record<string, unknown>;
 }
 

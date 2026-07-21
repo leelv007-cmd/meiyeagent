@@ -42,7 +42,7 @@ test('only one sheet can be open (mutex replace, never stack)', () => {
 });
 
 test('dismiss restores scroll/focus snapshot and clears open', () => {
-  let state = openComposerSheet(createComposerBottomSheetState(), {
+  const state = openComposerSheet(createComposerBottomSheetState(), {
     kind: 'tool_confirm',
     scrollY: 640,
     focusKey: 'tool.multi_size',

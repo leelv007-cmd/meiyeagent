@@ -3,10 +3,7 @@ import {
   type CanonicalDeliveryHandoff,
   type CanonicalHandoffResolveResult,
 } from './delivery-handoff-canonical';
-import type {
-  AssistedReceipt,
-  DeliveryPanelTarget,
-} from './delivery-b3-types';
+import type { AssistedReceipt, DeliveryPanelTarget } from './delivery-b3-types';
 
 export type CanonicalHandoffServerRecord = {
   assistedReceipt: AssistedReceipt;
@@ -44,7 +41,7 @@ export type CanonicalHandoffServerResult =
 
 type Submit = (
   action: string,
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown>
 ) => Promise<unknown>;
 
 function extensionFor(contentType: string) {
@@ -57,7 +54,7 @@ function extensionFor(contentType: string) {
 
 export function canonicalHandoffFromServer(
   source: CanonicalHandoffServerRecord,
-  origin: string,
+  origin: string
 ): CanonicalDeliveryHandoff {
   return {
     token: source.token,
@@ -91,7 +88,7 @@ export function canonicalHandoffFromServer(
 export async function loadCanonicalHandoff(
   token: string,
   submit: Submit,
-  options: { nowIso: string; origin: string; canShareFiles?: boolean },
+  options: { nowIso: string; origin: string; canShareFiles?: boolean }
 ): Promise<{
   resolve: CanonicalHandoffResolveResult;
   receiptRevision?: number;
@@ -126,7 +123,7 @@ export async function reportCanonicalHandoff(
     receiptRevision: number;
     recordedAt: string;
   },
-  submit: Submit,
+  submit: Submit
 ) {
   return (await submit('assisted_record_publish_result', {
     expectedRevision: input.receiptRevision,
@@ -156,16 +153,22 @@ type CanonicalShareSource = Pick<
 export async function shareCanonicalHandoff(
   source: CanonicalShareSource,
   boundary: {
-    canShare(payload: { files?: File[]; title?: string; url?: string }): boolean;
+    canShare(payload: {
+      files?: File[];
+      title?: string;
+      url?: string;
+    }): boolean;
     download(href: string): void;
-    fetchFile(media: CanonicalHandoffServerRecord['media'][number]): Promise<File>;
+    fetchFile(
+      media: CanonicalHandoffServerRecord['media'][number]
+    ): Promise<File>;
     origin: string;
     share?: (payload: {
       files?: File[];
       title?: string;
       url?: string;
     }) => Promise<void>;
-  },
+  }
 ): Promise<CanonicalShareResult> {
   if (boundary.share && source.media.length > 0) {
     try {

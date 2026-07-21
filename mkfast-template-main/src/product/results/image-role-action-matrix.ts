@@ -17,11 +17,7 @@ import type { VisualAdoptionRoleAction } from '@meiye/contracts';
 export type ImageOutputType = 'single_image' | 'ordered_image_set';
 
 /** Adoption target slot (D-095). Not a separate entity. */
-export type ImageAdoptionSlot =
-  | 'standalone'
-  | 'primary'
-  | 'cover'
-  | 'gallery';
+export type ImageAdoptionSlot = 'standalone' | 'primary' | 'cover' | 'gallery';
 
 /** Whether the image is still a candidate or already written. */
 export type ImageAdoptionLifecycle = 'candidate' | 'adopted' | 'delivered';
@@ -78,7 +74,10 @@ export type ImageRoleAction = {
   /** Whether this action writes canonical ContentPackage (false = local). */
   writesCanonical: boolean;
   /** B1 VisualAdoptionRoleAction kind when writesCanonical; local otherwise. */
-  roleActionKind: VisualAdoptionRoleAction['kind'] | 'set_working_cover' | 'replace_item';
+  roleActionKind:
+    | VisualAdoptionRoleAction['kind']
+    | 'set_working_cover'
+    | 'replace_item';
 };
 
 /** Exact completion feedback (D-087). Must match character-for-character in RTL. */
@@ -103,7 +102,7 @@ export type ImageRoleFeedbackKind = keyof typeof IMAGE_ROLE_FEEDBACK;
  * Same situation never shows multiple near-synonym adopt buttons.
  */
 export function projectImageRolePrimaryAction(
-  ctx: ImageRoleContext,
+  ctx: ImageRoleContext
 ): ImageRoleAction | null {
   // After delivery the shell primary is create_from_this; no adopt primary.
   if (ctx.lifecycle === 'delivered') return null;
@@ -216,7 +215,7 @@ export function projectImageRolePrimaryAction(
  */
 export function imageRoleFeedback(
   kind: ImageRoleActionKind,
-  options?: { position?: number; count?: number },
+  options?: { position?: number; count?: number }
 ): string {
   switch (kind) {
     case 'adopt_one':
@@ -228,7 +227,9 @@ export function imageRoleFeedback(
     case 'add_to_set':
       return IMAGE_ROLE_FEEDBACK.add_to_set(options?.position ?? 1);
     case 'adopt_set':
-      return IMAGE_ROLE_FEEDBACK.adopt_set(options?.count ?? options?.position ?? 1);
+      return IMAGE_ROLE_FEEDBACK.adopt_set(
+        options?.count ?? options?.position ?? 1
+      );
     case 'replace_item':
       return IMAGE_ROLE_FEEDBACK.replace_item;
     case 'set_working_cover':
@@ -348,7 +349,7 @@ export function projectImageLibraryActions(input: {
 }
 
 export function libraryActionFeedback(
-  kind: ImageLibraryAction['kind'],
+  kind: ImageLibraryAction['kind']
 ): string {
   return kind === 'save_one' || kind === 'save_selected'
     ? IMAGE_ROLE_FEEDBACK.save_to_library
@@ -366,7 +367,7 @@ export function libraryActionFeedback(
 export function toVisualAdoptionRoleAction(
   kind: ImageRoleActionKind,
   assetId: string,
-  orderedAssetIds?: readonly string[],
+  orderedAssetIds?: readonly string[]
 ): VisualAdoptionRoleAction | null {
   switch (kind) {
     case 'adopt_one':

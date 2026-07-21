@@ -29,7 +29,9 @@ function setRedeemCode(code: string) {
 function UnlockHarness({
   redeemImpl,
 }: {
-  redeemImpl: (code: string) => Promise<{ ok: true } | { ok: false; message?: string }>;
+  redeemImpl: (
+    code: string
+  ) => Promise<{ ok: true } | { ok: false; message?: string }>;
 }) {
   const [canContinue, setCanContinue] = useState(false);
 
@@ -57,15 +59,17 @@ function UnlockHarness({
 
 describe('GL-23 quota blocking card — redeem unlocks continue', () => {
   it('renders inline code input when quota exhausted', () => {
-    render(
-      <UnlockHarness
-        redeemImpl={async () => ({ ok: true })}
-      />
-    );
-    expect(screen.getByTestId('composer-quota-blocking-card')).toBeInTheDocument();
-    expect(screen.getByTestId('composer-quota-redemption-code')).toBeInTheDocument();
+    render(<UnlockHarness redeemImpl={async () => ({ ok: true })} />);
+    expect(
+      screen.getByTestId('composer-quota-blocking-card')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('composer-quota-redemption-code')
+    ).toBeInTheDocument();
     expect(screen.getByTestId('composer-quota-redeem-submit')).toBeDisabled();
-    expect(screen.getByTestId('continue-creation')).toHaveTextContent('blocked');
+    expect(screen.getByTestId('continue-creation')).toHaveTextContent(
+      'blocked'
+    );
     expect(screen.queryByTestId('continue-create-cta')).not.toBeInTheDocument();
   });
 
@@ -85,11 +89,13 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     fireEvent.click(submit);
 
     await waitFor(() => {
-      expect(screen.getByTestId('composer-quota-unlock-success')).toBeInTheDocument();
+      expect(
+        screen.getByTestId('composer-quota-unlock-success')
+      ).toBeInTheDocument();
     });
-    expect(screen.getByTestId('composer-quota-continue-ready')).toHaveTextContent(
-      '已解锁，可继续创作'
-    );
+    expect(
+      screen.getByTestId('composer-quota-continue-ready')
+    ).toHaveTextContent('已解锁，可继续创作');
     expect(screen.getByTestId('continue-creation')).toHaveTextContent('ready');
     expect(screen.getByTestId('continue-create-cta')).toBeInTheDocument();
     expect(redeem).toHaveBeenCalledTimes(1);
@@ -106,25 +112,24 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('composer-quota-redeem-error')).toHaveTextContent(
-        '兑换码已使用'
-      );
+      expect(
+        screen.getByTestId('composer-quota-redeem-error')
+      ).toHaveTextContent('兑换码已使用');
     });
-    expect(screen.getByTestId('continue-creation')).toHaveTextContent('blocked');
+    expect(screen.getByTestId('continue-creation')).toHaveTextContent(
+      'blocked'
+    );
     expect(screen.queryByTestId('continue-create-cta')).not.toBeInTheDocument();
-    expect(screen.getByTestId('composer-quota-redemption-code')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('composer-quota-redemption-code')
+    ).toBeInTheDocument();
   });
 
   it('passes redemptions CAS command shape to onRedeem', async () => {
     const redeem = vi.fn<QuotaBlockingCardProps['onRedeem']>(async () => ({
       ok: true as const,
     }));
-    render(
-      <QuotaBlockingCard
-        blocked
-        onRedeem={redeem}
-      />
-    );
+    render(<QuotaBlockingCard blocked onRedeem={redeem} />);
 
     setRedeemCode('CAS-01');
     fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));

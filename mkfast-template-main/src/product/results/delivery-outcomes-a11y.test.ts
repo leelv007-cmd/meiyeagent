@@ -16,14 +16,8 @@ import {
 
 test('four outcomes have distinct announcements', () => {
   assert.equal(DELIVERY_OUTCOMES.length, 4);
-  assert.equal(
-    DELIVERY_OUTCOME_ANNOUNCEMENT.download_done,
-    '下载已开始',
-  );
-  assert.equal(
-    DELIVERY_OUTCOME_ANNOUNCEMENT.share_done,
-    '已交给系统分享',
-  );
+  assert.equal(DELIVERY_OUTCOME_ANNOUNCEMENT.download_done, '下载已开始');
+  assert.equal(DELIVERY_OUTCOME_ANNOUNCEMENT.share_done, '已交给系统分享');
   assert.equal(DELIVERY_OUTCOME_ANNOUNCEMENT.handed_over, '已交接');
   assert.equal(DELIVERY_OUTCOME_ANNOUNCEMENT.published, '已发布');
 

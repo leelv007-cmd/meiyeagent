@@ -17,6 +17,7 @@ import {
   UploadError,
 } from '../types';
 import { sanitizeFolder } from '../utils';
+import { validateUploadPolicy } from '../upload-policy';
 import { websiteConfig } from '@/config/website';
 
 const success = <T>(data: T): ValidationResult<T> => ({ success: true, data });
@@ -200,9 +201,28 @@ export class R2Provider implements StorageProvider {
   }
 
   async uploadFile(params: UploadFileParams): Promise<UploadFileResult> {
-    const { file, filename, contentType, folder, userId, requestOrigin } =
-      params;
+    const {
+      file,
+      filename,
+      contentType,
+      folder,
+      purpose,
+      requestOrigin,
+      userId,
+      workspaceId,
+    } = params;
     const bucket = this.getBucket();
+
+    const bytes =
+      file instanceof Blob
+        ? new Uint8Array(await file.arrayBuffer())
+        : new Uint8Array(file as Buffer);
+    validateUploadPolicy({
+      bytes,
+      contentType,
+      purpose,
+      size: bytes.byteLength,
+    });
 
     const fileForValidation =
       file instanceof File
@@ -228,42 +248,38 @@ export class R2Provider implements StorageProvider {
     const sanitizedFolder = sanitizeFolder(folder);
 
     let r2Key: string;
-    if (userId !== undefined) {
-      if (sanitizedFolder) {
-        r2Key = `${sanitizedFolder}/${userId}/${storedFilename}`;
-      } else {
-        r2Key = `${this.userFilesFolder}/${userId}/${storedFilename}`;
-      }
+    if (sanitizedFolder) {
+      r2Key = `${sanitizedFolder}/${userId}/${storedFilename}`;
     } else {
-      r2Key = sanitizedFolder
-        ? `${sanitizedFolder}/${storedFilename}`
-        : storedFilename;
+      r2Key = `${this.userFilesFolder}/${userId}/${storedFilename}`;
     }
 
-    const body = file instanceof Blob ? file : new Uint8Array(file as Buffer);
+    const body = file instanceof Blob ? file : bytes;
     await bucket.put(r2Key, body, {
       httpMetadata: { contentType },
+      customMetadata: {
+        purpose,
+        userId,
+        workspaceId,
+      },
     });
 
     const url = this.getPublicUrl(r2Key, requestOrigin);
 
-    const result: UploadFileResult = { url, key: r2Key };
-
-    if (userId !== undefined) {
-      const size = file instanceof Blob ? file.size : (file as Buffer).length;
-      result.metadata = {
+    return {
+      url,
+      key: r2Key,
+      metadata: {
         id: fileId,
         userId,
         filename: storedFilename,
         originalName: filename,
         contentType,
-        size,
+        size: bytes.byteLength,
         r2Key,
         uploadedAt: new Date(),
-      };
-    }
-
-    return result;
+      },
+    };
   }
 
   async deleteFile(key: string): Promise<void> {

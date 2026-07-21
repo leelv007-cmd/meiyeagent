@@ -33,7 +33,7 @@ function empty(overrides: Partial<WorkingSelectionState> = {}) {
 
 function addMany(
   state: WorkingSelectionState,
-  ids: string[],
+  ids: string[]
 ): WorkingSelectionState {
   let current = state;
   for (const assetId of ids) {
@@ -82,7 +82,7 @@ test('add is idempotent for the same asset', () => {
 });
 
 test('remove soft-deletes and restore_removed brings it back', () => {
-  let state = addMany(empty(), ['img-a', 'img-b', 'img-c']);
+  const state = addMany(empty(), ['img-a', 'img-b', 'img-c']);
   const removed = reduceWorkingSelection(state, {
     type: 'remove',
     assetId: 'img-b',
@@ -107,7 +107,7 @@ test('remove soft-deletes and restore_removed brings it back', () => {
 // ---------------------------------------------------------------------------
 
 test('move_up and move_down reorder with keyboard-friendly feedback', () => {
-  let state = addMany(empty(), ['img-a', 'img-b', 'img-c']);
+  const state = addMany(empty(), ['img-a', 'img-b', 'img-c']);
   // cover is img-a; move img-c up
   const up = reduceWorkingSelection(state, {
     type: 'move_up',
@@ -174,9 +174,12 @@ test('workingSelectionAdoptPayload returns ordered ids for atomic adopt', () => 
 
 test('same-device restore expires after 7 days', () => {
   const state = empty({ updatedAt: '2026-07-01T00:00:00.000Z' });
-  assert.equal(isWorkingSelectionExpired(state, '2026-07-01T01:00:00.000Z'), false);
+  assert.equal(
+    isWorkingSelectionExpired(state, '2026-07-01T01:00:00.000Z'),
+    false
+  );
   const afterTtl = new Date(
-    Date.parse('2026-07-01T00:00:00.000Z') + WORKING_SELECTION_TTL_MS + 1,
+    Date.parse('2026-07-01T00:00:00.000Z') + WORKING_SELECTION_TTL_MS + 1
   ).toISOString();
   assert.equal(isWorkingSelectionExpired(state, afterTtl), true);
 });
@@ -233,7 +236,10 @@ test('hydrate detects base revision drift with three choices', () => {
 });
 
 test('drift discard clears selection onto current revision', () => {
-  const state = addMany(empty({ baseRevisionId: 'rev-old' }), ['img-a', 'img-b']);
+  const state = addMany(empty({ baseRevisionId: 'rev-old' }), [
+    'img-a',
+    'img-b',
+  ]);
   const drift = {
     kind: 'revision_drift' as const,
     baseRevisionId: 'rev-old',
@@ -244,7 +250,7 @@ test('drift discard clears selection onto current revision', () => {
     state,
     drift,
     'discard',
-    NOW,
+    NOW
   );
   assert.equal(discarded.kind, 'discard');
   assert.deepEqual(discarded.state.orderedAssetIds, []);
@@ -263,7 +269,7 @@ test('drift restore keeps local selection; compare exposes both revisions', () =
     state,
     drift,
     'restore',
-    NOW,
+    NOW
   );
   assert.equal(restored.kind, 'restore');
   assert.deepEqual(restored.state.orderedAssetIds, ['img-a']);
@@ -272,7 +278,7 @@ test('drift restore keeps local selection; compare exposes both revisions', () =
     state,
     drift,
     'compare',
-    NOW,
+    NOW
   );
   assert.equal(compared.kind, 'compare');
   if (compared.kind === 'compare') {

@@ -147,7 +147,8 @@ export function projectComposerQuoteView(
 ): ComposerQuoteView {
   const amount = snapshot.confirmedAmount ?? 0;
   const billingNote =
-    snapshot.billingMode === 'per_output_second' && snapshot.quotedSeconds != null
+    snapshot.billingMode === 'per_output_second' &&
+    snapshot.quotedSeconds != null
       ? `按生成成片 ${snapshot.quotedSeconds} 秒计费`
       : null;
 
@@ -175,8 +176,7 @@ export function requoteOnParamChange(
   request: ComposerQuoteRequest
 ): { snapshot: ProductQuoteSnapshot; revisionChanged: boolean } {
   const snapshot = buildComposerQuote(request);
-  const revisionChanged =
-    !previous || previous.revision !== snapshot.revision;
+  const revisionChanged = !previous || previous.revision !== snapshot.revision;
   return { snapshot, revisionChanged };
 }
 
@@ -184,9 +184,7 @@ export function requoteOnParamChange(
  * Confirm path: the amount the user accepts MUST equal the charge amount
  * frozen on the snapshot (confirmedAmount === authorizedCeiling for simple path).
  */
-export function confirmQuotePrice(
-  snapshot: ProductQuoteSnapshot
-): {
+export function confirmQuotePrice(snapshot: ProductQuoteSnapshot): {
   confirmPrice: number;
   chargePrice: number;
   matches: boolean;

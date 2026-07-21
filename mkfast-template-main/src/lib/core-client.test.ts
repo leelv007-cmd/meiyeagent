@@ -2,11 +2,96 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  CoreRequestBoundaryError,
+  coreFetch,
+  forwardedCorrelationId,
+  forwardedIdempotencyKey,
+  readRequestText,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
   workspaceHarnessDecisionResource,
   workspaceWorkflowEventResource,
 } from '@/lib/core-request';
+
+test('rejects oversized chunked Core proxy bodies before buffering them all', async () => {
+  const request = new Request('http://localhost/api/core/p1/commands', {
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(700_000));
+        controller.enqueue(new Uint8Array(400_000));
+        controller.close();
+      },
+    }),
+    duplex: 'half',
+    method: 'POST',
+  } as RequestInit & { duplex: 'half' });
+
+  await assert.rejects(
+    readRequestText(request),
+    (error: unknown) =>
+      error instanceof CoreRequestBoundaryError &&
+      error.code === 'REQUEST_BODY_TOO_LARGE' &&
+      error.status === 413
+  );
+});
+
+test('validates forwarded request IDs at the Web boundary', () => {
+  assert.throws(
+    () => forwardedIdempotencyKey('invalid key with spaces'),
+    (error: unknown) =>
+      error instanceof CoreRequestBoundaryError &&
+      error.code === 'INVALID_IDEMPOTENCY_KEY' &&
+      error.status === 400
+  );
+  assert.equal(forwardedIdempotencyKey('valid-key'), 'valid-key');
+  assert.notEqual(
+    forwardedCorrelationId('unsafe correlation value'),
+    'unsafe correlation value'
+  );
+});
+
+test('applies a total deadline to ordinary Core calls', async () => {
+  let observedSignal: AbortSignal | null = null;
+  await assert.rejects(
+    coreFetch(
+      async (_input, init) => {
+        observedSignal = init?.signal ?? null;
+        return await new Promise<Response>((_resolve, reject) => {
+          observedSignal?.addEventListener(
+            'abort',
+            () => reject(observedSignal?.reason),
+            { once: true }
+          );
+        });
+      },
+      'http://core.test/v1/query',
+      {},
+      { timeoutMs: 10 }
+    )
+  );
+  assert.equal((observedSignal as AbortSignal | null)?.aborted, true);
+});
+
+test('uses a connect deadline rather than a short total deadline for streams', async () => {
+  const response = await coreFetch(
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            setTimeout(() => {
+              controller.enqueue(new TextEncoder().encode('event: ready\n\n'));
+              controller.close();
+            }, 25);
+          },
+        })
+      ),
+    'http://core.test/v1/events',
+    {},
+    { idleTimeoutMs: 100, stream: true, timeoutMs: 10 }
+  );
+
+  assert.equal(await response.text(), 'event: ready\n\n');
+});
 
 test('the workspace stream proxy forwards the browser Request signal upstream', async () => {
   const controller = new AbortController();

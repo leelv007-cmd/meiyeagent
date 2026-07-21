@@ -19,7 +19,7 @@ export function AdminEntitlementStatus({
 } = {}) {
   const view = useMemo(
     () => viewProp ?? buildEntitlementStatusView(input),
-    [viewProp, input],
+    [viewProp, input]
   );
   return <EntitlementStatusPanel view={view} />;
 }

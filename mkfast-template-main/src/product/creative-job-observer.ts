@@ -191,9 +191,7 @@ export async function refreshCreativeJobCanonicalStateOnVideoWorkflowChange(
   );
   const statusChanged = current.some((workflow) => {
     const previousStatus = previousStatuses.get(workflow.workflowId);
-    return (
-      previousStatus !== undefined && previousStatus !== workflow.status
-    );
+    return previousStatus !== undefined && previousStatus !== workflow.status;
   });
   if (!statusChanged) return;
   await refreshCreativeJobCanonicalState(queryClient);

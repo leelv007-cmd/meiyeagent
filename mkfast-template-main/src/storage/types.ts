@@ -98,9 +98,12 @@ export interface UploadFileParams {
   file: Buffer | Blob | File;
   filename: string;
   contentType: string;
+  purpose: import('./upload-policy').UploadPurpose;
+  /** Server-resolved folder. Never accept this value from client input. */
   folder?: string;
-  /** When provided, key is scoped under user (e.g. user-files/{userId}/ or folder/{userId}/). */
-  userId?: string;
+  /** Every uploaded object is owner-scoped, including public avatars. */
+  userId: string;
+  workspaceId: string;
   /** Used to build same-origin proxy URL for the returned file. */
   requestOrigin?: string;
 }
@@ -108,8 +111,7 @@ export interface UploadFileParams {
 export interface UploadFileResult {
   url: string;
   key: string;
-  /** Present when userId was provided (full metadata). */
-  metadata?: FileMetadata;
+  metadata: FileMetadata;
 }
 
 /**
