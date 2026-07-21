@@ -5,6 +5,7 @@ import type { CreativeWorkbenchProjection } from '@meiye/contracts';
 
 import {
   buildLiveVideoWorksurface,
+  contentPackageRefreshToken,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
 } from './result-live-projection';
@@ -29,6 +30,22 @@ test('uses the newest same-Work ContentPackage instead of locking the original w
     latestContentPackageForWork(packages, 'work-video-target')?.id,
     'package-derived'
   );
+});
+
+test('changes the package refresh token when an asynchronous video rerun arrives', () => {
+  const baseline = contentPackageRefreshToken({
+    id: 'package-original',
+    revision: 1,
+    updatedAt: '2026-07-22T00:00:00.000Z',
+  });
+  const rerun = contentPackageRefreshToken({
+    id: 'package-derived',
+    revision: 1,
+    updatedAt: '2026-07-22T00:00:05.000Z',
+  });
+
+  assert.notEqual(rerun, baseline);
+  assert.equal(contentPackageRefreshToken(undefined), null);
 });
 
 const projection: CreativeWorkbenchProjection = {

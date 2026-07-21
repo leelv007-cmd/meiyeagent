@@ -21,6 +21,7 @@ import {
 } from '@/product/creative-job-observer';
 import {
   buildLiveVideoWorksurface,
+  contentPackageRefreshToken,
   latestContentPackageForWork,
   platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
@@ -120,6 +121,10 @@ function ResultCenterRoutePage() {
   const [shellActionError, setShellActionError] = useState<
     string | undefined
   >();
+  const [
+    videoRegenerationPackageBaseline,
+    setVideoRegenerationPackageBaseline,
+  ] = useState<string | null | undefined>(undefined);
   const deliveryViewport = useDeliveryViewport();
   const target = parseResultCenterSearch(workId, search);
   // ADR-0007 token stream — live partials for copy / image_text running phase.
@@ -191,6 +196,8 @@ function ResultCenterRoutePage() {
     queryFn: ({ signal }) =>
       operationsQuery<PublicContentPackage[]>('content_packages', {}, signal),
     retry: false,
+    refetchInterval:
+      videoRegenerationPackageBaseline === undefined ? false : 1_000,
   });
   const assistedReceiptsQuery = useQuery({
     queryKey: p1QueryKeys.request('result-delivery', 'assisted_list'),
@@ -245,6 +252,15 @@ function ResultCenterRoutePage() {
     contentPackagesQuery.data,
     workId
   );
+  const contentPackageToken = contentPackageRefreshToken(contentPackage);
+  useEffect(() => {
+    if (
+      videoRegenerationPackageBaseline !== undefined &&
+      contentPackageToken !== videoRegenerationPackageBaseline
+    ) {
+      setVideoRegenerationPackageBaseline(undefined);
+    }
+  }, [contentPackageToken, videoRegenerationPackageBaseline]);
   const currentPackageVersion = contentPackage?.versions.find(
     (version) => version.id === contentPackage.currentVersionId
   );
@@ -1033,11 +1049,17 @@ function ResultCenterRoutePage() {
         const fingerprint = `video-regen-confirm:${quoteId}:${taskId}`;
         const key = intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
         intentKeys.current.set(fingerprint, key);
-        await commandP1(
-          'video-regeneration',
-          { action: 'confirm', payload: { quoteId, taskId } },
-          key
-        );
+        setVideoRegenerationPackageBaseline(contentPackageToken);
+        try {
+          await commandP1(
+            'video-regeneration',
+            { action: 'confirm', payload: { quoteId, taskId } },
+            key
+          );
+        } catch (error) {
+          setVideoRegenerationPackageBaseline(undefined);
+          throw error;
+        }
         intentKeys.current.delete(fingerprint);
         await refreshCanonicalVideo();
       }}

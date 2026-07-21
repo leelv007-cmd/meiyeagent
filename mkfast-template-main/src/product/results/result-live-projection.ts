@@ -60,6 +60,17 @@ export function latestContentPackageForWork<
   return packages?.find((candidate) => candidate.source.workId === workId);
 }
 
+/** Stable client-side marker for detecting an asynchronously refreshed package. */
+export function contentPackageRefreshToken(
+  contentPackage:
+    | Pick<PublicContentPackage, 'id' | 'revision' | 'updatedAt'>
+    | undefined
+) {
+  return contentPackage
+    ? `${contentPackage.id}:${contentPackage.revision}:${contentPackage.updatedAt}`
+    : null;
+}
+
 /**
  * Only expose a platform preview after the canonical ContentPackage records
  * the server-produced copy.adapt output. Acceptance seed shells are export
