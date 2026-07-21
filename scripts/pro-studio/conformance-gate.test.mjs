@@ -23,6 +23,17 @@ import {
   validateReleaseEvidence,
 } from './conformance-gate.mjs';
 
+test('local live development sends Canvas session validation to the Vite listener', () => {
+  const rootPackage = JSON.parse(
+    readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+  );
+
+  assert.match(
+    rootPackage.scripts['dev:live'],
+    /MAIN_APP_ORIGIN=http:\/\/localhost:3000/
+  );
+});
+
 test('Playwright starts Canvas as the fourth required web server', () => {
   const config = readFileSync(
     new URL('../../mkfast-template-main/playwright.config.ts', import.meta.url),

@@ -7,6 +7,7 @@ import { findPlanByPriceId, getAllPricePlans } from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 import { getCanonicalUrl } from '@/lib/urls';
 import { authApiMiddleware } from '@/middlewares/auth-middleware';
+import { projectCurrentPlan } from './payment-current-plan';
 import { createCheckout, createCustomerPortal } from '@/payment';
 import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
 import { requireCheckoutWorkspaceBinding } from '@/payment/plan-commerce';
@@ -233,7 +234,10 @@ export const getCurrentPlan = createServerFn({ method: 'GET' })
     }
 
     if (userLifetimePlan) {
-      return { currentPlan: userLifetimePlan, subscription: null };
+      return {
+        currentPlan: projectCurrentPlan(userLifetimePlan),
+        subscription: null,
+      };
     }
     if (activeSubscription) {
       const subscriptionPlan =
@@ -241,11 +245,14 @@ export const getCurrentPlan = createServerFn({ method: 'GET' })
           p.prices.some((pr) => pr.priceId === activeSubscription!.priceId)
         ) ?? null;
       return {
-        currentPlan: subscriptionPlan as PricePlan | null,
+        currentPlan: projectCurrentPlan(subscriptionPlan),
         subscription: activeSubscription,
       };
     }
-    return { currentPlan: freePlan as PricePlan | null, subscription: null };
+    return {
+      currentPlan: projectCurrentPlan(freePlan),
+      subscription: null,
+    };
   });
 
 const checkCompletionSchema = z.object({ sessionId: z.string().min(1) });

@@ -63,9 +63,9 @@ export function BillingCard() {
   const plansRecord = getPricePlans();
   const plans = Object.values(plansRecord);
   const currentPlanWithName = currentPlan
-    ? (plans.find((p) => p.id === currentPlan.id) ?? currentPlan)
+    ? (plans.find((p) => p.id === currentPlan.id) ?? null)
     : null;
-  const isFreePlan = currentPlanWithName?.isFree ?? false;
+  const isFreePlan = currentPlan?.isFree ?? false;
   const currentPeriodStart = subscription?.currentPeriodStart
     ? formatDate(subscription.currentPeriodStart)
     : null;
@@ -129,7 +129,7 @@ export function BillingCard() {
     );
   }
   // No plan: show noPlan message and upgrade CTA in footer (right-aligned)
-  if (!currentPlanWithName) {
+  if (!currentPlan) {
     return (
       <Card className={cardClass}>
         <CardHeader>
