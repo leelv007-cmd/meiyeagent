@@ -1,6 +1,6 @@
 # 项目全局文档一致性复核（2026-07-18）
 
-> **状态：历史快照。** 本报告固定于基线 `4d2a63c`，保留当时的发现、计数和处置证据；当前一致性入口已由 [`doc-consistency-review-2026-07-19.md`](./doc-consistency-review-2026-07-19.md) 接管，当前实现状态以最新代码、测试与 [`implementation-gap-ledger-2026-07-19.md`](./implementation-gap-ledger-2026-07-19.md) 为准。
+> **状态：历史快照。** 本报告固定于基线 `4d2a63c`，保留当时的发现、计数和处置证据；当前一致性入口是 [`doc-consistency-review-2026-07-22.md`](./doc-consistency-review-2026-07-22.md)，当前实现状态以最新代码、测试、实现总账和本报告为准。
 
 - 触发：用户指令「启用 Agent Team 做项目全局文档一致性复核，偏移/冲突以最新的提交为准，明显过期的文档可退役」
 - 方法：8 路域审计 agent（只读）+ 对抗核验（retire/escalate 级逐条）→ 主会话单点执笔应用；ADR 域因输出超限拆 3 段在 Opus 重跑（见 §6）

@@ -1,7 +1,7 @@
 # 文档一致性全面复核 — 2026-07-16
 
-> **SUPERSEDED as consistency entry (2026-07-17)**  
-> 当前一致性入口：`docs/reviews/doc-consistency-audit-2026-07-17.md`。  
+> **SUPERSEDED as consistency entry (2026-07-22)**
+> 当前一致性入口：`docs/reviews/doc-consistency-review-2026-07-22.md`。
 > **北极星 / D01 测量**以 `docs/evidence/contentpackage/README.md` 与 `CONTEXT.md` Language 为准（**真实跑通链路数 = 1**，`real-run-0001`）。  
 > 本文件正文中「链路数仍为 0 / D01 仍为 0」是 **2026-07-16 当日快照**，不得再当活源。  
 > **仍可引用**：§二 B1–B14 的 Pro Studio 两线边界与术语裁决（在与 07-17 / ADR-0012 不冲突的范围内）。

@@ -17,6 +17,8 @@ source_of_truth:
 
 # vozeb 借鉴落地与 Pro Studio 升单线实施规格
 
+> **领域合同保留、实现入口已取代（2026-07-22）**：本文继续拥有两线边界、ContentPackage adoption、工程生命周期、计费/安全和商业 release gates 等原始领域合同；画布 parity、ports/copies 治理、用户侧模型选择、Canvas ZIP 导出与 Agent 外壳拆分由 D-099 rev2 重新裁决。当前实现不得从本文的“首发含 Agent/Audio”表述直接拆票，实施顺序与验收以 [`pro-studio-parity-rework-spec-2026-07-22.md`](./pro-studio-parity-rework-spec-2026-07-22.md)、G01–G48 baseline 和 K1–K7 票包为准。
+
 > 本规格是《vozeb 方案合集 2026-07-16》全部已拍板决策的工程落地口径。两条产品线:**主线**(L1 门店旅程,由 ContentPackage 产品化规格拥有,本规格只承接从 vozeb 借来的增强项)与**升单线**(L3 Pro Studio:无限画布 + 图片精修整套授权复用 + Audio + 画布 Agent,本规格的主体)。P1 Composer 的自由画布语义已收窄为日常轻编辑；首发范围含 Audio(TTS+音效)与 Agent(动词全集含改/删),整体量级如实计为 XL(详见实施决策 §12 的诚实口径:约 23-36 人周)。
 
 ## Problem Statement

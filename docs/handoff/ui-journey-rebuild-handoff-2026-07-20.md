@@ -1,5 +1,7 @@
 # UI/用户旅程重建 Worktree Handoff（2026-07-20）
 
+> **固定交付编排快照 / 当前状态以新证据为准（2026-07-22）**：本文保留 #84–#105 的分线、冻结清单和合并纪律，不再单独证明“票已完成”或三模态全旅程已验收。当前实现状态以 2026-07-21 UI Journey review、2026-07-22 P0/P1 Spec、代码/测试和最新一致性入口为准；任何与当前 live Spec 冲突的产品口径以最新用户确认决定覆盖。
+
 > 状态：**开放中的交付编排**。权威链：设计文档 D-072~D-098（`docs/design/beauty-marketing-agent-product-design-2026-07-17.md`）> spec issue #83 / `docs/specs/ui-journey-rebuild-spec-2026-07-20.md` > 各票（#84-#105）。复核链：`docs/reviews/ui-journey-decisions-xcheck-2026-07-20.md`（七路交叉复核+C1~C7 处置）+ `.scratch/ui-journey-spec-review-2026-07-20/`（Codex 两路 31 条全采纳）+ 一致性双复核。票号映射 `.scratch/ui-journey-tickets-2026-07-20/issue-numbers.json`。
 
 ## 分线与认领序列

@@ -1,7 +1,7 @@
 # P1 文档一致性复核
 
 > 状态：历史快照，固定于 2026-07-12。其“没有未决产品口径冲突”不覆盖 2026-07-14 D01–D18 新决策。  
-> **当前一致性入口**：[`doc-consistency-audit-2026-07-17.md`](./doc-consistency-audit-2026-07-17.md) + `CONTEXT.md` + `docs/evidence/contentpackage/`。  
+> **当前一致性入口**：[`doc-consistency-review-2026-07-22.md`](./doc-consistency-review-2026-07-22.md) + `CONTEXT.md` + `docs/evidence/contentpackage/`。本文只保留 2026-07-12 的 P1 历史审计事实。
 > `doc-consistency-audit-2026-07-15.md` / `2026-07-16.md` 均为历史（计数/实现矩阵不得当活源）。
 
 - 日期：2026-07-12（重校）

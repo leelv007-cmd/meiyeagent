@@ -14,6 +14,8 @@ source_of_truth:
   - P1 修订方案：`docs/reviews/p1-revision-plan-2026-07-11.md`
 ---
 
+> **历史 Scope/合同基线（2026-07-22）**：本文保留原 P1 Scope、领域合同和迁移约束，不再作为当前 P1 实施入口。当前 P1 执行使用 [`beauty-marketing-agent-p1-productization-spec-2026-07-22.md`](./beauty-marketing-agent-p1-productization-spec-2026-07-22.md)；Pro Studio 使用 D-099 rev2 独立规格。本文 `status: ready-for-agent` 只表示历史规格曾可被实现消费，不表示其中旧任务收件箱、开放画布、模型前台或 release 状态仍是当前产品事实。
+
 # 美业内容副驾 P1 实施规格
 
 > 当前口径叠加：本规格仍是 P1 Scope 基线；D01–D18 的最新决策、ContentPackage 架构和当前实现状态以 CONTEXT.md、ADR-0011、阶段决策日志与当前代码为准。2026-07-16 已确认两线边界：P1 的“开放图文工作台/自由画布”收窄为 Composer 日常轻编辑；无限画布、高阶精修、TTS+音效、在线画布 Agent 由 Pro Studio 独立加购规格承载，不计入 P1 mainline must-have，也不改变 ContentPackage 唯一成品聚合。

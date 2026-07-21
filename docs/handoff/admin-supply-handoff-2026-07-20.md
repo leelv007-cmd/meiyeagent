@@ -1,5 +1,7 @@
 # AP/MP 补足包 Worktree Handoff（2026-07-20）
 
+> **固定交付编排快照 / 当前状态以新证据为准（2026-07-22）**：本文保留 #107–#128 的属主、冻结清单和依赖图，不独立证明整包 complete 或生产 release-ready。当前状态以 `docs/reviews/admin-supply-ticket-completion-audit-2026-07-20.md`、2026-07-21 深度 review、P0/P1 当前 Spec、代码/测试和外部 evidence 为准；live conformance、#92 持久化与生产网络门仍按各自红门判断。
+
 > 状态：**开放中的交付编排**。权威链：设计文档 D-048~D-071 + D-080 六项处置（`docs/design/beauty-marketing-agent-product-design-2026-07-17.md`）> spec issue #106 / `docs/specs/admin-supply-control-spec-2026-07-20.md` > 各票（#107-#128）。复核链：`docs/reviews/admin-supply-decisions-xcheck-2026-07-20.md` + 本包双路 Codex 复核与双路一致性复核（`.scratch/admin-supply-spec-review-2026-07-20/`，38+9 条全落地）。票号映射 `.scratch/admin-supply-tickets-2026-07-20/issue-numbers.json`。
 >
 > **与 #83 包（#84-#105）并行开发**：跨包属主与冻结纪律见 `ui-journey-rebuild-handoff-2026-07-20.md`「跨包接缝增补」节（双向确认）；本包只消费 #92（ProductUsage/报价）、#94（ActionableInboxItem+pending-actions 无条件化）、#102（VideoWorkflow 派生化）、#87（S1 冻结清单）。

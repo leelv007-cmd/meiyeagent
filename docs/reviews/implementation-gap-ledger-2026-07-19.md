@@ -8,6 +8,8 @@
 >
 > **总判**：主链承诺（D-026~D-042 + 25 票）基本全部落地，未发现「文档声称已做、代码未做」的欺骗性差距。剩余差距分四类，性质不同，处置策略不同。
 
+> **2026-07-22 当前覆盖**：本文件前置章节与 §7.7 是 2026-07-19 的固定状态快照。Pro Studio 的 K01–K11 全闭表述不得再作为今日 parity 结论；D-099 rev2 已撤销旧 K03 parity 完成判据，并以 `docs/specs/pro-studio-parity-rework-spec-2026-07-22.md` 的 K1–K7、G01–G48 票包接管当前执行状态。当前文档一致性入口为 `docs/reviews/doc-consistency-review-2026-07-22.md`。
+
 ---
 
 ## 0. 快照后增量（记忆基线 `2a9d56d` → `9788f20`，11 commits）
@@ -226,5 +228,17 @@ D-042 修复批已全部执行完毕（此前记录为「修复待执行」）�
 修复轮验证（GL-21/22 落地后主会话复跑）：Web vitest **605/608 pass 0 fail 3 skipped**；Core 全量（既有 meiye_test 库、单 TEST_DATABASE_URL）**1314/1321 pass 0 fail 7 skipped**；web+core typecheck 0 错。注：GL-25/26 两处红出现在审计路的 fresh provision 库+双 URL 环境，本轮既有库下未复现——进一步支持 GL-26 归因（provision 脚本缺 canvas 迁移），GL-25 须在 fresh 库环境下归因。
 
 产品化欠缺总览（详见三路报告，本台账不重复展开）：试点前真欠账四项 = e2e 升 release-required + CI 真机持久层 job（含 GL-25/26）、生产密钥 hardening、trial 额度量/expireDays 定价数值、Langfuse 生产口径二选一；两道商用硬门 = ADR-0008 视频六题 spike 验收与 GL-20 真实单店 Owner 验证（均按 D-040 锁触发点）；Pro Studio 商业门五项照旧 open。当前不可宣称「可试点/可面世/宣发闭环≥1」。
+
+### 7.8 2026-07-22 增量 · Pro Studio parity 重做
+
+| ID | 条目 | 当前状态 | 权威与处置 |
+|---|---|---|---|
+| GL-28 | Pro Studio K03 旧 parity pass | `superseded` | D-099 rev2 仅撤销“上游 parity/内核完成”与“import 即挂载”充分性判据；K03 已取证的节点/文本/框选/多拖/Undo-Redo 行为保留为回归基线。 |
+| GL-29 | Pro Studio parity 票包 | `open / ready-for-agent` | K1 #163 是底座前置；K2 #164；K3 #165、K4 #166、K5 #167、K6 #168 按功能面实施；K7 #169 统一核销 G01–G48。票号存在不代表实现完成。 |
+| GL-30 | G01–G48 当前基线 | `baseline-pinned` | `docs/evidence/pro-studio/upstream-parity-gap-baseline-2026-07-22.md`；代码事实钉死于 `4625e4238748196a7fcb12226cb11e2c0420083b`，K1 开工前若接缝漂移必须重跑。 |
+| GL-31 | P0/P1 与 Pro Studio 两线 | `accepted-boundary` | Composer 使用 `CreationExecutionSnapshot + DBOS Harness`；Canvas 使用 `AdvancedCanvasProjectRevision + GenerationCheckpoint`；只有显式 adoption 写 ContentPackage；不得新增第二 Catalog/ledger/Asset/审计事实。 |
+| GL-32 | Agent 对话外壳 G42 | `deferred` | D-099③ 独立成线，不进入 K1–K7；Canvas 文本节点的 `text.respond` 流式回填仍属于 K4，不与 Agent 对话流混同。 |
+
+本增量不重写 §7.7 的历史测试数字；当前 Pro Studio 完成度只由 D-099 rev2、G01–G48 baseline、#163–#169 与后续实现证据共同决定。
 
 ---

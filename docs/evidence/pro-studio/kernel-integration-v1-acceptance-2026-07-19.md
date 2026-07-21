@@ -1,5 +1,7 @@
 # Pro Studio kernel integration V1 acceptance (K01–K11)
 
+> **固定验收快照 / parity 结论已部分取代（2026-07-22）**：本文保留 2026-07-19 的 K01–K11 工程验证、浏览器旅程和测试数字。D-099 rev2 已撤销 K03 “上游 parity/内核完成”的 pass 结论及“import 即挂载”的充分性判据；K03 中已取证的可见行为继续作为回归基线。当前 parity 以 G01–G48 baseline 和 K1–K7 票包为准，不能用本文宣称 Pro Studio 当前已完成上游对标。
+
 Date: 2026-07-19
 Working branch at verification: `feat/ux-fold-supply-coldstart`
 Spec: `docs/specs/pro-studio-kernel-integration-spec.md`

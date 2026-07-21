@@ -1,7 +1,7 @@
 # 文档一致性全面复核 — 2026-07-15
 
-> **SUPERSEDED for live product status (2026-07-17)**  
-> 当前一致性入口：[`doc-consistency-audit-2026-07-17.md`](./doc-consistency-audit-2026-07-17.md)。  
+> **SUPERSEDED for live product status (2026-07-22)**
+> 当前一致性入口：[`doc-consistency-review-2026-07-22.md`](./doc-consistency-review-2026-07-22.md)。本文及其 2026-07-17 接棒报告均为历史快照。
 > **北极星计数 / D01 测量**以 `docs/evidence/contentpackage/README.md` 与 `CONTEXT.md` Language 为准（**count = 1**，`real-run-0001`）。  
 > 下文矩阵与结论中的「链路数仍为 0 / ContentPackage 未落地 / 生产代码 0 命中」是 **2026-07-15 冻结快照**，正文不改写原始证据，但**不得再当活现状**。  
 > 历史基线补充：ContentPackage 代码已落地；Pro Studio 两线口径以 ADR-0012 + rev2 为准。

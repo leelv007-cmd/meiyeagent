@@ -18,6 +18,8 @@ source_of_truth:
 
 # Pro Studio 内核真接入实施规格
 
+> **历史工程基线（2026-07-22）**：本规格和对应 K01–K11 acceptance 是 2026-07-19 的原始工程交付记录。D-099 rev2 已撤销 K03 对“上游 parity/内核完成”及“import 即挂载”的充分性判据；K03 当时实际取证的节点、文本编辑、框选、多拖和 Undo/Redo 行为保留为回归基线。当前 Pro Studio 实施入口、G01–G48 核销和 K1–K7 票包以 [`pro-studio-parity-rework-spec-2026-07-22.md`](./pro-studio-parity-rework-spec-2026-07-22.md) 为准。
+
 > **实施状态（2026-07-19）**：K01–K11 engineering DoD 已完成并合入 `main`，证据见 `docs/evidence/pro-studio/kernel-integration-v1-acceptance-2026-07-19.md`。本规格正文继续作为合同；N2 生产恢复、安全演练、定价、升单验证与 Audio/SFX 商业激活仍是公开发售门，不得由工程完成推导为可售。
 
 > 本规格承接已拍板的「真接入」计划：在 **A2/A3 书面授权已归档** 的前提下，把授权的 **canvas / render / retouch 内核** exact-copy 进独立 Canvas 服务，经既有 **BackendPort → Product Core** 接缝服务端化，使商家看到的是上游式无限画布与精修，而不是工程列表薄壳。父规格 `vozeb-adoption-pro-studio-spec` 的领域合同、反面教材与发布门 **不重开**；本规格只补「内核挂载与适配」这一缺口。

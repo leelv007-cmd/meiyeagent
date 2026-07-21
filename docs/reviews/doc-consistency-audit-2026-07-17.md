@@ -1,6 +1,8 @@
 # 文档一致性全面复核 — 2026-07-17
 
-状态：**当前一致性入口；grilling 已收口（用户 2026-07-17 认同 A/B/C 三层口径）**
+> **固定历史快照 / 已被 2026-07-22 口径取代**：本文保留 2026-07-17 的 A/B/C 三层口径、real-run-0002 处置与当时一致性判断；当前入口改为 [`doc-consistency-review-2026-07-22.md`](./doc-consistency-review-2026-07-22.md)。
+
+状态：**历史一致性入口；grilling 已收口（用户 2026-07-17 认同 A/B/C 三层口径）**
 
 本轮使用 `grill-with-docs`（`/grilling` + `/domain-modeling`），**Agent Team 五路并发只读审计**后汇总。  
 权威状态以 **2026-07-17 已接受的 real-run-0002** 为准；real-run-0001 因生成图未进入同一 ContentPackage 聚合已驳回，不计数。
