@@ -283,7 +283,7 @@ test('projects persisted image candidates without inventing adoption', () => {
   assert.deepEqual(result.selected?.imageWorksurface?.candidates, [
     {
       assetId: 'asset-copy',
-      previewUrl: '/v1/assets/owned-image-1',
+      previewUrl: '/api/core/p1/assets?objectKey=images%2Fowned-image-1.png',
       persisted: true,
       rightsOk: true,
       generationOk: true,

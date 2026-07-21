@@ -272,8 +272,10 @@ function imageFacts(input: {
     lifecycle: candidateLifecycle(input.contents),
     candidates: images.map((asset, index) => ({
       assetId: asset.id,
-      ...(asset.ownedAssetId
-        ? { previewUrl: `/v1/assets/${asset.ownedAssetId}` }
+      ...(asset.objectKey
+        ? {
+            previewUrl: `/api/core/p1/assets?objectKey=${encodeURIComponent(asset.objectKey)}`,
+          }
         : {}),
       persisted: Boolean(asset.ownedAssetId || asset.objectKey),
       rightsOk: true,
