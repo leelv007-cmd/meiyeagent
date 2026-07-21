@@ -315,7 +315,7 @@ test('joins only the public video workflow with the exact canonical asset', () =
   assert.equal(state?.composedCandidate?.assetId, 'asset-video');
   assert.equal(
     state?.composedCandidate?.playableUrl,
-    '/v1/assets/owned-video-1'
+    '/api/core/p1/assets?objectKey=video%2Fowned-video-1.mp4'
   );
   assert.equal(state?.loopPhase, 'adopted');
 });

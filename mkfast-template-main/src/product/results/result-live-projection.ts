@@ -357,6 +357,13 @@ export function buildLiveVideoWorksurface(
   const videoAsset = selection.videoAsset;
   const content = selection.contents[0];
   const baseRevisionId = content?.id ?? selection.job?.id ?? selection.work.id;
+  const composedCandidate = videoAsset?.objectKey
+    ? {
+        assetId: videoAsset.id,
+        playableUrl: `/api/core/p1/assets?objectKey=${encodeURIComponent(videoAsset.objectKey)}`,
+        durationSeconds: selection.job?.contract.durationSeconds ?? 0,
+      }
+    : null;
 
   return buildVideoWorksurfaceState({
     workId: selection.work.id,
@@ -364,13 +371,7 @@ export function buildLiveVideoWorksurface(
     baseRevisionId,
     ...(content ? { contentId: content.id, versionId: content.id } : {}),
     ...(videoAsset ? { selectedObjectId: videoAsset.id } : {}),
-    composedCandidate: videoAsset
-      ? {
-          assetId: videoAsset.id,
-          playableUrl: `/v1/assets/${videoAsset.ownedAssetId ?? videoAsset.id}`,
-          durationSeconds: selection.job?.contract.durationSeconds ?? 0,
-        }
-      : null,
+    composedCandidate,
     adoption: content
       ? {
           status: 'adopted',
@@ -379,6 +380,6 @@ export function buildLiveVideoWorksurface(
           composedAssetId: videoAsset?.id ?? null,
           adoptedAt: content.acceptedAt ?? content.createdAt,
         }
-      : { status: videoAsset ? 'candidate_ready' : 'none' },
+      : { status: composedCandidate ? 'candidate_ready' : 'none' },
   });
 }
