@@ -108,7 +108,7 @@ function publicQuoteIntent(
   if (!publicProductQuoteOperations.includes(operation as never)) {
     throw new P1DomainError(
       'INVALID_STATE',
-      'operation must be copy.generate, image.generate, or video.generate.',
+      'operation must be copy.generate, copy.adapt, image.generate, or video.generate.',
     );
   }
   const aspectRatio = value.aspectRatio

@@ -103,6 +103,7 @@ export type ResultCenterPageProps = {
   onVideoCanonicalEdit?: (command: VideoCanonicalEditCommand) => Promise<void>;
   onVideoProStudio?: (handoff: VideoProStudioRefineHandoff) => void;
   onCopyAdopt?: () => void | Promise<void>;
+  onCopyGeneratePlatformVariants?: CopyImageTextWorksurfaceProps['onGeneratePlatformVariants'];
   onCopyHandEdit?: CopyImageTextWorksurfaceProps['onHandEdit'];
   onImageAdopt?: (
     actionKind: string,
@@ -171,6 +172,7 @@ function WorkspaceBody(props: {
   onVideoCanonicalEdit?: ResultCenterPageProps['onVideoCanonicalEdit'];
   onVideoProStudio?: ResultCenterPageProps['onVideoProStudio'];
   onCopyAdopt?: ResultCenterPageProps['onCopyAdopt'];
+  onCopyGeneratePlatformVariants?: ResultCenterPageProps['onCopyGeneratePlatformVariants'];
   onCopyHandEdit?: ResultCenterPageProps['onCopyHandEdit'];
   onImageAdopt?: ResultCenterPageProps['onImageAdopt'];
   onImageSaveLibrary?: ResultCenterPageProps['onImageSaveLibrary'];
@@ -235,6 +237,7 @@ function WorkspaceBody(props: {
         facts={copyFacts}
         onAdjust={props.onAdjust}
         onAdopt={props.onCopyAdopt}
+        onGeneratePlatformVariants={props.onCopyGeneratePlatformVariants}
         onHandEdit={props.onCopyHandEdit}
       />
     );
@@ -526,11 +529,14 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             onVideoCanonicalEdit={props.onVideoCanonicalEdit}
             onVideoProStudio={props.onVideoProStudio}
             onCopyAdopt={props.onCopyAdopt}
+            onCopyGeneratePlatformVariants={
+              props.onCopyGeneratePlatformVariants
+            }
             onCopyHandEdit={props.onCopyHandEdit}
-        onImageAdopt={props.onImageAdopt}
-        onImageSaveLibrary={props.onImageSaveLibrary}
-        onImageSaveDraft={props.onImageSaveDraft}
-        onImageCreateFromThis={props.onImageCreateFromThis}
+            onImageAdopt={props.onImageAdopt}
+            onImageSaveLibrary={props.onImageSaveLibrary}
+            onImageSaveDraft={props.onImageSaveDraft}
+            onImageCreateFromThis={props.onImageCreateFromThis}
             onAdjust={props.onAdjust}
           />
         )}

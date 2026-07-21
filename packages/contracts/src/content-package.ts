@@ -929,10 +929,20 @@ export const contentPackageVariantGenerationContractSchema =
     outputCount: z.literal(3),
   });
 export const generateContentPackageVariantsCommandSchema = z.object({
+  billingQuoteId: contentPackageIdSchema.optional(),
+  billingTaskId: contentPackageIdSchema.optional(),
   contract: contentPackageVariantGenerationContractSchema,
   expectedRevision: contentPackageExpectedRevisionSchema,
   packageId: contentPackageIdSchema,
   submissionKey: contentPackageIdSchema,
+}).superRefine((command, context) => {
+  if (Boolean(command.billingQuoteId) !== Boolean(command.billingTaskId)) {
+    context.addIssue({
+      code: 'custom',
+      message: 'billingQuoteId and billingTaskId must be provided together.',
+      path: ['billingQuoteId'],
+    });
+  }
 });
 export const editContentPackageVariantCommandSchema = z
   .object({

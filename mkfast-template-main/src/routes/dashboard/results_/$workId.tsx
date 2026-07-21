@@ -22,6 +22,7 @@ import {
 import {
   buildLiveVideoWorksurface,
   latestContentPackageForWork,
+  platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
 } from '@/product/results/result-live-projection';
 import { ResultCenterPage } from '@/product/results/result-center-page';
@@ -396,6 +397,7 @@ function ResultCenterRoutePage() {
             topics: [...currentPackageVersion.topics],
           },
           lifecycle: 'adopted' as const,
+          platformPreviews: platformPreviewsFromContentPackage(contentPackage),
         }
       : selected?.copyWorksurface;
   const imageWorksurface =
@@ -453,10 +455,81 @@ function ResultCenterRoutePage() {
   };
   const adopt = async (selection: Record<string, unknown>) => {
     const expectedRevision = contentPackage?.revision ?? 0;
-    await executeIntent(
+    const adopted = await executeIntent<PublicContentPackage>(
       `adopt:${workId}:${expectedRevision}:${JSON.stringify(selection)}`,
       'result_adopt',
       { expectedRevision, selection, workId }
+    );
+    await refreshCanonicalResult();
+    return adopted;
+  };
+  const generateCopyPlatformVariants = async (
+    packageToAdapt: PublicContentPackage | undefined = contentPackage
+  ) => {
+    if (
+      !packageToAdapt ||
+      !selected?.job ||
+      selected.job.contract.operation !== 'copy.generate'
+    ) {
+      throw new Error('当前结果暂不支持生成正式平台版本。');
+    }
+    const submissionKey = crypto.randomUUID();
+    const billingTaskId = `content-package-variants:${packageToAdapt.id}:${submissionKey}`;
+    const quoteId = `content-package-variants:${packageToAdapt.id}:${packageToAdapt.revision}:${submissionKey}`;
+    const quote = await commandP1<ProductQuoteSnapshot>(
+      'product-billing',
+      {
+        action: 'quote',
+        payload: {
+          catalogModelId: selected.job.contract.catalogModelId,
+          operation: 'copy.adapt',
+          quantity: 3,
+          quoteId,
+        },
+      },
+      `content-package-variants-quote:${quoteId}`
+    );
+    const confirmedQuote = await commandP1<ProductQuoteSnapshot>(
+      'product-billing',
+      {
+        action: 'confirm',
+        payload: {
+          quoteId: quote.quoteId,
+          taskId: billingTaskId,
+        },
+      },
+      `content-package-variants-confirm:${quote.quoteId}:${billingTaskId}`
+    );
+    await commandP1(
+      'operations',
+      {
+        action: 'generate_content_package_variants',
+        payload: {
+          billingQuoteId: confirmedQuote.quoteId,
+          billingTaskId,
+          contract: {
+            ...selected.job.contract,
+            aigcLabelEnabled: selected.job.contract.aigcLabelEnabled,
+            catalogModelId: confirmedQuote.catalogModelId,
+            catalogRevision:
+              confirmedQuote.catalogModelRevision ??
+              selected.job.contract.catalogRevision,
+            currency: confirmedQuote.formula.currency ?? 'CNY',
+            estimatedAmount: confirmedQuote.confirmedAmount ?? 0,
+            operation: 'copy.adapt',
+            outputCount: confirmedQuote.outputCount ?? 3,
+            outputLabel: confirmedQuote.outputLabel ?? '三平台版本',
+            quoteAcceptedAt:
+              confirmedQuote.confirmedAt ?? new Date().toISOString(),
+            quoteRevision: confirmedQuote.revision,
+            watermarkEnabled: selected.job.contract.watermarkEnabled,
+          },
+          expectedRevision: packageToAdapt.revision,
+          packageId: packageToAdapt.id,
+          submissionKey,
+        },
+      },
+      `content-package-variants:${packageToAdapt.id}:${submissionKey}`
     );
     await refreshCanonicalResult();
   };
@@ -790,8 +863,8 @@ function ResultCenterRoutePage() {
       onDriftChoice={(choice) => returnRestore.applyDriftChoice(choice)}
       onCopyAdopt={
         copyAsset
-          ? () =>
-              adopt(
+          ? async () => {
+              const adopted = await adopt(
                 imageAssetIds.length > 0
                   ? {
                       copyAssetId: copyAsset.id,
@@ -799,9 +872,12 @@ function ResultCenterRoutePage() {
                       orderedAssetIds: imageAssetIds,
                     }
                   : { copyAssetId: copyAsset.id, kind: 'copy' }
-              )
+              );
+              await generateCopyPlatformVariants(adopted);
+            }
           : undefined
       }
+      onCopyGeneratePlatformVariants={() => generateCopyPlatformVariants()}
       onCopyHandEdit={
         contentPackage?.currentVersionId
           ? async (changes) => {
@@ -819,9 +895,9 @@ function ResultCenterRoutePage() {
             }
           : undefined
       }
-      onImageAdopt={(_actionKind, orderedAssetIds) =>
-        adopt({ kind: 'image', orderedAssetIds })
-      }
+      onImageAdopt={async (_actionKind, orderedAssetIds) => {
+        await adopt({ kind: 'image', orderedAssetIds });
+      }}
       onImageSaveDraft={async (selection) => {
         await commandP1(
           'operations',
@@ -909,11 +985,12 @@ function ResultCenterRoutePage() {
       }}
       onVideoAdopt={
         videoWorksurface?.composedCandidate
-          ? () =>
-              adopt({
+          ? async () => {
+              await adopt({
                 kind: 'video',
                 videoAssetId: videoWorksurface.composedCandidate!.assetId,
-              })
+              });
+            }
           : undefined
       }
       onVideoDeliver={() =>

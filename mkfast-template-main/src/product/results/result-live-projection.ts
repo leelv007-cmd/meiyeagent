@@ -12,11 +12,16 @@ import type {
   CreativeJob,
   CreativeWorkbenchProjection,
   CreativeWork,
+  PublicContentPackage,
   ResultWorkspaceKind,
   VideoWorkflowPublicProjection,
 } from '@meiye/contracts';
 
-import type { CopyImageTextWorksurfaceFacts } from './copy-image-text-worksurface-model';
+import type {
+  CopyImageTextWorksurfaceFacts,
+  CopyPreviewCarrier,
+  PlatformPreviewVariant,
+} from './copy-image-text-worksurface-model';
 import type { ImageWorksurfaceFacts } from './image-worksurface-model';
 import type { ResultShellProgressState } from './result-shell-model';
 import type { ClientResolverWorkRecord } from './result-target-wiring';
@@ -52,6 +57,38 @@ export function latestContentPackageForWork<
   TPackage extends { source: { workId?: string } },
 >(packages: TPackage[] | undefined, workId: string) {
   return packages?.find((candidate) => candidate.source.workId === workId);
+}
+
+/**
+ * Only expose a platform preview after the canonical ContentPackage records
+ * the server-produced copy.adapt output. Acceptance seed shells are export
+ * scaffolding, not a platform rewrite.
+ */
+export function platformPreviewsFromContentPackage(
+  contentPackage: Pick<PublicContentPackage, 'variants'> | undefined
+): PlatformPreviewVariant[] {
+  return (contentPackage?.variants ?? []).flatMap((variant) => {
+    const current = variant.versions.find(
+      (version) => version.id === variant.currentVersionId
+    );
+    if (
+      !current ||
+      (current.source !== 'ai_generated' &&
+        current.source !== 'merchant_edited')
+    ) {
+      return [];
+    }
+    return [
+      {
+        carrier: variant.platform as CopyPreviewCarrier,
+        title: current.title,
+        body: current.body,
+        conversionHook: current.conversionHook ?? '',
+        topics: [...current.topics],
+        source: 'copy.adapt' as const,
+      },
+    ];
+  });
 }
 
 function workspaceKindForWork(work: CreativeWork): ResultWorkspaceKind {
