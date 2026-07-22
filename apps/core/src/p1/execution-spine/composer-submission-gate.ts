@@ -1,4 +1,4 @@
-import { creativeContentModuleIds } from "@meiye/contracts";
+import { creativeContentModuleIds, type CreativeOperation } from "@meiye/contracts";
 
 import type { BriefSubmissionGate } from "../creation-experience/brief-submission-gate.js";
 import { briefSourceRevisionId } from "../creation-experience/postgres-brief-revision-context.js";
@@ -132,16 +132,20 @@ export class ComposerSubmissionAdmissionGate
 		) {
 			throw invalid("Recipe revision is missing, unpublished, or does not match this submission.");
 		}
+		const recipeLens = composerLensForRecipe(recipe.lensId);
 		if (
-			recipe.lensId !== "copy" ||
-			input.lens !== "copy" ||
-			recipe.targetWorkspaceKind !== "copy"
+			!recipeLens ||
+			input.lens !== recipeLens ||
+			recipe.targetWorkspaceKind !== recipe.lensId
 		) {
-			throw invalid("Recipe is not published for the Copy Composer.");
+			throw invalid("Recipe is not published for the selected Composer modality.");
 		}
 		const recipeBinding = deriveRecipeBinding(recipe);
 		if (recipe.modelPolicy.mode !== input.modelPolicy.mode) {
 			throw invalid("Recipe model policy mode no longer matches the submission.");
+		}
+		if (recipeLens !== "copy" && recipe.modelPolicy.mode !== "fixed") {
+			throw invalid("Image and video Composer recipes require a fixed model policy.");
 		}
 		if (
 			input.modelPolicy.mode === "fixed" &&
@@ -165,11 +169,11 @@ export class ComposerSubmissionAdmissionGate
 			!surface.recipeRefs.some(
 				(reference) =>
 					reference.visible &&
-					reference.lensId === "copy" &&
+					reference.lensId === recipe.lensId &&
 					reference.recipeRevisionId === recipe.revisionId,
 			)
 		) {
-			throw invalid("Surface does not expose the selected published Copy recipe.");
+			throw invalid("Surface does not expose the selected published Composer recipe.");
 		}
 
 		const route = await this.dependencies.routes.getRouteSnapshot(
@@ -249,13 +253,10 @@ export class ComposerSubmissionAdmissionGate
 			assetIds,
 			workspaceId: input.workspaceId,
 		});
-		const knownAssetIds = rights.knownAssetIds
-			? new Set(rights.knownAssetIds)
-			: null;
+		const knownAssetIds = new Set(rights.knownAssetIds ?? []);
 		if (
 			rights.unauthorizedAssetIds.length > 0 ||
-			(knownAssetIds &&
-				assetIds.some((assetId) => !knownAssetIds.has(assetId)))
+			assetIds.some((assetId) => !knownAssetIds.has(assetId))
 		) {
 			throw invalid("Every source asset must be known and authorized in this workspace.");
 		}
@@ -307,20 +308,27 @@ export class ComposerSubmissionAdmissionGate
 			confirmation.boundRevisions.modelRevisionId !== input.catalogModel.revision ||
 			confirmation.boundRevisions.quoteRevisionId !== quote.revision ||
 			confirmation.boundRevisions.sourceRevisionId !== briefSourceRevisionId(sourceIds) ||
-			confirmation.boundRevisions.lensId !== "copy"
+			confirmation.boundRevisions.lensId !== recipe.lensId
 		) {
 			throw invalid("Durable Brief confirmation is missing or does not bind these exact submission facts.");
 		}
 
+		const deliverable = recipeBinding.deliverables[0]!;
 		await this.dependencies.briefs.assertCurrent({
+			...(deliverable.aspectRatio
+				? { aspectRatio: deliverable.aspectRatio }
+				: {}),
 			briefConfirmationId: input.briefConfirmation.id,
 			briefContextId: input.briefContext.id,
 			catalogModelId: input.catalogModel.id,
 			catalogRevision: input.catalogModel.revision,
+			...(deliverable.durationSeconds
+				? { durationSeconds: deliverable.durationSeconds }
+				: {}),
 			expectedContextRevision: input.briefContext.revision,
 			intent: input.intent,
-			operation: "copy.generate",
-			outputCount: recipeBinding.deliverables[0]!.quantity,
+			operation: operationForLens(recipeBinding.lens),
+			outputCount: deliverable.quantity,
 			sourceReferenceIds: sourceIds,
 			quoteRevision: quote.revision,
 			workspaceId: input.workspaceId,
@@ -363,6 +371,13 @@ export class ComposerSubmissionAdmissionGate
 	}
 }
 
+function composerLensForRecipe(lens: string) {
+	if (lens === "copy") return "copy" as const;
+	if (lens === "image_text") return "image" as const;
+	if (lens === "video") return "video" as const;
+	return null;
+}
+
 function deriveRecipeBinding(recipe: {
 	contextPatches: Record<string, unknown>;
 	delivery: {
@@ -378,9 +393,8 @@ function deriveRecipeBinding(recipe: {
 	CreationExecutionSnapshot,
 	"contentModules" | "deliverables" | "lens" | "platform"
 > {
-	if (recipe.lensId !== "copy") {
-		throw invalid("Recipe is not published for the Copy Composer.");
-	}
+	const lens = composerLensForRecipe(recipe.lensId);
+	if (!lens) throw invalid("Recipe has no supported Composer modality.");
 	const platform = recipe.delivery.platform;
 	if (
 		platform !== "xiaohongshu" &&
@@ -389,12 +403,12 @@ function deriveRecipeBinding(recipe: {
 	) {
 		throw invalid("Published Recipe must declare a supported delivery platform.");
 	}
-	if (recipe.delivery.deliverableKind !== "copy_document") {
-		throw invalid("Published Copy Recipe must declare a copy_document delivery kind.");
+	if (!recipe.delivery.deliverableKind?.trim()) {
+		throw invalid("Published Recipe must declare its delivery kind.");
 	}
 	const quantity = recipe.delivery.quantity;
-	if (quantity !== 1) {
-		throw invalid("Published Copy Recipe must declare exactly one copy document.");
+	if (!Number.isInteger(quantity) || !quantity || quantity < 1 || quantity > 100) {
+		throw invalid("Published Recipe must declare a valid delivery quantity.");
 	}
 	const modules = recipe.contextPatches.contentModules;
 	if (
@@ -412,19 +426,48 @@ function deriveRecipeBinding(recipe: {
 	) {
 		throw invalid("Published Recipe must declare unique supported content modules.");
 	}
+	const aspectRatio = recipe.delivery.aspectRatio;
+	if (
+		aspectRatio !== undefined &&
+		aspectRatio !== "1:1" &&
+		aspectRatio !== "3:4" &&
+		aspectRatio !== "9:16"
+	) {
+		throw invalid("Published Recipe declares an unsupported aspect ratio.");
+	}
+	if ((lens === "image" || lens === "video") && !aspectRatio) {
+		throw invalid("Published media Recipe must declare an aspect ratio.");
+	}
+	const durationSeconds = recipe.delivery.durationSeconds;
+	if (
+		lens === "video" &&
+		(!Number.isInteger(durationSeconds) || !durationSeconds || durationSeconds < 1 || durationSeconds > 3_600)
+	) {
+		throw invalid("Published video Recipe must declare a valid duration.");
+	}
 	return {
 		contentModules: modules as CreationExecutionSnapshot["contentModules"],
 		deliverables: [
 			{
 				id: `recipe-deliverable:${recipe.revisionId}`,
-				kind: "copy",
+				kind: lens,
 				order: 0,
 				quantity,
+				...(aspectRatio ? { aspectRatio } : {}),
+				...(durationSeconds ? { durationSeconds } : {}),
 			},
 		],
-		lens: "copy",
+		lens,
 		platform: { id: platform },
 	};
+}
+
+function operationForLens(
+	lens: CreationExecutionSnapshot["lens"],
+): CreativeOperation {
+	if (lens === "copy") return "copy.generate";
+	if (lens === "image") return "image.generate";
+	return "video.generate";
 }
 
 function selectionModeMatches(

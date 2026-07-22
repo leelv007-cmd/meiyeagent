@@ -1,20 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { contentPackageSchema } from "@meiye/contracts";
 import { Pool } from "pg";
 
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
 import { PostgresOperationsRepository } from "../operations/postgres-repository.js";
-import { buildContentPackage } from "../operations/content-package.js";
-import { PostgresHarnessStore } from "../harness/postgres-store.js";
-import { harnessRuntimeId } from "../harness/workspace-scope.js";
 import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
-import {
-  ContentPackageRevisionWriteError,
-  PostgresContentPackageRevisionWritePort,
-} from "./content-package-revision-port.js";
 import {
   PostgresCreationSubmissionPersistence,
   PostgresCreationSubmissionStore,
@@ -41,20 +33,6 @@ test(
       ),
       { harnessStartLeaseMs: 60_000 },
     );
-    const harnessStore = new PostgresHarnessStore(pool, {
-      async currentRevision() {
-        return 1;
-      },
-    });
-    let assetRightsAvailable = true;
-    const packageWriter = new PostgresContentPackageRevisionWritePort(pool, {
-      async resolve({ assetIds }) {
-        return {
-          knownAssetIds: assetIds,
-          unauthorizedAssetIds: assetRightsAvailable ? [] : assetIds,
-        };
-      },
-    });
     const suffix = randomUUID();
     const workspaceId = `spine-workspace-${suffix}`;
     const quoteId = `spine-quote-${suffix}`;
@@ -64,8 +42,6 @@ test(
       await operations.migrate();
       await billingRepository.migrate();
       await store.applySchema();
-      await harnessStore.applySchema();
-      await packageWriter.applySchema();
       const quote = await seedQuote(
         billingRepository,
         workspaceId,
@@ -134,184 +110,6 @@ test(
         tasks: 1,
         usage: 1,
         works: 1,
-      });
-      await harnessStore.claim({
-        taskId: submission.task.id,
-        fingerprint: "composer-harness-request",
-        request: {
-          actorId: submission.snapshot.actorId,
-          workspaceId,
-          packageId: submission.contentPackage.id,
-          expectedRevision: submission.contentPackage.expectedRevision,
-          workflowRevision: submission.snapshot.revision,
-          rawInput: submission.snapshot.intent.text,
-          intent: {
-            context: {
-              workId: submission.work.id,
-              intent: submission.snapshot.intent.text,
-              sourceSummaries: [],
-            },
-            assetReferences: submission.snapshot.sources.assets.map((asset) => asset.id),
-          },
-          executionSnapshot: submission.snapshot,
-        },
-      });
-      for (const [stage, payload] of [
-        ["context_injection", { sourceRevisions: { facts: 1 } }],
-        ["brief_compilation", { factRefs: ["store_fact:offer:1"] }],
-        [
-          "execution_selection",
-          {
-            winnerCandidateId: "candidate-a",
-            candidateScores: [
-              { candidateId: "candidate-a", reason: "适合当前预约需求" },
-            ],
-          },
-        ],
-      ] as const) {
-        await harnessStore.recordStageTrace({
-          workspaceId,
-          id: `trace-${submission.task.id}-${stage}`,
-          taskId: submission.task.id,
-          stage,
-          payload,
-        });
-      }
-      const sourceContentPackage = submission.snapshot.sources.contentPackage;
-      if (!sourceContentPackage) {
-        throw new Error("Expected the Composer snapshot to bind a source ContentPackage.");
-      }
-      await seedSourceContentPackage(
-        pool,
-        workspaceId,
-        sourceContentPackage,
-      );
-      const deliveryInput = {
-        additionalVersions: [
-          {
-            body: "候选版本 B 正文",
-            conversionHook: "了解详情",
-            createdAt: "2026-07-22T09:00:00.000Z",
-            createdBy: `harness-${submission.task.id}`,
-            harnessCandidateId: "candidate-b",
-            harnessScore: 85,
-            id: `copy-version-b-${suffix}`,
-            orderedAssetIds: ["asset-1"],
-            source: "ai_generated" as const,
-            title: "候选版本 B",
-            topics: [],
-          },
-        ],
-        expectedRevision: submission.contentPackage.expectedRevision,
-        generated: { assetIds: [], childRuns: [] },
-        harnessSelection: { recommendedCandidateId: "candidate-a" },
-        idempotencyKey: `copy-harness-${suffix}`,
-        kind: "image_text" as const,
-        occurredAt: "2026-07-22T09:00:00.000Z",
-        packageId: submission.contentPackage.id,
-        platform: "douyin" as const,
-        snapshotId: submission.snapshot.id,
-        snapshot: {
-          id: submission.snapshot.id,
-          revision: submission.snapshot.revision,
-          schemaVersion: submission.snapshot.schemaVersion,
-        },
-        sourceContentPackage: submission.snapshot.sources.contentPackage,
-        taskId: submission.task.id,
-        version: {
-          body: "候选版本 A 正文",
-          conversionHook: "私信预约",
-          createdAt: "2026-07-22T09:00:00.000Z",
-          createdBy: `harness-${submission.task.id}`,
-          harnessCandidateId: "candidate-a",
-          harnessScore: 91,
-          id: `copy-version-a-${suffix}`,
-          orderedAssetIds: ["asset-1"],
-          source: "ai_generated" as const,
-          title: "候选版本 A",
-          topics: [],
-        },
-        workId: submission.work.id,
-        workflowId: submission.task.id,
-        workflowRevision: submission.snapshot.revision,
-        workspaceId,
-      };
-      const delivered = await packageWriter.write(deliveryInput);
-      assert.deepEqual(delivered, {
-        packageId: submission.contentPackage.id,
-        revision: 1,
-        versionId: deliveryInput.version.id,
-      });
-      assert.deepEqual(await packageWriter.write(deliveryInput), delivered);
-      assetRightsAvailable = false;
-      await assert.rejects(
-        packageWriter.write({
-          ...deliveryInput,
-          idempotencyKey: `copy-harness-after-rights-revocation-${suffix}`,
-          version: {
-            ...deliveryInput.version,
-            id: `copy-version-after-rights-revocation-${suffix}`,
-          },
-        }),
-        (error: unknown) =>
-          error instanceof ContentPackageRevisionWriteError &&
-          error.code === "CONTENT_PACKAGE_ASSET_RIGHTS_UNAVAILABLE",
-      );
-      assetRightsAvailable = true;
-      const deliveryAudit = await pool.query<{
-        payload: {
-          expectedRevision: number;
-          packageId: string;
-          revision: number;
-          versionId: string;
-          workspaceId: string;
-        };
-        outbox_status: string;
-      }>(
-        `SELECT audit.payload - 'requestFingerprint' AS payload,
-                outbox.status AS outbox_status
-           FROM harness_runtime.audit_events audit
-           JOIN harness_runtime.langfuse_outbox outbox ON outbox.audit_id = audit.id
-          WHERE audit.workflow_id = $1 AND audit.event_type = 'package_delivered'`,
-        [harnessRuntimeId(workspaceId, submission.task.id)],
-      );
-      assert.deepEqual(deliveryAudit.rows, [
-        {
-          payload: {
-            expectedRevision: 0,
-            packageId: submission.contentPackage.id,
-            revision: 1,
-            versionId: deliveryInput.version.id,
-            workspaceId,
-          },
-          outbox_status: "queued",
-        },
-      ]);
-      const recommendation = await harnessStore.readTodayRecommendation(workspaceId);
-      assert.equal(recommendation.recommendation?.packageId, submission.contentPackage.id);
-      assert.equal(recommendation.recommendation?.versionId, deliveryInput.version.id);
-      assert.equal(recommendation.recommendation?.whyNow, "适合当前预约需求");
-      const deliveredPackage = await pool.query<{ payload: unknown }>(
-        `SELECT payload FROM p1_content_packages
-          WHERE workspace_id = $1 AND id = $2`,
-        [workspaceId, submission.contentPackage.id],
-      );
-      const packagePayload = contentPackageSchema.parse(deliveredPackage.rows[0]?.payload);
-      assert.equal(packagePayload.currentVersionId, deliveryInput.version.id);
-      assert.deepEqual(packagePayload.harnessSelection, {
-        recommendedCandidateId: "candidate-a",
-      });
-      assert.deepEqual(packagePayload.source.creationExecutionSnapshot, {
-        id: submission.snapshot.id,
-        revision: 1,
-        schemaVersion: "creation-execution-snapshot/v1",
-      });
-      assert.deepEqual(
-        packagePayload.source.sourceContentPackage,
-        submission.snapshot.sources.contentPackage,
-      );
-      assert.deepEqual(packagePayload.lineage, {
-        reusedFromPackageId: submission.snapshot.sources.contentPackage?.id,
       });
       assert.equal(
         (
@@ -537,6 +335,107 @@ test(
 );
 
 test(
+  "Postgres Coordinator reserves image and video shells with the same immutable snapshot and usage lineage",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool),
+      ),
+    );
+    const workspaceId = `spine-media-${randomUUID()}`;
+    const submissions: CreationSubmissionRecord[] = [];
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      for (const lens of ["image", "video"] as const) {
+        const suffix = `${lens}-${randomUUID()}`;
+        const quoteId = `spine-quote-${suffix}`;
+        const submission = reserveRecord(workspaceId, quoteId, suffix, lens);
+        submissions.push(submission);
+        const quote = await seedQuote(
+          billingRepository,
+          workspaceId,
+          quoteId,
+          submission.task.id,
+        );
+        submission.snapshot = createSnapshot({
+          lens,
+          quoteId,
+          quoteRevision: quote.revision,
+          submission,
+          workspaceId,
+        });
+
+        const claimed = await store.claim({
+          idempotencyKey: `submit-${lens}-1`,
+          payloadHash: `payload-${lens}`,
+          submission,
+          workspaceId,
+        });
+        assert.equal(claimed.kind, "created");
+        assert.equal(
+          (
+            await store.claim({
+              idempotencyKey: `submit-${lens}-1`,
+              payloadHash: `payload-${lens}`,
+              submission,
+              workspaceId,
+            })
+          ).kind,
+          "existing",
+        );
+
+        const lineage = await pool.query<{
+          package_kind: string;
+          package_snapshot: unknown;
+          resource: string | null;
+          snapshot_lens: string;
+          usage_id: string;
+        }>(
+          `SELECT p.payload->>'kind' AS package_kind,
+                  p.payload->'source'->'creationExecutionSnapshot' AS package_snapshot,
+                  u.payload->>'resource' AS resource,
+                  s.submission->'snapshot'->>'lens' AS snapshot_lens,
+                  u.usage_id
+             FROM execution_spine.creation_submissions s
+             JOIN p1_content_packages p
+               ON p.workspace_id = s.workspace_id
+              AND p.id = s.content_package_id
+             JOIN p1_product_billing_usage u
+               ON u.workspace_id = s.workspace_id
+              AND u.task_id = s.task_id
+            WHERE s.workspace_id = $1 AND s.id = $2`,
+          [workspaceId, submission.snapshot.id],
+        );
+        assert.deepEqual(lineage.rows, [
+          {
+            package_kind: lens === "image" ? "image_text" : "video",
+            package_snapshot: {
+              id: submission.snapshot.id,
+              revision: 1,
+              schemaVersion: "creation-execution-snapshot/v1",
+            },
+            resource: lens,
+            snapshot_lens: lens,
+            usage_id: submission.usageReservation.id,
+          },
+        ]);
+      }
+    } finally {
+      await cleanup(pool, workspaceId, submissions[0]!).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
   "a failed product reservation rolls back every Composer shell",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
@@ -604,6 +503,7 @@ function reserveRecord(
   workspaceId: string,
   quoteId: string,
   suffix: string,
+  lens: "copy" | "image" | "video" = "copy",
 ): CreationSubmissionRecord {
   const taskId = `spine-task-${suffix}`;
   const submission: CreationSubmissionRecord = {
@@ -611,6 +511,7 @@ function reserveRecord(
     snapshot: createSnapshot({
       quoteId,
       quoteRevision: "quote-revision-placeholder",
+      lens,
       submission: {
         contentPackage: { expectedRevision: 0, id: `spine-package-${suffix}` },
         task: { id: taskId },
@@ -655,6 +556,7 @@ async function seedUnconfirmedQuote(
 }
 
 function createSnapshot(input: {
+  lens?: "copy" | "image" | "video";
   quoteId: string;
   quoteRevision: string;
   submission: Pick<
@@ -663,6 +565,7 @@ function createSnapshot(input: {
   >;
   workspaceId: string;
 }) {
+	const lens = input.lens ?? "copy";
   return createCreationExecutionSnapshot(
     {
       actorId: "owner-1",
@@ -673,10 +576,12 @@ function createSnapshot(input: {
       contentPackageId: input.submission.contentPackage.id,
       deliverables: [
         {
-          id: "copy-main",
-          kind: "copy",
+          id: `${lens}-main`,
+          kind: lens,
           order: 1,
           quantity: 1,
+          ...(lens === "copy" ? {} : { aspectRatio: "9:16" }),
+          ...(lens === "video" ? { durationSeconds: 8 } : {}),
         },
       ],
       expectedContentPackageRevision:
@@ -684,7 +589,7 @@ function createSnapshot(input: {
       identity: { id: "identity-1", revision: "identity-r1" },
       idempotencyKey: "submission-key",
       intent: "为夏日护理项目写一条预约文案",
-      lens: "copy",
+      lens,
       modelPolicy: { id: "policy-1", mode: "fixed", revision: "policy-r1" },
       platform: { id: "douyin" },
       quote: { id: input.quoteId, revision: input.quoteRevision },
@@ -693,10 +598,6 @@ function createSnapshot(input: {
       route: { id: "route-1", revision: "route-r1" },
       sources: {
         assets: [{ id: "asset-1", revision: "asset-r1", role: "reference" }],
-        contentPackage: {
-          id: `source-package-${input.submission.task.id}`,
-          revision: "3",
-        },
       },
       surface: { id: "surface-1", revision: "surface-r1" },
       taskId: input.submission.task.id,
@@ -707,73 +608,12 @@ function createSnapshot(input: {
   );
 }
 
-async function seedSourceContentPackage(
-  pool: Pool,
-  workspaceId: string,
-  source: { id: string; revision: string },
-) {
-  const sourcePackage = {
-    ...buildContentPackage({
-      id: source.id,
-      kind: "image_text",
-      source: { assetIds: ["source-asset-1"], targetPlatform: "xiaohongshu" },
-      timestamp: "2026-07-22T09:00:00.000Z",
-      workspaceId,
-    }),
-    currentVersionId: "source-version-1",
-    revision: Number(source.revision),
-    status: "accepted" as const,
-    versions: [
-      {
-        body: "来源内容正文",
-        createdAt: "2026-07-22T09:00:00.000Z",
-        id: "source-version-1",
-        orderedAssetIds: ["source-asset-1"],
-        title: "来源内容",
-        topics: [],
-      },
-    ],
-  };
-  await pool.query(
-    `INSERT INTO p1_content_packages
-       (workspace_id, id, payload, revision, updated_at)
-     VALUES ($1, $2, $3::jsonb, $4, $5::timestamptz)`,
-    [
-      workspaceId,
-      source.id,
-      JSON.stringify(sourcePackage),
-      sourcePackage.revision,
-      "2026-07-22T09:00:00.000Z",
-    ],
-  );
-}
-
 async function cleanup(
   pool: Pool,
   workspaceId: string,
   submission: CreationSubmissionRecord,
 ) {
-	const runtimeTaskId = harnessRuntimeId(workspaceId, submission.task.id);
-	await pool.query(
-		`DELETE FROM harness_runtime.langfuse_outbox
-		  WHERE audit_id IN (
-		    SELECT id FROM harness_runtime.audit_events WHERE workflow_id = $1
-		  )`,
-		[runtimeTaskId],
-	);
-	await pool.query(
-		"DELETE FROM harness_runtime.audit_events WHERE workflow_id = $1",
-		[runtimeTaskId],
-	);
-	await pool.query(
-		"DELETE FROM harness_runtime.decision_traces WHERE task_id = $1",
-		[runtimeTaskId],
-	);
-	await pool.query(
-		"DELETE FROM harness_runtime.task_requests WHERE task_id = $1",
-		[runtimeTaskId],
-	);
-	await pool.query(
+  await pool.query(
     "DELETE FROM execution_spine.creation_submissions WHERE workspace_id = $1",
     [workspaceId],
   );

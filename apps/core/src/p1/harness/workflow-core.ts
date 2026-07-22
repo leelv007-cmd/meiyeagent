@@ -1,4 +1,5 @@
 import type {
+  ContentPackage,
   ContentPackageRevisionDelivery,
   CreativeRecommendationDecisionTrace,
   QuestionCard,
@@ -17,9 +18,15 @@ import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
 
 type CopyBrief = Extract<ExecutionBrief, { kind: 'copy' }>;
+type MediaBrief = Exclude<ExecutionBrief, { kind: 'copy' }>;
 
 interface MeasuredCopyBrief {
   brief: CopyBrief;
+  metrics: StructuredNodeMetricsSnapshot;
+}
+
+interface MeasuredMediaBrief {
+  brief: MediaBrief;
   metrics: StructuredNodeMetricsSnapshot;
 }
 
@@ -37,6 +44,13 @@ export interface HarnessSelectionResult {
     body: string;
     conversionHook: string;
   };
+  trace: DecisionTraceFragment;
+}
+
+export interface HarnessMediaSelectionResult {
+  asset: NonNullable<ContentPackage['generated']['ownedAssets']>[number];
+  childRun: ContentPackage['generated']['childRuns'][number];
+  kind: MediaBrief['kind'];
   trace: DecisionTraceFragment;
 }
 
@@ -103,6 +117,29 @@ export interface HarnessStagePorts {
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
+export interface HarnessMediaStagePorts extends HarnessStagePorts {
+  compileMediaBrief(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    declaration: IntentDeclaration;
+    context: HarnessContextSnapshot;
+  }): Promise<MediaBrief | MeasuredMediaBrief>;
+  executeMediaAndSelect(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    brief: MediaBrief;
+    context: HarnessContextSnapshot;
+  }): Promise<HarnessMediaSelectionResult>;
+  assembleMediaAndDeliver(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    declaration: IntentDeclaration;
+    context: HarnessContextSnapshot;
+    brief: MediaBrief;
+    selection: HarnessMediaSelectionResult;
+  }): Promise<ContentPackageRevisionDelivery>;
+}
+
 export interface HarnessWorkflowRuntime {
   runStep<Output>(
     effectIdempotencyKey: string,
@@ -155,6 +192,14 @@ export async function runHarnessWorkflow(
   ports: HarnessStagePorts,
   runtime: HarnessWorkflowRuntime,
 ) {
+  if (request.executionSnapshot?.lens === 'image' || request.executionSnapshot?.lens === 'video') {
+    return runMediaHarnessWorkflow(
+      workflowId,
+      request,
+      requireMediaStagePorts(ports),
+      runtime,
+    );
+  }
   let eventSequence = 0;
   const reportProgress = (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
@@ -404,6 +449,309 @@ export async function runHarnessWorkflow(
     recommendation,
     trace: selection.trace,
   };
+}
+
+async function runMediaHarnessWorkflow(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+  ports: HarnessMediaStagePorts,
+  runtime: HarnessWorkflowRuntime,
+) {
+  const kind = mediaKind(request);
+  let eventSequence = 0;
+  const reportProgress = (
+    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
+  ) => runtime.progress({ ...event, sequence: eventSequence++ });
+  let activeRequest = request;
+  const intent = await runtime.runStep(
+    harnessEffectKey(workflowId, 1, 'intent', '0'),
+    () => ports.nameIntent({ workflowId, request }),
+  );
+  if (intent.declaration.deliveryLayer !== 'finished_media') {
+    throw new HarnessMediaScopeError(
+      'A media submission must resolve to the finished_media delivery layer.',
+    );
+  }
+  if (intent.blockingQuestion) {
+    await reportProgress({
+      stage: 'intent_naming',
+      state: 'suspended',
+      message: intent.blockingQuestion.question,
+    });
+    activeRequest = applyCurrentTaskDecision(
+      request,
+      await runtime.awaitDecision(intent.blockingQuestion),
+    );
+  }
+  await trace(runtime, workflowId, 'intent_naming', {
+    executionRoot: mediaExecutionRoot(request),
+    declaration: intent.declaration,
+    questionId: intent.blockingQuestion?.questionId ?? null,
+    ...(request.prompts?.intentNaming
+      ? { prompt: promptTraceReference(request.prompts.intentNaming) }
+      : {}),
+    ...(intent.metrics ? { metrics: intent.metrics } : {}),
+  });
+  await reportProgress({
+    stage: 'intent_naming',
+    state: 'success',
+    message: '已确认这次的创作方向',
+  });
+
+  let bundle = await runtime.runStep(
+    harnessEffectKey(workflowId, 2, 'context', '0'),
+    () =>
+      ports.injectContext({
+        workflowId,
+        request: activeRequest,
+        declaration: intent.declaration,
+      }),
+  );
+  await trace(runtime, workflowId, 'context_injection', {
+    executionRoot: mediaExecutionRoot(request),
+    bundleId: bundle.bundle.bundleId,
+    revision: bundle.bundle.revision,
+    hash: bundle.bundle.hash,
+    sourceRevisions: bundle.bundle.sourceRevisions,
+  }, `r${bundle.bundle.revision}`);
+  await reportProgress({
+    stage: 'context_injection',
+    state: 'success',
+    message: '已整理本次创作资料',
+  });
+
+  let compiledBrief = await runtime.runStep(
+    harnessEffectKey(workflowId, 3, kind, '0'),
+    () =>
+      ports.compileMediaBrief({
+        workflowId,
+        request: activeRequest,
+        declaration: intent.declaration,
+        context: bundle,
+      }),
+  );
+  let { brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief);
+  await trace(runtime, workflowId, 'brief_compilation', {
+    executionRoot: mediaExecutionRoot(request),
+    ...mediaBriefTrace(brief),
+    ...(request.prompts?.briefCompilation
+      ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
+      : {}),
+    ...(briefMetrics ? { metrics: briefMetrics } : {}),
+  }, `r${bundle.bundle.revision}`);
+  await reportProgress({
+    stage: 'brief_compilation',
+    state: 'success',
+    message: '已整理本次创作要求',
+  });
+
+  let selection = await runtime.runStep(
+    harnessEffectKey(workflowId, 4, kind, 'selection'),
+    () =>
+      ports.executeMediaAndSelect({
+        workflowId,
+        request: activeRequest,
+        brief,
+        context: bundle,
+      }),
+  );
+  await trace(runtime, workflowId, 'execution_selection', {
+    executionRoot: mediaExecutionRoot(request),
+    ...selection.trace,
+  }, `r${bundle.bundle.revision}`);
+  await reportProgress({
+    stage: 'execution_selection',
+    state: 'success',
+    message: mediaSelectionMessage(brief.kind),
+  });
+
+  const fenced = await runtime.runStep(
+    harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
+    () =>
+      ports.fenceContext({
+        workflowId,
+        request: activeRequest,
+        declaration: intent.declaration,
+        context: bundle,
+      }),
+  );
+  if (fenced.bundle.hash !== bundle.bundle.hash) {
+    bundle = fenced;
+    await trace(runtime, workflowId, 'context_injection', {
+      executionRoot: mediaExecutionRoot(request),
+      bundleId: bundle.bundle.bundleId,
+      revision: bundle.bundle.revision,
+      hash: bundle.bundle.hash,
+      sourceRevisions: bundle.bundle.sourceRevisions,
+      recompiled: true,
+    }, `r${bundle.bundle.revision}`);
+    await reportProgress({
+      stage: 'context_injection',
+      state: 'success',
+      message: '资料有更新，已同步到本次创作',
+    });
+    compiledBrief = await runtime.runStep(
+      harnessEffectKey(workflowId, 3, `${kind}-r${bundle.bundle.revision}`, '0'),
+      () =>
+        ports.compileMediaBrief({
+          workflowId,
+          request: activeRequest,
+          declaration: intent.declaration,
+          context: bundle,
+        }),
+    );
+    ({ brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief));
+    await trace(runtime, workflowId, 'brief_compilation', {
+      executionRoot: mediaExecutionRoot(request),
+      ...mediaBriefTrace(brief),
+      recompiled: true,
+      ...(request.prompts?.briefCompilation
+        ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
+        : {}),
+      ...(briefMetrics ? { metrics: briefMetrics } : {}),
+    }, `r${bundle.bundle.revision}`);
+    selection = await runtime.runStep(
+      harnessEffectKey(workflowId, 4, `${kind}-r${bundle.bundle.revision}`, 'selection'),
+      () =>
+        ports.executeMediaAndSelect({
+          workflowId,
+          request: activeRequest,
+          brief,
+          context: bundle,
+        }),
+    );
+    await trace(runtime, workflowId, 'execution_selection', {
+      executionRoot: mediaExecutionRoot(request),
+      ...selection.trace,
+    }, `r${bundle.bundle.revision}`);
+    await reportProgress({
+      stage: 'execution_selection',
+      state: 'success',
+      message: `已按最新资料${mediaSelectionMessage(brief.kind)}`,
+    });
+  }
+
+  const delivery = await runtime.runStep(
+    harnessEffectKey(workflowId, 5, 'package', '0'),
+    () =>
+      ports.assembleMediaAndDeliver({
+        workflowId,
+        request: activeRequest,
+        declaration: intent.declaration,
+        context: bundle,
+        brief,
+        selection,
+      }),
+  );
+  const recommendation = {
+    recommendedCandidateId: selection.asset.id,
+    decisionTrace: mediaRecommendationDecisionTrace(
+      intent.declaration,
+      brief,
+      delivery,
+      activeRequest,
+    ),
+  };
+  await trace(runtime, workflowId, 'assembly_delivery', {
+    executionRoot: mediaExecutionRoot(request),
+    delivery,
+    recommendation,
+  });
+  await reportProgress({
+    stage: 'assembly_delivery',
+    state: 'success',
+    message: `已生成第 ${delivery.revision} 版，等待你采用`,
+  });
+
+  return {
+    delivery,
+    deliveryLayer: intent.declaration.deliveryLayer,
+    recommendation,
+    trace: selection.trace,
+  };
+}
+
+export class HarnessMediaScopeError extends Error {
+  readonly code = 'HARNESS_MEDIA_SCOPE_INVALID';
+  readonly status = 409;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'HarnessMediaScopeError';
+  }
+}
+
+function requireMediaStagePorts(ports: HarnessStagePorts): HarnessMediaStagePorts {
+  if (
+    !('compileMediaBrief' in ports) ||
+    !('executeMediaAndSelect' in ports) ||
+    !('assembleMediaAndDeliver' in ports)
+  ) {
+    throw new HarnessMediaScopeError('Media Harness stages are not configured.');
+  }
+  return ports as HarnessMediaStagePorts;
+}
+
+function mediaKind(request: HarnessWorkflowInput): MediaBrief['kind'] {
+  const lens = request.executionSnapshot?.lens;
+  if (lens === 'image' || lens === 'video') return lens;
+  throw new HarnessMediaScopeError('Media Harness request lacks an image or video snapshot.');
+}
+
+function unpackMediaBrief(input: MediaBrief | MeasuredMediaBrief) {
+  return 'brief' in input
+    ? input
+    : { brief: input, metrics: undefined };
+}
+
+function mediaBriefTrace(brief: MediaBrief) {
+  if (brief.kind === 'image') {
+    return {
+      kind: brief.kind,
+      referenceAssetIds: brief.referenceAssetIds,
+      parameters: brief.parameters,
+      constraints: brief.constraints,
+    };
+  }
+  return {
+    kind: brief.kind,
+    referenceAssetIds: brief.referenceAssetIds,
+    parameters: brief.parameters,
+    storyboardCount: brief.storyboard.length,
+    constraints: brief.constraints,
+  };
+}
+
+function mediaSelectionMessage(kind: MediaBrief['kind']) {
+  return kind === 'image' ? '已核验图片生成结果' : '已核验视频生成结果';
+}
+
+function mediaRecommendationDecisionTrace(
+  declaration: IntentDeclaration,
+  brief: MediaBrief,
+  delivery: ContentPackageRevisionDelivery,
+  request: HarnessWorkflowInput,
+): CreativeRecommendationDecisionTrace {
+  return {
+    whyPost: declaration.taskType,
+    expressionIdentity: 'media_execution_receipt',
+    factReferences: [],
+    platforms: request.executionSnapshot ? [request.executionSnapshot.platform.id] : [],
+    customerAction: 'review_media',
+    complianceStatus: 'owned_asset_verified',
+    deliverables: [`${brief.kind}_revision:${delivery.revision}`],
+  };
+}
+
+function mediaExecutionRoot(request: HarnessWorkflowInput) {
+  const snapshot = request.executionSnapshot;
+  return snapshot
+    ? {
+        creationSnapshotId: snapshot.id,
+        modality: snapshot.lens,
+        workId: snapshot.work.id,
+      }
+    : null;
 }
 
 function unpackBrief(input: CopyBrief | MeasuredCopyBrief) {

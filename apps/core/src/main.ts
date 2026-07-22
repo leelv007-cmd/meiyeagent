@@ -163,6 +163,10 @@ import {
 } from './p1/harness/dbos-workflow.js';
 import { LedgerBackedHarnessContextPort } from './p1/harness/production-context-port.js';
 import { ProductionHarnessStagePorts } from './p1/harness/production-stage-ports.js';
+import {
+  ModelSupplyHarnessMediaExecutionPort,
+  UnifiedHarnessStagePorts,
+} from './p1/harness/unified-media-stage-ports.js';
 import { PostgresHarnessStore } from './p1/harness/postgres-store.js';
 import {
   assertPendingActionsShareDatabase,
@@ -1447,18 +1451,19 @@ if (harnessRuntimeConfig) {
     )
   );
   await creationSubmissionStore.migrate();
-  const harnessStages = new ProductionHarnessStagePorts(
-    {
-      create({ workspaceId, actorId }) {
-        return new ModelSupplyStructuredNodeRunner({
-          application: p1ModelSupplyService,
-          executor: structuredExecutor,
-          workspaceId,
-          actorId,
-          selection: { mode: 'auto', profile: 'quality' },
-        });
-      },
+  const structuredNodeRunnerFactory = {
+    create({ workspaceId, actorId }: { workspaceId: string; actorId: string }) {
+      return new ModelSupplyStructuredNodeRunner({
+        application: p1ModelSupplyService,
+        executor: structuredExecutor,
+        workspaceId,
+        actorId,
+        selection: { mode: 'auto', profile: 'quality' },
+      });
     },
+  };
+  const copyHarnessStages = new ProductionHarnessStagePorts(
+    structuredNodeRunnerFactory,
     new LedgerBackedHarnessContextPort(
       storeFactLedger,
       contextBundleRepository,
@@ -1482,6 +1487,15 @@ if (harnessRuntimeConfig) {
     reuseMemoryService,
     contentPackageRevisionWriter,
     sourceContentPackages
+  );
+  // Single wiring owner: wrap copy ports so image/video share the same
+  // Coordinator → StagePort → Harness path (#139/#140).
+  const harnessStages = new UnifiedHarnessStagePorts(
+    copyHarnessStages,
+    structuredNodeRunnerFactory,
+    new ModelSupplyHarnessMediaExecutionPort(p1ModelSupplyService),
+    contentPackageRevisionWriter,
+    () => new Date().toISOString()
   );
   DBOS.setConfig(harnessRuntimeConfig.dbos);
   const harnessWorkflow = registerHarnessDbosWorkflow(

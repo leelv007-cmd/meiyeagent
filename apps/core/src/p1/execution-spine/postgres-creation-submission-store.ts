@@ -93,7 +93,7 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
     }
     const reserved = await billing.reserve({
       quoteId: quote.quoteId,
-      resource: "copy",
+      resource: billingResource(snapshot.lens),
       usageId: submission.usageReservation.id,
       workspaceId: snapshot.workspaceId,
     });
@@ -180,7 +180,7 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
     );
     const contentPackage = buildContentPackage({
       id: submission.contentPackage.id,
-      kind: "image_text",
+      kind: contentPackageKind(snapshot.lens),
       source: {
         assetIds: snapshot.sources.assets.map((asset) => asset.id),
         creationExecutionSnapshot: {
@@ -618,4 +618,12 @@ async function databaseNow(client: PoolClient) {
   const value = result.rows[0]?.now;
   if (!value) throw new Error("PostgreSQL clock timestamp was unavailable.");
   return new Date(value);
+}
+
+function billingResource(lens: CreationSubmissionRecord["snapshot"]["lens"]) {
+  return lens;
+}
+
+function contentPackageKind(lens: CreationSubmissionRecord["snapshot"]["lens"]) {
+  return lens === "video" ? "video" : "image_text";
 }

@@ -177,7 +177,11 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       metrics,
     );
     const measured = { ...result, metrics: metrics.snapshot() };
-    if (result.declaration.deliveryLayer !== 'copy') {
+    if (
+      result.declaration.deliveryLayer !== 'copy' &&
+      input.request.executionSnapshot?.lens !== 'image' &&
+      input.request.executionSnapshot?.lens !== 'video'
+    ) {
       throw new HarnessCopyScopeError();
     }
     if (result.blockingQuestion) {

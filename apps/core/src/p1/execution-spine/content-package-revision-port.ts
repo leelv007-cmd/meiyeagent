@@ -191,6 +191,7 @@ export class PostgresContentPackageRevisionWritePort
 					contentPackage,
 					sourceContentPackage,
 					versions,
+					generatedAssetIds(input),
 				);
 				await assertLiveDeliveredAssetRights(this.assetRights, input, versions);
 			const currentRevision = Number(row.revision);
@@ -368,7 +369,12 @@ export class MemoryContentPackageRevisionWritePort
 				: undefined,
 			input,
 		);
-		assertDeliveredAssetBinding(contentPackage, sourceContentPackage, versions);
+		assertDeliveredAssetBinding(
+			contentPackage,
+			sourceContentPackage,
+			versions,
+			generatedAssetIds(input),
+		);
 		await assertLiveDeliveredAssetRights(this.assetRights, input, versions);
 		if (contentPackage.revision !== input.expectedRevision) {
 			throw new ContentPackageRevisionWriteError(
@@ -571,12 +577,18 @@ function assertDeliveredAssetBinding(
 	contentPackage: ContentPackage,
 	sourceContentPackage: ContentPackage | undefined,
 	versions: ContentPackageVersion[],
+	ownedGeneratedAssetIds: readonly string[] = [],
 ) {
 	const allowedAssetIds = new Set(contentPackage.source.assetIds);
 	const sourceCurrentVersion = sourceContentPackage?.versions.find(
 		(version) => version.id === sourceContentPackage.currentVersionId,
 	);
 	for (const assetId of sourceCurrentVersion?.orderedAssetIds ?? []) {
+		allowedAssetIds.add(assetId);
+	}
+	// Newly produced Model Supply receipts may be ordered on the version while
+	// remaining outside the frozen source set; they must still be owned here.
+	for (const assetId of ownedGeneratedAssetIds) {
 		allowedAssetIds.add(assetId);
 	}
 	const foreignAssetIds = [
@@ -594,13 +606,29 @@ function assertDeliveredAssetBinding(
 	}
 }
 
+function generatedAssetIds(input: ContentPackageRevisionWriteInput) {
+	return [
+		...new Set([
+			...input.generated.assetIds,
+			...(input.generated.ownedAssets?.map((asset) => asset.id) ?? []),
+		]),
+	];
+}
+
 async function assertLiveDeliveredAssetRights(
 	rights: ContentPackageRightsResolverPort | undefined,
 	input: ContentPackageRevisionWriteInput,
 	versions: ContentPackageVersion[],
 ) {
+	// Owned Model Supply receipts are recorded by generation, not merchant
+	// source rights. Only freeze-bound source/order assets need live rights.
+	const ownedGenerated = new Set(generatedAssetIds(input));
 	const assetIds = [
-		...new Set(versions.flatMap((version) => version.orderedAssetIds)),
+		...new Set(
+			versions
+				.flatMap((version) => version.orderedAssetIds)
+				.filter((assetId) => !ownedGenerated.has(assetId)),
+		),
 	];
 	if (assetIds.length === 0) return;
 	if (!rights) {

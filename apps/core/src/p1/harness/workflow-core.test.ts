@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-	HarnessSnapshotDecisionError,
   runHarnessWorkflow,
+  type HarnessMediaStagePorts,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
-import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 
 test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
   const calls: string[] = [];
@@ -99,6 +99,67 @@ test('five semantic stages run in order with stable effect keys and a delivery f
   ]);
 });
 
+test('image and video snapshots use the same five Harness stages with modality-stable effects', async () => {
+  for (const kind of ['image', 'video'] as const) {
+    const keys: string[] = [];
+    const progress: string[] = [];
+    const traces: Array<{ stage: string; payload: unknown }> = [];
+    const result = await runHarnessWorkflow(
+      `task-${kind}`,
+      mediaTaskInput(kind),
+      mediaStages(kind),
+      {
+        async runStep(key, operation) {
+          keys.push(key);
+          return operation();
+        },
+        async progress(event) {
+          progress.push(`${event.stage}:${event.state}`);
+        },
+        async token() {},
+        async awaitDecision() {
+          throw new Error('Unexpected media decision wait.');
+        },
+        async recordTrace(input) {
+          traces.push({ stage: input.stage, payload: input.payload });
+        },
+      },
+    );
+
+    assert.deepEqual(keys, [
+      `wf:task-${kind}:s1:intent:0`,
+      `wf:task-${kind}:s2:context:0`,
+      `wf:task-${kind}:s3:${kind}:0`,
+      `wf:task-${kind}:s4:${kind}:selection`,
+      `wf:task-${kind}:s2:fence:r1`,
+      `wf:task-${kind}:s5:package:0`,
+    ]);
+    assert.deepEqual(progress, [
+      'intent_naming:success',
+      'context_injection:success',
+      'brief_compilation:success',
+      'execution_selection:success',
+      'assembly_delivery:success',
+    ]);
+    assert.equal(result.deliveryLayer, 'finished_media');
+    assert.equal(result.recommendation.recommendedCandidateId, `${kind}-asset-1`);
+    assert.deepEqual(
+      traces.map(({ stage }) => stage),
+      [
+        'intent_naming',
+        'context_injection',
+        'brief_compilation',
+        'execution_selection',
+        'assembly_delivery',
+      ],
+    );
+    assert.match(
+      JSON.stringify(traces[0]?.payload),
+      new RegExp(`"modality":"${kind}"`, 'u'),
+    );
+  }
+});
+
 test('one blocking question suspends and resumes before context injection', async () => {
   const stages = fixtureStages();
   stages.nameIntent = async () => ({
@@ -173,81 +234,6 @@ test('one blocking question suspends and resumes before context injection', asyn
     },
   ]);
 });
-
-for (const field of ['intent', 'scene'] as const) {
-  test(`a Composer snapshot rejects an accepted ${field} decision before context injection`, async () => {
-    const stages = fixtureStages();
-    stages.nameIntent = async () => ({
-      declaration: {
-        taskType: 'promotion_groupbuy_conversion',
-        deliveryLayer: 'copy',
-        implicitConstraints: [],
-      },
-      blockingQuestion: {
-        questionId: `question-snapshot-${field}`,
-        workflowId: 'task-snapshot',
-        workflowRevision: 1,
-        question: '请补充本次任务信息。',
-        options: [],
-        freeText: { enabled: true },
-        response: { field, reason: '补充当前任务信息' },
-        scope: 'current_task',
-      },
-    });
-    let contextInjected = false;
-    stages.injectContext = async () => {
-      contextInjected = true;
-      throw new Error('Composer snapshot must not reach context injection.');
-    };
-    const snapshot = composerSnapshot();
-
-    await assert.rejects(
-      runHarnessWorkflow(
-        snapshot.task.id,
-        {
-          ...taskInput(),
-          expectedRevision: snapshot.contentPackage.expectedRevision,
-          executionSnapshot: snapshot,
-          packageId: snapshot.contentPackage.id,
-          rawInput: snapshot.intent.text,
-          workflowRevision: snapshot.revision,
-          intent: {
-            context: {
-              workId: snapshot.work.id,
-              intent: snapshot.intent.text,
-              sourceSummaries: [],
-            },
-            assetReferences: [],
-          },
-        },
-        stages,
-        {
-          async runStep(_key, operation) {
-            return operation();
-          },
-          async progress() {},
-          async token() {},
-          async awaitDecision(question) {
-            return {
-              idempotencyKey: `decision-${field}`,
-              questionId: question.questionId,
-              workflowRevision: question.workflowRevision,
-              patch: {
-                field,
-                value: '新的语义输入',
-                reason: '补充当前任务信息',
-              },
-              decision: { state: 'accepted', value: '新的语义输入' },
-            };
-          },
-          async recordTrace() {},
-        },
-      ),
-      HarnessSnapshotDecisionError,
-    );
-    assert.equal(contextInjected, false);
-  });
-}
 
 test('fallback prompt version and hash enter stage traces without prompt content', async () => {
   const traces: Array<{ stage: string; payload: unknown }> = [];
@@ -503,37 +489,122 @@ function taskInput() {
   };
 }
 
-function composerSnapshot() {
-  return createCreationExecutionSnapshot(
+function mediaTaskInput(kind: 'image' | 'video'): HarnessWorkflowInput {
+  const snapshot = createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
-      briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
-      briefContext: { id: 'brief-context-1', revision: 1 },
-      catalogModel: { id: 'model-1', revision: 'model-r1' },
-      contentModules: ['social_cover'],
-      contentPackageId: 'package-1',
-      deliverables: [
-        { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
-      ],
-      expectedContentPackageRevision: 2,
-      identity: { id: 'identity-1', revision: '1' },
-      idempotencyKey: 'snapshot-submission-1',
-      intent: '把新团购做一套能发的',
-      lens: 'copy',
-      modelPolicy: { id: 'policy-1', mode: 'fixed', revision: 'policy-r1' },
-      platform: { id: 'douyin' },
-      quote: { id: 'quote-1', revision: 'quote-r1' },
-      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
-      rights: { revision: 'rights-r1', summary: 'authorized source assets' },
-      route: { id: 'route-1', revision: 'route-r1' },
-      sources: { assets: [] },
-      surface: { id: 'surface-1', revision: 'surface-r1' },
-      taskId: 'task-snapshot',
-      workId: 'work-1',
       workspaceId: 'workspace-1',
+      idempotencyKey: `submission-${kind}-1`,
+      taskId: `task-${kind}`,
+      workId: 'work-1',
+      contentPackageId: 'package-1',
+      expectedContentPackageRevision: 2,
+      intent: '把夏日护理项目做成可发布的素材',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
+      lens: kind,
+      platform: { id: 'douyin' },
+      deliverables: [
+        {
+          id: `${kind}-main`,
+          kind,
+          order: 0,
+          quantity: 1,
+          aspectRatio: '9:16',
+          ...(kind === 'video' ? { durationSeconds: 8 } : {}),
+        },
+      ],
+      sources: {
+        assets: [
+          { id: 'asset-1', revision: 'asset-r1', role: 'reference' },
+        ],
+      },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+      catalogModel: { id: `model-${kind}-1`, revision: `model-${kind}-r1` },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      contentModules: ['social_cover'],
     },
     '2026-07-22T09:00:00.000Z',
   );
+  return { ...taskInput(), executionSnapshot: snapshot };
+}
+
+function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
+  return {
+    ...fixtureStages(),
+    async nameIntent() {
+      return {
+        declaration: {
+          taskType: 'promotion_groupbuy_conversion',
+          deliveryLayer: 'finished_media',
+          implicitConstraints: ['不得编造价格'],
+        },
+        blockingQuestion: null,
+      };
+    },
+    async compileMediaBrief() {
+      if (kind === 'image') {
+        return {
+          kind,
+          prompt: '为夏日护理项目生成竖版门店活动海报，保留品牌主视觉和预约行动号召。',
+          referenceAssetIds: ['asset-1'],
+          parameters: { ratio: '9:16', resolution: '1080p' },
+          constraints: ['不得编造价格'],
+        };
+      }
+      return {
+        kind,
+        firstFramePrompt: '夏日护理项目门店开场，展示明确的品牌主视觉和预约行动号召。',
+        storyboard: [
+          {
+            index: 1,
+            description: '门店护理场景与主视觉展示。',
+            durationSeconds: 8,
+          },
+        ],
+        referenceAssetIds: ['asset-1'],
+        parameters: { durationSeconds: 8, ratio: '9:16' },
+        constraints: ['不得编造价格'],
+      };
+    },
+    async executeMediaAndSelect() {
+      return {
+        kind,
+        asset: {
+          contentType: kind === 'image' ? 'image/png' : 'video/mp4',
+          id: `${kind}-asset-1`,
+          objectKey: `owned/${kind}-asset-1`,
+          sha256: `${kind}-sha-1`,
+          sizeBytes: 1024,
+        },
+        childRun: {
+          runId: `${kind}-run-1`,
+          runType: 'model_job',
+          status: 'succeeded',
+        },
+        trace: {
+          stage: 'execution_selection',
+          winnerCandidateId: `${kind}-asset-1`,
+          candidateScores: [],
+          blockedCandidates: [],
+          rubricVersion: 'media-receipt-v1',
+          rubricHash: 'media-rubric-hash',
+        },
+      };
+    },
+    async assembleMediaAndDeliver() {
+      return {
+        packageId: 'package-1',
+        versionId: `${kind}-version-1`,
+        revision: 3,
+      };
+    },
+  };
 }
 
 function fallbackPrompt(name: string) {

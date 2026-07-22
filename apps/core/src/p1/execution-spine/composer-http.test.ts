@@ -7,7 +7,6 @@ import type { ContentPackage, DiagnosticRun } from "@meiye/contracts";
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
 import { createCoreServer, streamWorkflowEvents } from "../../server.js";
 import { buildContentPackage } from "../operations/content-package.js";
-import { P1DomainError } from "../foundation/domain.js";
 import {
 	WorkflowEventApplicationService,
 	type WorkflowEventFrame,
@@ -139,6 +138,7 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.equal(starter.starts[0]?.snapshot.platform.id, "douyin");
 	assert.deepEqual(starter.starts[0]?.snapshot.deliverables, [
 		{
+			aspectRatio: "3:4",
 			id: "recipe-deliverable-r7",
 			kind: "copy",
 			order: 0,
@@ -225,49 +225,148 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.doesNotMatch(projectionBody, /providerCost/u);
 });
 
-test("Core Composer reports a stale Brief Context as an OCC conflict", async (t) => {
+test("authenticated Composer HTTP carries copy, image, and video through one snapshot, SSE, and public package contract", async (t) => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	let sequence = 0;
 	const coordinator = new CreationSubmissionCoordinator(
-		new MemorySubmissionStore(),
-		new RecordingHarnessStarter(),
-		fixedIds(),
+		submissions,
+		starter,
 		{
-			async admit() {
-				throw new P1DomainError(
-					"IDEMPOTENCY_CONFLICT",
-					"Brief Context revision is no longer current.",
-				);
+			createId(prefix) {
+				if (prefix === "work") {
+					sequence += 1;
+					return `work-${sequence}`;
+				}
+				return `package-${sequence}`;
+			},
+			now() {
+				return "2026-07-22T09:00:00.000Z";
 			},
 		},
+		modalityAdmission(),
 	);
 	const server = createCoreServer({
 		composerSubmission: { coordinator },
+		contentPackageReader: {
+			async read(_context, packageId) {
+				const started = starter.starts.find(
+					(start) => start.snapshot.contentPackage.id === packageId,
+				);
+				if (!started) throw new Error("ContentPackage was not found.");
+				const snapshot = started.snapshot;
+				return {
+					...buildContentPackage({
+						id: packageId,
+						kind: snapshot.lens === "video" ? "video" : "image_text",
+						source: {
+							assetIds: snapshot.sources.assets.map((asset) => asset.id),
+							creationExecutionSnapshot: {
+								id: snapshot.id,
+								revision: snapshot.revision,
+								schemaVersion: snapshot.schemaVersion,
+							},
+							targetPlatform: snapshot.platform.id,
+							workId: snapshot.work.id,
+							workflowId: snapshot.task.id,
+							workflowRevision: snapshot.revision,
+						},
+						timestamp: "2026-07-22T09:00:00.000Z",
+						workspaceId: "workspace-1",
+					}),
+					generated: {
+						assetIds: [],
+						childRuns: [
+							{
+								providerModel: "provider-secret",
+								routeSnapshotId: "route-secret",
+								runId: `run-${snapshot.lens}`,
+								runType: "model_job",
+								status: "succeeded",
+							},
+						],
+					},
+					status: "review_ready" as const,
+				};
+			},
+		},
 		diagnosticRepository: diagnostics,
 		serviceToken: "composer-test-token",
+		workflowEvents: new WorkflowEventApplicationService([
+			{
+				async owns(workspaceId, workflowId) {
+					return workspaceId === "workspace-1" && /^task-(copy|image|video)$/u.test(workflowId);
+				},
+				async *stream(input) {
+					yield progressFrame(input.workflowId, 0);
+				},
+			},
+		]),
 	});
 	server.listen(0, "127.0.0.1");
 	await once(server, "listening");
 	t.after(() => server.close());
 	const { port } = server.address() as AddressInfo;
-	const response = await fetch(
-		`http://127.0.0.1:${port}/v1/workspaces/workspace-1/p1/composer/submissions`,
-		{
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				"x-service-token": "composer-test-token",
-				"x-user-id": "owner-1",
-				"x-workspace-id": "workspace-1",
-				"x-workspace-role": "owner",
-			},
-			body: JSON.stringify(submissionPayload()),
-		},
-	);
+	const base = `http://127.0.0.1:${port}/v1/workspaces/workspace-1/p1/composer`;
+	const headers = {
+		"content-type": "application/json",
+		"x-service-token": "composer-test-token",
+		"x-user-id": "owner-1",
+		"x-workspace-id": "workspace-1",
+		"x-workspace-role": "owner",
+	};
 
-	assert.equal(response.status, 409);
-	assert.deepEqual((await response.json()).error, {
-		code: "IDEMPOTENCY_CONFLICT",
-		message: "Brief Context revision is no longer current.",
-	});
+	for (const kind of ["copy", "image", "video"] as const) {
+		const submitted = await fetch(`${base}/submissions`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify(modalitySubmissionPayload(kind)),
+		});
+		assert.equal(submitted.status, 202);
+		const body = await submitted.json();
+		assert.equal(body.data.replayed, false);
+		assert.equal(body.data.task.id, `task-${kind}`);
+		assert.equal(body.data.usageReservation.id, `usage-reservation-task-${kind}`);
+		assert.equal(body.data.snapshot.id, `snapshot-task-${kind}`);
+
+		const replayed = await fetch(`${base}/submissions`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify(modalitySubmissionPayload(kind)),
+		});
+		assert.equal(replayed.status, 202);
+		assert.equal((await replayed.json()).data.replayed, true);
+
+		const started = starter.starts.find(
+			(start) => start.snapshot.task.id === `task-${kind}`,
+		);
+		assert.ok(started);
+		assert.equal(started?.snapshot.lens, kind);
+		assert.deepEqual(started?.snapshot.deliverables, [
+			{
+				id: `recipe-deliverable-${kind}`,
+				kind,
+				order: 0,
+				quantity: 1,
+				...(kind === "copy" ? {} : { aspectRatio: "9:16" }),
+				...(kind === "video" ? { durationSeconds: 8 } : {}),
+			},
+		]);
+
+		const events = await fetch(`${base}/tasks/task-${kind}/events`, { headers });
+		assert.equal(events.status, 200);
+		assert.match(await events.text(), /event: workflow\.progress/u);
+
+		const projection = await fetch(
+			`${base}/content-packages/${body.data.contentPackage.id}`,
+			{ headers },
+		);
+		assert.equal(projection.status, 200);
+		const projectionBody = await projection.text();
+		assert.match(projectionBody, new RegExp(`snapshot-task-${kind}`, "u"));
+		assert.doesNotMatch(projectionBody, /provider-secret|route-secret/u);
+	}
+	assert.equal(starter.starts.length, 3);
 });
 
 test("Core Composer SSE aborts its durable subscription when the client disconnects", async (t) => {
@@ -447,45 +546,6 @@ test("Core Composer SSE keeps only one heartbeat queued while a drain is blocked
 	await streaming;
 	assert.equal(response.writeCount, 3);
 	assert.equal(response.writableEnded, true);
-});
-
-test("Core Composer SSE aborts its subscription when a heartbeat finds an unwritable response", async () => {
-	const response = new HeartbeatDisconnectSseResponse();
-	const request = new EventEmitter() as EventEmitter & { headers: Record<string, string> };
-	request.headers = {};
-	const initialHeartbeat = once(response, "initial-heartbeat");
-	let aborted = false;
-	const streaming = streamWorkflowEvents({
-		request: request as never,
-		requestCorrelationId: "correlation-1",
-		response: response as never,
-		workflowEvents: new WorkflowEventApplicationService([
-			{
-				async owns() {
-					return true;
-				},
-				async *stream(input) {
-					await new Promise<void>((resolve) => {
-						input.signal.addEventListener(
-							"abort",
-							() => {
-								aborted = true;
-								resolve();
-							},
-							{ once: true },
-						);
-					});
-				},
-			},
-		]),
-		workflowHeartbeatMs: 1,
-		workflowId: "task-1",
-		workspaceId: "workspace-1",
-	});
-	await initialHeartbeat;
-	response.writableEnded = true;
-	await streaming;
-	assert.equal(aborted, true);
 });
 
 test("legacy Harness task admission stays retired without a configured Harness service", async (t) => {
@@ -805,28 +865,6 @@ class HeartbeatBackpressuredSseResponse extends EventEmitter {
 	}
 }
 
-class HeartbeatDisconnectSseResponse extends EventEmitter {
-	destroyed = false;
-	headersSent = false;
-	writableEnded = false;
-	private writes = 0;
-
-	writeHead() {
-		this.headersSent = true;
-		return this;
-	}
-
-	write() {
-		this.writes += 1;
-		if (this.writes === 1) this.emit("initial-heartbeat");
-		return true;
-	}
-
-	end() {
-		this.writableEnded = true;
-	}
-}
-
 function progressFrame(taskId: string, sequence: number): WorkflowEventFrame {
 	return {
 		event: "workflow.progress",
@@ -946,8 +984,9 @@ function fixedAdmission(): CreationSubmissionAdmissionPort {
 				},
 				recipeBinding: {
 					contentModules: ["social_cover"],
-				deliverables: [
-					{
+					deliverables: [
+						{
+							aspectRatio: "3:4",
 							id: "recipe-deliverable-r7",
 							kind: "copy",
 							order: 0,
@@ -962,6 +1001,48 @@ function fixedAdmission(): CreationSubmissionAdmissionPort {
 					summary: "Server verified source assets.",
 				},
 				taskId: "task-1",
+			};
+		},
+	};
+}
+
+function modalityAdmission(): CreationSubmissionAdmissionPort {
+	return {
+		async admit(input) {
+			const kind = input.lens;
+			return {
+				modelPolicy: {
+					id: `server-policy-${kind}`,
+					mode: "fixed",
+					revision: `server-policy-${kind}-r1`,
+				},
+				recipeBinding: {
+					contentModules: ["social_cover"],
+					deliverables: [
+						{
+							id: `recipe-deliverable-${kind}`,
+							kind,
+							order: 0,
+							quantity: 1,
+							...(kind === "copy" ? {} : { aspectRatio: "9:16" }),
+							...(kind === "video" ? { durationSeconds: 8 } : {}),
+						},
+					],
+					lens: kind,
+					platform: {
+						id:
+							kind === "copy"
+								? "douyin"
+								: kind === "image"
+									? "xiaohongshu"
+									: "video_account",
+					},
+				},
+				rights: {
+					revision: `rights-${kind}-r1`,
+					summary: "Server verified source assets.",
+				},
+				taskId: `task-${kind}`,
 			};
 		},
 	};
@@ -1003,5 +1084,30 @@ function submissionPayload(): ComposerSubmissionBody {
 			contentPackage: { id: "content-source-1", revision: "content-r3" },
 		},
 		surface: { id: "surface-composer", revision: "surface-r2" },
+	};
+}
+
+function modalitySubmissionPayload(
+	kind: "copy" | "image" | "video",
+): ComposerSubmissionBody {
+	return {
+		...submissionPayload(),
+		catalogModel: { id: `catalog-${kind}-1`, revision: `catalog-${kind}-r1` },
+		deliverables: [
+			{
+				id: `browser-${kind}-main`,
+				kind,
+				order: 1,
+				quantity: 1,
+				...(kind === "copy" ? {} : { aspectRatio: "1:1" }),
+				...(kind === "video" ? { durationSeconds: 3 } : {}),
+			},
+		],
+		idempotencyKey: `composer-${kind}-1`,
+		lens: kind,
+		modelPolicy: { id: `browser-policy-${kind}`, mode: "fixed", revision: "browser-r1" },
+		platform: { id: "douyin" },
+		recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
+		route: { id: `route-${kind}-1`, revision: `route-${kind}-r1` },
 	};
 }

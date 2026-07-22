@@ -4,6 +4,7 @@ import { z } from "zod";
 const identifierSchema = z.string().trim().min(1).max(200);
 const revisionSchema = z.string().trim().min(1).max(200);
 const platformSchema = z.enum(["xiaohongshu", "douyin", "video_account"]);
+const creationLensSchema = z.enum(["copy", "image", "video"]);
 
 const revisionReferenceSchema = z
 	.object({
@@ -83,7 +84,7 @@ const creationSubmissionCommandBaseSchema = z
 		intent: z.string().trim().min(1).max(4_000),
 		surface: revisionReferenceSchema,
 		recipe: revisionReferenceSchema,
-		lens: z.literal("copy"),
+		lens: creationLensSchema,
 		platform: z.object({ id: platformSchema }).strict(),
 		deliverables: z.array(deliverableSchema).min(1).max(20),
 		sources: sourceReferencesSchema,
@@ -100,7 +101,7 @@ const creationSubmissionCommandBaseSchema = z
 	.strict();
 
 export const creationSubmissionCommandSchema =
-	creationSubmissionCommandBaseSchema.superRefine(validateCopySubmission);
+	creationSubmissionCommandBaseSchema.superRefine(validateSubmission);
 
 const composerSubmissionRequestBaseSchema =
 	creationSubmissionCommandBaseSchema.omit({
@@ -111,11 +112,11 @@ const composerSubmissionRequestBaseSchema =
 	});
 
 export const composerSubmissionRequestSchema =
-	composerSubmissionRequestBaseSchema.superRefine(validateCopySubmission);
+	composerSubmissionRequestBaseSchema.superRefine(validateSubmission);
 
 export const composerSubmissionBodySchema = composerSubmissionRequestBaseSchema
 	.omit({ actorId: true, workspaceId: true })
-	.superRefine(validateCopySubmission);
+	.superRefine(validateSubmission);
 
 export type CreationSubmissionCommand = z.infer<
 	typeof creationSubmissionCommandSchema
@@ -146,7 +147,7 @@ export const creationExecutionSnapshotSchema = z
 		intent: z.object({ text: z.string().trim().min(1).max(4_000) }).strict(),
 		surface: revisionReferenceSchema,
 		recipe: revisionReferenceSchema,
-		lens: z.literal("copy"),
+		lens: creationLensSchema,
 		platform: z.object({ id: platformSchema }).strict(),
 		deliverables: z.array(deliverableSchema).min(1).max(20),
 		sources: sourceReferencesSchema,
@@ -205,10 +206,11 @@ export function createCreationExecutionSnapshot(
 	);
 }
 
-function validateCopySubmission(
+function validateSubmission(
 	command: {
 		contentModules: string[];
 		deliverables: Array<{ kind: string; order: number }>;
+		lens: "copy" | "image" | "video";
 	},
 	context: z.RefinementCtx,
 ) {
@@ -223,14 +225,14 @@ function validateCopySubmission(
 	if (command.deliverables.length !== 1) {
 		context.addIssue({
 			code: "custom",
-			message: "The Copy tracer accepts exactly one copy deliverable.",
+			message: "A Composer submission must contain exactly one modality deliverable.",
 			path: ["deliverables"],
 		});
 	}
-	if (command.deliverables.some((deliverable) => deliverable.kind !== "copy")) {
+	if (command.deliverables.some((deliverable) => deliverable.kind !== command.lens)) {
 		context.addIssue({
 			code: "custom",
-			message: "The Copy tracer accepts only copy deliverables.",
+			message: "Deliverable kind must match the selected Composer modality.",
 			path: ["deliverables"],
 		});
 	}

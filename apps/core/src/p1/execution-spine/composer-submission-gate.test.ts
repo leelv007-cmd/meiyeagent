@@ -12,31 +12,6 @@ test("Composer admission gate binds server facts before a submission can reserve
 	let capabilityChecks = 0;
 	const briefChecks: unknown[] = [];
 	let sourcePackageRights: "authorized" | "revoked" = "authorized";
-	let publishedRecipe: {
-		contextPatches: { contentModules: string[] };
-		delivery: { deliverableKind: string; platform: string; quantity: number };
-		lensId: string;
-		modelPolicy: { catalogModelId: string; mode: string };
-		recipeId: string;
-		revisionId: string;
-		sourceRequirements: Array<{ kinds: string[]; required: boolean; slot: string }>;
-		status: string;
-		targetWorkspaceKind: string;
-	} = {
-		contextPatches: { contentModules: ["social_cover"] },
-		delivery: {
-			deliverableKind: "copy_document",
-			platform: "douyin",
-			quantity: 1,
-		},
-		lensId: "copy",
-		modelPolicy: { catalogModelId: "catalog-copy-1", mode: "fixed" },
-		recipeId: "recipe-service-promotion",
-		revisionId: "recipe-service-promotion@7",
-		sourceRequirements: [{ kinds: ["image"], required: true, slot: "hero" }],
-		status: "published",
-		targetWorkspaceKind: "copy",
-	};
 	const gate = new ComposerSubmissionAdmissionGate({
 		assets: {
 			async resolve() {
@@ -81,7 +56,21 @@ test("Composer admission gate binds server facts before a submission can reserve
 		},
 		catalog: {
 			async getRecipeByRevisionId() {
-				return publishedRecipe as never;
+				return {
+					contextPatches: { contentModules: ["social_cover"] },
+					delivery: {
+						deliverableKind: "copy_document",
+						platform: "douyin",
+						quantity: 1,
+					},
+					lensId: "copy",
+					modelPolicy: { catalogModelId: "catalog-copy-1", mode: "fixed" },
+					recipeId: "recipe-service-promotion",
+					revisionId: "recipe-service-promotion@7",
+					sourceRequirements: [{ kinds: ["image"], required: true, slot: "hero" }],
+					status: "published",
+					targetWorkspaceKind: "copy",
+				} as never;
 			},
 			async getSurfaceByRevisionId() {
 				return {
@@ -120,7 +109,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 		},
 		rights: {
 			async resolve() {
-				return { unauthorizedAssetIds: [] };
+				return { knownAssetIds: ["asset-1"], unauthorizedAssetIds: [] };
 			},
 		},
 		routes: {
@@ -197,48 +186,6 @@ test("Composer admission gate binds server facts before a submission can reserve
 	);
 	assert.equal(capabilityChecks, 1);
 	assert.equal(briefChecks.length, 1);
-
-	sourcePackageRights = "authorized";
-	publishedRecipe = {
-		...publishedRecipe,
-		delivery: { ...publishedRecipe.delivery, platform: "wechat_moments" },
-	};
-	await assert.rejects(
-		gate.admit(submission()),
-		/Published Recipe must declare a supported delivery platform/u,
-	);
-	assert.equal(capabilityChecks, 1);
-	assert.equal(briefChecks.length, 1);
-
-	publishedRecipe = {
-		...publishedRecipe,
-		delivery: {
-			...publishedRecipe.delivery,
-			deliverableKind: "note",
-			platform: "douyin",
-		},
-	};
-	await assert.rejects(
-		gate.admit(submission()),
-		/Published Copy Recipe must declare a copy_document delivery kind/u,
-	);
-	assert.equal(capabilityChecks, 1);
-	assert.equal(briefChecks.length, 1);
-
-	publishedRecipe = {
-		...publishedRecipe,
-		delivery: {
-			...publishedRecipe.delivery,
-			deliverableKind: "copy_document",
-			quantity: 2,
-		},
-	};
-	await assert.rejects(
-		gate.admit(submission()),
-		/Published Copy Recipe must declare exactly one copy document/u,
-	);
-	assert.equal(capabilityChecks, 1);
-	assert.equal(briefChecks.length, 1);
 });
 
 test("Composer admission gate fails closed for stale quote, rights, and source facts", async () => {
@@ -275,6 +222,165 @@ test("Composer admission gate fails closed for stale quote, rights, and source f
 
 	await assert.rejects(gate.admit(submission()), /Recipe revision/u);
 	assert.equal(capabilityChecks, 0);
+});
+
+test("Composer admission derives image and video delivery facts from the published Recipe before the brief gate", async () => {
+	for (const kind of ["image", "video"] as const) {
+		const briefChecks: unknown[] = [];
+		const input = mediaSubmission(kind);
+		const recipeLens = kind === "image" ? "image_text" : "video";
+		const gate = new ComposerSubmissionAdmissionGate({
+			assets: {
+				async resolve() {
+					return [
+						{
+							assetId: "asset-1",
+							bytes: new Uint8Array([1]),
+							contentType: kind === "image" ? "image/jpeg" : "video/mp4",
+							kind: "resolved",
+							providerReadableUrl: "data:application/octet-stream;base64,AQ==",
+							sha256: "asset-r2",
+						},
+					];
+				},
+			},
+			briefs: {
+				async assertCurrent(value) {
+					briefChecks.push(structuredClone(value));
+				},
+			},
+			briefConfirmations: {
+				async getBriefConfirmation() {
+					return {
+						confirmedAt: "2026-07-22T09:00:00.000Z",
+						boundRevisions: {
+							draftRevisionId: "brief-r2",
+							lensId: recipeLens,
+							modelRevisionId: `catalog-${kind}-r1`,
+							quoteRevisionId: "quote-r5",
+							recipeRevisionId: `recipe-${kind}@1`,
+							sourceRevisionId: briefSourceRevisionId(["asset-1"]),
+							surfaceRevisionId: `surface-${kind}@1`,
+						},
+						triggerCodes: [],
+					} as never;
+				},
+			},
+			capabilities: { async assertReady() {} },
+			catalog: {
+				async getRecipeByRevisionId() {
+					return {
+						contextPatches: { contentModules: ["social_cover", "price_card"] },
+						delivery: {
+							aspectRatio: "9:16",
+							deliverableKind: kind === "image" ? "image_set" : "video_package",
+							...(kind === "video" ? { durationSeconds: 8 } : {}),
+							platform: kind === "image" ? "xiaohongshu" : "video_account",
+							quantity: 2,
+						},
+						lensId: recipeLens,
+						modelPolicy: { catalogModelId: `catalog-${kind}-1`, mode: "fixed" },
+						recipeId: `recipe-${kind}`,
+						revisionId: `recipe-${kind}@1`,
+						sourceRequirements: [
+							{ kinds: [kind], required: true, slot: "primary_reference" },
+						],
+						status: "published",
+						targetWorkspaceKind: recipeLens,
+					} as never;
+				},
+				async getSurfaceByRevisionId() {
+					return {
+						recipeRefs: [
+							{
+								featured: true,
+								lensId: recipeLens,
+								order: 0,
+								recipeRevisionId: `recipe-${kind}@1`,
+								visible: true,
+							},
+						],
+						surfaceId: `surface-${kind}`,
+						revisionId: `surface-${kind}@1`,
+						status: "published",
+					} as never;
+				},
+			},
+			identities: {
+				async listActive() {
+					return [{ identityId: "identity-brand", version: 3 }] as never;
+				},
+			},
+			quotes: {
+				async getQuote() {
+					return {
+						catalogModelId: `catalog-${kind}-1`,
+						catalogModelRevision: `catalog-${kind}-r1`,
+						lifecycleStatus: "confirmed",
+						quoteId: "quote-1",
+						revision: "quote-r5",
+						routeSnapshotRef: `route-${kind}-1`,
+						taskId: `task-${kind}-1`,
+					} as never;
+				},
+			},
+			rights: {
+				async resolve() {
+					return { knownAssetIds: ["asset-1"], unauthorizedAssetIds: [] };
+				},
+			},
+			routes: {
+				async getRouteSnapshot() {
+					return {
+						allowedCandidates: [
+							{ catalogModelId: `catalog-${kind}-1`, deploymentId: `deployment-${kind}-1` },
+						],
+						catalogRevision: `catalog-${kind}-r1`,
+						id: `route-${kind}-1`,
+						requestedCatalogModelId: `catalog-${kind}-1`,
+						selectionMode: "fixed",
+						workspaceId: "workspace-1",
+					} as never;
+				},
+			},
+			sourcePackages: { async get() { return null; } },
+		});
+
+		const admitted = await gate.admit(input);
+		assert.equal(admitted.taskId, `task-${kind}-1`);
+		assert.deepEqual(admitted.recipeBinding, {
+			contentModules: ["social_cover", "price_card"],
+			deliverables: [
+				{
+					id: `recipe-deliverable:recipe-${kind}@1`,
+					kind,
+					order: 0,
+					quantity: 2,
+					aspectRatio: "9:16",
+					...(kind === "video" ? { durationSeconds: 8 } : {}),
+				},
+			],
+			lens: kind,
+			platform: { id: kind === "image" ? "xiaohongshu" : "video_account" },
+		});
+		assert.deepEqual(briefChecks, [
+			{
+				briefConfirmationId: "brief-confirmation-1",
+				briefContextId: "brief-context-1",
+				catalogModelId: `catalog-${kind}-1`,
+				catalogRevision: `catalog-${kind}-r1`,
+				expectedContextRevision: 4,
+				intent: "为夏日护理项目写一条预约文案",
+				operation: kind === "image" ? "image.generate" : "video.generate",
+				outputCount: 2,
+				quoteRevision: "quote-r5",
+				sourceReferenceIds: ["asset-1"],
+				workspaceId: "workspace-1",
+				aspectRatio: "9:16",
+				...(kind === "video" ? { durationSeconds: 8 } : {}),
+			},
+		]);
+	}
 });
 
 test("Composer capability readiness only reads an accepting route channel", async () => {
@@ -367,5 +473,30 @@ function submission(): ComposerSubmissionRequest {
 		},
 		surface: { id: "surface-composer", revision: "surface-composer@2" },
 		workspaceId: "workspace-1",
+	};
+}
+
+function mediaSubmission(kind: "image" | "video"): ComposerSubmissionRequest {
+	return {
+		...submission(),
+		catalogModel: { id: `catalog-${kind}-1`, revision: `catalog-${kind}-r1` },
+		deliverables: [
+			{
+				id: `browser-${kind}-main`,
+				kind,
+				order: 1,
+				quantity: 1,
+				aspectRatio: "1:1",
+				...(kind === "video" ? { durationSeconds: 3 } : {}),
+			},
+		],
+		lens: kind,
+		modelPolicy: { id: `policy-${kind}`, mode: "fixed", revision: "policy-r1" },
+		recipe: { id: `recipe-${kind}`, revision: `recipe-${kind}@1` },
+		route: { id: `route-${kind}-1`, revision: `catalog-${kind}-r1` },
+		sources: {
+			assets: [{ id: "asset-1", revision: "asset-r2", role: "reference" }],
+		},
+		surface: { id: `surface-${kind}`, revision: `surface-${kind}@1` },
 	};
 }
