@@ -12,6 +12,7 @@ import type {
   MediaProviderEffectRequest,
   MediaProviderLifecyclePort,
   ProviderExecutionRequest,
+  ProviderExecutionResponse,
 } from '../provider-lifecycle.js';
 import type { ModelOperation } from '../supply-contracts.js';
 import { TuziMediaExecutionPort } from '../tuzi-media-adapter.js';
@@ -157,21 +158,21 @@ function resolveChannel(
   const maxProbeCostName =
     model.modality === 'llm'
       ? isOfficial
-        ? 'ARK_TEXT_MAX_PROBE_COST_USD'
-        : 'MODEL_DIRECT_MAX_PROBE_COST_USD'
+        ? 'ARK_TEXT_MAX_PROBE_COST_CNY'
+        : 'MODEL_DIRECT_MAX_PROBE_COST_CNY'
       : model.modality === 'image'
         ? isOfficial
-          ? 'ARK_IMAGE_MAX_PROBE_COST_USD'
-          : 'TUZI_IMAGE_MAX_PROBE_COST_USD'
+          ? 'ARK_IMAGE_MAX_PROBE_COST_CNY'
+          : 'TUZI_IMAGE_MAX_PROBE_COST_CNY'
         : isOfficial
-          ? 'ARK_VIDEO_MAX_PROBE_COST_USD'
-          : 'TUZI_VIDEO_MAX_PROBE_COST_USD';
+          ? 'ARK_VIDEO_MAX_PROBE_COST_CNY'
+          : 'TUZI_VIDEO_MAX_PROBE_COST_CNY';
   const maxProbeCostRaw = env(source, maxProbeCostName);
-  const maxProbeCostUsd = Number(maxProbeCostRaw);
+  const maxProbeCostCny = Number(maxProbeCostRaw);
   const hasValidMaxProbeCost =
     Boolean(maxProbeCostRaw) &&
-    Number.isFinite(maxProbeCostUsd) &&
-    maxProbeCostUsd > 0;
+    Number.isFinite(maxProbeCostCny) &&
+    maxProbeCostCny > 0;
   const priceNames = priceEnvNames(model);
   const prices = Object.fromEntries(
     priceNames.map((name) => [name, positiveNumberEnv(source, name)]),
@@ -207,7 +208,8 @@ function resolveChannel(
     adapterKind,
     accountIdentityFingerprint: fingerprint(accountIdentity!),
     endpointFingerprint: fingerprint(endpointOrigin!),
-    maxProbeCostUsd,
+    providerModelSha256: fingerprint(providerModel!),
+    maxProbeCostCny,
     apiKey: apiKey!,
     baseUrl: baseUrl!,
     providerModel: providerModel!,
@@ -392,6 +394,17 @@ async function probeLiveTextChannel(
         providerCost: response.providerCost,
       });
     }
+    const resultPayload = textResultPayload(response);
+    if (!resultPayload) {
+      return failedEvidence(channel, observedAt, {
+        acceptance: 'accepted',
+        adapterExecuted: true,
+        providerTaskRef: response.providerTaskRef,
+        failureCode: 'provider_text_result_empty',
+        failureMessage: 'Provider returned no usable text result.',
+        providerCost: response.providerCost,
+      });
+    }
     return {
       ...baseEvidence(channel, observedAt),
       acceptance: 'accepted',
@@ -404,6 +417,8 @@ async function probeLiveTextChannel(
         recovered: true,
         pollStatus: 'completed',
         downloaded: false,
+        resultBytes: new TextEncoder().encode(resultPayload).byteLength,
+        resultSha256: createHash('sha256').update(resultPayload).digest('hex'),
       },
     };
   } catch (error) {
@@ -414,6 +429,29 @@ async function probeLiveTextChannel(
       failureMessage: safeError(error),
     });
   }
+}
+
+function textResultPayload(
+  response: Extract<ProviderExecutionResponse, { kind: 'completed' }>,
+): string | undefined {
+  const result =
+    response.text ??
+    response.copyCandidates ??
+    response.platformVariants ??
+    response.structuredOutput;
+  if (result === undefined) return undefined;
+  if (typeof result === 'string' && !result.trim()) return undefined;
+  if (Array.isArray(result) && result.length === 0) return undefined;
+  if (
+    typeof result === 'object' &&
+    result !== null &&
+    !Array.isArray(result) &&
+    Object.keys(result).length === 0
+  ) {
+    return undefined;
+  }
+  const payload = JSON.stringify(result);
+  return payload && payload !== 'null' ? payload : undefined;
 }
 
 async function probeLiveMediaChannel(
@@ -745,6 +783,7 @@ function baseEvidence(
   | 'adapterKind'
   | 'accountIdentityFingerprint'
   | 'endpointFingerprint'
+  | 'providerModelSha256'
   | 'evidenceRef'
   | 'observedAt'
 > {
@@ -758,6 +797,7 @@ function baseEvidence(
     adapterKind: channel.adapterKind,
     accountIdentityFingerprint: channel.accountIdentityFingerprint,
     endpointFingerprint: channel.endpointFingerprint,
+    providerModelSha256: channel.providerModelSha256,
     evidenceRef: `provider-live:${channel.model.operation}:${channel.model.channelKind}:${randomUUID()}`,
     observedAt,
   };
@@ -816,8 +856,8 @@ function failedEvidence(
 function providerCostEvidence(
   cost: LiveProviderProbeEvidence['providerCost'],
 ): LiveProviderProbeEvidence['providerCost'] {
-  if (cost.currency === 'USD') return { ...cost, amountUsd: cost.amount };
-  if (cost.amount === 0) return { ...cost, amountUsd: 0 };
+  if (cost.currency === 'CNY') return { ...cost, amountCny: cost.amount };
+  if (cost.amount === 0) return { ...cost, amountCny: 0 };
   const cnyPerUsd = Number(process.env.PROVIDER_LIVE_CNY_PER_USD);
   const evidenceRef = process.env.PROVIDER_LIVE_FX_EVIDENCE_REF?.trim();
   if (
@@ -829,7 +869,7 @@ function providerCostEvidence(
   }
   return {
     ...cost,
-    amountUsd: cost.amount / cnyPerUsd,
+    amountCny: cost.amount * cnyPerUsd,
     fx: {
       cnyPerUsd,
       evidenceRef,

@@ -8,14 +8,10 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      cost_cap_usd:
-        description: 'Pre-call reservation ceiling in USD; actual spend is reconciled after calls'
+      cost_cap_cny:
+        description: 'Pre-call reservation ceiling in CNY; actual spend is reconciled after calls'
         required: false
-        default: '1.0'
-        type: string
-      release_ref:
-        description: 'Optional related release tag or commit; leave blank for ad hoc verification'
-        required: false
+        default: '5.0'
         type: string
   schedule:
     # Weekly off-peak (Sunday 16:00 UTC)
@@ -42,12 +38,13 @@ jobs:
       # official-channel result. Dual-channel conformance remains optional.
       PROVIDER_LIVE_REQUIRE_ALL: '1'
       PROVIDER_LIVE_ACCEPTANCE_MODE: primary_connectivity
-      PROVIDER_LIVE_COST_CAP_USD: ${{ github.event.inputs.cost_cap_usd || '1.0' }}
-      PROVIDER_LIVE_RELEASE_REF: ${{ github.event.release.tag_name || github.event.inputs.release_ref || github.sha }}
+      PROVIDER_LIVE_COST_CAP_CNY: ${{ github.event.inputs.cost_cap_cny || '5.0' }}
+      PROVIDER_LIVE_RELEASE_REF: ${{ github.sha }}
+      PROVIDER_LIVE_ENVIRONMENT: provider-live
+      PROVIDER_LIVE_CONFIG_REVISION: ${{ vars.PROVIDER_LIVE_CONFIG_REVISION }}
+      PROVIDER_LIVE_EVIDENCE_TTL_SECONDS: '86400'
       PROVIDER_LIVE_EVIDENCE_DIR: apps/core/provider-live-evidence
       PROVIDER_LIVE_RUN_NONCE: ${{ github.run_id }}-${{ github.run_attempt }}
-      PROVIDER_LIVE_CNY_PER_USD: ${{ secrets.PROVIDER_LIVE_CNY_PER_USD }}
-      PROVIDER_LIVE_FX_EVIDENCE_REF: ${{ secrets.PROVIDER_LIVE_FX_EVIDENCE_REF }}
       # Official text channel
       ARK_TEXT_API_KEY: ${{ secrets.ARK_TEXT_API_KEY }}
       ARK_API_KEY: ${{ secrets.ARK_API_KEY }}
@@ -56,7 +53,7 @@ jobs:
       ARK_TEXT_BASE_URL: ${{ secrets.ARK_TEXT_BASE_URL }}
       ARK_BASE_URL: ${{ secrets.ARK_BASE_URL }}
       ARK_PROVIDER_ACCOUNT_IDENTITY: ${{ secrets.ARK_PROVIDER_ACCOUNT_IDENTITY }}
-      ARK_TEXT_MAX_PROBE_COST_USD: ${{ secrets.ARK_TEXT_MAX_PROBE_COST_USD }}
+      ARK_TEXT_MAX_PROBE_COST_CNY: ${{ secrets.ARK_TEXT_MAX_PROBE_COST_CNY }}
       ARK_TEXT_INPUT_COST_PER_MILLION: ${{ secrets.ARK_TEXT_INPUT_COST_PER_MILLION }}
       ARK_TEXT_OUTPUT_COST_PER_MILLION: ${{ secrets.ARK_TEXT_OUTPUT_COST_PER_MILLION }}
       # Public official TOS origins (Seedream v2, Seedance, combined ACG).
@@ -71,8 +68,8 @@ jobs:
       ARK_IMAGE_CATALOG_MODEL_ID: ${{ secrets.ARK_IMAGE_CATALOG_MODEL_ID }}
       ARK_VIDEO_CATALOG_MODEL_ID: ${{ secrets.ARK_VIDEO_CATALOG_MODEL_ID }}
       ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: ${{ secrets.ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND }}
-      ARK_IMAGE_MAX_PROBE_COST_USD: ${{ secrets.ARK_IMAGE_MAX_PROBE_COST_USD }}
-      ARK_VIDEO_MAX_PROBE_COST_USD: ${{ secrets.ARK_VIDEO_MAX_PROBE_COST_USD }}
+      ARK_IMAGE_MAX_PROBE_COST_CNY: ${{ secrets.ARK_IMAGE_MAX_PROBE_COST_CNY }}
+      ARK_VIDEO_MAX_PROBE_COST_CNY: ${{ secrets.ARK_VIDEO_MAX_PROBE_COST_CNY }}
       ARK_SEEDREAM_COST_PER_IMAGE_CNY: ${{ secrets.ARK_SEEDREAM_COST_PER_IMAGE_CNY }}
       ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY: ${{ secrets.ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY }}
     steps:
@@ -95,13 +92,39 @@ jobs:
           pnpm --filter @meiye/contracts typecheck
           pnpm --filter @meiye/core typecheck
 
+      - name: Initialize redacted live evidence
+        shell: bash
+        run: |
+          mkdir -p apps/core/provider-live-evidence
+          node <<'NODE'
+            const { writeFileSync } = require('node:fs');
+            const startedAt = new Date().toISOString();
+            writeFileSync(
+              'apps/core/provider-live-evidence/provider-live-gate.json',
+              `${JSON.stringify({
+                complete: false,
+                status: 'preflight_pending',
+                acceptanceMode: process.env.PROVIDER_LIVE_ACCEPTANCE_MODE,
+                runNonce: process.env.PROVIDER_LIVE_RUN_NONCE,
+                releaseRef: process.env.PROVIDER_LIVE_RELEASE_REF,
+                environment: process.env.PROVIDER_LIVE_ENVIRONMENT,
+                configurationRevision:
+                  process.env.PROVIDER_LIVE_CONFIG_REVISION || 'missing',
+                startedAt,
+                completedAt: null,
+                expiresAt: null,
+              }, null, 2)}\n`,
+              { mode: 0o600 },
+            );
+          NODE
+
       - name: Provider live preflight
         shell: bash
         run: |
           node <<'NODE'
-            const cap = Number(process.env.PROVIDER_LIVE_COST_CAP_USD);
-            if (!Number.isFinite(cap) || cap <= 0 || cap > 5) {
-              console.error('PROVIDER_LIVE_COST_CAP_USD out of allowed range (0, 5]:', process.env.PROVIDER_LIVE_COST_CAP_USD);
+            const cap = Number(process.env.PROVIDER_LIVE_COST_CAP_CNY);
+            if (!Number.isFinite(cap) || cap <= 0 || cap > 50) {
+              console.error('PROVIDER_LIVE_COST_CAP_CNY out of allowed range (0, 50]:', process.env.PROVIDER_LIVE_COST_CAP_CNY);
               process.exit(1);
             }
             if (process.env.PROVIDER_LIVE_ACCEPTANCE_MODE !== 'primary_connectivity') {
@@ -119,8 +142,7 @@ jobs:
               ['ARK_IMAGE_CATALOG_MODEL_ID'],
               ['ARK_SEEDANCE_MODEL'],
               ['ARK_VIDEO_CATALOG_MODEL_ID'],
-              ['PROVIDER_LIVE_CNY_PER_USD'],
-              ['PROVIDER_LIVE_FX_EVIDENCE_REF'],
+              ['PROVIDER_LIVE_CONFIG_REVISION'],
             ];
             const missingGroups = requiredGroups.filter(
               (names) => !names.some((name) => process.env[name]?.trim()),
@@ -129,11 +151,6 @@ jobs:
               console.error(
                 `provider-live configuration missing: ${missingGroups.map((names) => names.join('|')).join(', ')}`,
               );
-              process.exit(1);
-            }
-            const cnyPerUsd = Number(process.env.PROVIDER_LIVE_CNY_PER_USD);
-            if (!Number.isFinite(cnyPerUsd) || cnyPerUsd <= 0) {
-              console.error('PROVIDER_LIVE_CNY_PER_USD must be finite and positive.');
               process.exit(1);
             }
             const priceNames = [
@@ -151,9 +168,9 @@ jobs:
               }
             }
             const reservations = [
-              'ARK_TEXT_MAX_PROBE_COST_USD',
-              'ARK_IMAGE_MAX_PROBE_COST_USD',
-              'ARK_VIDEO_MAX_PROBE_COST_USD',
+              'ARK_TEXT_MAX_PROBE_COST_CNY',
+              'ARK_IMAGE_MAX_PROBE_COST_CNY',
+              'ARK_VIDEO_MAX_PROBE_COST_CNY',
             ];
             const values = reservations.map((name) => {
               const value = Number(process.env[name]);

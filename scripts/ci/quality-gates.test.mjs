@@ -90,4 +90,22 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(providerLive, /workflow_dispatch:/);
   assert.match(providerLive, /schedule:/);
   assert.match(providerLive, /PROVIDER_LIVE_REQUIRE_ALL: '1'/);
+  assert.match(providerLive, /PROVIDER_LIVE_COST_CAP_CNY:/);
+  assert.doesNotMatch(providerLive, /PROVIDER_LIVE_COST_CAP_USD/);
+  assert.doesNotMatch(providerLive, /PROVIDER_LIVE_CNY_PER_USD/);
+  assert.doesNotMatch(providerLive, /PROVIDER_LIVE_FX_EVIDENCE_REF/);
+  assert.match(providerLive, /PROVIDER_LIVE_ACCEPTANCE_MODE: primary_connectivity/);
+  assert.match(providerLive, /PROVIDER_LIVE_RELEASE_REF: \$\{\{ github\.sha \}\}/);
+  assert.match(providerLive, /PROVIDER_LIVE_ENVIRONMENT: provider-live/);
+  assert.match(
+    providerLive,
+    /PROVIDER_LIVE_CONFIG_REVISION: \$\{\{ vars\.PROVIDER_LIVE_CONFIG_REVISION \}\}/
+  );
+  assert.match(providerLive, /name: Initialize redacted live evidence/);
+  assert.match(providerLive, /status: 'preflight_pending'/);
+  assert.match(providerLive, /name: Provider live preflight/);
+  assert.ok(
+    providerLive.indexOf('name: Initialize redacted live evidence') <
+      providerLive.indexOf('name: Provider live preflight')
+  );
 });

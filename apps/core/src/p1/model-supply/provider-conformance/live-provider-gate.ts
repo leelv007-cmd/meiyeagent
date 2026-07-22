@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   ActivationEvidenceStatus,
   SupplyChannelKind,
@@ -35,7 +36,8 @@ export interface LiveProviderChannel {
   deploymentId?: string;
   accountIdentityFingerprint: string;
   endpointFingerprint: string;
-  maxProbeCostUsd: number;
+  providerModelSha256: string;
+  maxProbeCostCny: number;
 }
 
 export interface LiveProviderProbeEvidence {
@@ -48,6 +50,7 @@ export interface LiveProviderProbeEvidence {
   adapterKind: LiveProviderAdapterKind;
   accountIdentityFingerprint: string;
   endpointFingerprint: string;
+  providerModelSha256: string;
   /** True only after calling the production adapter instance. */
   adapterExecuted: boolean;
   /** True only when that adapter returned accepted/completed provider evidence. */
@@ -60,7 +63,7 @@ export interface LiveProviderProbeEvidence {
   providerCost: {
     amount: number;
     currency: 'CNY' | 'USD';
-    amountUsd?: number;
+    amountCny?: number;
     fx?: {
       cnyPerUsd: number;
       evidenceRef: string;
@@ -77,6 +80,8 @@ export interface LiveProviderProbeEvidence {
     recovered: boolean;
     pollStatus?: 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
     downloaded: boolean;
+    resultBytes?: number;
+    resultSha256?: string;
     downloadedBytes?: number;
     contentType?: string;
     assetSha256?: string;
@@ -110,6 +115,7 @@ export interface LiveProviderActivationEvidence {
   providerCallSucceeded: boolean;
   accountIdentityFingerprint: string;
   endpointFingerprint: string;
+  providerModelSha256: string;
 }
 
 export interface LiveProviderBlockedCheck {
@@ -130,15 +136,15 @@ export interface LiveExternalCostEvidence {
   runNonce: string;
   evidenceRef: string;
   observedAt: string;
-  amountUsd: number;
-  currency: 'USD';
+  amountCny: number;
+  currency: 'CNY';
   components: Array<{
     kind:
       | 'secondary_probe'
       | 'lifecycle_probe'
       | 'fault_injection'
       | 'infrastructure';
-    amountUsd: number;
+    amountCny: number;
     evidenceRef: string;
   }>;
 }
@@ -201,7 +207,14 @@ export interface LiveTransportFaultEvidence {
 
 export interface LiveProviderGateReport {
   acceptanceMode: LiveProviderAcceptanceMode;
-  runNonce?: string;
+  runNonce: string;
+  releaseRef: string;
+  environment: string;
+  configurationRevision: string;
+  effectiveConfigurationSha256: string;
+  startedAt: string;
+  completedAt: string;
+  expiresAt: string;
   observedAt: string;
   probes: LiveProviderProbeEvidence[];
   activationEvidence: LiveProviderActivationEvidence[];
@@ -211,39 +224,63 @@ export interface LiveProviderGateReport {
   blockedChecks: LiveProviderBlockedCheck[];
   externalEvidenceRefs: string[];
   actualCost: {
-    providerProbeUsd: number;
-    externalEvidenceUsd: number;
-    totalUsd: number;
-    capUsd: number;
+    providerProbeCny: number;
+    externalEvidenceCny: number;
+    totalCny: number;
+    capCny: number;
   };
 }
 
 export async function runLiveProviderGate(input: {
   acceptanceMode?: LiveProviderAcceptanceMode;
+  runNonce: string;
+  releaseRef: string;
+  environment: string;
+  configurationRevision: string;
+  evidenceTtlSeconds: number;
   channels: readonly LiveProviderChannel[];
   probe: (channel: LiveProviderChannel) => Promise<LiveProviderProbeEvidence>;
   onProbe?: (probes: readonly LiveProviderProbeEvidence[]) => Promise<void>;
-  costCapUsd: number;
-  externalEvidenceCostReservationUsd?: number;
+  costCapCny: number;
+  externalEvidenceCostReservationCny?: number;
   externalCostEvidence?: LiveExternalCostEvidence;
-  runNonce?: string;
   secondaryProbes?: readonly LiveProviderProbeEvidence[];
   lifecycleEvidence?: readonly LiveProviderLifecycleEvidence[];
   transportFaultEvidence?: readonly LiveTransportFaultEvidence[];
 }): Promise<LiveProviderGateReport> {
   const acceptanceMode = input.acceptanceMode ?? 'dual_channel_conformance';
   const primaryConnectivity = acceptanceMode === 'primary_connectivity';
+  if (
+    !isEvidenceRef(input.runNonce) ||
+    !isEvidenceRef(input.releaseRef) ||
+    !isEvidenceRef(input.environment) ||
+    !isEvidenceRef(input.configurationRevision) ||
+    !Number.isSafeInteger(input.evidenceTtlSeconds) ||
+    input.evidenceTtlSeconds <= 0 ||
+    input.evidenceTtlSeconds > 7 * 24 * 60 * 60
+  ) {
+    throw new Error('provider_live_run_context_invalid');
+  }
   const channels = primaryConnectivity
     ? input.channels.filter(
         (channel) => channel.model.channelKind === 'official_direct',
       )
     : [...input.channels];
-  const observedAt = new Date().toISOString();
+  if (
+    channels.some(
+      (channel) => !/^[a-f0-9]{64}$/u.test(channel.providerModelSha256),
+    )
+  ) {
+    throw new Error('provider_live_run_context_invalid');
+  }
+  const effectiveConfigurationSha256 = configurationSha256(channels);
+  const startedAt = new Date().toISOString();
+  const observedAt = startedAt;
   const probes: LiveProviderProbeEvidence[] = [];
   // Keep paid calls serial so reservations and reported actual spend remain
   // observable; provider billing is reconciled after each completed call.
-  const externalEvidenceCostReservationUsd =
-    input.externalEvidenceCostReservationUsd ?? 0;
+  const externalEvidenceCostReservationCny =
+    input.externalEvidenceCostReservationCny ?? 0;
   const lifecycleEvidence = Array.isArray(input.lifecycleEvidence)
     ? input.lifecycleEvidence
     : [];
@@ -259,33 +296,32 @@ export async function runLiveProviderGate(input: {
     secondaryProbes.length > 0;
   const externalEvidenceRequired =
     !primaryConnectivity &&
-    (input.runNonce !== undefined ||
-      input.externalCostEvidence !== undefined ||
-      externalEvidenceCostReservationUsd > 0);
-  const reservedCostUsd =
+    (input.externalCostEvidence !== undefined ||
+      externalEvidenceCostReservationCny > 0);
+  const reservedCostCny =
     channels.reduce(
-      (sum, channel) => sum + channel.maxProbeCostUsd,
+      (sum, channel) => sum + channel.maxProbeCostCny,
       0,
-    ) + externalEvidenceCostReservationUsd;
+    ) + externalEvidenceCostReservationCny;
   const invalidChannelBudget = channels.some(
     (channel) =>
-      !Number.isFinite(channel.maxProbeCostUsd) ||
-      channel.maxProbeCostUsd <= 0,
+      !Number.isFinite(channel.maxProbeCostCny) ||
+      channel.maxProbeCostCny <= 0,
   );
   const invalidExternalEvidenceBudget =
-    !Number.isFinite(externalEvidenceCostReservationUsd) ||
-    externalEvidenceCostReservationUsd < 0 ||
+    !Number.isFinite(externalEvidenceCostReservationCny) ||
+    externalEvidenceCostReservationCny < 0 ||
     ((hasExternalEvidence || externalEvidenceRequired) &&
-      externalEvidenceCostReservationUsd <= 0);
+      externalEvidenceCostReservationCny <= 0);
   if (
-    !Number.isFinite(input.costCapUsd) ||
-    input.costCapUsd <= 0 ||
+    !Number.isFinite(input.costCapCny) ||
+    input.costCapCny <= 0 ||
     invalidChannelBudget ||
     invalidExternalEvidenceBudget ||
-    reservedCostUsd > input.costCapUsd
+    reservedCostCny > input.costCapCny
   ) {
     throw new Error(
-      `provider_live_cost_cap_exceeded:reserved=${reservedCostUsd.toFixed(4)}:cap=${input.costCapUsd}`,
+      `provider_live_cost_cap_exceeded:reserved=${reservedCostCny.toFixed(4)}:cap=${input.costCapCny}`,
     );
   }
   const externalCostEvidence = validateExternalCostEvidence(
@@ -299,8 +335,8 @@ export async function runLiveProviderGate(input: {
   ) {
     throw new Error('provider_live_external_cost_unverifiable');
   }
-  const externalEvidenceUsd = externalCostEvidence?.amountUsd ?? 0;
-  if (externalEvidenceUsd > externalEvidenceCostReservationUsd) {
+  const externalEvidenceCny = externalCostEvidence?.amountCny ?? 0;
+  if (externalEvidenceCny > externalEvidenceCostReservationCny) {
     throw new Error('provider_live_external_cost_reservation_exceeded');
   }
   if (hasExternalEvidence || externalEvidenceRequired) {
@@ -318,11 +354,11 @@ export async function runLiveProviderGate(input: {
     probes.push(await input.probe(channel));
     await input.onProbe?.([...probes]);
   }
-  const providerProbeUsd = validateProviderProbeCosts(probes, channels);
-  const actualTotalUsd = providerProbeUsd + externalEvidenceUsd;
-  if (actualTotalUsd > input.costCapUsd) {
+  const providerProbeCny = validateProviderProbeCosts(probes, channels);
+  const actualTotalCny = providerProbeCny + externalEvidenceCny;
+  if (actualTotalCny > input.costCapCny) {
     throw new Error(
-      `provider_live_actual_cost_cap_exceeded:actual=${actualTotalUsd.toFixed(4)}:cap=${input.costCapUsd}`,
+      `provider_live_actual_cost_cap_exceeded:actual=${actualTotalCny.toFixed(4)}:cap=${input.costCapCny}`,
     );
   }
   const validSecondaryProbes = validateSecondaryProbes({
@@ -568,9 +604,19 @@ export async function runLiveProviderGate(input: {
     }
   }
 
+  const completedAt = new Date().toISOString();
   return {
     acceptanceMode,
-    ...(input.runNonce ? { runNonce: input.runNonce } : {}),
+    runNonce: input.runNonce,
+    releaseRef: input.releaseRef,
+    environment: input.environment,
+    configurationRevision: input.configurationRevision,
+    effectiveConfigurationSha256,
+    startedAt,
+    completedAt,
+    expiresAt: new Date(
+      Date.parse(completedAt) + input.evidenceTtlSeconds * 1000,
+    ).toISOString(),
     observedAt,
     probes,
     activationEvidence,
@@ -580,10 +626,10 @@ export async function runLiveProviderGate(input: {
     blockedChecks,
     externalEvidenceRefs: [...externalEvidenceRefs],
     actualCost: {
-      providerProbeUsd,
-      externalEvidenceUsd,
-      totalUsd: actualTotalUsd,
-      capUsd: input.costCapUsd,
+      providerProbeCny,
+      externalEvidenceCny,
+      totalCny: actualTotalCny,
+      capCny: input.costCapCny,
     },
   };
 }
@@ -678,6 +724,33 @@ function channelDeploymentId(channel: LiveProviderChannel): string {
   );
 }
 
+function configurationSha256(
+  channels: readonly LiveProviderChannel[],
+): string {
+  const effectiveConfiguration = channels
+    .map((channel) => ({
+      operation: channel.model.operation,
+      modality: channel.model.modality,
+      channelKind: channel.model.channelKind,
+      catalogModelId: channel.model.catalogModelId,
+      providerProfileId: channel.model.providerProfileId,
+      deploymentId: channelDeploymentId(channel),
+      adapterKind: channel.adapterKind,
+      accountIdentityFingerprint: channel.accountIdentityFingerprint,
+      endpointFingerprint: channel.endpointFingerprint,
+      providerModelSha256: channel.providerModelSha256,
+      maxProbeCostCny: channel.maxProbeCostCny,
+    }))
+    .sort((left, right) =>
+      `${left.operation}:${left.channelKind}`.localeCompare(
+        `${right.operation}:${right.channelKind}`,
+      ),
+    );
+  return createHash('sha256')
+    .update(JSON.stringify(effectiveConfiguration))
+    .digest('hex');
+}
+
 function probeMatchesChannel(
   probe: LiveProviderProbeEvidence,
   channel: LiveProviderChannel,
@@ -691,7 +764,8 @@ function probeMatchesChannel(
     probe.deploymentId === channelDeploymentId(channel) &&
     probe.adapterKind === channel.adapterKind &&
     probe.accountIdentityFingerprint === channel.accountIdentityFingerprint &&
-    probe.endpointFingerprint === channel.endpointFingerprint
+    probe.endpointFingerprint === channel.endpointFingerprint &&
+    probe.providerModelSha256 === channel.providerModelSha256
   );
 }
 
@@ -707,6 +781,7 @@ function secondaryEvidenceMatchesChannel(
     | 'adapterKind'
     | 'accountIdentityFingerprint'
     | 'endpointFingerprint'
+    | 'providerModelSha256'
   >,
   channel: LiveProviderChannel,
 ): boolean {
@@ -727,7 +802,8 @@ function secondaryEvidenceMatchesChannel(
     evidence.adapterKind === channel.adapterKind &&
     evidence.accountIdentityFingerprint ===
       channel.accountIdentityFingerprint &&
-    evidence.endpointFingerprint === channel.endpointFingerprint
+    evidence.endpointFingerprint === channel.endpointFingerprint &&
+    evidence.providerModelSha256 === channel.providerModelSha256
   );
 }
 
@@ -745,7 +821,8 @@ function activationMatchesChannel(
     evidence.deploymentId === channelDeploymentId(channel) &&
     evidence.accountIdentityFingerprint ===
       channel.accountIdentityFingerprint &&
-    evidence.endpointFingerprint === channel.endpointFingerprint
+    evidence.endpointFingerprint === channel.endpointFingerprint &&
+    evidence.providerModelSha256 === channel.providerModelSha256
   );
 }
 
@@ -1132,24 +1209,24 @@ function validateProviderProbeCosts(
   probes: readonly LiveProviderProbeEvidence[],
   channels: readonly LiveProviderChannel[],
 ): number {
-  let totalUsd = 0;
+  let totalCny = 0;
   for (const probe of probes) {
     const channel = channels.find((candidate) =>
       probeMatchesChannelForCost(probe, candidate),
     );
     if (!channel) throw new Error('provider_live_probe_cost_unbound');
-    const amountUsd = verifiedProviderCostUsd(probe.providerCost);
-    if (amountUsd === null) {
+    const amountCny = verifiedProviderCostCny(probe.providerCost);
+    if (amountCny === null) {
       throw new Error('provider_live_probe_cost_unverifiable');
     }
-    if (amountUsd > channel.maxProbeCostUsd) {
+    if (amountCny > channel.maxProbeCostCny) {
       throw new Error(
         `provider_live_probe_reservation_exceeded:${channelDeploymentId(channel)}`,
       );
     }
-    totalUsd += amountUsd;
+    totalCny += amountCny;
   }
-  return totalUsd;
+  return totalCny;
 }
 
 function preflightExternalEvidence(input: {
@@ -1172,10 +1249,10 @@ function preflightExternalEvidence(input: {
     (operation) =>
       [...validSecondary].some((probe) => probe.operation === operation),
   );
-  const secondaryProbeUsd = validateSecondaryProbeCosts(input.secondaryProbes);
+  const secondaryProbeCny = validateSecondaryProbeCosts(input.secondaryProbes);
   const secondaryCostReconciled = approximatelyEqual(
     costComponentTotal(input.externalCostEvidence, 'secondary_probe'),
-    secondaryProbeUsd,
+    secondaryProbeCny,
   );
   const coreComplete = CORE_FAULT_INJECTION_OPERATIONS.every((operation) => {
     const aligned = selectAlignedChannels(
@@ -1216,11 +1293,11 @@ function validateSecondaryProbeCosts(
   probes: readonly LiveProviderProbeEvidence[],
 ): number {
   return probes.reduce((sum, probe) => {
-    const amountUsd = verifiedProviderCostUsd(probe.providerCost);
-    if (amountUsd === null) {
+    const amountCny = verifiedProviderCostCny(probe.providerCost);
+    if (amountCny === null) {
       throw new Error('provider_live_secondary_probe_cost_unverifiable');
     }
-    return sum + amountUsd;
+    return sum + amountCny;
   }, 0);
 }
 
@@ -1230,7 +1307,7 @@ function costComponentTotal(
 ): number {
   return evidence.components
     .filter((component) => component.kind === kind)
-    .reduce((sum, component) => sum + component.amountUsd, 0);
+    .reduce((sum, component) => sum + component.amountCny, 0);
 }
 
 function probeMatchesChannelForCost(
@@ -1242,29 +1319,30 @@ function probeMatchesChannelForCost(
     probe.modality === channel.model.modality &&
     probe.channelKind === channel.model.channelKind &&
     probe.deploymentId === channelDeploymentId(channel) &&
-    probe.adapterKind === channel.adapterKind
+    probe.adapterKind === channel.adapterKind &&
+    probe.providerModelSha256 === channel.providerModelSha256
   );
 }
 
-function verifiedProviderCostUsd(
+function verifiedProviderCostCny(
   cost: LiveProviderProbeEvidence['providerCost'],
 ): number | null {
   if (!Number.isFinite(cost.amount) || cost.amount < 0) return null;
-  if (cost.currency === 'USD') {
-    return cost.amountUsd === undefined ||
-      (Number.isFinite(cost.amountUsd) &&
-        cost.amountUsd >= 0 &&
-        approximatelyEqual(cost.amountUsd, cost.amount))
+  if (cost.currency === 'CNY') {
+    return cost.amountCny === undefined ||
+      (Number.isFinite(cost.amountCny) &&
+        cost.amountCny >= 0 &&
+        approximatelyEqual(cost.amountCny, cost.amount))
       ? cost.amount
       : null;
   }
   if (
     cost.amount === 0 &&
-    (cost.amountUsd === undefined || cost.amountUsd === 0)
+    (cost.amountCny === undefined || cost.amountCny === 0)
   ) {
     return 0;
   }
-  if (!Number.isFinite(cost.amountUsd) || (cost.amountUsd ?? -1) < 0) {
+  if (!Number.isFinite(cost.amountCny) || (cost.amountCny ?? -1) < 0) {
     return null;
   }
   const fx = cost.fx;
@@ -1277,9 +1355,9 @@ function verifiedProviderCostUsd(
   ) {
     return null;
   }
-  const calculated = cost.amount / fx.cnyPerUsd;
-  return approximatelyEqual(cost.amountUsd!, calculated)
-    ? cost.amountUsd!
+  const calculated = cost.amount * fx.cnyPerUsd;
+  return approximatelyEqual(cost.amountCny!, calculated)
+    ? cost.amountCny!
     : null;
 }
 
@@ -1291,13 +1369,13 @@ function validateExternalCostEvidence(
   if (!evidence) return undefined;
   if (
     evidence.source !== 'provider_live_cost_ledger' ||
-    evidence.currency !== 'USD' ||
+    evidence.currency !== 'CNY' ||
     !isRunNonce(runNonce) ||
     evidence.runNonce !== runNonce ||
     !isEvidenceRef(evidence.evidenceRef) ||
     !isFreshObservedAt(evidence.observedAt, observedAt) ||
-    !Number.isFinite(evidence.amountUsd) ||
-    evidence.amountUsd < 0 ||
+    !Number.isFinite(evidence.amountCny) ||
+    evidence.amountCny < 0 ||
     !Array.isArray(evidence.components) ||
     evidence.components.length < 3
   ) {
@@ -1319,8 +1397,8 @@ function validateExternalCostEvidence(
         'fault_injection',
         'infrastructure',
       ].includes(component.kind as string) ||
-      !Number.isFinite(component.amountUsd) ||
-      (component.amountUsd as number) < 0 ||
+      !Number.isFinite(component.amountCny) ||
+      (component.amountCny as number) < 0 ||
       !isEvidenceRef(component.evidenceRef) ||
       refs.has(component.evidenceRef)
     ) {
@@ -1328,10 +1406,10 @@ function validateExternalCostEvidence(
     }
     requiredKinds.delete(component.kind as string);
     refs.add(component.evidenceRef);
-    componentTotal += component.amountUsd as number;
+    componentTotal += component.amountCny as number;
   }
   return requiredKinds.size === 0 &&
-    approximatelyEqual(componentTotal, evidence.amountUsd)
+    approximatelyEqual(componentTotal, evidence.amountCny)
     ? evidence
     : undefined;
 }
@@ -1442,6 +1520,8 @@ export function isLiveVerifiedProbe(
   const lifecycleVerified =
     evidence.modality === 'llm'
       ? evidence.lifecycle.pollStatus === 'completed' &&
+        (evidence.lifecycle.resultBytes ?? 0) > 0 &&
+        /^[a-f0-9]{64}$/u.test(evidence.lifecycle.resultSha256 ?? '') &&
         (evidence.providerCost.usage?.inputTokens ?? 0) > 0 &&
         (evidence.providerCost.usage?.outputTokens ?? 0) > 0
       : evidence.lifecycle.recovered &&
@@ -1453,6 +1533,7 @@ export function isLiveVerifiedProbe(
         (evidence.modality !== 'video' ||
           (evidence.providerCost.usage?.outputTokens ?? 0) > 0);
   return (
+    /^[a-f0-9]{64}$/u.test(evidence.providerModelSha256) &&
     evidence.adapterExecuted &&
     evidence.providerCallSucceeded &&
     evidence.acceptance === 'accepted' &&
@@ -1488,6 +1569,7 @@ function toLiveProviderActivationEvidence(
     providerCallSucceeded: probe.providerCallSucceeded,
     accountIdentityFingerprint: probe.accountIdentityFingerprint,
     endpointFingerprint: probe.endpointFingerprint,
+    providerModelSha256: probe.providerModelSha256,
   };
 }
 

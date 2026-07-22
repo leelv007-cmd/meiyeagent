@@ -13,7 +13,7 @@ function environment(outputPath, endpoint = 'https://conformance.example/run') {
     PROVIDER_LIVE_CONFORMANCE_TOKEN: 'test-token',
     PROVIDER_LIVE_RUN_NONCE: runNonce,
     PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH: outputPath,
-    PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD: '0.1',
+    PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_CNY: '0.1',
   };
 }
 
@@ -45,6 +45,26 @@ test('runner requires HTTPS before fetch', async () => {
     /must use HTTPS/,
   );
   assert.equal(fetched, false);
+});
+
+test('runner rejects an invalid cost cap before fetch', async () => {
+  for (const costCap of ['abc', 'NaN', '0', '-1', '50.01']) {
+    let fetchCalls = 0;
+    await assert.rejects(
+      runConformance({
+        environment: {
+          ...environment('/tmp/unused'),
+          PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_CNY: costCap,
+        },
+        fetchImpl: async () => {
+          fetchCalls += 1;
+          return jsonResponse(evidence());
+        },
+      }),
+      /cost cap must be finite and within \(0, 50\]/,
+    );
+    assert.equal(fetchCalls, 0);
+  }
 });
 
 test('runner rejects nonce mismatch and oversized streamed evidence', async () => {

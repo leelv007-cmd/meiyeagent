@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const MAX_EVIDENCE_BYTES = 2 * 1024 * 1024;
+const MAX_CONFORMANCE_COST_CNY = 50;
 
 export async function runConformance({
   environment = process.env,
@@ -15,6 +16,16 @@ export async function runConformance({
     environment,
     'PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH',
   );
+  const costCapCny = Number(
+    required(environment, 'PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_CNY'),
+  );
+  if (
+    !Number.isFinite(costCapCny) ||
+    costCapCny <= 0 ||
+    costCapCny > MAX_CONFORMANCE_COST_CNY
+  ) {
+    throw new Error('Provider conformance cost cap must be finite and within (0, 50].');
+  }
   const url = new URL(endpoint);
 
   if (url.protocol !== 'https:' || url.username || url.password) {
@@ -32,9 +43,7 @@ export async function runConformance({
     },
     body: JSON.stringify({
       runNonce,
-      costCapUsd: Number(
-        required(environment, 'PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD'),
-      ),
+      costCapCny,
     }),
     redirect: 'error',
     signal: AbortSignal.timeout(45 * 60_000),
