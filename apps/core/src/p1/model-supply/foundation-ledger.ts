@@ -834,6 +834,9 @@ function foundationOutcome(result: ModelSupplyResult) {
               sha256: result.asset.sha256,
               sizeBytes: result.asset.sizeBytes,
               mediaType: result.asset.contentType,
+              ...(result.asset.storageRevision
+                ? { storageRevision: result.asset.storageRevision }
+                : {}),
             },
           }
         : {}),

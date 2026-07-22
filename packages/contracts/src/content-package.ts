@@ -523,6 +523,8 @@ export const contentPackageExportReceiptSchema = z
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
     sizeBytes: z.number().int().nonnegative().optional(),
+    /** Immutable shared-object receipt version used by deletion claims. */
+    storageRevision: z.string().trim().min(1).optional(),
     status: z.enum(['succeeded', 'failed']),
     variantVersionId: contentPackageIdSchema,
   })

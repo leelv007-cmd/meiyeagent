@@ -2,6 +2,7 @@ import { websiteConfig } from '@/config/website';
 import { R2Provider } from './provider/r2';
 import type {
   FileMetadata,
+  SharedAssetObjectState,
   StorageProvider,
   StorageProviderName,
   UploadFileResult,
@@ -39,6 +40,7 @@ export const uploadFile = async (
   filename: string,
   contentType: string,
   options: {
+    contentHash?: string;
     folder?: string;
     purpose: UploadPurpose;
     requestOrigin?: string;
@@ -48,6 +50,7 @@ export const uploadFile = async (
 ): Promise<UploadFileResult> => {
   const provider = getStorageProvider();
   return provider.uploadFile({
+    contentHash: options.contentHash,
     file,
     filename,
     contentType,
@@ -62,6 +65,18 @@ export const uploadFile = async (
 export const deleteFile = async (key: string): Promise<void> => {
   const provider = getStorageProvider();
   return provider.deleteFile(key);
+};
+
+export const inspectSharedAsset = async (
+  key: string
+): Promise<SharedAssetObjectState> => {
+  const provider = getStorageProvider();
+  return provider.inspectSharedAsset(key);
+};
+
+export const deleteSharedAsset = async (key: string): Promise<void> => {
+  const provider = getStorageProvider();
+  return provider.deleteSharedAsset(key);
 };
 
 export const downloadFile = async (

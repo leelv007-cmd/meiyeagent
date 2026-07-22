@@ -83,6 +83,15 @@ import {
   videoCompositionRuntimeFromEnv,
 } from './p1/model-supply/index.js';
 import {
+  FoundationOwnedAssetReferenceVerifier,
+  S3_ASSET_REGISTRATION_CLEANUP_JOB_KIND,
+  S3AssetRegistrationCleanupRunner,
+  createS3AssetRegistrationCleanupJobHandler,
+  registerS3AssetRegistrationCleanupSchedule,
+} from './p1/model-supply/owned-asset-registration-cleanup.js';
+import { PostgresOwnedAssetCleanupClaimCoordinator } from './p1/model-supply/postgres-owned-asset-cleanup-claim.js';
+import { S3CompatibleAssetStorage } from './p1/model-supply/s3-asset-storage.js';
+import {
   ensureDefaultRuntimeSupplyPool,
   PostgresAccountAllocationStore,
   PostgresCapacityLeaseStore,
@@ -107,6 +116,7 @@ import {
 } from './p1/product-billing/index.js';
 import {
   ModelSupplyImageGenerationAdapter,
+  ContentPackageArtifactReferenceVerifier,
   ContentPackageZipExportAdapter,
   OperationsContentPackageExportAssetReader,
   OPERATIONS_TRIGGER_JOB_KIND,
@@ -203,6 +213,31 @@ const referenceAssets = new CompositeReferenceAssetResolver([
 const foundationRepository = new PostgresFoundationRepository(pool);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
 const operationsRepository = new PostgresOperationsRepository(pool);
+const foundationAssetReferences = new FoundationOwnedAssetReferenceVerifier(
+  foundationRepository,
+);
+const contentPackageArtifactReferences =
+  new ContentPackageArtifactReferenceVerifier(operationsRepository);
+const assetRegistrationReferences = {
+  async isReferenced(input: Parameters<FoundationOwnedAssetReferenceVerifier['isReferenced']>[0]) {
+    return (
+      (await foundationAssetReferences.isReferenced(input)) ||
+      (await contentPackageArtifactReferences.isReferenced(input))
+    );
+  },
+};
+const assetRegistrationCleanup =
+  assetStorage instanceof S3CompatibleAssetStorage
+    ? new S3AssetRegistrationCleanupRunner(
+        assetStorage,
+        assetRegistrationReferences,
+        new PostgresOwnedAssetCleanupClaimCoordinator(
+          pool,
+          assetStorage,
+          assetRegistrationReferences,
+        ),
+      )
+    : undefined;
 const productBillingRepository = new PostgresProductBillingRepository(pool);
 const billingLifecycle = new DurableProductBillingService(
   productBillingRepository,
@@ -587,6 +622,9 @@ operations = new OperationsApplicationService(operationsRepository, {
 });
 const workerId =
   process.env.P1_JOB_WORKER_ID ?? `${hostname()}:${process.pid}`;
+if (assetRegistrationCleanup) {
+  await registerS3AssetRegistrationCleanupSchedule(jobRuntime);
+}
 const worker = new P1JobWorkerEntrypoint(
   jobRuntime,
   {
@@ -621,6 +659,12 @@ const worker = new P1JobWorkerEntrypoint(
         )
       ),
     [OPERATIONS_TRIGGER_JOB_KIND]: createOperationsTriggerJobHandler(operations),
+    ...(assetRegistrationCleanup
+      ? {
+          [S3_ASSET_REGISTRATION_CLEANUP_JOB_KIND]:
+            createS3AssetRegistrationCleanupJobHandler(assetRegistrationCleanup),
+        }
+      : {}),
     ...(mediaGenerationWorker
       ? {
           [MODEL_MEDIA_GENERATION_JOB_KIND]:

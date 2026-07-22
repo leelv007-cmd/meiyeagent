@@ -15,9 +15,18 @@ import {
   R2_ERROR_CODES,
   StorageError,
   UploadError,
+  UploadRegistrationError,
 } from '../types';
 import { sanitizeFolder } from '../utils';
 import { validateUploadPolicy } from '../upload-policy';
+import {
+  putImmutableSharedAsset,
+  sha256Hex,
+  SharedAssetPostWriteVerificationError,
+  inspectSharedAsset as inspectSharedAssetState,
+  sharedAssetReceiptKeyForObject,
+  writeSharedAssetReceipt,
+} from '../shared-asset-receipt';
 import { websiteConfig } from '@/config/website';
 
 const success = <T>(data: T): ValidationResult<T> => ({ success: true, data });
@@ -202,6 +211,7 @@ export class R2Provider implements StorageProvider {
 
   async uploadFile(params: UploadFileParams): Promise<UploadFileResult> {
     const {
+      contentHash,
       file,
       filename,
       contentType,
@@ -246,51 +256,113 @@ export class R2Provider implements StorageProvider {
     const sanitized = sanitizeFilename(filename);
     const storedFilename = `${fileId}-${sanitized}`;
     const sanitizedFolder = sanitizeFolder(folder);
+    const assetSha256 =
+      purpose === 'product_asset' ? await sha256Hex(bytes) : undefined;
+    if (contentHash && contentHash !== assetSha256) {
+      throw new UploadError(
+        'Product asset content hash does not match its bytes.'
+      );
+    }
 
     let r2Key: string;
-    if (sanitizedFolder) {
+    if (purpose === 'product_asset') {
+      const extension = MIME_TO_EXTENSIONS[contentType]?.[0] ?? 'bin';
+      r2Key = `${workspaceId}/assets/${userId}/${assetSha256}.${extension}`;
+    } else if (sanitizedFolder) {
       r2Key = `${sanitizedFolder}/${userId}/${storedFilename}`;
     } else {
       r2Key = `${this.userFilesFolder}/${userId}/${storedFilename}`;
     }
 
-    const body = file instanceof Blob ? file : bytes;
-    await bucket.put(r2Key, body, {
-      httpMetadata: { contentType },
-      customMetadata: {
-        purpose,
-        userId,
-        workspaceId,
-      },
-    });
-
+    const uploadedAt = new Date();
     const url = this.getPublicUrl(r2Key, requestOrigin);
-
-    return {
-      url,
-      key: r2Key,
-      metadata: {
-        id: fileId,
-        userId,
-        filename: storedFilename,
-        originalName: filename,
-        contentType,
-        size: bytes.byteLength,
-        r2Key,
-        uploadedAt: new Date(),
-      },
+    const metadata: FileMetadata = {
+      id: fileId,
+      userId,
+      filename: storedFilename,
+      originalName: filename,
+      contentType,
+      size: bytes.byteLength,
+      r2Key,
+      ...(assetSha256 ? { storageRevision: crypto.randomUUID() } : {}),
+      uploadedAt,
     };
+    if (assetSha256) {
+      try {
+        await putImmutableSharedAsset({
+          bucket,
+          bytes,
+          contentType,
+          objectKey: r2Key,
+          sha256: assetSha256,
+          storageRevision: metadata.storageRevision,
+        });
+      } catch (error) {
+        if (error instanceof SharedAssetPostWriteVerificationError) {
+          throw new UploadRegistrationError(r2Key, metadata, { cause: error });
+        }
+        throw error;
+      }
+      try {
+        const receipt = await writeSharedAssetReceipt({
+          bucket,
+          bytes,
+          contentType,
+          objectKey: r2Key,
+          sha256: assetSha256,
+          storageRevision: metadata.storageRevision,
+        });
+        metadata.storageRevision = receipt.storageRevision;
+      } catch (error) {
+        throw new UploadRegistrationError(r2Key, metadata, { cause: error });
+      }
+    } else {
+      await bucket.put(r2Key, file instanceof Blob ? file : bytes, {
+        httpMetadata: { contentType },
+        customMetadata: { purpose, userId, workspaceId },
+      });
+    }
+
+    return { url, key: r2Key, metadata };
   }
 
   async deleteFile(key: string): Promise<void> {
     try {
       const bucket = this.getBucket();
+      const state = await inspectSharedAssetState(bucket, key);
       await bucket.delete(key);
+      if (state.receipt) {
+        await bucket.delete(await sharedAssetReceiptKeyForObject(key));
+      }
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : 'Unknown error during file deletion';
+      throw new StorageError(message);
+    }
+  }
+
+  async inspectSharedAsset(key: string) {
+    try {
+      return await inspectSharedAssetState(this.getBucket(), key);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown shared asset inspection error';
+      throw new StorageError(message);
+    }
+  }
+
+  async deleteSharedAsset(key: string): Promise<void> {
+    try {
+      const bucket = this.getBucket();
+      await bucket.delete(key);
+      await bucket.delete(await sharedAssetReceiptKeyForObject(key));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unknown shared asset deletion error';
       throw new StorageError(message);
     }
   }

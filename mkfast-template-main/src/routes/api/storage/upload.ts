@@ -89,7 +89,6 @@ async function handleUpload(request: Request): Promise<Response> {
           contentHash,
           file,
           requestOrigin,
-          uploadId,
           userId: session.user.id,
           workspaceId: workspace.id,
         })

@@ -351,6 +351,7 @@ export interface OwnedAsset {
   sha256: string;
   sizeBytes: number;
   mediaType: string;
+  storageRevision?: string;
   createdAt: string;
 }
 

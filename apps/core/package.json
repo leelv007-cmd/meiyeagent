@@ -16,6 +16,8 @@
     "canvas:retirement-inventory": "tsx src/p1/operations/polotno-retirement-inventory-cli.ts",
     "canvas:renderer-comparison": "tsx src/p1/operations/renderer-comparison-cli.ts",
     "canvas:retirement-snapshot": "tsx src/p1/operations/polotno-retirement-snapshot-cli-entry.ts",
+    "assets:backfill-receipts": "tsx src/p1/model-supply/asset-receipt-backfill-cli-entry.ts",
+    "assets:contract-minio": "bash scripts/run-s3-compatible-minio-contract.sh",
     "contentpackage:cutover": "tsx src/p1/operations/content-package-migration-cli-entry.ts",
     "cutover": "tsx src/p1/cutover/cli-entry.ts",
     "dev": "tsx watch src/main.ts",

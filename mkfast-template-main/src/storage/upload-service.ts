@@ -1,7 +1,8 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { sharedAssetObjectLockKey } from '@meiye/contracts';
 import { getDb } from '@/db';
-import { userFiles } from '@/db/app.schema';
-import { deleteFile, uploadFile } from './index';
+import { storageObjectCleanupClaims, userFiles } from '@/db/app.schema';
+import { deleteFile, inspectSharedAsset, uploadFile } from './index';
 import { uploadAndPersistObject } from './object-lifecycle';
 import { enqueueStorageDelete } from './object-outbox';
 import { resolveUploadPolicy, type UploadPurpose } from './upload-policy';
@@ -14,6 +15,7 @@ async function sha256(bytes: ArrayBuffer): Promise<string> {
 }
 
 async function persistUserFile(input: {
+  contentHash?: string;
   description?: string;
   file: File;
   folder?: string;
@@ -38,7 +40,7 @@ async function persistUserFile(input: {
       },
       persistMetadata: async (metadata) => {
         const timestamp = metadata.uploadedAt;
-        await database.insert(userFiles).values({
+        const values = {
           id: metadata.id,
           userId: input.userId,
           workspaceId: input.workspaceId,
@@ -47,11 +49,101 @@ async function persistUserFile(input: {
           contentType: metadata.contentType,
           size: metadata.size,
           r2Key: metadata.r2Key,
+          storageRevision: metadata.storageRevision,
           purpose: input.purpose,
           createdAt: timestamp,
           updatedAt: timestamp,
           isPublic: input.isPublic,
           description: input.description,
+        };
+        if (input.purpose !== 'product_asset') {
+          await database.insert(userFiles).values(values);
+          return;
+        }
+        const objectLockKey = sharedAssetObjectLockKey(
+          input.workspaceId,
+          metadata.r2Key
+        );
+        await database.transaction(async (transaction) => {
+          await transaction.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtext(${objectLockKey}))`
+          );
+          const [cleanupClaim] = await transaction
+            .select({
+              receiptStorageRevision:
+                storageObjectCleanupClaims.receiptStorageRevision,
+              status: storageObjectCleanupClaims.status,
+            })
+            .from(storageObjectCleanupClaims)
+            .where(
+              and(
+                eq(storageObjectCleanupClaims.workspaceId, input.workspaceId),
+                eq(storageObjectCleanupClaims.objectKey, metadata.r2Key)
+              )
+            )
+            .limit(1);
+          if (cleanupClaim?.status === 'deleting') {
+            throw new Error(
+              'Shared asset cleanup is in progress; retry registration.'
+            );
+          }
+          if (
+            cleanupClaim?.status === 'deleted' &&
+            cleanupClaim.receiptStorageRevision === metadata.storageRevision
+          ) {
+            throw new Error(
+              'Shared asset was deleted during registration; retry upload.'
+            );
+          }
+          if (cleanupClaim?.status === 'delete_failed') {
+            throw new Error(
+              'Shared asset cleanup is incomplete; retry upload after cleanup succeeds.'
+            );
+          }
+          const sharedState = await inspectSharedAsset(metadata.r2Key);
+          if (
+            !metadata.storageRevision ||
+            !sharedState.objectExists ||
+            sharedState.objectVerified !== true ||
+            sharedState.receipt?.storageRevision !== metadata.storageRevision
+          ) {
+            throw new Error(
+              'Shared asset receipt and object could not be verified for registration.'
+            );
+          }
+          if (
+            cleanupClaim &&
+            cleanupClaim.status === 'deleted'
+          ) {
+            await transaction
+              .update(storageObjectCleanupClaims)
+              .set({
+                lastError: null,
+                receiptStorageRevision: metadata.storageRevision,
+                status: 'registration_recovered',
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(storageObjectCleanupClaims.workspaceId, input.workspaceId),
+                  eq(storageObjectCleanupClaims.objectKey, metadata.r2Key)
+                )
+              );
+          }
+          const [existing] = await transaction
+            .select({ id: userFiles.id })
+            .from(userFiles)
+            .where(
+              and(
+                eq(userFiles.workspaceId, input.workspaceId),
+                eq(userFiles.userId, input.userId),
+                eq(userFiles.purpose, 'product_asset'),
+                eq(userFiles.description, input.description ?? ''),
+                isNull(userFiles.deletedAt)
+              )
+            )
+            .limit(1);
+          if (!existing) await transaction.insert(userFiles).values(values);
         });
       },
       uploadObject: () =>
@@ -60,6 +152,7 @@ async function persistUserFile(input: {
           input.file.name,
           input.file.type,
           {
+            contentHash: input.contentHash,
             folder: input.folder,
             purpose: input.purpose,
             requestOrigin: input.requestOrigin,
@@ -93,7 +186,6 @@ export async function uploadProductAsset(input: {
   contentHash?: string;
   file: File;
   requestOrigin: string;
-  uploadId?: string;
   userId: string;
   workspaceId: string;
 }) {
@@ -102,9 +194,7 @@ export async function uploadProductAsset(input: {
   if (input.contentHash && input.contentHash !== contentHash) {
     throw new Error('File hash mismatch');
   }
-  const uploadDescription = input.uploadId
-    ? `mobile-upload:${input.uploadId}:${contentHash}`
-    : undefined;
+  const uploadDescription = `product-asset:${contentHash}`;
   const database = getDb();
   if (uploadDescription) {
     const [stored] = await database
@@ -116,6 +206,8 @@ export async function uploadProductAsset(input: {
       .where(
         and(
           eq(userFiles.workspaceId, input.workspaceId),
+          eq(userFiles.userId, input.userId),
+          eq(userFiles.purpose, 'product_asset'),
           eq(userFiles.description, uploadDescription),
           isNull(userFiles.deletedAt)
         )
@@ -133,7 +225,8 @@ export async function uploadProductAsset(input: {
   }
 
   const result = await persistUserFile({
-    description: uploadDescription ?? 'P0 real store asset',
+    contentHash,
+    description: uploadDescription,
     file: new File([bytes], input.file.name, { type: input.file.type }),
     folder: `${input.workspaceId}/assets`,
     isPublic: false,

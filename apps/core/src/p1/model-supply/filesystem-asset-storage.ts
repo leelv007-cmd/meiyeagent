@@ -4,6 +4,7 @@ import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { isSharedWorkspaceAssetObjectKey } from '@meiye/contracts';
 import type { CompositionAssetStoragePort } from './ffmpeg-composition-port.js';
 import type {
   CustodyOwnedAssetContentType,
@@ -548,11 +549,7 @@ function safeSegment(value: string) {
 }
 
 function assertPublicObjectKey(objectKey: string) {
-  if (
-    !/^[A-Za-z0-9._-]+\/(?:(?:generated|owned)\/[a-f0-9]{64}\.(?:jpg|png|webp|mp4|m4a|zip|mp3|ogg|wav)|composed\/[a-f0-9]{64}\.(?:png|mp4)|canvas\/assets\/[A-Za-z0-9._-]+\.(?:jpg|png|webp|mp4|mp3|wav))$/.test(
-      objectKey
-    )
-  ) {
+  if (!isSharedWorkspaceAssetObjectKey(objectKey)) {
     throw new Error('Object key is not a public media asset.');
   }
 }
@@ -585,6 +582,8 @@ function assetExtension(contentType: CustodyOwnedAssetContentType) {
       return 'webp';
     case 'video/mp4':
       return 'mp4';
+    case 'video/webm':
+      return 'webm';
     case 'audio/mp4':
       return 'm4a';
     case 'audio/mpeg':
@@ -609,6 +608,8 @@ function contentTypeForExtension(
       return 'image/webp';
     case '.mp4':
       return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
     case '.m4a':
       return 'audio/mp4';
     case '.mp3':

@@ -124,6 +124,7 @@ import {
   isExportableOwnedAssetObjectKey,
   UnverifiedVideoComplianceError,
 } from './content-package-export-adapter.js';
+import { ownedAssetRegistrationLifecycle } from '../model-supply/owned-asset-registration-lifecycle.js';
 
 export class OperationsError extends Error {
   constructor(
@@ -9355,8 +9356,9 @@ export class OperationsApplicationService {
       );
     }
     const timestamp = this.timestamp();
+    let artifact: Awaited<ReturnType<ContentPackageExportPort['export']>> | undefined;
     try {
-      const artifact = await exporter.export({
+      artifact = await exporter.export({
         compliance: contentPackage.compliance,
         contentPackageRevision: contentPackage.revision,
         kind: contentPackage.kind,
@@ -9384,7 +9386,8 @@ export class OperationsApplicationService {
           : {}),
         workspaceId: context.workspaceId,
       });
-      return this.mutate(context, async (current, repository) => {
+      const exportedArtifact = artifact;
+      return await this.mutate(context, async (current, repository) => {
         await this.requireContentPackageWrite(context);
         current.contentPackages ??= [];
         const index = current.contentPackages.findIndex(
@@ -9415,7 +9418,7 @@ export class OperationsApplicationService {
         }
         const receipt = {
           appliedCompliance: { ...stored.compliance },
-          ...artifact,
+          ...exportedArtifact,
           correlationId: context.correlationId,
           createdAt: timestamp,
           id: this.id(),
@@ -9463,7 +9466,7 @@ export class OperationsApplicationService {
           'content_package',
           stored.id,
           {
-            artifactAssetId: artifact.artifactAssetId,
+            artifactAssetId: exportedArtifact.artifactAssetId,
             platform: input.platform,
           }
         );
@@ -9473,6 +9476,31 @@ export class OperationsApplicationService {
         };
       });
     } catch (error) {
+      const lifecycle = ownedAssetRegistrationLifecycle(exporter);
+      if (artifact && lifecycle) {
+        try {
+          await lifecycle.recordOwnedAssetRegistrationFailure({
+            asset: {
+              contentType: artifact.contentType,
+              id: artifact.artifactAssetId,
+              objectKey: artifact.artifactObjectKey,
+              sha256: artifact.sha256,
+              sizeBytes: artifact.sizeBytes,
+              ...(artifact.storageRevision
+                ? { storageRevision: artifact.storageRevision }
+                : {}),
+            },
+            error,
+            failureStage: 'content_package_persistence',
+            workspaceId: context.workspaceId,
+          });
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            'ContentPackage export failed and its cleanup record could not be persisted.',
+          );
+        }
+      }
       if (
         error instanceof OperationsError ||
         error instanceof TaskBlockingNodeConflictError

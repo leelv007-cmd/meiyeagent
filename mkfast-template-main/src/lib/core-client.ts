@@ -204,40 +204,56 @@ export async function forwardWorkspaceCoreRequest(
 }
 
 export async function forwardWorkspaceAssetRequest(request: Request) {
-  const session = await createAuth().api.getSession({
-    headers: request.headers,
-  });
-  if (!session?.user?.id || !session.user.emailVerified) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  const workspace = await resolveActiveWorkspace(session.user.id);
-  if (!workspace) {
-    return Response.json({ error: 'Workspace not found' }, { status: 404 });
-  }
-  const productRole = normalizeProductRole({
-    platformRole: session.user.role,
-    workspaceRole: workspace.role,
-  });
-  if (!productRole) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  const headOnly = request.method === 'HEAD';
+  const serviceWorkspaceId = request.headers.get('x-workspace-id');
+  const serviceAuthorized =
+    request.headers.get('x-service-token') === serverEnv.CORE_SERVICE_TOKEN &&
+    Boolean(serviceWorkspaceId);
+  let workspaceId: string;
+  let productRole: Exclude<ReturnType<typeof normalizeProductRole>, null>;
+  let userId: string | undefined;
+  let workspaceRole: string;
+  if (serviceAuthorized) {
+    workspaceId = serviceWorkspaceId!;
+    productRole = 'owner';
+    workspaceRole = 'owner';
+  } else {
+    const session = await createAuth().api.getSession({
+      headers: request.headers,
+    });
+    if (!session?.user?.id || !session.user.emailVerified) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const workspace = await resolveActiveWorkspace(session.user.id);
+    if (!workspace) {
+      return Response.json({ error: 'Workspace not found' }, { status: 404 });
+    }
+    const resolvedProductRole = normalizeProductRole({
+      platformRole: session.user.role,
+      workspaceRole: workspace.role,
+    });
+    if (!resolvedProductRole) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    productRole = resolvedProductRole;
+    userId = session.user.id;
+    workspaceId = workspace.id;
+    workspaceRole = productRole === 'admin' ? workspace.role : productRole;
   }
   const objectKey = new URL(request.url).searchParams.get('objectKey');
   if (!objectKey || !isAllowedWorkspaceAssetObjectKey(objectKey)) {
     return Response.json({ error: 'Asset not found' }, { status: 404 });
   }
-  if (objectKey.split('/')[0] !== workspace.id) {
+  if (objectKey.split('/')[0] !== workspaceId) {
     return Response.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const headers = new Headers();
   headers.set('x-service-token', serverEnv.CORE_SERVICE_TOKEN);
-  headers.set('x-user-id', session.user.id);
-  headers.set('x-workspace-id', workspace.id);
+  if (userId) headers.set('x-user-id', userId);
+  headers.set('x-workspace-id', workspaceId);
   headers.set('x-core-actor', productRole === 'admin' ? 'admin' : 'user');
-  headers.set(
-    'x-workspace-role',
-    productRole === 'admin' ? workspace.role : productRole
-  );
+  headers.set('x-workspace-role', workspaceRole);
   headers.set('x-correlation-id', `asset-${crypto.randomUUID()}`);
   const path = objectKey.split('/').map(encodeURIComponent).join('/');
   let upstream: Response;
@@ -245,7 +261,7 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
     upstream = await coreFetch(
       fetch,
       `${serverEnv.CORE_SERVICE_URL}/v1/assets/${path}`,
-      { headers, signal: request.signal },
+      { headers, method: 'GET', signal: request.signal },
       { stream: true }
     );
   } catch {
@@ -265,7 +281,7 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
       `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
     );
   }
-  return new Response(upstream.body, {
+  return new Response(headOnly ? null : upstream.body, {
     status: upstream.status,
     headers: responseHeaders,
   });

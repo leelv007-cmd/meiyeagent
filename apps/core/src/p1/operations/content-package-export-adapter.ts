@@ -6,6 +6,10 @@ import type {
   ModelAssetStoragePort,
   OwnedAsset,
 } from '../model-supply/index.js';
+import {
+  ownedAssetRegistrationLifecycle,
+  type OwnedAssetRegistrationLifecyclePort,
+} from '../model-supply/owned-asset-registration-lifecycle.js';
 import type { ReferenceAssetResolverPort } from '../model-supply/reference-asset-resolver.js';
 import {
   buildImageTextDeliveryPackage,
@@ -174,14 +178,49 @@ export class OperationsContentPackageExportAssetReader
   }
 }
 
+/** Checks an already-committed ContentPackage delivery receipt before cleanup. */
+export class ContentPackageArtifactReferenceVerifier {
+  constructor(
+    private readonly repository: Pick<OperationsRepository, 'loadWorkspace'>,
+  ) {}
+
+  async isReferenced(input: {
+    assetId: string;
+    receipt: { objectKey: string; sha256: string; sizeBytes: number };
+    workspaceId: string;
+  }) {
+    const state = await this.repository.loadWorkspace(input.workspaceId);
+    return Boolean(
+      state?.contentPackages.some((contentPackage) =>
+        contentPackage.exportReceipts.some(
+          (receipt) =>
+            receipt.artifactAssetId === input.assetId &&
+            receipt.artifactObjectKey === input.receipt.objectKey &&
+            receipt.sha256 === input.receipt.sha256 &&
+            receipt.sizeBytes === input.receipt.sizeBytes,
+        ),
+      ),
+    );
+  }
+}
+
 export class ContentPackageZipExportAdapter
-  implements ContentPackageExportPort
+  implements ContentPackageExportPort, OwnedAssetRegistrationLifecyclePort
 {
   constructor(
     private readonly storage: ModelAssetStoragePort,
     private readonly assets: ContentPackageExportAssetReader,
     private readonly options: ContentPackageZipExportOptions = {}
   ) {}
+
+  async recordOwnedAssetRegistrationFailure(
+    input: Parameters<
+      OwnedAssetRegistrationLifecyclePort['recordOwnedAssetRegistrationFailure']
+    >[0],
+  ) {
+    await ownedAssetRegistrationLifecycle(this.storage)
+      ?.recordOwnedAssetRegistrationFailure(input);
+  }
 
   async export(
     input: Parameters<ContentPackageExportPort['export']>[0],
@@ -265,6 +304,9 @@ export class ContentPackageZipExportAdapter
       fileName: built.fileName,
       sha256: artifact.sha256,
       sizeBytes: artifact.sizeBytes,
+      ...(artifact.storageRevision
+        ? { storageRevision: artifact.storageRevision }
+        : {}),
     };
   }
 
@@ -395,6 +437,9 @@ export class ContentPackageZipExportAdapter
       fileName: built.fileName,
       sha256: artifact.sha256,
       sizeBytes: artifact.sizeBytes,
+      ...(artifact.storageRevision
+        ? { storageRevision: artifact.storageRevision }
+        : {}),
     };
   }
 }

@@ -1,4 +1,5 @@
 import type { Pool, PoolClient, QueryResultRow } from "pg";
+import { assertOwnedAssetRegistrationAllowed } from "../model-supply/postgres-owned-asset-cleanup-claim.js";
 import { chineseBigrams, mapProductSearchQuery } from "./search.js";
 import {
 	ContentPackageRevisionConflictError,
@@ -577,9 +578,17 @@ export class PostgresOperationsRepository implements OperationsRepository {
 	private async saveContentPackageRows(
 		workspaceId: string,
 		rows: OperationsWorkspaceState["contentPackages"],
-	) {
-		for (const row of rows) {
-			const revision = row.revision;
+		) {
+				for (const row of rows) {
+					for (const receipt of row.exportReceipts) {
+						if (!receipt.artifactObjectKey || !receipt.storageRevision) continue;
+						await assertOwnedAssetRegistrationAllowed(this.database, {
+							objectKey: receipt.artifactObjectKey,
+						storageRevision: receipt.storageRevision,
+						workspaceId,
+					});
+				}
+				const revision = row.revision;
 			if (!Number.isSafeInteger(revision) || revision < 0) {
 				throw new Error(
 					`ContentPackage ${row.id} has an invalid aggregate revision.`,

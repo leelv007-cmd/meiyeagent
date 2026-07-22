@@ -810,6 +810,82 @@ describe('ContentPackage application service contract', () => {
     assert.equal(internalRun?.routeSnapshotId, 'internal-route');
   });
 
+  it('records an orphan cleanup entry when ContentPackage receipt persistence fails', async () => {
+    const failures: unknown[] = [];
+    const exporter = {
+      async export() {
+        return {
+          artifactAssetId: 'owned-export-orphan',
+          artifactObjectKey: 'workspace-content-package/generated/export.zip',
+          contentType: 'application/zip' as const,
+          sha256: 'b'.repeat(64),
+          sizeBytes: 512,
+        };
+      },
+      async recordOwnedAssetRegistrationFailure(input: unknown) {
+        failures.push(input);
+      },
+    };
+    const { context, operations, operationsService } = setup({
+      contentPackageExporter: exporter,
+    });
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'image_text',
+    );
+    const state = await operations.loadWorkspace(context.workspaceId);
+    assert.ok(state);
+    const stored = state.contentPackages.find(
+      (candidate) => candidate.id === contentPackage.id,
+    );
+    assert.ok(stored);
+    stored.variants = (['xiaohongshu', 'douyin', 'video_account'] as const).map(
+      (platform) => ({
+        currentVersionId: `orphan-export-${platform}-v1`,
+        id: `${stored.id}-${platform}`,
+        platform,
+        versions: [{
+          body: '导出正文',
+          createdAt: NOW,
+          id: `orphan-export-${platform}-v1`,
+          orderedAssetIds: ['owned-image_text-1'],
+          title: '导出标题',
+          topics: ['美业'],
+        }],
+      }),
+    );
+    await operations.saveWorkspace(state);
+    const saveWorkspace = operations.saveWorkspace.bind(operations);
+    operations.saveWorkspace = async () => {
+      throw new Error('simulated ContentPackage transaction failure');
+    };
+
+    await assert.rejects(
+      operationsService.exportContentPackage(context, {
+        expectedRevision: contentPackage.revision,
+        packageId: contentPackage.id,
+        platform: 'xiaohongshu',
+      }),
+      /simulated ContentPackage transaction failure/,
+    );
+    operations.saveWorkspace = saveWorkspace;
+
+    assert.deepEqual(failures, [{
+      asset: {
+        contentType: 'application/zip',
+        id: 'owned-export-orphan',
+        objectKey: 'workspace-content-package/generated/export.zip',
+        sha256: 'b'.repeat(64),
+        sizeBytes: 512,
+      },
+      error: new Error('simulated ContentPackage transaction failure'),
+      failureStage: 'content_package_persistence',
+      workspaceId: context.workspaceId,
+    }]);
+  });
+
   it('moves a labeled video rejected by the verified exporter to needs replacement without a receipt', async () => {
     let exportEffects = 0;
     const { context, operations, operationsService } = setup({

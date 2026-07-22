@@ -23,6 +23,7 @@ export * from './product-quote.js';
 export * from './result-center.js';
 export * from './video-workflow.js';
 export * from './public-content-package.js';
+export * from './asset-storage.js';
 
 export interface ApiMeta {
   correlationId: string;

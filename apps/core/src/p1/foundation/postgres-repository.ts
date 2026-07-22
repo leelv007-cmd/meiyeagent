@@ -21,6 +21,7 @@ import type {
   FoundationStore,
   IdempotentExecution,
 } from './ports.js';
+import { assertOwnedAssetRegistrationAllowed } from '../model-supply/postgres-owned-asset-cleanup-claim.js';
 
 export class PostgresFoundationRepository implements FoundationRepository {
   constructor(
@@ -223,6 +224,7 @@ export class PostgresFoundationRepository implements FoundationRepository {
         sha256 text NOT NULL,
         size_bytes bigint NOT NULL CHECK (size_bytes > 0),
         media_type text NOT NULL,
+        storage_revision text,
         created_at timestamptz NOT NULL,
         PRIMARY KEY (workspace_id, id),
         UNIQUE (workspace_id, object_key),
@@ -230,6 +232,22 @@ export class PostgresFoundationRepository implements FoundationRepository {
           REFERENCES p1_generation_jobs(workspace_id, id),
         FOREIGN KEY (workspace_id, attempt_id)
           REFERENCES p1_provider_attempts(workspace_id, id)
+      );
+      ALTER TABLE p1_owned_assets
+        ADD COLUMN IF NOT EXISTS storage_revision text;
+      CREATE TABLE IF NOT EXISTS p1_owned_asset_cleanup_claims (
+        workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        object_key text NOT NULL,
+        failure_id text NOT NULL,
+        status text NOT NULL CHECK (
+          status IN ('deleting', 'delete_failed', 'deleted', 'referenced', 'registration_recovered')
+        ),
+        receipt_storage_revision text,
+        delete_attempt_count integer NOT NULL DEFAULT 0,
+        claimed_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        last_error text,
+        PRIMARY KEY (workspace_id, object_key)
       );
       CREATE TABLE IF NOT EXISTS p1_cutovers (
         workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -859,12 +877,27 @@ export class PostgresFoundationRepository implements FoundationRepository {
   }
 
   async insertOwnedAsset(asset: OwnedAsset) {
+    if (!this.client) {
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await new PostgresFoundationRepository(this.pool, client).insertOwnedAsset(asset);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      return;
+    }
+    await assertOwnedAssetRegistrationAllowed(this.database, asset);
     await this.database.query(
       `INSERT INTO p1_owned_assets
-       (workspace_id,id,job_id,attempt_id,object_key,sha256,size_bytes,media_type,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::timestamptz)`,
+       (workspace_id,id,job_id,attempt_id,object_key,sha256,size_bytes,media_type,storage_revision,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz)`,
       [asset.workspaceId, asset.id, asset.jobId, asset.attemptId, asset.objectKey,
-        asset.sha256, asset.sizeBytes, asset.mediaType, asset.createdAt]
+        asset.sha256, asset.sizeBytes, asset.mediaType, asset.storageRevision ?? null, asset.createdAt]
     );
   }
 
@@ -875,6 +908,7 @@ export class PostgresFoundationRepository implements FoundationRepository {
       `SELECT id, workspace_id AS "workspaceId", job_id AS "jobId",
               attempt_id AS "attemptId", object_key AS "objectKey", sha256,
               size_bytes AS "sizeBytes", media_type AS "mediaType",
+              storage_revision AS "storageRevision",
               created_at::text AS "createdAt"
          FROM p1_owned_assets WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, assetId]
