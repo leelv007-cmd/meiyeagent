@@ -143,7 +143,7 @@ export function validateCopyManifest(manifest, options = {}) {
     }
     const sourceBytes = readSource?.(copy.source);
     const targetBytes = readTarget?.(copy.target);
-    if (!sourceBytes) {
+    if (readSource && !sourceBytes) {
       issues.push(`${target}: pinned upstream source is missing`);
     }
     if (!targetBytes) {
@@ -160,8 +160,14 @@ export function validateCopyManifest(manifest, options = {}) {
         `${target}: source and target do not match the declared sha256`
       );
     }
-    if (sourceBytes) {
-      const sourceText = Buffer.from(sourceBytes).toString('utf8');
+    if (!sourceBytes && targetBytes && sha256(targetBytes) !== copy.sha256) {
+      issues.push(
+        `${target}: copied target does not match the declared sha256`
+      );
+    }
+    const verifiedBytes = sourceBytes ?? targetBytes;
+    if (verifiedBytes) {
+      const sourceText = Buffer.from(verifiedBytes).toString('utf8');
       for (const rule of EXACT_COPY_FORBIDDEN_RULES) {
         if (rule.pattern.test(sourceText)) {
           issues.push(`${target}: ${rule.message}`);

@@ -8,7 +8,7 @@ import test from 'node:test';
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const releaseCommitSha = 'a'.repeat(40);
 
-async function runGate(scriptName) {
+async function runGate(scriptName, environment = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-ci-gate-'));
   const logPath = join(directory, 'commands.log');
   const commandStub = `#!/usr/bin/env bash
@@ -31,6 +31,7 @@ printf '\\n' >> '${logPath}'
       encoding: 'utf8',
       env: {
         ...process.env,
+        ...environment,
         PATH: `${directory}:/usr/bin:/bin`,
         RELEASE_COMMIT_SHA: releaseCommitSha,
       },
@@ -46,6 +47,7 @@ printf '\\n' >> '${logPath}'
 
 test('the ordinary PR gate runs every Web and Canvas fast check plus repository guards', async () => {
   assert.deepEqual(await runGate('run-web-canvas-quality.sh'), [
+    'pnpm --filter @meiye/web build',
     'pnpm --filter @meiye/web check',
     'pnpm --filter @meiye/web typecheck',
     'pnpm --filter @meiye/web test',
@@ -55,6 +57,30 @@ test('the ordinary PR gate runs every Web and Canvas fast check plus repository 
     'node scripts/uiux/secret-scan.mjs',
     'node scripts/uiux/decision-ticket-guard.mjs',
   ]);
+});
+
+test('the root typecheck prepares Web generated content before checking every workspace', async () => {
+  assert.deepEqual(await runGate('run-root-typecheck.sh'), [
+    'pnpm --filter @meiye/contracts typecheck',
+    'pnpm --filter @meiye/core typecheck',
+    'pnpm --filter @meiye/canvas typecheck',
+    'pnpm --filter @meiye/web build',
+    'pnpm --filter @meiye/web typecheck',
+  ]);
+});
+
+test('the persistence gate uses Node test output before asserting database execution', async () => {
+  assert.deepEqual(
+    await runGate('run-core-persistence.sh', {
+      CORE_PERSISTENCE_LOG_PATH: '/dev/null',
+      TEST_DATABASE_URL: 'postgres://business.example.test/business',
+      TEST_DBOS_SYSTEM_DATABASE_URL: 'postgres://dbos.example.test/dbos',
+    }),
+    [
+      'pnpm --filter @meiye/core exec node --import tsx --test --test-concurrency=1 --test-reporter=spec src/**/*.test.ts',
+      'node scripts/ci/assert-core-persistence-ran.mjs /dev/null',
+    ]
+  );
 });
 
 test('the release-candidate gate builds all workspaces before four-service E2E', async () => {

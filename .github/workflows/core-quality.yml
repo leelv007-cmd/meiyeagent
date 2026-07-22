@@ -158,18 +158,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Provision business and DBOS test databases
         run: ./scripts/ci/provision-test-db.sh
-      # The full command is intentional: this job proves the normal Core suite
-      # executes its env-gated PostgreSQL and DBOS tests instead of silently
-      # reporting the persistence-free default as green. NODE_OPTIONS ensures
-      # --test-reporter=spec reaches Node rather than becoming a glob argument.
+      # The full suite runs through Node's test runner so the persisted-test
+      # assertion can read an authoritative summary instead of a tsx wrapper
+      # that omits it. The script fails if either database URL is absent.
       - name: Run Core with persistence gates enabled
-        shell: bash
-        env:
-          NODE_OPTIONS: --test-reporter=spec
-        run: |
-          set -o pipefail
-          pnpm --filter @meiye/core test 2>&1 | tee core-persistence-test.log
-          node scripts/ci/assert-core-persistence-ran.mjs core-persistence-test.log
+        run: bash scripts/ci/run-core-persistence.sh
 
   # Release-candidate acceptance builds every workspace, then boots Main, Core,
   # Worker, and Canvas for the real browser harness. Keep the historical run-e2e

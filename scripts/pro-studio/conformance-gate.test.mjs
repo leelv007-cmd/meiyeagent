@@ -172,6 +172,44 @@ test('copy manifest rejects missing or mismatched targets and omitted exact copi
   );
 });
 
+test('copy manifest validates committed target evidence without an upstream checkout', () => {
+  const copied = Buffer.from('committed canvas copy fixture');
+  const sha256 = createHash('sha256').update(copied).digest('hex');
+  const manifest = {
+    copies: [
+      {
+        a2Evidence: 'a2.md',
+        a3Evidence: 'a3.md',
+        authorizationStatus: 'authorized',
+        sha256,
+        source: 'web/src/copied.ts',
+        target: 'apps/canvas/src/vendor/vozeb/copied.ts',
+      },
+    ],
+    upstream: {
+      commit: 'a2c52c7aacf68d825563b7455efa9c34f3db0123',
+      repository: 'https://github.com/csyqlz/vozeb',
+    },
+  };
+
+  assert.deepEqual(
+    validateCopyManifest(manifest, {
+      evidenceExists: () => true,
+      readTarget: () => copied,
+    }),
+    []
+  );
+  assert.deepEqual(
+    validateCopyManifest(manifest, {
+      evidenceExists: () => true,
+      readTarget: () => Buffer.from('tampered target'),
+    }),
+    [
+      'apps/canvas/src/vendor/vozeb/copied.ts: copied target does not match the declared sha256',
+    ]
+  );
+});
+
 test('copy manifest rejects forbidden local-agent, arbitrary-proxy, and provider-direct sources', () => {
   const cases = [
     {
