@@ -25,12 +25,12 @@
 
 | Field | Value |
 |-------|--------|
-| Status | **open** |
+| Status | **open / live_blocked** (refreshed 2026-07-23 lane-live) |
 | Why | `.github/workflows/provider-live.yml` requires protected ARK credentials, model bindings, prices and a cost cap that are not present in the default test environment. |
 | Required for C5 claim | `copy.generate`, `image.generate`, and `video.generate` each complete one official production-adapter call and produce current `live_verified` task/result/cost evidence. |
 | Evidence expected | `PROVIDER_LIVE_ACCEPTANCE_MODE=primary_connectivity` env-gated integration run + protected workflow artifact bound to the release commit. |
-| Recorded substitute | None. Recorded/fake tests remain useful but cannot close live connectivity. |
-| Claim allowed today | **Recorded readiness only** until all three official probes run. No multi-channel claim. |
+| Recorded substitute | None. Recorded/fake tests remain useful but cannot close live connectivity. Official single-channel fault matrix (`runSingleChannelFaultInjectionMatrix`) is GREEN on fixtures only. |
+| Claim allowed today | **Recorded readiness only** until all three official probes run. No multi-channel claim. #119 stays OPEN; do not close #128 from recorded green. |
 
 ### G-LIVE-TEXT / IMAGE / VIDEO — official-channel credentials
 

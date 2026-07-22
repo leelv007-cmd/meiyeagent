@@ -25,6 +25,10 @@ export interface FaultInjectionChannelControl {
   forceAcceptanceUnknown(): void;
   /** Force next execution to accepted success. */
   forceSuccess(): void;
+  /** Force next execution to rate-limited reject (evidence only; no fake success). */
+  forceRateLimit(): void;
+  /** Force next execution to logical timeout reject (evidence only). */
+  forceTimeout(): void;
   /** Isolate channel (new tasks skip without restart). */
   isolate(): void;
   /** Drain channel (reject new submit; in-flight continues). */
@@ -493,6 +497,8 @@ export function scriptedExecutor(
   forceRejectBeforeAccept: () => void;
   forceAcceptanceUnknown: () => void;
   forceSuccess: () => void;
+  forceRateLimit: () => void;
+  forceTimeout: () => void;
   clear: () => void;
 } {
   let submitCalls = 0;
@@ -525,6 +531,26 @@ export function scriptedExecutor(
         acceptance: 'accepted',
         providerTaskRef: `ok-${randomUUID().slice(0, 8)}`,
         costAmount: 0.01,
+        currency: 'CNY',
+      };
+    },
+    forceRateLimit: () => {
+      forced = {
+        acceptance: 'rejected_before_accept',
+        errorCode: 'rate_limited',
+        retryable: true,
+        message: 'forced rate_limited',
+        costAmount: 0,
+        currency: 'CNY',
+      };
+    },
+    forceTimeout: () => {
+      forced = {
+        acceptance: 'rejected_before_accept',
+        errorCode: 'logical_timeout',
+        retryable: true,
+        message: 'forced logical_timeout',
+        costAmount: 0,
         currency: 'CNY',
       };
     },

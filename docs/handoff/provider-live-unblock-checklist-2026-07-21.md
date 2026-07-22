@@ -1,23 +1,33 @@
 # #119 Official Provider Connectivity — Unblock Checklist
 
-> Status: **verified_current** through `2026-07-23T09:33:07.321Z`. An authorized local run bound to commit `63a0be856d9e81d461901ca3b93691bcc74c3611` satisfied the #119 completion rule.
+> Status: **live_blocked** (2026-07-23 lane-live). Unit/recorded single-channel fault matrix + `primary_connectivity` publish gate are green. Real official ARK credentials / cost-cap secrets are not present in this environment, so #119 must stay OPEN — never project recorded as `live_verified`.
 > Authority: revised D-069 / D-080 C5 · gap `docs/evidence/admin-supply-accept-gaps-2026-07-20.md` G-LIVE-*.
+> Linkage: unblocks #128 Z2-ACCEPT only after a current green live artifact; do not close #128 from this ticket.
 
-## Latest authorized acceptance receipt
+## Code gate (CI-safe, free)
+
+| Deliverable | Status |
+|---|---|
+| Dual-channel recorded matrix | GREEN — `fault-injection.matrix.test.ts` |
+| Official single-channel fault matrix (reject / accepted / unknown / rate-limit / timeout / isolate / drain / cost / replay) | GREEN — `runSingleChannelFaultInjectionMatrix` |
+| Single-channel publishAllowed, never multi-channel ready | GREEN — `publish-gate` + matrix tests |
+| Recorded ≠ live_verified under `requireLiveVerified` | GREEN — negative unit test |
+| Live integration skip without secrets | GREEN — `live-fault-injection.integration.test.ts` env skip |
+| Protected workflow | Present — `.github/workflows/provider-live.yml` (`primary_connectivity`, cost cap, not `core-persistence`) |
+
+## Prior authorized acceptance receipt (historical — expired / not reusable)
 
 | Field | Verified value |
 |---|---|
-| Completed / expires | `2026-07-22T09:33:07.321Z` / `2026-07-23T09:33:07.321Z` |
+| Completed / expires | `2026-07-22T09:33:07.321Z` / `2026-07-23T09:33:07.321Z` (**expired**) |
 | Release / environment | `63a0be856d9e81d461901ca3b93691bcc74c3611` / `local-authorized` |
 | Configuration revision | `ark-primary-cny-20260722-r3` |
 | Redacted artifact SHA-256 | `1a5be3d39ec7673fb3ca71f9d2bbdbcc01399f01eb88e041838aedf869286c6e` |
 | Cost | `CNY 1.2355202` actual / `CNY 5` cap |
-| Text | `live_verified`; non-empty result, 1,425 bytes, SHA-256 present |
-| Image | `live_verified`; downloaded PNG, 2,476,010 bytes, SHA-256 present |
-| Video | `live_verified`; downloaded MP4, 1,130,848 bytes, SHA-256 present |
-| Gate result | `blockedChecks=[]`; `skippedOperations=[]`; all three publish gates `single_channel / no_fallback`, `publishAllowed=true` |
+| Text / Image / Video | were `live_verified` on that bound commit only |
+| Gate result | then `blockedChecks=[]`; single_channel / no_fallback |
 
-The raw redacted artifact remains ignored at `apps/core/provider-live-evidence/provider-live-gate.json`; this receipt intentionally omits provider task references and credentials. Re-run the gate after expiry before consuming it for a later release candidate.
+Do **not** treat the historical receipt as current release evidence. Re-run the protected gate with a fresh nonce bound to the release commit.
 
 ## Release gate
 

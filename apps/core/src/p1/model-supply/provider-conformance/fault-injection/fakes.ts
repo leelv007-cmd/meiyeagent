@@ -24,7 +24,13 @@ import type {
   FaultInjectionOperation,
 } from './types.js';
 
-type ForcedOutcome = 'reject' | 'unknown' | 'success' | null;
+type ForcedOutcome =
+  | 'reject'
+  | 'unknown'
+  | 'success'
+  | 'rate_limit'
+  | 'timeout'
+  | null;
 
 function baseCandidate(
   fixture: {
@@ -76,6 +82,12 @@ function createTextChannelControl(
     forceSuccess: () => {
       forced = 'success';
     },
+    forceRateLimit: () => {
+      forced = 'rate_limit';
+    },
+    forceTimeout: () => {
+      forced = 'timeout';
+    },
     isolate: () => {
       isolated = true;
       candidate.isolated = true;
@@ -101,6 +113,28 @@ function createTextChannelControl(
           errorCode: draining ? 'channel_draining' : 'channel_isolated',
           retryable: false,
           message: 'channel not accepting',
+          costAmount: 0,
+          currency: 'CNY',
+        } satisfies ChannelExecutionOutcome;
+      }
+      if (forced === 'rate_limit') {
+        forced = null;
+        return {
+          acceptance: 'rejected_before_accept',
+          errorCode: 'rate_limited',
+          retryable: true,
+          message: 'rate limited',
+          costAmount: 0,
+          currency: 'CNY',
+        } satisfies ChannelExecutionOutcome;
+      }
+      if (forced === 'timeout') {
+        forced = null;
+        return {
+          acceptance: 'rejected_before_accept',
+          errorCode: 'logical_timeout',
+          retryable: true,
+          message: 'logical timeout',
           costAmount: 0,
           currency: 'CNY',
         } satisfies ChannelExecutionOutcome;
@@ -169,6 +203,12 @@ function createImageChannelControl(
     forceSuccess: () => {
       forced = 'success';
     },
+    forceRateLimit: () => {
+      forced = 'rate_limit';
+    },
+    forceTimeout: () => {
+      forced = 'timeout';
+    },
     isolate: () => {
       isolated = true;
       candidate.isolated = true;
@@ -194,6 +234,30 @@ function createImageChannelControl(
           errorCode: 'channel_isolated',
           retryable: false,
           message: 'isolated',
+          costAmount: 0,
+          currency: 'CNY',
+        };
+      }
+      if (forced === 'rate_limit') {
+        forced = null;
+        port.submitCount += 1;
+        return {
+          acceptance: 'rejected_before_accept',
+          errorCode: 'rate_limited',
+          retryable: true,
+          message: 'rate limited',
+          costAmount: 0,
+          currency: 'CNY',
+        };
+      }
+      if (forced === 'timeout') {
+        forced = null;
+        port.submitCount += 1;
+        return {
+          acceptance: 'rejected_before_accept',
+          errorCode: 'logical_timeout',
+          retryable: true,
+          message: 'logical timeout',
           costAmount: 0,
           currency: 'CNY',
         };
@@ -261,6 +325,12 @@ function createVideoChannelControl(
     forceSuccess: () => {
       forced = 'success';
     },
+    forceRateLimit: () => {
+      forced = 'rate_limit';
+    },
+    forceTimeout: () => {
+      forced = 'timeout';
+    },
     isolate: () => {
       isolated = true;
       candidate.isolated = true;
@@ -286,6 +356,30 @@ function createVideoChannelControl(
           errorCode: 'channel_isolated',
           retryable: false,
           message: 'isolated',
+          costAmount: 0,
+          currency: 'CNY',
+        };
+      }
+      if (forced === 'rate_limit') {
+        forced = null;
+        port.submitCount += 1;
+        return {
+          acceptance: 'rejected_before_accept',
+          errorCode: 'rate_limited',
+          retryable: true,
+          message: 'rate limited',
+          costAmount: 0,
+          currency: 'CNY',
+        };
+      }
+      if (forced === 'timeout') {
+        forced = null;
+        port.submitCount += 1;
+        return {
+          acceptance: 'rejected_before_accept',
+          errorCode: 'logical_timeout',
+          retryable: true,
+          message: 'logical timeout',
           costAmount: 0,
           currency: 'CNY',
         };
@@ -335,6 +429,28 @@ function createVideoChannelControl(
     },
   };
 }
+
+/** Official-only harness for the single-channel matrix (no fallback candidate). */
+export function createSingleChannelFaultInjectionHarness(
+  modality: FaultInjectionModality,
+): SingleChannelHarnessBundle {
+  const dual = createFaultInjectionHarnessForModality(modality);
+  return {
+    operation: dual.operation,
+    modality: dual.modality,
+    catalogModelId: dual.catalogModelId,
+    channel: dual.primary,
+    evidenceKind: 'recorded',
+  };
+}
+
+export type SingleChannelHarnessBundle = {
+  operation: FaultInjectionHarness['operation'];
+  modality: FaultInjectionModality;
+  catalogModelId: string;
+  channel: FaultInjectionChannelControl;
+  evidenceKind: 'recorded';
+};
 
 export function createTextFaultInjectionHarness(
   operation: FaultInjectionOperation = 'copy.generate',

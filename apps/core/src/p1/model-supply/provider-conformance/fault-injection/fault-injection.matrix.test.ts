@@ -1,6 +1,6 @@
 /**
  * MP-08 fault-injection matrix unit tests (I4).
- * Dual-channel fakes for text / image / video; four scenarios each.
+ * Dual-channel fakes for text / image / video; official single-channel matrix.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -12,6 +12,7 @@ import {
 import {
   createFaultInjectionHarnessForModality,
   createImageFaultInjectionHarness,
+  createSingleChannelFaultInjectionHarness,
   createTextFaultInjectionHarness,
   createVideoFaultInjectionHarness,
 } from './fakes.js';
@@ -21,10 +22,16 @@ import {
   matrixModelsForOperation,
   SECONDARY_MATRIX_NOTES,
 } from './matrix-models.js';
+import { runSingleChannelFaultInjectionMatrix } from './single-channel-matrix.js';
 import {
   FAULT_INJECTION_SCENARIOS,
   CORE_FAULT_INJECTION_OPERATIONS,
+  SINGLE_CHANNEL_FAULT_INJECTION_SCENARIOS,
 } from './types.js';
+import {
+  evaluateMultiChannelPublishGate,
+  qualifiedDeployment,
+} from './publish-gate.js';
 
 for (const modality of ['llm', 'image', 'video'] as const) {
   test(`MP-08 ${modality} dual-channel fault-injection matrix passes all scenarios`, async () => {
@@ -192,6 +199,136 @@ test('admin and user labels distinguish multi-channel vs single-channel', async 
     }),
     '单渠道 / 无回退',
   );
+});
+
+for (const modality of ['llm', 'image', 'video'] as const) {
+  test(`MP-08 ${modality} official single-channel fault matrix passes all scenarios`, async () => {
+    const harness = createSingleChannelFaultInjectionHarness(modality);
+    const report = await runSingleChannelFaultInjectionMatrix(harness);
+
+    assert.equal(report.modality, modality);
+    assert.equal(report.channelMode, 'single_channel');
+    assert.equal(report.channelLabel, 'single-channel/no-fallback');
+    assert.equal(report.dualChannelReady, false);
+    assert.equal(report.fallbackAvailable, false);
+    assert.equal(report.evidenceKind, 'recorded');
+    assert.equal(
+      report.scenarios.length,
+      SINGLE_CHANNEL_FAULT_INJECTION_SCENARIOS.length,
+    );
+    assert.equal(report.allPassed, true, summarizeFailures(report));
+
+    for (const scenarioId of SINGLE_CHANNEL_FAULT_INJECTION_SCENARIOS) {
+      const scenario = report.scenarios.find((s) => s.scenarioId === scenarioId);
+      assert.ok(scenario, `missing scenario ${scenarioId}`);
+      assert.equal(
+        scenario!.passed,
+        true,
+        `${modality}/${scenarioId}: ${scenario!.detail}`,
+      );
+    }
+
+    const reject = report.scenarios.find(
+      (s) => s.scenarioId === 'reject_before_accept_fail_closed',
+    )!;
+    assert.equal(reject.disposition, 'failed_no_fallback');
+    assert.equal(reject.attempts[0]?.acceptance, 'rejected_before_accept');
+
+    const isolate = report.scenarios.find(
+      (s) => s.scenarioId === 'isolate_unavailable_blocks_new_task',
+    )!;
+    assert.equal(isolate.disposition, 'unavailable_blocked');
+    assert.equal(isolate.availability, 'unavailable');
+    assert.equal(isolate.attempts.length, 0);
+
+    const drain = report.scenarios.find(
+      (s) => s.scenarioId === 'drain_unavailable_blocks_new_task',
+    )!;
+    assert.equal(drain.disposition, 'unavailable_blocked');
+    assert.equal(drain.availability, 'unavailable');
+
+    const rateLimit = report.scenarios.find(
+      (s) => s.scenarioId === 'rate_limit_evidence',
+    )!;
+    assert.equal(rateLimit.faultEvidence?.errorCode, 'rate_limited');
+
+    const timeout = report.scenarios.find(
+      (s) => s.scenarioId === 'timeout_evidence',
+    )!;
+    assert.equal(timeout.faultEvidence?.errorCode, 'logical_timeout');
+
+    const cost = report.scenarios.find(
+      (s) => s.scenarioId === 'cost_convergence_evidence',
+    )!;
+    assert.equal(cost.faultEvidence?.costStatus, 'observed');
+    assert.ok((cost.faultEvidence?.costAmount ?? 0) > 0);
+
+    const replay = report.scenarios.find(
+      (s) => s.scenarioId === 'route_snapshot_ledger_replay',
+    )!;
+    assert.equal(replay.routeSnapshot?.fallbackConsent, false);
+    assert.equal(replay.routeSnapshot?.fallbackChain?.length, 1);
+  });
+}
+
+test('official single-channel publishAllowed without multi-channel ready claim', () => {
+  for (const operation of CORE_FAULT_INJECTION_OPERATIONS) {
+    const catalogModelId =
+      operation === 'copy.generate'
+        ? 'llm-doubao-seed-mini'
+        : operation === 'image.generate'
+          ? 'seedream-5-pro'
+          : 'seedance-1-5-pro';
+    const gate = evaluateMultiChannelPublishGate({
+      operation,
+      catalogModelId,
+      deployments: [
+        qualifiedDeployment({
+          deploymentId: `dep-${operation}-official`,
+          catalogModelId,
+          providerProfileId: 'pp-volcengine-ark',
+          executionChannelId: 'ec-ark',
+          channelKind: 'official_direct',
+          activationStatus: 'live_verified',
+          manufacturer: 'volcengine',
+          accountIdentity: `acct-${operation}`,
+          endpointFingerprint: `endpoint-${operation}`,
+        }),
+      ],
+      requireLiveVerified: true,
+    });
+    assert.equal(gate.status, 'single_channel', operation);
+    assert.equal(gate.publishAllowed, true, operation);
+    assert.equal(gate.multiChannelReady, false, operation);
+    assert.equal(gate.channelLabel, CHANNEL_LABEL.singleChannelNoFallback);
+    assert.equal(gate.hasOfficialDirect, true);
+    assert.equal(gate.hasUpstreamReseller, false);
+  }
+});
+
+test('recorded single Deployment must not satisfy requireLiveVerified publish gate', () => {
+  const gate = evaluateMultiChannelPublishGate({
+    operation: 'copy.generate',
+    catalogModelId: 'llm-doubao-seed-mini',
+    deployments: [
+      qualifiedDeployment({
+        deploymentId: 'dep-recorded-only',
+        catalogModelId: 'llm-doubao-seed-mini',
+        providerProfileId: 'pp-volcengine-ark',
+        executionChannelId: 'ec-ark',
+        channelKind: 'official_direct',
+        activationStatus: 'recorded',
+        manufacturer: 'volcengine',
+        accountIdentity: 'acct-recorded',
+        endpointFingerprint: 'endpoint-recorded',
+      }),
+    ],
+    requireLiveVerified: true,
+  });
+  assert.notEqual(gate.status, 'single_channel');
+  assert.equal(gate.publishAllowed, false);
+  assert.equal(gate.multiChannelReady, false);
+  assert.equal(gate.qualifiedDeployments.length, 0);
 });
 
 function summarizeFailures(report: {
