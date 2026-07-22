@@ -1,119 +1,142 @@
-# Pro Studio exact-copy candidate inventory (K01)
+# Pro Studio K1 copy/port inventory and foundation review
 
-- **Recorded:** 2026-07-19
-- **Upstream:** `https://github.com/csyqlz/vozeb`
-- **Pinned commit:** `a2c52c7aacf68d825563b7455efa9c34f3db0123` (`v1.0.0`)
-- **Checkout env:** `PRO_STUDIO_UPSTREAM_ROOT` (must `git rev-parse HEAD` == pinned)
-- **Primary surface:** `web/src/app/(user)/canvas/**` (46 files at pin)
-- **Target pattern:** `apps/canvas/src/vendor/vozeb/<relative under web/src/>`
-- **Policy:** canvas / render / retouch core only; 过窄优先 (narrow-first). No full-stack pack.
-- **Re-apply:** `scripts/pro-studio/apply-exact-copies.mjs`
+- **Recorded:** 2026-07-22 (Asia/Shanghai)
+- **Upstream pin:** `a2c52c7aacf68d825563b7455efa9c34f3db0123`
+- **Baseline recheck:** product code has no drift from
+  `4625e423a7b0efc9a7ec014580e7b01633cf264a` in the Canvas/Core Pro Studio
+  paths; the current K1 work starts from `e0dd4d81217957bddaac81fd417167a52542a63e`.
+- **Machine authority:** `docs/evidence/pro-studio/copy-manifest.json` schema
+  v2, regenerated only by `scripts/pro-studio/apply-exact-copies.mjs`.
 
-## Owner note (过窄优先)
+The 2026-07-19 K01 inventory is historical only. D-099 rev2 and the K1–K7
+plan replace its prior implication that an exact copy or an import establishes
+upstream parity.
 
-Product/engineering owner accepts this inventory as **narrow-first**: only presentation-level canvas/retouch core + pure client utils. Explicitly **not** copying Vozeb API routes, provider-direct generation orchestration, arbitrary media proxy helpers, auth/admin/points shells, local Agent bridge, bulk prompt corpora, or server task stores. Runtime integration supplies product-owned BackendPort adapters outside exact-copy rows.
+## Direct-copy classification
 
-## Include → exact-copy (K02)
+The v2 manifest closes the complete direct-copy set. `mount-exact` means a
+future host ticket may mount the unchanged bytes through a listed production
+boundary; it is not evidence that the surface is mounted today. `utility-exact`
+is the same rule for a pure utility. `port-required` may not be mounted until a
+host adapter/rebuild is completed. `delete-from-inventory` is deliberately
+unmounted. `out-of-scope` has no production reference.
 
-### Canvas surface — role `render` (node graph, shell, interaction)
+| Classification | Frozen upstream sources |
+| --- | --- |
+| `mount-exact` | `components/asset-picker-modal.tsx`, `canvas-config-composer.tsx`, `canvas-connections.tsx`, `canvas-context-menu.tsx`, `canvas-delete-projects-dialog.tsx`, `canvas-image-toolbar-tools.tsx`, `canvas-mini-map.tsx`, `canvas-node-angle-dialog.tsx`, `canvas-node-crop-dialog.tsx`, `canvas-node-hover-toolbar.tsx`, `canvas-node-mask-edit-dialog.tsx`, `canvas-node-split-dialog.tsx`, `canvas-node-upscale-dialog.tsx`, `canvas-node.tsx`, `canvas-project-card.tsx`, `canvas-size-picker.tsx`, `canvas-toolbar.tsx`, `canvas-zoom-controls.tsx`, `vozeb-canvas.tsx` |
+| `utility-exact` | `constants.ts`, `types.ts`, `utils/canvas-image-data.ts`, `utils/canvas-node-size.ts`, `lib/audio-generation.ts`, `lib/canvas-theme.ts`, `lib/file-drop.ts`, `lib/image-reference-prompt.ts`, `lib/image-utils.ts`, `lib/utils.ts` |
+| `port-required` | `components/canvas-image-toolbar-settings-modal.tsx` → `src/client/runtime-panel.tsx`; `components/canvas-prompt-library.tsx` → `src/client/runtime-panel.tsx`; `components/canvas-resource-mention-textarea.tsx` → `src/kernel-host/generation-adapter.ts`; `stores/use-canvas-ui-store.ts` → `src/kernel-host/ported/canvas-session-store.ts`; `lib/zip.ts` → `src/server/backend-port-vnext.ts` |
+| `delete-from-inventory` | `[id]/page.tsx`, `export-types.ts`, `stores/use-canvas-store.ts`, `lib/storage-keys.ts` |
+| `out-of-scope` | `components/canvas-agent-chat-ui.tsx`, `components/canvas-agent-panel-motion.ts`, `utils/canvas-agent-ops.ts` |
 
-| Source (upstream-relative) | Role | A3 risk | Into manifest |
-| --- | --- | --- | --- |
-| `web/src/app/(user)/canvas/[id]/page.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/constants.ts` | render | none material | yes |
-| `web/src/app/(user)/canvas/export-types.ts` | render | none material | yes |
-| `web/src/app/(user)/canvas/types.ts` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/vozeb-canvas.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-node.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-connections.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-mini-map.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-toolbar.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-zoom-controls.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-context-menu.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-config-composer.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-node-hover-toolbar.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-size-picker.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-project-card.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/asset-picker-modal.tsx` | render | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-prompt-library.tsx` | render | thin shell only; does **not** ship bulk prompt corpus (external dynamic import excluded) | yes |
-| `web/src/app/(user)/canvas/components/canvas-agent-chat-ui.tsx` | render | Agent UI chrome (online path); no local bridge | yes |
-| `web/src/app/(user)/canvas/components/canvas-agent-panel-motion.ts` | render | none material | yes |
-| `web/src/app/(user)/canvas/stores/use-canvas-store.ts` | render | localForage persistence (browser); cloud adapter later (K04) | yes |
-| `web/src/app/(user)/canvas/stores/use-canvas-ui-store.ts` | render | none material | yes |
-| `web/src/app/(user)/canvas/utils/canvas-image-data.ts` | render | none material | yes |
-| `web/src/app/(user)/canvas/utils/canvas-node-size.ts` | render | none material | yes |
-| `web/src/app/(user)/canvas/utils/canvas-resource-references.ts` | render | none material | yes |
-| `web/src/app/(user)/canvas/utils/canvas-agent-ops.ts` | render | pure op apply/summarize; product Agent path uses BackendPort confirm (K08) | yes |
+All paths in the table are relative to `web/src/app/(user)/canvas/` except the
+explicit `lib/` entries. The v2 JSON stores the full, unambiguous source path
+for every one of the 42 rows and is mechanically checked against
+`EXACT_COPY_SOURCES`; the table is a reviewer aid, not a second source of
+truth.
 
-### Retouch / local image tools — role `retouch`
+### Current production whitelist
 
-| Source (upstream-relative) | Role | A3 risk | Into manifest |
-| --- | --- | --- | --- |
-| `web/src/app/(user)/canvas/components/canvas-node-mask-edit-dialog.tsx` | retouch | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-node-crop-dialog.tsx` | retouch | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-node-split-dialog.tsx` | retouch | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-node-upscale-dialog.tsx` | retouch | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-node-angle-dialog.tsx` | retouch | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-image-toolbar-tools.tsx` | retouch | none material | yes |
-| `web/src/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx` | retouch | none material | yes |
+Only three direct copies have a real host import today. The conformance gate
+checks each listed consumer/import literal, so a whitelist row cannot become a
+fake reference.
 
-### Pure client utils — role `pure-util`
+| Exact target | Host consumer |
+| --- | --- |
+| `components/vozeb-canvas.tsx` | `src/kernel-host/kernel-canvas-surface.tsx` |
+| `utils/canvas-image-data.ts` | `src/kernel-host/retouch-adapter.ts` |
+| `lib/canvas-theme.ts` | `apps/canvas/lib/canvas-theme.ts` |
 
-| Source (upstream-relative) | Role | A3 risk | Into manifest | Why included |
-| --- | --- | --- | --- | --- |
-| `web/src/lib/canvas-theme.ts` | pure-util | none | yes | theme tokens used across canvas |
-| `web/src/lib/image-utils.ts` | pure-util | type-only external import | yes | meta/size helpers for retouch |
-| `web/src/lib/utils.ts` | pure-util | clsx/tailwind-merge npm | yes | `cn()` helper |
-| `web/src/lib/file-drop.ts` | pure-util | none | yes | drag/drop helpers |
-| `web/src/lib/image-reference-prompt.ts` | pure-util | none | yes | reference labels/prompt text |
-| `web/src/lib/audio-generation.ts` | pure-util | none | yes | voice/format labels for audio node UI |
-| `web/src/lib/zip.ts` | pure-util | fflate npm | yes | project import/export |
-| `web/src/lib/storage-keys.ts` | pure-util | branding keys only | yes | export id / storage key helpers |
+## A2/A3 derivative port
 
-**Include counts:** canvas 34 + pure-util 8 = **42** exact-copy rows.
+`src/kernel-host/ported/canvas-session-store.ts` is the sole current derivative
+port. Its source and target hashes, pin, A2/A3 addenda, reviewer,
+third-party notes, adaptation boundary, and adapter-replacement matrix are
+each mandatory `ports[]` fields. The port owns only ephemeral selection,
+panel, toolbar, and viewport state; `CanvasShell` consumes it. The persistent
+graph remains the project/revision fact and `fromKernelGraph()` deliberately
+drops viewport/session state before `ProjectPersistenceAdapter` calls the
+BackendPort.
 
-## Exclude — role `exclude` (do **not** exact-copy)
+The conformance test covers both directions: an unregistered file under
+`kernel-host/ported/`, a target hash drift, an outside target, and duplicated
+source/target records fail. Exact-copy replay only removes stale files within
+the vendor root and refuses a port target outside the port root.
 
-| Source / surface | Role | Reason |
+## BackendPort vNext freeze
+
+`apps/canvas/src/server/backend-port-vnext.ts` is a contract-only module. It
+does not advertise unimplemented actions in `CANVAS_ACTION_CONTRACTS`.
+
+| Contract | K1 state | Frozen behavior |
 | --- | --- | --- |
-| `web/src/app/(user)/canvas/components/canvas-local-agent-panel.tsx` | exclude | Local Agent bridge (agentToken/agentUrl/localStorage token) — unsafe for SaaS build |
-| `web/src/app/(user)/canvas/[id]/canvas-client-page.tsx`, `components/canvas-assistant-panel.tsx`, `stores/use-canvas-agent-store.ts` | exclude | Local Agent URL/token state and local-mode entry; the page also calls upstream provider/storage services directly |
-| `web/src/app/(user)/canvas/page.tsx`, `components/canvas-node-generation.ts`, `components/canvas-*-settings-popover.tsx`, `components/canvas-config-node-panel.tsx`, `components/canvas-node-prompt-panel.tsx`, `utils/canvas-export.ts` | exclude | Upstream provider/config/storage orchestration; product runtime must use BackendPort adapters |
-| `web/src/lib/browser-media-url.ts` | exclude | Constructs an arbitrary `/api/media-proxy?url=...` target |
-| `web/src/lib/seedance-video.ts` | exclude | Reads upstream provider config and base URL directly |
-| `web/src/app/api/**` | exclude | Vozeb backend/business runtime; arbitrary proxy / task routes |
-| `web/src/app/**/auth/**`, auth libs | exclude | Independent auth bootstrap |
-| `web/src/app/**/admin/**` | exclude | Admin shell |
-| `web/src/app/**/points/**`, points libs | exclude | Points/billing runtime |
-| `web/src/lib/prompts/**` | exclude | Bulk prompt corpus (A3 / product seed policy separate) |
-| `web/src/lib/server/**` | exclude | Server secrets / task stores |
-| `web/src/lib/auth/**`, `web/src/lib/mail/**` | exclude | Auth/mail runtime |
-| `web/src/lib/localforage-storage.ts` | exclude | Browser storage adapter; product uses OwnedAsset/BackendPort (K04/K05) — not pure enough for frozen util allow-list |
-| `web/src/lib/media-url.ts`, `web/src/lib/app-theme.ts`, other unlisted libs | exclude | Not required by frozen canvas allow-list / not pure canvas util |
-| `web/src/services/**`, `web/src/stores/**` (except canvas stores above) | exclude | Upstream business services & config channels |
-| `web/src/components/prompts/**` | exclude | Bulk prompt UI/corpus behind prompt library shell |
-| `canvas-agent/**` (repo root package) | exclude | Local agent package / shell |
-| Unpinned `main` drift | exclude | Only a2c52c7 bytes authorized for rows |
+| `quoteGeneration` / `submitGeneration` | active additive field | strict `modelId?` now reaches the existing one-item Core quote/submit path |
+| catalog defaults | reserved | `defaultModelIdByOperation` plus safe per-operation unavailable reason code |
+| prompts/assets/adoption targets | reserved | cursor/query/category-or-kind list request and paginated response contracts |
+| export | reserved | revision-bound JSON/ZIP request and export ID response |
+| bootstrap | reserved | `workspaceDisplayName` belongs to existing launch/session bootstrap, not a new Canvas auth path |
+| generation lineage | reserved | project/revision plus checkpoint, node, or item binding; lineage origin is `advanced_canvas_project_revision` |
 
-## Mapping rule
+Every record names compatibility (`additive-v1`), idempotency, error codes,
+Core owner, and a contract test. Checkpoint/node/item fields remain reserved
+until shared contracts #141/#142 are actually merged; K1 does not bypass them.
 
-```text
-web/src/<rel>  →  apps/canvas/src/vendor/vozeb/<rel>
-```
+## Batch and settings decisions
 
-Example:
+K1 chooses **B — fan-out**, because the current Core surface has one
+quote/submit/job/reservation lifecycle and no safe aggregate endpoint. The
+host ledger has deterministic `batchKey:item:n` item and idempotency keys; the
+UI will obtain N independent quotes, show one aggregate confirmation, then
+submit/recover every item individually. `generation-batch-contract.ts` is only
+that deterministic UI ledger, not a new durable ledger or endpoint.
 
-```text
-web/src/app/(user)/canvas/components/vozeb-canvas.tsx
-  → apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas.tsx
-```
+Parameter disposition:
 
-## Verification checklist
+- Existing Core fields: image width/height/ratio/resolution, video
+  duration/ratio/resolution/audio/watermark, text temperature/token limit, and
+  audio speech/SFX fields.
+- UI aliases only: image quality and audio instruction-to-prompt presentation.
+- New fields require a Core capability registry rather than Canvas guessing.
+- A count control follows B: N individual calls, not a synthetic batch field.
 
-1. `git -C "$PRO_STUDIO_UPSTREAM_ROOT" rev-parse HEAD` == `a2c52c7aacf68d825563b7455efa9c34f3db0123`
-2. Every `copies[]` row: `sha256(source) == sha256(target) == row.sha256`
-3. `authorizationStatus: authorized`; A2/A3 paths exist
-4. No undeclared exact-copy under `apps/canvas` (discoverExactCopyTargets)
-5. Re-apply: `PRO_STUDIO_UPSTREAM_ROOT=… node scripts/pro-studio/apply-exact-copies.mjs`
+All five shared controls are **rebuild**, not copy or port:
+
+| Control | Decision | Boundary reason |
+| --- | --- | --- |
+| Image settings | rebuild | upstream `AiConfig` differs from Core capability facts |
+| Video settings | rebuild | upstream Seedance/provider configuration is excluded |
+| Audio settings | rebuild | product audio capability and prompt mapping are host-owned |
+| Model picker | rebuild | model availability/defaults come from Core catalog |
+| Prompt selector | rebuild | A3 forbids importing upstream prompt corpus; use paginated product prompts |
+
+## Runtime and review record
+
+Canvas now declares the K1 runtime versions required by its production-facing
+surface: Ant Design 6.4.2, Antd Next registry 1.3.0, React Query 5.90.21,
+Zustand 5.0.12, localForage 1.10.0, Lucide 1.16.0, plus direct utility
+dependencies. `CanvasRuntimeProviders` supplies the SSR-safe
+`AntdRegistry → ConfigProvider → App → QueryClientProvider` chain.
+
+React Query is intentionally pinned to the monorepo's existing 5.90 line: the
+upstream 5.100 peer would otherwise make Main Web's router resolve a second
+`QueryClient` private type. The K1 provider APIs used here are unchanged, while
+the root typecheck remains a single-version proof.
+
+Tailwind 4 is intentionally not introduced in K1: existing Canvas CSS remains
+the migration path. Radix is likewise not added because the five controls are
+rebuilt on Ant Design rather than copied. `tsconfig.production.json` typechecks
+the three whitelisted vendor entries and their real import graph separately
+from unmounted vendor inventory. Canvas is its own app entry, so those package
+dependencies cannot enter Main Web's initial bundle; K1's route budget is
+enforced by `scripts/pro-studio/canvas-bundle-budget.mjs` after a Canvas build
+(Main Web 350 KiB gzip remains a separate app budget).
+
+Consumable K1 contracts and tests:
+
+- `copy-manifest.json`, `apply-exact-copies.mjs`, and `conformance-gate.mjs`
+- `backend-port-vnext.ts` and `backend-port-vnext.test.ts`
+- `generation-batch-contract.ts` and its test
+- `ported/canvas-session-store.ts` and its host-only test
+- `tsconfig.production.json` and `CanvasRuntimeProviders`
+
+No K1 code changes `apps/core/src/main.ts`.

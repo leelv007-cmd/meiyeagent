@@ -4,11 +4,18 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
-import { EXACT_COPY_SOURCES } from './apply-exact-copies.mjs';
+import {
+  EXACT_COPY_SOURCES,
+  PRODUCTION_INVENTORY,
+  PRODUCTION_WHITELIST,
+} from './apply-exact-copies.mjs';
 import {
   discoverExactCopyTargets,
+  discoverPortedTargets,
   validateCopyManifest,
   validateDiscoveredCopySet,
+  validatePortManifest,
+  validateProductionInventory,
 } from './conformance-gate.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -30,7 +37,8 @@ const upstreamParitySkipReason =
     : false;
 
 test('kernel integration: copy-manifest verifies committed target evidence', () => {
-  assert.equal(manifest.copies.length, 42);
+  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.copies.length, EXACT_COPY_SOURCES.length);
   assert.deepEqual(
     manifest.copies.map((row) => row.source).sort(),
     [...EXACT_COPY_SOURCES].sort()
@@ -63,6 +71,39 @@ test('kernel integration: copy-manifest verifies committed target evidence', () 
     assert.equal(row.authorizationStatus, 'authorized');
   }
   assert.deepEqual(issues, []);
+  assert.deepEqual(
+    manifest.productionInventory.map((row) => row.source).sort(),
+    PRODUCTION_INVENTORY.map((row) => row.source).sort()
+  );
+  assert.deepEqual(manifest.productionWhitelist, PRODUCTION_WHITELIST);
+  assert.deepEqual(
+    validateProductionInventory(manifest, {
+      readHost: (path) => {
+        try {
+          return readFileSync(resolve(root, path));
+        } catch {
+          return undefined;
+        }
+      },
+    }),
+    []
+  );
+  assert.deepEqual(
+    validatePortManifest(manifest, {
+      discoveredTargets: discoverPortedTargets(
+        resolve(root, 'apps/canvas/src/kernel-host/ported')
+      ),
+      evidenceExists: (path) => existsSync(resolve(root, path)),
+      readTarget: (path) => {
+        try {
+          return readFileSync(resolve(root, path));
+        } catch {
+          return undefined;
+        }
+      },
+    }),
+    []
+  );
 });
 
 test(
@@ -93,6 +134,23 @@ test(
       },
     });
     assert.deepEqual(issues, []);
+    assert.deepEqual(
+      validatePortManifest(manifest, {
+        discoveredTargets: discoverPortedTargets(
+          resolve(root, 'apps/canvas/src/kernel-host/ported')
+        ),
+        evidenceExists: (path) => existsSync(resolve(root, path)),
+        readSource: (path) => readFileSync(resolve(upstreamRoot, path)),
+        readTarget: (path) => {
+          try {
+            return readFileSync(resolve(root, path));
+          } catch {
+            return undefined;
+          }
+        },
+      }),
+      []
+    );
     assert.deepEqual(
       validateDiscoveredCopySet(
         manifest.copies,

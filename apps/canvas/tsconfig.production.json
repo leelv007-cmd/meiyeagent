@@ -1,0 +1,15 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"tsBuildInfoFile": ".next/cache/tsconfig.production.tsbuildinfo"
+	},
+	"files": [
+		"next-env.d.ts",
+		"app/layout.tsx",
+		"src/client/canvas-runtime-providers.tsx",
+		"src/kernel-host/kernel-canvas-surface.tsx",
+		"src/kernel-host/retouch-adapter.ts",
+		"lib/canvas-theme.ts"
+	],
+	"include": []
+}

@@ -80,6 +80,73 @@ export const EXACT_COPY_SOURCES = [
   'web/src/lib/zip.ts',
 ];
 
+/**
+ * K1's closed classification of the frozen direct-copy set. This is derived
+ * from the source inventory rather than a manually maintained count.
+ */
+export const PRODUCTION_INVENTORY = [
+  { source: 'web/src/app/(user)/canvas/[id]/page.tsx', classification: 'delete-from-inventory' },
+  { source: 'web/src/app/(user)/canvas/components/asset-picker-modal.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-agent-chat-ui.tsx', classification: 'out-of-scope' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-agent-panel-motion.ts', classification: 'out-of-scope' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-config-composer.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-connections.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-context-menu.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/client/runtime-panel.tsx' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-image-toolbar-tools.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-mini-map.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-node-angle-dialog.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-node-crop-dialog.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-node-hover-toolbar.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-node-mask-edit-dialog.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-node-split-dialog.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-node-upscale-dialog.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-node.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-project-card.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-prompt-library.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/client/runtime-panel.tsx' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/kernel-host/generation-adapter.ts' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-size-picker.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-toolbar.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-zoom-controls.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/vozeb-canvas.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/constants.ts', classification: 'utility-exact' },
+  { source: 'web/src/app/(user)/canvas/export-types.ts', classification: 'delete-from-inventory' },
+  { source: 'web/src/app/(user)/canvas/stores/use-canvas-store.ts', classification: 'delete-from-inventory' },
+  { source: 'web/src/app/(user)/canvas/stores/use-canvas-ui-store.ts', classification: 'port-required', replacementTarget: 'apps/canvas/src/kernel-host/ported/canvas-session-store.ts' },
+  { source: 'web/src/app/(user)/canvas/types.ts', classification: 'utility-exact' },
+  { source: 'web/src/app/(user)/canvas/utils/canvas-agent-ops.ts', classification: 'out-of-scope' },
+  { source: 'web/src/app/(user)/canvas/utils/canvas-image-data.ts', classification: 'utility-exact' },
+  { source: 'web/src/app/(user)/canvas/utils/canvas-node-size.ts', classification: 'utility-exact' },
+  { source: 'web/src/app/(user)/canvas/utils/canvas-resource-references.ts', classification: 'port-required', replacementTarget: 'apps/canvas/src/kernel-host/generation-adapter.ts' },
+  { source: 'web/src/lib/audio-generation.ts', classification: 'utility-exact' },
+  { source: 'web/src/lib/canvas-theme.ts', classification: 'utility-exact' },
+  { source: 'web/src/lib/file-drop.ts', classification: 'utility-exact' },
+  { source: 'web/src/lib/image-reference-prompt.ts', classification: 'utility-exact' },
+  { source: 'web/src/lib/image-utils.ts', classification: 'utility-exact' },
+  { source: 'web/src/lib/storage-keys.ts', classification: 'delete-from-inventory' },
+  { source: 'web/src/lib/utils.ts', classification: 'utility-exact' },
+  { source: 'web/src/lib/zip.ts', classification: 'port-required', replacementTarget: 'apps/canvas/src/server/backend-port-vnext.ts' },
+];
+
+export const PRODUCTION_WHITELIST = [
+  {
+    consumer: 'apps/canvas/src/kernel-host/kernel-canvas-surface.tsx',
+    importRef: '@/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas',
+    target: 'apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas.tsx',
+  },
+  {
+    consumer: 'apps/canvas/src/kernel-host/retouch-adapter.ts',
+    importRef: '../vendor/vozeb/app/(user)/canvas/utils/canvas-image-data.js',
+    target: 'apps/canvas/src/vendor/vozeb/app/(user)/canvas/utils/canvas-image-data.ts',
+  },
+  {
+    consumer: 'apps/canvas/lib/canvas-theme.ts',
+    importRef: '../src/vendor/vozeb/lib/canvas-theme',
+    target: 'apps/canvas/src/vendor/vozeb/lib/canvas-theme.ts',
+  },
+];
+
 export function sourceToTarget(source) {
   if (!source.startsWith('web/src/')) {
     throw new Error(`source must start with web/src/: ${source}`);
@@ -138,6 +205,14 @@ export function applyExactCopies({
       `manifest.upstream.commit must remain ${PINNED_COMMIT}`
     );
   }
+  if (!Array.isArray(manifest.ports)) {
+    throw new Error('copy-manifest.json missing K1 ports[] block');
+  }
+  for (const port of manifest.ports) {
+    if (!port?.target?.startsWith('apps/canvas/src/kernel-host/ported/')) {
+      throw new Error(`port target must stay under kernel-host/ported: ${port?.target}`);
+    }
+  }
 
   const copies = [];
   for (const source of sources) {
@@ -191,8 +266,11 @@ export function applyExactCopies({
 
   const next = {
     ...manifest,
+    schemaVersion: 2,
     authorization: { ...manifest.authorization },
     copies,
+    productionInventory: PRODUCTION_INVENTORY.map((item) => ({ ...item })),
+    productionWhitelist: PRODUCTION_WHITELIST.map((item) => ({ ...item })),
     status:
       copies.length > 0
         ? 'authorized_with_exact_copies'

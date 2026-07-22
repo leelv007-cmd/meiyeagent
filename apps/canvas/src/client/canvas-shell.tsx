@@ -16,6 +16,11 @@ import {
 } from "../kernel-host/graph-bridge";
 import { KernelCanvasSurface } from "../kernel-host/kernel-canvas-surface";
 import {
+	createCanvasSessionState,
+	withCanvasViewport,
+	withSelectedCanvasNodes,
+} from "../kernel-host/ported/canvas-session-store";
+import {
 	DraftVersionConflictError,
 	ProjectPersistenceAdapter,
 } from "../kernel-host/project-persistence";
@@ -58,13 +63,17 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 	const [selected, setSelected] = useState<AdvancedCanvasProject | null>(null);
 	const [revisions, setRevisions] = useState<AdvancedCanvasRevision[]>([]);
 	const [adoptedNodeIds, setAdoptedNodeIds] = useState<string[]>([]);
-	const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+	const [canvasSession, setCanvasSession] = useState(createCanvasSessionState);
 	const [kernelGraph, setKernelGraph] = useState<KernelSessionGraph | null>(
 		null,
 	);
 	const [dirty, setDirty] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState("正在恢复云端工程…");
+	const selectedNodeIds = canvasSession.selectedNodeIds;
+	const setSelectedNodeIds = useCallback((ids: string[]) => {
+		setCanvasSession((current) => withSelectedCanvasNodes(current, ids));
+	}, []);
 	const fileRef = useRef<HTMLInputElement>(null);
 	const selectedRef = useRef<AdvancedCanvasProject | null>(null);
 	const dirtyRef = useRef(false);
@@ -164,13 +173,16 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 			setSelected(loaded.project);
 			kernelGraphRef.current = loaded.kernel;
 			setKernelGraph(loaded.kernel);
+			setCanvasSession(
+				createCanvasSessionState({ viewport: loaded.kernel.viewport }),
+			);
 			setSelectedNodeIds([]);
 			setRevisions(loaded.revisions);
 			dirtyRef.current = false;
 			setDirty(false);
 			return loaded.project;
 		},
-		[projectPersistence],
+		[projectPersistence, setSelectedNodeIds],
 	);
 
 	useEffect(() => {
@@ -292,6 +304,7 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 		const next = { ...current, viewport };
 		kernelGraphRef.current = next;
 		setKernelGraph(next);
+		setCanvasSession((session) => withCanvasViewport(session, viewport));
 	}
 
 	async function renameProject() {

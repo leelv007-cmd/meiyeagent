@@ -14,12 +14,15 @@ import test from 'node:test';
 import {
   collectCanvasBuildArtifactFiles,
   discoverExactCopyTargets,
+  discoverPortedTargets,
   findForbiddenBuildArtifactFindings,
   findForbiddenSourceFindings,
   findFrontendFetchViolations,
   validateCanvasBuildArtifacts,
   validateCopyManifest,
   validateDiscoveredCopySet,
+  validatePortManifest,
+  validateProductionInventory,
   validateReleaseEvidence,
 } from './conformance-gate.mjs';
 
@@ -383,6 +386,131 @@ test('copy manifest cannot pass while the authorized canvas copy set is empty', 
     ),
     ['copies: at least one direct-copy entry is required']
   );
+});
+
+test('K1 port manifest requires a pinned, authorized, and registered derivative port', () => {
+  const source = Buffer.from('upstream Zustand session store');
+  const target = Buffer.from('host-owned React session boundary');
+  const targetPath =
+    'apps/canvas/src/kernel-host/ported/canvas-session-store.ts';
+  const port = {
+    a2Evidence: 'docs/evidence/pro-studio/a2-port.md',
+    a3Evidence: 'docs/evidence/pro-studio/a3-port.md',
+    adapterReplacementMatrix: [
+      {
+        decision: 'replace',
+        host: 'CanvasShell React session state',
+        upstream: 'zustand create<CanvasUiStore>',
+      },
+    ],
+    adaptationBoundary: 'Session state only; no project persistence or agent bridge.',
+    authorizationStatus: 'authorized',
+    pinnedCommit: 'a2c52c7aacf68d825563b7455efa9c34f3db0123',
+    reviewer: 'product_owner',
+    source: 'web/src/app/(user)/canvas/stores/use-canvas-ui-store.ts',
+    sourceSha256: createHash('sha256').update(source).digest('hex'),
+    target: targetPath,
+    targetSha256: createHash('sha256').update(target).digest('hex'),
+    thirdPartyNotes: 'Zustand is declared as an npm dependency, not copied.',
+  };
+  const manifest = {
+    ports: [port],
+    schemaVersion: 2,
+    upstream: {
+      commit: 'a2c52c7aacf68d825563b7455efa9c34f3db0123',
+    },
+  };
+  const options = {
+    discoveredTargets: [targetPath],
+    evidenceExists: () => true,
+    readSource: () => source,
+    readTarget: () => target,
+  };
+
+  assert.deepEqual(validatePortManifest(manifest, options), []);
+  assert.ok(
+    validatePortManifest(manifest, {
+      ...options,
+      discoveredTargets: [...options.discoveredTargets, `${targetPath}.unregistered`],
+    }).includes(`${targetPath}.unregistered: derivative port is missing from ports[]`)
+  );
+  assert.ok(
+    validatePortManifest(
+      { ...manifest, ports: [{ ...port, targetSha256: 'a'.repeat(64) }] },
+      options
+    ).includes(`${targetPath}: target does not match targetSha256`)
+  );
+  assert.ok(
+    validatePortManifest(
+      {
+        ...manifest,
+        ports: [{ ...port, target: 'apps/canvas/src/kernel-host/not-ported.ts' }],
+      },
+      { ...options, discoveredTargets: ['apps/canvas/src/kernel-host/not-ported.ts'] }
+    ).includes(
+      'apps/canvas/src/kernel-host/not-ported.ts: port target must stay under apps/canvas/src/kernel-host/ported/'
+    )
+  );
+  const duplicateIssues = validatePortManifest(
+    { ...manifest, ports: [port, { ...port }] },
+    options
+  );
+  assert.ok(
+    duplicateIssues.includes(`${targetPath}: port source is listed more than once`)
+  );
+  assert.ok(
+    duplicateIssues.includes(`${targetPath}: port target is listed more than once`)
+  );
+});
+
+test('K1 inventory is closed and production whitelist has a real host import', () => {
+  const target = 'apps/canvas/src/vendor/vozeb/canvas.tsx';
+  const manifest = {
+    copies: [{ source: 'web/src/canvas.tsx', target }],
+    productionInventory: [
+      { classification: 'mount-exact', source: 'web/src/canvas.tsx' },
+    ],
+    productionWhitelist: [
+      {
+        consumer: 'apps/canvas/src/kernel-host/surface.tsx',
+        importRef: '@/src/vendor/vozeb/canvas',
+        target,
+      },
+    ],
+  };
+  assert.deepEqual(
+    validateProductionInventory(manifest, {
+      readHost: () => 'import Canvas from "@/src/vendor/vozeb/canvas";',
+    }),
+    []
+  );
+  assert.deepEqual(
+    validateProductionInventory(
+      {
+        ...manifest,
+        productionInventory: [
+          { classification: 'out-of-scope', source: 'web/src/canvas.tsx' },
+        ],
+      },
+      { readHost: () => 'import Canvas from "@/src/vendor/vozeb/canvas";' }
+    ),
+    [`${target}: non-production inventory class cannot be whitelisted`]
+  );
+});
+
+test('ported target discovery is limited to the derivative namespace', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'pro-studio-ported-'));
+  try {
+    mkdirSync(join(directory, 'nested'), { recursive: true });
+    writeFileSync(join(directory, 'canvas-session-store.ts'), 'port');
+    writeFileSync(join(directory, 'nested', 'adapter.ts'), 'port');
+    assert.deepEqual(discoverPortedTargets(directory), [
+      'apps/canvas/src/kernel-host/ported/canvas-session-store.ts',
+      'apps/canvas/src/kernel-host/ported/nested/adapter.ts',
+    ]);
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
 });
 
 test('source scan rejects the unsafe local-agent and arbitrary-proxy surface', () => {

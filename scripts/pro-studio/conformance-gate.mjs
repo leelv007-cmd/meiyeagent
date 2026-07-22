@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 import { runProductionRecoveryCli } from '../recovery/production-recovery-cli.mjs';
 import {
+  findMainWebCanvasImportViolations,
+  validateCanvasBundleBudget,
+} from './canvas-bundle-budget.mjs';
+import {
   validateSecurityMatrixReleaseStatus,
   verifySecurityManifestFile,
 } from './security-matrix.mjs';
@@ -60,6 +64,15 @@ const EXACT_COPY_FORBIDDEN_RULES = [
       /@\/services\/(?:api\/|image-storage|file-storage)|@\/stores\/use-config-store/iu,
   },
 ];
+
+const PORT_TARGET_ROOT = 'apps/canvas/src/kernel-host/ported/';
+const INVENTORY_CLASSIFICATIONS = new Set([
+  'mount-exact',
+  'utility-exact',
+  'port-required',
+  'delete-from-inventory',
+  'out-of-scope',
+]);
 
 const RELEASE_EVIDENCE_KEYS = [
   'n2Recovery',
@@ -191,6 +204,211 @@ export function validateCopyManifest(manifest, options = {}) {
   return issues;
 }
 
+/**
+ * K1 derivative-port records are intentionally separate from byte-exact copies.
+ * A port may adapt its source, but it must retain a pinned upstream hash, an
+ * independently hashed target, authorization evidence, and an adapter matrix.
+ */
+export function validatePortManifest(manifest, options = {}) {
+  const normalized =
+    typeof options === 'function' ? { evidenceExists: options } : options;
+  const evidenceExists = normalized.evidenceExists ?? existsSync;
+  const readSource = normalized.readSource;
+  const readTarget = normalized.readTarget;
+  const issues = [];
+  const commit = manifest?.upstream?.commit;
+
+  if (manifest?.schemaVersion !== 2) {
+    issues.push('schemaVersion: K1 manifest schemaVersion must be 2');
+  }
+  if (!Array.isArray(manifest?.ports)) {
+    issues.push('ports: K1 manifest requires a ports[] array');
+    return issues;
+  }
+
+  const seenSources = new Set();
+  const seenTargets = new Set();
+  for (const port of manifest.ports) {
+    const target = port?.target || '<missing target>';
+    if (!port?.source) issues.push(`${target}: port source path is required`);
+    if (!port?.target) issues.push(`${target}: port target path is required`);
+    if (!port?.source?.startsWith('web/src/')) {
+      issues.push(`${target}: port source must be under web/src/`);
+    }
+    if (!port?.target?.startsWith(PORT_TARGET_ROOT)) {
+      issues.push(`${target}: port target must stay under ${PORT_TARGET_ROOT}`);
+    }
+    if (port?.pinnedCommit !== commit) {
+      issues.push(`${target}: port pinnedCommit must match upstream.commit`);
+    }
+    if (seenSources.has(port?.source)) {
+      issues.push(`${target}: port source is listed more than once`);
+    }
+    if (seenTargets.has(port?.target)) {
+      issues.push(`${target}: port target is listed more than once`);
+    }
+    seenSources.add(port?.source);
+    seenTargets.add(port?.target);
+    for (const [label, value] of [
+      ['sourceSha256', port?.sourceSha256],
+      ['targetSha256', port?.targetSha256],
+    ]) {
+      if (!/^[a-f0-9]{64}$/u.test(value ?? '')) {
+        issues.push(`${target}: ${label} must be an exact sha256`);
+      }
+    }
+    if (port?.authorizationStatus !== 'authorized') {
+      issues.push(`${target}: port authorizationStatus must be authorized`);
+    }
+    for (const [label, path] of [
+      ['A2', port?.a2Evidence],
+      ['A3', port?.a3Evidence],
+    ]) {
+      if (!path) {
+        issues.push(`${target}: port ${label} evidence path is required`);
+      } else if (!evidenceExists(path)) {
+        issues.push(`${target}: missing port ${label} evidence ${path}`);
+      }
+    }
+    for (const [label, value] of [
+      ['thirdPartyNotes', port?.thirdPartyNotes],
+      ['reviewer', port?.reviewer],
+      ['adaptationBoundary', port?.adaptationBoundary],
+    ]) {
+      if (typeof value !== 'string' || value.trim().length === 0) {
+        issues.push(`${target}: port ${label} is required`);
+      }
+    }
+    if (
+      !Array.isArray(port?.adapterReplacementMatrix) ||
+      port.adapterReplacementMatrix.length === 0
+    ) {
+      issues.push(`${target}: adapterReplacementMatrix must be non-empty`);
+    } else {
+      for (const replacement of port.adapterReplacementMatrix) {
+        if (
+          !replacement ||
+          typeof replacement.upstream !== 'string' ||
+          !replacement.upstream ||
+          typeof replacement.host !== 'string' ||
+          !replacement.host ||
+          !['exclude', 'replace'].includes(replacement.decision)
+        ) {
+          issues.push(
+            `${target}: every adapterReplacementMatrix row requires upstream, host, and decision`
+          );
+        }
+      }
+    }
+
+    const sourceBytes = readSource?.(port?.source);
+    const targetBytes = readTarget?.(port?.target);
+    if (readSource && !sourceBytes) {
+      issues.push(`${target}: pinned upstream port source is missing`);
+    }
+    if (readTarget && !targetBytes) {
+      issues.push(`${target}: port target is missing`);
+    }
+    if (sourceBytes && sha256(sourceBytes) !== port?.sourceSha256) {
+      issues.push(`${target}: source does not match sourceSha256`);
+    }
+    if (targetBytes && sha256(targetBytes) !== port?.targetSha256) {
+      issues.push(`${target}: target does not match targetSha256`);
+    }
+  }
+
+  if (normalized.discoveredTargets) {
+    const declared = new Set(manifest.ports.map((port) => port.target));
+    const discovered = new Set(normalized.discoveredTargets);
+    for (const target of declared) {
+      if (!discovered.has(target)) {
+        issues.push(`${target}: manifest port target was not discovered`);
+      }
+    }
+    for (const target of discovered) {
+      if (!declared.has(target)) {
+        issues.push(`${target}: derivative port is missing from ports[]`);
+      }
+    }
+  }
+  return issues.sort();
+}
+
+/** K1's closed 42-file inventory and production whitelist. */
+export function validateProductionInventory(manifest, options = {}) {
+  const readHost = options.readHost;
+  const issues = [];
+  const copies = manifest?.copies ?? [];
+  const copySources = new Set(copies.map((copy) => copy.source));
+  const copyTargets = new Map(copies.map((copy) => [copy.target, copy]));
+  const inventory = manifest?.productionInventory;
+  if (!Array.isArray(inventory)) {
+    return ['productionInventory: K1 manifest requires a closed inventory'];
+  }
+  const seenSources = new Set();
+  for (const item of inventory) {
+    const source = item?.source || '<missing source>';
+    if (!copySources.has(item?.source)) {
+      issues.push(`${source}: inventory source is not an exact-copy row`);
+    }
+    if (seenSources.has(item?.source)) {
+      issues.push(`${source}: inventory source is listed more than once`);
+    }
+    seenSources.add(item?.source);
+    if (!INVENTORY_CLASSIFICATIONS.has(item?.classification)) {
+      issues.push(`${source}: inventory classification is invalid`);
+    }
+    if (
+      item?.classification === 'port-required' &&
+      (typeof item.replacementTarget !== 'string' || !item.replacementTarget)
+    ) {
+      issues.push(`${source}: port-required inventory row needs replacementTarget`);
+    }
+  }
+  for (const source of copySources) {
+    if (!seenSources.has(source)) {
+      issues.push(`${source}: exact-copy row is absent from productionInventory`);
+    }
+  }
+
+  const inventoryBySource = new Map(inventory.map((item) => [item.source, item]));
+  if (!Array.isArray(manifest?.productionWhitelist)) {
+    issues.push('productionWhitelist: K1 manifest requires a production whitelist');
+    return issues.sort();
+  }
+  const seenTargets = new Set();
+  for (const entry of manifest.productionWhitelist) {
+    const target = entry?.target || '<missing target>';
+    const copy = copyTargets.get(entry?.target);
+    if (!copy) {
+      issues.push(`${target}: production whitelist target is not an exact-copy row`);
+      continue;
+    }
+    if (seenTargets.has(entry.target)) {
+      issues.push(`${target}: production whitelist target is listed more than once`);
+    }
+    seenTargets.add(entry.target);
+    const classification = inventoryBySource.get(copy.source)?.classification;
+    if (!['mount-exact', 'utility-exact'].includes(classification)) {
+      issues.push(`${target}: non-production inventory class cannot be whitelisted`);
+    }
+    if (
+      typeof entry?.consumer !== 'string' ||
+      !entry.consumer ||
+      typeof entry?.importRef !== 'string' ||
+      !entry.importRef
+    ) {
+      issues.push(`${target}: production whitelist needs consumer and importRef`);
+    } else if (readHost) {
+      const host = readHost(entry.consumer);
+      if (!host || !Buffer.from(host).toString('utf8').includes(entry.importRef)) {
+        issues.push(`${target}: production whitelist consumer does not import importRef`);
+      }
+    }
+  }
+  return issues.sort();
+}
+
 export function validateDiscoveredCopySet(copies, discoveredTargets) {
   const declared = new Set(copies.map((copy) => copy.target));
   const discovered = new Set(discoveredTargets);
@@ -222,6 +440,15 @@ export function discoverExactCopyTargets(
   );
   return collectCopyCandidates(targetDirectory, displayRoot)
     .filter((file) => upstreamHashes.has(sha256(file.contents)))
+    .map((file) => file.path)
+    .sort();
+}
+
+export function discoverPortedTargets(
+  targetDirectory,
+  displayRoot = PORT_TARGET_ROOT.slice(0, -1)
+) {
+  return collectCopyCandidates(targetDirectory, displayRoot)
     .map((file) => file.path)
     .sort();
 }
@@ -501,6 +728,21 @@ function run(root) {
         readTarget: (path) => safeRead(root, path),
       })
     );
+    issues.push(
+      ...validatePortManifest(manifest, {
+        discoveredTargets: discoverPortedTargets(
+          resolve(root, 'apps/canvas/src/kernel-host/ported')
+        ),
+        evidenceExists: (path) => existsSync(resolve(root, path)),
+        readSource: pinnedUpstreamRoot
+          ? (path) => safeRead(pinnedUpstreamRoot, path)
+          : undefined,
+        readTarget: (path) => safeRead(root, path),
+      }),
+      ...validateProductionInventory(manifest, {
+        readHost: (path) => safeRead(root, path),
+      })
+    );
     if (pinnedUpstreamRoot) {
       issues.push(
         ...validateDiscoveredCopySet(
@@ -559,6 +801,15 @@ function run(root) {
 
   issues.push(
     ...validateCanvasBuildArtifacts(resolve(root, 'apps/canvas/.next'))
+  );
+  const canvasBuildDirectory = resolve(root, 'apps/canvas/.next');
+  if (existsSync(canvasBuildDirectory)) {
+    issues.push(...validateCanvasBundleBudget(canvasBuildDirectory));
+  }
+  issues.push(
+    ...findMainWebCanvasImportViolations(
+      collectSourceFiles(resolve(root, 'mkfast-template-main'), root)
+    )
   );
 
   if (issues.length > 0) {
