@@ -40,11 +40,21 @@ function env(name: string): string | undefined {
   return value || undefined;
 }
 
-const liveEnabled = env('RUN_PROVIDER_LIVE_FAULT_INJECTION') === '1';
+const liveEnabled =
+  env('RUN_PROVIDER_LIVE_CONNECTIVITY') === '1' ||
+  env('RUN_PROVIDER_LIVE_FAULT_INJECTION') === '1';
 const requireAll = env('PROVIDER_LIVE_REQUIRE_ALL') === '1';
+const acceptanceMode =
+  env('PROVIDER_LIVE_ACCEPTANCE_MODE') === 'primary_connectivity'
+    ? 'primary_connectivity'
+    : 'dual_channel_conformance';
+const primaryConnectivity = acceptanceMode === 'primary_connectivity';
 const costCap = Number(env('PROVIDER_LIVE_COST_CAP_USD') ?? '1');
 const runNonce = env('PROVIDER_LIVE_RUN_NONCE');
-const resolution = resolveLiveProviderChannels();
+const resolution = resolveLiveProviderChannels(
+  process.env,
+  primaryConnectivity ? { channelKinds: ['official_direct'] } : {},
+);
 const missingSummary = resolution.missingByChannel
   .map(
     (entry) =>
@@ -52,7 +62,7 @@ const missingSummary = resolution.missingByChannel
   )
   .join('; ');
 const liveSkip = !liveEnabled
-  ? 'RUN_PROVIDER_LIVE_FAULT_INJECTION=1 is required (spends provider quota)'
+  ? 'RUN_PROVIDER_LIVE_CONNECTIVITY=1 is required (spends provider quota)'
   : resolution.missingByChannel.length > 0 && !requireAll
     ? `missing live provider configuration: ${missingSummary}`
     : false;
@@ -65,12 +75,13 @@ test(
   },
   async () => {
     assert.ok(Number.isFinite(costCap) && costCap > 0 && costCap <= 5);
+    assert.ok(runNonce, 'PROVIDER_LIVE_RUN_NONCE is required');
     assert.deepEqual(
       resolution.missingByChannel,
       [],
-      `protected provider-live workflow requires all six channels: ${missingSummary}`,
+      `protected provider-live workflow requires every configured release channel: ${missingSummary}`,
     );
-    assert.equal(resolution.channels.length, 6);
+    assert.equal(resolution.channels.length, primaryConnectivity ? 3 : 6);
 
     const evidenceDirectory = env('PROVIDER_LIVE_EVIDENCE_DIR');
     const evidencePath = evidenceDirectory
@@ -80,14 +91,16 @@ test(
     const externalEvidencePath = env(
       'PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH',
     );
-    const externalEvidence = externalEvidencePath
-      ? await loadExternalEvidence(externalEvidencePath)
-      : {};
-    const externalEvidenceCostReservationUsd = Number(
-      env('PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD') ?? '0',
-    );
+    const externalEvidence =
+      externalEvidencePath && !primaryConnectivity
+        ? await loadExternalEvidence(externalEvidencePath)
+        : {};
+    const externalEvidenceCostReservationUsd = primaryConnectivity
+      ? 0
+      : Number(env('PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD') ?? '0');
 
     const report = await runLiveProviderGate({
+      acceptanceMode,
       channels: resolution.channels,
       costCapUsd: costCap,
       externalEvidenceCostReservationUsd,
@@ -113,20 +126,25 @@ test(
     // `if: always()`, so a red gate still leaves truthful, redacted evidence.
     if (evidencePath) await writeEvidence(evidencePath, report);
 
+    assert.equal(report.acceptanceMode, acceptanceMode);
+    assert.equal(report.runNonce, runNonce);
+
     assert.equal(
       report.probes.filter((probe) =>
         CORE_FAULT_INJECTION_OPERATIONS.includes(
           probe.operation as (typeof CORE_FAULT_INJECTION_OPERATIONS)[number],
         ),
       ).length,
-      6,
+      primaryConnectivity ? 3 : 6,
     );
-    for (const operation of SECONDARY_FAULT_INJECTION_OPERATIONS) {
-      assert.ok(
-        report.probes.filter((probe) => probe.operation === operation).length >=
-          1,
-        operation,
-      );
+    if (!primaryConnectivity) {
+      for (const operation of SECONDARY_FAULT_INJECTION_OPERATIONS) {
+        assert.ok(
+          report.probes.filter((probe) => probe.operation === operation)
+            .length >= 1,
+          operation,
+        );
+      }
     }
     for (const probe of report.probes) {
       assert.equal(probe.adapterExecuted, true, probe.evidenceRef);
@@ -166,42 +184,56 @@ test(
       [],
       `provider-live gate remains blocked: ${JSON.stringify(report.blockedChecks)}`,
     );
-    assert.equal(report.publishGates.length, 6);
-    assert.ok(
-      report.publishGates
-        .filter((gate) =>
-          CORE_FAULT_INJECTION_OPERATIONS.includes(
-            gate.operation as (typeof CORE_FAULT_INJECTION_OPERATIONS)[number],
-          ),
-        )
-        .every((gate) => gate.multiChannelReady),
-    );
-    assert.ok(
-      report.publishGates
-        .filter((gate) =>
-          SECONDARY_FAULT_INJECTION_OPERATIONS.includes(
-            gate.operation as (typeof SECONDARY_FAULT_INJECTION_OPERATIONS)[number],
-          ),
-        )
-        .every(
+    assert.equal(report.publishGates.length, primaryConnectivity ? 3 : 6);
+    if (primaryConnectivity) {
+      assert.ok(
+        report.publishGates.every(
           (gate) =>
             gate.status === 'single_channel' &&
             gate.publishAllowed &&
             !gate.multiChannelReady &&
             gate.channelLabel === 'single-channel/no-fallback',
         ),
-    );
+      );
+    } else {
+      assert.ok(
+        report.publishGates
+          .filter((gate) =>
+            CORE_FAULT_INJECTION_OPERATIONS.includes(
+              gate.operation as (typeof CORE_FAULT_INJECTION_OPERATIONS)[number],
+            ),
+          )
+          .every((gate) => gate.multiChannelReady),
+      );
+      assert.ok(
+        report.publishGates
+          .filter((gate) =>
+            SECONDARY_FAULT_INJECTION_OPERATIONS.includes(
+              gate.operation as (typeof SECONDARY_FAULT_INJECTION_OPERATIONS)[number],
+            ),
+          )
+          .every(
+            (gate) =>
+              gate.status === 'single_channel' &&
+              gate.publishAllowed &&
+              !gate.multiChannelReady &&
+              gate.channelLabel === 'single-channel/no-fallback',
+          ),
+      );
+    }
     assert.deepEqual(report.skippedOperations, []);
-    assert.equal(report.liveMatrixReports.length, 3);
-    assert.ok(
-      report.liveMatrixReports.every(
-        (matrix) =>
-          matrix.evidenceKind === 'live_provider' &&
-          matrix.allPassed &&
-          matrix.dualChannelReady &&
-          matrix.scenarios.length === 5,
-      ),
-    );
+    assert.equal(report.liveMatrixReports.length, primaryConnectivity ? 0 : 3);
+    if (!primaryConnectivity) {
+      assert.ok(
+        report.liveMatrixReports.every(
+          (matrix) =>
+            matrix.evidenceKind === 'live_provider' &&
+            matrix.allPassed &&
+            matrix.dualChannelReady &&
+            matrix.scenarios.length === 5,
+        ),
+      );
+    }
     assert.ok(report.externalEvidenceRefs.length > 0);
     assert.ok(report.actualCost.totalUsd <= report.actualCost.capUsd);
   },

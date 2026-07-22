@@ -536,6 +536,56 @@ test('successful adapter probes do not clear unexecuted conformance checks', asy
   );
 });
 
+test('primary connectivity mode publishes one live official channel per modality', async () => {
+  const report = await runLiveProviderGate({
+    acceptanceMode: 'primary_connectivity',
+    channels: channels(),
+    costCapUsd: 1,
+    probe: async (channel) => successfulProbe(channel),
+  });
+
+  assert.equal(report.acceptanceMode, 'primary_connectivity');
+  assert.equal(report.probes.length, 3);
+  assert.ok(
+    report.activationEvidence.every(
+      (evidence) => evidence.activationStatus === 'live_verified',
+    ),
+  );
+  assert.deepEqual(report.blockedChecks, []);
+  assert.deepEqual(report.skippedOperations, []);
+  assert.equal(report.publishGates.length, 3);
+  assert.ok(
+    report.publishGates.every(
+      (gate) =>
+        gate.status === 'single_channel' &&
+        gate.publishAllowed &&
+        !gate.multiChannelReady &&
+        gate.channelLabel === 'single-channel/no-fallback',
+    ),
+  );
+  assert.equal(report.liveMatrixReports.length, 0);
+});
+
+test('primary connectivity mode stays blocked when one official probe fails', async () => {
+  const report = await runLiveProviderGate({
+    acceptanceMode: 'primary_connectivity',
+    channels: channels(),
+    costCapUsd: 1,
+    probe: async (channel) => {
+      const evidence = successfulProbe(channel);
+      return channel.model.operation === 'image.generate'
+        ? { ...evidence, providerCallSucceeded: false }
+        : evidence;
+    },
+  });
+
+  assert.deepEqual(report.skippedOperations, ['image.generate']);
+  assert.deepEqual(
+    report.blockedChecks.map((check) => [check.operation, check.check]),
+    [['image.generate', 'primary_live_verification']],
+  );
+});
+
 test('catalog id override cannot disguise a matrix declared as misaligned', async () => {
   const configured = channels().map((channel) =>
     channel.model.operation === 'copy.generate'

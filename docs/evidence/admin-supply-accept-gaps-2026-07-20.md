@@ -1,6 +1,6 @@
 # Z2-ACCEPT gap list — same-increment AP + MP (#128)
 
-**Date:** 2026-07-21 (refreshed after Wave 0/1 review remediations)  
+**Date:** 2026-07-22 (refreshed after single-channel live-connectivity decision)
 **Ticket:** #128 / `leelv007-cmd/issue-128-z2-accept-ap`  
 **Discipline:** honest gaps only — no silent degrade of acceptance claims.  
 **Recorded/fake gates and D-048 Playwright are green; only G-LIVE-* remains env-gated.**
@@ -10,37 +10,37 @@
 | # | Gate | Recorded / unit status | Live / env status |
 |---|------|------------------------|-------------------|
 | 1 | Capability skeleton completion (inventory + D-051 six-question + drilldown + exceptions aggregable) | **GREEN** — `packages/contracts` inventory + `mkfast-template-main/src/p1/z2-accept-ap.test.tsx` | N/A (pure projection) |
-| 2 | Tri-modal dual-channel + story 30 main chain (procurement→publish→allocate→task→ledger→audit) | **GREEN** — `apps/core/src/p1/z2-accept/z2-accept.test.ts` recorded/fake | **GREEN** unit matrix on main; **GAP** live env-gated (see below) |
+| 2 | Tri-modal official-channel connectivity + story 30 main chain (procurement→publish→allocate→task→ledger→audit) | **GREEN** — `apps/core/src/p1/z2-accept/z2-accept.test.ts` recorded/fake | **GAP** three official live probes remain env-gated (see below) |
 | 3 | Publish gate: <2 qualified Deployments cannot mark multi-channel ready; single-channel no-fallback labeled | **GREEN** — core `publish-gate.ts` + admin supply overview SSR + composer merchant select labels | **GREEN** dual-end label projection (admin + composer); not a live C5 claim |
 | 4 | D-048 interaction ban on ops main paths (no code/SQL/env/raw JSON/CLI) | **GREEN** — catalog / exception home / supply SSR unit assertions | **GREEN** — four-service Playwright 3/3 (2026-07-21; see below) |
 | 5 | Gap list on disk (this file) | **GREEN** | — |
 
-**Same-increment rule (D-080 C3):** AP skeleton and MP vertical are not separately claimable. Recorded gates green ≠ live C5 claim. **#128 whole package is not claimable complete while any G-LIVE / dual-end / Playwright gap remains open.**
+**Same-increment rule (D-080 C3):** AP skeleton and MP vertical are not separately claimable. Recorded gates green ≠ live C5 claim. **#128 whole package is not claimable complete until all three official-channel G-LIVE probes are current and green.** Dual-channel conformance is non-blocking unless the product claims multi-channel readiness.
 
 ---
 
 ## Explicit gaps (must not be claimed complete)
 
-### G-LIVE-I4 — MP-08 fault-injection live matrix (unit matrix on main; live env-gated)
+### G-LIVE-CONNECTIVITY — official text/image/video real generation
 
 | Field | Value |
 |-------|--------|
 | Status | **open** |
-| Why | I4 unit matrix + `.github/workflows/provider-live.yml` are on main; live runs still require `RUN_PROVIDER_LIVE_FAULT_INJECTION=1` + secrets + cost cap. |
-| Required for C5 claim | Per core operation: ≥2 independent fault-domain `live_verified` Deployments; four scenarios: pre-accept failover, accepted/acceptance_unknown no re-submit, isolate/drain without restart, RouteSnapshot + dual ledger replay. |
-| Evidence expected | `live-*.integration.test.ts` env-gated + manual/scheduled provider-live workflow (secrets + cost cap). |
-| Recorded substitute | Story 30 recorded chain + MP-04T/I/V fake dual-channel conformance + publish-gate negative tests + unit matrix with same-CatalogModel honesty (F-I-01). |
-| Claim allowed today | **Recorded dual-channel readiness only** — not production multi-channel live readiness. |
+| Why | `.github/workflows/provider-live.yml` requires protected ARK credentials, model bindings, prices and a cost cap that are not present in the default test environment. |
+| Required for C5 claim | `copy.generate`, `image.generate`, and `video.generate` each complete one official production-adapter call and produce current `live_verified` task/result/cost evidence. |
+| Evidence expected | `PROVIDER_LIVE_ACCEPTANCE_MODE=primary_connectivity` env-gated integration run + protected workflow artifact bound to the release commit. |
+| Recorded substitute | None. Recorded/fake tests remain useful but cannot close live connectivity. |
+| Claim allowed today | **Recorded readiness only** until all three official probes run. No multi-channel claim. |
 
-### G-LIVE-TEXT / IMAGE / VIDEO — live dual-channel credentials
+### G-LIVE-TEXT / IMAGE / VIDEO — official-channel credentials
 
 | Field | Value |
 |-------|--------|
 | Status | **open / env-gated** |
-| Why | Live probes require ARK + tuzi secrets under `docs/_private/` / root `.env` (gitignored). CI `core-persistence` does not run provider live matrix. |
-| Models (handoff matrix) | Text: `doubao-seed-2-0-mini-260428` + `gemini-3-flash-preview`; Image: Seedream 5.0 + Seedream 4.5 via tuzi; Video: Seedance 1.5 both channels (shared manufacturer → **channel-level only**, not manufacturer-independent). |
+| Why | Live probes require protected ARK credentials, account identity, model/CatalogModel bindings, price inputs and per-probe reservations. CI `core-persistence` does not spend provider quota. |
+| Required models | Text: `doubao-seed-2-0-mini-260428`; Image: `doubao-seedream-5-0-260128`; Video: `doubao-seedance-1-5-pro-251215`. |
 | Unit honesty note | F-I-01 FIXED: unit `dualChannelReady=true` now requires same `catalogModelId` + distinct channel kinds; text/image handoff cross-model pairs report honest `false` / `channelMatrixAligned=false`. |
-| Claim allowed today | Live optional when env open; default suite skips live. |
+| Claim allowed after green | Each modality may be `live_verified` while remaining `single_channel / no_fallback`; multi-channel readiness remains false. |
 
 ### G-UI-MERCHANT-NO-FALLBACK — user selection page single-channel label
 
@@ -88,7 +88,7 @@
 - Audio modality out of supply v1 (`generation_audio` = `not_in_scope_for_supply_v1`) — inventory stub retained (D-051/D-068).
 - Cloudflare GraphQL analytics broker — out of scope (D-080 C3).
 - Incident ack/assign workflow — out of scope (D-080 C1); exception home is read-only.
-- Manufacturer-independent dual supply for video when both channels are Seedance — channel-level only is the honest claim (handoff).
+- Dual-channel CatalogModel alignment or fault injection for the current release — retained as hardening and required only for a future multi-channel claim.
 
 ---
 
@@ -106,8 +106,10 @@ pnpm --filter @meiye/web exec tsx --test src/p1/z2-accept-ap.test.tsx
 pnpm --filter @meiye/web exec playwright test \
   tests/e2e/specs/admin-supply-ops.spec.ts --project=chromium --workers=1
 
-# Optional live (requires secrets; not default green)
-# RUN_PROVIDER_LIVE_FAULT_INJECTION=1 pnpm --filter @meiye/core test -- ...
+# Official provider live connectivity (requires protected secrets and spends quota)
+# RUN_PROVIDER_LIVE_CONNECTIVITY=1 PROVIDER_LIVE_ACCEPTANCE_MODE=primary_connectivity \
+#   pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
+#   src/p1/model-supply/provider-conformance/live-fault-injection.integration.test.ts
 
 # Optional Playwright four-service (not default CI green)
 # pnpm --filter @meiye/web e2e -- tests/e2e/specs/admin-supply-ops.spec.ts
@@ -116,4 +118,4 @@ pnpm --filter @meiye/web exec playwright test \
 ## Sign-off rule
 
 - **May claim:** same-increment **recorded acceptance harness** complete for #128.
-- **May not claim:** production C5 live dual-channel multi-channel ready or whole-package #128 complete while G-LIVE-* remains open.
+- **May not claim:** whole-package #128 complete until all three official G-LIVE probes are current and green. Even after that, do not claim multi-channel ready or automatic fallback without separate dual-channel evidence.

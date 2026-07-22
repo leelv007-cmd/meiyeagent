@@ -75,6 +75,20 @@ test('resolver requires positive prices and does not infer catalog alignment fro
   );
 });
 
+test('resolver can require only the three official release channels', () => {
+  const officialOnly = resolveLiveProviderChannels(configuredEnv, {
+    channelKinds: ['official_direct'],
+  });
+
+  assert.deepEqual(officialOnly.missingByChannel, []);
+  assert.equal(officialOnly.channels.length, 3);
+  assert.ok(
+    officialOnly.channels.every(
+      (channel) => channel.model.channelKind === 'official_direct',
+    ),
+  );
+});
+
 test('real adapter evidence preserves an explicit deployment id', async () => {
   const channel = {
     ...resolveLiveProviderChannels(configuredEnv).channels[0]!,

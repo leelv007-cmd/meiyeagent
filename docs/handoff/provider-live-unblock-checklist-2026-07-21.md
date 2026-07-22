@@ -1,87 +1,66 @@
-# #119 I4 Live Fault Injection — Unblock Checklist
+# #119 Official Provider Connectivity — Unblock Checklist
 
-> Status: **external_blocked**. Unit/recorded green ≠ C5 live complete.
-> Authority: D-069 / D-080 C5 · gap `docs/evidence/admin-supply-accept-gaps-2026-07-20.md` G-LIVE-*.
+> Status: **environment_blocked**. The product decision is resolved: this release requires one real official channel per modality, not dual-channel alignment.
+> Authority: revised D-069 / D-080 C5 · gap `docs/evidence/admin-supply-accept-gaps-2026-07-20.md` G-LIVE-*.
 
-## Already green (may claim)
+## Release gate
 
-- Unit MP-08 matrix + F-I-01 same-CatalogModel honesty
-- Publish-gate negatives (&lt;2 domains cannot multi-channel ready)
-- Live gate fail-closed without external evidence
-- Workflow skeleton `.github/workflows/provider-live.yml`
+Text, image, and video must each complete one real official-provider generation:
 
-## Structural blockers (not “missing a key”)
-
-| Modality | CatalogModel alignment | Note |
+| Modality | Official model | Required result |
 |---|---|---|
-| Text | **misaligned** | official doubao-seed-mini vs reseller gemini-flash |
-| Image | **misaligned** | official seedream-5-pro vs reseller gpt-image-2 (catalog already has seedream tuzi relay unused) |
-| Video | **aligned** | seedance-1-5-pro both; **channel_level only** (shared manufacturer) |
+| Text | `doubao-seed-2-0-mini-260428` | Accepted provider task with non-empty input/output usage and usable text |
+| Image | `doubao-seedream-5-0-260128` | Accepted task, restart recovery, completed poll, downloaded non-empty image and SHA-256 |
+| Video | `doubao-seedance-1-5-pro-251215` | Accepted task, restart recovery, completed poll, downloaded playable media and SHA-256 |
 
-## Required env (names only)
+All three publish as `live_verified`. Without a second channel they must also remain `single_channel / no_fallback`, with `dualChannelReady=false` and `fallbackAvailable=false` wherever those fields are projected.
 
-- Master: `RUN_PROVIDER_LIVE_FAULT_INJECTION=1`, `PROVIDER_LIVE_COST_CAP_USD`, `PROVIDER_LIVE_REQUIRE_ALL`
-- Hook: `PROVIDER_LIVE_CONFORMANCE_ENDPOINT`, `PROVIDER_LIVE_CONFORMANCE_TOKEN`, `PROVIDER_LIVE_CONFORMANCE_HOOK_SHA256`, `PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH`, `PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD`
-- Cost normalization: `PROVIDER_LIVE_CNY_PER_USD`, `PROVIDER_LIVE_FX_EVIDENCE_REF`, all provider `*_COST_*` price variables
-- Run binding: CI sets `PROVIDER_LIVE_RUN_NONCE`; local runs must export a fresh unique value too
-- Six channels: ARK/MODEL_DIRECT/TUZI keys + `*_PROVIDER_ACCOUNT_IDENTITY` + `*_MAX_PROBE_COST_USD` + media asset hosts
+Token validation, an HTTP 200, recorded evidence, fixtures, or unit tests do not satisfy this gate. The production adapter must create a real provider task and retrieve its result.
 
-The hook output JSON must contain channel-bound `lifecycleEvidence` and
-`transportFaultEvidence` for all three core operations, plus one real
-`secondaryProbes` entry for each of `copy.adapt`, `text.respond`, and
-`image.edit`, and `costEvidence` that reconciles actual secondary/lifecycle/
-fault-injection spend. Every entry must carry the current run nonce and fresh
-timestamps. Secondary probes may bind to either configured channel, but each
-must have its own task, idempotency request, request payload, and result hashes;
-copying a core probe or declaring a status is not accepted. The hook command
-must reference a checked-in `scripts/provider-live/` runner whose file SHA-256
-matches the protected secret.
+## Required protected environment
 
-Set `PROVIDER_LIVE_CONFORMANCE_HOOK_SHA256` to the output of
-`shasum -a 256 scripts/provider-live/run-conformance.mjs`.
+- Master: `RUN_PROVIDER_LIVE_CONNECTIVITY=1`, `PROVIDER_LIVE_ACCEPTANCE_MODE=primary_connectivity`, `PROVIDER_LIVE_REQUIRE_ALL=1`, `PROVIDER_LIVE_COST_CAP_USD`, `PROVIDER_LIVE_RUN_NONCE`
+- Official credentials: `ARK_TEXT_API_KEY` or `ARK_API_KEY`, plus `ARK_PROVIDER_ACCOUNT_IDENTITY`
+- Models: `ARK_TEXT_MODEL`, `ARK_SEEDREAM_MODEL`, `ARK_SEEDANCE_MODEL`
+- Catalog binding: `ARK_TEXT_CATALOG_MODEL_ID`, `ARK_IMAGE_CATALOG_MODEL_ID`, `ARK_VIDEO_CATALOG_MODEL_ID`
+- Per-probe reservations: `ARK_TEXT_MAX_PROBE_COST_USD`, `ARK_IMAGE_MAX_PROBE_COST_USD`, `ARK_VIDEO_MAX_PROBE_COST_USD`
+- Price normalization: `PROVIDER_LIVE_CNY_PER_USD`, `PROVIDER_LIVE_FX_EVIDENCE_REF`, `ARK_TEXT_INPUT_COST_PER_MILLION`, `ARK_TEXT_OUTPUT_COST_PER_MILLION`, `ARK_SEEDREAM_COST_PER_IMAGE_CNY`, `ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY`, `ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND`
+- Media allowlist: `ARK_MEDIA_ASSET_SOURCE_HOSTS`
 
-## Product decisions required before code can dualChannelReady text/image
+Secrets belong in the protected GitHub Environment `provider-live`; never commit them or paste their values into tickets, documents, logs, or chat.
 
-1. Text: approve one audited cross-channel model mapping, then update the checked-in matrix mapping and alignment flag; equal env IDs alone stay fail-closed
-2. Image: approve and check in the reseller mapping (prefer existing seedream tuzi relay); equal env IDs alone stay fail-closed
-3. Video: keep channel-level claim; manufacturer-independent needs third vendor
+## Cost and evidence invariants
 
-## Run when secrets + hook ready
+- Every required unit price and per-probe reservation must be finite and positive.
+- The sum of the three probe reservations must fit `PROVIDER_LIVE_COST_CAP_USD` before any paid call starts.
+- Reported actual cost must fit each reservation and the run-level cap.
+- Each artifact binds the current commit, protected environment, model and CatalogModel revision, provider task reference, run nonce, timestamps, result hash, and actual cost.
+- Failed runs still upload a redacted `apps/core/provider-live-evidence/provider-live-gate.json`; they do not become release evidence.
+
+## Run
+
+Use GitHub Environment `provider-live` and dispatch `.github/workflows/provider-live.yml`. For an authorized local run, export the same protected variables and a fresh nonce, then run:
 
 ```bash
-export RUN_PROVIDER_LIVE_FAULT_INJECTION=1
+export RUN_PROVIDER_LIVE_CONNECTIVITY=1
+export PROVIDER_LIVE_ACCEPTANCE_MODE=primary_connectivity
 export PROVIDER_LIVE_REQUIRE_ALL=1
 export PROVIDER_LIVE_COST_CAP_USD=1.0
 export PROVIDER_LIVE_RUN_NONCE="local-$(date +%s)-$RANDOM"
-export PROVIDER_LIVE_CONFORMANCE_ENDPOINT="https://<protected-service>/provider-live"
-export PROVIDER_LIVE_CONFORMANCE_TOKEN="<protected-token>"
-export PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH="apps/core/provider-live-evidence/external-conformance.json"
-export PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD="0.1"
-# … map secrets from docs/_private (never commit) …
-node scripts/provider-live/run-conformance.mjs
-test -s "${PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH}"
+
 pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
   src/p1/model-supply/provider-conformance/live-fault-injection.integration.test.ts
+test -s apps/core/provider-live-evidence/provider-live-gate.json
 ```
 
-Or GitHub Environment `provider-live` → workflow_dispatch → attach `provider-live-gate.json`.
+The filename remains compatible with the existing integration suite; in `primary_connectivity` mode it does not require the external transport-fault hook.
 
-## Non-claims
+## Non-blocking dual-channel evidence
 
-- Six paid probes alone ≠ multi-channel ready (need lifecycle + transport injector evidence)
-- Before any paid call, the sum of per-call reservations must fit the run
-  ceiling and every required unit-price input must be positive. After each
-  call, its reported actual cost must fit that call's reservation, and the run
-  total is reconciled afterward. This gate does not claim a transactional,
-  real-time provider-side cutoff.
-- Do not forge equal catalogModelId env values across different provider models;
-  alignment requires a reviewed checked-in matrix mapping
-- #128 whole-package complete still blocked by G-LIVE-* + G-E2E-PLAYWRIGHT-D048 + #92
+The existing same-CatalogModel matrix, independent fault-domain checks, secondary probes, lifecycle evidence, and transport fault injector remain valid hardening work. They are required only before claiming `multi-channel ready` or automatic fallback; they do not block the current single-channel release.
 
-## Shortest path
+Do not forge equal CatalogModel IDs. Text/image matrix misalignment must continue to report `dualChannelReady=false`.
 
-1. Product: text/image CM alignment decision  
-2. Code: matrix-models + fakes match decision  
-3. Ops: secrets + cost cap  
-4. Eng: real hook → external JSON (core lifecycle/transport + three secondary probes)
-5. Run live gate → only then update G-LIVE-* closed
+## Completion rule
+
+Close the live connectivity gap only when all three official probes are current and green, `blockedChecks=[]`, `skippedOperations=[]`, each publish gate is `single_channel` with `publishAllowed=true`, and the evidence artifact is bound to the release commit.

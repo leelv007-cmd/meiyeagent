@@ -24,6 +24,10 @@ export type LiveProviderAdapterKind =
   | 'ark_media'
   | 'tuzi_media';
 
+export type LiveProviderAcceptanceMode =
+  | 'primary_connectivity'
+  | 'dual_channel_conformance';
+
 export interface LiveProviderChannel {
   model: DualChannelMatrixModel;
   adapterKind: LiveProviderAdapterKind;
@@ -115,6 +119,7 @@ export interface LiveProviderBlockedCheck {
     | 'fault_domain_independence'
     | 'real_fault_injection'
     | 'complete_lifecycle_conformance'
+    | 'primary_live_verification'
     | 'secondary_live_verification';
   status: 'blocked';
   reason: string;
@@ -195,6 +200,8 @@ export interface LiveTransportFaultEvidence {
 }
 
 export interface LiveProviderGateReport {
+  acceptanceMode: LiveProviderAcceptanceMode;
+  runNonce?: string;
   observedAt: string;
   probes: LiveProviderProbeEvidence[];
   activationEvidence: LiveProviderActivationEvidence[];
@@ -212,6 +219,7 @@ export interface LiveProviderGateReport {
 }
 
 export async function runLiveProviderGate(input: {
+  acceptanceMode?: LiveProviderAcceptanceMode;
   channels: readonly LiveProviderChannel[];
   probe: (channel: LiveProviderChannel) => Promise<LiveProviderProbeEvidence>;
   onProbe?: (probes: readonly LiveProviderProbeEvidence[]) => Promise<void>;
@@ -223,6 +231,13 @@ export async function runLiveProviderGate(input: {
   lifecycleEvidence?: readonly LiveProviderLifecycleEvidence[];
   transportFaultEvidence?: readonly LiveTransportFaultEvidence[];
 }): Promise<LiveProviderGateReport> {
+  const acceptanceMode = input.acceptanceMode ?? 'dual_channel_conformance';
+  const primaryConnectivity = acceptanceMode === 'primary_connectivity';
+  const channels = primaryConnectivity
+    ? input.channels.filter(
+        (channel) => channel.model.channelKind === 'official_direct',
+      )
+    : [...input.channels];
   const observedAt = new Date().toISOString();
   const probes: LiveProviderProbeEvidence[] = [];
   // Keep paid calls serial so reservations and reported actual spend remain
@@ -243,15 +258,16 @@ export async function runLiveProviderGate(input: {
     transportFaultEvidence.length > 0 ||
     secondaryProbes.length > 0;
   const externalEvidenceRequired =
-    input.runNonce !== undefined ||
-    input.externalCostEvidence !== undefined ||
-    externalEvidenceCostReservationUsd > 0;
+    !primaryConnectivity &&
+    (input.runNonce !== undefined ||
+      input.externalCostEvidence !== undefined ||
+      externalEvidenceCostReservationUsd > 0);
   const reservedCostUsd =
-    input.channels.reduce(
+    channels.reduce(
       (sum, channel) => sum + channel.maxProbeCostUsd,
       0,
     ) + externalEvidenceCostReservationUsd;
-  const invalidChannelBudget = input.channels.some(
+  const invalidChannelBudget = channels.some(
     (channel) =>
       !Number.isFinite(channel.maxProbeCostUsd) ||
       channel.maxProbeCostUsd <= 0,
@@ -289,7 +305,7 @@ export async function runLiveProviderGate(input: {
   }
   if (hasExternalEvidence || externalEvidenceRequired) {
     preflightExternalEvidence({
-      channels: input.channels,
+      channels,
       lifecycleEvidence,
       transportFaultEvidence,
       secondaryProbes,
@@ -298,11 +314,11 @@ export async function runLiveProviderGate(input: {
       observedAt,
     });
   }
-  for (const channel of input.channels) {
+  for (const channel of channels) {
     probes.push(await input.probe(channel));
     await input.onProbe?.([...probes]);
   }
-  const providerProbeUsd = validateProviderProbeCosts(probes, input.channels);
+  const providerProbeUsd = validateProviderProbeCosts(probes, channels);
   const actualTotalUsd = providerProbeUsd + externalEvidenceUsd;
   if (actualTotalUsd > input.costCapUsd) {
     throw new Error(
@@ -311,7 +327,7 @@ export async function runLiveProviderGate(input: {
   }
   const validSecondaryProbes = validateSecondaryProbes({
     probes: secondaryProbes,
-    channels: input.channels,
+    channels,
     primaryProbes: probes,
     runNonce: input.runNonce,
     observedAt,
@@ -320,7 +336,7 @@ export async function runLiveProviderGate(input: {
   const activationEvidence = probes.map((probe) =>
     toLiveProviderActivationEvidence(
       probe,
-      input.channels.some(
+      channels.some(
         (channel) =>
           probeMatchesChannel(probe, channel) ||
           (validSecondaryProbes.has(probe) &&
@@ -342,15 +358,53 @@ export async function runLiveProviderGate(input: {
 
   for (const operation of CORE_FAULT_INJECTION_OPERATIONS) {
     let operationBlocked = false;
-    const configured = input.channels.filter(
+    const configured = channels.filter(
       (channel) => channel.model.operation === operation,
     );
-    const alignedChannels = selectAlignedChannels(configured);
-    const alignedCatalogModelId =
-      alignedChannels[0]?.model.catalogModelId ?? null;
     const operationEvidence = activationEvidence.filter(
       (evidence) => evidence.operation === operation,
     );
+    if (primaryConnectivity) {
+      const channel = configured.find(
+        (candidate) => candidate.model.channelKind === 'official_direct',
+      );
+      const evidence = channel
+        ? operationEvidence.find(
+            (candidate) =>
+              candidate.activationStatus === 'live_verified' &&
+              activationMatchesChannel(candidate, channel),
+          )
+        : undefined;
+      const gate = evaluateMultiChannelPublishGate({
+        operation,
+        catalogModelId: channel?.model.catalogModelId ?? null,
+        deployments:
+          channel && evidence ? [deploymentEvidence(channel, evidence)] : [],
+        requireLiveVerified: true,
+      });
+      publishGates.push(gate);
+      if (
+        !evidence ||
+        gate.status !== 'single_channel' ||
+        !gate.publishAllowed ||
+        gate.multiChannelReady
+      ) {
+        blockedChecks.push({
+          operation,
+          check: 'primary_live_verification',
+          status: 'blocked',
+          reason:
+            'One official channel must complete a real provider call and produce live_verified evidence.',
+        });
+        skippedOperations.push(operation);
+      } else {
+        externalEvidenceRefs.add(evidence.evidenceRef);
+      }
+      continue;
+    }
+    const alignedChannels = selectAlignedChannels(configured);
+    const alignedCatalogModelId =
+      alignedChannels[0]?.model.catalogModelId ?? null;
     const deployments = alignedChannels.map((channel) =>
       deploymentEvidence(
         channel,
@@ -475,44 +529,48 @@ export async function runLiveProviderGate(input: {
     }
   }
 
-  for (const operation of SECONDARY_FAULT_INJECTION_OPERATIONS) {
-    const evidence = activationEvidence.find(
-      (candidate) =>
-        candidate.operation === operation &&
-        candidate.activationStatus === 'live_verified',
-    );
-    const channel = evidence
-      ? input.channels.find((candidate) =>
-          secondaryEvidenceMatchesChannel(evidence, candidate),
-        )
-      : undefined;
-    const gate = evaluateMultiChannelPublishGate({
-      operation,
-      catalogModelId: channel?.model.catalogModelId ?? null,
-      deployments:
-        channel && evidence ? [deploymentEvidence(channel, evidence)] : [],
-      requireLiveVerified: true,
-    });
-    publishGates.push(gate);
-    if (
-      gate.status !== 'single_channel' ||
-      !gate.publishAllowed ||
-      gate.multiChannelReady
-    ) {
-      blockedChecks.push({
+  if (!primaryConnectivity) {
+    for (const operation of SECONDARY_FAULT_INJECTION_OPERATIONS) {
+      const evidence = activationEvidence.find(
+        (candidate) =>
+          candidate.operation === operation &&
+          candidate.activationStatus === 'live_verified',
+      );
+      const channel = evidence
+        ? channels.find((candidate) =>
+            secondaryEvidenceMatchesChannel(evidence, candidate),
+          )
+        : undefined;
+      const gate = evaluateMultiChannelPublishGate({
         operation,
-        check: 'secondary_live_verification',
-        status: 'blocked',
-        reason:
-          'One channel-bound live_verified probe is required for the secondary operation.',
+        catalogModelId: channel?.model.catalogModelId ?? null,
+        deployments:
+          channel && evidence ? [deploymentEvidence(channel, evidence)] : [],
+        requireLiveVerified: true,
       });
-      skippedOperations.push(operation);
-    } else if (evidence) {
-      externalEvidenceRefs.add(evidence.evidenceRef);
+      publishGates.push(gate);
+      if (
+        gate.status !== 'single_channel' ||
+        !gate.publishAllowed ||
+        gate.multiChannelReady
+      ) {
+        blockedChecks.push({
+          operation,
+          check: 'secondary_live_verification',
+          status: 'blocked',
+          reason:
+            'One channel-bound live_verified probe is required for the secondary operation.',
+        });
+        skippedOperations.push(operation);
+      } else if (evidence) {
+        externalEvidenceRefs.add(evidence.evidenceRef);
+      }
     }
   }
 
   return {
+    acceptanceMode,
+    ...(input.runNonce ? { runNonce: input.runNonce } : {}),
     observedAt,
     probes,
     activationEvidence,
@@ -540,23 +598,25 @@ function selectAlignedChannels(
     group.push(channel);
     groups.set(channel.model.catalogModelId, group);
   }
-  return [...groups.values()]
-    .filter(
-      (group) =>
-        group.length >= 2 &&
-        group.some(
-          (channel) => channel.model.channelKind === 'official_direct',
-        ) &&
-        group.some(
-          (channel) => channel.model.channelKind === 'upstream_reseller',
-        ),
-    )
-    .sort(
-      (left, right) =>
-        Number(hasIndependentOfficialResellerPair(right)) -
-          Number(hasIndependentOfficialResellerPair(left)) ||
-        right.length - left.length,
-    )[0] ?? [];
+  return (
+    [...groups.values()]
+      .filter(
+        (group) =>
+          group.length >= 2 &&
+          group.some(
+            (channel) => channel.model.channelKind === 'official_direct',
+          ) &&
+          group.some(
+            (channel) => channel.model.channelKind === 'upstream_reseller',
+          ),
+      )
+      .sort(
+        (left, right) =>
+          Number(hasIndependentOfficialResellerPair(right)) -
+            Number(hasIndependentOfficialResellerPair(left)) ||
+          right.length - left.length,
+      )[0] ?? []
+  );
 }
 
 function hasIndependentOfficialResellerPair(
@@ -963,9 +1023,7 @@ function isValidBilateralLedger(
     Number.isFinite(ledger.providerCost.amount) &&
     ledger.providerCost.amount >= 0 &&
     ['CNY', 'USD'].includes(ledger.providerCost.currency) &&
-    ['estimated', 'observed', 'unknown'].includes(
-      ledger.providerCost.status,
-    ) &&
+    ['estimated', 'observed', 'unknown'].includes(ledger.providerCost.status) &&
     isEvidenceRef(ledger.providerCost.attemptId) &&
     isEvidenceRef(ledger.supplyFreeze.id) &&
     ledger.supplyFreeze.routeSnapshotRef === routeSnapshotId &&
@@ -1049,8 +1107,7 @@ function sanitizeTransportMatrixReport(
                   scenario.bilateralLedger.supplyFreeze
                     .credentialAccountVersion,
                 supplierRequestTaskId:
-                  scenario.bilateralLedger.supplyFreeze
-                    .supplierRequestTaskId,
+                  scenario.bilateralLedger.supplyFreeze.supplierRequestTaskId,
                 supplyPoolId:
                   scenario.bilateralLedger.supplyFreeze.supplyPoolId,
                 frozenAt: scenario.bilateralLedger.supplyFreeze.frozenAt,
@@ -1201,7 +1258,10 @@ function verifiedProviderCostUsd(
       ? cost.amount
       : null;
   }
-  if (cost.amount === 0 && (cost.amountUsd === undefined || cost.amountUsd === 0)) {
+  if (
+    cost.amount === 0 &&
+    (cost.amountUsd === undefined || cost.amountUsd === 0)
+  ) {
     return 0;
   }
   if (!Number.isFinite(cost.amountUsd) || (cost.amountUsd ?? -1) < 0) {
@@ -1418,9 +1478,10 @@ function toLiveProviderActivationEvidence(
     catalogModelId: probe.catalogModelId,
     providerProfileId: probe.providerProfileId,
     adapterKind: probe.adapterKind,
-    activationStatus: boundToConfiguredChannel && isLiveVerifiedProbe(probe)
-      ? 'live_verified'
-      : 'documented',
+    activationStatus:
+      boundToConfiguredChannel && isLiveVerifiedProbe(probe)
+        ? 'live_verified'
+        : 'documented',
     evidenceRef: probe.evidenceRef,
     verifiedAt: probe.observedAt,
     adapterExecuted: probe.adapterExecuted,

@@ -84,11 +84,19 @@ function fingerprint(value: string): string {
 
 export function resolveLiveProviderChannels(
   source: Environment = process.env,
+  options: {
+    channelKinds?: readonly DualChannelMatrixModel['channelKind'][];
+  } = {},
 ): LiveProviderChannelResolution {
   const channels: ResolvedLiveProviderChannel[] = [];
   const missingByChannel: LiveProviderChannelResolution['missingByChannel'] = [];
 
-  for (const matrixModel of DUAL_CHANNEL_MATRIX_MODELS) {
+  const matrixModels = options.channelKinds
+    ? DUAL_CHANNEL_MATRIX_MODELS.filter((model) =>
+        options.channelKinds?.includes(model.channelKind),
+      )
+    : DUAL_CHANNEL_MATRIX_MODELS;
+  for (const matrixModel of matrixModels) {
     const resolved = resolveChannel(matrixModel, source);
     if ('missing' in resolved) {
       missingByChannel.push({

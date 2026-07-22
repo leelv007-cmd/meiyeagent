@@ -124,9 +124,9 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 ### 真实供应与发布证据
 
-61. As a 发布负责人, I want 真实文案、图片、视频 Provider 测试在受保护环境运行并受成本帽约束, so that live 证据可用且不会失控消费。
+61. As a 发布负责人, I want 真实文案、图片、视频官方主渠道测试在受保护环境运行并受成本帽约束, so that live 证据可用且不会失控消费。
 62. As a 发布负责人, I want 每个放行能力保存 commit、环境、Provider、目录与路由 revision、时间和证据有效期, so that 旧录制结果不能替代当前版本。
-63. As a 发布负责人, I want 每种媒介的主渠道和故障渠道都验证成功、失败、超时、限流、未知接单和费用收敛, so that 供应降级不是只测 happy path。
+63. As a 发布负责人, I want 每种媒介至少一个官方主渠道完成真实生成并留下任务、结果与费用证据, so that 发布门证明真实连通而不是只证明配置存在。双渠道故障切换保留为非阻塞增强项。
 64. As a 发布负责人, I want 同一 commit 完成 required CI、staging 部署、readiness、主旅程 smoke 和 provider live gate 后才能标记 release candidate, so that 发布结论绑定同一份代码真相。
 
 ## Implementation Decisions
@@ -293,7 +293,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 - 在全新 checkout 上使用冻结 lockfile 安装并执行完整 gate；本机已安装依赖结果不能作为替代。
 - Bundle gate 读取 production build 产物并按初始主包 gzip 预算判断。
-- Provider live gate 在受保护 environment 中按文案/图片/视频和主/故障渠道矩阵运行，强制成本帽、secret redaction 和 evidence artifact。
+- Provider live gate 在受保护 environment 中按文案/图片/视频三个官方主渠道运行；每种媒介必须完成一次真实生成，并强制成本帽、secret redaction、run nonce 和 evidence artifact。双渠道同 CatalogModel、独立故障域与故障切换矩阵不阻塞本轮发布。
 - staging smoke 验证四个部署单元版本一致、readiness 通过、跨实例资产可读、SSE 续传和至少一次 Worker 重启恢复。
 - 每份发布证据包含 commit SHA、workflow run、环境、配置 revision、开始/结束时间、结果、证据有效期和制品校验；缺任一字段不能标 release candidate。
 
@@ -320,7 +320,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 - **Issue Tracker**：本规格发布于 GitHub Issue [#129](https://github.com/leelv007-cmd/meiyeweb-agent/issues/129)，并以 `ready-for-agent` 标记；既有全量父项 #24、Provider live gate #119 与同增量验收 #128 是关联证据，不因新 Issue 自动关闭。
 - **本地权威文件**：`docs/specs/beauty-marketing-agent-p0-remediation-spec-2026-07-22.md` 与 Issue #129 正文保持同步；代码评审和拆票优先引用本地固定路径，Tracker 用于执行状态。
 - **测试接缝裁决**：本规格采用一个最高公共 seam——Composer 提交 HTTP + SSE + ContentPackage 投影。五阶段纯函数和 Adapter 测试只用于不变量与故障定位，不另立平行产品验收口径。
-- **依赖复用**：Provider 双渠道故障矩阵继续消费现有 live-gate 工作，不复制一套新矩阵；同一增量整体验收继续消费现有 acceptance 工作。若旧 Issue 的证据不绑定当前 commit，则视为未满足本规格。
+- **依赖复用**：Provider live gate 复用现有真实 Adapter 探针；发布硬门只要求三模态官方主渠道真实生成。现有双渠道故障矩阵继续保留为增强证据，但不阻塞本轮 release candidate。若旧 Issue 的证据不绑定当前 commit，则视为未满足本规格。
 - **建议实施包**：P0-A 绿色基线与三项安全；P0-B Snapshot/required source/Coordinator；P0-C 三模态 Harness 与单 ContentPackage Port；P0-D 共享存储/部署/readiness；P0-E 商家界面真相与移动进度；P0-F live gate 与同一 commit 发布验收。P0-A、P0-B 可先并行，P0-C 依赖 P0-B，P0-D 可与 P0-C 并行，P0-E 在公共 DTO 冻结后接入，P0-F 最后统一放行。
-- **Definition of Done**：只有当干净安装 required CI 全绿、三个安全回归关闭、三模态从同一 public seam 运行、生产 UI 零内部标识、共享资产跨实例可读、staging readiness fail-closed、真实 Provider gate 有当前证据时，P0 才能关闭。局部单测、旧 fixture 8/8、代码存在或本地 build 成功均不足以关闭。
+- **Definition of Done**：只有当干净安装 required CI 全绿、三个安全回归关闭、三模态从同一 public seam 运行、生产 UI 零内部标识、共享资产跨实例可读、staging readiness fail-closed，并且文案/图片/视频各有一个官方主渠道真实生成的当前证据时，P0 才能关闭。无第二渠道时必须显示 `single_channel / no_fallback`。局部单测、旧 fixture 8/8、Token 校验、代码存在或本地 build 成功均不足以关闭。
 - **诚实量级**：XL。该规格允许按上述实施包拆 PR，但不允许把其中任一局部完成描述为“生产就绪”。

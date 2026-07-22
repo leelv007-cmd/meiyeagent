@@ -1656,6 +1656,19 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
 - 待验证：上游共享控件（ImageSettingsPanel/VideoSettingsPanel/AudioSettingsPanel/ModelPicker/PromptSelectDialog，位于 `web/src/components/`）是否全部在 A2/A3 授权范围内可拷（K1 内核清点时判定，超范围则等价重建该控件层）；批量账本 A（聚合报价）/B（宿主 fan-out）由 K1 设计拍板。
 - Supersedes：修订 `kernel-integration-v1-acceptance-2026-07-19.md` 的 K03 pass 结论（其"import 即挂载"判据作废，已取证行为事实保留为回归基线）；D-044 供给默认从"唯一供给面"收窄为"缺省值"（仅 Pro Studio 范围）。
 
+## D-100 Provider 发布门改为三模态官方主渠道真实连通
+
+- 日期：2026-07-22
+- 状态：`accepted`（用户确认“只要保证可以真实连通即可”，并要求按建议修改）
+- 决定：当前 release candidate 不再要求文案、图片、视频具备同 CatalogModel 双渠道。发布硬门改为每种媒介至少一条 `official_direct` Deployment 完成一次真实生产 Adapter 调用：文案取得有效输出与 token/费用证据；图片和视频完成 submit、跨实例/重建后 recover、poll 到 completed、download 非空媒体，并记录 provider task、结果 SHA-256、run nonce、时间与实际费用。
+- 决定：通过上述门的能力可标 `live_verified`，但无第二条合格 Deployment 时必须同时投影 `single_channel / no_fallback`、`dualChannelReady=false`，不得宣称 multi-channel ready、自动回退或独立故障域。Token 校验、HTTP 200、recorded/fake、fixture 与单测不能替代真实生成。
+- 决定：同 CatalogModel 双渠道映射、独立账号/端点故障域、secondary probes、完整 transport fault injector 与故障切换矩阵保留为非阻塞增强；只有未来声称 multi-channel ready 或自动回退时才重新成为硬门。成本帽、secret 保护、受保护环境、当前 commit 绑定和证据有效期继续强制。
+- 原因：当前目标是证明三模态官方供应能力真实可调用并能取得可用结果；尚未采购/批准 text/image 同模型第二渠道，不应让不存在的冗余阻塞单渠道发布，也不能用伪映射制造双渠道声明。
+- 影响：修订 D-069 与 D-080 C5 的当前发布阈值；#119/#128/#146/#147、Provider live workflow、P0 release gate、admin supply spec 与 handoff 按单渠道真实连通验收。现有双渠道矩阵和 `multi-channel ready` 负向门继续保留。
+- 证据边界：本条只完成产品约束与代码门禁修改，不构成真实 Provider 已连通。关闭 G-LIVE 仍需受保护环境中的三次真实生成证据。
+- 待验证：官方 Ark 文案、Seedream 图片、Seedance 视频凭据与成本配置就绪后，执行 `primary_connectivity` workflow，并确认三条 probe 均为 `live_verified`、`blockedChecks=[]`、`skippedOperations=[]`。
+- Supersedes：仅替换 D-069、D-080 C5 中“三核心双渠道为当前发布硬门”的部分；不替换其供应实体、凭据治理、诚实标签、独立故障域判定和多渠道声明约束。
+
 ## 当前待验证
 
 （范围说明，2026-07-20：本章仅为 2026-07-17 合并评审识别的 20 条遗留待验证集及其状态投影；D-047 起各决策的待验证项以其条内 inline 记录为权威，不重复收录于此。）
@@ -1699,7 +1712,7 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
 
 已拍板转正：视频成片首发地位 → D-027；文案/成片两层交付 → D-028；Day-0 零资产首屏 → D-029；定位边界 → D-030；前台无槽位填表、结构化输入融入对话流 → D-031；Agent Workflow 编排总纲（收编原「阻塞作用域」「沉淀检测」两项为推论一/二）→ D-032；Task 统一交互单元与 Harness 五段式 → D-033（均 2026-07-17）；Harness 实现选型四题 + 工程约束（11 号简报全案采纳，提示词承载 = Langfuse 先行）→ D-034~D-038（2026-07-17 深夜，证据 = 10 份调研 + 9 路 Codex 对抗交叉验证（r08 三次容量失败未产出，Dify 在 D-037 中仅为战术搁置项，见其证据边界与 08 号报告头部横幅），`references/analysis/harness-research-2026-07-17/`）；09 合规章义务清单去向（2026-07-18 一致性复核 escalate 项）= 并入 Week 0 预登记文档 → D-039（2026-07-18）。
 
-2026-07-17 合并评审识别的待拍板项已全部转正（即上列清单）；本行不作全局声明——2026-07-20 起新决策产生的「待继续拍板」项以各决策条内记录为权威（见 D-072 起各决策条内记录，现至 D-099；D-079 为跳号未使用）。
+2026-07-17 合并评审识别的待拍板项已全部转正（即上列清单）；本行不作全局声明——2026-07-20 起新决策产生的「待继续拍板」项以各决策条内记录为权威（见 D-072 起各决策条内记录，现至 D-100；D-079 为跳号未使用）。
 
 ## 后续记录格式
 
