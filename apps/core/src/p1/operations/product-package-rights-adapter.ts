@@ -1,3 +1,7 @@
+import {
+  hasCurrentRestrictedAssetAuthorization,
+  type Platform,
+} from '@meiye/contracts';
 import type { ProductPackageRightsPropagationPort } from '../../product/product-service.js';
 import type { OperationsApplicationService } from './application-service.js';
 import type { ContentPackageRightsResolverPort } from './types.js';
@@ -6,9 +10,14 @@ interface ProductAssetRightsRepository {
   load(workspaceId: string): Promise<{
     assets: Array<{
       authorizationStatus: 'pending' | 'authorized' | 'withdrawn' | 'blocked';
+      category?: 'store' | 'before_after' | 'customer_case' | 'price_list' | 'other';
       consentScope: 'internal_only' | 'public_marketing' | 'paid_advertising';
+      containsPerson?: boolean;
       id: string;
       rightsEvidence?: string;
+      rightsNoFixedExpiry?: boolean;
+      rightsPlatforms?: Platform[];
+      rightsValidUntil?: string;
       sourceType: 'real' | 'ai_generated';
     }>;
   } | null>;
@@ -17,7 +26,10 @@ interface ProductAssetRightsRepository {
 export class ProductContentPackageRightsResolver
   implements ContentPackageRightsResolverPort
 {
-  constructor(private readonly product: ProductAssetRightsRepository) {}
+  constructor(
+    private readonly product: ProductAssetRightsRepository,
+    private readonly clock: () => Date = () => new Date()
+  ) {}
 
   async resolve(
     input: Parameters<ContentPackageRightsResolverPort['resolve']>[0]
@@ -39,7 +51,17 @@ export class ProductContentPackageRightsResolver
             asset.sourceType !== 'real' ||
             asset.authorizationStatus !== 'authorized' ||
             asset.consentScope === 'internal_only' ||
-            !asset.rightsEvidence?.trim()
+            !asset.rightsEvidence?.trim() ||
+            !hasCurrentRestrictedAssetAuthorization(
+              {
+                category: asset.category,
+                containsPerson: asset.containsPerson ?? false,
+                rightsNoFixedExpiry: asset.rightsNoFixedExpiry,
+                rightsPlatforms: asset.rightsPlatforms,
+                rightsValidUntil: asset.rightsValidUntil,
+              },
+              this.clock()
+            )
         )
         .map((asset) => asset.id),
     };

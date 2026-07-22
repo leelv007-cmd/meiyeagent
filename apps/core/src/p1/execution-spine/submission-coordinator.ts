@@ -82,6 +82,10 @@ export interface CreationSubmissionAdmissionPort {
 	 */
 	admit(input: ComposerSubmissionRequest): Promise<{
 		modelPolicy: { id: string; mode: "auto" | "fixed"; revision: string };
+		recipeBinding: Pick<
+			CreationExecutionSnapshot,
+			"contentModules" | "deliverables" | "lens" | "platform"
+		>;
 		rights: { revision: string; summary: string };
 		taskId: string;
 	}>;
@@ -112,7 +116,11 @@ export class CreationSubmissionCoordinator {
 		const admitted = await this.admission.admit(request);
 		const serverBoundRequest = {
 			...request,
+			contentModules: admitted.recipeBinding.contentModules,
+			deliverables: admitted.recipeBinding.deliverables,
+			lens: admitted.recipeBinding.lens,
 			modelPolicy: admitted.modelPolicy,
+			platform: admitted.recipeBinding.platform,
 			rights: admitted.rights,
 		};
 		const command = creationSubmissionCommandSchema.parse({

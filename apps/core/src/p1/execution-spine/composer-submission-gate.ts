@@ -1,3 +1,6 @@
+import { creativeContentModuleIds } from "@meiye/contracts";
+
+import type { BriefSubmissionGate } from "../creation-experience/brief-submission-gate.js";
 import { briefSourceRevisionId } from "../creation-experience/postgres-brief-revision-context.js";
 import type { BriefConfirmationRepository } from "../creation-experience/brief-confirmation-repository.js";
 import type { CreationExperienceCatalogRepository } from "../creation-experience/memory-repository.js";
@@ -13,7 +16,10 @@ import {
 	type CapabilityHotAssemblyPort,
 } from "../supply-registry/hot-assembly.js";
 
-import type { ComposerSubmissionRequest } from "./creation-execution-snapshot.js";
+import type {
+	ComposerSubmissionRequest,
+	CreationExecutionSnapshot,
+} from "./creation-execution-snapshot.js";
 import type { CreationSubmissionAdmissionPort } from "./submission-coordinator.js";
 
 export interface ComposerSourceContentPackageReader {
@@ -23,7 +29,8 @@ export interface ComposerSourceContentPackageReader {
 	}): Promise<{
 		id: string;
 		revision: string | number;
-		status: "accepted" | "review_ready";
+		rightsState: "authorized" | "revoked";
+		status: string;
 		workspaceId: string;
 	} | null>;
 }
@@ -38,6 +45,7 @@ export interface ComposerCapabilityReadinessPort {
 
 export interface ComposerSubmissionAdmissionDependencies {
 	assets: Pick<ReferenceAssetResolverPort, "resolve">;
+	briefs: Pick<BriefSubmissionGate, "assertCurrent">;
 	briefConfirmations: Pick<BriefConfirmationRepository, "getBriefConfirmation">;
 	capabilities: ComposerCapabilityReadinessPort;
 	catalog: Pick<
@@ -124,9 +132,14 @@ export class ComposerSubmissionAdmissionGate
 		) {
 			throw invalid("Recipe revision is missing, unpublished, or does not match this submission.");
 		}
-		if (recipe.lensId !== "copy" || recipe.targetWorkspaceKind !== "copy") {
+		if (
+			recipe.lensId !== "copy" ||
+			input.lens !== "copy" ||
+			recipe.targetWorkspaceKind !== "copy"
+		) {
 			throw invalid("Recipe is not published for the Copy Composer.");
 		}
+		const recipeBinding = deriveRecipeBinding(recipe);
 		if (recipe.modelPolicy.mode !== input.modelPolicy.mode) {
 			throw invalid("Recipe model policy mode no longer matches the submission.");
 		}
@@ -236,10 +249,13 @@ export class ComposerSubmissionAdmissionGate
 			assetIds,
 			workspaceId: input.workspaceId,
 		});
-		const knownAssetIds = new Set(rights.knownAssetIds ?? []);
+		const knownAssetIds = rights.knownAssetIds
+			? new Set(rights.knownAssetIds)
+			: null;
 		if (
 			rights.unauthorizedAssetIds.length > 0 ||
-			assetIds.some((assetId) => !knownAssetIds.has(assetId))
+			(knownAssetIds &&
+				assetIds.some((assetId) => !knownAssetIds.has(assetId)))
 		) {
 			throw invalid("Every source asset must be known and authorized in this workspace.");
 		}
@@ -256,6 +272,7 @@ export class ComposerSubmissionAdmissionGate
 				!sourcePackage ||
 				sourcePackage.workspaceId !== input.workspaceId ||
 				sourcePackage.id !== input.sources.contentPackage.id ||
+				sourcePackage.rightsState !== "authorized" ||
 				(sourcePackage.status !== "accepted" &&
 					sourcePackage.status !== "review_ready") ||
 				String(sourcePackage.revision) !== input.sources.contentPackage.revision
@@ -295,6 +312,20 @@ export class ComposerSubmissionAdmissionGate
 			throw invalid("Durable Brief confirmation is missing or does not bind these exact submission facts.");
 		}
 
+		await this.dependencies.briefs.assertCurrent({
+			briefConfirmationId: input.briefConfirmation.id,
+			briefContextId: input.briefContext.id,
+			catalogModelId: input.catalogModel.id,
+			catalogRevision: input.catalogModel.revision,
+			expectedContextRevision: input.briefContext.revision,
+			intent: input.intent,
+			operation: "copy.generate",
+			outputCount: recipeBinding.deliverables[0]!.quantity,
+			sourceReferenceIds: sourceIds,
+			quoteRevision: quote.revision,
+			workspaceId: input.workspaceId,
+		});
+
 		await this.dependencies.capabilities.assertReady({
 			catalogModel: input.catalogModel,
 			route,
@@ -305,6 +336,7 @@ export class ComposerSubmissionAdmissionGate
 				mode: recipe.modelPolicy.mode,
 				revision: recipe.revisionId,
 			},
+			recipeBinding,
 			rights: {
 				revision: `rights:${fingerprintValue(
 					[
@@ -329,6 +361,70 @@ export class ComposerSubmissionAdmissionGate
 			taskId: quote.taskId,
 		};
 	}
+}
+
+function deriveRecipeBinding(recipe: {
+	contextPatches: Record<string, unknown>;
+	delivery: {
+		aspectRatio?: string;
+		deliverableKind?: string;
+		durationSeconds?: number;
+		platform?: string;
+		quantity?: number;
+	};
+	lensId: string;
+	revisionId: string;
+}): Pick<
+	CreationExecutionSnapshot,
+	"contentModules" | "deliverables" | "lens" | "platform"
+> {
+	if (recipe.lensId !== "copy") {
+		throw invalid("Recipe is not published for the Copy Composer.");
+	}
+	const platform = recipe.delivery.platform;
+	if (
+		platform !== "xiaohongshu" &&
+		platform !== "douyin" &&
+		platform !== "video_account"
+	) {
+		throw invalid("Published Recipe must declare a supported delivery platform.");
+	}
+	if (recipe.delivery.deliverableKind !== "copy_document") {
+		throw invalid("Published Copy Recipe must declare a copy_document delivery kind.");
+	}
+	const quantity = recipe.delivery.quantity;
+	if (quantity !== 1) {
+		throw invalid("Published Copy Recipe must declare exactly one copy document.");
+	}
+	const modules = recipe.contextPatches.contentModules;
+	if (
+		!Array.isArray(modules) ||
+		modules.length === 0 ||
+		modules.length > creativeContentModuleIds.length ||
+		modules.some(
+			(module) =>
+				typeof module !== "string" ||
+				!creativeContentModuleIds.includes(
+					module as (typeof creativeContentModuleIds)[number],
+				),
+		) ||
+		new Set(modules).size !== modules.length
+	) {
+		throw invalid("Published Recipe must declare unique supported content modules.");
+	}
+	return {
+		contentModules: modules as CreationExecutionSnapshot["contentModules"],
+		deliverables: [
+			{
+				id: `recipe-deliverable:${recipe.revisionId}`,
+				kind: "copy",
+				order: 0,
+				quantity,
+			},
+		],
+		lens: "copy",
+		platform: { id: platform },
+	};
 }
 
 function selectionModeMatches(

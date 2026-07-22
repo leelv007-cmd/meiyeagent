@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type {
   AssetRevision,
   ContentPackageRevisionDelivery,
@@ -5,6 +7,16 @@ import type {
   MarketingPackageEvidence,
   ReuseTaskSeed,
 } from '@meiye/contracts';
+
+import type {
+  ContentPackageRevisionWriteInput,
+  ContentPackageRevisionWritePort,
+} from '../execution-spine/content-package-revision-port.js';
+import {
+  SourceContentPackageUnavailableError,
+  type ExecutionSourceContentPackageResolverPort,
+  type ResolvedSourceContentPackage,
+} from '../execution-spine/source-content-package-resolver.js';
 
 import {
   executeCopySelection,
@@ -16,6 +28,8 @@ import {
   InMemoryStructuredNodeMetrics,
   nameHarnessIntent,
   type StructuredNodeRunner,
+  type StructuredNodeRunnerRequest,
+  type StructuredNodeRunnerResult,
 } from './structured-nodes.js';
 import type {
   HarnessContextSnapshot,
@@ -91,6 +105,47 @@ export class HarnessIdentityPreflightError extends Error {
   }
 }
 
+export class HarnessSnapshotIdentityBindingError extends Error {
+  readonly code = 'HARNESS_IDENTITY_SNAPSHOT_MISMATCH';
+  readonly status = 409;
+
+  constructor(
+    readonly expectedIdentityRef: string,
+    readonly actualIdentityRefs: string[],
+  ) {
+    super('The copy brief and frozen context must bind exactly to the execution snapshot identity.');
+    this.name = 'HarnessSnapshotIdentityBindingError';
+  }
+}
+
+export class HarnessSnapshotAssetReferenceError extends Error {
+  readonly code = 'HARNESS_ASSET_SNAPSHOT_MISMATCH';
+  readonly status = 409;
+
+  constructor(readonly assetIds: string[]) {
+    super('The copy brief references assets outside the frozen execution snapshot.');
+    this.name = 'HarnessSnapshotAssetReferenceError';
+  }
+}
+
+class SourceContentPackageGuardedRunner implements StructuredNodeRunner {
+  constructor(
+    private readonly runner: StructuredNodeRunner,
+    private readonly verify: () => Promise<void>,
+  ) {}
+
+  async run<Output>(
+    request: StructuredNodeRunnerRequest<Output>,
+  ): Promise<StructuredNodeRunnerResult<Output>> {
+    const beforeProviderAttempt = async () => {
+      await this.verify();
+      await request.beforeProviderAttempt?.();
+    };
+    await beforeProviderAttempt();
+    return this.runner.run({ ...request, beforeProviderAttempt });
+  }
+}
+
 export class ProductionHarnessStagePorts implements HarnessStagePorts {
   constructor(
     private readonly runners: HarnessStructuredNodeRunnerFactory,
@@ -103,10 +158,13 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         seed: ReuseTaskSeed,
       ): Promise<AssetRevision>;
     },
+    private readonly executionDelivery?: ContentPackageRevisionWritePort,
+    private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
   ) {}
 
   async nameIntent(input: Parameters<HarnessStagePorts['nameIntent']>[0]) {
-    const runner = this.runner(input.request);
+    await this.resolveLiveSourceContentPackage(input.request);
+    const runner = this.runnerWithSourceFence(input.request);
     const metrics = new InMemoryStructuredNodeMetrics();
     const result = await nameHarnessIntent(
       {
@@ -161,7 +219,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     if (snapshot && snapshot.lens !== 'copy') {
       throw new HarnessCopyScopeError();
     }
-    const runner = this.runner(input.request);
+    const sourceContentPackage = await this.resolveLiveSourceContentPackage(
+      input.request,
+    );
+    const runner = this.runnerWithSourceFence(input.request);
     const metrics = new InMemoryStructuredNodeMetrics();
     const brief = await compileExecutionBrief(
       {
@@ -181,8 +242,11 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     if (brief.kind !== 'copy') {
       throw new Error('The first production tracer accepts only copy briefs.');
     }
+    const boundBrief = snapshot
+      ? bindComposerSnapshotBrief(brief, snapshot, sourceContentPackage?.assets)
+      : brief;
     return {
-      brief: snapshot ? { ...brief, platform: snapshot.platform.id } : brief,
+      brief: boundBrief,
       metrics: metrics.snapshot(),
     };
   }
@@ -195,11 +259,39 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         .filter((reference) => reference.status === 'registered')
         .map((reference) => reference.id),
     );
+    const snapshot = input.request.executionSnapshot;
+    if (snapshot) {
+      assertComposerSnapshotIdentityBinding(
+        snapshot,
+        registeredIdentityRefs,
+        input.brief.identityRefs,
+      );
+      if (!snapshot.sources.contentPackage) {
+        assertComposerSnapshotAssetBinding(snapshot, input.brief.assetRefs);
+      }
+    }
     const invalidIdentityRefs = input.brief.identityRefs.filter(
       (reference) => !registeredIdentityRefs.has(reference),
     );
     if (invalidIdentityRefs.length > 0) {
       throw new HarnessIdentityPreflightError(invalidIdentityRefs);
+    }
+    return this.executeAndSelectLive(input);
+  }
+
+  private async executeAndSelectLive(
+    input: Parameters<HarnessStagePorts['executeAndSelect']>[0],
+  ) {
+    const sourceContentPackage = await this.resolveLiveSourceContentPackage(
+      input.request,
+    );
+    const snapshot = input.request.executionSnapshot;
+    if (snapshot) {
+      assertComposerSnapshotAssetBinding(
+        snapshot,
+        input.brief.assetRefs,
+        sourceContentPackage?.assets,
+      );
     }
     const marketing = projectMarketingPackageEvidence({
       declaration: inferDeclarationFromBundle(input.context),
@@ -207,7 +299,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       context: input.context,
       at: this.now(),
     });
-    const runner = this.runner(input.request);
+    const runner = this.runnerWithSourceFence(input.request);
     const canonicalValidator = createHarnessCandidateValidator({
       phase: 'execution',
       bundle: {
@@ -264,11 +356,35 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         input.request.reuseSeed,
       );
     }
+    const occurredAt = this.now();
+    if (input.request.executionSnapshot) {
+      if (input.request.executionSnapshot.lens !== 'copy') {
+        throw new HarnessCopyScopeError();
+      }
+      if (!this.executionDelivery) {
+        throw new Error('Composer ContentPackage delivery is unavailable.');
+      }
+      const sourceContentPackage = await this.resolveLiveSourceContentPackage(
+        input.request,
+      );
+      assertComposerSnapshotAssetBinding(
+        input.request.executionSnapshot,
+        input.brief.assetRefs,
+        sourceContentPackage?.assets,
+      );
+      return this.executionDelivery.write(
+        copyContentPackageRevisionWriteInput(
+          input,
+          occurredAt,
+          sourceContentPackage?.assets,
+        ),
+      );
+    }
     const marketing = projectMarketingPackageEvidence({
       declaration: input.declaration,
       request: input.request,
       context: input.context,
-      at: this.now(),
+      at: occurredAt,
     });
     const platform = approvalPlatform(input.brief.platform);
     return this.delivery.deliverCopyRevision({
@@ -277,7 +393,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       packageId: input.request.packageId,
       expectedRevision: input.request.expectedRevision,
       platform,
-      occurredAt: this.now(),
+      occurredAt,
       workflowRevision: input.request.workflowRevision,
       winner: input.selection.winner,
       candidates: input.selection.candidates,
@@ -305,6 +421,114 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       actorId: request.actorId,
     });
   }
+
+  private runnerWithSourceFence(request: HarnessWorkflowInput) {
+    const runner = this.runner(request);
+    return request.executionSnapshot?.sources.contentPackage
+      ? new SourceContentPackageGuardedRunner(runner, async () => {
+          await this.resolveLiveSourceContentPackage(request);
+        })
+      : runner;
+  }
+
+  private async resolveLiveSourceContentPackage(
+    request: HarnessWorkflowInput,
+  ): Promise<ResolvedSourceContentPackage | undefined> {
+    const source = request.executionSnapshot?.sources.contentPackage;
+    if (!source) return;
+    if (!this.sourceContentPackages) {
+      throw new SourceContentPackageUnavailableError(source);
+    }
+    return this.sourceContentPackages.resolve({
+      workspaceId: request.workspaceId,
+      source,
+    });
+  }
+}
+
+export function copyContentPackageRevisionWriteInput(
+  input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+  occurredAt: string,
+  sourceAssets: ReadonlyArray<{ id: string; role: 'source' | 'selected' }> = [],
+): ContentPackageRevisionWriteInput {
+  const snapshot = input.request.executionSnapshot;
+  if (!snapshot) {
+    throw new Error('Composer delivery requires an execution snapshot.');
+  }
+  assertComposerSnapshotAssetBinding(snapshot, input.brief.assetRefs, sourceAssets);
+  const marketing = projectMarketingPackageEvidence({
+    declaration: input.declaration,
+    request: input.request,
+    context: input.context,
+    at: occurredAt,
+  });
+  const versions = input.selection.candidates.map((candidate) => ({
+    id: copyRevisionVersionId(input.workflowId, input.request.packageId, candidate),
+    title: candidate.title,
+    body: candidate.body,
+    conversionHook: candidate.conversionHook,
+    harnessCandidateId: candidate.candidateId,
+    harnessScore: candidate.score,
+    orderedAssetIds: [...new Set(input.brief.assetRefs)],
+    topics: [],
+    createdAt: occurredAt,
+    createdBy: `harness-${input.workflowId}`,
+    source: 'ai_generated' as const,
+  }));
+  const winner = versions.find(
+    (candidate) => candidate.harnessCandidateId === input.selection.winner.candidateId,
+  );
+  if (!winner) {
+    throw new Error('The Harness winner must be a delivered candidate.');
+  }
+  return {
+    additionalVersions: versions.filter((candidate) => candidate.id !== winner.id),
+    expectedRevision: input.request.expectedRevision,
+    generated: { assetIds: [], childRuns: [] },
+    harnessSelection: {
+      recommendedCandidateId: input.selection.winner.candidateId,
+    },
+    idempotencyKey: `harness-copy:${input.workflowId}`,
+    kind: 'image_text',
+    marketing,
+    occurredAt,
+    packageId: input.request.packageId,
+    platform: snapshot.platform.id,
+    snapshotId: snapshot.id,
+    snapshot: {
+      id: snapshot.id,
+      revision: snapshot.revision,
+      schemaVersion: snapshot.schemaVersion,
+    },
+    ...(snapshot.sources.contentPackage
+      ? { sourceContentPackage: snapshot.sources.contentPackage }
+      : {}),
+    taskId: snapshot.task.id,
+    version: winner,
+    workId: snapshot.work.id,
+    workflowId: input.workflowId,
+    workflowRevision: input.request.workflowRevision,
+    workspaceId: input.request.workspaceId,
+  };
+}
+
+function copyRevisionVersionId(
+  workflowId: string,
+  packageId: string,
+  candidate: { candidateId: string; title: string; body: string },
+) {
+  const digest = createHash('sha256')
+    .update(
+      JSON.stringify({
+        workflowId,
+        candidateId: candidate.candidateId,
+        title: candidate.title,
+        body: candidate.body,
+      }),
+    )
+    .digest('hex')
+    .slice(0, 16);
+  return `${packageId}-harness-${digest}`;
 }
 
 function approvalPlatform(platform: string) {
@@ -316,6 +540,73 @@ function approvalPlatform(platform: string) {
     return platform;
   }
   throw new Error(`Platform ${platform} does not support delivery approval.`);
+}
+
+function bindComposerSnapshotBrief(
+  brief: Extract<Awaited<ReturnType<typeof compileExecutionBrief>>, { kind: 'copy' }>,
+  snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
+  sourceAssets: ReadonlyArray<{ id: string; role: 'source' | 'selected' }> = [],
+) {
+  const expectedIdentityRef = snapshotIdentityReference(snapshot);
+  const foreignIdentityRefs = brief.identityRefs.filter(
+    (identityRef) => identityRef !== expectedIdentityRef,
+  );
+  if (foreignIdentityRefs.length > 0) {
+    throw new HarnessSnapshotIdentityBindingError(
+      expectedIdentityRef,
+      brief.identityRefs,
+    );
+  }
+  assertComposerSnapshotAssetBinding(snapshot, brief.assetRefs, sourceAssets);
+  return {
+    ...brief,
+    identityRefs: [expectedIdentityRef],
+    platform: snapshot.platform.id,
+  };
+}
+
+function assertComposerSnapshotIdentityBinding(
+  snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
+  registeredIdentityRefs: Set<string>,
+  briefIdentityRefs: string[],
+) {
+  const expectedIdentityRef = snapshotIdentityReference(snapshot);
+  if (
+    registeredIdentityRefs.size !== 1 ||
+    !registeredIdentityRefs.has(expectedIdentityRef) ||
+    briefIdentityRefs.length !== 1 ||
+    briefIdentityRefs[0] !== expectedIdentityRef
+  ) {
+    throw new HarnessSnapshotIdentityBindingError(
+      expectedIdentityRef,
+      briefIdentityRefs,
+    );
+  }
+}
+
+function assertComposerSnapshotAssetBinding(
+  snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
+  briefAssetRefs: string[],
+  sourceAssets: ReadonlyArray<{ id: string; role: 'source' | 'selected' }> = [],
+) {
+  const snapshotAssetIds = new Set(
+    snapshot.sources.assets.map((asset) => asset.id),
+  );
+  for (const asset of sourceAssets) {
+    if (asset.role === 'selected') snapshotAssetIds.add(asset.id);
+  }
+  const foreignAssetIds = [...new Set(briefAssetRefs)].filter(
+    (assetId) => !snapshotAssetIds.has(assetId),
+  );
+  if (foreignAssetIds.length > 0) {
+    throw new HarnessSnapshotAssetReferenceError(foreignAssetIds);
+  }
+}
+
+function snapshotIdentityReference(
+  snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
+) {
+  return `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
 }
 
 function inferDeclarationFromBundle(

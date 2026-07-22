@@ -238,6 +238,7 @@ test('brief compilation receives the frozen structured Composer contract before 
       quote: { id: 'quote-1', revision: 'quote-r1' },
       route: { id: 'route-1', revision: 'route-r1' },
       briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
       contentModules: ['social_cover'],
     },
     '2026-07-22T09:00:00.000Z'
@@ -262,6 +263,7 @@ test('brief compilation receives the frozen structured Composer contract before 
   const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
   assert.deepEqual(prompt.executionContract, {
     briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+    briefContext: { id: 'brief-context-1', revision: 1 },
     catalogModel: { id: 'model-1', revision: 'model-r1' },
     contentModules: ['social_cover'],
     deliverables: [{ id: 'copy-primary', kind: 'copy', quantity: 1, order: 1 }],

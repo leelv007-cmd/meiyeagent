@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
-import { HarnessCopyStagePort } from "./harness-copy-stage-port.js";
+import { CreationStagePort } from "./creation-stage-port.js";
 
-test("the Coordinator starts the existing Harness from one frozen Copy snapshot", async () => {
+test("the Coordinator starts the existing Harness from one frozen Composer snapshot", async () => {
 	const calls: unknown[] = [];
-	const stage = new HarnessCopyStagePort({
+	const stage = new CreationStagePort({
 		async submit(input) {
 			calls.push(structuredClone(input));
 			return { workflowId: input.taskId };
@@ -38,9 +38,7 @@ test("the Coordinator starts the existing Harness from one frozen Copy snapshot"
 				context: {
 					workId: "work-1",
 					intent: "为夏日护理项目写一条预约文案",
-					sourceSummaries: [
-						"ContentPackage content-source-1 revision content-r3",
-					],
+					sourceSummaries: [],
 				},
 				assetReferences: ["asset-1"],
 			},
@@ -88,6 +86,7 @@ function command() {
 		quote: { id: "quote-1", revision: "quote-r1" },
 		route: { id: "route-1", revision: "route-r1" },
 		briefConfirmation: { id: "brief-1", revision: "brief-r1" },
+		briefContext: { id: "brief-context-1", revision: 1 },
 		contentModules: ["social_cover" as const],
 	};
 }

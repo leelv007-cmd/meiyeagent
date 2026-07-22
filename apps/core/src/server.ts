@@ -590,7 +590,8 @@ function p1HttpError(
         ? 403
         : error.code === 'NOT_FOUND'
           ? 404
-          : error.code === 'INSUFFICIENT_ENTITLEMENT'
+          : error.code === 'INSUFFICIENT_ENTITLEMENT' ||
+              error.code === 'IDEMPOTENCY_CONFLICT'
             ? 409
             : 400
     );
@@ -670,8 +671,20 @@ export async function streamWorkflowEvents(input: {
     });
     const writer = new WorkflowSseWriter(input.response, abortController.signal);
     if (!(await writer.write(': heartbeat\n\n'))) return;
+    let heartbeatInFlight = false;
     heartbeat = setInterval(() => {
-      void writer.write(': heartbeat\n\n');
+      if (heartbeatInFlight || abortController.signal.aborted) return;
+      heartbeatInFlight = true;
+      void writer
+        .write(': heartbeat\n\n')
+        .then((written) => {
+          if (!written && !abortController.signal.aborted) {
+            abortController.abort(new Error('SSE response is no longer writable.'));
+          }
+        })
+        .finally(() => {
+          heartbeatInFlight = false;
+        });
     }, input.workflowHeartbeatMs);
     for await (const frame of subscription.frames) {
       if (abortController.signal.aborted) break;
@@ -1243,11 +1256,7 @@ export function createCoreServer({
       }
       return;
     }
-    if (
-      harnessService &&
-      request.method === 'POST' &&
-      harnessTaskCollectionWorkspaceId
-    ) {
+    if (request.method === 'POST' && harnessTaskCollectionWorkspaceId) {
       try {
         const context = p1Identity(
           request,

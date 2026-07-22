@@ -5,8 +5,13 @@ import { MemoryContextBundleRepository } from '../operations/context-bundle-repo
 import { MemoryContextSourceRevisionRepository } from '../operations/context-source-revisions.js';
 import { MemoryMarketingIdentityRepository } from '../operations/marketing-identity.js';
 import { MemoryStoreFactLedger } from '../operations/store-fact-ledger.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import { SourceContentPackageUnavailableError } from '../execution-spine/source-content-package-resolver.js';
 import { briefContextBundleSchema } from './structured-nodes.js';
-import { LedgerBackedHarnessContextPort } from './production-context-port.js';
+import {
+  HarnessSnapshotIdentityError,
+  LedgerBackedHarnessContextPort,
+} from './production-context-port.js';
 import { createHarnessCandidateValidator } from './policy-gates.js';
 
 test('production context port freezes the real #32 bundle and fact references', async () => {
@@ -528,6 +533,246 @@ test('production context hydrates complete active brand and person identities fo
   );
 });
 
+test('Composer context binds only its frozen identity revision', async () => {
+  const identities = new MemoryMarketingIdentityRepository();
+  await registerBrandIdentity(identities, 'identity-target', '目标身份');
+  await registerBrandIdentity(identities, 'identity-other', '其他身份');
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    new MemoryContextBundleRepository(),
+    () => '2026-07-22T09:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    identities,
+  );
+  const snapshot = composerSnapshot('task-snapshot-identity', 'identity-target', '1');
+  const request = composerRequest(snapshot);
+
+  const context = await port.compileAndFreeze({
+    workflowId: snapshot.task.id,
+    request,
+    declaration: {
+      taskType: 'brand_personal_ip',
+      deliveryLayer: 'copy',
+      implicitConstraints: [],
+    },
+  });
+
+  assert.deepEqual(context.policyReferences.identityRefs, [
+    {
+      id: 'marketing_identity:identity-target:1',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+  ]);
+  assert.deepEqual(
+    Object.keys(context.bundle.dimensions.expression_identity),
+    ['identity_identity-target'],
+  );
+
+  const forgedContext = structuredClone(context);
+  const targetIdentity =
+    forgedContext.bundle.dimensions.expression_identity['identity_identity-target'];
+  if (!targetIdentity) throw new Error('Expected the frozen target identity.');
+  forgedContext.bundle.dimensions.expression_identity['identity_identity-other'] = {
+    ...targetIdentity,
+    sourceRef: 'marketing_identity:identity-other:1',
+  };
+  await assert.rejects(
+    port.fence({
+      workflowId: snapshot.task.id,
+      request,
+      declaration: {
+        taskType: 'brand_personal_ip',
+        deliveryLayer: 'copy',
+        implicitConstraints: [],
+      },
+      context: forgedContext,
+    }),
+    HarnessSnapshotIdentityError,
+  );
+
+  const unavailableSnapshot = composerSnapshot(
+    'task-snapshot-identity-missing',
+    'identity-target',
+    '2',
+  );
+  await assert.rejects(
+    port.compileAndFreeze({
+      workflowId: unavailableSnapshot.task.id,
+      request: composerRequest(unavailableSnapshot),
+      declaration: {
+        taskType: 'brand_personal_ip',
+        deliveryLayer: 'copy',
+        implicitConstraints: [],
+      },
+    }),
+    HarnessSnapshotIdentityError,
+  );
+});
+
+test('Composer context carries safe source-package metadata and fences it again', async () => {
+  const identities = new MemoryMarketingIdentityRepository();
+  await registerBrandIdentity(identities, 'identity-source', '来源内容身份');
+  let available = true;
+  const source = { id: 'source-package-1', revision: '3' };
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    new MemoryContextBundleRepository(),
+    () => '2026-07-22T09:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    {
+      async resolve({ assetIds }) {
+        return { knownAssetIds: assetIds, unauthorizedAssetIds: [] };
+      },
+    },
+    identities,
+    {
+      async resolve() {
+        if (!available) throw new SourceContentPackageUnavailableError(source);
+        return {
+          reference: source,
+          structure: {
+            slots: ['headline', 'body', 'conversion_hook'],
+          },
+          style: { kind: 'image_text' as const, sourcePlatform: 'xiaohongshu' as const },
+          assets: [
+            { id: 'source-asset-1', role: 'source' as const },
+            { id: 'selected-asset-1', role: 'selected' as const },
+          ],
+        };
+      },
+    },
+  );
+  const snapshot = composerSnapshot(
+    'task-source-package',
+    'identity-source',
+    '1',
+    source,
+  );
+  const input = {
+    workflowId: snapshot.task.id,
+    request: composerRequest(snapshot),
+    declaration: {
+      taskType: 'brand_personal_ip' as const,
+      deliveryLayer: 'copy' as const,
+      implicitConstraints: [],
+    },
+  };
+
+  const context = await port.compileAndFreeze(input);
+
+  assert.deepEqual(
+    context.bundle.dimensions.store_facts_assets.source_content_package_structure,
+    {
+      value: {
+        packageId: 'source-package-1',
+        revision: '3',
+        slots: ['headline', 'body', 'conversion_hook'],
+      },
+      layer: 'current_instruction',
+      pool: 'current_signal',
+      sourceRef: 'content_package:source-package-1:3',
+    },
+  );
+  assert.deepEqual(
+    context.bundle.dimensions.store_facts_assets.source_content_package_assets?.value,
+    {
+      packageId: 'source-package-1',
+      revision: '3',
+      assets: [
+        { id: 'selected-asset-1', role: 'selected' },
+      ],
+    },
+  );
+  assert.deepEqual(
+    context.bundle.dimensions.platform_mechanism.source_content_package_style?.value,
+    {
+      packageId: 'source-package-1',
+      revision: '3',
+      kind: 'image_text',
+      sourcePlatform: 'xiaohongshu',
+    },
+  );
+  assert.deepEqual(context.policyReferences.rightsRefs, [
+    {
+      assetId: 'selected-asset-1',
+      workspaceId: 'workspace-1',
+      status: 'authorized',
+      allowedUses: ['public_content'],
+    },
+  ]);
+
+  available = false;
+  await assert.rejects(
+    port.fence({ ...input, context }),
+    SourceContentPackageUnavailableError,
+  );
+});
+
+test('Composer context does not self-authorize a selected source-package asset', async () => {
+  const identities = new MemoryMarketingIdentityRepository();
+  await registerBrandIdentity(identities, 'identity-source-rights', '来源素材身份');
+  const source = { id: 'source-package-1', revision: '3' };
+  const port = new LedgerBackedHarnessContextPort(
+    new MemoryStoreFactLedger(),
+    new MemoryContextBundleRepository(),
+    () => '2026-07-22T09:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    {
+      async resolve({ assetIds }) {
+        assert.deepEqual(assetIds, ['selected-asset-1']);
+        return {
+          knownAssetIds: ['selected-asset-1'],
+          unauthorizedAssetIds: ['selected-asset-1'],
+        };
+      },
+    },
+    identities,
+    {
+      async resolve() {
+        return {
+          reference: source,
+          structure: { slots: ['headline', 'body'] },
+          style: { kind: 'image_text' as const, sourcePlatform: 'douyin' as const },
+          assets: [{ id: 'selected-asset-1', role: 'selected' as const }],
+        };
+      },
+    },
+  );
+  const snapshot = composerSnapshot(
+    'task-source-package-rights',
+    'identity-source-rights',
+    '1',
+    source,
+  );
+
+  const context = await port.compileAndFreeze({
+    workflowId: snapshot.task.id,
+    request: composerRequest(snapshot),
+    declaration: {
+      taskType: 'brand_personal_ip',
+      deliveryLayer: 'copy',
+      implicitConstraints: [],
+    },
+  });
+
+  assert.deepEqual(context.policyReferences.rightsRefs, [
+    {
+      assetId: 'selected-asset-1',
+      workspaceId: 'workspace-1',
+      status: 'unknown',
+      allowedUses: [],
+    },
+  ]);
+});
+
 function taskInput() {
   return {
     actorId: 'owner-1',
@@ -554,4 +799,99 @@ function taskInput() {
       },
     ],
   };
+}
+
+function composerSnapshot(
+  taskId: string,
+  identityId: string,
+  identityRevision: string,
+  sourceContentPackage?: { id: string; revision: string },
+) {
+  return createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      contentModules: ['social_cover'],
+      contentPackageId: `package-${taskId}`,
+      deliverables: [
+        { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
+      ],
+      expectedContentPackageRevision: 0,
+      identity: { id: identityId, revision: identityRevision },
+      idempotencyKey: `submission-${taskId}`,
+      intent: '写一条预约文案',
+      lens: 'copy',
+      modelPolicy: { id: 'policy-1', mode: 'fixed', revision: 'policy-r1' },
+      platform: { id: 'douyin' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      rights: { revision: 'rights-r1', summary: 'authorized source assets' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      sources: {
+        assets: [],
+        ...(sourceContentPackage ? { contentPackage: sourceContentPackage } : {}),
+      },
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      taskId,
+      workId: `work-${taskId}`,
+      workspaceId: 'workspace-1',
+    },
+    '2026-07-22T09:00:00.000Z',
+  );
+}
+
+function composerRequest(
+  snapshot: ReturnType<typeof composerSnapshot>,
+) {
+  return {
+    actorId: snapshot.actorId,
+    workspaceId: snapshot.workspaceId,
+    packageId: snapshot.contentPackage.id,
+    expectedRevision: snapshot.contentPackage.expectedRevision,
+    workflowRevision: snapshot.revision,
+    rawInput: snapshot.intent.text,
+    factScope: { storeId: snapshot.workspaceId },
+    intent: {
+      context: {
+        workId: snapshot.work.id,
+        intent: snapshot.intent.text,
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+    executionSnapshot: snapshot,
+  };
+}
+
+async function registerBrandIdentity(
+  identities: MemoryMarketingIdentityRepository,
+  identityId: string,
+  displayName: string,
+) {
+  await identities.register({
+    workspaceId: 'workspace-1',
+    actorId: 'owner-1',
+    occurredAt: '2026-07-22T09:00:00.000Z',
+    command: {
+      identityId,
+      kind: 'brand',
+      expectedVersion: 0,
+      displayName,
+      owner: '门店',
+      professionalBoundaries: ['只表达已核验项目与品牌主张'],
+      allowedPlatforms: ['douyin'],
+      allowedScenes: ['brand_personal_ip'],
+      expressionSamples: ['以专业克制的方式说明项目价值。'],
+      effectiveFrom: '2026-07-22T09:00:00.000Z',
+      expiresAt: null,
+      departureHandling: '品牌停用后停止生成新内容。',
+      sourceRef: `${identityId}-policy`,
+      brandClaims: ['专业护理服务'],
+      forbiddenClaims: ['疗效保证'],
+      visualPrinciples: ['真实服务细节'],
+      seriesAnchors: ['门店护理指南'],
+    },
+  });
 }

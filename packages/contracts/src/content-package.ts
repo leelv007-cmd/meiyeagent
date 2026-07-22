@@ -306,6 +306,13 @@ export const contentPackageSourceSchema = z.object({
       schemaVersion: z.literal('creation-execution-snapshot/v1'),
     })
     .optional(),
+  sourceContentPackage: z
+    .object({
+      id: contentPackageIdSchema,
+      revision: contentPackageIdSchema,
+    })
+    .strict()
+    .optional(),
   groundingId: contentPackageIdSchema.optional(),
   layoutCanvas: z
     .object({

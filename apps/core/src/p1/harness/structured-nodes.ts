@@ -270,6 +270,7 @@ export async function compileExecutionBrief(
 function briefExecutionContract(snapshot: CreationExecutionSnapshot) {
   return {
     briefConfirmation: snapshot.briefConfirmation,
+    briefContext: snapshot.briefContext,
     catalogModel: snapshot.catalogModel,
     contentModules: snapshot.contentModules,
     deliverables: snapshot.deliverables,

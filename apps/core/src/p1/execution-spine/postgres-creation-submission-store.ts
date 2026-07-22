@@ -188,6 +188,9 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
           revision: snapshot.revision,
           schemaVersion: snapshot.schemaVersion,
         },
+        ...(snapshot.sources.contentPackage
+          ? { sourceContentPackage: snapshot.sources.contentPackage }
+          : {}),
         targetPlatform: snapshot.platform.id,
         workId: submission.work.id,
         workflowId: submission.task.id,
@@ -196,6 +199,12 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
       timestamp,
       workspaceId: snapshot.workspaceId,
     });
+    const contentPackageWithLineage = {
+      ...contentPackage,
+      lineage: snapshot.sources.contentPackage
+        ? { reusedFromPackageId: snapshot.sources.contentPackage.id }
+        : {},
+    };
     await insertOnce(
       client,
       `INSERT INTO p1_content_packages
@@ -205,7 +214,7 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
       [
         snapshot.workspaceId,
         submission.contentPackage.id,
-        JSON.stringify(contentPackage),
+        JSON.stringify(contentPackageWithLineage),
         timestamp,
       ],
       `ContentPackage ${submission.contentPackage.id} already exists.`,

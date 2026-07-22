@@ -3,10 +3,17 @@ import test from 'node:test';
 
 import {
   HarnessIdentityPreflightError,
+  HarnessSnapshotAssetReferenceError,
+  HarnessSnapshotIdentityBindingError,
   ProductionHarnessStagePorts,
   type HarnessCopyDeliveryPort,
 } from './production-stage-ports.js';
-import { runHarnessWorkflow } from './workflow-core.js';
+import type { ContentPackageRevisionWriteInput } from '../execution-spine/content-package-revision-port.js';
+import { SourceContentPackageUnavailableError } from '../execution-spine/source-content-package-resolver.js';
+import {
+  runHarnessWorkflow,
+  type HarnessContextSnapshot,
+} from './workflow-core.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type {
   StructuredNodeRunner,
@@ -245,8 +252,653 @@ test('production Copy stage keeps the frozen structured platform over model outp
   });
 
   assert.equal(result.brief.platform, 'douyin');
+  assert.deepEqual(result.brief.identityRefs, [
+    'marketing_identity:identity-1:identity-r1',
+  ]);
   const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
   assert.equal(prompt.executionContract.platform.id, 'douyin');
+});
+
+test('a Composer Copy snapshot rejects a different active identity before provider execution', () => {
+  const runner = new QueueRunner([]);
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+  );
+  const snapshot = composerSnapshot();
+  const context = contextSnapshot();
+  context.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:identity-1:identity-r1',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+    {
+      id: 'marketing_identity:other-active:1',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+  ];
+
+  assert.throws(
+    () =>
+      ports.executeAndSelect({
+        workflowId: snapshot.task.id,
+        request: {
+          ...taskInput(),
+          expectedRevision: snapshot.contentPackage.expectedRevision,
+          executionSnapshot: snapshot,
+          packageId: snapshot.contentPackage.id,
+          workflowRevision: snapshot.revision,
+        },
+        context,
+        brief: {
+          kind: 'copy',
+          instructions: 'x'.repeat(80),
+          platform: 'douyin',
+          cta: '私信预约',
+          factRefs: [],
+          assetRefs: [],
+          identityRefs: ['marketing_identity:other-active:1'],
+          constraints: [],
+        },
+      }),
+    HarnessSnapshotIdentityBindingError,
+  );
+  assert.equal(runner.requests.length, 0);
+});
+
+test('a Composer Copy snapshot rejects a foreign brief asset before provider execution', () => {
+  const runner = new QueueRunner([]);
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+  );
+  const snapshot = composerSnapshot();
+  const context = contextSnapshot();
+  context.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:identity-1:identity-r1',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+  ];
+
+  assert.throws(
+    () =>
+      ports.executeAndSelect({
+        workflowId: snapshot.task.id,
+        request: {
+          ...taskInput(),
+          expectedRevision: snapshot.contentPackage.expectedRevision,
+          executionSnapshot: snapshot,
+          packageId: snapshot.contentPackage.id,
+          workflowRevision: snapshot.revision,
+        },
+        context,
+        brief: {
+          kind: 'copy',
+          instructions: 'x'.repeat(80),
+          platform: 'douyin',
+          cta: '私信预约',
+          factRefs: [],
+          assetRefs: ['asset-foreign'],
+          identityRefs: ['marketing_identity:identity-1:identity-r1'],
+          constraints: [],
+        },
+      }),
+    HarnessSnapshotAssetReferenceError,
+  );
+  assert.equal(runner.requests.length, 0);
+});
+
+test('a frozen Composer Copy snapshot uses the single revision writer', async () => {
+  const legacyDelivery = new RecordingDelivery();
+  const executionDelivery = new RecordingRevisionWriter();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => new QueueRunner([]) },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    legacyDelivery,
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+  );
+  const snapshot = composerSnapshot();
+
+  const delivery = await ports.assembleAndDeliver({
+    workflowId: snapshot.task.id,
+    request: {
+      ...taskInput(),
+      expectedRevision: snapshot.contentPackage.expectedRevision,
+      executionSnapshot: snapshot,
+      packageId: snapshot.contentPackage.id,
+      workflowRevision: snapshot.revision,
+    },
+    declaration: {
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      implicitConstraints: [],
+    },
+    context: contextSnapshot(),
+    brief: {
+      kind: 'copy',
+      instructions: 'x'.repeat(80),
+      platform: 'douyin',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: ['asset-1', 'asset-1'],
+      identityRefs: [],
+      constraints: [],
+    },
+    selection: {
+      candidates: [
+        {
+          candidateId: 'candidate-1',
+          title: '候选一',
+          body: '候选一正文',
+          conversionHook: '私信预约',
+          score: 91,
+        },
+        {
+          candidateId: 'candidate-2',
+          title: '候选二',
+          body: '候选二正文',
+          conversionHook: '了解详情',
+          score: 88,
+        },
+      ],
+      winner: {
+        candidateId: 'candidate-1',
+        title: '候选一',
+        body: '候选一正文',
+        conversionHook: '私信预约',
+      },
+      trace: {} as never,
+    },
+  });
+
+  assert.deepEqual(delivery, {
+    packageId: 'package-1',
+    revision: 1,
+    versionId: executionDelivery.inputs[0]?.version.id,
+  });
+  assert.equal(legacyDelivery.inputs.length, 0);
+  assert.equal(executionDelivery.inputs.length, 1);
+  assert.equal(
+    executionDelivery.inputs[0]?.occurredAt,
+    '2026-07-22T10:00:00.000Z',
+  );
+  assert.deepEqual(executionDelivery.inputs[0]?.snapshot, {
+    id: snapshot.id,
+    revision: snapshot.revision,
+    schemaVersion: snapshot.schemaVersion,
+  });
+  assert.equal(executionDelivery.inputs[0]?.snapshotId, snapshot.id);
+  assert.equal(executionDelivery.inputs[0]?.taskId, snapshot.task.id);
+  assert.equal(executionDelivery.inputs[0]?.workId, snapshot.work.id);
+  assert.deepEqual(executionDelivery.inputs[0]?.generated, {
+    assetIds: [],
+    childRuns: [],
+  });
+  assert.deepEqual(executionDelivery.inputs[0]?.harnessSelection, {
+    recommendedCandidateId: 'candidate-1',
+  });
+  assert.deepEqual(executionDelivery.inputs[0]?.version.orderedAssetIds, ['asset-1']);
+  assert.deepEqual(
+    executionDelivery.inputs[0]?.additionalVersions?.map(
+      (version) => version.harnessCandidateId,
+    ),
+    ['candidate-2'],
+  );
+});
+
+test('a source ContentPackage enters the Copy Brief and fails closed after revocation', async () => {
+  const source = { id: 'source-package-1', revision: '3' };
+  let available = true;
+  const runner = new QueueRunner([
+    {
+      kind: 'copy',
+      instructions: '请基于已确认旧内容的结构和风格，写一条适合新平台的预约文案。'.repeat(3),
+      platform: 'xiaohongshu',
+      cta: '私信了解',
+      factRefs: [],
+      assetRefs: [],
+      identityRefs: [],
+      constraints: [],
+    },
+  ]);
+  const executionDelivery = new RecordingRevisionWriter();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextWithSourcePackage();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+    {
+      async resolve(input) {
+        if (!available) throw new SourceContentPackageUnavailableError(input.source!);
+        return sourceContentPackageProjection();
+      },
+    },
+  );
+  const snapshot = composerSnapshot(source);
+  const request = {
+    ...taskInput(),
+    expectedRevision: snapshot.contentPackage.expectedRevision,
+    executionSnapshot: snapshot,
+    packageId: snapshot.contentPackage.id,
+    workflowRevision: snapshot.revision,
+  };
+  const declaration = {
+    taskType: 'daily_service_exposure' as const,
+    deliveryLayer: 'copy' as const,
+    implicitConstraints: [],
+  };
+
+  await ports.compileBrief({
+    workflowId: snapshot.task.id,
+    request,
+    declaration,
+    context: contextWithSourcePackage(),
+  });
+  const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
+  assert.deepEqual(
+    prompt.bundle.dimensions.store_facts_assets.source_content_package_structure.value,
+    {
+      packageId: source.id,
+      revision: source.revision,
+      ...sourceContentPackageProjection().structure,
+    },
+  );
+  assert.deepEqual(
+    prompt.bundle.dimensions.store_facts_assets.source_content_package_assets.value,
+    {
+      packageId: source.id,
+      revision: source.revision,
+      assets: sourceContentPackageProjection().assets.filter(
+        (asset) => asset.role === 'selected',
+      ),
+    },
+  );
+  assert.doesNotMatch(JSON.stringify(prompt), /398元|限时团购|旧活动/u);
+  assert.doesNotMatch(JSON.stringify(prompt), /source-asset-1/u);
+
+  available = false;
+  await assert.rejects(
+    ports.nameIntent({ workflowId: snapshot.task.id, request }),
+    SourceContentPackageUnavailableError,
+  );
+  await assert.rejects(
+    ports.assembleAndDeliver({
+      workflowId: snapshot.task.id,
+      request,
+      declaration,
+      context: contextWithSourcePackage(),
+      brief: {
+        kind: 'copy',
+        instructions: 'x'.repeat(80),
+        platform: 'douyin',
+        cta: '私信了解',
+        factRefs: [],
+        assetRefs: [],
+        identityRefs: [],
+        constraints: [],
+      },
+      selection: selectionFixture(),
+    }),
+    SourceContentPackageUnavailableError,
+  );
+  assert.equal(runner.requests.length, 1);
+  assert.equal(executionDelivery.inputs.length, 0);
+});
+
+test('only selected source-package assets can cross Brief, selection, and delivery', async () => {
+  const source = { id: 'source-package-1', revision: '3' };
+  const runner = new QueueRunner([
+    {
+      kind: 'copy',
+      instructions: '请只使用已选择且仍有授权的来源素材，写一条可发布的预约文案。'.repeat(3),
+      platform: 'douyin',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: ['selected-asset-1'],
+      identityRefs: [],
+      constraints: [],
+    },
+    candidate('候选一', { assetRefs: ['selected-asset-1'] }),
+    candidate('候选二', { assetRefs: ['selected-asset-1'] }),
+    candidate('候选三', { assetRefs: ['selected-asset-1'] }),
+    score(91),
+    score(90),
+    score(89),
+  ]);
+  const executionDelivery = new RecordingRevisionWriter();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextWithSourcePackage();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+    {
+      async resolve() {
+        return sourceContentPackageProjection();
+      },
+    },
+  );
+  const snapshot = composerSnapshot(source);
+  const request = composerRequest(snapshot);
+  const declaration = {
+    taskType: 'daily_service_exposure' as const,
+    deliveryLayer: 'copy' as const,
+    implicitConstraints: [],
+  };
+  const context = contextWithSourcePackage();
+
+  const { brief } = await ports.compileBrief({
+    workflowId: snapshot.task.id,
+    request,
+    declaration,
+    context,
+  });
+  assert.deepEqual(brief.assetRefs, ['selected-asset-1']);
+
+  const selection = await ports.executeAndSelect({
+    workflowId: snapshot.task.id,
+    request,
+    context,
+    brief,
+  });
+  assert.equal(selection.winner.candidateId, 'c01');
+
+  await ports.assembleAndDeliver({
+    workflowId: snapshot.task.id,
+    request,
+    declaration,
+    context,
+    brief,
+    selection,
+  });
+  assert.equal(executionDelivery.inputs.length, 1);
+  assert.deepEqual(executionDelivery.inputs[0]?.version.orderedAssetIds, [
+    'selected-asset-1',
+  ]);
+  assert.deepEqual(
+    executionDelivery.inputs[0]?.additionalVersions?.map(
+      (version) => version.orderedAssetIds,
+    ),
+    [['selected-asset-1'], ['selected-asset-1']],
+  );
+
+  const sourceOnlyRunner = new QueueRunner([
+    {
+      kind: 'copy',
+      instructions: 'x'.repeat(80),
+      platform: 'douyin',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: ['source-asset-1'],
+      identityRefs: [],
+      constraints: [],
+    },
+  ]);
+  const sourceOnlyPorts = new ProductionHarnessStagePorts(
+    { create: () => sourceOnlyRunner },
+    {
+      async compileAndFreeze() {
+        return contextWithSourcePackage();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    new RecordingRevisionWriter(),
+    {
+      async resolve() {
+        return sourceContentPackageProjection();
+      },
+    },
+  );
+  await assert.rejects(
+    sourceOnlyPorts.compileBrief({
+      workflowId: snapshot.task.id,
+      request,
+      declaration,
+      context,
+    }),
+    HarnessSnapshotAssetReferenceError,
+  );
+});
+
+test('source revocation after c01 prevents c02 provider work and delivery', async () => {
+  const source = { id: 'source-package-1', revision: '3' };
+  const runner = new QueueRunner([
+    {
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+    {
+      kind: 'copy',
+      instructions: 'x'.repeat(80),
+      platform: 'douyin',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: [],
+      identityRefs: [],
+      constraints: [],
+    },
+    candidate('候选一'),
+  ]);
+  const executionDelivery = new RecordingRevisionWriter();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextWithSourcePackage();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+    {
+      async resolve(input) {
+        if (runner.requests.length >= 3) {
+          throw new SourceContentPackageUnavailableError(input.source!);
+        }
+        return sourceContentPackageProjection();
+      },
+    },
+  );
+  const snapshot = composerSnapshot(source);
+
+  await assert.rejects(
+    runHarnessWorkflow(snapshot.task.id, composerRequest(snapshot), ports, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected decision wait.');
+      },
+      async recordTrace() {},
+    }),
+    SourceContentPackageUnavailableError,
+  );
+  assert.deepEqual(
+    runner.requests.map((request) => request.effectIdempotencyKey),
+    [
+      `wf:${snapshot.task.id}:s1:intent:0`,
+      `wf:${snapshot.task.id}:s3:copy-primary:0`,
+      `wf:${snapshot.task.id}:s4:copy-primary:c01`,
+    ],
+  );
+  assert.equal(executionDelivery.inputs.length, 0);
+});
+
+test('source revocation between auto fallback attempts stops the second provider effect', async () => {
+  const source = { id: 'source-package-1', revision: '3' };
+  let available = true;
+  const runner = new FallbackFenceRunner(() => {
+    available = false;
+  });
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextWithSourcePackage();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    new RecordingRevisionWriter(),
+    {
+      async resolve(input) {
+        if (!available) throw new SourceContentPackageUnavailableError(input.source!);
+        return sourceContentPackageProjection();
+      },
+    },
+  );
+  const snapshot = composerSnapshot(source);
+  const request = composerRequest(snapshot);
+
+  await assert.rejects(
+    ports.compileBrief({
+      workflowId: snapshot.task.id,
+      request,
+      declaration: {
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        implicitConstraints: [],
+      },
+      context: contextWithSourcePackage(),
+    }),
+    SourceContentPackageUnavailableError,
+  );
+  assert.equal(runner.providerAttempts, 1);
+  assert.equal(runner.fenceCalls, 2);
+});
+
+test('a Composer Copy snapshot rejects brief assets outside its frozen sources', async () => {
+  const executionDelivery = new RecordingRevisionWriter();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => new QueueRunner([]) },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+  );
+  const snapshot = composerSnapshot();
+
+  await assert.rejects(
+    ports.assembleAndDeliver({
+      workflowId: snapshot.task.id,
+      request: {
+        ...taskInput(),
+        expectedRevision: snapshot.contentPackage.expectedRevision,
+        executionSnapshot: snapshot,
+        packageId: snapshot.contentPackage.id,
+        workflowRevision: snapshot.revision,
+      },
+      declaration: {
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        implicitConstraints: [],
+      },
+      context: contextSnapshot(),
+      brief: {
+        kind: 'copy',
+        instructions: 'x'.repeat(80),
+        platform: 'douyin',
+        cta: '私信预约',
+        factRefs: [],
+        assetRefs: ['asset-foreign'],
+        identityRefs: [],
+        constraints: [],
+      },
+      selection: {
+        candidates: [
+          {
+            candidateId: 'candidate-1',
+            title: '候选一',
+            body: '候选一正文',
+            conversionHook: '私信预约',
+            score: 91,
+          },
+        ],
+        winner: {
+          candidateId: 'candidate-1',
+          title: '候选一',
+          body: '候选一正文',
+          conversionHook: '私信预约',
+        },
+        trace: {} as never,
+      },
+    }),
+    HarnessSnapshotAssetReferenceError,
+  );
+  assert.equal(executionDelivery.inputs.length, 0);
 });
 
 test('production ports compose #31, canonical gates, N-to-1 and copy delivery', async () => {
@@ -619,6 +1271,32 @@ class QueueRunner implements StructuredNodeRunner {
   }
 }
 
+class FallbackFenceRunner implements StructuredNodeRunner {
+  fenceCalls = 0;
+  providerAttempts = 0;
+
+  constructor(private readonly afterFirstProviderAttempt: () => void) {}
+
+  async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
+    const fence = request.beforeProviderAttempt;
+    if (!fence) throw new Error('Expected source fence before provider attempt.');
+    this.fenceCalls += 1;
+    await fence();
+    this.providerAttempts += 1;
+    this.afterFirstProviderAttempt();
+    this.fenceCalls += 1;
+    await fence();
+    this.providerAttempts += 1;
+    return {
+      output: request.schema.parse({}),
+      attempts: this.providerAttempts,
+      providerTaskRef: 'provider-fallback',
+      replayed: false,
+      usage: { inputTokens: 1, outputTokens: 1 },
+    };
+  }
+}
+
 class RecordingDelivery implements HarnessCopyDeliveryPort {
   readonly inputs: Array<
     Parameters<HarnessCopyDeliveryPort['deliverCopyRevision']>[0]
@@ -629,6 +1307,19 @@ class RecordingDelivery implements HarnessCopyDeliveryPort {
   ) {
     this.inputs.push(input);
     return { packageId: input.packageId, versionId: 'version-3', revision: 3 };
+  }
+}
+
+class RecordingRevisionWriter {
+  readonly inputs: ContentPackageRevisionWriteInput[] = [];
+
+  async write(input: ContentPackageRevisionWriteInput) {
+    this.inputs.push(structuredClone(input));
+    return {
+      packageId: input.packageId,
+      revision: input.expectedRevision + 1,
+      versionId: input.version.id,
+    };
   }
 }
 
@@ -716,7 +1407,7 @@ function score(value: number) {
   };
 }
 
-function contextSnapshot() {
+function contextSnapshot(): HarnessContextSnapshot {
   return {
     bundle: {
       bundleId: 'bundle-1',
@@ -778,7 +1469,101 @@ function taskInput() {
   };
 }
 
-function composerSnapshot() {
+function contextWithSourcePackage(): HarnessContextSnapshot {
+  const context = contextSnapshot();
+  const source = sourceContentPackageProjection();
+  const sourceRef = `content_package:${source.reference.id}:${source.reference.revision}`;
+  context.bundle.dimensions.store_facts_assets.source_content_package_structure = {
+    value: {
+      packageId: source.reference.id,
+      revision: source.reference.revision,
+      ...source.structure,
+    },
+    layer: 'current_instruction',
+    pool: 'current_signal',
+    sourceRef,
+  };
+  context.bundle.dimensions.store_facts_assets.source_content_package_assets = {
+    value: {
+      packageId: source.reference.id,
+      revision: source.reference.revision,
+      assets: source.assets.filter((asset) => asset.role === 'selected'),
+    },
+    layer: 'current_instruction',
+    pool: 'current_signal',
+    sourceRef,
+  };
+  context.bundle.dimensions.platform_mechanism.source_content_package_style = {
+    value: {
+      packageId: source.reference.id,
+      revision: source.reference.revision,
+      ...source.style,
+    },
+    layer: 'current_instruction',
+    pool: 'current_signal',
+    sourceRef,
+  };
+  context.policyReferences.rightsRefs = [
+    {
+      assetId: 'selected-asset-1',
+      workspaceId: 'workspace-1',
+      status: 'authorized',
+      allowedUses: ['public_content'],
+    },
+  ];
+  context.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:identity-1:identity-r1',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+  ];
+  return context;
+}
+
+function sourceContentPackageProjection() {
+  return {
+    reference: { id: 'source-package-1', revision: '3' },
+    structure: {
+      slots: ['headline', 'body', 'conversion_hook'] as Array<
+        'headline' | 'body' | 'conversion_hook'
+      >,
+    },
+    style: {
+      kind: 'image_text' as const,
+      sourcePlatform: 'xiaohongshu' as const,
+    },
+    assets: [
+      { id: 'source-asset-1', role: 'source' as const },
+      { id: 'selected-asset-1', role: 'selected' as const },
+    ],
+  };
+}
+
+function selectionFixture() {
+  return {
+    candidates: [
+      {
+        candidateId: 'candidate-1',
+        title: '候选一',
+        body: '候选一正文',
+        conversionHook: '私信了解',
+        score: 91,
+      },
+    ],
+    winner: {
+      candidateId: 'candidate-1',
+      title: '候选一',
+      body: '候选一正文',
+      conversionHook: '私信了解',
+    },
+    trace: {} as never,
+  };
+}
+
+function composerSnapshot(
+  sourceContentPackage?: { id: string; revision: string },
+) {
   return createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
@@ -796,7 +1581,10 @@ function composerSnapshot() {
       deliverables: [
         { id: 'copy-primary', kind: 'copy', quantity: 1, order: 1 },
       ],
-      sources: { assets: [] },
+      sources: {
+        assets: [{ id: 'asset-1', revision: 'asset-r1', role: 'reference' }],
+        ...(sourceContentPackage ? { contentPackage: sourceContentPackage } : {}),
+      },
       rights: { revision: 'rights-r1', summary: 'authorized source assets' },
       identity: { id: 'identity-1', revision: 'identity-r1' },
       modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
@@ -804,8 +1592,19 @@ function composerSnapshot() {
       quote: { id: 'quote-1', revision: 'quote-r1' },
       route: { id: 'route-1', revision: 'route-r1' },
       briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
       contentModules: ['social_cover'],
     },
     '2026-07-22T09:00:00.000Z',
   );
+}
+
+function composerRequest(snapshot: ReturnType<typeof composerSnapshot>) {
+  return {
+    ...taskInput(),
+    packageId: snapshot.contentPackage.id,
+    expectedRevision: snapshot.contentPackage.expectedRevision,
+    workflowRevision: snapshot.revision,
+    executionSnapshot: snapshot,
+  };
 }

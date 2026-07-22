@@ -11,6 +11,7 @@ import {
 import {
   AiSdkStructuredObjectExecutor,
   ModelSupplyStructuredNodeRunner,
+  StructuredNodeRunError,
   type StructuredObjectExecutor,
 } from './structured-node-runner.js';
 
@@ -161,6 +162,34 @@ test('structured runner rejects one effect key reused with another payload', asy
   assert.equal(ledger.settlements, 1);
 });
 
+test('structured runner fences every auto provider attempt before fallback', async () => {
+  let revoked = false;
+  let fenceCalls = 0;
+  const executor = new FallbackStructuredExecutor(() => {
+    revoked = true;
+  });
+  const runner = createAutoRunner(new CountingLedger(), executor);
+
+  await assert.rejects(
+    runner.run({
+      effectIdempotencyKey: 'wf:workflow-auto-fence:s3:brief:0',
+      schemaName: 'copy_brief_v1',
+      schemaRevision: 'copy-brief-v1',
+      instructions: 'Return a Copy Brief.',
+      prompt: '{"intent":"改写旧内容"}',
+      schema: z.object({ normalized: z.string() }).strict(),
+      beforeProviderAttempt: async () => {
+        fenceCalls += 1;
+        if (revoked) throw rejectedBeforeAcceptance('source package was revoked');
+      },
+    }),
+    StructuredNodeRunError,
+  );
+
+  assert.equal(fenceCalls, 2);
+  assert.equal(executor.calls, 1);
+});
+
 function createRunner(
   ledger: ModelSupplyLedgerPort,
   executor: StructuredObjectExecutor,
@@ -197,6 +226,57 @@ function createRunner(
   });
 }
 
+function createAutoRunner(
+  ledger: ModelSupplyLedgerPort,
+  executor: StructuredObjectExecutor,
+) {
+  const application = new ModelSupplyApplicationService({
+    models: [
+      {
+        id: 'llm-primary',
+        modality: 'llm',
+        operations: ['text.respond'],
+        displayName: 'Primary Harness LLM',
+        qualityRank: 100,
+      },
+      {
+        id: 'llm-fallback',
+        modality: 'llm',
+        operations: ['text.respond'],
+        displayName: 'Fallback Harness LLM',
+        qualityRank: 90,
+      },
+    ],
+    deployments: [
+      {
+        id: 'deployment-primary',
+        catalogModelId: 'llm-primary',
+        apiFamily: 'openai',
+        channel: 'direct',
+        region: 'domestic',
+        status: 'active',
+      },
+      {
+        id: 'deployment-fallback',
+        catalogModelId: 'llm-fallback',
+        apiFamily: 'openai',
+        channel: 'direct',
+        region: 'domestic',
+        status: 'active',
+      },
+    ],
+    execution: new RecordedProviderExecutionPort(),
+    ledger,
+  });
+  return new ModelSupplyStructuredNodeRunner({
+    application,
+    executor,
+    workspaceId: 'workspace-1',
+    actorId: 'user-1',
+    selection: { mode: 'auto', profile: 'quality' },
+  });
+}
+
 class CountingStructuredExecutor implements StructuredObjectExecutor {
   calls = 0;
 
@@ -220,6 +300,39 @@ class CountingStructuredExecutor implements StructuredObjectExecutor {
   providerCost(usage: { inputTokens: number; outputTokens: number }) {
     return { amount: 0.000034, currency: 'CNY' as const, usage };
   }
+}
+
+class FallbackStructuredExecutor implements StructuredObjectExecutor {
+  calls = 0;
+
+  constructor(private readonly afterFirstProviderAttempt: () => void) {}
+
+  supportsCatalogModel() {
+    return true;
+  }
+
+  async generate<Output>(input: { schema: z.ZodType<Output> }) {
+    this.calls += 1;
+    if (this.calls === 1) {
+      this.afterFirstProviderAttempt();
+      throw rejectedBeforeAcceptance('provider rejected before acceptance');
+    }
+    return {
+      output: input.schema.parse({ normalized: 'fallback output' }),
+      providerTaskRef: 'provider-structured-fallback',
+      usage: { inputTokens: 8, outputTokens: 13 },
+    };
+  }
+
+  providerCost(usage: { inputTokens: number; outputTokens: number }) {
+    return { amount: 0.000034, currency: 'CNY' as const, usage };
+  }
+}
+
+function rejectedBeforeAcceptance(message: string) {
+  return Object.assign(new Error(message), {
+    acceptance: 'rejected_before_accept' as const,
+  });
 }
 
 class CountingLedger implements ModelSupplyLedgerPort {

@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+	HarnessSnapshotDecisionError,
   runHarnessWorkflow,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 
 test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
@@ -171,6 +173,81 @@ test('one blocking question suspends and resumes before context injection', asyn
     },
   ]);
 });
+
+for (const field of ['intent', 'scene'] as const) {
+  test(`a Composer snapshot rejects an accepted ${field} decision before context injection`, async () => {
+    const stages = fixtureStages();
+    stages.nameIntent = async () => ({
+      declaration: {
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId: `question-snapshot-${field}`,
+        workflowId: 'task-snapshot',
+        workflowRevision: 1,
+        question: '请补充本次任务信息。',
+        options: [],
+        freeText: { enabled: true },
+        response: { field, reason: '补充当前任务信息' },
+        scope: 'current_task',
+      },
+    });
+    let contextInjected = false;
+    stages.injectContext = async () => {
+      contextInjected = true;
+      throw new Error('Composer snapshot must not reach context injection.');
+    };
+    const snapshot = composerSnapshot();
+
+    await assert.rejects(
+      runHarnessWorkflow(
+        snapshot.task.id,
+        {
+          ...taskInput(),
+          expectedRevision: snapshot.contentPackage.expectedRevision,
+          executionSnapshot: snapshot,
+          packageId: snapshot.contentPackage.id,
+          rawInput: snapshot.intent.text,
+          workflowRevision: snapshot.revision,
+          intent: {
+            context: {
+              workId: snapshot.work.id,
+              intent: snapshot.intent.text,
+              sourceSummaries: [],
+            },
+            assetReferences: [],
+          },
+        },
+        stages,
+        {
+          async runStep(_key, operation) {
+            return operation();
+          },
+          async progress() {},
+          async token() {},
+          async awaitDecision(question) {
+            return {
+              idempotencyKey: `decision-${field}`,
+              questionId: question.questionId,
+              workflowRevision: question.workflowRevision,
+              patch: {
+                field,
+                value: '新的语义输入',
+                reason: '补充当前任务信息',
+              },
+              decision: { state: 'accepted', value: '新的语义输入' },
+            };
+          },
+          async recordTrace() {},
+        },
+      ),
+      HarnessSnapshotDecisionError,
+    );
+    assert.equal(contextInjected, false);
+  });
+}
 
 test('fallback prompt version and hash enter stage traces without prompt content', async () => {
   const traces: Array<{ stage: string; payload: unknown }> = [];
@@ -424,6 +501,39 @@ function taskInput() {
       assetReferences: [],
     },
   };
+}
+
+function composerSnapshot() {
+  return createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      contentModules: ['social_cover'],
+      contentPackageId: 'package-1',
+      deliverables: [
+        { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
+      ],
+      expectedContentPackageRevision: 2,
+      identity: { id: 'identity-1', revision: '1' },
+      idempotencyKey: 'snapshot-submission-1',
+      intent: '把新团购做一套能发的',
+      lens: 'copy',
+      modelPolicy: { id: 'policy-1', mode: 'fixed', revision: 'policy-r1' },
+      platform: { id: 'douyin' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      rights: { revision: 'rights-r1', summary: 'authorized source assets' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      sources: { assets: [] },
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      taskId: 'task-snapshot',
+      workId: 'work-1',
+      workspaceId: 'workspace-1',
+    },
+    '2026-07-22T09:00:00.000Z',
+  );
 }
 
 function fallbackPrompt(name: string) {

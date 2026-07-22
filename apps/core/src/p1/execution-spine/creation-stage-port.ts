@@ -10,16 +10,16 @@ import type {
 } from "./submission-coordinator.js";
 
 /**
- * The only bridge from a new Composer Copy submission into the existing Harness
- * admission service. It carries the frozen root through the stages rather than
- * rebuilding semantic selections from the free-text intent.
+ * The one Composer bridge into the existing Harness admission service. The
+ * immutable snapshot carries the server-bound root; Harness owns the five
+ * semantic stages without reconstructing browser selections from intent text.
  */
-export interface HarnessCopyAdmissionPort {
+export interface HarnessCreationAdmissionPort {
 	submit(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
 }
 
-export class HarnessCopyStagePort implements CreationSubmissionHarnessStarter {
-	constructor(private readonly admission: HarnessCopyAdmissionPort) {}
+export class CreationStagePort implements CreationSubmissionHarnessStarter {
+	constructor(private readonly admission: HarnessCreationAdmissionPort) {}
 
 	async start(submission: CreationSubmissionRecord) {
 		const started = await this.admission.submit({
@@ -46,18 +46,10 @@ export function toHarnessWorkflowInput(
 			context: {
 				workId: snapshot.work.id,
 				intent: snapshot.intent.text,
-				sourceSummaries: sourceSummaries(snapshot),
+				sourceSummaries: [],
 			},
 			assetReferences: snapshot.sources.assets.map((asset) => asset.id),
 		},
 		executionSnapshot: snapshot,
 	};
-}
-
-function sourceSummaries(snapshot: CreationExecutionSnapshot) {
-	return snapshot.sources.contentPackage
-		? [
-				`ContentPackage ${snapshot.sources.contentPackage.id} revision ${snapshot.sources.contentPackage.revision}`,
-			]
-		: [];
 }

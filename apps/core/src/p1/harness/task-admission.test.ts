@@ -7,6 +7,7 @@ import {
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowStarter,
 } from './task-admission.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
@@ -63,6 +64,85 @@ test('workflow id is the task id and request fingerprint is canonical', async ()
 
   assert.equal(starter.workflowIds[0], 'task-35');
   assert.equal(registry.claims[0]?.fingerprint, registry.claims[1]?.fingerprint);
+});
+
+test('Composer execution snapshots cannot be submitted under another task envelope', async () => {
+  const service = new HarnessTaskAdmissionService(
+    new MemoryRequestRegistry(),
+    new RecordingStarter(),
+  );
+	const snapshot = composerSnapshot();
+
+	await assert.rejects(
+		service.submit({
+			...snapshotTaskRequest(snapshot),
+			packageId: 'package-other',
+		}),
+    (error: unknown) =>
+      error instanceof HarnessAdmissionError &&
+      error.code === 'EXECUTION_SNAPSHOT_MISMATCH' &&
+      error.status === 409,
+	);
+});
+
+test('Composer execution snapshots reject forged ContextBundle inputs', async () => {
+  const service = new HarnessTaskAdmissionService(
+    new MemoryRequestRegistry(),
+    new RecordingStarter(),
+  );
+  const snapshot = composerSnapshot();
+  const request = snapshotTaskRequest(snapshot);
+  const forged = [
+    {
+      ...request,
+      intent: {
+        ...request.intent,
+        context: {
+          ...request.intent.context,
+          sourceSummaries: ['untrusted source summary'],
+        },
+      },
+    },
+    {
+      ...request,
+      intent: {
+        ...request.intent,
+        context: {
+          ...request.intent.context,
+          scene: 'unreviewed scene',
+          tone: 'unreviewed tone',
+          audience: 'unreviewed audience',
+        },
+      },
+    },
+    {
+      ...request,
+      factScope: { storeId: snapshot.workspaceId, serviceId: 'service-other' },
+    },
+    {
+      ...request,
+      reuseSeed: {
+        assetId: 'asset-series-1',
+        assetRevision: 1,
+        sourcePackageId: 'package-source-1',
+        sourceVersionId: 'version-source-1',
+        sourcePackageRevision: 1,
+        assetRevisionId: 'asset-series-1:1',
+        fixedItemKeys: [],
+        variableSlotKeys: [],
+      },
+    },
+  ];
+
+  for (const input of forged) {
+    await assert.rejects(
+      service.submit(input),
+      (error: unknown) =>
+        error instanceof HarnessAdmissionError &&
+        error.code === 'EXECUTION_SNAPSHOT_MISMATCH' &&
+        error.status === 409,
+    );
+  }
 });
 
 test('accepted task keeps its frozen prompt while only a new task observes a published version', async () => {
@@ -170,5 +250,59 @@ function taskRequest(overrides: { rawInput?: string; taskId?: string } = {}) {
       },
       assetReferences: [],
     },
+  };
+}
+
+function composerSnapshot() {
+  return createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'composer-key-1',
+      taskId: 'task-35',
+      workId: 'work-1',
+      contentPackageId: 'package-1',
+      expectedContentPackageRevision: 0,
+      intent: '为夏日护理项目写一条预约文案',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      lens: 'copy' as const,
+      platform: { id: 'douyin' as const },
+      deliverables: [
+        { id: 'copy-primary', kind: 'copy' as const, quantity: 1, order: 1 },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' as const },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      contentModules: ['social_cover' as const],
+    },
+    '2026-07-22T09:00:00.000Z',
+  );
+}
+
+function snapshotTaskRequest(snapshot: ReturnType<typeof composerSnapshot>) {
+  return {
+    taskId: snapshot.task.id,
+    actorId: snapshot.actorId,
+    workspaceId: snapshot.workspaceId,
+    packageId: snapshot.contentPackage.id,
+    expectedRevision: snapshot.contentPackage.expectedRevision,
+    workflowRevision: snapshot.revision,
+    rawInput: snapshot.intent.text,
+    intent: {
+      context: {
+        workId: snapshot.work.id,
+        intent: snapshot.intent.text,
+        sourceSummaries: [],
+      },
+      assetReferences: snapshot.sources.assets.map((asset) => asset.id),
+    },
+    executionSnapshot: snapshot,
   };
 }

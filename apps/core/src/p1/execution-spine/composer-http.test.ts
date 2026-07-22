@@ -7,6 +7,7 @@ import type { ContentPackage, DiagnosticRun } from "@meiye/contracts";
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
 import { createCoreServer, streamWorkflowEvents } from "../../server.js";
 import { buildContentPackage } from "../operations/content-package.js";
+import { P1DomainError } from "../foundation/domain.js";
 import {
 	WorkflowEventApplicationService,
 	type WorkflowEventFrame,
@@ -138,10 +139,9 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.equal(starter.starts[0]?.snapshot.platform.id, "douyin");
 	assert.deepEqual(starter.starts[0]?.snapshot.deliverables, [
 		{
-			aspectRatio: "3:4",
-			id: "deliverable-copy-main",
+			id: "recipe-deliverable-r7",
 			kind: "copy",
-			order: 1,
+			order: 0,
 			quantity: 1,
 		},
 	]);
@@ -187,7 +187,7 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.equal((await clientRightsChanged.json()).data.replayed, true);
 	assert.equal(starter.starts.length, 1);
 
-	const conflict = await fetch(`${base}/submissions`, {
+	const clientPlatformChanged = await fetch(`${base}/submissions`, {
 		method: "POST",
 		headers,
 		body: JSON.stringify({
@@ -195,11 +195,9 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 			platform: { id: "xiaohongshu" },
 		}),
 	});
-	assert.equal(conflict.status, 409);
-	assert.equal(
-		(await conflict.json()).error.code,
-		"CREATION_SUBMISSION_IDEMPOTENCY_CONFLICT",
-	);
+	assert.equal(clientPlatformChanged.status, 202);
+	assert.equal((await clientPlatformChanged.json()).data.replayed, true);
+	assert.equal(starter.starts.length, 1);
 
 	const events = await fetch(`${base}/tasks/task-1/events`, {
 		headers: { ...headers, "last-event-id": "task-1:progress:1" },
@@ -225,6 +223,51 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.doesNotMatch(projectionBody, /provider-secret/u);
 	assert.doesNotMatch(projectionBody, /route-secret/u);
 	assert.doesNotMatch(projectionBody, /providerCost/u);
+});
+
+test("Core Composer reports a stale Brief Context as an OCC conflict", async (t) => {
+	const coordinator = new CreationSubmissionCoordinator(
+		new MemorySubmissionStore(),
+		new RecordingHarnessStarter(),
+		fixedIds(),
+		{
+			async admit() {
+				throw new P1DomainError(
+					"IDEMPOTENCY_CONFLICT",
+					"Brief Context revision is no longer current.",
+				);
+			},
+		},
+	);
+	const server = createCoreServer({
+		composerSubmission: { coordinator },
+		diagnosticRepository: diagnostics,
+		serviceToken: "composer-test-token",
+	});
+	server.listen(0, "127.0.0.1");
+	await once(server, "listening");
+	t.after(() => server.close());
+	const { port } = server.address() as AddressInfo;
+	const response = await fetch(
+		`http://127.0.0.1:${port}/v1/workspaces/workspace-1/p1/composer/submissions`,
+		{
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-service-token": "composer-test-token",
+				"x-user-id": "owner-1",
+				"x-workspace-id": "workspace-1",
+				"x-workspace-role": "owner",
+			},
+			body: JSON.stringify(submissionPayload()),
+		},
+	);
+
+	assert.equal(response.status, 409);
+	assert.deepEqual((await response.json()).error, {
+		code: "IDEMPOTENCY_CONFLICT",
+		message: "Brief Context revision is no longer current.",
+	});
 });
 
 test("Core Composer SSE aborts its durable subscription when the client disconnects", async (t) => {
@@ -372,6 +415,108 @@ test("Core Composer SSE waits for drain before consuming the next durable frame"
 	await streaming;
 	assert.equal(secondFramePulled, true);
 	assert.equal(response.writableEnded, true);
+});
+
+test("Core Composer SSE keeps only one heartbeat queued while a drain is blocked", async () => {
+	const response = new HeartbeatBackpressuredSseResponse();
+	const request = new EventEmitter() as EventEmitter & { headers: Record<string, string> };
+	request.headers = {};
+	const blocked = once(response, "blocked");
+	const streaming = streamWorkflowEvents({
+		request: request as never,
+		requestCorrelationId: "correlation-1",
+		response: response as never,
+		workflowEvents: new WorkflowEventApplicationService([
+			{
+				async owns() {
+					return true;
+				},
+				async *stream() {
+					yield progressFrame("task-1", 1);
+				},
+			},
+		]),
+		workflowHeartbeatMs: 1,
+		workflowId: "task-1",
+		workspaceId: "workspace-1",
+	});
+	await blocked;
+	await new Promise<void>((resolve) => setTimeout(resolve, 25));
+	assert.equal(response.writeCount, 2);
+	response.emit("drain");
+	await streaming;
+	assert.equal(response.writeCount, 3);
+	assert.equal(response.writableEnded, true);
+});
+
+test("Core Composer SSE aborts its subscription when a heartbeat finds an unwritable response", async () => {
+	const response = new HeartbeatDisconnectSseResponse();
+	const request = new EventEmitter() as EventEmitter & { headers: Record<string, string> };
+	request.headers = {};
+	const initialHeartbeat = once(response, "initial-heartbeat");
+	let aborted = false;
+	const streaming = streamWorkflowEvents({
+		request: request as never,
+		requestCorrelationId: "correlation-1",
+		response: response as never,
+		workflowEvents: new WorkflowEventApplicationService([
+			{
+				async owns() {
+					return true;
+				},
+				async *stream(input) {
+					await new Promise<void>((resolve) => {
+						input.signal.addEventListener(
+							"abort",
+							() => {
+								aborted = true;
+								resolve();
+							},
+							{ once: true },
+						);
+					});
+				},
+			},
+		]),
+		workflowHeartbeatMs: 1,
+		workflowId: "task-1",
+		workspaceId: "workspace-1",
+	});
+	await initialHeartbeat;
+	response.writableEnded = true;
+	await streaming;
+	assert.equal(aborted, true);
+});
+
+test("legacy Harness task admission stays retired without a configured Harness service", async (t) => {
+	const server = createCoreServer({
+		diagnosticRepository: diagnostics,
+		serviceToken: "composer-test-token",
+	});
+	server.listen(0, "127.0.0.1");
+	await once(server, "listening");
+	t.after(() => server.close());
+	const { port } = server.address() as AddressInfo;
+	const response = await fetch(
+		`http://127.0.0.1:${port}/v1/workspaces/workspace-1/p1/harness/tasks`,
+		{
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-service-token": "composer-test-token",
+				"x-user-id": "owner-1",
+				"x-workspace-id": "workspace-1",
+				"x-workspace-role": "owner",
+			},
+			body: JSON.stringify({ taskId: "browser-task" }),
+		},
+	);
+	assert.equal(response.status, 410);
+	assert.deepEqual((await response.json()).error, {
+		code: "HARNESS_TASK_ADMISSION_RETIRED",
+		message:
+			"Direct Harness task admission is retired; submit through the Composer execution spine.",
+	});
 });
 
 class MemorySubmissionStore implements CreationSubmissionStore {
@@ -635,6 +780,53 @@ class BackpressuredSseResponse extends EventEmitter {
 	}
 }
 
+class HeartbeatBackpressuredSseResponse extends EventEmitter {
+	destroyed = false;
+	headersSent = false;
+	writableEnded = false;
+	writeCount = 0;
+
+	writeHead() {
+		this.headersSent = true;
+		return this;
+	}
+
+	write() {
+		this.writeCount += 1;
+		if (this.writeCount === 2) {
+			this.emit("blocked");
+			return false;
+		}
+		return true;
+	}
+
+	end() {
+		this.writableEnded = true;
+	}
+}
+
+class HeartbeatDisconnectSseResponse extends EventEmitter {
+	destroyed = false;
+	headersSent = false;
+	writableEnded = false;
+	private writes = 0;
+
+	writeHead() {
+		this.headersSent = true;
+		return this;
+	}
+
+	write() {
+		this.writes += 1;
+		if (this.writes === 1) this.emit("initial-heartbeat");
+		return true;
+	}
+
+	end() {
+		this.writableEnded = true;
+	}
+}
+
 function progressFrame(taskId: string, sequence: number): WorkflowEventFrame {
 	return {
 		event: "workflow.progress",
@@ -752,6 +944,19 @@ function fixedAdmission(): CreationSubmissionAdmissionPort {
 					mode: "fixed",
 					revision: "server-policy-r1",
 				},
+				recipeBinding: {
+					contentModules: ["social_cover"],
+				deliverables: [
+					{
+							id: "recipe-deliverable-r7",
+							kind: "copy",
+							order: 0,
+							quantity: 1,
+						},
+					],
+					lens: "copy",
+					platform: { id: "douyin" },
+				},
 				rights: {
 					revision: "server-rights-r1",
 					summary: "Server verified source assets.",
@@ -765,6 +970,7 @@ function fixedAdmission(): CreationSubmissionAdmissionPort {
 function submissionPayload(): ComposerSubmissionBody {
 	return {
 		briefConfirmation: { id: "brief-confirmation-1", revision: "brief-r2" },
+		briefContext: { id: "brief-context-1", revision: 4 },
 		catalogModel: { id: "catalog-copy-1", revision: "catalog-r4" },
 		contentModules: ["social_cover"],
 		deliverables: [

@@ -1,3 +1,4 @@
+import { creativeContentModuleIds } from "@meiye/contracts";
 import { z } from "zod";
 
 const identifierSchema = z.string().trim().min(1).max(200);
@@ -50,6 +51,18 @@ const rightsSummarySchema = z
 	})
 	.strict();
 
+const briefContextSchema = z
+	.object({
+		id: identifierSchema,
+		revision: z.number().int().nonnegative(),
+	})
+	.strict();
+
+const contentModulesSchema = z
+	.array(z.enum(creativeContentModuleIds))
+	.min(1)
+	.max(creativeContentModuleIds.length);
+
 export const CREATION_EXECUTION_SNAPSHOT_SCHEMA_VERSION =
 	"creation-execution-snapshot/v1" as const;
 
@@ -80,21 +93,9 @@ const creationSubmissionCommandBaseSchema = z
 		catalogModel: revisionReferenceSchema,
 		quote: revisionReferenceSchema,
 		route: revisionReferenceSchema,
+		briefContext: briefContextSchema,
 		briefConfirmation: revisionReferenceSchema,
-		contentModules: z
-			.array(
-				z.enum([
-					"social_cover",
-					"before_after",
-					"price_card",
-					"package_explainer",
-					"review_card",
-					"store_intro",
-					"shooting_checklist",
-				]),
-			)
-			.min(1)
-			.max(7),
+		contentModules: contentModulesSchema,
 	})
 	.strict();
 
@@ -155,21 +156,9 @@ export const creationExecutionSnapshotSchema = z
 		catalogModel: revisionReferenceSchema,
 		quote: revisionReferenceSchema,
 		route: revisionReferenceSchema,
+		briefContext: briefContextSchema,
 		briefConfirmation: revisionReferenceSchema,
-		contentModules: z
-			.array(
-				z.enum([
-					"social_cover",
-					"before_after",
-					"price_card",
-					"package_explainer",
-					"review_card",
-					"store_intro",
-					"shooting_checklist",
-				]),
-			)
-			.min(1)
-			.max(7),
+		contentModules: contentModulesSchema,
 	})
 	.strict();
 
@@ -209,6 +198,7 @@ export function createCreationExecutionSnapshot(
 			catalogModel: command.catalogModel,
 			quote: command.quote,
 			route: command.route,
+			briefContext: command.briefContext,
 			briefConfirmation: command.briefConfirmation,
 			contentModules: command.contentModules,
 		}),
@@ -227,6 +217,13 @@ function validateCopySubmission(
 		context.addIssue({
 			code: "custom",
 			message: "Deliverable order values must be unique.",
+			path: ["deliverables"],
+		});
+	}
+	if (command.deliverables.length !== 1) {
+		context.addIssue({
+			code: "custom",
+			message: "The Copy tracer accepts exactly one copy deliverable.",
 			path: ["deliverables"],
 		});
 	}

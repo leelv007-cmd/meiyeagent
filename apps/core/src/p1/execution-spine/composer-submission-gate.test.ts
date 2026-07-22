@@ -10,6 +10,33 @@ import type { ComposerSubmissionRequest } from "./creation-execution-snapshot.js
 
 test("Composer admission gate binds server facts before a submission can reserve shells", async () => {
 	let capabilityChecks = 0;
+	const briefChecks: unknown[] = [];
+	let sourcePackageRights: "authorized" | "revoked" = "authorized";
+	let publishedRecipe: {
+		contextPatches: { contentModules: string[] };
+		delivery: { deliverableKind: string; platform: string; quantity: number };
+		lensId: string;
+		modelPolicy: { catalogModelId: string; mode: string };
+		recipeId: string;
+		revisionId: string;
+		sourceRequirements: Array<{ kinds: string[]; required: boolean; slot: string }>;
+		status: string;
+		targetWorkspaceKind: string;
+	} = {
+		contextPatches: { contentModules: ["social_cover"] },
+		delivery: {
+			deliverableKind: "copy_document",
+			platform: "douyin",
+			quantity: 1,
+		},
+		lensId: "copy",
+		modelPolicy: { catalogModelId: "catalog-copy-1", mode: "fixed" },
+		recipeId: "recipe-service-promotion",
+		revisionId: "recipe-service-promotion@7",
+		sourceRequirements: [{ kinds: ["image"], required: true, slot: "hero" }],
+		status: "published",
+		targetWorkspaceKind: "copy",
+	};
 	const gate = new ComposerSubmissionAdmissionGate({
 		assets: {
 			async resolve() {
@@ -23,6 +50,11 @@ test("Composer admission gate binds server facts before a submission can reserve
 						sha256: "asset-r2",
 					},
 				];
+			},
+		},
+		briefs: {
+			async assertCurrent(input) {
+				briefChecks.push(structuredClone(input));
 			},
 		},
 		briefConfirmations: {
@@ -49,16 +81,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 		},
 		catalog: {
 			async getRecipeByRevisionId() {
-				return {
-					delivery: {},
-					lensId: "copy",
-					modelPolicy: { catalogModelId: "catalog-copy-1", mode: "fixed" },
-					recipeId: "recipe-service-promotion",
-					revisionId: "recipe-service-promotion@7",
-					sourceRequirements: [{ kinds: ["image"], required: true, slot: "hero" }],
-					status: "published",
-					targetWorkspaceKind: "copy",
-				} as never;
+				return publishedRecipe as never;
 			},
 			async getSurfaceByRevisionId() {
 				return {
@@ -97,7 +120,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 		},
 		rights: {
 			async resolve() {
-				return { knownAssetIds: ["asset-1"], unauthorizedAssetIds: [] };
+				return { unauthorizedAssetIds: [] };
 			},
 		},
 		routes: {
@@ -117,6 +140,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 				return {
 					id: "content-source-1",
 					revision: "content-r3",
+					rightsState: sourcePackageRights,
 					status: "accepted",
 					workspaceId: "workspace-1",
 				};
@@ -137,6 +161,84 @@ test("Composer admission gate binds server facts before a submission can reserve
 		"Server verified 1 source asset in workspace workspace-1.",
 	);
 	assert.equal(capabilityChecks, 1);
+	assert.deepEqual(admitted.recipeBinding, {
+		contentModules: ["social_cover"],
+		deliverables: [
+			{
+				id: "recipe-deliverable:recipe-service-promotion@7",
+				kind: "copy",
+				order: 0,
+				quantity: 1,
+			},
+		],
+		lens: "copy",
+		platform: { id: "douyin" },
+	});
+	assert.deepEqual(briefChecks, [
+		{
+			briefConfirmationId: "brief-confirmation-1",
+			briefContextId: "brief-context-1",
+			catalogModelId: "catalog-copy-1",
+			catalogRevision: "catalog-r4",
+			expectedContextRevision: 4,
+			intent: "为夏日护理项目写一条预约文案",
+			operation: "copy.generate",
+			outputCount: 1,
+			quoteRevision: "quote-r5",
+			sourceReferenceIds: ["asset-1", "content-source-1"],
+			workspaceId: "workspace-1",
+		},
+	]);
+
+	sourcePackageRights = "revoked";
+	await assert.rejects(
+		gate.admit(submission()),
+		/Source ContentPackage is missing, cross-workspace, or at a different revision/u,
+	);
+	assert.equal(capabilityChecks, 1);
+	assert.equal(briefChecks.length, 1);
+
+	sourcePackageRights = "authorized";
+	publishedRecipe = {
+		...publishedRecipe,
+		delivery: { ...publishedRecipe.delivery, platform: "wechat_moments" },
+	};
+	await assert.rejects(
+		gate.admit(submission()),
+		/Published Recipe must declare a supported delivery platform/u,
+	);
+	assert.equal(capabilityChecks, 1);
+	assert.equal(briefChecks.length, 1);
+
+	publishedRecipe = {
+		...publishedRecipe,
+		delivery: {
+			...publishedRecipe.delivery,
+			deliverableKind: "note",
+			platform: "douyin",
+		},
+	};
+	await assert.rejects(
+		gate.admit(submission()),
+		/Published Copy Recipe must declare a copy_document delivery kind/u,
+	);
+	assert.equal(capabilityChecks, 1);
+	assert.equal(briefChecks.length, 1);
+
+	publishedRecipe = {
+		...publishedRecipe,
+		delivery: {
+			...publishedRecipe.delivery,
+			deliverableKind: "copy_document",
+			quantity: 2,
+		},
+	};
+	await assert.rejects(
+		gate.admit(submission()),
+		/Published Copy Recipe must declare exactly one copy document/u,
+	);
+	assert.equal(capabilityChecks, 1);
+	assert.equal(briefChecks.length, 1);
 });
 
 test("Composer admission gate fails closed for stale quote, rights, and source facts", async () => {
@@ -153,6 +255,7 @@ test("Composer admission gate fails closed for stale quote, rights, and source f
 				];
 			},
 		},
+		briefs: { async assertCurrent() {} },
 		briefConfirmations: { async getBriefConfirmation() { return null; } },
 		capabilities: { async assertReady() { capabilityChecks += 1; } },
 		catalog: {
@@ -244,6 +347,7 @@ function submission(): ComposerSubmissionRequest {
 	return {
 		actorId: "owner-1",
 		briefConfirmation: { id: "brief-confirmation-1", revision: "brief-r2" },
+		briefContext: { id: "brief-context-1", revision: 4 },
 		catalogModel: { id: "catalog-copy-1", revision: "catalog-r4" },
 		contentModules: ["social_cover"],
 		deliverables: [{ id: "copy-main", kind: "copy", order: 1, quantity: 1 }],
