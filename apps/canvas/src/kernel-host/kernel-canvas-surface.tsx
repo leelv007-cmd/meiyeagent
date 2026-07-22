@@ -215,19 +215,6 @@ export function KernelCanvasSurface({
 			});
 			return;
 		}
-		if (!dragging) return;
-		const scale = graph.viewport.scale || 1;
-		emitGraph(
-			{
-				...graph,
-				nodes: moveNodesFromOrigin(graph.nodes, dragging.origins, {
-					x: (event.clientX - dragging.startClient.x) / scale,
-					y: (event.clientY - dragging.startClient.y) / scale,
-				}),
-			},
-			!dragHistoryRecordedRef.current,
-		);
-		dragHistoryRecordedRef.current = true;
 	};
 
 	const endPointer = () => {
@@ -353,6 +340,34 @@ export function KernelCanvasSurface({
 		window.addEventListener("paste", handlePaste);
 		return () => window.removeEventListener("paste", handlePaste);
 	}, [onImportFiles, visibleCenter]);
+
+	useEffect(() => {
+		if (!dragging) return;
+		const move = (event: PointerEvent) => {
+			const scale = graph.viewport.scale || 1;
+			emitGraph(
+				{
+					...graph,
+					nodes: moveNodesFromOrigin(graph.nodes, dragging.origins, {
+						x: (event.clientX - dragging.startClient.x) / scale,
+						y: (event.clientY - dragging.startClient.y) / scale,
+					}),
+				},
+				!dragHistoryRecordedRef.current,
+			);
+			dragHistoryRecordedRef.current = true;
+		};
+		const finish = () => {
+			setDragging(null);
+			dragHistoryRecordedRef.current = false;
+		};
+		window.addEventListener("pointermove", move);
+		window.addEventListener("pointerup", finish, { once: true });
+		return () => {
+			window.removeEventListener("pointermove", move);
+			window.removeEventListener("pointerup", finish);
+		};
+	}, [dragging, emitGraph, graph]);
 
 	useEffect(() => {
 		if (!connectionDrag) return;

@@ -89,7 +89,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
       textNodeId = (await textNode.getAttribute('data-node-id')) ?? '';
       expect(textNodeId).toBeTruthy();
 
-      await textNode.dblclick();
+      await textNode.getByText('双击后续编辑这段文案').dblclick();
       const editor = textNode.locator('textarea');
       await expect(editor).toBeVisible();
       await editor.fill('跨会话恢复的美业新品文案');
@@ -139,13 +139,14 @@ test.describe('Pro Studio authorized kernel UI', () => {
       sourceNodeId = (await sourceImage.getAttribute('data-node-id')) ?? '';
       expect(sourceNodeId).toBeTruthy();
 
-      await textNode.click();
-      await sourceImage.click({ modifiers: ['Shift'] });
+      await textNode.getByText('跨会话恢复的美业新品文案').click();
+      await sourceImage.locator('img').click({ modifiers: ['Shift'] });
       await expect(page.locator('.kernel-node.is-selected')).toHaveCount(2);
       await page.getByRole('button', { name: '连接选中' }).click();
       await expect(page.locator('[data-connection-id]')).toHaveCount(1);
 
-      await sourceImage.click();
+      await page.keyboard.press('Escape');
+      await sourceImage.locator('img').click();
       const crop = page.getByRole('button', { name: '方形裁切' });
       await expect(crop).toBeEnabled();
       await crop.click();
@@ -264,14 +265,17 @@ test.describe('Pro Studio authorized kernel UI', () => {
           textX: 0,
           textY: 0,
         };
+        const dragHandle = await requireBox(
+          textNode.getByText('跨会话恢复的美业新品文案')
+        );
         await page.mouse.move(
-          textBefore.x + textBefore.width / 2,
-          textBefore.y + textBefore.height / 2
+          dragHandle.x + dragHandle.width / 2,
+          dragHandle.y + dragHandle.height / 2
         );
         await page.mouse.down();
         await page.mouse.move(
-          textBefore.x + textBefore.width / 2 + dragDelta.x,
-          textBefore.y + textBefore.height / 2 + dragDelta.y,
+          dragHandle.x + dragHandle.width / 2 + dragDelta.x,
+          dragHandle.y + dragHandle.height / 2 + dragDelta.y,
           { steps: 8 }
         );
         await page.mouse.up();
@@ -329,13 +333,15 @@ test.describe('Pro Studio authorized kernel UI', () => {
       await openProject(restoredPage, projectName);
 
       await expect(
-        restoredPage.locator(`[data-node-id="${textNodeId}"]`)
+        restoredPage.locator(`.kernel-node[data-node-id="${textNodeId}"]`)
       ).toContainText('跨会话恢复的美业新品文案');
       await expect(
-        restoredPage.locator(`[data-node-id="${sourceNodeId}"] img`)
+        restoredPage.locator(`.kernel-node[data-node-id="${sourceNodeId}"] img`)
       ).toHaveAttribute('src', sourceDeliveryUrl);
       await expect(
-        restoredPage.locator(`[data-node-id="${derivedNodeId}"] img`)
+        restoredPage.locator(
+          `.kernel-node[data-node-id="${derivedNodeId}"] img`
+        )
       ).toHaveAttribute('src', new RegExp(derivedAssetId, 'u'));
       await expect(restoredPage.locator('.kernel-node img')).toHaveCount(2);
       await expect(restoredPage.locator('[data-connection-id]')).toHaveCount(2);
@@ -343,8 +349,10 @@ test.describe('Pro Studio authorized kernel UI', () => {
     });
 
     await test.step('fixture generation survives refresh and inserts through the UI', async () => {
-      const textAnchor = activePage.locator(`[data-node-id="${textNodeId}"]`);
-      await textAnchor.click();
+      const textAnchor = activePage.locator(
+        `.kernel-node[data-node-id="${textNodeId}"]`
+      );
+      await textAnchor.getByText('跨会话恢复的美业新品文案').click();
       await expect(textAnchor).toHaveClass(/is-selected/u);
       await expect(
         activePage.locator(`[data-generation-input-node-id="${sourceNodeId}"]`)
@@ -411,7 +419,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
       await activePage.reload();
       await openProject(activePage, projectName);
       await expect(
-        activePage.locator(`[data-node-id="${generatedNodeId}"]`)
+        activePage.locator(`.kernel-node[data-node-id="${generatedNodeId}"]`)
       ).toHaveCount(1);
       await expect(
         activePage.locator(
@@ -421,13 +429,15 @@ test.describe('Pro Studio authorized kernel UI', () => {
     });
 
     await test.step('E4 adopts the ordered canvas selection and opens the same ContentPackage', async () => {
-      const textNode = activePage.locator(`[data-node-id="${textNodeId}"]`);
+      const textNode = activePage.locator(
+        `.kernel-node[data-node-id="${textNodeId}"]`
+      );
       const generatedNode = activePage.locator(
-        `[data-node-id="${generatedNodeId}"]`
+        `.kernel-node[data-node-id="${generatedNodeId}"]`
       );
 
-      await textNode.click();
-      await generatedNode.click({ modifiers: ['Shift'] });
+      await textNode.getByText('跨会话恢复的美业新品文案').click();
+      await generatedNode.locator('img').click({ modifiers: ['Shift'] });
       await expect(activePage.locator('.kernel-node.is-selected')).toHaveCount(
         2
       );

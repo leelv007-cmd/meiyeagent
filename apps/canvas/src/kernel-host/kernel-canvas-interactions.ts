@@ -165,7 +165,12 @@ export function nodePointerSelection(
 				: alreadySelected
 					? selectedNodeIds
 					: [nodeId],
-		selectionOnPointerDown: !hasModifier && !alreadySelected ? [nodeId] : null,
+		selectionOnPointerDown:
+			hasModifier && !alreadySelected
+				? [...selectedNodeIds, nodeId]
+				: !hasModifier && !alreadySelected
+					? [nodeId]
+					: null,
 	};
 }
 

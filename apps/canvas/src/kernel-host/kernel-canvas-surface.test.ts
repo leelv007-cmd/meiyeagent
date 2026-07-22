@@ -136,7 +136,7 @@ test("modifier pointerdown preserves selection and prepares the expected drag gr
 	assert.equal(canStartNodeDrag(2), false);
 	assert.deepEqual(nodePointerSelection(["a"], "b", true), {
 		dragIds: ["a", "b"],
-		selectionOnPointerDown: null,
+		selectionOnPointerDown: ["a", "b"],
 	});
 	assert.deepEqual(nodePointerSelection(["a"], "b", false), {
 		dragIds: ["b"],
