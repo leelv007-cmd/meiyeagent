@@ -18,6 +18,7 @@ import { VozebCanvas } from "@/src/vendor/vozeb/app/(user)/canvas/components/voz
 import type { ContextMenuState } from "@/src/vendor/vozeb/app/(user)/canvas/types";
 import type { KernelSessionGraph } from "./graph-bridge";
 import {
+	adjustTextFontSize,
 	type CanvasPoint,
 	canStartNodeDrag,
 	canvasKeyboardCommand,
@@ -33,6 +34,7 @@ import {
 	redoSessionHistory,
 	removeCanvasSelection,
 	selectNodesInMarquee,
+	toggleNodeFreeResize,
 	undoSessionHistory,
 	updateTextNode,
 } from "./kernel-canvas-interactions";
@@ -40,6 +42,7 @@ import { createKernelNode, toVozebNode } from "./kernel-node-adapter";
 import { deliveryUrl } from "./media-adapter";
 import { PortedConnectionPath } from "./ported/canvas-connections";
 import { K2CanvasToolbar } from "./ported/k2-canvas-toolbar";
+import { KernelNodeHoverToolbar } from "./ported/kernel-node-hover-toolbar";
 
 export type KernelCanvasSurfaceProps = {
 	adoptedNodeIds?: string[];
@@ -80,6 +83,8 @@ export function KernelCanvasSurface({
 	const dragHistoryRecordedRef = useRef(false);
 	const clipboardNodeIdsRef = useRef<string[]>([]);
 	const pasteIndexRef = useRef(0);
+	const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
 	const [historyAvailability, setHistoryAvailability] = useState({
 		canRedo: false,
 		canUndo: false,
@@ -425,6 +430,30 @@ export function KernelCanvasSurface({
 		const nodes = updateTextNode(graph.nodes, nodeId, text);
 		if (nodes !== graph.nodes) emitGraph({ ...graph, nodes });
 	};
+	const keepHover = useCallback((nodeId: string) => {
+		if (hoverLeaveTimerRef.current) {
+			clearTimeout(hoverLeaveTimerRef.current);
+			hoverLeaveTimerRef.current = null;
+		}
+		setHoverNodeId(nodeId);
+	}, []);
+	const leaveHover = useCallback(() => {
+		if (hoverLeaveTimerRef.current) clearTimeout(hoverLeaveTimerRef.current);
+		hoverLeaveTimerRef.current = setTimeout(() => {
+			setHoverNodeId(null);
+			hoverLeaveTimerRef.current = null;
+		}, 180);
+	}, []);
+	useEffect(
+		() => () => {
+			if (hoverLeaveTimerRef.current) clearTimeout(hoverLeaveTimerRef.current);
+		},
+		[],
+	);
+	const hoverKernelNode = useMemo(
+		() => graph.nodes.find((node) => node.id === hoverNodeId) ?? null,
+		[graph.nodes, hoverNodeId],
+	);
 	const selectedImageId =
 		selectedNodeIds.length === 1 &&
 		graph.nodes.some(
@@ -686,8 +715,8 @@ export function KernelCanvasSurface({
 											});
 										}}
 										onGenerateImage={() => onSelectNodes?.([node.id])}
-										onHoverEnd={() => undefined}
-										onHoverStart={() => undefined}
+										onHoverEnd={leaveHover}
+										onHoverStart={(nodeId) => keepHover(nodeId)}
 										onMouseDown={(event) => {
 											if (!canStartNodeDrag(event.button)) return;
 											event.stopPropagation();
@@ -808,6 +837,61 @@ export function KernelCanvasSurface({
 							showImageInfo={showImageInfo}
 						/>
 					</>
+				) : null}
+				{clientChromeReady && hoverKernelNode ? (
+					<KernelNodeHoverToolbar
+						kernelNode={hoverKernelNode}
+						node={toVozebNode(hoverKernelNode, deliveryUrl)}
+						viewport={{
+							k: graph.viewport.scale,
+							x: graph.viewport.x,
+							y: graph.viewport.y,
+						}}
+						onCrop={
+							onCropSelected
+								? (nodeId) => {
+										onCropSelected(nodeId);
+									}
+								: undefined
+						}
+						onDelete={(nodeId) => {
+							deleteSelection([nodeId], null);
+							setHoverNodeId(null);
+						}}
+						onDownload={(nodeId) => {
+							const target = graph.nodes.find((node) => node.id === nodeId);
+							const assetId =
+								typeof target?.data.assetId === "string"
+									? target.data.assetId
+									: null;
+							if (!assetId || typeof window === "undefined") return;
+							window.open(deliveryUrl(assetId, { download: true }), "_blank");
+						}}
+						onFontDelta={(nodeId, delta) => {
+							const nodes = adjustTextFontSize(graph.nodes, nodeId, delta);
+							if (nodes !== graph.nodes) emitGraph({ ...graph, nodes });
+						}}
+						onKeep={keepHover}
+						onLeave={leaveHover}
+						onRetry={(nodeId) => {
+							emitGraph({
+								...graph,
+								nodes: graph.nodes.map((candidate) =>
+									candidate.id === nodeId
+										? {
+												...candidate,
+												data: { ...candidate.data, status: "idle" },
+											}
+										: candidate,
+								),
+							});
+						}}
+						onToggleFreeResize={(nodeId) => {
+							const nodes = toggleNodeFreeResize(graph.nodes, nodeId);
+							if (nodes !== graph.nodes) emitGraph({ ...graph, nodes });
+						}}
+						onView={(nodeId) => onSelectNodes?.([nodeId])}
+					/>
 				) : null}
 				{contextMenu ? (
 					<CanvasNodeContextMenu

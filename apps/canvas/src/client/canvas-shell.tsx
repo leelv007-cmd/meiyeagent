@@ -594,7 +594,7 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 			<header className="studio-topbar">
 				<div>
 					<span className="studio-mark">Pro Studio</span>
-					<span className="workspace-name">工作区 {context.workspaceId}</span>
+					<span className="workspace-name">当前工作区</span>
 				</div>
 				<div className="topbar-actions">
 					<span className="status-dot" aria-live="polite">

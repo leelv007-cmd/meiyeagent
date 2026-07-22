@@ -3,6 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+	adjustTextFontSize,
 	canStartNodeDrag,
 	canvasKeyboardCommand,
 	captureNodePositions,
@@ -20,10 +21,12 @@ import {
 	resizeNodeFromCorner,
 	selectNodesInMarquee,
 	sessionHistoryCommand,
+	toggleNodeFreeResize,
 	undoSessionHistory,
 	updateTextNode,
 } from "./kernel-canvas-interactions.js";
 import { KernelCanvasSurface } from "./kernel-canvas-surface.js";
+import { buildDesensitizedNodeInfo } from "./ported/kernel-node-info.js";
 
 test("media nodes use a focusable non-button container with isolated controls", () => {
 	const markup = renderToStaticMarkup(
@@ -530,4 +533,81 @@ test("Command marquee selects intersecting nodes in world coordinates", () => {
 	);
 
 	assert.deepEqual(selected, ["already-selected", "inside", "edge"]);
+});
+
+test("adjustTextFontSize clamps and ignores non-text nodes", () => {
+	const nodes = [
+		{
+			data: { text: "hi", fontSize: 16 },
+			height: 80,
+			id: "text-1",
+			type: "text",
+			width: 80,
+			x: 0,
+			y: 0,
+		},
+		{
+			data: {},
+			height: 80,
+			id: "image-1",
+			type: "image",
+			width: 80,
+			x: 0,
+			y: 0,
+		},
+	];
+	const grown = adjustTextFontSize(nodes, "text-1", 4);
+	assert.equal(grown[0]?.data.fontSize, 20);
+	const clamped = adjustTextFontSize(
+		[{ ...nodes[0], data: { text: "hi", fontSize: 63 } }],
+		"text-1",
+		10,
+	);
+	assert.equal(clamped[0]?.data.fontSize, 64);
+	assert.equal(adjustTextFontSize(nodes, "image-1", 4), nodes);
+});
+
+test("toggleNodeFreeResize only flips image nodes", () => {
+	const nodes = [
+		{
+			data: { freeResize: false },
+			height: 80,
+			id: "image-1",
+			type: "image",
+			width: 80,
+			x: 0,
+			y: 0,
+		},
+		{
+			data: { text: "x" },
+			height: 80,
+			id: "text-1",
+			type: "text",
+			width: 80,
+			x: 0,
+			y: 0,
+		},
+	];
+	const toggled = toggleNodeFreeResize(nodes, "image-1");
+	assert.equal(toggled[0]?.data.freeResize, true);
+	assert.equal(toggleNodeFreeResize(nodes, "text-1"), nodes);
+});
+
+test("hover chrome desensitized info projection stays merchant-safe", () => {
+	const info = buildDesensitizedNodeInfo({
+		height: 160,
+		prompt: "会员日海报",
+		status: "success",
+		type: "image",
+		width: 200,
+		x: 10,
+		y: 20,
+	});
+	assert.equal(info.rows.find((row) => row.label === "类型")?.value, "图片");
+	assert.equal(
+		info.rows.find((row) => row.label === "提示词")?.value,
+		"会员日海报",
+	);
+	assert.doesNotMatch(info.json, /assetId|workspaceId|"id"/u);
+	assert.match(info.json, /会员日海报/u);
 });

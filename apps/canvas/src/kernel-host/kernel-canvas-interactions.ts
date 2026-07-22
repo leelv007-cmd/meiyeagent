@@ -347,3 +347,44 @@ export function updateTextNode(
 		node.id === nodeId ? { ...node, data: { ...node.data, text } } : node,
 	);
 }
+
+const MIN_TEXT_FONT_SIZE = 12;
+const MAX_TEXT_FONT_SIZE = 64;
+const DEFAULT_TEXT_FONT_SIZE = 16;
+
+/** Adjust text node font size within a merchant-safe clamp. */
+export function adjustTextFontSize(
+	nodes: KernelNode[],
+	nodeId: string,
+	delta: number,
+) {
+	const current = nodes.find((node) => node.id === nodeId);
+	if (!current || current.type !== "text") return nodes;
+	const base =
+		typeof current.data.fontSize === "number" &&
+		Number.isFinite(current.data.fontSize)
+			? current.data.fontSize
+			: DEFAULT_TEXT_FONT_SIZE;
+	const next = Math.min(
+		MAX_TEXT_FONT_SIZE,
+		Math.max(MIN_TEXT_FONT_SIZE, base + delta),
+	);
+	if (next === base) return nodes;
+	return nodes.map((node) =>
+		node.id === nodeId
+			? { ...node, data: { ...node.data, fontSize: next } }
+			: node,
+	);
+}
+
+/** Toggle image freeResize flag used by the rich node aspect lock. */
+export function toggleNodeFreeResize(nodes: KernelNode[], nodeId: string) {
+	const current = nodes.find((node) => node.id === nodeId);
+	if (!current || current.type !== "image") return nodes;
+	const next = !current.data.freeResize;
+	return nodes.map((node) =>
+		node.id === nodeId
+			? { ...node, data: { ...node.data, freeResize: next } }
+			: node,
+	);
+}

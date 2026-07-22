@@ -612,7 +612,7 @@ export function RuntimePanel({
 						</option>
 						{CANVAS_PROMPT_SEEDS.map((seed) => (
 							<option key={seed.id} value={seed.id}>
-								{seed.group} · {seed.id} · {seed.fileName}
+								{seed.group} · {seed.id}
 							</option>
 						))}
 					</select>
