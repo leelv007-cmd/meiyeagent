@@ -83,6 +83,53 @@ test('an invalid Stripe signature is rejected before the verified inbox', async 
   assert.equal(received, false);
 });
 
+test('a forged Stripe event cannot reserve the id used by a later verified delivery', async () => {
+  const payload = JSON.stringify({
+    id: 'evt_forged_then_verified',
+    type: 'checkout.session.completed',
+  });
+  const webhookSecret = 'whsec_forged_then_verified';
+  const receivedIds: string[] = [];
+  const inbox: PaymentWebhookInboxPort = {
+    async receive(event) {
+      receivedIds.push(event.providerEventId);
+      return 'accepted';
+    },
+    async claimNext() {
+      return null;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  await assert.rejects(
+    receivePaymentWebhook(
+      {
+        payload,
+        provider: 'stripe',
+        signature: 't=1720000000,v1=forged',
+      },
+      { inbox, secrets: { stripeWebhookSecret: webhookSecret } }
+    ),
+    (error: unknown) => error instanceof PaymentWebhookSignatureError
+  );
+  assert.deepEqual(receivedIds, []);
+
+  const signature = Stripe.webhooks.generateTestHeaderString({
+    payload,
+    secret: webhookSecret,
+  });
+  assert.equal(
+    await receivePaymentWebhook(
+      { payload, provider: 'stripe', signature },
+      { inbox, secrets: { stripeWebhookSecret: webhookSecret } }
+    ),
+    'accepted'
+  );
+  assert.deepEqual(receivedIds, ['evt_forged_then_verified']);
+});
+
 test('a verified Stripe event reaches the inbox with its canonical identity', async () => {
   const payload = JSON.stringify({
     id: 'evt_verified_contract',

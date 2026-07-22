@@ -5,8 +5,11 @@ import { logPaymentWebhookError } from './webhook-logging';
 test('payment webhook failure logs stable fields without payload or signature', () => {
   const secret = 'whsec_not_for_logs';
   const payload = '{"id":"evt_not_for_logs"}';
+  const email = 'payer-not-for-logs@example.test';
   const error = Object.assign(new Error(`${payload} ${secret}`), {
+    body: { code: 'PAYMENT_DATABASE_FAILED', email, payload },
     code: 'PAYMENT_DATABASE_FAILED',
+    email,
     payload,
     signature: secret,
   });
@@ -29,5 +32,8 @@ test('payment webhook failure logs stable fields without payload or signature', 
       },
     ],
   ]);
-  assert.doesNotMatch(JSON.stringify(messages), /evt_not_for_logs|whsec_/u);
+  assert.doesNotMatch(
+    JSON.stringify(messages),
+    /evt_not_for_logs|whsec_|payer-not-for-logs/u
+  );
 });
