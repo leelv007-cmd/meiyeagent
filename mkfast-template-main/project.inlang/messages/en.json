@@ -1052,6 +1052,7 @@
   "content_package_recreate_with_assets": "Replace assets and create again",
   "content_package_replacement_required": "Replace the affected asset before exporting this content again.",
   "content_package_result_action_change_cta": "Change CTA",
+  "content_package_result_action_change_platform": "Change platform",
   "content_package_result_action_continue": "Continue this series",
   "content_package_result_action_stop": "Stop this series",
   "content_package_result_cta_message": "Message us to book an in-store visit",

@@ -380,3 +380,91 @@ export {
   CanonicalHandoffPage,
   type CanonicalHandoffPageProps,
 } from './canonical-handoff-page';
+
+// P1-D/E close-loop pure models + UI shells (#156–#159)
+export {
+  DELIVERY_ACTION_RECEIPT_KINDS,
+  DELIVERY_ACTION_RECEIPT_LABEL,
+  dedupeDeliveryActionReceipts,
+  deliveryActionReceiptIdempotencyKey,
+  projectDeliveryActionReceiptPanel,
+  projectShareAttemptReceipt,
+  projectShareDegradeExplanations,
+  receiptKindFromDeliveryEvent,
+  type DeliveryActionReceiptBinding,
+  type DeliveryActionReceiptFact,
+  type DeliveryActionReceiptKind,
+  type DeliveryActionReceiptPanelView,
+  type DeliveryDegradeStep,
+  type DeliveryShareAttemptInput,
+  type DeliveryShareAttemptProjection,
+} from './delivery-action-receipt-model';
+
+export {
+  PUBLICATION_LIFECYCLE_LABEL,
+  PUBLICATION_LIFECYCLE_STATES,
+  PUBLICATION_SOURCE_TIER_LABEL,
+  PUBLICATION_SOURCE_TIERS,
+  projectPublicationRecordPanel,
+  publicationLifecycleFromDelivery,
+  publicationRecordsFromDeliveryEvents,
+  validateManualPublicationForm,
+  type ManualPublicationFormInput,
+  type ManualPublicationFormValidation,
+  type PublicationLifecycleState,
+  type PublicationRecordFact,
+  type PublicationRecordPanelView,
+  type PublicationSourceTier,
+} from './publication-record-model';
+
+export {
+  PublicationRecordPanel,
+  type PublicationRecordPanelProps,
+} from './publication-record-panel';
+
+export {
+  OUTCOME_LADDER_STEP_LABEL,
+  OUTCOME_LADDER_STEPS,
+  OUTCOME_OBSERVATION_KIND_LABEL,
+  OUTCOME_OBSERVATION_KINDS,
+  OUTCOME_SOURCE_TIER_LABEL,
+  OUTCOME_SOURCE_TIERS,
+  activeOutcomeObservations,
+  isUnsafeOutcomeNote,
+  mapLegacyResultSignalKind,
+  mapLegacyResultSignalSource,
+  observationsFromResultSignals,
+  projectOutcomeLadder,
+  projectOutcomeObservationPanel,
+  type OutcomeChipAction,
+  type OutcomeLadderStepId,
+  type OutcomeObservationFact,
+  type OutcomeObservationKind,
+  type OutcomeObservationPanelView,
+  type OutcomeSourceTier,
+} from './outcome-observation-model';
+
+export {
+  OutcomeChipsPanel,
+  type OutcomeChipsPanelProps,
+} from './outcome-chips-panel';
+
+export {
+  WEEKLY_NEXT_ACTIONS,
+  WEEKLY_NEXT_ACTION_LABEL,
+  confirmWeeklyRecommendation,
+  projectWeeklyRecommendations,
+  projectWeeklyReviewPanel,
+  type WeeklyNextAction,
+  type WeeklyNextRecommendation,
+  type WeeklyReviewDecisionRecord,
+  type WeeklyReviewFacts,
+  type WeeklyReviewPackageFact,
+  type WeeklyReviewPanelView,
+  type WeeklySnapshotIntent,
+} from './weekly-review-model';
+
+export {
+  WeeklyReviewPanel,
+  type WeeklyReviewPanelProps,
+} from './weekly-review-panel';

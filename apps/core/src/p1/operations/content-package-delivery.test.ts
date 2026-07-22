@@ -468,6 +468,31 @@ test('manual results are native writes while legacy history remains a read-only 
   assert.equal(stored?.contentPackages[0]?.deliveryEvents?.length, 1);
 });
 
+test('manual publication record is idempotent for the same payload', async () => {
+  const setup = await createSetup('assisted');
+  const first = await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    platformUrl: 'https://www.douyin.com/video/idempotent',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  const second = await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    platformUrl: 'https://www.douyin.com/video/idempotent',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+
+  assert.equal(first.deliveryEvents?.length, 1);
+  assert.equal(second.deliveryEvents?.length, 1);
+  assert.equal(second.revision, first.revision);
+  assert.equal(second.deliveryEvents?.[0]?.id, first.deliveryEvents?.[0]?.id);
+});
+
 test('delivery revision conflict leaves exactly one canonical audit', async () => {
   const setup = await createSetup('assisted');
   const staleWrite = () =>
@@ -694,6 +719,7 @@ test('merchant chips update the result ladder while verified and inferred source
   assert.deepEqual(review.nextExperiments[0]?.actions, [
     'continue_series',
     'change_cta',
+    'change_platform',
     'stop_series',
   ]);
   assert.equal(review.nextExperiments[0]?.nextTest, 'repeat_or_change_cta');

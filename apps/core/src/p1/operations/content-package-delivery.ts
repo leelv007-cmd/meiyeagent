@@ -298,15 +298,34 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       variantVersionId: string;
     }
   ) {
+    // Load without OCC first so duplicate submits can short-circuit on the
+    // existing publication record (P1-D2 idempotency).
     const contentPackage = await this.requirePackage(
       context,
-      input.packageId,
-      input.expectedRevision
+      input.packageId
     );
     currentContentRevision(
       contentPackage,
       input.platform,
       input.variantVersionId
+    );
+    const existing = (contentPackage.deliveryEvents ?? []).find(
+      (event) =>
+        event.type === 'manual_publish_result' &&
+        event.platform === input.platform &&
+        event.variantVersionId === input.variantVersionId &&
+        event.status === input.status &&
+        (event.platformUrl ?? '') === (input.platformUrl ?? '') &&
+        (event.note ?? '') === (input.note ?? '')
+    );
+    if (existing) {
+      return structuredClone(contentPackage);
+    }
+    // New write still requires the caller's expected revision.
+    await this.requirePackage(
+      context,
+      input.packageId,
+      input.expectedRevision
     );
     return this.appendDeliveryEvent(context, contentPackage.id, {
       actorId: context.userId,
@@ -443,7 +462,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
   async recordResultReviewAction(
     context: OperationContext,
     input: {
-      action: 'change_cta' | 'continue_series' | 'stop_series';
+      action: 'change_cta' | 'change_platform' | 'continue_series' | 'stop_series';
       expectedRevision: number;
       packageId: string;
     }
@@ -534,7 +553,12 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         .slice(-3)
         .map(({ packageId }) => ({
           packageId,
-          actions: ['continue_series', 'change_cta', 'stop_series'] as const,
+          actions: [
+            'continue_series',
+            'change_cta',
+            'change_platform',
+            'stop_series',
+          ] as const,
           nextTest: 'repeat_or_change_cta' as const,
         })),
       observed,

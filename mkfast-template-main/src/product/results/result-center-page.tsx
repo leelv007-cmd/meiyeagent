@@ -83,6 +83,28 @@ import {
   type ResultRunDetailFacts,
 } from './result-run-detail-model';
 import { ResultRunDetailPanel } from './result-run-detail-panel';
+import {
+  projectDeliveryActionReceiptPanel,
+  type DeliveryActionReceiptFact,
+} from './delivery-action-receipt-model';
+import { OutcomeChipsPanel } from './outcome-chips-panel';
+import {
+  projectOutcomeObservationPanel,
+  type OutcomeObservationFact,
+  type OutcomeObservationKind,
+} from './outcome-observation-model';
+import { PublicationRecordPanel } from './publication-record-panel';
+import {
+  projectPublicationRecordPanel,
+  type ManualPublicationFormInput,
+  type PublicationRecordFact,
+} from './publication-record-model';
+import { WeeklyReviewPanel } from './weekly-review-panel';
+import {
+  projectWeeklyReviewPanel,
+  type WeeklyNextAction,
+  type WeeklyReviewFacts,
+} from './weekly-review-model';
 
 export type ResultCenterPageProps = {
   workId: string;
@@ -157,6 +179,35 @@ export type ResultCenterPageProps = {
   onBack?: () => void;
   /** Optional delivery panel facts when shell.panel === 'delivery'. */
   deliveryPanelFacts?: DeliveryPanelFacts;
+  /**
+   * P1-D/E close-loop facts. Omitted → panels stay unmounted (fail closed).
+   * Never invent live publication/outcome rows here.
+   */
+  closeLoop?: {
+    contentPackageId?: string;
+    contentPackageRevision?: number;
+    variantVersionId?: string;
+    workspaceId?: string;
+    deliveryReceipts?: readonly DeliveryActionReceiptFact[];
+    publicationRecords?: readonly PublicationRecordFact[];
+    observations?: readonly OutcomeObservationFact[];
+    weeklyReview?: WeeklyReviewFacts;
+    automaticVerifiedPlatformCount?: number;
+    hasOneShotLink?: boolean;
+    canShareFiles?: boolean;
+    hasDownload?: boolean;
+  };
+  onRecordManualPublication?: (
+    input: ManualPublicationFormInput & { idempotencyKey: string }
+  ) => void | Promise<void>;
+  onRecordOutcomeObservation?: (
+    kind: OutcomeObservationKind
+  ) => void | Promise<void>;
+  onConfirmWeeklyRecommendation?: (input: {
+    packageId: string;
+    action: WeeklyNextAction;
+  }) => void | Promise<void>;
+  closeLoopPending?: boolean;
 };
 
 function errorPanelKind(
@@ -764,6 +815,109 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
 
         {shell.panel === 'result' && props.shellFactSources ? (
           <ShellFactSourcesSection items={props.shellFactSources} />
+        ) : null}
+
+        {/*
+          P1-D/E close-loop surfaces. Mount only when the page supplies
+          projection facts — never invent live outcomes. Fail-closed views
+          still render honest empty/blocked states when facts are partial.
+        */}
+        {props.closeLoop ? (
+          <div className="space-y-4" data-testid="result-close-loop">
+            {(() => {
+              const cl = props.closeLoop;
+              const hasPublication = (cl.publicationRecords ?? []).some(
+                (r) => r.status === 'published'
+              );
+              const receiptView = projectDeliveryActionReceiptPanel({
+                contentPackageId: cl.contentPackageId,
+                contentPackageRevision: cl.contentPackageRevision,
+                receipts: cl.deliveryReceipts,
+                hasPublicationRecord: hasPublication,
+                canShareFiles: cl.canShareFiles,
+                hasOneShotLink: cl.hasOneShotLink,
+                hasDownload: cl.hasDownload,
+              });
+              const publicationView = projectPublicationRecordPanel({
+                contentPackageId: cl.contentPackageId,
+                contentPackageRevision: cl.contentPackageRevision,
+                variantVersionId: cl.variantVersionId,
+                workspaceId: cl.workspaceId,
+                recordsWorkspaceId: cl.workspaceId,
+                records: cl.publicationRecords,
+                automaticVerifiedPlatformCount:
+                  cl.automaticVerifiedPlatformCount,
+              });
+              const outcomeView = projectOutcomeObservationPanel({
+                workspaceId: cl.workspaceId,
+                contentPackageId: cl.contentPackageId,
+                contentPackageRevision: cl.contentPackageRevision,
+                hasPublicationRecord: hasPublication,
+                observations: cl.observations,
+                observationsWorkspaceId: cl.workspaceId,
+              });
+              return (
+                <>
+                  {receiptView.kind === 'ready' ? (
+                    <section
+                      className="space-y-2 rounded-lg border p-4"
+                      data-testid="delivery-action-receipt-panel"
+                      data-handed-over-not-published={
+                        receiptView.handedOffIsNotPublished ? 'true' : 'false'
+                      }
+                      aria-label={receiptView.heading}
+                    >
+                      <h3 className="text-sm font-medium">
+                        {receiptView.heading}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        {receiptView.summary}
+                      </p>
+                      <ul className="space-y-1">
+                        {receiptView.receipts.map((r) => (
+                          <li
+                            key={r.id}
+                            className="text-sm"
+                            data-testid="delivery-action-receipt-row"
+                            data-kind={r.kind}
+                            data-claims-published="false"
+                          >
+                            {r.label} · {r.platform} · {r.accountOrOwnerLabel} ·{' '}
+                            {r.revisionLabel} · {r.occurredAtLabel}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ) : null}
+                  <PublicationRecordPanel
+                    view={publicationView}
+                    contentPackageId={cl.contentPackageId}
+                    contentPackageRevision={cl.contentPackageRevision}
+                    variantVersionId={cl.variantVersionId}
+                    pending={props.closeLoopPending}
+                    onRecordManual={props.onRecordManualPublication}
+                  />
+                  <OutcomeChipsPanel
+                    view={outcomeView}
+                    pending={props.closeLoopPending}
+                    onRecord={props.onRecordOutcomeObservation}
+                  />
+                  {cl.weeklyReview ? (
+                    <WeeklyReviewPanel
+                      view={projectWeeklyReviewPanel({
+                        ...cl.weeklyReview,
+                        viewerWorkspaceId: cl.workspaceId,
+                      })}
+                      pending={props.closeLoopPending}
+                      onConfirmRecommendation={
+                        props.onConfirmWeeklyRecommendation
+                      }
+                    />
+                  ) : null}
+                </>
+              );
+            })()}
+          </div>
         ) : null}
       </div>
     </DashboardLayout>

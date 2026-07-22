@@ -651,7 +651,12 @@ export const contentPackageResultSignalSchema = z.object({
 });
 
 export const contentPackageResultReviewActionSchema = z.object({
-  action: z.enum(['continue_series', 'change_cta', 'stop_series']),
+  action: z.enum([
+    'continue_series',
+    'change_cta',
+    'change_platform',
+    'stop_series',
+  ]),
   actorId: contentPackageIdSchema,
   id: contentPackageIdSchema,
   occurredAt: contentPackageTimestampSchema,

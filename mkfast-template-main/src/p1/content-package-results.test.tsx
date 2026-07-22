@@ -44,7 +44,12 @@ test('renders six low-friction chips, three honest sources, the ladder, and week
       weeklyReview={{
         nextExperiments: [
           {
-            actions: ['continue_series', 'change_cta', 'stop_series'],
+            actions: [
+              'continue_series',
+              'change_cta',
+              'change_platform',
+              'stop_series',
+            ],
             nextTest: 'repeat_or_change_cta',
             packageId: 'package-a',
           },

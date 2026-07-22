@@ -1052,6 +1052,7 @@
   "content_package_recreate_with_assets": "更换素材并重新创作",
   "content_package_replacement_required": "成品需要替换素材后才能再次导出。",
   "content_package_result_action_change_cta": "换 CTA",
+  "content_package_result_action_change_platform": "换平台",
   "content_package_result_action_continue": "续做这一系列",
   "content_package_result_action_stop": "停止这一系列",
   "content_package_result_cta_message": "私信预约到店",

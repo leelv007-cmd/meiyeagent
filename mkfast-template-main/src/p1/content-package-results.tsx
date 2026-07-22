@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   content_package_result_action_change_cta,
+  content_package_result_action_change_platform,
   content_package_result_action_continue,
   content_package_result_action_stop,
   content_package_result_inferred_disclaimer,
@@ -58,7 +59,9 @@ export interface ContentPackageResultsProjection {
 
 export interface ContentPackageWeeklyResultReviewProjection {
   nextExperiments: Array<{
-    actions: Array<'change_cta' | 'continue_series' | 'stop_series'>;
+    actions: Array<
+      'change_cta' | 'change_platform' | 'continue_series' | 'stop_series'
+    >;
     packageId: string;
     nextTest: 'repeat_or_change_cta';
   }>;
@@ -110,7 +113,7 @@ export function ContentPackageResults({
   packageId: string;
   onRecord(kind: ContentPackageResultSignal['kind']): void;
   onReviewAction(
-    action: 'change_cta' | 'continue_series' | 'stop_series'
+    action: 'change_cta' | 'change_platform' | 'continue_series' | 'stop_series'
   ): void;
   pending?: boolean;
   results?: ContentPackageResultsProjection;
@@ -221,6 +224,14 @@ export function ContentPackageResults({
               variant="outline"
             >
               {content_package_result_action_change_cta()}
+            </Button>
+            <Button
+              onClick={() => onReviewAction('change_platform')}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {content_package_result_action_change_platform()}
             </Button>
             <Button
               onClick={() => onReviewAction('stop_series')}
