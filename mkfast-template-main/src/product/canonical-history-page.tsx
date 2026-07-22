@@ -95,7 +95,7 @@ import { useProductState } from '@/product/client';
 import { TrustedReturnAnchor } from '@/product/trusted-return';
 import { useQuery } from '@tanstack/react-query';
 import { IconPhoto } from '@tabler/icons-react';
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import {
   canonicalAssetItems,
   canonicalLegacyContentDetail,
@@ -116,6 +116,7 @@ import {
   CanonicalAssetCapture,
   CanonicalAssetGovernance,
 } from './canonical-asset-actions';
+import { assetBusinessTitle } from './canonical-asset-governance-model';
 import {
   contentPackageProjectionState,
   creativeWorkProjectionState,
@@ -433,7 +434,7 @@ export function CanonicalHistoryNavigation({
 export function CanonicalHistoryPage({
   children,
   mode,
-  searchQuery = '',
+  searchQuery: controlledSearchQuery,
   onSearchQueryChange,
 }: {
   children?: ReactNode;
@@ -441,6 +442,9 @@ export function CanonicalHistoryPage({
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
 }) {
+  const [internalSearchQuery, setInternalSearchQuery] = useState('');
+  const searchQuery = controlledSearchQuery ?? internalSearchQuery;
+  const setSearchQuery = onSearchQueryChange ?? setInternalSearchQuery;
   const historyQuery = useQuery({
     queryKey: p1QueryKeys.request('operations', 'canonical_history'),
     queryFn: ({ signal }) =>
@@ -492,9 +496,10 @@ export function CanonicalHistoryPage({
     const scoped = page.kind
       ? all.filter((item) => item.kind === page.kind)
       : all;
-    return mode === 'search'
-      ? queryCanonicalHistory(scoped, searchQuery)
-      : scoped;
+    if (mode === 'search' || mode === 'assets') {
+      return queryCanonicalHistory(scoped, searchQuery);
+    }
+    return scoped;
   }, [
     creationCatalogQuery.data,
     historyQuery.data,
@@ -525,7 +530,7 @@ export function CanonicalHistoryPage({
             <CanonicalAssetCapture product={product} />
           ) : null}
           {children}
-          {mode === 'search' ? (
+          {mode === 'search' || mode === 'assets' ? (
             <label
               className="grid max-w-xl gap-1.5 text-sm font-medium"
               htmlFor="canonical-history-search"
@@ -534,10 +539,13 @@ export function CanonicalHistoryPage({
               <Input
                 id="canonical-history-search"
                 aria-label={legacy_projection_history_search_label()}
-                autoFocus
+                autoFocus={mode === 'search'}
+                data-testid={
+                  mode === 'assets' ? 'asset-library-search' : undefined
+                }
                 placeholder={legacy_projection_history_search_placeholder()}
                 value={searchQuery}
-                onChange={(event) => onSearchQueryChange?.(event.target.value)}
+                onChange={(event) => setSearchQuery(event.target.value)}
               />
             </label>
           ) : null}
@@ -680,9 +688,13 @@ export function CanonicalAssetDetailPage({
               }
             />
             <h2 className="text-lg font-semibold leading-7">
-              {creative?.title ??
-                persisted?.tags[0] ??
-                canonical_asset_persisted_title()}
+              {creative?.title &&
+              !/^(asset|image|video|generated)/i.test(creative.title)
+                ? creative.title
+                : persisted
+                  ? (assetBusinessTitle(persisted) ??
+                    canonical_asset_persisted_title())
+                  : canonical_asset_persisted_title()}
             </h2>
             <p>
               {canonical_asset_type({

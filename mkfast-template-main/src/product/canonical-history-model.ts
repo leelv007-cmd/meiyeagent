@@ -48,7 +48,12 @@ import {
   creativeWorkDisplay,
   type CreativeWorkTemplateDisplay,
 } from './creative-work-display';
-import { assetAuthorizationPresentation } from './canonical-asset-governance-model';
+import {
+  assetAuthorizationPresentation,
+  assetBusinessTitle,
+  isUsableLibraryAsset,
+  projectAssetGovernanceCard,
+} from './canonical-asset-governance-model';
 
 export interface RawCanvasWork {
   id: string;
@@ -225,7 +230,7 @@ function uploadedMedia(asset: Asset): CanonicalMediaProjection {
     kind: asset.mediaType,
     src: `/api/storage/file?key=${encodeURIComponent(asset.objectKey)}`,
     title:
-      asset.tags[0] ??
+      assetBusinessTitle(asset) ??
       canonical_history_untitled_asset({
         kind: productAssetMediaLabel(asset.mediaType),
       }),
@@ -481,30 +486,53 @@ export function canonicalAssetItems(
       asset.ownedAssetId ? [asset.id, asset.ownedAssetId] : [asset.id]
     )
   );
-  return [
-    ...canonicalHistoryItems(history, productAssets).filter(
-      (item) => item.kind === 'asset'
-    ),
-    ...productAssets
+  // Merchant library: durable usable assets first; processing/failed/temporary
+  // are listed with honest availability in detail, never as completed usable.
+  const usableProductAssets = productAssets.filter((asset) =>
+    isUsableLibraryAsset(asset)
+  );
+  const nonUsableProductAssets = productAssets.filter(
+    (asset) => !isUsableLibraryAsset(asset)
+  );
+  const productItems = (assets: Asset[], usable: boolean) =>
+    assets
       .filter((asset) => !persistedMediaIds.has(asset.id))
-      .map(
-        (asset): CanonicalHistoryItem => ({
-          detail: `${productAssetSourceLabel(asset.sourceType)} · ${productAssetAuthorizationLabel(asset)}`,
+      .map((asset): CanonicalHistoryItem => {
+        const availability = projectAssetGovernanceCard(asset).availability;
+        return {
+          detail: usable
+            ? `${productAssetSourceLabel(asset.sourceType)} · ${productAssetAuthorizationLabel(asset)}`
+            : `${productAssetSourceLabel(asset.sourceType)} · ${availability}`,
           href: `/dashboard/assets/${asset.id}?from=assets`,
           id: asset.id,
           kind: 'asset',
           ...(asset.mediaType === 'audio'
             ? {}
-            : { media: [uploadedMedia(asset)] }),
+            : hasDurablePreview(asset)
+              ? { media: [uploadedMedia(asset)] }
+              : {}),
           title:
-            asset.tags[0] ??
+            assetBusinessTitle(asset) ??
             canonical_history_untitled_asset({
               kind: productAssetMediaLabel(asset.mediaType),
             }),
           updatedAt: asset.createdAt,
-        })
-      ),
+        };
+      });
+
+  return [
+    ...canonicalHistoryItems(history, productAssets).filter(
+      (item) => item.kind === 'asset'
+    ),
+    ...productItems(usableProductAssets, true),
+    ...productItems(nonUsableProductAssets, false),
   ].sort(byRecent);
+}
+
+function hasDurablePreview(asset: Asset) {
+  return (
+    Boolean(asset.objectKey?.trim()) && !asset.objectKey.startsWith('http')
+  );
 }
 
 export function queryCanonicalHistory(

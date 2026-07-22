@@ -31,6 +31,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -78,6 +79,8 @@ import {
   dashboard_handoff_field_title,
   dashboard_handoff_field_topics,
   dashboard_handoff_reported,
+  legacy_projection_history_search_label,
+  legacy_projection_history_search_placeholder,
   p1_filter_content_draft,
   p1_filter_content_published,
   product_client_command_failed,
@@ -101,6 +104,13 @@ import { sourceObjectElementId } from '@/p1/source-object-navigation';
 import { useProductState } from '@/product/client';
 import type { AccountUsageProjection } from '@/product/account-usage';
 import { canonicalMediaForAssetIds } from '@/product/canonical-history-model';
+import {
+  contentLibraryActionTarget,
+  filterContentLibrary,
+  projectContentLibraryCard,
+  type ContentLibraryFilter,
+  type ContentLibrarySearchHit,
+} from '@/product/content-library-model';
 import { OutputQuotaMeter } from '@/product/output-quota-meter';
 import { LegacyContentBody, writeTextToClipboard } from './-content-helpers';
 
@@ -216,6 +226,7 @@ export function ContentLibrarySurface({
     retry: false,
   });
   const [copied, setCopied] = useState<string>();
+  const [libraryQuery, setLibraryQuery] = useState('');
   const sourceHandoff = sourceHandoffId
     ? state?.handoffPackages.find(
         (item) => item.id === sourceHandoffId || item.token === sourceHandoffId
@@ -418,6 +429,8 @@ export function ContentLibrarySurface({
             items={contentPackages}
             onOpenPackage={openPackage}
             productAssets={state.assets}
+            query={libraryQuery}
+            onQueryChange={setLibraryQuery}
           />
         )}
 
@@ -823,64 +836,151 @@ function ContentPackageLibrary({
   highlightedId,
   items,
   onOpenPackage,
+  onQueryChange,
   productAssets,
+  query,
 }: {
   creativeAssets: CreativeWorkbenchProjection['assets'];
   highlightedId?: string;
   items: ContentPackageProjection[];
   onOpenPackage(packageId: string): void;
+  onQueryChange(query: string): void;
   productAssets: ProductState['assets'];
+  query: string;
 }) {
-  const highlighted = items.find((item) => item.id === highlightedId);
+  const cards = items.map((item) => projectContentLibraryCard(item));
+  const filter: ContentLibraryFilter = { query };
+  const hits = filterContentLibrary(cards, filter);
+  const hitByPackageId = new Map(
+    hits.map((hit) => [hit.card.packageId, hit] as const)
+  );
+  const visibleItems = items.filter((item) => hitByPackageId.has(item.id));
+  const highlighted = visibleItems.find((item) => item.id === highlightedId);
   const defaultGroup =
     highlighted?.statusGroup ??
     contentPackageGroups.find((group) =>
-      items.some((item) => item.statusGroup === group)
+      visibleItems.some((item) => item.statusGroup === group)
     ) ??
     'creating';
 
   return (
-    <Tabs className="min-w-0" defaultValue={defaultGroup}>
-      <TabsList variant="line">
-        {contentPackageGroups.map((group) => (
-          <TabsTrigger key={group} value={group}>
-            {CONTENT_PACKAGE_STATUS_GROUP_LABELS[group]} (
-            {items.filter((item) => item.statusGroup === group).length})
-          </TabsTrigger>
-        ))}
-      </TabsList>
-      {contentPackageGroups.map((group) => {
-        const groupedItems = items.filter((item) => item.statusGroup === group);
-        return (
-          <TabsContent className="mt-4" key={group} value={group}>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {groupedItems.map((contentPackage) => (
-                <div
-                  className={
-                    contentPackage.id === highlightedId
-                      ? 'rounded-2xl ring-2 ring-primary/30 ring-offset-2 ring-offset-background'
-                      : undefined
-                  }
-                  key={contentPackage.id}
-                >
-                  <ContentPackageCard
-                    contentPackage={contentPackage}
-                    media={canonicalMediaForAssetIds(
-                      creativeAssets,
-                      productAssets,
-                      contentPackage.versions.find(
-                        (version) =>
-                          version.id === contentPackage.currentVersionId
-                      )?.orderedAssetIds ?? contentPackage.generated.assetIds
-                    )}
-                    onOpen={() => onOpenPackage(contentPackage.id)}
-                  />
+    <div className="space-y-4">
+      <label
+        className="grid max-w-xl gap-1.5 text-sm font-medium"
+        htmlFor="content-library-search"
+      >
+        {legacy_projection_history_search_label()}
+        <Input
+          id="content-library-search"
+          aria-label={legacy_projection_history_search_label()}
+          data-testid="content-library-search"
+          placeholder={legacy_projection_history_search_placeholder()}
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+        />
+      </label>
+      {query.trim() && visibleItems.length === 0 ? (
+        <WarmEmptyState
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onQueryChange('')}
+            >
+              {legacy_projection_history_search_label()}
+            </Button>
+          }
+          description={content_library_empty_description()}
+          media={<IconFileText />}
+          title={content_library_empty_title()}
+        />
+      ) : (
+        <Tabs className="min-w-0" defaultValue={defaultGroup}>
+          <TabsList variant="line">
+            {contentPackageGroups.map((group) => (
+              <TabsTrigger key={group} value={group}>
+                {CONTENT_PACKAGE_STATUS_GROUP_LABELS[group]} (
+                {
+                  visibleItems.filter((item) => item.statusGroup === group)
+                    .length
+                }
+                )
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {contentPackageGroups.map((group) => {
+            const groupedItems = visibleItems.filter(
+              (item) => item.statusGroup === group
+            );
+            return (
+              <TabsContent className="mt-4" key={group} value={group}>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {groupedItems.map((contentPackage) => {
+                    const hit = hitByPackageId.get(
+                      contentPackage.id
+                    ) as ContentLibrarySearchHit;
+                    const actionTarget = contentLibraryActionTarget(hit.card);
+                    return (
+                      <div
+                        className={
+                          contentPackage.id === highlightedId
+                            ? 'rounded-2xl ring-2 ring-primary/30 ring-offset-2 ring-offset-background'
+                            : undefined
+                        }
+                        key={contentPackage.id}
+                      >
+                        {hit.matchReasonLabels.length > 0 ? (
+                          <div
+                            className="mb-2 flex flex-wrap gap-1"
+                            data-testid="content-library-match-reasons"
+                          >
+                            {hit.matchReasonLabels.map((label) => (
+                              <Badge key={label} variant="secondary">
+                                {label}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
+                        <ContentPackageCard
+                          contentPackage={contentPackage}
+                          media={canonicalMediaForAssetIds(
+                            creativeAssets,
+                            productAssets,
+                            contentPackage.versions.find(
+                              (version) =>
+                                version.id === contentPackage.currentVersionId
+                            )?.orderedAssetIds ??
+                              contentPackage.generated.assetIds
+                          )}
+                          nextActionLabel={hit.card.nextAction.label}
+                          projectLabels={[
+                            ...hit.card.projectLabels,
+                            ...hit.card.ipLabels,
+                            ...hit.card.seriesLabels,
+                          ]}
+                          updatedAtLabel={hit.card.updatedAt.slice(0, 10)}
+                          onOpen={() => {
+                            if (
+                              actionTarget.kind === 'result_adapter' &&
+                              actionTarget.href
+                            ) {
+                              window.location.assign(
+                                getPathWithLocale(actionTarget.href)
+                              );
+                              return;
+                            }
+                            onOpenPackage(contentPackage.id);
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          </TabsContent>
-        );
-      })}
-    </Tabs>
+              </TabsContent>
+            );
+          })}
+        </Tabs>
+      )}
+    </div>
   );
 }

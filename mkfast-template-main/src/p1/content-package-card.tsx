@@ -34,11 +34,18 @@ function platformLabel(platform: string) {
 export function ContentPackageCard({
   contentPackage,
   media = [],
+  nextActionLabel,
   onOpen,
+  projectLabels = [],
+  updatedAtLabel,
 }: {
   contentPackage: ContentPackageProjection;
   media?: CanonicalMediaProjection[];
+  /** Single merchant next action label from the Content library projection. */
+  nextActionLabel?: string;
   onOpen?: () => void;
+  projectLabels?: readonly string[];
+  updatedAtLabel?: string;
 }) {
   const currentVersion = contentPackage.versions.find(
     (version) => version.id === contentPackage.currentVersionId
@@ -49,6 +56,7 @@ export function ContentPackageCard({
   const isVideo = contentPackage.kind === 'video';
   const title = currentVersion?.title || content_package_untitled();
   const generatedMediaIds = new Set(contentPackage.generated.assetIds);
+  const actionLabel = nextActionLabel ?? content_package_view_details();
   const resolvedMedia = [
     ...media.filter((item) => generatedMediaIds.has(item.assetId)),
     ...media.filter((item) => !generatedMediaIds.has(item.assetId)),
@@ -202,6 +210,19 @@ export function ContentPackageCard({
                 {platformLabel(variant.platform)}
               </span>
             ))}
+            {projectLabels.map((label) => (
+              <span
+                className={cn(
+                  'rounded-full border px-2 py-0.5',
+                  hasMedia
+                    ? 'border-white/25 bg-white/10'
+                    : 'border-divider bg-[var(--paper)]'
+                )}
+                key={label}
+              >
+                {label}
+              </span>
+            ))}
             {contentPackage.legacySource ? (
               <span
                 className={cn(
@@ -215,6 +236,18 @@ export function ContentPackageCard({
               </span>
             ) : null}
           </div>
+
+          {updatedAtLabel ? (
+            <p
+              className={cn(
+                'text-xs',
+                hasMedia ? 'text-white/70' : 'text-[var(--ink-60)]'
+              )}
+              data-testid="content-package-updated-at"
+            >
+              {updatedAtLabel}
+            </p>
+          ) : null}
 
           {contentPackage.legacySource ? (
             <p
@@ -240,12 +273,13 @@ export function ContentPackageCard({
                     ? 'border-white/40 bg-white/15 text-white hover:bg-white/25 hover:text-white focus-visible:ring-white/50'
                     : undefined
                 }
+                data-testid="content-package-next-action"
                 onClick={onOpen}
                 size="sm"
                 type="button"
                 variant="outline"
               >
-                {content_package_view_details()}
+                {actionLabel}
               </Button>
             </div>
           ) : null}
