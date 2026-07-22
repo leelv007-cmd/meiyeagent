@@ -62,6 +62,14 @@ test('rejects private IPv4-mapped IPv6 representations before transport', async 
     '::ffff:ac10:1',
     '::ffff:192.168.0.1',
     '::ffff:c0a8:1',
+    '::ffff:192.0.0.1',
+    '::ffff:c000:1',
+    '::ffff:192.0.2.1',
+    '::ffff:c000:201',
+    '::ffff:192.88.99.1',
+    '::ffff:c058:6301',
+    '::ffff:192.175.48.1',
+    '::ffff:c0af:3001',
     '::ffff:169.254.169.254',
     '::ffff:a9fe:a9fe',
     '0:0:0:0:0:ffff:a9fe:a9fe',
@@ -100,11 +108,14 @@ test('rejects private IPv4-mapped IPv6 representations before transport', async 
 });
 
 test('allows public IPv4-mapped IPv6 representations through pinned transport', async () => {
-  const mappedAddresses = [
+  const mappedAddresses: Array<[string, string]> = [
     ['::ffff:93.184.216.34', '93.184.216.34'],
     ['::ffff:5db8:d822', '93.184.216.34'],
     ['0:0:0:0:0:ffff:5db8:d822', '93.184.216.34'],
     ['0::ffff:5db8:d822', '93.184.216.34'],
+    ['::ffff:192.0.1.1', '192.0.1.1'],
+    ['::ffff:198.51.1.1', '198.51.1.1'],
+    ['::ffff:203.0.1.1', '203.0.1.1'],
   ];
 
   for (const [address, expectedAddress] of mappedAddresses) {

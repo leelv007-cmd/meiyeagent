@@ -383,14 +383,18 @@ function isPublicIpv4(address: string) {
   if (octets.length !== 4 || octets.some((value) => value < 0 || value > 255)) {
     return false;
   }
-  const [a = 0, b = 0] = octets;
+  const [a = 0, b = 0, c = 0] = octets;
   if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
   if (a === 100 && b >= 64 && b <= 127) return false;
   if (a === 169 && b === 254) return false;
   if (a === 172 && b >= 16 && b <= 31) return false;
-  if (a === 192 && (b === 0 || b === 168)) return false;
-  if (a === 198 && (b === 18 || b === 19 || b === 51)) return false;
-  if (a === 203 && b === 0) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 192 && b === 0 && (c === 0 || c === 2)) return false;
+  if (a === 192 && b === 88 && c === 99) return false;
+  if (a === 192 && b === 175 && c === 48) return false;
+  if (a === 198 && (b === 18 || b === 19)) return false;
+  if (a === 198 && b === 51 && c === 100) return false;
+  if (a === 203 && b === 0 && c === 113) return false;
   return true;
 }
 
