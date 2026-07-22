@@ -93,6 +93,36 @@ interface CoreServerDependencies {
   };
   harnessService?: HarnessApplicationService;
   pendingActions?: Pick<PendingActionsService, 'list'>;
+  /**
+   * Optional runtime-truth port for /health/ready and /capabilities.
+   * Live endpoints never consult this port.
+   */
+  runtimeTruth?: {
+    evaluateReadiness(): Promise<{
+      checks: Array<{ detail?: string; name: string; status: string }>;
+      ready: boolean;
+      release?: {
+        artifactDigest?: string;
+        commitSha: string;
+        configRevision?: string;
+      };
+      service: string;
+      status: 'ready' | 'not_ready';
+    }>;
+    listMerchantCapabilities(): Promise<{
+      capabilities: Array<{
+        id: string;
+        safeExplanation: string;
+        state: 'verified' | 'assisted' | 'unavailable';
+      }>;
+      evidencePolicy: 'merchant_three_state_only';
+      release?: {
+        artifactDigest?: string;
+        commitSha: string;
+        configRevision?: string;
+      };
+    }>;
+  };
   serviceToken: string;
   workflowEvents?: WorkflowEventApplicationService;
   workflowHeartbeatMs?: number;
@@ -796,6 +826,7 @@ export function createCoreServer({
   contentPackageReader,
   harnessService,
   pendingActions,
+  runtimeTruth,
   serviceToken,
   workflowEvents,
   workflowHeartbeatMs = 15_000,
@@ -804,13 +835,108 @@ export function createCoreServer({
     const requestCorrelationId = correlationId(request);
     const url = new URL(request.url ?? '/', 'http://core.local');
 
-    if (request.method === 'GET' && url.pathname === '/health') {
+    // Process-only liveness. Never touches external dependencies or runtimeTruth.
+    if (
+      request.method === 'GET' &&
+      (url.pathname === '/health' || url.pathname === '/health/live')
+    ) {
       sendJson(
         response,
         200,
-        { service: 'meiye-core', status: 'ok' },
+        {
+          service: 'meiye-core',
+          status: url.pathname === '/health/live' ? 'live' : 'ok',
+        },
         requestCorrelationId
       );
+      return;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/health/ready') {
+      if (!runtimeTruth) {
+        sendJson(
+          response,
+          503,
+          {
+            service: 'meiye-core',
+            status: 'not_ready',
+            ready: false,
+            checks: [
+              {
+                name: 'runtimeTruth',
+                status: 'fail',
+                detail:
+                  'Runtime truth port is not wired; instance cannot prove readiness.',
+              },
+            ],
+          },
+          requestCorrelationId
+        );
+        return;
+      }
+      try {
+        const readiness = await runtimeTruth.evaluateReadiness();
+        sendJson(
+          response,
+          readiness.ready ? 200 : 503,
+          readiness,
+          requestCorrelationId
+        );
+      } catch (error) {
+        sendJson(
+          response,
+          503,
+          {
+            service: 'meiye-core',
+            status: 'not_ready',
+            ready: false,
+            checks: [
+              {
+                name: 'runtimeTruth',
+                status: 'fail',
+                detail:
+                  error instanceof Error
+                    ? error.message
+                    : 'Readiness evaluation failed.',
+              },
+            ],
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+
+    if (request.method === 'GET' && url.pathname === '/capabilities') {
+      if (!runtimeTruth) {
+        sendJson(
+          response,
+          200,
+          {
+            evidencePolicy: 'merchant_three_state_only',
+            capabilities: [],
+          },
+          requestCorrelationId
+        );
+        return;
+      }
+      try {
+        const snapshot = await runtimeTruth.listMerchantCapabilities();
+        sendJson(response, 200, snapshot, requestCorrelationId);
+      } catch (error) {
+        sendError(
+          response,
+          500,
+          {
+            code: 'CAPABILITIES_UNAVAILABLE',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Capabilities projection failed.',
+          },
+          requestCorrelationId
+        );
+      }
       return;
     }
 

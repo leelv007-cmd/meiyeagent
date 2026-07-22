@@ -10,7 +10,8 @@
     "./security": "./src/security/secret-hardening.ts"
   },
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "tsc --noEmit && node scripts/build-runtime.mjs",
+    "build:runtime": "node scripts/build-runtime.mjs",
     "check": "tsc --noEmit",
     "canvas:retirement-access": "tsx src/p1/operations/polotno-retirement-access-cli.ts",
     "canvas:retirement-inventory": "tsx src/p1/operations/polotno-retirement-inventory-cli.ts",
@@ -27,8 +28,8 @@
     "eval:preference-memory": "node --import tsx --test --test-concurrency=1 src/evals/preference-memory/beauty-preference-memory.test.ts",
     "eval:preference-memory:artifact": "node --import tsx src/evals/preference-memory/write-recorded-artifact.ts",
     "eval:import": "node --import tsx src/p1/harness/langfuse-evalrun-importer-cli.ts",
-    "start": "tsx src/main.ts",
-    "start:worker": "tsx src/job-worker.ts",
+    "start": "node --import tsx src/runtime-entry.ts api",
+    "start:worker": "node --import tsx src/runtime-entry.ts worker",
     "test": "tsx --test --test-concurrency=1 'src/**/*.test.ts'",
     "test:postgres": "tsx --test --test-concurrency=1 'src/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
