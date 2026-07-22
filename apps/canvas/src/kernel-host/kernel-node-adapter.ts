@@ -6,6 +6,24 @@ import {
 } from "@/src/vendor/vozeb/app/(user)/canvas/types";
 import type { KernelNode } from "./graph-bridge";
 
+export function createKernelNode(
+	typeValue: string,
+	position: { x: number; y: number },
+	id: string,
+): KernelNode {
+	const type = canvasNodeType(typeValue);
+	const size = NODE_DEFAULT_SIZE[type];
+	return {
+		data: type === CanvasNodeType.Text ? { text: "" } : {},
+		height: size.height,
+		id,
+		type,
+		width: size.width,
+		x: position.x,
+		y: position.y,
+	};
+}
+
 const TYPE_LABELS: Record<CanvasNodeType, string> = {
 	[CanvasNodeType.Audio]: "音频",
 	[CanvasNodeType.Config]: "生成配置",

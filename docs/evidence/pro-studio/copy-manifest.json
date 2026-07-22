@@ -428,6 +428,36 @@
           "decision": "replace"
         }
       ]
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-toolbar.tsx",
+      "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
+      "target": "apps/canvas/src/kernel-host/ported/k2-canvas-toolbar.tsx",
+      "sourceSha256": "fbd48c133f60025857fb1a0bfb3655a5089e9d26744b6213615b5c64432c52f5",
+      "targetSha256": "543952e924b9fa36fc160bc1e9816f67d1c0a1bc469563ef85cda6993bdd03b8",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-k2-toolbar-port-addendum-2026-07-22.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-k2-toolbar-port-addendum-2026-07-22.md",
+      "thirdPartyNotes": "Lucide React remains a separately declared npm dependency; no third-party package bytes are copied into the derivative.",
+      "reviewer": "product_owner",
+      "adaptationBoundary": "Preserves the approved K2 dock actions and appearance controls while removing the conflicting local theme switch. Graph mutations, OwnedAsset persistence, and bootstrap theme authority remain host-owned.",
+      "adapterReplacementMatrix": [
+        {
+          "upstream": "local node and graph callbacks",
+          "host": "KernelCanvasSurface graph callbacks to the server draft",
+          "decision": "replace"
+        },
+        {
+          "upstream": "local upload and asset modal callbacks",
+          "host": "CanvasShell BackendPort OwnedAsset callbacks",
+          "decision": "replace"
+        },
+        {
+          "upstream": "local light/dark theme switch",
+          "host": "Canvas bootstrap/system theme authority",
+          "decision": "exclude"
+        }
+      ]
     }
   ],
   "status": "authorized_with_exact_copies",
@@ -526,7 +556,8 @@
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-toolbar.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/ported/k2-canvas-toolbar.tsx"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-zoom-controls.tsx",

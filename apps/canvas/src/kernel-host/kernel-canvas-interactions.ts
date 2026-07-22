@@ -198,6 +198,32 @@ export function normalizeConnectionDirection(
 		: { source: second.id, target: first.id };
 }
 
+export function connectCanvasNodes(
+	graph: KernelSessionGraph,
+	firstId: string,
+	secondId: string,
+	id: string,
+): KernelSessionGraph {
+	const direction = normalizeConnectionDirection(
+		graph.nodes,
+		firstId,
+		secondId,
+	);
+	if (!direction) return graph;
+	if (
+		graph.edges.some(
+			(edge) =>
+				edge.source === direction.source && edge.target === direction.target,
+		)
+	) {
+		return graph;
+	}
+	return {
+		...graph,
+		edges: [...graph.edges, { id, ...direction }],
+	};
+}
+
 export function copySelectionAtPoint(
 	graph: KernelSessionGraph,
 	selectedNodeIds: string[],

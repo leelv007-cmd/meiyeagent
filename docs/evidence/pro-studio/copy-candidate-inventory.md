@@ -23,7 +23,7 @@ unmounted. `out-of-scope` has no production reference.
 
 | Classification | Frozen upstream sources |
 | --- | --- |
-| `mount-exact` | `components/asset-picker-modal.tsx`, `canvas-config-composer.tsx`, `canvas-context-menu.tsx`, `canvas-delete-projects-dialog.tsx`, `canvas-image-toolbar-tools.tsx`, `canvas-mini-map.tsx`, `canvas-node-angle-dialog.tsx`, `canvas-node-crop-dialog.tsx`, `canvas-node-hover-toolbar.tsx`, `canvas-node-mask-edit-dialog.tsx`, `canvas-node-split-dialog.tsx`, `canvas-node-upscale-dialog.tsx`, `canvas-node.tsx`, `canvas-project-card.tsx`, `canvas-size-picker.tsx`, `canvas-toolbar.tsx`, `canvas-zoom-controls.tsx`, `vozeb-canvas.tsx` |
+| `mount-exact` | `components/asset-picker-modal.tsx`, `canvas-config-composer.tsx`, `canvas-context-menu.tsx`, `canvas-delete-projects-dialog.tsx`, `canvas-image-toolbar-tools.tsx`, `canvas-mini-map.tsx`, `canvas-node-angle-dialog.tsx`, `canvas-node-crop-dialog.tsx`, `canvas-node-hover-toolbar.tsx`, `canvas-node-mask-edit-dialog.tsx`, `canvas-node-split-dialog.tsx`, `canvas-node-upscale-dialog.tsx`, `canvas-node.tsx`, `canvas-project-card.tsx`, `canvas-size-picker.tsx`, `canvas-zoom-controls.tsx`, `vozeb-canvas.tsx` |
 | `utility-exact` | `constants.ts`, `types.ts`, `utils/canvas-image-data.ts`, `utils/canvas-node-size.ts`, `lib/audio-generation.ts`, `lib/canvas-theme.ts`, `lib/file-drop.ts`, `lib/image-reference-prompt.ts`, `lib/image-utils.ts`, `lib/utils.ts` |
 | `port-required` | `components/canvas-image-toolbar-settings-modal.tsx` → `src/client/runtime-panel.tsx`; `components/canvas-prompt-library.tsx` → `src/client/runtime-panel.tsx`; `components/canvas-resource-mention-textarea.tsx` → `src/kernel-host/generation-adapter.ts`; `stores/use-canvas-ui-store.ts` → `src/kernel-host/ported/canvas-session-store.ts`; `lib/zip.ts` → `src/server/backend-port-vnext.ts` |
 | `delete-from-inventory` | `[id]/page.tsx`, `export-types.ts`, `stores/use-canvas-store.ts`, `lib/storage-keys.ts` |
@@ -57,9 +57,10 @@ fake reference.
 
 ## A2/A3 derivative port
 
-`src/kernel-host/ported/canvas-session-store.ts` and
-`src/kernel-host/ported/canvas-connections.tsx` are the current derivative
-ports. Their source and target hashes, pin, A2/A3 addenda, reviewer,
+`src/kernel-host/ported/canvas-session-store.ts`,
+`src/kernel-host/ported/canvas-connections.tsx`, and
+`src/kernel-host/ported/k2-canvas-toolbar.tsx` are the current derivative ports.
+Their source and target hashes, pin, A2/A3 addenda, reviewer,
 third-party notes, adaptation boundary, and adapter-replacement matrix are
 each mandatory `ports[]` fields. The session port owns only ephemeral selection,
 panel, toolbar, and viewport state; `CanvasShell` consumes it. The persistent
@@ -71,6 +72,10 @@ The connection port preserves the approved SVG geometry and callbacks while
 adding the explicit React runtime required by the host. Connection edits still
 flow through the kernel graph to the server draft; the port owns no project,
 provider, generation, or local persistence behavior.
+
+The K2 toolbar port preserves the approved dock and five node/upload/assets/
+appearance/delete/clear actions, while removing the local theme switch that
+would conflict with Canvas bootstrap/system appearance authority.
 
 The conformance test covers both directions: an unregistered file under
 `kernel-host/ported/`, a target hash drift, an outside target, and duplicated
@@ -152,6 +157,7 @@ Consumable K1 contracts and tests:
 - `generation-batch-contract.ts` and its test
 - `ported/canvas-session-store.ts` and its host-only test
 - `ported/canvas-connections.tsx` and the K2 kernel surface tests
+- `ported/k2-canvas-toolbar.tsx` and the K2 node-adapter tests
 - `tsconfig.production.json` and `CanvasRuntimeProviders`
 
 No K1 code changes `apps/core/src/main.ts`.

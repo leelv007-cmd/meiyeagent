@@ -107,7 +107,7 @@ export const PRODUCTION_INVENTORY = [
   { source: 'web/src/app/(user)/canvas/components/canvas-prompt-library.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/client/runtime-panel.tsx' },
   { source: 'web/src/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/canvas-size-picker.tsx', classification: 'mount-exact' },
-  { source: 'web/src/app/(user)/canvas/components/canvas-toolbar.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-toolbar.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/kernel-host/ported/k2-canvas-toolbar.tsx' },
   { source: 'web/src/app/(user)/canvas/components/canvas-zoom-controls.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/vozeb-canvas.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/constants.ts', classification: 'utility-exact' },

@@ -8,6 +8,7 @@ import {
 	captureNodePositions,
 	clientPointToWorld,
 	commitSessionHistory,
+	connectCanvasNodes,
 	copySelectionAtPoint,
 	createSessionHistory,
 	hasSameCanvasContent,
@@ -280,6 +281,33 @@ test("K2 normalizes connections from the visually left node to the right node", 
 		target: "right",
 	});
 	assert.equal(normalizeConnectionDirection(nodes, "left", "left"), null);
+});
+
+test("K2 appends one normalized connection and rejects duplicates", () => {
+	const graph = {
+		edges: [],
+		nodes: [
+			{
+				data: {},
+				height: 80,
+				id: "right",
+				type: "image",
+				width: 80,
+				x: 200,
+				y: 0,
+			},
+			{ data: {}, height: 80, id: "left", type: "text", width: 80, x: 0, y: 0 },
+		],
+		viewport: { scale: 1, x: 0, y: 0 },
+	};
+	const connected = connectCanvasNodes(graph, "right", "left", "edge-new");
+	assert.deepEqual(connected.edges, [
+		{ id: "edge-new", source: "left", target: "right" },
+	]);
+	assert.equal(
+		connectCanvasNodes(connected, "left", "right", "edge-duplicate"),
+		connected,
+	);
 });
 
 test("K2 copy keeps internal edges and relocates the group around the canvas anchor", () => {

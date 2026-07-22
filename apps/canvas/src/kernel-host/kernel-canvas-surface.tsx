@@ -9,13 +9,14 @@ import {
 	useRef,
 	useState,
 } from "react";
+import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { CanvasNodeContextMenu } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-context-menu";
 import { Minimap } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-mini-map";
 import { CanvasNode } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-node";
 import { CanvasZoomControls } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-zoom-controls";
 import { VozebCanvas } from "@/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas";
 import type { ContextMenuState } from "@/src/vendor/vozeb/app/(user)/canvas/types";
-import type { KernelEdge, KernelSessionGraph } from "./graph-bridge";
+import type { KernelSessionGraph } from "./graph-bridge";
 import {
 	type CanvasPoint,
 	canStartNodeDrag,
@@ -23,28 +24,35 @@ import {
 	captureNodePositions,
 	clientPointToWorld,
 	commitSessionHistory,
+	connectCanvasNodes,
 	copySelectionAtPoint,
 	createSessionHistory,
 	hasSameCanvasContent,
 	moveNodesFromOrigin,
 	nodePointerSelection,
-	normalizeConnectionDirection,
 	redoSessionHistory,
 	removeCanvasSelection,
 	selectNodesInMarquee,
 	undoSessionHistory,
 	updateTextNode,
 } from "./kernel-canvas-interactions";
-import { toVozebNode } from "./kernel-node-adapter";
+import { createKernelNode, toVozebNode } from "./kernel-node-adapter";
 import { deliveryUrl } from "./media-adapter";
 import { PortedConnectionPath } from "./ported/canvas-connections";
+import { K2CanvasToolbar } from "./ported/k2-canvas-toolbar";
 
 export type KernelCanvasSurfaceProps = {
 	adoptedNodeIds?: string[];
 	graph: KernelSessionGraph;
 	onChange: (next: KernelSessionGraph) => void;
 	onCropSelected?: (nodeId: string) => void;
+	onImportFiles?: (
+		files: File[],
+		position: CanvasPoint,
+	) => Promise<void> | void;
+	onOpenAssets?: () => void;
 	onSelectNodes?: (ids: string[]) => void;
+	onUpload?: () => void;
 	onViewportChange?: (viewport: KernelSessionGraph["viewport"]) => void;
 	selectedNodeIds?: string[];
 };
@@ -59,7 +67,10 @@ export function KernelCanvasSurface({
 	graph,
 	onChange,
 	onCropSelected,
+	onImportFiles,
+	onOpenAssets,
 	onSelectNodes,
+	onUpload,
 	onViewportChange,
 	selectedNodeIds = [],
 }: KernelCanvasSurfaceProps) {
@@ -79,7 +90,21 @@ export function KernelCanvasSurface({
 	const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 	const [clientChromeReady, setClientChromeReady] = useState(false);
 	const [isMiniMapOpen, setIsMiniMapOpen] = useState(true);
+	const [backgroundMode, setBackgroundMode] =
+		useState<CanvasBackgroundMode>("lines");
+	const [showImageInfo, setShowImageInfo] = useState(true);
 	const [viewportSize, setViewportSize] = useState({ height: 1, width: 1 });
+	const [connectionDrag, setConnectionDrag] = useState<{
+		current: CanvasPoint;
+		sourceNodeId: string;
+		start: CanvasPoint;
+	} | null>(null);
+	const [connectionCreate, setConnectionCreate] = useState<{
+		clientX: number;
+		clientY: number;
+		position: CanvasPoint;
+		sourceNodeId: string;
+	} | null>(null);
 	const [dragging, setDragging] = useState<{
 		origins: Record<string, CanvasPoint>;
 		startClient: CanvasPoint;
@@ -225,19 +250,13 @@ export function KernelCanvasSurface({
 		if (selectedNodeIds.length !== 2) return;
 		const [first, second] = selectedNodeIds;
 		if (!first || !second) return;
-		const direction = normalizeConnectionDirection(graph.nodes, first, second);
-		if (!direction) return;
-		const { source, target } = direction;
-		const id = `edge-${source}-${target}`;
-		if (
-			graph.edges.some(
-				(edge) => edge.source === source && edge.target === target,
-			)
-		) {
-			return;
-		}
-		const edge: KernelEdge = { id, source, target };
-		emitGraph({ ...graph, edges: [...graph.edges, edge] });
+		const next = connectCanvasNodes(
+			graph,
+			first,
+			second,
+			`edge-${crypto.randomUUID()}`,
+		);
+		if (next !== graph) emitGraph(next);
 	};
 	const duplicateAt = useCallback(
 		(ids: string[], anchor: CanvasPoint) => {
@@ -322,6 +341,71 @@ export function KernelCanvasSurface({
 		undo,
 		visibleCenter,
 	]);
+
+	useEffect(() => {
+		if (!onImportFiles) return;
+		const handlePaste = (event: ClipboardEvent) => {
+			const files = Array.from(event.clipboardData?.files ?? []);
+			if (files.length === 0) return;
+			event.preventDefault();
+			void onImportFiles(files, visibleCenter());
+		};
+		window.addEventListener("paste", handlePaste);
+		return () => window.removeEventListener("paste", handlePaste);
+	}, [onImportFiles, visibleCenter]);
+
+	useEffect(() => {
+		if (!connectionDrag) return;
+		const move = (event: PointerEvent) => {
+			const bounds = surfaceRef.current?.getBoundingClientRect();
+			if (!bounds) return;
+			setConnectionDrag((current) =>
+				current
+					? {
+							...current,
+							current: clientPointToWorld(
+								{ x: event.clientX, y: event.clientY },
+								bounds,
+								graph.viewport,
+							),
+						}
+					: null,
+			);
+		};
+		const finish = (event: PointerEvent) => {
+			const bounds = surfaceRef.current?.getBoundingClientRect();
+			const target = document
+				.elementFromPoint(event.clientX, event.clientY)
+				?.closest<HTMLElement>("[data-node-id]")?.dataset.nodeId;
+			if (target && target !== connectionDrag.sourceNodeId) {
+				const next = connectCanvasNodes(
+					graph,
+					connectionDrag.sourceNodeId,
+					target,
+					`edge-${crypto.randomUUID()}`,
+				);
+				if (next !== graph) emitGraph(next);
+			} else if (bounds) {
+				setConnectionCreate({
+					clientX: event.clientX,
+					clientY: event.clientY,
+					position: clientPointToWorld(
+						{ x: event.clientX, y: event.clientY },
+						bounds,
+						graph.viewport,
+					),
+					sourceNodeId: connectionDrag.sourceNodeId,
+				});
+			}
+			setConnectionDrag(null);
+		};
+		window.addEventListener("pointermove", move);
+		window.addEventListener("pointerup", finish, { once: true });
+		return () => {
+			window.removeEventListener("pointermove", move);
+			window.removeEventListener("pointerup", finish);
+		};
+	}, [connectionDrag, emitGraph, graph]);
 	const commitTextEdit = (nodeId: string, text: string) => {
 		const nodes = updateTextNode(graph.nodes, nodeId, text);
 		if (nodes !== graph.nodes) emitGraph({ ...graph, nodes });
@@ -358,6 +442,16 @@ export function KernelCanvasSurface({
 			x: viewportSize.width / 2 - worldCenter.x * scale,
 			y: viewportSize.height / 2 - worldCenter.y * scale,
 		});
+	};
+	const addNode = (type: "audio" | "config" | "image" | "text" | "video") => {
+		const center = visibleCenter();
+		const node = createKernelNode(
+			type,
+			{ x: center.x - 170, y: center.y - 120 },
+			`${type}-${crypto.randomUUID()}`,
+		);
+		emitGraph({ ...graph, nodes: [...graph.nodes, node] });
+		onSelectNodes?.([node.id]);
 	};
 
 	return (
@@ -404,7 +498,7 @@ export function KernelCanvasSurface({
 				onPointerUp={endPointer}
 			>
 				<VozebCanvas
-					backgroundMode="lines"
+					backgroundMode={backgroundMode}
 					containerRef={surfaceRef}
 					onCanvasDeselect={() => {
 						onSelectNodes?.([]);
@@ -412,6 +506,20 @@ export function KernelCanvasSurface({
 						setContextMenu(null);
 					}}
 					onCanvasMouseDown={beginMarquee}
+					onDrop={(event) => {
+						const files = Array.from(event.dataTransfer.files);
+						const bounds = surfaceRef.current?.getBoundingClientRect();
+						if (!bounds || files.length === 0) return;
+						event.preventDefault();
+						void onImportFiles?.(
+							files,
+							clientPointToWorld(
+								{ x: event.clientX, y: event.clientY },
+								bounds,
+								graph.viewport,
+							),
+						);
+					}}
 					onViewportChange={(viewport) =>
 						updateViewport({
 							scale: viewport.k,
@@ -462,6 +570,15 @@ export function KernelCanvasSurface({
 								</g>
 							);
 						})}
+						{connectionDrag ? (
+							<path
+								d={`M ${connectionDrag.start.x} ${connectionDrag.start.y} C ${connectionDrag.start.x + 60} ${connectionDrag.start.y}, ${connectionDrag.current.x - 60} ${connectionDrag.current.y}, ${connectionDrag.current.x} ${connectionDrag.current.y}`}
+								fill="none"
+								stroke="#2f80ff"
+								strokeDasharray="6 4"
+								strokeWidth={2}
+							/>
+						) : null}
 					</svg>
 					<div className="kernel-world">
 						{marquee ? (
@@ -508,13 +625,36 @@ export function KernelCanvasSurface({
 								>
 									<CanvasNode
 										data={{ ...richNode, position: { x: 0, y: 0 } }}
-										isConnecting={false}
-										isConnectionTarget={false}
+										isConnecting={Boolean(connectionDrag)}
+										isConnectionTarget={
+											Boolean(connectionDrag) &&
+											connectionDrag?.sourceNodeId !== node.id
+										}
 										isFocusRelated={related}
 										isRelated={related}
 										isSelected={selected.has(node.id)}
 										mentionReferences={[]}
-										onConnectStart={() => undefined}
+										onConnectStart={(event, nodeId, handleType) => {
+											event.preventDefault();
+											event.stopPropagation();
+											const source = graph.nodes.find(
+												(candidate) => candidate.id === nodeId,
+											);
+											if (!source) return;
+											const start = {
+												x:
+													handleType === "source"
+														? source.x + source.width
+														: source.x,
+												y: source.y + source.height / 2,
+											};
+											setConnectionDrag({
+												current: start,
+												sourceNodeId: nodeId,
+												start,
+											});
+											setConnectionCreate(null);
+										}}
 										onContentChange={(nodeId, content) =>
 											commitTextEdit(nodeId, content)
 										}
@@ -594,7 +734,7 @@ export function KernelCanvasSurface({
 											</div>
 										)}
 										scale={graph.viewport.scale}
-										showImageInfo={true}
+										showImageInfo={showImageInfo}
 										showPanel={false}
 									/>
 									{adopted.has(node.id) ? (
@@ -624,13 +764,35 @@ export function KernelCanvasSurface({
 					/>
 				) : null}
 				{clientChromeReady ? (
-					<CanvasZoomControls
-						isMiniMapOpen={isMiniMapOpen}
-						onReset={() => updateViewport({ scale: 1, x: 0, y: 0 })}
-						onScaleChange={changeScale}
-						onToggleMiniMap={() => setIsMiniMapOpen((open) => !open)}
-						scale={graph.viewport.scale}
-					/>
+					<>
+						<CanvasZoomControls
+							isMiniMapOpen={isMiniMapOpen}
+							onReset={() => updateViewport({ scale: 1, x: 0, y: 0 })}
+							onScaleChange={changeScale}
+							onToggleMiniMap={() => setIsMiniMapOpen((open) => !open)}
+							scale={graph.viewport.scale}
+						/>
+						<K2CanvasToolbar
+							backgroundMode={backgroundMode}
+							onAddNode={addNode}
+							onBackgroundModeChange={setBackgroundMode}
+							onClear={() => {
+								if (
+									graph.nodes.length > 0 &&
+									window.confirm("清空当前画布中的全部节点？")
+								) {
+									emitGraph({ ...graph, edges: [], nodes: [] });
+									onSelectNodes?.([]);
+								}
+							}}
+							onDelete={() => deleteSelection()}
+							onOpenAssets={() => onOpenAssets?.()}
+							onShowImageInfoChange={setShowImageInfo}
+							onUpload={() => onUpload?.()}
+							selectedCount={selectedNodeIds.length}
+							showImageInfo={showImageInfo}
+						/>
+					</>
 				) : null}
 				{contextMenu ? (
 					<CanvasNodeContextMenu
@@ -658,6 +820,56 @@ export function KernelCanvasSurface({
 							setContextMenu(null);
 						}}
 					/>
+				) : null}
+				{connectionCreate ? (
+					<div
+						className="fixed z-[90] flex gap-1 rounded-xl border bg-black/90 p-2 shadow-2xl"
+						data-connection-create-menu="true"
+						style={{
+							left: connectionCreate.clientX,
+							top: connectionCreate.clientY,
+						}}
+					>
+						{(["text", "image", "video", "audio", "config"] as const).map(
+							(type) => (
+								<button
+									key={type}
+									type="button"
+									onClick={() => {
+										const node = createKernelNode(
+											type,
+											connectionCreate.position,
+											`${type}-${crypto.randomUUID()}`,
+										);
+										const withNode = {
+											...graph,
+											nodes: [...graph.nodes, node],
+										};
+										emitGraph(
+											connectCanvasNodes(
+												withNode,
+												connectionCreate.sourceNodeId,
+												node.id,
+												`edge-${crypto.randomUUID()}`,
+											),
+										);
+										onSelectNodes?.([node.id]);
+										setConnectionCreate(null);
+									}}
+								>
+									{type === "text"
+										? "文字"
+										: type === "image"
+											? "图片"
+											: type === "video"
+												? "视频"
+												: type === "audio"
+													? "音频"
+													: "生成配置"}
+								</button>
+							),
+						)}
+					</div>
 				) : null}
 				{graph.nodes.length === 0 ? (
 					<div className="kernel-empty-hint">
