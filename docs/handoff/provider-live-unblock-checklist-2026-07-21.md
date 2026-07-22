@@ -1,7 +1,23 @@
 # #119 Official Provider Connectivity — Unblock Checklist
 
-> Status: **environment_blocked**. The product decision is resolved: this release requires one real official channel per modality, not dual-channel alignment.
+> Status: **verified_current** through `2026-07-23T09:33:07.321Z`. An authorized local run bound to commit `63a0be856d9e81d461901ca3b93691bcc74c3611` satisfied the #119 completion rule.
 > Authority: revised D-069 / D-080 C5 · gap `docs/evidence/admin-supply-accept-gaps-2026-07-20.md` G-LIVE-*.
+
+## Latest authorized acceptance receipt
+
+| Field | Verified value |
+|---|---|
+| Completed / expires | `2026-07-22T09:33:07.321Z` / `2026-07-23T09:33:07.321Z` |
+| Release / environment | `63a0be856d9e81d461901ca3b93691bcc74c3611` / `local-authorized` |
+| Configuration revision | `ark-primary-cny-20260722-r3` |
+| Redacted artifact SHA-256 | `1a5be3d39ec7673fb3ca71f9d2bbdbcc01399f01eb88e041838aedf869286c6e` |
+| Cost | `CNY 1.2355202` actual / `CNY 5` cap |
+| Text | `live_verified`; non-empty result, 1,425 bytes, SHA-256 present |
+| Image | `live_verified`; downloaded PNG, 2,476,010 bytes, SHA-256 present |
+| Video | `live_verified`; downloaded MP4, 1,130,848 bytes, SHA-256 present |
+| Gate result | `blockedChecks=[]`; `skippedOperations=[]`; all three publish gates `single_channel / no_fallback`, `publishAllowed=true` |
+
+The raw redacted artifact remains ignored at `apps/core/provider-live-evidence/provider-live-gate.json`; this receipt intentionally omits provider task references and credentials. Re-run the gate after expiry before consuming it for a later release candidate.
 
 ## Release gate
 
