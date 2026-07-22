@@ -128,7 +128,6 @@ export default defineConfig({
     },
     {
       command: [
-        `DATABASE_URL='${databaseURL}' pnpm db:migrate:local`,
         'pnpm locale:compile:e2e',
         [
           `VITE_BASE_URL=${authBaseURL}`,
