@@ -23,7 +23,7 @@ unmounted. `out-of-scope` has no production reference.
 
 | Classification | Frozen upstream sources |
 | --- | --- |
-| `mount-exact` | `components/asset-picker-modal.tsx`, `canvas-config-composer.tsx`, `canvas-connections.tsx`, `canvas-context-menu.tsx`, `canvas-delete-projects-dialog.tsx`, `canvas-image-toolbar-tools.tsx`, `canvas-mini-map.tsx`, `canvas-node-angle-dialog.tsx`, `canvas-node-crop-dialog.tsx`, `canvas-node-hover-toolbar.tsx`, `canvas-node-mask-edit-dialog.tsx`, `canvas-node-split-dialog.tsx`, `canvas-node-upscale-dialog.tsx`, `canvas-node.tsx`, `canvas-project-card.tsx`, `canvas-size-picker.tsx`, `canvas-toolbar.tsx`, `canvas-zoom-controls.tsx`, `vozeb-canvas.tsx` |
+| `mount-exact` | `components/asset-picker-modal.tsx`, `canvas-config-composer.tsx`, `canvas-context-menu.tsx`, `canvas-delete-projects-dialog.tsx`, `canvas-image-toolbar-tools.tsx`, `canvas-mini-map.tsx`, `canvas-node-angle-dialog.tsx`, `canvas-node-crop-dialog.tsx`, `canvas-node-hover-toolbar.tsx`, `canvas-node-mask-edit-dialog.tsx`, `canvas-node-split-dialog.tsx`, `canvas-node-upscale-dialog.tsx`, `canvas-node.tsx`, `canvas-project-card.tsx`, `canvas-size-picker.tsx`, `canvas-toolbar.tsx`, `canvas-zoom-controls.tsx`, `vozeb-canvas.tsx` |
 | `utility-exact` | `constants.ts`, `types.ts`, `utils/canvas-image-data.ts`, `utils/canvas-node-size.ts`, `lib/audio-generation.ts`, `lib/canvas-theme.ts`, `lib/file-drop.ts`, `lib/image-reference-prompt.ts`, `lib/image-utils.ts`, `lib/utils.ts` |
 | `port-required` | `components/canvas-image-toolbar-settings-modal.tsx` → `src/client/runtime-panel.tsx`; `components/canvas-prompt-library.tsx` → `src/client/runtime-panel.tsx`; `components/canvas-resource-mention-textarea.tsx` → `src/kernel-host/generation-adapter.ts`; `stores/use-canvas-ui-store.ts` → `src/kernel-host/ported/canvas-session-store.ts`; `lib/zip.ts` → `src/server/backend-port-vnext.ts` |
 | `delete-from-inventory` | `[id]/page.tsx`, `export-types.ts`, `stores/use-canvas-store.ts`, `lib/storage-keys.ts` |
@@ -37,14 +37,17 @@ truth.
 
 ### Current production whitelist
 
-Seven direct copies have a real production import after K2's first mounted
+Ten direct copies have a real production import after K2's first mounted
 node/connection slice. The conformance gate
 checks each listed consumer/import literal, so a whitelist row cannot become a
 fake reference.
 
 | Exact target | Host consumer |
 | --- | --- |
+| `components/canvas-context-menu.tsx` | `src/kernel-host/kernel-canvas-surface.tsx` |
+| `components/canvas-mini-map.tsx` | `src/kernel-host/kernel-canvas-surface.tsx` |
 | `components/canvas-node.tsx` | `src/kernel-host/kernel-canvas-surface.tsx` |
+| `components/canvas-zoom-controls.tsx` | `src/kernel-host/kernel-canvas-surface.tsx` |
 | `components/canvas-resource-mention-textarea.tsx` | transitive from approved `canvas-node.tsx`; references remain host-supplied |
 | `constants.ts` | `src/kernel-host/kernel-node-adapter.ts` |
 | `lib/image-reference-prompt.ts` | `apps/canvas/lib/image-reference-prompt.ts` |

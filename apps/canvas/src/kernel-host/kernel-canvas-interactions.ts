@@ -242,6 +242,28 @@ export function copySelectionAtPoint(
 	};
 }
 
+export function removeCanvasSelection(
+	graph: KernelSessionGraph,
+	selectedNodeIds: string[],
+	selectedConnectionId: string | null,
+): KernelSessionGraph {
+	if (selectedNodeIds.length > 0) {
+		const removed = new Set(selectedNodeIds);
+		return {
+			...graph,
+			edges: graph.edges.filter(
+				(edge) => !removed.has(edge.source) && !removed.has(edge.target),
+			),
+			nodes: graph.nodes.filter((node) => !removed.has(node.id)),
+		};
+	}
+	if (!selectedConnectionId) return graph;
+	return {
+		...graph,
+		edges: graph.edges.filter((edge) => edge.id !== selectedConnectionId),
+	};
+}
+
 export function resizeNodeFromCorner(
 	node: KernelNode,
 	corner: CanvasResizeCorner,

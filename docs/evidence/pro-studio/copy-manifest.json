@@ -611,8 +611,23 @@
   "productionWhitelist": [
     {
       "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-context-menu",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-context-menu.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-mini-map",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-mini-map.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
       "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-node",
       "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-zoom-controls",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-zoom-controls.tsx"
     },
     {
       "consumer": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx",

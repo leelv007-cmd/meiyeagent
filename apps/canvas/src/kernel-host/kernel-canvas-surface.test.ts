@@ -15,6 +15,7 @@ import {
 	nodePointerSelection,
 	normalizeConnectionDirection,
 	redoSessionHistory,
+	removeCanvasSelection,
 	resizeNodeFromCorner,
 	selectNodesInMarquee,
 	sessionHistoryCommand,
@@ -341,6 +342,31 @@ test("K2 copy keeps internal edges and relocates the group around the canvas anc
 	assert.equal(copied.graph.edges.length, 3);
 });
 
+test("K2 deletion removes selected nodes, incident edges, or one connection", () => {
+	const graph = {
+		edges: [
+			{ id: "a-b", source: "a", target: "b" },
+			{ id: "b-c", source: "b", target: "c" },
+		],
+		nodes: [
+			{ data: {}, height: 80, id: "a", type: "text", width: 80, x: 0, y: 0 },
+			{ data: {}, height: 80, id: "b", type: "image", width: 80, x: 100, y: 0 },
+			{ data: {}, height: 80, id: "c", type: "video", width: 80, x: 200, y: 0 },
+		],
+		viewport: { scale: 1, x: 0, y: 0 },
+	};
+
+	assert.deepEqual(removeCanvasSelection(graph, ["b"], null), {
+		...graph,
+		edges: [],
+		nodes: [graph.nodes[0], graph.nodes[2]],
+	});
+	assert.deepEqual(removeCanvasSelection(graph, [], "a-b"), {
+		...graph,
+		edges: [graph.edges[1]],
+	});
+});
+
 test("canvas exposes undo and redo controls", () => {
 	const markup = renderToStaticMarkup(
 		createElement(KernelCanvasSurface, {
@@ -350,6 +376,7 @@ test("canvas exposes undo and redo controls", () => {
 	);
 	assert.match(markup, /data-canvas-undo="true"[^>]*>撤销</u);
 	assert.match(markup, /data-canvas-redo="true"[^>]*>重做</u);
+	assert.doesNotMatch(markup, /canvas-zoom-controls/u);
 });
 
 test("text node editing writes the new value back without changing other nodes", () => {
@@ -429,7 +456,7 @@ test("rendered edges expose stable source and target projections", () => {
 	assert.match(markup, /data-connection-id="edge-1"/u);
 });
 
-test("Shift marquee selects intersecting nodes in world coordinates", () => {
+test("Command marquee selects intersecting nodes in world coordinates", () => {
 	assert.deepEqual(
 		clientPointToWorld(
 			{ x: 250, y: 180 },

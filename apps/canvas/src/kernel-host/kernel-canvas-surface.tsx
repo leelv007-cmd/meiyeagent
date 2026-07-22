@@ -9,22 +9,29 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { CanvasNodeContextMenu } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-context-menu";
+import { Minimap } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-mini-map";
 import { CanvasNode } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-node";
+import { CanvasZoomControls } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-zoom-controls";
 import { VozebCanvas } from "@/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas";
+import type { ContextMenuState } from "@/src/vendor/vozeb/app/(user)/canvas/types";
 import type { KernelEdge, KernelSessionGraph } from "./graph-bridge";
 import {
 	type CanvasPoint,
 	canStartNodeDrag,
+	canvasKeyboardCommand,
 	captureNodePositions,
 	clientPointToWorld,
 	commitSessionHistory,
+	copySelectionAtPoint,
 	createSessionHistory,
 	hasSameCanvasContent,
 	moveNodesFromOrigin,
 	nodePointerSelection,
+	normalizeConnectionDirection,
 	redoSessionHistory,
+	removeCanvasSelection,
 	selectNodesInMarquee,
-	sessionHistoryCommand,
 	undoSessionHistory,
 	updateTextNode,
 } from "./kernel-canvas-interactions";
@@ -60,6 +67,8 @@ export function KernelCanvasSurface({
 	const historyRef = useRef(createSessionHistory(graph));
 	const lastEmittedGraphRef = useRef<KernelSessionGraph | null>(null);
 	const dragHistoryRecordedRef = useRef(false);
+	const clipboardNodeIdsRef = useRef<string[]>([]);
+	const pasteIndexRef = useRef(0);
 	const [historyAvailability, setHistoryAvailability] = useState({
 		canRedo: false,
 		canUndo: false,
@@ -67,6 +76,10 @@ export function KernelCanvasSurface({
 	const [selectedConnectionId, setSelectedConnectionId] = useState<
 		string | null
 	>(null);
+	const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+	const [clientChromeReady, setClientChromeReady] = useState(false);
+	const [isMiniMapOpen, setIsMiniMapOpen] = useState(true);
+	const [viewportSize, setViewportSize] = useState({ height: 1, width: 1 });
 	const [dragging, setDragging] = useState<{
 		origins: Record<string, CanvasPoint>;
 		startClient: CanvasPoint;
@@ -135,26 +148,25 @@ export function KernelCanvasSurface({
 	}, [graph, publishHistoryAvailability]);
 
 	useEffect(() => {
-		const handleHistoryKey = (event: KeyboardEvent) => {
-			const command = sessionHistoryCommand(event);
-			if (!command) return;
-			const target = event.target;
-			if (
-				target instanceof HTMLElement &&
-				(target.isContentEditable ||
-					target instanceof HTMLInputElement ||
-					target instanceof HTMLTextAreaElement ||
-					target instanceof HTMLSelectElement)
-			) {
-				return;
-			}
-			event.preventDefault();
-			if (command === "redo") redo();
-			else undo();
+		setClientChromeReady(true);
+	}, []);
+
+	useEffect(() => {
+		const surface = surfaceRef.current;
+		if (!surface) return;
+		const publishSize = () => {
+			const bounds = surface.getBoundingClientRect();
+			setViewportSize({
+				height: Math.max(1, bounds.height),
+				width: Math.max(1, bounds.width),
+			});
 		};
-		window.addEventListener("keydown", handleHistoryKey);
-		return () => window.removeEventListener("keydown", handleHistoryKey);
-	}, [redo, undo]);
+		publishSize();
+		if (typeof ResizeObserver === "undefined") return;
+		const observer = new ResizeObserver(publishSize);
+		observer.observe(surface);
+		return () => observer.disconnect();
+	}, []);
 
 	const updateViewport = useCallback(
 		(viewport: KernelSessionGraph["viewport"]) => {
@@ -211,13 +223,105 @@ export function KernelCanvasSurface({
 
 	const connectSelected = () => {
 		if (selectedNodeIds.length !== 2) return;
-		const [source, target] = selectedNodeIds;
-		if (!source || !target) return;
+		const [first, second] = selectedNodeIds;
+		if (!first || !second) return;
+		const direction = normalizeConnectionDirection(graph.nodes, first, second);
+		if (!direction) return;
+		const { source, target } = direction;
 		const id = `edge-${source}-${target}`;
-		if (graph.edges.some((edge) => edge.id === id)) return;
+		if (
+			graph.edges.some(
+				(edge) => edge.source === source && edge.target === target,
+			)
+		) {
+			return;
+		}
 		const edge: KernelEdge = { id, source, target };
 		emitGraph({ ...graph, edges: [...graph.edges, edge] });
 	};
+	const duplicateAt = useCallback(
+		(ids: string[], anchor: CanvasPoint) => {
+			pasteIndexRef.current += 1;
+			const copied = copySelectionAtPoint(
+				graph,
+				ids,
+				anchor,
+				`copy-${pasteIndexRef.current}`,
+			);
+			if (copied.graph === graph) return;
+			emitGraph(copied.graph);
+			onSelectNodes?.(copied.selectedNodeIds);
+			setSelectedConnectionId(null);
+		},
+		[emitGraph, graph, onSelectNodes],
+	);
+	const visibleCenter = useCallback(() => {
+		const bounds = surfaceRef.current?.getBoundingClientRect();
+		if (!bounds) return { x: 0, y: 0 };
+		return clientPointToWorld(
+			{ x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 },
+			bounds,
+			graph.viewport,
+		);
+	}, [graph.viewport]);
+	const deleteSelection = useCallback(
+		(nodeIds = selectedNodeIds, connectionId = selectedConnectionId) => {
+			const next = removeCanvasSelection(graph, nodeIds, connectionId);
+			if (next !== graph) emitGraph(next);
+			onSelectNodes?.([]);
+			setSelectedConnectionId(null);
+			setContextMenu(null);
+		},
+		[emitGraph, graph, onSelectNodes, selectedConnectionId, selectedNodeIds],
+	);
+
+	useEffect(() => {
+		const handleCanvasKey = (event: KeyboardEvent) => {
+			const command = canvasKeyboardCommand(event);
+			if (!command) return;
+			const target = event.target;
+			if (
+				target instanceof HTMLElement &&
+				(target.isContentEditable ||
+					target instanceof HTMLInputElement ||
+					target instanceof HTMLTextAreaElement ||
+					target instanceof HTMLSelectElement)
+			) {
+				return;
+			}
+			event.preventDefault();
+			if (command === "undo") undo();
+			else if (command === "redo") redo();
+			else if (command === "select-all") {
+				onSelectNodes?.(graph.nodes.map((node) => node.id));
+				setSelectedConnectionId(null);
+			} else if (command === "copy") {
+				clipboardNodeIdsRef.current = [...selectedNodeIds];
+			} else if (command === "paste") {
+				const center = visibleCenter();
+				duplicateAt(clipboardNodeIdsRef.current, {
+					x: center.x + pasteIndexRef.current * 24,
+					y: center.y + pasteIndexRef.current * 24,
+				});
+			} else if (command === "delete") deleteSelection();
+			else {
+				onSelectNodes?.([]);
+				setSelectedConnectionId(null);
+				setContextMenu(null);
+			}
+		};
+		window.addEventListener("keydown", handleCanvasKey);
+		return () => window.removeEventListener("keydown", handleCanvasKey);
+	}, [
+		deleteSelection,
+		duplicateAt,
+		graph.nodes,
+		onSelectNodes,
+		redo,
+		selectedNodeIds,
+		undo,
+		visibleCenter,
+	]);
 	const commitTextEdit = (nodeId: string, text: string) => {
 		const nodes = updateTextNode(graph.nodes, nodeId, text);
 		if (nodes !== graph.nodes) emitGraph({ ...graph, nodes });
@@ -232,6 +336,29 @@ export function KernelCanvasSurface({
 		)
 			? selectedNodeIds[0]
 			: undefined;
+	const beginMarquee = (event: ReactPointerEvent<HTMLDivElement>) => {
+		if (event.button !== 0 || (!event.ctrlKey && !event.metaKey)) return;
+		const bounds = surfaceRef.current?.getBoundingClientRect();
+		if (!bounds) return;
+		const start = clientPointToWorld(
+			{ x: event.clientX, y: event.clientY },
+			bounds,
+			graph.viewport,
+		);
+		setMarquee({ current: start, existingIds: selectedNodeIds, start });
+	};
+	const changeScale = (scale: number) => {
+		const currentScale = graph.viewport.scale || 1;
+		const worldCenter = {
+			x: (viewportSize.width / 2 - graph.viewport.x) / currentScale,
+			y: (viewportSize.height / 2 - graph.viewport.y) / currentScale,
+		};
+		updateViewport({
+			scale,
+			x: viewportSize.width / 2 - worldCenter.x * scale,
+			y: viewportSize.height / 2 - worldCenter.y * scale,
+		});
+	};
 
 	return (
 		<div className="kernel-surface-root">
@@ -272,26 +399,6 @@ export function KernelCanvasSurface({
 			<div
 				className="kernel-surface"
 				data-canvas-marquee-surface="true"
-				onPointerDownCapture={(event) => {
-					if (event.button !== 0 || !event.shiftKey) return;
-					const target = event.target instanceof Element ? event.target : null;
-					if (target?.closest("[data-node-id]")) return;
-					const bounds = surfaceRef.current?.getBoundingClientRect();
-					if (!bounds) return;
-					event.preventDefault();
-					event.stopPropagation();
-					event.currentTarget.setPointerCapture(event.pointerId);
-					const start = clientPointToWorld(
-						{ x: event.clientX, y: event.clientY },
-						bounds,
-						graph.viewport,
-					);
-					setMarquee({
-						current: start,
-						existingIds: selectedNodeIds,
-						start,
-					});
-				}}
 				onPointerLeave={endPointer}
 				onPointerMove={onPointerMove}
 				onPointerUp={endPointer}
@@ -299,7 +406,12 @@ export function KernelCanvasSurface({
 				<VozebCanvas
 					backgroundMode="lines"
 					containerRef={surfaceRef}
-					onCanvasDeselect={() => onSelectNodes?.([])}
+					onCanvasDeselect={() => {
+						onSelectNodes?.([]);
+						setSelectedConnectionId(null);
+						setContextMenu(null);
+					}}
+					onCanvasMouseDown={beginMarquee}
 					onViewportChange={(viewport) =>
 						updateViewport({
 							scale: viewport.k,
@@ -337,6 +449,14 @@ export function KernelCanvasSurface({
 											setSelectedConnectionId(edge.id);
 											onSelectNodes?.([]);
 										}}
+										onContextMenu={(event) =>
+											setContextMenu({
+												connectionId: edge.id,
+												type: "connection",
+												x: event.clientX,
+												y: event.clientY,
+											})
+										}
 										to={toVozebNode(to, deliveryUrl)}
 									/>
 								</g>
@@ -398,7 +518,18 @@ export function KernelCanvasSurface({
 										onContentChange={(nodeId, content) =>
 											commitTextEdit(nodeId, content)
 										}
-										onContextMenu={() => undefined}
+										onContextMenu={(event, nodeId) => {
+											event.preventDefault();
+											event.stopPropagation();
+											onSelectNodes?.([nodeId]);
+											setSelectedConnectionId(null);
+											setContextMenu({
+												nodeId,
+												type: "node",
+												x: event.clientX,
+												y: event.clientY,
+											});
+										}}
 										onGenerateImage={() => onSelectNodes?.([node.id])}
 										onHoverEnd={() => undefined}
 										onHoverStart={() => undefined}
@@ -474,6 +605,60 @@ export function KernelCanvasSurface({
 						})}
 					</div>
 				</VozebCanvas>
+				{clientChromeReady && isMiniMapOpen ? (
+					<Minimap
+						nodes={graph.nodes.map((node) => toVozebNode(node, deliveryUrl))}
+						onViewportChange={(viewport) =>
+							updateViewport({
+								scale: viewport.k,
+								x: viewport.x,
+								y: viewport.y,
+							})
+						}
+						viewport={{
+							k: graph.viewport.scale,
+							x: graph.viewport.x,
+							y: graph.viewport.y,
+						}}
+						viewportSize={viewportSize}
+					/>
+				) : null}
+				{clientChromeReady ? (
+					<CanvasZoomControls
+						isMiniMapOpen={isMiniMapOpen}
+						onReset={() => updateViewport({ scale: 1, x: 0, y: 0 })}
+						onScaleChange={changeScale}
+						onToggleMiniMap={() => setIsMiniMapOpen((open) => !open)}
+						scale={graph.viewport.scale}
+					/>
+				) : null}
+				{contextMenu ? (
+					<CanvasNodeContextMenu
+						menu={contextMenu}
+						onClose={() => setContextMenu(null)}
+						onDelete={() => {
+							if (contextMenu.type === "node") {
+								deleteSelection([contextMenu.nodeId], null);
+							} else {
+								deleteSelection([], contextMenu.connectionId);
+							}
+						}}
+						onDuplicate={() => {
+							if (contextMenu.type !== "node") return;
+							const bounds = surfaceRef.current?.getBoundingClientRect();
+							if (!bounds) return;
+							duplicateAt(
+								[contextMenu.nodeId],
+								clientPointToWorld(
+									{ x: contextMenu.x, y: contextMenu.y },
+									bounds,
+									graph.viewport,
+								),
+							);
+							setContextMenu(null);
+						}}
+					/>
+				) : null}
 				{graph.nodes.length === 0 ? (
 					<div className="kernel-empty-hint">
 						<strong>开始你的 Pro Studio 创作</strong>
