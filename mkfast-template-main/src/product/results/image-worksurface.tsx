@@ -339,6 +339,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
                   key={slot.assetId}
                   className="flex flex-wrap items-center gap-2 text-sm"
                   data-testid="image-set-slot"
+                  data-asset-id={slot.assetId}
                   data-order={slot.order}
                 >
                   <span>
