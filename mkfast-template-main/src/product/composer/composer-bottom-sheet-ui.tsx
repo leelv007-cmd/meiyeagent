@@ -5,7 +5,14 @@
  * Does not own business writes — pure presentation + dismiss restore.
  */
 
-import { useEffect, useId, useRef } from 'react';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useId } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -41,34 +48,7 @@ export function ComposerBottomSheet({
   className,
 }: ComposerBottomSheetProps) {
   const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
   const open = state.open;
-
-  useEffect(() => {
-    if (!open) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    // Move focus into the sheet for keyboard / SR users.
-    panelRef.current?.focus();
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [open, state.generation]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        handleDismiss();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dismiss closes over latest state
-  }, [open, state]);
-
-  if (!open) return null;
 
   const handleDismiss = () => {
     const { state: next, restore } = dismissComposerSheet(state);
@@ -76,55 +56,52 @@ export function ComposerBottomSheet({
     if (restore) onRestore?.(restore);
   };
 
+  if (!open) return null;
+
   const resolvedTitle = title ?? SHEET_TITLES[open];
 
   return (
-    <div
-      data-testid="composer-bottom-sheet-root"
-      data-sheet-kind={open}
-      data-sheet-generation={state.generation}
-      className="fixed inset-0 z-50 flex items-end justify-center"
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) handleDismiss();
+      }}
     >
-      <button
-        type="button"
-        aria-label="关闭"
-        data-testid="composer-bottom-sheet-backdrop"
-        className="absolute inset-0 bg-black/40"
-        onClick={handleDismiss}
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
+      <DialogContent
         aria-modal="true"
         aria-labelledby={titleId}
-        tabIndex={-1}
         data-testid="composer-bottom-sheet"
         data-sheet-kind={open}
+        data-sheet-generation={state.generation}
+        data-product-modal="composer-bottom-sheet"
+        finalFocus={() => {
+          const focusKey = state.restore?.focusKey;
+          return focusKey ? document.getElementById(focusKey) ?? false : false;
+        }}
+        showCloseButton={false}
         className={cn(
-          'relative z-10 flex max-h-[85vh] w-full max-w-lg flex-col rounded-t-2xl border border-input bg-background p-4 shadow-lg outline-none',
+          'meiye-product-shell top-auto right-0 bottom-0 left-0 z-50 mx-auto flex max-h-[85vh] w-full max-w-lg translate-x-0 translate-y-0 flex-col rounded-t-2xl border border-input bg-popover p-4 shadow-lg',
           className
         )}
       >
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 id={titleId} className="text-base font-semibold text-foreground">
+        <DialogHeader className="mb-3 flex-row items-center justify-between gap-2">
+          <DialogTitle id={titleId} className="text-base font-semibold text-foreground">
             {resolvedTitle}
-          </h2>
-          <button
-            type="button"
+          </DialogTitle>
+          <DialogClose
             data-testid="composer-bottom-sheet-close"
             className="min-h-12 min-w-12 rounded-lg px-3 text-sm text-muted-foreground hover:bg-accent/40"
-            onClick={handleDismiss}
           >
             关闭
-          </button>
-        </div>
+          </DialogClose>
+        </DialogHeader>
         <div
           data-testid="composer-bottom-sheet-body"
           className="min-h-0 flex-1 overflow-y-auto"
         >
           {children}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

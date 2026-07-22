@@ -36,11 +36,15 @@ describe('video result worksurface', () => {
 
     await user.click(screen.getByTestId('video-adopt-action'));
     expect(onAdopt).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('video-loop-phase')).toHaveTextContent('adopted');
+    expect(screen.getByTestId('video-result-status')).toHaveTextContent(
+      '已采用，待交付'
+    );
 
     await user.click(screen.getByTestId('video-deliver-action'));
     expect(onDeliver).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('video-loop-phase')).toHaveTextContent('adopted');
+    expect(screen.getByTestId('video-result-status')).toHaveTextContent(
+      '已采用，待交付'
+    );
   });
 
   it('keeps independent subtitle proof free and opens confirmation for burned-in edits', async () => {
@@ -236,7 +240,9 @@ describe('video result worksurface', () => {
     await user.click(screen.getByTestId('video-full-recompose'));
     await screen.findByTestId('video-regen-confirm-action');
     await user.click(screen.getByTestId('video-regen-confirm-action'));
-    expect(await screen.findByRole('alert')).toHaveTextContent('网络中断');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '视频重生成暂时不可用。费用以报价确认页和账单记录为准，请稍后重试。'
+    );
     await user.click(screen.getByTestId('video-regen-confirm-action'));
 
     const firstTaskId = onConfirmRegeneration.mock.calls[0]?.[0].taskId;
@@ -295,9 +301,8 @@ describe('video result worksurface', () => {
       />
     );
 
-    expect(screen.getByTestId('video-worksurface')).toHaveAttribute(
-      'data-canonical-edits-locked',
-      'true'
+    expect(screen.getByTestId('video-result-status')).toHaveTextContent(
+      '成片待确认'
     );
     expect(screen.getByTestId('video-subtitle-input')).toBeDisabled();
     expect(screen.getByTestId('video-subtitle-save')).toBeDisabled();

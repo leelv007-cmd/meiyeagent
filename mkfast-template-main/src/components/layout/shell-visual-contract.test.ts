@@ -137,3 +137,21 @@ test('theme menu offers an actual dark choice and product chrome styles it', () 
   );
   assert.match(styles, /\.meiye-topbar-capsule[\s\S]*?\[data-slot="badge"\]/u);
 });
+
+test('mobile product portals inherit the product theme and clear the bottom navigation', () => {
+  const sidebarLayout = readSource('src/components/layout/sidebar-layout.tsx');
+  const composerSheet = readSource(
+    'src/product/composer/composer-bottom-sheet-ui.tsx'
+  );
+
+  assert.match(
+    sidebarLayout,
+    /document\.body\.classList\.add\('meiye-product-shell'\)/u
+  );
+  assert.match(
+    sidebarLayout,
+    /pb-\[calc\(5\.25rem\+env\(safe-area-inset-bottom\)\)\]/u
+  );
+  assert.match(composerSheet, /data-product-modal="composer-bottom-sheet"/u);
+  assert.match(composerSheet, /className=\{cn\(\s*'meiye-product-shell/u);
+});

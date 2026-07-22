@@ -89,6 +89,27 @@ export type VideoWorksurfaceProps = {
   onOpenProStudio?: (handoff: VideoProStudioRefineHandoff) => void;
 };
 
+function videoMerchantStatusLabel(
+  phase: VideoWorksurfaceState['loopPhase']
+): string {
+  switch (phase) {
+    case 'running':
+      return '成片生成中';
+    case 'candidate_ready':
+      return '成片待确认';
+    case 'adopted':
+      return '已采用，待交付';
+    case 'delivered':
+      return '已交付';
+    case 'failed':
+      return '生成失败';
+    default: {
+      const _exhaustive: never = phase;
+      return _exhaustive;
+    }
+  }
+}
+
 export function VideoWorksurface(props: VideoWorksurfaceProps) {
   const [state, setState] = useState(props.initialState);
   const [serverQuote, setServerQuote] =
@@ -117,10 +138,8 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
     setQuotePending(true);
     try {
       setServerQuote(await props.onRequestRegenerationQuote(request));
-    } catch (error) {
-      setCommandError(
-        error instanceof Error ? error.message : '暂时无法获取服务端报价'
-      );
+    } catch {
+      setCommandError('暂时无法获取报价，请稍后重试。');
     } finally {
       setQuotePending(false);
     }
@@ -139,34 +158,21 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
     setCommandPending(true);
     try {
       await props.onCanonicalEdit(command);
-    } catch (error) {
+    } catch {
       update(previous);
-      setCommandError(
-        error instanceof Error ? error.message : '视频修改保存失败'
-      );
+      setCommandError('视频修改暂未保存，请稍后重试。');
     } finally {
       setCommandPending(false);
     }
   };
 
   return (
-    <div
-      className="space-y-4"
-      data-testid="video-worksurface"
-      data-phase={state.loopPhase}
-      data-work-id={state.workId}
-      data-workflow-id={state.workflowId}
-      data-workflow-revision={state.workflowRevision}
-      data-composed-asset-id={state.composedCandidate?.assetId}
-      data-adopted-composed-asset-id={
-        state.adoption.composedAssetId ?? undefined
-      }
-      data-canonical-edits-locked={canonicalEditsLocked}
-    >
+    <div className="space-y-4" data-testid="video-worksurface">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge data-testid="video-loop-phase">{state.loopPhase}</Badge>
-        <Badge variant="outline">{state.catalogModelId}</Badge>
-        <Badge variant="outline">分镜 v{state.storyboardVersion}</Badge>
+        <Badge data-testid="video-result-status">
+          {videoMerchantStatusLabel(state.loopPhase)}
+        </Badge>
+        <Badge variant="outline">第 {state.storyboardVersion} 版分镜</Badge>
       </div>
 
       <section className="space-y-3 rounded-lg border p-4">
@@ -349,7 +355,6 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
               key={shot.shotId}
               className="space-y-2 rounded-md border p-3"
               data-testid="video-shot"
-              data-shot-id={shot.shotId}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -388,7 +393,6 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
                     variant={candidate.selected ? 'default' : 'outline'}
                     aria-pressed={candidate.selected}
                     data-testid="video-shot-candidate"
-                    data-candidate-index={candidate.index}
                     disabled={commandPending || canonicalEditsLocked}
                     onClick={() => {
                       const result = selectShotCandidate(
@@ -494,7 +498,6 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
         <section
           className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4"
           data-testid="video-regen-confirm"
-          data-scope={state.pendingQuote.scope}
         >
           <p className="text-sm font-medium">
             {state.pendingQuote.actionLabel}
@@ -546,12 +549,10 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
                       });
                       regenerationTaskIds.current.delete(quoteId);
                       setServerQuote(null);
-                    } catch (error) {
+                    } catch {
                       update(state);
                       setCommandError(
-                        error instanceof Error
-                          ? error.message
-                          : '视频重生成确认失败'
+                        '视频重生成暂时不可用。费用以报价确认页和账单记录为准，请稍后重试。'
                       );
                     } finally {
                       setCommandPending(false);

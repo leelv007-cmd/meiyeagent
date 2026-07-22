@@ -457,6 +457,16 @@ from the ported template; copy authority is
 | 6 | Theme toggle flips the landing skin | Click the floating theme switch, verify `html.dark` toggles and the page stays healthy. |
 | 7 | Reduced motion renders all sections | Emulate `prefers-reduced-motion: reduce`, reload `/`, and verify all section anchors and pricing copy render with no browser errors. |
 
+## 33. P0 Merchant Result And Mobile Truth
+
+**Files:** `specs/ui-journey-three-modal.spec.ts`, `specs/mobile-product-shell.spec.ts`, `fixtures/ui-journey.ts` | **Priority:** P0 | **Tickets:** #144 / #145
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Result keeps merchant language across copy, image, and video | Run the real Composer HTTP/SSE journey in desktop light and 375px mobile dark. Verify ProductStatus and usable actions, then reject Work/Asset IDs, raw execution states, provider text, and model slugs from the Result surface before adjustment, adoption, delivery, and reload restoration. |
+| 2 | Mobile Progress never opens a phantom stage | With no active Work, verify the mobile Progress entry goes to the real task center. The target model contract separately verifies that the newest in-flight Work becomes its exact Result deep link, rather than a dashboard query flag. |
+| 3 | Product modal semantics and safe area stay intact | Interaction tests require one aria-modal Bottom Sheet/Dialog, Escape close, focus return, and product portal tokens; the 375px browser journey checks Result does not overflow or hide behind the bottom navigation. |
+
 ## Deferred Coverage
 
 These flows should be added after their dependencies are made deterministic:

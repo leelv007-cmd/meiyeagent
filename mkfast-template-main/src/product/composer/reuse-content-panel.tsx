@@ -70,9 +70,6 @@ export function ReuseContentPanel({
 
   return (
     <section
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="composer-reuse-panel-title"
       data-testid="composer-reuse-content-panel"
       className={cn(
         'flex flex-col gap-4 rounded-2xl border border-input bg-background p-4 shadow-sm',

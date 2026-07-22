@@ -35,7 +35,7 @@ const SURFACE_PROFILES: readonly SurfaceProfile[] = [
   {
     name: 'mobile-dark',
     theme: 'dark',
-    viewport: { width: 390, height: 844 },
+    viewport: { width: 375, height: 812 },
   },
 ] as const;
 
@@ -95,11 +95,11 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
           `${contract.modality} C6 activation budget: ${JSON.stringify(activationCounter.events())}`
         ).toBe(contract.expectedActivations);
 
-        await adjustResult(page, contract.modality);
+        const adjusted = await adjustResult(page, contract.modality);
         await adoptResult(page, contract);
         await openDeliveryPanel(page, contract.modality);
         await downloadFullPackage(page, contract);
-        await assertJourneyRestored(page, contract, workId);
+        await assertJourneyRestored(page, contract, adjusted.workId ?? workId);
 
         if (surface.name === 'mobile-dark') {
           await expect(page.getByTestId('composer-home')).toHaveCount(0);

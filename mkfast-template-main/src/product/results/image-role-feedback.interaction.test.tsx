@@ -78,7 +78,6 @@ describe('image role feedback (exact D-087 copy)', () => {
 
     const primary = screen.getByTestId('image-role-primary');
     expect(primary).toHaveTextContent('采用这张');
-    expect(primary).toHaveAttribute('data-action-kind', 'adopt_one');
 
     await user.click(primary);
     expect(screen.getByTestId('image-role-feedback-visible')).toHaveTextContent(
@@ -263,6 +262,7 @@ describe('image role feedback (exact D-087 copy)', () => {
       'data-asset-id',
       'img-1'
     );
+    expect(screen.getByTestId('image-set-slot')).toHaveTextContent('第 1 张');
   });
 
   it('does not claim a library save when no canonical handler exists', () => {
@@ -339,13 +339,15 @@ describe('image role feedback (exact D-087 copy)', () => {
     );
 
     const drift = screen.getByTestId('image-selection-drift');
-    expect(drift).toHaveTextContent('rev-old');
-    expect(drift).toHaveTextContent('rev-new');
+    expect(drift).toHaveTextContent('当前成品已有更新');
+    expect(drift).not.toHaveTextContent('rev-old');
+    expect(drift).not.toHaveTextContent('rev-new');
     // Local selection still hydrated under drift
     expect(screen.getByTestId('image-set-slot')).toHaveAttribute(
       'data-asset-id',
       'img-1'
     );
+    expect(screen.getByTestId('image-set-slot')).toHaveTextContent('第 1 张');
 
     await user.click(screen.getByTestId('image-selection-drift-discard'));
     expect(screen.queryByTestId('image-selection-drift')).toBeNull();
@@ -401,7 +403,7 @@ describe('image role feedback (exact D-087 copy)', () => {
     );
 
     const primary = screen.getByTestId('image-role-primary');
-    expect(primary).toHaveAttribute('data-action-kind', 'adopt_set');
+    expect(primary).toHaveTextContent('采用这组');
     expect(primary).toBeDisabled();
     expect(screen.getByTestId('image-whole-set-reject')).toBeInTheDocument();
     await user.click(primary);

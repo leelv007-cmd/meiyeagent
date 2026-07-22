@@ -56,13 +56,16 @@ async function day0SeedPrep(
   return user;
 }
 
-async function assertResultFirstToken(page: Page, workspace: 'copy' | 'image') {
+async function assertResultFirstToken(
+  page: Page,
+  _workspace: 'copy' | 'image'
+) {
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+/u, {
     timeout: 60_000,
   });
   await expect(page.getByTestId('result-center-shell')).toBeVisible();
-  await expect(page.getByTestId('result-shell-workspace')).toHaveText(
-    workspace
+  await expect(page.getByTestId('result-merchant-status')).toContainText(
+    /生成中|可发布/u
   );
   await expect(firstTokenLocator(page)).toHaveAttribute(
     'data-has-token',
@@ -76,7 +79,9 @@ async function assertVideoFirstUsableResult(page: Page) {
     timeout: 60_000,
   });
   await expect(page.getByTestId('result-center-shell')).toBeVisible();
-  await expect(page.getByTestId('result-shell-workspace')).toHaveText('video');
+  await expect(page.getByTestId('video-result-status')).toContainText(
+    /成片生成中|成片待确认/u
+  );
   await expect(page.getByTestId('video-worksurface')).toBeVisible({
     timeout: 120_000,
   });

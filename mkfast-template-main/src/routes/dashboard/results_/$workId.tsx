@@ -730,8 +730,6 @@ function ResultCenterRoutePage() {
     'continue_adjust',
     'deliver',
     'leave_and_continue',
-    'open_history',
-    'open_run_detail',
     'create_from_this',
     'retry',
     'cancel_run',
@@ -762,14 +760,7 @@ function ResultCenterRoutePage() {
         });
         return;
       case 'open_history':
-        await navigate({
-          search: (current) => ({ ...current, panel: 'history' }),
-        });
-        return;
       case 'open_run_detail':
-        await navigate({
-          search: (current) => ({ ...current, panel: 'run' }),
-        });
         return;
       case 'leave_and_continue':
         window.location.assign('/dashboard');
@@ -840,10 +831,13 @@ function ResultCenterRoutePage() {
           derivedWorkId: pendingImageAdjust.derivedWorkId,
         }
       );
-      window.location.assign(resultCenterPath(result.work.id));
-    } catch (error) {
+      setPendingImageAdjust(null);
+      window.requestAnimationFrame(() => {
+        window.location.assign(resultCenterPath(result.work.id));
+      });
+    } catch {
       setAdjustError(
-        error instanceof Error ? error.message : '调整提交失败，请重试。'
+        '调整提交暂时不可用。费用以报价确认页和账单记录为准，请稍后重试。'
       );
     } finally {
       setAdjustBusy(false);
@@ -906,6 +900,13 @@ function ResultCenterRoutePage() {
           .finally(() => {
             setShellActionBusy(false);
           });
+      }}
+      onBack={() => {
+        if (window.history.length > 1) {
+          window.history.back();
+          return;
+        }
+        window.location.assign('/dashboard');
       }}
       onDriftChoice={(choice) => returnRestore.applyDriftChoice(choice)}
       onCopyAdopt={copyAsset ? adoptCopyCandidate : undefined}
@@ -1007,9 +1008,9 @@ function ResultCenterRoutePage() {
             quote,
             ...(scope ? { scope } : {}),
           });
-        } catch (error) {
+        } catch {
           setAdjustError(
-            error instanceof Error ? error.message : '调整报价失败，请重试。'
+            '暂时无法确认本次调整费用。请稍后重试，重新确认前不会创建新的调整。'
           );
         } finally {
           setAdjustBusy(false);

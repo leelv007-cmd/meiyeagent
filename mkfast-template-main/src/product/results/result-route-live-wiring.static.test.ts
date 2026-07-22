@@ -38,7 +38,16 @@ test('result route quotes and confirms adjustment before canonical submit', () =
   assert.match(route, /['"]quote['"]/);
   assert.match(route, /ImageAdjustConfirmation/);
   assert.match(route, /billingQuoteId/);
+  assert.match(
+    route,
+    /setPendingImageAdjust\(null\);[\s\S]*window\.location\.assign\(resultCenterPath\(result\.work\.id\)\)/u
+  );
   assert.doesNotMatch(route, /unitRate\s*:/);
+});
+
+test('result route gives a normal browser return to the originating surface', () => {
+  assert.match(route, /onBack=\{\(\) => \{[\s\S]*?window\.history\.back\(\)/u);
+  assert.match(route, /window\.location\.assign\('\/dashboard'\)/u);
 });
 
 test('result route sends adopt and export through canonical public commands', () => {

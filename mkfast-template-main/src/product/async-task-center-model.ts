@@ -205,6 +205,7 @@ export function composedVideoAsyncTaskSummaries(
           source: 'video_workflow',
           status,
           updatedAt: workflow.updatedAt,
+          workId: workflow.workId,
         },
       ];
     })

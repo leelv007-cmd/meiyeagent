@@ -85,11 +85,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
   );
 
   return (
-    <div
-      className="space-y-4"
-      data-testid="copy-image-text-worksurface"
-      data-lifecycle={props.facts.lifecycle}
-    >
+    <div className="space-y-4" data-testid="copy-image-text-worksurface">
       <section
         className="space-y-3 rounded-lg border p-4"
         data-testid="copy-edit-panel"
@@ -168,27 +164,28 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         </Button>
       </section>
 
-      <section
-        className="space-y-2 rounded-lg border p-4"
-        data-testid="copy-selection-rewrite"
-      >
-        <h3 className="text-sm font-medium">选区改写</h3>
-        <div className="flex flex-wrap gap-2">
-          {view.selectionRewriteActions.map((item) => (
-            <Button
-              key={item.action}
-              type="button"
-              size="sm"
-              variant="outline"
-              data-testid={`copy-rewrite-${item.action}`}
-              disabled={!props.onSelectionRewrite}
-              onClick={() => props.onSelectionRewrite?.(item.action)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </div>
-      </section>
+      {props.onSelectionRewrite ? (
+        <section
+          className="space-y-2 rounded-lg border p-4"
+          data-testid="copy-selection-rewrite"
+        >
+          <h3 className="text-sm font-medium">选区改写</h3>
+          <div className="flex flex-wrap gap-2">
+            {view.selectionRewriteActions.map((item) => (
+              <Button
+                key={item.action}
+                type="button"
+                size="sm"
+                variant="outline"
+                data-testid={`copy-rewrite-${item.action}`}
+                onClick={() => props.onSelectionRewrite?.(item.action)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section
         className="space-y-2 rounded-lg border p-4"
@@ -204,7 +201,6 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
                 key={item.id}
                 className="flex flex-wrap items-center gap-2 text-sm"
                 data-testid="copy-fact-item"
-                data-status={item.status}
               >
                 <Badge variant="outline">
                   {FACT_SOURCE_KIND_LABELS[item.kind]}
@@ -273,7 +269,6 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           <div
             className="rounded-md bg-muted p-3 text-sm"
             data-testid="copy-platform-preview-body"
-            data-source={view.platformPreview.variant.source}
           >
             <p className="font-medium">{view.platformPreview.variant.title}</p>
             <p className="mt-2 whitespace-pre-wrap">
@@ -284,7 +279,6 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           <p
             className="text-sm text-destructive"
             data-testid="copy-platform-preview-rejected"
-            data-code={view.platformPreview.code}
           >
             {view.platformPreview.message}
           </p>

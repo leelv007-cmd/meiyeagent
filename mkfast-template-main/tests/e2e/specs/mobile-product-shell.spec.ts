@@ -21,16 +21,29 @@ test('keeps the four merchant destinations and camera authorization reachable on
     await loginByForm(page, user);
     const mobileNav = page.getByRole('navigation', { name: '移动端导航' });
     await expect(mobileNav).toBeVisible();
+    await expect(
+      mobileNav.getByTestId('mobile-progress-entry')
+    ).toHaveAttribute('href', /^\/dashboard\/tasks(?:\?|$)/u);
     for (const label of ['创作', '进度', '内容', '门店']) {
       await expect(mobileNav.getByText(label, { exact: true })).toBeVisible();
     }
 
-    await mobileNav.getByText('创作', { exact: true }).click();
-    await expect(page.getByRole('tab', { name: '行动' })).toHaveAttribute(
-      'aria-selected',
-      'true'
+    await mobileNav.getByText('进度', { exact: true }).click();
+    await expect(page).toHaveURL(/\/dashboard\/tasks(?:\?|$)/u);
+    await expect(mobileNav.getByTestId('mobile-progress-entry')).toHaveClass(
+      /font-medium/u
     );
-    await expect(page.getByText('拍摄素材', { exact: true })).toBeVisible();
+
+    await mobileNav.getByText('创作', { exact: true }).click();
+    await expect(
+      page.getByRole('radiogroup', { name: '创作类型' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: '开始创作', exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: '拍照', exact: true })
+    ).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth)
     ).toBeLessThanOrEqual(390);

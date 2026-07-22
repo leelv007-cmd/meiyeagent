@@ -39,6 +39,12 @@ export function SidebarLayout({
     }
   }, [session, isPending, navigate]);
 
+  useEffect(() => {
+    if (mode !== 'product') return;
+    document.body.classList.add('meiye-product-shell');
+    return () => document.body.classList.remove('meiye-product-shell');
+  }, [mode]);
+
   if (isPending) {
     return (
       <div className="flex min-h-svh items-center justify-center">
@@ -91,7 +97,7 @@ export function SidebarLayout({
         tabIndex={-1}
         className={
           isMobile
-            ? 'min-w-0 bg-surface-0 pb-18 outline-none md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none'
+            ? 'min-w-0 bg-surface-0 pb-[calc(5.25rem+env(safe-area-inset-bottom))] outline-none md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none'
             : 'min-w-0 bg-surface-0 outline-none md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none'
         }
       >
