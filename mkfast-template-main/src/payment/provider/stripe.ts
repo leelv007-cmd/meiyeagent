@@ -27,6 +27,11 @@ import type {
 } from '../types';
 import { PlanIntervals, PaymentScenes, PaymentTypes } from '../types';
 import { normalizeStripeVerifiedPaymentEvent } from '../verified-webhook-event';
+import {
+  StripeCustomerIdentityError,
+  assertStripeCustomerBoundToUser,
+  assertStripeSubscriptionCustomerBoundToLocalUser,
+} from './stripe-customer-identity';
 
 export const STRIPE_HISTORICAL_API_VERSION: Stripe.LatestApiVersion =
   '2025-02-24.acacia';
@@ -99,16 +104,36 @@ export class StripeProvider implements PaymentProvider {
       return undefined;
     }
   }
+
+  private async assertCustomerBoundToUser(
+    customerId: string,
+    userId: string
+  ): Promise<void> {
+    const localUserId = await this.findUserIdByCustomerId(customerId);
+    if (localUserId !== userId) {
+      throw new StripeCustomerIdentityError(
+        'STRIPE_CUSTOMER_IDENTITY_MISMATCH',
+        'Stripe customer is not bound to the payment user.'
+      );
+    }
+    await assertStripeCustomerBoundToUser(
+      await this.stripe.customers.retrieve(customerId),
+      userId
+    );
+  }
+
   /**
    * Validates that a checkout session has required metadata
    * @param session Stripe checkout session
    * @returns Object with userId and customerId
    * @throws Error if required fields are missing
    */
-  private validateSessionMetadata(session: Stripe.Checkout.Session): {
+  private async validateSessionMetadata(
+    session: Stripe.Checkout.Session
+  ): Promise<{
     userId: string;
     customerId: string;
-  } {
+  }> {
     const userId = session.metadata?.userId;
     if (!userId || userId.trim() === '') {
       throw new Error(
@@ -123,6 +148,7 @@ export class StripeProvider implements PaymentProvider {
       );
     }
 
+    await this.assertCustomerBoundToUser(customerId, userId);
     return { userId, customerId };
   }
 
@@ -338,6 +364,10 @@ export class StripeProvider implements PaymentProvider {
         await this.updateSubscriptionPayment(invoice, paymentRecord);
       } else {
         // This is a one-time payment
+        await this.assertCustomerBoundToUser(
+          paymentRecord.customerId,
+          paymentRecord.userId
+        );
         await this.updateOneTimePayment(invoice, paymentRecord);
       }
     } catch (error) {
@@ -398,7 +428,6 @@ export class StripeProvider implements PaymentProvider {
       // Get subscription details from Stripe
       const subscription =
         await this.stripe.subscriptions.retrieve(subscriptionId);
-      const customerId = subscription.customer as string;
 
       // Get priceId from subscription items
       const priceId = subscription.items.data[0]?.price.id;
@@ -407,18 +436,13 @@ export class StripeProvider implements PaymentProvider {
         return;
       }
 
-      // Get userId from subscription metadata or fallback to customerId lookup
-      let userId: string | undefined = subscription.metadata?.userId;
-
-      // If no userId in metadata (common in renewals), find by customerId
-      if (!userId) {
-        console.log('No userId in metadata, finding by customerId');
-        userId = await this.findUserIdByCustomerId(customerId);
-
-        if (!userId) {
-          console.error('<< No userId found, this should not happen');
-          return;
-        }
+      const userId =
+        await this.assertSubscriptionBoundToLocalUser(subscription);
+      if (userId !== paymentRecord.userId) {
+        throw new StripeCustomerIdentityError(
+          'STRIPE_CUSTOMER_IDENTITY_MISMATCH',
+          'Stripe subscription customer is not bound to the payment user.'
+        );
       }
 
       const periodStart = this.getPeriodStart(subscription);
@@ -582,6 +606,7 @@ export class StripeProvider implements PaymentProvider {
     stripeSubscription: Stripe.Subscription
   ): Promise<void> {
     console.log('>> Handle subscription update:', stripeSubscription.id);
+    await this.assertSubscriptionBoundToLocalUser(stripeSubscription);
 
     // get priceId from subscription items (this is always available)
     const priceId = stripeSubscription.items.data[0]?.price.id;
@@ -643,6 +668,7 @@ export class StripeProvider implements PaymentProvider {
     stripeSubscription: Stripe.Subscription
   ): Promise<void> {
     console.log('>> Handle subscription deletion:', stripeSubscription.id);
+    await this.assertSubscriptionBoundToLocalUser(stripeSubscription);
 
     const db = getDb();
     const result = await db
@@ -695,6 +721,20 @@ export class StripeProvider implements PaymentProvider {
     console.log('<< Handle checkout session completion success');
   }
 
+  private async assertSubscriptionBoundToLocalUser(
+    subscription: Stripe.Subscription
+  ): Promise<string> {
+    return assertStripeSubscriptionCustomerBoundToLocalUser(
+      subscription.customer,
+      {
+        findUserIdByCustomerId: (customerId) =>
+          this.findUserIdByCustomerId(customerId),
+        retrieveCustomer: (customerId) =>
+          this.stripe.customers.retrieve(customerId),
+      }
+    );
+  }
+
   /**
    * Create subscription payment record in checkout.session.completed event
    * @param session Stripe checkout session
@@ -721,7 +761,7 @@ export class StripeProvider implements PaymentProvider {
     }
 
     // Validate session metadata and get userId, customerId
-    const { userId, customerId } = this.validateSessionMetadata(session);
+    const { userId, customerId } = await this.validateSessionMetadata(session);
 
     // No matter user uses coupon code or not, even amount=0, invoice id is available
     const invoiceId: string | null = session.invoice as string | null;
@@ -776,7 +816,7 @@ export class StripeProvider implements PaymentProvider {
     }
 
     // Validate session metadata and get userId, customerId
-    const { userId, customerId } = this.validateSessionMetadata(session);
+    const { userId, customerId } = await this.validateSessionMetadata(session);
 
     // No matter user uses coupon code or not, even amount=0, invoice id is available
     const invoiceId: string | null = session.invoice as string | null;
