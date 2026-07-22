@@ -18,6 +18,11 @@ export interface StripeCustomerIdentityRecord {
   metadata?: Record<string, string>;
 }
 
+export interface StripeCustomerIdentityBinding {
+  customerId: string;
+  userId: string;
+}
+
 export async function assertStripeCustomerBoundToUser(
   customer: StripeCustomerIdentityRecord,
   userId: string
@@ -34,14 +39,41 @@ export async function assertStripeCustomerBoundToUser(
   }
 }
 
-export async function assertStripeSubscriptionCustomerBoundToLocalUser(
+export async function verifyOrBackfillHistoricalStripeCustomer(
+  customer: StripeCustomerIdentityRecord,
+  userId: string,
+  dependencies: {
+    updateCustomerMetadata(
+      customerId: string,
+      metadata: Record<string, string>
+    ): Promise<StripeCustomerIdentityRecord>;
+  }
+): Promise<void> {
+  const expectedUserId = requireUserId(userId);
+  const metadataUserId = customer.metadata?.[STRIPE_USER_ID_METADATA_KEY];
+  if (customer.deleted === true || metadataUserId !== undefined) {
+    await assertStripeCustomerBoundToUser(customer, expectedUserId);
+    return;
+  }
+
+  const updated = await dependencies.updateCustomerMetadata(customer.id, {
+    [STRIPE_USER_ID_METADATA_KEY]: expectedUserId,
+  });
+  await assertStripeCustomerBoundToUser(updated, expectedUserId);
+}
+
+export async function verifyOrBackfillHistoricalStripeSubscriptionCustomer(
   customerReference: unknown,
   dependencies: {
     findUserIdByCustomerId(customerId: string): Promise<string | undefined>;
     retrieveCustomer(customerId: string): Promise<StripeCustomerIdentityRecord>;
+    updateCustomerMetadata(
+      customerId: string,
+      metadata: Record<string, string>
+    ): Promise<StripeCustomerIdentityRecord>;
   }
-): Promise<string> {
-  const customerId = customerIdFromReference(customerReference);
+): Promise<StripeCustomerIdentityBinding> {
+  const customerId = stripeCustomerIdFromReference(customerReference);
   if (!customerId) {
     throw new StripeCustomerIdentityError(
       'STRIPE_CUSTOMER_IDENTITY_INVALID',
@@ -57,11 +89,12 @@ export async function assertStripeSubscriptionCustomerBoundToLocalUser(
     );
   }
 
-  await assertStripeCustomerBoundToUser(
+  await verifyOrBackfillHistoricalStripeCustomer(
     await dependencies.retrieveCustomer(customerId),
-    userId
+    userId,
+    dependencies
   );
-  return userId;
+  return { customerId, userId };
 }
 
 function requireUserId(userId: string): string {
@@ -75,7 +108,7 @@ function requireUserId(userId: string): string {
   return normalized;
 }
 
-function customerIdFromReference(value: unknown): string | null {
+export function stripeCustomerIdFromReference(value: unknown): string | null {
   if (typeof value === 'string' && value.trim()) return value;
   if (
     value &&

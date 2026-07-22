@@ -5,7 +5,7 @@ import {
   STRIPE_USER_ID_METADATA_KEY,
   StripeCustomerIdentityError,
   assertStripeCustomerBoundToUser,
-  assertStripeSubscriptionCustomerBoundToLocalUser,
+  verifyOrBackfillHistoricalStripeSubscriptionCustomer,
 } from './stripe-customer-identity';
 
 test('accepts a historical Stripe customer only when its metadata matches the local user', async () => {
@@ -53,7 +53,7 @@ test('rejects a historical subscription webhook whose remote customer belongs to
   let lookedUpCustomerId = '';
 
   await assert.rejects(
-    assertStripeSubscriptionCustomerBoundToLocalUser(
+    verifyOrBackfillHistoricalStripeSubscriptionCustomer(
       { id: 'cus-user-b' },
       {
         async findUserIdByCustomerId(customerId) {
@@ -65,6 +65,9 @@ test('rejects a historical subscription webhook whose remote customer belongs to
             id: 'cus-user-b',
             metadata: { [STRIPE_USER_ID_METADATA_KEY]: 'user-b' },
           };
+        },
+        async updateCustomerMetadata() {
+          throw new Error('must not update mismatched metadata');
         },
       }
     ),
