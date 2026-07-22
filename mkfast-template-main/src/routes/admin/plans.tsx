@@ -9,7 +9,7 @@ import {
 
 export const Route = createFileRoute('/admin/plans')({ component: PlansPage });
 
-export function PlansPage() {
+function PlansPage() {
   return (
     <AdminRoutePage
       title={admin_plans_title()}

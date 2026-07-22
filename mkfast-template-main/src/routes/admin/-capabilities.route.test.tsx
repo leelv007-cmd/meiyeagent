@@ -29,8 +29,8 @@ const { assertOpsPathHasNoD048BannedControls } = await import(
   '@/p1/admin-capability-catalog-model'
 );
 
-test('admin capabilities route module exports Route and CapabilitiesPage', () => {
-  assert.equal(typeof routeModule.CapabilitiesPage, 'function');
+test('admin capabilities route module exposes its page through Route', () => {
+  assert.equal(typeof routeModule.Route.options.component, 'function');
   assert.ok(
     routeModule.Route,
     'createFileRoute Route export required for Z2 wiring'

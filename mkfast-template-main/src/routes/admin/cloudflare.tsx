@@ -10,7 +10,7 @@ export const Route = createFileRoute('/admin/cloudflare')({
   component: CloudflarePage,
 });
 
-export function CloudflarePage() {
+function CloudflarePage() {
   return (
     <AdminRoutePage
       title={admin_cloudflare_title()}

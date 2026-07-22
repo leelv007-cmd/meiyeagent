@@ -15,7 +15,7 @@ export const Route = createFileRoute('/admin/capabilities')({
   component: CapabilitiesPage,
 });
 
-export function CapabilitiesPage() {
+function CapabilitiesPage() {
   return (
     <AdminRoutePage
       title={admin_capabilities_title()}

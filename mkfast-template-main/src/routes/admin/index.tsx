@@ -15,7 +15,7 @@ export const Route = createFileRoute('/admin/')({
   component: AdminHomePage,
 });
 
-export function AdminHomePage() {
+function AdminHomePage() {
   return (
     <AdminRoutePage
       title={admin_exception_home_title()}

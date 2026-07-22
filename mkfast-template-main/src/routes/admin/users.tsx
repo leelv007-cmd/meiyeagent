@@ -12,7 +12,7 @@ export const Route = createFileRoute('/admin/users')({
   component: AdminUsersPage,
 });
 
-export function AdminUsersPage() {
+function AdminUsersPage() {
   const breadcrumbs = [
     { label: admin_title(), isCurrentPage: false },
     { label: admin_users_title(), isCurrentPage: true },

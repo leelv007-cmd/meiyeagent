@@ -14,7 +14,7 @@ registerHooks({
   },
 });
 
-const { stableContentPackageSelection } = await import('./content_/$contentId');
+const { stableContentPackageSelection } = await import('./-content-helpers');
 
 test('maps the stable path parameter to the same package selection as the query address', () => {
   assert.deepEqual(stableContentPackageSelection('package/a b'), {

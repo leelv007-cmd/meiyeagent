@@ -59,7 +59,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 
-export type ResultCenterSearch = {
+type ResultCenterSearch = {
   contentId?: string;
   versionId?: string;
   panel?: ResultPanel;
@@ -85,8 +85,7 @@ function optionalPanel(value: unknown): ResultPanel | undefined {
     : undefined;
 }
 
-/** Exported for unit tests — same search validation as the route. */
-export function validateResultCenterSearch(
+function validateResultCenterSearch(
   search: Record<string, unknown>
 ): ResultCenterSearch {
   const contentId = optionalString(search.contentId);

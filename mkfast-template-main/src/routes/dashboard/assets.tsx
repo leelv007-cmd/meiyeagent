@@ -6,7 +6,7 @@ export const Route = createFileRoute('/dashboard/assets')({
   component: AssetLibraryPage,
 });
 
-export function AssetLibraryPage() {
+function AssetLibraryPage() {
   return (
     <CanonicalHistoryPage mode="assets">
       <MarketingIdentityManager />

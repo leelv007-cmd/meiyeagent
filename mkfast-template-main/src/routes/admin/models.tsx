@@ -12,7 +12,7 @@ export const Route = createFileRoute('/admin/models')({
   component: ModelsPage,
 });
 
-export function ModelsPage() {
+function ModelsPage() {
   return (
     <AdminRoutePage
       title={admin_models_title()}

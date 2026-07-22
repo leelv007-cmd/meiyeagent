@@ -21,7 +21,11 @@ registerHooks({
   },
 });
 
-const { LegacyContentBody, writeTextToClipboard } = await import('./content');
+const { LegacyContentBody, writeTextToClipboard } = await import(
+  './-content-helpers'
+);
+const { ContentLibrarySurface } = await import('./-content-library-surface');
+const { Route: contentFileRoute } = await import('./content');
 
 type ActionElement = ReactElement<{
   children?: ReactNode;
@@ -53,6 +57,11 @@ function findAction(node: ReactNode, label: string): ActionElement | undefined {
   }
   return undefined;
 }
+
+test('content route retains the extracted library surface', () => {
+  assert.equal(typeof contentFileRoute.options.component, 'function');
+  assert.equal(typeof ContentLibrarySurface, 'function');
+});
 
 test('expands and collapses the full body of read-only legacy content', () => {
   const body = '第一段。\n第二段。\n第三段。\n第四段仍然必须可见。';
