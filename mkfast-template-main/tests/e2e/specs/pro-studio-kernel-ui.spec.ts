@@ -90,12 +90,10 @@ test.describe('Pro Studio authorized kernel UI', () => {
       expect(textNodeId).toBeTruthy();
 
       await textNode.dblclick();
-      const editor = page.locator(
-        `textarea[data-node-text-editor="${textNodeId}"]`
-      );
+      const editor = textNode.locator('textarea');
       await expect(editor).toBeVisible();
       await editor.fill('跨会话恢复的美业新品文案');
-      await editor.press('Enter');
+      await editor.press('Escape');
       await expect(textNode).toContainText('跨会话恢复的美业新品文案');
       await expect(page.locator('.canvas-toolbar')).toContainText('未保存');
 
@@ -124,17 +122,16 @@ test.describe('Pro Studio authorized kernel UI', () => {
 
     await test.step('E2 uploads, connects, square-crops, and restores owned media', async () => {
       await page
-        .locator('input[accept="image/png,image/jpeg,image/webp"]')
+        .locator('input[accept="image/*,video/*,audio/*"]')
         .setInputFiles({
           buffer: WIDE_PNG_FIXTURE,
           mimeType: 'image/png',
           name: uploadName,
         });
       await expect(page.locator('.status-dot')).toHaveText(
-        '素材已存入服务端素材库'
+        '素材已存入服务端素材库并插入画布'
       );
 
-      await page.getByTitle(uploadName).click();
       const textNode = page.locator('.kernel-node[data-node-id^="text-"]');
       const imageNodes = page.locator('.kernel-node[data-node-id^="image-"]');
       await expect(imageNodes).toHaveCount(1);
@@ -146,7 +143,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
       await sourceImage.click({ modifiers: ['Shift'] });
       await expect(page.locator('.kernel-node.is-selected')).toHaveCount(2);
       await page.getByRole('button', { name: '连接选中' }).click();
-      await expect(page.locator('svg.kernel-edges path')).toHaveCount(1);
+      await expect(page.locator('[data-connection-id]')).toHaveCount(1);
 
       await sourceImage.click();
       const crop = page.getByRole('button', { name: '方形裁切' });
@@ -156,7 +153,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
         '裁切结果已生成并保存'
       );
       await expect(imageNodes).toHaveCount(2);
-      await expect(page.locator('svg.kernel-edges path')).toHaveCount(2);
+      await expect(page.locator('[data-connection-id]')).toHaveCount(2);
       const derivedImage = imageNodes.last();
       derivedNodeId = (await derivedImage.getAttribute('data-node-id')) ?? '';
       expect(derivedNodeId).toBeTruthy();
@@ -226,7 +223,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
             ) + 8
           ),
         };
-        await page.keyboard.down('Shift');
+        await page.keyboard.down('Control');
         await page.mouse.move(marqueeStart.x, marqueeStart.y);
         await page.mouse.down();
         await page.mouse.move(marqueeEnd.x, marqueeEnd.y, { steps: 8 });
@@ -234,7 +231,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
           page.locator('[data-selection-marquee="true"]')
         ).toBeVisible();
         await page.mouse.up();
-        await page.keyboard.up('Shift');
+        await page.keyboard.up('Control');
 
         await expect(page.locator('.kernel-node.is-selected')).toHaveCount(2);
         await expect(textNode).toHaveClass(/is-selected/u);
@@ -303,7 +300,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
       await expect(
         page.locator('.kernel-node[data-node-id^="image-"]')
       ).toHaveCount(2);
-      await expect(page.locator('svg.kernel-edges path')).toHaveCount(2);
+      await expect(page.locator('[data-connection-id]')).toHaveCount(2);
       await expect(page.locator('.kernel-node img')).toHaveCount(2);
       await expect(page.locator('.kernel-node img').first()).toBeVisible();
       await expect(page.locator('.kernel-node img').last()).toBeVisible();
@@ -341,9 +338,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
         restoredPage.locator(`[data-node-id="${derivedNodeId}"] img`)
       ).toHaveAttribute('src', new RegExp(derivedAssetId, 'u'));
       await expect(restoredPage.locator('.kernel-node img')).toHaveCount(2);
-      await expect(restoredPage.locator('svg.kernel-edges path')).toHaveCount(
-        2
-      );
+      await expect(restoredPage.locator('[data-connection-id]')).toHaveCount(2);
       activePage = restoredPage;
     });
 
@@ -355,7 +350,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
         activePage.locator(`[data-generation-input-node-id="${sourceNodeId}"]`)
       ).toBeVisible();
       const edgeCountBeforeGeneration = await activePage
-        .locator('svg.kernel-edges path')
+        .locator('[data-connection-id]')
         .count();
       expect(edgeCountBeforeGeneration).toBe(2);
 
@@ -404,12 +399,12 @@ test.describe('Pro Studio authorized kernel UI', () => {
       generatedNodeId =
         (await generatedNode.getAttribute('data-node-id')) ?? '';
       expect(generatedNodeId).toBeTruthy();
-      await expect(activePage.locator('svg.kernel-edges path')).toHaveCount(
+      await expect(activePage.locator('[data-connection-id]')).toHaveCount(
         edgeCountBeforeGeneration + 1
       );
       await expect(
         activePage.locator(
-          `path[data-edge-source="${sourceNodeId}"][data-edge-target="${generatedNodeId}"]`
+          `g[data-edge-source="${sourceNodeId}"][data-edge-target="${generatedNodeId}"]`
         )
       ).toHaveCount(1);
 
@@ -420,7 +415,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
       ).toHaveCount(1);
       await expect(
         activePage.locator(
-          `path[data-edge-source="${sourceNodeId}"][data-edge-target="${generatedNodeId}"]`
+          `g[data-edge-source="${sourceNodeId}"][data-edge-target="${generatedNodeId}"]`
         )
       ).toHaveCount(1);
     });
