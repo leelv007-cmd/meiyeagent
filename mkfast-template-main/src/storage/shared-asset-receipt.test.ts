@@ -203,34 +203,31 @@ test('fences stale cleanup against a newer receipt and recovers sidecar-only del
   assert.equal(
     decideSharedAssetCleanup(
       { objectExists: true, objectVerified: true, receipt },
-      'revision-a',
+      'revision-a'
     ),
-    'preserve',
+    'preserve'
+  );
+  assert.equal(
+    decideSharedAssetCleanup({ objectExists: true }, 'revision-a'),
+    'unknown'
   );
   assert.equal(
     decideSharedAssetCleanup(
-      { objectExists: true },
-      'revision-a',
+      {
+        objectExists: false,
+        receipt: { ...receipt, storageRevision: 'revision-a' },
+      },
+      'revision-a'
     ),
-    'unknown',
+    'delete'
   );
   assert.equal(
-    decideSharedAssetCleanup(
-      { objectExists: false, receipt: { ...receipt, storageRevision: 'revision-a' } },
-      'revision-a',
-    ),
-    'delete',
-  );
-  assert.equal(
-    decideSharedAssetCleanup(
-      { objectExists: false, receipt },
-      'revision-a',
-    ),
-    'unknown',
+    decideSharedAssetCleanup({ objectExists: false, receipt }, 'revision-a'),
+    'unknown'
   );
   assert.equal(
     decideSharedAssetCleanup({ objectExists: false }, 'revision-a'),
-    'deleted',
+    'deleted'
   );
 });
 
@@ -245,13 +242,19 @@ test('requires a readable object body to verify a receipt generation', async () 
     objectKey,
     sha256: hash,
   });
-  assert.equal((await inspectSharedAsset(bucket, objectKey)).objectVerified, true);
+  assert.equal(
+    (await inspectSharedAsset(bucket, objectKey)).objectVerified,
+    true
+  );
   objects.set(objectKey, {
     bytes: Uint8Array.from([...bytes, 0]),
     contentType: 'image/png',
     customMetadata: { sha256: hash },
   });
-  assert.equal((await inspectSharedAsset(bucket, objectKey)).objectVerified, false);
+  assert.equal(
+    (await inspectSharedAsset(bucket, objectKey)).objectVerified,
+    false
+  );
 });
 
 test('treats a receipt PUT success without a readable sidecar as registration failure', async () => {
@@ -259,11 +262,15 @@ test('treats a receipt PUT success without a readable sidecar as registration fa
   const { bucket, objects } = bucketWithObject();
   objects.get(objectKey)!.customMetadata = { sha256: hash };
   const receiptKey = sharedAssetReceiptKey(
-    await sha256Hex(new TextEncoder().encode(objectKey)),
+    await sha256Hex(new TextEncoder().encode(objectKey))
   );
   const unavailableReceiptWrite = {
     ...bucket,
-    async put(key: string, value: string | ArrayBufferView, options?: Parameters<R2BucketInterface['put']>[2]) {
+    async put(
+      key: string,
+      value: string | ArrayBufferView,
+      options?: Parameters<R2BucketInterface['put']>[2]
+    ) {
       if (key === receiptKey) return {};
       return bucket.put(key, value, options);
     },
@@ -276,6 +283,6 @@ test('treats a receipt PUT success without a readable sidecar as registration fa
       objectKey,
       sha256: hash,
     }),
-    /did not expose the persisted receipt/,
+    /did not expose the persisted receipt/
   );
 });

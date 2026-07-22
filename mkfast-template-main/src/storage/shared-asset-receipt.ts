@@ -110,7 +110,9 @@ export async function writeSharedAssetReceipt(input: {
   }
   const persisted = await readSharedAssetReceipt(input.bucket, key);
   if (!persisted) {
-    throw new Error('Shared asset receipt write did not expose the persisted receipt.');
+    throw new Error(
+      'Shared asset receipt write did not expose the persisted receipt.'
+    );
   }
   return assertSameReceipt(persisted, input);
 }
@@ -128,7 +130,7 @@ export interface SharedAssetObjectState {
  */
 export function decideSharedAssetCleanup(
   state: SharedAssetObjectState,
-  expectedStorageRevision: string,
+  expectedStorageRevision: string
 ): 'delete' | 'deleted' | 'preserve' | 'unknown' {
   if (!state.objectExists && !state.receipt) return 'deleted';
   if (!state.receipt) return 'unknown';
@@ -138,13 +140,14 @@ export function decideSharedAssetCleanup(
       : 'unknown';
   }
   if (state.objectVerified !== true) return 'unknown';
-  if (state.receipt.storageRevision !== expectedStorageRevision) return 'preserve';
+  if (state.receipt.storageRevision !== expectedStorageRevision)
+    return 'preserve';
   return 'delete';
 }
 
 export async function inspectSharedAsset(
   bucket: R2BucketInterface,
-  objectKey: string,
+  objectKey: string
 ): Promise<SharedAssetObjectState> {
   const [object, receipt] = await Promise.all([
     bucket.head(objectKey),
@@ -167,11 +170,11 @@ export async function inspectSharedAsset(
 
 export async function readSharedAssetReceiptForObject(
   bucket: R2BucketInterface,
-  objectKey: string,
+  objectKey: string
 ): Promise<SharedAssetStorageReceipt | undefined> {
   const receipt = await readSharedAssetReceipt(
     bucket,
-    await sharedAssetReceiptKeyForObject(objectKey),
+    await sharedAssetReceiptKeyForObject(objectKey)
   );
   if (receipt && receipt.objectKey !== objectKey) {
     throw new Error('Shared asset receipt does not match its object key.');

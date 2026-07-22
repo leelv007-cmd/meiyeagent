@@ -348,7 +348,9 @@ export class R2Provider implements StorageProvider {
       return await inspectSharedAssetState(this.getBucket(), key);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Unknown shared asset inspection error';
+        error instanceof Error
+          ? error.message
+          : 'Unknown shared asset inspection error';
       throw new StorageError(message);
     }
   }

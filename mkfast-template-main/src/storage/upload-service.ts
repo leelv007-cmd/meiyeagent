@@ -111,10 +111,7 @@ async function persistUserFile(input: {
               'Shared asset receipt and object could not be verified for registration.'
             );
           }
-          if (
-            cleanupClaim &&
-            cleanupClaim.status === 'deleted'
-          ) {
+          if (cleanupClaim && cleanupClaim.status === 'deleted') {
             await transaction
               .update(storageObjectCleanupClaims)
               .set({

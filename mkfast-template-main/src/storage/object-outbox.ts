@@ -254,18 +254,20 @@ async function processSharedAssetDeleteClaim(
       let state = await inspectSharedAsset(job.objectKey);
       let decision = decideSharedAssetCleanup(
         state,
-        job.receiptStorageRevision!,
+        job.receiptStorageRevision!
       );
       if (decision === 'preserve') {
         await markSharedAssetRegistrationRecovered(
           transaction,
           job,
-          state.receipt!.storageRevision,
+          state.receipt!.storageRevision
         );
         return;
       }
       if (decision === 'unknown') {
-        throw new Error('Shared asset object is present without a durable receipt.');
+        throw new Error(
+          'Shared asset object is present without a durable receipt.'
+        );
       }
       await transaction.execute(sql`
         INSERT INTO storage_object_cleanup_claims
@@ -292,12 +294,14 @@ async function processSharedAssetDeleteClaim(
         await markSharedAssetRegistrationRecovered(
           transaction,
           job,
-          state.receipt!.storageRevision,
+          state.receipt!.storageRevision
         );
         return;
       }
       if (decision === 'unknown') {
-        throw new Error('Shared asset object is present without a durable receipt.');
+        throw new Error(
+          'Shared asset object is present without a durable receipt.'
+        );
       }
       if (decision === 'deleted') {
         await transaction.execute(sql`
@@ -335,7 +339,9 @@ async function processSharedAssetDeleteClaim(
         decideSharedAssetCleanup(state, job.receiptStorageRevision!) !==
         'deleted'
       ) {
-        throw new Error('Shared asset deletion did not remove its object and receipt together.');
+        throw new Error(
+          'Shared asset deletion did not remove its object and receipt together.'
+        );
       }
       await transaction.execute(sql`
         UPDATE storage_object_cleanup_claims
@@ -397,7 +403,7 @@ async function markSharedAssetRegistrationRecovered(
     execute(query: ReturnType<typeof sql>): Promise<unknown>;
   },
   job: StorageDeleteJob & { claimToken: string },
-  storageRevision: string,
+  storageRevision: string
 ) {
   await transaction.execute(sql`
     INSERT INTO storage_object_cleanup_claims
