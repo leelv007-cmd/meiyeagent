@@ -99,7 +99,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @meiye/contracts typecheck
       - run: pnpm --filter @meiye/core typecheck
@@ -123,7 +123,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei
       - run: pnpm install --frozen-lockfile
       - name: Verify the quality-gate command contract
         run: node --test scripts/ci/*.test.mjs
@@ -168,7 +168,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
       - run: pnpm install --frozen-lockfile
       - name: Provision business and DBOS test databases
         run: >-
@@ -229,7 +229,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
       - name: Provision production-journey databases
@@ -310,7 +310,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
       - run: pnpm install --frozen-lockfile
       - name: Audit production dependencies
         shell: bash
