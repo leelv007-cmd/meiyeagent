@@ -9,6 +9,10 @@ import {
 } from '@meiye/contracts';
 import { z } from 'zod';
 
+import {
+  creationExecutionSnapshotSchema,
+  type CreationExecutionSnapshot,
+} from '../execution-spine/creation-execution-snapshot.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type {
   HarnessFrozenPrompts,
@@ -31,6 +35,8 @@ export interface HarnessWorkflowInput {
     revision: number;
   }>;
   reuseSeed?: ReuseTaskSeed;
+  /** Present only for new Composer submissions on the execution spine. */
+  executionSnapshot?: CreationExecutionSnapshot;
   prompts?: HarnessFrozenPrompts;
 }
 
@@ -129,7 +135,8 @@ export class HarnessTaskAdmissionService {
 }
 
 function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
-  const parsed = harnessTaskRequestSchema.parse(input);
+  const { executionSnapshot, ...request } = input;
+  const parsed = harnessTaskRequestSchema.parse(request);
   return {
     actorId: parsed.actorId,
     workspaceId: parsed.workspaceId,
@@ -140,5 +147,11 @@ function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
     intent: parsed.intent,
     factScope: parsed.factScope ?? { storeId: parsed.workspaceId },
     ...(parsed.reuseSeed ? { reuseSeed: parsed.reuseSeed } : {}),
+    ...(executionSnapshot
+      ? {
+          executionSnapshot:
+            creationExecutionSnapshotSchema.parse(executionSnapshot),
+        }
+      : {}),
   };
 }

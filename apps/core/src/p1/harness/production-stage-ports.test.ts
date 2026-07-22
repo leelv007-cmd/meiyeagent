@@ -7,6 +7,7 @@ import {
   type HarnessCopyDeliveryPort,
 } from './production-stage-ports.js';
 import { runHarnessWorkflow } from './workflow-core.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type {
   StructuredNodeRunner,
   StructuredNodeRunnerRequest,
@@ -195,6 +196,57 @@ test('same-scope facts with the same key keep the blocking QuestionCard before b
     named.blockingQuestion?.questionId,
     'task-conflicting-price-streams:s1:offer_price',
   );
+});
+
+test('production Copy stage keeps the frozen structured platform over model output', async () => {
+  const runner = new QueueRunner([
+    {
+      kind: 'copy',
+      instructions:
+        '请基于已确认的服务事实写一条克制、可信的到店预约文案，说明服务价值与适用人群，不编造价格、疗效或资质，并在结尾给出低压力的私信预约行动；全文应保持清楚、自然、可信的门店主理人表达。',
+      platform: 'xiaohongshu',
+      cta: '私信预约',
+      factRefs: [],
+      assetRefs: [],
+      identityRefs: [],
+      constraints: [],
+    },
+  ]);
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+  );
+  const snapshot = composerSnapshot();
+
+  const result = await ports.compileBrief({
+    workflowId: snapshot.task.id,
+    request: {
+      ...taskInput(),
+      expectedRevision: snapshot.contentPackage.expectedRevision,
+      packageId: snapshot.contentPackage.id,
+      workflowRevision: snapshot.revision,
+      executionSnapshot: snapshot,
+    },
+    declaration: {
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      implicitConstraints: [],
+    },
+    context: contextSnapshot(),
+  });
+
+  assert.equal(result.brief.platform, 'douyin');
+  const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
+  assert.equal(prompt.executionContract.platform.id, 'douyin');
 });
 
 test('production ports compose #31, canonical gates, N-to-1 and copy delivery', async () => {
@@ -724,4 +776,36 @@ function taskInput() {
       assetReferences: [],
     },
   };
+}
+
+function composerSnapshot() {
+  return createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'composer-key-1',
+      taskId: 'task-production',
+      workId: 'work-1',
+      contentPackageId: 'package-1',
+      expectedContentPackageRevision: 0,
+      intent: '请为小红书写一条护理预约文案，但结构化平台实际选择抖音。',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      lens: 'copy',
+      platform: { id: 'douyin' },
+      deliverables: [
+        { id: 'copy-primary', kind: 'copy', quantity: 1, order: 1 },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized source assets' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      contentModules: ['social_cover'],
+    },
+    '2026-07-22T09:00:00.000Z',
+  );
 }

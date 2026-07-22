@@ -11,6 +11,7 @@ import {
   HARNESS_BUILTIN_PROMPTS,
   type HarnessFrozenPrompt,
 } from './langfuse-prompts.js';
+import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 
 export type {
   StructuredNodeRunner,
@@ -228,6 +229,7 @@ export async function compileExecutionBrief(
     unitKind: ExecutionUnitKind;
     declaration: IntentDeclaration;
     bundle: z.infer<typeof briefContextBundleSchema>;
+    executionSnapshot?: CreationExecutionSnapshot;
     prompt?: HarnessFrozenPrompt;
   },
   runner: StructuredNodeRunner,
@@ -246,6 +248,13 @@ export async function compileExecutionBrief(
         unitKind: input.unitKind,
         declaration: input.declaration,
         bundle,
+        ...(input.executionSnapshot
+          ? {
+              executionContract: briefExecutionContract(
+                input.executionSnapshot
+              ),
+            }
+          : {}),
       }),
       schema: executionBriefSchema,
     },
@@ -256,6 +265,21 @@ export async function compileExecutionBrief(
   return briefSchemaByKind[input.unitKind].parse(
     result.output
   ) as ExecutionBrief;
+}
+
+function briefExecutionContract(snapshot: CreationExecutionSnapshot) {
+  return {
+    briefConfirmation: snapshot.briefConfirmation,
+    catalogModel: snapshot.catalogModel,
+    contentModules: snapshot.contentModules,
+    deliverables: snapshot.deliverables,
+    identity: snapshot.identity,
+    lens: snapshot.lens,
+    modelPolicy: snapshot.modelPolicy,
+    platform: snapshot.platform,
+    quote: snapshot.quote,
+    route: snapshot.route,
+  };
 }
 
 const briefSchemaByKind = {

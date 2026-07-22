@@ -8,6 +8,7 @@ import {
   type StructuredNodeRunner,
   type StructuredNodeRunnerRequest,
 } from './structured-nodes.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 
 const taskFixtures = [
   ['daily_service_exposure', '把新项目写成一条朋友圈文案'],
@@ -198,6 +199,79 @@ test('brief compilation produces complete copy, image and video unit briefs', as
       total: expectedTotal,
     });
   }
+});
+
+test('brief compilation receives the frozen structured Composer contract before model output', async () => {
+  const runner = new FixtureStructuredNodeRunner({
+    kind: 'copy',
+    instructions:
+      '写一条可信、克制的本地门店项目曝光文案。先说明顾客常见困扰，再引用已确认的项目与环境事实解释服务价值；不编造价格、疗效或资质，结尾使用低压力的私信预约行动，并保持主理人本人分享的口吻。',
+    platform: 'xiaohongshu',
+    cta: '私信预约到店咨询',
+    factRefs: ['fact-service-1'],
+    assetRefs: ['asset-room-1'],
+    identityRefs: ['identity-owner-1'],
+    constraints: ['不得编造价格'],
+  });
+  const snapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'submission-1',
+      taskId: 'task-1',
+      workId: 'work-1',
+      contentPackageId: 'package-1',
+      expectedContentPackageRevision: 0,
+      intent: '请写一条小红书护理预约文案',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      lens: 'copy',
+      platform: { id: 'douyin' },
+      deliverables: [
+        { id: 'copy-primary', kind: 'copy', quantity: 1, order: 1 },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+      catalogModel: { id: 'model-1', revision: 'model-r1' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+      contentModules: ['social_cover'],
+    },
+    '2026-07-22T09:00:00.000Z'
+  );
+
+  await compileExecutionBrief(
+    {
+      workflowId: 'workflow-snapshot-contract',
+      unitId: 'copy-primary',
+      unitKind: 'copy',
+      declaration: {
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        implicitConstraints: [],
+      },
+      bundle: contextBundleFixture(),
+      executionSnapshot: snapshot,
+    },
+    runner
+  );
+
+  const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
+  assert.deepEqual(prompt.executionContract, {
+    briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
+    catalogModel: { id: 'model-1', revision: 'model-r1' },
+    contentModules: ['social_cover'],
+    deliverables: [{ id: 'copy-primary', kind: 'copy', quantity: 1, order: 1 }],
+    identity: { id: 'identity-1', revision: 'identity-r1' },
+    lens: 'copy',
+    modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+    platform: { id: 'douyin' },
+    quote: { id: 'quote-1', revision: 'quote-r1' },
+    route: { id: 'route-1', revision: 'route-r1' },
+  });
 });
 
 test('nested completeness reports partial non-empty output independently from schema validity', async () => {

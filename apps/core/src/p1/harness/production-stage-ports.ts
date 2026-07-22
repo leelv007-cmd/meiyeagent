@@ -157,6 +157,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   }
 
   async compileBrief(input: Parameters<HarnessStagePorts['compileBrief']>[0]) {
+    const snapshot = input.request.executionSnapshot;
+    if (snapshot && snapshot.lens !== 'copy') {
+      throw new HarnessCopyScopeError();
+    }
     const runner = this.runner(input.request);
     const metrics = new InMemoryStructuredNodeMetrics();
     const brief = await compileExecutionBrief(
@@ -166,6 +170,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         unitKind: 'copy',
         declaration: input.declaration,
         bundle: input.context.bundle,
+        ...(snapshot
+          ? { executionSnapshot: snapshot }
+          : {}),
         prompt: input.request.prompts?.briefCompilation,
       },
       runner,
@@ -174,7 +181,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     if (brief.kind !== 'copy') {
       throw new Error('The first production tracer accepts only copy briefs.');
     }
-    return { brief, metrics: metrics.snapshot() };
+    return {
+      brief: snapshot ? { ...brief, platform: snapshot.platform.id } : brief,
+      metrics: metrics.snapshot(),
+    };
   }
 
   executeAndSelect(

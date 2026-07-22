@@ -1,0 +1,344 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import test from "node:test";
+import { Pool } from "pg";
+
+import { DurableProductBillingService } from "../product-billing/durable-service.js";
+import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
+import { PostgresOperationsRepository } from "../operations/postgres-repository.js";
+import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
+import {
+  PostgresCreationSubmissionPersistence,
+  PostgresCreationSubmissionStore,
+  PostgresProductBillingUsageReservation,
+} from "./postgres-creation-submission-store.js";
+import type { CreationSubmissionRecord } from "./submission-coordinator.js";
+
+const connectionString = process.env.TEST_DATABASE_URL;
+
+test(
+  "Postgres Coordinator store atomically reserves product shells and reclaims only an expired Harness lease",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    let now = new Date("2026-07-22T09:00:00.000Z");
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool),
+      ),
+      { harnessStartLeaseMs: 60_000, now: () => now },
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-workspace-${suffix}`;
+    const quoteId = `spine-quote-${suffix}`;
+    const submission = reserveRecord(workspaceId, quoteId, suffix);
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      const quote = await seedQuote(billingRepository, workspaceId, quoteId);
+      submission.snapshot = createSnapshot({
+        quoteId,
+        quoteRevision: quote.revision,
+        submission,
+        workspaceId,
+      });
+
+      const first = await store.claim({
+        idempotencyKey: "submit-copy-1",
+        payloadHash: "payload-a",
+        submission,
+        workspaceId,
+      });
+      assert.equal(first.kind, "created");
+      const reservedQuote = await billingRepository.getQuote(
+        workspaceId,
+        quoteId,
+      );
+      assert.equal(reservedQuote?.lifecycleStatus, "reserved");
+      assert.equal(reservedQuote?.taskId, submission.task.id);
+      const replay = await store.claim({
+        idempotencyKey: "submit-copy-1",
+        payloadHash: "payload-a",
+        submission,
+        workspaceId,
+      });
+      assert.equal(replay.kind, "existing");
+      const conflict = await store.claim({
+        idempotencyKey: "submit-copy-1",
+        payloadHash: "payload-b",
+        submission,
+        workspaceId,
+      });
+      assert.equal(conflict.kind, "conflict");
+
+      const persisted = await pool.query<{
+        packages: number;
+        tasks: number;
+        usage: number;
+        works: number;
+      }>(
+        `SELECT
+           (SELECT count(*)::int FROM p1_content_packages
+             WHERE workspace_id = $1 AND id = $2) AS packages,
+           (SELECT count(*)::int FROM p1_content_tasks
+             WHERE workspace_id = $1 AND id = $3) AS tasks,
+           (SELECT count(*)::int FROM p1_creative_works
+             WHERE workspace_id = $1 AND id = $4) AS works,
+           (SELECT count(*)::int FROM p1_product_billing_usage
+             WHERE workspace_id = $1 AND task_id = $3) AS usage`,
+        [
+          workspaceId,
+          submission.contentPackage.id,
+          submission.task.id,
+          submission.work.id,
+        ],
+      );
+      assert.deepEqual(persisted.rows[0], {
+        packages: 1,
+        tasks: 1,
+        usage: 1,
+        works: 1,
+      });
+      assert.equal(
+        (
+          await pool.query<{ usage_id: string }>(
+            `SELECT usage_id FROM p1_product_billing_usage
+             WHERE workspace_id = $1 AND task_id = $2`,
+            [workspaceId, submission.task.id],
+          )
+        ).rows[0]?.usage_id,
+        submission.usageReservation.id,
+      );
+
+      const leaseOne = await store.claimHarnessStart({
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      });
+      assert.equal(leaseOne.kind, "start");
+      const held = await store.claimHarnessStart({
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      });
+      assert.deepEqual(held, { kind: "started" });
+
+      now = new Date("2026-07-22T09:01:01.000Z");
+      const leaseTwo = await store.claimHarnessStart({
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      });
+      assert.equal(leaseTwo.kind, "start");
+      if (leaseOne.kind !== "start" || leaseTwo.kind !== "start") {
+        throw new Error("Expected two active Harness lease claims.");
+      }
+      assert.notEqual(leaseOne.leaseId, leaseTwo.leaseId);
+      await store.releaseHarnessStart({
+        leaseId: leaseOne.leaseId,
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      });
+      await assert.rejects(
+        store.completeHarnessStart({
+          leaseId: leaseOne.leaseId,
+          submissionId: submission.snapshot.id,
+          workspaceId,
+        }),
+        /no longer current/u,
+      );
+      await store.completeHarnessStart({
+        leaseId: leaseTwo.leaseId,
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      });
+      assert.deepEqual(
+        await store.claimHarnessStart({
+          submissionId: submission.snapshot.id,
+          workspaceId,
+        }),
+        { kind: "started" },
+      );
+    } finally {
+      await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "a failed product reservation rolls back every Composer shell",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-rollback-${suffix}`;
+    const submission = reserveRecord(
+      workspaceId,
+      `missing-quote-${suffix}`,
+      suffix,
+    );
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      await assert.rejects(
+        store.claim({
+          idempotencyKey: "missing-quote",
+          payloadHash: "payload-missing-quote",
+          submission,
+          workspaceId,
+        }),
+        /was not found/u,
+      );
+      const counts = await pool.query<{
+        packages: number;
+        submissions: number;
+        tasks: number;
+        works: number;
+      }>(
+        `SELECT
+           (SELECT count(*)::int FROM p1_content_packages
+             WHERE workspace_id = $1) AS packages,
+           (SELECT count(*)::int FROM p1_content_tasks
+             WHERE workspace_id = $1) AS tasks,
+           (SELECT count(*)::int FROM p1_creative_works
+             WHERE workspace_id = $1) AS works,
+           (SELECT count(*)::int FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1) AS submissions`,
+        [workspaceId],
+      );
+      assert.deepEqual(counts.rows[0], {
+        packages: 0,
+        submissions: 0,
+        tasks: 0,
+        works: 0,
+      });
+    } finally {
+      await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+function reserveRecord(
+  workspaceId: string,
+  quoteId: string,
+  suffix: string,
+): CreationSubmissionRecord {
+  const taskId = `spine-task-${suffix}`;
+  const submission: CreationSubmissionRecord = {
+    contentPackage: { expectedRevision: 0, id: `spine-package-${suffix}` },
+    snapshot: createSnapshot({
+      quoteId,
+      quoteRevision: "quote-revision-placeholder",
+      submission: {
+        contentPackage: { expectedRevision: 0, id: `spine-package-${suffix}` },
+        task: { id: taskId },
+        work: { id: `spine-work-${suffix}` },
+      },
+      workspaceId,
+    }),
+    task: { id: taskId },
+    usageReservation: { id: `spine-usage-${suffix}` },
+    work: { id: `spine-work-${suffix}` },
+  };
+  return submission;
+}
+
+async function seedQuote(
+  repository: PostgresProductBillingRepository,
+  workspaceId: string,
+  quoteId: string,
+) {
+  return new DurableProductBillingService(repository).buildQuote({
+    billingMode: "per_request",
+    catalogModelId: "copy-model-1",
+    frozenCandidateDeploymentIds: ["copy-deployment-1"],
+    quoteId,
+    quotePolicyRevision: "quote-policy-1",
+    unitRate: 1,
+    workspaceId,
+  });
+}
+
+function createSnapshot(input: {
+  quoteId: string;
+  quoteRevision: string;
+  submission: Pick<
+    CreationSubmissionRecord,
+    "contentPackage" | "task" | "work"
+  >;
+  workspaceId: string;
+}) {
+  return createCreationExecutionSnapshot(
+    {
+      actorId: "owner-1",
+      briefConfirmation: { id: "brief-1", revision: "brief-r1" },
+      catalogModel: { id: "copy-model-1", revision: "catalog-r1" },
+      contentModules: ["social_cover"],
+      contentPackageId: input.submission.contentPackage.id,
+      deliverables: [{ id: "copy-main", kind: "copy", order: 1, quantity: 1 }],
+      expectedContentPackageRevision:
+        input.submission.contentPackage.expectedRevision,
+      identity: { id: "identity-1", revision: "identity-r1" },
+      idempotencyKey: "submission-key",
+      intent: "为夏日护理项目写一条预约文案",
+      lens: "copy",
+      modelPolicy: { id: "policy-1", mode: "fixed", revision: "policy-r1" },
+      platform: { id: "douyin" },
+      quote: { id: input.quoteId, revision: input.quoteRevision },
+      recipe: { id: "recipe-1", revision: "recipe-r1" },
+      rights: { revision: "rights-r1", summary: "authorized source assets" },
+      route: { id: "route-1", revision: "route-r1" },
+      sources: {
+        assets: [{ id: "asset-1", revision: "asset-r1", role: "reference" }],
+      },
+      surface: { id: "surface-1", revision: "surface-r1" },
+      taskId: input.submission.task.id,
+      workId: input.submission.work.id,
+      workspaceId: input.workspaceId,
+    },
+    "2026-07-22T09:00:00.000Z",
+  );
+}
+
+async function cleanup(
+  pool: Pool,
+  workspaceId: string,
+  submission: CreationSubmissionRecord,
+) {
+  await pool.query(
+    "DELETE FROM execution_spine.creation_submissions WHERE workspace_id = $1",
+    [workspaceId],
+  );
+  await pool.query(
+    "DELETE FROM p1_product_billing_usage WHERE workspace_id = $1",
+    [workspaceId],
+  );
+  await pool.query(
+    "DELETE FROM p1_product_billing_quotes WHERE workspace_id = $1",
+    [workspaceId],
+  );
+  await pool.query("DELETE FROM p1_content_packages WHERE workspace_id = $1", [
+    workspaceId,
+  ]);
+  await pool.query("DELETE FROM p1_content_tasks WHERE workspace_id = $1", [
+    workspaceId,
+  ]);
+  await pool.query("DELETE FROM p1_creative_works WHERE workspace_id = $1", [
+    workspaceId,
+  ]);
+  void submission;
+}
