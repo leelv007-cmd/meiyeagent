@@ -172,6 +172,19 @@ import {
   createHarnessStructuredModelExecutor,
 } from './p1/harness/structured-model-runtime.js';
 import { HarnessTaskAdmissionService } from './p1/harness/task-admission.js';
+import {
+  CapabilityHotAssemblyComposerReadiness,
+  ComposerSubmissionAdmissionGate,
+} from './p1/execution-spine/composer-submission-gate.js';
+import { PostgresContentPackageRevisionWritePort } from './p1/execution-spine/content-package-revision-port.js';
+import { CreationStagePort } from './p1/execution-spine/creation-stage-port.js';
+import {
+  PostgresCreationSubmissionPersistence,
+  PostgresCreationSubmissionStore,
+  PostgresProductBillingUsageReservation,
+} from './p1/execution-spine/postgres-creation-submission-store.js';
+import { ExecutionSourceContentPackageResolver } from './p1/execution-spine/source-content-package-resolver.js';
+import { CreationSubmissionCoordinator } from './p1/execution-spine/submission-coordinator.js';
 import { PendingActionsService } from './p1/pending-actions.js';
 import {
   AssetIntakeService,
@@ -962,6 +975,33 @@ const batchExecutor = new ProductOperationsBatchExecutionAdapter(
 const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
   relationalProductRepository
 );
+const sourceContentPackageReader = {
+  async get(input: { packageId: string; workspaceId: string }) {
+    return (
+      (await operationsRepository.loadWorkspace(input.workspaceId))?.contentPackages.find(
+        (contentPackage) => contentPackage.id === input.packageId
+      ) ?? null
+    );
+  },
+};
+const sourceContentPackages = new ExecutionSourceContentPackageResolver(
+  sourceContentPackageReader,
+  contentPackageRightsResolver
+);
+const sourceContentPackageAdmissionReader = {
+  async get(input: { packageId: string; workspaceId: string }) {
+    const contentPackage = await sourceContentPackageReader.get(input);
+    return contentPackage
+      ? {
+          id: contentPackage.id,
+          revision: contentPackage.revision,
+          rightsState: contentPackage.rights.state,
+          status: contentPackage.status,
+          workspaceId: contentPackage.workspaceId,
+        }
+      : null;
+  },
+};
 operationsService = new OperationsApplicationService(operationsRepository, {
   billingLifecycle,
   contentPackageExporter: new ContentPackageZipExportAdapter(
@@ -1040,6 +1080,7 @@ const reuseMemoryService = new ReuseMemoryService(
   )
 );
 let harnessService: HarnessApplicationService | undefined;
+let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
 // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
 // Harness questions need the harness_runtime schema; approvals come from operations.
 const pendingActionsQuestionStore = new PostgresHarnessStore(pool);
@@ -1393,6 +1434,19 @@ if (harnessRuntimeConfig) {
   const structuredExecutor = createHarnessStructuredModelExecutor(modelRuntime);
   // Reuse the unconditionally applied pending-actions harness store for DBOS.
   const harnessStore = pendingActionsQuestionStore;
+  const contentPackageRevisionWriter =
+    new PostgresContentPackageRevisionWritePort(
+      pool,
+      contentPackageRightsResolver
+    );
+  await contentPackageRevisionWriter.applySchema();
+  const creationSubmissionStore = new PostgresCreationSubmissionStore(
+    pool,
+    new PostgresCreationSubmissionPersistence(
+      new PostgresProductBillingUsageReservation(pool)
+    )
+  );
+  await creationSubmissionStore.migrate();
   const harnessStages = new ProductionHarnessStagePorts(
     {
       create({ workspaceId, actorId }) {
@@ -1420,11 +1474,14 @@ if (harnessRuntimeConfig) {
         )?.revision ?? 0,
       reuseMemoryService,
       contentPackageRightsResolver,
-      marketingIdentities
+      marketingIdentities,
+      sourceContentPackages
     ),
     harnessStore,
     () => new Date().toISOString(),
-    reuseMemoryService
+    reuseMemoryService,
+    contentPackageRevisionWriter,
+    sourceContentPackages
   );
   DBOS.setConfig(harnessRuntimeConfig.dbos);
   const harnessWorkflow = registerHarnessDbosWorkflow(
@@ -1456,6 +1513,33 @@ if (harnessRuntimeConfig) {
     harnessStore,
     harnessStore,
   );
+  composerSubmissionCoordinator = new CreationSubmissionCoordinator(
+    creationSubmissionStore,
+    new CreationStagePort(harnessService),
+    {
+      createId(prefix) {
+        return `${prefix}-${randomUUID()}`;
+      },
+      now() {
+        return new Date().toISOString();
+      },
+    },
+    new ComposerSubmissionAdmissionGate({
+      assets: referenceAssets,
+      briefs: creationExperienceRuntime.briefSubmissionGate,
+      briefConfirmations: creationExperienceRuntime.audit,
+      capabilities: new CapabilityHotAssemblyComposerReadiness(
+        capabilityHotAssembly
+      ),
+      catalog: creationExperienceRuntime.repository,
+      identities: marketingIdentities,
+      quotes: productQuoteService,
+      rights: contentPackageRightsResolver,
+      routes: foundationRepository,
+      sourcePackages: sourceContentPackageAdmissionReader,
+    })
+  );
+  await composerSubmissionCoordinator.recoverPendingStarts();
   harnessWorkflowEventSource = new HarnessWorkflowEventSource(
     new HarnessDbosWorkflowEventReader(harnessStore),
   );
@@ -1501,6 +1585,14 @@ const server = createCoreServer({
   aiStreamingRunner,
   executionModeGate: streamingModeGate,
   assetReader: assetStorage,
+  composerSubmission: composerSubmissionCoordinator
+    ? { coordinator: composerSubmissionCoordinator }
+    : undefined,
+  contentPackageReader: {
+    read(context, packageId) {
+      return operationsService.getContentPackage(context, packageId);
+    },
+  },
   diagnosticRepository,
   douyinCallbackToken,
   integrationService,
