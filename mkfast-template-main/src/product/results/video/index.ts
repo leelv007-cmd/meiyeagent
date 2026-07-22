@@ -19,6 +19,8 @@ export {
   classifyShotCandidateSelect,
   classifyShotRegen,
   classifySubtitleEdit,
+  classifySupplierTaskOps,
+  merchantShotLabel,
   editSubtitleText,
   markDelivered,
   markDeliveryInProgress,

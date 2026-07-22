@@ -219,16 +219,18 @@ export function projectResultShellActions(
   'primaryAction' | 'secondaryActions' | 'overflowActions'
 > {
   const delivery = facts.deliveryAttempt ?? 'none';
-  // History and Run Detail do not have a merchant-ready work surface yet.
-  // Keep the contract ids for future P1 wiring, but do not advertise empty
-  // panels as actions in the Result Center.
-  const overflowBase: ResultAction[] = [];
+  // P1-B1 / #150: History + Run Detail are real panels (not empty no-ops).
+  // Keep them in overflow so they never steal the single primary action.
+  const historyAndRun: ResultAction[] = [
+    action('open_history', 'overflow'),
+    action('open_run_detail', 'overflow'),
+  ];
 
   if (facts.acceptanceUnknown) {
     return {
       primaryAction: action('recover_or_verify', 'primary'),
       secondaryActions: [action('leave_and_continue', 'secondary')],
-      overflowActions: overflowBase,
+      overflowActions: historyAndRun,
     };
   }
 
@@ -241,7 +243,7 @@ export function projectResultShellActions(
         '查看并批准'
       ),
       secondaryActions: [action('leave_and_continue', 'secondary')],
-      overflowActions: overflowBase,
+      overflowActions: historyAndRun,
     };
   }
 
@@ -254,7 +256,7 @@ export function projectResultShellActions(
         '处理未完成交付'
       ),
       secondaryActions: [action('continue_adjust', 'secondary')],
-      overflowActions: overflowBase,
+      overflowActions: historyAndRun,
     };
   }
 
@@ -262,7 +264,7 @@ export function projectResultShellActions(
     return {
       primaryAction: action('retry', 'primary', true, '重试交付'),
       secondaryActions: [action('continue_adjust', 'secondary')],
-      overflowActions: overflowBase,
+      overflowActions: historyAndRun,
     };
   }
 
@@ -270,7 +272,7 @@ export function projectResultShellActions(
     return {
       primaryAction: action('leave_and_continue', 'primary'),
       secondaryActions: [],
-      overflowActions: [action('cancel_run', 'overflow'), ...overflowBase],
+      overflowActions: [action('cancel_run', 'overflow'), ...historyAndRun],
     };
   }
 
@@ -283,27 +285,31 @@ export function projectResultShellActions(
       return {
         primaryAction: primary,
         secondaryActions: [],
-        overflowActions: [action('cancel_run', 'overflow'), ...overflowBase],
+        overflowActions: [
+          action('cancel_run', 'overflow'),
+          // Run detail is the useful diagnostic while generating; history
+          // still available when revisions already exist for this work.
+          ...historyAndRun,
+        ],
       };
     }
     case 'needs_input':
       return {
         primaryAction: action('handle_current_issue', 'primary'),
         secondaryActions: [action('leave_and_continue', 'secondary')],
-        overflowActions: overflowBase,
+        overflowActions: historyAndRun,
       };
     case 'failed':
       return {
         primaryAction: action('retry', 'primary'),
         secondaryActions: [action('continue_adjust', 'secondary')],
-        overflowActions: overflowBase,
+        overflowActions: historyAndRun,
       };
     case 'delivered':
       return {
         primaryAction: action('create_from_this', 'primary'),
         secondaryActions: [action('continue_adjust', 'secondary')],
-        // open_history / open_run_detail stay contract ids only until P1 surfaces exist.
-        overflowActions: overflowBase,
+        overflowActions: historyAndRun,
       };
     case 'ready': {
       if (facts.hasUsableCandidate && !facts.hasAdoptedCandidate) {
@@ -318,7 +324,7 @@ export function projectResultShellActions(
             action('continue_adjust', 'secondary'),
             action('deliver', 'secondary'),
           ],
-          overflowActions: overflowBase,
+          overflowActions: historyAndRun,
         };
       }
       if (facts.hasAdoptedCandidate && delivery === 'none') {
@@ -329,7 +335,7 @@ export function projectResultShellActions(
             action('continue_adjust', 'secondary'),
             action('create_from_this', 'secondary'),
           ],
-          overflowActions: overflowBase,
+          overflowActions: historyAndRun,
         };
       }
       return {
@@ -338,7 +344,7 @@ export function projectResultShellActions(
           action('deliver', 'secondary'),
           action('create_from_this', 'secondary'),
         ],
-        overflowActions: overflowBase,
+        overflowActions: historyAndRun,
       };
     }
     default: {

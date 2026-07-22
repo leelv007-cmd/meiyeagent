@@ -1,13 +1,23 @@
 /**
- * Token-stream intermediate state fixture tests (ADR-0007 / #99).
+ * Token-stream intermediate state fixture tests
+ * (ADR-0007 / #99 / P1-B2 / #151).
  * Stage announcements must not substitute for token-stream assertions.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  acceptWorkflowTokenDelta,
+  calibrateTerminalRevision,
+  pickExclusiveTokenCandidates,
   projectResultTokenStream,
+  projectTokenStreamA11y,
+  projectTokenStreamReconnect,
+  reduceExclusiveWorkflowTokens,
   tokenStreamFixtureSteps,
+  type PartialCopyCandidate,
+  type ResultTokenStreamCursor,
+  type WorkflowTokenDelta,
 } from './result-token-stream';
 
 test('fixture steps: first token appears before full object completes', () => {
@@ -132,4 +142,201 @@ test('error before first chunk still shows stream panel', () => {
   });
   assert.equal(projection.showStreamPanel, true);
   assert.equal(projection.hasFirstToken, false);
+});
+
+test('document face: primary expanded, alternatives separate', () => {
+  const projection = projectResultTokenStream({
+    workspaceKind: 'copy',
+    progressState: 'running',
+    partialCandidates: [
+      { title: '主推荐', body: '正文 A', conversionHook: '预约' },
+      { title: '备选', body: '正文 B' },
+    ],
+    loading: true,
+  });
+  assert.equal(projection.primary?.role, 'primary');
+  assert.equal(projection.primary?.title, '主推荐');
+  assert.equal(projection.alternatives.length, 1);
+  assert.equal(projection.alternatives[0]?.role, 'alternative');
+});
+
+test('reconnecting preserves banner without clearing tokens', () => {
+  const projection = projectResultTokenStream({
+    workspaceKind: 'copy',
+    progressState: 'running',
+    partialCandidates: [{ title: '已到达', body: '不断线清空' }],
+    loading: false,
+    reconnecting: true,
+  });
+  assert.equal(projection.reconnecting, true);
+  assert.equal(projection.reconnectBanner, '正在恢复连接');
+  assert.equal(projection.hasFirstToken, true);
+  assert.equal(projection.primary?.body, '不断线清空');
+  assert.equal(projection.showStreamPanel, true);
+  assert.equal(projection.a11yStageAnnouncement, '正在恢复连接');
+});
+
+test('Last-Event-ID cursor rejects replayed sequences and keeps event id', () => {
+  let cursor: ResultTokenStreamCursor | undefined;
+  const first: WorkflowTokenDelta = {
+    eventId: 'task-a:token:2',
+    sequence: 2,
+    candidateId: 'c01',
+    channel: 'copy.body',
+    delta: '先写清',
+  };
+  const accepted = acceptWorkflowTokenDelta(cursor, first);
+  assert.equal(accepted.accepted, true);
+  cursor = accepted.cursor;
+  assert.equal(cursor.lastEventId, 'task-a:token:2');
+  assert.equal(cursor.sequence, 2);
+
+  const replay = acceptWorkflowTokenDelta(cursor, first);
+  assert.equal(replay.accepted, false);
+  assert.equal(replay.cursor.sequence, 2);
+
+  const next = acceptWorkflowTokenDelta(cursor, {
+    ...first,
+    eventId: 'task-a:token:3',
+    sequence: 3,
+    delta: '到店细节',
+  });
+  assert.equal(next.accepted, true);
+  assert.equal(next.cursor.lastEventId, 'task-a:token:3');
+});
+
+test('exclusive workflow.token reduce never invents poll duplicates', () => {
+  const tokens: WorkflowTokenDelta[] = [
+    {
+      eventId: 't:1',
+      sequence: 1,
+      candidateId: 'c01',
+      channel: 'copy.title',
+      delta: '夏日',
+    },
+    {
+      eventId: 't:2',
+      sequence: 2,
+      candidateId: 'c01',
+      channel: 'copy.body',
+      delta: '到店',
+    },
+    {
+      eventId: 't:3',
+      sequence: 3,
+      candidateId: 'c02',
+      channel: 'copy.title',
+      delta: '备选',
+    },
+  ];
+  let cursor: ResultTokenStreamCursor | undefined;
+  let candidates: PartialCopyCandidate[] = [];
+  for (const token of tokens) {
+    const step = acceptWorkflowTokenDelta(cursor, token);
+    if (!step.accepted) continue;
+    cursor = step.cursor;
+    candidates = reduceExclusiveWorkflowTokens(candidates, token);
+  }
+  assert.equal(candidates.length, 2);
+  assert.equal(candidates[0]?.title, '夏日');
+  assert.equal(candidates[0]?.body, '到店');
+
+  const exclusive = pickExclusiveTokenCandidates({
+    workflowTokenCandidates: candidates,
+    pollCandidates: [
+      { title: '轮询重复主推荐', body: '不应显示' },
+      { title: '轮询重复备选' },
+    ],
+    structuredStreamCandidates: [{ title: '结构化流也让位' }],
+  });
+  assert.equal(exclusive.source, 'workflow.token');
+  assert.equal(exclusive.candidates[0]?.title, '夏日');
+  assert.equal(exclusive.candidates.length, 2);
+});
+
+test('pickExclusiveTokenCandidates ignores poll when no tokens yet', () => {
+  const exclusive = pickExclusiveTokenCandidates({
+    workflowTokenCandidates: [],
+    pollCandidates: [{ title: '仅轮询' }],
+    structuredStreamCandidates: [],
+  });
+  assert.equal(exclusive.source, 'none');
+  assert.equal(exclusive.candidates.length, 0);
+});
+
+test('reconnect projection never clears arrived text', () => {
+  const reconnect = projectTokenStreamReconnect({
+    arrivedCandidates: [{ title: '已到达', body: '保留' }],
+    cursor: { sequence: 4, lastEventId: 'task:token:4' },
+    reconnecting: true,
+  });
+  assert.equal(reconnect.cleared, false);
+  assert.equal(reconnect.candidates[0]?.body, '保留');
+  assert.equal(reconnect.lastEventId, 'task:token:4');
+  assert.equal(reconnect.reconnectBanner, '正在恢复连接');
+});
+
+test('terminal ContentPackage revision calibrates streamed display text', () => {
+  const calibrated = calibrateTerminalRevision({
+    streamed: { title: '流式标题', body: '流式正文' },
+    terminal: {
+      title: '终态标题',
+      body: '终态正文',
+      conversionHook: '预约',
+      revisionId: 'rev-final',
+    },
+  });
+  assert.equal(calibrated.kind, 'calibrated');
+  assert.equal(calibrated.title, '终态标题');
+  assert.equal(calibrated.body, '终态正文');
+  assert.equal(calibrated.revisionId, 'rev-final');
+  assert.equal(calibrated.matched, false);
+
+  const matched = calibrateTerminalRevision({
+    streamed: { title: '终态标题', body: '终态正文', conversionHook: '预约' },
+    terminal: {
+      title: '终态标题',
+      body: '终态正文',
+      conversionHook: '预约',
+      revisionId: 'rev-final',
+    },
+  });
+  assert.equal(matched.matched, true);
+});
+
+test('a11y throttles semantic paragraphs and announces complete once', () => {
+  const first = projectTokenStreamA11y({
+    previousAnnounced: null,
+    previousCompleteAnnounced: false,
+    primaryBody: '到店立减。',
+    completed: false,
+  });
+  assert.ok(first.announcement);
+  assert.equal(first.completeAnnounced, false);
+
+  const midToken = projectTokenStreamA11y({
+    previousAnnounced: first.nextAnnounced,
+    previousCompleteAnnounced: false,
+    primaryBody: '到店立减。再',
+    completed: false,
+  });
+  assert.equal(midToken.announcement, null);
+
+  const complete = projectTokenStreamA11y({
+    previousAnnounced: first.nextAnnounced,
+    previousCompleteAnnounced: false,
+    primaryBody: '到店立减。再写一句。',
+    completed: true,
+  });
+  assert.equal(complete.announcement, '文案生成完成');
+  assert.equal(complete.completeAnnounced, true);
+
+  const completeAgain = projectTokenStreamA11y({
+    previousAnnounced: complete.nextAnnounced,
+    previousCompleteAnnounced: true,
+    primaryBody: '到店立减。再写一句。',
+    completed: true,
+  });
+  assert.equal(completeAgain.announcement, null);
+  assert.equal(completeAgain.completeAnnounced, true);
 });

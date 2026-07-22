@@ -1,5 +1,5 @@
 /**
- * Copy / image_text worksurface model tests (WT-D2 / #100).
+ * Copy / image_text worksurface model tests (WT-D2 / #100 / P1-B2 / #151).
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -7,13 +7,17 @@ import test from 'node:test';
 import {
   ADJUST_PROMPT_PLACEHOLDER,
   applyCopyFieldEdit,
+  captureStableSelectionAnchor,
   createCopyDocumentDraft,
   isClientConcatPlatformBody,
   previewSelectionRewrite,
   projectCopyImageTextWorksurface,
   projectCopyMobileP0Actions,
+  projectDocumentWorksurface,
   projectFactSources,
   projectPlatformPreview,
+  resolveSelectionAnchor,
+  resolveSelectionRewrite,
   routeAdjustExecution,
   COPY_MOBILE_P0_ACTIONS,
 } from './copy-image-text-worksurface-model';
@@ -172,4 +176,139 @@ test('mobile P0 full actions — no please-continue-on-desktop', () => {
   assert.ok(mobile.actions.includes('adopt'));
   assert.ok(mobile.actions.includes('create_from_this'));
   assert.ok(mobile.actions.includes('free_text_adjust'));
+});
+
+test('stable selection anchor binds text + context hash', () => {
+  const body = '限时优惠，立即抢购本店美甲套餐。';
+  const start = body.indexOf('立即抢购');
+  const end = start + '立即抢购'.length;
+  const anchor = captureStableSelectionAnchor(body, 'body', start, end);
+  assert.equal('kind' in anchor, false);
+  if (!('kind' in anchor)) {
+    assert.equal(anchor.selectedText, '立即抢购');
+    assert.ok(anchor.prefix.length > 0);
+    assert.ok(anchor.anchorHash.length === 8);
+    const resolved = resolveSelectionAnchor(body, anchor);
+    assert.equal(resolved.kind, 'ok');
+    if (resolved.kind === 'ok') {
+      assert.equal(resolved.start, start);
+      assert.equal(resolved.end, end);
+    }
+  }
+});
+
+test('selection rewrite base drift returns conflict with compare options', () => {
+  const body = '限时优惠，立即抢购本店美甲套餐。';
+  const start = 0;
+  const end = 4;
+  const anchor = captureStableSelectionAnchor(body, 'body', start, end);
+  assert.equal('kind' in anchor, false);
+  if ('kind' in anchor) return;
+
+  const conflict = resolveSelectionRewrite({
+    workId: 'work-1',
+    baseRevisionId: 'rev-1',
+    currentRevisionId: 'rev-2',
+    currentFieldText: body,
+    action: 'weaker_promo',
+    anchor,
+  });
+  assert.equal(conflict.kind, 'conflict');
+  if (conflict.kind === 'conflict') {
+    assert.equal(conflict.code, 'BASE_REVISION_DRIFT');
+    assert.deepEqual(conflict.choices, ['compare', 'discard', 'reapply']);
+    assert.match(conflict.message, /新版本/);
+  }
+});
+
+test('selection rewrite success binds derived_task command to base + anchor', () => {
+  const body = '限时优惠，立即抢购本店美甲套餐。';
+  const start = body.indexOf('限时优惠');
+  const end = start + '限时优惠'.length;
+  const anchor = captureStableSelectionAnchor(body, 'body', start, end);
+  assert.equal('kind' in anchor, false);
+  if ('kind' in anchor) return;
+
+  const ok = resolveSelectionRewrite({
+    workId: 'work-1',
+    baseRevisionId: 'rev-1',
+    currentRevisionId: 'rev-1',
+    currentFieldText: body,
+    action: 'weaker_promo',
+    anchor,
+  });
+  assert.equal(ok.kind, 'ok');
+  if (ok.kind === 'ok') {
+    assert.equal(ok.command.execution, 'derived_task');
+    assert.equal(ok.command.baseRevisionId, 'rev-1');
+    assert.equal(ok.command.anchor.anchorHash, anchor.anchorHash);
+    assert.equal(ok.preview.execution, 'derived_task');
+  }
+});
+
+test('anchor not found after text rewrite returns conflict', () => {
+  const body = '限时优惠，立即抢购本店美甲套餐。';
+  const anchor = captureStableSelectionAnchor(body, 'body', 0, 4);
+  assert.equal('kind' in anchor, false);
+  if ('kind' in anchor) return;
+
+  const missing = resolveSelectionRewrite({
+    workId: 'work-1',
+    baseRevisionId: 'rev-1',
+    currentRevisionId: 'rev-1',
+    currentFieldText: '完全不同的正文，没有原选区。',
+    action: 'rewrite',
+    instruction: '改写',
+    anchor,
+  });
+  assert.equal(missing.kind, 'conflict');
+  if (missing.kind === 'conflict') {
+    assert.equal(missing.code, 'ANCHOR_NOT_FOUND');
+  }
+});
+
+test('document worksurface: primary expanded, alternatives on demand', () => {
+  const face = projectDocumentWorksurface({
+    candidates: [
+      {
+        candidateId: 'c01',
+        title: '主推荐',
+        body: '正文 A',
+        conversionHook: '预约',
+      },
+      {
+        candidateId: 'c02',
+        title: '备选',
+        body: '正文 B',
+        conversionHook: '私信',
+      },
+    ],
+  });
+  assert.notEqual('kind' in face && (face as { kind: string }).kind, 'empty');
+  if (!('kind' in face)) {
+    assert.equal(face.primaryExpanded, true);
+    assert.equal(face.alternativesExpandedDefault, false);
+    assert.equal(face.primary.title, '主推荐');
+    assert.equal(face.alternatives.length, 1);
+    assert.equal(face.activeDocument.title, '主推荐');
+  }
+
+  const projected = projectCopyImageTextWorksurface({
+    workId: 'work-1',
+    baseRevisionId: 'rev-1',
+    document: doc,
+    alternativeCandidates: [
+      {
+        candidateId: 'alt-1',
+        title: '备选标题',
+        body: '备选正文',
+        conversionHook: '到店',
+      },
+    ],
+    lifecycle: 'candidate',
+  });
+  assert.ok(projected.documentFace);
+  assert.equal(projected.documentFace?.primaryExpanded, true);
+  assert.equal(projected.documentFace?.alternatives.length, 1);
+  assert.equal(projected.panels.alternatives, true);
 });

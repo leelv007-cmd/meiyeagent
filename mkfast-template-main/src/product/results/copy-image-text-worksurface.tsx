@@ -1,8 +1,8 @@
 /**
- * Copy / image_text worksurface UI (WT-D2 / #100).
+ * Copy / image_text document worksurface UI (WT-D2 / #100 / P1-B2 / #151).
  *
- * Edit · selection rewrite chips · fact sources · platform preview ·
- * persistent "还想怎么改？".
+ * Primary document face · on-demand alternatives · selection rewrite with
+ * stable anchors · fact sources · platform preview · persistent "还想怎么改？".
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -15,10 +15,14 @@ import {
   COPY_PREVIEW_EXPORT_CARRIERS,
   COPY_PREVIEW_PLATFORM_CARRIERS,
   FACT_SOURCE_KIND_LABELS,
+  captureStableSelectionAnchor,
   projectCopyImageTextWorksurface,
+  resolveSelectionRewrite,
   type CopyImageTextWorksurfaceFacts,
   type CopyPreviewCarrier,
   type SelectionRewriteAction,
+  type SelectionRewriteResolveResult,
+  type StableSelectionAnchor,
 } from './copy-image-text-worksurface-model';
 
 export type CopyImageTextWorksurfaceProps = {
@@ -27,7 +31,13 @@ export type CopyImageTextWorksurfaceProps = {
     field: 'title' | 'body' | 'conversionHook',
     value: string
   ) => void;
-  onSelectionRewrite?: (action: SelectionRewriteAction) => void;
+  onSelectionRewrite?: (
+    action: SelectionRewriteAction,
+    anchor?: StableSelectionAnchor
+  ) => void;
+  /** Optional live revision for base-drift conflict detection. */
+  currentRevisionId?: string;
+  onSelectionRewriteResolved?: (result: SelectionRewriteResolveResult) => void;
   onCarrierChange?: (carrier: CopyPreviewCarrier) => void;
   onGeneratePlatformVariants?: () => Promise<void>;
   onAdjust?: (instruction: string) => void;
@@ -60,6 +70,15 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
   >();
   const [adopting, setAdopting] = useState(false);
   const [adoptionError, setAdoptionError] = useState<string | undefined>();
+  const [alternativesOpen, setAlternativesOpen] = useState(false);
+  const [selectionConflict, setSelectionConflict] = useState<Extract<
+    SelectionRewriteResolveResult,
+    { kind: 'conflict' }
+  > | null>(null);
+  const [bodySelection, setBodySelection] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
   useEffect(() => {
     setDraft({
       body: view.document.body,
@@ -83,14 +102,49 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           variant.carrier === carrier && variant.source === 'copy.adapt'
       )
   );
+  const alternatives = view.documentFace?.alternatives ?? [];
+
+  const runSelectionRewrite = (action: SelectionRewriteAction) => {
+    const start = bodySelection?.start ?? 0;
+    const end = bodySelection?.end ?? draft.body.length;
+    const anchor = captureStableSelectionAnchor(draft.body, 'body', start, end);
+    if ('kind' in anchor) {
+      setSelectionConflict(null);
+      props.onSelectionRewrite?.(action);
+      return;
+    }
+    const currentRevisionId =
+      props.currentRevisionId ?? props.facts.baseRevisionId;
+    const resolved = resolveSelectionRewrite({
+      workId: props.facts.workId,
+      baseRevisionId: props.facts.baseRevisionId,
+      currentRevisionId,
+      currentFieldText: draft.body,
+      action,
+      anchor,
+    });
+    props.onSelectionRewriteResolved?.(resolved);
+    if (resolved.kind === 'conflict') {
+      setSelectionConflict(resolved);
+      return;
+    }
+    setSelectionConflict(null);
+    props.onSelectionRewrite?.(action, anchor);
+  };
 
   return (
     <div className="space-y-4" data-testid="copy-image-text-worksurface">
       <section
         className="space-y-3 rounded-lg border p-4"
         data-testid="copy-edit-panel"
+        data-document-face="primary"
       >
-        <h3 className="text-sm font-medium">编辑</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium">主推荐</h3>
+          <Badge variant="outline" data-testid="copy-primary-badge">
+            默认展开
+          </Badge>
+        </div>
         <label className="block space-y-1 text-sm">
           <span className="text-muted-foreground">标题</span>
           <input
@@ -109,7 +163,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         <label className="block space-y-1 text-sm">
           <span className="text-muted-foreground">正文</span>
           <textarea
-            className="min-h-28 w-full rounded-md border bg-background px-3 py-2"
+            className="min-h-28 w-full max-w-prose rounded-md border bg-background px-3 py-2"
             data-testid="copy-field-body"
             value={draft.body}
             onChange={(event) => {
@@ -118,6 +172,15 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
                 body: event.target.value,
               }));
               props.onFieldChange?.('body', event.target.value);
+            }}
+            onSelect={(event) => {
+              const target = event.currentTarget;
+              if (target.selectionStart !== target.selectionEnd) {
+                setBodySelection({
+                  start: target.selectionStart,
+                  end: target.selectionEnd,
+                });
+              }
             }}
           />
         </label>
@@ -164,12 +227,51 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         </Button>
       </section>
 
+      {alternatives.length > 0 ? (
+        <section
+          className="space-y-2 rounded-lg border p-4"
+          data-testid="copy-alternatives-panel"
+        >
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-sm font-medium"
+            data-testid="copy-alternatives-toggle"
+            aria-expanded={alternativesOpen}
+            onClick={() => setAlternativesOpen((open) => !open)}
+          >
+            <span>备选（{alternatives.length}）</span>
+            <span className="text-muted-foreground">
+              {alternativesOpen ? '收起' : '按需查看'}
+            </span>
+          </button>
+          {alternativesOpen ? (
+            <ul className="space-y-3" data-testid="copy-alternatives-list">
+              {alternatives.map((item) => (
+                <li
+                  key={item.candidateId}
+                  className="rounded-md border p-3 text-sm"
+                  data-testid="copy-alternative-item"
+                >
+                  <p className="font-medium">{item.title || '备选文案'}</p>
+                  <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+                    {item.body}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
+
       {props.onSelectionRewrite ? (
         <section
           className="space-y-2 rounded-lg border p-4"
           data-testid="copy-selection-rewrite"
         >
           <h3 className="text-sm font-medium">选区改写</h3>
+          <p className="text-xs text-muted-foreground">
+            先在正文中选中一段文字，再选择改写方式。改写绑定当前版本与稳定锚点。
+          </p>
           <div className="flex flex-wrap gap-2">
             {view.selectionRewriteActions.map((item) => (
               <Button
@@ -178,12 +280,45 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
                 size="sm"
                 variant="outline"
                 data-testid={`copy-rewrite-${item.action}`}
-                onClick={() => props.onSelectionRewrite?.(item.action)}
+                onClick={() => runSelectionRewrite(item.action)}
               >
                 {item.label}
               </Button>
             ))}
           </div>
+          {selectionConflict ? (
+            <div
+              className="space-y-2 rounded-md border border-destructive/40 p-3"
+              data-testid="copy-selection-rewrite-conflict"
+              role="alert"
+            >
+              <p className="text-sm text-destructive">
+                {selectionConflict.message}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {selectionConflict.choices.map((choice) => (
+                  <Button
+                    key={choice}
+                    type="button"
+                    size="sm"
+                    variant={choice === 'discard' ? 'outline' : 'default'}
+                    data-testid={`copy-rewrite-conflict-${choice}`}
+                    onClick={() => {
+                      if (choice === 'discard') {
+                        setSelectionConflict(null);
+                      }
+                    }}
+                  >
+                    {choice === 'compare'
+                      ? '比较版本'
+                      : choice === 'discard'
+                        ? '丢弃选区'
+                        : '重新应用'}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

@@ -180,24 +180,108 @@ test('actions: adopted → deliver primary', () => {
   assert.equal(actions.primaryAction?.id, 'deliver');
 });
 
-test('actions: delivered → create_from_this primary without unfinished panels', () => {
+test('actions: delivered → create_from_this primary with real History/Run Detail overflow', () => {
   const facts = baseFacts({ deliveryAttempt: 'delivered' });
   const actions = projectResultShellActions('delivered', facts);
   assert.equal(actions.primaryAction?.id, 'create_from_this');
+  // Primary stays unique — History / Run Detail live in overflow only.
   assert.equal(
-    actions.secondaryActions.some((item) => item.id === 'open_history'),
-    false
+    actions.overflowActions.some((item) => item.id === 'open_history'),
+    true
   );
   assert.equal(
     actions.overflowActions.some((item) => item.id === 'open_run_detail'),
-    false
+    true
   );
   assert.equal(
-    [...actions.secondaryActions, ...actions.overflowActions].some(
+    actions.secondaryActions.some(
       (item) => item.id === 'open_history' || item.id === 'open_run_detail'
     ),
     false
   );
+  assert.equal(
+    actions.primaryAction?.id === 'create_from_this' &&
+      !actions.overflowActions.some((item) => item.id === 'create_from_this'),
+    true
+  );
+});
+
+test('actions: every merchant phase keeps a single primary and real History/Run Detail', () => {
+  const matrix: Array<{
+    label: string;
+    facts: ResultShellFacts;
+    primary: string;
+  }> = [
+    {
+      label: 'running',
+      facts: baseFacts({ progressState: 'running' }),
+      primary: 'leave_and_continue',
+    },
+    {
+      label: 'waiting_suspended',
+      facts: baseFacts({
+        progressState: 'suspended',
+        needsUserChoice: true,
+      }),
+      primary: 'handle_current_issue',
+    },
+    {
+      label: 'recoverable_failure',
+      facts: baseFacts({ progressState: 'failed' }),
+      primary: 'retry',
+    },
+    {
+      label: 'candidate',
+      facts: baseFacts({
+        progressState: 'success',
+        hasUsableCandidate: true,
+        hasAdoptedCandidate: false,
+      }),
+      primary: 'adopt_candidate',
+    },
+    {
+      label: 'accepted',
+      facts: baseFacts({
+        progressState: 'success',
+        hasAdoptedCandidate: true,
+        deliveryAttempt: 'none',
+      }),
+      primary: 'deliver',
+    },
+    {
+      label: 'delivered',
+      facts: baseFacts({ deliveryAttempt: 'delivered' }),
+      primary: 'create_from_this',
+    },
+    {
+      label: 'published_as_delivered',
+      facts: baseFacts({
+        deliveryAttempt: 'delivered',
+        hasAdoptedCandidate: true,
+      }),
+      primary: 'create_from_this',
+    },
+  ];
+
+  for (const row of matrix) {
+    const phase = projectResultShellPhase(row.facts);
+    const actions = projectResultShellActions(phase, row.facts);
+    assert.equal(
+      actions.primaryAction?.id,
+      row.primary,
+      `${row.label} primary`
+    );
+    assert.equal(
+      actions.overflowActions.some((item) => item.id === 'open_history'),
+      true,
+      `${row.label} history`
+    );
+    assert.equal(
+      actions.overflowActions.some((item) => item.id === 'open_run_detail'),
+      true,
+      `${row.label} run detail`
+    );
+  }
 });
 
 test('actions: failed → retry primary', () => {

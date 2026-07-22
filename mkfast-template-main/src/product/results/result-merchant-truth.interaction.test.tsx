@@ -144,7 +144,7 @@ describe('merchant Result Center truth', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it('hides unfinished History and Run Detail after delivery', () => {
+  it('exposes real version timeline and Run Detail after delivery without stealing primary', () => {
     render(
       <ResultCenterPage
         workId={workId}
@@ -163,14 +163,126 @@ describe('merchant Result Center truth', () => {
           'open_history',
           'open_run_detail',
         ]}
+        revisionTimelineFacts={{
+          currentVersionId: 'ver-1',
+          versions: [
+            {
+              versionId: 'ver-1',
+              title: '已交付版本',
+              createdAt: '2026-07-21T10:00:00.000Z',
+              source: 'merchant_edited',
+              operatorDisplayName: '店长',
+            },
+          ],
+        }}
+        runDetailFacts={{
+          phase: 'delivered',
+          jobStatus: 'completed',
+          productUsageQuantity: 1,
+          supportReference: formatMerchantSupportReference(workId),
+        }}
       />
     );
 
     expect(screen.getByTestId('result-primary-action')).toHaveTextContent(
       '基于此再创作'
     );
-    expect(screen.queryByRole('button', { name: '版本与历史' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '运行详情' })).toBeNull();
+    // Overflow "更多" hosts version timeline / Run Detail — not the single primary.
+    expect(screen.getByTestId('result-more-actions')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '版本与历史' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '运行详情' })).toBeTruthy();
+  });
+
+  it('renders ContentPackage revision timeline from canonical facts', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId, panel: 'history' },
+          workspaceKind: 'copy',
+          progressState: 'success',
+          hasAdoptedCandidate: true,
+          requestedPanel: 'history',
+        }}
+        revisionTimelineFacts={{
+          currentVersionId: 'ver-2',
+          versions: [
+            {
+              versionId: 'ver-1',
+              title: '初稿',
+              createdAt: '2026-07-20T08:00:00.000Z',
+              source: 'ai_generated',
+            },
+            {
+              versionId: 'ver-2',
+              title: '手改版',
+              createdAt: '2026-07-20T09:00:00.000Z',
+              source: 'merchant_edited',
+              derivedFromVersionId: 'ver-1',
+              operatorDisplayName: '店长小美',
+            },
+          ],
+        }}
+        shellFactSources={[
+          {
+            id: 'price-1',
+            kind: 'price',
+            label: '美甲价格',
+            summary: '128 元 · 已确认',
+            status: 'confirmed',
+          },
+        ]}
+      />
+    );
+
+    expect(
+      screen.getByTestId('result-revision-timeline-panel')
+    ).toHaveTextContent('版本与历史');
+    expect(
+      screen.getByTestId('result-revision-timeline-panel')
+    ).toHaveTextContent('基于「初稿」');
+    expect(
+      screen.getByTestId('result-revision-timeline-panel')
+    ).toHaveTextContent('店长小美');
+    expect(
+      screen.getByTestId('result-revision-timeline-restore')
+    ).toHaveTextContent('恢复此版本');
+    expect(
+      screen.getByTestId('result-revision-timeline-panel')
+    ).not.toHaveTextContent(workId);
+  });
+
+  it('renders Run Detail panel collapsed with merchant fee/stage language', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId, panel: 'run' },
+          workspaceKind: 'copy',
+          progressState: 'failed',
+          requestedPanel: 'run',
+        }}
+        runDetailFacts={{
+          phase: 'failed',
+          progressState: 'failed',
+          jobStatus: 'failed',
+          failureCode: 'PROVIDER_ERROR',
+          supportReference: formatMerchantSupportReference(workId),
+        }}
+      />
+    );
+
+    const panel = screen.getByTestId('result-run-detail-panel');
+    expect(panel).toHaveTextContent('运行详情');
+    expect(panel).toHaveTextContent('生成失败，可恢复');
+    expect(panel).toHaveTextContent('生成服务暂时不可用');
+    expect(panel).not.toHaveTextContent('PROVIDER_ERROR');
+    expect(panel).not.toHaveTextContent(workId);
+    // Collapsed by default: details element is present without open attr forced true
+    const details = screen.getByTestId('result-run-detail');
+    expect(details.hasAttribute('open')).toBe(false);
   });
 
   it('surfaces a short support reference on resolution errors without UUID leak', () => {

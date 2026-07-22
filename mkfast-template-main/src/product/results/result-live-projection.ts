@@ -24,12 +24,19 @@ import type {
   PlatformPreviewVariant,
 } from './copy-image-text-worksurface-model';
 import type { ImageWorksurfaceFacts } from './image-worksurface-model';
+import type {
+  RevisionTimelineFacts,
+  RevisionTimelineVersionFact,
+} from './result-revision-timeline-model';
+import type { ResultRunDetailFacts } from './result-run-detail-model';
 import type { ResultShellProgressState } from './result-shell-model';
 import type { ClientResolverWorkRecord } from './result-target-wiring';
 import {
   buildVideoWorksurfaceState,
   type VideoWorksurfaceState,
 } from './video/video-worksurface-model';
+import { formatMerchantSupportReference } from './merchant-support-reference';
+import type { ResultShellPhase } from '@meiye/contracts';
 
 export type ResultCenterLiveSelection = {
   work: CreativeWork;
@@ -205,31 +212,172 @@ function candidateLifecycle(
   return contents.length > 0 ? 'adopted' : 'candidate';
 }
 
-function factSourcesFromGroundingSnapshot(
+/**
+ * Fact Sources for the current revision only: projects/prices actually
+ * referenced by intent, grounding assets used as materials, identity, and
+ * rights. Unused catalog rows never enter the drawer.
+ */
+export function factSourcesFromGroundingSnapshot(
   work: CreativeWork,
-  job: CreativeJob | null
+  job: CreativeJob | null,
+  options?: {
+    contentPackageRights?: PublicContentPackage['rights'];
+    referencedAssetIds?: readonly string[];
+  }
 ): FactSourceItem[] {
-  const store = job?.groundingSnapshot?.store;
-  if (!store || !job) return [];
-  const namedProjects = store.projects.filter((project) =>
-    work.intent.includes(project.name)
+  const items: FactSourceItem[] = [];
+  const grounding = job?.groundingSnapshot;
+  const store = grounding?.store;
+
+  if (store && job) {
+    const namedProjects = store.projects.filter((project) =>
+      work.intent.includes(project.name)
+    );
+    const projects =
+      namedProjects.length > 0
+        ? namedProjects
+        : store.projects.length === 1
+          ? store.projects
+          : [];
+    for (const project of projects) {
+      if (!Number.isFinite(project.price) || project.price < 0) continue;
+      items.push({
+        id: `grounding:${job.id}:project:${project.id}:price`,
+        kind: 'price',
+        label: `${project.name}价格`,
+        summary: `${project.price} 元 · ${store.name}已确认`,
+        status: 'confirmed',
+        sourceRef: `grounding:${job.id}:project:${project.id}`,
+      });
+    }
+
+    items.push({
+      id: `grounding:${job.id}:identity:store`,
+      kind: 'identity',
+      label: '门店身份',
+      summary: `${store.name} · ${store.city}${store.district}`,
+      status: 'confirmed',
+      sourceRef: `grounding:${job.id}:store`,
+    });
+
+    const referenced = new Set(options?.referencedAssetIds ?? []);
+    const usedAssets =
+      referenced.size > 0
+        ? grounding.assets.filter((asset) => referenced.has(asset.id))
+        : grounding.assets.filter((asset) =>
+            work.sourceReferences.some((ref) => ref.id === asset.id)
+          );
+    for (const asset of usedAssets) {
+      const categoryLabel =
+        asset.category === 'customer_case'
+          ? '顾客案例素材'
+          : asset.category === 'before_after'
+            ? '前后对比素材'
+            : asset.category === 'price_list'
+              ? '价目素材'
+              : asset.category === 'store'
+                ? '门店实拍'
+                : '授权素材';
+      items.push({
+        id: `grounding:${job.id}:asset:${asset.id}`,
+        kind: asset.category === 'customer_case' ? 'customer_case' : 'material',
+        label: categoryLabel,
+        summary:
+          asset.consentScope === 'public_marketing'
+            ? '已授权公开营销使用'
+            : asset.consentScope === 'paid_advertising'
+              ? '已授权付费投放使用'
+              : '仅限内部使用',
+        status:
+          asset.authorizationStatus === 'authorized' ? 'confirmed' : 'pending',
+        sourceRef: `grounding:${job.id}:asset:${asset.id}`,
+      });
+    }
+
+    if (grounding.qualification?.confirmed) {
+      items.push({
+        id: `grounding:${job.id}:credential`,
+        kind: 'credential',
+        label: '门店资质',
+        summary: grounding.qualification.admitted
+          ? '资质已确认，可用于合规宣发'
+          : '资质待补全',
+        status: grounding.qualification.admitted ? 'confirmed' : 'pending',
+        sourceRef: `grounding:${job.id}:qualification`,
+      });
+    }
+  }
+
+  const rights = options?.contentPackageRights;
+  if (rights) {
+    items.push({
+      id: 'content-package:rights',
+      kind: 'rights',
+      label: '内容权利',
+      summary:
+        rights.state === 'authorized'
+          ? '当前版本授权有效，可继续交付'
+          : '授权已撤回，仅可审计查看历史版本',
+      status: rights.state === 'authorized' ? 'confirmed' : 'pending',
+      sourceRef: 'content-package:rights',
+    });
+  }
+
+  return items;
+}
+
+/** Project revision timeline facts from a public ContentPackage version list. */
+export function revisionTimelineFactsFromContentPackage(
+  contentPackage:
+    | Pick<PublicContentPackage, 'currentVersionId' | 'versions'>
+    | null
+    | undefined
+): RevisionTimelineFacts {
+  if (!contentPackage) return { versions: [] };
+  const versions: RevisionTimelineVersionFact[] = contentPackage.versions.map(
+    (version) => ({
+      versionId: version.id,
+      title: version.title,
+      createdAt: version.createdAt,
+      ...(version.source ? { source: version.source } : {}),
+      ...(version.derivedFromVersionId
+        ? { derivedFromVersionId: version.derivedFromVersionId }
+        : {}),
+      // createdBy is an internal id — never pass through as operator label.
+    })
   );
-  const projects =
-    namedProjects.length > 0
-      ? namedProjects
-      : store.projects.length === 1
-        ? store.projects
-        : [];
-  return projects
-    .filter((project) => Number.isFinite(project.price) && project.price >= 0)
-    .map((project) => ({
-      id: `grounding:${job.id}:project:${project.id}:price`,
-      kind: 'price' as const,
-      label: `${project.name}价格`,
-      summary: `${project.price} 元 · ${store.name}已确认`,
-      status: 'confirmed' as const,
-      sourceRef: `grounding:${job.id}:project:${project.id}`,
-    }));
+  return {
+    ...(contentPackage.currentVersionId
+      ? { currentVersionId: contentPackage.currentVersionId }
+      : {}),
+    versions,
+  };
+}
+
+/** Project Run Detail facts from the exact Work/Job without tech leaks. */
+export function runDetailFactsFromLiveSelection(input: {
+  workId: string;
+  phase: ResultShellPhase;
+  progressState?: ResultShellProgressState;
+  job: CreativeJob | null;
+  workspaceKind?: 'copy' | 'image' | 'video';
+}): ResultRunDetailFacts {
+  const provenance = input.job?.executionProvenance;
+  return {
+    phase: input.phase,
+    ...(input.progressState ? { progressState: input.progressState } : {}),
+    jobStatus: input.job?.status ?? 'none',
+    ...(provenance?.modelDisplayName
+      ? { modelDisplayName: provenance.modelDisplayName }
+      : {}),
+    ...(input.job?.productUsageQuantity !== undefined
+      ? { productUsageQuantity: input.job.productUsageQuantity }
+      : {}),
+    ...(input.job?.failureCode ? { failureCode: input.job.failureCode } : {}),
+    ...(input.job?.recoveredAt ? { recoveredAt: input.job.recoveredAt } : {}),
+    supportReference: formatMerchantSupportReference(input.workId),
+    ...(input.workspaceKind ? { workspaceKind: input.workspaceKind } : {}),
+  };
 }
 
 function copyFacts(input: {

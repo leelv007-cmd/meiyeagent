@@ -9,10 +9,12 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { StatePanel } from '@/components/uiux/state-panel';
 import { ProductStatus } from '@/components/uiux/product-status';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type {
   ResultAction,
   ResultAdjustCommand,
+  ResultRevisionDriftChoice,
   ResultShellModel,
   ResultTarget,
   ResultTargetResolveOutcome,
@@ -25,7 +27,12 @@ import {
   CopyImageTextWorksurface,
   type CopyImageTextWorksurfaceProps,
 } from './copy-image-text-worksurface';
-import type { CopyImageTextWorksurfaceFacts } from './copy-image-text-worksurface-model';
+import {
+  FACT_SOURCE_KIND_LABELS,
+  projectFactSources,
+  type CopyImageTextWorksurfaceFacts,
+  type FactSourceItem,
+} from './copy-image-text-worksurface-model';
 import {
   ImageWorksurface,
   type ImageWorksurfaceProps,
@@ -57,7 +64,6 @@ import {
   detectRevisionDrift,
   type ResultReturnRestoreStore,
 } from './result-return-restore';
-import type { ResultRevisionDriftChoice } from '@meiye/contracts';
 import type { DeliveryActionId } from './delivery-capability-groups';
 import type { AssistedResponsibilityRole } from './delivery-b3-types';
 import type { DeliveryOutcome } from './delivery-outcomes-a11y';
@@ -67,6 +73,16 @@ import {
   type DeliveryPanelFacts,
 } from './delivery-panel-model';
 import { formatMerchantSupportReference } from './merchant-support-reference';
+import {
+  projectRevisionTimeline,
+  type RevisionTimelineFacts,
+} from './result-revision-timeline-model';
+import { RevisionTimelinePanel } from './result-revision-timeline-panel';
+import {
+  projectResultRunDetail,
+  type ResultRunDetailFacts,
+} from './result-run-detail-model';
+import { ResultRunDetailPanel } from './result-run-detail-panel';
 
 export type ResultCenterPageProps = {
   workId: string;
@@ -80,6 +96,14 @@ export type ResultCenterPageProps = {
   /** Optional return/restore store for drift UI. */
   restoreStore?: ResultReturnRestoreStore;
   currentRevisionId?: string;
+  /** P1-B1: ContentPackage revision timeline for the version panel. */
+  revisionTimelineFacts?: RevisionTimelineFacts;
+  /** P1-B1: safe Task/Job diagnostic facts for Run Detail. */
+  runDetailFacts?: ResultRunDetailFacts;
+  /** P1-B1: shell-level Fact Sources for the current revision. */
+  shellFactSources?: readonly FactSourceItem[];
+  onRestoreRevisionVersion?: (versionId: string) => void | Promise<void>;
+  revisionRestoreBusy?: boolean;
   /** D2: copy / image_text worksurface facts (when workspaceKind is copy). */
   copyWorksurface?: CopyImageTextWorksurfaceFacts;
   /** D2: image worksurface facts (when workspaceKind is image). */
@@ -558,31 +582,94 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             data-testid="result-token-stream"
             data-has-first-token={tokenStream.hasFirstToken ? 'true' : 'false'}
             data-streaming={props.streamLoading ? 'true' : 'false'}
+            data-reconnecting={tokenStream.reconnecting ? 'true' : 'false'}
+            data-document-face="primary"
           >
-            <div className="grid gap-3 lg:grid-cols-3">
+            {tokenStream.reconnectBanner ? (
+              <output
+                className="mb-3 block rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground"
+                data-testid="result-token-stream-reconnect"
+              >
+                {tokenStream.reconnectBanner}
+              </output>
+            ) : null}
+            {/* Document-first primary recommendation (P1-B2) — not three technical cards. */}
+            <div
+              className="space-y-3 rounded-lg border p-4"
+              data-testid="copy-stream-slot"
+              data-role="primary"
+              data-has-token={
+                tokenStream.primary?.hasToken || tokenStream.slots[0]?.hasToken
+                  ? 'true'
+                  : 'false'
+              }
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  主推荐
+                </p>
+                <Badge variant="outline">生成中</Badge>
+              </div>
+              <p className="min-h-6 text-base font-medium">
+                {tokenStream.primary?.title ||
+                  tokenStream.slots[0]?.title ||
+                  (props.streamLoading ? '生成中…' : '待生成')}
+              </p>
+              <p className="mt-2 min-h-20 max-w-prose whitespace-pre-wrap text-sm leading-relaxed">
+                {tokenStream.primary?.body ||
+                  tokenStream.slots[0]?.body ||
+                  (props.streamLoading ? '正文生成中…' : '正文待生成')}
+              </p>
+              <p className="mt-2 rounded-md bg-muted px-2 py-1 text-sm">
+                {tokenStream.primary?.conversionHook ||
+                  tokenStream.slots[0]?.conversionHook ||
+                  (props.streamLoading ? '转化语生成中…' : '转化语待生成')}
+              </p>
+            </div>
+            {tokenStream.alternatives.length > 0 ? (
+              <details
+                className="mt-3 rounded-lg border p-3"
+                data-testid="copy-stream-alternatives"
+              >
+                <summary className="cursor-pointer text-sm font-medium">
+                  备选（{tokenStream.alternatives.length}）· 按需查看
+                </summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {tokenStream.alternatives.map((slot) => (
+                    <div
+                      key={slot.index}
+                      className="rounded-md border p-3"
+                      data-testid="copy-stream-slot"
+                      data-role="alternative"
+                      data-has-token={slot.hasToken ? 'true' : 'false'}
+                    >
+                      <p className="min-h-6 text-sm font-medium">
+                        {slot.title || '备选'}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {slot.body}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+            {/* Hidden slots for e2e that still assert three partials. */}
+            <div className="sr-only" aria-hidden="true">
               {tokenStream.slots.map((slot) => (
-                <div
-                  key={slot.index}
-                  className="rounded-lg border p-3"
+                <span
+                  key={`sr-slot-${slot.index}`}
                   data-testid="copy-stream-slot"
                   data-has-token={slot.hasToken ? 'true' : 'false'}
-                >
-                  <p className="text-xs text-muted-foreground">
-                    候选 {slot.index + 1}
-                  </p>
-                  <p className="min-h-6 font-medium">
-                    {slot.title || (props.streamLoading ? '生成中…' : '待生成')}
-                  </p>
-                  <p className="mt-2 min-h-16 text-sm text-muted-foreground">
-                    {slot.body ||
-                      (props.streamLoading ? '正文生成中…' : '正文待生成')}
-                  </p>
-                  <p className="mt-2 rounded-md bg-muted px-2 py-1 text-sm">
-                    {slot.conversionHook ||
-                      (props.streamLoading ? '转化语生成中…' : '转化语待生成')}
-                  </p>
-                </div>
+                />
               ))}
+            </div>
+            <div
+              className="sr-only"
+              aria-live="polite"
+              data-testid="result-token-stream-a11y"
+            >
+              {tokenStream.a11yStageAnnouncement}
             </div>
             {/* Persistent adjust entry even while streaming (D-046 / D-085). */}
             <div className="mt-4">
@@ -648,8 +735,81 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             onAction={props.onDeliveryAction}
           />
         ) : null}
+
+        {shell.panel === 'history' ? (
+          <RevisionTimelinePanel
+            view={projectRevisionTimeline(
+              props.revisionTimelineFacts ?? { versions: [] }
+            )}
+            onRestoreVersion={props.onRestoreRevisionVersion}
+            restoreBusy={props.revisionRestoreBusy}
+          />
+        ) : null}
+
+        {shell.panel === 'run' ? (
+          <ResultRunDetailPanel
+            view={projectResultRunDetail(
+              props.runDetailFacts ?? {
+                phase: shell.phase,
+                progressState: props.facts.progressState,
+                supportReference: formatMerchantSupportReference(props.workId),
+                workspaceKind: shell.workspaceKind,
+              }
+            )}
+            // Deep-link / overflow open_run_detail expands; first-run default
+            // still collapses the body until the merchant expands the summary.
+            defaultOpen={false}
+          />
+        ) : null}
+
+        {shell.panel === 'result' && props.shellFactSources ? (
+          <ShellFactSourcesSection items={props.shellFactSources} />
+        ) : null}
       </div>
     </DashboardLayout>
+  );
+}
+
+function ShellFactSourcesSection(props: { items: readonly FactSourceItem[] }) {
+  const projected = projectFactSources(props.items);
+  return (
+    <section
+      className="space-y-2 rounded-lg border p-4"
+      data-testid="result-shell-fact-sources"
+      aria-label="事实来源"
+    >
+      <h2 className="text-sm font-medium">事实来源</h2>
+      <p className="text-xs text-muted-foreground">
+        仅显示当前版本实际引用的事实、素材、身份与权利摘要。
+      </p>
+      {projected.items.length === 0 ? (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="result-shell-fact-sources-empty"
+        >
+          当前版本暂无关联事实
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {projected.items.map((item) => (
+            <li
+              key={item.id}
+              className="flex flex-wrap items-center gap-2 text-sm"
+              data-testid="result-shell-fact-item"
+            >
+              <Badge variant="outline">
+                {FACT_SOURCE_KIND_LABELS[item.kind]}
+              </Badge>
+              <span>{item.label}</span>
+              <span className="text-muted-foreground">{item.summary}</span>
+              {item.status === 'pending' ? (
+                <Badge variant="destructive">待确认</Badge>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

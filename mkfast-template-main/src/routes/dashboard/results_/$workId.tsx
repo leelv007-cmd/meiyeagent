@@ -8,7 +8,12 @@
 
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { StatePanel } from '@/components/uiux/state-panel';
-import { commandP1, operationsQuery, queryP1 } from '@/p1/client';
+import {
+  commandP1,
+  operationsCommand,
+  operationsQuery,
+  queryP1,
+} from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   buildCopyStreamRequestFromJob,
@@ -22,10 +27,18 @@ import {
 import {
   buildLiveVideoWorksurface,
   contentPackageRefreshToken,
+  factSourcesFromGroundingSnapshot,
+  revisionTimelineFactsFromContentPackage,
   latestContentPackageForWork,
   platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
+  runDetailFactsFromLiveSelection,
 } from '@/product/results/result-live-projection';
+import {
+  calibrateTerminalRevision,
+  pickExclusiveTokenCandidates,
+} from '@/product/results/result-token-stream';
+import { projectResultShellPhase } from '@/product/results/result-shell-model';
 import { ResultCenterPage } from '@/product/results/result-center-page';
 import { ImageAdjustConfirmation } from '@/product/results/image-adjust-confirmation';
 import { createCanonicalAssistedHandoff } from '@/product/results/delivery-assisted-live';
@@ -318,7 +331,9 @@ function ResultCenterRoutePage() {
   // Video worksurface simply omits workflow-derived panels instead of hard-failing.
 
   const workspaceKind = selected?.workspaceKind ?? 'copy';
-  // ADR-0007 token stream is only for copy.generate jobs (workspace "copy").
+  // ADR-0007 / P1-B2: user-visible copy increments are exclusive.
+  // Prefer structured stream partials as the sole source while running;
+  // never merge poll/workbench candidate snapshots into the stream face.
   // image.generate / video never feed copy-stream slots — do not mark them
   // streamActive or e2e will wait forever for tokens that cannot arrive.
   const streamActive =
@@ -326,11 +341,21 @@ function ResultCenterRoutePage() {
     (selected?.progressState === 'running' ||
       selected?.progressState === 'waiting') &&
     selected?.job?.contract.operation === 'copy.generate';
-  const partialCandidates = streamActive
+  const structuredStreamCandidates = streamActive
     ? copyCandidateStream.object?.candidates?.filter(
         (candidate): candidate is NonNullable<typeof candidate> =>
           candidate !== undefined
       )
+    : undefined;
+  // Poll/workbench harness candidates are intentionally not passed as a
+  // second source — pickExclusiveTokenCandidates discards poll when empty.
+  const exclusiveTokens = pickExclusiveTokenCandidates({
+    workflowTokenCandidates: null,
+    structuredStreamCandidates: structuredStreamCandidates ?? null,
+    pollCandidates: null,
+  });
+  const partialCandidates = streamActive
+    ? exclusiveTokens.candidates
     : undefined;
   const streamLoading = streamActive
     ? Boolean(copyCandidateStream.isLoading) ||
@@ -380,16 +405,33 @@ function ResultCenterRoutePage() {
           versionId: currentPackageVersion.id,
         }
       : packageBackedVideoWorksurface;
+  // Terminal ContentPackage revision wins over intermediate stream text (P1-B2).
+  const terminalCalibration =
+    currentPackageVersion &&
+    (workspaceKind === 'copy' || workspaceKind === 'image')
+      ? calibrateTerminalRevision({
+          streamed: exclusiveTokens.candidates[0],
+          terminal: {
+            title: currentPackageVersion.title,
+            body: currentPackageVersion.body,
+            conversionHook: currentPackageVersion.conversionHook ?? '',
+            revisionId: currentPackageVersion.id,
+          },
+        })
+      : null;
   const copyWorksurface =
     selected?.copyWorksurface && currentPackageVersion
       ? {
           ...selected.copyWorksurface,
           baseRevisionId: currentPackageVersion.id,
           document: {
-            body: currentPackageVersion.body,
-            conversionHook: currentPackageVersion.conversionHook ?? '',
+            body: terminalCalibration?.body ?? currentPackageVersion.body,
+            conversionHook:
+              terminalCalibration?.conversionHook ??
+              currentPackageVersion.conversionHook ??
+              '',
             orderedAssetIds: [...currentPackageVersion.orderedAssetIds],
-            title: currentPackageVersion.title,
+            title: terminalCalibration?.title ?? currentPackageVersion.title,
             topics: [...currentPackageVersion.topics],
           },
           lifecycle: 'adopted' as const,
@@ -710,6 +752,8 @@ function ResultCenterRoutePage() {
     'create_from_this',
     'retry',
     'cancel_run',
+    'open_history',
+    'open_run_detail',
     ...(selected?.job?.status === 'recoverable' ||
     selected?.job?.status === 'unknown'
       ? (['recover_or_verify', 'handle_current_issue'] as const)
@@ -737,7 +781,28 @@ function ResultCenterRoutePage() {
         });
         return;
       case 'open_history':
+        await navigate({
+          search: (current) => ({ ...current, panel: 'history' }),
+        });
+        window.requestAnimationFrame(() => {
+          document
+            .querySelector<HTMLElement>(
+              '[data-testid="result-revision-timeline-panel"]'
+            )
+            ?.scrollIntoView({ block: 'nearest' });
+        });
+        return;
       case 'open_run_detail':
+        await navigate({
+          search: (current) => ({ ...current, panel: 'run' }),
+        });
+        window.requestAnimationFrame(() => {
+          document
+            .querySelector<HTMLElement>(
+              '[data-testid="result-run-detail-panel"]'
+            )
+            ?.scrollIntoView({ block: 'nearest' });
+        });
         return;
       case 'leave_and_continue':
         window.location.assign('/dashboard');
@@ -821,6 +886,45 @@ function ResultCenterRoutePage() {
     }
   };
 
+  const shellPhase = projectResultShellPhase({
+    target,
+    workspaceKind,
+    progressState: selected?.progressState,
+    hasUsableCandidate: selected?.hasUsableCandidate,
+    hasAdoptedCandidate: Boolean(currentPackageVersion),
+  });
+  const revisionTimelineFacts =
+    revisionTimelineFactsFromContentPackage(contentPackage);
+  const runDetailFacts = runDetailFactsFromLiveSelection({
+    workId,
+    phase: shellPhase,
+    progressState: selected?.progressState,
+    job: selected?.job ?? null,
+    workspaceKind,
+  });
+  const shellFactSources = selected
+    ? factSourcesFromGroundingSnapshot(selected.work, selected.job, {
+        contentPackageRights: contentPackage?.rights,
+        referencedAssetIds: currentPackageVersion?.orderedAssetIds,
+      })
+    : contentPackage?.rights
+      ? factSourcesFromGroundingSnapshot(
+          {
+            id: workId,
+            workspaceId: contentPackage.workspaceId,
+            sessionId: '',
+            intent: '',
+            mode: 'agent',
+            sourceReferences: [],
+            status: 'completed',
+            createdAt: contentPackage.createdAt,
+            updatedAt: contentPackage.updatedAt,
+          },
+          null,
+          { contentPackageRights: contentPackage.rights }
+        )
+      : [];
+
   return (
     <ResultCenterPage
       workId={workId}
@@ -841,6 +945,28 @@ function ResultCenterRoutePage() {
       videoWorksurface={videoWorksurface}
       restoreStore={returnRestore.store}
       currentRevisionId={currentRevisionId}
+      revisionTimelineFacts={revisionTimelineFacts}
+      runDetailFacts={runDetailFacts}
+      shellFactSources={shellFactSources}
+      revisionRestoreBusy={shellActionBusy}
+      onRestoreRevisionVersion={async (versionId) => {
+        if (!contentPackage) {
+          throw new Error('当前还没有可恢复的内容版本。');
+        }
+        await operationsCommand(
+          'rollback_content_package_version',
+          {
+            packageId: contentPackage.id,
+            targetVersionId: versionId,
+            expectedRevision: contentPackage.revision,
+          },
+          crypto.randomUUID()
+        );
+        await refreshCanonicalResult();
+        await navigate({
+          search: (current) => ({ ...current, panel: 'history' }),
+        });
+      }}
       actionBusy={shellActionBusy}
       actionError={shellActionError}
       supportedActionIds={supportedActionIds}

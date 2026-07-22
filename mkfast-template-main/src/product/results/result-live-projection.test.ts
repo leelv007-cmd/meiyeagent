@@ -6,9 +6,14 @@ import type { CreativeWorkbenchProjection } from '@meiye/contracts';
 import {
   buildLiveVideoWorksurface,
   contentPackageRefreshToken,
+  factSourcesFromGroundingSnapshot,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
+  revisionTimelineFactsFromContentPackage,
+  runDetailFactsFromLiveSelection,
 } from './result-live-projection';
+import { projectRevisionTimeline } from './result-revision-timeline-model';
+import { projectResultRunDetail } from './result-run-detail-model';
 
 test('uses the newest same-Work ContentPackage instead of locking the original workflow package', () => {
   const packages = [
@@ -279,8 +284,125 @@ test('projects copy facts from the exact recommended/current job asset', () => {
       status: 'confirmed',
       sourceRef: 'grounding:job-copy-old:project:project-copy',
     },
+    {
+      id: 'grounding:job-copy-old:identity:store',
+      kind: 'identity',
+      label: '门店身份',
+      summary: '测试门店 · 上海静安区',
+      status: 'confirmed',
+      sourceRef: 'grounding:job-copy-old:store',
+    },
   ]);
   assert.equal(result.selected?.imageWorksurface, undefined);
+});
+
+test('revision timeline facts project ContentPackage versions without inventing a ledger', () => {
+  const facts = revisionTimelineFactsFromContentPackage({
+    currentVersionId: 'ver-2',
+    versions: [
+      {
+        id: 'ver-1',
+        title: '初稿',
+        body: 'body-1',
+        createdAt: '2026-07-20T08:00:00.000Z',
+        orderedAssetIds: [],
+        topics: [],
+        source: 'ai_generated',
+      },
+      {
+        id: 'ver-2',
+        title: '手改',
+        body: 'body-2',
+        createdAt: '2026-07-20T09:00:00.000Z',
+        orderedAssetIds: ['asset-1'],
+        topics: [],
+        source: 'merchant_edited',
+        derivedFromVersionId: 'ver-1',
+        createdBy: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      },
+    ],
+  });
+  const view = projectRevisionTimeline(facts);
+  assert.equal(view.entries.length, 2);
+  assert.equal(view.entries[0]?.isCurrent, true);
+  assert.equal(view.entries[0]?.derivedFromLabel, '基于「初稿」');
+  // createdBy UUID must never become the operator label.
+  assert.equal(view.entries[0]?.operatorLabel, '本店同事');
+  assert.doesNotMatch(JSON.stringify(view), /a1b2c3d4-e5f6/u);
+});
+
+test('run detail facts strip provider identity and keep merchant language', () => {
+  const live = projectResultCenterLiveProjection(projection, 'work-copy-old');
+  const job = live.selected!.job!;
+  job.failureCode = 'TIMEOUT';
+  job.productUsageQuantity = 1;
+  job.executionProvenance = {
+    actualCatalogModelId: 'catalog-secret',
+    modelDisplayName: '门店文案助手',
+    providerModel: 'openai/gpt-4o',
+    apiCounterparty: 'sub2api',
+  };
+  const facts = runDetailFactsFromLiveSelection({
+    workId: 'work-copy-old',
+    phase: 'failed',
+    progressState: 'failed',
+    job,
+    workspaceKind: 'copy',
+  });
+  const view = projectResultRunDetail(facts);
+  assert.equal(view.modelSummary, '使用模型：门店文案助手');
+  assert.equal(view.failureSummary, '生成超时，可以重试。');
+  assert.doesNotMatch(JSON.stringify(view), /openai|sub2api|catalog-secret/iu);
+  assert.doesNotMatch(JSON.stringify(view), /work-copy-old/u);
+});
+
+test('fact sources only include referenced materials and rights for current revision', () => {
+  const live = projectResultCenterLiveProjection(projection, 'work-copy-old');
+  const job = live.selected!.job!;
+  job.groundingSnapshot = {
+    ...job.groundingSnapshot!,
+    assets: [
+      {
+        id: 'mat-used',
+        sourceType: 'real',
+        category: 'store',
+        tags: [],
+        consentScope: 'public_marketing',
+        containsPerson: false,
+        containsSensitiveData: false,
+        minorStatus: 'none',
+        authorizationStatus: 'authorized',
+        rightsEvidenceRecorded: true,
+      },
+      {
+        id: 'mat-unused',
+        sourceType: 'real',
+        category: 'price_list',
+        tags: [],
+        consentScope: 'internal_only',
+        containsPerson: false,
+        containsSensitiveData: false,
+        minorStatus: 'none',
+        authorizationStatus: 'authorized',
+        rightsEvidenceRecorded: true,
+      },
+    ],
+  };
+  const items = factSourcesFromGroundingSnapshot(live.selected!.work, job, {
+    referencedAssetIds: ['mat-used'],
+    contentPackageRights: { state: 'authorized' },
+  });
+  assert.ok(
+    items.some(
+      (item) => item.kind === 'material' && item.id.includes('mat-used')
+    )
+  );
+  assert.equal(
+    items.some((item) => item.id.includes('mat-unused')),
+    false
+  );
+  assert.ok(items.some((item) => item.kind === 'rights'));
+  assert.ok(items.some((item) => item.kind === 'identity'));
 });
 
 test('projects persisted image candidates without inventing adoption', () => {

@@ -57,6 +57,37 @@ export {
 } from './merchant-support-reference';
 
 export {
+  projectRevisionTimeline,
+  revisionOperatorLabel,
+  revisionSourceLabel,
+  type RevisionTimelineEntry,
+  type RevisionTimelineFacts,
+  type RevisionTimelinePanelView,
+  type RevisionTimelineRecoverAction,
+  type RevisionTimelineVersionFact,
+  type RevisionTimelineVersionSource,
+} from './result-revision-timeline-model';
+
+export {
+  RevisionTimelinePanel,
+  type RevisionTimelinePanelProps,
+} from './result-revision-timeline-panel';
+
+export {
+  projectResultRunDetail,
+  type ResultRunDetailFacts,
+  type ResultRunDetailJobStatus,
+  type ResultRunDetailPanelView,
+  type ResultRunDetailStage,
+  type ResultRunDetailStageState,
+} from './result-run-detail-model';
+
+export {
+  ResultRunDetailPanel,
+  type ResultRunDetailPanelProps,
+} from './result-run-detail-panel';
+
+export {
   RESULT_SHELL_PROJECTION_ONLY,
   desktopVisibleActions,
   mobileVisibleActions,
@@ -74,6 +105,12 @@ export {
 } from './result-shell-model';
 
 export {
+  factSourcesFromGroundingSnapshot,
+  revisionTimelineFactsFromContentPackage,
+  runDetailFactsFromLiveSelection,
+} from './result-live-projection';
+
+export {
   parseResultCenterSearch,
   resolveResultTargetClient,
   resolveRouteResultTarget,
@@ -87,15 +124,23 @@ export {
 } from './result-target-wiring';
 
 export {
+  acceptWorkflowTokenDelta,
+  calibrateTerminalRevision,
   candidateHasToken,
   copyCandidateSlots,
+  pickExclusiveTokenCandidates,
   projectResultTokenStream,
+  projectTokenStreamA11y,
+  projectTokenStreamReconnect,
+  reduceExclusiveWorkflowTokens,
   tokenStreamFixtureSteps,
   type PartialCopyCandidate,
+  type ResultTokenStreamCursor,
   type ResultTokenStreamInput,
   type ResultTokenStreamProjection,
   type ResultTokenStreamSlot,
   type ResultTokenStreamWorkspace,
+  type WorkflowTokenDelta,
 } from './result-token-stream';
 
 // ---------------------------------------------------------------------------
@@ -110,13 +155,18 @@ export {
   COPY_MOBILE_P0_ACTIONS,
   COPY_PREVIEW_CARRIER_LABELS,
   applyCopyFieldEdit,
+  captureStableSelectionAnchor,
   createCopyDocumentDraft,
+  hashSelectionAnchorParts,
   isClientConcatPlatformBody,
   previewSelectionRewrite,
   projectCopyImageTextWorksurface,
   projectCopyMobileP0Actions,
+  projectDocumentWorksurface,
   projectFactSources,
   projectPlatformPreview,
+  resolveSelectionAnchor,
+  resolveSelectionRewrite,
   routeAdjustExecution,
   type AdjustExecutionPath,
   type CopyDocumentDraft,
@@ -124,9 +174,14 @@ export {
   type CopyImageTextWorksurfaceFacts,
   type CopyImageTextWorksurfaceView,
   type CopyPreviewCarrier,
+  type DocumentCandidate,
+  type DocumentWorksurfaceProjection,
   type FactSourceItem,
   type PlatformPreviewVariant,
   type SelectionRewriteAction,
+  type SelectionRewriteCommand,
+  type SelectionRewriteResolveResult,
+  type StableSelectionAnchor,
 } from './copy-image-text-worksurface-model';
 
 export {

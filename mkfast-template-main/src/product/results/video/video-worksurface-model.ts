@@ -252,6 +252,46 @@ export function classifyAdoptCandidate(): VideoEditFeeDecision {
 }
 
 /**
+ * Recover / poll / download the same supplier task never re-quotes or charges
+ * (P1-B4 / #153). These are free operational actions on an existing attempt.
+ */
+export function classifySupplierTaskOps(
+  action: 'poll' | 'recover' | 'download_supplier_task'
+): VideoFreeEditFeeDecision {
+  return {
+    fee: 'none',
+    freeAction: action,
+    createsProductUsage: false,
+    requiresFullRecomposeQuote: false,
+  };
+}
+
+/**
+ * Merchant-facing shot label — never expose raw shot UUID / provider slug /
+ * internal phase in the Result worksurface (P1-B4 / #153).
+ */
+export function merchantShotLabel(input: {
+  order: number;
+  promptPreview?: string;
+  shotId?: string;
+}): string {
+  const orderLabel = `镜头 ${input.order + 1}`;
+  const preview = input.promptPreview?.trim();
+  if (preview) {
+    // Strip accidental UUID-looking tokens from prompt previews.
+    const cleaned = preview
+      .replace(
+        /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+        ''
+      )
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (cleaned) return `${orderLabel} · ${cleaned.slice(0, 24)}`;
+  }
+  return orderLabel;
+}
+
+/**
  * Independent subtitle asset text / toggle / style-on-asset: free.
  * Burned-in subtitle change requires full recompose + independent quote.
  */

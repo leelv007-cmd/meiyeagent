@@ -8,6 +8,7 @@ import {
   adoptComposedFilm,
   buildVideoProStudioRefineHandoff,
   editSubtitleText,
+  merchantShotLabel,
   projectVideoMobileP0Actions,
   reorderShots,
   requestFullRecompose,
@@ -358,12 +359,16 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium">镜头 {shotIndex + 1}</p>
-                  {shot.promptPreview ? (
-                    <p className="text-xs text-muted-foreground">
-                      {shot.promptPreview}
-                    </p>
-                  ) : null}
+                  <p
+                    className="text-sm font-medium"
+                    data-testid="video-shot-label"
+                  >
+                    {merchantShotLabel({
+                      order: shotIndex,
+                      promptPreview: shot.promptPreview,
+                      shotId: shot.shotId,
+                    })}
+                  </p>
                 </div>
                 <Button
                   type="button"

@@ -7,12 +7,40 @@ import { describe, it } from 'node:test';
 
 import {
   classifySubtitleEdit,
+  classifySupplierTaskOps,
   editSubtitleText,
+  merchantShotLabel,
   requestFullRecompose,
   toggleSubtitleEnabled,
   videoWorksurfaceFixture,
   videoWorksurfaceFreeActions,
 } from './video-worksurface-model';
+
+describe('supplier task ops never re-quote (P1-B4)', () => {
+  it('poll / recover / download_supplier_task are free', () => {
+    for (const action of [
+      'poll',
+      'recover',
+      'download_supplier_task',
+    ] as const) {
+      const decision = classifySupplierTaskOps(action);
+      assert.equal(decision.fee, 'none', action);
+      assert.equal(decision.createsProductUsage, false, action);
+      assert.equal(decision.requiresFullRecomposeQuote, false, action);
+    }
+  });
+
+  it('merchant shot labels never leak UUIDs', () => {
+    const label = merchantShotLabel({
+      order: 0,
+      promptPreview: '开场 7f3c2a10-1111-2222-3333-444455556666 到店',
+      shotId: '7f3c2a10-1111-2222-3333-444455556666',
+    });
+    assert.match(label, /镜头 1/);
+    assert.doesNotMatch(label, /7f3c2a10/);
+    assert.doesNotMatch(label, /444455556666/);
+  });
+});
 
 describe('subtitle fee boundary', () => {
   it('independent asset text edit is free and listed in free actions', () => {

@@ -216,11 +216,7 @@ function buildRoleContext(
     : false;
   const focusedIsCurrentSlot =
     focusedAssetId && facts.adoptedOrderedAssetIds
-      ? facts.adoptedOrderedAssetIds[0] === focusedAssetId
-        ? true
-        : facts.adoptedOrderedAssetIds.includes(focusedAssetId)
-          ? true
-          : false
+      ? facts.adoptedOrderedAssetIds.includes(focusedAssetId)
       : undefined;
 
   const allGenerationOk = facts.candidates.every(
@@ -239,9 +235,7 @@ function buildRoleContext(
     hasContentPackage: facts.hasContentPackage,
     focusedIsCurrentSlot:
       facts.lifecycle === 'adopted' && focusedAssetId
-        ? facts.adoptedOrderedAssetIds?.includes(focusedAssetId)
-          ? true
-          : false
+        ? Boolean(facts.adoptedOrderedAssetIds?.includes(focusedAssetId))
         : focusedIsCurrentSlot,
     fullCandidateSetReady,
     fullCandidateSetCount: facts.candidates.length,

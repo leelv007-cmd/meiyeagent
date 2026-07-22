@@ -128,6 +128,56 @@ describe('copy / image_text worksurface', () => {
     );
 
     await user.click(screen.getByTestId('copy-rewrite-rewrite'));
-    expect(onSelectionRewrite).toHaveBeenCalledWith('rewrite');
+    expect(onSelectionRewrite).toHaveBeenCalled();
+    expect(onSelectionRewrite.mock.calls[0]?.[0]).toBe('rewrite');
+  });
+
+  it('keeps alternatives collapsed by default and expands on demand', async () => {
+    const user = userEvent.setup();
+    render(
+      <CopyImageTextWorksurface
+        facts={{
+          ...facts,
+          alternativeCandidates: [
+            {
+              candidateId: 'alt-1',
+              title: '备选标题',
+              body: '备选正文',
+              conversionHook: '到店',
+            },
+          ],
+        }}
+      />
+    );
+    expect(screen.getByTestId('copy-primary-badge')).toHaveTextContent(
+      '默认展开'
+    );
+    expect(screen.getByTestId('copy-alternatives-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('copy-alternatives-list')).toBeNull();
+    await user.click(screen.getByTestId('copy-alternatives-toggle'));
+    expect(screen.getByTestId('copy-alternatives-list')).toBeInTheDocument();
+    expect(screen.getByText('备选标题')).toBeInTheDocument();
+  });
+
+  it('surfaces base-revision drift conflict for selection rewrite', async () => {
+    const user = userEvent.setup();
+    const onResolved = vi.fn();
+    render(
+      <CopyImageTextWorksurface
+        facts={facts}
+        currentRevisionId="rev-stale-other"
+        onSelectionRewrite={vi.fn()}
+        onSelectionRewriteResolved={onResolved}
+      />
+    );
+    await user.click(screen.getByTestId('copy-rewrite-shorten'));
+    expect(onResolved).toHaveBeenCalled();
+    expect(onResolved.mock.calls[0]?.[0]?.kind).toBe('conflict');
+    expect(
+      await screen.findByTestId('copy-selection-rewrite-conflict')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('copy-rewrite-conflict-compare')
+    ).toBeInTheDocument();
   });
 });

@@ -1,10 +1,12 @@
 /**
- * Copy / image_text worksurface pure model (D-085 / D-046 / WT-D2 / #100).
+ * Copy / image_text worksurface pure model
+ * (D-085 / D-046 / WT-D2 / #100 / P1-B2 / #151).
  *
- * Edit · selection rewrite · fact sources · platform preview.
- * Persistent "还想怎么改？": model path → derived Task (D-046);
- * deterministic hand edit → OCC derived revision. Never client-concat
- * platform variants (formal copy.adapt only).
+ * Document-first primary recommendation · on-demand alternatives ·
+ * edit · selection rewrite with stable anchors · fact sources ·
+ * platform preview. Persistent "还想怎么改？": model path → derived Task
+ * (D-046); deterministic hand edit → OCC derived revision. Never
+ * client-concat platform variants (formal copy.adapt only).
  */
 
 // ---------------------------------------------------------------------------
@@ -58,7 +60,7 @@ export function applyCopyFieldEdit(
 }
 
 // ---------------------------------------------------------------------------
-// Selection rewrite (preview then confirm → new revision)
+// Selection rewrite (stable anchor · base drift · derived Task)
 // ---------------------------------------------------------------------------
 
 export type SelectionRewriteAction =
@@ -90,6 +92,26 @@ export type SelectionRewriteRequest = {
   instruction?: string;
 };
 
+/**
+ * Stable text anchor for selection rewrite (P1-B2).
+ * Binds selected text + surrounding context so offsets are not reapplied
+ * blindly after base revision drift.
+ */
+export type StableSelectionAnchor = {
+  field: Extract<CopyFieldKey, 'title' | 'body' | 'conversionHook'>;
+  /** Selected substring at capture time. */
+  selectedText: string;
+  /** Up to 24 chars before the selection (context prefix). */
+  prefix: string;
+  /** Up to 24 chars after the selection (context suffix). */
+  suffix: string;
+  /** FNV-1a style hash of field|prefix|selected|suffix for equality. */
+  anchorHash: string;
+  /** Offsets at capture time — informational only after drift. */
+  start: number;
+  end: number;
+};
+
 export type SelectionRewritePreview = {
   field: SelectionRewriteRequest['field'];
   before: string;
@@ -98,7 +120,159 @@ export type SelectionRewritePreview = {
   fieldAfter: string;
   /** Always model-path: derived Task on confirm. */
   execution: 'derived_task';
+  anchor: StableSelectionAnchor;
+  baseRevisionId: string;
 };
+
+export type SelectionRewriteCommand = {
+  kind: 'selection_rewrite';
+  workId: string;
+  baseRevisionId: string;
+  action: SelectionRewriteAction;
+  instruction: string;
+  anchor: StableSelectionAnchor;
+  /** Always derived Task — never OCC hand-edit. */
+  execution: 'derived_task';
+};
+
+export type SelectionRewriteResolveResult =
+  | {
+      kind: 'ok';
+      command: SelectionRewriteCommand;
+      preview: SelectionRewritePreview;
+      resolvedStart: number;
+      resolvedEnd: number;
+    }
+  | {
+      kind: 'conflict';
+      code: 'BASE_REVISION_DRIFT' | 'ANCHOR_NOT_FOUND';
+      message: string;
+      baseRevisionId: string;
+      currentRevisionId: string;
+      choices: readonly ['compare', 'discard', 'reapply'];
+      /** Anchor as captured — for compare UI. */
+      anchor: StableSelectionAnchor;
+      /** Current field text for side-by-side compare. */
+      currentFieldText: string;
+    }
+  | { kind: 'invalid'; message: string };
+
+/** Lightweight stable hash (FNV-1a 32-bit) — no crypto dependency. */
+export function hashSelectionAnchorParts(
+  field: string,
+  prefix: string,
+  selected: string,
+  suffix: string
+): string {
+  const input = `${field}|${prefix}|${selected}|${suffix}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * Capture a stable selection anchor from field offsets at the current base.
+ */
+export function captureStableSelectionAnchor(
+  fieldText: string,
+  field: StableSelectionAnchor['field'],
+  start: number,
+  end: number
+): StableSelectionAnchor | { kind: 'invalid'; message: string } {
+  if (start < 0 || end > fieldText.length || start >= end) {
+    return { kind: 'invalid', message: '请先选择一段文字' };
+  }
+  const selectedText = fieldText.slice(start, end);
+  const prefix = fieldText.slice(Math.max(0, start - 24), start);
+  const suffix = fieldText.slice(end, Math.min(fieldText.length, end + 24));
+  return {
+    field,
+    selectedText,
+    prefix,
+    suffix,
+    anchorHash: hashSelectionAnchorParts(field, prefix, selectedText, suffix),
+    start,
+    end,
+  };
+}
+
+/**
+ * Resolve an anchor against live field text without relying on stale offsets.
+ * Prefers prefix+selected+suffix match; falls back to unique selectedText.
+ */
+export function resolveSelectionAnchor(
+  fieldText: string,
+  anchor: StableSelectionAnchor
+):
+  | { kind: 'ok'; start: number; end: number }
+  | { kind: 'not_found'; message: string } {
+  const needle = `${anchor.prefix}${anchor.selectedText}${anchor.suffix}`;
+  if (needle.length > 0) {
+    const at = fieldText.indexOf(needle);
+    if (at >= 0) {
+      const start = at + anchor.prefix.length;
+      return {
+        kind: 'ok',
+        start,
+        end: start + anchor.selectedText.length,
+      };
+    }
+  }
+  // Unique selected-text fallback.
+  const first = fieldText.indexOf(anchor.selectedText);
+  if (first >= 0) {
+    const second = fieldText.indexOf(
+      anchor.selectedText,
+      first + anchor.selectedText.length
+    );
+    if (second < 0) {
+      return {
+        kind: 'ok',
+        start: first,
+        end: first + anchor.selectedText.length,
+      };
+    }
+  }
+  return {
+    kind: 'not_found',
+    message: '选区已随正文变化失效，请重新选择后再改写。',
+  };
+}
+
+function applyRewriteAction(
+  before: string,
+  action: SelectionRewriteAction,
+  instruction?: string
+): string {
+  switch (action) {
+    case 'shorten':
+      return before.slice(0, Math.max(1, Math.floor(before.length * 0.6)));
+    case 'expand':
+      return `${before}，结合本店真实项目说明，欢迎到店了解。`;
+    case 'weaker_promo':
+      return (
+        before
+          .replace(/(?:限时|优惠|抢购|必买|冲|立即)/gu, '')
+          .replace(/\s{2,}/gu, ' ')
+          .trim() || before
+      );
+    case 'stronger_cta':
+      return `${before} 现在可预约到店咨询。`;
+    case 'tone_shift':
+      return instruction?.trim()
+        ? `【${instruction.trim()}】${before}`
+        : `换个说法：${before}`;
+    case 'rewrite':
+      return instruction?.trim() ? instruction.trim() : `改写：${before}`;
+    default: {
+      const _exhaustive: never = action;
+      return _exhaustive;
+    }
+  }
+}
 
 /**
  * Local deterministic preview for selection rewrite chips.
@@ -112,55 +286,156 @@ export function previewSelectionRewrite(
   if (typeof source !== 'string') {
     return { kind: 'invalid', message: '选区字段无效' };
   }
-  if (
-    request.start < 0 ||
-    request.end > source.length ||
-    request.start >= request.end
-  ) {
-    return { kind: 'invalid', message: '请先选择一段文字' };
-  }
-  const before = source.slice(request.start, request.end);
-  let after = before;
-  switch (request.action) {
-    case 'shorten':
-      after = before.slice(0, Math.max(1, Math.floor(before.length * 0.6)));
-      break;
-    case 'expand':
-      after = `${before}，结合本店真实项目说明，欢迎到店了解。`;
-      break;
-    case 'weaker_promo':
-      after =
-        before
-          .replace(/(?:限时|优惠|抢购|必买|冲|立即)/gu, '')
-          .replace(/\s{2,}/gu, ' ')
-          .trim() || before;
-      break;
-    case 'stronger_cta':
-      after = `${before} 现在可预约到店咨询。`;
-      break;
-    case 'tone_shift':
-      after = request.instruction?.trim()
-        ? `【${request.instruction.trim()}】${before}`
-        : `换个说法：${before}`;
-      break;
-    case 'rewrite':
-      after = request.instruction?.trim()
-        ? request.instruction.trim()
-        : `改写：${before}`;
-      break;
-    default: {
-      const _exhaustive: never = request.action;
-      return _exhaustive;
-    }
-  }
+  const anchor = captureStableSelectionAnchor(
+    source,
+    request.field,
+    request.start,
+    request.end
+  );
+  if ('kind' in anchor) return anchor;
+  const before = anchor.selectedText;
+  const after = applyRewriteAction(before, request.action, request.instruction);
   const fieldAfter =
-    source.slice(0, request.start) + after + source.slice(request.end);
+    source.slice(0, anchor.start) + after + source.slice(anchor.end);
   return {
     field: request.field,
     before,
     after,
     fieldAfter,
     execution: 'derived_task',
+    anchor,
+    baseRevisionId: draft.baseRevisionId,
+  };
+}
+
+/**
+ * Build a selection-rewrite derived Task command bound to base revision +
+ * stable anchor. Base drift or lost anchor returns conflict with compare.
+ */
+export function resolveSelectionRewrite(input: {
+  workId: string;
+  /** Revision the selection was captured against. */
+  baseRevisionId: string;
+  /** Live canonical revision id. */
+  currentRevisionId: string;
+  /** Live field text for the anchor field. */
+  currentFieldText: string;
+  action: SelectionRewriteAction;
+  instruction?: string;
+  anchor: StableSelectionAnchor;
+}): SelectionRewriteResolveResult {
+  if (input.baseRevisionId !== input.currentRevisionId) {
+    return {
+      kind: 'conflict',
+      code: 'BASE_REVISION_DRIFT',
+      message: '正文已有新版本。请比较后再决定是否重新应用选区改写。',
+      baseRevisionId: input.baseRevisionId,
+      currentRevisionId: input.currentRevisionId,
+      choices: ['compare', 'discard', 'reapply'],
+      anchor: input.anchor,
+      currentFieldText: input.currentFieldText,
+    };
+  }
+  const resolved = resolveSelectionAnchor(input.currentFieldText, input.anchor);
+  if (resolved.kind === 'not_found') {
+    return {
+      kind: 'conflict',
+      code: 'ANCHOR_NOT_FOUND',
+      message: resolved.message,
+      baseRevisionId: input.baseRevisionId,
+      currentRevisionId: input.currentRevisionId,
+      choices: ['compare', 'discard', 'reapply'],
+      anchor: input.anchor,
+      currentFieldText: input.currentFieldText,
+    };
+  }
+  const before = input.currentFieldText.slice(resolved.start, resolved.end);
+  const after = applyRewriteAction(before, input.action, input.instruction);
+  const instruction =
+    input.instruction?.trim() ||
+    `${SELECTION_REWRITE_LABELS[input.action]}：「${before}」`;
+  const fieldAfter =
+    input.currentFieldText.slice(0, resolved.start) +
+    after +
+    input.currentFieldText.slice(resolved.end);
+  const command: SelectionRewriteCommand = {
+    kind: 'selection_rewrite',
+    workId: input.workId,
+    baseRevisionId: input.baseRevisionId,
+    action: input.action,
+    instruction,
+    anchor: input.anchor,
+    execution: 'derived_task',
+  };
+  return {
+    kind: 'ok',
+    command,
+    preview: {
+      field: input.anchor.field,
+      before,
+      after,
+      fieldAfter,
+      execution: 'derived_task',
+      anchor: input.anchor,
+      baseRevisionId: input.baseRevisionId,
+    },
+    resolvedStart: resolved.start,
+    resolvedEnd: resolved.end,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Document-first primary + on-demand alternatives (P1-B2)
+// ---------------------------------------------------------------------------
+
+export type DocumentCandidate = {
+  candidateId: string;
+  title: string;
+  body: string;
+  conversionHook: string;
+  topics?: string[];
+};
+
+export type DocumentWorksurfaceProjection = {
+  /** Primary recommendation is always expanded as the document face. */
+  primary: DocumentCandidate;
+  primaryExpanded: true;
+  /** Alternatives stay collapsed until the merchant expands them. */
+  alternatives: DocumentCandidate[];
+  alternativesExpandedDefault: false;
+  /** Editable draft bound to the primary (or selected alternative). */
+  activeDocument: CopyDocumentFields;
+  activeCandidateId: string;
+};
+
+/**
+ * Project the document worksurface: primary expanded, alternatives on demand.
+ * Never renders three technical candidate cards as the default face.
+ */
+export function projectDocumentWorksurface(input: {
+  candidates: readonly DocumentCandidate[];
+  /** Which candidate is active for edit; defaults to primary. */
+  activeCandidateId?: string;
+  orderedAssetIds?: string[];
+}): DocumentWorksurfaceProjection | { kind: 'empty' } {
+  const [primary, ...rest] = input.candidates;
+  if (!primary) return { kind: 'empty' };
+  const active =
+    input.candidates.find((c) => c.candidateId === input.activeCandidateId) ??
+    primary;
+  return {
+    primary,
+    primaryExpanded: true,
+    alternatives: rest,
+    alternativesExpandedDefault: false,
+    activeDocument: {
+      title: active.title,
+      body: active.body,
+      conversionHook: active.conversionHook,
+      topics: active.topics ? [...active.topics] : [],
+      orderedAssetIds: input.orderedAssetIds ? [...input.orderedAssetIds] : [],
+    },
+    activeCandidateId: active.candidateId,
   };
 }
 
@@ -173,7 +448,10 @@ export type FactSourceKind =
   | 'deadline'
   | 'effect_claim'
   | 'credential'
-  | 'customer_case';
+  | 'customer_case'
+  | 'material'
+  | 'identity'
+  | 'rights';
 
 export type FactSourceStatus = 'confirmed' | 'pending' | 'missing';
 
@@ -192,6 +470,9 @@ export const FACT_SOURCE_KIND_LABELS: Record<FactSourceKind, string> = {
   effect_claim: '项目效果',
   credential: '资质',
   customer_case: '顾客案例',
+  material: '素材',
+  identity: '门店身份',
+  rights: '权利摘要',
 };
 
 export function projectFactSources(items: readonly FactSourceItem[]): {
@@ -457,6 +738,8 @@ export type CopyImageTextWorksurfaceFacts = {
   workId: string;
   baseRevisionId: string;
   document: CopyDocumentFields;
+  /** Optional alternative candidates (on-demand, not three technical cards). */
+  alternativeCandidates?: readonly DocumentCandidate[];
   factSources?: readonly FactSourceItem[];
   platformPreviews?: readonly PlatformPreviewVariant[];
   selectedCarrier?: CopyPreviewCarrier;
@@ -467,6 +750,8 @@ export type CopyImageTextWorksurfaceFacts = {
 
 export type CopyImageTextWorksurfaceView = {
   document: CopyDocumentDraft;
+  /** Primary is the editable document; alternatives stay collapsed by default. */
+  documentFace: DocumentWorksurfaceProjection | null;
   factSources: ReturnType<typeof projectFactSources>;
   platformPreview: PlatformPreviewProjection | null;
   adjustPrompt: {
@@ -486,6 +771,7 @@ export type CopyImageTextWorksurfaceView = {
     factSources: true;
     platformPreview: true;
     adjustPrompt: true;
+    alternatives: true;
   };
 };
 
@@ -509,8 +795,25 @@ export function projectCopyImageTextWorksurface(
     formalVariant: safeFormal ?? null,
   });
 
+  const primaryCandidate: DocumentCandidate = {
+    candidateId: 'primary',
+    title: facts.document.title,
+    body: facts.document.body,
+    conversionHook: facts.document.conversionHook,
+    topics: facts.document.topics,
+  };
+  const documentFaceResult = projectDocumentWorksurface({
+    candidates: [primaryCandidate, ...(facts.alternativeCandidates ?? [])],
+    orderedAssetIds: facts.document.orderedAssetIds,
+  });
+  const documentFace =
+    'kind' in documentFaceResult && documentFaceResult.kind === 'empty'
+      ? null
+      : (documentFaceResult as DocumentWorksurfaceProjection);
+
   return {
     document: draft,
+    documentFace,
     factSources,
     platformPreview,
     adjustPrompt: {
@@ -531,6 +834,7 @@ export function projectCopyImageTextWorksurface(
       factSources: true,
       platformPreview: true,
       adjustPrompt: true,
+      alternatives: true,
     },
   };
 }
