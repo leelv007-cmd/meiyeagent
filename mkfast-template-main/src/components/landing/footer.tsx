@@ -21,7 +21,6 @@ import {
   landing_footer_social_douyin,
   landing_footer_social_wechat,
   landing_footer_social_xhs,
-  landing_footer_tagline,
 } from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 
@@ -132,9 +131,6 @@ export function Footer(): ReactNode {
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <p className="text-sm text-muted-foreground">
             {landing_footer_copyright({ year })}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {landing_footer_tagline()}
           </p>
         </div>
       </div>
