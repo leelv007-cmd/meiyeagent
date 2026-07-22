@@ -69,6 +69,17 @@ test('the root typecheck prepares Web generated content before checking every wo
   ]);
 });
 
+test('Biome checks authored Canvas sources while excluding only byte-exact vendor copies', async () => {
+  const rootBiome = JSON.parse(
+    await readFile(join(repositoryRoot, 'biome.json'), 'utf8')
+  );
+
+  assert.deepEqual(rootBiome.files?.includes, [
+    '**',
+    '!apps/canvas/src/vendor/vozeb',
+  ]);
+});
+
 test('the persistence gate uses Node test output before asserting database execution', async () => {
   assert.deepEqual(
     await runGate('run-core-persistence.sh', {
