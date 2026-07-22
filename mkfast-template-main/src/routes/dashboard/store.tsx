@@ -629,7 +629,8 @@ function StoreProfilePage() {
                 </h2>
                 <div>
                   <Label htmlFor="brand-voice">
-                    {dashboard_store_brand_voice_label()} <span aria-hidden="true">*</span>
+                    {dashboard_store_brand_voice_label()}{' '}
+                    <span aria-hidden="true">*</span>
                   </Label>
                   <Textarea
                     id="brand-voice"
@@ -644,10 +645,7 @@ function StoreProfilePage() {
             </div>
             <div className="flex justify-end border-t border-divider pt-4">
               <Button
-                disabled={
-                  pending ||
-                  missingRequiredFields.length > 0
-                }
+                disabled={pending || missingRequiredFields.length > 0}
                 onClick={() => void confirmStore()}
               >
                 <IconShieldCheck />

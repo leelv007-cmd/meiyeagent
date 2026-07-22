@@ -27,10 +27,9 @@ const completeStore: StoreProfileForm = {
 // Found by /qa on 2026-07-22
 // Report: .gstack/qa-reports/qa-report-localhost-2026-07-22.md
 test('requires every Product store fact before confirming a store', () => {
-  assert.deepEqual(
-    missingStoreProfileFields({ ...completeStore, city: '' }),
-    ['city']
-  );
+  assert.deepEqual(missingStoreProfileFields({ ...completeStore, city: '' }), [
+    'city',
+  ]);
   assert.deepEqual(
     missingStoreProfileFields({ ...completeStore, projectPrice: '' }),
     ['projectPrice']
