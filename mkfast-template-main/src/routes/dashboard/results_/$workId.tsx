@@ -42,6 +42,14 @@ import type {
   VideoRegenerationServerQuote,
 } from '@/product/results/video/video-worksurface';
 import { executeResultContentPackageHandEdit } from '@/product/results/result-content-package-hand-edit';
+import {
+  validateResultCenterSearch,
+  type ResultCenterSearch,
+} from '@/product/results/result-center-search';
+import {
+  parseResultReturnState,
+  resultReturnDestination,
+} from '@/product/results/result-return-navigation';
 import { parseResultCenterSearch } from '@/product/results/result-target-wiring';
 import { useResultReturnRestoreSession } from '@/product/results/use-result-return-restore-session';
 import type {
@@ -50,21 +58,13 @@ import type {
   PublicContentPackage,
   ResultAction,
   ResultAdjustCommand,
-  ResultPanel,
   ResultTargetResolveOutcome,
   VideoWorkflowPublicProjection,
 } from '@meiye/contracts';
-import { resultCenterPath, resultPanels } from '@meiye/contracts';
+import { resultCenterPath } from '@meiye/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
-
-type ResultCenterSearch = {
-  contentId?: string;
-  versionId?: string;
-  panel?: ResultPanel;
-  focusKey?: string;
-};
 
 type PendingImageAdjust = {
   baseJobId: string;
@@ -74,31 +74,7 @@ type PendingImageAdjust = {
   scope?: ResultAdjustCommand['scope'];
 };
 
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function optionalPanel(value: unknown): ResultPanel | undefined {
-  return typeof value === 'string' &&
-    (resultPanels as readonly string[]).includes(value)
-    ? (value as ResultPanel)
-    : undefined;
-}
-
-function validateResultCenterSearch(
-  search: Record<string, unknown>
-): ResultCenterSearch {
-  const contentId = optionalString(search.contentId);
-  const versionId = optionalString(search.versionId);
-  const panel = optionalPanel(search.panel);
-  const focusKey = optionalString(search.focusKey);
-  return {
-    ...(contentId ? { contentId } : {}),
-    ...(versionId ? { versionId } : {}),
-    ...(panel ? { panel } : {}),
-    ...(focusKey ? { focusKey } : {}),
-  };
-}
+export type { ResultCenterSearch } from '@/product/results/result-center-search';
 
 export const Route = createFileRoute('/dashboard/results_/$workId')({
   validateSearch: (search: Record<string, unknown>): ResultCenterSearch =>
@@ -110,6 +86,7 @@ function ResultCenterRoutePage() {
   const { workId } = Route.useParams();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  const returnState = parseResultReturnState(search);
   const queryClient = useQueryClient();
   const intentKeys = useRef(new Map<string, string>());
   const [pendingImageAdjust, setPendingImageAdjust] =
@@ -902,11 +879,15 @@ function ResultCenterRoutePage() {
           });
       }}
       onBack={() => {
-        if (window.history.length > 1) {
-          window.history.back();
+        if (returnState?.kind === 'task-inbox') {
+          const destination = resultReturnDestination(returnState);
+          void navigate({
+            to: '/dashboard/tasks',
+            search: destination.search,
+          });
           return;
         }
-        window.location.assign('/dashboard');
+        void navigate({ to: '/dashboard', search: {} });
       }}
       onDriftChoice={(choice) => returnRestore.applyDriftChoice(choice)}
       onCopyAdopt={copyAsset ? adoptCopyCandidate : undefined}

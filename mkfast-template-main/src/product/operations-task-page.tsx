@@ -104,10 +104,11 @@ import type {
   TaskInboxFiltersValue,
   WeeklyBatchAction,
 } from '@/p1/types';
+import type { ResultReturnFocusKey } from '@/product/results/result-return-navigation';
 import { ThinWeeklyReview, WeeklyBatch } from '@/p1/weekly-operations';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 interface RawWeeklyBatch {
@@ -115,11 +116,12 @@ interface RawWeeklyBatch {
   excluded: Array<RawTask & { reason: string }>;
 }
 
-interface TaskPageSearch extends TaskInboxFiltersValue {
+interface TaskPageSearch extends Omit<TaskInboxFiltersValue, 'date'> {
+  date: 'all' | 'week';
   mode: 'inbox' | 'week';
+  restoreScrollY?: number;
+  restoreFocusKey?: ResultReturnFocusKey;
 }
-
-type TaskPageRouteSearch = Omit<TaskPageSearch, 'mode'> & { mode: string };
 
 export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
   const navigate = useNavigate({ from: '/dashboard/tasks' });
@@ -166,6 +168,7 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
   });
   const review = weeklyReviewView(weeklyReviewQuery.data ?? null);
   const inbox = inboxQuery.data;
+  const restoredReturnRef = useRef<string | null>(null);
   const inboxFailure = inboxQuery.isError
     ? friendlyProductError(
         inboxQuery.error,
@@ -179,13 +182,41 @@ export function OperationsTaskPage({ search }: { search: TaskPageSearch }) {
       )
     : undefined;
 
+  useEffect(() => {
+    if (
+      !inbox ||
+      (search.restoreScrollY === undefined && !search.restoreFocusKey)
+    ) {
+      return;
+    }
+    const restoreKey = `${search.restoreScrollY ?? 0}:${search.restoreFocusKey ?? ''}`;
+    if (restoredReturnRef.current === restoreKey) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo(0, search.restoreScrollY ?? 0);
+      if (search.restoreFocusKey === 'mobile-progress-entry') {
+        document
+          .querySelector<HTMLElement>(
+            '[data-return-focus-key="mobile-progress-entry"]'
+          )
+          ?.focus();
+      }
+      restoredReturnRef.current = restoreKey;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [inbox, search.restoreFocusKey, search.restoreScrollY]);
+
   const setMode = (mode: TaskPageSearch['mode']) =>
     navigate({
-      search: (current: TaskPageRouteSearch) => ({ ...current, mode }),
+      search: (current) => ({ ...current, mode }),
     });
   const setFilters = (next: TaskInboxFiltersValue) =>
     navigate({
-      search: (current: TaskPageRouteSearch) => ({ ...current, ...next }),
+      search: (current) => ({
+        ...current,
+        ...next,
+        date: next.date === 'week' ? 'week' : 'all',
+      }),
     });
   const taskAction = (taskId: string, action: ContentTaskAction) => {
     if (action === 'add_asset') {

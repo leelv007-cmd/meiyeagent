@@ -45,9 +45,11 @@ test('result route quotes and confirms adjustment before canonical submit', () =
   assert.doesNotMatch(route, /unitRate\s*:/);
 });
 
-test('result route gives a normal browser return to the originating surface', () => {
-  assert.match(route, /onBack=\{\(\) => \{[\s\S]*?window\.history\.back\(\)/u);
-  assert.match(route, /window\.location\.assign\('\/dashboard'\)/u);
+test('result route consumes a trusted typed return anchor instead of browser history', () => {
+  assert.match(route, /parseResultReturnState\(search\)/u);
+  assert.match(route, /resultReturnDestination\(returnState\)/u);
+  assert.match(route, /to: '\/dashboard\/tasks'/u);
+  assert.doesNotMatch(route, /window\.history\.back\(\)/u);
 });
 
 test('result route sends adopt and export through canonical public commands', () => {

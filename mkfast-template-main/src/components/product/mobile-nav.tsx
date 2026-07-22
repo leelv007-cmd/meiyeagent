@@ -9,21 +9,19 @@ import {
 import { cn } from '@/lib/utils';
 import { operationsQuery } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import type { RawCanonicalHistory } from '@/product/canonical-history-model';
 import {
-  canonicalAsyncTaskSummaries,
-  composedVideoAsyncTaskSummaries,
-} from '@/product/async-task-center-model';
-import { useVideoWorkflowListObserver } from '@/product/creative-job-observer';
+  resultReturnSearch,
+  taskInboxReturnState,
+} from '@/product/results/result-return-navigation';
+import type { CreativeWorkbenchProjection } from '@meiye/contracts';
 import {
   IconBuildingStore,
   IconFileText,
   IconPlayerPlay,
   IconSparkles,
 } from '@tabler/icons-react';
-import { Link, useRouterState } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
 
 import { mobileProgressTarget } from './mobile-progress-target';
 
@@ -36,37 +34,53 @@ function isDashboardPath(pathname: string) {
   return pathname === Routes.Dashboard || pathname === `${Routes.Dashboard}/`;
 }
 
+function progressReturnSearch(input: {
+  pathname: string;
+  search: Record<string, unknown>;
+  scrollY: number;
+}) {
+  if (input.pathname === Routes.TaskInbox) {
+    return resultReturnSearch(
+      taskInboxReturnState({
+        search: input.search,
+        scrollY: input.scrollY,
+        focusKey: 'mobile-progress-entry',
+      })
+    );
+  }
+  return isDashboardPath(input.pathname)
+    ? resultReturnSearch({ kind: 'dashboard' })
+    : {};
+}
+
 export function ProductMobileNav() {
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
+  const location = useRouterState({
+    select: (state) => state.location,
   });
-  const historyQuery = useQuery({
-    queryKey: p1QueryKeys.request('operations', 'canonical_history'),
+  const navigate = useNavigate();
+  const workbenchQuery = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'creative_workbench'),
     queryFn: ({ signal }) =>
-      operationsQuery<RawCanonicalHistory>('canonical_history', {}, signal),
+      operationsQuery<CreativeWorkbenchProjection>(
+        'creative_workbench',
+        {},
+        signal
+      ),
     refetchOnWindowFocus: true,
   });
-  const videoWorkflowQuery = useVideoWorkflowListObserver();
-  const tasks = useMemo(
-    () =>
-      [
-        ...(historyQuery.data
-          ? canonicalAsyncTaskSummaries(historyQuery.data)
-          : []),
-        ...(videoWorkflowQuery.data
-          ? composedVideoAsyncTaskSummaries(videoWorkflowQuery.data)
-          : []),
-      ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
-    [historyQuery.data, videoWorkflowQuery.data]
-  );
 
-  const onDashboard = isDashboardPath(pathname);
+  const onDashboard = isDashboardPath(location.pathname);
   const createActive = onDashboard;
   const progressActive =
-    pathname.startsWith('/dashboard/results/') ||
-    pathname === Routes.TaskInbox ||
-    pathname.startsWith(`${Routes.TaskInbox}/`);
-  const progress = mobileProgressTarget(tasks);
+    location.pathname.startsWith('/dashboard/results/') ||
+    location.pathname === Routes.TaskInbox ||
+    location.pathname.startsWith(`${Routes.TaskInbox}/`);
+  const progress = mobileProgressTarget(workbenchQuery.data);
+  const stableProgressSearch = progressReturnSearch({
+    pathname: location.pathname,
+    search: location.search,
+    scrollY: typeof window === 'undefined' ? 0 : window.scrollY,
+  });
 
   return (
     <nav
@@ -81,12 +95,48 @@ export function ProductMobileNav() {
         <IconSparkles className="size-5" aria-hidden="true" />
         <span className="truncate">{product_navigation_workbench()}</span>
       </Link>
-      {progress.kind === 'result' ? (
+      {progress.kind === 'loading' ? (
+        <button
+          aria-busy={workbenchQuery.isPending}
+          aria-disabled="true"
+          className={itemClassName}
+          data-testid="mobile-progress-entry"
+          disabled
+          type="button"
+        >
+          <IconPlayerPlay className="size-5" aria-hidden="true" />
+          <span className="truncate">{mobile_action_stage_progress()}</span>
+        </button>
+      ) : progress.kind === 'result' ? (
         <Link
           to="/dashboard/results/$workId"
           params={{ workId: progress.workId }}
+          search={stableProgressSearch}
           className={cn(itemClassName, progressActive && activeClassName)}
           data-testid="mobile-progress-entry"
+          data-return-focus-key="mobile-progress-entry"
+          onClick={(event) => {
+            if (
+              event.defaultPrevented ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.altKey ||
+              event.ctrlKey ||
+              event.shiftKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            void navigate({
+              to: '/dashboard/results/$workId',
+              params: { workId: progress.workId },
+              search: progressReturnSearch({
+                pathname: location.pathname,
+                search: location.search,
+                scrollY: window.scrollY,
+              }),
+            });
+          }}
         >
           <IconPlayerPlay className="size-5" aria-hidden="true" />
           <span className="truncate">{mobile_action_stage_progress()}</span>
@@ -104,6 +154,7 @@ export function ProductMobileNav() {
           }}
           className={cn(itemClassName, progressActive && activeClassName)}
           data-testid="mobile-progress-entry"
+          data-return-focus-key="mobile-progress-entry"
         >
           <IconPlayerPlay className="size-5" aria-hidden="true" />
           <span className="truncate">{mobile_action_stage_progress()}</span>
