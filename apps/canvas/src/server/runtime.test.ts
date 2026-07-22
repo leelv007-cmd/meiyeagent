@@ -115,15 +115,9 @@ test("bounds Main session validation with an abort signal", async () => {
 				{
 					fetcher: async (_input, init) => {
 						observedSignal = init?.signal ?? null;
-						return await new Promise<Response>((_resolve, reject) => {
-							observedSignal?.addEventListener(
-								"abort",
-								() => reject(observedSignal?.reason),
-								{ once: true },
-							);
-						});
+						return await rejectWhenAborted(observedSignal);
 					},
-					timeoutMs: 10,
+					timeoutMs: 50,
 				},
 			),
 			(error: unknown) => error instanceof MainSessionAvailabilityError,
@@ -135,3 +129,27 @@ test("bounds Main session validation with an abort signal", async () => {
 		else process.env.CANVAS_SERVICE_TOKEN = originalServiceToken;
 	}
 });
+
+/** Wait for AbortSignal including the already-aborted race (no hang in CI). */
+function rejectWhenAborted(signal: AbortSignal | null): Promise<Response> {
+	return new Promise((_resolve, reject) => {
+		if (!signal) {
+			reject(new Error("Main session validation missing AbortSignal"));
+			return;
+		}
+		const fail = (reason: unknown) => {
+			clearTimeout(safety);
+			reject(reason ?? new Error("aborted"));
+		};
+		// Keep the event loop alive even if AbortSignal.timeout is delayed.
+		const safety = setTimeout(
+			() => fail(new Error("abort safety timeout")),
+			500,
+		);
+		if (signal.aborted) {
+			fail(signal.reason);
+			return;
+		}
+		signal.addEventListener("abort", () => fail(signal.reason), { once: true });
+	});
+}

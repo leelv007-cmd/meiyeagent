@@ -66,7 +66,14 @@ test('shows the most recent provider credential rotation time', () => {
     </QueryClientProvider>
   );
 
-  assert.match(html, /最近轮换时间: 7\/15\/2026, 6:00:00 PM/);
+  // Match the runtime locale/timezone used by Date#toLocaleString (CI is UTC).
+  const expectedRotation = `最近轮换时间: ${new Date(
+    '2026-07-15T10:00:00.000Z'
+  ).toLocaleString()}`;
+  assert.match(
+    html,
+    new RegExp(expectedRotation.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  );
   assert.doesNotMatch(html, /2026-07-15T10:00:00.000Z/);
 });
 
