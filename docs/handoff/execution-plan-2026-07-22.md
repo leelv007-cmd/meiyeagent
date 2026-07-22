@@ -127,6 +127,15 @@ git -C <主仓> worktree remove /Users/bin/orca/workspaces/美业内容2/<name>
 
 ---
 
-## 7. 待办（依赖机器可读化）
+## 7. 依赖已机器可读（GitHub 原生 `Blocked by`）
 
-当前 40 张 issue **零 milestone、零依赖 label**，依赖全靠 spec 文字。建议把本文件第 3 节的「开启条件」以 GitHub 原生 **`Blocked by`** 回填到各 issue（Pro Studio spec 已声明「`Blocked by` 为执行权威」）。回填清单见第 3 节。**此为改远端动作，执行前须确认。**
+2026-07-22 全部依赖已以 GitHub 原生 `Blocked by` 关系落到远端（orca 发布这批 issue 时已建**传递闭包式**依赖，本次核对补齐 8 条缺失直接边并全量校验）。Agent 直接查：
+
+```bash
+gh issue view <n>   # 底部 "Blocked by" 区列出前置；全部 closed 才 unblock
+gh api repos/leelv007-cmd/meiyeweb-agent/issues/<n>/dependencies/blocked_by --jq '[.[].number]'
+```
+
+**根节点（`blocked_by=[]` = 立即可开）**：#131 #134 #135 #136 #137 #142（P0 六起点）· #163（Canvas K1）· #119（真机门）——即第 3 节阶段① 的全部 worktree 起点。
+
+依赖图为**传递闭包式**（每票列出全部直接+间接前置，如 #147 列 9 个、#161 列 14 个）。Agent 只需判断某票 `Blocked by` 是否**全部 closed** 即可决定开工，无需递归推导。跨群关键边：#152←#139、#153←#140（工作面←对应媒介 Harness）；#168←#141+#142、#169←#143（Canvas←P0 冻结点）；#161←#147（P1 总验收←P0 RC）。
