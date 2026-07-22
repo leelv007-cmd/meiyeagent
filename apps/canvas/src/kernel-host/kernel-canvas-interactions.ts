@@ -1,6 +1,11 @@
 import type { KernelNode, KernelSessionGraph } from "./graph-bridge";
 
 export type CanvasPoint = { x: number; y: number };
+export type CanvasResizeCorner =
+	| "bottom-left"
+	| "bottom-right"
+	| "top-left"
+	| "top-right";
 
 export type CanvasSessionHistory<T> = {
 	canRedo: boolean;
@@ -56,10 +61,38 @@ export function sessionHistoryCommand(event: {
 	metaKey: boolean;
 	shiftKey: boolean;
 }) {
-	if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") {
-		return null;
+	const command = canvasKeyboardCommand(event);
+	return command === "undo" || command === "redo" ? command : null;
+}
+
+export type CanvasKeyboardCommand =
+	| "copy"
+	| "delete"
+	| "escape"
+	| "paste"
+	| "redo"
+	| "select-all"
+	| "undo";
+
+export function canvasKeyboardCommand(event: {
+	ctrlKey: boolean;
+	key: string;
+	metaKey: boolean;
+	shiftKey: boolean;
+}): CanvasKeyboardCommand | null {
+	const key = event.key.toLowerCase();
+	const hasCommandModifier = event.metaKey || event.ctrlKey;
+	if (hasCommandModifier && key === "z") {
+		return event.shiftKey ? "redo" : "undo";
 	}
-	return event.shiftKey ? "redo" : "undo";
+	if (hasCommandModifier && key === "a") return "select-all";
+	if (hasCommandModifier && key === "c") return "copy";
+	if (hasCommandModifier && key === "v") return "paste";
+	if (!hasCommandModifier && (key === "delete" || key === "backspace")) {
+		return "delete";
+	}
+	if (!hasCommandModifier && key === "escape") return "escape";
+	return null;
 }
 
 export function hasSameCanvasContent(
@@ -147,6 +180,107 @@ export function moveNodesFromOrigin(
 			? { ...node, x: origin.x + delta.x, y: origin.y + delta.y }
 			: node;
 	});
+}
+
+export function normalizeConnectionDirection(
+	nodes: KernelNode[],
+	firstId: string,
+	secondId: string,
+): { source: string; target: string } | null {
+	if (firstId === secondId) return null;
+	const first = nodes.find((node) => node.id === firstId);
+	const second = nodes.find((node) => node.id === secondId);
+	if (!first || !second) return null;
+	const firstCenter = first.x + first.width / 2;
+	const secondCenter = second.x + second.width / 2;
+	return firstCenter <= secondCenter
+		? { source: first.id, target: second.id }
+		: { source: second.id, target: first.id };
+}
+
+export function copySelectionAtPoint(
+	graph: KernelSessionGraph,
+	selectedNodeIds: string[],
+	anchor: CanvasPoint,
+	idSuffix: string,
+): { graph: KernelSessionGraph; selectedNodeIds: string[] } {
+	const selected = new Set(selectedNodeIds);
+	const originals = graph.nodes.filter((node) => selected.has(node.id));
+	if (originals.length === 0) return { graph, selectedNodeIds: [] };
+	const left = Math.min(...originals.map((node) => node.x));
+	const right = Math.max(...originals.map((node) => node.x + node.width));
+	const top = Math.min(...originals.map((node) => node.y));
+	const bottom = Math.max(...originals.map((node) => node.y + node.height));
+	const offset = {
+		x: anchor.x - (left + right) / 2,
+		y: anchor.y - (top + bottom) / 2,
+	};
+	const idMap = new Map(
+		originals.map((node) => [node.id, `${node.id}-${idSuffix}`]),
+	);
+	const copiedNodes = originals.map((node) => ({
+		...node,
+		data: { ...node.data },
+		id: idMap.get(node.id) ?? node.id,
+		x: node.x + offset.x,
+		y: node.y + offset.y,
+	}));
+	const copiedEdges = graph.edges.flatMap((edge) => {
+		const source = idMap.get(edge.source);
+		const target = idMap.get(edge.target);
+		return source && target
+			? [{ ...edge, id: `${edge.id}-${idSuffix}`, source, target }]
+			: [];
+	});
+	return {
+		graph: {
+			...graph,
+			edges: [...graph.edges, ...copiedEdges],
+			nodes: [...graph.nodes, ...copiedNodes],
+		},
+		selectedNodeIds: copiedNodes.map((node) => node.id),
+	};
+}
+
+export function resizeNodeFromCorner(
+	node: KernelNode,
+	corner: CanvasResizeCorner,
+	delta: CanvasPoint,
+	keepRatio: boolean,
+): KernelNode {
+	const minWidth = 220;
+	const minHeight = 160;
+	const fromLeft = corner.includes("left");
+	const fromTop = corner.includes("top");
+	const right = node.x + node.width;
+	const bottom = node.y + node.height;
+	let width = Math.max(minWidth, node.width + (fromLeft ? -delta.x : delta.x));
+	let height = Math.max(
+		minHeight,
+		node.height + (fromTop ? -delta.y : delta.y),
+	);
+
+	if (keepRatio) {
+		const ratio = node.width / Math.max(1, node.height);
+		if (Math.abs(delta.x) >= Math.abs(delta.y)) height = width / ratio;
+		else width = height * ratio;
+		if (height < minHeight) {
+			height = minHeight;
+			width = height * ratio;
+		}
+		if (width < minWidth) {
+			width = minWidth;
+			height = width / ratio;
+		}
+	}
+
+	return {
+		...node,
+		height,
+		width,
+		x: fromLeft ? right - width : node.x,
+		y: fromTop ? bottom - height : node.y,
+	};
 }
 
 export function updateTextNode(

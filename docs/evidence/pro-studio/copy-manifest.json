@@ -398,6 +398,36 @@
           "decision": "exclude"
         }
       ]
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-connections.tsx",
+      "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
+      "target": "apps/canvas/src/kernel-host/ported/canvas-connections.tsx",
+      "sourceSha256": "9d6dd28cacef0a7efc9611b04d421300f8d463052c38a655693bf1fde2eda30a",
+      "targetSha256": "9e0b6dcadfc21eccbf81fb51bad8a5b6caf53476dba0567b7b30d1f4ebe746fc",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-k2-connections-port-addendum-2026-07-22.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-k2-connections-port-addendum-2026-07-22.md",
+      "thirdPartyNotes": "React and Zustand remain separately declared npm dependencies; no third-party package bytes are copied into the derivative.",
+      "reviewer": "product_owner",
+      "adaptationBoundary": "Preserves the upstream SVG connection geometry and selection/context-menu callbacks while adding an explicit React runtime import for the Canvas host. Provider, storage, project, and generation behavior remain excluded.",
+      "adapterReplacementMatrix": [
+        {
+          "upstream": "implicit classic React JSX runtime",
+          "host": "explicit React runtime import",
+          "decision": "replace"
+        },
+        {
+          "upstream": "useThemeStore canvas colors",
+          "host": "Canvas bootstrap-owned theme adapter",
+          "decision": "replace"
+        },
+        {
+          "upstream": "connection persistence",
+          "host": "Kernel graph onChange to server draft via BackendPort",
+          "decision": "replace"
+        }
+      ]
     }
   ],
   "status": "authorized_with_exact_copies",
@@ -425,7 +455,8 @@
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-connections.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/ported/canvas-connections.tsx"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-context-menu.tsx",
@@ -487,8 +518,7 @@
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx",
-      "classification": "port-required",
-      "replacementTarget": "apps/canvas/src/kernel-host/generation-adapter.ts"
+      "classification": "mount-exact"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-size-picker.tsx",
@@ -579,6 +609,26 @@
     }
   ],
   "productionWhitelist": [
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-node",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx",
+      "importRef": "./canvas-resource-mention-textarea",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-node-adapter.ts",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/constants",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/constants.ts"
+    },
+    {
+      "consumer": "apps/canvas/lib/image-reference-prompt.ts",
+      "importRef": "../src/vendor/vozeb/lib/image-reference-prompt",
+      "target": "apps/canvas/src/vendor/vozeb/lib/image-reference-prompt.ts"
+    },
     {
       "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
       "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas",

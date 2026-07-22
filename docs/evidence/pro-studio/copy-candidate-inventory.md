@@ -37,26 +37,37 @@ truth.
 
 ### Current production whitelist
 
-Only three direct copies have a real host import today. The conformance gate
+Seven direct copies have a real production import after K2's first mounted
+node/connection slice. The conformance gate
 checks each listed consumer/import literal, so a whitelist row cannot become a
 fake reference.
 
 | Exact target | Host consumer |
 | --- | --- |
+| `components/canvas-node.tsx` | `src/kernel-host/kernel-canvas-surface.tsx` |
+| `components/canvas-resource-mention-textarea.tsx` | transitive from approved `canvas-node.tsx`; references remain host-supplied |
+| `constants.ts` | `src/kernel-host/kernel-node-adapter.ts` |
+| `lib/image-reference-prompt.ts` | `apps/canvas/lib/image-reference-prompt.ts` |
 | `components/vozeb-canvas.tsx` | `src/kernel-host/kernel-canvas-surface.tsx` |
 | `utils/canvas-image-data.ts` | `src/kernel-host/retouch-adapter.ts` |
 | `lib/canvas-theme.ts` | `apps/canvas/lib/canvas-theme.ts` |
 
 ## A2/A3 derivative port
 
-`src/kernel-host/ported/canvas-session-store.ts` is the sole current derivative
-port. Its source and target hashes, pin, A2/A3 addenda, reviewer,
+`src/kernel-host/ported/canvas-session-store.ts` and
+`src/kernel-host/ported/canvas-connections.tsx` are the current derivative
+ports. Their source and target hashes, pin, A2/A3 addenda, reviewer,
 third-party notes, adaptation boundary, and adapter-replacement matrix are
-each mandatory `ports[]` fields. The port owns only ephemeral selection,
+each mandatory `ports[]` fields. The session port owns only ephemeral selection,
 panel, toolbar, and viewport state; `CanvasShell` consumes it. The persistent
 graph remains the project/revision fact and `fromKernelGraph()` deliberately
 drops viewport/session state before `ProjectPersistenceAdapter` calls the
 BackendPort.
+
+The connection port preserves the approved SVG geometry and callbacks while
+adding the explicit React runtime required by the host. Connection edits still
+flow through the kernel graph to the server draft; the port owns no project,
+provider, generation, or local persistence behavior.
 
 The conformance test covers both directions: an unregistered file under
 `kernel-host/ported/`, a target hash drift, an outside target, and duplicated
@@ -137,6 +148,7 @@ Consumable K1 contracts and tests:
 - `backend-port-vnext.ts` and `backend-port-vnext.test.ts`
 - `generation-batch-contract.ts` and its test
 - `ported/canvas-session-store.ts` and its host-only test
+- `ported/canvas-connections.tsx` and the K2 kernel surface tests
 - `tsconfig.production.json` and `CanvasRuntimeProviders`
 
 No K1 code changes `apps/core/src/main.ts`.

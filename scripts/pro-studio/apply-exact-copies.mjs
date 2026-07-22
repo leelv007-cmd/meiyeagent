@@ -90,7 +90,7 @@ export const PRODUCTION_INVENTORY = [
   { source: 'web/src/app/(user)/canvas/components/canvas-agent-chat-ui.tsx', classification: 'out-of-scope' },
   { source: 'web/src/app/(user)/canvas/components/canvas-agent-panel-motion.ts', classification: 'out-of-scope' },
   { source: 'web/src/app/(user)/canvas/components/canvas-config-composer.tsx', classification: 'mount-exact' },
-  { source: 'web/src/app/(user)/canvas/components/canvas-connections.tsx', classification: 'mount-exact' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-connections.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/kernel-host/ported/canvas-connections.tsx' },
   { source: 'web/src/app/(user)/canvas/components/canvas-context-menu.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/client/runtime-panel.tsx' },
@@ -105,7 +105,7 @@ export const PRODUCTION_INVENTORY = [
   { source: 'web/src/app/(user)/canvas/components/canvas-node.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/canvas-project-card.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/canvas-prompt-library.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/client/runtime-panel.tsx' },
-  { source: 'web/src/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx', classification: 'port-required', replacementTarget: 'apps/canvas/src/kernel-host/generation-adapter.ts' },
+  { source: 'web/src/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/canvas-size-picker.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/canvas-toolbar.tsx', classification: 'mount-exact' },
   { source: 'web/src/app/(user)/canvas/components/canvas-zoom-controls.tsx', classification: 'mount-exact' },
@@ -130,6 +130,26 @@ export const PRODUCTION_INVENTORY = [
 ];
 
 export const PRODUCTION_WHITELIST = [
+  {
+    consumer: 'apps/canvas/src/kernel-host/kernel-canvas-surface.tsx',
+    importRef: '@/src/vendor/vozeb/app/(user)/canvas/components/canvas-node',
+    target: 'apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx',
+  },
+  {
+    consumer: 'apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx',
+    importRef: './canvas-resource-mention-textarea',
+    target: 'apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx',
+  },
+  {
+    consumer: 'apps/canvas/src/kernel-host/kernel-node-adapter.ts',
+    importRef: '@/src/vendor/vozeb/app/(user)/canvas/constants',
+    target: 'apps/canvas/src/vendor/vozeb/app/(user)/canvas/constants.ts',
+  },
+  {
+    consumer: 'apps/canvas/lib/image-reference-prompt.ts',
+    importRef: '../src/vendor/vozeb/lib/image-reference-prompt',
+    target: 'apps/canvas/src/vendor/vozeb/lib/image-reference-prompt.ts',
+  },
   {
     consumer: 'apps/canvas/src/kernel-host/kernel-canvas-surface.tsx',
     importRef: '@/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas',

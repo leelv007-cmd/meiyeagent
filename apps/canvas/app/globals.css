@@ -575,28 +575,22 @@ button {
 	position: absolute;
 	z-index: 2;
 	box-sizing: border-box;
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	padding: 10px;
+	display: block;
+	padding: 0;
 	margin: 0;
 	min-width: 0;
-	border: 1px solid rgba(255, 255, 255, 0.12);
-	border-radius: 12px;
-	background: rgba(28, 24, 20, 0.96);
-	color: #f0ede7;
+	border: 0;
+	background: transparent;
 	text-align: left;
 	cursor: grab;
-	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 .kernel-node.is-selected {
-	border-color: #efb66c;
-	box-shadow: 0 0 0 1px rgba(239, 182, 108, 0.5);
+	z-index: 50;
 }
 
 .kernel-node.is-adopted {
-	border-color: rgba(244, 114, 182, 0.8);
+	z-index: 51;
 }
 
 .kernel-node header {
@@ -691,8 +685,5 @@ button {
 }
 
 :root[data-canvas-theme="light"] .kernel-node {
-	border-color: #d9e7ee;
-	background: rgba(255, 255, 255, 0.97);
-	color: #1e293b;
-	box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+	background: transparent;
 }

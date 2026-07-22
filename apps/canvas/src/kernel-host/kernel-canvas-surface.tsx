@@ -9,12 +9,9 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { CanvasNode } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-node";
 import { VozebCanvas } from "@/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas";
-import type {
-	KernelEdge,
-	KernelNode,
-	KernelSessionGraph,
-} from "./graph-bridge";
+import type { KernelEdge, KernelSessionGraph } from "./graph-bridge";
 import {
 	type CanvasPoint,
 	canStartNodeDrag,
@@ -31,7 +28,9 @@ import {
 	undoSessionHistory,
 	updateTextNode,
 } from "./kernel-canvas-interactions";
-import { KernelNodeMedia } from "./kernel-node-media";
+import { toVozebNode } from "./kernel-node-adapter";
+import { deliveryUrl } from "./media-adapter";
+import { PortedConnectionPath } from "./ported/canvas-connections";
 
 export type KernelCanvasSurfaceProps = {
 	adoptedNodeIds?: string[];
@@ -58,7 +57,6 @@ export function KernelCanvasSurface({
 	selectedNodeIds = [],
 }: KernelCanvasSurfaceProps) {
 	const surfaceRef = useRef<HTMLDivElement>(null);
-	const textEditorRef = useRef<HTMLTextAreaElement>(null);
 	const historyRef = useRef(createSessionHistory(graph));
 	const lastEmittedGraphRef = useRef<KernelSessionGraph | null>(null);
 	const dragHistoryRecordedRef = useRef(false);
@@ -66,6 +64,9 @@ export function KernelCanvasSurface({
 		canRedo: false,
 		canUndo: false,
 	});
+	const [selectedConnectionId, setSelectedConnectionId] = useState<
+		string | null
+	>(null);
 	const [dragging, setDragging] = useState<{
 		origins: Record<string, CanvasPoint>;
 		startClient: CanvasPoint;
@@ -74,10 +75,6 @@ export function KernelCanvasSurface({
 		current: CanvasPoint;
 		existingIds: string[];
 		start: CanvasPoint;
-	} | null>(null);
-	const [textEditor, setTextEditor] = useState<{
-		id: string;
-		value: string;
 	} | null>(null);
 	const adopted = useMemo(() => new Set(adoptedNodeIds), [adoptedNodeIds]);
 	const selected = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
@@ -159,12 +156,6 @@ export function KernelCanvasSurface({
 		return () => window.removeEventListener("keydown", handleHistoryKey);
 	}, [redo, undo]);
 
-	useEffect(() => {
-		if (!textEditor) return;
-		textEditorRef.current?.focus();
-		textEditorRef.current?.select();
-	}, [textEditor]);
-
 	const updateViewport = useCallback(
 		(viewport: KernelSessionGraph["viewport"]) => {
 			if (onViewportChange) onViewportChange(viewport);
@@ -230,7 +221,6 @@ export function KernelCanvasSurface({
 	const commitTextEdit = (nodeId: string, text: string) => {
 		const nodes = updateTextNode(graph.nodes, nodeId, text);
 		if (nodes !== graph.nodes) emitGraph({ ...graph, nodes });
-		setTextEditor(null);
 	};
 	const selectedImageId =
 		selectedNodeIds.length === 1 &&
@@ -326,23 +316,30 @@ export function KernelCanvasSurface({
 					<svg className="kernel-edges" aria-hidden>
 						<title>节点连线</title>
 						{graph.edges.map((edge) => {
-							const from = graph.nodes.find((n) => n.id === edge.source);
-							const to = graph.nodes.find((n) => n.id === edge.target);
+							const from = graph.nodes.find((node) => node.id === edge.source);
+							const to = graph.nodes.find((node) => node.id === edge.target);
 							if (!from || !to) return null;
-							const x1 = from.x + from.width;
-							const y1 = from.y + from.height / 2;
-							const x2 = to.x;
-							const y2 = to.y + to.height / 2;
 							return (
-								<path
+								<g
 									key={edge.id}
 									data-edge-source={edge.source}
 									data-edge-target={edge.target}
-									d={`M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`}
-									fill="none"
-									stroke="rgba(244,114,182,.7)"
-									strokeWidth={2}
-								/>
+								>
+									<PortedConnectionPath
+										active={selectedConnectionId === edge.id}
+										connection={{
+											fromNodeId: edge.source,
+											id: edge.id,
+											toNodeId: edge.target,
+										}}
+										from={toVozebNode(from, deliveryUrl)}
+										onSelect={() => {
+											setSelectedConnectionId(edge.id);
+											onSelectNodes?.([]);
+										}}
+										to={toVozebNode(to, deliveryUrl)}
+									/>
+								</g>
 							);
 						})}
 					</svg>
@@ -359,111 +356,122 @@ export function KernelCanvasSurface({
 								}}
 							/>
 						) : null}
-						{graph.nodes.map((node) => (
-							<fieldset
-								key={node.id}
-								aria-label={`${node.type} 节点`}
-								tabIndex={0}
-								className={[
-									"kernel-node",
-									selected.has(node.id) ? "is-selected" : "",
-									adopted.has(node.id) ? "is-adopted" : "",
-								]
-									.filter(Boolean)
-									.join(" ")}
-								data-node-text-editable={
-									typeof node.data.text === "string" ? "true" : undefined
-								}
-								data-node-id={node.id}
-								style={{
-									height: node.height,
-									left: node.x,
-									top: node.y,
-									width: node.width,
-								}}
-								onClick={(event) => {
-									event.stopPropagation();
-									const target =
-										event.target instanceof Element ? event.target : null;
-									if (target?.closest("[data-canvas-media-controls]")) return;
-									const multi =
-										event.metaKey || event.ctrlKey || event.shiftKey;
-									if (multi) {
-										const next = selected.has(node.id)
-											? selectedNodeIds.filter((id) => id !== node.id)
-											: [...selectedNodeIds, node.id];
-										onSelectNodes?.(next);
-									} else {
-										onSelectNodes?.([node.id]);
+						{graph.nodes.map((node) => {
+							const richNode = toVozebNode(node, deliveryUrl);
+							const related = graph.edges.some(
+								(edge) =>
+									(selected.has(edge.source) && edge.target === node.id) ||
+									(selected.has(edge.target) && edge.source === node.id),
+							);
+							return (
+								<fieldset
+									key={node.id}
+									aria-label={`${richNode.title}节点`}
+									tabIndex={0}
+									className={[
+										"kernel-node",
+										selected.has(node.id) ? "is-selected" : "",
+										adopted.has(node.id) ? "is-adopted" : "",
+									]
+										.filter(Boolean)
+										.join(" ")}
+									data-node-text-editable={
+										typeof node.data.text === "string" ? "true" : undefined
 									}
-								}}
-								onKeyDown={(event) => {
-									if (event.target !== event.currentTarget) return;
-									if (event.key !== "Enter" && event.key !== " ") return;
-									event.preventDefault();
-									onSelectNodes?.([node.id]);
-								}}
-								onDoubleClick={(event) => {
-									if (typeof node.data.text !== "string") return;
-									event.stopPropagation();
-									setTextEditor({ id: node.id, value: node.data.text });
-								}}
-								onPointerDown={(event) => {
-									if (!canStartNodeDrag(event.button)) return;
-									event.stopPropagation();
-									const target =
-										event.target instanceof Element ? event.target : null;
-									if (target?.closest("[data-canvas-media-controls]")) return;
-									const pointerSelection = nodePointerSelection(
-										selectedNodeIds,
-										node.id,
-										event.metaKey || event.ctrlKey || event.shiftKey,
-									);
-									if (pointerSelection.selectionOnPointerDown) {
-										onSelectNodes?.(pointerSelection.selectionOnPointerDown);
-									}
-									dragHistoryRecordedRef.current = false;
-									setDragging({
-										origins: captureNodePositions(
-											graph.nodes,
-											pointerSelection.dragIds,
-										),
-										startClient: { x: event.clientX, y: event.clientY },
-									});
-								}}
-							>
-								<header>
-									<strong>{node.type}</strong>
-									{adopted.has(node.id) ? <em>已采用</em> : null}
-								</header>
-								{textEditor?.id === node.id ? (
-									<textarea
-										aria-label="编辑文本节点"
-										data-node-text-editor={node.id}
-										ref={textEditorRef}
-										value={textEditor.value}
-										onBlur={() => commitTextEdit(node.id, textEditor.value)}
-										onChange={(event) =>
-											setTextEditor({ id: node.id, value: event.target.value })
+									data-node-id={node.id}
+									style={{
+										height: node.height,
+										left: node.x,
+										top: node.y,
+										width: node.width,
+									}}
+								>
+									<CanvasNode
+										data={{ ...richNode, position: { x: 0, y: 0 } }}
+										isConnecting={false}
+										isConnectionTarget={false}
+										isFocusRelated={related}
+										isRelated={related}
+										isSelected={selected.has(node.id)}
+										mentionReferences={[]}
+										onConnectStart={() => undefined}
+										onContentChange={(nodeId, content) =>
+											commitTextEdit(nodeId, content)
 										}
-										onClick={(event) => event.stopPropagation()}
-										onDoubleClick={(event) => event.stopPropagation()}
-										onKeyDown={(event) => {
+										onContextMenu={() => undefined}
+										onGenerateImage={() => onSelectNodes?.([node.id])}
+										onHoverEnd={() => undefined}
+										onHoverStart={() => undefined}
+										onMouseDown={(event) => {
+											if (!canStartNodeDrag(event.button)) return;
 											event.stopPropagation();
-											if (event.key === "Escape") {
-												setTextEditor(null);
-											} else if (event.key === "Enter" && !event.shiftKey) {
-												event.preventDefault();
-												event.currentTarget.blur();
+											const pointerSelection = nodePointerSelection(
+												selectedNodeIds,
+												node.id,
+												event.metaKey || event.ctrlKey || event.shiftKey,
+											);
+											if (pointerSelection.selectionOnPointerDown) {
+												onSelectNodes?.(
+													pointerSelection.selectionOnPointerDown,
+												);
 											}
+											dragHistoryRecordedRef.current = false;
+											setDragging({
+												origins: captureNodePositions(
+													graph.nodes,
+													pointerSelection.dragIds,
+												),
+												startClient: { x: event.clientX, y: event.clientY },
+											});
 										}}
-										onPointerDown={(event) => event.stopPropagation()}
+										onResize={(_nodeId, width, height, position) => {
+											emitGraph({
+												...graph,
+												nodes: graph.nodes.map((candidate) =>
+													candidate.id === node.id
+														? {
+																...candidate,
+																height,
+																width,
+																x: node.x + (position?.x ?? 0),
+																y: node.y + (position?.y ?? 0),
+															}
+														: candidate,
+												),
+											});
+										}}
+										onRetry={() =>
+											emitGraph({
+												...graph,
+												nodes: graph.nodes.map((candidate) =>
+													candidate.id === node.id
+														? {
+																...candidate,
+																data: { ...candidate.data, status: "idle" },
+															}
+														: candidate,
+												),
+											})
+										}
+										onViewImage={() => onSelectNodes?.([node.id])}
+										renderNodeContent={(candidate) => (
+											<div className="kernel-config-node">
+												<strong>生成配置</strong>
+												<span>
+													{candidate.metadata?.prompt || "选择节点后配置生成"}
+												</span>
+											</div>
+										)}
+										scale={graph.viewport.scale}
+										showImageInfo={true}
+										showPanel={false}
 									/>
-								) : (
-									<NodeBody node={node} />
-								)}
-							</fieldset>
-						))}
+									{adopted.has(node.id) ? (
+										<em className="kernel-adopted-badge">已采用</em>
+									) : null}
+								</fieldset>
+							);
+						})}
 					</div>
 				</VozebCanvas>
 				{graph.nodes.length === 0 ? (
@@ -475,35 +483,4 @@ export function KernelCanvasSurface({
 			</div>
 		</div>
 	);
-}
-
-function NodeBody({ node }: { node: KernelNode }) {
-	if (
-		(node.type === "image" || node.type === "video" || node.type === "audio") &&
-		typeof node.data.assetId === "string"
-	) {
-		if (node.type === "image") {
-			return <KernelNodeMedia assetId={node.data.assetId} type="image" />;
-		}
-		return (
-			<div data-canvas-media-controls="true">
-				<KernelNodeMedia assetId={node.data.assetId} type={node.type} />
-			</div>
-		);
-	}
-	if (typeof node.data.text === "string") {
-		return <p>{node.data.text}</p>;
-	}
-	if (typeof node.data.prompt === "string") {
-		return <p className="muted">{node.data.prompt}</p>;
-	}
-	if (typeof node.data.jobId === "string") {
-		return (
-			<p className="muted">
-				job {String(node.data.jobId).slice(0, 8)} ·{" "}
-				{String(node.data.status ?? "")}
-			</p>
-		);
-	}
-	return <p className="muted">{node.id.slice(0, 8)}</p>;
 }
