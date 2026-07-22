@@ -66,6 +66,7 @@ import {
   projectDeliveryPanel,
   type DeliveryPanelFacts,
 } from './delivery-panel-model';
+import { formatMerchantSupportReference } from './merchant-support-reference';
 
 export type ResultCenterPageProps = {
   workId: string;
@@ -372,6 +373,9 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
     (props.supportedActionIds?.includes(action.id) ?? true);
 
   if (view.kind === 'error') {
+    const supportReference = formatMerchantSupportReference(
+      props.workId || view.requested.workId
+    );
     return (
       <DashboardLayout
         breadcrumbs={[
@@ -388,6 +392,12 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
           actionLabel={props.onBack ? '返回' : undefined}
           onAction={props.onBack}
         />
+        <p
+          className="mt-3 text-xs text-muted-foreground"
+          data-testid="result-support-reference"
+        >
+          联系支持时请提供编号 {supportReference}
+        </p>
       </DashboardLayout>
     );
   }
@@ -435,9 +445,13 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
           />
         </div>
         {shell.phase === 'failed' ? (
-          <p className="text-xs text-muted-foreground">
-            本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。
-          </p>
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p>本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。</p>
+            <p data-testid="result-support-reference">
+              联系支持时请提供编号{' '}
+              {formatMerchantSupportReference(props.workId)}
+            </p>
+          </div>
         ) : null}
 
         {/* Single aggregate live region for stage announcements (ADR-0007). */}

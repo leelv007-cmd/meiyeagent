@@ -143,6 +143,12 @@ test('mobile product portals inherit the product theme and clear the bottom navi
   const composerSheet = readSource(
     'src/product/composer/composer-bottom-sheet-ui.tsx'
   );
+  const imageAdjust = readSource(
+    'src/product/results/image-adjust-confirmation.tsx'
+  );
+  const dialog = readSource('src/components/ui/dialog.tsx');
+  const select = readSource('src/components/ui/select.tsx');
+  const toaster = readSource('src/components/shared/toaster.tsx');
 
   assert.match(
     sidebarLayout,
@@ -154,4 +160,16 @@ test('mobile product portals inherit the product theme and clear the bottom navi
   );
   assert.match(composerSheet, /data-product-modal="composer-bottom-sheet"/u);
   assert.match(composerSheet, /className=\{cn\(\s*'meiye-product-shell/u);
+  assert.match(composerSheet, /aria-modal="true"/u);
+  assert.match(composerSheet, /finalFocus=/u);
+  assert.match(imageAdjust, /data-product-modal="image-adjust-confirmation"/u);
+  assert.match(imageAdjust, /meiye-product-shell/u);
+  assert.match(imageAdjust, /finalFocus=/u);
+  // Shared Dialog primitive always exposes a single aria-modal surface.
+  assert.match(dialog, /"aria-modal":\s*ariaModal\s*=\s*true/u);
+  // Portal Select + Toast consume product/theme tokens, not hard-coded light only.
+  assert.match(select, /bg-surface-2/u);
+  assert.match(select, /text-popover-foreground/u);
+  assert.match(toaster, /resolvedTheme/u);
+  assert.match(toaster, /--normal-bg':\s*'var\(--popover\)'/u);
 });

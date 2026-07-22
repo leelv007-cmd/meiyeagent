@@ -52,6 +52,11 @@ export {
 } from './result-return-restore';
 
 export {
+  formatMerchantSupportReference,
+  looksLikeInternalUuid,
+} from './merchant-support-reference';
+
+export {
   RESULT_SHELL_PROJECTION_ONLY,
   desktopVisibleActions,
   mobileVisibleActions,

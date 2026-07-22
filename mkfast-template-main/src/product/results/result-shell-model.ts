@@ -301,11 +301,9 @@ export function projectResultShellActions(
     case 'delivered':
       return {
         primaryAction: action('create_from_this', 'primary'),
-        secondaryActions: [
-          action('continue_adjust', 'secondary'),
-          action('open_history', 'secondary'),
-        ],
-        overflowActions: [action('open_run_detail', 'overflow')],
+        secondaryActions: [action('continue_adjust', 'secondary')],
+        // open_history / open_run_detail stay contract ids only until P1 surfaces exist.
+        overflowActions: overflowBase,
       };
     case 'ready': {
       if (facts.hasUsableCandidate && !facts.hasAdoptedCandidate) {

@@ -36,7 +36,15 @@ describe('mobile video P0 actions', () => {
     assert.ok(mobile.moreResult.length >= 1);
     assert.ok(mobile.moreResult.some((a) => a.id === 'continue_adjust'));
     assert.ok(mobile.moreResult.some((a) => a.id === 'deliver'));
-    assert.ok(mobile.moreResult.some((a) => a.id === 'open_history'));
+    // History / Run Detail stay hidden until P1 surfaces exist.
+    assert.equal(
+      mobile.moreResult.some((a) => a.id === 'open_history'),
+      false
+    );
+    assert.equal(
+      mobile.moreResult.some((a) => a.id === 'open_run_detail'),
+      false
+    );
   });
 
   it('play label reflects player state; cover/subtitle stay available after adopt', () => {

@@ -947,20 +947,9 @@ export function projectVideoWorksurfaceActions(state: VideoWorksurfaceState): {
   secondaryActions: VideoWorksurfaceAction[];
   overflowActions: VideoWorksurfaceAction[];
 } {
-  const overflow: VideoWorksurfaceAction[] = [
-    {
-      id: 'open_history',
-      role: 'overflow',
-      label: '版本与历史',
-      enabled: true,
-    },
-    {
-      id: 'open_run_detail',
-      role: 'overflow',
-      label: '运行详情',
-      enabled: true,
-    },
-  ];
+  // History / Run Detail stay contract ids only until P1 work surfaces exist.
+  // Advertising them here would create clickable no-ops on merchant Result.
+  const overflow: VideoWorksurfaceAction[] = [];
 
   switch (state.loopPhase) {
     case 'running':
@@ -1063,21 +1052,8 @@ export function projectVideoWorksurfaceActions(state: VideoWorksurfaceState): {
             label: '继续调整',
             enabled: true,
           },
-          {
-            id: 'open_history',
-            role: 'secondary',
-            label: '版本与历史',
-            enabled: true,
-          },
         ],
-        overflowActions: [
-          {
-            id: 'open_run_detail',
-            role: 'overflow',
-            label: '运行详情',
-            enabled: true,
-          },
-        ],
+        overflowActions: overflow,
       };
     default: {
       const _exhaustive: never = state.loopPhase;

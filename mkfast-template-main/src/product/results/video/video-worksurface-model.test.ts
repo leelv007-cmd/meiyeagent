@@ -263,6 +263,14 @@ describe('action matrix (contracts ResultActionId, video labels)', () => {
     const deliveredActions = projectVideoWorksurfaceActions(delivered);
     assert.equal(deliveredActions.primaryAction?.id, 'create_from_this');
     assert.equal(deliveredActions.primaryAction?.label, '基于此再创作');
+    assert.equal(
+      deliveredActions.secondaryActions.some((a) => a.id === 'open_history'),
+      false
+    );
+    assert.equal(
+      deliveredActions.overflowActions.some((a) => a.id === 'open_run_detail'),
+      false
+    );
   });
 });
 

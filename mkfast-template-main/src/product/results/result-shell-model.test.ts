@@ -180,10 +180,24 @@ test('actions: adopted → deliver primary', () => {
   assert.equal(actions.primaryAction?.id, 'deliver');
 });
 
-test('actions: delivered → create_from_this primary', () => {
+test('actions: delivered → create_from_this primary without unfinished panels', () => {
   const facts = baseFacts({ deliveryAttempt: 'delivered' });
   const actions = projectResultShellActions('delivered', facts);
   assert.equal(actions.primaryAction?.id, 'create_from_this');
+  assert.equal(
+    actions.secondaryActions.some((item) => item.id === 'open_history'),
+    false
+  );
+  assert.equal(
+    actions.overflowActions.some((item) => item.id === 'open_run_detail'),
+    false
+  );
+  assert.equal(
+    [...actions.secondaryActions, ...actions.overflowActions].some(
+      (item) => item.id === 'open_history' || item.id === 'open_run_detail'
+    ),
+    false
+  );
 });
 
 test('actions: failed → retry primary', () => {
