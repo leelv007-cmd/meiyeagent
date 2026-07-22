@@ -13,8 +13,9 @@ export interface R2BucketInterface {
     options?: {
       httpMetadata?: { contentType?: string };
       customMetadata?: Record<string, string>;
+      onlyIf?: Headers;
     }
-  ): Promise<unknown>;
+  ): Promise<unknown | null>;
   get(key: string): Promise<{
     body: ReadableStream | null;
     httpMetadata?: { contentType?: string };
@@ -47,7 +48,16 @@ export interface FileMetadata {
   contentType: string;
   size: number;
   r2Key: string;
+  /** Sidecar receipt version for product-asset registration/deletion claims. */
+  storageRevision?: string;
   uploadedAt: Date;
+}
+
+/** Recoverable two-key state for a shared object and its immutable receipt. */
+export interface SharedAssetObjectState {
+  objectExists: boolean;
+  objectVerified?: boolean;
+  receipt?: import('@meiye/contracts').SharedAssetStorageReceipt;
 }
 
 /**
@@ -91,10 +101,24 @@ export class UploadError extends StorageError {
   }
 }
 
+/** Upload created a shared object, but its durable receipt could not be registered. */
+export class UploadRegistrationError extends UploadError {
+  constructor(
+    readonly key: string,
+    readonly metadata: FileMetadata,
+    options: { cause: unknown }
+  ) {
+    super('Uploaded object could not be registered');
+    this.cause = options.cause;
+  }
+}
+
 /**
  * Params for upload operation
  */
 export interface UploadFileParams {
+  /** Verified content hash for deterministic shared Product asset keys. */
+  contentHash?: string;
   file: Buffer | Blob | File;
   filename: string;
   contentType: string;
@@ -126,6 +150,12 @@ export interface StorageProvider {
 
   /** Delete a file */
   deleteFile(key: string): Promise<void>;
+
+  /** Inspect a shared object and receipt together before generation-fenced deletion. */
+  inspectSharedAsset(key: string): Promise<SharedAssetObjectState>;
+
+  /** Delete both halves of a shared object; retries may complete a partial delete. */
+  deleteSharedAsset(key: string): Promise<void>;
 
   /** Download by R2 key or by FileMetadata. Returns stream or null */
   downloadFile(

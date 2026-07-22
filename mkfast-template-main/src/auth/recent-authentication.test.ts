@@ -96,7 +96,7 @@ describe('route-level recent authentication', () => {
       observed.push({ path: context.path, options });
       return {
         session: {
-          createdAt: new Date('2026-07-22T09:00:00.000Z'),
+          createdAt: new Date(Date.now() - RECENT_AUTHENTICATION_WINDOW_MS),
         },
         user: {},
       } as never;

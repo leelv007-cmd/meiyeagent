@@ -31,7 +31,7 @@ export const Route = createFileRoute('/admin/integrations')({
   component: IntegrationsPage,
 });
 
-export function IntegrationsPage() {
+function IntegrationsPage() {
   return (
     <AdminRoutePage
       title={admin_integrations_title()}

@@ -301,14 +301,16 @@ export class ProviderSafeFetch implements ReferenceAssetDeliveryPort {
   }
 
   private async resolve(hostname: string) {
-    const addresses = this.options.resolver
-      ? await this.options.resolver.resolve(hostname)
-      : (
-          await lookup(hostname, {
-            all: true,
-            verbatim: true,
-          })
-        ).map((entry) => entry.address);
+    const addresses = (
+      this.options.resolver
+        ? await this.options.resolver.resolve(hostname)
+        : (
+            await lookup(hostname, {
+              all: true,
+              verbatim: true,
+            })
+          ).map((entry) => entry.address)
+    ).map(normalizeAddress);
     if (addresses.length === 0) {
       throw new ProviderSafeFetchError(
         'SAFE_FETCH_DNS_EMPTY',
@@ -371,19 +373,28 @@ function isPublicAddress(address: string) {
   return false;
 }
 
+function normalizeAddress(address: string) {
+  if (isIP(address) !== 6) return address;
+  return mappedIpv4FromIpv6(address) ?? address;
+}
+
 function isPublicIpv4(address: string) {
   const octets = address.split('.').map(Number);
   if (octets.length !== 4 || octets.some((value) => value < 0 || value > 255)) {
     return false;
   }
-  const [a = 0, b = 0] = octets;
+  const [a = 0, b = 0, c = 0, d = 0] = octets;
   if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
   if (a === 100 && b >= 64 && b <= 127) return false;
   if (a === 169 && b === 254) return false;
   if (a === 172 && b >= 16 && b <= 31) return false;
-  if (a === 192 && (b === 0 || b === 168)) return false;
-  if (a === 198 && (b === 18 || b === 19 || b === 51)) return false;
-  if (a === 203 && b === 0) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 192 && b === 0 && c === 0 && d !== 9 && d !== 10) return false;
+  if (a === 192 && b === 0 && c === 2) return false;
+  if (a === 192 && b === 88 && c === 99) return false;
+  if (a === 198 && (b === 18 || b === 19)) return false;
+  if (a === 198 && b === 51 && c === 100) return false;
+  if (a === 203 && b === 0 && c === 113) return false;
   return true;
 }
 

@@ -9,6 +9,7 @@ import { unzipSync } from 'fflate';
 import sharp from 'sharp';
 import { MemoryModelAssetStorage } from '../model-supply/index.js';
 import {
+  ContentPackageArtifactReferenceVerifier,
   ContentPackageZipExportAdapter,
   OperationsContentPackageExportAssetReader,
 } from './content-package-export-adapter.js';
@@ -69,6 +70,42 @@ function repositoryWithOwnedAsset(asset: {
     },
   } as unknown as OperationsRepository;
 }
+
+it('recognizes only an exact committed ContentPackage export receipt', async () => {
+  const verifier = new ContentPackageArtifactReferenceVerifier({
+    async loadWorkspace() {
+      return {
+        contentPackages: [{
+          exportReceipts: [{
+            artifactAssetId: 'owned-export',
+            artifactObjectKey: 'workspace-export/generated/export.zip',
+            sha256: 'a'.repeat(64),
+            sizeBytes: 512,
+          }],
+        }],
+      } as unknown as Awaited<ReturnType<OperationsRepository['loadWorkspace']>>;
+    },
+  });
+
+  assert.equal(await verifier.isReferenced({
+    assetId: 'owned-export',
+    receipt: {
+      objectKey: 'workspace-export/generated/export.zip',
+      sha256: 'a'.repeat(64),
+      sizeBytes: 512,
+    },
+    workspaceId: 'workspace-export',
+  }), true);
+  assert.equal(await verifier.isReferenced({
+    assetId: 'owned-export',
+    receipt: {
+      objectKey: 'workspace-export/generated/export.zip',
+      sha256: 'b'.repeat(64),
+      sizeBytes: 512,
+    },
+    workspaceId: 'workspace-export',
+  }), false);
+});
 
 it('builds one durable zip with copy and ordered owned images', async () => {
   const storage = new MemoryModelAssetStorage();

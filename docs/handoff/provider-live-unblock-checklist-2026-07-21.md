@@ -1,87 +1,91 @@
-# #119 I4 Live Fault Injection — Unblock Checklist
+# #119 Official Provider Connectivity — Unblock Checklist
 
-> Status: **external_blocked**. Unit/recorded green ≠ C5 live complete.
-> Authority: D-069 / D-080 C5 · gap `docs/evidence/admin-supply-accept-gaps-2026-07-20.md` G-LIVE-*.
+> Status: **verified_current** through `2026-07-23T09:33:07.321Z`. An authorized local run bound to commit `63a0be856d9e81d461901ca3b93691bcc74c3611` satisfied the #119 completion rule.
+> Authority: revised D-069 / D-080 C5 · gap `docs/evidence/admin-supply-accept-gaps-2026-07-20.md` G-LIVE-*.
 
-## Already green (may claim)
+## Latest authorized acceptance receipt
 
-- Unit MP-08 matrix + F-I-01 same-CatalogModel honesty
-- Publish-gate negatives (&lt;2 domains cannot multi-channel ready)
-- Live gate fail-closed without external evidence
-- Workflow skeleton `.github/workflows/provider-live.yml`
+| Field | Verified value |
+|---|---|
+| Completed / expires | `2026-07-22T09:33:07.321Z` / `2026-07-23T09:33:07.321Z` |
+| Release / environment | `63a0be856d9e81d461901ca3b93691bcc74c3611` / `local-authorized` |
+| Configuration revision | `ark-primary-cny-20260722-r3` |
+| Redacted artifact SHA-256 | `1a5be3d39ec7673fb3ca71f9d2bbdbcc01399f01eb88e041838aedf869286c6e` |
+| Cost | `CNY 1.2355202` actual / `CNY 5` cap |
+| Text | `live_verified`; non-empty result, 1,425 bytes, SHA-256 present |
+| Image | `live_verified`; downloaded PNG, 2,476,010 bytes, SHA-256 present |
+| Video | `live_verified`; downloaded MP4, 1,130,848 bytes, SHA-256 present |
+| Gate result | `blockedChecks=[]`; `skippedOperations=[]`; all three publish gates `single_channel / no_fallback`, `publishAllowed=true` |
 
-## Structural blockers (not “missing a key”)
+The raw redacted artifact remains ignored at `apps/core/provider-live-evidence/provider-live-gate.json`; this receipt intentionally omits provider task references and credentials. Re-run the gate after expiry before consuming it for a later release candidate.
 
-| Modality | CatalogModel alignment | Note |
+## Release gate
+
+Text, image, and video must each complete one real official-provider generation:
+
+| Modality | Official model | Required result |
 |---|---|---|
-| Text | **misaligned** | official doubao-seed-mini vs reseller gemini-flash |
-| Image | **misaligned** | official seedream-5-pro vs reseller gpt-image-2 (catalog already has seedream tuzi relay unused) |
-| Video | **aligned** | seedance-1-5-pro both; **channel_level only** (shared manufacturer) |
+| Text | `doubao-seed-2-0-mini-260428` | Accepted provider task with non-empty input/output usage and usable text |
+| Image | `doubao-seedream-5-0-260128` | Accepted task, restart recovery, completed poll, downloaded non-empty image and SHA-256 |
+| Video | `doubao-seedance-2-0-mini-260615` | Accepted task, restart recovery, completed poll, downloaded playable media and SHA-256 |
 
-## Required env (names only)
+The protected workflow pins the public Seedance model ID above; changing it requires a reviewed workflow revision rather than an untracked secret edit.
 
-- Master: `RUN_PROVIDER_LIVE_FAULT_INJECTION=1`, `PROVIDER_LIVE_COST_CAP_USD`, `PROVIDER_LIVE_REQUIRE_ALL`
-- Hook: `PROVIDER_LIVE_CONFORMANCE_ENDPOINT`, `PROVIDER_LIVE_CONFORMANCE_TOKEN`, `PROVIDER_LIVE_CONFORMANCE_HOOK_SHA256`, `PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH`, `PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD`
-- Cost normalization: `PROVIDER_LIVE_CNY_PER_USD`, `PROVIDER_LIVE_FX_EVIDENCE_REF`, all provider `*_COST_*` price variables
-- Run binding: CI sets `PROVIDER_LIVE_RUN_NONCE`; local runs must export a fresh unique value too
-- Six channels: ARK/MODEL_DIRECT/TUZI keys + `*_PROVIDER_ACCOUNT_IDENTITY` + `*_MAX_PROBE_COST_USD` + media asset hosts
+All three publish as `live_verified`. Without a second channel they must also remain `single_channel / no_fallback`, with `dualChannelReady=false` and `fallbackAvailable=false` wherever those fields are projected.
 
-The hook output JSON must contain channel-bound `lifecycleEvidence` and
-`transportFaultEvidence` for all three core operations, plus one real
-`secondaryProbes` entry for each of `copy.adapt`, `text.respond`, and
-`image.edit`, and `costEvidence` that reconciles actual secondary/lifecycle/
-fault-injection spend. Every entry must carry the current run nonce and fresh
-timestamps. Secondary probes may bind to either configured channel, but each
-must have its own task, idempotency request, request payload, and result hashes;
-copying a core probe or declaring a status is not accepted. The hook command
-must reference a checked-in `scripts/provider-live/` runner whose file SHA-256
-matches the protected secret.
+Token validation, an HTTP 200, recorded evidence, fixtures, or unit tests do not satisfy this gate. The production adapter must create a real provider task and retrieve its result.
 
-Set `PROVIDER_LIVE_CONFORMANCE_HOOK_SHA256` to the output of
-`shasum -a 256 scripts/provider-live/run-conformance.mjs`.
+## Required protected environment
 
-## Product decisions required before code can dualChannelReady text/image
+- Master: `RUN_PROVIDER_LIVE_CONNECTIVITY=1`, `PROVIDER_LIVE_ACCEPTANCE_MODE=primary_connectivity`, `PROVIDER_LIVE_REQUIRE_ALL=1`, `PROVIDER_LIVE_COST_CAP_CNY`, `PROVIDER_LIVE_RUN_NONCE`, `PROVIDER_LIVE_RELEASE_REF`, `PROVIDER_LIVE_CONFIG_REVISION`
+- Official credentials: `ARK_TEXT_API_KEY` or `ARK_API_KEY`, plus `ARK_PROVIDER_ACCOUNT_IDENTITY`
+- Models: `ARK_TEXT_MODEL`, `ARK_SEEDREAM_MODEL`, `ARK_SEEDANCE_MODEL`
+- Catalog binding: `ARK_TEXT_CATALOG_MODEL_ID`, `ARK_IMAGE_CATALOG_MODEL_ID`, `ARK_VIDEO_CATALOG_MODEL_ID`
+- Per-probe reservations: `ARK_TEXT_MAX_PROBE_COST_CNY`, `ARK_IMAGE_MAX_PROBE_COST_CNY`, `ARK_VIDEO_MAX_PROBE_COST_CNY`
+- Official CNY prices: `ARK_TEXT_INPUT_COST_PER_MILLION`, `ARK_TEXT_OUTPUT_COST_PER_MILLION`, `ARK_SEEDREAM_COST_PER_IMAGE_CNY`, `ARK_SEEDANCE_COST_PER_MILLION_TOKENS_CNY`, `ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND`
+- Optional USD-channel conversion: only a future enabled USD-priced secondary channel needs `PROVIDER_LIVE_CNY_PER_USD` and `PROVIDER_LIVE_FX_EVIDENCE_REF`; the official-only release workflow does not.
+- Media allowlist: `ARK_MEDIA_ASSET_SOURCE_HOSTS`
 
-1. Text: approve one audited cross-channel model mapping, then update the checked-in matrix mapping and alignment flag; equal env IDs alone stay fail-closed
-2. Image: approve and check in the reseller mapping (prefer existing seedream tuzi relay); equal env IDs alone stay fail-closed
-3. Video: keep channel-level claim; manufacturer-independent needs third vendor
+Secrets belong in the protected GitHub Environment `provider-live`; never commit them or paste their values into tickets, documents, logs, or chat.
 
-## Run when secrets + hook ready
+## Cost and evidence invariants
+
+- Every required unit price and per-probe reservation must be finite and positive.
+- Official unit prices, per-probe reservations, the run-level cap, and reported totals are all denominated in CNY.
+- The sum of the three probe reservations must fit `PROVIDER_LIVE_COST_CAP_CNY` before any paid call starts.
+- Reported actual cost must fit each reservation and the run-level cap.
+- Each artifact binds the current commit, protected environment, model and CatalogModel revision, provider task reference, run nonce, timestamps, result hash, and actual cost.
+- Evidence has an explicit expiry; the protected workflow currently uses `PROVIDER_LIVE_EVIDENCE_TTL_SECONDS=86400`.
+- Failed runs still upload a redacted `apps/core/provider-live-evidence/provider-live-gate.json`; they do not become release evidence.
+
+## Run
+
+Use GitHub Environment `provider-live` and dispatch `.github/workflows/provider-live.yml`. For an authorized local run, export the same protected variables and a fresh nonce, then run:
 
 ```bash
-export RUN_PROVIDER_LIVE_FAULT_INJECTION=1
+export RUN_PROVIDER_LIVE_CONNECTIVITY=1
+export PROVIDER_LIVE_ACCEPTANCE_MODE=primary_connectivity
 export PROVIDER_LIVE_REQUIRE_ALL=1
-export PROVIDER_LIVE_COST_CAP_USD=1.0
+export PROVIDER_LIVE_COST_CAP_CNY=5.0
 export PROVIDER_LIVE_RUN_NONCE="local-$(date +%s)-$RANDOM"
-export PROVIDER_LIVE_CONFORMANCE_ENDPOINT="https://<protected-service>/provider-live"
-export PROVIDER_LIVE_CONFORMANCE_TOKEN="<protected-token>"
-export PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH="apps/core/provider-live-evidence/external-conformance.json"
-export PROVIDER_LIVE_FAULT_INJECTOR_MAX_COST_USD="0.1"
-# … map secrets from docs/_private (never commit) …
-node scripts/provider-live/run-conformance.mjs
-test -s "${PROVIDER_LIVE_EXTERNAL_EVIDENCE_PATH}"
+export PROVIDER_LIVE_RELEASE_REF="$(git rev-parse HEAD)"
+export PROVIDER_LIVE_ENVIRONMENT="local-authorized"
+export PROVIDER_LIVE_CONFIG_REVISION="<reviewed-config-revision>"
+export PROVIDER_LIVE_EVIDENCE_TTL_SECONDS=86400
+
 pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
   src/p1/model-supply/provider-conformance/live-fault-injection.integration.test.ts
+test -s apps/core/provider-live-evidence/provider-live-gate.json
 ```
 
-Or GitHub Environment `provider-live` → workflow_dispatch → attach `provider-live-gate.json`.
+The filename remains compatible with the existing integration suite; in `primary_connectivity` mode it does not require the external transport-fault hook.
 
-## Non-claims
+## Non-blocking dual-channel evidence
 
-- Six paid probes alone ≠ multi-channel ready (need lifecycle + transport injector evidence)
-- Before any paid call, the sum of per-call reservations must fit the run
-  ceiling and every required unit-price input must be positive. After each
-  call, its reported actual cost must fit that call's reservation, and the run
-  total is reconciled afterward. This gate does not claim a transactional,
-  real-time provider-side cutoff.
-- Do not forge equal catalogModelId env values across different provider models;
-  alignment requires a reviewed checked-in matrix mapping
-- #128 whole-package complete still blocked by G-LIVE-* + G-E2E-PLAYWRIGHT-D048 + #92
+The existing same-CatalogModel matrix, independent fault-domain checks, secondary probes, lifecycle evidence, and transport fault injector remain valid hardening work. They are required only before claiming `multi-channel ready` or automatic fallback; they do not block the current single-channel release.
 
-## Shortest path
+Do not forge equal CatalogModel IDs. Text/image matrix misalignment must continue to report `dualChannelReady=false`.
 
-1. Product: text/image CM alignment decision  
-2. Code: matrix-models + fakes match decision  
-3. Ops: secrets + cost cap  
-4. Eng: real hook → external JSON (core lifecycle/transport + three secondary probes)
-5. Run live gate → only then update G-LIVE-* closed
+## Completion rule
+
+Close the live connectivity gap only when all three official probes are current and green, `blockedChecks=[]`, `skippedOperations=[]`, each publish gate is `single_channel` with `publishAllowed=true`, and the evidence artifact is bound to the release commit.

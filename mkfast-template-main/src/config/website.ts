@@ -16,29 +16,26 @@ import {
   site_name,
   site_title,
 } from '@/locale/paraglide/messages';
-import { clientEnv } from '@/env/client';
-import type { WebsiteConfig } from '../types';
 import {
   DEFAULT_ALLOWED_TYPES,
   DEFAULT_MAX_FILE_SIZE,
   DEFAULT_USER_FILES_FOLDER,
 } from '@/storage/constants';
+import { clientEnv } from '@/env/client';
+import type { WebsiteConfig } from '../types';
+import { resolvePaymentRuntimePolicy } from './payment-runtime-policy';
 
 // Stripe is retirement-only: keep its runtime available for controlled legacy
 // webhooks, but never publish a sellable Stripe catalog or new-commerce UI.
-const paymentProvider = clientEnv.VITE_PAYMENT_PROVIDER;
-const isStripeRetirementRuntime = paymentProvider === 'stripe';
-const isCreemPayment = paymentProvider === 'creem';
-const isCreemPaidLaunch =
-  isCreemPayment && clientEnv.VITE_PUBLIC_PAID_LAUNCH_ENABLED;
-const isPaymentRuntimeEnabled = isStripeRetirementRuntime || isCreemPaidLaunch;
-const priceIds = isCreemPaidLaunch
-  ? {
-      proMonthly: clientEnv.VITE_CREEM_PRODUCT_PRO_MONTHLY ?? '',
-      proYearly: clientEnv.VITE_CREEM_PRODUCT_PRO_YEARLY ?? '',
-      lifetime: clientEnv.VITE_CREEM_PRODUCT_LIFETIME ?? '',
-    }
-  : { proMonthly: '', proYearly: '', lifetime: '' };
+const paymentRuntimePolicy = resolvePaymentRuntimePolicy({
+  provider: clientEnv.VITE_PAYMENT_PROVIDER,
+  publicPaidLaunchEnabled: clientEnv.VITE_PUBLIC_PAID_LAUNCH_ENABLED,
+  creemPriceIds: {
+    proMonthly: clientEnv.VITE_CREEM_PRODUCT_PRO_MONTHLY,
+    proYearly: clientEnv.VITE_CREEM_PRODUCT_PRO_YEARLY,
+    lifetime: clientEnv.VITE_CREEM_PRODUCT_LIFETIME,
+  },
+});
 
 /**
  * Website config
@@ -93,8 +90,8 @@ export const websiteConfig: WebsiteConfig = {
     userFilesFolder: DEFAULT_USER_FILES_FOLDER,
   },
   payment: {
-    enable: isPaymentRuntimeEnabled,
-    provider: isPaymentRuntimeEnabled ? paymentProvider : undefined,
+    enable: paymentRuntimePolicy.enabled,
+    provider: paymentRuntimePolicy.provider,
     price: {
       plans: {
         free: {
@@ -120,14 +117,14 @@ export const websiteConfig: WebsiteConfig = {
           prices: [
             {
               type: 'subscription',
-              priceId: priceIds.proMonthly,
+              priceId: paymentRuntimePolicy.priceIds.proMonthly,
               amount: clientEnv.VITE_GROWTH_MONTHLY_AMOUNT_CENTS,
               currency: 'CNY',
               interval: 'month',
             },
             {
               type: 'subscription',
-              priceId: priceIds.proYearly,
+              priceId: paymentRuntimePolicy.priceIds.proYearly,
               amount: clientEnv.VITE_GROWTH_YEARLY_AMOUNT_CENTS,
               currency: 'CNY',
               interval: 'year',
@@ -155,7 +152,7 @@ export const websiteConfig: WebsiteConfig = {
           prices: [
             {
               type: 'one_time',
-              priceId: priceIds.lifetime,
+              priceId: paymentRuntimePolicy.priceIds.lifetime,
               amount: clientEnv.VITE_LIFETIME_AMOUNT_CENTS,
               currency: 'CNY',
               allowPromotionCode: true,

@@ -15,9 +15,11 @@ import {
   requiredP1Capability,
   requiredProductCommandCapability,
   type ApiEnvelope,
+  type ContentPackage,
   type ProductRole,
   type ProductCommand,
   type ProductContext,
+  toPublicContentPackage,
 } from '@meiye/contracts';
 import type {
   DiagnosticIdentity,
@@ -43,8 +45,13 @@ import {
   OperationsError,
   type OperationsApplicationService,
 } from './p1/operations/application-service.js';
+import type { OperationContext } from './p1/operations/types.js';
 import type { HarnessApplicationService } from './p1/harness/application-service.js';
-import { harnessTaskRequestSchema } from './p1/harness/task-admission.js';
+import { composerSubmissionBodySchema } from './p1/execution-spine/creation-execution-snapshot.js';
+import {
+  CreationSubmissionConflictError,
+  type CreationSubmissionCoordinator,
+} from './p1/execution-spine/submission-coordinator.js';
 import type { PendingActionsService } from './p1/pending-actions.js';
 import {
   encodeWorkflowSseFrame,
@@ -78,6 +85,12 @@ interface CoreServerDependencies {
     OperationsApplicationService,
     'getCreativeWorkbench' | 'startCreativeCopyStream'
   >;
+  composerSubmission?: {
+    coordinator: Pick<CreationSubmissionCoordinator, 'submit'>;
+  };
+  contentPackageReader?: {
+    read(context: OperationContext, packageId: string): Promise<ContentPackage>;
+  };
   harnessService?: HarnessApplicationService;
   pendingActions?: Pick<PendingActionsService, 'list'>;
   serviceToken: string;
@@ -320,6 +333,36 @@ function workspaceWorkflowEventRoute(pathname: string) {
   }
 }
 
+function workspaceComposerTaskEventRoute(pathname: string) {
+  const match = pathname.match(
+    /^\/v1\/workspaces\/([^/]+)\/p1\/composer\/tasks\/([^/]+)\/events$/
+  );
+  if (!match?.[1] || !match[2]) return null;
+  try {
+    return {
+      taskId: decodeURIComponent(match[2]),
+      workspaceId: decodeURIComponent(match[1]),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function workspaceComposerContentPackageRoute(pathname: string) {
+  const match = pathname.match(
+    /^\/v1\/workspaces\/([^/]+)\/p1\/composer\/content-packages\/([^/]+)$/
+  );
+  if (!match?.[1] || !match[2]) return null;
+  try {
+    return {
+      packageId: decodeURIComponent(match[2]),
+      workspaceId: decodeURIComponent(match[1]),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function douyinAuthorizationEventRoute(pathname: string) {
   const match = pathname.match(
     /^\/v1\/workspaces\/([^/]+)\/integrations\/douyin\/authorization-events$/
@@ -534,6 +577,211 @@ async function pipeWebResponse(
   }
 }
 
+function p1HttpError(
+  error: unknown,
+  fallback: { code: string; message: string; status: number }
+) {
+  if (error instanceof DomainError) return error;
+  if (error instanceof P1DomainError) {
+    return new DomainError(
+      error.code,
+      error.message,
+      error.code === 'FORBIDDEN'
+        ? 403
+        : error.code === 'NOT_FOUND'
+          ? 404
+          : error.code === 'INSUFFICIENT_ENTITLEMENT' ||
+              error.code === 'IDEMPOTENCY_CONFLICT'
+            ? 409
+            : 400
+    );
+  }
+  if (
+    typeof error === 'object' &&
+    error &&
+    'status' in error &&
+    typeof error.status === 'number' &&
+    'code' in error &&
+    typeof error.code === 'string'
+  ) {
+    return new DomainError(
+      error.code,
+      error instanceof Error ? error.message : fallback.message,
+      error.status
+    );
+  }
+  return new DomainError(fallback.code, fallback.message, fallback.status);
+}
+
+function sendP1HttpError(
+  response: ServerResponse,
+  error: unknown,
+  fallback: { code: string; message: string; status: number },
+  requestCorrelationId: string
+) {
+  const domainError = p1HttpError(error, fallback);
+  sendError(
+    response,
+    domainError.status,
+    { code: domainError.code, message: domainError.message },
+    requestCorrelationId
+  );
+}
+
+export async function streamWorkflowEvents(input: {
+  request: IncomingMessage;
+  response: ServerResponse;
+  requestCorrelationId: string;
+  workflowEvents: WorkflowEventApplicationService;
+  workflowHeartbeatMs: number;
+  workflowId: string;
+  workspaceId: string;
+}) {
+  const abortController = new AbortController();
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const disconnect = () => {
+    if (!input.response.writableEnded && !abortController.signal.aborted) {
+      abortController.abort(new Error('Client disconnected.'));
+    }
+  };
+  input.request.once('aborted', disconnect);
+  input.request.once('close', disconnect);
+  input.response.once('close', disconnect);
+  try {
+    const lastEventId = input.request.headers['last-event-id'];
+    const subscription = await input.workflowEvents.subscribe({
+      ...(typeof lastEventId === 'string' && lastEventId.trim()
+        ? { lastEventId: lastEventId.trim() }
+        : {}),
+      signal: abortController.signal,
+      workflowId: input.workflowId,
+      workspaceId: input.workspaceId,
+    });
+    if (!subscription) {
+      throw new DomainError('NOT_FOUND', 'Workflow was not found.', 404);
+    }
+    if (abortController.signal.aborted) return;
+    input.response.writeHead(200, {
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'content-type': 'text/event-stream; charset=utf-8',
+      'x-accel-buffering': 'no',
+      'x-correlation-id': input.requestCorrelationId,
+      'x-meiye-stream-protocol': 'workflow-events-v1',
+    });
+    const writer = new WorkflowSseWriter(input.response, abortController.signal);
+    if (!(await writer.write(': heartbeat\n\n'))) return;
+    let heartbeatInFlight = false;
+    heartbeat = setInterval(() => {
+      if (heartbeatInFlight || abortController.signal.aborted) return;
+      heartbeatInFlight = true;
+      void writer
+        .write(': heartbeat\n\n')
+        .then((written) => {
+          if (!written && !abortController.signal.aborted) {
+            abortController.abort(new Error('SSE response is no longer writable.'));
+          }
+        })
+        .finally(() => {
+          heartbeatInFlight = false;
+        });
+    }, input.workflowHeartbeatMs);
+    for await (const frame of subscription.frames) {
+      if (abortController.signal.aborted) break;
+      if (!(await writer.write(encodeWorkflowSseFrame(frame)))) break;
+    }
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = undefined;
+    }
+    await writer.flush();
+    if (!input.response.writableEnded) input.response.end();
+  } catch (error) {
+    if (abortController.signal.aborted) return;
+    if (input.response.headersSent) {
+      input.response.destroy(error instanceof Error ? error : undefined);
+    } else {
+      sendP1HttpError(
+        input.response,
+        error,
+        {
+          code: 'WORKFLOW_EVENTS_UNAVAILABLE',
+          message: 'Workflow events are unavailable.',
+          status: 503,
+        },
+        input.requestCorrelationId
+      );
+    }
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
+    input.request.off('aborted', disconnect);
+    input.request.off('close', disconnect);
+    input.response.off('close', disconnect);
+    if (!abortController.signal.aborted) abortController.abort();
+  }
+}
+
+class WorkflowSseWriter {
+  private pending: Promise<boolean> = Promise.resolve(true);
+
+  constructor(
+    private readonly response: ServerResponse,
+    private readonly signal: AbortSignal,
+  ) {}
+
+  write(chunk: string) {
+    this.pending = this.pending.then((previousWriteSucceeded) => {
+      if (!previousWriteSucceeded || this.signal.aborted) return false;
+      return writeWorkflowSseChunk(this.response, chunk, this.signal);
+    });
+    return this.pending;
+  }
+
+  flush() {
+    return this.pending;
+  }
+}
+
+async function writeWorkflowSseChunk(
+  response: ServerResponse,
+  chunk: string,
+  signal: AbortSignal,
+) {
+  if (signal.aborted || response.destroyed || response.writableEnded) {
+    return false;
+  }
+  try {
+    if (response.write(chunk)) return true;
+  } catch {
+    return false;
+  }
+  return waitForSseDrain(response, signal);
+}
+
+function waitForSseDrain(response: ServerResponse, signal: AbortSignal) {
+  if (signal.aborted || response.destroyed || response.writableEnded) {
+    return Promise.resolve(false);
+  }
+  return new Promise<boolean>((resolve) => {
+    const cleanup = () => {
+      response.off('close', onClose);
+      response.off('drain', onDrain);
+      response.off('error', onClose);
+      signal.removeEventListener('abort', onClose);
+    };
+    const settle = (written: boolean) => {
+      cleanup();
+      resolve(written);
+    };
+    const onClose = () => settle(false);
+    const onDrain = () => settle(true);
+    response.once('close', onClose);
+    response.once('drain', onDrain);
+    response.once('error', onClose);
+    signal.addEventListener('abort', onClose, { once: true });
+  });
+}
+
 export function createCoreServer({
   aiStreamingRunner,
   executionModeGate,
@@ -544,6 +792,8 @@ export function createCoreServer({
   p1ApplicationService,
   integrationService,
   operationsService,
+  composerSubmission,
+  contentPackageReader,
   harnessService,
   pendingActions,
   serviceToken,
@@ -715,6 +965,179 @@ export function createCoreServer({
       return;
     }
 
+    const composerSubmissionWorkspaceId = workspaceRoute(
+      url.pathname,
+      'p1/composer/submissions'
+    );
+    if (composerSubmission && composerSubmissionWorkspaceId) {
+      if (request.method !== 'POST') {
+        sendError(
+          response,
+          405,
+          {
+            code: 'METHOD_NOT_ALLOWED',
+            message: 'Composer submissions require POST.',
+          },
+          requestCorrelationId
+        );
+        return;
+      }
+      try {
+        const context = p1Identity(
+          request,
+          composerSubmissionWorkspaceId,
+          requestCorrelationId
+        );
+        authorizeContentCreation(context);
+        const body = composerSubmissionBodySchema.parse(
+          await readJson(request)
+        );
+        const result = await composerSubmission.coordinator.submit({
+          ...body,
+          actorId: context.userId,
+          workspaceId: context.workspaceId,
+        });
+        sendJson(response, 202, result, requestCorrelationId);
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code:
+              error instanceof CreationSubmissionConflictError
+                ? error.code
+                : 'INVALID_COMPOSER_SUBMISSION',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Composer submission is invalid.',
+            status:
+              error instanceof CreationSubmissionConflictError
+                ? error.status
+                : 400,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+
+    const composerTaskEventRoute = workspaceComposerTaskEventRoute(
+      url.pathname
+    );
+    if (composerSubmission && composerTaskEventRoute) {
+      if (request.method !== 'GET') {
+        sendError(
+          response,
+          405,
+          {
+            code: 'METHOD_NOT_ALLOWED',
+            message: 'Composer events require GET.',
+          },
+          requestCorrelationId
+        );
+        return;
+      }
+      try {
+        if (!workflowEvents) {
+          throw new DomainError(
+            'COMPOSER_EVENTS_UNAVAILABLE',
+            'Composer events are unavailable.',
+            503
+          );
+        }
+        const context = p1Identity(
+          request,
+          composerTaskEventRoute.workspaceId,
+          requestCorrelationId
+        );
+        authorizeP1Request(context, 'query', 'model-supply', 'video_workflow');
+        await streamWorkflowEvents({
+          request,
+          response,
+          requestCorrelationId,
+          workflowEvents,
+          workflowHeartbeatMs,
+          workflowId: composerTaskEventRoute.taskId,
+          workspaceId: composerTaskEventRoute.workspaceId,
+        });
+      } catch (error) {
+        if (!response.headersSent) {
+          sendP1HttpError(
+            response,
+            error,
+            {
+              code: 'COMPOSER_EVENTS_UNAVAILABLE',
+              message: 'Composer events are unavailable.',
+              status: 503,
+            },
+            requestCorrelationId
+          );
+        }
+      }
+      return;
+    }
+
+    const composerContentPackageRoute = workspaceComposerContentPackageRoute(
+      url.pathname
+    );
+    if (composerSubmission && composerContentPackageRoute) {
+      if (request.method !== 'GET') {
+        sendError(
+          response,
+          405,
+          {
+            code: 'METHOD_NOT_ALLOWED',
+            message: 'Composer ContentPackage projections require GET.',
+          },
+          requestCorrelationId
+        );
+        return;
+      }
+      try {
+        if (!contentPackageReader) {
+          throw new DomainError(
+            'COMPOSER_CONTENT_PACKAGE_UNAVAILABLE',
+            'Composer ContentPackage projections are unavailable.',
+            503
+          );
+        }
+        const context = p1Identity(
+          request,
+          composerContentPackageRoute.workspaceId,
+          requestCorrelationId
+        );
+        authorizeP1Request(context, 'query', 'model-supply', 'video_workflow');
+        const contentPackage = await contentPackageReader.read(
+          {
+            actor: context.actor as OperationContext['actor'],
+            correlationId: context.correlationId,
+            userId: context.userId,
+            workspaceId: context.workspaceId,
+          },
+          composerContentPackageRoute.packageId
+        );
+        sendJson(
+          response,
+          200,
+          toPublicContentPackage(contentPackage),
+          requestCorrelationId
+        );
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'COMPOSER_CONTENT_PACKAGE_UNAVAILABLE',
+            message: 'Composer ContentPackage projection is unavailable.',
+            status: 503,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+
     const harnessRecommendationWorkspaceId = workspaceRoute(
       url.pathname,
       'p1/harness/recommendation'
@@ -833,26 +1256,48 @@ export function createCoreServer({
       }
       return;
     }
+    if (request.method === 'POST' && harnessTaskCollectionWorkspaceId) {
+      try {
+        const context = p1Identity(
+          request,
+          harnessTaskCollectionWorkspaceId,
+          requestCorrelationId
+        );
+        authorizeContentCreation(context);
+        sendError(
+          response,
+          410,
+          {
+            code: 'HARNESS_TASK_ADMISSION_RETIRED',
+            message:
+              'Direct Harness task admission is retired; submit through the Composer execution spine.',
+          },
+          requestCorrelationId
+        );
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'INVALID_HARNESS_REQUEST',
+            message: 'Harness request is invalid.',
+            status: 400,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
     if (
       harnessService &&
-      ((request.method === 'POST' && harnessTaskCollectionWorkspaceId) ||
-        ((request.method === 'GET' || request.method === 'POST') &&
-          harnessDecisionMatch))
+      (request.method === 'GET' || request.method === 'POST') &&
+      harnessDecisionMatch
     ) {
       try {
-        const workspaceId =
-          harnessTaskCollectionWorkspaceId ?? harnessDecisionMatch![1]!;
+        const workspaceId = harnessDecisionMatch[1]!;
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
-        if (harnessTaskCollectionWorkspaceId) {
-          const parsed = harnessTaskRequestSchema.parse({
-            ...(await readJson(request)),
-            actorId: context.userId,
-            workspaceId,
-          });
-          const handle = await harnessService.submit(parsed);
-          sendJson(response, 202, handle, requestCorrelationId);
-        } else if (request.method === 'GET') {
+        if (request.method === 'GET') {
           const question = await harnessService.readPendingDecision(
             workspaceId,
             harnessDecisionMatch![2]!
@@ -902,85 +1347,35 @@ export function createCoreServer({
 
     const workflowEventRoute = workspaceWorkflowEventRoute(url.pathname);
     if (request.method === 'GET' && workflowEventRoute && workflowEvents) {
-      const abortController = new AbortController();
-      let heartbeat: ReturnType<typeof setInterval> | undefined;
       try {
         const context = p1Identity(
           request,
           workflowEventRoute.workspaceId,
           requestCorrelationId
         );
-        authorizeP1Request(
-          context,
-          'query',
-          'model-supply',
-          'video_workflow'
-        );
-        const lastEventId = request.headers['last-event-id'];
-        const subscription = await workflowEvents.subscribe({
-          ...(typeof lastEventId === 'string' && lastEventId.trim()
-            ? { lastEventId: lastEventId.trim() }
-            : {}),
-          signal: abortController.signal,
+        authorizeP1Request(context, 'query', 'model-supply', 'video_workflow');
+        await streamWorkflowEvents({
+          request,
+          response,
+          requestCorrelationId,
+          workflowEvents,
+          workflowHeartbeatMs,
           workflowId: workflowEventRoute.workflowId,
           workspaceId: workflowEventRoute.workspaceId,
         });
-        if (!subscription) {
-          throw new DomainError(
-            'NOT_FOUND',
-            'Workflow was not found.',
-            404
-          );
-        }
-        response.once('close', () => {
-          if (!response.writableEnded) {
-            abortController.abort(new Error('Client disconnected.'));
-          }
-        });
-        response.writeHead(200, {
-          'cache-control': 'no-cache, no-transform',
-          connection: 'keep-alive',
-          'content-type': 'text/event-stream; charset=utf-8',
-          'x-accel-buffering': 'no',
-          'x-correlation-id': requestCorrelationId,
-          'x-meiye-stream-protocol': 'workflow-events-v1',
-        });
-        response.write(': heartbeat\n\n');
-        heartbeat = setInterval(() => {
-          if (!response.writableEnded) response.write(': heartbeat\n\n');
-        }, workflowHeartbeatMs);
-        for await (const frame of subscription.frames) {
-          if (abortController.signal.aborted) break;
-          response.write(encodeWorkflowSseFrame(frame));
-        }
-        if (!response.writableEnded) response.end();
       } catch (error) {
-        if (response.headersSent) {
-          response.destroy(error instanceof Error ? error : undefined);
-        } else {
-          const domainError =
-            error instanceof DomainError
-              ? error
-              : error instanceof P1DomainError
-                ? new DomainError(
-                    error.code,
-                    error.message,
-                    error.code === 'FORBIDDEN' ? 403 : 404
-                  )
-                : new DomainError(
-                    'WORKFLOW_EVENTS_UNAVAILABLE',
-                    'Workflow events are unavailable.',
-                    503
-                  );
-          sendError(
+        if (!response.headersSent) {
+          sendP1HttpError(
             response,
-            domainError.status,
-            { code: domainError.code, message: domainError.message },
+            error,
+            {
+              code: 'WORKFLOW_EVENTS_UNAVAILABLE',
+              message: 'Workflow events are unavailable.',
+              status: 503,
+            },
             requestCorrelationId
           );
         }
-      } finally {
-        if (heartbeat) clearInterval(heartbeat);
       }
       return;
     }

@@ -142,19 +142,22 @@ export async function composeVideo(options: ComposeVideoOptions): Promise<void> 
   await mkdir(dirname(options.outputPath), { recursive: true });
 
   try {
-    const videoDuration = options.bgmPath
-      ? (
-          await Promise.all(
-            options.clipPaths.map((clipPath) =>
-              probeClipDuration(
-                clipPath,
-                options.ffprobePath ?? process.env.FFPROBE_PATH ?? 'ffprobe',
-                options.signal
-              )
-            )
+    const videoDuration = (
+      await Promise.all(
+        options.clipPaths.map((clipPath) =>
+          probeClipDuration(
+            clipPath,
+            options.ffprobePath ?? process.env.FFPROBE_PATH ?? 'ffprobe',
+            options.signal
           )
-        ).reduce((total, duration) => total + duration, 0)
-      : undefined;
+        )
+      )
+    ).reduce((total, duration) => total + duration, 0);
+    const subtitleDuration = options.subtitles.reduce(
+      (duration, subtitle) => Math.max(duration, subtitle.endSeconds),
+      0,
+    );
+    const outputDuration = Math.max(videoDuration, subtitleDuration);
     const labelTextPath = join(temporaryDirectory, 'aigc-label.txt');
     if (aigcLabelEnabled) {
       await writeFile(labelTextPath, DEFAULT_AIGC_VISIBLE_LABEL, 'utf8');
@@ -235,10 +238,9 @@ export async function composeVideo(options: ComposeVideoOptions): Promise<void> 
             'aac',
             '-b:a',
             '160k',
-            '-t',
-            String(videoDuration),
           ]
         : ['-an']),
+      ...(outputDuration ? ['-t', String(outputDuration)] : []),
       '-movflags', '+faststart+use_metadata_tags'
     );
     if (aigcLabelEnabled && options.implicitLabel) {

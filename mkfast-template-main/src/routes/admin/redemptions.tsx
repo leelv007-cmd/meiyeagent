@@ -11,7 +11,7 @@ export const Route = createFileRoute('/admin/redemptions')({
   component: RedemptionsPage,
 });
 
-export function RedemptionsPage() {
+function RedemptionsPage() {
   return (
     <AdminRoutePage
       title={admin_redemption_title()}

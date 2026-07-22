@@ -22,6 +22,8 @@ export interface StructuredNodeRunnerRequest<Output> {
   schemaName: string;
   schemaRevision: string;
   abortSignal?: AbortSignal;
+  /** Revalidates live execution facts immediately before every provider effect. */
+  beforeProviderAttempt?: () => Promise<void>;
   onPartialOutput?: (partial: unknown) => Promise<void> | void;
 }
 export interface StructuredNodeRunnerResult<Output> {
@@ -126,7 +128,10 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         schema: request.schema,
         schemaName: request.schemaName,
       },
-      this.options.executor,
+      providerAttemptFencedExecutor(
+        this.options.executor,
+        request.beforeProviderAttempt,
+      ),
     );
     if (result.status !== 'completed' || result.structuredOutput === undefined) {
       throw new StructuredNodeRunError(
@@ -145,6 +150,32 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       },
     };
   }
+}
+
+function providerAttemptFencedExecutor(
+  executor: StructuredObjectExecutor,
+  beforeProviderAttempt?: () => Promise<void>,
+): StructuredObjectExecutor {
+  if (!beforeProviderAttempt) return executor;
+  return {
+    supportsCatalogModel(catalogModelId) {
+      return executor.supportsCatalogModel(catalogModelId);
+    },
+    async generate<Output>(input: {
+      abortSignal?: AbortSignal;
+      instructions: string;
+      onPartialOutput?: (partial: unknown) => Promise<void> | void;
+      prompt: string;
+      schema: ZodType<Output>;
+      schemaName: string;
+    }) {
+      await beforeProviderAttempt();
+      return executor.generate(input);
+    },
+    providerCost(usage) {
+      return executor.providerCost(usage);
+    },
+  };
 }
 
 export class AiSdkStructuredObjectExecutor

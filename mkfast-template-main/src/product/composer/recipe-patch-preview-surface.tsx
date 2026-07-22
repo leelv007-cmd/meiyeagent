@@ -124,9 +124,6 @@ export function RecipePatchPreviewSurface({
 
   return (
     <section
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="composer-patch-preview-title"
       data-testid="composer-recipe-patch-preview"
       data-conflict-kind={preview.conflictKind}
       className={cn(

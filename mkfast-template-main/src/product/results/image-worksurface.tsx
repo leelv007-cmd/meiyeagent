@@ -104,7 +104,7 @@ function localReducer(state: LocalState, action: LocalAction): LocalState {
           action.choice === 'discard'
             ? '已丢弃本地套图草稿'
             : action.choice === 'compare'
-              ? `对比：本地 ${state.drift.baseRevisionId} / 当前 ${state.drift.currentRevisionId}`
+              ? '已保留本地套图草稿，方便你与当前成品对比。'
               : '已保留本地套图草稿',
       };
     }
@@ -189,12 +189,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
   const now = () => new Date().toISOString();
 
   return (
-    <div
-      className="space-y-4"
-      data-testid="image-worksurface"
-      data-mode={view.mode}
-      data-lifecycle={props.facts.lifecycle}
-    >
+    <div className="space-y-4" data-testid="image-worksurface">
       {/* Exact role feedback — polite live region (D-087). */}
       <div
         aria-live="polite"
@@ -219,8 +214,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
         >
           <p className="text-sm font-medium">套图草稿版本已更新</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            本地套图基于 {local.drift.baseRevisionId}，当前为{' '}
-            {local.drift.currentRevisionId}。请选择恢复、对比或丢弃。
+            本地套图基于较早版本，当前成品已有更新。请选择恢复、对比或丢弃。
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {local.drift.choices.map((choice) => (
@@ -290,7 +284,6 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
               candidate.isFocused ? 'ring-2 ring-primary' : ''
             }`}
             data-testid="image-candidate"
-            data-asset-id={candidate.assetId}
             data-order={candidate.order}
             data-in-set={candidate.inWorkingSelection ? 'true' : 'false'}
             data-cover={candidate.isWorkingCover ? 'true' : 'false'}
@@ -322,7 +315,7 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
               />
             ) : (
               <div className="mt-2 flex aspect-[3/4] items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">
-                {candidate.assetId}
+                暂无预览
               </div>
             )}
           </button>
@@ -346,13 +339,11 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
                   key={slot.assetId}
                   className="flex flex-wrap items-center gap-2 text-sm"
                   data-testid="image-set-slot"
-                  data-asset-id={slot.assetId}
                   data-order={slot.order}
                 >
                   <span>
                     第 {slot.order} 张{slot.isCover ? ' · 封面' : ''}
                   </span>
-                  <code className="text-xs">{slot.assetId}</code>
                   <Button
                     type="button"
                     size="sm"
@@ -451,7 +442,6 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
           <Button
             type="button"
             data-testid="image-role-primary"
-            data-action-kind={view.primaryAction.kind}
             disabled={
               (view.primaryAction.kind === 'adopt_set' &&
                 view.wholeSetAdopt?.kind === 'rejected') ||
@@ -546,7 +536,6 @@ export function ImageWorksurface(props: ImageWorksurfaceProps) {
         <p
           className="text-sm text-destructive"
           data-testid="image-whole-set-reject"
-          data-code={view.wholeSetAdopt.code}
         >
           {view.wholeSetAdopt.message}
         </p>

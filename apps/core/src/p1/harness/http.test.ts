@@ -163,16 +163,28 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     'x-workspace-id': 'workspace-1',
     'x-workspace-role': 'owner',
   };
-  const admitted = await fetch(base, {
+  const retiredAdmission = await fetch(base, {
     method: 'POST',
     headers,
     body: JSON.stringify(taskRequest()),
   });
-  assert.equal(admitted.status, 202);
-  assert.deepEqual((await admitted.json()).data, {
+  assert.equal(retiredAdmission.status, 410);
+  assert.equal(
+    (await retiredAdmission.json()).error.code,
+    'HARNESS_TASK_ADMISSION_RETIRED',
+  );
+
+  assert.deepEqual(
+    await harnessService.submit({
+      ...taskRequest(),
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+    }),
+    {
     workflowId: 'task-http-1',
     replayed: false,
-  });
+    },
+  );
 
   const productMetric = {
     idempotencyKey: 'first-usable-draft:task-http-1',
@@ -283,12 +295,11 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     assert.match(eventBody, new RegExp(`"${field}"`, 'u'));
   }
 
-  const conflictAdmission = await fetch(base, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(taskRequest('task-http-conflict')),
+  await harnessService.submit({
+    ...taskRequest('task-http-conflict'),
+    actorId: 'owner-1',
+    workspaceId: 'workspace-1',
   });
-  assert.equal(conflictAdmission.status, 202);
   const conflictEvents = await fetch(
     `http://127.0.0.1:${port}/v1/workspaces/workspace-1/p1/workflows/task-http-conflict/events`,
     { headers },

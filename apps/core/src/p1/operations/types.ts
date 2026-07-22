@@ -917,6 +917,8 @@ export interface ContentPackageExportArtifact {
   contentType: 'application/zip' | 'video/mp4';
   sha256: string;
   sizeBytes: number;
+  /** Durable receipt version for the shared object cleanup claim protocol. */
+  storageRevision?: string;
 }
 
 export interface ContentPackageExportPort {

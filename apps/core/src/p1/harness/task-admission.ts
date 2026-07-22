@@ -9,6 +9,10 @@ import {
 } from '@meiye/contracts';
 import { z } from 'zod';
 
+import {
+  creationExecutionSnapshotSchema,
+  type CreationExecutionSnapshot,
+} from '../execution-spine/creation-execution-snapshot.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type {
   HarnessFrozenPrompts,
@@ -31,6 +35,8 @@ export interface HarnessWorkflowInput {
     revision: number;
   }>;
   reuseSeed?: ReuseTaskSeed;
+  /** Present only for new Composer submissions on the execution spine. */
+  executionSnapshot?: CreationExecutionSnapshot;
   prompts?: HarnessFrozenPrompts;
 }
 
@@ -81,7 +87,9 @@ export class HarnessAdmissionError extends Error {
   readonly status = 409;
 
   constructor(
-    readonly code: 'REQUEST_FINGERPRINT_CONFLICT',
+    readonly code:
+      | 'EXECUTION_SNAPSHOT_MISMATCH'
+      | 'REQUEST_FINGERPRINT_CONFLICT',
     message: string,
   ) {
     super(message);
@@ -129,7 +137,15 @@ export class HarnessTaskAdmissionService {
 }
 
 function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
-  const parsed = harnessTaskRequestSchema.parse(input);
+  const { executionSnapshot, ...request } = input;
+  const parsed = harnessTaskRequestSchema.parse(request);
+  const snapshot = executionSnapshot
+    ? creationExecutionSnapshotSchema.parse(executionSnapshot)
+    : undefined;
+  if (snapshot) {
+    assertExecutionSnapshotMatchesRequest(snapshot, parsed);
+    return snapshotWorkflowInput(snapshot);
+  }
   return {
     actorId: parsed.actorId,
     workspaceId: parsed.workspaceId,
@@ -141,4 +157,80 @@ function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
     factScope: parsed.factScope ?? { storeId: parsed.workspaceId },
     ...(parsed.reuseSeed ? { reuseSeed: parsed.reuseSeed } : {}),
   };
+}
+
+function snapshotWorkflowInput(
+  snapshot: CreationExecutionSnapshot,
+): HarnessWorkflowInput {
+  return {
+    actorId: snapshot.actorId,
+    workspaceId: snapshot.workspaceId,
+    packageId: snapshot.contentPackage.id,
+    expectedRevision: snapshot.contentPackage.expectedRevision,
+    workflowRevision: snapshot.revision,
+    rawInput: snapshot.intent.text,
+    intent: {
+      context: {
+        workId: snapshot.work.id,
+        intent: snapshot.intent.text,
+        sourceSummaries: [],
+      },
+      assetReferences: snapshot.sources.assets.map((asset) => asset.id),
+    },
+    factScope: { storeId: snapshot.workspaceId },
+    executionSnapshot: snapshot,
+  };
+}
+
+function assertExecutionSnapshotMatchesRequest(
+  snapshot: CreationExecutionSnapshot,
+  request: z.infer<typeof harnessTaskRequestSchema>,
+) {
+  const snapshotAssetIds = snapshot.sources.assets.map((asset) => asset.id);
+  const matchingAssets =
+    snapshotAssetIds.length === request.intent.assetReferences.length &&
+    snapshotAssetIds.every(
+      (assetId, index) => assetId === request.intent.assetReferences[index],
+    );
+  const context = request.intent.context;
+  if (
+    snapshot.actorId !== request.actorId ||
+    snapshot.workspaceId !== request.workspaceId ||
+    snapshot.task.id !== request.taskId ||
+    snapshot.work.id !== context.workId ||
+    snapshot.contentPackage.id !== request.packageId ||
+    snapshot.contentPackage.expectedRevision !== request.expectedRevision ||
+    snapshot.revision !== request.workflowRevision ||
+    snapshot.intent.text !== request.rawInput ||
+    snapshot.intent.text !== context.intent ||
+    !sameStringArray(context.sourceSummaries, []) ||
+    context.scene !== undefined ||
+    context.tone !== undefined ||
+    context.audience !== undefined ||
+    !isDefaultFactScope(request.factScope, snapshot.workspaceId) ||
+    request.reuseSeed !== undefined ||
+    !matchingAssets
+  ) {
+    throw new HarnessAdmissionError(
+      'EXECUTION_SNAPSHOT_MISMATCH',
+      'The execution snapshot does not match the Harness task request.',
+    );
+  }
+}
+
+function sameStringArray(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function isDefaultFactScope(
+  scope: StoreFact['scope'] | undefined,
+  workspaceId: string,
+) {
+  return (
+    scope === undefined ||
+    (scope.storeId === workspaceId &&
+      scope.serviceId === undefined &&
+      scope.personaId === undefined &&
+      scope.platform === undefined)
+  );
 }

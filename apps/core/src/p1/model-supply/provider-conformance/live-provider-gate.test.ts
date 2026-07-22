@@ -8,7 +8,7 @@ import type {
 } from './fault-injection/types.js';
 import {
   isLiveVerifiedProbe,
-  runLiveProviderGate,
+  runLiveProviderGate as runLiveProviderGateCore,
   type LiveExternalCostEvidence,
   type LiveProviderChannel,
   type LiveProviderLifecycleEvidence,
@@ -19,6 +19,23 @@ import {
 const fingerprint = 'a'.repeat(64);
 const alternateFingerprint = 'b'.repeat(64);
 const runNonce = 'provider-live-test-run-0001';
+const defaultRunContext = {
+  runNonce,
+  releaseRef: 'release-commit-0001',
+  environment: 'provider-live-test',
+  configurationRevision: 'provider-live-config-0001',
+  evidenceTtlSeconds: 86_400,
+} as const;
+
+type LiveProviderGateInput = Parameters<typeof runLiveProviderGateCore>[0];
+type RunContextKey = keyof typeof defaultRunContext;
+
+function runLiveProviderGate(
+  input: Omit<LiveProviderGateInput, RunContextKey> &
+    Partial<Pick<LiveProviderGateInput, RunContextKey>>,
+) {
+  return runLiveProviderGateCore({ ...defaultRunContext, ...input });
+}
 
 function channels(): LiveProviderChannel[] {
   return DUAL_CHANNEL_MATRIX_MODELS.map((model) => ({
@@ -37,7 +54,11 @@ function channels(): LiveProviderChannel[] {
       model.channelKind === 'official_direct'
         ? fingerprint
         : alternateFingerprint,
-    maxProbeCostUsd: 0.01,
+    providerModelSha256:
+      model.channelKind === 'official_direct'
+        ? fingerprint
+        : alternateFingerprint,
+    maxProbeCostCny: 0.01,
   }));
 }
 
@@ -63,6 +84,8 @@ function successfulProbe(
             downloaded: false,
             pollStatus: 'completed',
             recovered: true,
+            resultBytes: 64,
+            resultSha256: fingerprint,
             submitted: true,
           }
         : {
@@ -82,10 +105,11 @@ function successfulProbe(
     operation: channel.model.operation,
     providerCallSucceeded: true,
     providerProfileId: channel.model.providerProfileId,
+    providerModelSha256: channel.providerModelSha256,
     providerTaskRef: `provider-task-${deploymentId}`,
     providerCost: {
       amount: 0.005,
-      currency: 'USD',
+      currency: 'CNY',
       usage:
         channel.model.modality === 'llm'
           ? { inputTokens: 10, outputTokens: 20 }
@@ -158,22 +182,22 @@ function externalCostEvidence(): LiveExternalCostEvidence {
     runNonce,
     evidenceRef: 'provider-live:test:cost-ledger',
     observedAt: new Date().toISOString(),
-    amountUsd: 0.035,
-    currency: 'USD',
+    amountCny: 0.035,
+    currency: 'CNY',
     components: [
       {
         kind: 'secondary_probe',
-        amountUsd: 0.015,
+        amountCny: 0.015,
         evidenceRef: 'provider-live:test:cost:secondary',
       },
       {
         kind: 'lifecycle_probe',
-        amountUsd: 0.01,
+        amountCny: 0.01,
         evidenceRef: 'provider-live:test:cost:lifecycle',
       },
       {
         kind: 'fault_injection',
-        amountUsd: 0.01,
+        amountCny: 0.01,
         evidenceRef: 'provider-live:test:cost:fault',
       },
     ],
@@ -360,7 +384,7 @@ function transportFaultEvidenceFor(
           providerCost: {
             id: `test-cost-${official.model.modality}`,
             amount: 0.1,
-            currency: 'USD',
+            currency: 'CNY',
             status: 'observed',
             attemptId: `test-attempt-${official.model.modality}`,
           },
@@ -418,8 +442,8 @@ function completeGateInput(
 ): Parameters<typeof runLiveProviderGate>[0] {
   return {
     channels: configured,
-    costCapUsd: 1,
-    externalEvidenceCostReservationUsd: 0.1,
+    costCapCny: 1,
+    externalEvidenceCostReservationCny: 0.1,
     externalCostEvidence: externalCostEvidence(),
     runNonce,
     secondaryProbes: secondaryProbesFor(configured),
@@ -433,7 +457,7 @@ test('configured env never becomes live_verified when the real adapter probe fai
   let probeCalls = 0;
   const report = await runLiveProviderGate({
     channels: channels(),
-    costCapUsd: 1,
+    costCapCny: 1,
     probe: async (channel): Promise<LiveProviderProbeEvidence> => {
       probeCalls += 1;
       return {
@@ -442,6 +466,7 @@ test('configured env never becomes live_verified when the real adapter probe fai
         adapterKind: channel.adapterKind,
         accountIdentityFingerprint: channel.accountIdentityFingerprint,
         endpointFingerprint: channel.endpointFingerprint,
+        providerModelSha256: channel.providerModelSha256,
         catalogModelId: channel.model.catalogModelId,
         channelKind: channel.model.channelKind,
         deploymentId: `live-${channel.model.modality}-${channel.model.channelKind}`,
@@ -456,7 +481,7 @@ test('configured env never becomes live_verified when the real adapter probe fai
         operation: channel.model.operation,
         providerCallSucceeded: false,
         providerProfileId: channel.model.providerProfileId,
-        providerCost: { amount: 0, currency: 'USD' },
+        providerCost: { amount: 0, currency: 'CNY' },
       };
     },
   });
@@ -475,7 +500,7 @@ test('missing channel configuration skips without fabricating evidence', async (
   let probeCalls = 0;
   const report = await runLiveProviderGate({
     channels: [],
-    costCapUsd: 1,
+    costCapCny: 1,
     probe: async () => {
       probeCalls += 1;
       throw new Error('unreachable');
@@ -498,7 +523,7 @@ test('missing channel configuration skips without fabricating evidence', async (
 test('successful adapter probes do not clear unexecuted conformance checks', async () => {
   const report = await runLiveProviderGate({
     channels: channels(),
-    costCapUsd: 1,
+    costCapCny: 1,
     probe: async (channel) => successfulProbe(channel),
   });
 
@@ -536,6 +561,85 @@ test('successful adapter probes do not clear unexecuted conformance checks', asy
   );
 });
 
+test('primary connectivity mode publishes one live official channel per modality', async () => {
+  const report = await runLiveProviderGate({
+    acceptanceMode: 'primary_connectivity',
+    channels: channels(),
+    costCapCny: 1,
+    probe: async (channel) => successfulProbe(channel),
+  });
+
+  assert.equal(report.acceptanceMode, 'primary_connectivity');
+  assert.equal(report.runNonce, runNonce);
+  assert.equal(report.releaseRef, defaultRunContext.releaseRef);
+  assert.equal(report.environment, defaultRunContext.environment);
+  assert.equal(
+    report.configurationRevision,
+    defaultRunContext.configurationRevision,
+  );
+  assert.ok(Date.parse(report.completedAt) >= Date.parse(report.startedAt));
+  assert.ok(Date.parse(report.expiresAt) > Date.parse(report.completedAt));
+  assert.match(report.effectiveConfigurationSha256, /^[a-f0-9]{64}$/u);
+  assert.equal(report.probes.length, 3);
+  assert.ok(
+    report.activationEvidence.every(
+      (evidence) => evidence.activationStatus === 'live_verified',
+    ),
+  );
+  assert.deepEqual(report.blockedChecks, []);
+  assert.deepEqual(report.skippedOperations, []);
+  assert.equal(report.publishGates.length, 3);
+  assert.ok(
+    report.publishGates.every(
+      (gate) =>
+        gate.status === 'single_channel' &&
+        gate.publishAllowed &&
+        !gate.multiChannelReady &&
+        gate.channelLabel === 'single-channel/no-fallback',
+    ),
+  );
+  assert.equal(report.liveMatrixReports.length, 0);
+});
+
+test('run context fails closed before any paid provider probe', async () => {
+  let probeCalls = 0;
+  await assert.rejects(
+    runLiveProviderGateCore({
+      ...defaultRunContext,
+      runNonce: '',
+      acceptanceMode: 'primary_connectivity',
+      channels: channels(),
+      costCapCny: 1,
+      probe: async (channel) => {
+        probeCalls += 1;
+        return successfulProbe(channel);
+      },
+    }),
+    /provider_live_run_context_invalid/u,
+  );
+  assert.equal(probeCalls, 0);
+});
+
+test('primary connectivity mode stays blocked when one official probe fails', async () => {
+  const report = await runLiveProviderGate({
+    acceptanceMode: 'primary_connectivity',
+    channels: channels(),
+    costCapCny: 1,
+    probe: async (channel) => {
+      const evidence = successfulProbe(channel);
+      return channel.model.operation === 'image.generate'
+        ? { ...evidence, providerCallSucceeded: false }
+        : evidence;
+    },
+  });
+
+  assert.deepEqual(report.skippedOperations, ['image.generate']);
+  assert.deepEqual(
+    report.blockedChecks.map((check) => [check.operation, check.check]),
+    [['image.generate', 'primary_live_verification']],
+  );
+});
+
 test('catalog id override cannot disguise a matrix declared as misaligned', async () => {
   const configured = channels().map((channel) =>
     channel.model.operation === 'copy.generate'
@@ -550,7 +654,7 @@ test('catalog id override cannot disguise a matrix declared as misaligned', asyn
   );
   const report = await runLiveProviderGate({
     channels: configured,
-    costCapUsd: 1,
+    costCapCny: 1,
     probe: async (channel) => successfulProbe(channel),
   });
 
@@ -584,9 +688,9 @@ test('validated external lifecycle and transport evidence produces live matrix r
     ),
   );
   assert.equal(report.liveMatrixReports.length, 3);
-  assert.ok(Math.abs(report.actualCost.providerProbeUsd - 0.03) < 1e-9);
-  assert.equal(report.actualCost.externalEvidenceUsd, 0.035);
-  assert.ok(Math.abs(report.actualCost.totalUsd - 0.065) < 1e-9);
+  assert.ok(Math.abs(report.actualCost.providerProbeCny - 0.03) < 1e-9);
+  assert.equal(report.actualCost.externalEvidenceCny, 0.035);
+  assert.ok(Math.abs(report.actualCost.totalCny - 0.065) < 1e-9);
   assert.ok(report.externalEvidenceRefs.length > 30);
   assert.ok(
     report.liveMatrixReports.every(
@@ -683,8 +787,8 @@ test('secondary operations accept more than one independent probe per operation'
     },
   });
   const costEvidence = externalCostEvidence();
-  costEvidence.components[0]!.amountUsd += 0.005;
-  costEvidence.amountUsd += 0.005;
+  costEvidence.components[0]!.amountCny += 0.005;
+  costEvidence.amountCny += 0.005;
   const report = await runLiveProviderGate({
     ...completeGateInput(configured),
     secondaryProbes,
@@ -775,6 +879,7 @@ test('each required evidence field independently gates live_verified', () => {
     adapterKind: 'ark_media',
     accountIdentityFingerprint: fingerprint,
     endpointFingerprint: alternateFingerprint,
+    providerModelSha256: fingerprint,
     catalogModelId: 'seedance-1-5-pro',
     channelKind: 'official_direct',
     deploymentId: 'live-video-official_direct',
@@ -795,7 +900,7 @@ test('each required evidence field independently gates live_verified', () => {
     providerTaskRef: 'provider-task',
     providerCost: {
       amount: 0.1,
-      currency: 'USD',
+      currency: 'CNY',
       usage: { mediaUnits: 1, outputTokens: 100 },
     },
   };
@@ -805,6 +910,7 @@ test('each required evidence field independently gates live_verified', () => {
     { ...complete, adapterExecuted: false },
     { ...complete, providerCallSucceeded: false },
     { ...complete, acceptance: 'acceptance_unknown' },
+    { ...complete, providerModelSha256: 'invalid' },
     { ...complete, providerTaskRef: undefined },
     { ...complete, evidenceRef: 'invalid' },
     { ...complete, observedAt: 'not-a-timestamp' },
@@ -851,13 +957,14 @@ test('channel evidence cannot be rebound to a different provider identity', asyn
   );
   const report = await runLiveProviderGate({
     channels: videoChannels,
-    costCapUsd: 1,
+    costCapCny: 1,
     probe: async (channel): Promise<LiveProviderProbeEvidence> => ({
       acceptance: 'accepted',
       adapterExecuted: true,
       adapterKind: channel.adapterKind,
       accountIdentityFingerprint: channel.accountIdentityFingerprint,
       endpointFingerprint: channel.endpointFingerprint,
+      providerModelSha256: channel.providerModelSha256,
       catalogModelId: channel.model.catalogModelId,
       channelKind: channel.model.channelKind,
       deploymentId: `live-${channel.model.modality}-${channel.model.channelKind}`,
@@ -881,7 +988,7 @@ test('channel evidence cannot be rebound to a different provider identity', asyn
       providerTaskRef: 'provider-task',
       providerCost: {
         amount: 0.005,
-        currency: 'USD',
+        currency: 'CNY',
         usage: { mediaUnits: 1, outputTokens: 100 },
       },
     }),
@@ -911,13 +1018,14 @@ test('shared account or endpoint fingerprints cannot count as two fault domains'
   };
   const report = await runLiveProviderGate({
     channels: videoChannels,
-    costCapUsd: 1,
+    costCapCny: 1,
     probe: async (channel): Promise<LiveProviderProbeEvidence> => ({
       acceptance: 'accepted',
       adapterExecuted: true,
       adapterKind: channel.adapterKind,
       accountIdentityFingerprint: channel.accountIdentityFingerprint,
       endpointFingerprint: channel.endpointFingerprint,
+      providerModelSha256: channel.providerModelSha256,
       catalogModelId: channel.model.catalogModelId,
       channelKind: channel.model.channelKind,
       deploymentId: `live-${channel.model.modality}-${channel.model.channelKind}`,
@@ -938,7 +1046,7 @@ test('shared account or endpoint fingerprints cannot count as two fault domains'
       providerTaskRef: 'provider-task',
       providerCost: {
         amount: 0.005,
-        currency: 'USD',
+        currency: 'CNY',
         usage: { mediaUnits: 1, outputTokens: 100 },
       },
     }),
@@ -962,7 +1070,7 @@ test('reserved provider cost blocks every paid call before the cap is exceeded',
   await assert.rejects(
     runLiveProviderGate({
       channels: channels(),
-      costCapUsd: 0.01,
+      costCapCny: 0.01,
       probe: async () => {
         probeCalls += 1;
         throw new Error('unreachable');
@@ -976,12 +1084,12 @@ test('reserved provider cost blocks every paid call before the cap is exceeded',
     const invalidChannels = channels();
     invalidChannels[0] = {
       ...invalidChannels[0]!,
-      maxProbeCostUsd: invalidBudget,
+      maxProbeCostCny: invalidBudget,
     };
     await assert.rejects(
       runLiveProviderGate({
         channels: invalidChannels,
-        costCapUsd: 1,
+        costCapCny: 1,
         probe: async () => {
           probeCalls += 1;
           throw new Error('unreachable');
@@ -996,8 +1104,8 @@ test('reserved provider cost blocks every paid call before the cap is exceeded',
   await assert.rejects(
     runLiveProviderGate({
       channels: configured,
-      costCapUsd: 1,
-      externalEvidenceCostReservationUsd: 0,
+      costCapCny: 1,
+      externalEvidenceCostReservationCny: 0,
       lifecycleEvidence: lifecycleEvidenceFor(configured),
       probe: async () => {
         probeCalls += 1;
@@ -1016,7 +1124,7 @@ test('actual provider and hook cost evidence fail closed against reservations', 
   await assert.rejects(
     runLiveProviderGate({
       channels: videoChannels,
-      costCapUsd: 1,
+      costCapCny: 1,
       probe: async (channel) => ({
         ...successfulProbe(channel),
         providerCost: {
@@ -1030,13 +1138,13 @@ test('actual provider and hook cost evidence fail closed against reservations', 
 
   const configured = alignedChannels();
   const excessiveHookCost = externalCostEvidence();
-  excessiveHookCost.amountUsd = 0.12;
-  excessiveHookCost.components[0]!.amountUsd = 0.1;
+  excessiveHookCost.amountCny = 0.12;
+  excessiveHookCost.components[0]!.amountCny = 0.1;
   await assert.rejects(
     runLiveProviderGate({
       channels: configured,
-      costCapUsd: 1,
-      externalEvidenceCostReservationUsd: 0.1,
+      costCapCny: 1,
+      externalEvidenceCostReservationCny: 0.1,
       externalCostEvidence: excessiveHookCost,
       runNonce,
       secondaryProbes: secondaryProbesFor(configured),
@@ -1048,13 +1156,13 @@ test('actual provider and hook cost evidence fail closed against reservations', 
   );
 
   const unreconciledCost = externalCostEvidence();
-  unreconciledCost.components[0]!.amountUsd = 0.01;
-  unreconciledCost.amountUsd = 0.03;
+  unreconciledCost.components[0]!.amountCny = 0.01;
+  unreconciledCost.amountCny = 0.03;
   await assert.rejects(
     runLiveProviderGate({
       channels: configured,
-      costCapUsd: 1,
-      externalEvidenceCostReservationUsd: 0.1,
+      costCapCny: 1,
+      externalEvidenceCostReservationCny: 0.1,
       externalCostEvidence: unreconciledCost,
       runNonce,
       secondaryProbes: secondaryProbesFor(configured),
@@ -1066,14 +1174,14 @@ test('actual provider and hook cost evidence fail closed against reservations', 
   await assert.rejects(
     runLiveProviderGate({
       channels: videoChannels,
-      costCapUsd: 1,
+      costCapCny: 1,
       probe: async (channel) => ({
         ...successfulProbe(channel),
         providerCost: {
           ...successfulProbe(channel).providerCost,
           amount: 0.005,
-          amountUsd: undefined,
-          currency: 'CNY',
+          amountCny: undefined,
+          currency: 'USD',
           fx: undefined,
         },
       }),

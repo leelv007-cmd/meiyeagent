@@ -26,9 +26,11 @@ registerHooks({
 
 const { SidebarProvider } = await import('@/components/ui/sidebar');
 const { p1QueryKeys } = await import('@/p1/query-keys');
-const { ModelsPage } = await import('./models');
+const { Route: modelsFileRoute } = await import('./models');
+const ModelsPage = modelsFileRoute.options.component;
 
 test('admin models route renders execution mode and adapter assembly controls', async () => {
+  assert.equal(typeof ModelsPage, 'function');
   const queryClient = new QueryClient();
   queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
     ...[
@@ -59,7 +61,7 @@ test('admin models route renders execution mode and adapter assembly controls', 
 
   const rootRoute = createRootRoute({ component: Outlet });
   const modelsRoute = createRoute({
-    component: ModelsPage,
+    component: ModelsPage!,
     getParentRoute: () => rootRoute,
     path: '/admin/models',
   });

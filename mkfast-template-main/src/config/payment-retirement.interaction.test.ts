@@ -1,24 +1,64 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.resetModules();
-});
+import { describe, expect, it } from 'vitest';
+import { resolvePaymentRuntimePolicy } from './payment-runtime-policy';
 
 describe('payment runtime policy', () => {
-  it('keeps Stripe webhook runtime configured while publishing no Stripe prices', async () => {
-    vi.stubEnv('VITE_PAYMENT_PROVIDER', 'stripe');
-    vi.stubEnv('VITE_PUBLIC_PAID_LAUNCH_ENABLED', 'true');
-    vi.stubEnv('VITE_STRIPE_PRICE_PRO_MONTHLY', 'price_must_not_publish');
-    vi.resetModules();
+  it('keeps Stripe webhook runtime enabled without publishing prices', () => {
+    expect(
+      resolvePaymentRuntimePolicy({
+        provider: 'stripe',
+        publicPaidLaunchEnabled: true,
+        creemPriceIds: {
+          proMonthly: 'must_not_publish',
+          proYearly: 'must_not_publish',
+          lifetime: 'must_not_publish',
+        },
+      })
+    ).toEqual({
+      enabled: true,
+      provider: 'stripe',
+      priceIds: { proMonthly: '', proYearly: '', lifetime: '' },
+    });
+  });
 
-    const { websiteConfig } = await import('./website');
-    const prices = Object.values(
-      websiteConfig.payment?.price?.plans ?? {}
-    ).flatMap((plan) => plan.prices);
+  it('publishes Creem prices only for an explicit paid launch', () => {
+    expect(
+      resolvePaymentRuntimePolicy({
+        provider: 'creem',
+        publicPaidLaunchEnabled: true,
+        creemPriceIds: {
+          proMonthly: 'creem_monthly',
+          proYearly: 'creem_yearly',
+          lifetime: 'creem_lifetime',
+        },
+      })
+    ).toEqual({
+      enabled: true,
+      provider: 'creem',
+      priceIds: {
+        proMonthly: 'creem_monthly',
+        proYearly: 'creem_yearly',
+        lifetime: 'creem_lifetime',
+      },
+    });
+  });
 
-    expect(websiteConfig.payment?.enable).toBe(true);
-    expect(websiteConfig.payment?.provider).toBe('stripe');
-    expect(prices.every((price) => price.priceId === '')).toBe(true);
-  }, 15_000);
+  it.each([
+    { provider: 'creem' as const, publicPaidLaunchEnabled: false },
+    { provider: '' as const, publicPaidLaunchEnabled: true },
+  ])('disables unsupported runtime input %#', (input) => {
+    expect(
+      resolvePaymentRuntimePolicy({
+        ...input,
+        creemPriceIds: {
+          proMonthly: 'must_not_publish',
+          proYearly: 'must_not_publish',
+          lifetime: 'must_not_publish',
+        },
+      })
+    ).toEqual({
+      enabled: false,
+      provider: undefined,
+      priceIds: { proMonthly: '', proYearly: '', lifetime: '' },
+    });
+  });
 });

@@ -12,7 +12,7 @@ function RoutedSupplyTaskDrilldownPage() {
   return <SupplyTaskDrilldownPage taskId={taskId} />;
 }
 
-export function SupplyTaskDrilldownPage({
+function SupplyTaskDrilldownPage({
   taskId: taskIdProp,
 }: {
   taskId?: string;

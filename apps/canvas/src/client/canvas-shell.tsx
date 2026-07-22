@@ -16,6 +16,15 @@ import {
 } from "../kernel-host/graph-bridge";
 import { KernelCanvasSurface } from "../kernel-host/kernel-canvas-surface";
 import {
+	fileToBase64,
+	persistBlobAsOwnedAsset,
+} from "../kernel-host/media-adapter";
+import {
+	createCanvasSessionState,
+	withCanvasViewport,
+	withSelectedCanvasNodes,
+} from "../kernel-host/ported/canvas-session-store";
+import {
 	DraftVersionConflictError,
 	ProjectPersistenceAdapter,
 } from "../kernel-host/project-persistence";
@@ -58,14 +67,19 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 	const [selected, setSelected] = useState<AdvancedCanvasProject | null>(null);
 	const [revisions, setRevisions] = useState<AdvancedCanvasRevision[]>([]);
 	const [adoptedNodeIds, setAdoptedNodeIds] = useState<string[]>([]);
-	const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+	const [canvasSession, setCanvasSession] = useState(createCanvasSessionState);
 	const [kernelGraph, setKernelGraph] = useState<KernelSessionGraph | null>(
 		null,
 	);
 	const [dirty, setDirty] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState("正在恢复云端工程…");
+	const selectedNodeIds = canvasSession.selectedNodeIds;
+	const setSelectedNodeIds = useCallback((ids: string[]) => {
+		setCanvasSession((current) => withSelectedCanvasNodes(current, ids));
+	}, []);
 	const fileRef = useRef<HTMLInputElement>(null);
+	const assetLibraryRef = useRef<HTMLDivElement>(null);
 	const selectedRef = useRef<AdvancedCanvasProject | null>(null);
 	const dirtyRef = useRef(false);
 	const kernelGraphRef = useRef<KernelSessionGraph | null>(null);
@@ -164,13 +178,16 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 			setSelected(loaded.project);
 			kernelGraphRef.current = loaded.kernel;
 			setKernelGraph(loaded.kernel);
+			setCanvasSession(
+				createCanvasSessionState({ viewport: loaded.kernel.viewport }),
+			);
 			setSelectedNodeIds([]);
 			setRevisions(loaded.revisions);
 			dirtyRef.current = false;
 			setDirty(false);
 			return loaded.project;
 		},
-		[projectPersistence],
+		[projectPersistence, setSelectedNodeIds],
 	);
 
 	useEffect(() => {
@@ -292,6 +309,7 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 		const next = { ...current, viewport };
 		kernelGraphRef.current = next;
 		setKernelGraph(next);
+		setCanvasSession((session) => withCanvasViewport(session, viewport));
 	}
 
 	async function renameProject() {
@@ -420,18 +438,22 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 
 	async function upload(file: File) {
 		await run(async () => {
-			const bytesBase64 = await fileBase64(file);
-			await callCanvas("persistLocalCanvasArtifact", {
-				bytesBase64,
+			const persisted = await persistBlobAsOwnedAsset(callCanvas, {
+				bytesBase64: await fileToBase64(file),
 				contentType: file.type,
 				derivation: "retouch",
 				fileName: file.name,
 			});
+			insertOwnedAsset(persisted);
 			setAssets(await callCanvas<CanvasOwnedAsset[]>("listAssets"));
-		}, "素材已存入服务端素材库");
+		}, "素材已存入服务端素材库并插入画布");
 	}
 
 	function insertAsset(asset: CanvasOwnedAsset) {
+		insertOwnedAsset(asset);
+	}
+
+	function insertOwnedAsset(asset: { contentType: string; id: string }) {
 		if (!selected || !kernelGraphRef.current) return;
 		const nodeType = canvasNodeTypeFromContentType(asset.contentType);
 		if (!nodeType) {
@@ -449,6 +471,42 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 			...position,
 		});
 		applyKernelGraph(next);
+	}
+
+	async function importFiles(
+		files: File[],
+		position: { x: number; y: number },
+	) {
+		if (!selected || !kernelGraphRef.current || files.length === 0) return;
+		await run(async () => {
+			const next = structuredClone(kernelGraphRef.current);
+			if (!next) return;
+			const insertedIds: string[] = [];
+			for (const [index, file] of files.entries()) {
+				const nodeType = canvasNodeTypeFromContentType(file.type);
+				if (!nodeType) continue;
+				const asset = await persistBlobAsOwnedAsset(callCanvas, {
+					bytesBase64: await fileToBase64(file),
+					contentType: file.type,
+					fileName: file.name || `clipboard-${index + 1}`,
+				});
+				const id = `${nodeType}-${crypto.randomUUID()}`;
+				next.nodes.push({
+					data: { assetId: asset.id },
+					height: 160,
+					id,
+					type: nodeType,
+					width: 200,
+					x: position.x + index * 32,
+					y: position.y + index * 32,
+				});
+				insertedIds.push(id);
+			}
+			if (insertedIds.length === 0) return;
+			applyKernelGraph(next);
+			setSelectedNodeIds(insertedIds);
+			setAssets(await callCanvas<CanvasOwnedAsset[]>("listAssets"));
+		}, "素材已持久化并插入画布");
 	}
 
 	async function cropSelectedImage(nodeId: string) {
@@ -582,7 +640,7 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 							</button>
 						))}
 					</div>
-					<div className="asset-library">
+					<div className="asset-library" ref={assetLibraryRef}>
 						<div className="rail-heading">
 							<h2>素材库</h2>
 							<button type="button" onClick={() => fileRef.current?.click()}>
@@ -592,7 +650,7 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 								ref={fileRef}
 								hidden
 								type="file"
-								accept="image/png,image/jpeg,image/webp"
+								accept="image/*,video/*,audio/*"
 								onChange={(event) => {
 									const file = event.target.files?.[0];
 									if (file) upload(file);
@@ -670,7 +728,15 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 										graph={kernelGraph}
 										onChange={applyKernelGraph}
 										onCropSelected={cropSelectedImage}
+										onImportFiles={importFiles}
+										onOpenAssets={() =>
+											assetLibraryRef.current?.scrollIntoView({
+												behavior: "smooth",
+												block: "nearest",
+											})
+										}
 										onSelectNodes={setSelectedNodeIds}
+										onUpload={() => fileRef.current?.click()}
 										onViewportChange={applyKernelViewport}
 										selectedNodeIds={selectedNodeIds}
 									/>
@@ -798,14 +864,4 @@ function showError(setMessage: (message: string) => void) {
 		}
 		setMessage("操作失败，请重试");
 	};
-}
-
-async function fileBase64(file: File) {
-	const buffer = await file.arrayBuffer();
-	const bytes = new Uint8Array(buffer);
-	let binary = "";
-	for (let index = 0; index < bytes.length; index += 0x8000) {
-		binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-	}
-	return btoa(binary);
 }

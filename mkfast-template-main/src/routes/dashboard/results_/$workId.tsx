@@ -42,6 +42,14 @@ import type {
   VideoRegenerationServerQuote,
 } from '@/product/results/video/video-worksurface';
 import { executeResultContentPackageHandEdit } from '@/product/results/result-content-package-hand-edit';
+import {
+  validateResultCenterSearch,
+  type ResultCenterSearch,
+} from '@/product/results/result-center-search';
+import {
+  parseResultReturnState,
+  resultReturnDestination,
+} from '@/product/results/result-return-navigation';
 import { parseResultCenterSearch } from '@/product/results/result-target-wiring';
 import { useResultReturnRestoreSession } from '@/product/results/use-result-return-restore-session';
 import type {
@@ -50,21 +58,13 @@ import type {
   PublicContentPackage,
   ResultAction,
   ResultAdjustCommand,
-  ResultPanel,
   ResultTargetResolveOutcome,
   VideoWorkflowPublicProjection,
 } from '@meiye/contracts';
-import { resultCenterPath, resultPanels } from '@meiye/contracts';
+import { resultCenterPath } from '@meiye/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
-
-export type ResultCenterSearch = {
-  contentId?: string;
-  versionId?: string;
-  panel?: ResultPanel;
-  focusKey?: string;
-};
 
 type PendingImageAdjust = {
   baseJobId: string;
@@ -74,32 +74,7 @@ type PendingImageAdjust = {
   scope?: ResultAdjustCommand['scope'];
 };
 
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function optionalPanel(value: unknown): ResultPanel | undefined {
-  return typeof value === 'string' &&
-    (resultPanels as readonly string[]).includes(value)
-    ? (value as ResultPanel)
-    : undefined;
-}
-
-/** Exported for unit tests — same search validation as the route. */
-export function validateResultCenterSearch(
-  search: Record<string, unknown>
-): ResultCenterSearch {
-  const contentId = optionalString(search.contentId);
-  const versionId = optionalString(search.versionId);
-  const panel = optionalPanel(search.panel);
-  const focusKey = optionalString(search.focusKey);
-  return {
-    ...(contentId ? { contentId } : {}),
-    ...(versionId ? { versionId } : {}),
-    ...(panel ? { panel } : {}),
-    ...(focusKey ? { focusKey } : {}),
-  };
-}
+export type { ResultCenterSearch } from '@/product/results/result-center-search';
 
 export const Route = createFileRoute('/dashboard/results_/$workId')({
   validateSearch: (search: Record<string, unknown>): ResultCenterSearch =>
@@ -111,6 +86,7 @@ function ResultCenterRoutePage() {
   const { workId } = Route.useParams();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  const returnState = parseResultReturnState(search);
   const queryClient = useQueryClient();
   const intentKeys = useRef(new Map<string, string>());
   const [pendingImageAdjust, setPendingImageAdjust] =
@@ -731,8 +707,6 @@ function ResultCenterRoutePage() {
     'continue_adjust',
     'deliver',
     'leave_and_continue',
-    'open_history',
-    'open_run_detail',
     'create_from_this',
     'retry',
     'cancel_run',
@@ -763,14 +737,7 @@ function ResultCenterRoutePage() {
         });
         return;
       case 'open_history':
-        await navigate({
-          search: (current) => ({ ...current, panel: 'history' }),
-        });
-        return;
       case 'open_run_detail':
-        await navigate({
-          search: (current) => ({ ...current, panel: 'run' }),
-        });
         return;
       case 'leave_and_continue':
         window.location.assign('/dashboard');
@@ -841,10 +808,13 @@ function ResultCenterRoutePage() {
           derivedWorkId: pendingImageAdjust.derivedWorkId,
         }
       );
-      window.location.assign(resultCenterPath(result.work.id));
-    } catch (error) {
+      setPendingImageAdjust(null);
+      window.requestAnimationFrame(() => {
+        window.location.assign(resultCenterPath(result.work.id));
+      });
+    } catch {
       setAdjustError(
-        error instanceof Error ? error.message : '调整提交失败，请重试。'
+        '调整提交暂时不可用。费用以报价确认页和账单记录为准，请稍后重试。'
       );
     } finally {
       setAdjustBusy(false);
@@ -907,6 +877,17 @@ function ResultCenterRoutePage() {
           .finally(() => {
             setShellActionBusy(false);
           });
+      }}
+      onBack={() => {
+        if (returnState?.kind === 'task-inbox') {
+          const destination = resultReturnDestination(returnState);
+          void navigate({
+            to: '/dashboard/tasks',
+            search: destination.search,
+          });
+          return;
+        }
+        void navigate({ to: '/dashboard', search: {} });
       }}
       onDriftChoice={(choice) => returnRestore.applyDriftChoice(choice)}
       onCopyAdopt={copyAsset ? adoptCopyCandidate : undefined}
@@ -1008,9 +989,9 @@ function ResultCenterRoutePage() {
             quote,
             ...(scope ? { scope } : {}),
           });
-        } catch (error) {
+        } catch {
           setAdjustError(
-            error instanceof Error ? error.message : '调整报价失败，请重试。'
+            '暂时无法确认本次调整费用。请稍后重试，重新确认前不会创建新的调整。'
           );
         } finally {
           setAdjustBusy(false);

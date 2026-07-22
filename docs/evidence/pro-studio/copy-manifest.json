@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "upstream": {
     "repository": "https://github.com/csyqlz/vozeb",
     "commit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
@@ -24,6 +24,10 @@
     },
     "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
     "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md",
+    "portAddenda": {
+      "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md"
+    },
     "note": "Both grantors confirmed. Written instrument archived with content hash. Exact-copy rows still required for conformance; A3 third-party assets not auto-cleared."
   },
   "copies": [
@@ -364,6 +368,327 @@
       "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
     }
   ],
+  "ports": [
+    {
+      "source": "web/src/app/(user)/canvas/stores/use-canvas-ui-store.ts",
+      "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
+      "target": "apps/canvas/src/kernel-host/ported/canvas-session-store.ts",
+      "sourceSha256": "ce6ca88828354ddccb77a9a0e89b79503b78e3e5eaf94ea0eb709bea0c137003",
+      "targetSha256": "ca068b0839a679faa724d922dc80d3194addc352e23c9123210276e6635cbf57",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
+      "thirdPartyNotes": "Zustand is declared as an npm dependency and no third-party bytes are copied into this host derivative.",
+      "reviewer": "product_owner",
+      "adaptationBoundary": "Session-only selection, panel, toolbar, and viewport state; persistent graph, Core calls, Agent, provider configuration, and prompt corpus are excluded.",
+      "adapterReplacementMatrix": [
+        {
+          "upstream": "zustand create<CanvasUiStore>",
+          "host": "CanvasShell React session state",
+          "decision": "replace"
+        },
+        {
+          "upstream": "editing and delete-project dialog state",
+          "host": "K2 project dialog host adapters",
+          "decision": "replace"
+        },
+        {
+          "upstream": "upstream local persistence or Agent state",
+          "host": "Product BackendPort and Core-owned facts",
+          "decision": "exclude"
+        }
+      ]
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-connections.tsx",
+      "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
+      "target": "apps/canvas/src/kernel-host/ported/canvas-connections.tsx",
+      "sourceSha256": "9d6dd28cacef0a7efc9611b04d421300f8d463052c38a655693bf1fde2eda30a",
+      "targetSha256": "9e0b6dcadfc21eccbf81fb51bad8a5b6caf53476dba0567b7b30d1f4ebe746fc",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-k2-connections-port-addendum-2026-07-22.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-k2-connections-port-addendum-2026-07-22.md",
+      "thirdPartyNotes": "React and Zustand remain separately declared npm dependencies; no third-party package bytes are copied into the derivative.",
+      "reviewer": "product_owner",
+      "adaptationBoundary": "Preserves the upstream SVG connection geometry and selection/context-menu callbacks while adding an explicit React runtime import for the Canvas host. Provider, storage, project, and generation behavior remain excluded.",
+      "adapterReplacementMatrix": [
+        {
+          "upstream": "implicit classic React JSX runtime",
+          "host": "explicit React runtime import",
+          "decision": "replace"
+        },
+        {
+          "upstream": "useThemeStore canvas colors",
+          "host": "Canvas bootstrap-owned theme adapter",
+          "decision": "replace"
+        },
+        {
+          "upstream": "connection persistence",
+          "host": "Kernel graph onChange to server draft via BackendPort",
+          "decision": "replace"
+        }
+      ]
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-toolbar.tsx",
+      "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
+      "target": "apps/canvas/src/kernel-host/ported/k2-canvas-toolbar.tsx",
+      "sourceSha256": "fbd48c133f60025857fb1a0bfb3655a5089e9d26744b6213615b5c64432c52f5",
+      "targetSha256": "543952e924b9fa36fc160bc1e9816f67d1c0a1bc469563ef85cda6993bdd03b8",
+      "authorizationStatus": "authorized",
+      "a2Evidence": "docs/evidence/pro-studio/a2-k2-toolbar-port-addendum-2026-07-22.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-k2-toolbar-port-addendum-2026-07-22.md",
+      "thirdPartyNotes": "Lucide React remains a separately declared npm dependency; no third-party package bytes are copied into the derivative.",
+      "reviewer": "product_owner",
+      "adaptationBoundary": "Preserves the approved K2 dock actions and appearance controls while removing the conflicting local theme switch. Graph mutations, OwnedAsset persistence, and bootstrap theme authority remain host-owned.",
+      "adapterReplacementMatrix": [
+        {
+          "upstream": "local node and graph callbacks",
+          "host": "KernelCanvasSurface graph callbacks to the server draft",
+          "decision": "replace"
+        },
+        {
+          "upstream": "local upload and asset modal callbacks",
+          "host": "CanvasShell BackendPort OwnedAsset callbacks",
+          "decision": "replace"
+        },
+        {
+          "upstream": "local light/dark theme switch",
+          "host": "Canvas bootstrap/system theme authority",
+          "decision": "exclude"
+        }
+      ]
+    }
+  ],
   "status": "authorized_with_exact_copies",
-  "note": "A2/A3 written authorization on file. Exact-copy rows frozen at pinned commit via scripts/pro-studio/apply-exact-copies.mjs."
+  "note": "A2/A3 written authorization on file. Exact-copy rows frozen at pinned commit via scripts/pro-studio/apply-exact-copies.mjs.",
+  "productionInventory": [
+    {
+      "source": "web/src/app/(user)/canvas/[id]/page.tsx",
+      "classification": "delete-from-inventory"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/asset-picker-modal.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-agent-chat-ui.tsx",
+      "classification": "out-of-scope"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-agent-panel-motion.ts",
+      "classification": "out-of-scope"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-config-composer.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-connections.tsx",
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/ported/canvas-connections.tsx"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-context-menu.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx",
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/client/runtime-panel.tsx"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-tools.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-mini-map.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-angle-dialog.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-crop-dialog.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-hover-toolbar.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-mask-edit-dialog.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-split-dialog.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node-upscale-dialog.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-node.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-project-card.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-prompt-library.tsx",
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/client/runtime-panel.tsx"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-size-picker.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-toolbar.tsx",
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/ported/k2-canvas-toolbar.tsx"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/canvas-zoom-controls.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/components/vozeb-canvas.tsx",
+      "classification": "mount-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/constants.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/export-types.ts",
+      "classification": "delete-from-inventory"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/stores/use-canvas-store.ts",
+      "classification": "delete-from-inventory"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/stores/use-canvas-ui-store.ts",
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/ported/canvas-session-store.ts"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/types.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/utils/canvas-agent-ops.ts",
+      "classification": "out-of-scope"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/utils/canvas-image-data.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/utils/canvas-node-size.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/app/(user)/canvas/utils/canvas-resource-references.ts",
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/generation-adapter.ts"
+    },
+    {
+      "source": "web/src/lib/audio-generation.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/lib/canvas-theme.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/lib/file-drop.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/lib/image-reference-prompt.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/lib/image-utils.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/lib/storage-keys.ts",
+      "classification": "delete-from-inventory"
+    },
+    {
+      "source": "web/src/lib/utils.ts",
+      "classification": "utility-exact"
+    },
+    {
+      "source": "web/src/lib/zip.ts",
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/server/backend-port-vnext.ts"
+    }
+  ],
+  "productionWhitelist": [
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-context-menu",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-context-menu.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-mini-map",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-mini-map.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-node",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-zoom-controls",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-zoom-controls.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx",
+      "importRef": "./canvas-resource-mention-textarea",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-resource-mention-textarea.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-node-adapter.ts",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/constants",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/constants.ts"
+    },
+    {
+      "consumer": "apps/canvas/lib/image-reference-prompt.ts",
+      "importRef": "../src/vendor/vozeb/lib/image-reference-prompt",
+      "target": "apps/canvas/src/vendor/vozeb/lib/image-reference-prompt.ts"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/kernel-canvas-surface.tsx",
+      "importRef": "@/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas.tsx"
+    },
+    {
+      "consumer": "apps/canvas/src/kernel-host/retouch-adapter.ts",
+      "importRef": "../vendor/vozeb/app/(user)/canvas/utils/canvas-image-data.js",
+      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/utils/canvas-image-data.ts"
+    },
+    {
+      "consumer": "apps/canvas/lib/canvas-theme.ts",
+      "importRef": "../src/vendor/vozeb/lib/canvas-theme",
+      "target": "apps/canvas/src/vendor/vozeb/lib/canvas-theme.ts"
+    }
+  ]
 }

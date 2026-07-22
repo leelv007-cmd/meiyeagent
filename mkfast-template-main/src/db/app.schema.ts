@@ -413,6 +413,7 @@ export const userFiles = pgTable(
     contentType: text('content_type').notNull(),
     size: integer('size').notNull(),
     r2Key: text('r2_key').notNull(),
+    storageRevision: text('storage_revision'),
     purpose: text('purpose').default('private_file').notNull(),
     isPublic: boolean('is_public'),
     description: text('description'),
@@ -464,6 +465,7 @@ export const storageObjectOutbox = pgTable(
     operation: text('operation').default('delete_object').notNull(),
     reason: text('reason').$type<StorageObjectDeleteReason>().notNull(),
     objectKey: text('object_key').notNull(),
+    receiptStorageRevision: text('receipt_storage_revision'),
     userFileId: text('user_file_id'),
     userId: text('user_id').notNull(),
     workspaceId: text('workspace_id').notNull(),
@@ -492,6 +494,38 @@ export const storageObjectOutbox = pgTable(
       table.availableAt,
     ),
     uniqueIndex('storage_object_outbox_user_file_idx').on(table.userFileId),
+  ],
+);
+
+export type StorageObjectCleanupClaimStatus =
+  | 'delete_failed'
+  | 'deleted'
+  | 'deleting'
+  | 'referenced'
+  | 'registration_recovered';
+
+/** Durable object identity state shared by registration and deletion workers. */
+export const storageObjectCleanupClaims = pgTable(
+  'storage_object_cleanup_claims',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    objectKey: text('object_key').notNull(),
+    status: text('status').$type<StorageObjectCleanupClaimStatus>().notNull(),
+    receiptStorageRevision: text('receipt_storage_revision'),
+    deleteAttemptCount: integer('delete_attempt_count').default(0).notNull(),
+    claimedAt: timestamp('claimed_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastError: text('last_error'),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.objectKey],
+      name: 'storage_object_cleanup_claims_workspace_object_pk',
+    }),
   ],
 );
 

@@ -144,7 +144,7 @@ test('product controls consume the fixed touch target and readable type tokens',
 });
 
 const localizedDashboardRoutes = [
-  'src/routes/dashboard/content.tsx',
+  'src/routes/dashboard/-content-library-surface.tsx',
   'src/routes/dashboard/store.tsx',
   'src/routes/dashboard/leads.tsx',
   'src/routes/dashboard/handoff/$token.tsx',

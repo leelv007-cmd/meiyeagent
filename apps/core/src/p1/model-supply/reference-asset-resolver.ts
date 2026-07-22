@@ -351,7 +351,7 @@ export class ProductReferenceAssetResolver
   }
 
   private fileUrl(objectKey: string) {
-    return `${this.appBaseUrl}/api/storage/file?key=${encodeURIComponent(objectKey)}`;
+    return `${this.appBaseUrl}/api/core/p1/assets?objectKey=${encodeURIComponent(objectKey)}`;
   }
 }
 

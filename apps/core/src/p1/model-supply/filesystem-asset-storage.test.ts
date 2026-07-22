@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -74,6 +74,40 @@ test('main and worker storage assembly share the same default public asset URL',
     storage.publicUrl(objectKey),
     `http://web.test/api/core/p1/assets?objectKey=${encodeURIComponent(objectKey)}`
   );
+});
+
+test('filesystem storage serves the narrow legacy ProductAsset key allowed by the Web BFF', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-legacy-product-asset-'));
+  const objectKey = 'workspace-a/assets/user-a/legacy-store-front.png';
+  try {
+    await mkdir(dirname(join(rootDirectory, objectKey)), { recursive: true });
+    await writeFile(join(rootDirectory, objectKey), png);
+    const storage = new FileSystemAssetStorage({
+      publicBaseUrl: 'http://web.test/api/core/p1/assets?objectKey=',
+      rootDirectory,
+    });
+    assert.deepEqual((await storage.read(objectKey)).bytes, png);
+    assert.equal(
+      storage.publicUrl(objectKey),
+      `http://web.test/api/core/p1/assets?objectKey=${encodeURIComponent(objectKey)}`,
+    );
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});
+
+test('filesystem storage serves the ProductAsset WebM key allowed by the Web BFF', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-product-asset-webm-'));
+  const objectKey = `workspace-a/assets/user-a/${'a'.repeat(64)}.webm`;
+  const webm = Uint8Array.from([0x1a, 0x45, 0xdf, 0xa3]);
+  try {
+    await mkdir(dirname(join(rootDirectory, objectKey)), { recursive: true });
+    await writeFile(join(rootDirectory, objectKey), webm);
+    const storage = new FileSystemAssetStorage({ rootDirectory });
+    assert.equal((await storage.head(objectKey)).contentType, 'video/webm');
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
 });
 
 test('production refuses local-only asset storage while explicit test environments retain it', () => {

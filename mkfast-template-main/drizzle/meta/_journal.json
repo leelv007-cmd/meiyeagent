@@ -85,6 +85,20 @@
       "when": 1784667450000,
       "tag": "0011_storage_legacy_avatar_and_canvas_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784709300000,
+      "tag": "0012_stripe_customer_identity_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784720000000,
+      "tag": "0013_storage_object_cleanup_claims",
+      "breakpoints": true
     }
   ]
 }

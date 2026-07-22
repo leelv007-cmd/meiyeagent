@@ -45,11 +45,11 @@ const {
 } = await import('@/p1/admin-supply-run-table-model');
 
 test('admin supply route module exports Route and page components', () => {
-  assert.equal(typeof supplyRoute.SupplyControlCenterPage, 'function');
+  assert.equal(typeof supplyRoute.Route.options.component, 'function');
   assert.ok(supplyRoute.Route, 'createFileRoute Route export required for Z2');
-  assert.equal(typeof viewsRoute.SupplyAssociationViewPage, 'function');
+  assert.equal(typeof viewsRoute.Route.options.component, 'function');
   assert.ok(viewsRoute.Route);
-  assert.equal(typeof tasksRoute.SupplyTaskDrilldownPage, 'function');
+  assert.equal(typeof tasksRoute.Route.options.component, 'function');
   assert.ok(tasksRoute.Route);
 });
 
@@ -74,8 +74,7 @@ test('five association view routes are reachable and render forward+reverse', ()
       ASSOCIATION_VIEW_PATHS[viewId],
       `/admin/supply/views/${viewId}`
     );
-    // Page export is a function (router will inject params; tests pass viewId prop).
-    assert.equal(typeof viewsRoute.SupplyAssociationViewPage, 'function');
+    assert.equal(typeof viewsRoute.Route.options.component, 'function');
 
     const pageHtml = renderToStaticMarkup(
       <AdminSupplyAssociationView
@@ -115,7 +114,7 @@ test('task drilldown route body renders information completeness contract', () =
   assert.match(html, /data-durable="true"/);
   assert.match(html, /data-testid="supply-task-error"/);
   assert.match(html, /data-folded-default="true"/);
-  assert.equal(typeof tasksRoute.SupplyTaskDrilldownPage, 'function');
+  assert.equal(typeof tasksRoute.Route.options.component, 'function');
 });
 
 test('run table URL state sync preserves shareable filter contract on control', () => {

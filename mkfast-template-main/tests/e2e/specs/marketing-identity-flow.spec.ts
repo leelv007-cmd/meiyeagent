@@ -116,10 +116,16 @@ test('identity registration stays single-question, editable, and accessible', as
     await expect(preview).toContainText('Qing He Studio');
 
     await preview.getByRole('button', { name: '登记身份' }).click();
+    const savedIdentity = manager
+      .locator('article')
+      .filter({ hasText: 'Qing He Studio' });
+    await expect(savedIdentity).toHaveCount(1);
     await expect(
-      manager.getByText('Qing He Studio', { exact: true })
+      savedIdentity.getByText('Qing He Studio', { exact: true })
     ).toBeVisible();
-    await expect(manager.getByText('生效中', { exact: true })).toBeVisible();
+    await expect(
+      savedIdentity.getByText('生效中', { exact: true })
+    ).toBeVisible();
     await expect(manager.getByText('active', { exact: true })).toHaveCount(0);
     await expect(manager.getByText('V1', { exact: true })).toHaveCount(0);
   } finally {

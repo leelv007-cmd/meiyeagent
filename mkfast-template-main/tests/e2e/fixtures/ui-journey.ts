@@ -206,13 +206,13 @@ export async function submitComposerJourney(
 }
 
 /**
- * Wait for Result Center to reach a usable terminal phase.
+ * Wait for Result Center to reach a usable merchant-ready state.
  *
  * Honesty contract (E-02):
- * - Prefer observing intermediate `running` (and for copy/image_text, a real
+ * - Prefer observing the user-visible generating state (and for copy/image_text, a real
  *   first token on `copy-stream-slot`) before `ready|delivered`.
  * - If the Job already completed by the time the shell mounts, record an
- *   auditable fast-path via `data-phase` assertion message — do not pretend
+ *   auditable fast-path through ProductStatus — do not pretend
  *   we saw streaming when we did not.
  */
 export async function waitForResultJourney(
@@ -221,23 +221,36 @@ export async function waitForResultJourney(
   workId: string
 ) {
   const shell = page.getByTestId('result-center-shell');
-  await expect(shell).toHaveAttribute('data-work-id', workId, {
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/dashboard/results/${encodeURIComponent(workId)}(?:\\?|$)`,
+      'u'
+    ),
+    {
+      timeout: 60_000,
+    }
+  );
+  await expect(shell).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByTestId('result-shell-workspace')).toHaveText(
-    contract.workspace
+  const visibleResultText = await shell.innerText();
+  expect(visibleResultText).not.toContain(workId);
+  expect(visibleResultText).not.toMatch(
+    /\b(?:running|ready|delivered|candidate_ready|needs_input|automatic_verified|assisted|unavailable)\b/iu
   );
-
-  const phase = page.getByTestId('result-shell-phase');
+  expect(visibleResultText).not.toMatch(
+    /(?:provider|workId=|workspaceId=|assetId=|catalogModelId|seedance-2)/iu
+  );
+  const merchantStatus = page.getByTestId('result-merchant-status');
   await expect(
-    phase,
-    'Result shell must expose active Job (running) or an auditable completed fast-path (ready|delivered)'
-  ).toHaveAttribute('data-phase', /running|ready|delivered/u, {
+    merchantStatus,
+    'Result must explain progress with merchant ProductStatus copy'
+  ).toContainText(/生成中|可发布|已发布就绪/u, {
     timeout: 30_000,
   });
 
-  const initialPhase = await phase.getAttribute('data-phase');
-  const observedRunning = initialPhase === 'running';
+  const initialStatus = await merchantStatus.textContent();
+  const observedRunning = initialStatus?.includes('生成中') ?? false;
 
   // copy.generate is the only job that feeds ADR-0007 copy token stream.
   // image_text submits image.generate — do not demand copy-stream slots.
@@ -256,24 +269,24 @@ export async function waitForResultJourney(
         page
           .getByTestId(contract.resultSurfaceTestId)
           .or(page.locator('[data-testid="copy-stream-slot"]').first()),
-        `auditable fast-path: initial phase was "${initialPhase}" without observed running/token intermediate`
+        `auditable fast-path: initial merchant status was "${initialStatus ?? ''}" without observed generating/token intermediate`
       ).toBeVisible({ timeout: 60_000 });
     }
   } else if (contract.modality === 'image_text') {
     if (observedRunning) {
       await expect(
-        page.getByTestId('image-worksurface').or(phase),
-        'image_text running path must keep Result shell alive until ready'
+        page.getByTestId('image-worksurface').or(merchantStatus),
+        'image_text generating path must keep Result visible until ready'
       ).toBeVisible({ timeout: 120_000 });
     } else {
       await expect(
         page.getByTestId(contract.resultSurfaceTestId),
-        `auditable image_text fast-path: initial phase was "${initialPhase}"`
+        `auditable image_text fast-path: initial merchant status was "${initialStatus ?? ''}"`
       ).toBeVisible({ timeout: 60_000 });
     }
   }
 
-  await expect(phase).toHaveAttribute('data-phase', /ready|delivered/u, {
+  await expect(merchantStatus).toContainText(/可发布|已发布就绪/u, {
     timeout: 180_000,
   });
   await expect(page.getByTestId(contract.resultSurfaceTestId)).toBeVisible();
@@ -360,20 +373,15 @@ async function videoWorkflowStatus(page: Page, workflowId: string) {
   }, workflowId);
 }
 
-export async function adjustResult(page: Page, modality: JourneyModality) {
+export async function adjustResult(
+  page: Page,
+  modality: JourneyModality
+): Promise<{ instruction: string; workId?: string }> {
   const instruction = `e2e-${modality}-adjust-${crypto.randomUUID()}`;
   if (modality === 'video') {
     const worksurface = page.getByTestId('video-worksurface');
-    const sourceRunId = await worksurface.getAttribute('data-workflow-id');
-    const originalAssetId = await worksurface.getAttribute(
-      'data-composed-asset-id'
-    );
-    expect(sourceRunId).toBeTruthy();
-    expect(originalAssetId).toBeTruthy();
-    await expect(worksurface).toHaveAttribute(
-      'data-canonical-edits-locked',
-      'true'
-    );
+    await expect(worksurface).toBeVisible();
+    await expect(page.getByTestId('video-subtitle-save')).toBeDisabled();
 
     const quotePromise = mutationResponse(page, /^quote$/u);
     await page.getByTestId('video-full-recompose').click();
@@ -385,8 +393,10 @@ export async function adjustResult(page: Page, modality: JourneyModality) {
     };
     expect(quoteRequest).toMatchObject({
       module: 'video-regeneration',
-      payload: { scope: 'full_compose', sourceRunId },
+      payload: { scope: 'full_compose' },
     });
+    const sourceRunId = quoteRequest.payload?.sourceRunId;
+    expect(typeof sourceRunId).toBe('string');
 
     const confirm = page.getByTestId('video-regen-confirm-action');
     await expect(confirm).toBeEnabled();
@@ -408,7 +418,7 @@ export async function adjustResult(page: Page, modality: JourneyModality) {
     expect(confirmEnvelope.data?.task).toMatchObject({
       quoteId: confirmRequest.payload!.quoteId,
       scope: 'full_compose',
-      sourceRunId,
+      sourceRunId: sourceRunId!,
       taskId,
     });
 
@@ -421,7 +431,7 @@ export async function adjustResult(page: Page, modality: JourneyModality) {
     expect(await videoRegenerationTask(page, taskId)).toMatchObject({
       quoteId: confirmRequest.payload!.quoteId,
       scope: 'full_compose',
-      sourceRunId,
+      sourceRunId: sourceRunId!,
       status: 'completed',
       taskId,
     });
@@ -430,14 +440,11 @@ export async function adjustResult(page: Page, modality: JourneyModality) {
     await page.reload();
     const refreshed = page.getByTestId('video-worksurface');
     await expect(refreshed).toBeVisible({ timeout: 60_000 });
-    await expect
-      .poll(() => refreshed.getAttribute('data-composed-asset-id'), {
-        message:
-          'full_compose must refresh ContentPackage to the derived composed asset',
-        timeout: 60_000,
-      })
-      .not.toBe(originalAssetId);
-    return instruction;
+    await expect(page.getByTestId('video-result-status')).toContainText(
+      '成片待确认',
+      { timeout: 60_000 }
+    );
+    return { instruction };
   }
 
   const input = page.getByTestId('result-adjust-input').first();
@@ -452,41 +459,49 @@ export async function adjustResult(page: Page, modality: JourneyModality) {
 
   // Quoted adjust path shows confirmation (quote + confirm) before submit.
   const confirm = page.getByRole('button', {
-    name: /确认调整|确认提交|Confirm adjust/u,
+    name: /确认调整|确认提交|确认并生成|Confirm adjust/u,
   });
-  if (await confirm.isVisible().catch(() => false)) {
-    const confirmPromise = mutationResponse(
-      page,
-      /result_adjust|revise|adjust|regenerate|create_revision/u
-    );
-    await confirm.click();
-    const confirmResponse = await confirmPromise;
-    expect(confirmResponse.ok(), await confirmResponse.text()).toBeTruthy();
-  }
+  await expect(confirm).toBeVisible({ timeout: 30_000 });
+  const previousResultUrl = page.url();
+  const confirmPromise = mutationResponse(
+    page,
+    /result_adjust|revise|adjust|regenerate|create_revision/u
+  );
+  await confirm.click();
+  const confirmResponse = await confirmPromise;
+  expect(confirmResponse.ok(), await confirmResponse.text()).toBeTruthy();
+  await expect
+    .poll(() => page.url(), {
+      message: 'confirmed adjustment must leave the quoted Result route',
+      timeout: 30_000,
+    })
+    .not.toBe(previousResultUrl);
+  await expect(page.getByTestId('image-adjust-confirmation')).toHaveCount(0);
 
-  await expect(input).toHaveValue('', { timeout: 30_000 });
-  return instruction;
+  await expect(page.getByTestId('result-adjust-input').first()).toHaveValue(
+    '',
+    {
+      timeout: 30_000,
+    }
+  );
+  const adjustedWorkId = new URL(page.url()).pathname.match(
+    /^\/dashboard\/results\/([^/]+)$/u
+  )?.[1];
+  expect(
+    adjustedWorkId,
+    'confirmed adjustment must open its derived Work'
+  ).toBeTruthy();
+  return { instruction, workId: decodeURIComponent(adjustedWorkId!) };
 }
 
 function adoptLocator(page: Page, modality: JourneyModality): Locator {
   if (modality === 'copy') return page.getByTestId('copy-adopt-action');
-  if (modality === 'image_text') {
-    return page
-      .getByTestId('image-role-primary')
-      .and(page.locator('[data-action-kind^="adopt_"]'));
-  }
+  if (modality === 'image_text') return page.getByTestId('image-role-primary');
   return page.getByTestId('video-adopt-action');
 }
 
 export async function adoptResult(page: Page, contract: JourneyContract) {
   const adopt = adoptLocator(page, contract.modality);
-  const videoAssetId =
-    contract.modality === 'video'
-      ? await page
-          .getByTestId('video-worksurface')
-          .getAttribute('data-composed-asset-id')
-      : null;
-  if (contract.modality === 'video') expect(videoAssetId).toBeTruthy();
   await expect(adopt).toBeVisible();
   const responsePromise = mutationResponse(page, /adopt/u);
   await adopt.click();
@@ -494,20 +509,12 @@ export async function adoptResult(page: Page, contract: JourneyContract) {
   expect(response.ok(), await response.text()).toBeTruthy();
 
   if (contract.modality === 'copy') {
-    await expect(
-      page.getByTestId('copy-image-text-worksurface')
-    ).toHaveAttribute('data-lifecycle', 'adopted');
+    await expect(page.getByTestId('copy-adopt-action')).toHaveCount(0);
   } else if (contract.modality === 'image_text') {
     await expect(page.getByTestId('image-adopted-badge').first()).toBeVisible();
   } else {
-    const worksurface = page.getByTestId('video-worksurface');
-    await expect(worksurface).toHaveAttribute(
-      'data-phase',
-      /adopted|delivery_ready|delivered/u
-    );
-    await expect(worksurface).toHaveAttribute(
-      'data-adopted-composed-asset-id',
-      videoAssetId!
+    await expect(page.getByTestId('video-result-status')).toContainText(
+      '已采用，待交付'
     );
   }
 }
@@ -516,10 +523,9 @@ export async function openDeliveryPanel(page: Page, modality: JourneyModality) {
   const deliver =
     modality === 'video'
       ? page.getByTestId('video-deliver-action')
-      : page.locator('[data-action-id="deliver"]:visible').first();
+      : page.getByRole('button', { name: '交付', exact: true }).first();
   await expect(deliver).toBeEnabled();
   await deliver.click();
-  await expect(page.getByTestId('result-shell-panel')).toHaveText('delivery');
   await expect(page.getByTestId('delivery-panel')).toBeVisible();
   await expect(page.getByTestId('delivery-panel')).toHaveAttribute(
     'data-direct-publish-hidden',
@@ -682,30 +688,25 @@ export async function assertJourneyRestored(
   workId: string
 ) {
   await page.reload();
-  await expect(page.getByTestId('result-center-shell')).toHaveAttribute(
-    'data-work-id',
-    workId,
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/dashboard/results/${encodeURIComponent(workId)}(?:\\?|$)`,
+      'u'
+    ),
     { timeout: 60_000 }
-  );
-  await expect(page.getByTestId('result-shell-workspace')).toHaveText(
-    contract.workspace
   );
   await expect(page.getByTestId(contract.resultSurfaceTestId)).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByTestId('result-shell-panel')).toHaveText('delivery');
   await expect(page.getByTestId('delivery-panel')).toBeVisible();
 
   if (contract.modality === 'copy') {
-    await expect(
-      page.getByTestId('copy-image-text-worksurface')
-    ).toHaveAttribute('data-lifecycle', 'adopted');
+    await expect(page.getByTestId('copy-adopt-action')).toHaveCount(0);
   } else if (contract.modality === 'image_text') {
     await expect(page.getByTestId('image-adopted-badge').first()).toBeVisible();
   } else {
-    await expect(page.getByTestId('video-worksurface')).toHaveAttribute(
-      'data-phase',
-      /adopted|delivery_ready|delivered/u
+    await expect(page.getByTestId('video-result-status')).toContainText(
+      '已采用，待交付'
     );
   }
 }

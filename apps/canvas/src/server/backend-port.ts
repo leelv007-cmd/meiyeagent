@@ -144,6 +144,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 	z.strictObject({
 		inputAssets: inputAssetsFor(["reference_image"], 20),
 		inputNodeBindings: inputNodeBindingsFor(["reference_image"], 20),
+		modelId: identifierSchema.optional(),
 		operation: z.literal("image.generate"),
 		parameters: z.strictObject({
 			height: z.number().int().positive().max(4096).optional(),
@@ -158,6 +159,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 	z.strictObject({
 		inputAssets: inputAssetsFor(["reference_image", "mask"], 20),
 		inputNodeBindings: inputNodeBindingsFor(["reference_image", "mask"], 20),
+		modelId: identifierSchema.optional(),
 		operation: z.literal("image.edit"),
 		parameters: z.strictObject({
 			height: z.number().int().positive().max(4096).optional(),
@@ -173,6 +175,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 	z.strictObject({
 		inputAssets: inputAssetsFor(["reference_image"], 8),
 		inputNodeBindings: inputNodeBindingsFor(["reference_image"], 8),
+		modelId: identifierSchema.optional(),
 		operation: z.literal("text.respond"),
 		parameters: z.strictObject({
 			maxOutputTokens: z.number().int().positive().max(16_000).optional(),
@@ -191,6 +194,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 			["reference_image", "reference_video", "reference_audio"],
 			8,
 		),
+		modelId: identifierSchema.optional(),
 		operation: z.literal("video.generate"),
 		parameters: z.strictObject({
 			durationSeconds: z.number().int().positive().max(120).optional(),
@@ -206,6 +210,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 	z.strictObject({
 		inputAssets: inputAssetsFor(["reference_audio"], 1),
 		inputNodeBindings: inputNodeBindingsFor(["reference_audio"], 1),
+		modelId: identifierSchema.optional(),
 		operation: z.literal("audio.speech"),
 		parameters: z.strictObject({
 			format: z.enum(["mp3", "wav"]),
@@ -222,6 +227,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 	z.strictObject({
 		inputAssets: inputAssetsFor(["reference_audio"], 1),
 		inputNodeBindings: inputNodeBindingsFor(["reference_audio"], 1),
+		modelId: identifierSchema.optional(),
 		operation: z.literal("audio.sfx"),
 		parameters: z.strictObject({
 			durationSeconds: z.number().int().positive().max(120),

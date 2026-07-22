@@ -219,10 +219,10 @@ export function projectResultShellActions(
   'primaryAction' | 'secondaryActions' | 'overflowActions'
 > {
   const delivery = facts.deliveryAttempt ?? 'none';
-  const overflowBase: ResultAction[] = [
-    action('open_history', 'overflow'),
-    action('open_run_detail', 'overflow'),
-  ];
+  // History and Run Detail do not have a merchant-ready work surface yet.
+  // Keep the contract ids for future P1 wiring, but do not advertise empty
+  // panels as actions in the Result Center.
+  const overflowBase: ResultAction[] = [];
 
   if (facts.acceptanceUnknown) {
     return {

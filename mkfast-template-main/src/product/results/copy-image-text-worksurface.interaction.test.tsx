@@ -35,10 +35,10 @@ const facts = {
 };
 
 describe('copy / image_text worksurface', () => {
-  it('renders edit, rewrite, facts, platform preview, and 还想怎么改？', () => {
+  it('renders only supported result actions alongside editing and preview', () => {
     render(<CopyImageTextWorksurface facts={facts} />);
     expect(screen.getByTestId('copy-edit-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('copy-selection-rewrite')).toBeInTheDocument();
+    expect(screen.queryByTestId('copy-selection-rewrite')).toBeNull();
     expect(screen.getByTestId('copy-fact-sources')).toBeInTheDocument();
     expect(screen.getByTestId('copy-platform-preview')).toBeInTheDocument();
     expect(screen.getByTestId('result-adjust-prompt')).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe('copy / image_text worksurface', () => {
   it('does not expose inert rewrite actions and switches preview carrier locally', async () => {
     const user = userEvent.setup();
     render(<CopyImageTextWorksurface facts={facts} />);
-    expect(screen.getByTestId('copy-rewrite-rewrite')).toBeDisabled();
+    expect(screen.queryByTestId('copy-rewrite-rewrite')).toBeNull();
     await user.click(screen.getByTestId('copy-carrier-wechat_moments'));
     expect(screen.getByTestId('copy-carrier-wechat_moments')).toHaveAttribute(
       'data-active',
@@ -115,5 +115,19 @@ describe('copy / image_text worksurface', () => {
     );
     expect(screen.getByTestId('copy-adopt-action')).toBeEnabled();
     expect(onAdopt).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a rewrite action only with a real handler', async () => {
+    const user = userEvent.setup();
+    const onSelectionRewrite = vi.fn();
+    render(
+      <CopyImageTextWorksurface
+        facts={facts}
+        onSelectionRewrite={onSelectionRewrite}
+      />
+    );
+
+    await user.click(screen.getByTestId('copy-rewrite-rewrite'));
+    expect(onSelectionRewrite).toHaveBeenCalledWith('rewrite');
   });
 });

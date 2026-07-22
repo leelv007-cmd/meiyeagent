@@ -30,7 +30,8 @@ const { MarketingIdentityManager } = await import(
 const { CanonicalHistoryNavigation } = await import(
   '@/product/canonical-history-page'
 );
-const { AssetLibraryPage } = await import('./assets');
+const { Route: assetsFileRoute } = await import('./assets');
+const AssetLibraryPage = assetsFileRoute.options.component;
 
 function containsComponent(node: ReactNode, component: ComponentType): boolean {
   if (!isValidElement(node)) return false;
@@ -42,8 +43,9 @@ function containsComponent(node: ReactNode, component: ComponentType): boolean {
 }
 
 test('asset library route exposes identity management on the asset page', () => {
+  assert.equal(typeof AssetLibraryPage, 'function');
   assert.equal(
-    containsComponent(AssetLibraryPage(), MarketingIdentityManager),
+    containsComponent(AssetLibraryPage!({}), MarketingIdentityManager),
     true
   );
 });

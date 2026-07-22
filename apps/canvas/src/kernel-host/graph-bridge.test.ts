@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CanvasGraph } from "@meiye/core/pro-studio";
 import {
 	emptyKernelGraph,
 	fromKernelGraph,
@@ -9,8 +8,18 @@ import {
 	toKernelGraph,
 } from "./graph-bridge.js";
 
+type CanvasGraphFixture = {
+	edges: Array<{ id?: string; source: string; target: string; type?: string }>;
+	nodes: Array<{
+		data: Record<string, number | string>;
+		id: string;
+		type: string;
+	}>;
+	schemaVersion: 1;
+};
+
 test("toKernelGraph lifts layout from data and preserves asset/job/text/prompt", () => {
-	const graph: CanvasGraph = {
+	const graph: CanvasGraphFixture = {
 		edges: [{ source: "a", target: "b", type: "derive" }],
 		nodes: [
 			{
@@ -103,7 +112,7 @@ test("fromKernelGraph strips viewport and writes x/y/width/height into data", ()
 });
 
 test("round-trip preserves domain fields and edge endpoints", () => {
-	const original: CanvasGraph = {
+	const original: CanvasGraphFixture = {
 		edges: [{ id: "edge-1", source: "img", target: "txt" }],
 		nodes: [
 			{

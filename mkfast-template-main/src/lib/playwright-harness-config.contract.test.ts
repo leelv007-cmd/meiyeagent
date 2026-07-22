@@ -12,6 +12,11 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
 
   assert.match(config, /_playwright_\$\{corePort\}_\$\{process\.pid\}/u);
   assert.match(config, /scripts\/ci\/provision-test-db\.sh/u);
+  assert.doesNotMatch(
+    config,
+    /pnpm db:migrate:local/u,
+    'the authoritative provision step must be the only migration apply path'
+  );
   assert.match(config, /HARNESS_DBOS_SYSTEM_DATABASE_URL/u);
   assert.match(config, /MODEL_EXECUTION_MODE=fixture/u);
   assert.equal(config.match(/P1_VIDEO_COMPOSITION_MODE=recorded/gu)?.length, 2);

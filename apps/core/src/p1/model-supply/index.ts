@@ -13,6 +13,10 @@ import type {
   ReferenceAssetResolverPort,
   ResolvedReferenceAsset,
 } from './reference-asset-resolver.js';
+import {
+  ownedAssetRegistrationLifecycle,
+  type OwnedAssetRegistrationFailureStage,
+} from './owned-asset-registration-lifecycle.js';
 
 
 // S2a: behavior-preserving extracts (re-export for existing import paths)
@@ -2079,6 +2083,47 @@ export class ModelSupplyApplicationService {
     return this.assetStorage.publicUrl?.(objectKey);
   }
 
+  /**
+   * A failed transaction leaves a durable, replayable cleanup record. The
+   * object is not deleted inline because the transaction outcome is uncertain.
+   */
+  private async settleResultWithOwnedAssetRegistration(input: {
+    evidence: string;
+    result: ModelSupplyResult;
+    submission: ModelSupplySubmission;
+  }) {
+    const lifecycle = ownedAssetRegistrationLifecycle(this.assetStorage);
+    let failureStage: OwnedAssetRegistrationFailureStage = this.ledger
+      ? 'ledger_settlement'
+      : 'result_persistence';
+    try {
+      await this.ledger?.settleAttempt({
+        submission: input.submission,
+        result: input.result,
+        evidence: input.evidence,
+      });
+      failureStage = 'result_persistence';
+      await this.resultSink?.saveResult(input.submission.workspaceId, input.result);
+    } catch (error) {
+      if (lifecycle && input.result.asset) {
+        try {
+          await lifecycle.recordOwnedAssetRegistrationFailure({
+            asset: input.result.asset,
+            error,
+            failureStage,
+            workspaceId: input.submission.workspaceId,
+          });
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            'Owned asset registration failed and its cleanup record could not be persisted.',
+          );
+        }
+      }
+      throw error;
+    }
+  }
+
   private async executeSubmission(
     submission: ModelSupplySubmission,
     execution: ProviderExecutionPort,
@@ -2681,12 +2726,11 @@ export class ModelSupplyApplicationService {
         providerCosts: [...providerCostChain],
       };
       applyActualRouteDecisionExplanation(result);
-      await this.ledger?.settleAttempt({
+      await this.settleResultWithOwnedAssetRegistration({
         submission: attemptSubmission,
         result,
         evidence: 'provider_response',
       });
-      await this.resultSink?.saveResult(submission.workspaceId, result);
       this.idempotency.set(key, { canonical: payload, result });
       return result;
     }
@@ -2745,8 +2789,11 @@ export class ModelSupplyApplicationService {
       );
     }
     const audited = applyActualRouteDecisionExplanation(result);
-    await this.ledger.settleAttempt({ submission, result: audited, evidence });
-    await this.resultSink?.saveResult(submission.workspaceId, audited);
+    await this.settleResultWithOwnedAssetRegistration({
+      submission,
+      result: audited,
+      evidence,
+    });
     this.idempotency.set(
       `${submission.workspaceId}:${submission.idempotencyKey}`,
       { canonical: canonical(submission), result: structuredClone(audited) }

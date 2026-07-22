@@ -71,20 +71,14 @@ test.describe('video Result canonical live commands', () => {
     );
     await waitForResultJourney(page, contract, workId);
 
-    const worksurface = page.getByTestId('video-worksurface');
-    const initialRevision = Number(
-      await worksurface.getAttribute('data-workflow-revision')
-    );
-
     const candidate = page
       .locator('[data-testid="video-shot-candidate"][aria-pressed="false"]')
       .first();
     await expect(candidate).toBeVisible();
-    const candidateIndex = await candidate.getAttribute('data-candidate-index');
-    const candidateShotId = await candidate.evaluate((element) =>
-      element
-        .closest('[data-testid="video-shot"]')
-        ?.getAttribute('data-shot-id')
+    const candidatePosition = await candidate.evaluate((element) =>
+      Array.from(
+        document.querySelectorAll('[data-testid="video-shot-candidate"]')
+      ).indexOf(element)
     );
     const selectResponsePromise = waitForP1Command(
       page,
@@ -94,25 +88,15 @@ test.describe('video Result canonical live commands', () => {
     await candidate.click();
     const selectResponse = await selectResponsePromise;
     expect(selectResponse.ok(), await selectResponse.text()).toBeTruthy();
-    await expect(worksurface).toHaveAttribute(
-      'data-workflow-revision',
-      String(initialRevision + 1)
-    );
     await page.reload();
     await expect(
-      page
-        .locator(
-          `[data-testid="video-shot"][data-shot-id="${candidateShotId}"]`
-        )
-        .locator(
-          `[data-testid="video-shot-candidate"][data-candidate-index="${candidateIndex}"]`
-        )
+      page.getByTestId('video-shot-candidate').nth(candidatePosition)
     ).toHaveAttribute('aria-pressed', 'true');
 
     const firstShotBefore = await page
       .getByTestId('video-shot')
       .first()
-      .getAttribute('data-shot-id');
+      .innerText();
     const reorderResponsePromise = waitForP1Command(
       page,
       'model-supply',
@@ -122,9 +106,8 @@ test.describe('video Result canonical live commands', () => {
     const reorderResponse = await reorderResponsePromise;
     expect(reorderResponse.ok(), await reorderResponse.text()).toBeTruthy();
     await page.reload();
-    await expect(page.getByTestId('video-shot').first()).not.toHaveAttribute(
-      'data-shot-id',
-      firstShotBefore!
+    await expect(page.getByTestId('video-shot').first()).not.toHaveText(
+      firstShotBefore
     );
 
     const subtitle = `已持久化字幕-${crypto.randomUUID()}`;
@@ -175,9 +158,8 @@ test.describe('video Result canonical live commands', () => {
     };
     expect(confirmRequest.payload.quoteId).toBeTruthy();
     expect(confirmRequest.payload.taskId).toMatch(/^video-regen-/u);
-    await expect(page.getByTestId('video-worksurface')).toHaveAttribute(
-      'data-phase',
-      /running|candidate_ready/u,
+    await expect(page.getByTestId('video-result-status')).toContainText(
+      /成片生成中|成片待确认/u,
       { timeout: 60_000 }
     );
   });

@@ -1,12 +1,14 @@
 import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { sharedAssetObjectLockKey } from '@meiye/contracts';
 import { getDb } from '@/db';
 import { storageObjectOutbox, userFiles } from '@/db/app.schema';
-import { deleteFile } from './index';
+import { deleteFile, deleteSharedAsset, inspectSharedAsset } from './index';
 import {
   processStorageDeleteJob,
   type StorageDeleteIntent,
   type StorageDeleteJob,
 } from './object-lifecycle';
+import { decideSharedAssetCleanup } from './shared-asset-receipt';
 
 const READY_STATUSES = ['pending', 'retry'] as const;
 const CLAIM_LEASE_MS = 60_000;
@@ -38,6 +40,7 @@ export async function enqueueStorageDelete(
   return {
     id: existing.id,
     objectKey: existing.objectKey,
+    receiptStorageRevision: existing.receiptStorageRevision ?? undefined,
     reason: existing.reason,
     userFileId: existing.userFileId ?? undefined,
     userId: existing.userId,
@@ -55,6 +58,7 @@ export async function tombstoneUserFile(input: {
       .select({
         id: userFiles.id,
         r2Key: userFiles.r2Key,
+        storageRevision: userFiles.storageRevision,
         workspaceId: userFiles.workspaceId,
       })
       .from(userFiles)
@@ -77,6 +81,7 @@ export async function tombstoneUserFile(input: {
     await transaction.insert(storageObjectOutbox).values({
       id,
       objectKey: file.r2Key,
+      receiptStorageRevision: file.storageRevision ?? undefined,
       reason: 'user_delete',
       userFileId: file.id,
       userId: input.userId,
@@ -85,6 +90,7 @@ export async function tombstoneUserFile(input: {
     return {
       id,
       objectKey: file.r2Key,
+      receiptStorageRevision: file.storageRevision ?? undefined,
       reason: 'user_delete',
       userFileId: file.id,
       userId: input.userId,
@@ -129,6 +135,7 @@ async function claimStorageDeleteJob(
     claimToken,
     id: claimed.id,
     objectKey: claimed.objectKey,
+    receiptStorageRevision: claimed.receiptStorageRevision ?? undefined,
     reason: claimed.reason,
     userFileId: claimed.userFileId ?? undefined,
     userId: claimed.userId,
@@ -208,11 +215,210 @@ async function retryStorageDeleteJob(
 export async function processStorageDeleteById(id: string): Promise<void> {
   const claimed = await claimStorageDeleteJob(id);
   if (!claimed) return;
+  if (claimed.receiptStorageRevision) {
+    await processSharedAssetDeleteClaim(claimed);
+    return;
+  }
+  const database = getDb();
   await processStorageDeleteJob(claimed, {
     complete: () => completeStorageDeleteJob(claimed),
     deleteObject: deleteFile,
+    isStillReferenced: async (job) => {
+      const [reference] = await database
+        .select({ id: userFiles.id })
+        .from(userFiles)
+        .where(
+          and(eq(userFiles.r2Key, job.objectKey), isNull(userFiles.deletedAt))
+        )
+        .limit(1);
+      return Boolean(reference);
+    },
     retry: (_job, errorCode) => retryStorageDeleteJob(claimed, errorCode),
   });
+}
+
+/**
+ * The transaction lock covers the final reference probe, durable deleting
+ * state, and R2 deletion. Product registration takes the same object lock.
+ */
+async function processSharedAssetDeleteClaim(
+  job: StorageDeleteJob & { claimToken: string }
+): Promise<void> {
+  const database = getDb();
+  try {
+    await database.transaction(async (transaction) => {
+      const lockKey = sharedAssetObjectLockKey(job.workspaceId, job.objectKey);
+      await transaction.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`
+      );
+      let state = await inspectSharedAsset(job.objectKey);
+      let decision = decideSharedAssetCleanup(
+        state,
+        job.receiptStorageRevision!
+      );
+      if (decision === 'preserve') {
+        await markSharedAssetRegistrationRecovered(
+          transaction,
+          job,
+          state.receipt!.storageRevision
+        );
+        return;
+      }
+      if (decision === 'unknown') {
+        throw new Error(
+          'Shared asset object is present without a durable receipt.'
+        );
+      }
+      await transaction.execute(sql`
+        INSERT INTO storage_object_cleanup_claims
+          (workspace_id, object_key, status, receipt_storage_revision,
+           delete_attempt_count, claimed_at, updated_at, last_error)
+        VALUES (
+          ${job.workspaceId}, ${job.objectKey}, 'deleting',
+          ${job.receiptStorageRevision}, 1, now(), now(), NULL
+        )
+        ON CONFLICT (workspace_id, object_key) DO UPDATE
+          SET status = 'deleting',
+              receipt_storage_revision = EXCLUDED.receipt_storage_revision,
+              delete_attempt_count = storage_object_cleanup_claims.delete_attempt_count + 1,
+              claimed_at = now(),
+              updated_at = now(),
+              last_error = NULL
+      `);
+      // Re-read after the durable deleting claim. A concurrent re-upload that
+      // reached its sidecar between the first read and this claim owns the
+      // object when its generation differs from this outbox job.
+      state = await inspectSharedAsset(job.objectKey);
+      decision = decideSharedAssetCleanup(state, job.receiptStorageRevision!);
+      if (decision === 'preserve') {
+        await markSharedAssetRegistrationRecovered(
+          transaction,
+          job,
+          state.receipt!.storageRevision
+        );
+        return;
+      }
+      if (decision === 'unknown') {
+        throw new Error(
+          'Shared asset object is present without a durable receipt.'
+        );
+      }
+      if (decision === 'deleted') {
+        await transaction.execute(sql`
+          UPDATE storage_object_cleanup_claims
+             SET status = 'deleted', updated_at = now(), last_error = NULL
+           WHERE workspace_id = ${job.workspaceId}
+             AND object_key = ${job.objectKey}
+        `);
+        return;
+      }
+      const [reference] = await transaction
+        .select({ id: userFiles.id })
+        .from(userFiles)
+        .where(
+          and(
+            eq(userFiles.workspaceId, job.workspaceId),
+            eq(userFiles.r2Key, job.objectKey),
+            isNull(userFiles.deletedAt)
+          )
+        )
+        .limit(1);
+      if (reference) {
+        await transaction.execute(sql`
+          UPDATE storage_object_cleanup_claims
+             SET status = 'referenced', updated_at = now(), last_error = NULL
+           WHERE workspace_id = ${job.workspaceId}
+             AND object_key = ${job.objectKey}
+        `);
+        return;
+      }
+
+      await deleteSharedAsset(job.objectKey);
+      state = await inspectSharedAsset(job.objectKey);
+      if (
+        decideSharedAssetCleanup(state, job.receiptStorageRevision!) !==
+        'deleted'
+      ) {
+        throw new Error(
+          'Shared asset deletion did not remove its object and receipt together.'
+        );
+      }
+      await transaction.execute(sql`
+        UPDATE storage_object_cleanup_claims
+           SET status = 'deleted', updated_at = now(), last_error = NULL
+         WHERE workspace_id = ${job.workspaceId}
+           AND object_key = ${job.objectKey}
+      `);
+    });
+  } catch (error) {
+    await markSharedAssetDeleteFailed(job, error).catch(() => undefined);
+    await retryStorageDeleteJob(job, 'OBJECT_DELETE_FAILED');
+    return;
+  }
+  try {
+    await completeStorageDeleteJob(job);
+  } catch {
+    // The object delete and its durable claim have already committed. Retrying
+    // the outbox must preserve `deleted`, so a later registration observes the
+    // correct object generation instead of a synthetic delete failure.
+    await retryStorageDeleteJob(job, 'OBJECT_DELETE_FAILED');
+  }
+}
+
+async function markSharedAssetDeleteFailed(
+  job: StorageDeleteJob & { claimToken: string },
+  error: unknown
+) {
+  const database = getDb();
+  const message =
+    error instanceof Error
+      ? error.message.slice(0, 512)
+      : 'Unknown delete error.';
+  await database.transaction(async (transaction) => {
+    const lockKey = sharedAssetObjectLockKey(job.workspaceId, job.objectKey);
+    await transaction.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`
+    );
+    await transaction.execute(sql`
+      INSERT INTO storage_object_cleanup_claims
+        (workspace_id, object_key, status, receipt_storage_revision,
+         delete_attempt_count, claimed_at, updated_at, last_error)
+      VALUES (
+        ${job.workspaceId}, ${job.objectKey}, 'delete_failed',
+        ${job.receiptStorageRevision}, 1, now(), now(), ${message}
+      )
+      ON CONFLICT (workspace_id, object_key) DO UPDATE
+        SET status = 'delete_failed',
+            receipt_storage_revision = EXCLUDED.receipt_storage_revision,
+            updated_at = now(),
+            last_error = EXCLUDED.last_error
+      WHERE storage_object_cleanup_claims.receipt_storage_revision IS NULL
+         OR storage_object_cleanup_claims.receipt_storage_revision = EXCLUDED.receipt_storage_revision
+    `);
+  });
+}
+
+async function markSharedAssetRegistrationRecovered(
+  transaction: {
+    execute(query: ReturnType<typeof sql>): Promise<unknown>;
+  },
+  job: StorageDeleteJob & { claimToken: string },
+  storageRevision: string
+) {
+  await transaction.execute(sql`
+    INSERT INTO storage_object_cleanup_claims
+      (workspace_id, object_key, status, receipt_storage_revision,
+       delete_attempt_count, claimed_at, updated_at, last_error)
+    VALUES (
+      ${job.workspaceId}, ${job.objectKey}, 'registration_recovered',
+      ${storageRevision}, 0, now(), now(), NULL
+    )
+    ON CONFLICT (workspace_id, object_key) DO UPDATE
+      SET status = 'registration_recovered',
+          receipt_storage_revision = EXCLUDED.receipt_storage_revision,
+          updated_at = now(),
+          last_error = NULL
+  `);
 }
 
 export async function processStorageObjectOutbox(limit = 25): Promise<void> {

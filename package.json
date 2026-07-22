@@ -25,7 +25,7 @@
     "security:production-boundary": "node scripts/production-network-boundary-gate.mjs",
     "security:production-boundary:test": "node --test scripts/production-network-boundary-gate.test.mjs",
     "test": "pnpm -r --if-present test && node --test scripts/uiux/*.test.mjs scripts/pro-studio/*.test.mjs scripts/recovery/*.test.mjs scripts/polotno-retirement-gate.test.mjs",
-    "typecheck": "pnpm -r --if-present typecheck",
+    "typecheck": "bash scripts/ci/run-root-typecheck.sh",
     "uiux:baseline": "node scripts/uiux/baseline-manifest.mjs --pre-cutover 0cba260",
     "uiux:bundle-check": "node scripts/uiux/bundle-budget.mjs",
     "uiux:cutover": "pnpm --filter @meiye/core cutover",

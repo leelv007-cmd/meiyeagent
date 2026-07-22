@@ -166,6 +166,7 @@ export interface OwnedAsset {
   sha256: string;
   sizeBytes: number;
   contentType: (typeof OWNED_ASSET_CONTENT_TYPES)[number];
+  storageRevision?: string;
   sourceTaskRef?: string;
   sourceTtlEvidence?: {
     providerTaskRef: string;
@@ -187,7 +188,8 @@ export interface OwnedAsset {
 export type CustodyOwnedAssetContentType =
   | OwnedAsset['contentType']
   | 'image/jpeg'
-  | 'image/webp';
+  | 'image/webp'
+  | 'video/webm';
 
 export type PersistedCustodyOwnedAsset = Omit<OwnedAsset, 'contentType'> & {
   contentType: CustodyOwnedAssetContentType;

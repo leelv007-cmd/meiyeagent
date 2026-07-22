@@ -45,7 +45,7 @@ git -C <主仓> worktree remove /Users/bin/orca/workspaces/美业内容2/<name>
 | **G-DTO** | **#141 merged** | 单一 ContentPackage 写口 + 退役旧路径（**公共投影冻结**）| P0-E、P1-Result、P1-Govern、Canvas-K6 |
 | **G-Store** | #142 merged | R2/S3 OwnedAsset 存储就绪 | Canvas-K3、Canvas-K6 |
 | **G-Deploy** | #143 merged | 不可变构建 + Readiness + Capability | Canvas-K7、P0-Release |
-| **G-Live** | #119 真机绿 | 双渠道 provider live 证据 | P0-F(#146) 的 Capability 判断 |
+| **G-Live** | #119 真机绿 | 文案/图片/视频各一个官方主渠道真实生成证据 | P0-F(#146) 的 Capability 判断 |
 
 ---
 
@@ -59,7 +59,7 @@ git -C <主仓> worktree remove /Users/bin/orca/workspaces/美业内容2/<name>
 | 4 | **wt-p0-store** | #142→#143 | 无（立即） | ① |
 | 5 | **wt-canvas** | #163→#164→(#165∥#166∥#167∥#168)→#169 | 无（立即起 K1） | ① |
 | 6 | **wt-p0-ui** | #144 ∥ #145 | **#141**（G-DTO） | ② |
-| 7 | **wt-live** | #119（+联动 #146） | 真机环境 + 双渠道供应商凭据 | ② |
+| 7 | **wt-live** | #119（+联动 #146） | 真机环境 + 三模态官方主渠道凭据 + 成本帽 | ② |
 | 8 | **wt-p0-release** | #146→#147 | #131–#145 全 merged + **#119 绿** | ②/④ |
 | 9 | **wt-p1-onboard** | #148 ∥ #149 | **#137**（G-Snap） | ③ |
 | 10 | **wt-p1-result** | #150→(#151∥#152∥#153) | **#141 + #144** | ③ |
@@ -103,7 +103,7 @@ git -C <主仓> worktree remove /Users/bin/orca/workspaces/美业内容2/<name>
 
 **阶段② P0 收尾 + 真机（P0 lane 陆续回收）**
 - #141 合并 → 开 wt-p0-ui。
-- 真机环境+凭据就绪 → 开 wt-live 跑 #119（其 live 证据喂给 #146）。
+- 真机环境、三模态官方主渠道凭据和成本帽就绪 → 开 wt-live 跑 #119（其 live 证据喂给 #146）。双渠道同 CatalogModel 与故障切换是非阻塞增强，不再是本轮发布前置。
 - Canvas 进入 K2 → K3∥K4∥K5∥K6（K3/K6 等 G-Store，K6 等 G-DTO）。
 
 **阶段③ P1 全面（P0 大部分已回收）**
@@ -114,7 +114,7 @@ git -C <主仓> worktree remove /Users/bin/orca/workspaces/美业内容2/<name>
 
 **阶段④ 各群总验收（各自群收尾，不必独立 worktree）**
 - 顺序：**#147（P0 RC）→ #169（K7 对标验收）→ #161（P1 总验收）→ #128（admin 同一增量验收）**。
-- #119 + #128 需真实环境 + 双渠道供应商凭据（admin-supply 剩余 2 门）。
+- #119 + #128 需真实环境 + 文案/图片/视频官方主渠道凭据；每种媒介完成一次真实生成即满足 live 连通门。无第二渠道时必须保持 `single_channel / no_fallback`，不得宣称多渠道就绪。
 
 ---
 

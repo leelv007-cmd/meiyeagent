@@ -93,5 +93,5 @@ Z2-ACCEPT(#128) ← 全部
 
   **代码落点（I4 / MP-08）**：机器可读矩阵 = `apps/core/src/p1/model-supply/provider-conformance/fault-injection/matrix-models.ts`（`DUAL_CHANNEL_MATRIX_MODELS`）；故障注入四场景 = `fault-injection/matrix.ts`；发布门（<2 合格故障域不得标 multi-channel ready）= `fault-injection/publish-gate.ts`；次级 operation 单通道标签 `single-channel/no-fallback` = `fault-injection/channel-label.ts`。
 - Core 持久层：`./scripts/ci/provision-test-db.sh` 双库（业务+DBOS system）；`pnpm --filter @meiye/core test`+typecheck。
-- 供应商真机：`live-*.integration.test.ts`+env 显式开闸；**live matrix 走独立受保护 CI workflow（`.github/workflows/provider-live.yml`，manual/scheduled + `environment: provider-live` secrets + `PROVIDER_LIVE_COST_CAP_USD`），不复用 core-persistence**。开闸 env=`RUN_PROVIDER_LIVE_FAULT_INJECTION=1`。
+- 供应商真机：`live-*.integration.test.ts`+env 显式开闸；**live matrix 走独立受保护 CI workflow（`.github/workflows/provider-live.yml`，manual/scheduled + `environment: provider-live` secrets + `PROVIDER_LIVE_COST_CAP_CNY`），不复用 core-persistence**。开闸 env=`RUN_PROVIDER_LIVE_FAULT_INJECTION=1`。
 - 前端：node:test 纯模型+SSR（现状）；#86 落地后 RTL；Playwright e2e 四服务真启动（异常首页→下钻→快捷动作→审计闭环；D-048 交互禁令断言）。

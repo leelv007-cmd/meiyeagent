@@ -53,3 +53,38 @@ it('resolves current Product authorization without requiring propagation into Co
     }
   );
 });
+
+it('rejects an expired restricted-asset authorization during live resolution', async () => {
+  const resolver = new ProductContentPackageRightsResolver(
+    {
+      async load() {
+        return {
+          assets: [
+            {
+              authorizationStatus: 'authorized',
+              consentScope: 'public_marketing',
+              containsPerson: true,
+              id: 'asset-expired',
+              rightsEvidence: 'merchant-release.pdf',
+              rightsPlatforms: ['douyin'],
+              rightsValidUntil: '2026-07-22T09:59:59.000Z',
+              sourceType: 'real',
+            },
+          ],
+        };
+      },
+    },
+    () => new Date('2026-07-22T10:00:00.000Z'),
+  );
+
+  assert.deepEqual(
+    await resolver.resolve({
+      assetIds: ['asset-expired'],
+      workspaceId: 'workspace-rights',
+    }),
+    {
+      knownAssetIds: ['asset-expired'],
+      unauthorizedAssetIds: ['asset-expired'],
+    },
+  );
+});

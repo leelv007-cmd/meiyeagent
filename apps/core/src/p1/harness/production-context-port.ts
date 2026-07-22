@@ -19,9 +19,24 @@ import {
   storeFactContextRevision,
   type StoreFactLedger,
 } from '../operations/store-fact-ledger.js';
+import {
+  SourceContentPackageUnavailableError,
+  type ExecutionSourceContentPackageResolverPort,
+  type ResolvedSourceContentPackage,
+} from '../execution-spine/source-content-package-resolver.js';
 import type { ProductionHarnessContextPort } from './production-stage-ports.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import type { HarnessContextSnapshot } from './workflow-core.js';
+
+export class HarnessSnapshotIdentityError extends Error {
+  readonly code = 'HARNESS_IDENTITY_SNAPSHOT_INVALID';
+  readonly status = 409;
+
+  constructor(readonly identityRef: string) {
+    super('The execution snapshot identity is missing, inactive, or at a different revision.');
+    this.name = 'HarnessSnapshotIdentityError';
+  }
+}
 
 export class LedgerBackedHarnessContextPort
   implements ProductionHarnessContextPort
@@ -53,6 +68,7 @@ export class LedgerBackedHarnessContextPort
         at: string,
       ): Promise<MarketingIdentityAsset[]>;
     },
+    private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
   ) {}
 
   async compileAndFreeze(
@@ -77,6 +93,9 @@ export class LedgerBackedHarnessContextPort
 
   async fence(input: Parameters<ProductionHarnessContextPort['fence']>[0]) {
     const at = this.now();
+    await this.resolveSourceContentPackage(input.request);
+    await this.activeIdentitiesForRequest(input.request, at);
+    this.assertSnapshotIdentityBundle(input.request, input.context.bundle);
     const scope = factScope(input.request);
     const activeFacts = await this.facts.listActive({
       workspaceId: input.request.workspaceId,
@@ -135,13 +154,8 @@ export class LedgerBackedHarnessContextPort
       scope,
       at,
     });
-    const requestedAssetIds = [...new Set(input.request.intent.assetReferences)];
-    const [
-      sourceRevisions,
-      rawReuseRevision,
-      requestedAssetRights,
-      activeIdentities,
-    ] =
+    const directAssetIds = [...new Set(input.request.intent.assetReferences)];
+    const [sourceRevisions, rawReuseRevision, activeIdentities, sourceContentPackage] =
       await Promise.all([
         this.currentSourceRevisions(
           input.request.workspaceId,
@@ -154,16 +168,17 @@ export class LedgerBackedHarnessContextPort
               input.request.reuseSeed,
             )
           : Promise.resolve(undefined),
-        this.assetRights && requestedAssetIds.length > 0
-          ? this.assetRights.resolve({
-              workspaceId: input.request.workspaceId,
-              assetIds: requestedAssetIds,
-            })
-          : Promise.resolve(undefined),
-        this.identities
-          ? this.identities.listActive(input.request.workspaceId, at)
-          : Promise.resolve([]),
+        this.activeIdentitiesForRequest(input.request, at),
+        this.resolveSourceContentPackage(input.request),
       ]);
+    const assetIds = assetIdsForRequest(directAssetIds, sourceContentPackage);
+    const requestedAssetRights =
+      this.assetRights && assetIds.length > 0
+        ? await this.assetRights.resolve({
+            workspaceId: input.request.workspaceId,
+            assetIds,
+          })
+        : undefined;
     const reuseRevision = rawReuseRevision
       ? assetRevisionSchema.parse(rawReuseRevision)
       : undefined;
@@ -213,6 +228,9 @@ export class LedgerBackedHarnessContextPort
           `task:${input.workflowId}:asset:${assetId}`,
         ),
       ),
+      ...(sourceContentPackage
+        ? sourceContentPackageContributions(sourceContentPackage)
+        : []),
       ...(reuseRevision?.fixedItems.map((item) =>
         contribution(
           'promotion_task',
@@ -262,6 +280,7 @@ export class LedgerBackedHarnessContextPort
       requestedAssetRights,
       activeFacts,
       activeIdentities,
+      sourceContentPackage,
     );
   }
 
@@ -274,8 +293,15 @@ export class LedgerBackedHarnessContextPort
     },
     resolvedActiveFacts?: Awaited<ReturnType<StoreFactLedger['listActive']>>,
     resolvedActiveIdentities?: MarketingIdentityAsset[],
+    resolvedSourceContentPackage?: ResolvedSourceContentPackage,
   ): Promise<HarnessContextSnapshot> {
-    const assetIds = [...new Set(input.request.intent.assetReferences)];
+    const sourceContentPackage =
+      resolvedSourceContentPackage ??
+      (await this.resolveSourceContentPackage(input.request));
+    const assetIds = assetIdsForRequest(
+      input.request.intent.assetReferences,
+      sourceContentPackage,
+    );
     const assetRights =
       resolvedAssetRights ??
       (this.assetRights && assetIds.length > 0
@@ -293,12 +319,24 @@ export class LedgerBackedHarnessContextPort
       }));
     const activeIdentities =
       resolvedActiveIdentities ??
-      (this.identities
-        ? await this.identities.listActive(
-            input.request.workspaceId,
-            this.now(),
-          )
-        : []);
+      (await this.activeIdentitiesForRequest(input.request, this.now()));
+    this.assertSnapshotIdentityBundle(input.request, bundle);
+    const rightsRefs = assetIds.map((assetId) => {
+      const authorized =
+        assetRights !== undefined &&
+        !assetRights.unauthorizedAssetIds.includes(assetId) &&
+        (assetRights.knownAssetIds === undefined ||
+          assetRights.knownAssetIds.includes(assetId));
+      const allowedUses: Array<
+        'internal_draft' | 'public_content' | 'paid_promotion'
+      > = authorized ? ['public_content'] : [];
+      return {
+        assetId,
+        workspaceId: input.request.workspaceId,
+        status: authorized ? ('authorized' as const) : ('unknown' as const),
+        allowedUses,
+      };
+    });
     return {
       bundle,
       activeFactReferences: activeFacts.map((fact) => ({
@@ -328,22 +366,7 @@ export class LedgerBackedHarnessContextPort
               status: 'current' as const,
             })),
           ),
-        rightsRefs: assetIds.map((assetId) => {
-          const authorized =
-            assetRights !== undefined &&
-            !assetRights.unauthorizedAssetIds.includes(assetId) &&
-            (assetRights.knownAssetIds === undefined ||
-              assetRights.knownAssetIds.includes(assetId));
-          const allowedUses: Array<
-            'internal_draft' | 'public_content' | 'paid_promotion'
-          > = authorized ? ['public_content'] : [];
-          return {
-            assetId,
-            workspaceId: input.request.workspaceId,
-            status: authorized ? ('authorized' as const) : ('unknown' as const),
-            allowedUses,
-          };
-        }),
+        rightsRefs,
         identityRefs: activeIdentities.map((identity) => ({
           id: identityReference(identity),
           workspaceId: input.request.workspaceId,
@@ -358,6 +381,59 @@ export class LedgerBackedHarnessContextPort
       throw new Error('Reuse Task context is unavailable.');
     }
     return this.reuseTasks;
+  }
+
+  private async activeIdentitiesForRequest(
+    request: HarnessWorkflowInput,
+    at: string,
+  ) {
+    const activeIdentities = this.identities
+      ? await this.identities.listActive(request.workspaceId, at)
+      : [];
+    const snapshot = request.executionSnapshot;
+    if (!snapshot) return activeIdentities;
+
+    const identity = activeIdentities.find(
+      (candidate) =>
+        candidate.identityId === snapshot.identity.id &&
+        String(candidate.version) === snapshot.identity.revision,
+    );
+    if (!identity) {
+      throw new HarnessSnapshotIdentityError(
+        snapshotIdentityReference(snapshot),
+      );
+    }
+    return [identity];
+  }
+
+  private async resolveSourceContentPackage(request: HarnessWorkflowInput) {
+    const source = request.executionSnapshot?.sources.contentPackage;
+    if (!source) return undefined;
+    if (!this.sourceContentPackages) {
+      throw new SourceContentPackageUnavailableError(source);
+    }
+    return this.sourceContentPackages.resolve({
+      workspaceId: request.workspaceId,
+      source,
+    });
+  }
+
+  private assertSnapshotIdentityBundle(
+    request: HarnessWorkflowInput,
+    bundle: ContextBundle,
+  ) {
+    const snapshot = request.executionSnapshot;
+    if (!snapshot) return;
+    const expectedIdentityRef = snapshotIdentityReference(snapshot);
+    const identityRefs = Object.values(bundle.dimensions.expression_identity)
+      .map((item) => item.sourceRef)
+      .filter((sourceRef) => sourceRef.startsWith('marketing_identity:'));
+    if (
+      identityRefs.length !== 1 ||
+      identityRefs[0] !== expectedIdentityRef
+    ) {
+      throw new HarnessSnapshotIdentityError(expectedIdentityRef);
+    }
   }
 
   private async currentSourceRevisions(
@@ -431,6 +507,59 @@ function optionalInstructionContributions(
   ].filter((item): item is ContextContribution => item !== null);
 }
 
+function assetIdsForRequest(
+  directAssetIds: string[],
+  sourceContentPackage?: ResolvedSourceContentPackage,
+) {
+  return [
+    ...new Set([
+      ...directAssetIds,
+      ...(sourceContentPackage?.assets
+        .filter((asset) => asset.role === 'selected')
+        .map((asset) => asset.id) ?? []),
+    ]),
+  ];
+}
+
+function sourceContentPackageContributions(
+  source: ResolvedSourceContentPackage,
+): ContextContribution[] {
+  const sourceRef = `content_package:${source.reference.id}:${source.reference.revision}`;
+  const selectedAssets = source.assets.filter((asset) => asset.role === 'selected');
+  return [
+    contribution(
+      'store_facts_assets',
+      'source_content_package_structure',
+      {
+        packageId: source.reference.id,
+        revision: source.reference.revision,
+        ...source.structure,
+      },
+      sourceRef,
+    ),
+    contribution(
+      'platform_mechanism',
+      'source_content_package_style',
+      {
+        packageId: source.reference.id,
+        revision: source.reference.revision,
+        ...source.style,
+      },
+      sourceRef,
+    ),
+    contribution(
+      'store_facts_assets',
+      'source_content_package_assets',
+      {
+        packageId: source.reference.id,
+        revision: source.reference.revision,
+        assets: selectedAssets,
+      },
+      sourceRef,
+    ),
+  ];
+}
+
 function contribution(
   dimension: ContextContribution['dimension'],
   key: string,
@@ -485,6 +614,12 @@ function identityContribution(
 
 function identityReference(identity: MarketingIdentityAsset) {
   return `marketing_identity:${identity.identityId}:${identity.version}`;
+}
+
+function snapshotIdentityReference(
+  snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
+) {
+  return `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
 }
 
 function factReference(factId: string, revision: number) {

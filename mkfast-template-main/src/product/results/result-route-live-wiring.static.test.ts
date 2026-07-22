@@ -38,7 +38,18 @@ test('result route quotes and confirms adjustment before canonical submit', () =
   assert.match(route, /['"]quote['"]/);
   assert.match(route, /ImageAdjustConfirmation/);
   assert.match(route, /billingQuoteId/);
+  assert.match(
+    route,
+    /setPendingImageAdjust\(null\);[\s\S]*window\.location\.assign\(resultCenterPath\(result\.work\.id\)\)/u
+  );
   assert.doesNotMatch(route, /unitRate\s*:/);
+});
+
+test('result route consumes a trusted typed return anchor instead of browser history', () => {
+  assert.match(route, /parseResultReturnState\(search\)/u);
+  assert.match(route, /resultReturnDestination\(returnState\)/u);
+  assert.match(route, /to: '\/dashboard\/tasks'/u);
+  assert.doesNotMatch(route, /window\.history\.back\(\)/u);
 });
 
 test('result route sends adopt and export through canonical public commands', () => {

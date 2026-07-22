@@ -1,5 +1,8 @@
+import { AntdRegistry } from "@ant-design/nextjs-registry";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { CanvasRuntimeProviders } from "@/src/client/canvas-runtime-providers";
+import "antd/dist/reset.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,7 +14,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
 	return (
 		<html lang="zh-CN">
-			<body>{children}</body>
+			<body>
+				<AntdRegistry>
+					<CanvasRuntimeProviders>{children}</CanvasRuntimeProviders>
+				</AntdRegistry>
+			</body>
 		</html>
 	);
 }

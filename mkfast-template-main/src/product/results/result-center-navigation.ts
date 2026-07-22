@@ -12,14 +12,20 @@ import type {
 } from '@meiye/contracts';
 import { resultCenterPath, resultCenterSearchParams } from '@meiye/contracts';
 
+import {
+  resultReturnSearch,
+  type ResultReturnState,
+} from './result-return-navigation';
+
 export type ResultCenterLocation = {
   pathname: string;
-  search: Record<string, string>;
+  search: Record<string, string | number | undefined>;
   /** Optional history.state payload for return restore. */
   state?: {
     returnToDraftKey?: string;
     focusKey?: string;
-    sourceRoute?: string;
+    /** Legacy dashboard-only handoff kept for existing draft restoration. */
+    sourceRoute?: '/dashboard';
   };
 };
 
@@ -53,15 +59,22 @@ export function resultCenterLocationFromNavigation(
     contentId?: string;
     versionId?: string;
     panel?: ResultPanel;
-    sourceRoute?: string;
+    returnState?: ResultReturnState;
+    sourceRoute?: '/dashboard';
   }
 ): ResultCenterLocation {
-  const search = resultCenterSearchParams({
-    ...(options?.contentId ? { contentId: options.contentId } : {}),
-    ...(options?.versionId ? { versionId: options.versionId } : {}),
-    ...(options?.panel ? { panel: options.panel } : {}),
-    ...(nav.focusKey ? { focusKey: nav.focusKey } : {}),
-  });
+  const search = {
+    ...resultCenterSearchParams({
+      ...(options?.contentId ? { contentId: options.contentId } : {}),
+      ...(options?.versionId ? { versionId: options.versionId } : {}),
+      ...(options?.panel ? { panel: options.panel } : {}),
+      ...(nav.focusKey ? { focusKey: nav.focusKey } : {}),
+    }),
+    ...resultReturnSearch(
+      options?.returnState ??
+        (options?.sourceRoute ? { kind: 'dashboard' } : undefined)
+    ),
+  };
 
   return {
     pathname: resultCenterPath(nav.workId),
@@ -83,8 +96,9 @@ export function navigateAfterSubmitSuccess(input: {
   workId: string;
   returnToDraftKey?: string;
   focusKey?: string;
-  sourceRoute?: string;
   panel?: ResultPanel;
+  returnState?: ResultReturnState;
+  sourceRoute?: '/dashboard';
 }): ResultCenterLocation {
   const nav = buildResultCenterNavigation({
     workId: input.workId,
@@ -95,6 +109,7 @@ export function navigateAfterSubmitSuccess(input: {
   });
   return resultCenterLocationFromNavigation(nav, {
     ...(input.panel ? { panel: input.panel } : {}),
+    ...(input.returnState ? { returnState: input.returnState } : {}),
     ...(input.sourceRoute ? { sourceRoute: input.sourceRoute } : {}),
   });
 }

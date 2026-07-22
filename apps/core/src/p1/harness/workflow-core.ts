@@ -139,6 +139,16 @@ export interface HarnessWorkflowRuntime {
   }): Promise<void>;
 }
 
+export class HarnessSnapshotDecisionError extends Error {
+  readonly code = 'HARNESS_SNAPSHOT_DECISION_REQUIRES_RESUBMISSION';
+  readonly status = 409;
+
+  constructor() {
+    super('A semantic decision requires a new Composer submission and execution snapshot.');
+    this.name = 'HarnessSnapshotDecisionError';
+  }
+}
+
 export async function runHarnessWorkflow(
   workflowId: string,
   request: HarnessWorkflowInput,
@@ -407,6 +417,9 @@ function applyCurrentTaskDecision(
   command: StructuredDecisionInput,
 ): HarnessWorkflowInput {
   if (command.decision.state === 'ignored') return request;
+  if (request.executionSnapshot) {
+    throw new HarnessSnapshotDecisionError();
+  }
   const value = command.decision.value;
   return {
     ...request,

@@ -38,7 +38,7 @@ function RoutedSupplyControlCenterPage() {
   );
 }
 
-export function SupplyControlCenterPage({
+function SupplyControlCenterPage({
   runTableState,
   onRunTableStateChange,
 }: {

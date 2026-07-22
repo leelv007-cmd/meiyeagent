@@ -89,6 +89,56 @@ test('ffmpeg concatenates clips, burns subtitle/AIGC text, adds BGM, and writes 
   assert.equal(validation.implicitLabel.contentId, 'content-integration-1');
 });
 
+test('ffmpeg preserves longer clip duration than short subtitles with and without BGM', {
+  skip: mediaSkip,
+}, async (t) => {
+  assert.ok(tools.available);
+  const directory = await mkdtemp(join(tmpdir(), 'video-compose-duration-'));
+  t.after(() => rm(directory, { force: true, recursive: true }));
+  const clip = join(directory, 'clip.mp4');
+  const bgm = join(directory, 'bgm.wav');
+  await run(tools.ffmpegPath, [
+    '-y', '-f', 'lavfi', '-i', 'color=c=0x264653:s=320x240:d=1.2',
+    '-r', '24', '-pix_fmt', 'yuv420p', '-c:v', 'mpeg4', clip,
+  ]);
+  await run(tools.ffmpegPath, [
+    '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.2',
+    '-c:a', 'pcm_s16le', bgm,
+  ]);
+
+  for (const [name, bgmPath] of [
+    ['without BGM', undefined],
+    ['with BGM', bgm],
+  ] as const) {
+    const output = join(directory, `${name}.mp4`);
+    await composeVideo({
+      clipPaths: [clip],
+      outputPath: output,
+      subtitles: [
+        { text: '短字幕', startSeconds: 0, endSeconds: 0.25 },
+      ],
+      ...(bgmPath ? { bgmPath, bgmVolume: 0.15 } : {}),
+      width: 320,
+      height: 240,
+      ffmpegPath: tools.ffmpegPath,
+      ffprobePath: tools.ffprobePath,
+    });
+
+    const outputStats = await stat(output);
+    const probe = await probeVideoFile(output, tools.ffprobePath);
+    assert.ok(outputStats.size > 0);
+    assert.ok(
+      probe.durationSeconds >= 1.1,
+      `${name} output was truncated to ${probe.durationSeconds}s`,
+    );
+    assert.ok(probe.streams.some((stream) => stream.codecType === 'video'));
+    assert.equal(
+      probe.streams.some((stream) => stream.codecType === 'audio'),
+      Boolean(bgmPath),
+    );
+  }
+});
+
 test('ffmpeg burns AIGC and brand watermark text together and writes both labels', {
   skip: mediaSkip,
 }, async (t) => {

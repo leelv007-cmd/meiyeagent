@@ -30,13 +30,14 @@ test('buildResultCenterNavigation requires workId', () => {
 test('location uses /dashboard/results/$workId not ?workId= bridge', () => {
   const location = resultCenterLocationFromNavigation(
     { workId: 'work-42', returnToDraftKey: 'd1', focusKey: 'f1' },
-    { panel: 'run', sourceRoute: '/dashboard' }
+    { panel: 'run', returnState: { kind: 'dashboard' } }
   );
   assert.equal(location.pathname, '/dashboard/results/work-42');
   assert.match(RESULT_CENTER_PATH_PATTERN, /results\/\$workId/);
   assert.equal(RESULT_CENTER_ROUTE_ID, '/dashboard/results_/$workId');
   assert.equal(location.search.panel, 'run');
   assert.equal(location.search.focusKey, 'f1');
+  assert.equal(location.search.returnTo, 'dashboard');
   assert.equal('workId' in location.search, false);
 });
 
@@ -44,11 +45,11 @@ test('navigateAfterSubmitSuccess is the composer handoff seam', () => {
   const location = navigateAfterSubmitSuccess({
     workId: 'work-submit',
     returnToDraftKey: 'composer-draft-1',
-    sourceRoute: '/dashboard',
+    returnState: { kind: 'dashboard' },
   });
   assert.equal(location.pathname, '/dashboard/results/work-submit');
   assert.equal(location.state?.returnToDraftKey, 'composer-draft-1');
-  assert.equal(location.state?.sourceRoute, '/dashboard');
+  assert.equal(location.search.returnTo, 'dashboard');
 });
 
 test('resultTargetFromRoute builds shareable target', () => {

@@ -16,7 +16,7 @@ function RoutedSupplyAssociationViewPage() {
   return <SupplyAssociationViewPage viewId={viewId} />;
 }
 
-export function SupplyAssociationViewPage({
+function SupplyAssociationViewPage({
   viewId: viewIdProp,
 }: {
   viewId?: string;

@@ -99,7 +99,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @meiye/contracts typecheck
       - run: pnpm --filter @meiye/core typecheck
@@ -109,10 +109,13 @@ jobs:
         env:
           NODE_OPTIONS: --test-reporter=spec
 
-  web-canvas-quality:
+  root-quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize root quality evidence
+        run: mkdir -p output/ci/root-required-quality && touch output/ci/root-required-quality/job-started.log
       - uses: pnpm/action-setup@v4
         with:
           version: 10.30.3
@@ -120,11 +123,20 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei
       - run: pnpm install --frozen-lockfile
       - name: Verify the quality-gate command contract
         run: node --test scripts/ci/*.test.mjs
-      - name: Run Web, Canvas, and repository fast gates
-        run: bash scripts/ci/run-web-canvas-quality.sh
+      - name: Run root required quality gates
+        run: bash scripts/ci/run-root-required-quality.sh
+        env:
+          CI_EVIDENCE_DIR: output/ci/root-required-quality
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: root-required-quality-evidence
+          path: output/ci/root-required-quality
+          if-no-files-found: error
 
   core-persistence:
     runs-on: ubuntu-latest
@@ -147,6 +159,8 @@ jobs:
       TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_dbos_test
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize persistence evidence
+        run: mkdir -p output/ci/core-persistence && touch output/ci/core-persistence/job-started.log
       - uses: pnpm/action-setup@v4
         with:
           version: 10.30.3
@@ -154,22 +168,108 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
       - run: pnpm install --frozen-lockfile
       - name: Provision business and DBOS test databases
-        run: ./scripts/ci/provision-test-db.sh
-      # The full command is intentional: this job proves the normal Core suite
-      # executes its env-gated PostgreSQL and DBOS tests instead of silently
-      # reporting the persistence-free default as green. NODE_OPTIONS ensures
-      # --test-reporter=spec reaches Node rather than becoming a glob argument.
+        run: >-
+          set -o pipefail;
+          ./scripts/ci/provision-test-db.sh 2>&1 |
+          tee output/ci/core-persistence/provision.log
+      # The full suite runs through Node's test runner so the persisted-test
+      # assertion can read an authoritative summary instead of a tsx wrapper
+      # that omits it. The script fails if either database URL is absent.
       - name: Run Core with persistence gates enabled
-        shell: bash
+        run: bash scripts/ci/run-core-persistence.sh
         env:
-          NODE_OPTIONS: --test-reporter=spec
-        run: |
-          set -o pipefail
-          pnpm --filter @meiye/core test 2>&1 | tee core-persistence-test.log
-          node scripts/ci/assert-core-persistence-ran.mjs core-persistence-test.log
+          CORE_PERSISTENCE_LOG_PATH: output/ci/core-persistence/core-persistence-test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-persistence-evidence
+          path: output/ci/core-persistence
+          if-no-files-found: error
+
+  production-main-journey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: meiye
+          POSTGRES_USER: meiye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meiye -d postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CI: true
+      MODEL_EXECUTION_MODE: fixture
+      PLAYWRIGHT_AUTH_BASE_URL: http://localhost:3011
+      PLAYWRIGHT_BASE_URL: http://localhost:3010
+      PLAYWRIGHT_CANDIDATE_PORT: 3010
+      PLAYWRIGHT_CANVAS_PORT: 4210
+      PLAYWRIGHT_CORE_PORT: 4110
+      PLAYWRIGHT_PRODUCTION_CANDIDATE: true
+      PORT: 3011
+      TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_journey
+      TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_journey_dbos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize production journey evidence
+        run: mkdir -p output/ci/production-main-journey && touch output/ci/production-main-journey/job-started.log
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
+      - name: Provision production-journey databases
+        run: >-
+          set -o pipefail;
+          ./scripts/ci/provision-test-db.sh 2>&1 |
+          tee output/ci/production-main-journey/provision.log
+      - name: Run production-build main journey
+        run: bash scripts/ci/run-pr-production-journey.sh
+        env:
+          CI_EVIDENCE_DIR: output/ci/production-main-journey
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-main-journey-evidence
+          path: |
+            output/ci/production-main-journey
+            mkfast-template-main/test-results
+          if-no-files-found: error
+
+  required:
+    if: ${{ always() }}
+    needs:
+      - redline-evals
+      - core
+      - root-quality
+      - core-persistence
+      - production-main-journey
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require every ordinary quality job to succeed
+        run: node scripts/ci/assert-required-jobs.mjs
+        env:
+          REQUIRED_CORE_PERSISTENCE_RESULT: ${{ needs.core-persistence.result }}
+          REQUIRED_CORE_RESULT: ${{ needs.core.result }}
+          REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT: ${{ needs.production-main-journey.result }}
+          REQUIRED_REDLINE_EVALS_RESULT: ${{ needs.redline-evals.result }}
+          REQUIRED_ROOT_QUALITY_RESULT: ${{ needs.root-quality.result }}
 
   # Release-candidate acceptance builds every workspace, then boots Main, Core,
   # Worker, and Canvas for the real browser harness. Keep the historical run-e2e
@@ -210,7 +310,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg postgresql-client
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
       - run: pnpm install --frozen-lockfile
       - name: Audit production dependencies
         shell: bash

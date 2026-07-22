@@ -58,6 +58,44 @@ export interface RecipeSourceRequirement {
   kinds?: string[];
 }
 
+/**
+ * Server-enforced source policy frozen with a Recipe revision. This is kept
+ * separate from the legacy browser hint above so execution never infers
+ * authorization or fallback semantics from `sourceRequirements`.
+ */
+export type RecipeRequiredSourceObjectType =
+  | 'asset'
+  | 'content_package_revision'
+  | 'store_fact'
+  | 'work_revision';
+
+export type RecipeRequiredSourcePlatform =
+  | 'xiaohongshu'
+  | 'douyin'
+  | 'video_account'
+  | 'wechat_moments';
+
+export interface RecipeRequiredSourceSlot {
+  allowedObjectTypes: RecipeRequiredSourceObjectType[];
+  id: string;
+  maximum: number;
+  minimum: number;
+  platforms: RecipeRequiredSourcePlatform[];
+  required: boolean;
+  rights: 'authorized';
+  safeFallback?: {
+    code: string;
+    message: string;
+  };
+  usage: string;
+  userLabel: string;
+}
+
+export interface RecipeRequiredSourcePolicy {
+  schemaVersion: 'recipe-required-source-policy/v1';
+  slots: RecipeRequiredSourceSlot[];
+}
+
 export interface RecipeModelPolicy {
   mode: RecipeModelPolicyMode;
   /** Required when mode is fixed; ignored when auto. */
@@ -80,6 +118,8 @@ export interface CreationRecipeVersion {
   /** User-visible context patches only. */
   contextPatches: Record<string, unknown>;
   sourceRequirements: RecipeSourceRequirement[];
+  /** Legacy recipes may omit this and fail closed at unified submit. */
+  requiredSourcePolicy?: RecipeRequiredSourcePolicy;
   modelPolicy: RecipeModelPolicy;
   settingsPatches: Record<string, unknown>;
   outputContractRef?: string;
@@ -112,6 +152,7 @@ export interface BrowserRecipeProjection {
   delivery: RecipeDeliveryDefaults;
   contextPatches: Record<string, unknown>;
   sourceRequirements: RecipeSourceRequirement[];
+  requiredSourcePolicy?: RecipeRequiredSourcePolicy;
   modelPolicy: RecipeModelPolicy;
   settingsPatches: Record<string, unknown>;
   outputContractRef?: string;

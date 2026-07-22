@@ -519,6 +519,7 @@ test("generation quote reaches Core without creating a Canvas-local ledger", asy
 		| {
 				inputAssets: unknown[];
 				inputNodeBindings: unknown[];
+				modelId?: string;
 				workspaceId: string;
 		  }
 		| undefined;
@@ -529,12 +530,16 @@ test("generation quote reaches Core without creating a Canvas-local ledger", asy
 	const { port, sessionToken } = await fixture(ports);
 	const response = await port.handle(
 		"quoteGeneration",
-		request(generationContract("text.respond", {})),
+		request({
+			...generationContract("text.respond", {}),
+			modelId: "core-text-model",
+		}),
 		sessionToken,
 	);
 	assert.equal(response.status, 200);
 	assert.equal((await response.json()).data.quoteId, "core-quote-1");
 	assert.equal(quoteInput?.workspaceId, "workspace-1");
+	assert.equal(quoteInput?.modelId, "core-text-model");
 	assert.deepEqual(quoteInput?.inputAssets, []);
 	assert.deepEqual(quoteInput?.inputNodeBindings, []);
 });

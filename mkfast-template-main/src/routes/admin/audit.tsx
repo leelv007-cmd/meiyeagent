@@ -59,7 +59,7 @@ import { createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/admin/audit')({ component: AuditPage });
 
-export function AuditPage() {
+function AuditPage() {
   return (
     <AdminRoutePage
       title={admin_audit_title()}
@@ -175,7 +175,7 @@ function AdminByokAuditProjection() {
   );
 }
 
-export function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
+function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
   return (
     <Table>
       <TableHeader>

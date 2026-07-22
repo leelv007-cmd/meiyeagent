@@ -25,6 +25,7 @@ registerHooks({
 });
 
 const routeModule = await import('./index');
+const AdminHomePage = routeModule.Route.options.component;
 const { SidebarProvider } = await import('@/components/ui/sidebar');
 const { AdminExceptionHome } = await import('@/p1/admin-exception-home');
 const { assertNoAckAssignOwnerUi, buildExceptionHomeView } = await import(
@@ -39,10 +40,10 @@ const { pendingActionsQueryKey } = await import(
 const { p1QueryKeys } = await import('@/p1/query-keys');
 
 test('admin index route exports home page (no models redirect)', () => {
-  assert.equal(typeof routeModule.AdminHomePage, 'function');
+  assert.equal(typeof AdminHomePage, 'function');
   assert.ok(routeModule.Route, 'createFileRoute Route export required');
   // Source contract: index must not redirect to models.
-  assert.equal(typeof routeModule.AdminHomePage, 'function');
+  assert.equal(typeof AdminHomePage, 'function');
 });
 
 test('admin home body is exception-first (list or empty panorama)', () => {
@@ -112,7 +113,7 @@ test('admin home default path consumes live pending-actions and metrics', async 
 
   const rootRoute = createRootRoute({ component: Outlet });
   const pageRoute = createRoute({
-    component: routeModule.AdminHomePage,
+    component: AdminHomePage!,
     getParentRoute: () => rootRoute,
     path: '/admin',
   });

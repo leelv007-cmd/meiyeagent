@@ -8,7 +8,7 @@
 
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { StatePanel } from '@/components/uiux/state-panel';
-import { Badge } from '@/components/ui/badge';
+import { ProductStatus } from '@/components/uiux/product-status';
 import { Button } from '@/components/ui/button';
 import type {
   ResultAction,
@@ -156,6 +156,63 @@ function errorTitle(
       return '历史档案';
     default: {
       const _exhaustive: never = code;
+      return _exhaustive;
+    }
+  }
+}
+
+function errorDescription(
+  code: Extract<ResultShellView, { kind: 'error' }>['code']
+): string {
+  switch (code) {
+    case 'NOT_FOUND':
+      return '这个结果暂时无法打开。请返回创作后重新选择。';
+    case 'FORBIDDEN':
+      return '你暂时无权查看这个结果。请联系本店负责人确认权限。';
+    case 'LINEAGE_MISMATCH':
+      return '这个链接对应的内容已更新。请从创作或内容页重新打开。';
+    case 'LEGACY_READONLY':
+      return '这份历史内容仅供查看，请从内容页继续操作。';
+    default: {
+      const _exhaustive: never = code;
+      return _exhaustive;
+    }
+  }
+}
+
+function statusForResultPhase(
+  phase: ResultShellModel['phase']
+): Parameters<typeof ProductStatus>[0]['status'] {
+  switch (phase) {
+    case 'running':
+      return 'running';
+    case 'needs_input':
+      return 'recoverable';
+    case 'ready':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'delivered':
+      return 'accepted';
+    default: {
+      const _exhaustive: never = phase;
+      return _exhaustive;
+    }
+  }
+}
+
+function deliveryCapabilityLabel(
+  mode: 'automatic_verified' | 'assisted' | 'unavailable'
+): string {
+  switch (mode) {
+    case 'automatic_verified':
+      return '可以直接交付';
+    case 'assisted':
+      return '需要你确认后交付';
+    case 'unavailable':
+      return '暂时无法交付';
+    default: {
+      const _exhaustive: never = mode;
       return _exhaustive;
     }
   }
@@ -327,19 +384,10 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
         <StatePanel
           kind={errorPanelKind(view.code)}
           title={errorTitle(view.code)}
-          description={view.message}
+          description={errorDescription(view.code)}
           actionLabel={props.onBack ? '返回' : undefined}
           onAction={props.onBack}
-        >
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="result-center-error-code"
-            data-error-code={view.code}
-          >
-            {view.code}
-            {view.requested.workId ? ` · workId=${view.requested.workId}` : ''}
-          </p>
-        </StatePanel>
+        />
       </DashboardLayout>
     );
   }
@@ -365,25 +413,32 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
         { label: '创作', isCurrentPage: false },
         { label: '结果', isCurrentPage: true },
       ]}
-      description={`Work ${shell.target.workId}`}
+      description="查看成品、费用摘要和下一步"
       title="结果中心"
     >
-      <div
-        className="space-y-4"
-        data-testid="result-center-shell"
-        data-work-id={props.workId}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge data-testid="result-shell-phase" data-phase={shell.phase}>
-            {shell.phase}
-          </Badge>
-          <Badge variant="outline" data-testid="result-shell-panel">
-            {shell.panel}
-          </Badge>
-          <Badge variant="outline" data-testid="result-shell-workspace">
-            {shell.workspaceKind}
-          </Badge>
+      <div className="space-y-4" data-testid="result-center-shell">
+        {props.onBack ? (
+          <Button
+            data-testid="result-back"
+            onClick={props.onBack}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            返回创作
+          </Button>
+        ) : null}
+        <div data-testid="result-merchant-status">
+          <ProductStatus
+            showExplanation
+            status={statusForResultPhase(shell.phase)}
+          />
         </div>
+        {shell.phase === 'failed' ? (
+          <p className="text-xs text-muted-foreground">
+            本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。
+          </p>
+        ) : null}
 
         {/* Single aggregate live region for stage announcements (ADR-0007). */}
         <div
@@ -401,8 +456,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
           >
             <p className="text-sm font-medium">内容版本已更新</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              本地草稿基于 {drift.baseRevisionId}，当前为{' '}
-              {drift.currentRevisionId}。请选择恢复、对比或丢弃。
+              本地调整基于较早版本，当前成品已有更新。请选择恢复、对比或丢弃。
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {drift.choices.map((choice) => (
@@ -432,45 +486,39 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
           data-testid="result-shell-actions"
           aria-busy={props.actionBusy ? 'true' : undefined}
         >
-          {actions.primary ? (
+          {actions.primary && actionEnabled(actions.primary) ? (
             <Button
               type="button"
               data-testid="result-primary-action"
-              data-action-id={actions.primary.id}
-              disabled={!actionEnabled(actions.primary)}
               onClick={() => props.onAction?.(actions.primary!, shell)}
             >
               {actions.primary.label}
             </Button>
           ) : null}
-          {actions.secondary.map((item) => (
+          {actions.secondary.filter(actionEnabled).map((item) => (
             <Button
               key={item.id}
               type="button"
               variant="outline"
               data-testid="result-secondary-action"
-              data-action-id={item.id}
-              disabled={!actionEnabled(item)}
               onClick={() => props.onAction?.(item, shell)}
             >
               {item.label}
             </Button>
           ))}
-          {actions.more.length > 0 ? (
+          {actions.more.filter(actionEnabled).length > 0 ? (
             <details data-testid="result-more-actions">
               <summary className="cursor-pointer px-3 py-2 text-sm">
                 更多
               </summary>
               <div className="mt-2 flex flex-wrap gap-2">
-                {actions.more.map((item) => (
+                {actions.more.filter(actionEnabled).map((item) => (
                   <Button
                     key={item.id}
                     type="button"
                     size="sm"
                     variant="ghost"
                     data-testid="result-overflow-action"
-                    data-action-id={item.id}
-                    disabled={!actionEnabled(item)}
                     onClick={() => props.onAction?.(item, shell)}
                   >
                     {item.label}
@@ -575,9 +623,8 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
           <p
             className="text-xs text-muted-foreground"
             data-testid="result-delivery-capability"
-            data-mode={sub.deliveryCapability.mode}
           >
-            交付能力：{sub.deliveryCapability.mode}
+            交付：{deliveryCapabilityLabel(sub.deliveryCapability.mode)}
           </p>
         ) : null}
 

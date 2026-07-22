@@ -299,6 +299,20 @@ export const contentPackageSourceSchema = z.object({
   dataClass: z.array(z.string().trim().min(1)).optional(),
   executionContract: creativeExecutionContractSchema.optional(),
   compositionRevision: contentPackageIdSchema.optional(),
+  creationExecutionSnapshot: z
+    .object({
+      id: contentPackageIdSchema,
+      revision: z.number().int().positive(),
+      schemaVersion: z.literal('creation-execution-snapshot/v1'),
+    })
+    .optional(),
+  sourceContentPackage: z
+    .object({
+      id: contentPackageIdSchema,
+      revision: contentPackageIdSchema,
+    })
+    .strict()
+    .optional(),
   groundingId: contentPackageIdSchema.optional(),
   layoutCanvas: z
     .object({
@@ -523,6 +537,8 @@ export const contentPackageExportReceiptSchema = z
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
     sizeBytes: z.number().int().nonnegative().optional(),
+    /** Immutable shared-object receipt version used by deletion claims. */
+    storageRevision: z.string().trim().min(1).optional(),
     status: z.enum(['succeeded', 'failed']),
     variantVersionId: contentPackageIdSchema,
   })

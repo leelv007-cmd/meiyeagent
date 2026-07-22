@@ -59,7 +59,10 @@ test('secret scan surfaces non-missing file read failures', () => {
 });
 
 test('schema evidence covers every runtime migrator source', () => {
-  assert.deepEqual(CORE_SCHEMA_SOURCE_FILES, [...CORE_SCHEMA_SOURCE_FILES].sort());
+  assert.deepEqual(
+    CORE_SCHEMA_SOURCE_FILES,
+    [...CORE_SCHEMA_SOURCE_FILES].sort()
+  );
   for (const path of [
     'apps/core/src/p1/cutover/execution-service.ts',
     'apps/core/src/p1/foundation/postgres-repository.ts',
@@ -90,10 +93,34 @@ test('secret findings report location and rule without echoing the secret', () =
 test('secret findings ignore an explicit all-x documentation placeholder', () => {
   assert.deepEqual(
     findSecretFindings([
-      { path: 'docs/example.md', text: `OPENAI_API_KEY="sk-${'x'.repeat(40)}"` },
+      {
+        path: 'docs/example.md',
+        text: `OPENAI_API_KEY="sk-${'x'.repeat(40)}"`,
+      },
     ]),
     []
   );
+});
+
+test('secret findings allow only the audited invalid credential fixtures', () => {
+  const realLookingKey = `sk-${'b'.repeat(24)}`;
+  const findings = findSecretFindings([
+    {
+      path: 'apps/core/src/p1/supply-registry/credential-account.test.ts',
+      text: [
+        "const fixture = 'sk-live-secret-version-one';",
+        `const real = '${realLookingKey}';`,
+      ].join('\n'),
+    },
+  ]);
+
+  assert.deepEqual(findings, [
+    {
+      path: 'apps/core/src/p1/supply-registry/credential-account.test.ts',
+      line: 2,
+      rule: 'api-key',
+    },
+  ]);
 });
 
 test('bundle analysis reports the initial shell budgets', () => {

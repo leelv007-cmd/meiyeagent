@@ -116,6 +116,7 @@ describe('single bottom sheet mutex + restore', () => {
     return (
       <div>
         <button
+          id="trigger-a"
           type="button"
           data-testid="open-conflict"
           onClick={() =>
@@ -132,6 +133,7 @@ describe('single bottom sheet mutex + restore', () => {
           open conflict
         </button>
         <button
+          id="trigger-b"
           type="button"
           data-testid="open-reuse"
           onClick={() =>
@@ -178,9 +180,12 @@ describe('single bottom sheet mutex + restore', () => {
     expect(screen.queryByTestId('composer-bottom-sheet')).toBeNull();
 
     await user.click(screen.getByTestId('open-conflict'));
-    expect(screen.getByTestId('composer-bottom-sheet')).toHaveAttribute(
-      'data-sheet-kind',
-      'conflict'
+    const sheet = screen.getByTestId('composer-bottom-sheet');
+    expect(sheet).toHaveAttribute('data-sheet-kind', 'conflict');
+    expect(sheet).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(sheet).toContainElement(
+      document.activeElement as HTMLElement | null
     );
 
     // Mutex: opening reuse replaces conflict — still a single sheet root.
@@ -191,6 +196,7 @@ describe('single bottom sheet mutex + restore', () => {
 
     await user.click(screen.getByTestId('composer-bottom-sheet-close'));
     expect(screen.queryByTestId('composer-bottom-sheet')).toBeNull();
+    expect(screen.getByTestId('open-reuse')).toHaveFocus();
     const restoreJson = screen.getByTestId('restore-json').textContent ?? '';
     expect(restoreJson).toContain('trigger-b');
     expect(restoreJson).toContain('"scrollY":12');

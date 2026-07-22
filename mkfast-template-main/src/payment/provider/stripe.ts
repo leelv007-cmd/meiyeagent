@@ -1,3 +1,5 @@
+import { and, desc, eq } from 'drizzle-orm';
+import { Stripe } from 'stripe';
 import { getDb } from '@/db';
 import { payment } from '@/db/app.schema';
 import { user } from '@/db/auth.schema';
@@ -13,8 +15,6 @@ import {
 } from '@/payment/payment-record-effect';
 import { StripeNewCommerceRetiredError } from '@/payment/checkout-policy';
 import { logPaymentWebhookError } from '@/payment/webhook-logging';
-import { desc, eq } from 'drizzle-orm';
-import { Stripe } from 'stripe';
 import type {
   CheckoutResult,
   CreateCheckoutParams,
@@ -27,6 +27,12 @@ import type {
 } from '../types';
 import { PlanIntervals, PaymentScenes, PaymentTypes } from '../types';
 import { normalizeStripeVerifiedPaymentEvent } from '../verified-webhook-event';
+import {
+  StripeCustomerIdentityError,
+  stripeCustomerIdFromReference,
+  verifyOrBackfillHistoricalStripeCustomer,
+  verifyOrBackfillHistoricalStripeSubscriptionCustomer,
+} from './stripe-customer-identity';
 
 export const STRIPE_HISTORICAL_API_VERSION: Stripe.LatestApiVersion =
   '2025-02-24.acacia';
@@ -82,12 +88,16 @@ export class StripeProvider implements PaymentProvider {
         .select({ id: user.id })
         .from(user)
         .where(eq(user.customerId, customerId))
-        .limit(1);
+        .limit(2);
 
-      if (result.length > 0) {
+      if (result.length === 1) {
         return result[0].id;
       }
-      console.warn('No user found with given customerId');
+      console.warn(
+        result.length === 0
+          ? 'No user found with given customerId'
+          : 'Ambiguous local Stripe customer binding'
+      );
 
       return undefined;
     } catch (error) {
@@ -99,16 +109,40 @@ export class StripeProvider implements PaymentProvider {
       return undefined;
     }
   }
+
+  private async verifyOrBackfillHistoricalCustomerBinding(
+    customerId: string,
+    userId: string
+  ): Promise<void> {
+    const localUserId = await this.findUserIdByCustomerId(customerId);
+    if (localUserId !== userId) {
+      throw new StripeCustomerIdentityError(
+        'STRIPE_CUSTOMER_IDENTITY_MISMATCH',
+        'Stripe customer is not bound to the payment user.'
+      );
+    }
+    await verifyOrBackfillHistoricalStripeCustomer(
+      await this.stripe.customers.retrieve(customerId),
+      userId,
+      {
+        updateCustomerMetadata: (id, metadata) =>
+          this.stripe.customers.update(id, { metadata }),
+      }
+    );
+  }
+
   /**
    * Validates that a checkout session has required metadata
    * @param session Stripe checkout session
    * @returns Object with userId and customerId
    * @throws Error if required fields are missing
    */
-  private validateSessionMetadata(session: Stripe.Checkout.Session): {
+  private async validateSessionMetadata(
+    session: Stripe.Checkout.Session
+  ): Promise<{
     userId: string;
     customerId: string;
-  } {
+  }> {
     const userId = session.metadata?.userId;
     if (!userId || userId.trim() === '') {
       throw new Error(
@@ -123,6 +157,7 @@ export class StripeProvider implements PaymentProvider {
       );
     }
 
+    await this.verifyOrBackfillHistoricalCustomerBinding(customerId, userId);
     return { userId, customerId };
   }
 
@@ -327,6 +362,15 @@ export class StripeProvider implements PaymentProvider {
         console.error('<< Payment record not found for invoice:', invoice.id);
         throw new Error(`Payment record not found for invoice: ${invoice.id}`);
       }
+      if (
+        stripeCustomerIdFromReference(invoice.customer) !==
+        paymentRecord.customerId
+      ) {
+        throw new StripeCustomerIdentityError(
+          'STRIPE_CUSTOMER_IDENTITY_MISMATCH',
+          'Stripe invoice customer is not bound to the payment record.'
+        );
+      }
 
       // Determine payment type based on existing payment record type
       // This is more reliable than checking invoice.subscription field
@@ -338,6 +382,10 @@ export class StripeProvider implements PaymentProvider {
         await this.updateSubscriptionPayment(invoice, paymentRecord);
       } else {
         // This is a one-time payment
+        await this.verifyOrBackfillHistoricalCustomerBinding(
+          paymentRecord.customerId,
+          paymentRecord.userId
+        );
         await this.updateOneTimePayment(invoice, paymentRecord);
       }
     } catch (error) {
@@ -391,34 +439,32 @@ export class StripeProvider implements PaymentProvider {
       }
 
       if (!subscriptionId) {
-        console.warn('<< No subscriptionId found in invoice or paymentRecord');
-        return;
+        throw new StripeCustomerIdentityError(
+          'STRIPE_CUSTOMER_IDENTITY_INVALID',
+          'Stripe subscription invoice has no subscription identity.'
+        );
       }
 
       // Get subscription details from Stripe
       const subscription =
         await this.stripe.subscriptions.retrieve(subscriptionId);
-      const customerId = subscription.customer as string;
+
+      const binding =
+        await this.verifyOrBackfillHistoricalSubscriptionBinding(subscription);
+      if (
+        binding.customerId !== paymentRecord.customerId ||
+        binding.userId !== paymentRecord.userId
+      ) {
+        throw new StripeCustomerIdentityError(
+          'STRIPE_CUSTOMER_IDENTITY_MISMATCH',
+          'Stripe subscription customer is not bound to the payment user.'
+        );
+      }
 
       // Get priceId from subscription items
       const priceId = subscription.items.data[0]?.price.id;
       if (!priceId) {
-        console.warn('<< No priceId found for subscription');
-        return;
-      }
-
-      // Get userId from subscription metadata or fallback to customerId lookup
-      let userId: string | undefined = subscription.metadata?.userId;
-
-      // If no userId in metadata (common in renewals), find by customerId
-      if (!userId) {
-        console.log('No userId in metadata, finding by customerId');
-        userId = await this.findUserIdByCustomerId(customerId);
-
-        if (!userId) {
-          console.error('<< No userId found, this should not happen');
-          return;
-        }
+        throw new Error('Stripe subscription has no price identity.');
       }
 
       const periodStart = this.getPeriodStart(subscription);
@@ -452,7 +498,7 @@ export class StripeProvider implements PaymentProvider {
         .where(eq(payment.id, paymentRecord.id));
 
       // Process subscription benefits (no credits in MkFast)
-      await this.processSubscriptionPurchase(userId, priceId);
+      await this.processSubscriptionPurchase(binding.userId, priceId);
     } catch (error) {
       logPaymentWebhookError({
         error,
@@ -582,6 +628,10 @@ export class StripeProvider implements PaymentProvider {
     stripeSubscription: Stripe.Subscription
   ): Promise<void> {
     console.log('>> Handle subscription update:', stripeSubscription.id);
+    const binding =
+      await this.verifyOrBackfillHistoricalSubscriptionBinding(
+        stripeSubscription
+      );
 
     // get priceId from subscription items (this is always available)
     const priceId = stripeSubscription.items.data[0]?.price.id;
@@ -619,13 +669,22 @@ export class StripeProvider implements PaymentProvider {
     const result = await db
       .update(payment)
       .set(updateFields)
-      .where(eq(payment.subscriptionId, stripeSubscription.id))
+      .where(
+        and(
+          eq(payment.subscriptionId, stripeSubscription.id),
+          eq(payment.userId, binding.userId),
+          eq(payment.customerId, binding.customerId)
+        )
+      )
       .returning({ id: payment.id });
 
     if (result.length > 0) {
       console.log('<< Updated payment record for subscription');
     } else {
-      console.warn('<< No payment record found for subscription update');
+      throw new StripeCustomerIdentityError(
+        'STRIPE_CUSTOMER_IDENTITY_MISMATCH',
+        'No payment record matches the verified subscription binding.'
+      );
     }
   }
 
@@ -643,6 +702,10 @@ export class StripeProvider implements PaymentProvider {
     stripeSubscription: Stripe.Subscription
   ): Promise<void> {
     console.log('>> Handle subscription deletion:', stripeSubscription.id);
+    const binding =
+      await this.verifyOrBackfillHistoricalSubscriptionBinding(
+        stripeSubscription
+      );
 
     const db = getDb();
     const result = await db
@@ -653,13 +716,22 @@ export class StripeProvider implements PaymentProvider {
         ),
         updatedAt: new Date(),
       })
-      .where(eq(payment.subscriptionId, stripeSubscription.id))
+      .where(
+        and(
+          eq(payment.subscriptionId, stripeSubscription.id),
+          eq(payment.userId, binding.userId),
+          eq(payment.customerId, binding.customerId)
+        )
+      )
       .returning({ id: payment.id });
 
     if (result.length > 0) {
       console.log('<< Marked payment record for subscription as canceled');
     } else {
-      console.warn('<< No payment record found for subscription deletion');
+      throw new StripeCustomerIdentityError(
+        'STRIPE_CUSTOMER_IDENTITY_MISMATCH',
+        'No payment record matches the verified subscription binding.'
+      );
     }
   }
 
@@ -695,6 +767,22 @@ export class StripeProvider implements PaymentProvider {
     console.log('<< Handle checkout session completion success');
   }
 
+  private async verifyOrBackfillHistoricalSubscriptionBinding(
+    subscription: Stripe.Subscription
+  ): ReturnType<typeof verifyOrBackfillHistoricalStripeSubscriptionCustomer> {
+    return verifyOrBackfillHistoricalStripeSubscriptionCustomer(
+      subscription.customer,
+      {
+        findUserIdByCustomerId: (customerId) =>
+          this.findUserIdByCustomerId(customerId),
+        retrieveCustomer: (customerId) =>
+          this.stripe.customers.retrieve(customerId),
+        updateCustomerMetadata: (customerId, metadata) =>
+          this.stripe.customers.update(customerId, { metadata }),
+      }
+    );
+  }
+
   /**
    * Create subscription payment record in checkout.session.completed event
    * @param session Stripe checkout session
@@ -721,7 +809,7 @@ export class StripeProvider implements PaymentProvider {
     }
 
     // Validate session metadata and get userId, customerId
-    const { userId, customerId } = this.validateSessionMetadata(session);
+    const { userId, customerId } = await this.validateSessionMetadata(session);
 
     // No matter user uses coupon code or not, even amount=0, invoice id is available
     const invoiceId: string | null = session.invoice as string | null;
@@ -776,7 +864,7 @@ export class StripeProvider implements PaymentProvider {
     }
 
     // Validate session metadata and get userId, customerId
-    const { userId, customerId } = this.validateSessionMetadata(session);
+    const { userId, customerId } = await this.validateSessionMetadata(session);
 
     // No matter user uses coupon code or not, even amount=0, invoice id is available
     const invoiceId: string | null = session.invoice as string | null;

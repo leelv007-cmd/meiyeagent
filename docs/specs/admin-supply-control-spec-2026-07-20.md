@@ -1,6 +1,6 @@
 # 后台能力指挥台 + 多渠道模型供应 开发规格（2026-07-20）
 
-- 决策依据：D-048~D-071（后台管理平台可视化 D-048~D-057 + 多渠道模型供应 D-058~D-069 + 控制中心 D-070/D-071），**全部按 D-080 六项处置的修订口径执行**（C1 只读异常列表 / C2 自报+查找表 / C3 骨架与 MP 纵向同一增量、CF broker 不进首切 / C4 凭据三态主干+SupplyPool 一等实体 / C5 三核心双渠道验收维持 / C6 熔断参数抄 LiteLLM/Envoy 默认）；继承 D-037/D-038/D-040/D-044/D-080、ADR-0011
+- 决策依据：D-048~D-071（后台管理平台可视化 D-048~D-057 + 多渠道模型供应 D-058~D-069 + 控制中心 D-070/D-071），**全部按 D-080 六项处置的修订口径执行**（C1 只读异常列表 / C2 自报+查找表 / C3 骨架与 MP 纵向同一增量、CF broker 不进首切 / C4 凭据三态主干+SupplyPool 一等实体 / C5 三核心官方主渠道真实连通为发布门，双渠道为非阻塞增强 / C6 熔断参数抄 LiteLLM/Envoy 默认）；继承 D-037/D-038/D-040/D-044/D-080、ADR-0011
 - 复核链：`docs/reviews/admin-supply-decisions-xcheck-2026-07-20.md`（六路复核+D-080 处置）+ 上游对照 `docs/reviews/mkfast-mkimage-source-xref-2026-07-20.md` + 本 spec 双路 Codex 对抗复核 `.scratch/admin-supply-spec-review-2026-07-20/lane1-fidelity.md`（决策保真：0 P0/9 P1/5 P2）与 `lane2-reality.md`（代码现实与分包：6 P0/13 P1/5 P2）——**33 条全采纳并已回写本稿**
 - 与在飞包的关系：**本 spec 是 D-080 证据边界预留的 AP/MP 拆票欠账补足**；#83 包（#84-#105）已占位的接缝本包只消费不重建——`product-quote` contracts 与 ProductUsage 预占/结算扩展属 WT-B（#92）、pending-actions/ActionableInboxItem 属 WT-B（#94）、VideoWorkflow 派生化属 WT-E（#102）、S1（#87）冻结清单对本包同样生效。**票号权威**：以上编号非 UI spec 原文，出处=已提交的 `docs/handoff/ui-journey-rebuild-handoff-2026-07-20.md` 与 `.scratch/ui-journey-tickets-2026-07-20/issue-numbers.json`（GitHub 已发布 issues）
 - 实施状态：**终稿**——双路 Codex 复核 33 条 + 双路一致性复核（落地核验 38/38、全局一致性 P0=0/P1=4/P2=5）全部落地；跨包属主已在 `docs/handoff/ui-journey-rebuild-handoff-2026-07-20.md`「跨包接缝增补」节双向确认；进入拆票
@@ -21,7 +21,7 @@
 - **EntitlementPolicy 已有可执行合同**：`ProductEntitlementPolicy` 含 revision/tier/四模态 allowance/concurrencyLimit/queuePriority + composite resolver；任务提交时写入 scheduling。WT-H=扩展包裹，不新建平行 port。
 - **RoutePolicy/DataPolicy 有薄基础**：`RouteRevision`（仅 id/model/operation/revision）、`Deployment.allowedDataClasses`、执行与模拟共用硬过滤（`planModelSupplyCandidates`）。演进而非首建；先加 characterization tests 再接新政策聚合。
 - **健康 overlay 现状=三处进程内 cooldown map**（gateway PoC + recorded image/video adapters 各一，固定 30 秒），无 `circuit_open`、无持久化状态机。新 overlay 落地时必须迁移/删除三处本地 map，不写第四份。
-- **Ark/Tuzi/TTS 基线远高于旧稿假设**：`MediaProviderLifecyclePort` 已要求并已实现 submit/recover/poll/download/cancel + observed usage/cost。WT-I 真实缺口=health/drain/**跨进程持久化 recover**/late-terminal 对账 conformance/双故障域 live gate，**不是补 cancel/usage/recover**。
+- **Ark/Tuzi/TTS 基线远高于旧稿假设**：`MediaProviderLifecyclePort` 已要求并已实现 submit/recover/poll/download/cancel + observed usage/cost。WT-I 发布缺口=三模态官方主渠道真实生成；health/drain/**跨进程持久化 recover**/late-terminal 对账与双故障域 conformance 保留为非阻塞增强，**不是补 cancel/usage/recover**。
 - **capability permission 已有集中骨架**：`productCapabilities`（含 `publication.handoff`，`uiux.ts:298-347`）+ `requiredP1Capability`（`:405-494`）+ `server.ts:353-376` 统一授权。缺口=key 太粗、未知 action 落宽泛默认，非显式注册+默认拒绝。WT-K=演进这条缝，不建新缝。
 - **OperationalMetric 是 job-runtime 私有类型**（`job-runtime/operational-metrics.ts:10-36`），今天唯一 reporter=`PostgresOperationalMetricsCollector`，前端 audit 页自行复制 view 类型消费。S2 需把 known|unknown envelope 提升到 contracts，job-runtime 降为 reporter 之一。
 - **pending-actions 服务存在但条件装配**：仅 `harnessRuntimeConfig` 存在时装配（`main.ts:1076-1087`），server 仅非空才注册路由。异常首页依赖它成为无条件平台服务（由 #94/Z2 解除条件装配）。
@@ -88,9 +88,9 @@
 
 30. 作为平台，首轮端到端主链贯通：结构化 ProviderProfile/SupplyContract → CredentialAccount secret 写入/测试 → ExecutionChannel/endpoint revision → provider alias 映射 CatalogModel → conformance/数据政策/价格证据 → Deployment 审批发布 → SupplyPool/RoutePolicy revision → 套餐默认与测试账号覆盖 → 用户真实任务 → RouteSnapshot 与双侧账本分账 → 后台审计下钻；发布后 HTTP 与 Worker 读同一 effective revision，渠道增删隔离排空**不依赖进程重启**。
 31. 作为平台，首轮同时覆盖文本/图片/视频三模态（音频后续独立，能力目录仍留存根）：三类任务全部经统一供应链实体与账本，媒体不再走环境变量/固定 provider mode/recorded 目录旁路；MP-04 拆 MP-04T/MP-04I/MP-04V，热装配/路由发布/用户分配/双侧账本/故障注入同时覆盖三模态（D-068）。
-32. 作为平台，图片与视频首轮验收原生异步副作用合同全项：submit/provider task ID/acceptance/recover-query/poll 或已验证 callback/cancel/download/自有资产持久化/供应商 URL TTL/排空/晚到终态/幂等/成本结算；accepted 或 unknown 禁止跨渠道盲目重提（D-038 纯函数内核约束）。**基线校正：Ark/Tuzi/TTS 已实现 submit/recover/poll/download/cancel+usage/cost，conformance 缺口=health/drain/跨进程持久化 recover/late-terminal 对账/双故障域 live gate，不重改稳定 adapter 已有方法**。
-33. 作为平台，验收强度（C5 维持原样）：三核心 operation 各≥两条独立故障域的真实 `live_verified` Deployment（同账户双 token/同 endpoint 双别名不算数；共享底层厂商只可声称渠道级容灾）+ 真实故障注入矩阵（主通道接单前失败切换/已接受不重提/隔离排空后新任务免重启走另一条/快照与账本可回放）；次级 operation ≥一条真实 live_verified，单通道在用户选择页与后台明确标 single-channel/no-fallback；首轮至少一条 `official_direct` + 一条 `upstream_reseller`。
-34. 作为运营者，双渠道覆盖、独立故障域、数据等级覆盖与 fallback readiness 在能力页按 operation/CatalogModel 可视；发布门阻止少于两条合格 Deployment 的核心 operation 标记 multi-channel ready。
+32. 作为平台，图片与视频首轮验收原生异步副作用合同至少覆盖 submit/provider task ID/recover-query/poll/download/自有资产持久化/幂等/成本结算；accepted 或 unknown 禁止跨渠道盲目重提（D-038 纯函数内核约束）。**基线校正：Ark 已实现这些稳定 adapter 方法；本轮发布只要求官方主渠道真实执行成功，双渠道 health/drain/late-terminal 与故障域矩阵后续增强**。
+33. 作为平台，验收强度（C5 修订）：三核心 operation 各≥一条 `official_direct` 的真实 `live_verified` Deployment；无第二条合格 Deployment 时在用户选择页与后台明确标 `single_channel / no_fallback`。两条独立故障域、`upstream_reseller` 与真实故障注入矩阵只在声称 `multi-channel ready` 或自动回退前强制，不阻塞本轮单渠道发布。
+34. 作为运营者，主渠道真实连通、双渠道覆盖、独立故障域、数据等级覆盖与 fallback readiness 在能力页按 operation/CatalogModel 可视；每个核心 operation 至少一个官方 `live_verified` Deployment 即可发布，但少于两条合格 Deployment 时必须标记 `single_channel / no_fallback`，且不得标记 multi-channel ready。
 
 ### G. 供应控制中心与 Cloudflare（D-070/D-071/D-052/D-053）
 
@@ -123,7 +123,7 @@
 | MP-05 SupplyPool/RoutePolicy 发布 | G4+H2 | RoutePolicy/overlay 归 G，Pool 归 H |
 | MP-06 套餐与 AccountAllocation | H1 | 扩展既有 ProductEntitlementPolicy |
 | MP-07 任务审计与双侧账本 | H2+Z2-WIRING（桥接）+J4（呈现） | ProductUsage 属 #92，本包只消费 |
-| MP-08 端到端/故障注入验收 | I4+Z2-ACCEPT | C5 双渠道门+同一增量验收 |
+| MP-08 端到端/故障注入验收 | I4+Z2-ACCEPT | C5 三模态官方主渠道真实连通门；双渠道矩阵为非阻塞增强 |
 
 > 注：本表只映射 D-067 的 MP-01~08 供应模块。G5（数据政策/排序，D-064/D-065）、K1（能力权限，D-057）与 J1-J6（AP 管理台，D-048~D-056）属 AP 域与其他决策，不在 MP 编号内，归属见分包节。
 
@@ -134,10 +134,10 @@
   1. **HTTP 命令+合同测试**（先例 `operations/http.test.ts`）：供应实体 CRUD/发布/隔离/排空/恢复/轮换命令的权限、影响预览、CAS/幂等、审计字段断言；默认拒绝未知权限的负向断言。
   2. **发布聚合合同测试**（先例=**model-supply `foundation-module.test.ts`** 的 lifecycle/publish/rollback/CAS；admin-config 仅作 CAS/审计/回滚小先例）：RoutePolicy/Deployment/EntitlementPolicy 的 candidate→approve→publish→rollback、并发冲突、影响预览。
   3. **纯投影单测 + characterization**：capability status projection（known|unknown/去重/排序）、**D-051 六问逐能力 completeness 测试（inventory fixture）**、异常列表投影、EffectiveEntitlement 计算与优先级、路由硬过滤+排序分层（**先对 `planModelSupplyCandidates` 加 characterization tests 再改**）、健康 overlay 状态机、**RouteSnapshot 字段级序列化+回放**、**多产品账号绕限额负向测试**。
-  4. **conformance/故障注入真机**（形态=`live-*.integration.test.ts` + env 显式开闸，**仓库无 `*.live.test.ts` 命名**）：三模态双渠道矩阵——接单前失败切换、accepted/unknown 不重提、隔离排空免重启、快照账本回放；媒体异步合同全生命周期。**CI：`core-persistence` 是持久化门不承担供应商真机；供应商 live matrix 另建受保护、手动/定时、带 secret 与成本上限的独立 workflow**。
+  4. **官方主渠道真机连通**（形态=`live-*.integration.test.ts` + env 显式开闸，**仓库无 `*.live.test.ts` 命名**）：文案、图片、视频各执行一次真实官方 Adapter 调用；文本取得有效输出，媒体完成 submit/recover/poll/download 并保存结果 hash、任务、费用和 run nonce。双渠道故障注入矩阵继续保留，但不阻塞本轮发布。**CI：`core-persistence` 是持久化门不承担供应商真机；供应商 live gate 另建受保护、手动/定时、带 secret 与成本上限的独立 workflow**。
   5. **前端**：admin console 页面沿现状 node:test 纯模型+SSR markup+memory-router（**当前无 RTL**）；#86 落地后补 RTL 交互；运行表/时间线组件模型单测；Playwright e2e 走真实四服务覆盖异常首页→下钻→快捷动作→审计闭环。**D-048 交互禁令入 e2e 验收：运营主路径零 code/SQL/env/raw JSON/CLI**。
 - **迁移兼容测试**：D-044 verified-workspace provisioning 默认供给在新 registry 下成立；三固定槽迁移分别断言元数据与 runtime binding（douyin 现状 not_wired 显式）。
-- **验收口径**：能力骨架完成=capability inventory 所列能力全部有真实状态或显式缺口+六问合同完整+有下钻+异常可聚合（D-056）；供应首轮完成=三模态主链共同通过+三核心双渠道门（D-068/D-069）；两者为同一增量整体验收（D-080 C3）。
+- **验收口径**：能力骨架完成=capability inventory 所列能力全部有真实状态或显式缺口+六问合同完整+有下钻+异常可聚合（D-056）；供应首轮完成=三模态主链共同通过+三核心官方主渠道各有一个当前 `live_verified` 真实生成证据（D-068/D-069 修订）；两者为同一增量整体验收（D-080 C3）。
 
 ## Out of Scope（本 spec 明确不做）
 
@@ -159,11 +159,11 @@
 - **S2b RouteSnapshot 规范化迁移**：四形收敛为单一权威类型+兼容适配器；独占 `foundation/domain.ts`、`model-supply/foundation-ledger.ts`（仅快照转换段，合入后该文件属主移交 Z2-WIRING）、`integrations/contracts.ts`、`integrations/foundation-byok-ledger.ts` 及对应 tests。阻塞：S2a。
 - **WT-G 供应核心（core 新模块 `p1/supply-registry/**` + S2 合入后独占 `catalog.ts` 等）**：G1 registry expand/migrate（含三固定槽→CredentialAccount 迁移+D-044 兼容）；G2 CredentialAccount 特化+secret broker；G3 凭据/adapter capability 热装配（domain+ports，接线归 Z2-WIRING）；G4 RoutePolicy 发布+持久化健康 overlay（C6 常量+三处 cooldown map 迁移）；G5 DataPolicyRevision 硬过滤+三层排序（characterization 先行）。不碰 `main.ts`/`job-worker.ts`/`runtime-assembly.ts`/`runtime-config.ts`/视频文件。
 - **WT-H 权益与池（core 新模块 `p1/entitlement-pools/**` + 独占扩展既有 entitlement 文件）**：H1 EntitlementPolicy 扩展+AccountAllocation+EffectiveEntitlement 预览；H2 SupplyPool shared/dedicated+供应侧公平排队+三层容量+供应侧账本字段（消费 #92 合同；GrantLot 窄扩展；桥接归 Z2-WIRING；Graphile transport conformance 子票条件触发）。
-- **WT-I 三模态 conformance（adapters 域独占：ark/tuzi/volcengine 系列+activation-probe+live-* tests+新 `provider-conformance/**`）**：I1 MP-04T；I2 MP-04I（health/drain/跨进程 recover/late-terminal）；I3 MP-04V（阻塞 #102 E1）；I4 MP-08 故障注入矩阵+live gate。`adapters.ts` 先按 provider 抽小文件再改。
+- **WT-I 三模态 conformance（adapters 域独占：ark/tuzi/volcengine 系列+activation-probe+live-* tests+新 `provider-conformance/**`）**：I1 MP-04T；I2 MP-04I；I3 MP-04V；I4 先以三模态官方主渠道真实连通形成 release gate，MP-08 双渠道故障注入矩阵保留为非阻塞增强。`adapters.ts` 先按 provider 抽小文件再改。
 - **WT-K 权限合同（core 新模块 `p1/capability-permission/**`；本线仅 K1 一票，编号为跨线统一风格非多子票暗示）**：key 注册表+默认拒绝+审计投影；enforcement 只改 `server.ts` 集中授权点与其 contract tests；authorizer port 内部强制由 Z2-WIRING 装配。
 - **WT-J 管理台前端（admin 域，业务 glob 与 #83 WT-C/WT-D 零交集；共享接线面归唯一前端整合属主）**：J1 capability registry 骨架+状态投影+manifest 存根；J2 `/admin` 异常首页（**阻塞 #94** ActionableInboxItem+pending-actions 无条件化）；J3 能力目录+七页编组+运营语言；J4 供应控制中心（总览/运行表/任务下钻）；J5 凭据 UI+路由模拟器+受治理快捷动作；J6 Cloudflare 只读呈现（deep-link+探针+只读 REST 盘点）。
 - **Z2-WIRING 接线（唯一整合属主，内部分批各落独立 PR）**：**批A core**=`main.ts`/`job-worker.ts`/`runtime-assembly.ts`/`runtime-config.ts`/模块与 migration 注册/HTTP-Worker effective revision 一致性测试/`foundation-ledger.ts` 双侧桥接（S2b 合入后接管该文件）/pending-actions 无条件装配/authorizer port 装配；**批B 前端**=`lib/routes.ts`/sidebar/locales/routeTree 生成（跨包冻结增补见 #83 handoff「跨包接缝增补」节，经跨包同一整合属主合入）。
-- **Z2-ACCEPT 同一增量验收**：能力骨架完成合同（inventory 全覆盖+六问 completeness）+三模态双渠道门+发布门阻止不足两渠道标 multi-channel ready+single-channel 标示检查。
+- **Z2-ACCEPT 同一增量验收**：能力骨架完成合同（inventory 全覆盖+六问 completeness）+三模态官方主渠道真实连通门+发布门阻止不足两渠道标 multi-channel ready+single-channel/no-fallback 标示检查。
 
 依赖边（按代码现实修订）：
 
@@ -181,7 +181,7 @@ Z2-WIRING ← G3/H2/K1 domain 就绪；Z2-ACCEPT ← 全部
 
 ## Further Notes
 
-- **同一增量纪律**：AP 骨架与 MP 纵向合并验收（D-080 C3），拆票虽分线，宣称完成必须两者同过——能力骨架完成合同 + 三模态双渠道门缺一不可。
+- **同一增量纪律**：AP 骨架与 MP 纵向合并验收（D-080 C3），拆票虽分线，宣称完成必须两者同过——能力骨架完成合同 + 三模态官方主渠道真实连通门缺一不可。双渠道矩阵不再阻塞本轮完成声明。
 - **第二真相高危点**：异常首页 vs pending-actions 收件箱（组合消费不复制）；`SupplierPriceRevision` vs #92 产品报价（分侧属主，名字都不共用）；capability status vs 各域已有健康区块（registry 引用不复制）；GrantLot vs ProductUsage vs ProviderCost（三条账本链各自语义与写路径，永不合并、不共改文件）；三个"capability"概念（运维能力状态/授权 permission/模型 operation revision）类型名互斥；外部网关 Console vs 控制中心（深链不镜像）。
 - **"看似配置实为重构"坑位（显式立项票）**：三固定凭据槽→动态 registry（触运行时装配链）、RouteSnapshot 四形规范化（S2b 独立迁移）、`model-supply/index.ts` 无行为抽取（S2a，4828 行巨型文件）、pending-actions 无条件化（Z2-WIRING）。
 - **上游对照可抄件**（详见 xref 报告）：任务详情版式/faceted 运行表/StatCard/中间件双态/Better Auth 原语/ModelConfig 字段形状起点/submit+poll port 骨架——均为**首选实现参考非强制合同**；反面教训（FIFO 过期浪费/授予无独立幂等键/装饰性隐藏/零契约测试）已写入对应票硬要求。
