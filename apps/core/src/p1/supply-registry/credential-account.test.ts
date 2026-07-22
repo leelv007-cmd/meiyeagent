@@ -300,7 +300,7 @@ test('secret broker assembles by frozen version and product projection never ech
     credentialId: 'cred-model-direct',
     secretVersion: 1,
     provider: 'model',
-    value: 'sk-live-secret-version-one',
+    value: 'fixture-secret-version-one',
   });
   const put2 = await putCredentialSecret({
     secrets,
@@ -308,7 +308,7 @@ test('secret broker assembles by frozen version and product projection never ech
     credentialId: 'cred-model-direct',
     secretVersion: 2,
     provider: 'model',
-    value: 'sk-live-secret-version-two',
+    value: 'fixture-secret-version-two',
   });
 
   let account = createCredentialAccount({
@@ -404,7 +404,7 @@ test('secret broker assembles by frozen version and product projection never ech
     frozenVersion: '1',
     requiredScope: 'platform',
   });
-  assert.equal(assembledV1.secret, 'sk-live-secret-version-one');
+  assert.equal(assembledV1.secret, 'fixture-secret-version-one');
   assert.equal(assembledV1.version, '1');
 
   const assembledV2 = await broker.assembleForRequest({
@@ -412,7 +412,7 @@ test('secret broker assembles by frozen version and product projection never ech
     frozenVersion: '2',
     requiredScope: 'platform',
   });
-  assert.equal(assembledV2.secret, 'sk-live-secret-version-two');
+  assert.equal(assembledV2.secret, 'fixture-secret-version-two');
 
   const assembledHead = await broker.assembleForRequest({
     credentialAccountId: account.id,
@@ -447,7 +447,7 @@ test('secret broker assembles by frozen version and product projection never ech
 
   const publicMeta = await broker.projectPublic(account.id);
   assertNoSecretEcho(publicMeta);
-  assert.equal(JSON.stringify(publicMeta).includes('sk-live-secret'), false);
+  assert.equal(JSON.stringify(publicMeta).includes('fixture-secret'), false);
 });
 
 test('secret broker pending/drain allow frozen history but reject head assembly', async () => {
@@ -458,7 +458,7 @@ test('secret broker pending/drain allow frozen history but reject head assembly'
     credentialId: 'cred-model-direct',
     secretVersion: 1,
     provider: 'model',
-    value: 'sk-live-secret-version-one',
+    value: 'fixture-secret-version-one',
   });
   const put2 = await putCredentialSecret({
     secrets,
@@ -466,7 +466,7 @@ test('secret broker pending/drain allow frozen history but reject head assembly'
     credentialId: 'cred-model-direct',
     secretVersion: 2,
     provider: 'model',
-    value: 'sk-live-secret-version-two',
+    value: 'fixture-secret-version-two',
   });
 
   let account = createCredentialAccount({
@@ -512,7 +512,7 @@ test('secret broker pending/drain allow frozen history but reject head assembly'
     requiredScope: 'platform',
   });
   assert.equal(inflight.version, '1');
-  assert.equal(inflight.secret, 'sk-live-secret-version-one');
+  assert.equal(inflight.secret, 'fixture-secret-version-one');
 
   // New head assembly without freeze is rejected while pending.
   await assert.rejects(
@@ -597,29 +597,29 @@ test('connectivity test normalizes without logging upstream response / Authoriza
     testedAt: '2026-07-18T15:00:00.000Z',
     upstreamResponse: {
       data: [{ id: 'model-x' }],
-      secret: 'sk-should-not-leak',
+      secret: 'fixture-should-not-leak',
     },
-    authorizationHeader: 'Bearer sk-live-secret-version-one',
+    authorizationHeader: 'Bearer fixture-secret-version-one',
     endpointWithQuery:
-      'https://api.example.test/v1/models?api_key=sk-live-secret-version-one',
+      'https://api.example.test/v1/models?api_key=fixture-secret-version-one',
   });
 
   assert.equal(result.status, 'passed');
   assert.equal(result.errorCode, undefined);
   assertNoSecretEcho(result);
   const json = JSON.stringify(result);
-  assert.equal(json.includes('sk-live-secret'), false);
+  assert.equal(json.includes('fixture-secret'), false);
   assert.equal(json.includes('Bearer'), false);
   assert.equal(json.includes('api_key='), false);
   assert.equal(json.includes('model-x'), false);
 
   const redacted = redactCredentialLogDetails({
     status: 'passed',
-    authorization: 'Bearer sk-live-secret-version-one',
+    authorization: 'Bearer fixture-secret-version-one',
     upstreamResponse: { ok: true, body: 'secret-body' },
     endpoint: 'https://api.example.test/v1/models?token=abc',
     errorCode: undefined,
-    note: 'Bearer sk-live-secret-version-one used',
+    note: 'Bearer fixture-secret-version-one used',
   });
   assert.equal('authorization' in redacted, false);
   assert.equal('upstreamResponse' in redacted, false);
