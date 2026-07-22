@@ -464,13 +464,13 @@
       "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
       "target": "apps/canvas/src/kernel-host/ported/kernel-node-hover-toolbar.tsx",
       "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "targetSha256": "8530b21dc6e1a8d17004914442877b4a1c7e5969f9080d6ed993e0694cc082ed",
+      "targetSha256": "d867f807ab57d9a458387c7d99987f31cc3a2c66536eaefc1e60415bbb5aa5b6",
       "authorizationStatus": "authorized",
       "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
       "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
       "thirdPartyNotes": "Merchant-safe host rebuild; no third-party package bytes are copied into the derivative.",
       "reviewer": "product_owner",
-      "adaptationBoundary": "G23 merchant-safe hover toolbar; host graph callbacks only; no local agent bridge.",
+      "adaptationBoundary": "G23 merchant-safe hover toolbar + K3 pure retouch (crop/upscale/split) host callbacks; no local agent bridge.",
       "adapterReplacementMatrix": [
         {
           "upstream": "local agent bridge / provider store",
@@ -494,13 +494,13 @@
       "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
       "target": "apps/canvas/src/kernel-host/ported/image-quick-tools.ts",
       "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "targetSha256": "b8dcc78494aba95b8c265958f18bda02f1815e0779043667b578553c6a80e144",
+      "targetSha256": "677f74958a1eacd50497f1bc0b877564785d2c3efe047904277e5cdcca7f877e",
       "authorizationStatus": "authorized",
       "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
       "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
       "thirdPartyNotes": "Merchant-safe host rebuild; no third-party package bytes are copied into the derivative.",
       "reviewer": "product_owner",
-      "adaptationBoundary": "G25 image quick-tool visibility preferences in localStorage; no provider state.",
+      "adaptationBoundary": "G25 image quick-tool visibility preferences; K3 adds upscale/split to pure-transform catalog.",
       "adapterReplacementMatrix": [
         {
           "upstream": "local agent bridge / provider store",
@@ -524,13 +524,13 @@
       "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
       "target": "apps/canvas/src/kernel-host/ported/image-quick-tools.test.ts",
       "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "targetSha256": "e0ea1d0c366d60eeb51d0caabe88300639dd3fa06ac6f6255ad63eb5f8c52212",
+      "targetSha256": "d4f03f4d949aba6f0522a4acf411f8bc84b73201038be2fd4167c885ce628de7",
       "authorizationStatus": "authorized",
       "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
       "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
       "thirdPartyNotes": "Merchant-safe host rebuild; no third-party package bytes are copied into the derivative.",
       "reviewer": "product_owner",
-      "adaptationBoundary": "Unit coverage for G25 quick-tool normalize/storage contracts.",
+      "adaptationBoundary": "Unit coverage for G25/K3 quick-tool normalize/storage contracts.",
       "adapterReplacementMatrix": [
         {
           "upstream": "local agent bridge / provider store",

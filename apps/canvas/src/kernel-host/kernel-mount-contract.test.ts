@@ -18,6 +18,11 @@ test("production kernel surface imports the authorized VozebCanvas without its l
 	assert.match(source, /ported\/kernel-node-hover-toolbar/u);
 	assert.match(source, /onHoverStart=\{\(nodeId\) => keepHover\(nodeId\)\}/u);
 	assert.match(source, /onHoverEnd=\{leaveHover\}/u);
+	// K3 pure retouch residual: upscale/split host callbacks (no multi-channel live).
+	assert.match(source, /onUpscaleSelected/u);
+	assert.match(source, /onSplitSelected/u);
+	assert.match(source, /onUpscale=/u);
+	assert.match(source, /onSplit=/u);
 });
 
 test("CanvasShell uses the production persistence and bootstrap coordinators", () => {
@@ -30,6 +35,10 @@ test("CanvasShell uses the production persistence and bootstrap coordinators", (
 	assert.match(source, /projectIdFromAudience\(context\.audience\)/u);
 	assert.match(source, /runAfterDirtyDraftFlush/u);
 	assert.match(source, /cropOwnedImageAsset/u);
+	assert.match(source, /upscaleOwnedImageAsset/u);
+	assert.match(source, /splitOwnedImageAsset/u);
+	assert.match(source, /onUpscaleSelected=\{upscaleSelectedImage\}/u);
+	assert.match(source, /onSplitSelected=\{splitSelectedImage\}/u);
 	assert.match(source, /applyAndPersistKernelGraph/u);
 	assert.match(source, /onViewportChange=\{applyKernelViewport\}/u);
 	assert.match(source, /<KernelCanvasSurface\s+key=\{selected\.id\}/u);

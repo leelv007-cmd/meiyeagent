@@ -28,7 +28,11 @@ import {
 	DraftVersionConflictError,
 	ProjectPersistenceAdapter,
 } from "../kernel-host/project-persistence";
-import { cropOwnedImageAsset } from "../kernel-host/retouch-adapter";
+import {
+	cropOwnedImageAsset,
+	splitOwnedImageAsset,
+	upscaleOwnedImageAsset,
+} from "../kernel-host/retouch-adapter";
 import {
 	assetDeliveryUrl,
 	CanvasBackendError,
@@ -529,6 +533,56 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 		}, "裁切结果已生成并保存");
 	}
 
+	async function upscaleSelectedImage(nodeId: string) {
+		await run(async () => {
+			const current = kernelGraphRef.current;
+			const sourceNode = current?.nodes.find((node) => node.id === nodeId);
+			if (!current || !sourceNode)
+				throw new Error("SOURCE_IMAGE_NODE_REQUIRED");
+			// Default 2K high path (G28); dialog param matrix can layer later.
+			const derived = await upscaleOwnedImageAsset(callCanvas, {
+				params: { algorithm: "high", targetLongEdge: 2048 },
+				sourceNode,
+			});
+			const next = structuredClone(current);
+			next.nodes.push(derived.node);
+			next.edges.push(derived.edge);
+			setSelectedNodeIds([derived.node.id]);
+			await applyAndPersistKernelGraph({
+				applyGraph: applyKernelGraph,
+				graph: next,
+				persistDraft: persistSelectedDraft,
+			});
+			setAssets(await callCanvas<CanvasOwnedAsset[]>("listAssets"));
+		}, "放大结果已生成并保存");
+	}
+
+	async function splitSelectedImage(nodeId: string) {
+		await run(async () => {
+			const current = kernelGraphRef.current;
+			const sourceNode = current?.nodes.find((node) => node.id === nodeId);
+			if (!current || !sourceNode)
+				throw new Error("SOURCE_IMAGE_NODE_REQUIRED");
+			// Default 2×2 grid (G29); interactive grid dialog can layer later.
+			const derived = await splitOwnedImageAsset(callCanvas, {
+				params: { columns: 2, rows: 2 },
+				sourceNode,
+			});
+			const next = structuredClone(current);
+			for (const piece of derived.pieces) {
+				next.nodes.push(piece.node);
+				next.edges.push(piece.edge);
+			}
+			setSelectedNodeIds(derived.pieces.map((piece) => piece.node.id));
+			await applyAndPersistKernelGraph({
+				applyGraph: applyKernelGraph,
+				graph: next,
+				persistDraft: persistSelectedDraft,
+			});
+			setAssets(await callCanvas<CanvasOwnedAsset[]>("listAssets"));
+		}, "切分结果已生成并保存");
+	}
+
 	async function insertGenerated(
 		job: CoreCanvasGenerationJob,
 		inputNodeIds: string[],
@@ -736,7 +790,9 @@ export function CanvasShell({ context, returnUrl }: CanvasShellProps) {
 											})
 										}
 										onSelectNodes={setSelectedNodeIds}
+										onSplitSelected={splitSelectedImage}
 										onUpload={() => fileRef.current?.click()}
+										onUpscaleSelected={upscaleSelectedImage}
 										onViewportChange={applyKernelViewport}
 										selectedNodeIds={selectedNodeIds}
 									/>

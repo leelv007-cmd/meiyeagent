@@ -4,6 +4,8 @@ import { Modal, Segmented, Switch } from "antd";
 import {
 	Download,
 	Ellipsis,
+	Grid2x2,
+	ImagePlus,
 	Info,
 	Lock,
 	LockOpen,
@@ -38,7 +40,9 @@ export type KernelNodeHoverHandlers = {
 	onDownload?: (nodeId: string) => void;
 	onFontDelta?: (nodeId: string, delta: number) => void;
 	onRetry?: (nodeId: string) => void;
+	onSplit?: (nodeId: string) => void;
 	onToggleFreeResize?: (nodeId: string) => void;
+	onUpscale?: (nodeId: string) => void;
 	onView?: (nodeId: string) => void;
 };
 
@@ -69,6 +73,8 @@ const IMAGE_TOOL_META: Record<
 	download: { label: "下载", title: "下载图片" },
 	info: { label: "信息", title: "查看节点信息" },
 	resize: { label: "锁比例", title: "切换等比/自由比例" },
+	split: { label: "切分", title: "2×2 网格切分" },
+	upscale: { label: "放大", title: "2K 放大" },
 	view: { label: "大图", title: "查看图片" },
 };
 
@@ -82,7 +88,9 @@ export function KernelNodeHoverToolbar({
 	onKeep,
 	onLeave,
 	onRetry,
+	onSplit,
 	onToggleFreeResize,
+	onUpscale,
 	onView,
 	viewport,
 }: KernelNodeHoverToolbarProps) {
@@ -199,6 +207,28 @@ export function KernelNodeHoverToolbar({
 						} satisfies ToolbarTool,
 					]
 				: []),
+			...(hasImage && onUpscale
+				? [
+						{
+							id: "upscale",
+							icon: <ImagePlus className="size-4" />,
+							label: "放大",
+							onClick: () => onUpscale(node.id),
+							title: "2K 放大",
+						} satisfies ToolbarTool,
+					]
+				: []),
+			...(hasImage && onSplit
+				? [
+						{
+							id: "split",
+							icon: <Grid2x2 className="size-4" />,
+							label: "切分",
+							onClick: () => onSplit(node.id),
+							title: "2×2 网格切分",
+						} satisfies ToolbarTool,
+					]
+				: []),
 			...(hasImage && onView
 				? [
 						{
@@ -223,7 +253,9 @@ export function KernelNodeHoverToolbar({
 		onCrop,
 		onDelete,
 		onDownload,
+		onSplit,
 		onToggleFreeResize,
+		onUpscale,
 		onView,
 		quickToolIds,
 	]);

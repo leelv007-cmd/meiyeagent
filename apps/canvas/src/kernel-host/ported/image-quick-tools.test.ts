@@ -9,17 +9,19 @@ import {
 	serializeImageQuickToolsConfig,
 } from "./image-quick-tools.js";
 
-test("normalizeImageQuickToolIds keeps catalog order and drops unknown/K3 ids", () => {
+test("normalizeImageQuickToolIds keeps catalog order and drops unknown/live-only ids", () => {
 	assert.deepEqual(
 		normalizeImageQuickToolIds([
 			"view",
 			"maskEdit",
 			"info",
 			"upscale",
+			"split",
 			"delete",
+			"angle",
 			"not-a-tool",
 		]),
-		["info", "delete", "view"],
+		["info", "delete", "upscale", "split", "view"],
 	);
 });
 

@@ -55,7 +55,9 @@ export type KernelCanvasSurfaceProps = {
 	) => Promise<void> | void;
 	onOpenAssets?: () => void;
 	onSelectNodes?: (ids: string[]) => void;
+	onSplitSelected?: (nodeId: string) => void;
 	onUpload?: () => void;
+	onUpscaleSelected?: (nodeId: string) => void;
 	onViewportChange?: (viewport: KernelSessionGraph["viewport"]) => void;
 	selectedNodeIds?: string[];
 };
@@ -73,7 +75,9 @@ export function KernelCanvasSurface({
 	onImportFiles,
 	onOpenAssets,
 	onSelectNodes,
+	onSplitSelected,
 	onUpload,
+	onUpscaleSelected,
 	onViewportChange,
 	selectedNodeIds = [],
 }: KernelCanvasSurfaceProps) {
@@ -529,6 +533,24 @@ export function KernelCanvasSurface({
 				>
 					方形裁切
 				</button>
+				<button
+					disabled={!selectedImageId || !onUpscaleSelected}
+					type="button"
+					onClick={() => {
+						if (selectedImageId) onUpscaleSelected?.(selectedImageId);
+					}}
+				>
+					2K放大
+				</button>
+				<button
+					disabled={!selectedImageId || !onSplitSelected}
+					type="button"
+					onClick={() => {
+						if (selectedImageId) onSplitSelected?.(selectedImageId);
+					}}
+				>
+					2×2切分
+				</button>
 				<span>
 					缩放 {(graph.viewport.scale * 100).toFixed(0)}% · 节点{" "}
 					{graph.nodes.length}
@@ -851,6 +873,20 @@ export function KernelCanvasSurface({
 							onCropSelected
 								? (nodeId) => {
 										onCropSelected(nodeId);
+									}
+								: undefined
+						}
+						onSplit={
+							onSplitSelected
+								? (nodeId) => {
+										onSplitSelected(nodeId);
+									}
+								: undefined
+						}
+						onUpscale={
+							onUpscaleSelected
+								? (nodeId) => {
+										onUpscaleSelected(nodeId);
 									}
 								: undefined
 						}

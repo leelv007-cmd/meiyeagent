@@ -1,6 +1,8 @@
 /**
- * Merchant-safe image hover toolbar customization (G25).
- * Only tools that the K2 host can honor without G-Store/K3 retouch journeys.
+ * Merchant-safe image hover toolbar customization (G25 + K3 pure retouch).
+ * Catalog only includes tools the host can honor without multi-channel live:
+ * crop / upscale / split are browser pure transforms + OwnedAsset lineage.
+ * maskEdit / angle / reversePrompt stay out until GenerationJob paths land.
  */
 
 export type ImageQuickToolId =
@@ -9,6 +11,8 @@ export type ImageQuickToolId =
 	| "download"
 	| "resize"
 	| "crop"
+	| "upscale"
+	| "split"
 	| "view";
 
 export type ImageQuickToolsConfig = {
@@ -19,13 +23,15 @@ export type ImageQuickToolsConfig = {
 /** Stable key shared with upstream shape so later exact-mount can reuse prefs. */
 export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v6";
 
-/** Full catalog of tools the K2 host can actually run today. */
+/** Full catalog of tools the host can actually run today. */
 export const IMAGE_QUICK_TOOL_CATALOG: readonly ImageQuickToolId[] = [
 	"info",
 	"delete",
 	"download",
 	"resize",
 	"crop",
+	"upscale",
+	"split",
 	"view",
 ] as const;
 
@@ -35,6 +41,8 @@ export const defaultImageQuickToolIds: ImageQuickToolId[] = [
 	"download",
 	"resize",
 	"crop",
+	"upscale",
+	"split",
 	"view",
 ];
 
