@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import type { ContentPackage, DiagnosticRun } from "@meiye/contracts";
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
-import { createCoreServer } from "../../server.js";
+import { createCoreServer, streamWorkflowEvents } from "../../server.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import {
 	WorkflowEventApplicationService,
@@ -15,6 +15,7 @@ import {
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
 	CreationSubmissionCoordinator,
+	type CreationSubmissionAdmissionPort,
 	type CreationSubmissionHarnessStarter,
 	type CreationSubmissionStore,
 	type CreationSubmissionStoreClaim,
@@ -39,6 +40,7 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 		submissions,
 		starter,
 		fixedIds(),
+		fixedAdmission(),
 	);
 	const contentPackage = packageWithPrivateProviderFields();
 	const cursors: Array<string | undefined> = [];
@@ -147,6 +149,15 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 		id: "recipe-service-promotion",
 		revision: "recipe-r7",
 	});
+	assert.deepEqual(starter.starts[0]?.snapshot.rights, {
+		revision: "server-rights-r1",
+		summary: "Server verified source assets.",
+	});
+	assert.deepEqual(starter.starts[0]?.snapshot.modelPolicy, {
+		id: "server-policy-copy",
+		mode: "fixed",
+		revision: "server-policy-r1",
+	});
 	assert.equal(
 		JSON.stringify(starter.starts[0]?.snapshot).includes("provider-secret"),
 		false,
@@ -162,6 +173,18 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	});
 	assert.equal(replayed.status, 202);
 	assert.equal((await replayed.json()).data.replayed, true);
+	assert.equal(starter.starts.length, 1);
+
+	const clientRightsChanged = await fetch(`${base}/submissions`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({
+			...submissionPayload(),
+			rights: { revision: "browser-random", summary: "untrusted browser summary" },
+		}),
+	});
+	assert.equal(clientRightsChanged.status, 202);
+	assert.equal((await clientRightsChanged.json()).data.replayed, true);
 	assert.equal(starter.starts.length, 1);
 
 	const conflict = await fetch(`${base}/submissions`, {
@@ -277,6 +300,80 @@ test("Core Composer SSE aborts its durable subscription when the client disconne
 	}
 });
 
+test("Core Composer SSE registers disconnect handling before delayed ownership resolution", async () => {
+	let releaseOwnership: (() => void) | undefined;
+	const ownershipReleased = new Promise<void>((resolve) => {
+		releaseOwnership = resolve;
+	});
+	let markOwnershipStarted: (() => void) | undefined;
+	const ownershipStarted = new Promise<void>((resolve) => {
+		markOwnershipStarted = resolve;
+	});
+	let streamCalls = 0;
+	const request = new EventEmitter() as EventEmitter & { headers: Record<string, string> };
+	request.headers = {};
+	const response = new BackpressuredSseResponse();
+	const streaming = streamWorkflowEvents({
+		request: request as never,
+		requestCorrelationId: "correlation-1",
+		response: response as never,
+		workflowEvents: new WorkflowEventApplicationService([
+			{
+				async owns() {
+					markOwnershipStarted?.();
+					await ownershipReleased;
+					return true;
+				},
+				async *stream() {
+					streamCalls += 1;
+				},
+			},
+		]),
+		workflowHeartbeatMs: 60_000,
+		workflowId: "task-1",
+		workspaceId: "workspace-1",
+	});
+	await ownershipStarted;
+	request.emit("close");
+	releaseOwnership?.();
+	await streaming;
+	assert.equal(streamCalls, 0);
+});
+
+test("Core Composer SSE waits for drain before consuming the next durable frame", async () => {
+	const response = new BackpressuredSseResponse();
+	const request = new EventEmitter() as EventEmitter & { headers: Record<string, string> };
+	request.headers = {};
+	const blocked = once(response, "blocked");
+	let secondFramePulled = false;
+	const streaming = streamWorkflowEvents({
+		request: request as never,
+		requestCorrelationId: "correlation-1",
+		response: response as never,
+		workflowEvents: new WorkflowEventApplicationService([
+			{
+				async owns() {
+					return true;
+				},
+				async *stream() {
+					yield progressFrame("task-1", 1);
+					secondFramePulled = true;
+					yield progressFrame("task-1", 2);
+				},
+			},
+		]),
+		workflowHeartbeatMs: 60_000,
+		workflowId: "task-1",
+		workspaceId: "workspace-1",
+	});
+	await blocked;
+	assert.equal(secondFramePulled, false);
+	response.emit("drain");
+	await streaming;
+	assert.equal(secondFramePulled, true);
+	assert.equal(response.writableEnded, true);
+});
+
 class MemorySubmissionStore implements CreationSubmissionStore {
 	private readonly claims = new Map<string, CreationSubmissionStoreClaim>();
 	private readonly harnessStarts = new Map<
@@ -352,6 +449,16 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		}
 	}
 
+	async listRecoverableHarnessStarts(input: { limit: number }) {
+		return [...this.claims.values()]
+			.filter(
+				(claim) =>
+					this.harnessStarts.get(claim.submission.snapshot.id)?.state === "reserved",
+			)
+			.slice(0, input.limit)
+			.map((claim) => ({ submission: structuredClone(claim.submission) }));
+	}
+
 	count() {
 		return this.claims.size;
 	}
@@ -379,6 +486,7 @@ test("a failed Harness start releases the same submission for an idempotent retr
 			},
 		},
 		fixedIds(),
+		fixedAdmission(),
 	);
 	const command: Parameters<CreationSubmissionCoordinator["submit"]>[0] = {
 		...submissionPayload(),
@@ -394,6 +502,61 @@ test("a failed Harness start releases the same submission for an idempotent retr
 	assert.equal(submissions.count(), 1);
 });
 
+test("a rejected Composer admission does not claim a shell or start Harness", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		{
+			async admit() {
+				throw new Error("Quote confirmation is stale");
+			},
+		},
+	);
+
+	await assert.rejects(
+		coordinator.submit({
+			...submissionPayload(),
+			actorId: "owner-1",
+			workspaceId: "workspace-1",
+		}),
+		/Quote confirmation is stale/u,
+	);
+	assert.equal(submissions.count(), 0);
+	assert.equal(starter.starts.length, 0);
+});
+
+test("durable recovery reclaims a committed submission whose first Harness start failed", async () => {
+	const submissions = new MemorySubmissionStore();
+	let starts = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{
+			async start() {
+				starts += 1;
+				if (starts === 1) throw new Error("Harness unavailable during first start");
+			},
+		},
+		fixedIds(),
+		fixedAdmission(),
+	);
+	const command = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	await assert.rejects(coordinator.submit(command), /first start/u);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 0,
+		started: 1,
+	});
+	assert.equal(starts, 2);
+});
+
 test("a failed start-completion record never re-runs an already admitted Harness", async () => {
 	const submissions = new CompletionFailingSubmissionStore();
 	let starts = 0;
@@ -405,6 +568,7 @@ test("a failed start-completion record never re-runs an already admitted Harness
 			},
 		},
 		fixedIds(),
+		fixedAdmission(),
 	);
 	const command: Parameters<CreationSubmissionCoordinator["submit"]>[0] = {
 		...submissionPayload(),
@@ -444,6 +608,48 @@ function fixtureEvents(
 			},
 		},
 	];
+}
+
+class BackpressuredSseResponse extends EventEmitter {
+	destroyed = false;
+	headersSent = false;
+	writableEnded = false;
+	private writes = 0;
+
+	writeHead() {
+		this.headersSent = true;
+		return this;
+	}
+
+	write() {
+		this.writes += 1;
+		if (this.writes === 2) {
+			this.emit("blocked");
+			return false;
+		}
+		return true;
+	}
+
+	end() {
+		this.writableEnded = true;
+	}
+}
+
+function progressFrame(taskId: string, sequence: number): WorkflowEventFrame {
+	return {
+		event: "workflow.progress",
+		data: {
+			eventId: `${taskId}:progress:${sequence}`,
+			message: `stage-${sequence}`,
+			occurredAt: "2026-07-22T09:00:01.000Z",
+			sequence,
+			sourceRevision: 1,
+			stage: "intent_naming",
+			state: "success",
+			workflowId: taskId,
+			workflowType: "beauty_marketing_harness",
+		},
+	};
 }
 
 async function* fixtureFrames(
@@ -533,6 +739,25 @@ function fixedIds() {
 		},
 		now() {
 			return "2026-07-22T09:00:00.000Z";
+		},
+	};
+}
+
+function fixedAdmission(): CreationSubmissionAdmissionPort {
+	return {
+		async admit() {
+			return {
+				modelPolicy: {
+					id: "server-policy-copy",
+					mode: "fixed",
+					revision: "server-policy-r1",
+				},
+				rights: {
+					revision: "server-rights-r1",
+					summary: "Server verified source assets.",
+				},
+				taskId: "task-1",
+			};
 		},
 	};
 }

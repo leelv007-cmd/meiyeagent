@@ -55,6 +55,14 @@ export interface CreationSubmissionStore {
 		workspaceId: string;
 		submissionId: string;
 	}): Promise<void>;
+	/**
+	 * Returns committed submissions that have never been dispatched or whose
+	 * dispatch lease expired. The caller must still claim a fresh lease before
+	 * invoking Harness.
+	 */
+	listRecoverableHarnessStarts(input: {
+		limit: number;
+	}): Promise<Array<{ submission: CreationSubmissionRecord }>>;
 }
 
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
@@ -63,8 +71,20 @@ export interface CreationSubmissionHarnessStarter {
 }
 
 export interface CreationSubmissionIdFactory {
-	createId(prefix: "content-package" | "task" | "work"): string;
+	createId(prefix: "content-package" | "work"): string;
 	now(): string;
+}
+
+export interface CreationSubmissionAdmissionPort {
+	/**
+	 * Validates server-owned facts before the Coordinator claims its idempotency
+	 * root or writes any Work, Task, ContentPackage, or usage reservation.
+	 */
+	admit(input: ComposerSubmissionRequest): Promise<{
+		modelPolicy: { id: string; mode: "auto" | "fixed"; revision: string };
+		rights: { revision: string; summary: string };
+		taskId: string;
+	}>;
 }
 
 export class CreationSubmissionConflictError extends Error {
@@ -84,13 +104,20 @@ export class CreationSubmissionCoordinator {
 		private readonly store: CreationSubmissionStore,
 		private readonly harness: CreationSubmissionHarnessStarter,
 		private readonly ids: CreationSubmissionIdFactory,
+		private readonly admission: CreationSubmissionAdmissionPort,
 	) {}
 
 	async submit(input: ComposerSubmissionRequest) {
 		const request = composerSubmissionRequestSchema.parse(input);
-		const command = creationSubmissionCommandSchema.parse({
+		const admitted = await this.admission.admit(request);
+		const serverBoundRequest = {
 			...request,
-			taskId: this.ids.createId("task"),
+			modelPolicy: admitted.modelPolicy,
+			rights: admitted.rights,
+		};
+		const command = creationSubmissionCommandSchema.parse({
+			...serverBoundRequest,
+			taskId: admitted.taskId,
 			workId: this.ids.createId("work"),
 			contentPackageId: this.ids.createId("content-package"),
 			expectedContentPackageRevision: 0,
@@ -103,7 +130,8 @@ export class CreationSubmissionCoordinator {
 			contentPackage: { ...snapshot.contentPackage },
 			usageReservation: { id: `usage-reservation-${snapshot.task.id}` },
 		};
-		const { idempotencyKey: _idempotencyKey, ...canonicalPayload } = request;
+		const { idempotencyKey: _idempotencyKey, ...canonicalPayload } =
+			serverBoundRequest;
 		const claimed = await this.store.claim({
 			workspaceId: command.workspaceId,
 			idempotencyKey: command.idempotencyKey,
@@ -113,29 +141,7 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
-		const startLease = {
-			workspaceId: command.workspaceId,
-			submissionId: claimed.submission.snapshot.id,
-		};
-		const harnessClaim = await this.store.claimHarnessStart(startLease);
-		if (harnessClaim.kind === "start") {
-			const leasedStart = { ...startLease, leaseId: harnessClaim.leaseId };
-			let started = false;
-			try {
-				await this.harness.start(claimed.submission);
-				started = true;
-				await this.store.completeHarnessStart(leasedStart);
-			} catch (error) {
-				if (!started) {
-					try {
-						await this.store.releaseHarnessStart(leasedStart);
-					} catch {
-						// Keep the Harness failure as the user-visible cause.
-					}
-				}
-				throw error;
-			}
-		}
+		await this.startHarness(claimed.submission);
 		return {
 			contentPackage: claimed.submission.contentPackage,
 			replayed: claimed.kind === "existing",
@@ -147,5 +153,46 @@ export class CreationSubmissionCoordinator {
 			usageReservation: claimed.submission.usageReservation,
 			work: claimed.submission.work,
 		};
+	}
+
+	/** Replays only committed, reclaimable starts after a process crash. */
+	async recoverPendingStarts(limit = 100) {
+		const recoverable = await this.store.listRecoverableHarnessStarts({ limit });
+		let failed = 0;
+		let started = 0;
+		for (const candidate of recoverable) {
+			try {
+				if (await this.startHarness(candidate.submission)) started += 1;
+			} catch {
+				failed += 1;
+			}
+		}
+		return { attempted: recoverable.length, failed, started };
+	}
+
+	private async startHarness(submission: CreationSubmissionRecord) {
+		const startLease = {
+			workspaceId: submission.snapshot.workspaceId,
+			submissionId: submission.snapshot.id,
+		};
+		const harnessClaim = await this.store.claimHarnessStart(startLease);
+		if (harnessClaim.kind === "started") return false;
+		const leasedStart = { ...startLease, leaseId: harnessClaim.leaseId };
+		let started = false;
+		try {
+			await this.harness.start(submission);
+			started = true;
+			await this.store.completeHarnessStart(leasedStart);
+			return true;
+		} catch (error) {
+			if (!started) {
+				try {
+					await this.store.releaseHarnessStart(leasedStart);
+				} catch {
+					// Keep the Harness failure as the user-visible cause.
+				}
+			}
+			throw error;
+		}
 	}
 }

@@ -47,7 +47,6 @@ import {
 } from './p1/operations/application-service.js';
 import type { OperationContext } from './p1/operations/types.js';
 import type { HarnessApplicationService } from './p1/harness/application-service.js';
-import { harnessTaskRequestSchema } from './p1/harness/task-admission.js';
 import { composerSubmissionBodySchema } from './p1/execution-spine/creation-execution-snapshot.js';
 import {
   CreationSubmissionConflictError,
@@ -628,7 +627,7 @@ function sendP1HttpError(
   );
 }
 
-async function streamWorkflowEvents(input: {
+export async function streamWorkflowEvents(input: {
   request: IncomingMessage;
   response: ServerResponse;
   requestCorrelationId: string;
@@ -639,6 +638,14 @@ async function streamWorkflowEvents(input: {
 }) {
   const abortController = new AbortController();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const disconnect = () => {
+    if (!input.response.writableEnded && !abortController.signal.aborted) {
+      abortController.abort(new Error('Client disconnected.'));
+    }
+  };
+  input.request.once('aborted', disconnect);
+  input.request.once('close', disconnect);
+  input.response.once('close', disconnect);
   try {
     const lastEventId = input.request.headers['last-event-id'];
     const subscription = await input.workflowEvents.subscribe({
@@ -652,11 +659,7 @@ async function streamWorkflowEvents(input: {
     if (!subscription) {
       throw new DomainError('NOT_FOUND', 'Workflow was not found.', 404);
     }
-    input.response.once('close', () => {
-      if (!input.response.writableEnded) {
-        abortController.abort(new Error('Client disconnected.'));
-      }
-    });
+    if (abortController.signal.aborted) return;
     input.response.writeHead(200, {
       'cache-control': 'no-cache, no-transform',
       connection: 'keep-alive',
@@ -665,18 +668,23 @@ async function streamWorkflowEvents(input: {
       'x-correlation-id': input.requestCorrelationId,
       'x-meiye-stream-protocol': 'workflow-events-v1',
     });
-    input.response.write(': heartbeat\n\n');
+    const writer = new WorkflowSseWriter(input.response, abortController.signal);
+    if (!(await writer.write(': heartbeat\n\n'))) return;
     heartbeat = setInterval(() => {
-      if (!input.response.writableEnded) {
-        input.response.write(': heartbeat\n\n');
-      }
+      void writer.write(': heartbeat\n\n');
     }, input.workflowHeartbeatMs);
     for await (const frame of subscription.frames) {
       if (abortController.signal.aborted) break;
-      input.response.write(encodeWorkflowSseFrame(frame));
+      if (!(await writer.write(encodeWorkflowSseFrame(frame)))) break;
     }
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = undefined;
+    }
+    await writer.flush();
     if (!input.response.writableEnded) input.response.end();
   } catch (error) {
+    if (abortController.signal.aborted) return;
     if (input.response.headersSent) {
       input.response.destroy(error instanceof Error ? error : undefined);
     } else {
@@ -693,7 +701,72 @@ async function streamWorkflowEvents(input: {
     }
   } finally {
     if (heartbeat) clearInterval(heartbeat);
+    input.request.off('aborted', disconnect);
+    input.request.off('close', disconnect);
+    input.response.off('close', disconnect);
+    if (!abortController.signal.aborted) abortController.abort();
   }
+}
+
+class WorkflowSseWriter {
+  private pending: Promise<boolean> = Promise.resolve(true);
+
+  constructor(
+    private readonly response: ServerResponse,
+    private readonly signal: AbortSignal,
+  ) {}
+
+  write(chunk: string) {
+    this.pending = this.pending.then((previousWriteSucceeded) => {
+      if (!previousWriteSucceeded || this.signal.aborted) return false;
+      return writeWorkflowSseChunk(this.response, chunk, this.signal);
+    });
+    return this.pending;
+  }
+
+  flush() {
+    return this.pending;
+  }
+}
+
+async function writeWorkflowSseChunk(
+  response: ServerResponse,
+  chunk: string,
+  signal: AbortSignal,
+) {
+  if (signal.aborted || response.destroyed || response.writableEnded) {
+    return false;
+  }
+  try {
+    if (response.write(chunk)) return true;
+  } catch {
+    return false;
+  }
+  return waitForSseDrain(response, signal);
+}
+
+function waitForSseDrain(response: ServerResponse, signal: AbortSignal) {
+  if (signal.aborted || response.destroyed || response.writableEnded) {
+    return Promise.resolve(false);
+  }
+  return new Promise<boolean>((resolve) => {
+    const cleanup = () => {
+      response.off('close', onClose);
+      response.off('drain', onDrain);
+      response.off('error', onClose);
+      signal.removeEventListener('abort', onClose);
+    };
+    const settle = (written: boolean) => {
+      cleanup();
+      resolve(written);
+    };
+    const onClose = () => settle(false);
+    const onDrain = () => settle(true);
+    response.once('close', onClose);
+    response.once('drain', onDrain);
+    response.once('error', onClose);
+    signal.addEventListener('abort', onClose, { once: true });
+  });
 }
 
 export function createCoreServer({
@@ -1172,24 +1245,50 @@ export function createCoreServer({
     }
     if (
       harnessService &&
-      ((request.method === 'POST' && harnessTaskCollectionWorkspaceId) ||
-        ((request.method === 'GET' || request.method === 'POST') &&
-          harnessDecisionMatch))
+      request.method === 'POST' &&
+      harnessTaskCollectionWorkspaceId
     ) {
       try {
-        const workspaceId =
-          harnessTaskCollectionWorkspaceId ?? harnessDecisionMatch![1]!;
+        const context = p1Identity(
+          request,
+          harnessTaskCollectionWorkspaceId,
+          requestCorrelationId
+        );
+        authorizeContentCreation(context);
+        sendError(
+          response,
+          410,
+          {
+            code: 'HARNESS_TASK_ADMISSION_RETIRED',
+            message:
+              'Direct Harness task admission is retired; submit through the Composer execution spine.',
+          },
+          requestCorrelationId
+        );
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'INVALID_HARNESS_REQUEST',
+            message: 'Harness request is invalid.',
+            status: 400,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+    if (
+      harnessService &&
+      (request.method === 'GET' || request.method === 'POST') &&
+      harnessDecisionMatch
+    ) {
+      try {
+        const workspaceId = harnessDecisionMatch[1]!;
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
-        if (harnessTaskCollectionWorkspaceId) {
-          const parsed = harnessTaskRequestSchema.parse({
-            ...(await readJson(request)),
-            actorId: context.userId,
-            workspaceId,
-          });
-          const handle = await harnessService.submit(parsed);
-          sendJson(response, 202, handle, requestCorrelationId);
-        } else if (request.method === 'GET') {
+        if (request.method === 'GET') {
           const question = await harnessService.readPendingDecision(
             workspaceId,
             harnessDecisionMatch![2]!

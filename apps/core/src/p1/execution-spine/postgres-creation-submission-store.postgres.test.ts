@@ -12,7 +12,10 @@ import {
   PostgresCreationSubmissionStore,
   PostgresProductBillingUsageReservation,
 } from "./postgres-creation-submission-store.js";
-import type { CreationSubmissionRecord } from "./submission-coordinator.js";
+import {
+  CreationSubmissionCoordinator,
+  type CreationSubmissionRecord,
+} from "./submission-coordinator.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -23,13 +26,12 @@ test(
     const pool = new Pool({ connectionString });
     const operations = new PostgresOperationsRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
-    let now = new Date("2026-07-22T09:00:00.000Z");
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
         new PostgresProductBillingUsageReservation(pool),
       ),
-      { harnessStartLeaseMs: 60_000, now: () => now },
+      { harnessStartLeaseMs: 60_000 },
     );
     const suffix = randomUUID();
     const workspaceId = `spine-workspace-${suffix}`;
@@ -40,7 +42,12 @@ test(
       await operations.migrate();
       await billingRepository.migrate();
       await store.applySchema();
-      const quote = await seedQuote(billingRepository, workspaceId, quoteId);
+      const quote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+        submission.task.id,
+      );
       submission.snapshot = createSnapshot({
         quoteId,
         quoteRevision: quote.revision,
@@ -114,6 +121,61 @@ test(
         ).rows[0]?.usage_id,
         submission.usageReservation.id,
       );
+      const lineage = await pool.query<{
+        content_package_id: string;
+        execution_snapshot: unknown;
+        quote_id: string;
+        route_snapshot_id: string;
+        task_id: string;
+        usage_reservation_id: string;
+        work_id: string;
+      }>(
+        `SELECT c.task_id, c.work_id, c.content_package_id,
+                c.usage_reservation_id, c.quote_id, c.route_snapshot_id,
+                p.payload->'source'->'creationExecutionSnapshot' AS execution_snapshot
+           FROM execution_spine.creation_submissions c
+           JOIN p1_content_packages p
+             ON p.workspace_id = c.workspace_id
+            AND p.id = c.content_package_id
+          WHERE c.workspace_id = $1 AND c.id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      assert.deepEqual(lineage.rows[0], {
+        content_package_id: submission.contentPackage.id,
+        execution_snapshot: {
+          id: submission.snapshot.id,
+          revision: 1,
+          schemaVersion: "creation-execution-snapshot/v1",
+        },
+        quote_id: quoteId,
+        route_snapshot_id: "route-1",
+        task_id: submission.task.id,
+        usage_reservation_id: submission.usageReservation.id,
+        work_id: submission.work.id,
+      });
+      await billingRepository.saveProviderCost(workspaceId, {
+        attemptId: `attempt-${suffix}`,
+        billingMode: "per_request",
+        billingStatus: "known",
+        currency: "CNY",
+        deploymentId: "copy-deployment-1",
+        estimatedCostMicros: 100,
+        payer: "platform",
+        supplierPriceRevision: "supplier-price-1",
+        taskId: submission.task.id,
+        unit: "request",
+        unitPriceMicros: 100,
+      });
+      const linkedCost = await pool.query<{ attempt_id: string }>(
+        `SELECT cost.attempt_id
+           FROM execution_spine.creation_submissions submission
+           JOIN p1_product_billing_provider_costs cost
+             ON cost.workspace_id = submission.workspace_id
+            AND cost.task_id = submission.task_id
+          WHERE submission.workspace_id = $1 AND submission.id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      assert.deepEqual(linkedCost.rows, [{ attempt_id: `attempt-${suffix}` }]);
 
       const leaseOne = await store.claimHarnessStart({
         submissionId: submission.snapshot.id,
@@ -126,16 +188,49 @@ test(
       });
       assert.deepEqual(held, { kind: "started" });
 
-      now = new Date("2026-07-22T09:01:01.000Z");
-      const leaseTwo = await store.claimHarnessStart({
-        submissionId: submission.snapshot.id,
-        workspaceId,
-      });
-      assert.equal(leaseTwo.kind, "start");
-      if (leaseOne.kind !== "start" || leaseTwo.kind !== "start") {
-        throw new Error("Expected two active Harness lease claims.");
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET harness_lease_expires_at = clock_timestamp() - interval '1 second'
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      assert.deepEqual(
+        (await store.listRecoverableHarnessStarts({ limit: 10 })).map(
+          (candidate) => candidate.submission.snapshot.id,
+        ),
+        [submission.snapshot.id],
+      );
+      if (leaseOne.kind !== "start") {
+        throw new Error("Expected the initial Harness lease claim.");
       }
-      assert.notEqual(leaseOne.leaseId, leaseTwo.leaseId);
+      const recoveredStarts: string[] = [];
+      const coordinator = new CreationSubmissionCoordinator(
+        store,
+        {
+          async start(record) {
+            recoveredStarts.push(record.task.id);
+          },
+        },
+        {
+          createId() {
+            return "unused-recovery-id";
+          },
+          now() {
+            return "2026-07-22T09:00:00.000Z";
+          },
+        },
+        {
+          async admit() {
+            throw new Error("Recovery must not run a new-submission admission.");
+          },
+        },
+      );
+      assert.deepEqual(await coordinator.recoverPendingStarts(), {
+        attempted: 1,
+        failed: 0,
+        started: 1,
+      });
+      assert.deepEqual(recoveredStarts, [submission.task.id]);
       await store.releaseHarnessStart({
         leaseId: leaseOne.leaseId,
         submissionId: submission.snapshot.id,
@@ -149,11 +244,6 @@ test(
         }),
         /no longer current/u,
       );
-      await store.completeHarnessStart({
-        leaseId: leaseTwo.leaseId,
-        submissionId: submission.snapshot.id,
-        workspaceId,
-      });
       assert.deepEqual(
         await store.claimHarnessStart({
           submissionId: submission.snapshot.id,
@@ -161,6 +251,82 @@ test(
         }),
         { kind: "started" },
       );
+    } finally {
+      await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "a quoted ProductQuote is never auto-confirmed by a Composer reservation",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-unconfirmed-${suffix}`;
+    const quoteId = `spine-quote-${suffix}`;
+    const submission = reserveRecord(workspaceId, quoteId, suffix);
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      const quote = await seedUnconfirmedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+      );
+      submission.snapshot = createSnapshot({
+        quoteId,
+        quoteRevision: quote.revision,
+        submission,
+        workspaceId,
+      });
+
+      await assert.rejects(
+        store.claim({
+          idempotencyKey: "quoted-without-confirmation",
+          payloadHash: "payload-quoted",
+          submission,
+          workspaceId,
+        }),
+        /requires explicit confirmation/u,
+      );
+      const unchangedQuote = await billingRepository.getQuote(workspaceId, quoteId);
+      assert.equal(unchangedQuote?.lifecycleStatus, "quoted");
+      assert.equal(unchangedQuote?.taskId, undefined);
+      const counts = await pool.query<{
+        packages: number;
+        submissions: number;
+        tasks: number;
+        usage: number;
+        works: number;
+      }>(
+        `SELECT
+           (SELECT count(*)::int FROM p1_content_packages WHERE workspace_id = $1) AS packages,
+           (SELECT count(*)::int FROM p1_content_tasks WHERE workspace_id = $1) AS tasks,
+           (SELECT count(*)::int FROM p1_creative_works WHERE workspace_id = $1) AS works,
+           (SELECT count(*)::int FROM p1_product_billing_usage WHERE workspace_id = $1) AS usage,
+           (SELECT count(*)::int FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1) AS submissions`,
+        [workspaceId],
+      );
+      assert.deepEqual(counts.rows[0], {
+        packages: 0,
+        submissions: 0,
+        tasks: 0,
+        usage: 0,
+        works: 0,
+      });
     } finally {
       await cleanup(pool, workspaceId, submission).catch(() => undefined);
       await pool.end();
@@ -261,13 +427,26 @@ async function seedQuote(
   repository: PostgresProductBillingRepository,
   workspaceId: string,
   quoteId: string,
+  taskId: string,
+) {
+  const billing = new DurableProductBillingService(repository);
+  await seedUnconfirmedQuote(repository, workspaceId, quoteId);
+  return billing.confirm({ quoteId, taskId, workspaceId });
+}
+
+async function seedUnconfirmedQuote(
+  repository: PostgresProductBillingRepository,
+  workspaceId: string,
+  quoteId: string,
 ) {
   return new DurableProductBillingService(repository).buildQuote({
     billingMode: "per_request",
     catalogModelId: "copy-model-1",
+    catalogModelRevision: "catalog-r1",
     frozenCandidateDeploymentIds: ["copy-deployment-1"],
     quoteId,
     quotePolicyRevision: "quote-policy-1",
+    routeSnapshotRef: "route-1",
     unitRate: 1,
     workspaceId,
   });

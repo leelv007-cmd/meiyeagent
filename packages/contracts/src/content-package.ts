@@ -299,6 +299,13 @@ export const contentPackageSourceSchema = z.object({
   dataClass: z.array(z.string().trim().min(1)).optional(),
   executionContract: creativeExecutionContractSchema.optional(),
   compositionRevision: contentPackageIdSchema.optional(),
+  creationExecutionSnapshot: z
+    .object({
+      id: contentPackageIdSchema,
+      revision: z.number().int().positive(),
+      schemaVersion: z.literal('creation-execution-snapshot/v1'),
+    })
+    .optional(),
   groundingId: contentPackageIdSchema.optional(),
   layoutCanvas: z
     .object({
