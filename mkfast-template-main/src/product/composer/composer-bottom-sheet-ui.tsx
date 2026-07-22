@@ -76,7 +76,9 @@ export function ComposerBottomSheet({
         data-product-modal="composer-bottom-sheet"
         finalFocus={() => {
           const focusKey = state.restore?.focusKey;
-          return focusKey ? document.getElementById(focusKey) ?? false : false;
+          return focusKey
+            ? (document.getElementById(focusKey) ?? false)
+            : false;
         }}
         showCloseButton={false}
         className={cn(
@@ -85,7 +87,10 @@ export function ComposerBottomSheet({
         )}
       >
         <DialogHeader className="mb-3 flex-row items-center justify-between gap-2">
-          <DialogTitle id={titleId} className="text-base font-semibold text-foreground">
+          <DialogTitle
+            id={titleId}
+            className="text-base font-semibold text-foreground"
+          >
             {resolvedTitle}
           </DialogTitle>
           <DialogClose

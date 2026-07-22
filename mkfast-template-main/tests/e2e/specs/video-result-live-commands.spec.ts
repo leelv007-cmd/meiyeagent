@@ -90,12 +90,13 @@ test.describe('video Result canonical live commands', () => {
     expect(selectResponse.ok(), await selectResponse.text()).toBeTruthy();
     await page.reload();
     await expect(
-      page
-        .getByTestId('video-shot-candidate')
-        .nth(candidatePosition)
+      page.getByTestId('video-shot-candidate').nth(candidatePosition)
     ).toHaveAttribute('aria-pressed', 'true');
 
-    const firstShotBefore = await page.getByTestId('video-shot').first().innerText();
+    const firstShotBefore = await page
+      .getByTestId('video-shot')
+      .first()
+      .innerText();
     const reorderResponsePromise = waitForP1Command(
       page,
       'model-supply',

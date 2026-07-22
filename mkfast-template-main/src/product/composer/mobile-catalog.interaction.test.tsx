@@ -181,13 +181,12 @@ describe('single bottom sheet mutex + restore', () => {
 
     await user.click(screen.getByTestId('open-conflict'));
     const sheet = screen.getByTestId('composer-bottom-sheet');
-    expect(sheet).toHaveAttribute(
-      'data-sheet-kind',
-      'conflict'
-    );
+    expect(sheet).toHaveAttribute('data-sheet-kind', 'conflict');
     expect(sheet).toHaveAttribute('aria-modal', 'true');
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
-    expect(sheet).toContainElement(document.activeElement as HTMLElement | null);
+    expect(sheet).toContainElement(
+      document.activeElement as HTMLElement | null
+    );
 
     // Mutex: opening reuse replaces conflict — still a single sheet root.
     await user.click(screen.getByTestId('open-reuse'));

@@ -45,7 +45,10 @@ describe('ImageAdjustConfirmation', () => {
       const [open, setOpen] = useState(true);
       return (
         <>
-          <textarea data-testid="result-adjust-input" id="result-adjust-input" />
+          <textarea
+            data-testid="result-adjust-input"
+            id="result-adjust-input"
+          />
           {open ? (
             <ImageAdjustConfirmation
               instruction="换成夏日风格"

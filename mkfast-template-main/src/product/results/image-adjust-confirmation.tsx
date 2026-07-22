@@ -72,11 +72,7 @@ export function ImageAdjustConfirmation(props: ImageAdjustConfirmationProps) {
           >
             取消
           </Button>
-          <Button
-            disabled={props.busy}
-            onClick={props.onConfirm}
-            type="button"
-          >
+          <Button disabled={props.busy} onClick={props.onConfirm} type="button">
             {props.busy ? '正在提交…' : '确认并生成'}
           </Button>
         </DialogFooter>

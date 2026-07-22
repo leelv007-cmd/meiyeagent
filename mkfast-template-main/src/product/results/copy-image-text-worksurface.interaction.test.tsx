@@ -124,7 +124,7 @@ describe('copy / image_text worksurface', () => {
       <CopyImageTextWorksurface
         facts={facts}
         onSelectionRewrite={onSelectionRewrite}
-      />,
+      />
     );
 
     await user.click(screen.getByTestId('copy-rewrite-rewrite'));
