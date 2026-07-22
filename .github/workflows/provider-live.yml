@@ -43,7 +43,7 @@ jobs:
       PROVIDER_LIVE_ENVIRONMENT: provider-live
       PROVIDER_LIVE_CONFIG_REVISION: ${{ vars.PROVIDER_LIVE_CONFIG_REVISION }}
       PROVIDER_LIVE_EVIDENCE_TTL_SECONDS: '86400'
-      PROVIDER_LIVE_EVIDENCE_DIR: apps/core/provider-live-evidence
+      PROVIDER_LIVE_EVIDENCE_DIR: provider-live-evidence
       PROVIDER_LIVE_RUN_NONCE: ${{ github.run_id }}-${{ github.run_attempt }}
       # Official text channel
       ARK_TEXT_API_KEY: ${{ secrets.ARK_TEXT_API_KEY }}
@@ -64,7 +64,7 @@ jobs:
         ark-acg-cn-beijing.tos-cn-beijing.volces.com
       # Official image / video channels
       ARK_SEEDREAM_MODEL: ${{ secrets.ARK_SEEDREAM_MODEL }}
-      ARK_SEEDANCE_MODEL: ${{ secrets.ARK_SEEDANCE_MODEL }}
+      ARK_SEEDANCE_MODEL: doubao-seedance-2-0-mini-260615
       ARK_IMAGE_CATALOG_MODEL_ID: ${{ secrets.ARK_IMAGE_CATALOG_MODEL_ID }}
       ARK_VIDEO_CATALOG_MODEL_ID: ${{ secrets.ARK_VIDEO_CATALOG_MODEL_ID }}
       ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND: ${{ secrets.ARK_SEEDANCE_ESTIMATED_TOKENS_PER_SECOND }}

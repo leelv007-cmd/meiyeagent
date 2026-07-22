@@ -23,7 +23,7 @@ function effectRequest(
         : 'video.generate',
       catalogModelId === 'seedream-5-pro'
         ? { width: 1024, height: 1024 }
-        : { durationSeconds: 5, height: 1280, width: 720 },
+        : { durationSeconds: 5, height: 864, width: 486 },
     ),
     effectIdempotencyKey: `effect-${catalogModelId}`,
   };
@@ -45,6 +45,7 @@ function assetFetchFrom(fetch: typeof globalThis.fetch): ProviderAssetFetchPort 
 function adapter(
   fetch: typeof globalThis.fetch,
   assetFetch: ProviderAssetFetchPort = assetFetchFrom(fetch),
+  videoModel = 'doubao-seedance-2-0-test',
 ) {
   return new ArkMediaExecutionPort({
     apiKey: 'ark-test-secret',
@@ -64,7 +65,7 @@ function adapter(
       catalogModelId: 'seedance-2',
       costPerMillionTokens: 28,
       estimatedTokensPerSecond: 10_000,
-      model: 'doubao-seedance-2-0-test',
+      model: videoModel,
     },
   });
 }
@@ -287,6 +288,7 @@ test('Ark Seedance supports async submit, poll, download and cancel with observe
         model: string;
         content: Array<{ type: string; text?: string }>;
         duration: number;
+        resolution: string;
       };
       assert.equal(body.model, 'doubao-seedance-2-0-test');
       assert.equal(body.content[0]?.type, 'text');
@@ -295,6 +297,7 @@ test('Ark Seedance supports async submit, poll, download and cancel with observe
         'seedance-2 recorded request --ratio 9:16'
       );
       assert.equal(body.duration, 5);
+      assert.equal(body.resolution, '480p');
       return Response.json({
         id: taskCreates === 1 ? 'cgt-video-1' : 'cgt-cancel-1',
       });
@@ -359,6 +362,49 @@ test('Ark Seedance supports async submit, poll, download and cancel with observe
         candidate.method === 'DELETE' && candidate.url.includes('cgt-cancel-1'),
     ),
   );
+});
+
+test('Ark Seedance maps only model-supported resolution tiers before provider access', async () => {
+  async function submittedResolution(
+    width: number,
+    height: number,
+    videoModel = 'doubao-seedance-2-0-test',
+  ) {
+    let resolution: string | undefined;
+    let fetchCalls = 0;
+    const fetchMock: typeof globalThis.fetch = async (_input, init) => {
+      fetchCalls += 1;
+      const body = JSON.parse(String(init?.body)) as { resolution?: string };
+      resolution = body.resolution;
+      return Response.json({ id: `task-${width}-${height}` });
+    };
+    const request = effectRequest('seedance-2');
+    request.submission.input = { durationSeconds: 4, width, height };
+    const receipt = await adapter(
+      fetchMock,
+      assetFetchFrom(fetchMock),
+      videoModel,
+    ).submit(request);
+    return { fetchCalls, receipt, resolution };
+  }
+
+  assert.equal((await submittedResolution(486, 864)).resolution, '480p');
+  assert.equal((await submittedResolution(720, 1280)).resolution, '720p');
+  assert.equal((await submittedResolution(1080, 1920)).resolution, '1080p');
+
+  const unsupportedMini = await submittedResolution(
+    1080,
+    1920,
+    'doubao-seedance-2-0-mini-260615',
+  );
+  assert.equal(unsupportedMini.fetchCalls, 0);
+  assert.equal(unsupportedMini.receipt.acceptance, 'rejected_before_accept');
+  assert.equal(unsupportedMini.receipt.errorCode, 'unsupported_resolution');
+
+  const unsupported4k = await submittedResolution(2160, 3840);
+  assert.equal(unsupported4k.fetchCalls, 0);
+  assert.equal(unsupported4k.receipt.acceptance, 'rejected_before_accept');
+  assert.equal(unsupported4k.receipt.errorCode, 'unsupported_resolution');
 });
 
 test('Ark lifecycle classifies explicit rejection, uncertain acceptance, provider failure and cold recovery safely', async () => {

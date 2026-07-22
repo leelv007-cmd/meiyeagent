@@ -794,6 +794,7 @@ export class ArkMediaExecutionPort<
         'Video generation requires provider-readable reference Asset URLs.',
       );
     }
+    const resolution = this.videoResolution(request);
     const body = await this.requestJson(
       `${trimTrailingSlash(this.options.baseUrl)}/contents/generations/tasks`,
       {
@@ -819,6 +820,7 @@ export class ArkMediaExecutionPort<
           ...(request.submission.input?.durationSeconds
             ? { duration: request.submission.input.durationSeconds }
             : {}),
+          ...(resolution ? { resolution } : {}),
         }),
       },
       request.effectIdempotencyKey,
@@ -1098,6 +1100,26 @@ export class ArkMediaExecutionPort<
     return (
       (request.submission.input?.durationSeconds ?? 1) *
       this.options.video.estimatedTokensPerSecond
+    );
+  }
+
+  private videoResolution(request: ProviderExecutionRequest) {
+    const width = request.submission.input?.width;
+    const height = request.submission.input?.height;
+    if (!width || !height) return undefined;
+    const shortEdge = Math.min(width, height);
+    if (shortEdge <= 512) return '480p';
+    if (shortEdge <= 720) return '720p';
+    if (
+      shortEdge <= 1080 &&
+      !this.options.video.model.includes('seedance-2-0-mini')
+    ) {
+      return '1080p';
+    }
+    throw new ArkAdapterError(
+      'unsupported_resolution',
+      false,
+      `Ark video model ${this.options.video.model} does not support the requested resolution.`,
     );
   }
 

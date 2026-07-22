@@ -763,7 +763,7 @@ function createProviderRequest(
       ...(channel.model.modality === 'image'
         ? { input: { width: 2048, height: 2048 } }
         : channel.model.modality === 'video'
-          ? { input: { durationSeconds: 5, width: 720, height: 1280 } }
+          ? { input: { durationSeconds: 4, width: 486, height: 864 } }
           : {}),
     },
   };

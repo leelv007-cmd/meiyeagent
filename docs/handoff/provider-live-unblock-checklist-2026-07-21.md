@@ -11,7 +11,9 @@ Text, image, and video must each complete one real official-provider generation:
 |---|---|---|
 | Text | `doubao-seed-2-0-mini-260428` | Accepted provider task with non-empty input/output usage and usable text |
 | Image | `doubao-seedream-5-0-260128` | Accepted task, restart recovery, completed poll, downloaded non-empty image and SHA-256 |
-| Video | `doubao-seedance-1-5-pro-251215` | Accepted task, restart recovery, completed poll, downloaded playable media and SHA-256 |
+| Video | `doubao-seedance-2-0-mini-260615` | Accepted task, restart recovery, completed poll, downloaded playable media and SHA-256 |
+
+The protected workflow pins the public Seedance model ID above; changing it requires a reviewed workflow revision rather than an untracked secret edit.
 
 All three publish as `live_verified`. Without a second channel they must also remain `single_channel / no_fallback`, with `dualChannelReady=false` and `fallbackAvailable=false` wherever those fields are projected.
 

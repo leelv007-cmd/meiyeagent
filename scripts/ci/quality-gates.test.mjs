@@ -97,6 +97,15 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(providerLive, /PROVIDER_LIVE_ACCEPTANCE_MODE: primary_connectivity/);
   assert.match(providerLive, /PROVIDER_LIVE_RELEASE_REF: \$\{\{ github\.sha \}\}/);
   assert.match(providerLive, /PROVIDER_LIVE_ENVIRONMENT: provider-live/);
+  assert.match(providerLive, /PROVIDER_LIVE_EVIDENCE_DIR: provider-live-evidence/);
+  assert.match(
+    providerLive,
+    /ARK_SEEDANCE_MODEL: doubao-seedance-2-0-mini-260615/,
+  );
+  assert.doesNotMatch(
+    providerLive,
+    /PROVIDER_LIVE_EVIDENCE_DIR: apps\/core\/provider-live-evidence/
+  );
   assert.match(
     providerLive,
     /PROVIDER_LIVE_CONFIG_REVISION: \$\{\{ vars\.PROVIDER_LIVE_CONFIG_REVISION \}\}/
