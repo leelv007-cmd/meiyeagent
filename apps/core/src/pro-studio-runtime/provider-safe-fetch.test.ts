@@ -58,9 +58,19 @@ test('rejects private IPv4-mapped IPv6 representations before transport', async 
     '::ffff:10.0.0.1',
     '::ffff:0a00:1',
     '0:0:0:0:0:ffff:a00:1',
+    '::ffff:172.16.0.1',
+    '::ffff:ac10:1',
+    '::ffff:192.168.0.1',
+    '::ffff:c0a8:1',
     '::ffff:169.254.169.254',
     '::ffff:a9fe:a9fe',
     '0:0:0:0:0:ffff:a9fe:a9fe',
+    '::ffff:198.18.0.1',
+    '::ffff:c612:1',
+    '::ffff:203.0.113.1',
+    '::ffff:cb00:7101',
+    '::ffff:224.0.0.1',
+    '::ffff:e000:1',
   ];
 
   for (const address of mappedAddresses) {
@@ -91,13 +101,13 @@ test('rejects private IPv4-mapped IPv6 representations before transport', async 
 
 test('allows public IPv4-mapped IPv6 representations through pinned transport', async () => {
   const mappedAddresses = [
-    '::ffff:93.184.216.34',
-    '::ffff:5db8:d822',
-    '0:0:0:0:0:ffff:5db8:d822',
-    '0::ffff:5db8:d822',
+    ['::ffff:93.184.216.34', '93.184.216.34'],
+    ['::ffff:5db8:d822', '93.184.216.34'],
+    ['0:0:0:0:0:ffff:5db8:d822', '93.184.216.34'],
+    ['0::ffff:5db8:d822', '93.184.216.34'],
   ];
 
-  for (const address of mappedAddresses) {
+  for (const [address, expectedAddress] of mappedAddresses) {
     let requestedAddresses: string[] = [];
     const safeFetch = new ProviderSafeFetch({
       allowedHosts: ['cdn.provider.test'],
@@ -118,7 +128,7 @@ test('allows public IPv4-mapped IPv6 representations through pinned transport', 
       maxBytes: 1024,
     });
 
-    assert.deepEqual(requestedAddresses, [address], address);
+    assert.deepEqual(requestedAddresses, [expectedAddress], address);
   }
 });
 
@@ -186,6 +196,44 @@ test('revalidates every redirect and rejects a disallowed target', async () => {
       error.code === 'SAFE_FETCH_HOST_FORBIDDEN',
   );
   assert.equal(calls, 1);
+});
+
+test('rejects a mapped private DNS answer before a redirect can reach transport', async () => {
+  let requests = 0;
+  let resolutions = 0;
+  const safeFetch = new ProviderSafeFetch({
+    allowedHosts: ['cdn.provider.test'],
+    resolver: {
+      resolve: async () => {
+        resolutions += 1;
+        return resolutions === 1
+          ? ['93.184.216.34']
+          : ['::ffff:169.254.169.254'];
+      },
+    },
+    transport: transport(async () => {
+      requests += 1;
+      return {
+        status: 302,
+        headers: { location: 'https://cdn.provider.test/redirected.png' },
+        body: body([]),
+        cancel: () => undefined,
+      };
+    }),
+  });
+
+  await assert.rejects(
+    safeFetch.get('https://cdn.provider.test/result.png', {
+      allowedMimeTypes: ['image/png'],
+      maxBytes: 1024,
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'SAFE_FETCH_PRIVATE_ADDRESS',
+  );
+  assert.equal(resolutions, 2);
+  assert.equal(requests, 1);
 });
 
 test('cancels a redirect response body before following the next hop', async () => {

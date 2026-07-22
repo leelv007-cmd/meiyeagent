@@ -301,14 +301,16 @@ export class ProviderSafeFetch implements ReferenceAssetDeliveryPort {
   }
 
   private async resolve(hostname: string) {
-    const addresses = this.options.resolver
-      ? await this.options.resolver.resolve(hostname)
-      : (
-          await lookup(hostname, {
-            all: true,
-            verbatim: true,
-          })
-        ).map((entry) => entry.address);
+    const addresses = (
+      this.options.resolver
+        ? await this.options.resolver.resolve(hostname)
+        : (
+            await lookup(hostname, {
+              all: true,
+              verbatim: true,
+            })
+          ).map((entry) => entry.address)
+    ).map(normalizeAddress);
     if (addresses.length === 0) {
       throw new ProviderSafeFetchError(
         'SAFE_FETCH_DNS_EMPTY',
@@ -369,6 +371,11 @@ function isPublicAddress(address: string) {
   if (family === 4) return isPublicIpv4(address);
   if (family === 6) return isPublicIpv6(address);
   return false;
+}
+
+function normalizeAddress(address: string) {
+  if (isIP(address) !== 6) return address;
+  return mappedIpv4FromIpv6(address) ?? address;
 }
 
 function isPublicIpv4(address: string) {
