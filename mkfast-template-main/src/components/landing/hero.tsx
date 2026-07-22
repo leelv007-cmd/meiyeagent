@@ -8,8 +8,14 @@ import {
   ArrowRight,
   ArrowDown,
 } from 'lucide-react';
-import { useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
-import { Link } from '@tanstack/react-router';
+import {
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   landing_a11y_add_material,
   landing_a11y_voice_input,
@@ -28,6 +34,7 @@ import {
 } from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 import { useTheme } from '@/components/theme/theme-provider';
+import { captureLandingIntent } from '@/product/landing-handoff';
 import { FluidCursor } from './fluid-cursor';
 
 function usePrefersReducedMotion(): boolean {
@@ -44,8 +51,16 @@ function usePrefersReducedMotion(): boolean {
 
 export function Hero(): ReactNode {
   const sectionRef = useRef<HTMLElement>(null);
+  const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const prefersReducedMotion = usePrefersReducedMotion();
+  const [intent, setIntent] = useState('');
+
+  const goToRegisterWithIntent = () => {
+    // Whitelist-only handoff: intent + createdAt. No assets/rights/quotes.
+    captureLandingIntent({ intent });
+    void navigate({ to: Routes.Register });
+  };
 
   const cursorColor = useMemo(
     () =>
@@ -139,9 +154,22 @@ export function Hero(): ReactNode {
           >
             <div className="flex items-start gap-3">
               <textarea
-                placeholder={landing_hero_input_placeholder()}
+                aria-label={landing_hero_input_placeholder()}
                 className="no-focus-ring mx-4 my-2 min-h-15 w-full resize-none bg-transparent text-foreground placeholder:text-muted-foreground"
+                data-testid="landing-intent-input"
+                onChange={(event) => setIntent(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    (event.metaKey || event.ctrlKey) &&
+                    event.key === 'Enter'
+                  ) {
+                    event.preventDefault();
+                    goToRegisterWithIntent();
+                  }
+                }}
+                placeholder={landing_hero_input_placeholder()}
                 rows={2}
+                value={intent}
               />
             </div>
 
@@ -190,13 +218,15 @@ export function Hero(): ReactNode {
                 >
                   <Mic className="h-4 w-4" />
                 </button>
-                <Link
-                  to={Routes.Register}
+                <button
                   aria-label={landing_hero_send_aria()}
                   className="focus-ring bg-foreground dark:bg-background hover:bg-foreground/90 dark:hover:bg-background/90 isolate flex h-12 w-12 cursor-pointer items-center justify-center rounded-full text-white transition-colors"
+                  data-testid="landing-intent-send"
+                  onClick={goToRegisterWithIntent}
+                  type="button"
                 >
                   <ArrowRight className="h-4 w-4" />
-                </Link>
+                </button>
               </div>
             </div>
           </div>

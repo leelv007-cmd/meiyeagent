@@ -212,6 +212,8 @@ export type ConfirmedAssetFacts = {
   containsPerson: boolean;
   containsSensitiveData: boolean;
   minorStatus: 'none' | 'minor';
+  /** Rights subject from progressive rights (#149); falls back to store name. */
+  rightsOwner?: string;
   rightsEvidence?: string;
   rightsNoFixedExpiry?: boolean;
   rightsPlatforms?: Platform[];
@@ -233,7 +235,10 @@ export function composerAssetAuthorizationDraft(input: {
     minorStatus: input.facts.minorStatus,
     rightsEvidence: input.facts.rightsEvidence,
     rightsNoFixedExpiry: input.facts.rightsNoFixedExpiry,
-    rightsOwner: input.currentAsset?.rightsOwner || input.fallbackRightsOwner,
+    rightsOwner:
+      input.facts.rightsOwner?.trim() ||
+      input.currentAsset?.rightsOwner ||
+      input.fallbackRightsOwner,
     rightsPlatforms: input.facts.rightsPlatforms,
     rightsValidUntil: input.facts.rightsValidUntil,
     systemEvidence: { context: 'composer', nonce: input.assetId },

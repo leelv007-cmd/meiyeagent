@@ -60,9 +60,6 @@ import {
   composer_image_retry,
   composer_image_rights_evidence_expand,
   composer_image_rights_evidence_optional,
-  composer_image_rights_expiry,
-  composer_image_rights_no_expiry,
-  composer_image_rights_platforms,
   composer_image_rights_required,
   composer_image_scope,
   composer_image_status_ready,
@@ -73,8 +70,6 @@ import {
   composer_image_upload_aria,
   composer_image_upload_failed,
   composer_image_upload_list_aria,
-  composer_image_platform_douyin,
-  composer_image_platform_xiaohongshu,
   composer_image_yes,
 } from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
@@ -84,6 +79,7 @@ import {
   type AssetFactAnswers,
   type ConfirmedAssetFacts,
 } from '@/product/creation-entry-model';
+import { ProgressiveRightsCard } from '@/product/progressive-rights-card';
 
 export interface ComposerImageIdentity {
   assetId: string;
@@ -699,107 +695,68 @@ export function ComposerImageInput({
                             </p>
                           ) : null}
                         </fieldset>
-                        {item.answers.consentScope === 'public_marketing' ? (
+                        {item.answers.consentScope === 'public_marketing' &&
+                        restricted ? (
+                          <ProgressiveRightsCard
+                            category={item.answers.category ?? 'customer_case'}
+                            containsPerson={item.answers.containsPerson ?? true}
+                            containsSensitiveData={
+                              item.answers.containsSensitiveData ?? false
+                            }
+                            initialDraft={{
+                              purpose: 'public_marketing',
+                            }}
+                            minorStatus={item.answers.minorStatus ?? 'none'}
+                            onConfirm={(facts) => {
+                              const answers: AssetFactAnswers = {
+                                ...item.answers,
+                                category: facts.category,
+                                consentScope: facts.consentScope,
+                                containsPerson: facts.containsPerson,
+                                containsSensitiveData:
+                                  facts.containsSensitiveData,
+                                minorStatus: facts.minorStatus,
+                                rightsEvidence: facts.rightsEvidence ?? '',
+                                rightsNoFixedExpiry:
+                                  facts.rightsNoFixedExpiry ?? false,
+                                rightsPlatforms: facts.rightsPlatforms ?? [],
+                                rightsValidUntil: facts.rightsValidUntil
+                                  ? facts.rightsValidUntil.slice(0, 10)
+                                  : '',
+                              };
+                              const confirmed: ConfirmedAssetFacts = {
+                                category: facts.category,
+                                consentScope: facts.consentScope,
+                                containsPerson: facts.containsPerson,
+                                containsSensitiveData:
+                                  facts.containsSensitiveData,
+                                minorStatus: facts.minorStatus,
+                                rightsOwner: facts.rightsOwner,
+                                ...(facts.rightsEvidence
+                                  ? { rightsEvidence: facts.rightsEvidence }
+                                  : {}),
+                                ...(facts.rightsNoFixedExpiry !== undefined
+                                  ? {
+                                      rightsNoFixedExpiry:
+                                        facts.rightsNoFixedExpiry,
+                                    }
+                                  : {}),
+                                ...(facts.rightsPlatforms
+                                  ? {
+                                      rightsPlatforms: [
+                                        ...facts.rightsPlatforms,
+                                      ],
+                                    }
+                                  : {}),
+                                ...(facts.rightsValidUntil
+                                  ? { rightsValidUntil: facts.rightsValidUntil }
+                                  : {}),
+                              };
+                              submitFacts(confirmed, answers);
+                            }}
+                          />
+                        ) : item.answers.consentScope === 'public_marketing' ? (
                           <div className="space-y-3 rounded-2xl bg-muted p-3">
-                            {restricted ? (
-                              <>
-                                <fieldset className="space-y-2">
-                                  <legend className="text-xs font-medium">
-                                    {composer_image_rights_platforms()}
-                                  </legend>
-                                  <div className="flex gap-2">
-                                    {(
-                                      [
-                                        [
-                                          'xiaohongshu',
-                                          composer_image_platform_xiaohongshu(),
-                                        ],
-                                        [
-                                          'douyin',
-                                          composer_image_platform_douyin(),
-                                        ],
-                                      ] as const
-                                    ).map(([platform, label]) => {
-                                      const selected =
-                                        item.answers.rightsPlatforms.includes(
-                                          platform
-                                        );
-                                      return (
-                                        <Button
-                                          aria-pressed={selected}
-                                          key={platform}
-                                          onClick={() =>
-                                            updateAnswers({
-                                              ...item.answers,
-                                              rightsPlatforms: selected
-                                                ? item.answers.rightsPlatforms.filter(
-                                                    (value) =>
-                                                      value !== platform
-                                                  )
-                                                : [
-                                                    ...item.answers
-                                                      .rightsPlatforms,
-                                                    platform,
-                                                  ],
-                                            })
-                                          }
-                                          size="sm"
-                                          type="button"
-                                          variant={
-                                            selected ? 'secondary' : 'outline'
-                                          }
-                                        >
-                                          {label}
-                                        </Button>
-                                      );
-                                    })}
-                                  </div>
-                                </fieldset>
-                                <fieldset className="space-y-2">
-                                  <legend className="text-xs font-medium">
-                                    {composer_image_rights_expiry()}
-                                  </legend>
-                                  <Button
-                                    aria-pressed={
-                                      item.answers.rightsNoFixedExpiry
-                                    }
-                                    onClick={() =>
-                                      updateAnswers({
-                                        ...item.answers,
-                                        rightsNoFixedExpiry:
-                                          !item.answers.rightsNoFixedExpiry,
-                                        rightsValidUntil: '',
-                                      })
-                                    }
-                                    size="sm"
-                                    type="button"
-                                    variant={
-                                      item.answers.rightsNoFixedExpiry
-                                        ? 'secondary'
-                                        : 'outline'
-                                    }
-                                  >
-                                    {composer_image_rights_no_expiry()}
-                                  </Button>
-                                  {!item.answers.rightsNoFixedExpiry ? (
-                                    <Input
-                                      aria-label={composer_image_rights_expiry()}
-                                      min={new Date()
-                                        .toISOString()
-                                        .slice(0, 10)}
-                                      onChange={(event) =>
-                                        updateAnswers({
-                                          ...item.answers,
-                                          rightsValidUntil: event.target.value,
-                                        })
-                                      }
-                                      type="date"
-                                      value={item.answers.rightsValidUntil}
-                                    />
-                                  ) : null}
-                                </fieldset>
-                              </>
-                            ) : null}
                             {item.showEvidence ? (
                               <label
                                 className="block text-xs font-medium"
@@ -837,20 +794,25 @@ export function ComposerImageInput({
                             ) : null}
                           </div>
                         ) : null}
-                        <Button
-                          disabled={!itemFacts}
-                          onClick={() => {
-                            if (!itemFacts) return;
-                            submitFacts(itemFacts);
-                          }}
-                          size="sm"
-                          type="button"
-                        >
-                          <IconUpload aria-hidden="true" />
-                          {item.status === 'authorization_required'
-                            ? composer_image_authorize_attach()
-                            : composer_image_confirm_upload()}
-                        </Button>
+                        {!(
+                          item.answers.consentScope === 'public_marketing' &&
+                          restricted
+                        ) ? (
+                          <Button
+                            disabled={!itemFacts}
+                            onClick={() => {
+                              if (!itemFacts) return;
+                              submitFacts(itemFacts);
+                            }}
+                            size="sm"
+                            type="button"
+                          >
+                            <IconUpload aria-hidden="true" />
+                            {item.status === 'authorization_required'
+                              ? composer_image_authorize_attach()
+                              : composer_image_confirm_upload()}
+                          </Button>
+                        ) : null}
                       </div>
                     )}
                     {item.status === 'authorization_required' ? (

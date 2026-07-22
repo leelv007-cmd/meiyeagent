@@ -60,10 +60,12 @@ import {
   missingCreativeGrounding,
   type CreativeGroundingRequirement,
 } from '@/product/creative-brief-editor';
+import { LandingHandoffRestore } from '@/product/landing-handoff-restore';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
 
 import { BriefSurface } from './brief-surface-panel';
 import { applyCatalogRecipeSelection } from './catalog-selection';
+import { ProgressiveFactCard } from './progressive-fact-card';
 import {
   cancelBriefSurface,
   confirmBriefSurface,
@@ -481,7 +483,10 @@ export function ComposerHome({
           containsPerson: facts.containsPerson,
           containsSensitiveData: facts.containsSensitiveData,
           minorStatus: facts.minorStatus,
-          rightsOwner: identity.assetId,
+          rightsOwner:
+            facts.rightsOwner?.trim() ||
+            product.state?.store?.name?.trim() ||
+            '门店',
         },
       },
       `composer-asset:${identity.contentHash}`
@@ -983,12 +988,47 @@ export function ComposerHome({
         })
       : null;
 
+  const showProgressiveFact =
+    Boolean(product.state) &&
+    !product.loading &&
+    (submissionGroundingBlocked === 'store' ||
+      missingGrounding.includes('confirmed_store') ||
+      missingGrounding.includes('confirmed_project'));
+
   return (
     <div
       className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6"
       data-testid="composer-home"
       data-viewport={viewportKind}
     >
+      <LandingHandoffRestore
+        onConfirm={({ intent, lens }) => {
+          // Restore into the same Composer draft — never auto-submit.
+          if (lens) {
+            setLensState((current) =>
+              updateUserText(selectLens(current, lens), intent)
+            );
+          } else {
+            setLensState((current) => updateUserText(current, intent));
+          }
+          intentRef.current?.focus();
+        }}
+      />
+
+      {showProgressiveFact ? (
+        <ProgressiveFactCard
+          onConfirm={async (command) => {
+            await executeProductCommand(
+              command,
+              `progressive-fact:${sessionIdRef.current}:${Date.now()}`
+            );
+            setSubmissionGroundingBlocked(null);
+            await product.refresh();
+          }}
+          pending={product.pending}
+        />
+      ) : null}
+
       <Card className="meiye-composer meiye-entry-card border-0 shadow-none">
         <CardContent className="space-y-5 p-5 sm:p-6">
           <LensRadiogroup
