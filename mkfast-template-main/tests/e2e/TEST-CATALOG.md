@@ -467,6 +467,70 @@ from the ported template; copy authority is
 | 2 | Mobile Progress never opens a phantom stage | With no active Work, verify the mobile Progress entry goes to the real task center. The target model contract separately verifies that the newest in-flight Work becomes its exact Result deep link, rather than a dashboard query flag. |
 | 3 | Product modal semantics and safe area stay intact | Interaction tests require one aria-modal Bottom Sheet/Dialog, Escape close, focus return, and product portal tokens; the 375px browser journey checks Result does not overflow or hide behind the bottom navigation. |
 
+## 34. Pro Studio G-index Local And Release QA
+
+**Files:** `specs/pro-studio-k2-canvas.spec.ts`,
+`specs/pro-studio-kernel-ui.spec.ts`,
+`specs/pro-studio-cross-service-smoke.spec.ts`,
+`specs/pro-studio-security-boundaries.spec.ts` | **Priority:** P0 | **Tickets:** #163–#169
+
+These are visible, fixture-local acceptance journeys for the current G-index
+implementation. A catalog row is not a passing run: it requires the real local
+Main, Core, Worker, Canvas, and PostgreSQL harness. It is never live-provider,
+protected-release, pricing-approval, or manual-security-approval evidence.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | G01–G25 graph interaction stays visible and merchant-safe | Unlock the fixture workspace, create a project using the visible name dialog, create/select five node types, use the rich node controls, preview an owned image, adjust text/resize, marquee/multi-select, connect/copy/delete, change background/minimap/zoom controls, open the node info surface, and exercise the hover quick-tool preference. Require no raw node, asset, workspace, model, or provider identifier in rendered merchant copy. |
+| 2 | G26–G31 retouch creates governed child lineage | Insert an owned image through the visible picker, use crop/mask/upscale/split/angle/reverse-prompt controls, confirm the quote where required, and verify each result is a distinct owned child with a derived graph edge. A fixture result proves only the local durable path; it does not prove a live model or provider. |
+| 3 | G32–G41 contextual generation is fail-closed and recoverable | Select a text/image/config node, open the visible node generation surface, prove an inactive catalog cannot quote or submit, then use an active fixture capability with an explicit `@` mention. Exercise 1 and 15 item quote/confirmation, partial failure, retry/cancel, durable text-stream cursor recovery, prompt search, and image/video/audio asset pagination without injecting an unmentioned resource. |
+| 4 | G43–G48 project/export controls preserve product boundaries | Create, rename, select and soft-delete a disposable project through visible confirmation dialogs; use beforeunload with an unsaved draft; create a checkpoint; export a frozen revision with the explicit available-only choice; and verify the result remains a Canvas ZIP manifest rather than a ContentPackage write. Recheck the adopted badge and Main ContentPackage only through the existing cross-service smoke. |
+| 5 | G42 stays deferred and forbidden | Do not add a chat shell, local Agent bridge, token storage, or arbitrary provider connection. The acceptance is the absence guard plus the existing governed plan/confirm/apply surface, not a substitute assistant UI. |
+
+### Known fixture boundaries
+
+- The local harness provisions PostgreSQL and starts Main, Core, Worker, and
+  Canvas with `MODEL_EXECUTION_MODE=fixture`; an unavailable Docker/PostgreSQL
+  fixture blocks the journeys rather than allowing a soft pass.
+- Recorded/fixture image, audio, checkout, and security behavior remains local
+  acceptance only. The opt-in real-provider checkout smoke does not demonstrate
+  a completed payment, live model execution, protected workflow, or production
+  security approval.
+- A release claim still requires the pinned upstream checkout plus the protected
+  production security drill, manual approval, N2 recovery, audio activation,
+  pricing approval, and upsell validation. Do not infer any of those from this
+  catalog or from unit/build output.
+
+## 35. P1-F2 Continuous Production Acceptance
+
+**File:** `specs/p1-f2-acceptance.spec.ts` | **Priority:** P0 | **Ticket:** #161
+
+Continuous recorded-mode acceptance for P1 productization. Primary seam is a
+logged-in browser through the public App Shell HTTP+SSE BFF into Core with
+`MODEL_EXECUTION_MODE=fixture` (recorded adapters). Frontend fixture
+short-circuits are never treated as #161 pass evidence. Evidence and residuals:
+`docs/evidence/p1-f2-161/README.md`. Production-build opt-in:
+`PLAYWRIGHT_PRODUCTION_CANDIDATE=true`.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Day-0 Landing intent restores without auto-submit | Capture Landing intent into same-browser handoff, sign in, confirm restore into Composer intent, require no automatic Result navigation. |
+| 2 | Copy continuous close-loop | Discover three modalities, submit copy via real commands, wait for merchant-ready Result, adjust, adopt, open Delivery, download the full package, record manual publication, record an outcome chip, confirm weekly-review next-round action, and restore after reload. Axe + merchant-language on Composer/Result/Delivery. |
+| 3 | Image-text continuous to delivery | Submit image_text, wait for Result, adopt, download 小红书 ZIP, restore. |
+| 4 | Video continuous to delivery | Submit video (抖音), wait for Result in dark theme, adopt, download 抖音 ZIP, restore. |
+| 5 | Content + Assets merchant-safe axe matrix | Open Content, Assets, and Tasks/Weekly shell in light and dark; require zero axe serious/critical and no UUID/raw enum/provider slug leaks. |
+| 6 | Responsive 320/375/768/1440 + 200% zoom | On a ready Result, assert no horizontal overflow and no fully occluded primary CTA at each width and at 200% zoom. |
+| 7 | prefers-reduced-motion Result/Delivery usable | Emulate reduced motion, complete copy Result→adopt→Delivery; document Save-Data product-hook residual when absent. |
+| 8 | Mobile dark Result smoke | 375px dark Result: no overflow, primary CTA geometry, merchant language, axe clean. |
+
+### Residuals (honest, not soft-pass)
+
+- VoiceOver manual checklist (Lens, stream, media roles, status, share degrade, chips).
+- Save-Data / low-power product hooks not present.
+- Legacy Content on-demand anchor browser journey without seeded legacy fixtures.
+- Rights withdrawal → pending replace → safe replace → re-delivery browser journey.
+- #147 P0 staging RC and live Provider remain out of band.
+
 ## Deferred Coverage
 
 These flows should be added after their dependencies are made deterministic:

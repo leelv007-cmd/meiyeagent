@@ -77,10 +77,15 @@ export interface ContentPackageWeeklyResultReviewProjection {
 
 const SIGNAL_LABELS: Record<ContentPackageResultSignal['kind'], () => string> =
   {
+    attention: content_package_result_ladder_attention,
     appointment: content_package_result_signal_appointment,
+    contact_added: content_package_result_signal_wechat_added,
+    inquiry: content_package_result_signal_private_message,
     private_message: content_package_result_signal_private_message,
     redeemed: content_package_result_signal_redeemed,
+    redemption: content_package_result_signal_redeemed,
     store_visit: content_package_result_signal_store_visit,
+    voucher_purchase: content_package_result_signal_voucher_purchased,
     voucher_purchased: content_package_result_signal_voucher_purchased,
     wechat_added: content_package_result_signal_wechat_added,
   };

@@ -89,6 +89,19 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
           `Z1 ${intentSeed} ${contract.modality} ${surface.name} ${crypto.randomUUID()}`
         );
         await waitForResultJourney(page, contract, workId);
+        if (surface.name === 'mobile-dark') {
+          const actions = page.getByTestId('result-shell-actions');
+          await expect(actions).toHaveAttribute(
+            'data-mobile-sticky-actions',
+            'true'
+          );
+          await expect(
+            actions.getByTestId('result-primary-action')
+          ).toHaveCount(1);
+          await expect(
+            actions.getByTestId('result-secondary-action')
+          ).toHaveCount(0);
+        }
         activationCounter.stop();
         expect(
           activationCounter.count(),

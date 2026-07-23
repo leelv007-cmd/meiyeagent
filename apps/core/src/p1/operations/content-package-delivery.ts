@@ -289,11 +289,13 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
   async recordManualResult(
     context: OperationContext,
     input: {
+      accountDisplayLabel?: string;
       expectedRevision: number;
       note?: string;
       packageId: string;
       platform: ApprovalBinding['platform'];
       platformUrl?: string;
+      publishedAt?: string;
       status: 'failed' | 'published' | 'unknown';
       variantVersionId: string;
     }
@@ -315,8 +317,12 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         event.platform === input.platform &&
         event.variantVersionId === input.variantVersionId &&
         event.status === input.status &&
+        (event.accountDisplayLabel ?? '') ===
+          (input.accountDisplayLabel ?? '') &&
         (event.platformUrl ?? '') === (input.platformUrl ?? '') &&
-        (event.note ?? '') === (input.note ?? '')
+        (event.note ?? '') === (input.note ?? '') &&
+        (input.publishedAt === undefined ||
+          event.occurredAt === input.publishedAt)
     );
     if (existing) {
       return structuredClone(contentPackage);
@@ -330,8 +336,11 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     return this.appendDeliveryEvent(context, contentPackage.id, {
       actorId: context.userId,
       id: this.id(),
+      ...(input.accountDisplayLabel
+        ? { accountDisplayLabel: input.accountDisplayLabel }
+        : {}),
       ...(input.note ? { note: input.note } : {}),
-      occurredAt: this.now(),
+      occurredAt: input.publishedAt ?? this.now(),
       platform: input.platform,
       ...(input.platformUrl ? { platformUrl: input.platformUrl } : {}),
       source: 'native',
@@ -1228,11 +1237,17 @@ function resultLadder(
   const published = hasPublishedDelivery(contentPackage);
   const stage = signals.reduce((highest, signal) => {
     const current =
-      signal.kind === 'redeemed' || signal.kind === 'store_visit'
+      signal.kind === 'redeemed' ||
+      signal.kind === 'redemption' ||
+      signal.kind === 'store_visit'
         ? 4
-        : signal.kind === 'appointment' || signal.kind === 'voucher_purchased'
+        : signal.kind === 'appointment' ||
+            signal.kind === 'voucher_purchase' ||
+            signal.kind === 'voucher_purchased'
           ? 3
-          : 2;
+          : signal.kind === 'attention'
+            ? 1
+            : 2;
     return Math.max(highest, current);
   }, 0);
   return [

@@ -4,8 +4,14 @@
  */
 
 import assert from 'node:assert/strict';
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, it } from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { afterEach, describe, it, vi } from 'vitest';
 
 import { OutcomeChipsPanel } from './outcome-chips-panel';
 import { projectOutcomeObservationPanel } from './outcome-observation-model';
@@ -45,6 +51,46 @@ describe('close-loop panels', () => {
     );
     assert.ok(screen.getByTestId('publication-record-manual-only'));
     assert.ok(screen.getByTestId('publication-record-form'));
+  });
+
+  it('binds a manual publication to the exact platform variant', async () => {
+    const onRecordManual = vi.fn();
+    const view = projectPublicationRecordPanel({
+      contentPackageId: 'pkg-a',
+      contentPackageRevision: 1,
+      variantVersionId: 'douyin-v1',
+      automaticVerifiedPlatformCount: 0,
+    });
+    render(
+      <PublicationRecordPanel
+        view={view}
+        contentPackageId="pkg-a"
+        contentPackageRevision={1}
+        variantVersionId="douyin-v1"
+        platform="douyin"
+        onRecordManual={onRecordManual}
+      />
+    );
+
+    assert.equal(
+      screen.queryByTestId('publication-platform-xiaohongshu'),
+      null
+    );
+    assert.ok(screen.getByTestId('publication-platform-douyin'));
+    fireEvent.change(screen.getByTestId('publication-account'), {
+      target: { value: '本店抖音' },
+    });
+    fireEvent.change(screen.getByTestId('publication-at'), {
+      target: { value: '2026-07-23T09:30' },
+    });
+    fireEvent.submit(screen.getByTestId('publication-record-form'));
+
+    await waitFor(() => assert.equal(onRecordManual.mock.calls.length, 1));
+    assert.equal(onRecordManual.mock.calls[0]?.[0]?.platform, 'douyin');
+    assert.match(
+      onRecordManual.mock.calls[0]?.[0]?.idempotencyKey ?? '',
+      /^pub\.douyin\.1\.[0-9a-z]+\.[0-9a-f-]{36}$/u
+    );
   });
 
   it('outcome chips stay disabled until published', () => {

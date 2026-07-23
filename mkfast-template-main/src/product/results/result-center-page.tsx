@@ -12,6 +12,7 @@ import { ProductStatus } from '@/components/uiux/product-status';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type {
+  ContentPackagePlatform,
   ResultAction,
   ResultAdjustCommand,
   ResultRevisionDriftChoice,
@@ -187,6 +188,7 @@ export type ResultCenterPageProps = {
     contentPackageId?: string;
     contentPackageRevision?: number;
     variantVersionId?: string;
+    publicationPlatform?: ContentPackagePlatform;
     workspaceId?: string;
     deliveryReceipts?: readonly DeliveryActionReceiptFact[];
     publicationRecords?: readonly PublicationRecordFact[];
@@ -345,7 +347,7 @@ function WorkspaceBody(props: {
     if (props.imageWorksurface) {
       return (
         <ImageWorksurface
-          facts={props.imageWorksurface}
+          facts={{ ...props.imageWorksurface, viewport: props.viewport }}
           onAdjust={props.onAdjust}
           onAdoptPrimary={props.onImageAdopt}
           onSaveLibrary={props.onImageSaveLibrary}
@@ -369,7 +371,7 @@ function WorkspaceBody(props: {
   if (copyFacts) {
     return (
       <CopyImageTextWorksurface
-        facts={copyFacts}
+        facts={{ ...copyFacts, viewport: props.viewport }}
         onAdjust={props.onAdjust}
         onAdopt={props.onCopyAdopt}
         onGeneratePlatformVariants={props.onCopyGeneratePlatformVariants}
@@ -571,8 +573,15 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
         {props.adjustConfirmation}
 
         <div
-          className="flex flex-wrap gap-2"
+          className={
+            viewport === 'mobile'
+              ? 'sticky bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-40 -mx-4 flex flex-wrap gap-2 border-y bg-background/95 px-4 py-3 backdrop-blur'
+              : 'flex flex-wrap gap-2'
+          }
           data-testid="result-shell-actions"
+          data-mobile-sticky-actions={
+            viewport === 'mobile' ? 'true' : undefined
+          }
           aria-busy={props.actionBusy ? 'true' : undefined}
         >
           {actions.primary && actionEnabled(actions.primary) ? (
@@ -894,6 +903,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
                     contentPackageId={cl.contentPackageId}
                     contentPackageRevision={cl.contentPackageRevision}
                     variantVersionId={cl.variantVersionId}
+                    platform={cl.publicationPlatform}
                     pending={props.closeLoopPending}
                     onRecordManual={props.onRecordManualPublication}
                   />

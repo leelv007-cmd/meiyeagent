@@ -493,6 +493,26 @@ test('manual publication record is idempotent for the same payload', async () =>
   assert.equal(second.deliveryEvents?.[0]?.id, first.deliveryEvents?.[0]?.id);
 });
 
+test('manual publication preserves the merchant account and reported publish time', async () => {
+  const setup = await createSetup('assisted');
+  const publishedAt = '2026-07-23T09:30:00.000Z';
+  const recorded = await setup.service.recordManualResult(context, {
+    accountDisplayLabel: '花间美甲抖音',
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    publishedAt,
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+
+  const event = recorded.deliveryEvents?.[0];
+  assert.equal(event?.type, 'manual_publish_result');
+  if (event?.type !== 'manual_publish_result') return;
+  assert.equal(event.accountDisplayLabel, '花间美甲抖音');
+  assert.equal(event.occurredAt, publishedAt);
+});
+
 test('delivery revision conflict leaves exactly one canonical audit', async () => {
   const setup = await createSetup('assisted');
   const staleWrite = () =>

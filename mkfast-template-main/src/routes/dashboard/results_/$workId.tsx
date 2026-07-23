@@ -45,6 +45,7 @@ import { createCanonicalAssistedHandoff } from '@/product/results/delivery-assis
 import type { AssistedReceipt } from '@/product/results/delivery-b3-types';
 import { buildCaptionText } from '@/product/results/delivery-full-package';
 import { shareCanonicalHandoff } from '@/product/results/delivery-handoff-live';
+import { projectResultCloseLoopFacts } from '@/product/results/result-close-loop-live';
 import {
   deliveryTargetForIntent,
   useDeliveryViewport,
@@ -110,6 +111,7 @@ function ResultCenterRoutePage() {
   const [shellActionError, setShellActionError] = useState<
     string | undefined
   >();
+  const [closeLoopPending, setCloseLoopPending] = useState(false);
   const [
     videoRegenerationPackageBaseline,
     setVideoRegenerationPackageBaseline,
@@ -621,6 +623,22 @@ function ResultCenterRoutePage() {
   );
   const existingOneShotUrl = assistedStored?.receipt.handoffLink?.token
     ? `/dashboard/handoff/${encodeURIComponent(assistedStored.receipt.handoffLink.token)}`
+    : undefined;
+  const closeLoopFacts = contentPackage
+    ? projectResultCloseLoopFacts({
+        contentPackage,
+        contentPackages: contentPackagesQuery.data ?? [],
+        assistedReceipts:
+          assistedReceiptsQuery.data?.map(({ receipt }) => receipt) ?? [],
+        canShareFiles: typeof navigator.canShare === 'function',
+        hasDownload: Boolean(
+          singleDownloadUrl ||
+            canExportFullPackage ||
+            (deliveryTarget === 'wechat_moments' && copyAsset)
+        ),
+        nowIso: new Date().toISOString(),
+        preferredPlatform: deliveryTarget,
+      })
     : undefined;
   const exactExportReceipt = contentPackage?.exportReceipts
     .filter(
@@ -1188,6 +1206,117 @@ function ResultCenterRoutePage() {
       }}
       onVideoProStudio={() => {
         window.location.assign('/pro-studio');
+      }}
+      closeLoop={closeLoopFacts}
+      closeLoopPending={closeLoopPending}
+      onRecordManualPublication={async (input) => {
+        if (!contentPackage || !closeLoopFacts?.variantVersionId) return;
+        setCloseLoopPending(true);
+        setShellActionError(undefined);
+        try {
+          await operationsCommand(
+            'record_content_package_manual_result',
+            {
+              accountDisplayLabel: input.accountDisplayLabel,
+              expectedRevision: contentPackage.revision,
+              ...(input.note ? { note: input.note } : {}),
+              packageId: contentPackage.id,
+              platform: input.platform,
+              ...(input.platformUrl ? { platformUrl: input.platformUrl } : {}),
+              publishedAt: input.publishedAt,
+              status: input.status,
+              variantVersionId: closeLoopFacts.variantVersionId,
+            },
+            input.idempotencyKey
+          );
+          await refreshCanonicalResult();
+        } catch (error) {
+          setShellActionError(
+            error instanceof Error ? error.message : '发布记录暂时无法保存。'
+          );
+        } finally {
+          setCloseLoopPending(false);
+        }
+      }}
+      onRecordOutcomeObservation={async (kind) => {
+        if (!contentPackage) return;
+        setCloseLoopPending(true);
+        setShellActionError(undefined);
+        try {
+          await operationsCommand(
+            'record_content_package_result_signal',
+            {
+              expectedRevision: contentPackage.revision,
+              kind,
+              packageId: contentPackage.id,
+            },
+            crypto.randomUUID()
+          );
+          await refreshCanonicalResult();
+        } catch (error) {
+          setShellActionError(
+            error instanceof Error ? error.message : '结果信号暂时无法保存。'
+          );
+        } finally {
+          setCloseLoopPending(false);
+        }
+      }}
+      onConfirmWeeklyRecommendation={async ({ packageId, action }) => {
+        const sourcePackage = contentPackagesQuery.data?.find(
+          (candidate) => candidate.id === packageId
+        );
+        if (!sourcePackage) return;
+        setCloseLoopPending(true);
+        setShellActionError(undefined);
+        try {
+          await operationsCommand(
+            'record_content_package_result_review_action',
+            {
+              action,
+              expectedRevision: sourcePackage.revision,
+              packageId: sourcePackage.id,
+            },
+            crypto.randomUUID()
+          );
+          if (action === 'stop_series') {
+            await refreshCanonicalResult();
+            return;
+          }
+          const sourceWorkId = sourcePackage.source.workId;
+          if (!sourceWorkId) {
+            setShellActionError(
+              '已记录下一轮方向，但该历史内容没有可复用的创作来源。'
+            );
+            await refreshCanonicalResult();
+            return;
+          }
+          const currentVersion = sourcePackage.versions.find(
+            (version) => version.id === sourcePackage.currentVersionId
+          );
+          const derived = await commandP1<{ id: string }>(
+            'operations',
+            {
+              action: 'derive_creative_work',
+              payload: {
+                autoConfirmBrief: false,
+                intent: currentVersion?.title ?? '基于已有成品继续创作',
+                sessionId: `weekly:${sourceWorkId}`,
+                sourceReferences: [{ id: sourceWorkId, kind: 'work' }],
+                sourceWorkId,
+              },
+            },
+            crypto.randomUUID()
+          );
+          window.location.assign(resultCenterPath(derived.id));
+        } catch (error) {
+          setShellActionError(
+            error instanceof Error
+              ? error.message
+              : '下一轮创作草稿暂时无法创建。'
+          );
+        } finally {
+          setCloseLoopPending(false);
+        }
       }}
       deliveryPanelFacts={{
         target: deliveryTarget,

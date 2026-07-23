@@ -69,6 +69,17 @@ describe('publication-record-model', () => {
     );
   });
 
+  it('fails closed when the exact platform variant is absent', () => {
+    const view = projectPublicationRecordPanel({
+      contentPackageId: 'pkg-a',
+      contentPackageRevision: 2,
+    });
+    assert.equal(view.kind, 'fail_closed');
+    if (view.kind !== 'fail_closed') return;
+    assert.equal(view.reason, 'missing_variant');
+    assert.equal(view.canRecordManual, false);
+  });
+
   it('projects records with source tier and supersede trail', () => {
     const view = projectPublicationRecordPanel({
       contentPackageId: 'pkg-a',
@@ -129,7 +140,11 @@ describe('publication-record-model', () => {
     );
     assert.equal(valid.ok, true);
     if (!valid.ok) return;
-    assert.match(valid.idempotencyKey, /^pkg-a:2:douyin:dy-v1:/u);
+    // Header-safe fingerprint (never embeds free-text URL/note).
+    assert.match(
+      valid.idempotencyKey,
+      /^pub\.douyin\.2\.[0-9a-z]+\.[0-9a-f-]{36}$/u
+    );
   });
 
   it('maps delivery events to publication records only for publish results', () => {

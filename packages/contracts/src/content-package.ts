@@ -605,6 +605,7 @@ export const contentPackageDeliveryEventSchema = z.discriminatedUnion('type', [
     type: z.literal('automatic_publish_result'),
   }),
   contentPackageDeliveryEventBaseSchema.extend({
+    accountDisplayLabel: z.string().trim().min(1).optional(),
     note: z.string().trim().min(1).optional(),
     platformUrl: z.url().optional(),
     status: z.enum(['published', 'failed', 'unknown']),
@@ -633,10 +634,15 @@ export const contentPackageResultSignalSchema = z.object({
   actorId: contentPackageIdSchema,
   id: contentPackageIdSchema,
   kind: z.enum([
+    'attention',
+    'inquiry',
+    'contact_added',
     'private_message',
     'wechat_added',
     'appointment',
+    'voucher_purchase',
     'voucher_purchased',
+    'redemption',
     'redeemed',
     'store_visit',
   ]),
@@ -1022,11 +1028,13 @@ export const deliverContentPackageCommandSchema =
     receiptId: contentPackageIdSchema.optional(),
   });
 export const recordContentPackageManualResultCommandSchema = z.object({
+  accountDisplayLabel: z.string().trim().min(1).optional(),
   expectedRevision: contentPackageExpectedRevisionSchema,
   note: z.string().trim().min(1).optional(),
   packageId: contentPackageIdSchema,
   platform: contentPackagePlatformSchema,
   platformUrl: z.url().optional(),
+  publishedAt: z.iso.datetime().optional(),
   status: z.enum(['published', 'failed', 'unknown']),
   variantVersionId: contentPackageIdSchema,
 });

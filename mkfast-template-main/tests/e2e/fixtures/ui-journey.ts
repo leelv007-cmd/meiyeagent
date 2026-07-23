@@ -89,9 +89,14 @@ export async function assertThreeModalDiscovery(page: Page) {
         .first(),
       `cold Composer must expose a discoverable ${modality} recipe`
     ).toBeVisible();
+    // Native <input type="radio"> exposes checked via the property / data-state,
+    // not necessarily an aria-checked attribute.
     await expect(
       page.getByTestId(`composer-lens-option-${modality}`)
-    ).toHaveAttribute('aria-checked', 'false');
+    ).not.toBeChecked();
+    await expect(
+      page.getByTestId(`composer-lens-option-${modality}`)
+    ).toHaveAttribute('data-state', 'unchecked');
   }
 }
 
@@ -102,7 +107,8 @@ export async function submitComposerJourney(
 ) {
   const lens = page.getByTestId(`composer-lens-option-${contract.modality}`);
   await lens.click();
-  await expect(lens).toHaveAttribute('aria-checked', 'true');
+  await expect(lens).toBeChecked();
+  await expect(lens).toHaveAttribute('data-state', 'checked');
 
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(
@@ -178,7 +184,16 @@ export async function submitComposerJourney(
   const submitResponse = await submitResponsePromise;
   const submitResponseBody = await submitResponse.text();
   const submitEnvelope = JSON.parse(submitResponseBody) as {
-    data?: { job?: { status?: string } };
+    data?: {
+      job?: {
+        errorCode?: string;
+        errorMessage?: string;
+        failureReason?: string;
+        status?: string;
+      };
+      error?: { message?: string };
+    };
+    error?: { message?: string };
   };
   expect(
     submitResponse.ok(),
@@ -189,7 +204,7 @@ export async function submitComposerJourney(
   // Never accept missing job / failed / submitting-only without a real Job.
   expect(
     submitEnvelope.data?.job?.status,
-    'submit_creative_work must return a real Job (running or completed fast-path)'
+    `submit_creative_work must return a real Job (running or completed fast-path); body=${submitResponseBody}`
   ).toMatch(/^(running|completed)$/u);
 
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+(?:\?|$)/u, {

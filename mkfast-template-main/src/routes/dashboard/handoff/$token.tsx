@@ -64,6 +64,9 @@ function MobileHandoffPage() {
       />
       <CanonicalHandoffPage
         resolve={resolve}
+        onUnavailableRecovery={() => {
+          window.location.assign('/dashboard');
+        }}
         onCopy={async (_fieldId, value) => {
           try {
             await navigator.clipboard.writeText(value);

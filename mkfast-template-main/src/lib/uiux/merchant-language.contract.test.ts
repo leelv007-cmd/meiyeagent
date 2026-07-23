@@ -13,6 +13,33 @@ const zh = JSON.parse(
   readFileSync(new URL('zh.json', messagesDirectory), 'utf8')
 ) as Record<string, string>;
 
+/** Full UUID shape (with optional work_/workspace_/job_ prefix). */
+const UUID_LEAK =
+  /(?:\b(?:work|workspace|job|asset)_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/iu;
+
+/**
+ * Snake_case / machine enums that must never ship as merchant-visible copy.
+ * Keep this list mechanical — English prose like "Task is running" is allowed.
+ */
+const RAW_ENUM_LEAK =
+  /\b(?:candidate_ready|needs_input|automatic_verified|cancel_requested|permission_denied|result_ready|provider_failed|acceptance_unknown)\b/u;
+
+/**
+ * Internal provider / model routing identifiers. Public brand names
+ * (OpenAI, Seedream) may appear; catalog/provider slugs may not.
+ */
+const PROVIDER_SLUG_LEAK =
+  /\b(?:openai\/[a-z0-9._-]+|anthropic\/[a-z0-9._-]+|seedance-2|llm-openai|gpt-image-2|catalogModelId|providerModel|providerJobId|sub2api)\b/iu;
+
+function merchantCopyLeaks(
+  messages: Record<string, string>,
+  pattern: RegExp
+): Array<[string, string]> {
+  return Object.entries(messages)
+    .filter(([, value]) => pattern.test(value))
+    .map(([key, value]) => [key, value]);
+}
+
 test('English merchant copy does not expose canonical object names', () => {
   const exposed = Object.entries(en).filter(
     ([key, value]) =>
@@ -56,6 +83,37 @@ test('Chinese admin copy uses merchant language for creation records', () => {
   ]) {
     assert.doesNotMatch(zh[key] ?? '', /\b(?:Job|Work)\b/u, key);
   }
+});
+
+test('locale copy never embeds UUID or work_/workspace_ id shapes', () => {
+  assert.deepEqual(merchantCopyLeaks(zh, UUID_LEAK), []);
+  assert.deepEqual(merchantCopyLeaks(en, UUID_LEAK), []);
+});
+
+test('locale copy never surfaces raw execution enums as merchant labels', () => {
+  assert.deepEqual(merchantCopyLeaks(zh, RAW_ENUM_LEAK), []);
+  assert.deepEqual(merchantCopyLeaks(en, RAW_ENUM_LEAK), []);
+});
+
+test('locale copy never surfaces provider routing slugs', () => {
+  assert.deepEqual(merchantCopyLeaks(zh, PROVIDER_SLUG_LEAK), []);
+  assert.deepEqual(merchantCopyLeaks(en, PROVIDER_SLUG_LEAK), []);
+});
+
+test('product shell CSS degrades rose-glow under prefers-reduced-motion', () => {
+  const styles = readFileSync(
+    new URL('../../styles.css', import.meta.url),
+    'utf8'
+  );
+  assert.match(styles, /\.meiye-rose-glow\s*\{[\s\S]*?animation:/u);
+  assert.match(
+    styles,
+    /@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{[\s\S]*?\.meiye-rose-glow\s*\{[\s\S]*?animation:\s*none/u
+  );
+  assert.match(
+    styles,
+    /@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{[\s\S]*?\.meiye-product-shell[\s\S]*?animation-duration:\s*0\.01ms/u
+  );
 });
 
 test('Z1 removes legacy entries and keeps Composer + Result Center contracts', () => {

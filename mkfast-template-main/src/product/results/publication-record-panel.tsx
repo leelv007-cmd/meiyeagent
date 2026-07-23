@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useMemo, useState } from 'react';
+import type { ContentPackagePlatform } from '@meiye/contracts';
 
 import {
   validateManualPublicationForm,
@@ -22,13 +23,15 @@ export type PublicationRecordPanelProps = {
   contentPackageId?: string;
   contentPackageRevision?: number;
   variantVersionId?: string;
+  /** Exact platform for the bound ContentPackage variant. */
+  platform?: ContentPackagePlatform;
   pending?: boolean;
   onRecordManual?: (
     input: ManualPublicationFormInput & { idempotencyKey: string }
   ) => void | Promise<void>;
 };
 
-const PLATFORMS = [
+const PLATFORMS: readonly { id: ContentPackagePlatform; label: string }[] = [
   { id: 'xiaohongshu', label: '小红书' },
   { id: 'douyin', label: '抖音' },
   { id: 'video_account', label: '视频号' },
@@ -36,7 +39,9 @@ const PLATFORMS = [
 
 export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
   const { view } = props;
-  const [platform, setPlatform] = useState<string>('xiaohongshu');
+  const [platform, setPlatform] = useState<ContentPackagePlatform>(
+    props.platform ?? 'xiaohongshu'
+  );
   const [accountDisplayLabel, setAccountDisplayLabel] = useState('');
   const [publishedAt, setPublishedAt] = useState('');
   const [platformUrl, setPlatformUrl] = useState('');
@@ -47,6 +52,9 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
     if (view.kind === 'fail_closed') return view.canRecordManual;
     return view.canRecordManual;
   }, [view]);
+  const platforms = props.platform
+    ? PLATFORMS.filter((item) => item.id === props.platform)
+    : PLATFORMS;
 
   return (
     <section
@@ -168,7 +176,7 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
         >
           <p className="text-sm font-medium">人工补记发布</p>
           <div className="grid gap-2 sm:grid-cols-3">
-            {PLATFORMS.map((item) => (
+            {platforms.map((item) => (
               <Button
                 key={item.id}
                 type="button"

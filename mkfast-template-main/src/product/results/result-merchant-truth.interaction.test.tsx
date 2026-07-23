@@ -253,6 +253,35 @@ describe('merchant Result Center truth', () => {
     ).not.toHaveTextContent(workId);
   });
 
+  it('keeps the mobile Result primary action sticky above the safe area', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        viewport="mobile"
+        facts={{
+          target: { workId },
+          workspaceKind: 'image',
+          progressState: 'success',
+          hasUsableCandidate: true,
+        }}
+        onAction={() => undefined}
+        supportedActionIds={['adopt_candidate', 'continue_adjust', 'deliver']}
+      />
+    );
+
+    const actions = screen.getByTestId('result-shell-actions');
+    expect(actions).toHaveAttribute('data-mobile-sticky-actions', 'true');
+    expect(actions).toHaveClass('sticky');
+    expect(actions).toHaveClass(
+      'bottom-[calc(5.25rem+env(safe-area-inset-bottom))]'
+    );
+    expect(screen.getByTestId('result-primary-action')).toHaveTextContent(
+      '采用这组'
+    );
+    expect(screen.queryAllByTestId('result-secondary-action')).toHaveLength(0);
+  });
+
   it('renders Run Detail panel collapsed with merchant fee/stage language', () => {
     render(
       <ResultCenterPage

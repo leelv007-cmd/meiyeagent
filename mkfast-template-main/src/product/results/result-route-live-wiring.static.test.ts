@@ -109,3 +109,19 @@ test('wechat moments full-package action downloads canonical caption segments', 
   assert.match(route, /URL\.createObjectURL/);
   assert.match(route, /URL\.revokeObjectURL/);
 });
+
+test('result route forwards the live viewport to the Result shell', () => {
+  assert.match(route, /viewport=\{deliveryViewport\}/u);
+});
+
+test('result route wires the Result close-loop panels to public P1 operations', () => {
+  assert.match(route, /projectResultCloseLoopFacts/);
+  assert.match(route, /closeLoop=\{closeLoopFacts\}/);
+  assert.match(route, /record_content_package_manual_result/);
+  assert.match(route, /record_content_package_result_signal/);
+  assert.match(route, /record_content_package_result_review_action/);
+  assert.match(
+    route,
+    /onConfirmWeeklyRecommendation=\{async[\s\S]*?derive_creative_work/u
+  );
+});

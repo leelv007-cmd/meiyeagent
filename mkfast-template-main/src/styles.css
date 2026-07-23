@@ -715,3 +715,18 @@
 [data-sonner-toaster] {
   z-index: var(--layer-toast) !important;
 }
+
+/*
+ * Sonner richColors success defaults to ~4.25:1 (#008a2e on #ecfdf3).
+ * Darken the success text so transient toasts meet WCAG 2.1 AA 4.5:1.
+ */
+[data-rich-colors="true"][data-sonner-toast][data-type="success"] {
+  --success-text: hsl(140 100% 22%);
+  color: hsl(140 100% 22%);
+}
+
+[data-rich-colors="true"][data-sonner-toast][data-type="success"] [data-title],
+[data-rich-colors="true"][data-sonner-toast][data-type="success"]
+  [data-close-button] {
+  color: hsl(140 100% 22%);
+}

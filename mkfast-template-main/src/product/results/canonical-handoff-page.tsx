@@ -42,6 +42,8 @@ export type CanonicalHandoffPageProps = {
     platformUrl?: string;
     note?: string;
   }) => void | Promise<void>;
+  /** Unavailable links only recover to an authenticated safe surface. */
+  onUnavailableRecovery?: (reason: 'expired' | 'not_found') => void;
 };
 
 export function CanonicalHandoffPage({
@@ -50,6 +52,7 @@ export function CanonicalHandoffPage({
   onDownload,
   onShare,
   onReport,
+  onUnavailableRecovery,
 }: CanonicalHandoffPageProps) {
   const [outcome, setOutcome] = useState<DeliveryOutcome | null>(null);
   const [message, setMessage] = useState<string>();
@@ -68,10 +71,20 @@ export function CanonicalHandoffPage({
           <AlertTitle>交接包不可用</AlertTitle>
           <AlertDescription>
             {resolve.kind === 'expired'
-              ? '交接链接已过期，请重新生成。'
-              : '未找到该交接包，或数据源已退役。'}
+              ? '交接链接已过期。请返回工作台，由原发布者重新生成。'
+              : '该交接链接不可用。请返回工作台，由原发布者获取新的交接链接。'}
           </AlertDescription>
         </Alert>
+        {onUnavailableRecovery ? (
+          <Button
+            className="mt-4"
+            data-testid="canonical-handoff-recover"
+            onClick={() => onUnavailableRecovery(resolve.kind)}
+            type="button"
+          >
+            返回工作台
+          </Button>
+        ) : null}
       </div>
     );
   }

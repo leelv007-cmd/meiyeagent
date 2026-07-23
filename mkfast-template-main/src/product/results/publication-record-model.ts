@@ -249,18 +249,32 @@ export function validateManualPublicationForm(
     ...(note ? { note } : {}),
   };
 
+  // Core/BFF Idempotency-Key: /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/
+  // Never embed free-text URL/note (or non-ASCII package labels) — those can
+  // fail the header regex. Fingerprint the binding fields into a short key.
+  const digestSource = [
+    context.contentPackageId,
+    String(context.contentPackageRevision),
+    platform,
+    context.variantVersionId,
+    publishedAt,
+    input.status,
+    platformUrl ?? '',
+  ].join('|');
+  let hash = 0;
+  for (let i = 0; i < digestSource.length; i += 1) {
+    hash = (Math.imul(31, hash) + digestSource.charCodeAt(i)) | 0;
+  }
+  const fingerprint = Math.abs(hash).toString(36);
+  const idempotencyKey =
+    `pub.${platform}.${context.contentPackageRevision}.${fingerprint}.${crypto.randomUUID()}`.slice(
+      0,
+      200
+    );
   return {
     ok: true,
     normalized,
-    idempotencyKey: [
-      context.contentPackageId,
-      String(context.contentPackageRevision),
-      platform,
-      context.variantVersionId,
-      publishedAt,
-      platformUrl ?? '',
-      input.status,
-    ].join(':'),
+    idempotencyKey,
   };
 }
 
@@ -304,7 +318,7 @@ export function projectPublicationRecordPanel(input: {
     };
   }
 
-  if (input.variantVersionId !== undefined && !input.variantVersionId.trim()) {
+  if (!input.variantVersionId?.trim()) {
     return {
       kind: 'fail_closed',
       heading,
@@ -403,6 +417,7 @@ export function publicationRecordsFromDeliveryEvents(input: {
     status?: string;
     platform: string;
     platformUrl?: string;
+    accountDisplayLabel?: string;
     actorId: string;
     occurredAt: string;
     note?: string;
@@ -432,6 +447,7 @@ export function publicationRecordsFromDeliveryEvents(input: {
       contentPackageRevision: input.contentPackageRevision,
       platform: event.platform,
       accountDisplayLabel:
+        event.accountDisplayLabel ??
         input.accountDisplayLabelByPlatform?.[event.platform] ??
         platformLabel(event.platform),
       publishedAt: event.occurredAt,

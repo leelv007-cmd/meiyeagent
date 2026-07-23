@@ -271,6 +271,12 @@ test('actions: every merchant phase keeps a single primary and real History/Run 
       row.primary,
       `${row.label} primary`
     );
+    // Dead CTA gate: the single primary must stay enabled for every merchant phase.
+    assert.equal(
+      actions.primaryAction?.enabled,
+      true,
+      `${row.label} primary enabled`
+    );
     assert.equal(
       actions.overflowActions.some((item) => item.id === 'open_history'),
       true,
