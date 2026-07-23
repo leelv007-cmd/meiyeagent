@@ -38,16 +38,16 @@ export function buildComposerCatalogHref(
   if (params.tab === 'templates' || params.tab === 'tools') {
     search.set('tab', params.tab);
   }
-  if (params.category && params.category.trim()) {
+  if (params.category?.trim()) {
     search.set('category', params.category.trim());
   }
-  if (params.surfaceRevisionId && params.surfaceRevisionId.trim()) {
+  if (params.surfaceRevisionId?.trim()) {
     search.set('surfaceRevisionId', params.surfaceRevisionId.trim());
   }
-  if (params.returnKey && params.returnKey.trim()) {
+  if (params.returnKey?.trim()) {
     search.set('returnKey', params.returnKey.trim());
   }
-  if (params.q && params.q.trim()) {
+  if (params.q?.trim()) {
     search.set('q', params.q.trim());
   }
   const qs = search.toString();
