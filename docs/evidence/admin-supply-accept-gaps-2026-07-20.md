@@ -119,3 +119,17 @@ pnpm --filter @meiye/web exec playwright test \
 
 - **May claim:** same-increment **recorded acceptance harness** complete for #128.
 - **May not claim:** whole-package #128 complete until all three official G-LIVE probes are current and green. Even after that, do not claim multi-channel ready or automatic fallback without separate dual-channel evidence.
+
+## Local live re-run (2026-07-23)
+
+**Status update for G-LIVE-***: authorized local `primary_connectivity` run produced a current artifact bound to
+`d6787b292cc12db0fd3ecef738f34b9842262856` (environment `local-authorized`, nonce `local-1784786625-14318`,
+cost CNY 1.24 / cap 5, expires `2026-07-24T06:06:25.833Z`). Text/image/video probes accepted; publish gates are
+`single_channel` / `publishAllowed=true` / `multiChannelReady=false`.
+
+Redacted acceptance: `docs/evidence/provider-live-local-acceptance-2026-07-23.md`.
+Raw gitignored path: `apps/core/provider-live-evidence/provider-live-gate.json` (worktree `wt-provider-live`).
+
+**Still not package-complete for #128:** multi-channel remains false by design; staging/protected workflow upload is separate;
+re-run the five Z2 gates on the same increment before closing #128. Do not treat this note as multi-channel or paid-launch readiness.
+

@@ -1,6 +1,6 @@
 # #119 Official Provider Connectivity — Unblock Checklist
 
-> Status: **live_blocked** (2026-07-23 lane-live). Unit/recorded single-channel fault matrix + `primary_connectivity` publish gate are green. Real official ARK credentials / cost-cap secrets are not present in this environment, so #119 must stay OPEN — never project recorded as `live_verified`.
+> Status: **local_live_verified_current_sha** (2026-07-23 wt-provider-live). Authorized local `primary_connectivity` run bound to `d6787b292cc12db0fd3ecef738f34b9842262856` is green through 2026-07-24T06:06:25.833Z (see `docs/evidence/provider-live-local-acceptance-2026-07-23.md`). Recorded still ≠ live_verified. Staging/protected-workflow RC package and multi-channel remain separate. Historical receipt on `63a0be85…` must not be reused.
 > Authority: revised D-069 / D-080 C5 · gap `docs/evidence/admin-supply-accept-gaps-2026-07-20.md` G-LIVE-*.
 > Linkage: unblocks #128 Z2-ACCEPT only after a current green live artifact; do not close #128 from this ticket.
 
