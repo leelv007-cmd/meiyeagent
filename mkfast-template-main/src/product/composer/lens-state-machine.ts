@@ -786,7 +786,7 @@ export function updateSettings(
     } else if (ownership === 'template') {
       fieldMeta[key] = {
         ownership: 'template',
-        dirty: fieldMeta[key]?.ownership === 'user' ? true : false,
+        dirty: fieldMeta[key]?.ownership === 'user',
       };
       // Template cannot overwrite user-dirty fields.
       if (fieldMeta[key]?.ownership === 'user' && fieldMeta[key]?.dirty) {
