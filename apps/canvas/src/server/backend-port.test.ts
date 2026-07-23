@@ -619,6 +619,7 @@ test("generation catalog mirrors only authoritative Core capability activation",
 				activation: "active",
 				allowedInputAssetRoles: ["reference_image"],
 				allowedParameters: ["width", "height"],
+				estimatedDurationSeconds: [5, 20],
 				modelId: "core-image-model",
 				operation: "image.generate",
 			},
@@ -638,6 +639,14 @@ test("generation catalog mirrors only authoritative Core capability activation",
 	);
 	assert.equal(image?.modelId, "core-image-model");
 	assert.equal(image?.activation, "active");
+	// Regression: capability mapping must forward Core's estimatedDurationSeconds
+	// (previously dropped, so runtime-panel's quote row crashed on undefined.join).
+	assert.deepEqual(image?.estimatedDurationSeconds, [5, 20]);
+	// Operations without a Core source fall back to a safe pair, never undefined.
+	const audioWithoutSource = body.operations.find(
+		(operation: { operation: string }) => operation.operation === "audio.sfx",
+	);
+	assert.deepEqual(audioWithoutSource?.estimatedDurationSeconds, [0, 0]);
 });
 
 test("catalog is deterministic and fails closed without an explicit default", async () => {

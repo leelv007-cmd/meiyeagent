@@ -163,10 +163,11 @@ test.describe('Pro Studio cross-service smoke', () => {
       true
     );
     await page.reload();
-    await expect(
-      page.getByRole('button', { name: project.name })
-    ).toBeVisible();
-    await page.getByRole('button', { name: project.name }).click();
+    const projectCard = page
+      .locator('.project-card')
+      .filter({ hasText: project.name });
+    await expect(projectCard).toBeVisible();
+    await projectCard.locator('.project-card-open').click();
 
     const checkpoint = await canvasCall<CanvasRevision>(
       page,
@@ -258,7 +259,11 @@ test.describe('Pro Studio cross-service smoke', () => {
       true
     );
     await page.reload();
-    await page.getByRole('button', { name: project.name }).click();
+    await page
+      .locator('.project-card')
+      .filter({ hasText: project.name })
+      .locator('.project-card-open')
+      .click();
     await expect(page.locator('audio')).toHaveCount(2);
     const audioSources = await page
       .locator('audio')

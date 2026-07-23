@@ -1515,6 +1515,7 @@ function normalizedCanvasCatalog(
 				: ("active" as const),
 			allowedInputAssetRoles: stringArray(source?.allowedInputAssetRoles),
 			allowedParameters: stringArray(source?.allowedParameters),
+			estimatedDurationSeconds: numberPair(source?.estimatedDurationSeconds),
 			...(sourceModelId ? { modelId: sourceModelId } : { modelId: null }),
 			operation,
 			output: canvasOperationOutput(operation),
@@ -1587,6 +1588,15 @@ function stringArray(value: unknown) {
 	return Array.isArray(value)
 		? value.filter((item): item is string => typeof item === "string")
 		: [];
+}
+
+function numberPair(value: unknown): [number, number] {
+	return Array.isArray(value) &&
+		value.length === 2 &&
+		typeof value[0] === "number" &&
+		typeof value[1] === "number"
+		? [value[0], value[1]]
+		: [0, 0];
 }
 
 function plainRecord(value: unknown) {

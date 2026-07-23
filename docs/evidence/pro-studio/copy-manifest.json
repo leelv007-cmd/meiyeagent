@@ -88,14 +88,6 @@
       "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
     },
     {
-      "source": "web/src/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx",
-      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx",
-      "sha256": "33bf87acf284aa7a8f23d43a6b662def2568e8dc0c7bc64753b87b8539924c21",
-      "authorizationStatus": "authorized",
-      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
-      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
-    },
-    {
       "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx",
       "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx",
       "sha256": "ef85ef1c1f5d3cb3838dbf72ca6b68879829ec1f64908d58c9059ee5dc8829d7",
@@ -171,14 +163,6 @@
       "source": "web/src/app/(user)/canvas/components/canvas-node.tsx",
       "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-node.tsx",
       "sha256": "d700c4e8742167390ef3e421272f1fa61ec04cefbd0d7240cf863a4a97438ffa",
-      "authorizationStatus": "authorized",
-      "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
-      "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
-    },
-    {
-      "source": "web/src/app/(user)/canvas/components/canvas-project-card.tsx",
-      "target": "apps/canvas/src/vendor/vozeb/app/(user)/canvas/components/canvas-project-card.tsx",
-      "sha256": "37176f47276f8038a6cb1f1f2aacbef4d5808ac57ef2e733e8dc1aedf73f072f",
       "authorizationStatus": "authorized",
       "a2Evidence": "docs/evidence/pro-studio/a2-authorization-2026-07-19.md",
       "a3Evidence": "docs/evidence/pro-studio/a3-authorization-2026-07-19.md"
@@ -559,7 +543,7 @@
     },
     {
       "source": "web/src/app/(user)/canvas/components/asset-picker-modal.tsx",
-      "classification": "mount-exact"
+      "classification": "delete-from-inventory"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-agent-chat-ui.tsx",
@@ -571,7 +555,7 @@
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-config-composer.tsx",
-      "classification": "mount-exact"
+      "classification": "delete-from-inventory"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-connections.tsx",
@@ -583,17 +567,14 @@
       "classification": "mount-exact"
     },
     {
-      "source": "web/src/app/(user)/canvas/components/canvas-delete-projects-dialog.tsx",
-      "classification": "mount-exact"
-    },
-    {
       "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx",
       "classification": "port-required",
-      "replacementTarget": "apps/canvas/src/client/runtime-panel.tsx"
+      "replacementTarget": "apps/canvas/src/kernel-host/ported/image-quick-tools.ts"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-tools.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/ported/image-quick-tools.ts"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-mini-map.tsx",
@@ -601,34 +582,36 @@
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-node-angle-dialog.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/retouch-dialogs.tsx"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-node-crop-dialog.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/retouch-dialogs.tsx"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-node-hover-toolbar.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/ported/kernel-node-hover-toolbar.tsx"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-node-mask-edit-dialog.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/retouch-dialogs.tsx"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-node-split-dialog.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/retouch-dialogs.tsx"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-node-upscale-dialog.tsx",
-      "classification": "mount-exact"
+      "classification": "port-required",
+      "replacementTarget": "apps/canvas/src/kernel-host/retouch-dialogs.tsx"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-node.tsx",
-      "classification": "mount-exact"
-    },
-    {
-      "source": "web/src/app/(user)/canvas/components/canvas-project-card.tsx",
       "classification": "mount-exact"
     },
     {
@@ -642,7 +625,7 @@
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-size-picker.tsx",
-      "classification": "mount-exact"
+      "classification": "delete-from-inventory"
     },
     {
       "source": "web/src/app/(user)/canvas/components/canvas-toolbar.tsx",
@@ -692,8 +675,7 @@
     },
     {
       "source": "web/src/app/(user)/canvas/utils/canvas-resource-references.ts",
-      "classification": "port-required",
-      "replacementTarget": "apps/canvas/src/kernel-host/generation-adapter.ts"
+      "classification": "utility-exact"
     },
     {
       "source": "web/src/lib/audio-generation.ts",

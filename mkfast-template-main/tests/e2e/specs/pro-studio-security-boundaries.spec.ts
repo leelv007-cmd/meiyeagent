@@ -786,7 +786,7 @@ test.describe('Ticket 25 security boundaries', () => {
       `canvas:v1:${contextB.userId}:${contextB.workspaceId}`
     );
     await expect(
-      page.getByRole('button', { name: fixtureA.project.name })
+      page.locator('.project-card').filter({ hasText: fixtureA.project.name })
     ).toHaveCount(0);
     await page.unroute('**/api/canvas/listProjects');
   });

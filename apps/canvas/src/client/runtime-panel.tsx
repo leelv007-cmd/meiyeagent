@@ -756,8 +756,8 @@ export function RuntimePanel({
 					<p className="runtime-meta">
 						{currentCapability?.usageAmount ?? 0}{" "}
 						{currentCapability?.usageResource ?? "copy"} · 约{" "}
-						{currentCapability?.estimatedDurationSeconds.join("–") ?? "--"} 秒 ·
-						价格版本 {quote.priceRevision}
+						{currentCapability?.estimatedDurationSeconds?.join("–") ?? "--"} 秒
+						· 价格版本 {quote.priceRevision}
 					</p>
 				) : null}
 				<div className="job-list">
