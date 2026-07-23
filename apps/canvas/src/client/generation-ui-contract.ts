@@ -12,16 +12,24 @@ export type CanvasGenerationRequest = {
 		role: CanvasGenerationInputAssetRole;
 	}>;
 	inputNodeBindings: CanvasGenerationInputNodeBinding[];
+	modelId?: string;
 	operation: CanvasGenerationOperation;
-	parameters: Record<string, boolean | number | string>;
+	parameters: Record<string, CanvasGenerationParameterValue>;
 	projectId: string;
 	prompt: string;
 	revisionId: string;
 };
 
+export type CanvasGenerationParameterValue = boolean | number | string;
+
 export interface CoreCanvasGenerationQuote {
 	catalogRevisionId: string;
 	createdAt: string;
+	estimatedProviderCost?: {
+		amountMicros: number;
+		currency: "CNY" | "USD";
+		unit: string;
+	} | null;
 	operation: CanvasGenerationOperation;
 	payloadHash: string;
 	priceRevision: string;
@@ -194,18 +202,22 @@ export function generatedResultEdges(input: {
 }
 
 export function buildCanvasGenerationInput(input: {
-	assets: CanvasGenerationInputBinding[];
+	assets: CanvasAssetInput[];
 	allowedInputAssetRoles: readonly CanvasGenerationInputAssetRole[];
 	allowedParameters: readonly string[];
 	maskAssetId: string;
 	maskNodeId: string;
+	modelId?: string;
 	operation: CanvasGenerationOperation;
+	parameterValues?: Record<string, CanvasGenerationParameterValue>;
 	projectId: string;
 	prompt: string;
 	ratio: string;
 	revisionId: string;
 }): CanvasGenerationRequest {
+	const modelId = normalizedModelId(input.modelId);
 	const common = {
+		...(modelId ? { modelId } : {}),
 		projectId: input.projectId,
 		prompt: input.prompt,
 		revisionId: input.revisionId,
@@ -216,6 +228,14 @@ export function buildCanvasGenerationInput(input: {
 		.filter(isPresent)
 		.filter((asset) => allowedRoles.has(asset.role));
 	const canUseMask = input.maskAssetId.length > 0 && allowedRoles.has("mask");
+	const parameters = strictCanvasGenerationParameters({
+		allowedParameters: input.allowedParameters,
+		operation: input.operation,
+		values: {
+			...defaultCanvasGenerationParameters(input.operation, input.ratio),
+			...input.parameterValues,
+		},
+	});
 	switch (input.operation) {
 		case "image.generate":
 			return {
@@ -227,10 +247,7 @@ export function buildCanvasGenerationInput(input: {
 					input.assets,
 				),
 				operation: input.operation,
-				parameters: supportedParameters(
-					{ ratio: input.ratio },
-					input.allowedParameters,
-				),
+				parameters,
 			};
 		case "image.edit":
 			return {
@@ -254,10 +271,7 @@ export function buildCanvasGenerationInput(input: {
 						: undefined,
 				),
 				operation: input.operation,
-				parameters: supportedParameters(
-					{ ratio: input.ratio, strength: 0.7 },
-					input.allowedParameters,
-				),
+				parameters,
 			};
 		case "text.respond":
 			return {
@@ -269,24 +283,14 @@ export function buildCanvasGenerationInput(input: {
 					input.assets,
 				),
 				operation: input.operation,
-				parameters: supportedParameters(
-					{ maxOutputTokens: 1200, temperature: 0.4 },
-					input.allowedParameters,
-				),
+				parameters,
 			};
 		case "video.generate":
 			return {
 				...common,
 				...generationInputFields(assets.slice(0, 8), input.assets),
 				operation: input.operation,
-				parameters: supportedParameters(
-					{
-						generateAudio: false,
-						ratio: input.ratio,
-						watermark: false,
-					},
-					input.allowedParameters,
-				),
+				parameters,
 			};
 		case "audio.speech":
 			return {
@@ -298,17 +302,7 @@ export function buildCanvasGenerationInput(input: {
 					input.assets,
 				),
 				operation: input.operation,
-				parameters: supportedParameters(
-					{
-						format: "mp3",
-						language: "zh-CN",
-						maxDurationSeconds: 120,
-						speed: 1,
-						tone: "natural",
-						voice: "default",
-					},
-					input.allowedParameters,
-				),
+				parameters,
 			};
 		case "audio.sfx":
 			return {
@@ -320,11 +314,163 @@ export function buildCanvasGenerationInput(input: {
 					input.assets,
 				),
 				operation: input.operation,
-				parameters: supportedParameters(
-					{ durationSeconds: 10, format: "mp3" },
-					input.allowedParameters,
-				),
+				parameters,
 			};
+	}
+}
+
+const STRICT_CANVAS_GENERATION_PARAMETERS: Record<
+	CanvasGenerationOperation,
+	readonly string[]
+> = {
+	"audio.sfx": ["durationSeconds", "format"],
+	"audio.speech": [
+		"format",
+		"language",
+		"maxDurationSeconds",
+		"speed",
+		"tone",
+		"voice",
+	],
+	"image.edit": [
+		"height",
+		"quality",
+		"ratio",
+		"resolution",
+		"strength",
+		"width",
+	],
+	"image.generate": ["height", "quality", "ratio", "resolution", "width"],
+	"text.respond": ["maxOutputTokens", "temperature"],
+	"video.generate": [
+		"durationSeconds",
+		"generateAudio",
+		"ratio",
+		"resolution",
+		"watermark",
+	],
+};
+
+export function strictCanvasGenerationParameterNames(
+	operation: CanvasGenerationOperation,
+) {
+	return STRICT_CANVAS_GENERATION_PARAMETERS[operation];
+}
+
+export function strictCanvasGenerationParameters(input: {
+	allowedParameters: readonly string[];
+	operation: CanvasGenerationOperation;
+	values: Record<string, CanvasGenerationParameterValue>;
+}): Record<string, CanvasGenerationParameterValue> {
+	const serverAllowed = new Set(input.allowedParameters);
+	const parameters: Record<string, CanvasGenerationParameterValue> = {};
+	for (const name of strictCanvasGenerationParameterNames(input.operation)) {
+		const value = input.values[name];
+		if (
+			serverAllowed.has(name) &&
+			isStrictCanvasGenerationParameterValue(input.operation, name, value)
+		) {
+			if (name === "ratio") {
+				const normalized = normalizeCanvasGenerationRatio(value as string);
+				if (normalized) parameters[name] = normalized;
+			} else {
+				parameters[name] = value;
+			}
+		}
+	}
+	if (
+		!serverAllowed.has("ratio") &&
+		serverAllowed.has("width") &&
+		serverAllowed.has("height") &&
+		!("width" in parameters) &&
+		!("height" in parameters) &&
+		typeof input.values.ratio === "string"
+	) {
+		const dimensions = ratioDimensions(input.values.ratio);
+		if (dimensions) Object.assign(parameters, dimensions);
+	}
+	return parameters;
+}
+
+export function isStrictCanvasGenerationParameterValue(
+	operation: CanvasGenerationOperation,
+	name: string,
+	value: CanvasGenerationParameterValue | undefined,
+) {
+	if (!strictCanvasGenerationParameterNames(operation).includes(name)) {
+		return false;
+	}
+	switch (name) {
+		case "durationSeconds":
+			return isIntegerInRange(value, 1, 120);
+		case "format":
+			return value === "mp3" || value === "wav";
+		case "generateAudio":
+		case "watermark":
+			return typeof value === "boolean";
+		case "height":
+		case "width":
+			return isIntegerInRange(value, 1, 4096);
+		case "language":
+			return isTextInRange(value, 2, 20);
+		case "maxDurationSeconds":
+			return isIntegerInRange(value, 1, 600);
+		case "maxOutputTokens":
+			return isIntegerInRange(value, 1, 16_000);
+		case "ratio":
+			return (
+				typeof value === "string" &&
+				Boolean(normalizeCanvasGenerationRatio(value))
+			);
+		case "quality":
+			return value === "standard" || value === "high";
+		case "resolution":
+		case "tone":
+		case "voice":
+			return isTextInRange(value, 1, name === "resolution" ? 30 : 100);
+		case "speed":
+			return typeof value === "number" && value >= 0.5 && value <= 2;
+		case "strength":
+			return typeof value === "number" && value >= 0 && value <= 1;
+		case "temperature":
+			return typeof value === "number" && value >= 0 && value <= 2;
+	}
+}
+
+function defaultCanvasGenerationParameters(
+	operation: CanvasGenerationOperation,
+	ratio: string,
+): Record<string, CanvasGenerationParameterValue> {
+	switch (operation) {
+		case "image.generate":
+			return { quality: "standard", ratio, resolution: "standard" };
+		case "image.edit":
+			return {
+				quality: "standard",
+				ratio,
+				resolution: "standard",
+				strength: 0.7,
+			};
+		case "text.respond":
+			return { maxOutputTokens: 1200, temperature: 0.4 };
+		case "video.generate":
+			return {
+				generateAudio: false,
+				ratio,
+				resolution: "standard",
+				watermark: false,
+			};
+		case "audio.speech":
+			return {
+				format: "mp3",
+				language: "zh-CN",
+				maxDurationSeconds: 120,
+				speed: 1,
+				tone: "natural",
+				voice: "default",
+			};
+		case "audio.sfx":
+			return { durationSeconds: 10, format: "mp3" };
 	}
 }
 
@@ -368,34 +514,61 @@ export function selectableCanvasAssets<T extends CanvasAssetInput>(
 	});
 }
 
-function supportedParameters(
-	parameters: Record<string, boolean | number | string>,
-	allowedParameters: readonly string[],
-) {
-	const allowed = new Set(allowedParameters);
-	const supported = Object.fromEntries(
-		Object.entries(parameters).filter(([name]) => allowed.has(name)),
-	) as Record<string, boolean | number | string>;
-	if (
-		typeof parameters.ratio === "string" &&
-		!allowed.has("ratio") &&
-		allowed.has("width") &&
-		allowed.has("height")
-	) {
-		const dimensions = ratioDimensions(parameters.ratio);
-		if (dimensions) Object.assign(supported, dimensions);
-	}
-	return supported;
+function normalizedModelId(modelId: string | undefined) {
+	const normalized = modelId?.trim() ?? "";
+	return normalized.length > 0 && normalized.length <= 200 ? normalized : null;
 }
 
-function ratioDimensions(ratio: string) {
-	const match = /^(\d+):(\d+)$/u.exec(ratio.trim());
+function isIntegerInRange(
+	value: CanvasGenerationParameterValue | undefined,
+	minimum: number,
+	maximum: number,
+) {
+	return (
+		typeof value === "number" &&
+		Number.isInteger(value) &&
+		value >= minimum &&
+		value <= maximum
+	);
+}
+
+function isTextInRange(
+	value: CanvasGenerationParameterValue | undefined,
+	minimum: number,
+	maximum: number,
+) {
+	return (
+		typeof value === "string" &&
+		value.trim().length >= minimum &&
+		value.length <= maximum
+	);
+}
+
+export function normalizeCanvasGenerationRatio(ratio: string): string | null {
+	const match = /^\s*(\d+)\s*:\s*(\d+)\s*$/u.exec(ratio);
 	if (!match) return null;
 	const widthRatio = Number(match[1]);
 	const heightRatio = Number(match[2]);
-	if (!Number.isSafeInteger(widthRatio) || !Number.isSafeInteger(heightRatio)) {
+	if (
+		!Number.isSafeInteger(widthRatio) ||
+		!Number.isSafeInteger(heightRatio) ||
+		widthRatio < 1 ||
+		heightRatio < 1 ||
+		widthRatio > 4096 ||
+		heightRatio > 4096
+	) {
 		return null;
 	}
+	const divisor = greatestCommonDivisor(widthRatio, heightRatio);
+	return `${widthRatio / divisor}:${heightRatio / divisor}`;
+}
+
+function ratioDimensions(ratio: string) {
+	const normalized = normalizeCanvasGenerationRatio(ratio);
+	if (!normalized) return null;
+	const [widthText, heightText] = normalized.split(":");
+	const widthRatio = Number(widthText);
+	const heightRatio = Number(heightText);
 	const longSide = 1024;
 	if (widthRatio >= heightRatio) {
 		return {
@@ -407,6 +580,17 @@ function ratioDimensions(ratio: string) {
 		height: longSide,
 		width: Math.max(1, Math.round((longSide * widthRatio) / heightRatio)),
 	};
+}
+
+function greatestCommonDivisor(left: number, right: number) {
+	let dividend = left;
+	let divisor = right;
+	while (divisor !== 0) {
+		const remainder = dividend % divisor;
+		dividend = divisor;
+		divisor = remainder;
+	}
+	return dividend;
 }
 
 export function canvasGenerationSubmitPayload(

@@ -59,6 +59,16 @@ test('persists a verified local derivative as a workspace-owned asset', async ()
   assert.equal(asset.source.kind, 'local_canvas_derivative');
   assert.equal(asset.source.parentAssetId, 'source-1');
   assert.match(asset.objectKey, /^workspace-1\/canvas\/assets\//);
+  assert.deepEqual(asset.exportPolicy, {
+    exportAllowed: true,
+    expiresAt: null,
+    ownerId: 'user-1',
+    privateRetrievalAllowed: true,
+    revokedAt: null,
+    updatedAt: '2026-07-16T08:00:00.000Z',
+    version: 1,
+    workspaceId: 'workspace-1',
+  });
   assert.equal(repository.inspect()[0]?.sha256.length, 64);
 });
 
@@ -76,6 +86,85 @@ test('records parentless retouch uploads as original imports instead of derivati
   );
 
   assert.deepEqual(asset.source, { kind: 'local_import' });
+  assert.equal(asset.exportPolicy?.ownerId, 'user-1');
+  assert.equal(asset.exportPolicy?.workspaceId, 'workspace-1');
+});
+
+test('updates current export policy without reauthorizing historical assets', async () => {
+  const { facade, repository } = fixture();
+  const context = { userId: 'user-1', workspaceId: 'workspace-1' };
+  const current = await facade.persistLocalCanvasArtifact(context, {
+    bytes: png,
+    contentType: 'image/png',
+    derivation: 'retouch',
+    fileName: 'current.png',
+  });
+
+  const revoked = await facade.updateExportPolicy(context, current.id, {
+    expectedVersion: 1,
+    revokedAt: '2026-07-16T09:00:00.000Z',
+  });
+  assert.equal(revoked.exportPolicy?.revokedAt, '2026-07-16T09:00:00.000Z');
+  assert.equal(revoked.exportPolicy?.version, 2);
+  await assert.rejects(
+    facade.updateExportPolicy(context, current.id, {
+      expectedVersion: 2,
+      revokedAt: null,
+    }),
+    (error: unknown) =>
+      error instanceof CanvasAssetError && error.code === 'INVALID_INPUT'
+  );
+
+  await repository.insert({
+    contentType: 'image/png',
+    createdAt: '2026-07-16T08:00:00.000Z',
+    fileName: 'historical.png',
+    id: 'historical-asset',
+    objectKey: 'workspace-1/canvas/assets/historical-asset.png',
+    sha256: 'a'.repeat(64),
+    sizeBytes: png.byteLength,
+    source: { kind: 'local_import' },
+    workspaceId: 'workspace-1',
+  });
+  await assert.rejects(
+    facade.updateExportPolicy(context, 'historical-asset', {
+      expectedVersion: 1,
+      exportAllowed: true,
+    }),
+    (error: unknown) =>
+      error instanceof CanvasAssetError && error.code === 'NOT_FOUND'
+  );
+});
+
+test('compare-and-swap prevents a stale policy write from clearing revocation', async () => {
+  const { facade } = fixture();
+  const context = { userId: 'user-1', workspaceId: 'workspace-1' };
+  const asset = await facade.persistLocalCanvasArtifact(context, {
+    bytes: png,
+    contentType: 'image/png',
+    derivation: 'retouch',
+    fileName: 'concurrent.png',
+  });
+
+  const [revoked, stale] = await Promise.allSettled([
+    facade.updateExportPolicy(context, asset.id, {
+      expectedVersion: 1,
+      revokedAt: '2026-07-16T09:00:00.000Z',
+    }),
+    facade.updateExportPolicy(context, asset.id, {
+      expectedVersion: 1,
+      revokedAt: null,
+    }),
+  ]);
+
+  assert.equal(revoked.status, 'fulfilled');
+  assert.equal(stale.status, 'rejected');
+  if (stale.status !== 'rejected') throw new Error('Expected stale update rejection.');
+  assert.ok(stale.reason instanceof CanvasAssetError);
+  assert.equal(stale.reason.code, 'POLICY_VERSION_CONFLICT');
+  const persisted = await facade.getAsset(context, asset.id);
+  assert.equal(persisted.exportPolicy?.revokedAt, '2026-07-16T09:00:00.000Z');
+  assert.equal(persisted.exportPolicy?.version, 2);
 });
 
 test('removes uploaded bytes when the asset record cannot be committed', async () => {

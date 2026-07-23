@@ -25,6 +25,7 @@ test('creates launch/session, project/revision and canvas-owned-asset facts', as
   assert.match(sql, /CREATE TABLE IF NOT EXISTS advanced_canvas_revisions/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS pro_studio_owned_assets/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS tombstoned_at/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS export_policy jsonb/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS pro_studio_asset_deletion_outbox/);
   assert.match(sql, /workspace_id text NOT NULL/);
 });

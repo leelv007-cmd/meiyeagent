@@ -169,8 +169,9 @@ test('the persistence gate uses Node test output before asserting database execu
   );
 });
 
-test('the release-candidate gate builds all workspaces before four-service E2E', async () => {
+test('the release-candidate gate fails closed on live evidence before build/E2E', async () => {
   assert.deepEqual(await runGate('run-release-candidate-quality.sh'), [
+    'node scripts/ci/assert-release-candidate-evidence.mjs',
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
     'pnpm build',
     'pnpm --filter @meiye/web e2e',

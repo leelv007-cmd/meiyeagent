@@ -2,12 +2,15 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  createCanvasOwnedAssetExportPolicy,
+} from '../pro-studio/canvas-asset-facade.js';
 import type {
   CanvasAssetContentType,
   CanvasAssetRepository,
   CanvasAudioValidation,
-  CanvasObjectStorage,
   CanvasOwnedAsset,
+  ReceiptAwareCanvasObjectStorage,
 } from '../pro-studio/canvas-asset-facade.js';
 import type { ReferenceAssetDeliveryPort } from '../p1/model-supply/reference-asset-delivery.js';
 import { runMediaCommand } from '../video/media-tools.js';
@@ -119,7 +122,7 @@ interface AudioAssetPipelineOptions {
   nextObjectToken?: () => string;
   providerFetch?: AudioProviderFetchPort;
   repository: CanvasAssetRepository;
-  storage: CanvasObjectStorage;
+  storage: ReceiptAwareCanvasObjectStorage;
 }
 
 export class AudioAssetPipeline {
@@ -139,6 +142,7 @@ export class AudioAssetPipeline {
   async persistProviderAudio(input: {
     fileName: string;
     jobId: string;
+    ownerId: string;
     providerUrl: string;
     workspaceId: string;
   }) {
@@ -163,6 +167,7 @@ export class AudioAssetPipeline {
       contentType: fetched.mimeType,
       fileName: input.fileName,
       jobId: input.jobId,
+      ownerId: input.ownerId,
       workspaceId: input.workspaceId,
     });
   }
@@ -172,10 +177,12 @@ export class AudioAssetPipeline {
     contentType: 'audio/mpeg' | 'audio/wav';
     fileName: string;
     jobId: string;
+    ownerId: string;
     workspaceId: string;
   }) {
     requireObjectKeySegment(input.workspaceId, 'workspaceId');
     requireIdentifier(input.jobId, 'jobId');
+    requireIdentifier(input.ownerId, 'ownerId');
     const audioValidation = await validateGeneratedAudio(
       {
         bytes: input.bytes,
@@ -192,10 +199,16 @@ export class AudioAssetPipeline {
       );
     }
     const id = this.nextAssetId();
-    const objectKey = `${input.workspaceId}/canvas/private/audio/${objectToken}.${extension}`;
+    const objectKey = `${input.workspaceId}/canvas/assets/${objectToken}.${extension}`;
+    const createdAt = this.clock().toISOString();
     const asset: CanvasOwnedAsset = {
       contentType: input.contentType,
-      createdAt: this.clock().toISOString(),
+      createdAt,
+      exportPolicy: createCanvasOwnedAssetExportPolicy({
+        ownerId: input.ownerId,
+        updatedAt: createdAt,
+        workspaceId: input.workspaceId,
+      }),
       fileName: safeFileName(input.fileName, extension),
       id,
       objectKey,
@@ -208,7 +221,10 @@ export class AudioAssetPipeline {
       },
       workspaceId: input.workspaceId,
     };
-    await this.options.storage.put(objectKey, Uint8Array.from(input.bytes));
+    await this.options.storage.putVerifiedCanvasAsset(
+      objectKey,
+      Uint8Array.from(input.bytes),
+    );
     await this.options.repository.insert(asset);
     return structuredClone(asset);
   }

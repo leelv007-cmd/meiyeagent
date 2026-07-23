@@ -25,6 +25,13 @@ export class CoreRemoteCallConfigurationError extends Error {
 	}
 }
 
+export class CoreRemoteCallTransportError extends Error {
+	constructor(readonly cause: unknown) {
+		super("Core remote stream request failed.");
+		this.name = "CoreRemoteCallTransportError";
+	}
+}
+
 export class CoreRemoteCall {
 	private readonly fetcher: typeof fetch;
 	private readonly serviceUrl: URL;
@@ -91,6 +98,40 @@ export class CoreRemoteCall {
 			return { kind: "invalid-envelope", status: response.status };
 		}
 		return { data: envelope.data, kind: "success", status: response.status };
+	}
+
+	async stream(input: {
+		body: Record<string, unknown>;
+		identity: CoreRemoteIdentity;
+		lastEventId?: string;
+		signal?: AbortSignal;
+	}): Promise<Response> {
+		const headers: Record<string, string> = {
+			"content-type": "application/json",
+			"x-core-actor": "worker",
+			"x-correlation-id": input.identity.correlationId,
+			"x-service-token": this.options.coreServiceToken,
+			"x-user-id": input.identity.userId,
+			"x-workspace-id": input.identity.workspaceId,
+		};
+		if (input.lastEventId) headers["last-event-id"] = input.lastEventId;
+		try {
+			return await this.fetcher(
+				new URL(
+					`/v1/workspaces/${encodeURIComponent(input.identity.workspaceId)}/canvas/text/stream`,
+					this.serviceUrl,
+				),
+				{
+					body: JSON.stringify(input.body),
+					cache: "no-store",
+					headers,
+					method: "POST",
+					signal: input.signal,
+				},
+			);
+		} catch (cause) {
+			throw new CoreRemoteCallTransportError(cause);
+		}
 	}
 }
 

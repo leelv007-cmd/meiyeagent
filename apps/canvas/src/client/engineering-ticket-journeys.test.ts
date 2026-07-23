@@ -3,13 +3,13 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CANVAS_PROMPT_SEEDS } from "../shared/prompt-seeds.js";
 import { assetDeliveryUrl } from "./backend-client.js";
 import {
 	buildCanvasGenerationInput,
 	generatedCanvasNode,
 } from "./generation-ui-contract.js";
 import { applyCanvasPromptSeed } from "./prompt-seed-actions.js";
-import { CANVAS_PROMPT_SEEDS } from "./prompt-seeds.js";
 
 test("ticket 07: image ratio is translated to the active Core width/height capability", () => {
 	const input = buildCanvasGenerationInput({

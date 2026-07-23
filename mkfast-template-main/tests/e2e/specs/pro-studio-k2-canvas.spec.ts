@@ -90,13 +90,18 @@ test.describe('Pro Studio K2 canvas acceptance', () => {
     );
     await expect(page.getByText('Pro Studio', { exact: true })).toBeVisible();
 
-    page.once('dialog', (dialog) => dialog.accept(projectName));
     const createProject = page.getByRole('button', {
       name: '新建',
       exact: true,
     });
     await expect(createProject).toBeEnabled();
     await createProject.click();
+    const projectDialog = page.getByRole('dialog', { name: '新建工程' });
+    await expect(projectDialog).toBeVisible();
+    await projectDialog.getByLabel('工程名称').fill(projectName);
+    await projectDialog
+      .getByRole('button', { name: '创建工程', exact: true })
+      .click();
     const surface = page.locator('[data-canvas-marquee-surface="true"]');
     await expect(surface).toBeVisible({ timeout: 20_000 });
 

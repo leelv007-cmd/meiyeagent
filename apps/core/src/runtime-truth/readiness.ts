@@ -18,6 +18,7 @@ export interface ReadinessProbeMap {
   objectStorage?: ReadinessProbe;
   outbox?: ReadinessProbe;
   postgresql?: ReadinessProbe;
+  providerLive?: ReadinessProbe;
   providerMode?: ReadinessProbe;
   schema?: ReadinessProbe;
   workerFreshness?: ReadinessProbe;
@@ -30,6 +31,7 @@ const ALL_CHECKS: ReadinessCheckName[] = [
   'objectStorage',
   'workerFreshness',
   'providerMode',
+  'providerLive',
   'outbox',
   'canvas',
 ];
@@ -190,6 +192,11 @@ export interface ComposeRuntimeTruthOptions {
    * probe is provided for other checks. Custom probes override env gates when set.
    */
   includeEnvModeGates?: boolean;
+  /**
+   * When true (default in protected envs, or when PROVIDER_LIVE_REQUIRE_EVIDENCE=1),
+   * a missing providerLive probe fails closed instead of skipping.
+   */
+  requireProviderLiveEvidence?: boolean;
 }
 
 /** Portable runtime-truth port used by HTTP handlers and assembly wiring. */
@@ -200,6 +207,9 @@ export function composeRuntimeTruth(
   const release = options.release ?? releaseIdentityFromEnv(env);
   const protectedEnvironment = isProtectedAppEnv(env);
   const includeEnvModeGates = options.includeEnvModeGates ?? true;
+  const requireProviderLiveEvidence =
+    options.requireProviderLiveEvidence ??
+    (env.PROVIDER_LIVE_REQUIRE_EVIDENCE === '1' || protectedEnvironment);
 
   const probes: ReadinessProbeMap = { ...(options.probes ?? {}) };
   if (includeEnvModeGates) {
@@ -211,6 +221,15 @@ export function composeRuntimeTruth(
       probes.objectStorage = () => objectStorageModeReadinessFromEnv(env);
     }
   }
+  if (!probes.providerLive && requireProviderLiveEvidence) {
+    // Fail closed: callers must supply a real judgment via capability assembly.
+    probes.providerLive = () => ({
+      name: 'providerLive',
+      status: 'fail',
+      detail:
+        'Provider live evidence probe is required but not wired; refuse readiness.',
+    });
+  }
 
   return {
     releaseIdentity() {
@@ -220,7 +239,10 @@ export function composeRuntimeTruth(
     },
     async evaluateReadiness() {
       return evaluateReadiness({
-        protectedEnvironment,
+        // When provider live evidence is explicitly required outside staging/
+        // production, treat the evaluation as protected for required checks.
+        protectedEnvironment:
+          protectedEnvironment || requireProviderLiveEvidence,
         probes,
         release,
       });

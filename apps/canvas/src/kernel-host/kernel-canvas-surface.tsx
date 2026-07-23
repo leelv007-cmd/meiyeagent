@@ -1,6 +1,7 @@
 // biome-ignore-all lint/a11y/noNoninteractiveTabindex: canvas node groups must be keyboard-focusable while containing nested media controls.
 "use client";
 
+import Image from "next/image";
 import {
 	type PointerEvent as ReactPointerEvent,
 	useCallback,
@@ -16,7 +17,7 @@ import { CanvasNode } from "@/src/vendor/vozeb/app/(user)/canvas/components/canv
 import { CanvasZoomControls } from "@/src/vendor/vozeb/app/(user)/canvas/components/canvas-zoom-controls";
 import { VozebCanvas } from "@/src/vendor/vozeb/app/(user)/canvas/components/vozeb-canvas";
 import type { ContextMenuState } from "@/src/vendor/vozeb/app/(user)/canvas/types";
-import type { KernelSessionGraph } from "./graph-bridge";
+import type { KernelNode, KernelSessionGraph } from "./graph-bridge";
 import {
 	adjustTextFontSize,
 	type CanvasPoint,
@@ -48,12 +49,19 @@ export type KernelCanvasSurfaceProps = {
 	adoptedNodeIds?: string[];
 	graph: KernelSessionGraph;
 	onChange: (next: KernelSessionGraph) => void;
+	onAngleSelected?: (nodeId: string) => void;
 	onCropSelected?: (nodeId: string) => void;
 	onImportFiles?: (
 		files: File[],
 		position: CanvasPoint,
 	) => Promise<void> | void;
 	onOpenAssets?: () => void;
+	onMaskEditSelected?: (nodeId: string) => void;
+	onReversePromptSelected?: (nodeId: string) => void;
+	onRetryFrozenJob?: (input: {
+		jobId: string;
+		nodeId: string;
+	}) => Promise<void> | void;
 	onSelectNodes?: (ids: string[]) => void;
 	onSplitSelected?: (nodeId: string) => void;
 	onUpload?: () => void;
@@ -61,6 +69,95 @@ export type KernelCanvasSurfaceProps = {
 	onViewportChange?: (viewport: KernelSessionGraph["viewport"]) => void;
 	selectedNodeIds?: string[];
 };
+
+const CANVAS_NODE_CLIPBOARD_MIME = "application/x-meiye-canvas-node-ids";
+const MAX_EXTERNAL_TEXT_LENGTH = 20_000;
+
+type ClipboardDataLike = {
+	files: ArrayLike<File>;
+	getData: (type: string) => string;
+};
+
+export type CanvasClipboardPayload =
+	| { kind: "files"; files: File[] }
+	| { kind: "internal"; nodeIds: string[] }
+	| { kind: "text"; text: string };
+
+export function canvasClipboardPayload(
+	clipboard: ClipboardDataLike | null | undefined,
+	knownNodeIds: readonly string[],
+): CanvasClipboardPayload | null {
+	if (!clipboard) return null;
+	const internalNodeIds = readInternalClipboardNodeIds(
+		clipboard.getData(CANVAS_NODE_CLIPBOARD_MIME),
+		knownNodeIds,
+	);
+	if (internalNodeIds.length > 0) {
+		return { kind: "internal", nodeIds: internalNodeIds };
+	}
+	const files = Array.from(clipboard.files);
+	if (files.length > 0) return { files, kind: "files" };
+	const text = clipboard.getData("text/plain").replaceAll("\u0000", "").trim();
+	if (!text) return null;
+	return { kind: "text", text: text.slice(0, MAX_EXTERNAL_TEXT_LENGTH) };
+}
+
+export function imagePreviewAssetId(
+	node: Pick<KernelNode, "data" | "type">,
+): string | undefined {
+	const assetId = node.data.assetId;
+	return node.type === "image" && typeof assetId === "string" && assetId.trim()
+		? assetId
+		: undefined;
+}
+
+function readInternalClipboardNodeIds(
+	value: string,
+	knownNodeIds: readonly string[],
+): string[] {
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+			return [];
+		const payload = parsed as { kind?: unknown; nodeIds?: unknown };
+		if (
+			payload.kind !== "meiye.canvas.nodes.v1" ||
+			!Array.isArray(payload.nodeIds)
+		) {
+			return [];
+		}
+		const known = new Set(knownNodeIds);
+		const selected = new Set<string>();
+		return payload.nodeIds.filter((nodeId): nodeId is string => {
+			if (
+				typeof nodeId !== "string" ||
+				!known.has(nodeId) ||
+				selected.has(nodeId)
+			) {
+				return false;
+			}
+
+			selected.add(nodeId);
+			return true;
+		});
+	} catch {
+		return [];
+	}
+}
+
+function isTextEditingTarget(target: EventTarget | null) {
+	return (
+		target instanceof HTMLElement &&
+		(target.isContentEditable ||
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			target instanceof HTMLSelectElement)
+	);
+}
+
+function serialiseCanvasNodeClipboard(nodeIds: readonly string[]) {
+	return JSON.stringify({ kind: "meiye.canvas.nodes.v1", nodeIds });
+}
 
 /**
  * Infinite pan/zoom canvas host surface.
@@ -71,9 +168,13 @@ export function KernelCanvasSurface({
 	adoptedNodeIds = [],
 	graph,
 	onChange,
+	onAngleSelected,
 	onCropSelected,
 	onImportFiles,
 	onOpenAssets,
+	onMaskEditSelected,
+	onReversePromptSelected,
+	onRetryFrozenJob,
 	onSelectNodes,
 	onSplitSelected,
 	onUpload,
@@ -97,8 +198,13 @@ export function KernelCanvasSurface({
 		string | null
 	>(null);
 	const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+	const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false);
 	const [clientChromeReady, setClientChromeReady] = useState(false);
+	const [interactionMessage, setInteractionMessage] = useState<string | null>(
+		null,
+	);
 	const [isMiniMapOpen, setIsMiniMapOpen] = useState(true);
+	const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
 	const [backgroundMode, setBackgroundMode] =
 		useState<CanvasBackgroundMode>("lines");
 	const [showImageInfo, setShowImageInfo] = useState(true);
@@ -279,6 +385,66 @@ export function KernelCanvasSurface({
 			graph.viewport,
 		);
 	}, [graph.viewport]);
+	const pasteTextAt = useCallback(
+		(text: string, position: CanvasPoint) => {
+			const node = createKernelNode(
+				"text",
+				position,
+				`text-${crypto.randomUUID()}`,
+			);
+			node.data = { text };
+			emitGraph({ ...graph, nodes: [...graph.nodes, node] });
+			onSelectNodes?.([node.id]);
+			setSelectedConnectionId(null);
+			setContextMenu(null);
+		},
+		[emitGraph, graph, onSelectNodes],
+	);
+	const openImagePreview = useCallback(
+		(node: KernelNode) => {
+			const assetId = imagePreviewAssetId(node);
+			if (!assetId) return;
+			onSelectNodes?.([node.id]);
+			setSelectedConnectionId(null);
+			setPreviewAssetId(assetId);
+		},
+		[onSelectNodes],
+	);
+	const retryFrozenJob = useCallback(
+		(node: KernelNode) => {
+			const jobId =
+				typeof node.data.jobId === "string" && node.data.jobId.trim()
+					? node.data.jobId
+					: null;
+			if (!jobId) {
+				setInteractionMessage("该失败节点没有可恢复的固定任务。");
+				return;
+			}
+			if (!onRetryFrozenJob) {
+				setInteractionMessage("当前画布暂不支持恢复该固定任务。");
+				return;
+			}
+			setInteractionMessage(null);
+			void Promise.resolve()
+				.then(() => onRetryFrozenJob({ jobId, nodeId: node.id }))
+				.catch(() =>
+					setInteractionMessage("固定任务状态刷新失败，请稍后重试。"),
+				);
+		},
+		[onRetryFrozenJob],
+	);
+	const clearCanvas = useCallback(() => {
+		if (graph.nodes.length === 0) {
+			setClearConfirmationOpen(false);
+			return;
+		}
+		emitGraph({ ...graph, edges: [], nodes: [] });
+		onSelectNodes?.([]);
+		setSelectedConnectionId(null);
+		setContextMenu(null);
+		setPreviewAssetId(null);
+		setClearConfirmationOpen(false);
+	}, [emitGraph, graph, onSelectNodes]);
 	const deleteSelection = useCallback(
 		(nodeIds = selectedNodeIds, connectionId = selectedConnectionId) => {
 			const next = removeCanvasSelection(graph, nodeIds, connectionId);
@@ -294,61 +460,99 @@ export function KernelCanvasSurface({
 		const handleCanvasKey = (event: KeyboardEvent) => {
 			const command = canvasKeyboardCommand(event);
 			if (!command) return;
-			const target = event.target;
-			if (
-				target instanceof HTMLElement &&
-				(target.isContentEditable ||
-					target instanceof HTMLInputElement ||
-					target instanceof HTMLTextAreaElement ||
-					target instanceof HTMLSelectElement)
-			) {
+			if (isTextEditingTarget(event.target)) return;
+			if (command === "copy") {
+				clipboardNodeIdsRef.current = [...selectedNodeIds];
 				return;
 			}
+			if (command === "paste") return;
 			event.preventDefault();
 			if (command === "undo") undo();
 			else if (command === "redo") redo();
 			else if (command === "select-all") {
 				onSelectNodes?.(graph.nodes.map((node) => node.id));
 				setSelectedConnectionId(null);
-			} else if (command === "copy") {
-				clipboardNodeIdsRef.current = [...selectedNodeIds];
-			} else if (command === "paste") {
-				const center = visibleCenter();
-				duplicateAt(clipboardNodeIdsRef.current, {
-					x: center.x + pasteIndexRef.current * 24,
-					y: center.y + pasteIndexRef.current * 24,
-				});
 			} else if (command === "delete") deleteSelection();
 			else {
 				onSelectNodes?.([]);
 				setSelectedConnectionId(null);
 				setContextMenu(null);
+				setClearConfirmationOpen(false);
+				setInteractionMessage(null);
+				setPreviewAssetId(null);
 			}
 		};
 		window.addEventListener("keydown", handleCanvasKey);
 		return () => window.removeEventListener("keydown", handleCanvasKey);
 	}, [
 		deleteSelection,
-		duplicateAt,
 		graph.nodes,
 		onSelectNodes,
 		redo,
 		selectedNodeIds,
 		undo,
-		visibleCenter,
 	]);
 
 	useEffect(() => {
-		if (!onImportFiles) return;
-		const handlePaste = (event: ClipboardEvent) => {
-			const files = Array.from(event.clipboardData?.files ?? []);
-			if (files.length === 0) return;
+		const handleCopy = (event: ClipboardEvent) => {
+			if (isTextEditingTarget(event.target)) return;
+			const nodeIds = selectedNodeIds.filter((nodeId) =>
+				graph.nodes.some((node) => node.id === nodeId),
+			);
+			if (nodeIds.length === 0) return;
+			clipboardNodeIdsRef.current = nodeIds;
 			event.preventDefault();
-			void onImportFiles(files, visibleCenter());
+			event.clipboardData?.setData(
+				CANVAS_NODE_CLIPBOARD_MIME,
+				serialiseCanvasNodeClipboard(nodeIds),
+			);
+		};
+		window.addEventListener("copy", handleCopy);
+		return () => window.removeEventListener("copy", handleCopy);
+	}, [graph.nodes, selectedNodeIds]);
+
+	useEffect(() => {
+		const handlePaste = (event: ClipboardEvent) => {
+			if (isTextEditingTarget(event.target)) return;
+			const payload = canvasClipboardPayload(
+				event.clipboardData,
+				graph.nodes.map((node) => node.id),
+			);
+			const center = visibleCenter();
+			if (payload?.kind === "internal") {
+				event.preventDefault();
+				duplicateAt(payload.nodeIds, {
+					x: center.x + pasteIndexRef.current * 24,
+					y: center.y + pasteIndexRef.current * 24,
+				});
+				return;
+			}
+			if (payload?.kind === "files") {
+				event.preventDefault();
+				if (!onImportFiles) {
+					setInteractionMessage("当前画布无法导入该文件。");
+					return;
+				}
+				void Promise.resolve()
+					.then(() => onImportFiles(payload.files, center))
+					.catch(() => setInteractionMessage("素材导入失败，请稍后重试。"));
+				return;
+			}
+			if (payload?.kind === "text") {
+				event.preventDefault();
+				pasteTextAt(payload.text, center);
+				return;
+			}
+			if (clipboardNodeIdsRef.current.length === 0) return;
+			event.preventDefault();
+			duplicateAt(clipboardNodeIdsRef.current, {
+				x: center.x + pasteIndexRef.current * 24,
+				y: center.y + pasteIndexRef.current * 24,
+			});
 		};
 		window.addEventListener("paste", handlePaste);
 		return () => window.removeEventListener("paste", handlePaste);
-	}, [onImportFiles, visibleCenter]);
+	}, [duplicateAt, graph.nodes, onImportFiles, pasteTextAt, visibleCenter]);
 
 	useEffect(() => {
 		if (!dragging) return;
@@ -531,7 +735,16 @@ export function KernelCanvasSurface({
 						if (selectedImageId) onCropSelected?.(selectedImageId);
 					}}
 				>
-					方形裁切
+					裁剪
+				</button>
+				<button
+					disabled={!selectedImageId || !onMaskEditSelected}
+					type="button"
+					onClick={() => {
+						if (selectedImageId) onMaskEditSelected?.(selectedImageId);
+					}}
+				>
+					局部编辑
 				</button>
 				<button
 					disabled={!selectedImageId || !onUpscaleSelected}
@@ -550,6 +763,24 @@ export function KernelCanvasSurface({
 					}}
 				>
 					2×2切分
+				</button>
+				<button
+					disabled={!selectedImageId || !onAngleSelected}
+					type="button"
+					onClick={() => {
+						if (selectedImageId) onAngleSelected?.(selectedImageId);
+					}}
+				>
+					AI多角度
+				</button>
+				<button
+					disabled={!selectedImageId || !onReversePromptSelected}
+					type="button"
+					onClick={() => {
+						if (selectedImageId) onReversePromptSelected?.(selectedImageId);
+					}}
+				>
+					反推提示词
 				</button>
 				<span>
 					缩放 {(graph.viewport.scale * 100).toFixed(0)}% · 节点{" "}
@@ -623,14 +854,16 @@ export function KernelCanvasSurface({
 											setSelectedConnectionId(edge.id);
 											onSelectNodes?.([]);
 										}}
-										onContextMenu={(event) =>
+										onContextMenu={(event) => {
+											setSelectedConnectionId(edge.id);
+											onSelectNodes?.([]);
 											setContextMenu({
 												connectionId: edge.id,
 												type: "connection",
 												x: event.clientX,
 												y: event.clientY,
-											})
-										}
+											});
+										}}
 										to={toVozebNode(to, deliveryUrl)}
 									/>
 								</g>
@@ -777,20 +1010,8 @@ export function KernelCanvasSurface({
 												),
 											});
 										}}
-										onRetry={() =>
-											emitGraph({
-												...graph,
-												nodes: graph.nodes.map((candidate) =>
-													candidate.id === node.id
-														? {
-																...candidate,
-																data: { ...candidate.data, status: "idle" },
-															}
-														: candidate,
-												),
-											})
-										}
-										onViewImage={() => onSelectNodes?.([node.id])}
+										onRetry={() => retryFrozenJob(node)}
+										onViewImage={() => openImagePreview(node)}
 										renderNodeContent={(candidate) => (
 											<div className="kernel-config-node">
 												<strong>生成配置</strong>
@@ -842,15 +1063,7 @@ export function KernelCanvasSurface({
 							backgroundMode={backgroundMode}
 							onAddNode={addNode}
 							onBackgroundModeChange={setBackgroundMode}
-							onClear={() => {
-								if (
-									graph.nodes.length > 0 &&
-									window.confirm("清空当前画布中的全部节点？")
-								) {
-									emitGraph({ ...graph, edges: [], nodes: [] });
-									onSelectNodes?.([]);
-								}
-							}}
+							onClear={() => setClearConfirmationOpen(graph.nodes.length > 0)}
 							onDelete={() => deleteSelection()}
 							onOpenAssets={() => onOpenAssets?.()}
 							onShowImageInfoChange={setShowImageInfo}
@@ -859,6 +1072,73 @@ export function KernelCanvasSurface({
 							showImageInfo={showImageInfo}
 						/>
 					</>
+				) : null}
+				{interactionMessage ? (
+					<output
+						className="absolute left-1/2 top-4 z-[90] -translate-x-1/2 rounded-full bg-black/80 px-3 py-2 text-sm text-white shadow-lg"
+						data-canvas-interaction-message="true"
+					>
+						{interactionMessage}
+					</output>
+				) : null}
+				{previewAssetId ? (
+					<div
+						aria-label="图片大图预览"
+						aria-modal="true"
+						className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-6"
+						data-image-preview="true"
+						role="dialog"
+					>
+						<div className="relative max-h-full max-w-5xl rounded-2xl bg-black p-3 shadow-2xl">
+							<button
+								aria-label="关闭图片预览"
+								className="absolute right-2 top-2 z-10 rounded-full bg-black/70 px-3 py-1 text-sm text-white"
+								type="button"
+								onClick={() => setPreviewAssetId(null)}
+							>
+								关闭
+							</button>
+							<Image
+								alt="图片大图预览"
+								className="max-h-[80vh] max-w-[88vw] rounded-xl object-contain"
+								height={1200}
+								src={deliveryUrl(previewAssetId)}
+								unoptimized
+								width={1600}
+							/>
+						</div>
+					</div>
+				) : null}
+				{clearConfirmationOpen ? (
+					<div
+						aria-labelledby="clear-canvas-title"
+						aria-modal="true"
+						className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-6"
+						data-canvas-clear-confirmation="true"
+						role="dialog"
+					>
+						<div className="w-full max-w-sm rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
+							<strong id="clear-canvas-title">确认清空画布？</strong>
+							<p className="mt-2 text-sm text-slate-600">
+								将移除当前草稿中的全部节点和连线，可通过撤销恢复。
+							</p>
+							<div className="mt-4 flex justify-end gap-2">
+								<button
+									type="button"
+									onClick={() => setClearConfirmationOpen(false)}
+								>
+									取消
+								</button>
+								<button
+									className="rounded-lg bg-red-600 px-3 py-2 text-white"
+									type="button"
+									onClick={clearCanvas}
+								>
+									确认清空
+								</button>
+							</div>
+						</div>
+					</div>
 				) : null}
 				{clientChromeReady && hoverKernelNode ? (
 					<KernelNodeHoverToolbar
@@ -910,23 +1190,21 @@ export function KernelCanvasSurface({
 						onKeep={keepHover}
 						onLeave={leaveHover}
 						onRetry={(nodeId) => {
-							emitGraph({
-								...graph,
-								nodes: graph.nodes.map((candidate) =>
-									candidate.id === nodeId
-										? {
-												...candidate,
-												data: { ...candidate.data, status: "idle" },
-											}
-										: candidate,
-								),
-							});
+							const node = graph.nodes.find(
+								(candidate) => candidate.id === nodeId,
+							);
+							if (node) retryFrozenJob(node);
 						}}
 						onToggleFreeResize={(nodeId) => {
 							const nodes = toggleNodeFreeResize(graph.nodes, nodeId);
 							if (nodes !== graph.nodes) emitGraph({ ...graph, nodes });
 						}}
-						onView={(nodeId) => onSelectNodes?.([nodeId])}
+						onView={(nodeId) => {
+							const node = graph.nodes.find(
+								(candidate) => candidate.id === nodeId,
+							);
+							if (node) openImagePreview(node);
+						}}
 					/>
 				) : null}
 				{contextMenu ? (

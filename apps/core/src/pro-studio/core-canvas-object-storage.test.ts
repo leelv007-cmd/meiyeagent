@@ -6,7 +6,7 @@ import {
   CoreCanvasObjectStorage,
 } from './core-canvas-object-storage.js';
 
-test('core asset storage reads and writes through the service boundary with workspace scope', async () => {
+test('core asset storage writes verified Canvas assets through the service boundary with workspace scope', async () => {
   const requests: Array<{
     body: Uint8Array;
     headers: Headers;
@@ -30,7 +30,7 @@ test('core asset storage reads and writes through the service boundary with work
     },
   });
 
-  await storage.put(
+  await storage.putVerifiedCanvasAsset(
     'workspace-a/canvas/assets/local one.png',
     Uint8Array.from([4, 5]),
   );
@@ -62,6 +62,13 @@ test('composite asset storage writes locally and falls back to Core reads', asyn
   await fallback.put('workspace-a/generated/core.png', Uint8Array.from([4]));
   const storage = new CompositeCanvasObjectStorage(local, fallback);
 
+  await assert.rejects(
+    storage.putVerifiedCanvasAsset(
+      'workspace-a/canvas/local.png',
+      Uint8Array.from([5]),
+    ),
+    /cannot verify an immutable export receipt/
+  );
   await storage.put('workspace-a/canvas/local.png', Uint8Array.from([5]));
   await storage.delete('workspace-a/canvas/local.png');
 

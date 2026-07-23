@@ -33,6 +33,7 @@ export {
   type CanvasGenerationInputAsset,
   type CanvasGenerationInputNodeBinding,
   type AdvancedCanvasGenerationOrigin,
+  type AdvancedCanvasGenerationOriginRef,
   type CanvasGenerationCapability,
   type DeploymentStatus,
   type Acceptance,
@@ -190,6 +191,9 @@ function canvasGenerationResultInputs(submission: ModelSupplySubmission) {
   if (submission.origin?.kind !== 'advanced_canvas') return {};
   return {
     inputAssets: structuredClone(submission.input?.inputAssets ?? []),
+    ...(submission.originRef
+      ? { originRef: structuredClone(submission.originRef) }
+      : {}),
     ...(submission.lineage
       ? {
           inputNodeBindings: structuredClone(
@@ -1215,6 +1219,133 @@ export class ModelSupplyApplicationService {
     });
   }
 
+  executeCanvasTextStream(
+    submission: ModelSupplySubmission,
+    runner: AiStreamingRunner | undefined,
+    input: {
+      abortSignal?: AbortSignal;
+      effectIdempotencyKey: string;
+      onDelta(delta: string): Promise<void> | void;
+    },
+  ): Promise<ModelSupplyResult> {
+    if (
+      submission.operation !== 'text.respond' ||
+      submission.selection.mode !== 'fixed' ||
+      !submission.selection.catalogModelId
+    ) {
+      throw new Error('Canvas text streaming requires one fixed text model.');
+    }
+    return this.executeSubmission(
+      submission,
+      {
+        execute: async (request): Promise<ProviderExecutionResponse> => {
+          const unavailable = (message: string, errorCode: string) => ({
+            kind: 'failure' as const,
+            acceptance: 'rejected_before_accept' as const,
+            errorCode,
+            retryable: false,
+            message,
+            providerCost: {
+              amount: 0,
+              currency: (request.deployment.region === 'domestic'
+                ? 'CNY'
+                : 'USD') as 'CNY' | 'USD',
+              usage: {},
+            },
+          });
+          if (
+            this.submissionGate &&
+            (await this.submissionGate.blocksNewSubmission())
+          ) {
+            return unavailable('模型执行已停用。', 'MODEL_EXECUTION_DISABLED');
+          }
+          if (!runner?.startCanvasTextStream) {
+            return unavailable(
+              'Canvas text streaming is unavailable for the selected runner.',
+              'CANVAS_TEXT_STREAM_UNAVAILABLE',
+            );
+          }
+          if (!runner.supportsCatalogModel(request.model.id)) {
+            return unavailable(
+              `Streaming runner is not bound to ${request.model.id}.`,
+              'CANVAS_TEXT_STREAM_MODEL_UNAVAILABLE',
+            );
+          }
+
+          let providerOutputStarted = false;
+          let completion: ReturnType<
+            NonNullable<AiStreamingRunner['startCanvasTextStream']>
+          >['result'] | undefined;
+          try {
+            const started = runner.startCanvasTextStream(
+              {
+                catalogModelId: request.model.id,
+                prompt: request.submission.prompt,
+                referenceAssets:
+                  request.resolvedInputAssets
+                    ?.filter((asset) => asset.role === 'reference_image') ??
+                  request.resolvedReferenceAssets,
+              },
+              input.abortSignal,
+            );
+            completion = started.result;
+            for await (const delta of started.deltas) {
+              if (!delta) continue;
+              providerOutputStarted = true;
+              await input.onDelta(delta);
+            }
+            const generated = await completion;
+            return {
+              kind: 'completed' as const,
+              providerTaskRef: generated.providerTaskRef,
+              text: generated.text,
+              providerCost: runner.providerCost(generated.usage),
+            };
+          } catch (error) {
+            await completion?.catch(() => undefined);
+            const statusCode =
+              error &&
+              typeof error === 'object' &&
+              'statusCode' in error &&
+              typeof error.statusCode === 'number'
+                ? error.statusCode
+                : undefined;
+            const aborted =
+              input.abortSignal?.aborted ||
+              (error instanceof DOMException && error.name === 'AbortError');
+            return {
+              kind: 'failure' as const,
+              acceptance:
+                aborted || providerOutputStarted
+                  ? 'acceptance_unknown'
+                  : statusCode !== undefined && statusCode < 500
+                    ? 'rejected_before_accept'
+                    : 'acceptance_unknown',
+              errorCode: aborted
+                ? 'CANVAS_TEXT_STREAM_INTERRUPTED'
+                : 'CANVAS_TEXT_STREAM_FAILED',
+              retryable: false,
+              message: `Canvas text AI SDK stream failed: ${
+                error instanceof Error ? error.name : 'unknown'
+              }`,
+              providerCost: {
+                amount: 0,
+                currency: (request.deployment.region === 'domestic'
+                  ? 'CNY'
+                  : 'USD') as 'CNY' | 'USD',
+                usage: {},
+              },
+            };
+          }
+        },
+      },
+      {
+        deferResultPersistence: true,
+        effectIdempotencyKey: input.effectIdempotencyKey,
+      },
+    );
+  }
+
   executeStructuredObject<Output>(
     submission: ModelSupplySubmission,
     input: {
@@ -2089,6 +2220,7 @@ export class ModelSupplyApplicationService {
    */
   private async settleResultWithOwnedAssetRegistration(input: {
     evidence: string;
+    persistResult?: boolean;
     result: ModelSupplyResult;
     submission: ModelSupplySubmission;
   }) {
@@ -2102,6 +2234,7 @@ export class ModelSupplyApplicationService {
         result: input.result,
         evidence: input.evidence,
       });
+      if (input.persistResult === false) return;
       failureStage = 'result_persistence';
       await this.resultSink?.saveResult(input.submission.workspaceId, input.result);
     } catch (error) {
@@ -2132,6 +2265,7 @@ export class ModelSupplyApplicationService {
       continueAfterRecoveredCheckpoint?: boolean;
       useFrozenMediaCandidateSequence?: boolean;
       attemptEffectGuardsCheckpoint?: boolean;
+      deferResultPersistence?: boolean;
       effectIdempotencyKey?: string;
       reconcileProviderReceipt?: boolean;
     } = {},
@@ -2355,7 +2489,9 @@ export class ModelSupplyApplicationService {
           continue;
         }
         const audited = applyActualRouteDecisionExplanation(recovered);
-        await this.resultSink?.saveResult(submission.workspaceId, audited);
+        if (!options.deferResultPersistence) {
+          await this.resultSink?.saveResult(submission.workspaceId, audited);
+        }
         this.idempotency.set(key, { canonical: payload, result: audited });
         return audited;
       }
@@ -2569,7 +2705,9 @@ export class ModelSupplyApplicationService {
             (providerInvoked ? 'provider' : 'pre_provider') +
             `_exception:${error instanceof Error ? error.name : 'unknown'}`,
         });
-        await this.resultSink?.saveResult(submission.workspaceId, unknown);
+        if (!options.deferResultPersistence) {
+          await this.resultSink?.saveResult(submission.workspaceId, unknown);
+        }
         this.idempotency.set(key, { canonical: payload, result: unknown });
         return unknown;
       }
@@ -2655,6 +2793,7 @@ export class ModelSupplyApplicationService {
             ? { origin: structuredClone(attemptSubmission.origin) }
             : {}),
           ...(response.errorCode ? { failureCode: response.errorCode } : {}),
+			...(response.retryable === true ? { retryable: true } : {}),
           snapshot,
           attempt,
           attempts: [...attemptChain],
@@ -2678,7 +2817,9 @@ export class ModelSupplyApplicationService {
             : 'provider_response',
         });
         if (!willFallback) {
-          await this.resultSink?.saveResult(submission.workspaceId, failed);
+          if (!options.deferResultPersistence) {
+            await this.resultSink?.saveResult(submission.workspaceId, failed);
+          }
           if (failed.status !== 'failed') {
             this.idempotency.set(key, { canonical: payload, result: failed });
           }
@@ -2730,6 +2871,7 @@ export class ModelSupplyApplicationService {
         submission: attemptSubmission,
         result,
         evidence: 'provider_response',
+        persistResult: !options.deferResultPersistence,
       });
       this.idempotency.set(key, { canonical: payload, result });
       return result;
@@ -2741,7 +2883,9 @@ export class ModelSupplyApplicationService {
         attempts: [...attemptChain],
         providerCosts: [...providerCostChain],
       });
-      await this.resultSink?.saveResult(submission.workspaceId, failed);
+      if (!options.deferResultPersistence) {
+        await this.resultSink?.saveResult(submission.workspaceId, failed);
+      }
       return failed;
     }
     throw new Error('No candidate produced an execution result.');

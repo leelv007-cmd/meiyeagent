@@ -120,6 +120,26 @@ test('shared storage persists, rematerializes, and idempotently deletes authorit
       objectKey: 'workspace-a/canvas/assets/asset-a.png',
       workspaceId: 'workspace-a',
     });
+    assert.equal(
+      await storage.verifyCanvasAssetReceipt({
+        contentType: 'image/png',
+        objectKey: 'workspace-a/canvas/assets/asset-a.png',
+        sha256: createHash('sha256').update(png).digest('hex'),
+        sizeBytes: png.byteLength,
+        workspaceId: 'workspace-a',
+      }),
+      true,
+    );
+    assert.equal(
+      await storage.verifyCanvasAssetReceipt({
+        contentType: 'image/png',
+        objectKey: 'workspace-a/canvas/assets/asset-a.png',
+        sha256: '0'.repeat(64),
+        sizeBytes: png.byteLength,
+        workspaceId: 'workspace-a',
+      }),
+      false,
+    );
     await storage.putCanvasAsset({
       bytes: png,
       objectKey: 'workspace-a/canvas/assets/asset-a.png',

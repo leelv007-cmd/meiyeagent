@@ -96,6 +96,10 @@ export class PostgresProStudioMigration implements PostgresSchemaMigrator {
         ON pro_studio_owned_assets (workspace_id, created_at, id);
       ALTER TABLE pro_studio_owned_assets
         ADD COLUMN IF NOT EXISTS tombstoned_at timestamptz;
+      -- Existing rows remain NULL and therefore fail closed until an external,
+      -- verifiable migration records a current export policy for that Asset.
+      ALTER TABLE pro_studio_owned_assets
+        ADD COLUMN IF NOT EXISTS export_policy jsonb;
       CREATE TABLE IF NOT EXISTS pro_studio_asset_deletion_outbox (
         id text PRIMARY KEY,
         workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -131,6 +135,14 @@ export class PostgresProStudioMigration implements PostgresSchemaMigrator {
       );
       CREATE INDEX IF NOT EXISTS pro_studio_audit_workspace_idx
         ON pro_studio_audit_events (workspace_id, created_at, id);
+      CREATE INDEX IF NOT EXISTS pro_studio_audit_canvas_export_receipt_idx
+        ON pro_studio_audit_events
+          (workspace_id, actor_id, (detail->>'idempotencyKeyHash'), id)
+        WHERE action = 'canvas_export_receipt_started';
+      CREATE INDEX IF NOT EXISTS pro_studio_audit_canvas_export_completion_idx
+        ON pro_studio_audit_events
+          (workspace_id, actor_id, (detail->>'receiptId'), id)
+        WHERE action = 'canvas_export_receipt_completed';
     `);
   }
 }

@@ -4,7 +4,10 @@ import {
 } from '@meiye/contracts';
 import type { ProductPackageRightsPropagationPort } from '../../product/product-service.js';
 import type { OperationsApplicationService } from './application-service.js';
-import type { ContentPackageRightsResolverPort } from './types.js';
+import type {
+  ContentPackageAssetExportPolicyPort,
+  ContentPackageRightsResolverPort,
+} from './types.js';
 
 interface ProductAssetRightsRepository {
   load(workspaceId: string): Promise<{
@@ -24,7 +27,9 @@ interface ProductAssetRightsRepository {
 }
 
 export class ProductContentPackageRightsResolver
-  implements ContentPackageRightsResolverPort
+  implements
+    ContentPackageRightsResolverPort,
+    ContentPackageAssetExportPolicyPort
 {
   constructor(
     private readonly product: ProductAssetRightsRepository,
@@ -63,8 +68,57 @@ export class ProductContentPackageRightsResolver
               this.clock()
             )
         )
-        .map((asset) => asset.id),
+      .map((asset) => asset.id),
     };
+  }
+
+  async resolveExportPolicy(
+    input: Parameters<ContentPackageAssetExportPolicyPort['resolveExportPolicy']>[0]
+  ) {
+    const asset = (await this.product.load(input.workspaceId))?.assets.find(
+      (candidate) => candidate.id === input.assetId
+    );
+    if (!asset) return { kind: 'unknown' as const };
+    if (
+      asset.authorizationStatus === 'withdrawn' ||
+      asset.authorizationStatus === 'blocked'
+    ) {
+      return { kind: 'unavailable' as const, reason: 'revoked' as const };
+    }
+    if (asset.authorizationStatus !== 'authorized' || asset.sourceType !== 'real') {
+      return { kind: 'unavailable' as const, reason: 'access_denied' as const };
+    }
+    if (asset.consentScope === 'internal_only') {
+      return {
+        kind: 'unavailable' as const,
+        reason: 'private_retrieval_denied' as const,
+      };
+    }
+    const now = this.clock();
+    if (
+      asset.rightsNoFixedExpiry !== true &&
+      asset.rightsValidUntil &&
+      Number.isFinite(Date.parse(asset.rightsValidUntil)) &&
+      Date.parse(asset.rightsValidUntil) <= now.getTime()
+    ) {
+      return { kind: 'unavailable' as const, reason: 'expired' as const };
+    }
+    if (
+      !asset.rightsEvidence?.trim() ||
+      !hasCurrentRestrictedAssetAuthorization(
+        {
+          category: asset.category,
+          containsPerson: asset.containsPerson ?? false,
+          rightsNoFixedExpiry: asset.rightsNoFixedExpiry,
+          rightsPlatforms: asset.rightsPlatforms,
+          rightsValidUntil: asset.rightsValidUntil,
+        },
+        now
+      )
+    ) {
+      return { kind: 'unavailable' as const, reason: 'access_denied' as const };
+    }
+    return { kind: 'authorized' as const };
   }
 }
 

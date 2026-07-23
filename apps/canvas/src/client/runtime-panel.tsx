@@ -27,6 +27,12 @@ import {
 	honestAvailability,
 } from "../kernel-host/generation-adapter";
 import type { KernelSessionGraph } from "../kernel-host/graph-bridge";
+import {
+	type AdoptionTargetOption,
+	type AdoptionTargetPage,
+	AdoptionTargetPicker,
+	existingPackageAdoptionTarget,
+} from "./adoption-target-picker";
 import { callCanvas as callCanvasRequest } from "./backend-client";
 import {
 	buildCanvasGenerationInput,
@@ -36,11 +42,20 @@ import {
 	canvasGenerationCancelPayload,
 	canvasGenerationJobPresentation,
 	canvasGenerationSubmitPayload,
-	freezeCanvasGenerationInputs,
 	isCanvasGenerationCancellable,
 	resolveGenerationJobInputNodeIds,
 } from "./generation-ui-contract";
-import { CANVAS_PROMPT_SEEDS } from "./prompt-seeds";
+import {
+	type CanvasAssetListItem,
+	type CanvasCursorPage,
+	type CanvasPromptListItem,
+	createResourceDraft,
+	mentionedGenerationInputs,
+	nodeMentionCandidates,
+	type ResourceDraft,
+	resourceDraftFromGraph,
+} from "./resource-workflow";
+import { PromptLibrary, ResourceMentionComposer } from "./resource-workflow-ui";
 
 interface RuntimePanelProps {
 	graph: KernelSessionGraph | null;
@@ -48,6 +63,7 @@ interface RuntimePanelProps {
 	onAdoptedNodesChange(nodeIds: string[]): void;
 	onInsertGenerated(job: CoreCanvasGenerationJob, inputNodeIds: string[]): void;
 	onReloadProject(projectId: string): Promise<void>;
+	onResourceDraftChange(draft: ResourceDraft): void;
 	persistDraft(): Promise<AdvancedCanvasProject | null>;
 	project: AdvancedCanvasProject | null;
 	requestAbortRef?: { current: AbortController | null };
@@ -89,6 +105,7 @@ export function RuntimePanel({
 	onAdoptedNodesChange,
 	onInsertGenerated,
 	onReloadProject,
+	onResourceDraftChange,
 	persistDraft,
 	project,
 	requestAbortRef,
@@ -96,10 +113,8 @@ export function RuntimePanel({
 	selectedNodeIds,
 }: RuntimePanelProps) {
 	const [catalog, setCatalog] = useState<Catalog | null>(null);
-	const [operation, setOperation] =
-		useState<CanvasGenerationOperation>("image.generate");
-	const [prompt, setPrompt] = useState("");
-	const [selectedSeedId, setSelectedSeedId] = useState("");
+	const [transientResourceDraft, setTransientResourceDraft] =
+		useState(createResourceDraft);
 	const [maskNodeId, setMaskNodeId] = useState("");
 	const [quote, setQuote] = useState<CoreCanvasGenerationQuote | null>(null);
 	const [jobs, setJobs] = useState<CoreCanvasGenerationJob[]>([]);
@@ -107,9 +122,8 @@ export function RuntimePanel({
 	const [adoptionTarget, setAdoptionTarget] = useState<
 		"new_package" | "existing_package"
 	>("new_package");
-	const [targetPackageId, setTargetPackageId] = useState("");
-	const [targetBaseVersionId, setTargetBaseVersionId] = useState("");
-	const [targetExpectedRevision, setTargetExpectedRevision] = useState(0);
+	const [existingAdoptionTarget, setExistingAdoptionTarget] =
+		useState<AdoptionTargetOption | null>(null);
 	const [agentIntent, setAgentIntent] = useState("");
 	const [agentMaxCostMicros, setAgentMaxCostMicros] = useState(0);
 	const [agentMaxGenerationCount, setAgentMaxGenerationCount] = useState(0);
@@ -140,24 +154,53 @@ export function RuntimePanel({
 			}),
 		[requestAbortRef],
 	);
+	const loadPromptPage = useCallback(
+		(input: { category?: string; cursor?: string; query?: string }) =>
+			callCanvas<CanvasCursorPage<CanvasPromptListItem>>("listPrompts", input),
+		[callCanvas],
+	);
+	const loadAssetPage = useCallback(
+		(input: {
+			cursor?: string;
+			kind?: "audio" | "image" | "video";
+			query?: string;
+		}) =>
+			callCanvas<CanvasCursorPage<CanvasAssetListItem>>("listAssets", input),
+		[callCanvas],
+	);
 	const agentAdapter = useMemo(
 		() => new AgentAdapter(callCanvas),
 		[callCanvas],
 	);
+	const requestAdoptionTargetPage = useCallback(
+		(input: { cursor?: string; query?: string }) =>
+			callCanvas<AdoptionTargetPage>("listAdoptionTargets", input),
+		[callCanvas],
+	);
+	const handleAdoptionTargetError = useCallback(
+		(error: unknown) => setMessage(runtimeErrorMessage(error)),
+		[],
+	);
 	const latestRevision = revisions.at(-1) ?? null;
-	const selectedSeed =
-		CANVAS_PROMPT_SEEDS.find((seed) => seed.id === selectedSeedId) ??
-		CANVAS_PROMPT_SEEDS[0];
-	const assetNodes = useMemo(
-		() =>
-			graph?.nodes
-				.filter((node) => typeof node.data.assetId === "string")
-				.map((node) => ({
-					assetId: node.data.assetId as string,
-					nodeId: node.id,
-					type: node.type,
-				})) ?? [],
-		[graph],
+	const persistedResourceDraft = useMemo(
+		() => resourceDraftFromGraph(graph, selectedNodeIds),
+		[graph, selectedNodeIds],
+	);
+	const resourceDraft = persistedResourceDraft ?? transientResourceDraft;
+	const operation = resourceDraft.operation;
+	const commitResourceDraft = useCallback(
+		(next: ResourceDraft) => {
+			setTransientResourceDraft(next);
+			if (
+				persistedResourceDraft ||
+				next.operation !== "image.generate" ||
+				next.prompt.trim() ||
+				next.mentions.length > 0
+			) {
+				onResourceDraftChange(next);
+			}
+		},
+		[onResourceDraftChange, persistedResourceDraft],
 	);
 	const currentCapability = catalog?.operations.find(
 		(candidate) => candidate.operation === operation,
@@ -166,31 +209,78 @@ export function RuntimePanel({
 		operation,
 		catalog?.operations ?? [],
 	);
-	const generationInputBindings = useMemo(
+	const resourceNodeCandidates = useMemo(
 		() =>
-			freezeCanvasGenerationInputs({
-				allowedInputAssetRoles: currentCapability?.allowedInputAssetRoles ?? [],
+			nodeMentionCandidates({
 				edges: graph?.edges ?? [],
 				nodes: graph?.nodes ?? [],
 				selectedNodeIds,
 			}),
-		[currentCapability?.allowedInputAssetRoles, graph, selectedNodeIds],
+		[graph, selectedNodeIds],
 	);
+	const mentionedInputs = useMemo(
+		() =>
+			mentionedGenerationInputs({
+				allowedInputAssetRoles: currentCapability?.allowedInputAssetRoles ?? [],
+				mentions: resourceDraft.mentions,
+				nodes: graph?.nodes ?? [],
+			}),
+		[
+			currentCapability?.allowedInputAssetRoles,
+			graph?.nodes,
+			resourceDraft.mentions,
+		],
+	);
+	const imageMentionNodeIds = useMemo(
+		() =>
+			new Set(
+				mentionedInputs.flatMap((input) =>
+					input.nodeType === "image" && input.nodeId ? [input.nodeId] : [],
+				),
+			),
+		[mentionedInputs],
+	);
+	const imageMentionOptions = useMemo(
+		() =>
+			resourceDraft.mentions.flatMap((mention) =>
+				mention.kind === "node" &&
+				mention.mediaKind === "image" &&
+				mention.nodeId &&
+				imageMentionNodeIds.has(mention.nodeId)
+					? [{ label: mention.label, nodeId: mention.nodeId }]
+					: [],
+			),
+		[imageMentionNodeIds, resourceDraft.mentions],
+	);
+	const activeInputMentions = useMemo(() => {
+		const included = new Set(
+			mentionedInputs.map(
+				(input) => `${input.nodeId ?? "asset"}:${input.assetId}`,
+			),
+		);
+		return resourceDraft.mentions.filter((mention) =>
+			included.has(`${mention.nodeId ?? "asset"}:${mention.assetId}`),
+		);
+	}, [mentionedInputs, resourceDraft.mentions]);
 	const maskAssetId =
-		assetNodes.find((node) => node.nodeId === maskNodeId)?.assetId ?? "";
+		mentionedInputs.find(
+			(input) => input.nodeType === "image" && input.nodeId === maskNodeId,
+		)?.assetId ?? "";
 	const generationLineageNodeIds = useMemo(() => {
 		return [
 			...new Set([
-				...generationInputBindings.map((binding) => binding.nodeId),
+				...mentionedInputs.flatMap((input) =>
+					input.nodeId ? [input.nodeId] : [],
+				),
 				...(maskNodeId ? [maskNodeId] : []),
 			]),
 		];
-	}, [generationInputBindings, maskNodeId]);
+	}, [maskNodeId, mentionedInputs]);
 	const generationInput = useMemo(
 		() =>
 			project && latestRevision
 				? buildCanvasGenerationInput({
-						assets: generationInputBindings,
+						assets: mentionedInputs,
 						allowedInputAssetRoles:
 							currentCapability?.allowedInputAssetRoles ?? [],
 						allowedParameters: currentCapability?.allowedParameters ?? [],
@@ -198,20 +288,19 @@ export function RuntimePanel({
 						maskNodeId,
 						operation,
 						projectId: project.id,
-						prompt,
-						ratio: selectedSeed.ratio,
+						prompt: resourceDraft.prompt,
+						ratio: "1:1",
 						revisionId: latestRevision.id,
 					})
 				: null,
 		[
-			generationInputBindings,
 			latestRevision,
 			maskAssetId,
 			maskNodeId,
+			mentionedInputs,
 			operation,
 			project,
-			prompt,
-			selectedSeed.ratio,
+			resourceDraft.prompt,
 			currentCapability?.allowedInputAssetRoles,
 			currentCapability?.allowedParameters,
 		],
@@ -220,7 +309,7 @@ export function RuntimePanel({
 		busy: busy !== "",
 		catalog: catalog?.operations ?? [],
 		hasGenerationInput: generationInput !== null,
-		hasPrompt: prompt.trim().length > 0,
+		hasPrompt: resourceDraft.prompt.trim().length > 0,
 		hasQuote: quote !== null,
 		operation,
 	});
@@ -328,15 +417,10 @@ export function RuntimePanel({
 	useEffect(() => {
 		const maskAllowed =
 			currentCapability?.allowedInputAssetRoles.includes("mask") === true;
-		const imageNodes = new Set(
-			assetNodes
-				.filter((node) => node.type === "image")
-				.map((node) => node.nodeId),
-		);
 		setMaskNodeId((current) =>
-			maskAllowed && imageNodes.has(current) ? current : "",
+			maskAllowed && imageMentionNodeIds.has(current) ? current : "",
 		);
-	}, [assetNodes, currentCapability?.allowedInputAssetRoles]);
+	}, [currentCapability?.allowedInputAssetRoles, imageMentionNodeIds]);
 
 	useEffect(() => {
 		if (generationFingerprint.length === 0) return;
@@ -366,7 +450,7 @@ export function RuntimePanel({
 
 	function selectGenerationOperation(next: CanvasGenerationOperation) {
 		if (next === operation) return;
-		setOperation(next);
+		commitResourceDraft({ ...resourceDraft, operation: next });
 		setMaskNodeId("");
 	}
 
@@ -435,6 +519,18 @@ export function RuntimePanel({
 	}
 
 	async function adopt() {
+		const selectedExistingTarget = existingAdoptionTarget;
+		const existingPackageDestination =
+			adoptionTarget === "existing_package" && selectedExistingTarget
+				? existingPackageAdoptionTarget(selectedExistingTarget)
+				: null;
+		if (adoptionTarget === "existing_package" && !existingPackageDestination) {
+			setMessage("请先从服务端可写入的已有成品中选择一个目标。");
+			return;
+		}
+		const adoptionDestination = existingPackageDestination ?? {
+			kind: "new_package" as const,
+		};
 		const saved = await persistDraft();
 		if (!saved) return;
 		await run("adopt", async () => {
@@ -445,15 +541,7 @@ export function RuntimePanel({
 					nodes: saved.graph.nodes,
 					projectId: saved.id,
 					selectedNodeIds,
-					target:
-						adoptionTarget === "existing_package"
-							? {
-									baseVersionId: targetBaseVersionId,
-									expectedRevision: targetExpectedRevision,
-									kind: "existing_package",
-									packageId: targetPackageId,
-								}
-							: { kind: "new_package" },
+					target: adoptionDestination,
 				}),
 				{ idempotencyKey: intentKey("adopt") },
 			);
@@ -593,46 +681,36 @@ export function RuntimePanel({
 						{currentAvailability.reason ?? "该能力尚未通过激活验证。"}
 					</p>
 				) : null}
-				<label>
-					<span>美业提示词起点（40 条）</span>
-					<select
-						value={selectedSeedId}
-						onChange={(event) => {
-							const seed = CANVAS_PROMPT_SEEDS.find(
-								(candidate) => candidate.id === event.target.value,
-							);
-							if (!seed) return;
-							setSelectedSeedId(seed.id);
-							selectGenerationOperation(seed.operation);
-							setPrompt(seed.prompt);
-						}}
-					>
-						<option disabled value="">
-							选择一条产品提供的提示词
-						</option>
-						{CANVAS_PROMPT_SEEDS.map((seed) => (
-							<option key={seed.id} value={seed.id}>
-								{seed.group} · {seed.id}
-							</option>
-						))}
-					</select>
-				</label>
+				<PromptLibrary
+					catalog={catalog?.operations ?? []}
+					loadPage={loadPromptPage}
+					onSelect={(prompt) =>
+						commitResourceDraft({ ...resourceDraft, prompt: prompt.prompt })
+					}
+					operation={operation}
+				/>
+				<ResourceMentionComposer
+					disabled={!currentAvailability.available}
+					draft={resourceDraft}
+					loadAssets={loadAssetPage}
+					nodeCandidates={resourceNodeCandidates}
+					onChange={commitResourceDraft}
+				/>
 				{currentCapability?.allowedInputAssetRoles.some(
 					(role) => role !== "mask",
 				) ? (
 					<fieldset className="asset-selection">
-						<legend>画布连线输入</legend>
-						{generationInputBindings.length > 0 ? (
-							generationInputBindings.map((binding) => (
+						<legend>已引用的输入</legend>
+						{activeInputMentions.length > 0 ? (
+							activeInputMentions.map((mention) => (
 								<small
-									data-generation-input-node-id={binding.nodeId}
-									key={binding.nodeId}
+									key={`${mention.kind}:${mention.nodeId ?? mention.assetId}`}
 								>
-									画布连线输入：{binding.nodeId}
+									已引用输入：@{mention.label}
 								</small>
 							))
 						) : (
-							<small>当前有序选区及其连线中没有可用输入素材。</small>
+							<small>请在提示词中用 @ 明确引用输入素材。</small>
 						)}
 					</fieldset>
 				) : null}
@@ -645,22 +723,14 @@ export function RuntimePanel({
 							onChange={(event) => setMaskNodeId(event.target.value)}
 						>
 							<option value="">不使用蒙版</option>
-							{assetNodes
-								.filter((node) => node.type === "image")
-								.map((node) => (
-									<option key={node.nodeId} value={node.nodeId}>
-										{node.nodeId}
-									</option>
-								))}
+							{imageMentionOptions.map((option) => (
+								<option key={option.nodeId} value={option.nodeId}>
+									@{option.label}
+								</option>
+							))}
 						</select>
 					</label>
 				) : null}
-				<textarea
-					placeholder="选择提示词或输入生成指令"
-					rows={5}
-					value={prompt}
-					onChange={(event) => setPrompt(event.target.value)}
-				/>
 				<p className="runtime-meta">
 					{latestRevision
 						? `使用最新检查点 ${latestRevision.label ?? latestRevision.id}`
@@ -743,10 +813,9 @@ export function RuntimePanel({
 					仅采用已完成 canonical generation job 的图文或视频节点。
 				</p>
 				<p className="runtime-meta">
-					采用画布当前有序选择：
 					{selectedNodeIds.length > 0
-						? selectedNodeIds.join(" → ")
-						: "尚未选择"}
+						? `将按当前画布选中顺序采用 ${selectedNodeIds.length} 个节点。`
+						: "尚未选择可采用的画布节点。"}
 				</p>
 				<label>
 					<span>采用目标</span>
@@ -763,38 +832,20 @@ export function RuntimePanel({
 					</select>
 				</label>
 				{adoptionTarget === "existing_package" ? (
-					<div className="adoption-target-fields">
-						<input
-							placeholder="Package ID"
-							value={targetPackageId}
-							onChange={(event) => setTargetPackageId(event.target.value)}
-						/>
-						<input
-							placeholder="Base version ID"
-							value={targetBaseVersionId}
-							onChange={(event) => setTargetBaseVersionId(event.target.value)}
-						/>
-						<input
-							min={0}
-							placeholder="Aggregate revision"
-							type="number"
-							value={targetExpectedRevision}
-							onChange={(event) =>
-								setTargetExpectedRevision(Number(event.target.value))
-							}
-						/>
-					</div>
+					<AdoptionTargetPicker
+						disabled={busy !== ""}
+						onChange={setExistingAdoptionTarget}
+						onError={handleAdoptionTargetError}
+						requestPage={requestAdoptionTargetPage}
+						selectedTarget={existingAdoptionTarget}
+					/>
 				) : null}
 				<button
 					disabled={
 						!project ||
 						selectedNodeIds.length === 0 ||
 						busy !== "" ||
-						(adoptionTarget === "existing_package" &&
-							(!targetPackageId.trim() ||
-								!targetBaseVersionId.trim() ||
-								!Number.isInteger(targetExpectedRevision) ||
-								targetExpectedRevision < 0))
+						(adoptionTarget === "existing_package" && !existingAdoptionTarget)
 					}
 					onClick={adopt}
 					type="button"
@@ -807,7 +858,7 @@ export function RuntimePanel({
 							href={packageUrl(mainReturnUrl, adoption.packageId)}
 							key={`${adoption.packageId}:${adoption.versionId}`}
 						>
-							{adoption.packageId} · {adoption.versionId}
+							打开已采用的 ContentPackage
 						</a>
 					))}
 				</div>
@@ -924,7 +975,7 @@ export function RuntimePanel({
 						<p>
 							涉及资产：
 							{agentPlan.affectedAssetIds.length > 0
-								? agentPlan.affectedAssetIds.join("、")
+								? `${agentPlan.affectedAssetIds.length} 项`
 								: "无"}
 						</p>
 						<p>

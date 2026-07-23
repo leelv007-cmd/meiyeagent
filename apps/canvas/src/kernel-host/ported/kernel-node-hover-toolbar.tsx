@@ -20,6 +20,10 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasNodeData } from "@/src/vendor/vozeb/app/(user)/canvas/types";
 import type { KernelNode } from "../graph-bridge";
 import {
+	buildDesensitizedNodeInfo,
+	type DesensitizedNodeInfo,
+} from "../kernel-node-info";
+import {
 	defaultImageQuickToolIds,
 	IMAGE_QUICK_TOOLS_STORAGE_KEY,
 	type ImageQuickToolId,
@@ -27,10 +31,6 @@ import {
 	readImageQuickToolsConfig,
 	serializeImageQuickToolsConfig,
 } from "./image-quick-tools";
-import {
-	buildDesensitizedNodeInfo,
-	type DesensitizedNodeInfo,
-} from "./kernel-node-info";
 
 export type HoverViewport = { k: number; x: number; y: number };
 

@@ -21,6 +21,15 @@ test('live_verified and merchant_validated project to verified only', () => {
     }).state,
     'verified',
   );
+  const single = projectMerchantCapability({
+    id: 'generation_video',
+    evidence: ['implemented', 'live_verified'],
+    channelMode: 'single_channel',
+  });
+  assert.equal(single.state, 'verified');
+  assert.equal(single.channelMode, 'single_channel');
+  assert.equal(single.channelLabel, 'single-channel/no-fallback');
+  assert.match(single.safeExplanation, /single-channel\/no-fallback/);
 });
 
 test('recorded_verified never becomes verified', () => {

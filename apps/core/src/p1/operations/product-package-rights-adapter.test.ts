@@ -88,3 +88,59 @@ it('rejects an expired restricted-asset authorization during live resolution', a
     },
   );
 });
+
+it('exposes precise read-only export policy reasons from the live Product facts', async () => {
+  const resolver = new ProductContentPackageRightsResolver(
+    {
+      async load() {
+        return {
+          assets: [
+            {
+              authorizationStatus: 'withdrawn',
+              consentScope: 'public_marketing',
+              id: 'asset-revoked',
+              rightsEvidence: 'release.pdf',
+              sourceType: 'real',
+            },
+            {
+              authorizationStatus: 'authorized',
+              consentScope: 'internal_only',
+              id: 'asset-private',
+              rightsEvidence: 'release.pdf',
+              sourceType: 'real',
+            },
+            {
+              authorizationStatus: 'authorized',
+              consentScope: 'public_marketing',
+              containsPerson: true,
+              id: 'asset-expired',
+              rightsEvidence: 'release.pdf',
+              rightsPlatforms: ['douyin'],
+              rightsValidUntil: '2026-07-22T09:59:59.000Z',
+              sourceType: 'real',
+            },
+          ],
+        };
+      },
+    },
+    () => new Date('2026-07-22T10:00:00.000Z')
+  );
+
+  assert.deepEqual(
+    await Promise.all(
+      ['asset-revoked', 'asset-private', 'asset-expired', 'asset-missing'].map(
+        (assetId) =>
+          resolver.resolveExportPolicy({
+            assetId,
+            workspaceId: 'workspace-rights',
+          })
+      )
+    ),
+    [
+      { kind: 'unavailable', reason: 'revoked' },
+      { kind: 'unavailable', reason: 'private_retrieval_denied' },
+      { kind: 'unavailable', reason: 'expired' },
+      { kind: 'unknown' },
+    ]
+  );
+});

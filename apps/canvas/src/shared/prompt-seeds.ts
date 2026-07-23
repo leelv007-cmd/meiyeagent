@@ -1,17 +1,27 @@
+import type { CanvasGenerationOperation } from "@meiye/core/pro-studio-runtime";
+
 export const CANVAS_PROMPT_SEED_MANIFEST = {
-	a3EvidenceStatus: "pending",
+	// A3 gate: product-owned static recipes are cleared by exclusion under
+	// a3-authorization-2026-07-19.md §2 ("Prompt / seed corpora … Pro Studio
+	// seeds remain product-owned static recipes (Ticket 16), not a Vozeb dump").
+	a3Evidence: "docs/evidence/pro-studio/a3-authorization-2026-07-19.md",
+	a3EvidenceStatus: "product-owned",
 	catalogVersion: "2026-07-14",
 	owner: "product",
 	source: "docs/design/seed-visual-pack-prompts-2026-07-14.md",
 } as const;
 
 export interface CanvasPromptSeed {
+	a3Evidence: typeof CANVAS_PROMPT_SEED_MANIFEST.a3Evidence;
 	a3EvidenceStatus: typeof CANVAS_PROMPT_SEED_MANIFEST.a3EvidenceStatus;
 	catalogVersion: typeof CANVAS_PROMPT_SEED_MANIFEST.catalogVersion;
 	fileName: string;
 	group: string;
 	id: string;
-	operation: "image.generate";
+	// Not locked to a single operation: the seed schema carries the creative
+	// capability so future non-image seeds can join the same catalog. All
+	// currently documented seeds are image.generate.
+	operation: CanvasGenerationOperation;
 	owner: typeof CANVAS_PROMPT_SEED_MANIFEST.owner;
 	prompt: string;
 	ratio: string;
@@ -234,7 +244,7 @@ export const CANVAS_PROMPT_SEEDS: CanvasPromptSeed[] = [
 		"模板画廊",
 		"template-before-after",
 		"3:4",
-		"同 B1 双联对比构图但更紧凑，适合小卡",
+		"左右对称双联对比构图但更紧凑，左侧改造前右侧同角度改造后，适合小卡",
 	),
 	seed(
 		"F4",

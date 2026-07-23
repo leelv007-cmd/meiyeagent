@@ -23,6 +23,7 @@ import {
   type ProviderExecutionPort,
   type ReferenceAssetResolverPort,
 } from './index.js';
+import { FixtureAiStreamingRunner } from './ai-sdk-runner.js';
 import { RecordedAdapterRouter } from './adapters.js';
 import { MediaActivationProbeExecutor } from './activation-probe-executor.js';
 import { modelRuntimeAssemblyFromEnv } from './runtime-config.js';
@@ -1663,6 +1664,7 @@ describe('ModelSupplyFoundationModule', () => {
     );
     const canvasCatalog = await controlPlane.getCanvasGenerationCatalog(
       owner.workspaceId,
+      owner.userId,
     );
     assert.equal(
       canvasCatalog.operations.find(
@@ -1685,7 +1687,10 @@ describe('ModelSupplyFoundationModule', () => {
       repository: new MemoryModelSupplyControlPlaneRepository(),
     });
     const nonFixtureCatalog =
-      await nonFixtureControlPlane.getCanvasGenerationCatalog(owner.workspaceId);
+      await nonFixtureControlPlane.getCanvasGenerationCatalog(
+        owner.workspaceId,
+        owner.userId,
+      );
     // Production gate keeps fixture audio closed even if the catalog row is
     // active for e2e — no real provider/price/probe, no generation activation.
     const nonFixtureSpeech = nonFixtureCatalog.operations.find(
@@ -2764,7 +2769,14 @@ describe('ModelSupplyFoundationModule', () => {
       },
     );
     const workerContext: P1Context = { ...owner, actor: 'worker' };
+    await repository.setWorkspaceDefault(
+      workerContext.workspaceId,
+      'text.respond',
+      'llm-openai',
+    );
     const request = {
+      checkpointId: 'revision-1',
+      count: 1,
       dataClass: [],
       inputAssets: [
         { assetId: 'asset-reference-1', role: 'reference_image' as const },
@@ -2777,6 +2789,7 @@ describe('ModelSupplyFoundationModule', () => {
         },
       ],
       modelId: 'llm-openai',
+      nodeId: 'image-reference-1',
       operation: 'text.respond',
       parameters: {},
       projectId: 'project-1',
@@ -2803,6 +2816,17 @@ describe('ModelSupplyFoundationModule', () => {
     );
     assert.equal(textOperation?.activation, 'active');
     assert.equal(textOperation?.usageAmount, 1);
+    await assert.rejects(
+      command(
+        module,
+        { ...workerContext, correlationId: 'corr-canvas-batch-unsupported' },
+        'canvas_generation_quote',
+        { ...request, count: 2 },
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE',
+    );
+    assert.equal(providerCalls, 0);
     const quote = (await command(
       module,
       workerContext,
@@ -3018,6 +3042,807 @@ describe('ModelSupplyFoundationModule', () => {
     assert.equal(providerCalls, 1);
   });
 
+  it('streams one Canvas text job through its durable event cursor without replaying the provider', async () => {
+    class CountingCanvasTextRunner extends FixtureAiStreamingRunner {
+      canvasTextStreamCalls = 0;
+
+      override startCanvasTextStream(
+        request: Parameters<FixtureAiStreamingRunner['startCanvasTextStream']>[0],
+        abortSignal?: AbortSignal,
+      ) {
+        this.canvasTextStreamCalls += 1;
+        return super.startCanvasTextStream(request, abortSignal);
+      }
+    }
+
+    const { controlPlane, module, repository } = setup();
+    const saveResult = repository.saveResult.bind(repository);
+    let completedJobWrites = 0;
+    repository.saveResult = async (workspaceId, result) => {
+      if (result.status === 'completed') completedJobWrites += 1;
+      await saveResult(workspaceId, result);
+    };
+    const context: P1Context = {
+      ...owner,
+      actor: 'worker',
+      correlationId: 'corr-canvas-native-stream',
+    };
+    const request = {
+      checkpointId: 'revision-1',
+      count: 1,
+      dataClass: [],
+      inputAssets: [],
+      inputNodeBindings: [],
+      modelId: 'llm-openai',
+      nodeId: 'text-node-1',
+      operation: 'text.respond',
+      parameters: {},
+      projectId: 'project-1',
+      prompt: '只生成一次可恢复的画布文本。',
+      revisionId: 'revision-1',
+    };
+    const quote = (await command(
+      module,
+      context,
+      'canvas_generation_quote',
+      request,
+    )) as { quoteId: string };
+    const submitted = (await command(
+      module,
+      context,
+      'canvas_generation_submit',
+      { ...request, quoteId: quote.quoteId },
+    )) as { jobId: string; status: string };
+    assert.equal(submitted.status, 'queued');
+
+    const runner = new CountingCanvasTextRunner();
+    const firstConnection: Array<{
+      sequence: number;
+      type: 'delta' | 'recoverable' | 'terminal';
+    }> = [];
+    await controlPlane.streamCanvasTextGeneration(context, {
+      afterSequence: 0,
+      jobId: submitted.jobId,
+      onEvent(event) {
+        firstConnection.push({ sequence: event.sequence, type: event.type });
+      },
+      projectId: 'project-1',
+      runner,
+    });
+    assert.equal(runner.canvasTextStreamCalls, 1);
+    assert.equal(completedJobWrites, 1);
+    assert.ok(firstConnection.some((event) => event.type === 'delta'));
+    assert.equal(
+      firstConnection.filter((event) => event.type === 'terminal').length,
+      1,
+    );
+    assert.deepEqual(
+      firstConnection.map((event) => event.sequence),
+      [...firstConnection.map((event) => event.sequence)].sort((a, b) => a - b),
+    );
+    const completed = (await query(module, context, 'canvas_generation_job', {
+      jobId: submitted.jobId,
+      projectId: 'project-1',
+    })) as { deliverable: { kind: string; text: string } | null; status: string };
+    assert.equal(completed.status, 'completed');
+    assert.deepEqual(completed.deliverable, {
+      kind: 'text',
+      text: `画布文本：${request.prompt}`,
+    });
+
+    const resumed: number[] = [];
+    await controlPlane.streamCanvasTextGeneration(context, {
+      afterSequence: firstConnection[0]!.sequence,
+      jobId: submitted.jobId,
+      onEvent(event) {
+        resumed.push(event.sequence);
+      },
+      projectId: 'project-1',
+      runner,
+    });
+    assert.equal(runner.canvasTextStreamCalls, 1);
+    assert.deepEqual(
+      resumed,
+      firstConnection.slice(1).map((event) => event.sequence),
+    );
+    await assert.rejects(
+      controlPlane.streamCanvasTextGeneration(
+        context,
+        {
+          afterSequence: 0,
+          jobId: submitted.jobId,
+          onEvent() {},
+          projectId: 'project-2',
+          runner,
+        },
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'NOT_FOUND',
+    );
+    assert.equal(runner.canvasTextStreamCalls, 1);
+  });
+
+  it('keeps one Canvas text producer alive across an active disconnect and another Core cursor reconnect', async () => {
+    class ControlledCanvasTextRunner extends FixtureAiStreamingRunner {
+      canvasTextStreamCalls = 0;
+      private finish!: () => void;
+      private readonly finishGate = new Promise<void>((resolve) => {
+        this.finish = resolve;
+      });
+
+      override startCanvasTextStream(
+        request: Parameters<FixtureAiStreamingRunner['startCanvasTextStream']>[0],
+      ) {
+        this.canvasTextStreamCalls += 1;
+        const text = `画布文本：${request.prompt}`;
+        const finishGate = this.finishGate;
+        return {
+          deltas: (async function* () {
+            yield '已持久化的首段。';
+            await finishGate;
+            yield '断线后继续的尾段。';
+          })(),
+          result: finishGate.then(() => ({
+            providerTaskRef: 'fixture-canvas-text-reconnect',
+            text,
+            usage: { inputTokens: 0, outputTokens: 0 },
+          })),
+        };
+      }
+
+      complete() {
+        this.finish();
+      }
+    }
+
+    const { controlPlane, models, module, repository } = setup();
+    const context: P1Context = {
+      ...owner,
+      actor: 'worker',
+      correlationId: 'corr-canvas-native-stream-reconnect',
+    };
+    const request = {
+      checkpointId: 'revision-1',
+      count: 1,
+      dataClass: [],
+      inputAssets: [],
+      inputNodeBindings: [],
+      modelId: 'llm-openai',
+      nodeId: 'text-node-2',
+      operation: 'text.respond',
+      parameters: {},
+      projectId: 'project-1',
+      prompt: '断线后必须从同一个画布文本任务恢复。',
+      revisionId: 'revision-1',
+    };
+    const quote = (await command(
+      module,
+      context,
+      'canvas_generation_quote',
+      request,
+    )) as { quoteId: string };
+    const submitted = (await command(
+      module,
+      context,
+      'canvas_generation_submit',
+      { ...request, quoteId: quote.quoteId },
+    )) as { jobId: string };
+    const runner = new ControlledCanvasTextRunner();
+    let firstSequence = 0;
+    let firstDelta!: () => void;
+    const firstDeltaPersisted = new Promise<void>((resolve) => {
+      firstDelta = resolve;
+    });
+    const disconnected = controlPlane
+      .streamCanvasTextGeneration(context, {
+        afterSequence: 0,
+        jobId: submitted.jobId,
+        onEvent(event) {
+          if (event.type !== 'delta') return;
+          firstSequence = event.sequence;
+          firstDelta();
+          throw new Error('browser disconnected');
+        },
+        projectId: 'project-1',
+        runner,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    await firstDeltaPersisted;
+    const disconnectError = await disconnected;
+    assert.match(String(disconnectError), /browser disconnected/u);
+    assert.equal(runner.canvasTextStreamCalls, 1);
+
+    const partial = (await query(module, context, 'canvas_generation_job', {
+      jobId: submitted.jobId,
+      projectId: 'project-1',
+    })) as { deliverable: unknown; status: string };
+    assert.notEqual(partial.status, 'completed');
+    assert.equal(partial.deliverable, null);
+
+    const remoteControlPlane = new ModelSupplyControlPlaneService({
+      application: models,
+      canvasProjects: canvasProjectAuthority(),
+      repository,
+    });
+    let remoteClaimRejected!: () => void;
+    const remoteClaimRejectedWhileOwned = new Promise<void>((resolve) => {
+      remoteClaimRejected = resolve;
+    });
+    const claimById = repository.claimCanvasTextGenerationById.bind(repository);
+    repository.claimCanvasTextGenerationById = async (input) => {
+      const claimed = await claimById(input);
+      if (!claimed) remoteClaimRejected();
+      return claimed;
+    };
+    const resumed: Array<{
+      sequence: number;
+      type: 'delta' | 'recoverable' | 'terminal';
+    }> = [];
+    const reconnected = remoteControlPlane.streamCanvasTextGeneration(context, {
+      afterSequence: firstSequence,
+      jobId: submitted.jobId,
+      onEvent(event) {
+        resumed.push({ sequence: event.sequence, type: event.type });
+      },
+      projectId: 'project-1',
+      runner,
+    });
+    await remoteClaimRejectedWhileOwned;
+    assert.equal(runner.canvasTextStreamCalls, 1);
+    runner.complete();
+    await reconnected;
+    assert.equal(runner.canvasTextStreamCalls, 1);
+    assert.deepEqual(resumed.map((event) => event.sequence), [2, 3]);
+    assert.deepEqual(resumed.map((event) => event.type), ['delta', 'terminal']);
+
+    const completed = (await query(module, context, 'canvas_generation_job', {
+      jobId: submitted.jobId,
+      projectId: 'project-1',
+    })) as {
+      deliverable: { kind: string; text: string } | null;
+      status: string;
+    };
+    assert.equal(completed.status, 'completed');
+    assert.deepEqual(completed.deliverable, {
+      kind: 'text',
+      text: `画布文本：${request.prompt}`,
+    });
+  });
+
+  it('releases an idle disconnected Canvas subscriber without aborting its producer', async () => {
+    class PausedCanvasTextRunner extends FixtureAiStreamingRunner {
+      canvasTextStreamCalls = 0;
+      receivedAbortSignal: AbortSignal | undefined;
+      private finish!: () => void;
+      private readonly finishGate = new Promise<void>((resolve) => {
+        this.finish = resolve;
+      });
+
+      override startCanvasTextStream(
+        request: Parameters<FixtureAiStreamingRunner['startCanvasTextStream']>[0],
+        abortSignal?: AbortSignal,
+      ) {
+        this.canvasTextStreamCalls += 1;
+        this.receivedAbortSignal = abortSignal;
+        const text = `画布文本：${request.prompt}`;
+        const finishGate = this.finishGate;
+        return {
+          deltas: (async function* () {
+            yield '连接断开前的首段。';
+            await finishGate;
+            yield '连接断开后的尾段。';
+          })(),
+          result: finishGate.then(() => ({
+            providerTaskRef: 'fixture-canvas-text-subscriber-abort',
+            text,
+            usage: { inputTokens: 0, outputTokens: 0 },
+          })),
+        };
+      }
+
+      complete() {
+        this.finish();
+      }
+    }
+
+    const { controlPlane, module, repository } = setup();
+    const context: P1Context = {
+      ...owner,
+      actor: 'worker',
+      correlationId: 'corr-canvas-native-stream-subscriber-abort',
+    };
+    const request = {
+      checkpointId: 'revision-1',
+      count: 1,
+      dataClass: [],
+      inputAssets: [],
+      inputNodeBindings: [],
+      modelId: 'llm-openai',
+      nodeId: 'text-node-2',
+      operation: 'text.respond',
+      parameters: {},
+      projectId: 'project-1',
+      prompt: '断线只释放订阅，不停止服务端生成。',
+      revisionId: 'revision-1',
+    };
+    const quote = (await command(
+      module,
+      context,
+      'canvas_generation_quote',
+      request,
+    )) as { quoteId: string };
+    const submitted = (await command(
+      module,
+      context,
+      'canvas_generation_submit',
+      { ...request, quoteId: quote.quoteId },
+    )) as { jobId: string };
+    let openDurableSubscriptions = 0;
+    const subscribe =
+      repository.subscribeCanvasTextGenerationStreamEvents.bind(repository);
+    repository.subscribeCanvasTextGenerationStreamEvents = async (input) => {
+      openDurableSubscriptions += 1;
+      const durableSubscription = await subscribe(input);
+      return {
+        close: async () => {
+          openDurableSubscriptions -= 1;
+          await durableSubscription.close();
+        },
+      };
+    };
+
+    const runner = new PausedCanvasTextRunner();
+    const abortController = new AbortController();
+    let firstSequence = 0;
+    let firstDelta!: () => void;
+    const firstDeltaPersisted = new Promise<void>((resolve) => {
+      firstDelta = resolve;
+    });
+    const disconnected = controlPlane.streamCanvasTextGeneration(context, {
+      abortSignal: abortController.signal,
+      afterSequence: 0,
+      jobId: submitted.jobId,
+      onEvent(event) {
+        if (event.type !== 'delta') return;
+        firstSequence = event.sequence;
+        firstDelta();
+      },
+      projectId: 'project-1',
+      runner,
+    });
+    await firstDeltaPersisted;
+    assert.equal(openDurableSubscriptions, 1);
+    abortController.abort();
+    await disconnected;
+    assert.equal(openDurableSubscriptions, 0);
+    assert.equal(runner.receivedAbortSignal, undefined);
+
+    const partial = (await query(module, context, 'canvas_generation_job', {
+      jobId: submitted.jobId,
+      projectId: 'project-1',
+    })) as { deliverable: unknown; status: string };
+    assert.notEqual(partial.status, 'completed');
+    assert.equal(partial.deliverable, null);
+
+    const cancelled = (await command(
+      module,
+      context,
+      'canvas_generation_cancel',
+      { jobId: submitted.jobId, projectId: 'project-1' },
+    )) as { deliverable: unknown; status: string };
+    assert.notEqual(cancelled.status, 'completed');
+    assert.equal(cancelled.deliverable, null);
+
+    runner.complete();
+    const resumed: number[] = [];
+    await controlPlane.streamCanvasTextGeneration(context, {
+      afterSequence: firstSequence,
+      jobId: submitted.jobId,
+      onEvent(event) {
+        resumed.push(event.sequence);
+      },
+      projectId: 'project-1',
+      runner,
+    });
+    assert.equal(runner.canvasTextStreamCalls, 1);
+    assert.deepEqual(resumed, [2, 3]);
+  });
+
+  it('recovers an accepted-unknown Canvas text effect as terminal unknown without another provider call', async () => {
+    class CountingCanvasTextRunner extends FixtureAiStreamingRunner {
+      canvasTextStreamCalls = 0;
+
+      override startCanvasTextStream(
+        request: Parameters<FixtureAiStreamingRunner['startCanvasTextStream']>[0],
+        abortSignal?: AbortSignal,
+      ) {
+        this.canvasTextStreamCalls += 1;
+        return super.startCanvasTextStream(request, abortSignal);
+      }
+    }
+
+    const { controlPlane, module, repository } = setup();
+    const context: P1Context = {
+      ...owner,
+      actor: 'worker',
+      correlationId: 'corr-canvas-native-stream-unknown',
+    };
+    const request = {
+      checkpointId: 'revision-1',
+      count: 1,
+      dataClass: [],
+      inputAssets: [],
+      inputNodeBindings: [],
+      modelId: 'llm-openai',
+      nodeId: 'text-node-2',
+      operation: 'text.respond',
+      parameters: {},
+      projectId: 'project-1',
+      prompt: 'provider 接受后失联不能重新调用。',
+      revisionId: 'revision-1',
+    };
+    const quote = (await command(
+      module,
+      context,
+      'canvas_generation_quote',
+      request,
+    )) as { quoteId: string };
+    const submitted = (await command(
+      module,
+      context,
+      'canvas_generation_submit',
+      { ...request, quoteId: quote.quoteId },
+    )) as { jobId: string };
+    const stale = await repository.claimCanvasTextGeneration({
+      claimToken: 'provider-accepted-before-crash',
+      leaseExpiresAt: '2026-07-23T00:01:00.000Z',
+      now: '2026-07-23T00:00:00.000Z',
+    });
+    assert.ok(stale);
+    assert.deepEqual(
+      await repository.beginCanvasTextGenerationProviderEffect({
+        claimToken: 'provider-accepted-before-crash',
+        effectKey: `canvas-text:${stale.id}`,
+        id: stale.id,
+      }),
+      { status: 'execute' },
+    );
+    await repository.releaseCanvasTextGeneration({
+      claimToken: 'provider-accepted-before-crash',
+      id: stale.id,
+    });
+
+    const events: Array<{
+      status?: string;
+      type: 'delta' | 'recoverable' | 'terminal';
+    }> = [];
+    const runner = new CountingCanvasTextRunner();
+    await controlPlane.streamCanvasTextGeneration(context, {
+      afterSequence: 0,
+      jobId: submitted.jobId,
+      onEvent(event) {
+        events.push(
+          event.type === 'terminal'
+            ? { status: event.result.status, type: event.type }
+            : { type: event.type },
+        );
+      },
+      projectId: 'project-1',
+      runner,
+    });
+    const interrupted = (await query(module, context, 'canvas_generation_job', {
+      jobId: submitted.jobId,
+      projectId: 'project-1',
+    })) as { deliverable: unknown; status: string; usage: { status: string } };
+    assert.equal(runner.canvasTextStreamCalls, 0);
+    assert.equal(interrupted.status, 'queued');
+    assert.equal(interrupted.deliverable, null);
+    assert.equal(interrupted.usage.status, 'refunded');
+    assert.equal(
+      (await repository.getJob('workspace-a', submitted.jobId))?.status,
+      'unknown',
+    );
+    assert.deepEqual(events.at(-1), { status: 'unknown', type: 'terminal' });
+  });
+
+  it('emits a durable recoverable event when a Canvas producer cannot settle, then resumes the same provider effect', async () => {
+    class CountingCanvasTextRunner extends FixtureAiStreamingRunner {
+      canvasTextStreamCalls = 0;
+
+      override startCanvasTextStream(
+        request: Parameters<FixtureAiStreamingRunner['startCanvasTextStream']>[0],
+        abortSignal?: AbortSignal,
+      ) {
+        this.canvasTextStreamCalls += 1;
+        return super.startCanvasTextStream(request, abortSignal);
+      }
+    }
+
+    const { controlPlane, module, repository } = setup();
+    const context: P1Context = {
+      ...owner,
+      actor: 'worker',
+      correlationId: 'corr-canvas-native-stream-recoverable',
+    };
+    const request = {
+      checkpointId: 'revision-1',
+      count: 1,
+      dataClass: [],
+      inputAssets: [],
+      inputNodeBindings: [],
+      modelId: 'llm-openai',
+      nodeId: 'text-node-2',
+      operation: 'text.respond',
+      parameters: {},
+      projectId: 'project-1',
+      prompt: '结算异常后必须显式要求按游标恢复。',
+      revisionId: 'revision-1',
+    };
+    const quote = (await command(
+      module,
+      context,
+      'canvas_generation_quote',
+      request,
+    )) as { quoteId: string };
+    const submitted = (await command(
+      module,
+      context,
+      'canvas_generation_submit',
+      { ...request, quoteId: quote.quoteId },
+    )) as { jobId: string };
+    const complete = repository.completeCanvasTextGeneration.bind(repository);
+    let rejectSettlement = true;
+    repository.completeCanvasTextGeneration = async (input) =>
+      rejectSettlement ? false : complete(input);
+
+    const firstEvents: Array<{ sequence: number; type: string }> = [];
+    const runner = new CountingCanvasTextRunner();
+    await controlPlane.streamCanvasTextGeneration(context, {
+      afterSequence: 0,
+      jobId: submitted.jobId,
+      onEvent(event) {
+        firstEvents.push({ sequence: event.sequence, type: event.type });
+      },
+      projectId: 'project-1',
+      runner,
+    });
+    const recovery = firstEvents.at(-1);
+    assert.deepEqual(recovery?.type, 'recoverable');
+    assert.equal(runner.canvasTextStreamCalls, 1);
+    const partial = (await query(module, context, 'canvas_generation_job', {
+      jobId: submitted.jobId,
+      projectId: 'project-1',
+    })) as { deliverable: unknown; status: string };
+    assert.notEqual(partial.status, 'completed');
+    assert.equal(partial.deliverable, null);
+
+    rejectSettlement = false;
+    const resumed: Array<{ sequence: number; type: string }> = [];
+    await controlPlane.streamCanvasTextGeneration(context, {
+      afterSequence: recovery!.sequence,
+      jobId: submitted.jobId,
+      onEvent(event) {
+        resumed.push({ sequence: event.sequence, type: event.type });
+      },
+      projectId: 'project-1',
+      runner,
+    });
+    assert.equal(runner.canvasTextStreamCalls, 1);
+    assert.deepEqual(resumed.map((event) => event.type), ['terminal']);
+
+    const completed = (await query(module, context, 'canvas_generation_job', {
+      jobId: submitted.jobId,
+      projectId: 'project-1',
+    })) as {
+      deliverable: { kind: string; text: string } | null;
+      status: string;
+    };
+    assert.equal(completed.status, 'completed');
+    assert.deepEqual(completed.deliverable, {
+      kind: 'text',
+      text: `画布文本：${request.prompt}`,
+    });
+  });
+
+  it('retries only a safely failed Canvas job with its frozen model, parameters, and lineage', async () => {
+    let providerCalls = 0;
+    const frozenRequests: Array<{
+      input: unknown;
+      lineage: unknown;
+      originRef: unknown;
+      prompt: string;
+      selection: unknown;
+      snapshot: unknown;
+    }> = [];
+    const recorded = new RecordedProviderExecutionPort();
+    const { models, module, repository } = setup({
+      async execute(request) {
+        providerCalls += 1;
+        frozenRequests.push({
+          input: structuredClone(request.submission.input),
+          lineage: structuredClone(request.submission.lineage),
+          originRef: structuredClone(request.submission.originRef),
+          prompt: request.submission.prompt,
+          selection: structuredClone(request.submission.selection),
+          snapshot: structuredClone(request.submission.frozenRouteSnapshot),
+        });
+        if (providerCalls === 1) {
+          return {
+            acceptance: 'rejected_before_accept' as const,
+            errorCode: 'TRANSIENT_PROVIDER_FAILURE',
+            kind: 'failure' as const,
+				message: 'Recorded transient failure before provider acceptance.',
+            providerCost: { amount: 0, currency: 'USD' as const, usage: {} },
+            retryable: true,
+          };
+        }
+        return recorded.execute(request);
+      },
+    });
+    const context: P1Context = {
+      ...owner,
+      actor: 'worker',
+      correlationId: 'corr-canvas-retry-source',
+    };
+    const request = {
+      checkpointId: 'revision-1',
+      count: 1,
+      dataClass: [],
+      inputAssets: [],
+      inputNodeBindings: [],
+      modelId: 'llm-openai',
+      nodeId: 'text-node-1',
+      operation: 'text.respond',
+      parameters: { maxOutputTokens: 120, temperature: 0.2 },
+      projectId: 'project-1',
+      prompt: 'Retry this exact campaign direction.',
+      revisionId: 'revision-1',
+    };
+    const quote = (await command(
+      module,
+      context,
+      'canvas_generation_quote',
+      request,
+    )) as { quoteId: string };
+    const source = (await command(
+      module,
+      context,
+      'canvas_generation_submit',
+      { ...request, quoteId: quote.quoteId },
+    )) as { jobId: string; status: string };
+    assert.equal(source.status, 'queued');
+
+    const worker = new CanvasTextGenerationOutboxWorker({
+      application: models,
+      claimToken: () => `canvas-retry-claim-${providerCalls}`,
+      clock: () => new Date('2026-07-23T00:00:00.000Z'),
+      repository,
+    });
+    assert.equal((await worker.runOnce()).status, 'completed');
+    const failed = (await query(module, context, 'canvas_generation_job', {
+      jobId: source.jobId,
+      projectId: 'project-1',
+    })) as {
+      originRef?: {
+        checkpointId: string;
+        count: number;
+        modelId: string;
+        nodeId?: string;
+        parameters: Record<string, unknown>;
+        prompt: string;
+      };
+      retryable?: boolean;
+      status: string;
+      usage: { status: string };
+    };
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.retryable, true);
+    assert.equal(failed.usage.status, 'refunded');
+    assert.deepEqual(failed.originRef, {
+      checkpointId: 'revision-1',
+      count: 1,
+      modelId: 'llm-openai',
+      nodeId: 'text-node-1',
+      parameters: { maxOutputTokens: 120, temperature: 0.2 },
+      projectId: 'project-1',
+      prompt: 'Retry this exact campaign direction.',
+      revisionId: 'revision-1',
+      type: 'advanced_canvas_project_revision',
+    });
+
+    const storedSource = await repository.getJob('workspace-a', source.jobId);
+    assert.ok(storedSource);
+    assert.ok(storedSource.originRef);
+    const sourceOriginRef = structuredClone(storedSource.originRef);
+    const missingLineageOriginRef = structuredClone(sourceOriginRef);
+    delete missingLineageOriginRef.nodeId;
+    await repository.saveResult('workspace-a', {
+      ...storedSource,
+      originRef: missingLineageOriginRef,
+    });
+    await assert.rejects(
+      command(
+        module,
+        { ...context, correlationId: 'corr-canvas-retry-missing-lineage' },
+        'canvas_generation_retry',
+        { jobId: source.jobId, projectId: 'project-1' },
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE',
+    );
+
+    const pseudoBatchOriginRef = structuredClone(sourceOriginRef);
+    pseudoBatchOriginRef.count = 2;
+    await repository.saveResult('workspace-a', {
+      ...storedSource,
+      originRef: pseudoBatchOriginRef,
+    });
+    await assert.rejects(
+      command(
+        module,
+        { ...context, correlationId: 'corr-canvas-retry-pseudo-batch' },
+        'canvas_generation_retry',
+        { jobId: source.jobId, projectId: 'project-1' },
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE',
+    );
+    await repository.saveResult('workspace-a', storedSource);
+    assert.equal(providerCalls, 1);
+
+    const retryContext: P1Context = {
+      ...context,
+      correlationId: 'corr-canvas-retry',
+    };
+    const firstRetry = (await command(
+      module,
+      retryContext,
+      'canvas_generation_retry',
+      { jobId: source.jobId, projectId: 'project-1' },
+    )) as { jobId: string; status: string };
+    const replayedRetry = (await command(
+      module,
+      retryContext,
+      'canvas_generation_retry',
+      { jobId: source.jobId, projectId: 'project-1' },
+    )) as { jobId: string; status: string };
+    assert.equal(firstRetry.status, 'queued');
+    assert.equal(replayedRetry.jobId, firstRetry.jobId);
+    assert.equal(providerCalls, 1);
+
+    assert.equal((await worker.runOnce()).status, 'completed');
+    const completed = (await query(module, retryContext, 'canvas_generation_job', {
+      jobId: firstRetry.jobId,
+      projectId: 'project-1',
+    })) as { status: string; usage: { status: string } };
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.usage.status, 'committed');
+    assert.equal(providerCalls, 2);
+    assert.deepEqual(frozenRequests[1], frozenRequests[0]);
+
+    await assert.rejects(
+      command(module, retryContext, 'canvas_generation_retry', {
+        jobId: firstRetry.jobId,
+        projectId: 'project-1',
+      }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE',
+    );
+    await assert.rejects(
+      command(
+        module,
+        { ...retryContext, workspaceId: 'workspace-b' },
+        'canvas_generation_retry',
+        { jobId: source.jobId, projectId: 'project-1' },
+      ),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'NOT_FOUND',
+    );
+  });
+
   it('executes the exact deployment frozen by the Canvas quote', async () => {
     const base = createDefaultDeployments({
       activatedDeploymentIds: ['openai-direct-recorded'],
@@ -3063,8 +3888,11 @@ describe('ModelSupplyFoundationModule', () => {
     const module = new ModelSupplyFoundationModule(controlPlane);
     const context: P1Context = { ...owner, actor: 'worker' };
     const request = {
+      checkpointId: 'revision-1',
+      count: 1,
       dataClass: [],
       inputAssets: [],
+      itemId: 'canvas-item-1',
       modelId: 'llm-openai',
       operation: 'text.respond',
       parameters: {},

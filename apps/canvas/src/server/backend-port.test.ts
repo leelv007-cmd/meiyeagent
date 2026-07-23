@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import {
 	AdvancedCanvasProjectService,
@@ -8,6 +9,7 @@ import {
 	LaunchCodeService,
 	MemoryAdvancedCanvasProjectRepository,
 	MemoryCanvasAssetRepository,
+	MemoryCanvasExportReceiptRepository,
 	MemoryCanvasObjectStorage,
 	MemoryLaunchCodeRepository,
 	MemorySecurityRejectionAuditRepository,
@@ -22,7 +24,9 @@ import {
 	CanvasBackendPort,
 	type CanvasBackendRuntimePorts,
 } from "./backend-port.js";
+import { CanvasRevisionExportService } from "./canvas-export.js";
 import { CoreAdvancedCanvasAdoptionError } from "./core-adoption-client.js";
+import { CoreCanvasExportAssetClient } from "./core-canvas-export-asset-client.js";
 import { CoreGenerationProviderError } from "./core-generation-provider.js";
 
 async function fixture(
@@ -187,7 +191,13 @@ function runtimePorts(): CanvasBackendRuntimePorts {
 				async quote() {
 					throw new Error("Generation is not configured in this fixture.");
 				},
+				async retry() {
+					throw new Error("Generation is not configured in this fixture.");
+				},
 				async submit() {
+					throw new Error("Generation is not configured in this fixture.");
+				},
+				async streamCanvasText() {
 					throw new Error("Generation is not configured in this fixture.");
 				},
 			},
@@ -217,6 +227,7 @@ test("freezes the M1 action paths, methods and idempotency location", () => {
 			createProject: ["POST", "/api/canvas/createProject", "header"],
 			deleteProject: ["POST", "/api/canvas/deleteProject", "header"],
 			duplicateProject: ["POST", "/api/canvas/duplicateProject", "header"],
+			exportCanvas: ["POST", "/api/canvas/exportCanvas", "header"],
 			getAsset: ["POST", "/api/canvas/getAsset", "none"],
 			getAssetDelivery: ["GET", "/api/canvas/getAssetDelivery", "none"],
 			getCatalog: ["POST", "/api/canvas/getCatalog", "none"],
@@ -225,8 +236,10 @@ test("freezes the M1 action paths, methods and idempotency location", () => {
 			getRevision: ["POST", "/api/canvas/getRevision", "none"],
 			getSessionContext: ["POST", "/api/canvas/getSessionContext", "none"],
 			listAdoptions: ["POST", "/api/canvas/listAdoptions", "none"],
+			listAdoptionTargets: ["POST", "/api/canvas/listAdoptionTargets", "none"],
 			listAgentAudit: ["POST", "/api/canvas/listAgentAudit", "none"],
 			listAssets: ["POST", "/api/canvas/listAssets", "none"],
+			listPrompts: ["POST", "/api/canvas/listPrompts", "none"],
 			listProjectGenerations: [
 				"POST",
 				"/api/canvas/listProjectGenerations",
@@ -248,10 +261,16 @@ test("freezes the M1 action paths, methods and idempotency location", () => {
 			],
 			purchaseProStudio: ["POST", "/api/canvas/purchaseProStudio", "header"],
 			quoteGeneration: ["POST", "/api/canvas/quoteGeneration", "header"],
+			retryGeneration: ["POST", "/api/canvas/retryGeneration", "header"],
 			renameProject: ["POST", "/api/canvas/renameProject", "header"],
 			restoreRevision: ["POST", "/api/canvas/restoreRevision", "header"],
 			saveProjectDraft: ["POST", "/api/canvas/saveProjectDraft", "header"],
 			submitGeneration: ["POST", "/api/canvas/submitGeneration", "header"],
+			streamTextGeneration: [
+				"POST",
+				"/api/canvas/streamTextGeneration",
+				"none",
+			],
 		},
 	);
 });
@@ -444,9 +463,110 @@ test("cancelGeneration requests cancellation without confirming provider termina
 	assert.equal((await response.json()).data.status, "cancel_requested");
 });
 
-test("quote, submit and Agent apply explicitly require generation entitlement", async () => {
+test("streams Canvas text only through the authenticated project facade and forwards its resume cursor", async () => {
+	const ports = runtimePorts();
+	let received:
+		| {
+				jobId: string;
+				lastEventId?: string;
+				projectId: string;
+				userId: string;
+				workspaceId: string;
+		  }
+		| undefined;
+	ports.generation.core.streamCanvasText = async (input) => {
+		received = input;
+		return new Response(
+			'id: 1\nevent: canvas.text.delta\ndata: {"jobId":"job-1","sequence":1,"delta":"真实"}\n\n',
+			{
+				headers: {
+					"content-type": "text/event-stream; charset=utf-8",
+					"x-meiye-stream-protocol": "canvas-text-events-v1",
+				},
+			},
+		);
+	};
+	const { port, sessionToken } = await fixture(ports);
+	const response = await port.handle(
+		"streamTextGeneration",
+		request(
+			{ jobId: "job-1", projectId: "project-1" },
+			{ headers: { "last-event-id": "7" } },
+		),
+		sessionToken,
+	);
+
+	assert.equal(response.status, 200);
+	assert.equal(
+		response.headers.get("content-type"),
+		"text/event-stream; charset=utf-8",
+	);
+	assert.equal(response.headers.get("x-service-token"), null);
+	assert.equal(received?.jobId, "job-1");
+	assert.equal(received?.lastEventId, "7");
+	assert.equal(received?.projectId, "project-1");
+	assert.equal(received?.userId, "user-1");
+	assert.equal(received?.workspaceId, "workspace-1");
+
+	const unauthenticated = await port.handle(
+		"streamTextGeneration",
+		request({ jobId: "job-1", projectId: "project-1" }),
+		undefined,
+	);
+	assert.equal(unauthenticated.status, 401);
+	const csrfRejected = await port.handle(
+		"streamTextGeneration",
+		request({ jobId: "job-1", projectId: "project-1" }, { csrf: false }),
+		sessionToken,
+	);
+	assert.equal(csrfRejected.status, 403);
+	const foreign = await port.handle(
+		"streamTextGeneration",
+		request({ jobId: "job-1", projectId: "project-foreign" }),
+		sessionToken,
+	);
+	assert.equal(foreign.status, 404);
+});
+
+test("retryGeneration invokes the injected frozen Core retry action once", async () => {
+	const ports = runtimePorts();
+	let received:
+		| {
+				idempotencyKey: string;
+				jobId: string;
+				projectId: string;
+				workspaceId: string;
+		  }
+		| undefined;
+	ports.generation.core.retry = async (input) => {
+		received = input;
+		return {
+			jobId: "retry-job-1",
+			projectId: input.projectId,
+			status: "queued" as const,
+		};
+	};
+	const { port, sessionToken } = await fixture(ports);
+	const response = await port.handle(
+		"retryGeneration",
+		request({ jobId: "failed-job-1", projectId: "project-1" }),
+		sessionToken,
+	);
+
+	assert.equal(response.status, 200);
+	assert.equal(received?.idempotencyKey, "test-idempotency-key");
+	assert.equal(received?.jobId, "failed-job-1");
+	assert.equal(received?.projectId, "project-1");
+	assert.equal(received?.workspaceId, "workspace-1");
+	assert.equal((await response.json()).data.jobId, "retry-job-1");
+});
+
+test("quote, submit, retry and Agent apply explicitly require generation entitlement", async () => {
 	const generationInput = {
+		checkpointId: "revision-1",
+		count: 1,
 		inputAssets: [],
+		itemId: "canvas-item-1",
 		operation: "image.generate",
 		parameters: {},
 		projectId: "project-1",
@@ -456,6 +576,8 @@ test("quote, submit and Agent apply explicitly require generation entitlement", 
 	const cases = [
 		["quoteGeneration", generationInput],
 		["submitGeneration", { input: generationInput, quoteId: "quote-1" }],
+		["retryGeneration", { jobId: "job-1", projectId: "project-1" }],
+		["streamTextGeneration", { jobId: "job-1", projectId: "project-1" }],
 		[
 			"applyAgentOps",
 			{
@@ -491,6 +613,7 @@ test("generation catalog mirrors only authoritative Core capability activation",
 		operations: [activeCapability("image.generate", "image", ["ratio"])],
 	});
 	ports.generation.core.getCatalog = async () => ({
+		defaultModelIdByOperation: { "image.generate": "core-image-model" },
 		operations: [
 			{
 				activation: "active",
@@ -509,8 +632,425 @@ test("generation catalog mirrors only authoritative Core capability activation",
 	assert.equal(response.status, 200);
 	assert.equal(body.revisionId, "core-catalog-v2");
 	assert.equal(body.agent.activation, "inactive");
-	assert.equal(body.operations[0]?.modelId, "core-image-model");
-	assert.equal(body.operations[0]?.activation, "active");
+	const image = body.operations.find(
+		(operation: { operation: string }) =>
+			operation.operation === "image.generate",
+	);
+	assert.equal(image?.modelId, "core-image-model");
+	assert.equal(image?.activation, "active");
+});
+
+test("catalog is deterministic and fails closed without an explicit default", async () => {
+	const ports = runtimePorts();
+	ports.generation.core.getCatalog = async () => ({
+		operations: [
+			{
+				activation: "active",
+				allowedInputAssetRoles: [],
+				allowedParameters: [],
+				modelId: "first-by-accident",
+				operation: "text.respond",
+			},
+		],
+		revisionId: "core-catalog-v3",
+	});
+	const { port, sessionToken } = await fixture(ports);
+	const response = await port.handle("getCatalog", request({}), sessionToken);
+	const body = (await response.json()).data;
+	const text = body.operations.find(
+		(operation: { operation: string }) =>
+			operation.operation === "text.respond",
+	);
+
+	assert.equal(response.status, 200);
+	assert.equal(text.activation, "inactive");
+	assert.equal(text.modelId, "first-by-accident");
+	assert.equal(
+		body.unavailableReasonCodeByOperation["text.respond"],
+		"MODEL_NOT_CONFIGURED",
+	);
+	assert.deepEqual(
+		body.operations.map(
+			(operation: { operation: string }) => operation.operation,
+		),
+		[
+			"audio.sfx",
+			"audio.speech",
+			"image.edit",
+			"image.generate",
+			"text.respond",
+			"video.generate",
+		],
+	);
+});
+
+test("generation rejects unfrozen or invalid lineage before Core", async () => {
+	const ports = runtimePorts();
+	let coreCalls = 0;
+	ports.generation.core.quote = async () => {
+		coreCalls += 1;
+		return { quoteId: "core-quote-1" };
+	};
+	const graph: CanvasGraph = {
+		edges: [],
+		nodes: [{ data: {}, id: "image-1", type: "image" }],
+		schemaVersion: 1,
+	};
+	const { port, sessionToken } = await fixture(ports, async () => true, graph);
+	const base = generationContract("image.generate", {});
+
+	for (const [input, code] of [
+		[
+			{ ...base, checkpointId: "checkpoint-other" },
+			"GENERATION_INPUT_BINDING_INVALID",
+		],
+		[
+			{ ...base, itemId: undefined, nodeId: undefined },
+			"GENERATION_INPUT_BINDING_INVALID",
+		],
+		[{ ...base, count: 2 }, "INVALID_INPUT"],
+		[
+			{ ...base, itemId: undefined, nodeId: "missing-node" },
+			"GENERATION_INPUT_BINDING_INVALID",
+		],
+	] as const) {
+		const response = await port.handle(
+			"quoteGeneration",
+			request(input),
+			sessionToken,
+		);
+		assert.equal(response.status, 400);
+		assert.equal((await response.json()).error.code, code);
+	}
+	assert.equal(coreCalls, 0);
+});
+
+test("derives K3 retouch lineage only from a real frozen input node", async () => {
+	const ports = runtimePorts();
+	let quote:
+		| {
+				checkpointId: string;
+				count: number;
+				itemId?: string;
+				nodeId?: string;
+		  }
+		| undefined;
+	ports.generation.core.quote = async (input) => {
+		quote = input;
+		return { quoteId: "core-quote-1" };
+	};
+	const graph: CanvasGraph = {
+		edges: [],
+		nodes: [
+			{
+				data: { assetId: "asset-input-1" },
+				id: "image-input-1",
+				type: "image",
+			},
+		],
+		schemaVersion: 1,
+	};
+	const { port, sessionToken } = await fixture(ports, async () => true, graph);
+	const retouch = {
+		inputAssets: [
+			{ assetId: "asset-input-1", role: "reference_image" as const },
+		],
+		inputNodeBindings: [
+			{
+				assetId: "asset-input-1",
+				nodeId: "image-input-1",
+				role: "reference_image" as const,
+			},
+		],
+		operation: "image.edit" as const,
+		parameters: {},
+		projectId: "project-1",
+		prompt: "Retouch the selected image",
+		revisionId: "revision-1",
+	};
+	const compatible = await port.handle(
+		"quoteGeneration",
+		request(retouch),
+		sessionToken,
+	);
+	assert.equal(compatible.status, 200);
+	assert.equal(quote?.checkpointId, "revision-1");
+	assert.equal(quote?.count, 1);
+	assert.equal(quote?.nodeId, "image-input-1");
+	assert.equal(quote?.itemId, undefined);
+
+	const withoutRealLineage = await port.handle(
+		"quoteGeneration",
+		request({
+			...retouch,
+			inputAssets: [],
+			inputNodeBindings: [],
+		}),
+		sessionToken,
+	);
+	assert.equal(withoutRealLineage.status, 400);
+	assert.equal(
+		(await withoutRealLineage.json()).error.code,
+		"GENERATION_INPUT_BINDING_INVALID",
+	);
+});
+
+test("lists authorized targets, prompts, and assets through scoped query contracts", async () => {
+	const ports = runtimePorts();
+	ports.adoptionTargets = {
+		async list() {
+			return Array.from({ length: 51 }, (_, index) => ({
+				handle: {
+					baseVersionId: `version-${String(index).padStart(2, "0")}`,
+					expectedRevision: index,
+					packageId: `package-${String(index).padStart(2, "0")}`,
+				},
+				id: `package-${String(index).padStart(2, "0")}`,
+				title: `Target package ${index}`,
+			}));
+		},
+	};
+	ports.prompts = {
+		async list() {
+			return [
+				{
+					category: "campaign",
+					id: "prompt-1",
+					prompt: "Create a campaign visual",
+					title: "Campaign visual",
+				},
+				{
+					category: "retouch",
+					id: "prompt-2",
+					prompt: "Retouch a portrait",
+					title: "Portrait retouch",
+				},
+			];
+		},
+	};
+	const { port, sessionToken } = await fixture(ports);
+
+	const firstTargets = await port.handle(
+		"listAdoptionTargets",
+		request({ query: "target package" }),
+		sessionToken,
+	);
+	const firstTargetPage = (await firstTargets.json()).data;
+	assert.equal(firstTargets.status, 200);
+	assert.equal(firstTargetPage.items.length, 50);
+	assert.ok(firstTargetPage.nextCursor);
+	assert.deepEqual(firstTargetPage.items[0], {
+		handle: {
+			baseVersionId: "version-00",
+			expectedRevision: 0,
+			packageId: "package-00",
+		},
+		id: "package-00",
+		title: "Target package 0",
+	});
+	const secondTargets = await port.handle(
+		"listAdoptionTargets",
+		request({ cursor: firstTargetPage.nextCursor, query: "target package" }),
+		sessionToken,
+	);
+	assert.deepEqual(
+		(await secondTargets.json()).data.items.map(
+			(item: { id: string }) => item.id,
+		),
+		["package-50"],
+	);
+
+	const prompts = await port.handle(
+		"listPrompts",
+		request({ category: "campaign", query: "visual" }),
+		sessionToken,
+	);
+	assert.deepEqual((await prompts.json()).data.items, [
+		{
+			category: "campaign",
+			id: "prompt-1",
+			prompt: "Create a campaign visual",
+			title: "Campaign visual",
+		},
+	]);
+
+	await port.handle(
+		"persistLocalCanvasArtifact",
+		request({
+			bytesBase64: Buffer.from([
+				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+			]).toString("base64"),
+			contentType: "image/png",
+			derivation: "retouch",
+			fileName: "campaign-poster.png",
+		}),
+		sessionToken,
+	);
+	const assets = await port.handle(
+		"listAssets",
+		request({ kind: "image", query: "poster" }),
+		sessionToken,
+	);
+	assert.equal(assets.status, 200);
+	const listedAsset = (await assets.json()).data.items[0];
+	assert.equal(listedAsset?.kind, "image");
+	assert.equal(listedAsset?.title, "campaign-poster.png");
+	assert.equal(typeof listedAsset?.id, "string");
+
+	const invalidCursor = await port.handle(
+		"listAssets",
+		request({ cursor: "not-a-cursor" }),
+		sessionToken,
+	);
+	assert.equal(invalidCursor.status, 400);
+	assert.equal((await invalidCursor.json()).error.code, "INVALID_CURSOR");
+});
+
+test("returns only a server-owned workspace display name and fails closed export retrieval", async () => {
+	const ports = runtimePorts();
+	ports.workspace = {
+		async displayName() {
+			return "Studio Aurora";
+		},
+	};
+	const { port, sessionToken } = await fixture(ports);
+	const session = await port.handle(
+		"getSessionContext",
+		request({}),
+		sessionToken,
+	);
+	assert.deepEqual((await session.json()).data, {
+		workspaceDisplayName: "Studio Aurora",
+	});
+
+	const exportResponse = await port.handle(
+		"exportCanvas",
+		request({
+			format: "json",
+			projectId: "project-1",
+			revisionId: "revision-1",
+		}),
+		sessionToken,
+	);
+	assert.equal(exportResponse.status, 503);
+	assert.equal(
+		(await exportResponse.json()).error.code,
+		"EXPORT_NOT_AVAILABLE",
+	);
+
+	const missingRevision = await port.handle(
+		"exportCanvas",
+		request({
+			format: "json",
+			projectId: "project-1",
+			revisionId: "missing-revision",
+		}),
+		sessionToken,
+	);
+	assert.equal(missingRevision.status, 404);
+	assert.equal((await missingRevision.json()).error.code, "REVISION_NOT_FOUND");
+});
+
+test("exports a frozen revision through the authoritative Core asset adapter", async () => {
+	const ports = runtimePorts();
+	const assetBytes = new TextEncoder().encode("exported media");
+	const assetSha256 = createHash("sha256").update(assetBytes).digest("hex");
+	let mode: "available" | "foreign" | "revoked" = "available";
+	const requests: RequestInit[] = [];
+	ports.exports = new CanvasRevisionExportService(
+		new CoreCanvasExportAssetClient({
+			coreServiceToken: "service-secret",
+			coreServiceUrl: "http://core.internal:4100",
+			fetcher: async (_url, init) => {
+				requests.push(init ?? {});
+				if (mode === "revoked") {
+					return new Response(
+						JSON.stringify({
+							data: { code: "ASSET_REVOKED", kind: "unavailable" },
+						}),
+						{ headers: { "content-type": "application/json" }, status: 200 },
+					);
+				}
+				return new Response(
+					JSON.stringify({
+						data: {
+							asset: {
+								bytesBase64: Buffer.from(assetBytes).toString("base64"),
+								contentType: "image/png",
+								fileName: "image.png",
+								id: "asset-1",
+								receipt: { id: "asset-1", storageRevision: "receipt-v1" },
+								sha256: assetSha256,
+								sizeBytes: assetBytes.byteLength,
+								workspaceId: mode === "foreign" ? "workspace-2" : "workspace-1",
+							},
+							kind: "available",
+						},
+					}),
+					{ headers: { "content-type": "application/json" }, status: 200 },
+				);
+			},
+		}),
+		new MemoryCanvasExportReceiptRepository({
+			clock: () => new Date("2026-07-23T00:00:00.000Z"),
+			nextId: () => "canvas-export-backend-receipt",
+		}),
+	);
+	const graph: CanvasGraph = {
+		edges: [],
+		nodes: [{ data: { assetId: "asset-1" }, id: "image-1", type: "image" }],
+		schemaVersion: 1,
+	};
+	const { port, sessionToken } = await fixture(ports, async () => true, graph);
+
+	const exported = await port.handle(
+		"exportCanvas",
+		request({
+			format: "zip",
+			projectId: "project-1",
+			revisionId: "revision-1",
+		}),
+		sessionToken,
+	);
+	assert.equal(exported.status, 200);
+	assert.equal(exported.headers.get("content-type"), "application/zip");
+	assert.equal(
+		exported.headers.get("content-disposition"),
+		'attachment; filename="canvas-export.zip"',
+	);
+	assert.ok(exported.headers.get("x-canvas-export-manifest-sha256"));
+	assert.ok((await exported.arrayBuffer()).byteLength > assetBytes.byteLength);
+	assert.deepEqual(JSON.parse(String(requests[0]?.body)), {
+		action: "canvas_export_asset",
+		module: "operations",
+		payload: { assetId: "asset-1" },
+	});
+
+	mode = "foreign";
+	const foreign = await port.handle(
+		"exportCanvas",
+		request({
+			format: "json",
+			projectId: "project-1",
+			revisionId: "revision-1",
+		}),
+		sessionToken,
+	);
+	assert.equal(foreign.status, 503);
+	assert.equal((await foreign.json()).error.code, "EXPORT_NOT_AVAILABLE");
+
+	mode = "revoked";
+	const revoked = await port.handle(
+		"exportCanvas",
+		request({
+			format: "json",
+			projectId: "project-1",
+			revisionId: "revision-1",
+		}),
+		sessionToken,
+	);
+	assert.equal(revoked.status, 503);
+	assert.equal((await revoked.json()).error.code, "EXPORT_NOT_AVAILABLE");
 });
 
 test("generation quote reaches Core without creating a Canvas-local ledger", async () => {
@@ -669,6 +1209,34 @@ test("image quote accepts bounded pixel dimensions from the authoritative catalo
 		assert.equal((await response.json()).error.code, "INVALID_INPUT");
 	}
 	assert.equal(quoted.length, 2);
+});
+
+test("image quote accepts only the approved quality field", async () => {
+	const ports = runtimePorts();
+	const quoted: Array<Record<string, unknown>> = [];
+	ports.generation.core.quote = async (input) => {
+		quoted.push(input.parameters);
+		return { quoteId: `core-quality-${quoted.length}` };
+	};
+	const { port, sessionToken } = await fixture(ports);
+
+	for (const operation of ["image.generate", "image.edit"] as const) {
+		const response = await port.handle(
+			"quoteGeneration",
+			request(generationContract(operation, { quality: "high" })),
+			sessionToken,
+		);
+		assert.equal(response.status, 200, operation);
+	}
+	assert.deepEqual(quoted, [{ quality: "high" }, { quality: "high" }]);
+
+	const rejected = await port.handle(
+		"quoteGeneration",
+		request(generationContract("image.generate", { quality: "ultra" })),
+		sessionToken,
+	);
+	assert.equal(rejected.status, 400);
+	assert.equal((await rejected.json()).error.code, "INVALID_INPUT");
 });
 
 test("generation actions reject unknown projects and mismatched revisions before Core", async () => {
@@ -1032,7 +1600,10 @@ function generationContract(
 	parameters: Record<string, unknown>,
 ) {
 	return {
+		checkpointId: "revision-1",
+		count: 1,
 		inputAssets: [],
+		itemId: "canvas-item-1",
 		operation,
 		parameters,
 		projectId: "project-1",
@@ -1043,7 +1614,11 @@ function generationContract(
 
 function request(
 	body: unknown,
-	options: { csrf?: boolean; method?: string } = {},
+	options: {
+		csrf?: boolean;
+		headers?: Record<string, string>;
+		method?: string;
+	} = {},
 ) {
 	const csrf = options.csrf ?? true;
 	return new Request("https://canvas.example.test/api/canvas/action", {
@@ -1055,6 +1630,7 @@ function request(
 			origin: "https://canvas.example.test",
 			"sec-fetch-site": "same-origin",
 			...(csrf ? { "x-csrf-token": "csrf-token" } : {}),
+			...(options.headers ?? {}),
 		},
 		body: JSON.stringify(body),
 	});

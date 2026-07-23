@@ -25,8 +25,12 @@ import {
 	undoSessionHistory,
 	updateTextNode,
 } from "./kernel-canvas-interactions.js";
-import { KernelCanvasSurface } from "./kernel-canvas-surface.js";
-import { buildDesensitizedNodeInfo } from "./ported/kernel-node-info.js";
+import {
+	canvasClipboardPayload,
+	imagePreviewAssetId,
+	KernelCanvasSurface,
+} from "./kernel-canvas-surface.js";
+import { buildDesensitizedNodeInfo } from "./kernel-node-info.js";
 
 test("media nodes use a focusable non-button container with isolated controls", () => {
 	const markup = renderToStaticMarkup(
@@ -112,6 +116,73 @@ test("K2 production surface mounts the approved rich node for all five node type
 	assert.match(markup, /生成配置/u);
 	assert.match(markup, /空视频节点/u);
 	assert.match(markup, /空音频节点/u);
+});
+
+test("K2 opens previews only for owned image assets", () => {
+	assert.equal(
+		imagePreviewAssetId({
+			data: { assetId: "owned-image-1" },
+			type: "image",
+		}),
+		"owned-image-1",
+	);
+	assert.equal(
+		imagePreviewAssetId({
+			data: { assetId: "owned-video-1" },
+			type: "video",
+		}),
+		undefined,
+	);
+	assert.equal(
+		imagePreviewAssetId({
+			data: { remoteUrl: "https://untrusted.example/image.png" },
+			type: "image",
+		}),
+		undefined,
+	);
+});
+
+test("K2 routes internal, file, and plain-text clipboard payloads safely", () => {
+	const clipboard = (
+		data: Record<string, string>,
+		files: File[] = [],
+	): {
+		files: File[];
+		getData: (type: string) => string;
+	} => ({
+		files,
+		getData: (type) => data[type] ?? "",
+	});
+
+	assert.deepEqual(
+		canvasClipboardPayload(
+			clipboard({
+				"application/x-meiye-canvas-node-ids": JSON.stringify({
+					kind: "meiye.canvas.nodes.v1",
+					nodeIds: ["node-1", "missing", "node-1"],
+				}),
+			}),
+			["node-1", "node-2"],
+		),
+		{ kind: "internal", nodeIds: ["node-1"] },
+	);
+
+	const image = { name: "clipboard.png", type: "image/png" } as File;
+	const files = canvasClipboardPayload(
+		clipboard({ "text/plain": "ignored because files win" }, [image]),
+		[],
+	);
+	assert.equal(files?.kind, "files");
+	if (files?.kind === "files") assert.deepEqual(files.files, [image]);
+
+	assert.deepEqual(
+		canvasClipboardPayload(
+			clipboard({ "text/plain": "https://untrusted.example/image.png" }),
+			[],
+		),
+		{ kind: "text", text: "https://untrusted.example/image.png" },
+	);
+	assert.equal(canvasClipboardPayload(clipboard({}), []), null);
 });
 
 test("dragging a selected node moves the whole selected group", () => {

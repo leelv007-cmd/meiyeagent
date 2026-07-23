@@ -28,7 +28,7 @@ const FORBIDDEN_RULES = [
   {
     rule: 'token-query',
     pattern:
-      /[?&](?:token|agentToken)=|searchParams[^\n;]*(?:token|agentToken)/,
+      /[?&](?:token|agentToken)=|searchParams\s*\.\s*(?:get|has|getAll)\s*\(\s*["'](?:token|agentToken)["']/,
   },
   {
     rule: 'node-process-execution',

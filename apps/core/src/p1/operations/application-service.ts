@@ -124,6 +124,7 @@ import {
   isExportableOwnedAssetObjectKey,
   UnverifiedVideoComplianceError,
 } from './content-package-export-adapter.js';
+import type { CanvasExportAssetAccessPort } from './canvas-export-asset-access.js';
 import { ownedAssetRegistrationLifecycle } from '../model-supply/owned-asset-registration-lifecycle.js';
 
 export class OperationsError extends Error {
@@ -286,6 +287,7 @@ interface OperationsDependencies {
   batchExecutor?: BatchExecutionPort;
   billingLifecycle?: BillingLifecyclePort;
   briefSubmissionGate?: import('../creation-experience/brief-submission-gate.js').BriefSubmissionGate;
+  canvasExportAssetAccess?: CanvasExportAssetAccessPort;
   canvasExporter: CanvasExportPort;
   creationExecutor?: import('./types.js').CreationExecutorPort;
   contentPackageExporter?: ContentPackageExportPort;
@@ -8909,6 +8911,28 @@ export class OperationsApplicationService {
       ...contentPackage,
       ...contentPackageVisibleStatus(contentPackage.status),
     };
+  }
+
+  /**
+   * Canvas ZIP reads through this server-owned boundary. The caller may supply
+   * only an asset ID; membership, ContentPackage export policy, live Product
+   * rights, receipt validation, and private retrieval stay below this seam.
+   */
+  async resolveCanvasExportAsset(context: OperationContext, assetId: string) {
+    const state = await this.read(context);
+    const access = this.dependencies.canvasExportAssetAccess;
+    if (!access) {
+      throw new OperationsError(
+        'CANVAS_EXPORT_ASSET_UNAVAILABLE',
+        'Canvas export asset access is unavailable.',
+        503
+      );
+    }
+    return access.resolve({
+      assetId,
+      contentPackages: structuredClone(state.contentPackages ?? []),
+      workspaceId: context.workspaceId,
+    });
   }
 
   async generateContentPackageVariants(

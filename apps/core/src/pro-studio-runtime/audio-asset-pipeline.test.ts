@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,8 @@ import {
   MemoryCanvasAssetRepository,
   MemoryCanvasObjectStorage,
 } from '../pro-studio/canvas-asset-facade.js';
+import { FileSystemAssetStorage } from '../p1/model-supply/filesystem-asset-storage.js';
+import { OperationsCanvasExportAssetAccessService } from '../p1/operations/canvas-export-asset-access.js';
 import {
   AudioAssetPipeline,
   AudioAssetPipelineError,
@@ -25,6 +28,14 @@ const mp3 = Uint8Array.from([
   0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0xff, 0xfb, 0x90, 0x64,
 ]);
+
+/** Memory exercises validation and policy registration only; export evidence
+ * uses the receipt-aware Core storage integration below. */
+class ReceiptAwareMemoryCanvasObjectStorage extends MemoryCanvasObjectStorage {
+  async putVerifiedCanvasAsset(objectKey: string, bytes: Uint8Array) {
+    await this.put(objectKey, bytes);
+  }
+}
 
 function pcmWav() {
   const sampleRate = 8_000;
@@ -52,7 +63,7 @@ function fixture(
   providerFetch?: AudioProviderFetchPort,
 ) {
   const repository = new MemoryCanvasAssetRepository();
-  const storage = new MemoryCanvasObjectStorage();
+  const storage = new ReceiptAwareMemoryCanvasObjectStorage();
   const pipeline = new AudioAssetPipeline({
     clock: () => new Date('2026-07-16T12:00:00.000Z'),
     inspector: { inspect: async () => inspection },
@@ -65,7 +76,7 @@ function fixture(
   return { pipeline, repository, storage };
 }
 
-test('validated audio is persisted under a random private key and delivered through CanvasAssetFacade', async () => {
+test('validated audio is registered with current export policy and delivered through CanvasAssetFacade', async () => {
   const { pipeline, repository, storage } = fixture({
     bitRate: 128_000,
     codec: 'mp3',
@@ -80,13 +91,24 @@ test('validated audio is persisted under a random private key and delivered thro
     contentType: 'audio/mpeg',
     fileName: '门店“欢迎”\r\nX-Evil: yes.html',
     jobId: 'job-audio-1',
+    ownerId: 'owner-1',
     workspaceId: 'workspace-1',
   });
 
   assert.equal(
     asset.objectKey,
-    `workspace-1/canvas/private/audio/${'a'.repeat(48)}.mp3`,
+    `workspace-1/canvas/assets/${'a'.repeat(48)}.mp3`,
   );
+  assert.deepEqual(asset.exportPolicy, {
+    exportAllowed: true,
+    expiresAt: null,
+    ownerId: 'owner-1',
+    privateRetrievalAllowed: true,
+    revokedAt: null,
+    updatedAt: '2026-07-16T12:00:00.000Z',
+    version: 1,
+    workspaceId: 'workspace-1',
+  });
   assert.match(asset.fileName, /\.mp3$/u);
   assert.doesNotMatch(asset.fileName, /\.html|[\r\n]/u);
   assert.deepEqual(asset.source, {
@@ -125,10 +147,129 @@ test('validated audio is persisted under a random private key and delivered thro
   );
 });
 
+test('receipt-aware Core storage makes a generated audio asset exportable through the Core boundary', async () => {
+  const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-audio-export-'));
+  try {
+    const assetStorage = new FileSystemAssetStorage({ rootDirectory });
+    const repository = new MemoryCanvasAssetRepository();
+    const workspaceId = 'workspace-1';
+    const storage = {
+      async delete(objectKey: string) {
+        await assetStorage.deleteCanvasAsset({
+          objectKey,
+          workspaceId: objectKey.split('/')[0] ?? '',
+        });
+      },
+      async put(objectKey: string, bytes: Uint8Array) {
+        await assetStorage.putCanvasAsset({
+          bytes,
+          objectKey,
+          workspaceId: objectKey.split('/')[0] ?? '',
+        });
+      },
+      async putVerifiedCanvasAsset(objectKey: string, bytes: Uint8Array) {
+        await assetStorage.putCanvasAsset({
+          bytes,
+          objectKey,
+          workspaceId: objectKey.split('/')[0] ?? '',
+        });
+      },
+      async read(objectKey: string) {
+        try {
+          return (await assetStorage.read(objectKey)).bytes;
+        } catch {
+          return null;
+        }
+      },
+    };
+    const pipeline = new AudioAssetPipeline({
+      clock: () => new Date('2026-07-16T12:00:00.000Z'),
+      inspector: {
+        async inspect() {
+          return {
+            bitRate: 128_000,
+            codec: 'mp3',
+            container: 'mp3',
+            durationSeconds: 2.5,
+            metadata: {},
+            sampleRate: 44_100,
+          };
+        },
+      },
+      nextAssetId: () => 'asset-audio-export',
+      nextObjectToken: () => 'b'.repeat(48),
+      repository,
+      storage,
+    });
+    const asset = await pipeline.persistGeneratedAudio({
+      bytes: mp3,
+      contentType: 'audio/mpeg',
+      fileName: 'exportable.mp3',
+      jobId: 'job-audio-export',
+      ownerId: 'owner-1',
+      workspaceId,
+    });
+    let storageReads = 0;
+    const access = new OperationsCanvasExportAssetAccessService({
+      canvasAssets: repository,
+      contentPackageAssets: {
+        async readOwnedAsset() {
+          throw new Error('No ContentPackage asset is referenced.');
+        },
+      },
+      contentPackageRights: {
+        async resolve() {
+          return { knownAssetIds: [], unauthorizedAssetIds: [] };
+        },
+      },
+      ownedAssetStorage: {
+        async read(objectKey) {
+          storageReads += 1;
+          return assetStorage.read(objectKey);
+        },
+        async verifyCanvasAssetReceipt(input) {
+          return assetStorage.verifyCanvasAssetReceipt(input);
+        },
+      },
+      productAssets: {
+        async resolve() {
+          return [];
+        },
+      },
+      productPolicy: {
+        async resolveExportPolicy() {
+          return { kind: 'unknown' as const };
+        },
+      },
+    });
+
+    const result = await access.resolve({
+      assetId: asset.id,
+      contentPackages: [],
+      workspaceId,
+    });
+
+    assert.equal(result.kind, 'available');
+    assert.equal(storageReads, 1);
+    if (result.kind === 'available') {
+      assert.deepEqual(
+        Buffer.from(result.asset.bytesBase64, 'base64'),
+        Buffer.from(mp3),
+      );
+      assert.equal(
+        result.asset.sha256,
+        createHash('sha256').update(mp3).digest('hex'),
+      );
+    }
+  } finally {
+    await rm(rootDirectory, { recursive: true, force: true });
+  }
+});
+
 test('container and magic mismatch is rejected before decode or persistence', async () => {
   let inspected = false;
   const repository = new MemoryCanvasAssetRepository();
-  const storage = new MemoryCanvasObjectStorage();
+  const storage = new ReceiptAwareMemoryCanvasObjectStorage();
   const pipeline = new AudioAssetPipeline({
     inspector: {
       async inspect() {
@@ -146,6 +287,7 @@ test('container and magic mismatch is rejected before decode or persistence', as
       contentType: 'audio/mpeg',
       fileName: 'forged.mp3',
       jobId: 'job-forged',
+      ownerId: 'owner-1',
       workspaceId: 'workspace-1',
     }),
     (error: unknown) =>
@@ -171,6 +313,7 @@ test('private object custody rejects a workspace path instead of treating it as 
       contentType: 'audio/mpeg',
       fileName: 'speech.mp3',
       jobId: 'job-audio',
+      ownerId: 'owner-1',
       workspaceId: '../public',
     }),
     (error: unknown) =>
@@ -205,6 +348,7 @@ test('decoded duration, bitrate, sample rate, codec, and metadata limits fail cl
         contentType: 'audio/mpeg',
         fileName: 'invalid.mp3',
         jobId: 'job-invalid',
+        ownerId: 'owner-1',
         workspaceId: 'workspace-1',
       }),
       (error: unknown) =>
@@ -248,6 +392,7 @@ test('provider audio enters custody only through the shared safe-fetch seam', as
   const asset = await pipeline.persistProviderAudio({
     fileName: 'speech.mp3',
     jobId: 'job-provider-audio',
+    ownerId: 'owner-1',
     providerUrl: 'https://audio.provider.example/result/owned.mp3',
     workspaceId: 'workspace-1',
   });

@@ -1,4 +1,7 @@
-import type { CanvasObjectStorage } from './canvas-asset-facade.js';
+import type {
+  CanvasObjectStorage,
+  ReceiptAwareCanvasObjectStorage,
+} from './canvas-asset-facade.js';
 
 interface CoreCanvasObjectStorageOptions {
   coreServiceToken: string;
@@ -6,7 +9,7 @@ interface CoreCanvasObjectStorageOptions {
   fetcher?: typeof fetch;
 }
 
-export class CoreCanvasObjectStorage implements CanvasObjectStorage {
+export class CoreCanvasObjectStorage implements ReceiptAwareCanvasObjectStorage {
   private readonly fetcher: typeof fetch;
 
   constructor(private readonly options: CoreCanvasObjectStorageOptions) {
@@ -28,6 +31,14 @@ export class CoreCanvasObjectStorage implements CanvasObjectStorage {
     if (!response.ok) {
       throw new Error(`Core asset write failed with status ${response.status}.`);
     }
+  }
+
+  /**
+   * Core accepts this PUT only after its receipt-aware asset storage commits
+   * the object and immutable receipt together.
+   */
+  async putVerifiedCanvasAsset(objectKey: string, bytes: Uint8Array) {
+    await this.put(objectKey, bytes);
   }
 
   async delete(objectKey: string) {
@@ -69,7 +80,7 @@ export class CoreCanvasObjectStorage implements CanvasObjectStorage {
   }
 }
 
-export class CompositeCanvasObjectStorage implements CanvasObjectStorage {
+export class CompositeCanvasObjectStorage implements ReceiptAwareCanvasObjectStorage {
   constructor(
     private readonly writable: CanvasObjectStorage,
     private readonly fallback: CanvasObjectStorage
@@ -77,6 +88,13 @@ export class CompositeCanvasObjectStorage implements CanvasObjectStorage {
 
   async put(objectKey: string, bytes: Uint8Array) {
     await this.writable.put(objectKey, bytes);
+  }
+
+  async putVerifiedCanvasAsset(objectKey: string, bytes: Uint8Array) {
+    if (!isReceiptAwareCanvasObjectStorage(this.writable)) {
+      throw new Error('Canvas storage cannot verify an immutable export receipt.');
+    }
+    await this.writable.putVerifiedCanvasAsset(objectKey, bytes);
   }
 
   async delete(objectKey: string) {
@@ -89,6 +107,15 @@ export class CompositeCanvasObjectStorage implements CanvasObjectStorage {
       (await this.fallback.read(objectKey))
     );
   }
+}
+
+function isReceiptAwareCanvasObjectStorage(
+  storage: CanvasObjectStorage,
+): storage is ReceiptAwareCanvasObjectStorage {
+  return (
+    'putVerifiedCanvasAsset' in storage &&
+    typeof storage.putVerifiedCanvasAsset === 'function'
+  );
 }
 
 function workspaceFromObjectKey(objectKey: string) {

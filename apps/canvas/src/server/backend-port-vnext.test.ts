@@ -30,6 +30,16 @@ test("K1 freezes every vNext BackendPort record with owner, compatibility, error
 	assert.throws(() =>
 		CANVAS_BACKEND_PORT_VNEXT.listAssets.request.parse({ unknown: true }),
 	);
+	assert.deepEqual(
+		CANVAS_BACKEND_PORT_VNEXT.listAssets.response.parse({
+			items: [{ id: "asset-1", kind: "image", title: "夏日门店图" }],
+			nextCursor: null,
+		}),
+		{
+			items: [{ id: "asset-1", kind: "image", title: "夏日门店图" }],
+			nextCursor: null,
+		},
+	);
 });
 
 test("reserved generation items retain revision lineage and require an item binding", () => {
@@ -58,5 +68,74 @@ test("reserved generation items retain revision lineage and require an item bind
 			revisionId: "revision-1",
 		}).nodeId,
 		"node-1",
+	);
+});
+
+test("adoption target response carries a server-derived current version and OCC handle", () => {
+	assert.deepEqual(
+		CANVAS_BACKEND_PORT_VNEXT.listAdoptionTargets.response.parse({
+			items: [
+				{
+					handle: {
+						baseVersionId: "version-1",
+						expectedRevision: 3,
+						packageId: "package-1",
+					},
+					id: "package-1",
+					title: "Merchant package",
+				},
+			],
+			nextCursor: null,
+		}),
+		{
+			items: [
+				{
+					handle: {
+						baseVersionId: "version-1",
+						expectedRevision: 3,
+						packageId: "package-1",
+					},
+					id: "package-1",
+					title: "Merchant package",
+				},
+			],
+			nextCursor: null,
+		},
+	);
+	assert.throws(() =>
+		CANVAS_BACKEND_PORT_VNEXT.listAdoptionTargets.response.parse({
+			items: [
+				{
+					handle: {
+						expectedRevision: 3,
+						packageId: "package-1",
+					},
+					id: "package-1",
+					title: "Merchant package",
+				},
+			],
+			nextCursor: null,
+		}),
+	);
+});
+
+test("export contract keeps asset failures private and supports explicit available-only option", () => {
+	assert.deepEqual(CANVAS_BACKEND_PORT_VNEXT.exportCanvas.errors, [
+		"EXPORT_NOT_AVAILABLE",
+		"REVISION_NOT_FOUND",
+	]);
+	assert.deepEqual(
+		CANVAS_BACKEND_PORT_VNEXT.exportCanvas.request.parse({
+			format: "zip",
+			includeAvailableOnly: true,
+			projectId: "project-1",
+			revisionId: "revision-1",
+		}),
+		{
+			format: "zip",
+			includeAvailableOnly: true,
+			projectId: "project-1",
+			revisionId: "revision-1",
+		},
 	);
 });

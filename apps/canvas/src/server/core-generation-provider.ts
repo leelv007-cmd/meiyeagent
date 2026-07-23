@@ -2,6 +2,7 @@ import type { CanvasGenerationOperation } from "@meiye/core/pro-studio-runtime";
 import {
 	CoreRemoteCall,
 	CoreRemoteCallConfigurationError,
+	CoreRemoteCallTransportError,
 } from "./core-remote-call";
 
 const coreOperations = [
@@ -23,7 +24,11 @@ export interface CoreGenerationIdentity {
 }
 
 export interface CoreGenerationQuoteInput extends CoreGenerationIdentity {
+	checkpointId: string;
+	count: number;
 	idempotencyKey: string;
+	itemId?: string;
+	nodeId?: string;
 	projectId: string;
 	revisionId: string;
 	operation: CanvasGenerationOperation;
@@ -46,9 +51,22 @@ export interface CoreGenerationSubmitInput extends CoreGenerationQuoteInput {
 	quoteId: string;
 }
 
+export interface CoreGenerationRetryInput extends CoreGenerationIdentity {
+	idempotencyKey: string;
+	jobId: string;
+	projectId: string;
+}
+
 export interface CoreTextResponseInput extends CoreGenerationIdentity {
 	idempotencyKey: string;
 	prompt: string;
+}
+
+export interface CoreCanvasTextStreamInput extends CoreGenerationIdentity {
+	jobId: string;
+	lastEventId?: string;
+	projectId: string;
+	signal?: AbortSignal;
 }
 
 export interface CoreGenerationJobResult {
@@ -148,6 +166,68 @@ export class CoreGenerationProvider {
 		};
 	}
 
+	async streamCanvasText(input: CoreCanvasTextStreamInput) {
+		const workspaceId = requireText(input.workspaceId, "workspaceId");
+		let response: Response;
+		try {
+			response = await this.remoteCall.stream({
+				body: {
+					jobId: requireText(input.jobId, "jobId"),
+					projectId: requireText(input.projectId, "projectId"),
+				},
+				identity: {
+					correlationId: requireText(input.correlationId, "correlationId"),
+					userId: requireText(input.userId, "userId"),
+					workspaceId,
+				},
+				...(input.lastEventId === undefined
+					? {}
+					: { lastEventId: requireText(input.lastEventId, "lastEventId") }),
+				...(input.signal === undefined ? {} : { signal: input.signal }),
+			});
+		} catch (error) {
+			if (error instanceof CoreRemoteCallTransportError) {
+				throw new CoreGenerationProviderError(
+					"CORE_UNREACHABLE",
+					`Core Canvas text stream failed: ${errorMessage(error.cause)}.`,
+					{ retryable: true },
+				);
+			}
+			throw error;
+		}
+		if (!response.ok) {
+			let remote: { code?: string; message?: string } = {};
+			try {
+				remote = remoteError(await response.json());
+			} catch {
+				// The Core boundary must return JSON errors before SSE headers.
+			}
+			throw new CoreGenerationProviderError(
+				remote.code ?? "CORE_TEXT_STREAM_REJECTED",
+				remote.message ??
+					`Core Canvas text stream failed with status ${response.status}.`,
+				{
+					retryable: response.status === 429 || response.status >= 500,
+					status: response.status,
+				},
+			);
+		}
+		if (
+			!response.body ||
+			!response.headers
+				.get("content-type")
+				?.toLowerCase()
+				.includes("text/event-stream")
+		) {
+			throw new CoreGenerationProviderError(
+				"CORE_TEXT_STREAM_INVALID",
+				"Core Canvas text stream returned an invalid response.",
+				{ retryable: true, status: response.status },
+			);
+		}
+		return response;
+	}
+
 	async getJob(
 		input: CoreGenerationIdentity & { jobId: string; projectId: string },
 	) {
@@ -185,6 +265,24 @@ export class CoreGenerationProvider {
 				),
 			},
 			input.idempotencyKey,
+		);
+	}
+
+	async retry(input: CoreGenerationRetryInput) {
+		return generationResult(
+			await this.request(
+				input,
+				"commands",
+				{
+					action: "canvas_generation_retry",
+					module: "model-supply",
+					payload: {
+						jobId: requireText(input.jobId, "jobId"),
+						projectId: requireText(input.projectId, "projectId"),
+					},
+				},
+				input.idempotencyKey,
+			),
 		);
 	}
 
@@ -453,19 +551,49 @@ function canvasGenerationPayload(
 	operation: CoreGenerationOperation,
 	providerInput: ReturnType<typeof coreProviderInput>,
 ) {
+	if (!input.itemId && !input.nodeId) {
+		throw new CoreGenerationProviderError(
+			"CORE_GENERATION_LINEAGE_INVALID",
+			"Core generation requires a frozen itemId or nodeId.",
+			{ retryable: false },
+		);
+	}
 	return {
+		checkpointId: requireText(input.checkpointId, "checkpointId"),
+		count: requireGenerationCount(input.count),
 		dataClass: requireDataClass(input.dataClass),
 		inputAssets: providerInput.inputAssets,
 		inputNodeBindings: providerInput.inputNodeBindings,
+		...(input.itemId === undefined
+			? {}
+			: { itemId: requireText(input.itemId, "itemId") }),
 		...(input.modelId === undefined
 			? {}
 			: { modelId: requireText(input.modelId, "modelId") }),
+		...(input.nodeId === undefined
+			? {}
+			: { nodeId: requireText(input.nodeId, "nodeId") }),
 		operation,
 		parameters: providerInput.parameters,
 		projectId: requireText(input.projectId, "projectId"),
 		prompt: requireText(input.prompt, "prompt"),
 		revisionId: requireText(input.revisionId, "revisionId"),
 	};
+}
+
+function requireGenerationCount(value: unknown) {
+	if (
+		typeof value !== "number" ||
+		!Number.isSafeInteger(value) ||
+		value !== 1
+	) {
+		throw new CoreGenerationProviderError(
+			"CORE_GENERATION_COUNT_INVALID",
+			"Canvas batch generation is unavailable until per-item execution and product usage settlement are implemented.",
+			{ retryable: false },
+		);
+	}
+	return value;
 }
 
 function requireDataClass(value: CoreDataClass[]) {

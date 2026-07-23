@@ -62,3 +62,38 @@ test("K2 creates every toolbar node at approved size without provider state", ()
 		],
 	);
 });
+
+test("text stream preview is visual-only and loses to durable Canvas text", () => {
+	const preview = toVozebNode(
+		{
+			data: {
+				jobId: "job-internal-1",
+				streamPreview: "正在生成的预览",
+				text: "",
+			},
+			height: 120,
+			id: "text-1",
+			type: "text",
+			width: 220,
+			x: 0,
+			y: 0,
+		},
+		() => "",
+	);
+	assert.equal(preview.metadata?.content, "正在生成的预览");
+	assert.doesNotMatch(JSON.stringify(preview), /job-internal/u);
+
+	const durable = toVozebNode(
+		{
+			data: { streamPreview: "旧预览", text: "服务端确认的正文" },
+			height: 120,
+			id: "text-2",
+			type: "text",
+			width: 220,
+			x: 0,
+			y: 0,
+		},
+		() => "",
+	);
+	assert.equal(durable.metadata?.content, "服务端确认的正文");
+});

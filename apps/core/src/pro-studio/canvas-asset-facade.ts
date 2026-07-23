@@ -45,9 +45,43 @@ export type CanvasAssetSource =
       kind: 'generation_job';
     };
 
+/**
+ * Current, server-owned export policy for a Canvas asset. It is deliberately
+ * separate from the immutable object receipt: a receipt proves bytes, while
+ * this fact decides whether those bytes may be retrieved now.
+ */
+export interface CanvasOwnedAssetExportPolicy {
+  exportAllowed: boolean;
+  expiresAt: string | null;
+  ownerId: string;
+  privateRetrievalAllowed: boolean;
+  revokedAt: string | null;
+  updatedAt: string;
+  version: number;
+  workspaceId: string;
+}
+
+export function createCanvasOwnedAssetExportPolicy(input: {
+  ownerId: string;
+  updatedAt: string;
+  workspaceId: string;
+}): CanvasOwnedAssetExportPolicy {
+  return {
+    exportAllowed: true,
+    expiresAt: null,
+    ownerId: input.ownerId,
+    privateRetrievalAllowed: true,
+    revokedAt: null,
+    updatedAt: input.updatedAt,
+    version: 1,
+    workspaceId: input.workspaceId,
+  };
+}
+
 export interface CanvasOwnedAsset {
   contentType: CanvasAssetContentType;
   createdAt: string;
+  exportPolicy?: CanvasOwnedAssetExportPolicy;
   fileName: string;
   id: string;
   legacyStorageKey?: string;
@@ -96,6 +130,12 @@ export interface CanvasAssetRepository {
     assetId: string,
     createdAt: string,
   ): Promise<CanvasAssetDeletionOutboxRecord | null>;
+  updateExportPolicy?(input: {
+    assetId: string;
+    expectedVersion: number;
+    exportPolicy: CanvasOwnedAssetExportPolicy;
+    workspaceId: string;
+  }): Promise<CanvasOwnedAsset | null>;
 }
 
 export interface CanvasObjectStorage {
@@ -104,11 +144,22 @@ export interface CanvasObjectStorage {
   read(objectKey: string): Promise<Uint8Array | null>;
 }
 
+/**
+ * A write boundary that confirms the Core storage receipt before returning.
+ * Generation producers use this instead of a generic Canvas object write so
+ * their new records are exportable only when Core can later verify the same
+ * immutable receipt before reading media bytes.
+ */
+export interface ReceiptAwareCanvasObjectStorage extends CanvasObjectStorage {
+  putVerifiedCanvasAsset(objectKey: string, bytes: Uint8Array): Promise<void>;
+}
+
 export type CanvasAssetErrorCode =
   | 'GENERATED_ASSET_REJECTED'
   | 'INVALID_INPUT'
   | 'INVALID_MEDIA'
   | 'NOT_FOUND'
+  | 'POLICY_VERSION_CONFLICT'
   | 'RANGE_NOT_SATISFIABLE';
 
 export class CanvasAssetError extends Error {
@@ -185,6 +236,87 @@ export class CanvasAssetFacade {
     return { assetId, status: 'pending' as const };
   }
 
+  /**
+   * Policy changes are made against the durable Core OwnedAsset record. A
+   * legacy asset without a registered policy cannot be made exportable through
+   * this path; it needs an externally verified migration instead.
+   */
+  async updateExportPolicy(
+    context: AdvancedCanvasContext,
+    assetId: string,
+    input: {
+      expectedVersion: number;
+      exportAllowed?: boolean;
+      expiresAt?: string | null;
+      privateRetrievalAllowed?: boolean;
+      revokedAt?: string | null;
+    },
+  ) {
+    requireContext(context);
+    requireId(assetId, 'assetId');
+    const asset = await this.options.repository.get(context.workspaceId, assetId);
+    const current = asset?.exportPolicy;
+    if (!asset || !current || current.ownerId !== context.userId) {
+      await this.denyAccess(context, assetId);
+      throw new CanvasAssetError(
+        'NOT_FOUND',
+        'Canvas asset export policy was not found.',
+      );
+    }
+    if (
+      !this.options.repository.updateExportPolicy ||
+      !validPolicyTimestamp(current.updatedAt) ||
+      !Number.isSafeInteger(current.version) ||
+      current.version < 1 ||
+      !Number.isSafeInteger(input.expectedVersion) ||
+      input.expectedVersion < 1 ||
+      (input.expiresAt !== undefined &&
+        input.expiresAt !== null &&
+        !validPolicyTimestamp(input.expiresAt)) ||
+      (input.revokedAt !== undefined &&
+        input.revokedAt !== null &&
+        !validPolicyTimestamp(input.revokedAt)) ||
+      (current.revokedAt !== null && input.revokedAt !== current.revokedAt)
+    ) {
+      throw new CanvasAssetError(
+        'INVALID_INPUT',
+        'Canvas asset export policy update is invalid.',
+      );
+    }
+    if (input.expectedVersion !== current.version) {
+      throw new CanvasAssetError(
+        'POLICY_VERSION_CONFLICT',
+        'Canvas asset export policy changed before this update.',
+      );
+    }
+    const updated = await this.options.repository.updateExportPolicy({
+      assetId,
+      expectedVersion: input.expectedVersion,
+      exportPolicy: {
+        ...current,
+        ...(input.exportAllowed !== undefined
+          ? { exportAllowed: input.exportAllowed }
+          : {}),
+        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+        ...(input.privateRetrievalAllowed !== undefined
+          ? { privateRetrievalAllowed: input.privateRetrievalAllowed }
+          : {}),
+        ...(input.revokedAt !== undefined ? { revokedAt: input.revokedAt } : {}),
+        updatedAt: this.clock().toISOString(),
+        version: current.version + 1,
+        workspaceId: context.workspaceId,
+      },
+      workspaceId: context.workspaceId,
+    });
+    if (!updated) {
+      throw new CanvasAssetError(
+        'POLICY_VERSION_CONFLICT',
+        'Canvas asset export policy changed before this update.',
+      );
+    }
+    return updated;
+  }
+
   private async denyAccess(context: AdvancedCanvasContext, assetId: string) {
     await this.options.accessAudit?.recordAccessDenied({
       actorId: context.userId,
@@ -246,12 +378,18 @@ export class CanvasAssetFacade {
         'Canvas derivatives require an owned parent asset.',
       );
     }
+    const createdAt = this.clock().toISOString();
     const id = this.nextId();
     const extension = extensionFor(input.contentType);
     const objectKey = `${context.workspaceId}/canvas/assets/${id}.${extension}`;
     const asset: CanvasOwnedAsset = {
       contentType: input.contentType,
-      createdAt: this.clock().toISOString(),
+      createdAt,
+      exportPolicy: createCanvasOwnedAssetExportPolicy({
+        ownerId: context.userId,
+        updatedAt: createdAt,
+        workspaceId: context.workspaceId,
+      }),
       fileName: safeFileName(input.fileName, extension),
       id,
       ...(input.legacyStorageKey
@@ -269,7 +407,7 @@ export class CanvasAssetFacade {
         : { kind: 'local_import' },
       workspaceId: context.workspaceId,
     };
-    await this.options.storage.put(objectKey, Uint8Array.from(input.bytes));
+    await this.writeCanvasAsset(objectKey, Uint8Array.from(input.bytes));
     try {
       await this.options.repository.insert(asset);
     } catch (error) {
@@ -318,6 +456,18 @@ export class CanvasAssetFacade {
       node.data = nextData;
     }
     return hydrated;
+  }
+
+  private async writeCanvasAsset(objectKey: string, bytes: Uint8Array) {
+    const storage = this.options.storage;
+    if (
+      'putVerifiedCanvasAsset' in storage &&
+      typeof storage.putVerifiedCanvasAsset === 'function'
+    ) {
+      await storage.putVerifiedCanvasAsset(objectKey, bytes);
+      return;
+    }
+    await storage.put(objectKey, bytes);
   }
 
   async getAssetDelivery(
@@ -396,6 +546,30 @@ export class MemoryCanvasAssetRepository implements CanvasAssetRepository {
         candidate.legacyStorageKey === storageKey
     );
     return asset ? structuredClone(asset) : null;
+  }
+
+  async updateExportPolicy(input: {
+    assetId: string;
+    expectedVersion: number;
+    exportPolicy: CanvasOwnedAssetExportPolicy;
+    workspaceId: string;
+  }) {
+    const key = this.key(input.workspaceId, input.assetId);
+    if (this.tombstones.has(key)) return null;
+    const asset = this.assets.get(key);
+    if (
+      !asset ||
+      !asset.exportPolicy ||
+      asset.exportPolicy.version !== input.expectedVersion
+    ) {
+      return null;
+    }
+    const updated = {
+      ...asset,
+      exportPolicy: structuredClone(input.exportPolicy),
+    };
+    this.assets.set(key, updated);
+    return structuredClone(updated);
   }
 
   inspect() {
@@ -582,6 +756,10 @@ function matchesMagicBytes(
     ascii(bytes, 0, 3) === 'ID3' ||
     (bytes[0] === 0xff && (bytes[1] ?? 0) >= 0xe0)
   );
+}
+
+function validPolicyTimestamp(value: string) {
+  return Number.isFinite(Date.parse(value));
 }
 
 function parseRange(value: string, size: number) {

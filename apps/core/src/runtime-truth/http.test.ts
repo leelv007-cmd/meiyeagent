@@ -98,7 +98,8 @@ test('GET /health/ready reports ready when probes pass', async (t) => {
   assert.equal(payload.data.ready, true);
   assert.equal(payload.data.status, 'ready');
   assert.equal(payload.data.release?.commitSha, 'http-test-sha');
-  assert.equal(payload.data.checks.length, 8);
+  // 9 named checks including providerLive (skipped when not required/configured).
+  assert.equal(payload.data.checks.length, 9);
 });
 
 test('GET /health/ready returns 503 when a required probe fails', async (t) => {

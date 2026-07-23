@@ -23,6 +23,11 @@ import {
 } from './product/p1-model-policy.js';
 import { createCoreServer } from './server.js';
 import {
+  assembleCapabilitiesFromEnv,
+  composeRuntimeTruth,
+  isProtectedAppEnv,
+} from './runtime-truth/index.js';
+import {
   closeHttpServerWithDeadline,
   shutdownCoreRuntime,
 } from './server-shutdown.js';
@@ -215,6 +220,7 @@ import {
   ContextFoundationModule,
   ContentPackageZipExportAdapter,
   HeadGetContentPackageOwnedReceiptVerifier,
+  OperationsCanvasExportAssetAccessService,
   OperationsContentPackageExportAssetReader,
   PostgresContentPackageMigrationRunRepository,
   PostgresContentPackageMigrationSource,
@@ -293,22 +299,28 @@ const relationalProductRepository = new PostgresRelationalProductRepository(
   pool
 );
 const assetStorage = modelAssetStorageFromEnv(process.env);
-const referenceAssets = new CompositeReferenceAssetResolver([
-  new OwnedAssetReferenceResolver(
-    new PostgresCanvasAssetRepository(pool),
-    {
-      async head(objectKey) {
-        return assetStorage.head(objectKey);
-      },
-      async read(objectKey) {
-        return (await assetStorage.read(objectKey)).bytes;
-      },
+const canvasAssetRepository = new PostgresCanvasAssetRepository(pool);
+const ownedReferenceAssets = new OwnedAssetReferenceResolver(
+  canvasAssetRepository,
+  {
+    async head(objectKey) {
+      return assetStorage.head(objectKey);
     },
-  ),
-  new ProductReferenceAssetResolver(relationalProductRepository, {
+    async read(objectKey) {
+      return (await assetStorage.read(objectKey)).bytes;
+    },
+  },
+);
+const productReferenceAssets = new ProductReferenceAssetResolver(
+  relationalProductRepository,
+  {
     appBaseUrl: process.env.APP_BASE_URL ?? 'http://localhost:3000',
     serviceToken,
-  }),
+  },
+);
+const referenceAssets = new CompositeReferenceAssetResolver([
+  ownedReferenceAssets,
+  productReferenceAssets,
 ]);
 const foundationRepository = new PostgresFoundationRepository(pool);
 const grantLotLedger = new PostgresGrantLotLedger(pool);
@@ -979,6 +991,19 @@ const batchExecutor = new ProductOperationsBatchExecutionAdapter(
 const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
   relationalProductRepository
 );
+const contentPackageExportAssets = new OperationsContentPackageExportAssetReader(
+  operationsRepository,
+  assetStorage,
+  referenceAssets
+);
+const canvasExportAssetAccess = new OperationsCanvasExportAssetAccessService({
+  canvasAssets: canvasAssetRepository,
+  contentPackageAssets: contentPackageExportAssets,
+  contentPackageRights: contentPackageRightsResolver,
+  ownedAssetStorage: assetStorage,
+  productAssets: productReferenceAssets,
+  productPolicy: contentPackageRightsResolver,
+});
 const sourceContentPackageReader = {
   async get(input: { packageId: string; workspaceId: string }) {
     return (
@@ -1008,13 +1033,10 @@ const sourceContentPackageAdmissionReader = {
 };
 operationsService = new OperationsApplicationService(operationsRepository, {
   billingLifecycle,
+  canvasExportAssetAccess,
   contentPackageExporter: new ContentPackageZipExportAdapter(
     assetStorage,
-    new OperationsContentPackageExportAssetReader(
-      operationsRepository,
-      assetStorage,
-      referenceAssets
-    ),
+    contentPackageExportAssets,
     {
       allowRecordedSyntheticVideoCompliance: process.env.APP_ENV === 'e2e',
       appEnv: process.env.APP_ENV,
@@ -1595,8 +1617,37 @@ const workflowEvents = new WorkflowEventApplicationService([
   videoWorkflowEventSource,
 ]);
 
+// Rebuild this lightweight projection for every truth-surface request so an
+// evidence artifact that expires or is replaced cannot stay verified in memory.
+const resolveRuntimeTruth = () => {
+  const providerEvidence = assembleCapabilitiesFromEnv(process.env);
+  const providerEvidenceConfigured =
+    process.env.PROVIDER_LIVE_REQUIRE_EVIDENCE === '1' ||
+    Boolean(process.env.PROVIDER_LIVE_EVIDENCE_PATH?.trim()) ||
+    Boolean(process.env.PROVIDER_LIVE_EVIDENCE_DIR?.trim()) ||
+    isProtectedAppEnv(process.env);
+
+  return composeRuntimeTruth({
+    capabilityRecords: providerEvidence.capabilityRecords,
+    env: process.env,
+    probes: providerEvidenceConfigured
+      ? {
+          providerLive: () => providerEvidence.providerLiveReadiness,
+        }
+      : undefined,
+    release: providerEvidence.release,
+  });
+};
+const runtimeTruth = {
+  evaluateReadiness: () => resolveRuntimeTruth().evaluateReadiness(),
+  listMerchantCapabilities: () =>
+    resolveRuntimeTruth().listMerchantCapabilities(),
+  releaseIdentity: () => resolveRuntimeTruth().releaseIdentity(),
+};
+
 const server = createCoreServer({
   aiStreamingRunner,
+  canvasTextStreams: modelControlPlane,
   executionModeGate: streamingModeGate,
   assetReader: assetStorage,
   composerSubmission: composerSubmissionCoordinator
@@ -1615,6 +1666,7 @@ const server = createCoreServer({
   operationsService,
   productService,
   p1ApplicationService,
+  runtimeTruth,
   serviceToken,
   workflowEvents,
 });

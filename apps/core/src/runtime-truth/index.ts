@@ -1,4 +1,5 @@
 export {
+  assertP0ReleaseCandidateManifest,
   assertReleaseManifestCoherent,
   buildReleaseManifest,
   releaseIdentityFromEnv,
@@ -35,6 +36,31 @@ export {
   type Queryable,
   type WorkerFreshnessSource,
 } from './probes.js';
+export {
+  CORE_GENERATION_CAPABILITIES,
+  OPERATION_TO_CAPABILITY,
+  defaultProviderLiveEvidencePath,
+  isCoreProviderOperation,
+  judgeProviderLiveEvidence,
+  projectCapabilityRecordsFromProviderEvidence,
+  providerLiveEvidenceReadiness,
+  type AssistedEvidenceHint,
+  type CoreGenerationCapabilityId,
+  type CoreProviderOperation,
+  type ProviderEvidenceJudgment,
+  type ProviderOperationJudgment,
+  type ProviderPublishGateStatus,
+} from './provider-evidence.js';
+export {
+  assembleCapabilitiesFromEnv,
+  assembleCapabilitiesFromProviderEvidence,
+  type CapabilityAssemblyResult,
+} from './capability-assembly.js';
+export {
+  evaluateReleaseCandidateAcceptance,
+  type ReleaseCandidateAcceptanceInput,
+  type ReleaseCandidateAcceptanceResult,
+} from './release-candidate.js';
 export type {
   InternalCapabilityEvidence,
   InternalCapabilityRecord,
@@ -42,6 +68,8 @@ export type {
   MerchantCapabilitiesSnapshot,
   MerchantCapability,
   MerchantCapabilityState,
+  MerchantChannelMode,
+  P0ReleaseCandidateManifest,
   ReadinessCheckName,
   ReadinessCheckResult,
   ReadinessCheckStatus,

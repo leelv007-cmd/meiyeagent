@@ -107,6 +107,15 @@ export function layoutSplitChildren(
 	return pieces;
 }
 
+/** Load an OwnedAsset image as a data URL for retouch dialog previews. */
+export async function loadSourceImageDataUrl(input: {
+	fetcher?: typeof fetch;
+	sourceNode: SourceImageNode;
+}): Promise<string> {
+	const source = await readSourceImage(input);
+	return source.dataUrl;
+}
+
 export async function cropOwnedImageAsset(
 	callCanvas: CanvasCaller,
 	input: {
@@ -142,6 +151,50 @@ export async function cropOwnedImageAsset(
 	});
 	const edge: KernelEdge = {
 		id: input.nextEdgeId?.() ?? `edge-${input.sourceNode.id}-${node.id}-crop`,
+		source: input.sourceNode.id,
+		target: node.id,
+		type: "derive",
+	};
+	return { asset, edge, node };
+}
+
+/** Persist the locally painted PNG mask as an OwnedAsset before image.edit. */
+export async function persistMaskOwnedImageAsset(
+	callCanvas: CanvasCaller,
+	input: {
+		maskDataUrl: string;
+		nextEdgeId?: () => string;
+		nextNodeId?: () => string;
+		sourceNode: SourceImageNode;
+	},
+) {
+	const sourceAssetId = sourceImageAssetId(input.sourceNode);
+	const mask = parseImageDataUrl(input.maskDataUrl);
+	if (mask.contentType !== "image/png") {
+		throw new Error("MASK_PNG_REQUIRED");
+	}
+	const asset = await persistBlobAsOwnedAsset(callCanvas, {
+		bytesBase64: mask.bytesBase64,
+		contentType: mask.contentType,
+		derivation: "mask",
+		fileName: `${safeFileStem(sourceAssetId)}-mask.png`,
+		parentAssetId: sourceAssetId,
+	});
+	if (!asset.id?.trim()) throw new Error("DERIVED_ASSET_REQUIRED");
+
+	const baseNode = buildImageNodeFromAsset(asset.id, {
+		height: input.sourceNode.height,
+		id: input.nextNodeId?.() ?? `image-${crypto.randomUUID()}`,
+		width: input.sourceNode.width,
+		x: input.sourceNode.x + input.sourceNode.width + 48,
+		y: input.sourceNode.y,
+	});
+	const node = {
+		...baseNode,
+		data: { ...baseNode.data, retouchRole: "mask" },
+	};
+	const edge: KernelEdge = {
+		id: input.nextEdgeId?.() ?? `edge-${input.sourceNode.id}-${node.id}-mask`,
 		source: input.sourceNode.id,
 		target: node.id,
 		type: "derive",
@@ -270,14 +323,7 @@ async function readSourceImage(input: {
 	fetcher?: typeof fetch;
 	sourceNode: SourceImageNode;
 }) {
-	const sourceAssetId =
-		typeof input.sourceNode.data.assetId === "string"
-			? input.sourceNode.data.assetId.trim()
-			: "";
-	if (!sourceAssetId) throw new Error("SOURCE_ASSET_REQUIRED");
-	if (input.sourceNode.type !== "image" || !input.sourceNode.id.trim()) {
-		throw new Error("SOURCE_IMAGE_NODE_REQUIRED");
-	}
+	const sourceAssetId = sourceImageAssetId(input.sourceNode);
 
 	const response = await (input.fetcher ?? fetch)(deliveryUrl(sourceAssetId), {
 		cache: "no-store",
@@ -290,6 +336,18 @@ async function readSourceImage(input: {
 	);
 	const dataUrl = `data:${sourceContentType};base64,${await fileToBase64(sourceBlob)}`;
 	return { assetId: sourceAssetId, dataUrl };
+}
+
+function sourceImageAssetId(sourceNode: SourceImageNode) {
+	const sourceAssetId =
+		typeof sourceNode.data.assetId === "string"
+			? sourceNode.data.assetId.trim()
+			: "";
+	if (!sourceAssetId) throw new Error("SOURCE_ASSET_REQUIRED");
+	if (sourceNode.type !== "image" || !sourceNode.id.trim()) {
+		throw new Error("SOURCE_IMAGE_NODE_REQUIRED");
+	}
+	return sourceAssetId;
 }
 
 function clampSplitAxis(value: number) {

@@ -7,6 +7,8 @@ import {
 } from "./core-generation-provider";
 
 const submission: CoreGenerationSubmitInput = {
+	checkpointId: "revision-1",
+	count: 1,
 	correlationId: "corr-canvas-1",
 	dataClass: ["contains_face"],
 	idempotencyKey: "canvas-generation-key-1",
@@ -26,6 +28,7 @@ const submission: CoreGenerationSubmitInput = {
 			role: "reference_image",
 		},
 	],
+	itemId: "item-1",
 	modelId: "image-model-1",
 	operation: "image.generate",
 	parameters: { height: 1024, width: 768 },
@@ -76,6 +79,8 @@ test("submits a Canvas generation through the authoritative Core model-supply co
 		action: "canvas_generation_submit",
 		module: "model-supply",
 		payload: {
+			checkpointId: "revision-1",
+			count: 1,
 			dataClass: ["contains_face"],
 			inputAssets: [{ assetId: "asset-input-1", role: "reference_image" }],
 			inputNodeBindings: [
@@ -85,6 +90,7 @@ test("submits a Canvas generation through the authoritative Core model-supply co
 					role: "reference_image",
 				},
 			],
+			itemId: "item-1",
 			modelId: "image-model-1",
 			operation: "image.generate",
 			parameters: { height: 1024, width: 768 },
@@ -96,7 +102,7 @@ test("submits a Canvas generation through the authoritative Core model-supply co
 	});
 });
 
-test("queries and cancels the Core job without substituting the Canvas job id", async () => {
+test("queries, retries, and cancels the Core job without substituting the Canvas job id", async () => {
 	const requests: Array<{ init?: RequestInit; url: string }> = [];
 	const provider = new CoreGenerationProvider({
 		coreServiceToken: "service-secret",
@@ -111,6 +117,14 @@ test("queries and cancels the Core job without substituting the Canvas job id", 
 
 	await provider.getJob({
 		correlationId: "corr-query",
+		jobId: "core-job-1",
+		projectId: "project-1",
+		userId: "user-a",
+		workspaceId: "workspace-a",
+	});
+	await provider.retry({
+		correlationId: "corr-retry",
+		idempotencyKey: "retry-key-1",
 		jobId: "core-job-1",
 		projectId: "project-1",
 		userId: "user-a",
@@ -134,9 +148,18 @@ test("queries and cancels the Core job without substituting the Canvas job id", 
 	assert.equal(requests[1]?.url.endsWith("/p1/commands"), true);
 	assert.equal(
 		new Headers(requests[1]?.init?.headers).get("idempotency-key"),
-		"cancel-key-1",
+		"retry-key-1",
 	);
 	assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), {
+		action: "canvas_generation_retry",
+		module: "model-supply",
+		payload: { jobId: "core-job-1", projectId: "project-1" },
+	});
+	assert.equal(
+		new Headers(requests[2]?.init?.headers).get("idempotency-key"),
+		"cancel-key-1",
+	);
+	assert.deepEqual(JSON.parse(String(requests[2]?.init?.body)), {
 		action: "canvas_generation_cancel",
 		module: "model-supply",
 		payload: { jobId: "core-job-1", projectId: "project-1" },
@@ -200,9 +223,12 @@ test("submits fixed text.respond without disguising it as copy generation", asyn
 		action: "canvas_generation_submit",
 		module: "model-supply",
 		payload: {
+			checkpointId: "revision-1",
+			count: 1,
 			dataClass: ["contains_face"],
 			inputAssets: [],
 			inputNodeBindings: [],
+			itemId: "item-1",
 			modelId: "llm-openai",
 			operation: "text.respond",
 			parameters: {},
@@ -293,6 +319,24 @@ test("preserves multimodal roles and advanced parameters for Core capability val
 		isProviderError("CORE_IMAGE_PARAMETERS_UNSUPPORTED", false),
 	);
 	assert.equal(requests.length, 3);
+});
+
+test("rejects batch counts before a single Core submission can be created", async () => {
+	let calls = 0;
+	const provider = new CoreGenerationProvider({
+		coreServiceToken: "service-secret",
+		coreServiceUrl: "http://core.internal:4100",
+		fetcher: async () => {
+			calls += 1;
+			return jsonResponse(200, { data: {} });
+		},
+	});
+
+	await assert.rejects(
+		provider.submit({ ...submission, count: 2 }),
+		isProviderError("CORE_GENERATION_COUNT_INVALID", false),
+	);
+	assert.equal(calls, 0);
 });
 
 test("surfaces an inactive Core deployment as a terminal failure", async () => {

@@ -7,7 +7,8 @@ import type {
   GeneratedPlatformVariants,
 } from '@meiye/contracts';
 import type {
-  AdvancedCanvasGenerationOrigin,
+	AdvancedCanvasGenerationOrigin,
+	AdvancedCanvasGenerationOriginRef,
   CatalogModel,
   CanvasGenerationInputAsset,
   CanvasGenerationInputNodeBinding,
@@ -70,9 +71,11 @@ export interface ModelSupplyResult {
   inputNodeBindings?: CanvasGenerationInputNodeBinding[];
   dispatchStatus?: 'queued';
   status: 'completed' | 'unknown' | 'failed';
-  failureCode?: string;
-  origin?: AdvancedCanvasGenerationOrigin;
-  snapshot: RouteSnapshot;
+	failureCode?: string;
+	retryable?: boolean;
+	origin?: AdvancedCanvasGenerationOrigin;
+	originRef?: AdvancedCanvasGenerationOriginRef;
+	snapshot: RouteSnapshot;
   attempt: ProviderAttempt;
   attempts: ProviderAttempt[];
   asset?: OwnedAsset;

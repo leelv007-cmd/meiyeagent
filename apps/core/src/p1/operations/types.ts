@@ -948,6 +948,30 @@ export interface ContentPackageRightsResolverPort {
   }>;
 }
 
+/**
+ * Optional, richer view of the same live Product rights decision used by
+ * ContentPackage. It is read-only and exists so private export callers can
+ * preserve a safe unavailable reason without reconstructing rights from
+ * Canvas graph data.
+ */
+export interface ContentPackageAssetExportPolicyPort {
+  resolveExportPolicy(input: {
+    assetId: string;
+    workspaceId: string;
+  }): Promise<
+    | { kind: 'authorized' }
+    | { kind: 'unknown' }
+    | {
+        kind: 'unavailable';
+        reason:
+          | 'access_denied'
+          | 'expired'
+          | 'private_retrieval_denied'
+          | 'revoked';
+      }
+  >;
+}
+
 export interface UserTemplate {
   id: string;
   workspaceId: string;

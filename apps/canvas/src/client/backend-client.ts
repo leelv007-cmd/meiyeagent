@@ -44,6 +44,32 @@ export async function callCanvas<T>(
 	return payload.data as T;
 }
 
+/** The one response-streaming Canvas BFF action; callers must not bypass it. */
+export function openCanvasTextStream(
+	input: {
+		jobId: string;
+		lastEventId?: string;
+		projectId: string;
+	},
+	options: { signal?: AbortSignal } = {},
+) {
+	return fetch("/api/canvas/streamTextGeneration", {
+		body: JSON.stringify({
+			jobId: input.jobId,
+			projectId: input.projectId,
+		}),
+		cache: "no-store",
+		credentials: "same-origin",
+		headers: {
+			"content-type": "application/json",
+			"x-csrf-token": readCookie("__Host-canvas-csrf") ?? "",
+			...(input.lastEventId ? { "last-event-id": input.lastEventId } : {}),
+		},
+		method: "POST",
+		signal: options.signal,
+	});
+}
+
 export function assetDeliveryUrl(
 	assetId: string,
 	options: { download?: boolean } = {},

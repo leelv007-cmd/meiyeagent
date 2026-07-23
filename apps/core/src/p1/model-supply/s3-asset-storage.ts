@@ -537,6 +537,33 @@ export class S3CompatibleAssetStorage
   }
 
   /**
+   * Reads only the receipt sidecar. Canvas export uses this before it asks for
+   * object bytes, so a mismatched or missing immutable receipt fails closed.
+   */
+  async verifyCanvasAssetReceipt(input: {
+    contentType: CustodyOwnedAssetContentType;
+    objectKey: string;
+    sha256: string;
+    sizeBytes: number;
+    workspaceId: string;
+  }) {
+    if (!input.objectKey.startsWith(`${input.workspaceId}/canvas/assets/`)) {
+      return false;
+    }
+    try {
+      const receipt = await this.readStoredReceipt(input.objectKey);
+      return (
+        receipt.contentType === input.contentType &&
+        receipt.objectKey === input.objectKey &&
+        receipt.sha256 === input.sha256 &&
+        receipt.sizeBytes === input.sizeBytes
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Cleanup treats the data object and receipt sidecar as one recoverable
    * state. A missing sidecar never authorizes deletion of a present object.
    */

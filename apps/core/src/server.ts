@@ -40,6 +40,10 @@ import {
 } from './p1/foundation/index.js';
 import type { IntegrationApplicationService } from './p1/integrations/index.js';
 import type { AiStreamingRunner } from './p1/model-supply/ai-sdk-runner.js';
+import type {
+  CanvasTextGenerationStreamEvent,
+  ModelSupplyControlPlaneService,
+} from './p1/model-supply/foundation-module.js';
 import type { CustodyOwnedAssetContentType } from './p1/model-supply/index.js';
 import {
   OperationsError,
@@ -80,6 +84,10 @@ interface CoreServerDependencies {
   p1ApplicationService?: P1ApplicationService;
   integrationService?: IntegrationApplicationService;
   aiStreamingRunner?: AiStreamingRunner;
+  canvasTextStreams?: Pick<
+    ModelSupplyControlPlaneService,
+    'streamCanvasTextGeneration'
+  >;
   executionModeGate?: { blocksNewSubmission(): Promise<boolean> };
   operationsService?: Pick<
     OperationsApplicationService,
@@ -111,6 +119,8 @@ interface CoreServerDependencies {
     }>;
     listMerchantCapabilities(): Promise<{
       capabilities: Array<{
+        channelLabel?: string;
+        channelMode?: 'single_channel' | 'multi_channel' | 'none';
         id: string;
         safeExplanation: string;
         state: 'verified' | 'assisted' | 'unavailable';
@@ -812,8 +822,91 @@ function waitForSseDrain(response: ServerResponse, signal: AbortSignal) {
   });
 }
 
+function canvasTextStreamRequest(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new DomainError(
+      'INVALID_CANVAS_TEXT_STREAM_REQUEST',
+      'A Canvas project and text generation job are required.',
+      400,
+    );
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    Object.keys(record).some((key) => key !== 'jobId' && key !== 'projectId') ||
+    typeof record.projectId !== 'string' ||
+    !SAFE_REQUEST_ID.test(record.projectId) ||
+    typeof record.jobId !== 'string' ||
+    !SAFE_REQUEST_ID.test(record.jobId)
+  ) {
+    throw new DomainError(
+      'INVALID_CANVAS_TEXT_STREAM_REQUEST',
+      'A valid Canvas project and text generation job are required.',
+      400,
+    );
+  }
+  return { jobId: record.jobId, projectId: record.projectId };
+}
+
+function canvasTextStreamCursor(value: string | string[] | undefined) {
+  if (value === undefined) return 0;
+  if (typeof value !== 'string' || !/^(0|[1-9]\d*)$/u.test(value)) {
+    throw new DomainError(
+      'INVALID_CANVAS_TEXT_STREAM_CURSOR',
+      'Canvas text stream cursor is invalid.',
+      400,
+    );
+  }
+  const cursor = Number(value);
+  if (!Number.isSafeInteger(cursor)) {
+    throw new DomainError(
+      'INVALID_CANVAS_TEXT_STREAM_CURSOR',
+      'Canvas text stream cursor is invalid.',
+      400,
+    );
+  }
+  return cursor;
+}
+
+function encodeCanvasTextStreamEvent(event: CanvasTextGenerationStreamEvent) {
+  const data =
+    event.type === 'delta'
+      ? {
+          delta: event.delta,
+          jobId: event.jobId,
+          sequence: event.sequence,
+        }
+      : event.type === 'recoverable'
+        ? {
+            code: event.code,
+            jobId: event.jobId,
+            message: event.message,
+            retryable: event.retryable,
+            sequence: event.sequence,
+          }
+      : {
+          failureCode: event.result.failureCode,
+          jobId: event.jobId,
+          sequence: event.sequence,
+          status: event.result.status,
+        };
+  return `id: ${event.sequence}\nevent: canvas.text.${event.type}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+function encodeCanvasTextStreamError(error: unknown) {
+  const domainError = p1HttpError(error, {
+    code: 'CANVAS_TEXT_STREAM_FAILED',
+    message: 'Canvas text streaming failed.',
+    status: 502,
+  });
+  return `event: canvas.text.error\ndata: ${JSON.stringify({
+    code: domainError.code,
+    message: domainError.message,
+  })}\n\n`;
+}
+
 export function createCoreServer({
   aiStreamingRunner,
+  canvasTextStreams,
   executionModeGate,
   assetReader,
   diagnosticRepository,
@@ -1502,6 +1595,112 @@ export function createCoreServer({
             requestCorrelationId
           );
         }
+      }
+      return;
+    }
+
+    const canvasTextStreamWorkspaceId = workspaceRoute(
+      url.pathname,
+      'canvas/text/stream'
+    );
+    if (request.method === 'POST' && canvasTextStreamWorkspaceId) {
+      const abortController = new AbortController();
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let writer: WorkflowSseWriter | undefined;
+      const disconnect = () => {
+        if (!abortController.signal.aborted) {
+          abortController.abort(new Error('Canvas text stream disconnected.'));
+        }
+      };
+      request.once('aborted', disconnect);
+      response.once('close', disconnect);
+      try {
+        if (!canvasTextStreams) {
+          throw new DomainError(
+            'CANVAS_TEXT_STREAM_UNAVAILABLE',
+            'Canvas text streaming is unavailable in the current execution mode.',
+            503,
+          );
+        }
+        const context = p1Identity(
+          request,
+          canvasTextStreamWorkspaceId,
+          requestCorrelationId
+        );
+        if (context.actor !== 'worker') {
+          throw new DomainError(
+            'FORBIDDEN',
+            'Canvas text streaming requires the Canvas service actor.',
+            403,
+          );
+        }
+        const parsed = canvasTextStreamRequest(await readJson(request));
+        const afterSequence = canvasTextStreamCursor(
+          request.headers['last-event-id']
+        );
+        await canvasTextStreams.streamCanvasTextGeneration(context, {
+          abortSignal: abortController.signal,
+          afterSequence,
+          jobId: parsed.jobId,
+          onEvent: async (event) => {
+            if (!writer || !(await writer.write(encodeCanvasTextStreamEvent(event)))) {
+              disconnect();
+              throw new Error('Canvas text stream response is no longer writable.');
+            }
+          },
+          onReady: async () => {
+            if (abortController.signal.aborted) {
+              throw new Error('Canvas text stream disconnected before start.');
+            }
+            response.writeHead(200, {
+              'cache-control': 'no-cache, no-transform',
+              connection: 'keep-alive',
+              'content-type': 'text/event-stream; charset=utf-8',
+              'x-accel-buffering': 'no',
+              'x-correlation-id': requestCorrelationId,
+              'x-meiye-stream-protocol': 'canvas-text-events-v1',
+            });
+            writer = new WorkflowSseWriter(response, abortController.signal);
+            if (!(await writer.write(': heartbeat\n\n'))) {
+              disconnect();
+              throw new Error('Canvas text stream response is no longer writable.');
+            }
+            heartbeat = setInterval(() => {
+              if (abortController.signal.aborted || !writer) return;
+              void writer.write(': heartbeat\n\n').then((written) => {
+                if (!written) disconnect();
+              });
+            }, workflowHeartbeatMs);
+          },
+          projectId: parsed.projectId,
+          runner: aiStreamingRunner,
+        });
+        if (heartbeat) clearInterval(heartbeat);
+        await writer?.flush();
+        if (!response.writableEnded) response.end();
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          if (response.headersSent) {
+            await writer?.write(encodeCanvasTextStreamError(error));
+            if (!response.writableEnded) response.end();
+          } else {
+            sendP1HttpError(
+              response,
+              error,
+              {
+                code: 'CANVAS_TEXT_STREAM_FAILED',
+                message: 'Canvas text streaming failed.',
+                status: 502,
+              },
+              requestCorrelationId
+            );
+          }
+        }
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
+        request.off('aborted', disconnect);
+        response.off('close', disconnect);
+        if (!abortController.signal.aborted) abortController.abort();
       }
       return;
     }

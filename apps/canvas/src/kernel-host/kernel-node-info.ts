@@ -1,5 +1,5 @@
 /**
- * Desensitized node info projection (G24).
+ * Host-owned desensitized node info projection (G24).
  * Never surfaces raw ids, asset keys, delivery URLs, or binary payloads.
  */
 

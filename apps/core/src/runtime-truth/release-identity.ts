@@ -1,4 +1,9 @@
-import type { ReleaseIdentity, ReleaseManifest, ReleaseUnitIdentity } from './types.js';
+import type {
+  P0ReleaseCandidateManifest,
+  ReleaseIdentity,
+  ReleaseManifest,
+  ReleaseUnitIdentity,
+} from './types.js';
 
 const COMMIT_ENV_KEYS = [
   'RELEASE_COMMIT_SHA',
@@ -18,6 +23,14 @@ const CONFIG_ENV_KEYS = [
   'PROVIDER_LIVE_CONFIG_REVISION',
   'CONFIG_REVISION',
 ] as const;
+
+const REQUIRED_UNITS: ReleaseUnitIdentity['unit'][] = [
+  'web',
+  'core',
+  'worker',
+  'canvas',
+];
+const COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/u;
 
 /**
  * Resolve release identity from process env without inventing multi-channel claims.
@@ -72,14 +85,16 @@ export function buildReleaseManifest(input: {
 
 /** All four deploy units must share one commit for a coherent release candidate. */
 export function assertReleaseManifestCoherent(manifest: ReleaseManifest) {
-  const required: ReleaseUnitIdentity['unit'][] = [
-    'web',
-    'core',
-    'worker',
-    'canvas',
-  ];
   const present = new Set(manifest.units.map((unit) => unit.unit));
-  for (const unit of required) {
+  if (manifest.units.length !== REQUIRED_UNITS.length) {
+    throw new Error(
+      'Release manifest must contain exactly web, core, worker, and canvas.',
+    );
+  }
+  if (present.size !== manifest.units.length) {
+    throw new Error('Release manifest must not duplicate units.');
+  }
+  for (const unit of REQUIRED_UNITS) {
     if (!present.has(unit)) {
       throw new Error(`Release manifest is missing unit ${unit}.`);
     }
@@ -90,13 +105,77 @@ export function assertReleaseManifestCoherent(manifest: ReleaseManifest) {
       'Release manifest units must share a single commit SHA.',
     );
   }
-  const digests = manifest.units
-    .map((unit) => unit.artifactDigest)
-    .filter((value): value is string => Boolean(value));
-  if (digests.length > 0 && new Set(digests).size !== 1) {
-    throw new Error(
-      'When artifact digests are present they must match across units.',
-    );
+}
+
+/**
+ * Validate the staging-produced artifact consumed by #147. This intentionally
+ * rejects in-process/unit-only manifests: they do not prove a deployed RC.
+ */
+export function assertP0ReleaseCandidateManifest(
+  manifest: P0ReleaseCandidateManifest,
+  expectedCommitSha: string,
+  now = new Date(),
+) {
+  assertReleaseManifestCoherent(manifest);
+  if (!COMMIT_SHA_PATTERN.test(expectedCommitSha)) {
+    throw new Error('Release candidate must use a full 40-character commit SHA.');
+  }
+  if (!Number.isFinite(now.getTime())) {
+    throw new Error('Release candidate requires a valid current clock.');
+  }
+  if (manifest.schemaVersion !== 1) {
+    throw new Error('Release manifest schemaVersion must be 1.');
+  }
+  if (manifest.releaseRef !== expectedCommitSha) {
+    throw new Error('Release manifest releaseRef must match the release candidate SHA.');
+  }
+  if (manifest.environment !== 'staging') {
+    throw new Error('P0 release manifest environment must be staging.');
+  }
+  if (!nonEmpty(manifest.workflowRun)) {
+    throw new Error('Release manifest workflowRun is required.');
+  }
+  if (
+    !validTimestamp(manifest.startedAt) ||
+    !validTimestamp(manifest.completedAt) ||
+    !validTimestamp(manifest.capturedAt) ||
+    !validTimestamp(manifest.expiresAt)
+  ) {
+    throw new Error('Release manifest requires valid start, completion, capture, and expiry timestamps.');
+  }
+  if (Date.parse(manifest.completedAt) < Date.parse(manifest.startedAt)) {
+    throw new Error('Release manifest completed before it started.');
+  }
+  if (Date.parse(manifest.expiresAt) <= Date.parse(manifest.completedAt)) {
+    throw new Error('Release manifest expires before completion.');
+  }
+  if (Date.parse(manifest.expiresAt) <= now.getTime()) {
+    throw new Error(`Release manifest expired at ${manifest.expiresAt}.`);
+  }
+  if (manifest.result !== 'pass') {
+    throw new Error('Release manifest result must be pass.');
+  }
+  if (
+    !nonEmpty(manifest.verification?.readinessEvidenceRef) ||
+    !nonEmpty(manifest.verification?.recoveryEvidenceRef)
+  ) {
+    throw new Error('Release manifest requires readiness and recovery evidence references.');
+  }
+  for (const medium of ['copy', 'image', 'video'] as const) {
+    if (!nonEmpty(manifest.verification?.journeyEvidenceRefs?.[medium])) {
+      throw new Error(`Release manifest is missing ${medium} journey evidence.`);
+    }
+  }
+  for (const unit of manifest.units) {
+    if (!COMMIT_SHA_PATTERN.test(unit.commitSha)) {
+      throw new Error(`Release unit ${unit.unit} must have a full commit SHA.`);
+    }
+    if (!nonEmpty(unit.artifactDigest)) {
+      throw new Error(`Release unit ${unit.unit} is missing an immutable artifact digest.`);
+    }
+    if (!nonEmpty(unit.configRevision)) {
+      throw new Error(`Release unit ${unit.unit} is missing a configuration revision.`);
+    }
   }
 }
 
@@ -109,4 +188,12 @@ function firstNonEmpty(
     if (value) return value;
   }
   return undefined;
+}
+
+function nonEmpty(value: string | undefined): value is string {
+  return Boolean(value?.trim());
+}
+
+function validTimestamp(value: string): boolean {
+  return Number.isFinite(Date.parse(value));
 }

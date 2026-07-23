@@ -27,12 +27,24 @@ test("K1 fan-out ledger uses one aggregate confirmation and deterministic item k
 	);
 });
 
-test("K1 fan-out ledger rejects an ambiguous batch item", () => {
+test("K1 fan-out ledger permits multiple outputs for one source item and caps the batch at 15", () => {
 	assert.throws(() => createFanOutGenerationLedger("batch-1", []));
-	assert.throws(() =>
-		createFanOutGenerationLedger("batch-1", [
-			{ nodeId: "node-1", operation: "image.generate" },
-			{ nodeId: "node-1", operation: "text.respond" },
-		]),
+	const repeatedSource = createFanOutGenerationLedger("batch-1", [
+		{ nodeId: "node-1", operation: "image.generate" },
+		{ nodeId: "node-1", operation: "image.generate" },
+	]);
+	assert.deepEqual(
+		repeatedSource.items.map((item) => item.itemKey),
+		["batch-1:item:1", "batch-1:item:2"],
+	);
+	assert.throws(
+		() =>
+			createFanOutGenerationLedger(
+				"batch-16",
+				Array.from({ length: 16 }, () => ({
+					operation: "image.generate",
+				})),
+			),
+		/count between 1 and 15/u,
 	);
 });

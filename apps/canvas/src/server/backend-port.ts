@@ -22,7 +22,15 @@ import {
 	ProStudioEntitlementError,
 } from "@meiye/core/pro-studio-runtime";
 import * as z from "zod";
-import { CoreAdvancedCanvasAdoptionError } from "./core-adoption-client";
+import {
+	CanvasRevisionExportError,
+	type CanvasRevisionExportPort,
+	exportUnavailablePort,
+} from "./canvas-export";
+import {
+	type CanvasAdoptionTarget,
+	CoreAdvancedCanvasAdoptionError,
+} from "./core-adoption-client";
 import {
 	type CoreGenerationIdentity,
 	type CoreGenerationProvider,
@@ -45,6 +53,7 @@ export const CANVAS_ACTION_CONTRACTS = {
 	createProject: contract("POST", "header", true),
 	deleteProject: contract("POST", "header", true),
 	duplicateProject: contract("POST", "header", true),
+	exportCanvas: contract("POST", "header", true),
 	getAsset: contract("POST", "none", false),
 	getAssetDelivery: contract("GET", "none", false),
 	getCatalog: contract("POST", "none", false),
@@ -53,8 +62,10 @@ export const CANVAS_ACTION_CONTRACTS = {
 	getRevision: contract("POST", "none", false),
 	getSessionContext: contract("POST", "none", false),
 	listAdoptions: contract("POST", "none", false),
+	listAdoptionTargets: contract("POST", "none", false),
 	listAgentAudit: contract("POST", "none", false),
 	listAssets: contract("POST", "none", false),
+	listPrompts: contract("POST", "none", false),
 	listProjectGenerations: contract("POST", "none", false),
 	listProjects: contract("POST", "none", false),
 	listRevisions: contract("POST", "none", false),
@@ -64,10 +75,12 @@ export const CANVAS_ACTION_CONTRACTS = {
 	persistLocalCanvasArtifact: contract("POST", "header", true),
 	purchaseProStudio: contract("POST", "header", true),
 	quoteGeneration: contract("POST", "header", true),
+	retryGeneration: contract("POST", "header", true),
 	renameProject: contract("POST", "header", true),
 	restoreRevision: contract("POST", "header", true),
 	saveProjectDraft: contract("POST", "header", true),
 	submitGeneration: contract("POST", "header", true),
+	streamTextGeneration: contract("POST", "none", true),
 } as const satisfies Record<string, CanvasActionContract>;
 
 export type CanvasM1Action = keyof typeof CANVAS_ACTION_CONTRACTS;
@@ -105,6 +118,13 @@ const graphSchema = z.strictObject({
 const emptySchema = z.strictObject({});
 const projectIdSchema = z.strictObject({ projectId: z.string().min(1) });
 const identifierSchema = z.string().min(1).max(200);
+const cursorSchema = z.string().min(1).max(500);
+const generationLineageFields = {
+	checkpointId: identifierSchema.optional(),
+	count: z.literal(1).optional(),
+	itemId: identifierSchema.optional(),
+	nodeId: identifierSchema.optional(),
+};
 const inputAssetSchema = z.strictObject({
 	assetId: identifierSchema,
 	role: z.enum([
@@ -142,12 +162,14 @@ const inputNodeBindingsFor = (
 		.optional();
 const generationInputSchema = z.discriminatedUnion("operation", [
 	z.strictObject({
+		...generationLineageFields,
 		inputAssets: inputAssetsFor(["reference_image"], 20),
 		inputNodeBindings: inputNodeBindingsFor(["reference_image"], 20),
 		modelId: identifierSchema.optional(),
 		operation: z.literal("image.generate"),
 		parameters: z.strictObject({
 			height: z.number().int().positive().max(4096).optional(),
+			quality: z.enum(["standard", "high"]).optional(),
 			ratio: z.string().min(1).max(20).optional(),
 			resolution: z.string().min(1).max(30).optional(),
 			width: z.number().int().positive().max(4096).optional(),
@@ -157,12 +179,14 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 		revisionId: identifierSchema,
 	}),
 	z.strictObject({
+		...generationLineageFields,
 		inputAssets: inputAssetsFor(["reference_image", "mask"], 20),
 		inputNodeBindings: inputNodeBindingsFor(["reference_image", "mask"], 20),
 		modelId: identifierSchema.optional(),
 		operation: z.literal("image.edit"),
 		parameters: z.strictObject({
 			height: z.number().int().positive().max(4096).optional(),
+			quality: z.enum(["standard", "high"]).optional(),
 			ratio: z.string().min(1).max(20).optional(),
 			resolution: z.string().min(1).max(30).optional(),
 			strength: z.number().min(0).max(1).optional(),
@@ -173,6 +197,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 		revisionId: identifierSchema,
 	}),
 	z.strictObject({
+		...generationLineageFields,
 		inputAssets: inputAssetsFor(["reference_image"], 8),
 		inputNodeBindings: inputNodeBindingsFor(["reference_image"], 8),
 		modelId: identifierSchema.optional(),
@@ -186,6 +211,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 		revisionId: identifierSchema,
 	}),
 	z.strictObject({
+		...generationLineageFields,
 		inputAssets: inputAssetsFor(
 			["reference_image", "reference_video", "reference_audio"],
 			8,
@@ -208,6 +234,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 		revisionId: identifierSchema,
 	}),
 	z.strictObject({
+		...generationLineageFields,
 		inputAssets: inputAssetsFor(["reference_audio"], 1),
 		inputNodeBindings: inputNodeBindingsFor(["reference_audio"], 1),
 		modelId: identifierSchema.optional(),
@@ -225,6 +252,7 @@ const generationInputSchema = z.discriminatedUnion("operation", [
 		revisionId: identifierSchema,
 	}),
 	z.strictObject({
+		...generationLineageFields,
 		inputAssets: inputAssetsFor(["reference_audio"], 1),
 		inputNodeBindings: inputNodeBindingsFor(["reference_audio"], 1),
 		modelId: identifierSchema.optional(),
@@ -289,6 +317,12 @@ const schemas = {
 		name: z.string().min(1).max(120).optional(),
 		projectId: z.string().min(1),
 	}),
+	exportCanvas: z.strictObject({
+		format: z.enum(["json", "zip"]),
+		includeAvailableOnly: z.literal(true).optional(),
+		projectId: identifierSchema,
+		revisionId: identifierSchema,
+	}),
 	getAsset: z.strictObject({ assetId: z.string().min(1) }),
 	getAssetDelivery: z.strictObject({
 		assetId: z.string().min(1),
@@ -306,8 +340,21 @@ const schemas = {
 	}),
 	getSessionContext: emptySchema,
 	listAdoptions: projectIdSchema,
+	listAdoptionTargets: z.strictObject({
+		cursor: cursorSchema.optional(),
+		query: z.string().max(200).optional(),
+	}),
 	listAgentAudit: projectIdSchema,
-	listAssets: emptySchema,
+	listAssets: z.strictObject({
+		cursor: cursorSchema.optional(),
+		kind: z.enum(["audio", "image", "video"]).optional(),
+		query: z.string().max(200).optional(),
+	}),
+	listPrompts: z.strictObject({
+		category: z.string().max(100).optional(),
+		cursor: cursorSchema.optional(),
+		query: z.string().max(200).optional(),
+	}),
 	listProjectGenerations: projectIdSchema,
 	listProjects: emptySchema,
 	listRevisions: projectIdSchema,
@@ -339,6 +386,10 @@ const schemas = {
 		paymentEventId: identifierSchema,
 	}),
 	quoteGeneration: generationInputSchema,
+	retryGeneration: z.strictObject({
+		jobId: identifierSchema,
+		projectId: identifierSchema,
+	}),
 	renameProject: z.strictObject({
 		name: z.string().min(1).max(120),
 		projectId: z.string().min(1),
@@ -356,6 +407,10 @@ const schemas = {
 	submitGeneration: z.strictObject({
 		input: generationInputSchema,
 		quoteId: identifierSchema,
+	}),
+	streamTextGeneration: z.strictObject({
+		jobId: identifierSchema,
+		projectId: identifierSchema,
 	}),
 } as const satisfies Record<CanvasM1Action, z.ZodType>;
 
@@ -389,6 +444,9 @@ const MEDIA_BODY_BUDGET = {
 
 export interface CanvasBackendRuntimePorts {
 	adoption: AdvancedCanvasAdoptionPort;
+	adoptionTargets?: {
+		list(input: CoreGenerationIdentity): Promise<CanvasAdoptionTarget[]>;
+	};
 	agent: {
 		audit: {
 			list(input: {
@@ -425,10 +483,29 @@ export interface CanvasBackendRuntimePorts {
 			| "getJob"
 			| "listProjectGenerations"
 			| "quote"
+			| "retry"
+			| "streamCanvasText"
 			| "submit"
 		>;
 	};
+	exports?: CanvasRevisionExportPort;
+	prompts?: {
+		list(input: CoreGenerationIdentity): Promise<
+			Array<{
+				category?: string;
+				id: string;
+				prompt: string;
+				title: string;
+			}>
+		>;
+	};
 	securityAudit: Pick<SecurityRejectionAuditService, "list" | "record">;
+	workspace?: {
+		displayName(input: {
+			userId: string;
+			workspaceId: string;
+		}): Promise<string | null>;
+	};
 }
 
 interface CanvasBackendPortOptions extends CanvasBackendRuntimePorts {
@@ -444,6 +521,21 @@ class CanvasRuntimeError extends Error {
 		message: string,
 	) {
 		super(message);
+	}
+}
+
+class CanvasContractError extends Error {
+	constructor(
+		readonly code:
+			| "CATALOG_UNAVAILABLE"
+			| "CONTENT_PACKAGE_LIST_UNAVAILABLE"
+			| "INVALID_CURSOR"
+			| "PROMPT_CATALOG_UNAVAILABLE",
+		readonly status: 400 | 503,
+		message: string,
+	) {
+		super(message);
+		this.name = "CanvasContractError";
 	}
 }
 
@@ -662,7 +754,12 @@ export class CanvasBackendPort {
 	) {
 		switch (action) {
 			case "getSessionContext":
-				return context;
+				return {
+					workspaceDisplayName: await safeWorkspaceDisplayName(
+						this.options.workspace,
+						context,
+					),
+				};
 			case "getProStudioEntry":
 				return this.options.entitlement.service.getEntry(runtimeContext);
 			case "purchaseProStudio": {
@@ -673,14 +770,20 @@ export class CanvasBackendPort {
 				});
 			}
 			case "getCatalog": {
-				const [localCatalog, coreCatalog] = await Promise.all([
-					this.options.generation.catalog.list(runtimeContext),
-					this.options.generation.core.getCatalog(runtimeContext),
-				]);
-				return {
-					...(coreCatalog as Record<string, unknown>),
-					agent: localCatalog.agent,
-				};
+				try {
+					const [localCatalog, coreCatalog] = await Promise.all([
+						this.options.generation.catalog.list(runtimeContext),
+						this.options.generation.core.getCatalog(runtimeContext),
+					]);
+					return normalizedCanvasCatalog(coreCatalog, localCatalog.agent);
+				} catch (error) {
+					if (error instanceof CanvasContractError) throw error;
+					throw new CanvasContractError(
+						"CATALOG_UNAVAILABLE",
+						503,
+						"Canvas capability catalog is unavailable.",
+					);
+				}
 			}
 			case "quoteGeneration": {
 				const value = input as z.infer<(typeof schemas)["quoteGeneration"]>;
@@ -689,12 +792,21 @@ export class CanvasBackendPort {
 					value.projectId,
 					value.revisionId,
 				);
+				const inputNodeBindings = validatedInputNodeBindings(
+					value,
+					revision.graph,
+				);
+				const frozen = freezeGenerationLineage(
+					value,
+					revision,
+					inputNodeBindings,
+				);
 				return this.options.generation.core.quote({
 					...runtimeContext,
-					...value,
+					...frozen,
 					dataClass: [],
 					idempotencyKey: requiredIdempotencyKey(idempotencyKey),
-					inputNodeBindings: validatedInputNodeBindings(value, revision.graph),
+					inputNodeBindings,
 				});
 			}
 			case "submitGeneration": {
@@ -704,15 +816,21 @@ export class CanvasBackendPort {
 					value.input.projectId,
 					value.input.revisionId,
 				);
+				const inputNodeBindings = validatedInputNodeBindings(
+					value.input,
+					revision.graph,
+				);
+				const frozen = freezeGenerationLineage(
+					value.input,
+					revision,
+					inputNodeBindings,
+				);
 				return this.options.generation.core.submit({
 					...runtimeContext,
-					...value.input,
+					...frozen,
 					dataClass: [],
 					idempotencyKey: requiredIdempotencyKey(idempotencyKey),
-					inputNodeBindings: validatedInputNodeBindings(
-						value.input,
-						revision.graph,
-					),
+					inputNodeBindings,
 					quoteId: value.quoteId,
 				});
 			}
@@ -722,6 +840,28 @@ export class CanvasBackendPort {
 				return this.options.generation.core.getJob({
 					...runtimeContext,
 					...value,
+				});
+			}
+			case "streamTextGeneration": {
+				const value = input as z.infer<
+					(typeof schemas)["streamTextGeneration"]
+				>;
+				const lastEventId = request.headers.get("last-event-id");
+				await this.options.projects.loadProject(context, value.projectId);
+				return this.options.generation.core.streamCanvasText({
+					...runtimeContext,
+					...value,
+					...(lastEventId ? { lastEventId } : {}),
+					signal: request.signal,
+				});
+			}
+			case "retryGeneration": {
+				const value = input as z.infer<(typeof schemas)["retryGeneration"]>;
+				await this.options.projects.loadProject(context, value.projectId);
+				return this.options.generation.core.retry({
+					...runtimeContext,
+					...value,
+					idempotencyKey: requiredIdempotencyKey(idempotencyKey),
 				});
 			}
 			case "listProjectGenerations": {
@@ -753,6 +893,25 @@ export class CanvasBackendPort {
 					runtimeContext,
 					(input as z.infer<(typeof schemas)["listAdoptions"]>).projectId,
 				);
+			case "listAdoptionTargets": {
+				if (!this.options.adoptionTargets) {
+					throw new CanvasContractError(
+						"CONTENT_PACKAGE_LIST_UNAVAILABLE",
+						503,
+						"Canvas adoption targets are unavailable.",
+					);
+				}
+				const value = input as z.infer<(typeof schemas)["listAdoptionTargets"]>;
+				const targets = await this.options.adoptionTargets.list(runtimeContext);
+				return cursorPage(
+					targets
+						.filter((target) => matchesQuery(target, value.query))
+						.sort((left, right) =>
+							left.handle.packageId.localeCompare(right.handle.packageId),
+						),
+					value.cursor,
+				);
+			}
 			case "planAgent": {
 				const value = input as z.infer<(typeof schemas)["planAgent"]>;
 				return this.options.agent.service.plan(runtimeContext, {
@@ -802,6 +961,55 @@ export class CanvasBackendPort {
 					context,
 					input as z.infer<(typeof schemas)["duplicateProject"]>,
 				);
+			case "exportCanvas": {
+				const value = input as z.infer<(typeof schemas)["exportCanvas"]>;
+				let revision: Awaited<
+					ReturnType<AdvancedCanvasProjectService["getRevision"]>
+				>;
+				try {
+					revision = await this.options.projects.getRevision(
+						context,
+						value.projectId,
+						value.revisionId,
+					);
+				} catch (error) {
+					if (
+						error instanceof AdvancedCanvasProjectError &&
+						error.code === "NOT_FOUND"
+					) {
+						throw new CanvasRevisionExportError(
+							"REVISION_NOT_FOUND",
+							"Canvas revision was not found.",
+						);
+					}
+					throw error;
+				}
+				const artifact = await (
+					this.options.exports ?? exportUnavailablePort()
+				).export({
+					idempotencyKey: requiredIdempotencyKey(idempotencyKey),
+					includeAvailableOnly: value.includeAvailableOnly === true,
+					revision,
+					userId: runtimeContext.userId,
+					workspaceId: runtimeContext.workspaceId,
+				});
+				if (value.format === "json") {
+					return {
+						manifest: artifact.manifest,
+						manifestSha256: artifact.manifestSha256,
+						zipSha256: artifact.zipSha256,
+					};
+				}
+				return new Response(Uint8Array.from(artifact.zipBytes).buffer, {
+					headers: {
+						"cache-control": "private, no-store",
+						"content-disposition": `attachment; filename="${artifact.fileName}"`,
+						"content-type": artifact.contentType,
+						"x-canvas-export-manifest-sha256": artifact.manifestSha256,
+						"x-canvas-export-zip-sha256": artifact.zipSha256,
+					},
+				});
+			}
 			case "deleteProject":
 				return this.options.projects.deleteProject(
 					context,
@@ -852,8 +1060,47 @@ export class CanvasBackendPort {
 					context,
 					input as z.infer<(typeof schemas)["restoreRevision"]>,
 				);
-			case "listAssets":
-				return this.options.assets.listAssets(context);
+			case "listAssets": {
+				const value = input as z.infer<(typeof schemas)["listAssets"]>;
+				const assets = await this.options.assets.listAssets(context);
+				return cursorPage(
+					assets
+						.map((asset) => ({
+							id: asset.id,
+							kind: assetKind(asset.contentType),
+							title: asset.fileName,
+						}))
+						.filter(
+							(asset) =>
+								(value.kind === undefined || asset.kind === value.kind) &&
+								matchesQuery(asset, value.query),
+						)
+						.sort((left, right) => left.id.localeCompare(right.id)),
+					value.cursor,
+				);
+			}
+			case "listPrompts": {
+				if (!this.options.prompts) {
+					throw new CanvasContractError(
+						"PROMPT_CATALOG_UNAVAILABLE",
+						503,
+						"Canvas prompt catalog is unavailable.",
+					);
+				}
+				const value = input as z.infer<(typeof schemas)["listPrompts"]>;
+				const prompts = await this.options.prompts.list(runtimeContext);
+				return cursorPage(
+					prompts
+						.filter(
+							(prompt) =>
+								(value.category === undefined ||
+									prompt.category === value.category) &&
+								matchesQuery(prompt, value.query),
+						)
+						.sort((left, right) => left.id.localeCompare(right.id)),
+					value.cursor,
+				);
+			}
 			case "getAsset":
 				return this.options.assets.getAsset(
 					context,
@@ -1041,6 +1288,22 @@ function mappedError(error: unknown, correlationId: string) {
 	if (error instanceof CanvasGenerationInputBindingError) {
 		return errorResponse(400, error.code, error.message, correlationId);
 	}
+	if (error instanceof CanvasContractError) {
+		return errorResponse(
+			error.status,
+			error.code,
+			error.message,
+			correlationId,
+		);
+	}
+	if (error instanceof CanvasRevisionExportError) {
+		return errorResponse(
+			error.code === "EXPORT_NOT_AVAILABLE" ? 503 : 404,
+			error.code,
+			error.message,
+			correlationId,
+		);
+	}
 	if (error instanceof CanvasRuntimeError) {
 		return errorResponse(403, error.code, error.message, correlationId);
 	}
@@ -1135,6 +1398,292 @@ function validatedInputNodeBindings(
 	return bindings;
 }
 
+function freezeGenerationLineage(
+	input: z.infer<typeof generationInputSchema>,
+	revision: { id: string; graph: CanvasGraph },
+	inputNodeBindings: ReturnType<typeof validatedInputNodeBindings>,
+) {
+	const checkpointId = input.checkpointId ?? revision.id;
+	if (checkpointId !== revision.id) {
+		throw new CanvasGenerationInputBindingError(
+			"Canvas generation checkpointId must be the frozen revision checkpoint.",
+		);
+	}
+	if (
+		input.nodeId &&
+		!revision.graph.nodes.some((node) => node.id === input.nodeId)
+	) {
+		throw new CanvasGenerationInputBindingError(
+			"Canvas generation nodeId must exist in the frozen revision.",
+		);
+	}
+	const nodeId = input.nodeId ?? inputNodeBindings[0]?.nodeId;
+	const itemId = input.itemId;
+	if (!nodeId && !itemId) {
+		throw new CanvasGenerationInputBindingError(
+			"Canvas generation requires a real frozen nodeId or itemId.",
+		);
+	}
+	return {
+		...input,
+		checkpointId,
+		count: input.count ?? 1,
+		...(itemId ? { itemId } : {}),
+		...(nodeId ? { nodeId } : {}),
+	};
+}
+
+const CANVAS_GENERATION_OPERATIONS = [
+	"audio.sfx",
+	"audio.speech",
+	"image.edit",
+	"image.generate",
+	"text.respond",
+	"video.generate",
+] as const;
+
+const CANVAS_UNAVAILABLE_REASONS = new Set([
+	"CATALOG_UNAVAILABLE",
+	"MODEL_DISABLED",
+	"MODEL_NOT_CONFIGURED",
+	"OPERATION_UNAVAILABLE",
+	"WORKSPACE_NOT_ENTITLED",
+]);
+
+function normalizedCanvasCatalog(
+	value: unknown,
+	agent: { activation: "active" | "inactive"; reason?: string },
+) {
+	const catalog = plainRecord(value);
+	const revisionId = safeText(catalog?.revisionId);
+	if (!catalog || !revisionId) {
+		throw new CanvasContractError(
+			"CATALOG_UNAVAILABLE",
+			503,
+			"Canvas capability catalog is unavailable.",
+		);
+	}
+	const rawDefaults = plainRecord(catalog.defaultModelIdByOperation);
+	const rawReasons = plainRecord(catalog.unavailableReasonCodeByOperation);
+	const rawOperations = Array.isArray(catalog.operations)
+		? catalog.operations
+				.map(plainRecord)
+				.filter(
+					(operation): operation is Record<string, unknown> =>
+						operation !== null,
+				)
+		: [];
+	const byOperation = new Map(
+		rawOperations
+			.filter((operation) => isCanvasGenerationOperation(operation.operation))
+			.sort((left, right) => {
+				const byOperation = String(left.operation).localeCompare(
+					String(right.operation),
+				);
+				if (byOperation !== 0) return byOperation;
+				return String(left.modelId ?? "").localeCompare(
+					String(right.modelId ?? ""),
+				);
+			})
+			.map((operation) => [String(operation.operation), operation]),
+	);
+	const defaultModelIdByOperation: Record<string, string> = {};
+	const unavailableReasonCodeByOperation: Record<string, string> = {};
+	const operations = CANVAS_GENERATION_OPERATIONS.map((operation) => {
+		const source = byOperation.get(operation);
+		const defaultModelId = safeText(rawDefaults?.[operation]);
+		const explicitReason = safeUnavailableReason(rawReasons?.[operation]);
+		const active = source?.activation === "active";
+		const sourceModelId = safeText(source?.modelId);
+		const unavailableReason =
+			explicitReason ??
+			(!active
+				? "OPERATION_UNAVAILABLE"
+				: !defaultModelId
+					? "MODEL_NOT_CONFIGURED"
+					: sourceModelId !== defaultModelId
+						? "MODEL_DISABLED"
+						: undefined);
+		if (unavailableReason) {
+			unavailableReasonCodeByOperation[operation] = unavailableReason;
+		} else if (defaultModelId) {
+			defaultModelIdByOperation[operation] = defaultModelId;
+		}
+		return {
+			activation: unavailableReason
+				? ("inactive" as const)
+				: ("active" as const),
+			allowedInputAssetRoles: stringArray(source?.allowedInputAssetRoles),
+			allowedParameters: stringArray(source?.allowedParameters),
+			...(sourceModelId ? { modelId: sourceModelId } : { modelId: null }),
+			operation,
+			output: canvasOperationOutput(operation),
+			usageAmount:
+				typeof source?.usageAmount === "number" && !unavailableReason
+					? source.usageAmount
+					: 0,
+			usageResource:
+				typeof source?.usageResource === "string"
+					? source.usageResource
+					: canvasOperationOutput(operation),
+		};
+	});
+	return {
+		agent: {
+			activation: agent.activation,
+			...(agent.reason ? { reason: agent.reason } : {}),
+		},
+		defaultModelIdByOperation,
+		models: normalizedCatalogModels(catalog.models),
+		operations,
+		revisionId,
+		...(catalog.schema && typeof catalog.schema === "object"
+			? { schema: structuredClone(catalog.schema) }
+			: {}),
+		unavailableReasonCodeByOperation,
+	};
+}
+
+function normalizedCatalogModels(value: unknown) {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map(plainRecord)
+		.filter((model): model is Record<string, unknown> => model !== null)
+		.map((model) => ({
+			active: model.active === true,
+			capabilities: stringArray(model.capabilities),
+			displayName: safeText(model.displayName) ?? safeText(model.id) ?? "Model",
+			id: safeText(model.id) ?? "",
+		}))
+		.filter((model) => model.id.length > 0)
+		.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function canvasOperationOutput(
+	operation: (typeof CANVAS_GENERATION_OPERATIONS)[number],
+) {
+	if (operation.startsWith("image.")) return "image";
+	if (operation === "text.respond") return "text";
+	if (operation === "video.generate") return "video";
+	return "audio";
+}
+
+function isCanvasGenerationOperation(
+	value: unknown,
+): value is (typeof CANVAS_GENERATION_OPERATIONS)[number] {
+	return (
+		typeof value === "string" &&
+		(CANVAS_GENERATION_OPERATIONS as readonly string[]).includes(value)
+	);
+}
+
+function safeUnavailableReason(value: unknown) {
+	return typeof value === "string" && CANVAS_UNAVAILABLE_REASONS.has(value)
+		? value
+		: undefined;
+}
+
+function stringArray(value: unknown) {
+	return Array.isArray(value)
+		? value.filter((item): item is string => typeof item === "string")
+		: [];
+}
+
+function plainRecord(value: unknown) {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+}
+
+function safeText(value: unknown) {
+	return typeof value === "string" && value.trim().length > 0
+		? value.trim()
+		: undefined;
+}
+
+async function safeWorkspaceDisplayName(
+	workspace: CanvasBackendRuntimePorts["workspace"],
+	context: { userId: string; workspaceId: string },
+) {
+	try {
+		const value = await workspace?.displayName(context);
+		const displayName = safeText(value);
+		if (
+			displayName &&
+			displayName !== context.workspaceId &&
+			displayName.length <= 200
+		) {
+			return displayName;
+		}
+	} catch {
+		// The bootstrap seam must not expose a raw workspace identifier on failure.
+	}
+	return "Workspace";
+}
+
+const CURSOR_PAGE_SIZE = 50;
+
+function cursorPage<T extends { id: string }>(items: T[], cursor?: string) {
+	const cursorId = cursor ? decodeCursor(cursor) : undefined;
+	const start = cursorId
+		? items.findIndex((item) => item.id === cursorId) + 1
+		: 0;
+	if (cursorId && start === 0) {
+		throw new CanvasContractError(
+			"INVALID_CURSOR",
+			400,
+			"Canvas list cursor is invalid.",
+		);
+	}
+	const page = items.slice(start, start + CURSOR_PAGE_SIZE);
+	const last = page.at(-1);
+	return {
+		items: page,
+		nextCursor:
+			last && start + CURSOR_PAGE_SIZE < items.length
+				? encodeCursor(last.id)
+				: null,
+	};
+}
+
+function encodeCursor(id: string) {
+	return Buffer.from(id, "utf8").toString("base64url");
+}
+
+function decodeCursor(value: string) {
+	try {
+		const decoded = Buffer.from(value, "base64url").toString("utf8");
+		if (!decoded || decoded.length > 200 || encodeCursor(decoded) !== value) {
+			throw new Error("invalid cursor");
+		}
+		return decoded;
+	} catch {
+		throw new CanvasContractError(
+			"INVALID_CURSOR",
+			400,
+			"Canvas list cursor is invalid.",
+		);
+	}
+}
+
+function matchesQuery(
+	item: { id: string; title: string },
+	query: string | undefined,
+) {
+	if (!query?.trim()) return true;
+	const needle = query.trim().toLocaleLowerCase();
+	return (
+		item.id.toLocaleLowerCase().includes(needle) ||
+		item.title.toLocaleLowerCase().includes(needle)
+	);
+}
+
+function assetKind(contentType: string) {
+	if (contentType.startsWith("audio/")) return "audio" as const;
+	if (contentType.startsWith("video/")) return "video" as const;
+	return "image" as const;
+}
+
 function securityObjectRejection(
 	action: string,
 	input: unknown,
@@ -1147,6 +1696,9 @@ function securityObjectRejection(
 	  }
 	| undefined {
 	const code = errorCode(error);
+	if (action === "exportCanvas" && code === "REVISION_NOT_FOUND") {
+		return undefined;
+	}
 	if (!code || !opaqueRejectionCode(code)) return undefined;
 	const value = input as Record<string, unknown> | undefined;
 	if (!value) return undefined;
@@ -1156,10 +1708,13 @@ function securityObjectRejection(
 	if (action === "getRevision") {
 		return rejection("revision", action, value.revisionId);
 	}
+	if (action === "exportCanvas") {
+		return rejection("revision", action, value.revisionId);
+	}
 	if (action === "getAsset") {
 		return rejection("asset", action, value.assetId);
 	}
-	if (action === "getGenerationJob") {
+	if (action === "getGenerationJob" || action === "retryGeneration") {
 		return rejection("job", action, value.jobId);
 	}
 	if (action === "applyAgentOps") {
@@ -1326,9 +1881,13 @@ function requiresProStudioEntry(action: CanvasM1Action) {
 }
 
 function requiresGenerationEntitlement(action: CanvasM1Action) {
-	return ["applyAgentOps", "quoteGeneration", "submitGeneration"].includes(
-		action,
-	);
+	return [
+		"applyAgentOps",
+		"quoteGeneration",
+		"retryGeneration",
+		"submitGeneration",
+		"streamTextGeneration",
+	].includes(action);
 }
 
 function requiredIdempotencyKey(value: string | undefined) {

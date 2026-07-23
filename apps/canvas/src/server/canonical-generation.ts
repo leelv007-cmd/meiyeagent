@@ -399,11 +399,14 @@ async function generationRequest(
 		return { ...asset, nodeId: node.id };
 	});
 	return {
+		checkpointId: input.revisionId,
+		count: 1,
 		correlationId: context.correlationId,
 		dataClass: [],
 		idempotencyKey,
 		inputAssets: [...input.inputAssets],
 		inputNodeBindings,
+		itemId: input.localJobId,
 		operation: input.operation,
 		parameters: {},
 		projectId: input.projectId,

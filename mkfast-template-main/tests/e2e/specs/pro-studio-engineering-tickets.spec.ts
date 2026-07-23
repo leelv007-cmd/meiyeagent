@@ -201,19 +201,18 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
       (url) => url.origin === canvasOrigin && url.pathname === '/',
       { timeout: 20_000 }
     );
-    await expect(page.getByText('美业提示词起点（40 条）')).toBeVisible({
-      timeout: 20_000,
-    });
-    const seedSelect = page.locator('select').filter({
-      has: page.locator('option', { hasText: '选择一条产品提供的提示词' }),
-    });
-    await expect(seedSelect).toBeVisible();
-    const options = seedSelect.locator('option');
-    // placeholder + 40 seeds
-    await expect(options).toHaveCount(41);
-    await seedSelect.selectOption({ index: 1 });
-    const prompt = page.getByPlaceholder('选择提示词或输入生成指令');
-    await expect(prompt).not.toHaveValue('');
+    // The retired seed <select> is replaced by the governed prompt library:
+    // opening it loads the product-owned seed corpus through listPrompts.
+    await page.getByRole('button', { name: '提示词库' }).click();
+    const promptDialog = page.getByRole('dialog', { name: '提示词库' });
+    await expect(promptDialog).toBeVisible();
+    const promptCards = promptDialog.locator('.resource-prompt-card');
+    await expect(promptCards.first()).toBeVisible({ timeout: 20_000 });
+    expect(await promptCards.count()).toBeGreaterThan(1);
+    // Not a 503: the catalog-unavailable error must never render.
+    await expect(
+      promptDialog.getByText('提示词暂时无法载入，请稍后重试。')
+    ).toBeHidden();
     await page.screenshot({
       fullPage: true,
       path: '../docs/evidence/pro-studio/ticket16-prompt-seeds.png',

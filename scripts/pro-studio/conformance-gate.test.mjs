@@ -463,6 +463,64 @@ test('K1 port manifest requires a pinned, authorized, and registered derivative 
   );
 });
 
+test('K1 port manifest fails closed for missing sources and zero source hashes', () => {
+  const source = Buffer.from('pinned upstream port source');
+  const target = Buffer.from('host-owned derivative target');
+  const targetPath =
+    'apps/canvas/src/kernel-host/ported/verified-derivative.ts';
+  const port = {
+    a2Evidence: 'docs/evidence/pro-studio/a2-port.md',
+    a3Evidence: 'docs/evidence/pro-studio/a3-port.md',
+    adapterReplacementMatrix: [
+      {
+        decision: 'replace',
+        host: 'Canvas host boundary',
+        upstream: 'Upstream dependency',
+      },
+    ],
+    adaptationBoundary: 'Host-only adaptation.',
+    authorizationStatus: 'authorized',
+    pinnedCommit: 'a2c52c7aacf68d825563b7455efa9c34f3db0123',
+    reviewer: 'product_owner',
+    source: 'web/src/app/(user)/canvas/components/verified-derivative.ts',
+    sourceSha256: createHash('sha256').update(source).digest('hex'),
+    target: targetPath,
+    targetSha256: createHash('sha256').update(target).digest('hex'),
+    thirdPartyNotes: 'No package bytes are copied.',
+  };
+  const manifest = {
+    ports: [port],
+    schemaVersion: 2,
+    upstream: {
+      commit: 'a2c52c7aacf68d825563b7455efa9c34f3db0123',
+    },
+  };
+  const options = {
+    discoveredTargets: [targetPath],
+    evidenceExists: () => true,
+    readSource: () => source,
+    readTarget: () => target,
+  };
+
+  assert.deepEqual(
+    validatePortManifest(manifest, {
+      ...options,
+      readSource: () => undefined,
+    }),
+    [`${targetPath}: pinned upstream port source is missing`]
+  );
+  assert.deepEqual(
+    validatePortManifest(
+      {
+        ...manifest,
+        ports: [{ ...port, sourceSha256: '0'.repeat(64) }],
+      },
+      options
+    ),
+    [`${targetPath}: source does not match sourceSha256`]
+  );
+});
+
 test('K1 inventory is closed and production whitelist has a real host import', () => {
   const target = 'apps/canvas/src/vendor/vozeb/canvas.tsx';
   const manifest = {
@@ -550,6 +608,29 @@ test('source scan does not self-report the local-agent guard module', () => {
     ]),
     []
   );
+});
+
+test('build scan permits export sanitizers but rejects direct token reads', () => {
+  const safe = {
+    contents:
+      'new URL(value).searchParams.keys().some((key) => /token/.test(key));',
+    path: 'apps/canvas/.next/server/sanitize.js',
+  };
+  const unsafe = {
+    contents: 'new URL(value).searchParams.get("token");',
+    path: 'apps/canvas/.next/server/unsafe.js',
+  };
+  const unsafeMany = {
+    contents: 'new URL(value).searchParams.getAll("token");',
+    path: 'apps/canvas/.next/server/unsafe-many.js',
+  };
+  assert.deepEqual(findForbiddenBuildArtifactFindings([safe]), []);
+  assert.deepEqual(findForbiddenBuildArtifactFindings([unsafe]), [
+    { path: unsafe.path, rule: 'token-query' },
+  ]);
+  assert.deepEqual(findForbiddenBuildArtifactFindings([unsafeMany]), [
+    { path: unsafeMany.path, rule: 'token-query' },
+  ]);
 });
 
 test('build-artifact scan rejects forbidden secrets emitted by Next', () => {

@@ -11,6 +11,7 @@ import {
 	migrateProStudioSchema,
 	PostgresAdvancedCanvasProjectRepository,
 	PostgresCanvasAssetRepository,
+	PostgresCanvasExportReceiptRepository,
 	PostgresLaunchCodeRepository,
 	PostgresProStudioAccessAudit,
 	PostgresSecurityRejectionAuditRepository,
@@ -38,12 +39,15 @@ import {
 	CoreQuotaAuthority,
 	DurableGenerationConsumerWorker,
 } from "./canonical-generation";
+import { CanvasRevisionExportService } from "./canvas-export";
 import { CoreAdvancedCanvasAdoptionClient } from "./core-adoption-client";
+import { CoreCanvasExportAssetClient } from "./core-canvas-export-asset-client";
 import { CoreGenerationProvider } from "./core-generation-provider";
 import { CoreCanvasAgentPlanner } from "./core-planner";
 import { canIssueProStudioLaunch } from "./launch-entitlement";
 import { PostgresProStudioBillingVerifier } from "./postgres-pro-studio-billing-verifier";
 import { proStudioOffer } from "./pro-studio-offer";
+import { listCanvasPromptSeeds } from "./prompt-catalog";
 
 interface CanvasRuntime {
 	backend: CanvasBackendPort;
@@ -130,6 +134,10 @@ async function createRuntime(): Promise<CanvasRuntime> {
 		resolveWorkspaceRole(pool, input);
 	const generation = new CoreGenerationProvider(coreRemoteOptions);
 	const adoption = new CoreAdvancedCanvasAdoptionClient(coreRemoteOptions);
+	const exports = new CanvasRevisionExportService(
+		new CoreCanvasExportAssetClient(coreRemoteOptions),
+		new PostgresCanvasExportReceiptRepository(pool),
+	);
 	const agentAuthority = new PostgresCanvasAgentAuthoritySource(pool);
 	const generationAuthority = new CoreGenerationAuthority(pool, generation);
 	const quotaAuthority = new CoreQuotaAuthority(generation);
@@ -213,6 +221,9 @@ async function createRuntime(): Promise<CanvasRuntime> {
 	return {
 		backend: new CanvasBackendPort({
 			adoption,
+			adoptionTargets: {
+				list: (context) => adoption.listAdoptionTargets(context),
+			},
 			allowedOrigin: process.env.CANVAS_ORIGIN ?? "http://127.0.0.1:4200",
 			agent: {
 				audit: {
@@ -222,6 +233,7 @@ async function createRuntime(): Promise<CanvasRuntime> {
 			},
 			assets,
 			entitlement: { resolveRole, service: entitlement },
+			exports,
 			generation: {
 				catalog: {
 					async list(input) {
@@ -250,8 +262,16 @@ async function createRuntime(): Promise<CanvasRuntime> {
 				core: generation,
 			},
 			projects,
+			prompts: {
+				async list() {
+					return listCanvasPromptSeeds();
+				},
+			},
 			securityAudit,
 			sessions,
+			workspace: {
+				displayName: (input) => resolveWorkspaceDisplayName(pool, input),
+			},
 		}),
 		entry: {
 			async get(input) {
@@ -320,6 +340,22 @@ async function resolveWorkspaceRole(
 	return role === "owner" || role === "operator" || role === "reviewer"
 		? role
 		: null;
+}
+
+async function resolveWorkspaceDisplayName(
+	pool: Pool,
+	input: { userId: string; workspaceId: string },
+) {
+	const result = await pool.query<{ name: string }>(
+		`SELECT workspaces.name
+		 FROM workspaces
+		 JOIN workspace_memberships
+		   ON workspace_memberships.workspace_id = workspaces.id
+		 WHERE workspaces.id = $1 AND workspace_memberships.user_id = $2`,
+		[input.workspaceId, input.userId],
+	);
+	const name = result.rows[0]?.name?.trim();
+	return name ? name.slice(0, 200) : null;
 }
 
 async function listAgentAudit(

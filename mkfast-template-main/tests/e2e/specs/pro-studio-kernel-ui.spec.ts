@@ -28,7 +28,7 @@ async function openProject(page: Page, projectName: string) {
     .locator('.project-list .project-card')
     .filter({ hasText: projectName });
   await expect(project).toBeVisible();
-  await project.click();
+  await project.locator('.project-card-open').click();
   await expect(page.locator('.canvas-toolbar')).toContainText(projectName);
   await expect(page.getByLabel('Pro Studio 高阶画布')).toBeVisible();
 }
@@ -50,6 +50,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
     });
     const uiActions = collectCanvasUiActions(page);
     const projectName = `kernel-ui-${randomUUID().slice(0, 8)}`;
+    const deletedProjectName = `kernel-delete-${randomUUID().slice(0, 8)}`;
     const uploadName = `kernel-wide-${randomUUID().slice(0, 8)}.png`;
     let activePage = page;
     let derivedAssetId = '';
@@ -77,8 +78,13 @@ test.describe('Pro Studio authorized kernel UI', () => {
     await expect(page.getByText('Pro Studio', { exact: true })).toBeVisible();
 
     await test.step('E1 creates a kernel project and restores its node graph after refresh', async () => {
-      page.once('dialog', (dialog) => dialog.accept(projectName));
       await page.getByRole('button', { name: '新建', exact: true }).click();
+      const createDialog = page.getByRole('dialog', { name: '新建工程' });
+      const projectNameInput = createDialog.getByLabel('工程名称');
+      await expect(createDialog).toBeVisible();
+      await expect(projectNameInput).toBeFocused();
+      await projectNameInput.fill(projectName);
+      await projectNameInput.press('Enter');
       await expect(page.getByLabel('Pro Studio 高阶画布')).toBeVisible();
       await expect(page.getByText('开始你的 Pro Studio 创作')).toBeVisible();
 
@@ -118,6 +124,37 @@ test.describe('Pro Studio authorized kernel UI', () => {
       await expect(
         page.locator('.kernel-node[data-node-id^="text-"]')
       ).toHaveCount(1);
+
+      await page.getByRole('button', { name: '新建', exact: true }).click();
+      const deleteCreateDialog = page.getByRole('dialog', { name: '新建工程' });
+      await deleteCreateDialog.getByLabel('工程名称').fill(deletedProjectName);
+      await deleteCreateDialog
+        .getByRole('button', { name: '创建工程' })
+        .click();
+      const deletedProject = page
+        .locator('.project-list .project-card')
+        .filter({ hasText: deletedProjectName });
+      const deleteTrigger = deletedProject.getByRole('button', {
+        name: `删除工程 ${deletedProjectName}`,
+      });
+      await expect(deletedProject).toBeVisible();
+      await deleteTrigger.click();
+      const deleteDialog = page.getByRole('dialog', {
+        name: '删除 1 个工程？',
+      });
+      await expect(deleteDialog).toContainText('移入回收保留区');
+      await deleteDialog.getByRole('button', { name: '取消' }).click();
+      await expect(deleteTrigger).toBeFocused();
+      await expect(deletedProject).toBeVisible();
+
+      await deleteTrigger.click();
+      await page
+        .getByRole('dialog', { name: '删除 1 个工程？' })
+        .getByRole('button', { name: '移入回收保留区' })
+        .click();
+      await expect(page.locator('.status-dot')).toHaveText('工程已软删除');
+      await expect(deletedProject).toHaveCount(0);
+      await openProject(page, projectName);
     });
 
     await test.step('E2 uploads, connects, square-crops, and restores owned media', async () => {
@@ -442,10 +479,9 @@ test.describe('Pro Studio authorized kernel UI', () => {
         2
       );
       await expect(
-        activePage.getByText(
-          `采用画布当前有序选择：${textNodeId} → ${generatedNodeId}`,
-          { exact: true }
-        )
+        activePage.getByText('将按当前画布选中顺序采用 2 个节点。', {
+          exact: true,
+        })
       ).toBeVisible();
 
       const adopt = activePage.getByRole('button', {

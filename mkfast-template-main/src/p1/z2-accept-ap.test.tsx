@@ -5,8 +5,9 @@
  * Gate 3 (UI): multi-channel ready projection + single-channel no-fallback dual-end labels.
  * Gate 4: D-048 interaction ban on ops main paths (catalog / exception home / supply).
  *
- * Live Playwright four-service e2e and composer-mounted merchant picker remain
- * honest gaps — see docs/evidence/admin-supply-accept-gaps-2026-07-20.md.
+ * Provider live connectivity remains env-gated. The four-service Playwright
+ * proof is recorded in the evidence file; the mounted Composer selector is
+ * asserted separately in composer-channel-readiness.static.test.ts.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -240,9 +241,9 @@ test('Z2-ACCEPT gate3 UI: admin supply overview SSR surfaces single-channel / mu
   );
 });
 
-test('Z2-ACCEPT gate3 UI: merchant label projection shares single-channel / no-fallback copy (F-J-01 partial)', () => {
+test('Z2-ACCEPT gate3 UI: merchant label projection shares single-channel / no-fallback copy', () => {
   // Shared paraglide keys power model-settings badge + ModelCardPicker view.
-  // Composer main path does not yet mount ModelCardPicker — see accept gaps.
+  // The mounted Composer selector is covered by its focused static test.
   assert.match(model_card_channel_single(), /单渠道|无回退/);
   assert.match(model_card_channel_multi(), /双渠道|multi/i);
 

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
@@ -313,6 +313,37 @@ export class FileSystemAssetStorage
     ) {
       throw new Error('Canvas asset key already contains different bytes.');
     }
+    await this.writeCanvasAssetReceipt({
+      contentType,
+      objectKey: input.objectKey,
+      sha256: digest(stored),
+      sizeBytes: stored.byteLength,
+    });
+  }
+
+  /**
+   * Verifies the local immutable-receipt sidecar without opening the media
+   * object, so Canvas export can reject a changed receipt before payload I/O.
+   */
+  async verifyCanvasAssetReceipt(input: {
+    contentType: CustodyOwnedAssetContentType;
+    objectKey: string;
+    sha256: string;
+    sizeBytes: number;
+    workspaceId: string;
+  }) {
+    try {
+      assertCanvasObjectKey(input.workspaceId, input.objectKey);
+      const receipt = await this.readCanvasAssetReceipt(input.objectKey);
+      return (
+        receipt.contentType === input.contentType &&
+        receipt.objectKey === input.objectKey &&
+        receipt.sha256 === input.sha256 &&
+        receipt.sizeBytes === input.sizeBytes
+      );
+    } catch {
+      return false;
+    }
   }
 
   async deleteCanvasAsset(input: {
@@ -320,10 +351,15 @@ export class FileSystemAssetStorage
     workspaceId: string;
   }) {
     assertCanvasObjectKey(input.workspaceId, input.objectKey);
-    try {
-      await unlink(this.pathFor(input.objectKey));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    for (const path of [
+      this.pathFor(input.objectKey),
+      this.canvasAssetReceiptPath(input.objectKey),
+    ]) {
+      try {
+        await unlink(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
     }
   }
 
@@ -440,6 +476,67 @@ export class FileSystemAssetStorage
     }
     return path;
   }
+
+  private canvasAssetReceiptPath(objectKey: string) {
+    return resolve(
+      this.rootDirectory,
+      '.canvas-asset-receipts',
+      `${digest(Buffer.from(objectKey))}.json`,
+    );
+  }
+
+  private async readCanvasAssetReceipt(objectKey: string) {
+    const raw = await readFile(this.canvasAssetReceiptPath(objectKey));
+    let value: unknown;
+    try {
+      value = JSON.parse(raw.toString('utf8'));
+    } catch {
+      throw new Error('Canvas asset receipt is not valid JSON.');
+    }
+    if (!validCanvasAssetReceipt(value)) {
+      throw new Error('Canvas asset receipt is invalid.');
+    }
+    return value;
+  }
+
+  private async writeCanvasAssetReceipt(input: {
+    contentType: CustodyOwnedAssetContentType;
+    objectKey: string;
+    sha256: string;
+    sizeBytes: number;
+  }) {
+    const path = this.canvasAssetReceiptPath(input.objectKey);
+    const expected: CanvasAssetStorageReceipt = {
+      ...input,
+      createdAt: new Date().toISOString(),
+      storageRevision: randomUUID(),
+    };
+    await mkdir(dirname(path), { recursive: true });
+    try {
+      await writeFile(path, JSON.stringify(expected), { flag: 'wx' });
+      return;
+    } catch (error) {
+      if (!isAlreadyExists(error)) throw error;
+    }
+    const existing = await this.readCanvasAssetReceipt(input.objectKey);
+    if (
+      existing.contentType !== input.contentType ||
+      existing.objectKey !== input.objectKey ||
+      existing.sha256 !== input.sha256 ||
+      existing.sizeBytes !== input.sizeBytes
+    ) {
+      throw new Error('Canvas asset receipt does not match the immutable object.');
+    }
+  }
+}
+
+interface CanvasAssetStorageReceipt {
+  contentType: CustodyOwnedAssetContentType;
+  createdAt: string;
+  objectKey: string;
+  sha256: string;
+  sizeBytes: number;
+  storageRevision: string;
 }
 
 async function probeVideo(
@@ -642,5 +739,25 @@ function isAlreadyExists(error: unknown): error is NodeJS.ErrnoException {
       typeof error === 'object' &&
       'code' in error &&
       error.code === 'EEXIST'
+  );
+}
+
+function validCanvasAssetReceipt(
+  value: unknown,
+): value is CanvasAssetStorageReceipt {
+  if (!value || typeof value !== 'object') return false;
+  const receipt = value as Partial<CanvasAssetStorageReceipt>;
+  return (
+    typeof receipt.contentType === 'string' &&
+    typeof receipt.createdAt === 'string' &&
+    Number.isFinite(Date.parse(receipt.createdAt)) &&
+    typeof receipt.objectKey === 'string' &&
+    typeof receipt.sha256 === 'string' &&
+    /^[a-f0-9]{64}$/u.test(receipt.sha256) &&
+    typeof receipt.sizeBytes === 'number' &&
+    Number.isSafeInteger(receipt.sizeBytes) &&
+    receipt.sizeBytes >= 0 &&
+    typeof receipt.storageRevision === 'string' &&
+    receipt.storageRevision.length > 0
   );
 }

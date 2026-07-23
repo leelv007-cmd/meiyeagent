@@ -5,8 +5,10 @@ import type { CanvasCaller } from "./project-persistence";
 import {
 	cropOwnedImageAsset,
 	layoutSplitChildren,
+	loadSourceImageDataUrl,
 	normalizeSplitParams,
 	normalizeUpscaleParams,
+	persistMaskOwnedImageAsset,
 	splitOwnedImageAsset,
 	upscaleOwnedImageAsset,
 } from "./retouch-adapter.js";
@@ -34,6 +36,14 @@ function jpegFetcher() {
 		});
 	};
 }
+
+test("loadSourceImageDataUrl reads OwnedAsset bytes for retouch dialog previews", async () => {
+	const dataUrl = await loadSourceImageDataUrl({
+		fetcher: jpegFetcher(),
+		sourceNode,
+	});
+	assert.match(dataUrl, /^data:image\/jpeg;base64,/u);
+});
 
 test("crop reads the source through BackendPort and persists an owned child with lineage", async () => {
 	const calls: Array<{ action: string; input?: Record<string, unknown> }> = [];
@@ -126,6 +136,67 @@ test("crop rejects an empty source asset before delivery, crop, or persistence",
 		/SOURCE_ASSET_REQUIRED/,
 	);
 	assert.equal(sideEffects, 0);
+});
+
+test("mask persists a PNG OwnedAsset child and derive edge before image edit", async () => {
+	const calls: Array<{ action: string; input?: Record<string, unknown> }> = [];
+	const result = await persistMaskOwnedImageAsset(
+		(async (action, input) => {
+			calls.push({ action, input });
+			return { contentType: "image/png", id: "asset-mask" };
+		}) as CanvasCaller,
+		{
+			maskDataUrl: "data:image/png;base64,bWFzaw==",
+			nextEdgeId: () => "edge-source-mask",
+			nextNodeId: () => "image-mask",
+			sourceNode,
+		},
+	);
+
+	assert.deepEqual(calls, [
+		{
+			action: "persistLocalCanvasArtifact",
+			input: {
+				bytesBase64: "bWFzaw==",
+				contentType: "image/png",
+				derivation: "mask",
+				fileName: "asset-source-mask.png",
+				parentAssetId: "asset-source",
+			},
+		},
+	]);
+	assert.deepEqual(result.edge, {
+		id: "edge-source-mask",
+		source: "image-source",
+		target: "image-mask",
+		type: "derive",
+	});
+	assert.deepEqual(result.node.data, {
+		assetId: "asset-mask",
+		height: 160,
+		retouchRole: "mask",
+		width: 200,
+		x: 268,
+		y: 30,
+	});
+});
+
+test("mask rejects non-PNG bytes before persistence", async () => {
+	let persisted = false;
+	await assert.rejects(
+		persistMaskOwnedImageAsset(
+			(async () => {
+				persisted = true;
+				return { contentType: "image/jpeg", id: "unexpected" };
+			}) as CanvasCaller,
+			{
+				maskDataUrl: "data:image/jpeg;base64,bWFzaw==",
+				sourceNode,
+			},
+		),
+		/MASK_PNG_REQUIRED/,
+	);
+	assert.equal(persisted, false);
 });
 
 test("normalizeUpscaleParams clamps long-edge and defaults algorithm", () => {

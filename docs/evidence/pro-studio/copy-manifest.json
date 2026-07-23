@@ -463,11 +463,11 @@
       "source": "web/src/app/(user)/canvas/components/canvas-node-hover-toolbar.tsx",
       "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
       "target": "apps/canvas/src/kernel-host/ported/kernel-node-hover-toolbar.tsx",
-      "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "targetSha256": "d867f807ab57d9a458387c7d99987f31cc3a2c66536eaefc1e60415bbb5aa5b6",
+      "sourceSha256": "3f5a17c3bf26da7cc511d00b77d8f1992e2458d04d6e23369ec28eb33b1581e2",
+      "targetSha256": "364092b237095e2c83a7ab75db7f1305ed457cf8d092faa72bcc929129c35c38",
       "authorizationStatus": "authorized",
-      "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
-      "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
+      "a2Evidence": "docs/evidence/pro-studio/a2-k2-hover-ports-addendum-2026-07-23.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-k2-hover-ports-addendum-2026-07-23.md",
       "thirdPartyNotes": "Merchant-safe host rebuild; no third-party package bytes are copied into the derivative.",
       "reviewer": "product_owner",
       "adaptationBoundary": "G23 merchant-safe hover toolbar + K3 pure retouch (crop/upscale/split) host callbacks; no local agent bridge.",
@@ -493,11 +493,11 @@
       "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-tools.tsx",
       "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
       "target": "apps/canvas/src/kernel-host/ported/image-quick-tools.ts",
-      "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sourceSha256": "d11c586d1ccf80ec2d0a3f9b3871d6255b2306b7a64e7c7fe339c6b578f75dc7",
       "targetSha256": "677f74958a1eacd50497f1bc0b877564785d2c3efe047904277e5cdcca7f877e",
       "authorizationStatus": "authorized",
-      "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
-      "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
+      "a2Evidence": "docs/evidence/pro-studio/a2-k2-hover-ports-addendum-2026-07-23.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-k2-hover-ports-addendum-2026-07-23.md",
       "thirdPartyNotes": "Merchant-safe host rebuild; no third-party package bytes are copied into the derivative.",
       "reviewer": "product_owner",
       "adaptationBoundary": "G25 image quick-tool visibility preferences; K3 adds upscale/split to pure-transform catalog.",
@@ -523,74 +523,14 @@
       "source": "web/src/app/(user)/canvas/components/canvas-image-toolbar-settings-modal.tsx",
       "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
       "target": "apps/canvas/src/kernel-host/ported/image-quick-tools.test.ts",
-      "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sourceSha256": "ef85ef1c1f5d3cb3838dbf72ca6b68879829ec1f64908d58c9059ee5dc8829d7",
       "targetSha256": "d4f03f4d949aba6f0522a4acf411f8bc84b73201038be2fd4167c885ce628de7",
       "authorizationStatus": "authorized",
-      "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
-      "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
+      "a2Evidence": "docs/evidence/pro-studio/a2-k2-hover-ports-addendum-2026-07-23.md",
+      "a3Evidence": "docs/evidence/pro-studio/a3-k2-hover-ports-addendum-2026-07-23.md",
       "thirdPartyNotes": "Merchant-safe host rebuild; no third-party package bytes are copied into the derivative.",
       "reviewer": "product_owner",
       "adaptationBoundary": "Unit coverage for G25/K3 quick-tool normalize/storage contracts.",
-      "adapterReplacementMatrix": [
-        {
-          "upstream": "local agent bridge / provider store",
-          "host": "KernelCanvasSurface host callbacks + BackendPort",
-          "decision": "replace"
-        },
-        {
-          "upstream": "raw workspace/asset ids in UI",
-          "host": "desensitized merchant labels",
-          "decision": "replace"
-        },
-        {
-          "upstream": "exact vendor hover mount",
-          "host": "merchant-safe rebuilt toolbar",
-          "decision": "exclude"
-        }
-      ]
-    },
-    {
-      "source": "web/src/app/(user)/canvas/components/canvas-node-info-dialog.tsx",
-      "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
-      "target": "apps/canvas/src/kernel-host/ported/kernel-node-info.ts",
-      "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "targetSha256": "66450164bfa2ae6274c33168b9ec8af3fcf31bcd732bb2cc7a5525fad08f2808",
-      "authorizationStatus": "authorized",
-      "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
-      "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
-      "thirdPartyNotes": "Merchant-safe host rebuild; no third-party package bytes are copied into the derivative.",
-      "reviewer": "product_owner",
-      "adaptationBoundary": "G24 desensitized node info projection; strips ids, asset URLs, base64.",
-      "adapterReplacementMatrix": [
-        {
-          "upstream": "local agent bridge / provider store",
-          "host": "KernelCanvasSurface host callbacks + BackendPort",
-          "decision": "replace"
-        },
-        {
-          "upstream": "raw workspace/asset ids in UI",
-          "host": "desensitized merchant labels",
-          "decision": "replace"
-        },
-        {
-          "upstream": "exact vendor hover mount",
-          "host": "merchant-safe rebuilt toolbar",
-          "decision": "exclude"
-        }
-      ]
-    },
-    {
-      "source": "web/src/app/(user)/canvas/components/canvas-node-info-dialog.test.tsx",
-      "pinnedCommit": "a2c52c7aacf68d825563b7455efa9c34f3db0123",
-      "target": "apps/canvas/src/kernel-host/ported/kernel-node-info.test.ts",
-      "sourceSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "targetSha256": "a2592345f8518f6ee30d817b864d261c0e0028050ad2b5c5d60eda38f1e0e4e9",
-      "authorizationStatus": "authorized",
-      "a2Evidence": "docs/evidence/pro-studio/a2-derivative-port-addendum-2026-07-22.md",
-      "a3Evidence": "docs/evidence/pro-studio/a3-derivative-port-addendum-2026-07-22.md",
-      "thirdPartyNotes": "Merchant-safe host rebuild; no third-party package bytes are copied into the derivative.",
-      "reviewer": "product_owner",
-      "adaptationBoundary": "Unit coverage for G24 desensitization contracts.",
       "adapterReplacementMatrix": [
         {
           "upstream": "local agent bridge / provider store",

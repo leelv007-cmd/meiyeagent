@@ -63,12 +63,15 @@ export function toVozebNode(
 	const defaults = NODE_DEFAULT_SIZE[type];
 	const assetId =
 		typeof node.data.assetId === "string" ? node.data.assetId : undefined;
-	const text =
+	const durableText =
 		typeof node.data.text === "string"
 			? node.data.text
 			: typeof node.data.prompt === "string"
 				? node.data.prompt
 				: "";
+	const streamPreview =
+		typeof node.data.streamPreview === "string" ? node.data.streamPreview : "";
+	const text = durableText || streamPreview;
 	return {
 		height: node.height > 0 ? node.height : defaults.height,
 		id: node.id,

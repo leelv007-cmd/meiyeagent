@@ -13,6 +13,15 @@ export type MerchantCapabilityState =
   | 'unavailable';
 
 /**
+ * Merchant-safe channel posture. Never invent multi-channel without ≥2 domains.
+ * `none` means no verified channel posture to advertise.
+ */
+export type MerchantChannelMode =
+  | 'single_channel'
+  | 'multi_channel'
+  | 'none';
+
+/**
  * Internal evidence layers kept separate from merchant projection.
  * These must never appear on `/capabilities`.
  */
@@ -31,6 +40,7 @@ export type ReadinessCheckName =
   | 'objectStorage'
   | 'workerFreshness'
   | 'providerMode'
+  | 'providerLive'
   | 'outbox'
   | 'canvas';
 
@@ -55,6 +65,27 @@ export interface ReleaseManifest {
   units: ReleaseUnitIdentity[];
 }
 
+/** Redacted staging evidence required before P0 may be called a release candidate. */
+export interface P0ReleaseCandidateManifest extends ReleaseManifest {
+  completedAt: string;
+  environment: 'staging';
+  expiresAt: string;
+  releaseRef: string;
+  result: 'pass';
+  schemaVersion: 1;
+  startedAt: string;
+  verification: {
+    journeyEvidenceRefs: {
+      copy: string;
+      image: string;
+      video: string;
+    };
+    readinessEvidenceRef: string;
+    recoveryEvidenceRef: string;
+  };
+  workflowRun: string;
+}
+
 export interface LiveStatus {
   role?: 'api' | 'worker';
   service: 'meiye-core';
@@ -71,6 +102,12 @@ export interface ReadyStatus {
 
 export interface MerchantCapability {
   id: string;
+  /**
+   * Merchant-safe channel label when a verified posture exists
+   * (e.g. `single-channel/no-fallback`). Never internal evidence vocabulary.
+   */
+  channelLabel?: string;
+  channelMode?: MerchantChannelMode;
   safeExplanation: string;
   state: MerchantCapabilityState;
 }
@@ -86,6 +123,12 @@ export interface InternalCapabilityRecord {
   id: string;
   /** Optional assisted path that remains usable without live verification. */
   assistedPathAvailable?: boolean;
+  /**
+   * Merchant-safe channel label carried through projection.
+   * Must not contain internal evidence tokens (live_verified, etc.).
+   */
+  channelLabel?: string;
+  channelMode?: MerchantChannelMode;
   evidence: InternalCapabilityEvidence[];
   /** Optional human-readable purpose used only to craft safe explanations. */
   purpose?: string;

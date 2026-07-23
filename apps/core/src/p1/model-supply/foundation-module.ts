@@ -30,10 +30,12 @@ import {
   type CatalogModel,
   type CanvasGenerationInputAsset,
   type CanvasGenerationParameterName,
+  type AdvancedCanvasGenerationOriginRef,
   type DataClass,
   type ModelOperation,
   type ModelDeployment,
   type ModelSupplyApplicationService,
+  modelSupplyJobId,
   type ModelSupplyPlanningControlPlanePort,
   type ModelSupplyPlanningControlPlaneState,
   type ModelSupplyRouteSimulationInput,
@@ -108,6 +110,7 @@ export interface PersistedCanvasGenerationQuote {
   createdAt: string;
   deploymentId: string;
   estimatedProviderCost: ModelDeployment['unitPrice'] | null;
+  originRef: AdvancedCanvasGenerationOriginRef;
   quoteId: string;
   operation: ModelOperation;
   payloadHash: string;
@@ -126,6 +129,7 @@ export interface CanvasGenerationProjectAuthority {
 export interface CanvasTextGenerationOutboxRecord {
   claimToken?: string;
   createdAt: string;
+  deliveryMode?: 'canvas_sse' | 'worker';
   id: string;
   leaseExpiresAt?: string;
   providerEffectKey?: string;
@@ -134,6 +138,170 @@ export interface CanvasTextGenerationOutboxRecord {
   status: 'pending' | 'claimed' | 'completed';
   submission: Parameters<ModelSupplyApplicationService['submit']>[0];
   workspaceId: string;
+}
+
+export type CanvasTextGenerationStreamEvent =
+  | {
+      createdAt: string;
+      delta: string;
+      jobId: string;
+      sequence: number;
+      type: 'delta';
+    }
+  | {
+      code: 'CANVAS_TEXT_PRODUCER_INTERRUPTED';
+      createdAt: string;
+      jobId: string;
+      message: string;
+      retryable: true;
+      sequence: number;
+      type: 'recoverable';
+    }
+  | {
+      createdAt: string;
+      jobId: string;
+      result: ModelSupplyResult;
+      sequence: number;
+      type: 'terminal';
+    };
+
+export type CanvasTextGenerationStreamEventInput =
+  | {
+      createdAt: string;
+      delta: string;
+      type: 'delta';
+    }
+  | {
+      code: 'CANVAS_TEXT_PRODUCER_INTERRUPTED';
+      createdAt: string;
+      message: string;
+      retryable: true;
+      type: 'recoverable';
+    }
+  | {
+      createdAt: string;
+      result: ModelSupplyResult;
+      type: 'terminal';
+    };
+
+export interface CanvasTextGenerationStreamSubscription {
+  close(): Promise<void> | void;
+}
+
+class CanvasTextStreamSubscription {
+  private closed = false;
+  private failed = false;
+  private failure: unknown;
+  private lastSequence: number;
+  private readonly pendingSequences = new Set<number>();
+  private readonly queued: CanvasTextGenerationStreamEvent[] = [];
+  private readonly waiters: Array<
+    {
+      reject(error: unknown): void;
+      resolve(event: CanvasTextGenerationStreamEvent | null): void;
+    }
+  > = [];
+
+  constructor(afterSequence: number) {
+    this.lastSequence = afterSequence;
+  }
+
+  push(event: CanvasTextGenerationStreamEvent) {
+    if (
+      event.sequence <= this.lastSequence ||
+      this.pendingSequences.has(event.sequence)
+    ) {
+      return;
+    }
+    this.pendingSequences.add(event.sequence);
+    this.queued.push(event);
+    this.queued.sort((left, right) => left.sequence - right.sequence);
+    this.drain();
+  }
+
+  async next(): Promise<CanvasTextGenerationStreamEvent | null> {
+    const event = this.take();
+    if (event) return event;
+    if (this.failed) throw this.failure;
+    if (this.closed) return null;
+    return new Promise((resolve, reject) => this.waiters.push({ reject, resolve }));
+  }
+
+  close() {
+    this.closed = true;
+    this.drain();
+  }
+
+  fail(error: unknown) {
+    this.failed = true;
+    this.failure = error;
+    this.closed = true;
+    this.drain();
+  }
+
+  private take() {
+    const event = this.queued.shift();
+    if (!event) return null;
+    this.pendingSequences.delete(event.sequence);
+    this.lastSequence = event.sequence;
+    return event;
+  }
+
+  private drain() {
+    while (this.waiters.length > 0) {
+      const event = this.take();
+      if (event) {
+        this.waiters.shift()!.resolve(event);
+        continue;
+      }
+      if (this.failed) {
+        this.waiters.shift()!.reject(this.failure);
+        continue;
+      }
+      if (!this.closed) return;
+      this.waiters.shift()!.resolve(null);
+    }
+  }
+}
+
+class CanvasTextStreamProducer {
+  private closed = false;
+  private readonly subscriptions = new Set<CanvasTextStreamSubscription>();
+
+  get isClosed() {
+    return this.closed;
+  }
+
+  subscribe(afterSequence: number) {
+    const subscription = new CanvasTextStreamSubscription(afterSequence);
+    if (this.closed) {
+      subscription.close();
+      return subscription;
+    }
+    this.subscriptions.add(subscription);
+    return subscription;
+  }
+
+  unsubscribe(subscription: CanvasTextStreamSubscription) {
+    this.subscriptions.delete(subscription);
+    subscription.close();
+  }
+
+  publish(event: CanvasTextGenerationStreamEvent) {
+    for (const subscription of this.subscriptions) subscription.push(event);
+  }
+
+  close() {
+    this.closed = true;
+    for (const subscription of this.subscriptions) subscription.close();
+    this.subscriptions.clear();
+  }
+
+  fail(error: unknown) {
+    this.closed = true;
+    for (const subscription of this.subscriptions) subscription.fail(error);
+    this.subscriptions.clear();
+  }
 }
 
 export type CanvasTextGenerationProviderEffectDecision =
@@ -263,8 +431,16 @@ export interface ModelSupplyControlPlaneRepository {
   ): Promise<void>;
   claimCanvasTextGeneration(input: {
     claimToken: string;
+    deliveryMode?: NonNullable<CanvasTextGenerationOutboxRecord['deliveryMode']>;
     leaseExpiresAt: string;
     now: string;
+  }): Promise<CanvasTextGenerationOutboxRecord | null>;
+  claimCanvasTextGenerationById(input: {
+    claimToken: string;
+    id: string;
+    leaseExpiresAt: string;
+    now: string;
+    workspaceId: string;
   }): Promise<CanvasTextGenerationOutboxRecord | null>;
   renewCanvasTextGenerationLease(input: {
     claimToken: string;
@@ -291,6 +467,22 @@ export interface ModelSupplyControlPlaneRepository {
     claimToken: string;
     id: string;
   }): Promise<boolean>;
+  appendCanvasTextGenerationStreamEvent(input: {
+    event: CanvasTextGenerationStreamEventInput;
+    jobId: string;
+    workspaceId: string;
+  }): Promise<CanvasTextGenerationStreamEvent>;
+  listCanvasTextGenerationStreamEvents(input: {
+    afterSequence: number;
+    jobId: string;
+    workspaceId: string;
+  }): Promise<CanvasTextGenerationStreamEvent[]>;
+  subscribeCanvasTextGenerationStreamEvents(input: {
+    jobId: string;
+    onError?(error: unknown): void;
+    onWake(): Promise<void> | void;
+    workspaceId: string;
+  }): Promise<CanvasTextGenerationStreamSubscription>;
   saveQualityEvent(workspaceId: string, event: QualityEvent): Promise<QualityEvent>;
   listQualityEvents(workspaceId: string): Promise<QualityEvent[]>;
   saveQualityEvaluationRun(
@@ -544,6 +736,17 @@ export class MemoryModelSupplyControlPlaneRepository
     string,
     CanvasTextGenerationOutboxRecord
   >();
+  private readonly canvasTextStreamEvents = new Map<
+    string,
+    CanvasTextGenerationStreamEvent[]
+  >();
+  private readonly canvasTextStreamWatches = new Map<
+    string,
+    Set<{
+      onError?(error: unknown): void;
+      onWake(): Promise<void> | void;
+    }>
+  >();
   private readonly quality = new Map<string, QualityEvent[]>();
   private readonly qualityEvaluations = new Map<string, BeautyQualityEvaluationRun[]>();
   private readonly promptHeads = new Map<string, string>();
@@ -763,21 +966,51 @@ export class MemoryModelSupplyControlPlaneRepository
 
   async claimCanvasTextGeneration(input: {
     claimToken: string;
+    deliveryMode?: NonNullable<CanvasTextGenerationOutboxRecord['deliveryMode']>;
     leaseExpiresAt: string;
     now: string;
   }) {
     const candidate = [...this.canvasTextOutbox.values()]
       .filter(
         (item) =>
-          item.status === 'pending' ||
-          (item.status === 'claimed' &&
-            Boolean(item.leaseExpiresAt) &&
-            item.leaseExpiresAt! <= input.now),
+          (input.deliveryMode === undefined ||
+            (item.deliveryMode ?? 'worker') === input.deliveryMode) &&
+          (item.status === 'pending' ||
+            (item.status === 'claimed' &&
+              Boolean(item.leaseExpiresAt) &&
+              item.leaseExpiresAt! <= input.now)),
       )
       .sort((left, right) =>
         left.createdAt.localeCompare(right.createdAt),
       )[0];
     if (!candidate) return null;
+    candidate.status = 'claimed';
+    candidate.claimToken = input.claimToken;
+    candidate.leaseExpiresAt = input.leaseExpiresAt;
+    return structuredClone(candidate);
+  }
+
+  async claimCanvasTextGenerationById(input: {
+    claimToken: string;
+    id: string;
+    leaseExpiresAt: string;
+    now: string;
+    workspaceId: string;
+  }) {
+    const candidate = this.canvasTextOutbox.get(input.id);
+    if (
+      !candidate ||
+      candidate.workspaceId !== input.workspaceId ||
+      candidate.deliveryMode !== 'canvas_sse' ||
+      !(
+        candidate.status === 'pending' ||
+        (candidate.status === 'claimed' &&
+          Boolean(candidate.leaseExpiresAt) &&
+          candidate.leaseExpiresAt! <= input.now)
+      )
+    ) {
+      return null;
+    }
     candidate.status = 'claimed';
     candidate.claimToken = input.claimToken;
     candidate.leaseExpiresAt = input.leaseExpiresAt;
@@ -881,6 +1114,73 @@ export class MemoryModelSupplyControlPlaneRepository
     delete item.claimToken;
     delete item.leaseExpiresAt;
     return true;
+  }
+
+  async appendCanvasTextGenerationStreamEvent(input: {
+    event: CanvasTextGenerationStreamEventInput;
+    jobId: string;
+    workspaceId: string;
+  }) {
+    const key = canvasTextStreamEventKey(input.workspaceId, input.jobId);
+    const events = this.canvasTextStreamEvents.get(key) ?? [];
+    if (input.event.type === 'terminal') {
+      const terminal = events.find((event) => event.type === 'terminal');
+      if (terminal) return structuredClone(terminal);
+    }
+    const event: CanvasTextGenerationStreamEvent = {
+      ...structuredClone(input.event),
+      jobId: input.jobId,
+      sequence: (events.at(-1)?.sequence ?? 0) + 1,
+    };
+    events.push(event);
+    this.canvasTextStreamEvents.set(key, events);
+    this.notifyCanvasTextStreamWatches(key);
+    return structuredClone(event);
+  }
+
+  async listCanvasTextGenerationStreamEvents(input: {
+    afterSequence: number;
+    jobId: string;
+    workspaceId: string;
+  }) {
+    return structuredClone(
+      (this.canvasTextStreamEvents.get(
+        canvasTextStreamEventKey(input.workspaceId, input.jobId),
+      ) ?? []).filter((event) => event.sequence > input.afterSequence),
+    );
+  }
+
+  async subscribeCanvasTextGenerationStreamEvents(input: {
+    jobId: string;
+    onError?(error: unknown): void;
+    onWake(): Promise<void> | void;
+    workspaceId: string;
+  }) {
+    const key = canvasTextStreamEventKey(input.workspaceId, input.jobId);
+    const watches = this.canvasTextStreamWatches.get(key) ?? new Set();
+    const watch = { onError: input.onError, onWake: input.onWake };
+    watches.add(watch);
+    this.canvasTextStreamWatches.set(key, watches);
+    return {
+      close: () => {
+        watches.delete(watch);
+        if (watches.size === 0) this.canvasTextStreamWatches.delete(key);
+      },
+    } satisfies CanvasTextGenerationStreamSubscription;
+  }
+
+  private notifyCanvasTextStreamWatches(key: string) {
+    for (const watch of this.canvasTextStreamWatches.get(key) ?? []) {
+      queueMicrotask(() => {
+        void Promise.resolve(watch.onWake()).catch((error: unknown) => {
+          try {
+            watch.onError?.(error);
+          } catch {
+            // A test watcher cannot make a persisted event append fail.
+          }
+        });
+      });
+    }
   }
 
   async saveQualityEvent(workspaceId: string, event: QualityEvent) {
@@ -1326,6 +1626,14 @@ function stableId(value: string) {
   return createHash('sha256').update(value).digest('hex').slice(0, 28);
 }
 
+function canvasTextStreamEventKey(workspaceId: string, jobId: string) {
+  return `${workspaceId}:${jobId}`;
+}
+
+function canvasTextOutboxId(workspaceId: string, jobId: string) {
+  return `canvas-text-outbox-${stableId(`${workspaceId}:${jobId}`)}`;
+}
+
 function languageActivationProbePrompt(operation: ModelOperation) {
   if (operation === 'copy.generate') {
     return 'Return three short, distinct beauty-store captions for an activation smoke test.';
@@ -1420,6 +1728,7 @@ function publicCanvasGenerationJob(value: unknown, projectId: string) {
     result.inputAssets,
     result.inputNodeBindings,
   );
+  const originRef = publicCanvasGenerationOriginRef(result.originRef);
   return {
     jobId,
     projectId,
@@ -1438,12 +1747,79 @@ function publicCanvasGenerationJob(value: unknown, projectId: string) {
         ? { kind: 'asset' as const, asset }
         : null,
     ...inputProjection,
+    ...(originRef ? { originRef } : {}),
     ...(typeof result.failureCode === 'string'
       ? { failureCode: result.failureCode }
       : {}),
+		...(result.retryable === true ? { retryable: true } : {}),
     usage: structuredClone(result.usage),
     providerCost: structuredClone(result.providerCost),
   };
+}
+
+function isModelSupplyResult(value: unknown): value is ModelSupplyResult {
+  return (
+    plainRecord(value) &&
+    typeof value.jobId === 'string' &&
+    plainRecord(value.snapshot) &&
+    plainRecord(value.attempt) &&
+    Array.isArray(value.attempts) &&
+    plainRecord(value.usage) &&
+    plainRecord(value.providerCost) &&
+    Array.isArray(value.providerCosts)
+  );
+}
+
+function publicCanvasGenerationOriginRef(
+	value: unknown,
+): AdvancedCanvasGenerationOriginRef | undefined {
+	if (!plainRecord(value)) {
+		return undefined;
+	}
+	const record = value;
+	const parameters = plainRecord(record.parameters)
+		? record.parameters
+		: undefined;
+  if (
+    record.type !== 'advanced_canvas_project_revision' ||
+    typeof record.checkpointId !== 'string' ||
+    !record.checkpointId.trim() ||
+    typeof record.count !== 'number' ||
+    !Number.isSafeInteger(record.count) ||
+    record.count !== 1 ||
+    typeof record.modelId !== 'string' ||
+    !record.modelId.trim() ||
+		typeof record.prompt !== 'string' ||
+		!record.prompt.trim() ||
+    typeof record.projectId !== 'string' ||
+    !record.projectId.trim() ||
+    typeof record.revisionId !== 'string' ||
+    !record.revisionId.trim() ||
+		!parameters
+  ) {
+    return undefined;
+  }
+  if (
+    (record.itemId === undefined && record.nodeId === undefined) ||
+    (record.itemId !== undefined &&
+      (typeof record.itemId !== 'string' || !record.itemId.trim())) ||
+    (record.nodeId !== undefined &&
+      (typeof record.nodeId !== 'string' || !record.nodeId.trim()))
+  ) {
+    return undefined;
+  }
+	return {
+		checkpointId: record.checkpointId,
+		count: record.count,
+		...(typeof record.itemId === 'string' ? { itemId: record.itemId } : {}),
+		modelId: record.modelId,
+		...(typeof record.nodeId === 'string' ? { nodeId: record.nodeId } : {}),
+		parameters: structuredClone(parameters),
+		prompt: record.prompt,
+		projectId: record.projectId,
+		revisionId: record.revisionId,
+		type: 'advanced_canvas_project_revision',
+	};
 }
 
 function publicCanvasGenerationInputs(value: unknown, bindingsValue: unknown) {
@@ -1537,6 +1913,7 @@ export class ModelSupplyControlPlaneService {
   private readonly canvasProjects?: CanvasGenerationProjectAuthority;
   private readonly planningControlPlane?: ModelSupplyPlanningControlPlanePort;
   private readonly supplyRegistry?: ModelSupplyRegistryPersistencePort;
+  private readonly canvasTextProducers = new Map<string, CanvasTextStreamProducer>();
 
   constructor(options: {
     application: ModelSupplyApplicationService;
@@ -1919,7 +2296,7 @@ export class ModelSupplyControlPlaneService {
     };
   }
 
-  async getCanvasGenerationCatalog(workspaceId: string) {
+  async getCanvasGenerationCatalog(workspaceId: string, userId: string) {
     const source = catalogSource(
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
       this.fallbackCatalog,
@@ -1935,6 +2312,75 @@ export class ModelSupplyControlPlaneService {
         candidate === 'video.generate' ||
         candidate.startsWith('audio.'),
     );
+    const operationCatalog = await Promise.all(operations.map(async (operation) => {
+      const active = deployments
+        .filter((deployment) => deployment.status === 'active')
+        .flatMap((deployment) =>
+          (deployment.canvasGenerationCapabilities ?? [])
+            .filter((capability) => capability.operation === operation)
+            .map((capability) => ({ deployment, capability })),
+        );
+      const eligible = active
+        .filter(({ deployment }) =>
+          !isAudioGenerationOperation(operation) ||
+          this.allowRecordedExecution ||
+          isAudioProductionGenerationAllowed({ operation, deployment }),
+        )
+        .sort((left, right) =>
+          left.deployment.id.localeCompare(right.deployment.id),
+        );
+      const preferences = await this.repository.getPreferences(
+        workspaceId,
+        userId,
+        operation,
+      );
+      const defaultModelId =
+        preferences.userDefault ?? preferences.workspaceDefault;
+      const selected = defaultModelId
+        ? eligible.find(
+            ({ deployment }) => deployment.catalogModelId === defaultModelId,
+          )
+        : undefined;
+      const unavailableReasonCode =
+        eligible.length === 0
+          ? 'OPERATION_UNAVAILABLE'
+          : !defaultModelId
+            ? 'MODEL_NOT_CONFIGURED'
+            : !selected
+              ? 'MODEL_DISABLED'
+              : undefined;
+      return {
+        defaultModelId,
+        entry: {
+          activation: unavailableReasonCode
+            ? ('inactive' as const)
+            : ('active' as const),
+          allowedInputAssetRoles: selected
+            ? [...selected.capability.inputAssetRoles]
+            : [],
+          allowedParameters: selected ? [...selected.capability.parameters] : [],
+          estimatedDurationSeconds: [5, 60] as [number, number],
+          modelId: selected?.deployment.catalogModelId ?? null,
+          operation,
+          output: operation === 'text.respond'
+            ? ('text' as const)
+            : operation.startsWith('image.')
+              ? ('image' as const)
+              : operation === 'video.generate'
+                ? ('video' as const)
+                : ('audio' as const),
+          usageAmount: selected
+            ? canvasProductUsageQuantity(
+                selected.deployment,
+                this.allowRecordedExecution,
+              )
+            : 0,
+          usageResource: durationOperation(operation),
+          ...(unavailableReasonCode ? { unavailableReasonCode } : {}),
+        },
+        unavailableReasonCode,
+      };
+    }));
     return {
       revisionId: source.revisionId,
       schema: {
@@ -1959,59 +2405,19 @@ export class ModelSupplyControlPlaneService {
           ),
         };
       }),
-      operations: operations.map((operation) => {
-        const active = deployments
-          .filter((deployment) => deployment.status === 'active')
-          .flatMap((deployment) =>
-            (deployment.canvasGenerationCapabilities ?? [])
-              .filter((capability) => capability.operation === operation)
-              .map((capability) => ({ deployment, capability })),
-          );
-        const productionAudioOpen =
-          !isAudioGenerationOperation(operation) ||
-          this.allowRecordedExecution ||
-          (active[0]
-            ? isAudioProductionGenerationAllowed({
-                operation,
-                deployment: active[0].deployment,
-              })
-            : false);
-        const open = active.length > 0 && productionAudioOpen;
-        return {
-          activation: open ? ('active' as const) : ('inactive' as const),
-          allowedInputAssetRoles: [
-            ...new Set(
-              open
-                ? active.flatMap(({ capability }) => capability.inputAssetRoles)
-                : [],
-            ),
-          ],
-          allowedParameters: [
-            ...new Set(
-              open
-                ? active.flatMap(({ capability }) => capability.parameters)
-                : [],
-            ),
-          ],
-          estimatedDurationSeconds: [5, 60] as [number, number],
-          modelId: open ? active[0]?.deployment.catalogModelId ?? null : null,
-          operation,
-          output: operation === 'text.respond'
-            ? ('text' as const)
-            : operation.startsWith('image.')
-              ? ('image' as const)
-              : operation === 'video.generate'
-                ? ('video' as const)
-                : ('audio' as const),
-          usageAmount: open
-            ? canvasProductUsageQuantity(
-                active[0]?.deployment,
-                this.allowRecordedExecution,
-              )
-            : 0,
-          usageResource: durationOperation(operation),
-        };
-      }),
+      operations: operationCatalog.map(({ entry }) => entry),
+      defaultModelIdByOperation: Object.fromEntries(
+        operationCatalog.flatMap(({ defaultModelId, entry }) =>
+          defaultModelId ? [[entry.operation, defaultModelId]] : [],
+        ),
+      ),
+      unavailableReasonCodeByOperation: Object.fromEntries(
+        operationCatalog.flatMap(({ entry, unavailableReasonCode }) =>
+          unavailableReasonCode
+            ? [[entry.operation, unavailableReasonCode]]
+            : [],
+        ),
+      ),
     };
   }
 
@@ -2020,10 +2426,11 @@ export class ModelSupplyControlPlaneService {
     request: ReturnType<typeof canvasGenerationRequest>,
     idempotencyKey: string,
   ) {
-    await this.assertCanvasRevision(context, request.projectId, request.revisionId);
+    await this.assertCanvasGenerationLineage(context, request);
     const { catalogRevisionId, deployment } =
       await this.requireCanvasGenerationCapability(
       context.workspaceId,
+      context.userId,
       request,
     );
     await this.initialize(context.workspaceId);
@@ -2061,6 +2468,7 @@ export class ModelSupplyControlPlaneService {
       estimatedProviderCost: deployment.unitPrice
         ? structuredClone(deployment.unitPrice)
         : null,
+      originRef: canvasGenerationOriginRef(request, deployment.catalogModelId),
       quoteId,
       operation: request.operation,
       payloadHash,
@@ -2086,7 +2494,7 @@ export class ModelSupplyControlPlaneService {
     quoteId: string,
     idempotencyKey: string,
   ) {
-    await this.assertCanvasRevision(context, request.projectId, request.revisionId);
+    await this.assertCanvasGenerationLineage(context, request);
     const quote = await this.repository.getCanvasGenerationQuote(
       context.workspaceId,
       quoteId,
@@ -2107,7 +2515,11 @@ export class ModelSupplyControlPlaneService {
       );
     }
     const { catalogRevisionId, deployment } =
-      await this.requireCanvasGenerationCapability(context.workspaceId, request);
+      await this.requireCanvasGenerationCapability(
+        context.workspaceId,
+        context.userId,
+        request,
+      );
     if (
       quote.payloadHash !==
         canvasGenerationPayloadHash(context.workspaceId, request) ||
@@ -2143,6 +2555,7 @@ export class ModelSupplyControlPlaneService {
         projectId: request.projectId,
         revisionId: request.revisionId,
       },
+      originRef: structuredClone(quote.originRef),
       lineage: {
         inputNodeBindings: request.inputNodeBindings,
       },
@@ -2158,26 +2571,104 @@ export class ModelSupplyControlPlaneService {
       },
       workspaceId: context.workspaceId,
     };
+    return this.dispatchCanvasGeneration(
+      context,
+      request.projectId,
+      submission,
+    );
+  }
+
+  async retryCanvasGeneration(
+    context: P1Context,
+    projectId: string,
+    jobId: string,
+    idempotencyKey: string,
+  ) {
+    await this.assertCanvasProject(context, projectId);
+    const source = await this.getJob(context.workspaceId, jobId);
+    const retry = canvasGenerationRetrySource(source, projectId);
+    await this.assertCanvasRevision(
+      context,
+      projectId,
+      retry.originRef.revisionId,
+    );
+    const submission: Parameters<ModelSupplyApplicationService['submit']>[0] = {
+      actorId: context.userId,
+      correlationId: context.correlationId,
+      dataClass: retry.dataClass,
+      idempotencyKey: `canvas-retry:${jobId}:${idempotencyKey}`,
+      input: {
+        ...structuredClone(retry.originRef.parameters),
+        inputAssets: structuredClone(retry.inputAssets),
+        referenceAssetIds: retry.inputAssets
+          .filter((asset) => asset.role !== 'mask')
+          .map((asset) => asset.assetId),
+      } as Parameters<ModelSupplyApplicationService['submit']>[0]['input'],
+      operation: retry.operation,
+      origin: {
+        kind: 'advanced_canvas',
+        projectId,
+        revisionId: retry.originRef.revisionId,
+      },
+      originRef: structuredClone(retry.originRef),
+      lineage: {
+        inputNodeBindings: structuredClone(retry.inputNodeBindings),
+      },
+      productUsageQuantity: retry.usageQuantity,
+      prompt: retry.originRef.prompt,
+      frozenRouteSnapshot: structuredClone(retry.snapshot),
+      selection: {
+        catalogModelId: retry.originRef.modelId,
+        mode: 'fixed',
+      },
+      workspaceId: context.workspaceId,
+    };
+    const existing = await this.canvasGenerationJobIfPresent(
+      context.workspaceId,
+      modelSupplyJobId(submission),
+    );
+    if (existing) return publicCanvasGenerationJob(existing, projectId);
+    return this.dispatchCanvasGeneration(context, projectId, submission);
+  }
+
+  private async dispatchCanvasGeneration(
+    context: P1Context,
+    projectId: string,
+    submission: Parameters<ModelSupplyApplicationService['submit']>[0],
+  ) {
     await this.initialize(context.workspaceId);
-    if (request.operation === 'text.respond') {
+    if (submission.operation === 'text.respond') {
       const queued = this.application.previewTextSubmission(submission);
       await this.repository.enqueueCanvasTextGeneration(
         context.workspaceId,
         queued,
         {
           createdAt: this.clock().toISOString(),
-          id: `canvas-text-outbox-${stableId(
-            `${context.workspaceId}:${queued.jobId}`,
-          )}`,
+          deliveryMode: 'canvas_sse',
+          id: canvasTextOutboxId(context.workspaceId, queued.jobId),
           status: 'pending',
           submission: structuredClone(submission),
           workspaceId: context.workspaceId,
         },
       );
-      return publicCanvasGenerationJob(queued, request.projectId);
+      return publicCanvasGenerationJob(queued, projectId);
     }
     const result = await this.application.submit(submission);
-    return publicCanvasGenerationJob(result, request.projectId);
+    return publicCanvasGenerationJob(result, projectId);
+  }
+
+  private async canvasGenerationJobIfPresent(
+    workspaceId: string,
+    jobId: string,
+  ) {
+    try {
+      return await this.getJob(workspaceId, jobId);
+    } catch (error) {
+      if (error instanceof P1DomainError && error.code === 'NOT_FOUND') {
+        return null;
+      }
+      throw error;
+    }
   }
 
   async getCanvasGenerationJob(
@@ -2190,6 +2681,400 @@ export class ModelSupplyControlPlaneService {
     const view = publicCanvasGenerationJob(raw, projectId);
     await this.assertCanvasRevision(context, projectId, view.revisionId);
     return view;
+  }
+
+  async streamCanvasTextGeneration(
+    context: P1Context,
+    input: {
+      abortSignal?: AbortSignal;
+      afterSequence: number;
+      jobId: string;
+      onEvent(event: CanvasTextGenerationStreamEvent): Promise<void> | void;
+      onReady?(): Promise<void> | void;
+      projectId: string;
+      runner: AiStreamingRunner | undefined;
+    },
+  ) {
+    if (!Number.isSafeInteger(input.afterSequence) || input.afterSequence < 0) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Canvas text stream cursor is invalid.',
+      );
+    }
+    await this.assertCanvasProject(context, input.projectId);
+    const rawValue = await this.getJob(context.workspaceId, input.jobId);
+    if (!isModelSupplyResult(rawValue)) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        'Canvas text generation job was not found in this project.',
+      );
+    }
+    const raw = rawValue;
+    const view = publicCanvasGenerationJob(raw, input.projectId);
+    await this.assertCanvasRevision(context, input.projectId, view.revisionId);
+    if (view.operation !== 'text.respond') {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        'Canvas text generation job was not found in this project.',
+      );
+    }
+    await input.onReady?.();
+    let producer: CanvasTextStreamProducer | undefined;
+    let subscription: CanvasTextStreamSubscription | undefined;
+    let durableSubscription: CanvasTextGenerationStreamSubscription | undefined;
+    let pendingFailure: P1DomainError | undefined;
+    let refreshTail = Promise.resolve();
+    let subscriberAborted = input.abortSignal?.aborted ?? false;
+    const abortSubscriber = () => {
+      subscriberAborted = true;
+      subscription?.close();
+    };
+    const failSubscriber = () => {
+      const failure = this.canvasTextStreamRecoveryError();
+      if (subscription) {
+        subscription.fail(failure);
+      } else {
+        pendingFailure = failure;
+      }
+    };
+    const refresh = () => {
+      if (!subscription || subscriberAborted) return Promise.resolve();
+      const target = subscription;
+      refreshTail = refreshTail
+        .catch(() => undefined)
+        .then(async () => {
+          const history = await this.canvasTextStreamHistory(
+            context,
+            input.projectId,
+            input.jobId,
+          );
+          if (subscriberAborted) return;
+          for (const event of history) target.push(event);
+        })
+        .catch(() => {
+          failSubscriber();
+        });
+      return refreshTail;
+    };
+    input.abortSignal?.addEventListener('abort', abortSubscriber, { once: true });
+    try {
+      durableSubscription =
+        await this.repository.subscribeCanvasTextGenerationStreamEvents({
+          jobId: input.jobId,
+          onError: failSubscriber,
+          onWake: refresh,
+          workspaceId: context.workspaceId,
+        });
+      if (subscriberAborted) return;
+      producer = await this.canvasTextProducerFor(context, input, raw);
+      subscription =
+        producer?.subscribe(input.afterSequence) ??
+        new CanvasTextStreamSubscription(input.afterSequence);
+      if (subscriberAborted) return;
+      if (pendingFailure) subscription.fail(pendingFailure);
+      await refresh();
+      if (subscriberAborted) return;
+      for (;;) {
+        const event = await subscription.next();
+        if (!event) return;
+        if (event.type === 'terminal') {
+          await this.assertCanvasTextTerminalOwnership(
+            context,
+            input.projectId,
+            event,
+          );
+        }
+        await input.onEvent(event);
+        if (event.type === 'terminal' || event.type === 'recoverable') return;
+      }
+    } finally {
+      input.abortSignal?.removeEventListener('abort', abortSubscriber);
+      if (subscription && producer) producer.unsubscribe(subscription);
+      else subscription?.close();
+      await durableSubscription?.close();
+    }
+  }
+
+  private async canvasTextProducerFor(
+    context: P1Context,
+    input: {
+      jobId: string;
+      projectId: string;
+      runner: AiStreamingRunner | undefined;
+    },
+    raw: ModelSupplyResult,
+  ) {
+    const key = canvasTextStreamEventKey(context.workspaceId, input.jobId);
+    const current = this.canvasTextProducers.get(key);
+    if (current && !current.isClosed) return current;
+    if (current?.isClosed) this.canvasTextProducers.delete(key);
+    const history = await this.canvasTextStreamHistory(
+      context,
+      input.projectId,
+      input.jobId,
+    );
+    if (history.some((event) => event.type === 'terminal')) return undefined;
+    if (raw.status !== 'unknown') {
+      await this.appendCanvasTextTerminalEvent(
+        context.workspaceId,
+        input.jobId,
+        raw,
+      );
+      return undefined;
+    }
+
+    const now = this.clock();
+    const claimToken = randomUUID();
+    const leaseMs = 60_000;
+    const claimed = await this.repository.claimCanvasTextGenerationById({
+      claimToken,
+      id: canvasTextOutboxId(context.workspaceId, input.jobId),
+      leaseExpiresAt: new Date(now.getTime() + leaseMs).toISOString(),
+      now: now.toISOString(),
+      workspaceId: context.workspaceId,
+    });
+    if (!claimed) {
+      const concurrent = this.canvasTextProducers.get(key);
+      if (concurrent && !concurrent.isClosed) return concurrent;
+      if (concurrent?.isClosed) this.canvasTextProducers.delete(key);
+      const latest = await this.getJob(context.workspaceId, input.jobId);
+      if (isModelSupplyResult(latest) && latest.status !== 'unknown') {
+        await this.appendCanvasTextTerminalEvent(
+          context.workspaceId,
+          input.jobId,
+          latest,
+        );
+        return undefined;
+      }
+      const refreshedHistory = await this.canvasTextStreamHistory(
+        context,
+        input.projectId,
+        input.jobId,
+      );
+      if (refreshedHistory.some((event) => event.type === 'terminal')) {
+        return undefined;
+      }
+      return undefined;
+    }
+
+    const producer = new CanvasTextStreamProducer();
+    this.canvasTextProducers.set(key, producer);
+    // A browser connection is only a subscriber; it never owns the provider effect.
+    void this.runCanvasTextProducer({
+      claimToken,
+      context,
+      jobId: input.jobId,
+      producer,
+      queued: claimed,
+      raw,
+      runner: input.runner,
+    })
+      .catch(async () => {
+        try {
+          const recoverable = await this.appendCanvasTextRecoverableEvent(
+            context.workspaceId,
+            input.jobId,
+          );
+          producer.publish(recoverable);
+          producer.close();
+        } catch {
+          producer.fail(this.canvasTextStreamRecoveryError());
+        }
+      })
+      .finally(() => {
+        producer.close();
+        if (this.canvasTextProducers.get(key) === producer) {
+          this.canvasTextProducers.delete(key);
+        }
+      });
+    return producer;
+  }
+
+  private async runCanvasTextProducer(input: {
+    claimToken: string;
+    context: P1Context;
+    jobId: string;
+    producer: CanvasTextStreamProducer;
+    queued: CanvasTextGenerationOutboxRecord;
+    raw: ModelSupplyResult;
+    runner: AiStreamingRunner | undefined;
+  }) {
+    const leaseMs = 60_000;
+    let claimLost = false;
+    let heartbeatError: unknown;
+    let heartbeatTask: Promise<void> | undefined;
+    const heartbeat = setInterval(() => {
+      if (claimLost || heartbeatTask) return;
+      const now = this.clock();
+      heartbeatTask = this.repository
+        .renewCanvasTextGenerationLease({
+          claimToken: input.claimToken,
+          id: input.queued.id,
+          leaseExpiresAt: new Date(now.getTime() + leaseMs).toISOString(),
+        })
+        .then((renewed) => {
+          if (!renewed) claimLost = true;
+        })
+        .catch((error: unknown) => {
+          heartbeatError = error;
+          claimLost = true;
+        })
+        .then(() => undefined)
+        .finally(() => {
+          heartbeatTask = undefined;
+        });
+    }, Math.floor(leaseMs / 3));
+    heartbeat.unref();
+    try {
+      await this.initialize(input.context.workspaceId);
+      const effectKey = `canvas-text:${input.queued.id}`;
+      const effect = await this.repository.beginCanvasTextGenerationProviderEffect({
+        claimToken: input.claimToken,
+        effectKey,
+        id: input.queued.id,
+      });
+      const result =
+        effect.status === 'completed'
+          ? effect.result
+          : effect.status === 'acceptance_unknown'
+            ? await this.canvasTextDurableResult(
+                input.context.workspaceId,
+                input.jobId,
+                this.canvasTextAcceptanceUnknownResult(input.raw),
+              )
+            : await this.application.executeCanvasTextStream(
+                input.queued.submission,
+                input.runner,
+                {
+                  effectIdempotencyKey: effectKey,
+                  onDelta: async (delta) => {
+                    const event =
+                      await this.repository.appendCanvasTextGenerationStreamEvent({
+                        event: {
+                          createdAt: this.clock().toISOString(),
+                          delta,
+                          type: 'delta',
+                        },
+                        jobId: input.jobId,
+                        workspaceId: input.context.workspaceId,
+                      });
+                    input.producer.publish(event);
+                  },
+                },
+              );
+      if (effect.status !== 'completed') {
+        const recorded =
+          await this.repository.completeCanvasTextGenerationProviderEffect({
+            claimToken: input.claimToken,
+            effectKey,
+            id: input.queued.id,
+            result,
+          });
+        if (!recorded) claimLost = true;
+      }
+      await heartbeatTask;
+      if (claimLost) {
+        if (heartbeatError) throw heartbeatError;
+        throw new Error('Canvas text generation outbox claim was lost.');
+      }
+      const completed = await this.repository.completeCanvasTextGeneration({
+        claimToken: input.claimToken,
+        id: input.queued.id,
+        result,
+      });
+      if (!completed) {
+        throw new Error('Canvas text generation outbox claim was lost.');
+      }
+      const durable = await this.canvasTextDurableResult(
+        input.context.workspaceId,
+        input.jobId,
+        result,
+      );
+      const terminal = await this.appendCanvasTextTerminalEvent(
+        input.context.workspaceId,
+        input.jobId,
+        durable,
+      );
+      input.producer.publish(terminal);
+    } catch (error) {
+      await this.repository.releaseCanvasTextGeneration({
+        claimToken: input.claimToken,
+        id: input.queued.id,
+      });
+      throw error;
+    } finally {
+      clearInterval(heartbeat);
+    }
+  }
+
+  private async canvasTextStreamHistory(
+    context: P1Context,
+    projectId: string,
+    jobId: string,
+  ) {
+    const history = await this.repository.listCanvasTextGenerationStreamEvents({
+      afterSequence: 0,
+      jobId,
+      workspaceId: context.workspaceId,
+    });
+    await Promise.all(
+      history
+        .filter((event) => event.type === 'terminal')
+        .map((event) =>
+          this.assertCanvasTextTerminalOwnership(context, projectId, event),
+        ),
+    );
+    return history;
+  }
+
+  private async assertCanvasTextTerminalOwnership(
+    context: P1Context,
+    projectId: string,
+    event: Extract<CanvasTextGenerationStreamEvent, { type: 'terminal' }>,
+  ) {
+    const terminal = publicCanvasGenerationJob(event.result, projectId);
+    await this.assertCanvasRevision(context, projectId, terminal.revisionId);
+  }
+
+  private async canvasTextDurableResult(
+    workspaceId: string,
+    jobId: string,
+    fallback: ModelSupplyResult,
+  ) {
+    const value = await this.getJob(workspaceId, jobId);
+    if (!isModelSupplyResult(value)) {
+      throw new Error('Canvas text generation durable job was not found.');
+    }
+    return value.status === 'unknown' ? fallback : value;
+  }
+
+  private canvasTextAcceptanceUnknownResult(result: ModelSupplyResult) {
+    return {
+      ...structuredClone(result),
+      failureCode: 'CANVAS_TEXT_ACCEPTANCE_UNKNOWN',
+      status: 'unknown' as const,
+      attempt: {
+        ...structuredClone(result.attempt),
+        acceptance: 'acceptance_unknown' as const,
+        status: 'unknown' as const,
+      },
+      attempts: result.attempts.map((attempt) => ({
+        ...structuredClone(attempt),
+        acceptance: 'acceptance_unknown' as const,
+        status: 'unknown' as const,
+      })),
+      usage: {
+        ...structuredClone(result.usage),
+        status: 'refunded' as const,
+      },
+    } satisfies ModelSupplyResult;
+  }
+
+  private canvasTextStreamRecoveryError() {
+    return new P1DomainError(
+      'INVALID_STATE',
+      'Canvas text producer stopped before terminal settlement. Reconnect with Last-Event-ID to recover the durable job.',
+    );
   }
 
   async listCanvasGenerationJobs(context: P1Context, projectId: string) {
@@ -2219,6 +3104,9 @@ export class ModelSupplyControlPlaneService {
     if (job) {
       const view = publicCanvasGenerationJob(job, projectId);
       await this.assertCanvasRevision(context, projectId, view.revisionId);
+      if (job.operation === 'text.respond') {
+        return view;
+      }
       if (job.status !== 'unknown') {
         return view;
       }
@@ -2227,43 +3115,88 @@ export class ModelSupplyControlPlaneService {
     return publicCanvasGenerationJob(cancelled, projectId);
   }
 
+  private appendCanvasTextTerminalEvent(
+    workspaceId: string,
+    jobId: string,
+    result: ModelSupplyResult,
+  ) {
+    return this.repository.appendCanvasTextGenerationStreamEvent({
+      event: {
+        createdAt: this.clock().toISOString(),
+        result: structuredClone(result),
+        type: 'terminal',
+      },
+      jobId,
+      workspaceId,
+    });
+  }
+
+  private appendCanvasTextRecoverableEvent(
+    workspaceId: string,
+    jobId: string,
+  ) {
+    return this.repository.appendCanvasTextGenerationStreamEvent({
+      event: {
+        code: 'CANVAS_TEXT_PRODUCER_INTERRUPTED',
+        createdAt: this.clock().toISOString(),
+        message:
+          'Canvas text producer stopped before terminal settlement. Reconnect with Last-Event-ID to recover the durable job.',
+        retryable: true,
+        type: 'recoverable',
+      },
+      jobId,
+      workspaceId,
+    });
+  }
+
   private async requireCanvasGenerationCapability(
     workspaceId: string,
+    userId: string,
     request: ReturnType<typeof canvasGenerationRequest>,
   ) {
     const source = catalogSource(
       await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
       this.fallbackCatalog,
     );
-    const deployment = (
+    const candidates = (
       await this.application.constrainRuntimeDeploymentsForRequest(
         source.payload.deployments,
       )
-    ).find((candidate) =>
-        (request.modelId === undefined ||
-          candidate.catalogModelId === request.modelId) &&
+    ).filter((candidate) =>
         candidate.status === 'active' &&
         candidate.canvasGenerationCapabilities?.some(
           (capability) => capability.operation === request.operation,
         ),
+      )
+      .filter((candidate) =>
+        !isAudioGenerationOperation(request.operation) ||
+        this.allowRecordedExecution ||
+        isAudioProductionGenerationAllowed({
+          operation: request.operation,
+          deployment: candidate,
+        }),
+      )
+      .sort((left, right) => left.id.localeCompare(right.id));
+    const preferences = await this.repository.getPreferences(
+      workspaceId,
+      userId,
+      request.operation,
+    );
+    const selectedModelId =
+      request.modelId ?? preferences.userDefault ?? preferences.workspaceDefault;
+    if (!selectedModelId) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Canvas generation model is not configured for this workspace.',
       );
+    }
+    const deployment = candidates.find(
+      (candidate) => candidate.catalogModelId === selectedModelId,
+    );
     const capability = deployment?.canvasGenerationCapabilities?.find(
       (candidate) => candidate.operation === request.operation,
     );
     if (!deployment || !capability) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Requested Canvas generation capability is inactive.',
-      );
-    }
-    if (
-      !this.allowRecordedExecution &&
-      isAudioGenerationOperation(request.operation) &&
-      audioProductionActivationBlockers({
-        operation: request.operation,
-        deployment,
-      }).length > 0
-    ) {
       throw new P1DomainError(
         'INVALID_STATE',
         'Requested Canvas generation capability is inactive.',
@@ -2320,6 +3253,19 @@ export class ModelSupplyControlPlaneService {
       throw new P1DomainError(
         'NOT_FOUND',
         'Canvas generation revision was not found in this project.',
+      );
+    }
+  }
+
+  private async assertCanvasGenerationLineage(
+    context: P1Context,
+    request: ReturnType<typeof canvasGenerationRequest>,
+  ) {
+    await this.assertCanvasRevision(context, request.projectId, request.revisionId);
+    if (request.checkpointId !== request.revisionId) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Canvas generation checkpoint must equal the frozen revision.',
       );
     }
   }
@@ -3268,6 +4214,7 @@ export class CanvasTextGenerationOutboxWorker {
       repository: ModelSupplyControlPlaneRepository;
       claimToken?: () => string;
       clock?: () => Date;
+      deliveryMode?: NonNullable<CanvasTextGenerationOutboxRecord['deliveryMode']>;
       initializeWorkspace?: (workspaceId: string) => Promise<void>;
       heartbeatMs?: number;
       leaseMs?: number;
@@ -3284,6 +4231,9 @@ export class CanvasTextGenerationOutboxWorker {
     const claimToken = this.claimToken();
     const item = await this.options.repository.claimCanvasTextGeneration({
       claimToken,
+      ...(this.options.deliveryMode === undefined
+        ? {}
+        : { deliveryMode: this.options.deliveryMode }),
       leaseExpiresAt: new Date(now.getTime() + this.leaseMs).toISOString(),
       now: now.toISOString(),
     });
@@ -3376,10 +4326,14 @@ export class CanvasTextGenerationOutboxWorker {
 }
 
 function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new P1DomainError('INVALID_STATE', 'Model supply input must be an object.');
-  }
-  return value as Record<string, unknown>;
+	if (!plainRecord(value)) {
+		throw new P1DomainError('INVALID_STATE', 'Model supply input must be an object.');
+	}
+	return value;
+}
+
+function plainRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function requiredString(input: Record<string, unknown>, key: string) {
@@ -4008,8 +4962,9 @@ function videoCandidateIndex(value: unknown) {
 }
 
 const CANVAS_GENERATION_REQUEST_KEYS = new Set([
-  'dataClass', 'inputAssets', 'inputNodeBindings', 'modelId', 'operation',
-  'parameters', 'projectId', 'prompt', 'revisionId',
+  'checkpointId', 'count', 'dataClass', 'inputAssets', 'inputNodeBindings',
+  'itemId', 'modelId', 'nodeId', 'operation', 'parameters', 'projectId',
+  'prompt', 'revisionId',
 ]);
 
 function canvasProductUsageQuantity(
@@ -4176,6 +5131,30 @@ function canvasGenerationRequest(payload: Record<string, unknown>) {
   }
   const requestedOperation = operation(payload);
   const prompt = requiredString(payload, 'prompt');
+  const checkpointId = requiredString(payload, 'checkpointId');
+  const count = payload.count;
+  if (
+    typeof count !== 'number' ||
+    !Number.isSafeInteger(count) ||
+    count !== 1
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Canvas batch generation is unavailable until per-item execution and product usage settlement are implemented.',
+    );
+  }
+  const itemId = payload.itemId === undefined
+    ? undefined
+    : requiredString(payload, 'itemId');
+  const nodeId = payload.nodeId === undefined
+    ? undefined
+    : requiredString(payload, 'nodeId');
+  if (!itemId && !nodeId) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Canvas generation requires a frozen itemId or nodeId.',
+    );
+  }
   try {
     if (requestedOperation === 'audio.speech') {
       parseAudioSpeechContract(parameters);
@@ -4189,13 +5168,17 @@ function canvasGenerationRequest(payload: Record<string, unknown>) {
     );
   }
   return {
+    checkpointId,
+    count,
     dataClass: videoDataClass(payload.dataClass),
     inputAssets: normalizedInputAssets,
     inputNodeBindings,
+    ...(itemId ? { itemId } : {}),
     modelId:
       payload.modelId === undefined
         ? undefined
         : requiredString(payload, 'modelId'),
+    ...(nodeId ? { nodeId } : {}),
     operation: requestedOperation,
     parameters,
     projectId: requiredString(payload, 'projectId'),
@@ -4209,6 +5192,599 @@ function canvasGenerationSubmitRequest(payload: Record<string, unknown>) {
   const requestPayload = { ...payload };
   delete requestPayload.quoteId;
   return { quoteId, request: canvasGenerationRequest(requestPayload) };
+}
+
+function canvasGenerationOriginRef(
+  request: ReturnType<typeof canvasGenerationRequest>,
+  modelId: string,
+): AdvancedCanvasGenerationOriginRef {
+  return {
+    checkpointId: request.checkpointId,
+    count: request.count,
+    ...(request.itemId ? { itemId: request.itemId } : {}),
+    modelId,
+    ...(request.nodeId ? { nodeId: request.nodeId } : {}),
+    parameters: structuredClone(request.parameters),
+		prompt: request.prompt,
+    projectId: request.projectId,
+    revisionId: request.revisionId,
+    type: 'advanced_canvas_project_revision',
+  };
+}
+
+function canvasGenerationRetrySource(value: unknown, projectId: string) {
+	const view = publicCanvasGenerationJob(value, projectId);
+	const stored = object(value);
+	const result = object(stored.result ?? stored);
+	const originRef = publicCanvasGenerationOriginRef(result.originRef);
+  if (!originRef) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Canvas generation retry requires a complete frozen origin reference.',
+    );
+  }
+  if (
+    originRef.projectId !== projectId ||
+    originRef.revisionId !== view.revisionId ||
+    originRef.checkpointId !== originRef.revisionId
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Canvas generation retry lineage does not match the frozen project revision.',
+    );
+  }
+	const usage = object(result.usage);
+	const attempt = object(result.attempt);
+	const retryOperation = operation(result);
+  if (
+    result.status !== 'failed' ||
+    result.retryable !== true ||
+    usage.status !== 'refunded' ||
+    attempt.acceptance !== 'rejected_before_accept' ||
+    (usage.quantity !== 0 && usage.quantity !== 1)
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Canvas generation job is not a safely retryable failed execution.',
+    );
+  }
+	const usageQuantity: 0 | 1 = usage.quantity === 0 ? 0 : 1;
+	const snapshot = canvasGenerationRetryRouteSnapshot(
+		object(result.snapshot),
+		originRef,
+		retryOperation,
+	);
+  const inputAssets = canvasGenerationRetryInputAssets(result.inputAssets);
+  const inputNodeBindings = canvasGenerationRetryInputNodeBindings(
+    result.inputNodeBindings,
+    inputAssets,
+  );
+  return {
+		dataClass: snapshot.dataClass,
+		inputAssets,
+		inputNodeBindings,
+		operation: retryOperation,
+		originRef,
+		snapshot,
+		usageQuantity,
+	};
+}
+
+function canvasGenerationRetryRouteSnapshot(
+	value: Record<string, unknown>,
+	originRef: AdvancedCanvasGenerationOriginRef,
+	retryOperation: ModelOperation,
+): RouteSnapshot {
+	const selection = object(value.requestedSelection);
+	const selectedModelId = requiredString(selection, 'catalogModelId');
+	if (selection.mode !== 'fixed' || selectedModelId !== originRef.modelId) {
+		throw new P1DomainError(
+			'INVALID_STATE',
+			'Canvas generation retry requires the originally fixed model selection.',
+		);
+	}
+	if (!Array.isArray(value.allowedCandidates) || value.allowedCandidates.length === 0) {
+		throw new P1DomainError(
+			'INVALID_STATE',
+			'Canvas generation retry requires a complete frozen route snapshot.',
+		);
+	}
+	const allowedCandidates = value.allowedCandidates.map((candidate, index) =>
+		canvasGenerationRetryRouteCandidate(candidate, index),
+	);
+	const actualCatalogModelId = requiredString(value, 'actualCatalogModelId');
+	const deploymentId = requiredString(value, 'deploymentId');
+	const primary = allowedCandidates.find(
+		(candidate) =>
+			candidate.catalogModelId === actualCatalogModelId &&
+			candidate.deploymentId === deploymentId,
+	);
+	if (
+		actualCatalogModelId !== originRef.modelId ||
+		!primary ||
+		!primary.modelOperations.includes(retryOperation)
+	) {
+		throw new P1DomainError(
+			'INVALID_STATE',
+			'Canvas generation retry frozen route does not match its model and operation.',
+		);
+	}
+	const snapshot: RouteSnapshot = {
+		actualCatalogModelId,
+		allowedCandidates,
+		candidateCatalogModelIds: canvasGenerationRetryStrings(
+			value.candidateCatalogModelIds,
+			'candidateCatalogModelIds',
+		),
+		catalogRevisionId: requiredString(value, 'catalogRevisionId'),
+		createdAt: requiredString(value, 'createdAt'),
+		dataClass: videoDataClass(value.dataClass),
+		deploymentId,
+		id: requiredString(value, 'id'),
+		reason: canvasGenerationRetryEnum(
+			value.reason,
+			[
+				'fixed_selection',
+				'auto_quality_after_hard_filters',
+				'auto_fallback_before_accept',
+			] as const,
+			'reason',
+		),
+		requestedSelection: {
+			catalogModelId: selectedModelId,
+			mode: 'fixed',
+		},
+	};
+	if (!snapshot.candidateCatalogModelIds.includes(actualCatalogModelId)) {
+		throw new P1DomainError(
+			'INVALID_STATE',
+			'Canvas generation retry route omits its selected model candidate.',
+		);
+	}
+	const capabilityRevisionId = canvasGenerationRetryOptionalString(
+		value,
+		'capabilityRevisionId',
+	);
+	if (capabilityRevisionId) snapshot.capabilityRevisionId = capabilityRevisionId;
+	const routePolicyRevisionId = canvasGenerationRetryOptionalString(
+		value,
+		'routePolicyRevisionId',
+	);
+	if (routePolicyRevisionId) snapshot.routePolicyRevisionId = routePolicyRevisionId;
+	const dataPolicyRevisionId = canvasGenerationRetryOptionalString(
+		value,
+		'dataPolicyRevisionId',
+	);
+	if (dataPolicyRevisionId) snapshot.dataPolicyRevisionId = dataPolicyRevisionId;
+	const runtimeExclusionReasons = canvasGenerationRetryOptionalStrings(
+		value,
+		'runtimeExclusionReasons',
+	);
+	if (runtimeExclusionReasons) snapshot.runtimeExclusionReasons = runtimeExclusionReasons;
+	const policyRevision = canvasGenerationRetryOptionalString(value, 'policyRevision');
+	if (policyRevision) snapshot.policyRevision = policyRevision;
+	const priceRevision = canvasGenerationRetryOptionalString(value, 'priceRevision');
+	if (priceRevision) snapshot.priceRevision = priceRevision;
+	const credentialMode = canvasGenerationRetryOptionalEnum(
+		value,
+		'credentialMode',
+		['platform', 'byok_strict'] as const,
+	);
+	if (credentialMode) snapshot.credentialMode = credentialMode;
+	const credentialVersion = canvasGenerationRetryOptionalString(
+		value,
+		'credentialVersion',
+	);
+	if (credentialVersion) snapshot.credentialVersion = credentialVersion;
+	const credentialAccountId = canvasGenerationRetryOptionalString(
+		value,
+		'credentialAccountId',
+	);
+	if (credentialAccountId) {
+		if (!credentialVersion) {
+			throw new P1DomainError(
+				'INVALID_STATE',
+				'Canvas generation retry credential account requires a frozen credential version.',
+			);
+		}
+		snapshot.credentialAccountId = credentialAccountId;
+	}
+	const supplyPoolId = canvasGenerationRetryOptionalString(value, 'supplyPoolId');
+	if (supplyPoolId) snapshot.supplyPoolId = supplyPoolId;
+	const entitlementPolicyRevision = canvasGenerationRetryOptionalString(
+		value,
+		'entitlementPolicyRevision',
+	);
+	if (entitlementPolicyRevision) {
+		snapshot.entitlementPolicyRevision = entitlementPolicyRevision;
+	}
+	const appliedAllocationIds = canvasGenerationRetryOptionalStrings(
+		value,
+		'appliedAllocationIds',
+	);
+	if (appliedAllocationIds) snapshot.appliedAllocationIds = appliedAllocationIds;
+	const providerProfileId = canvasGenerationRetryOptionalString(
+		value,
+		'providerProfileId',
+	);
+	if (providerProfileId) snapshot.providerProfileId = providerProfileId;
+	const executionChannelId = canvasGenerationRetryOptionalString(
+		value,
+		'executionChannelId',
+	);
+	if (executionChannelId) snapshot.executionChannelId = executionChannelId;
+	const providerModel = canvasGenerationRetryOptionalString(value, 'providerModel');
+	if (providerModel) snapshot.providerModel = providerModel;
+	const endpointRevision = canvasGenerationRetryOptionalString(
+		value,
+		'endpointRevision',
+	);
+	if (endpointRevision) snapshot.endpointRevision = endpointRevision;
+	const apiCounterparty = canvasGenerationRetryOptionalString(
+		value,
+		'apiCounterparty',
+	);
+	if (apiCounterparty) snapshot.apiCounterparty = apiCounterparty;
+	const credentialOwner = canvasGenerationRetryOptionalEnum(
+		value,
+		'credentialOwner',
+		['platform', 'workspace_byok', 'provider_managed'] as const,
+	);
+	if (credentialOwner) snapshot.credentialOwner = credentialOwner;
+	const deploymentLifecycleRevision = canvasGenerationRetryOptionalString(
+		value,
+		'deploymentLifecycleRevision',
+	);
+	if (deploymentLifecycleRevision) {
+		snapshot.deploymentLifecycleRevision = deploymentLifecycleRevision;
+	}
+	const fallbackConsent = canvasGenerationRetryOptionalBoolean(
+		value,
+		'fallbackConsent',
+	);
+	if (fallbackConsent !== undefined) snapshot.fallbackConsent = fallbackConsent;
+	const maxAttempts = canvasGenerationRetryOptionalPositiveInteger(
+		value,
+		'maxAttempts',
+	);
+	if (maxAttempts !== undefined) snapshot.maxAttempts = maxAttempts;
+	const fallbackAuthorized = canvasGenerationRetryOptionalBoolean(
+		value,
+		'fallbackAuthorized',
+	);
+	if (fallbackAuthorized !== undefined) {
+		snapshot.fallbackAuthorized = fallbackAuthorized;
+	}
+	const promptRevision = canvasGenerationRetryOptionalString(value, 'promptRevision');
+	if (promptRevision) snapshot.promptRevision = promptRevision;
+	const exampleSetRevision = canvasGenerationRetryOptionalString(
+		value,
+		'exampleSetRevision',
+	);
+	if (exampleSetRevision) snapshot.exampleSetRevision = exampleSetRevision;
+	return snapshot;
+}
+
+function canvasGenerationRetryRouteCandidate(
+	value: unknown,
+	index: number,
+): NonNullable<RouteSnapshot['allowedCandidates']>[number] {
+	const candidate = object(value);
+	const field = (name: string) => `allowedCandidates[${index}].${name}`;
+	const parsed: NonNullable<RouteSnapshot['allowedCandidates']>[number] = {
+		accountIdentity: canvasGenerationRetryNullableString(candidate, 'accountIdentity'),
+		allowedDataClasses: canvasGenerationRetryNullableDataClasses(
+			candidate,
+			'allowedDataClasses',
+		),
+		apiCounterparty: canvasGenerationRetryNullableString(candidate, 'apiCounterparty'),
+		apiFamily: canvasGenerationRetryEnum(
+			candidate.apiFamily,
+			['openai', 'anthropic', 'gemini', 'custom', 'image', 'media', 'audio'] as const,
+			field('apiFamily'),
+		),
+		catalogModelId: requiredString(candidate, 'catalogModelId'),
+		channel: canvasGenerationRetryEnum(
+			candidate.channel,
+			['direct', 'managed', 'bifrost', 'litellm'] as const,
+			field('channel'),
+		),
+		credentialMode: canvasGenerationRetryEnum(
+			candidate.credentialMode,
+			['platform', 'byok_strict'] as const,
+			field('credentialMode'),
+		),
+		credentialOwner: canvasGenerationRetryNullableEnum(
+			candidate,
+			'credentialOwner',
+			['platform', 'workspace_byok', 'provider_managed'] as const,
+		),
+		credentialVersion: requiredString(candidate, 'credentialVersion'),
+		currency: canvasGenerationRetryEnum(
+			candidate.currency,
+			['CNY', 'USD'] as const,
+			field('currency'),
+		),
+		dataPolicyRevisionId: canvasGenerationRetryNullableString(
+			candidate,
+			'dataPolicyRevisionId',
+		),
+		deploymentId: requiredString(candidate, 'deploymentId'),
+		deploymentLifecycleRevision: canvasGenerationRetryNullableString(
+			candidate,
+			'deploymentLifecycleRevision',
+		),
+		deploymentStatus: canvasGenerationRetryEnum(
+			candidate.deploymentStatus,
+			['active', 'inactive', 'retired'] as const,
+			field('deploymentStatus'),
+		),
+		endpointFingerprint: canvasGenerationRetryNullableString(
+			candidate,
+			'endpointFingerprint',
+		),
+		endpointRevision: canvasGenerationRetryNullableString(
+			candidate,
+			'endpointRevision',
+		),
+		executionChannelId: canvasGenerationRetryNullableString(
+			candidate,
+			'executionChannelId',
+		),
+		fallbackRank: canvasGenerationRetryPositiveInteger(
+			candidate.fallbackRank,
+			field('fallbackRank'),
+		),
+		modelCapabilities: canvasGenerationRetryNullableModelOperations(
+			candidate,
+			'modelCapabilities',
+		),
+		modelDisplayName: requiredString(candidate, 'modelDisplayName'),
+		modelManufacturer: canvasGenerationRetryNullableString(
+			candidate,
+			'modelManufacturer',
+		),
+		modelModality: canvasGenerationRetryEnum(
+			candidate.modelModality,
+			['llm', 'image', 'video', 'audio'] as const,
+			field('modelModality'),
+		),
+		modelOperations: canvasGenerationRetryModelOperations(
+			candidate.modelOperations,
+			field('modelOperations'),
+		),
+		modelQualityRank: canvasGenerationRetryFiniteNumber(
+			candidate.modelQualityRank,
+			field('modelQualityRank'),
+		),
+		modelVersion: canvasGenerationRetryNullableString(candidate, 'modelVersion'),
+		policyRevision: requiredString(candidate, 'policyRevision'),
+		priceRevision: requiredString(candidate, 'priceRevision'),
+		providerModel: canvasGenerationRetryNullableString(candidate, 'providerModel'),
+		providerProfileId: canvasGenerationRetryNullableString(
+			candidate,
+			'providerProfileId',
+		),
+		region: canvasGenerationRetryEnum(
+			candidate.region,
+			['domestic', 'overseas'] as const,
+			field('region'),
+		),
+		stableModelName: canvasGenerationRetryNullableString(
+			candidate,
+			'stableModelName',
+		),
+		unit: requiredString(candidate, 'unit'),
+		unitPriceMicros: canvasGenerationRetryFiniteNumber(
+			candidate.unitPriceMicros,
+			field('unitPriceMicros'),
+		),
+	};
+	const pricingStatus = canvasGenerationRetryOptionalEnum(
+		candidate,
+		'pricingStatus',
+		['unknown'] as const,
+	);
+	if (pricingStatus) parsed.pricingStatus = pricingStatus;
+	const activationStatus = canvasGenerationRetryOptionalEnum(
+		candidate,
+		'activationStatus',
+		['documented', 'recorded', 'live_verified'] as const,
+	);
+	if (activationStatus) parsed.activationStatus = activationStatus;
+	return parsed;
+}
+
+function canvasGenerationRetryStrings(value: unknown, field: string) {
+	if (!Array.isArray(value) || value.length === 0) {
+		throw new P1DomainError('INVALID_STATE', `Canvas generation retry ${field} is required.`);
+	}
+	const strings: string[] = [];
+	for (const item of value) {
+		if (typeof item !== 'string' || !item.trim()) {
+			throw new P1DomainError('INVALID_STATE', `Canvas generation retry ${field} is invalid.`);
+		}
+		strings.push(item);
+	}
+	return strings;
+}
+
+function canvasGenerationRetryOptionalStrings(
+	value: Record<string, unknown>,
+	field: string,
+) {
+	if (value[field] === undefined) return undefined;
+	return canvasGenerationRetryStrings(value[field], field);
+}
+
+function canvasGenerationRetryModelOperations(value: unknown, field: string) {
+	return canvasGenerationRetryStrings(value, field).map((operationValue) =>
+		canvasGenerationRetryEnum(operationValue, MODEL_OPERATIONS, field),
+	);
+}
+
+function canvasGenerationRetryNullableModelOperations(
+	value: Record<string, unknown>,
+	field: string,
+) {
+	if (value[field] === null) return null;
+	return canvasGenerationRetryModelOperations(value[field], field);
+}
+
+function canvasGenerationRetryNullableDataClasses(
+	value: Record<string, unknown>,
+	field: string,
+) {
+	if (value[field] === null) return null;
+	return canvasGenerationRetryStrings(value[field], field).map((dataClass) =>
+		canvasGenerationRetryEnum(
+			dataClass,
+			['public', 'contains_face', 'pii', 'medical'] as const,
+			field,
+		),
+	);
+}
+
+function canvasGenerationRetryNullableString(
+	value: Record<string, unknown>,
+	field: string,
+) {
+	if (value[field] === null) return null;
+	return requiredString(value, field);
+}
+
+function canvasGenerationRetryOptionalString(
+	value: Record<string, unknown>,
+	field: string,
+) {
+	if (value[field] === undefined) return undefined;
+	return requiredString(value, field);
+}
+
+function canvasGenerationRetryOptionalBoolean(
+	value: Record<string, unknown>,
+	field: string,
+) {
+	if (value[field] === undefined) return undefined;
+	if (typeof value[field] !== 'boolean') {
+		throw new P1DomainError('INVALID_STATE', `Canvas generation retry ${field} is invalid.`);
+	}
+	return value[field];
+}
+
+function canvasGenerationRetryOptionalPositiveInteger(
+	value: Record<string, unknown>,
+	field: string,
+): number | undefined {
+	if (value[field] === undefined) return undefined;
+	return canvasGenerationRetryPositiveInteger(value[field], field);
+}
+
+function canvasGenerationRetryPositiveInteger(value: unknown, field: string): number {
+	if (
+		typeof value !== 'number' ||
+		!Number.isSafeInteger(value) ||
+		value < 1
+	) {
+		throw new P1DomainError('INVALID_STATE', `Canvas generation retry ${field} is invalid.`);
+	}
+	return value;
+}
+
+function canvasGenerationRetryFiniteNumber(value: unknown, field: string) {
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+		throw new P1DomainError('INVALID_STATE', `Canvas generation retry ${field} is invalid.`);
+	}
+	return value;
+}
+
+function canvasGenerationRetryEnum<T extends string>(
+	value: unknown,
+	allowed: readonly T[],
+	field: string,
+): T {
+	if (typeof value === 'string' && allowed.includes(value as T)) return value as T;
+	throw new P1DomainError('INVALID_STATE', `Canvas generation retry ${field} is invalid.`);
+}
+
+function canvasGenerationRetryOptionalEnum<T extends string>(
+	value: Record<string, unknown>,
+	field: string,
+	allowed: readonly T[],
+) {
+	if (value[field] === undefined) return undefined;
+	return canvasGenerationRetryEnum(value[field], allowed, field);
+}
+
+function canvasGenerationRetryNullableEnum<T extends string>(
+	value: Record<string, unknown>,
+	field: string,
+	allowed: readonly T[],
+) {
+	if (value[field] === null) return null;
+	return canvasGenerationRetryEnum(value[field], allowed, field);
+}
+
+function canvasGenerationRetryInputAssets(value: unknown) {
+  if (!Array.isArray(value)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Canvas generation retry requires frozen input assets.',
+    );
+  }
+  return value.map((candidate) => {
+    const asset = object(candidate);
+    const role = requiredString(asset, 'role');
+    if (
+      !CANVAS_GENERATION_INPUT_ASSET_ROLES.includes(
+        role as CanvasGenerationInputAsset['role'],
+      )
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Canvas generation retry has an unsupported frozen input asset role.',
+      );
+    }
+    return {
+      assetId: requiredString(asset, 'assetId'),
+      role: role as CanvasGenerationInputAsset['role'],
+    };
+  });
+}
+
+function canvasGenerationRetryInputNodeBindings(
+  value: unknown,
+  inputAssets: CanvasGenerationInputAsset[],
+) {
+  if (!Array.isArray(value) || value.length !== inputAssets.length) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Canvas generation retry requires frozen input node bindings.',
+    );
+  }
+  return value.map((candidate, index) => {
+    const binding = object(candidate);
+    const asset = inputAssets[index];
+    const role = requiredString(binding, 'role');
+    if (
+      !asset ||
+      binding.assetId !== asset.assetId ||
+      role !== asset.role ||
+      !CANVAS_GENERATION_INPUT_ASSET_ROLES.includes(
+        role as CanvasGenerationInputAsset['role'],
+      )
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Canvas generation retry input node bindings do not match frozen assets.',
+      );
+    }
+    return {
+      assetId: asset.assetId,
+      nodeId: requiredString(binding, 'nodeId'),
+      role: asset.role,
+    };
+  });
 }
 
 function canvasGenerationJobReference(payload: Record<string, unknown>) {
@@ -4419,6 +5995,15 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           args.context,
           submission.request,
           submission.quoteId,
+          args.idempotencyKey,
+        );
+      }
+      case 'canvas_generation_retry': {
+        const reference = canvasGenerationJobReference(payload);
+        return this.controlPlane.retryCanvasGeneration(
+          args.context,
+          reference.projectId,
+          reference.jobId,
           args.idempotencyKey,
         );
       }
@@ -4656,6 +6241,7 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
         assertExactCanvasKeys(payload, []);
         return this.controlPlane.getCanvasGenerationCatalog(
           args.context.workspaceId,
+          args.context.userId,
         );
       case 'canvas_generation_job':
         {

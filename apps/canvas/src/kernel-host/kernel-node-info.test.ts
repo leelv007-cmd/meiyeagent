@@ -1,3 +1,4 @@
+// Host-owned redaction coverage; it is intentionally outside the port ledger.
 import assert from "node:assert/strict";
 import test from "node:test";
 import {

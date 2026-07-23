@@ -1,6 +1,6 @@
 # Z2-ACCEPT gap list — same-increment AP + MP (#128)
 
-**Date:** 2026-07-22 (refreshed after single-channel live-connectivity decision)
+**Date:** 2026-07-23 (refreshed after single-channel local completion audit)
 **Ticket:** #128 / `leelv007-cmd/issue-128-z2-accept-ap`  
 **Discipline:** honest gaps only — no silent degrade of acceptance claims.  
 **Recorded/fake gates and D-048 Playwright are green; only G-LIVE-* remains env-gated.**
@@ -38,7 +38,7 @@
 |-------|--------|
 | Status | **open / env-gated** |
 | Why | Live probes require protected ARK credentials, account identity, model/CatalogModel bindings, price inputs and per-probe reservations. CI `core-persistence` does not spend provider quota. |
-| Required models | Text: `doubao-seed-2-0-mini-260428`; Image: `doubao-seedream-5-0-260128`; Video: `doubao-seedance-1-5-pro-251215`. |
+| Required models | Text: `doubao-seed-2-0-mini-260428`; Image: `doubao-seedream-5-0-260128`; Video: `doubao-seedance-2-0-mini-260615` (the protected primary-connectivity workflow pins this value). |
 | Unit honesty note | F-I-01 FIXED: unit `dualChannelReady=true` now requires same `catalogModelId` + distinct channel kinds; text/image handoff cross-model pairs report honest `false` / `channelMatrixAligned=false`. |
 | Claim allowed after green | Each modality may be `live_verified` while remaining `single_channel / no_fallback`; multi-channel readiness remains false. |
 
@@ -100,7 +100,11 @@ pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
   src/p1/z2-accept/z2-accept.test.ts
 
 # Web AP gates (skeleton + D-048 + dual-end admin/merchant labels)
-pnpm --filter @meiye/web exec tsx --test src/p1/z2-accept-ap.test.tsx
+# Generate the Paraglide imports required by the direct TSX runner first.
+pnpm --filter @meiye/web locale:compile
+pnpm --filter @meiye/web exec tsx --test \
+  src/p1/z2-accept-ap.test.tsx \
+  src/product/composer/composer-channel-readiness.static.test.ts
 
 # Four-service interactive D-048 gate
 pnpm --filter @meiye/web exec playwright test \

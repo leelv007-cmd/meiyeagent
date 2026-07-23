@@ -58,9 +58,27 @@ export interface CanvasGenerationInputNodeBinding
   nodeId: string;
 }
 export type AdvancedCanvasGenerationOrigin = AdvancedCanvasEditingContext & {
-  /** Present only on historical Canvas-local dispatches. */
-  localJobId?: string;
+	/** Present only on historical Canvas-local dispatches. */
+	localJobId?: string;
 };
+
+/**
+ * Product-Core lineage for Canvas executions. It is deliberately separate
+ * from EditingContext so older Canvas records remain readable while all new
+ * quote/submit paths retain the immutable generation checkpoint and item.
+ */
+export interface AdvancedCanvasGenerationOriginRef {
+	checkpointId: string;
+	count: number;
+	itemId?: string;
+	modelId: string;
+	nodeId?: string;
+	parameters: Record<string, unknown>;
+	prompt: string;
+	projectId: string;
+	revisionId: string;
+	type: 'advanced_canvas_project_revision';
+}
 export interface CanvasGenerationCapability {
   operation: ModelOperation;
   parameters: CanvasGenerationParameterName[];

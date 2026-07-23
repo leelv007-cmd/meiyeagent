@@ -65,6 +65,17 @@ export interface GeneratedPlatformVariantsResult {
   usage: GeneratedCopyResult['usage'];
 }
 
+export interface CanvasTextStreamResult {
+  providerTaskRef: string;
+  text: string;
+  usage: GeneratedCopyResult['usage'];
+}
+
+export interface CanvasTextStream {
+  deltas: AsyncIterable<string>;
+  result: Promise<CanvasTextStreamResult>;
+}
+
 export interface AiStreamingRunner {
   readonly catalogModelId: string;
   supportsCatalogModel(catalogModelId: string): boolean;
@@ -85,6 +96,14 @@ export interface AiStreamingRunner {
     request: { catalogModelId: string; prompt: string },
     abortSignal?: AbortSignal
   ): { response: Response; result: Promise<GeneratedCopyResult> };
+  startCanvasTextStream?(
+    request: {
+      catalogModelId: string;
+      prompt: string;
+      referenceAssets?: ResolvedReferenceAsset[];
+    },
+    abortSignal?: AbortSignal,
+  ): CanvasTextStream;
 }
 
 export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
@@ -332,6 +351,55 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     return { response, result: completion };
   }
 
+  startCanvasTextStream(
+    request: {
+      catalogModelId: string;
+      prompt: string;
+      referenceAssets?: ResolvedReferenceAsset[];
+    },
+    abortSignal?: AbortSignal,
+  ): CanvasTextStream {
+    this.assertFixedModel(request.catalogModelId);
+    const referenceAssets = request.referenceAssets ?? [];
+    const result = streamText({
+      abortSignal,
+      instructions:
+        'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
+      maxRetries: 0,
+      model: this.model,
+      ...(referenceAssets.length === 0
+        ? { prompt: request.prompt }
+        : {
+            messages: [{
+              role: 'user' as const,
+              content: [
+                { type: 'text' as const, text: request.prompt },
+                ...referenceAssets.map((asset) => ({
+                  type: 'image' as const,
+                  image: asset.bytes,
+                  mediaType: asset.contentType,
+                })),
+              ],
+            }],
+          }),
+    });
+    return {
+      deltas: result.textStream,
+      result: Promise.all([
+        Promise.resolve(result.text),
+        Promise.resolve(result.usage),
+        Promise.resolve(result.finalStep),
+      ]).then(([text, usage, metadata]) => ({
+        providerTaskRef: metadata.response.id,
+        text,
+        usage: {
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+        },
+      })),
+    };
+  }
+
   private assertFixedModel(catalogModelId: string) {
     if (catalogModelId !== this.catalogModelId) {
       throw new Error(
@@ -474,6 +542,35 @@ export class FixtureAiStreamingRunner implements AiStreamingRunner {
         result,
         chunks.length * FIXTURE_COPY_CHUNK_INTERVAL_MS,
         abortSignal
+      ),
+    };
+  }
+
+  startCanvasTextStream(
+    request: {
+      catalogModelId: string;
+      prompt: string;
+      referenceAssets?: ResolvedReferenceAsset[];
+    },
+    abortSignal?: AbortSignal,
+  ): CanvasTextStream {
+    const text = `画布文本：${request.prompt}`;
+    const deltas = [text.slice(0, 5), text.slice(5, 11), text.slice(11)]
+      .filter(Boolean);
+    return {
+      deltas: pacedTextDeltas(deltas, abortSignal),
+      result: delayedCanvasTextResult(
+        {
+          providerTaskRef: `fixture-canvas-text-${Buffer.from(
+            request.prompt,
+          )
+            .toString('base64url')
+            .slice(0, 24)}`,
+          text,
+          usage: { inputTokens: 0, outputTokens: 0 },
+        },
+        Math.max(0, deltas.length - 1) * FIXTURE_COPY_CHUNK_INTERVAL_MS,
+        abortSignal,
       ),
     };
   }
@@ -853,6 +950,40 @@ function delayedResult(
       resolve(result);
     }, delayMs);
   });
+}
+
+function delayedCanvasTextResult(
+  result: CanvasTextStreamResult,
+  delayMs: number,
+  abortSignal?: AbortSignal,
+) {
+  return new Promise<CanvasTextStreamResult>((resolve, reject) => {
+    if (abortSignal?.aborted) {
+      reject(createAbortError());
+      return;
+    }
+    const abortHandler = () => {
+      clearTimeout(timer);
+      reject(createAbortError());
+    };
+    abortSignal?.addEventListener('abort', abortHandler, { once: true });
+    const timer = setTimeout(() => {
+      abortSignal?.removeEventListener('abort', abortHandler);
+      resolve(result);
+    }, delayMs);
+  });
+}
+
+async function* pacedTextDeltas(
+  chunks: readonly string[],
+  abortSignal?: AbortSignal,
+): AsyncIterable<string> {
+  for (const [index, chunk] of chunks.entries()) {
+    if (abortSignal?.aborted) throw createAbortError();
+    if (index > 0) await fixtureStreamPause();
+    if (abortSignal?.aborted) throw createAbortError();
+    yield chunk;
+  }
 }
 
 function createAbortError() {

@@ -4,11 +4,13 @@ import type {
   CanvasAssetRepository,
   CanvasAssetSource,
   CanvasOwnedAsset,
+  CanvasOwnedAssetExportPolicy,
 } from './canvas-asset-facade.js';
 
 interface AssetRow extends QueryResultRow {
   contentType: CanvasOwnedAsset['contentType'];
   createdAt: string;
+  exportPolicy: CanvasOwnedAssetExportPolicy | null;
   fileName: string;
   id: string;
   legacyStorageKey: string | null;
@@ -26,8 +28,8 @@ export class PostgresCanvasAssetRepository implements CanvasAssetRepository {
     await this.pool.query(
       `INSERT INTO pro_studio_owned_assets
        (workspace_id,id,object_key,legacy_storage_key,sha256,size_bytes,
-        content_type,file_name,source,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::timestamptz)`,
+        content_type,file_name,source,export_policy,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::timestamptz)`,
       [
         asset.workspaceId,
         asset.id,
@@ -38,9 +40,37 @@ export class PostgresCanvasAssetRepository implements CanvasAssetRepository {
         asset.contentType,
         asset.fileName,
         JSON.stringify(asset.source),
+        asset.exportPolicy ? JSON.stringify(asset.exportPolicy) : null,
         asset.createdAt,
       ]
     );
+  }
+
+  async updateExportPolicy(input: {
+    assetId: string;
+    expectedVersion: number;
+    exportPolicy: CanvasOwnedAssetExportPolicy;
+    workspaceId: string;
+  }) {
+    const result = await this.pool.query<AssetRow>(
+      `UPDATE pro_studio_owned_assets
+          SET export_policy = $3::jsonb
+        WHERE workspace_id = $1 AND id = $2 AND tombstoned_at IS NULL
+          AND export_policy IS NOT NULL
+          AND export_policy->>'version' = $4
+      RETURNING id, workspace_id AS "workspaceId", object_key AS "objectKey",
+                legacy_storage_key AS "legacyStorageKey", sha256,
+                size_bytes AS "sizeBytes", content_type AS "contentType",
+                file_name AS "fileName", source,
+                export_policy AS "exportPolicy", created_at::text AS "createdAt"`,
+      [
+        input.workspaceId,
+        input.assetId,
+        JSON.stringify(input.exportPolicy),
+        String(input.expectedVersion),
+      ],
+    );
+    return result.rows[0] ? mapAsset(result.rows[0]) : null;
   }
 
   async tombstoneAndEnqueueDeletion(
@@ -246,18 +276,19 @@ export class PostgresCanvasAssetRepository implements CanvasAssetRepository {
 
 function combinedAssetSelect() {
   return `SELECT id, "workspaceId", "objectKey", "legacyStorageKey", sha256,
-                 "sizeBytes", "contentType", "fileName", source, "createdAt",
+                 "sizeBytes", "contentType", "fileName", source, "exportPolicy", "createdAt",
                  priority
             FROM (
               SELECT DISTINCT ON (id)
                      id, "workspaceId", "objectKey", "legacyStorageKey", sha256,
-                     "sizeBytes", "contentType", "fileName", source, "createdAt",
+                     "sizeBytes", "contentType", "fileName", source, "exportPolicy", "createdAt",
                      priority
                 FROM (
                   SELECT id, workspace_id AS "workspaceId", object_key AS "objectKey",
                          legacy_storage_key AS "legacyStorageKey", sha256,
                          size_bytes AS "sizeBytes", content_type AS "contentType",
                          file_name AS "fileName", source,
+                         export_policy AS "exportPolicy",
                          created_at::text AS "createdAt", 0 AS priority
                   FROM pro_studio_owned_assets
                    WHERE workspace_id = $1 AND tombstoned_at IS NULL
@@ -267,6 +298,7 @@ function combinedAssetSelect() {
                          size_bytes AS "sizeBytes", media_type AS "contentType",
                          id AS "fileName",
                          jsonb_build_object('kind', 'product_asset', 'sourceAssetId', id) AS source,
+                         NULL::jsonb AS "exportPolicy",
                          created_at::text AS "createdAt", 1 AS priority
                     FROM p1_owned_assets
                    WHERE workspace_id = $1
@@ -312,6 +344,7 @@ function mapAsset(row: AssetRow): CanvasOwnedAsset {
   return {
     contentType: row.contentType,
     createdAt: row.createdAt,
+    ...(row.exportPolicy ? { exportPolicy: row.exportPolicy } : {}),
     fileName: row.fileName,
     id: row.id,
     ...(row.legacyStorageKey ? { legacyStorageKey: row.legacyStorageKey } : {}),

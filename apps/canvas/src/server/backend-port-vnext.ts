@@ -89,7 +89,15 @@ export const CANVAS_BACKEND_PORT_VNEXT = {
 		}),
 		response: z.strictObject({
 			items: z.array(
-				z.strictObject({ id: identifier, title: z.string().min(1) }),
+				z.strictObject({
+					handle: z.strictObject({
+						baseVersionId: identifier,
+						expectedRevision: z.number().int().nonnegative(),
+						packageId: identifier,
+					}),
+					id: identifier,
+					title: z.string().min(1),
+				}),
 			),
 			nextCursor: cursor.nullable(),
 		}),
@@ -110,6 +118,7 @@ export const CANVAS_BACKEND_PORT_VNEXT = {
 				z.strictObject({
 					id: identifier,
 					kind: z.enum(["audio", "image", "video"]),
+					title: z.string().min(1).max(200),
 				}),
 			),
 			nextCursor: cursor.nullable(),
@@ -164,6 +173,7 @@ export const CANVAS_BACKEND_PORT_VNEXT = {
 		idempotency: "header",
 		request: z.strictObject({
 			format: z.enum(["json", "zip"]),
+			includeAvailableOnly: z.literal(true).optional(),
 			projectId: identifier,
 			revisionId: identifier,
 		}),

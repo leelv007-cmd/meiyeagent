@@ -27,6 +27,16 @@ export class CoreAdvancedCanvasAdoptionError extends AdvancedCanvasAdoptionError
 	}
 }
 
+export type CanvasAdoptionTarget = {
+	handle: {
+		baseVersionId: string;
+		expectedRevision: number;
+		packageId: string;
+	};
+	id: string;
+	title: string;
+};
+
 export class CoreAdvancedCanvasAdoptionClient
 	implements AdvancedCanvasAdoptionPort
 {
@@ -89,6 +99,25 @@ export class CoreAdvancedCanvasAdoptionClient
 		return value.map(adoptionResult);
 	}
 
+	/**
+	 * Read the Core-owned ContentPackage list only. Canvas does not synthesize
+	 * adoption targets or persist any package state of its own.
+	 */
+	async listAdoptionTargets(context: AdvancedCanvasAdoptionContext) {
+		const value = await this.request(context, "query", {
+			action: "content_packages",
+			module: "operations",
+			payload: {},
+		});
+		if (!Array.isArray(value)) throw invalidResponse();
+		return value
+			.map(adoptionTarget)
+			.filter((target): target is CanvasAdoptionTarget => target !== null)
+			.sort((left, right) =>
+				left.handle.packageId.localeCompare(right.handle.packageId),
+			);
+	}
+
 	private async request(
 		context: AdvancedCanvasAdoptionContext,
 		kind: "commands" | "query",
@@ -142,6 +171,31 @@ function adoptionResult(value: unknown): AdvancedCanvasAdoptionResult {
 	};
 }
 
+function adoptionTarget(value: unknown) {
+	if (!isRecord(value) || !isText(value.id)) throw invalidResponse();
+	if (!isRecord(value.rights) || value.rights.state !== "authorized") {
+		return null;
+	}
+	if (!isText(value.currentVersionId) || !nonNegativeInteger(value.revision)) {
+		return null;
+	}
+	const currentVersionId = value.currentVersionId;
+	const versions = Array.isArray(value.versions) ? value.versions : [];
+	const currentVersion = versions.find(
+		(candidate) => isRecord(candidate) && candidate.id === currentVersionId,
+	);
+	if (!isRecord(currentVersion)) return null;
+	return {
+		handle: {
+			baseVersionId: currentVersionId,
+			expectedRevision: value.revision,
+			packageId: value.id,
+		},
+		id: value.id,
+		title: isText(currentVersion.title) ? currentVersion.title : "未命名成品",
+	};
+}
+
 function stringArray(value: unknown) {
 	if (!Array.isArray(value) || value.some((item) => !isText(item))) {
 		throw invalidResponse();
@@ -162,6 +216,10 @@ function requireText(value: unknown, field: string) {
 
 function isText(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0;
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -48,3 +48,16 @@ test("ships exactly the 40 product-provided image.generate prompts", async () =>
 		Object.fromEntries(documented),
 	);
 });
+
+test("resolves the A3 gate to a product-owned disposition with evidence", () => {
+	assert.equal(CANVAS_PROMPT_SEED_MANIFEST.a3EvidenceStatus, "product-owned");
+	assert.notEqual(CANVAS_PROMPT_SEED_MANIFEST.a3EvidenceStatus, "pending");
+	assert.match(CANVAS_PROMPT_SEED_MANIFEST.a3Evidence, /a3-authorization/u);
+	assert.ok(
+		CANVAS_PROMPT_SEEDS.every(
+			(seed) =>
+				seed.a3EvidenceStatus === "product-owned" &&
+				seed.a3Evidence === CANVAS_PROMPT_SEED_MANIFEST.a3Evidence,
+		),
+	);
+});

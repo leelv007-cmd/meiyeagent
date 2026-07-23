@@ -263,6 +263,9 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
       ...(input.submission.origin
         ? { origin: structuredClone(input.submission.origin) }
         : {}),
+      ...(input.submission.originRef
+        ? { originRef: structuredClone(input.submission.originRef) }
+        : {}),
       snapshot: structuredClone(input.snapshot),
       attempt,
       attempts: [...structuredClone(input.previousAttempts), attempt],

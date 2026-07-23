@@ -3,6 +3,7 @@ import type {
   MerchantCapabilitiesSnapshot,
   MerchantCapability,
   MerchantCapabilityState,
+  MerchantChannelMode,
   ReleaseIdentity,
 } from './types.js';
 
@@ -20,10 +21,18 @@ export function projectMerchantCapability(
 ): MerchantCapability {
   const evidence = new Set(record.evidence);
   const state = merchantStateFromEvidence(evidence, record.assistedPathAvailable);
+  const channelMode =
+    state === 'verified' ? (record.channelMode ?? 'none') : 'none';
+  const channelLabel =
+    state === 'verified'
+      ? sanitizeChannelLabel(record.channelLabel, channelMode)
+      : undefined;
   return {
     id: record.id,
     state,
-    safeExplanation: safeExplanationFor(state, record),
+    safeExplanation: safeExplanationFor(state, record, channelMode),
+    ...(channelMode !== 'none' ? { channelMode } : {}),
+    ...(channelLabel ? { channelLabel } : {}),
   };
 }
 
@@ -57,13 +66,22 @@ function merchantStateFromEvidence(
 function safeExplanationFor(
   state: MerchantCapabilityState,
   record: InternalCapabilityRecord,
+  channelMode: MerchantChannelMode = 'none',
 ): string {
   const purpose = record.purpose?.trim();
   switch (state) {
-    case 'verified':
-      return purpose
+    case 'verified': {
+      const base = purpose
         ? `${purpose}已通过线上验证，可直接使用。`
         : '该能力已通过线上验证，可直接使用。';
+      if (channelMode === 'single_channel') {
+        return `${base}当前为单渠道 / 无回退（single-channel/no-fallback）。`;
+      }
+      if (channelMode === 'multi_channel') {
+        return `${base}已具备多渠道容灾。`;
+      }
+      return base;
+    }
     case 'assisted':
       return purpose
         ? `${purpose}可在辅助流程下使用，尚不可自动闭环。`
@@ -73,6 +91,29 @@ function safeExplanationFor(
         ? `${purpose}当前不可用。`
         : '该能力当前不可用。';
   }
+}
+
+function sanitizeChannelLabel(
+  label: string | undefined,
+  channelMode: MerchantChannelMode | undefined,
+): string | undefined {
+  if (channelMode === 'single_channel') {
+    return 'single-channel/no-fallback';
+  }
+  if (channelMode === 'multi_channel') {
+    const trimmed = label?.trim();
+    if (
+      trimmed &&
+      !trimmed.includes('live_verified') &&
+      !trimmed.includes('recorded_verified') &&
+      !trimmed.includes('implemented') &&
+      !trimmed.includes('merchant_validated')
+    ) {
+      return trimmed;
+    }
+    return 'multi-channel ready';
+  }
+  return undefined;
 }
 
 /** Guard: merchant payloads must never leak internal evidence vocabulary. */

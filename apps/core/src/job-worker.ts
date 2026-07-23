@@ -508,6 +508,7 @@ const mediaGenerationWorker = gatedMediaExecution
   : undefined;
 const canvasTextGenerationWorker = new CanvasTextGenerationOutboxWorker({
   application: modelSupply,
+  deliveryMode: 'worker',
   initializeWorkspace: (workspaceId) =>
     modelControlPlane.initialize(workspaceId).then(() => undefined),
   repository: modelRepository,

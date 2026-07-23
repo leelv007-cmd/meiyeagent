@@ -2,8 +2,9 @@
  * S2a behavior-preserving extract: route / simulation contracts.
  */
 import type {
-  Acceptance,
-  AdvancedCanvasGenerationOrigin,
+	Acceptance,
+	AdvancedCanvasGenerationOrigin,
+	AdvancedCanvasGenerationOriginRef,
   CatalogModel,
   CanvasGenerationInputAsset,
   CanvasGenerationInputNodeBinding,
@@ -34,9 +35,10 @@ export interface ModelSupplySubmission {
   operation: ModelOperation;
   selection: RequestedSelection;
   dataClass: DataClass[];
-  prompt: string;
-  origin?: AdvancedCanvasGenerationOrigin;
-  lineage?: {
+	prompt: string;
+	origin?: AdvancedCanvasGenerationOrigin;
+	originRef?: AdvancedCanvasGenerationOriginRef;
+	lineage?: {
     inputNodeBindings: CanvasGenerationInputNodeBinding[];
   };
   /** Product entitlement units billed for this provider execution. Defaults to 1. */

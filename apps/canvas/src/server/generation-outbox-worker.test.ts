@@ -13,11 +13,14 @@ import {
 } from "./generation-outbox-worker";
 
 const request: CoreGenerationSubmitInput = {
+	checkpointId: "revision-1",
+	count: 1,
 	correlationId: "corr-worker-1",
 	dataClass: [],
 	idempotencyKey: "generation-key-1",
 	inputAssets: [],
 	inputNodeBindings: [],
+	itemId: "item-1",
 	modelId: "image-model-1",
 	operation: "image.generate",
 	parameters: {},

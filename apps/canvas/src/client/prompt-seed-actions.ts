@@ -1,4 +1,4 @@
-import type { CanvasPromptSeed } from "./prompt-seeds";
+import type { CanvasPromptSeed } from "../shared/prompt-seeds";
 
 /**
  * Pure selection action for Ticket 16: choosing a seed only fills the local

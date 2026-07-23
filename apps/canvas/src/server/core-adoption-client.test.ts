@@ -79,6 +79,98 @@ test("forwards adoption and list one-to-one to Product Core module actions", asy
 	});
 });
 
+test("lists only Core-authorized ContentPackage adoption targets", async () => {
+	const requests: RequestInit[] = [];
+	const client = new CoreAdvancedCanvasAdoptionClient({
+		coreServiceToken: "service-secret",
+		coreServiceUrl: "http://core.internal:4100",
+		fetcher: async (_input, init) => {
+			requests.push(init ?? {});
+			return jsonResponse(200, {
+				data: [
+					{
+						currentVersionId: "version-1",
+						id: "package-1",
+						revision: 4,
+						rights: { state: "authorized" },
+						versions: [{ id: "version-1", title: "Current package" }],
+					},
+					{
+						currentVersionId: "version-2",
+						id: "package-2",
+						revision: 9,
+						rights: { state: "revoked" },
+						versions: [{ id: "version-2", title: "Revoked package" }],
+					},
+				],
+			});
+		},
+	});
+
+	assert.deepEqual(await client.listAdoptionTargets(context), [
+		{
+			handle: {
+				baseVersionId: "version-1",
+				expectedRevision: 4,
+				packageId: "package-1",
+			},
+			id: "package-1",
+			title: "Current package",
+		},
+	]);
+	assert.deepEqual(JSON.parse(String(requests[0]?.body)), {
+		action: "content_packages",
+		module: "operations",
+		payload: {},
+	});
+});
+
+test("fails closed for authorized packages without a current version or OCC revision", async () => {
+	const client = new CoreAdvancedCanvasAdoptionClient({
+		coreServiceToken: "service-secret",
+		coreServiceUrl: "http://core.internal:4100",
+		fetcher: async () =>
+			jsonResponse(200, {
+				data: [
+					{
+						id: "package-without-current-version",
+						revision: 2,
+						rights: { state: "authorized" },
+						versions: [],
+					},
+					{
+						currentVersionId: "version-2",
+						id: "package-without-occ",
+						rights: { state: "authorized" },
+						versions: [{ id: "version-2", title: "Incomplete target" }],
+					},
+				],
+			}),
+	});
+
+	assert.deepEqual(await client.listAdoptionTargets(context), []);
+});
+
+test("fails closed when Core omits the public authorization fact", async () => {
+	const client = new CoreAdvancedCanvasAdoptionClient({
+		coreServiceToken: "service-secret",
+		coreServiceUrl: "http://core.internal:4100",
+		fetcher: async () =>
+			jsonResponse(200, {
+				data: [
+					{
+						currentVersionId: "version-1",
+						id: "package-1",
+						revision: 1,
+						versions: [{ id: "version-1", title: "Unverified package" }],
+					},
+				],
+			}),
+	});
+
+	assert.deepEqual(await client.listAdoptionTargets(context), []);
+});
+
 test("preserves a rejected Core adoption code without leaking its internals", async () => {
 	const client = new CoreAdvancedCanvasAdoptionClient({
 		coreServiceToken: "service-secret",

@@ -65,6 +65,7 @@ test('evaluateReadiness requires all probes to pass in protected environments', 
       objectStorage: () => ({ name: 'objectStorage', status: 'pass' }),
       workerFreshness: () => ({ name: 'workerFreshness', status: 'pass' }),
       providerMode: () => ({ name: 'providerMode', status: 'pass' }),
+      providerLive: () => ({ name: 'providerLive', status: 'pass' }),
       outbox: () => ({ name: 'outbox', status: 'pass' }),
       canvas: () => ({ name: 'canvas', status: 'pass' }),
     },
@@ -86,6 +87,11 @@ test('evaluateReadiness requires all probes to pass in protected environments', 
   assert.ok(
     notReady.checks.some(
       (check) => check.name === 'dbos' && check.status === 'fail',
+    ),
+  );
+  assert.ok(
+    notReady.checks.some(
+      (check) => check.name === 'providerLive' && check.status === 'fail',
     ),
   );
 });
@@ -222,6 +228,11 @@ test('composeRuntimeTruth fail-closes production recorded mode without inventing
   assert.ok(
     readiness.checks.some(
       (check) => check.name === 'objectStorage' && check.status === 'fail',
+    ),
+  );
+  assert.ok(
+    readiness.checks.some(
+      (check) => check.name === 'providerLive' && check.status === 'fail',
     ),
   );
 

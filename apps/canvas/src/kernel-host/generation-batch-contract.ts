@@ -1,7 +1,7 @@
 export const CANVAS_BATCH_STRATEGY = "fan-out" as const;
 
 export type FanOutGenerationItem = {
-	nodeId: string;
+	nodeId?: string;
 	operation: string;
 };
 
@@ -29,20 +29,18 @@ export function createFanOutGenerationLedger(
 		throw new Error("batchKey must be a stable identifier.");
 	}
 	if (items.length === 0) {
-		throw new Error("A fan-out batch requires at least one item.");
+		throw new Error("A fan-out batch requires a count between 1 and 15.");
 	}
-	const nodeIds = new Set<string>();
+	if (items.length > 15) {
+		throw new Error("A fan-out batch requires a count between 1 and 15.");
+	}
 	return {
 		batchKey,
 		confirmation: "aggregate-N-quotes-once",
 		items: items.map((item, index) => {
-			if (!item.nodeId || !item.operation) {
-				throw new Error("Every fan-out item requires nodeId and operation.");
+			if (!item.operation) {
+				throw new Error("Every fan-out item requires an operation.");
 			}
-			if (nodeIds.has(item.nodeId)) {
-				throw new Error("A fan-out batch cannot contain a node twice.");
-			}
-			nodeIds.add(item.nodeId);
 			const itemKey = `${batchKey}:item:${index + 1}`;
 			return {
 				...item,
