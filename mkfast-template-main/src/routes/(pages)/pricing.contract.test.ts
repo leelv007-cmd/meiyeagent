@@ -45,9 +45,10 @@ test('landing pricing speaks the launch contract in the landing scope', () => {
   assert.match(home, /Routes\.Pricing/u);
   assert.match(home, /aria-disabled/u);
 
+  // The pilot shows the indicative price band; the tier that cannot be bought
+  // yet says so, and the lifetime tier stays a disabled non-offer (D-124).
   assert.equal(zh.landing_pricing_growth_price, '¥399');
-  assert.match(zh.landing_pricing_growth_badge, /上线特惠/u);
-  assert.match(zh.landing_pricing_coming_soon, /敬请期待/u);
+  assert.match(zh.landing_pricing_coming_soon, /未开放/u);
   for (const key of [
     'landing_pricing_growth_price',
     'landing_pricing_growth_badge',
@@ -56,6 +57,44 @@ test('landing pricing speaks the launch contract in the landing scope', () => {
     assert.equal(typeof en[key], 'string', `en missing ${key}`);
     assert.ok(en[key].length > 0, `en empty ${key}`);
   }
+});
+
+test('landing pricing never promotes a promo or a purchase that does not exist', () => {
+  // T36 / D-124: during the pilot there is zero payment development, so the
+  // landing must not run a fabricated launch promo and must not imply that a
+  // tier can be bought. Activation is email sign-up + redemption code (D-128).
+  const zh = JSON.parse(read('project.inlang/messages/zh.json'));
+  const en = JSON.parse(read('project.inlang/messages/en.json'));
+  const landingPricingKeys = Object.keys(zh).filter((key) =>
+    key.startsWith('landing_pricing_')
+  );
+  assert.ok(landingPricingKeys.length > 0);
+
+  for (const key of landingPricingKeys) {
+    // No fabricated promotion anywhere in the landing pricing block.
+    assert.doesNotMatch(zh[key], /上线特惠|限时|特价|折扣|优惠价/u, key);
+    assert.doesNotMatch(en[key], /launch special|limited time|discount/iu, key);
+    // No purchase/subscribe verbs — the pilot has no checkout to reach.
+    assert.doesNotMatch(
+      zh[key],
+      /立即(?:购买|订阅|升级)|马上(?:购买|订阅)/u,
+      key
+    );
+  }
+
+  // The purchasable-looking CTA is replaced by the real activation path.
+  assert.match(zh.landing_pricing_growth_cta, /兑换码/u, 'growth cta');
+  assert.doesNotMatch(zh.landing_pricing_growth_cta, /升级|订阅|购买/u);
+  assert.match(en.landing_pricing_growth_cta, /redemption code/iu);
+  assert.doesNotMatch(en.landing_pricing_growth_cta, /upgrade|subscribe|buy/iu);
+
+  // No subscription-management promise while there is no subscription.
+  assert.doesNotMatch(zh.landing_pricing_growth_note, /取消|暂停/u);
+
+  // The footnote states the pilot payment stance, matching /pricing's own
+  // "purchase not open" projection instead of contradicting it.
+  assert.match(zh.landing_pricing_footnote_prefix, /未开放/u);
+  assert.match(zh.landing_pricing_footnote_prefix, /兑换码/u);
 });
 
 test('dead "不可用" CTA is gone; availability is computed, not faked', () => {
