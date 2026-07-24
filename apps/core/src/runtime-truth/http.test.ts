@@ -81,6 +81,50 @@ test('GET /health and /health/live are process-only and do not require runtimeTr
   }
 });
 
+test('GET /health/assembly reports whether the required Harness path is active', async (t) => {
+  const inactive = createCoreServer({
+    diagnosticRepository: new MemoryDiagnosticRepository(),
+    serviceToken: 'test-service-token',
+  });
+  inactive.listen(0, '127.0.0.1');
+  await once(inactive, 'listening');
+  t.after(() => inactive.close());
+  const inactivePort = (inactive.address() as AddressInfo).port;
+
+  const inactiveResponse = await fetch(
+    `http://127.0.0.1:${inactivePort}/health/assembly`,
+  );
+  assert.equal(inactiveResponse.status, 503);
+  assert.deepEqual((await inactiveResponse.json()).data, {
+    composerSubmission: 'inactive',
+    harness: 'inactive',
+    service: 'meiye-core',
+    status: 'inactive',
+  });
+
+  const active = createCoreServer({
+    composerSubmission: { coordinator: { submit: async () => undefined as never } },
+    diagnosticRepository: new MemoryDiagnosticRepository(),
+    harnessService: {} as never,
+    serviceToken: 'test-service-token',
+  });
+  active.listen(0, '127.0.0.1');
+  await once(active, 'listening');
+  t.after(() => active.close());
+  const activePort = (active.address() as AddressInfo).port;
+
+  const activeResponse = await fetch(
+    `http://127.0.0.1:${activePort}/health/assembly`,
+  );
+  assert.equal(activeResponse.status, 200);
+  assert.deepEqual((await activeResponse.json()).data, {
+    composerSubmission: 'active',
+    harness: 'active',
+    service: 'meiye-core',
+    status: 'active',
+  });
+});
+
 test('GET /health/ready reports ready when probes pass', async (t) => {
   const { baseUrl, server } = await listen();
   t.after(() => server.close());

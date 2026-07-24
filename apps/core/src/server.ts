@@ -945,6 +945,22 @@ export function createCoreServer({
       return;
     }
 
+    if (request.method === 'GET' && url.pathname === '/health/assembly') {
+      const active = Boolean(harnessService && composerSubmission);
+      sendJson(
+        response,
+        active ? 200 : 503,
+        {
+          composerSubmission: composerSubmission ? 'active' : 'inactive',
+          harness: harnessService ? 'active' : 'inactive',
+          service: 'meiye-core',
+          status: active ? 'active' : 'inactive',
+        },
+        requestCorrelationId
+      );
+      return;
+    }
+
     if (request.method === 'GET' && url.pathname === '/health/ready') {
       if (!runtimeTruth) {
         sendJson(
