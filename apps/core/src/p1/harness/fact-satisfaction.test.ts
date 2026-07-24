@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  STORE_FACT_KIND_LABELS,
+  STORE_FACT_KINDS,
   contextBundleSchema,
   type ContextBundle,
   type StoreFactKind,
@@ -51,12 +53,12 @@ test('partial critical facts ask through QuestionCard and retain canonical ledge
     {
       status: 'partial',
       matchedFactRefs: ['store_fact:fact-service:1'],
-      missingFactTypes: ['price'],
+      missingFactTypes: ['group_buy', 'price'],
     },
     { criticality: 'critical' },
   ]);
   const result = await assessRecipeFactSatisfaction(
-    request(['service', 'price']),
+    request(['service', 'group_buy', 'price']),
     runner,
     authorizedRights,
   );
@@ -65,8 +67,17 @@ test('partial critical facts ask through QuestionCard and retain canonical ledge
   assert.equal(result.action, 'ask_user');
   if (result.action !== 'ask_user') assert.fail('expected ask_user');
   assert.equal(result.question.response.field, 'store_facts');
+  assert.equal(
+    result.question.question.includes(STORE_FACT_KIND_LABELS.group_buy),
+    true,
+  );
+  assert.equal(
+    result.question.question.includes(STORE_FACT_KIND_LABELS.price),
+    true,
+  );
+  assertNoStoreFactKindLiteral(result.question.question);
   assert.deepEqual(result.ledgerIntake, {
-    factTypes: ['price'],
+    factTypes: ['group_buy', 'price'],
     writePath: 'asset_intake.confirm_fact',
   });
 });
@@ -91,8 +102,18 @@ test('partial optional facts continue with an explicit result notice', async () 
   if (result.action !== 'execute_with_notice') {
     assert.fail('expected execute_with_notice');
   }
-  assert.match(result.resultNotice, /未使用/u);
+  assert.equal(
+    result.resultNotice.includes(STORE_FACT_KIND_LABELS.staff_experience),
+    true,
+  );
+  assertNoStoreFactKindLiteral(result.resultNotice);
 });
+
+function assertNoStoreFactKindLiteral(value: string) {
+  for (const kind of STORE_FACT_KINDS) {
+    assert.equal(value.includes(kind), false, `must not expose ${kind}`);
+  }
+}
 
 test('unsatisfied or invalid model output stays conservative', async () => {
   const unsatisfied = await assessRecipeFactSatisfaction(

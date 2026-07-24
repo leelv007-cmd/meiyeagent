@@ -16,6 +16,18 @@ export const STORE_FACT_KINDS = [
   'other',
 ] as const;
 
+export const STORE_FACT_KIND_LABELS = {
+  service: '服务项目',
+  price: '价格',
+  discount: '优惠',
+  group_buy: '团购信息',
+  qualification: '资质',
+  fulfillment: '履约信息',
+  staff_experience: '员工经验',
+  customer_case: '顾客案例',
+  other: '其他门店信息',
+} as const satisfies Record<(typeof STORE_FACT_KINDS)[number], string>;
+
 export const storeFactKindSchema = z.enum(STORE_FACT_KINDS);
 export const storeFactSourceSchema = z
   .object({

@@ -1,4 +1,5 @@
 import {
+  STORE_FACT_KIND_LABELS,
   STORE_FACT_KINDS,
   questionCardSchema,
   type ContextBundle,
@@ -122,6 +123,10 @@ export async function assessRecipeFactSatisfaction(
     return conservativeGuidance(assessment.missingFactTypes);
   }
 
+  const missingFactLabels = assessment.missingFactTypes
+    .map((kind) => STORE_FACT_KIND_LABELS[kind])
+    .join('、');
+
   try {
     const result = await runner.run({
       effectIdempotencyKey: `wf:${input.workflowId}:s2:facts:criticality:0`,
@@ -146,7 +151,7 @@ export async function assessRecipeFactSatisfaction(
           questionId: `${input.workflowId}:s2:missing-facts`,
           workflowId: input.workflowId,
           workflowRevision: input.workflowRevision,
-          question: '还需要确认哪些本店事实，才能继续这次创作？',
+          question: `请确认本次创作要用的${missingFactLabels}。`,
           options: [],
           freeText: { enabled: true },
           response: {
@@ -166,7 +171,7 @@ export async function assessRecipeFactSatisfaction(
       action: 'execute_with_notice' as const,
       factRefs: assessment.matchedFactRefs,
       missingFactTypes: assessment.missingFactTypes,
-      resultNotice: '部分可选资料尚未确认，本次结果未使用这些事实。',
+      resultNotice: `本次结果没有使用尚未确认的${missingFactLabels}。`,
     };
   } catch {
     return conservativeGuidance(assessment.missingFactTypes);
