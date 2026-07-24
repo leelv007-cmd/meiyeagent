@@ -7,7 +7,7 @@ export const HARNESS_LANGFUSE_PROMPT_NAMES = {
 
 export const HARNESS_BUILTIN_PROMPTS = {
   intentNaming:
-    'Classify the merchant request into exactly one supported marketing task and one delivery layer. Extract only implicit constraints grounded in the request. If one fact blocks truthful execution, return only the single highest-priority blocking gap; otherwise return null.',
+    'Restate the merchant request as a clear creative intent, classify one supported marketing task and delivery layer, and identify which operating asset categories are relevant and genuinely useful for this request. Route to customized only when at least one relevant category has a real benefit; an inferred industry category is the minimum useful unit. Otherwise route to guidance and ask one conversational question covering at most two related details. Never route directly to free, never invent merchant facts, and extract only grounded constraints.',
   briefCompilation:
     'Compile a complete professional copy brief. Ground every factual claim in supplied fact references, keep rights references explicit, and include a concrete CTA and platform. Only source refs beginning with marketing_identity: are registered identity refs; tone instructions are not identities. When none exists, use a neutral official brand voice and return an empty identityRefs array.',
 } as const;

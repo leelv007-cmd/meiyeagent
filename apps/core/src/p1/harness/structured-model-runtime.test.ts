@@ -95,7 +95,7 @@ test('fixture harness runtime assembles and completes its structured model path'
   );
 
   assert.deepEqual(warnings, [HARNESS_FIXTURE_STRUCTURED_MODEL_WARNING]);
-  assert.equal(pendingQuestionField, 'offer_price');
+  assert.equal(pendingQuestionField, 'promotion_details');
   assert.equal(result.deliveryLayer, 'copy');
   assert.equal(result.trace.winnerCandidateId, 'c01');
   assert.equal(delivery.inputs.length, 1);

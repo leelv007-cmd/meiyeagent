@@ -27,6 +27,8 @@ export const workflowStateSchema = z.enum([
   'failed',
 ]);
 
+export const creationModeSchema = z.enum(['customized', 'free']);
+
 export const taskIntentInputSchema = z
   .object({
     context: assistantContextSchema,
@@ -40,6 +42,7 @@ export const harnessTaskSubmissionSchema = z
     packageId: harnessIdSchema,
     expectedRevision: workflowRevisionSchema,
     workflowRevision: workflowRevisionSchema,
+    creationMode: creationModeSchema,
     rawInput: z.string().trim().min(1).max(4_000),
     intent: taskIntentInputSchema,
   })
@@ -265,6 +268,7 @@ export const todayRecommendationStateSchema = z
 
 export type HarnessStage = z.infer<typeof harnessStageSchema>;
 export type WorkflowState = z.infer<typeof workflowStateSchema>;
+export type CreationMode = z.infer<typeof creationModeSchema>;
 export type TaskIntentInput = z.infer<typeof taskIntentInputSchema>;
 export type HarnessTaskSubmission = z.infer<
   typeof harnessTaskSubmissionSchema

@@ -263,6 +263,7 @@ function composerSnapshot() {
       workId: 'work-1',
       contentPackageId: 'package-1',
       expectedContentPackageRevision: 0,
+      creationMode: 'customized',
       intent: '为夏日护理项目写一条预约文案',
       surface: { id: 'surface-1', revision: 'surface-r1' },
       recipe: { id: 'recipe-1', revision: 'recipe-r1' },

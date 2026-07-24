@@ -171,12 +171,17 @@ function smokePorts(): HarnessStagePorts {
     policyReferences: { sourceRefs: [], rightsRefs: [], identityRefs: [] },
   };
   return {
-    async nameIntent() {
-      return {
-        declaration: {
-          taskType: 'promotion_groupbuy_conversion',
-          deliveryLayer: 'copy',
-          implicitConstraints: [],
+      async nameIntent() {
+        return {
+          declaration: {
+            normalizedIntent: '推广本店团购',
+            taskType: 'promotion_groupbuy_conversion',
+            deliveryLayer: 'copy',
+            relevantAssetCategories: ['promotion_activity'],
+            usedAssetCategories: ['promotion_activity'],
+            route: 'customized',
+            routingSource: 'model',
+            implicitConstraints: [],
         },
         blockingQuestion: null,
       };

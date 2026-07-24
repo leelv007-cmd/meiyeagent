@@ -588,6 +588,7 @@ function createSnapshot(input: {
         input.submission.contentPackage.expectedRevision,
       identity: { id: "identity-1", revision: "identity-r1" },
       idempotencyKey: "submission-key",
+      creationMode: "customized",
       intent: "为夏日护理项目写一条预约文案",
       lens,
       modelPolicy: { id: "policy-1", mode: "fixed", revision: "policy-r1" },

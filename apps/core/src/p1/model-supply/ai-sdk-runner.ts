@@ -815,15 +815,53 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       const context = fixtureRecord(payload.context);
       const intent = typeof context.intent === 'string' ? context.intent : '';
       const promotion = /团购|优惠|套餐/u.test(intent);
+      const sourceSummaries = Array.isArray(context.sourceSummaries)
+        ? context.sourceSummaries.filter(
+            (item): item is string => typeof item === 'string',
+          )
+        : [];
+      const supplemented = sourceSummaries.some((item) =>
+        item.startsWith('Merchant decision'),
+      );
+      const hasAsset =
+        Array.isArray(payload.assetReferences) &&
+        payload.assetReferences.length > 0;
+      const industryInferred = /美发|美甲|护理|皮肤|美容|发型|染发/u.test(
+        intent,
+      );
+      const route =
+        supplemented || industryInferred || hasAsset ? 'customized' : 'guidance';
+      const relevantAssetCategories = promotion
+        ? ['promotion_activity', 'product_service']
+        : hasAsset
+          ? ['material']
+        : industryInferred
+          ? ['industry_category', 'product_service']
+          : ['industry_category'];
       return {
+        normalizedIntent: intent,
         taskType: fixtureHarnessTaskType(intent),
         deliveryLayer: 'copy',
+        relevantAssetCategories,
+        usedAssetCategories:
+          route === 'customized'
+            ? supplemented
+              ? [relevantAssetCategories[0]]
+              : hasAsset
+                ? ['material']
+              : industryInferred
+                ? ['industry_category']
+                : ['industry_category']
+            : [],
+        route,
         implicitConstraints: ['只使用已确认的本店事实'],
         blockingGap:
-          promotion && context.offer_price === undefined
+          route === 'guidance'
             ? {
-                field: 'offer_price',
-                question: '这次团购价按哪个金额写？',
+                field: promotion ? 'promotion_details' : 'industry_category',
+                question: promotion
+                  ? '方便补充这次活动的项目和价格档吗？'
+                  : '这次内容主要属于哪一类美业服务？',
                 options: [],
                 allowFreeText: true,
                 scope: 'current_task',

@@ -76,10 +76,20 @@ test('corrected intake fact is the only price in the next frozen Task, output an
 
   const runner = new QueueRunner([
     {
+      normalizedIntent: '按已确认价格推广当前团购',
       taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: [],
+      route: 'guidance',
       implicitConstraints: ['Price must use the frozen fact.'],
-      blockingGap: null,
+      blockingGap: {
+        field: 'offer_price',
+        question: '这次团购价按哪个金额写？',
+        options: [],
+        allowFreeText: true,
+        scope: 'current_task',
+      },
     },
     {
       kind: 'copy',

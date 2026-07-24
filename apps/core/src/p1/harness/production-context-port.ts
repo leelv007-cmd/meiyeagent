@@ -95,14 +95,17 @@ export class LedgerBackedHarnessContextPort
   async fence(input: Parameters<ProductionHarnessContextPort['fence']>[0]) {
     const at = this.now();
     await this.resolveSourceContentPackage(input.request);
-    await this.activeIdentitiesForRequest(input.request, at);
-    this.assertSnapshotIdentityBundle(input.request, input.context.bundle);
+    await this.activeIdentitiesForRouting(input, at);
+    this.assertSnapshotIdentityBundle(input, input.context.bundle);
     const scope = factScope(input.request);
-    const activeFacts = await this.facts.listActive({
-      workspaceId: input.request.workspaceId,
-      scope,
-      at,
-    });
+    const activeFacts =
+      input.declaration.route === 'customized'
+        ? await this.facts.listActive({
+            workspaceId: input.request.workspaceId,
+            scope,
+            at,
+          })
+        : [];
     const currentRevisions = await this.currentSourceRevisions(
       input.request.workspaceId,
       activeFacts,
@@ -150,11 +153,14 @@ export class LedgerBackedHarnessContextPort
   ) {
     const at = this.now();
     const scope = factScope(input.request);
-    const activeFacts = await this.facts.listActive({
-      workspaceId: input.request.workspaceId,
-      scope,
-      at,
-    });
+    const activeFacts =
+      input.declaration.route === 'customized'
+        ? await this.facts.listActive({
+            workspaceId: input.request.workspaceId,
+            scope,
+            at,
+          })
+        : [];
     const directAssetIds = [...new Set(input.request.intent.assetReferences)];
     const [sourceRevisions, rawReuseRevision, activeIdentities, sourceContentPackage] =
       await Promise.all([
@@ -169,7 +175,7 @@ export class LedgerBackedHarnessContextPort
               input.request.reuseSeed,
             )
           : Promise.resolve(undefined),
-        this.activeIdentitiesForRequest(input.request, at),
+        this.activeIdentitiesForRouting(input, at),
         this.resolveSourceContentPackage(input.request),
       ]);
     const assetIds = assetIdsForRequest(directAssetIds, sourceContentPackage);
@@ -322,15 +328,17 @@ export class LedgerBackedHarnessContextPort
         : undefined);
     const activeFacts =
       resolvedActiveFacts ??
-      (await this.facts.listActive({
-        workspaceId: input.request.workspaceId,
-        scope: factScope(input.request),
-        at: this.now(),
-      }));
+      (input.declaration.route === 'customized'
+        ? await this.facts.listActive({
+            workspaceId: input.request.workspaceId,
+            scope: factScope(input.request),
+            at: this.now(),
+          })
+        : []);
     const activeIdentities =
       resolvedActiveIdentities ??
-      (await this.activeIdentitiesForRequest(input.request, this.now()));
-    this.assertSnapshotIdentityBundle(input.request, bundle);
+      (await this.activeIdentitiesForRouting(input, this.now()));
+    this.assertSnapshotIdentityBundle(input, bundle);
     const rightsRefs = assetIds.map((assetId) => {
       const authorized =
         assetRights !== undefined &&
@@ -417,6 +425,15 @@ export class LedgerBackedHarnessContextPort
     return [identity];
   }
 
+  private activeIdentitiesForRouting(
+    input: Parameters<ProductionHarnessContextPort['compileAndFreeze']>[0],
+    at: string,
+  ) {
+    return input.declaration.route === 'customized'
+      ? this.activeIdentitiesForRequest(input.request, at)
+      : Promise.resolve([]);
+  }
+
   private async resolveSourceContentPackage(request: HarnessWorkflowInput) {
     const source = request.executionSnapshot?.sources.contentPackage;
     if (!source) return undefined;
@@ -430,12 +447,15 @@ export class LedgerBackedHarnessContextPort
   }
 
   private assertSnapshotIdentityBundle(
-    request: HarnessWorkflowInput,
+    input: Parameters<ProductionHarnessContextPort['compileAndFreeze']>[0],
     bundle: ContextBundle,
   ) {
-    const snapshot = request.executionSnapshot;
+    const snapshot = input.request.executionSnapshot;
     if (!snapshot) return;
-    const expectedIdentityRef = snapshotIdentityReference(snapshot);
+    const expectedIdentityRef =
+      input.declaration.route === 'customized'
+        ? snapshotIdentityReference(snapshot)
+        : null;
     const identityRefs = Object.values(bundle.dimensions.expression_identity)
       .map((item) => item.sourceRef)
       .filter((sourceRef) => sourceRef.startsWith('marketing_identity:'));

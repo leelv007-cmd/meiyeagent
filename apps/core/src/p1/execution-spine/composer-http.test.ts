@@ -1074,6 +1074,7 @@ function submissionPayload(): ComposerSubmissionBody {
 		briefConfirmation: { id: "brief-confirmation-1", revision: "brief-r2" },
 		briefContext: { id: "brief-context-1", revision: 4 },
 		catalogModel: { id: "catalog-copy-1", revision: "catalog-r4" },
+		creationMode: "customized",
 		contentModules: ["social_cover"],
 		deliverables: [
 			{

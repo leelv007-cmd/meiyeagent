@@ -41,6 +41,7 @@ export function toHarnessWorkflowInput(
 		packageId: snapshot.contentPackage.id,
 		expectedRevision: snapshot.contentPackage.expectedRevision,
 		workflowRevision: snapshot.revision,
+		creationMode: snapshot.creationMode,
 		rawInput: snapshot.intent.text,
 		intent: {
 			context: {

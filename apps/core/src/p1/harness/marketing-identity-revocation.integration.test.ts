@@ -71,8 +71,13 @@ test('identity revocation rejects the stale persona, falls back safely, and inva
     workflowId: 'task-identity-revocation',
     request: taskInput(),
     declaration: {
+      normalizedIntent: '用主理人口吻介绍本店服务',
       taskType: 'brand_personal_ip' as const,
       deliveryLayer: 'copy' as const,
+      relevantAssetCategories: ['personal_ip' as const],
+      usedAssetCategories: ['personal_ip' as const],
+      route: 'customized' as const,
+      routingSource: 'model' as const,
       implicitConstraints: ['绝不冒用已撤权身份'],
     },
   };

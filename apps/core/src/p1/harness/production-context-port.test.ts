@@ -7,7 +7,10 @@ import { MemoryMarketingIdentityRepository } from '../operations/marketing-ident
 import { MemoryStoreFactLedger } from '../operations/store-fact-ledger.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { SourceContentPackageUnavailableError } from '../execution-spine/source-content-package-resolver.js';
-import { briefContextBundleSchema } from './structured-nodes.js';
+import {
+  briefContextBundleSchema,
+  type IntentDeclaration,
+} from './structured-nodes.js';
 import {
   HarnessSnapshotIdentityError,
   LedgerBackedHarnessContextPort,
@@ -43,11 +46,10 @@ test('production context port freezes the real #32 bundle and fact references', 
   const input = {
     workflowId: 'task-context-1',
     request: taskInput(),
-    declaration: {
-      taskType: 'promotion_groupbuy_conversion' as const,
-      deliveryLayer: 'copy' as const,
-      implicitConstraints: ['不得编造价格'],
-    },
+    declaration: customizedDeclaration(
+      'promotion_groupbuy_conversion',
+      ['不得编造价格'],
+    ),
   };
 
   const first = await port.compileAndFreeze(input);
@@ -159,11 +161,10 @@ test('production context preserves pre-fold references for same-scope fact confl
   ).compileAndFreeze({
     workflowId: 'task-conflicting-facts',
     request: taskInput(),
-    declaration: {
-      taskType: 'promotion_groupbuy_conversion',
-      deliveryLayer: 'copy',
-      implicitConstraints: ['价格必须唯一'],
-    },
+    declaration: customizedDeclaration(
+      'promotion_groupbuy_conversion',
+      ['价格必须唯一'],
+    ),
   });
 
   assert.equal(
@@ -188,11 +189,7 @@ test('a decision accepted after the preflight freeze creates a new exact bundle 
   const input = {
     workflowId: 'task-decision-refreeze',
     request: requestWithoutDecision,
-    declaration: {
-      taskType: 'promotion_groupbuy_conversion' as const,
-      deliveryLayer: 'copy' as const,
-      implicitConstraints: [],
-    },
+    declaration: customizedDeclaration('promotion_groupbuy_conversion'),
   };
   const preflight = await port.compileAndFreeze(input);
   assert.equal(preflight.bundle.revision, 1);
@@ -306,11 +303,7 @@ test('production context fence compares every mutable source head and carries re
       reuseSeed: seed,
       intent: { ...baseTask.intent, assetReferences: ['asset-current'] },
     },
-    declaration: {
-      taskType: 'promotion_groupbuy_conversion' as const,
-      deliveryLayer: 'copy' as const,
-      implicitConstraints: [],
-    },
+    declaration: customizedDeclaration('promotion_groupbuy_conversion'),
   };
   const first = await port.compileAndFreeze(input);
   assert.equal(first.bundle.sourceRevisions.assets, 1);
@@ -405,11 +398,7 @@ test('production context rejects forged free-form copy in reusable fixed items',
           variableSlotKeys: ['offer.price'],
         },
       },
-      declaration: {
-        taskType: 'promotion_groupbuy_conversion',
-        deliveryLayer: 'copy',
-        implicitConstraints: [],
-      },
+      declaration: customizedDeclaration('promotion_groupbuy_conversion'),
     }),
   );
 });
@@ -477,11 +466,7 @@ test('production context hydrates complete active brand and person identities fo
   const snapshot = await port.compileAndFreeze({
     workflowId: 'task-brand-identity',
     request: taskInput(),
-    declaration: {
-      taskType: 'brand_personal_ip',
-      deliveryLayer: 'copy',
-      implicitConstraints: [],
-    },
+    declaration: customizedDeclaration('brand_personal_ip'),
   });
 
   assert.deepEqual(snapshot.policyReferences.identityRefs, [
@@ -553,11 +538,7 @@ test('Composer context binds only its frozen identity revision', async () => {
   const context = await port.compileAndFreeze({
     workflowId: snapshot.task.id,
     request,
-    declaration: {
-      taskType: 'brand_personal_ip',
-      deliveryLayer: 'copy',
-      implicitConstraints: [],
-    },
+    declaration: customizedDeclaration('brand_personal_ip'),
   });
 
   assert.deepEqual(context.policyReferences.identityRefs, [
@@ -584,11 +565,7 @@ test('Composer context binds only its frozen identity revision', async () => {
     port.fence({
       workflowId: snapshot.task.id,
       request,
-      declaration: {
-        taskType: 'brand_personal_ip',
-        deliveryLayer: 'copy',
-        implicitConstraints: [],
-      },
+      declaration: customizedDeclaration('brand_personal_ip'),
       context: forgedContext,
     }),
     HarnessSnapshotIdentityError,
@@ -603,11 +580,7 @@ test('Composer context binds only its frozen identity revision', async () => {
     port.compileAndFreeze({
       workflowId: unavailableSnapshot.task.id,
       request: composerRequest(unavailableSnapshot),
-      declaration: {
-        taskType: 'brand_personal_ip',
-        deliveryLayer: 'copy',
-        implicitConstraints: [],
-      },
+      declaration: customizedDeclaration('brand_personal_ip'),
     }),
     HarnessSnapshotIdentityError,
   );
@@ -657,11 +630,7 @@ test('Composer context carries safe source-package metadata and fences it again'
   const input = {
     workflowId: snapshot.task.id,
     request: composerRequest(snapshot),
-    declaration: {
-      taskType: 'brand_personal_ip' as const,
-      deliveryLayer: 'copy' as const,
-      implicitConstraints: [],
-    },
+    declaration: customizedDeclaration('brand_personal_ip'),
   };
 
   const context = await port.compileAndFreeze(input);
@@ -756,11 +725,7 @@ test('Composer context does not self-authorize a selected source-package asset',
   const context = await port.compileAndFreeze({
     workflowId: snapshot.task.id,
     request: composerRequest(snapshot),
-    declaration: {
-      taskType: 'brand_personal_ip',
-      deliveryLayer: 'copy',
-      implicitConstraints: [],
-    },
+    declaration: customizedDeclaration('brand_personal_ip'),
   });
 
   assert.deepEqual(context.policyReferences.rightsRefs, [
@@ -801,6 +766,26 @@ function taskInput() {
   };
 }
 
+function customizedDeclaration(
+  taskType: IntentDeclaration['taskType'],
+  implicitConstraints: string[] = [],
+): IntentDeclaration {
+  const category =
+    taskType === 'brand_personal_ip'
+      ? ('personal_ip' as const)
+      : ('promotion_activity' as const);
+  return {
+    normalizedIntent: '完成本次美业内容创作',
+    taskType,
+    deliveryLayer: 'copy',
+    relevantAssetCategories: [category],
+    usedAssetCategories: [category],
+    route: 'customized',
+    routingSource: 'model',
+    implicitConstraints,
+  };
+}
+
 function composerSnapshot(
   taskId: string,
   identityId: string,
@@ -821,6 +806,7 @@ function composerSnapshot(
       expectedContentPackageRevision: 0,
       identity: { id: identityId, revision: identityRevision },
       idempotencyKey: `submission-${taskId}`,
+      creationMode: 'customized',
       intent: '写一条预约文案',
       lens: 'copy',
       modelPolicy: { id: 'policy-1', mode: 'fixed', revision: 'policy-r1' },

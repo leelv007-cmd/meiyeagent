@@ -25,6 +25,7 @@ export interface HarnessWorkflowInput {
   packageId: string;
   expectedRevision: number;
   workflowRevision: number;
+  creationMode?: 'customized' | 'free';
   rawInput: string;
   intent: TaskIntentInput;
   factScope?: StoreFact['scope'];
@@ -51,6 +52,7 @@ export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
     packageId: z.string().trim().min(1),
     expectedRevision: z.number().int().nonnegative(),
     workflowRevision: z.number().int().nonnegative(),
+    creationMode: z.enum(['customized', 'free']).default('customized'),
     rawInput: z.string().trim().min(1),
     intent: taskIntentInputSchema,
     factScope: storeFactScopeSchema.optional(),
@@ -152,6 +154,7 @@ function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
     packageId: parsed.packageId,
     expectedRevision: parsed.expectedRevision,
     workflowRevision: parsed.workflowRevision,
+    creationMode: parsed.creationMode,
     rawInput: parsed.rawInput,
     intent: parsed.intent,
     factScope: parsed.factScope ?? { storeId: parsed.workspaceId },
@@ -168,6 +171,7 @@ function snapshotWorkflowInput(
     packageId: snapshot.contentPackage.id,
     expectedRevision: snapshot.contentPackage.expectedRevision,
     workflowRevision: snapshot.revision,
+    creationMode: snapshot.creationMode,
     rawInput: snapshot.intent.text,
     intent: {
       context: {
@@ -201,6 +205,7 @@ function assertExecutionSnapshotMatchesRequest(
     snapshot.contentPackage.id !== request.packageId ||
     snapshot.contentPackage.expectedRevision !== request.expectedRevision ||
     snapshot.revision !== request.workflowRevision ||
+    snapshot.creationMode !== request.creationMode ||
     snapshot.intent.text !== request.rawInput ||
     snapshot.intent.text !== context.intent ||
     !sameStringArray(context.sourceSummaries, []) ||
