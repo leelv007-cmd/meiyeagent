@@ -33,6 +33,30 @@ describe('launch seeds (D-082 / D-083)', () => {
     ]);
   });
 
+  it('uses structured factTypes instead of text upload slots', () => {
+    const specs = listLaunchRecipeSpecs();
+    assert.equal(
+      specs.some((spec) =>
+        spec.sourceRequirements.some((slot) => slot.kinds?.includes('text')),
+      ),
+      false,
+    );
+    assert.deepEqual(
+      specs.find((spec) => spec.recipeId === 'recipe.project_intro')?.factTypes,
+      ['service'],
+    );
+    assert.deepEqual(
+      specs.find((spec) => spec.recipeId === 'recipe.campaign_visual_set')
+        ?.factTypes,
+      ['service', 'price', 'group_buy', 'fulfillment'],
+    );
+    assert.deepEqual(
+      specs.find((spec) => spec.recipeId === 'recipe.promotion_poster')
+        ?.factTypes,
+      ['price', 'discount', 'fulfillment'],
+    );
+  });
+
   it('locks presentation copy to D-083 wording', () => {
     const byTitle = Object.fromEntries(
       listLaunchRecipeSpecs()

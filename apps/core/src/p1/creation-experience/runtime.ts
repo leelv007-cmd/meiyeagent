@@ -160,6 +160,7 @@ function matchesLaunchRecipe(
       presentation: recipe.presentation,
       delivery: recipe.delivery,
       contextPatches: recipe.contextPatches,
+      factTypes: recipe.factTypes,
       sourceRequirements: recipe.sourceRequirements,
       modelPolicy: recipe.modelPolicy,
       settingsPatches: recipe.settingsPatches,

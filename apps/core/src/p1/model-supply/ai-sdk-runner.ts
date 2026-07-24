@@ -883,6 +883,44 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         reason: '候选仅使用已确认上下文，内容完整且适合目标平台。',
       };
     }
+    case 'harness_fact_satisfaction_v1': {
+      const requested = Array.isArray(payload.factTypes)
+        ? payload.factTypes.filter((item): item is string => typeof item === 'string')
+        : [];
+      const facts = Array.isArray(payload.facts)
+        ? payload.facts.map(fixtureRecord)
+        : [];
+      const available = new Set(
+        facts
+          .map((fact) => fact.kind)
+          .filter((kind): kind is string => typeof kind === 'string'),
+      );
+      const missingFactTypes = requested.filter((kind) => !available.has(kind));
+      return {
+        status:
+          missingFactTypes.length === 0
+            ? 'satisfied'
+            : missingFactTypes.length === requested.length
+              ? 'unsatisfied'
+              : 'partial',
+        matchedFactRefs: facts
+          .map((fact) => fact.sourceRef)
+          .filter((reference): reference is string => typeof reference === 'string'),
+        missingFactTypes,
+      };
+    }
+    case 'harness_fact_criticality_v1': {
+      const missing = Array.isArray(payload.missingFactTypes)
+        ? payload.missingFactTypes
+        : [];
+      return {
+        criticality: missing.some((kind) =>
+          ['price', 'discount', 'group_buy', 'qualification'].includes(String(kind)),
+        )
+          ? 'critical'
+          : 'optional',
+      };
+    }
     default:
       throw new Error(`Unsupported fixture structured schema ${schemaName}.`);
   }
