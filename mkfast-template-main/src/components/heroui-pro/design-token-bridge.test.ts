@@ -4,7 +4,7 @@
  * so every value in the bridge is checked back against DESIGN.md here.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,11 @@ const bridge = readFileSync(
   join(here, 'theme/design-token-bridge.css'),
   'utf8'
 );
+const glassSheet = readFileSync(join(here, 'heroui-glass.css'), 'utf8');
+
+function stripComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
 
 /** Body of a top-level CSS rule, which in this file never nests braces. */
 function ruleBody(css: string, selector: string): string {
@@ -170,6 +175,73 @@ test('一点胭脂法则: 玫瑰金 never becomes a control, link or text colour
         );
       }
     }
+  }
+});
+
+test('bridge stays rooted at <html> so portalled overlays inherit it', () => {
+  // C-02 blocker #2. modal / popover / tooltip portal onto document.body, so
+  // they only receive these tokens because the rules' *subject* is the root
+  // element and `:has()` is merely the gate. Re-scoping to the shell subtree
+  // reads as equivalent and silently strands every floating surface on
+  // HeroUI's defaults; live proof is in
+  // .scratch/c02-reshell-prereqs-2026-07-25/portal-tokens-after.json.
+  const selectors = [
+    ...stripComments(bridge).matchAll(/^([^\s@{}][^{}]*)\{/gm),
+  ].map(([, selector]) => selector.trim());
+  assert.deepEqual(selectors, [
+    'html:has(.meiye-heroui-glass)',
+    'html.dark:has(.meiye-heroui-glass)',
+  ]);
+});
+
+test('glass sheet inlines the @heroui/styles entry minus its Tailwind root', () => {
+  // C-02 blocker #1. `@import "@heroui/styles/css"` drags in a second
+  // `@import "tailwindcss"`, which compiled a duplicate of everything
+  // src/styles.css already ships (292KB of the old 733KB artefact). The sheet
+  // therefore restates that entry by hand — which only stays correct if an
+  // upstream bump does not add or move an import behind our back.
+  const upstream = readFileSync(
+    join(here, '../../../node_modules/@heroui/styles/dist/index.css'),
+    'utf8'
+  );
+  const imports = (css: string): string[] =>
+    [...stripComments(css).matchAll(/@import\s+"([^"]+)"/g)].map(([, s]) => s);
+
+  const tailwindRoots = ['tailwindcss', 'tw-animate-css'];
+  // '@heroui/styles/themes/default/index.css' → 'themes/default/index.css'
+  const subpathToDist: Record<string, string> = {
+    base: 'base/base.css',
+    'themes/default': 'themes/default/index.css',
+    utilities: 'utilities/index.css',
+    variants: 'variants/index.css',
+  };
+  const ours = imports(glassSheet)
+    .filter((specifier) => specifier.startsWith('@heroui/styles'))
+    .map((specifier) => {
+      const subpath = specifier.replace('@heroui/styles/', '');
+      return subpathToDist[subpath] ?? subpath;
+    });
+
+  assert.ok(
+    !imports(glassSheet).some((specifier) =>
+      [...tailwindRoots, '@heroui/styles', '@heroui/styles/css'].includes(
+        specifier
+      )
+    ),
+    'heroui-glass.css must not pull a second Tailwind root'
+  );
+  assert.deepEqual(
+    ours,
+    imports(upstream)
+      .filter((specifier) => !tailwindRoots.includes(specifier))
+      .map((specifier) => specifier.replace('./', '')),
+    'heroui-glass.css has drifted from @heroui/styles/dist/index.css'
+  );
+  for (const file of ours) {
+    assert.ok(
+      existsSync(join(here, '../../../node_modules/@heroui/styles/dist', file)),
+      `@heroui/styles/dist/${file} does not exist`
+    );
   }
 });
 
