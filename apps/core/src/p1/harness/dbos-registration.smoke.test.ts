@@ -21,6 +21,7 @@ test('registered workflow accepts both legacy and scoped invocation payloads', (
     packageId: 'package-smoke',
     expectedRevision: 0,
     workflowRevision: 1,
+    creationMode: 'customized' as const,
     rawInput: '把新团购做一套能发的',
     intent: {
       context: {
@@ -75,6 +76,7 @@ test(
           packageId: 'package-smoke',
           expectedRevision: 0,
           workflowRevision: 1,
+          creationMode: 'customized',
           rawInput: '把新团购做一套能发的',
           intent: {
             context: {

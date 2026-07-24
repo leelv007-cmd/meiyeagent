@@ -246,6 +246,7 @@ export async function runHarnessWorkflow(
   });
   activeRequest = routed.request;
   await trace(runtime, workflowId, 'intent_naming', {
+    // Replay fallback only for durable workflows enqueued before creationMode existed.
     entryMode: request.creationMode ?? 'customized',
     declaration: routed.declaration,
     questionId: intent.blockingQuestion?.questionId ?? null,
@@ -486,6 +487,7 @@ async function runMediaHarnessWorkflow(
   activeRequest = routed.request;
   await trace(runtime, workflowId, 'intent_naming', {
     executionRoot: mediaExecutionRoot(request),
+    // Replay fallback only for durable workflows enqueued before creationMode existed.
     entryMode: request.creationMode ?? 'customized',
     declaration: routed.declaration,
     questionId: intent.blockingQuestion?.questionId ?? null,

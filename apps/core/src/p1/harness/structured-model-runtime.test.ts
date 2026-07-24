@@ -144,6 +144,7 @@ function taskInput() {
     packageId: 'package-fixture',
     expectedRevision: 0,
     workflowRevision: 1,
+    creationMode: 'customized' as const,
     rawInput: '把新团购做成一条可以发的小红书文案',
     intent: {
       context: {

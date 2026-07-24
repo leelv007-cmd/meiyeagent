@@ -745,6 +745,7 @@ function taskInput() {
     packageId: 'package-1',
     expectedRevision: 0,
     workflowRevision: 1,
+    creationMode: 'customized' as const,
     rawInput: '把新团购做一套能发的',
     factScope: { storeId: 'workspace-1', serviceId: 'scalp-clean' },
     intent: {
@@ -837,6 +838,7 @@ function composerRequest(
     packageId: snapshot.contentPackage.id,
     expectedRevision: snapshot.contentPackage.expectedRevision,
     workflowRevision: snapshot.revision,
+    creationMode: snapshot.creationMode,
     rawInput: snapshot.intent.text,
     factScope: { storeId: snapshot.workspaceId },
     intent: {

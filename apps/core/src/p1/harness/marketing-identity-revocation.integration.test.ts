@@ -257,6 +257,7 @@ function taskInput(): HarnessWorkflowInput {
     packageId: 'package-1',
     expectedRevision: 1,
     workflowRevision: 2,
+    creationMode: 'customized',
     rawInput: '继续用小林老师的口吻写发色选择栏目',
     intent: {
       context: {

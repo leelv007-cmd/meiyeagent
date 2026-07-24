@@ -232,6 +232,7 @@ function request(rawInput: string): HarnessWorkflowInput {
     packageId: 'package-1',
     expectedRevision: 0,
     workflowRevision: 1,
+    creationMode: 'customized',
     rawInput,
     intent: {
       context: { workId: 'work-1', intent: rawInput, sourceSummaries: [] },

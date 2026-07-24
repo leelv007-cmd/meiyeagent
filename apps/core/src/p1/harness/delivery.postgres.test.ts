@@ -407,6 +407,7 @@ test(
           packageId,
           expectedRevision: 0,
           workflowRevision: 1,
+          creationMode: 'customized',
           rawInput: '把新团购做一套能发的',
           intent: {
             context: {
@@ -554,6 +555,7 @@ async function seedHarnessTask(
       packageId,
       expectedRevision: 0,
       workflowRevision: 1,
+      creationMode: 'customized',
       rawInput: '生成团购文案',
       factScope: { storeId: workspaceId },
       intent: {

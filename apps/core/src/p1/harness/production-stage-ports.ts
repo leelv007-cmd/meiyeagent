@@ -171,6 +171,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       {
         workflowId: input.workflowId,
         workflowRevision: input.request.workflowRevision,
+        // Replay fallback only for durable workflows enqueued before creationMode existed.
         creationMode: input.request.creationMode ?? 'customized',
         deliveryLayer:
           input.request.executionSnapshot?.lens === 'image' ||

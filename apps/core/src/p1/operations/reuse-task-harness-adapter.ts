@@ -52,6 +52,7 @@ export class ReuseTaskHarnessAdapter implements ReuseTaskSubmissionPort {
       packageId: input.packageId,
       expectedRevision: 0,
       workflowRevision: input.workflowRevision,
+      creationMode: 'customized',
       rawInput: input.rawInput,
       factScope: input.factScope,
       reuseSeed: input.seed,

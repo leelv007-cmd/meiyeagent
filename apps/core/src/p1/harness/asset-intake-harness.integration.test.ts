@@ -125,6 +125,7 @@ test('corrected intake fact is the only price in the next frozen Task, output an
       packageId: 'package-after-correction',
       expectedRevision: 0,
       workflowRevision: 1,
+      creationMode: 'customized',
       rawInput: '按已确认价格写团购文案。',
       factScope: {
         storeId: 'workspace-a',

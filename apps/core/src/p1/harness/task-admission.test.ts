@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   HarnessAdmissionError,
   HarnessTaskAdmissionService,
+  harnessTaskRequestSchema,
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowStarter,
 } from './task-admission.js';
@@ -42,6 +43,12 @@ test('same task and different payload is an explicit 409 conflict', async () => 
       error.code === 'REQUEST_FINGERPRINT_CONFLICT' &&
       error.status === 409,
   );
+});
+
+test('admission rejects a task submission without creationMode', () => {
+  const { creationMode: _creationMode, ...request } = taskRequest();
+
+  assert.throws(() => harnessTaskRequestSchema.parse(request));
 });
 
 test('workflow id is the task id and request fingerprint is canonical', async () => {
@@ -241,6 +248,7 @@ function taskRequest(overrides: { rawInput?: string; taskId?: string } = {}) {
     packageId: 'package-1',
     expectedRevision: 2,
     workflowRevision: 4,
+    creationMode: 'customized' as const,
     rawInput: overrides.rawInput ?? '把新团购做一套能发的',
     intent: {
       context: {
@@ -295,6 +303,7 @@ function snapshotTaskRequest(snapshot: ReturnType<typeof composerSnapshot>) {
     packageId: snapshot.contentPackage.id,
     expectedRevision: snapshot.contentPackage.expectedRevision,
     workflowRevision: snapshot.revision,
+    creationMode: snapshot.creationMode,
     rawInput: snapshot.intent.text,
     intent: {
       context: {

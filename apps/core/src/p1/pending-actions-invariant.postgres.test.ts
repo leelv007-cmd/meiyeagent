@@ -185,6 +185,7 @@ async function createFixture(withPendingApproval: boolean) {
     rawInput: '生成并发布抖音内容',
     taskId,
     workflowRevision: 1,
+    creationMode: 'customized',
     workspaceId,
   });
 

@@ -25,7 +25,7 @@ export interface HarnessWorkflowInput {
   packageId: string;
   expectedRevision: number;
   workflowRevision: number;
-  creationMode?: 'customized' | 'free';
+  creationMode: 'customized' | 'free';
   rawInput: string;
   intent: TaskIntentInput;
   factScope?: StoreFact['scope'];
@@ -52,7 +52,7 @@ export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
     packageId: z.string().trim().min(1),
     expectedRevision: z.number().int().nonnegative(),
     workflowRevision: z.number().int().nonnegative(),
-    creationMode: z.enum(['customized', 'free']).default('customized'),
+    creationMode: z.enum(['customized', 'free']),
     rawInput: z.string().trim().min(1),
     intent: taskIntentInputSchema,
     factScope: storeFactScopeSchema.optional(),

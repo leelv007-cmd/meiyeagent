@@ -600,6 +600,7 @@ function taskInput() {
     packageId: 'package-1',
     expectedRevision: 2,
     workflowRevision: 4,
+    creationMode: 'customized' as const,
     rawInput: '把新团购做一套能发的',
     intent: {
       context: {
