@@ -35,7 +35,9 @@ function ChatScaffold() {
             <Avatar className="size-9">
               <Avatar.Fallback>美</Avatar.Fallback>
             </Avatar>
-            <span className="text-foreground text-sm font-medium">门店工作区</span>
+            <span className="text-foreground text-sm font-medium">
+              门店工作区
+            </span>
           </div>
         </Sidebar.Header>
         <Sidebar.Content>

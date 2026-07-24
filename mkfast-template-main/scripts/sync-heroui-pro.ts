@@ -28,7 +28,10 @@ const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(appRoot, '..');
 const vendorRoot = join(appRoot, 'src/components/heroui-pro/vendor');
 const pinPath = join(appRoot, 'src/components/heroui-pro/components.json');
-const patchesPath = join(appRoot, 'src/components/heroui-pro/vendor-patches.json');
+const patchesPath = join(
+  appRoot,
+  'src/components/heroui-pro/vendor-patches.json'
+);
 
 type Patch = {
   file: string;
@@ -99,7 +102,8 @@ while (queue.length > 0) {
   if (copied.has(id)) continue;
 
   const asDirectory = join(mirror, 'src', id);
-  const isDirectory = existsSync(asDirectory) && statSync(asDirectory).isDirectory();
+  const isDirectory =
+    existsSync(asDirectory) && statSync(asDirectory).isDirectory();
   const sources = isDirectory
     ? readSourceFiles(asDirectory)
     : ['.tsx', '.ts']
@@ -113,12 +117,16 @@ while (queue.length > 0) {
   for (const { path, text } of sources) {
     for (const importId of relativeImports(text)) {
       // `../../utils/compose` from src/components/x/y.tsx → utils/compose
-      const resolved = relative(join(mirror, 'src'), resolve(dirname(path), importId));
+      const resolved = relative(
+        join(mirror, 'src'),
+        resolve(dirname(path), importId)
+      );
       // Pull whole component/util units, not single files, so partial copies
       // can't drift: `components/sheet/index` → `components/sheet`.
       const [area, unit] = resolved.split('/');
       const unitPath = join(mirror, 'src', area, unit);
-      const isUnitDirectory = existsSync(unitPath) && statSync(unitPath).isDirectory();
+      const isUnitDirectory =
+        existsSync(unitPath) && statSync(unitPath).isDirectory();
       queue.push(isUnitDirectory ? `${area}/${unit}` : resolved);
     }
   }
@@ -185,7 +193,9 @@ mkdirSync(cssDestination, { recursive: true });
 const componentCss = units
   .filter((id) => id.startsWith('components/'))
   .map((id) => id.slice('components/'.length))
-  .filter((name) => existsSync(join(mirror, 'src/css/components', `${name}.css`)));
+  .filter((name) =>
+    existsSync(join(mirror, 'src/css/components', `${name}.css`))
+  );
 for (const name of componentCss) {
   const destination = join(cssDestination, `${name}.css`);
   cpSync(join(mirror, 'src/css/components', `${name}.css`), destination);
@@ -194,7 +204,10 @@ for (const name of componentCss) {
 
 // D-130 pins Glass. Brutalism and Mouve are deliberately not vendored.
 const themeDestination = join(cssDestination, `theme-${pin.theme}.css`);
-cpSync(join(mirror, 'src/css/themes', pin.theme, 'index.css'), themeDestination);
+cpSync(
+  join(mirror, 'src/css/themes', pin.theme, 'index.css'),
+  themeDestination
+);
 record(themeDestination);
 
 const cssEntry = [

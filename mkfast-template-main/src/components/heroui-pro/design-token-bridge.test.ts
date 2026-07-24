@@ -10,9 +10,15 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const designMarkdown = readFileSync(join(here, '../../../../DESIGN.md'), 'utf8');
+const designMarkdown = readFileSync(
+  join(here, '../../../../DESIGN.md'),
+  'utf8'
+);
 const productStyles = readFileSync(join(here, '../../styles.css'), 'utf8');
-const bridge = readFileSync(join(here, 'theme/design-token-bridge.css'), 'utf8');
+const bridge = readFileSync(
+  join(here, 'theme/design-token-bridge.css'),
+  'utf8'
+);
 
 /** Body of a top-level CSS rule, which in this file never nests braces. */
 function ruleBody(css: string, selector: string): string {
@@ -31,7 +37,9 @@ function declarations(body: string): Map<string, string> {
 }
 
 const light = declarations(ruleBody(bridge, 'html:has(.meiye-heroui-glass)'));
-const dark = declarations(ruleBody(bridge, 'html.dark:has(.meiye-heroui-glass)'));
+const dark = declarations(
+  ruleBody(bridge, 'html.dark:has(.meiye-heroui-glass)')
+);
 
 /** The `colors` block of DESIGN.md frontmatter. */
 function designColors(): Map<string, string> {
@@ -126,7 +134,9 @@ test('every HeroUI token the bridge maps resolves to a declared 门店橱窗 tok
   const declared = new Set([...light.keys(), ...dark.keys()]);
   for (const body of [light, dark]) {
     for (const [name, value] of body) {
-      for (const [, reference] of value.matchAll(/var\((--meiye-[a-z0-9-]+)\)/g)) {
+      for (const [, reference] of value.matchAll(
+        /var\((--meiye-[a-z0-9-]+)\)/g
+      )) {
         assert.ok(
           declared.has(reference),
           `${name} references undeclared ${reference}`

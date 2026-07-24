@@ -7,7 +7,12 @@
  *
  *   pnpm --filter @meiye/web dev → /heroui-spike
  */
-import { createFileRoute, Link, notFound, Outlet } from '@tanstack/react-router';
+import {
+  createFileRoute,
+  Link,
+  notFound,
+  Outlet,
+} from '@tanstack/react-router';
 import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { useTheme } from '@/components/theme/theme-provider';
 
@@ -32,7 +37,9 @@ function HeroUiSpikeLayout() {
   return (
     <div className="meiye-heroui-glass bg-background text-foreground min-h-svh">
       <header className="border-border flex flex-wrap items-center gap-3 border-b px-6 py-3">
-        <span className="text-muted text-xs">HeroUI Pro V3 · Glass · 仅开发环境</span>
+        <span className="text-muted text-xs">
+          HeroUI Pro V3 · Glass · 仅开发环境
+        </span>
         <nav className="flex flex-wrap gap-2">
           {SCAFFOLDS.map((scaffold) => (
             <Link

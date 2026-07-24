@@ -102,3 +102,9 @@ function Page() {
 `/heroui-spike/dashboard`（template-dashboard 起点＝运营后台）是空壳路由，
 production 构建下整段 404，不挂任何现有 IA、不接后端。双主题走查证据见
 `.scratch/heroui-glass-spike-2026-07-25/`。
+
+脚手架页面目前**带着营销页 Navbar + Footer** 渲染：`__root.tsx` 的 `RootComponent`
+按路径前缀分派布局，`/heroui-spike/*` 是未识别前缀，落到默认的营销壳分支。
+`__root.tsx` 是 KEEP 桶文件（归桶矩阵第 283 行），属主不在本票，故未改。
+营销壳由 `src/styles.css` 供色，**不影响 HeroUI token 的 computed 值**（实测见证据
+目录）。这条布局分支归属已交回 coordinator，转 T29/T30 换壳票处理。

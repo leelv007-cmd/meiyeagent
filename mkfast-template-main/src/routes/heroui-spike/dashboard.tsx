@@ -41,7 +41,9 @@ function DashboardScaffold() {
     <Sidebar.Provider className="min-h-[calc(100svh-3.25rem)]">
       <Sidebar>
         <Sidebar.Header>
-          <span className="text-foreground px-1 py-1 text-sm font-medium">运营后台</span>
+          <span className="text-foreground px-1 py-1 text-sm font-medium">
+            运营后台
+          </span>
         </Sidebar.Header>
         <Sidebar.Content>
           <Sidebar.Group>
@@ -93,7 +95,9 @@ function DashboardScaffold() {
                 <ListView.Item key={task.title} id={task.title}>
                   <ListView.ItemContent>
                     <ListView.Title>{task.title}</ListView.Title>
-                    <ListView.Description>{task.description}</ListView.Description>
+                    <ListView.Description>
+                      {task.description}
+                    </ListView.Description>
                   </ListView.ItemContent>
                 </ListView.Item>
               ))}
