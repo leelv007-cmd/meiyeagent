@@ -278,7 +278,9 @@ test("authenticated Composer HTTP carries copy, image, and video through one sna
 								revision: snapshot.revision,
 								schemaVersion: snapshot.schemaVersion,
 							},
-							targetPlatform: snapshot.platform.id,
+							...(snapshot.platform.id === "wechat_moments"
+								? {}
+								: { targetPlatform: snapshot.platform.id }),
 							workId: snapshot.work.id,
 							workflowId: snapshot.task.id,
 							workflowRevision: snapshot.revision,
@@ -987,8 +989,9 @@ function fixedIds() {
 
 function fixedAdmission(): CreationSubmissionAdmissionPort {
 	return {
-		async admit() {
+		async admit(input) {
 			return {
+				identity: input.identity ?? { id: "official-neutral", revision: "1" },
 				modelPolicy: {
 					id: "server-policy-copy",
 					mode: "fixed",
@@ -1024,6 +1027,7 @@ function modalityAdmission(): CreationSubmissionAdmissionPort {
 		async admit(input) {
 			const kind = input.lens ?? "copy";
 			return {
+				identity: input.identity ?? { id: "official-neutral", revision: "1" },
 				modelPolicy: {
 					id: `server-policy-${kind}`,
 					mode: "fixed",

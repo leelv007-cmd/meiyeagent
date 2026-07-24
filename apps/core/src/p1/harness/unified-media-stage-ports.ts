@@ -130,7 +130,7 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 			kind: input.brief.kind === "video" ? "video" : "image_text",
 			occurredAt: now,
 			packageId: input.request.packageId,
-			platform: snapshot.platform.id,
+			platform: mediaPlatform(snapshot.platform.id),
 			snapshotId: snapshot.id,
 			snapshot: {
 				id: snapshot.id,
@@ -156,6 +156,17 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 			workspaceId: input.request.workspaceId,
 		});
 	}
+}
+
+function mediaPlatform(platform: string) {
+	if (
+		platform === "xiaohongshu" ||
+		platform === "douyin" ||
+		platform === "video_account"
+	) {
+		return platform;
+	}
+	throw new Error(`Platform ${platform} does not support media delivery.`);
 }
 
 /** Narrow adapter over the existing Model Supply durable media path. */

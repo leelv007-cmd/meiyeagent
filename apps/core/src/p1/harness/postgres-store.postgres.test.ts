@@ -147,25 +147,54 @@ test(
         audits: 2,
         outbox: 2,
       });
-      const claimed = await store.claimLangfuseBatch(10);
-      assert.equal(claimed.length, 3);
-      assert.ok(claimed.some((item) => item.workflowId === runtimeTaskId));
-      assert.ok(
-        claimed.some((item) => item.workflowId === otherRuntimeTaskId),
+      const ownOutbox = await pool.query<{ audit_id: string }>(
+        `select o.audit_id
+         from harness_runtime.langfuse_outbox o
+         join harness_runtime.audit_events a on a.id=o.audit_id
+         where a.workflow_id=any($1::text[])
+         order by o.audit_id`,
+        [[runtimeTaskId, otherRuntimeTaskId]],
       );
-      await store.markLangfuseSent(claimed[1]!.auditId);
+      assert.equal(ownOutbox.rows.length, 3);
+      const ownAuditIds = ownOutbox.rows.map((row) => row.audit_id);
+      await pool.query(
+        `update harness_runtime.langfuse_outbox
+         set next_attempt_at='-infinity'::timestamptz
+         where audit_id=any($1::text[])`,
+        [ownAuditIds],
+      );
+
+      const claimed = await store.claimLangfuseBatch(ownAuditIds.length);
+      const claimedByAuditId = new Map(
+        claimed.map((item) => [item.auditId, item]),
+      );
+      assert.ok(
+        ownAuditIds.every((auditId) => claimedByAuditId.has(auditId)),
+      );
+      assert.deepEqual(
+        new Set(claimed.map((item) => item.workflowId)),
+        new Set([runtimeTaskId, otherRuntimeTaskId]),
+      );
+      const failedItem = claimedByAuditId.get(ownAuditIds[0]!);
+      const sentItem = claimedByAuditId.get(ownAuditIds[1]!);
+      assert.ok(failedItem);
+      assert.ok(sentItem);
+      await store.markLangfuseSent(sentItem.auditId);
       await store.markLangfuseFailed(
-        claimed[0]!.auditId,
+        failedItem.auditId,
         'temporary failure',
         new Date(0)
       );
-      const retried = await store.claimLangfuseBatch(10);
-      assert.equal(retried.length, 1);
-      assert.equal(retried[0]!.attempts, 2);
-      await store.markLangfuseSent(retried[0]!.auditId);
+      const retried = await store.claimLangfuseBatch(1);
+      const retriedItem = retried.find(
+        (item) => item.auditId === failedItem.auditId,
+      );
+      assert.ok(retriedItem);
+      assert.equal(retriedItem.attempts, 2);
+      await store.markLangfuseSent(retriedItem.auditId);
       const outbox = await pool.query(
         `select status from harness_runtime.langfuse_outbox where audit_id=$1`,
-        [retried[0]!.auditId]
+        [retriedItem.auditId]
       );
       assert.equal(outbox.rows[0]?.status, 'sent');
       await store.recordTerminalFailure({

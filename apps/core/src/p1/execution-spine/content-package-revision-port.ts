@@ -26,7 +26,7 @@ export interface ContentPackageRevisionWriteInput {
 	marketing?: ContentPackage["marketing"];
 	occurredAt: string;
 	packageId: string;
-	platform: ContentPackagePlatform;
+	platform?: ContentPackagePlatform;
 	snapshotId: string;
 	snapshot: {
 		id: string;
@@ -253,7 +253,7 @@ export class PostgresContentPackageRevisionWritePort
 				revision,
 				source: {
 					...contentPackage.source,
-					targetPlatform: input.platform,
+					...(input.platform ? { targetPlatform: input.platform } : {}),
 					workflowId: input.taskId,
 					workflowRevision: input.workflowRevision,
 					workId: input.workId,
@@ -433,7 +433,7 @@ export class MemoryContentPackageRevisionWritePort
 			revision,
 			source: {
 				...contentPackage.source,
-				targetPlatform: input.platform,
+				...(input.platform ? { targetPlatform: input.platform } : {}),
 				workflowId: input.taskId,
 				workflowRevision: input.workflowRevision,
 				workId: input.workId,

@@ -197,7 +197,9 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
         ...(snapshot.sources.contentPackage
           ? { sourceContentPackage: snapshot.sources.contentPackage }
           : {}),
-        targetPlatform: snapshot.platform.id,
+        ...(snapshot.platform.id === 'wechat_moments'
+          ? {}
+          : { targetPlatform: snapshot.platform.id }),
         workId: submission.work.id,
         workflowId: submission.task.id,
         workflowRevision: snapshot.revision,

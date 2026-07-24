@@ -17,6 +17,7 @@ import {
   type ExecutionSourceContentPackageResolverPort,
   type ResolvedSourceContentPackage,
 } from '../execution-spine/source-content-package-resolver.js';
+import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution-snapshot.js';
 
 import {
   executeCopySelection,
@@ -58,7 +59,7 @@ export interface HarnessCopyDeliveryPort {
     workspaceId: string;
     packageId: string;
     expectedRevision: number;
-    platform: 'xiaohongshu' | 'douyin' | 'video_account';
+    platform?: 'xiaohongshu' | 'douyin' | 'video_account';
     occurredAt: string;
     workflowRevision: number;
     winner: {
@@ -390,13 +391,13 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       context: input.context,
       at: occurredAt,
     });
-    const platform = approvalPlatform(input.brief.platform);
+    const platform = publicationPlatform(input.brief.platform);
     return this.delivery.deliverCopyRevision({
       workflowId: input.workflowId,
       workspaceId: input.request.workspaceId,
       packageId: input.request.packageId,
       expectedRevision: input.request.expectedRevision,
-      platform,
+      ...(platform ? { platform } : {}),
       occurredAt,
       workflowRevision: input.request.workflowRevision,
       winner: input.selection.winner,
@@ -497,7 +498,9 @@ export function copyContentPackageRevisionWriteInput(
     marketing,
     occurredAt,
     packageId: input.request.packageId,
-    platform: snapshot.platform.id,
+    ...(publicationPlatform(snapshot.platform.id)
+      ? { platform: publicationPlatform(snapshot.platform.id) }
+      : {}),
     snapshotId: snapshot.id,
     snapshot: {
       id: snapshot.id,
@@ -535,7 +538,7 @@ function copyRevisionVersionId(
   return `${packageId}-harness-${digest}`;
 }
 
-function approvalPlatform(platform: string) {
+function publicationPlatform(platform: string) {
   if (
     platform === 'xiaohongshu' ||
     platform === 'douyin' ||
@@ -543,6 +546,7 @@ function approvalPlatform(platform: string) {
   ) {
     return platform;
   }
+  if (platform === 'wechat_moments') return undefined;
   throw new Error(`Platform ${platform} does not support delivery approval.`);
 }
 
@@ -552,6 +556,20 @@ function bindComposerSnapshotBrief(
   sourceAssets: ReadonlyArray<{ id: string; role: 'source' | 'selected' }> = [],
 ) {
   const expectedIdentityRef = snapshotIdentityReference(snapshot);
+  if (expectedIdentityRef === null) {
+    if (brief.identityRefs.length > 0) {
+      throw new HarnessSnapshotIdentityBindingError(
+        'official-neutral',
+        brief.identityRefs,
+      );
+    }
+    assertComposerSnapshotAssetBinding(snapshot, brief.assetRefs, sourceAssets);
+    return {
+      ...brief,
+      identityRefs: [],
+      platform: snapshot.platform.id,
+    };
+  }
   const foreignIdentityRefs = brief.identityRefs.filter(
     (identityRef) => identityRef !== expectedIdentityRef,
   );
@@ -575,6 +593,15 @@ function assertComposerSnapshotIdentityBinding(
   briefIdentityRefs: string[],
 ) {
   const expectedIdentityRef = snapshotIdentityReference(snapshot);
+  if (expectedIdentityRef === null) {
+    if (registeredIdentityRefs.size !== 0 || briefIdentityRefs.length !== 0) {
+      throw new HarnessSnapshotIdentityBindingError(
+        'official-neutral',
+        briefIdentityRefs,
+      );
+    }
+    return;
+  }
   if (
     registeredIdentityRefs.size !== 1 ||
     !registeredIdentityRefs.has(expectedIdentityRef) ||
@@ -610,6 +637,7 @@ function assertComposerSnapshotAssetBinding(
 function snapshotIdentityReference(
   snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
 ) {
+  if (isOfficialNeutralIdentity(snapshot.identity)) return null;
   return `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
 }
 

@@ -3,7 +3,12 @@ import { z } from "zod";
 
 const identifierSchema = z.string().trim().min(1).max(200);
 const revisionSchema = z.string().trim().min(1).max(200);
-const platformSchema = z.enum(["xiaohongshu", "douyin", "video_account"]);
+const platformSchema = z.enum([
+	"xiaohongshu",
+	"douyin",
+	"video_account",
+	"wechat_moments",
+]);
 const creationLensSchema = z.enum(["copy", "image", "video"]);
 
 const revisionReferenceSchema = z
@@ -12,6 +17,20 @@ const revisionReferenceSchema = z
 		revision: revisionSchema,
 	})
 	.strict();
+
+export const OFFICIAL_NEUTRAL_IDENTITY = {
+	id: "official-neutral",
+	revision: "1",
+} as const;
+
+export function isOfficialNeutralIdentity(
+	identity: { id: string; revision: string },
+) {
+	return (
+		identity.id === OFFICIAL_NEUTRAL_IDENTITY.id &&
+		identity.revision === OFFICIAL_NEUTRAL_IDENTITY.revision
+	);
+}
 
 const assetReferenceSchema = revisionReferenceSchema
 	.extend({
@@ -113,6 +132,7 @@ const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
 	.partial({
 		contentModules: true,
 		deliverables: true,
+		identity: true,
 		lens: true,
 		modelPolicy: true,
 		platform: true,
@@ -167,7 +187,7 @@ export const creationExecutionSnapshotSchema = z
 		quote: revisionReferenceSchema,
 		route: revisionReferenceSchema,
 		briefContext: briefContextSchema,
-		briefConfirmation: revisionReferenceSchema,
+		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
 	})
 	.strict();

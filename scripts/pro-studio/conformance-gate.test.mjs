@@ -26,19 +26,13 @@ import {
   validateReleaseEvidence,
 } from './conformance-gate.mjs';
 
-test('local live development keeps browser launch and Main auth on localhost', () => {
+test('local live development uses the unified runtime profile', () => {
   const rootPackage = JSON.parse(
     readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
   );
 
-  assert.match(
-    rootPackage.scripts['dev:live'],
-    /MAIN_APP_ORIGIN=http:\/\/localhost:3000/
-  );
-  assert.match(
-    rootPackage.scripts['dev:live'],
-    /CANVAS_ORIGIN=http:\/\/localhost:4200/
-  );
+  assert.equal(rootPackage.scripts['dev:live'], 'pnpm dev');
+  assert.match(rootPackage.scripts.dev, /scripts\/dev\/start-stack\.mjs/);
 });
 
 test('Playwright starts Canvas as the fourth required web server', () => {
