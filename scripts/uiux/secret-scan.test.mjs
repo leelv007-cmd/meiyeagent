@@ -90,3 +90,36 @@ test('an ignored environment path staged by force fails the index contract', asy
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, new RegExp(secret));
   });
 });
+
+test('an ignored nested repository holding an env file does not break the scan', async () => {
+  await withRepository(async (rootDir) => {
+    /*
+     * The mirrors under references/repos are clones, so each carries its own
+     * .git. `ls-files --others --ignored` stops at a repository boundary and
+     * reports the directory itself rather than descending, so the scan's
+     * ':(glob)**\/.env*' pathspec matched 22 directories in the real repo.
+     * readFileSync on one threw EISDIR and took `pnpm check` and the
+     * web-canvas gate down. This pins the boundary case, not the symptom.
+     */
+    await writeFile(
+      path.join(rootDir, '.gitignore'),
+      ['.env', '.env.*', '!.env.example', 'mirror/', ''].join('\n')
+    );
+    git(rootDir, ['add', '.gitignore']);
+    const mirrorDir = path.join(rootDir, 'mirror');
+    await mkdir(mirrorDir);
+    git(mirrorDir, ['init', '--quiet']);
+    await writeFile(
+      path.join(mirrorDir, '.env'),
+      `API_KEY=sk-${'d'.repeat(32)}\n`
+    );
+    await writeFile(path.join(rootDir, 'tracked.md'), 'no secrets here\n');
+    git(rootDir, ['add', 'tracked.md']);
+
+    const result = runSecretScan(rootDir);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /EISDIR/);
+    assert.deepEqual(JSON.parse(result.stdout).ignoredEnvironment.paths, []);
+  });
+});

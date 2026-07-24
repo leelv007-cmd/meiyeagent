@@ -45,7 +45,19 @@ const ignoredEnvironmentPaths = gitPaths([
   '-z',
   '--',
   ':(glob)**/.env*',
-]).sort();
+])
+  /*
+   * `ls-files --others --ignored` collapses a wholly ignored directory to the
+   * directory itself instead of descending into it, so `**\/.env*` also reports
+   * every vendored mirror under references/ that happens to contain an env file
+   * — 22 of them in this repo. Those entries arrive with a trailing slash and
+   * are not environment files at all; reading one throws EISDIR and takes the
+   * whole gate down. Keep only real env files, which is also the right scope:
+   * a wholly ignored directory cannot be in the index, so the contract this
+   * list enforces does not apply to anything inside it.
+   */
+  .filter((path) => !path.endsWith('/') && isEnvironmentPath(path))
+  .sort();
 const indexedEnvironmentPaths = trackedPaths.filter(isEnvironmentPath);
 const indexedIgnoredEnvironmentPaths =
   indexedEnvironmentPaths.length === 0
