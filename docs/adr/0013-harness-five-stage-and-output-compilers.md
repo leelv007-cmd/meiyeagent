@@ -12,7 +12,7 @@ Status: accepted (2026-07-24)
 
 **五段状态机（D-033，DBOS 承载 D-041）**：①意图正名（LLM：模糊一句话→结构化任务声明）→②上下文注入（确定性：六维编译→不可变 ContextBundle）→③Brief 编译（LLM：每执行单元完整 brief）→④执行与择优→⑤回装与交付（组装回 ContentPackage revision）。DBOS Transact 为唯一 durable 载体，workflowID=TaskID；不叠第二运行时。
 
-**确定性骨架＋段内智能（D-112）**：五段是 DBOS 确定性状态机；段内为受限 agent loop（控制 LLM 理解/规划/allowlist 内调工具/自检）。阶段分支由 LLM 输出**结构化判断信号**，Workflow 按预置条件边执行转移——LLM 出判断、状态机执行，LLM 永不直接驱动转移。硬编码兜底只保四类底线：忠实性（按 ADR-0018 收窄口径）、权利授权、产品额度、外部发布确认。platform 拆双字段 `contentPackagePlatform × distributionTarget`，用户确认的选择进提交 Body→服务端签名→admission 冻结。
+**确定性骨架＋段内智能（D-112）**：五段是 DBOS 确定性状态机；段内为受限 agent loop（控制 LLM 理解/规划/allowlist 内调工具/自检）。阶段分支由 LLM 输出**结构化判断信号**，Workflow 按预置条件边执行转移——LLM 出判断、状态机执行，LLM 永不直接驱动转移。硬编码兜底只保四类底线：忠实性（按 ADR-0018 收窄口径）、权利授权、产品额度、外部发布确认。platform 拆双字段 `contentPackagePlatform × distributionTarget`，用户确认的选择进提交 Body→服务端签名→admission 冻结。v1 `contentPackagePlatform` 集合＝小红书/抖音/视频号三平台；朋友圈（wechat_moments）＝仅 `distributionTarget`（导出＋assisted 交付，不做平台化变体主体）——D-128。
 
 **四类输出编译器（D-104/D-118）**：定制创作共享稳定 `ContentIntent`（①②段编译产物），随后分流四类编译器，编排分级：
 
