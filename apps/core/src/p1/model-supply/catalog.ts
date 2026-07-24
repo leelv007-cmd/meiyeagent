@@ -10,7 +10,10 @@ import type {
 function canvasCapabilitiesFor(
   deployment: Pick<ModelDeployment, 'apiFamily' | 'catalogModelId'>,
 ): CanvasGenerationCapability[] {
-  if (deployment.catalogModelId.startsWith('llm-')) {
+  if (
+    deployment.catalogModelId.startsWith('llm-') ||
+    deployment.catalogModelId.startsWith('deepseek-v4-')
+  ) {
     return [{
       operation: 'text.respond',
       parameters: ['maxOutputTokens', 'temperature'],
@@ -139,9 +142,21 @@ export interface CatalogRevision {
   reason?: string;
 }
 
-const FORWARD_MIGRATED_MODEL_IDS = new Set(['seedance-1-5-pro']);
+const FORWARD_MIGRATED_MODEL_IDS = new Set([
+  'deepseek-v4-flash',
+  'deepseek-v4-pro',
+  'seedance-1-5-pro',
+]);
 const FORWARD_MIGRATED_DEPLOYMENT_IDS = new Set([
+  'deepseek-v4-flash-direct',
+  'deepseek-v4-pro-direct',
   'seedance-1-5-pro-tuzi-relay',
+]);
+const FORWARD_MIGRATED_PROVIDER_PROFILE_IDS = new Set([
+  'provider-deepseek',
+]);
+const FORWARD_MIGRATED_EXECUTION_CHANNEL_IDS = new Set([
+  'channel-deepseek-direct',
 ]);
 
 export function forwardMigratePublishedCatalogPayload(
@@ -154,6 +169,12 @@ export function forwardMigratePublishedCatalogPayload(
   );
   const publishedDeploymentIds = new Set(
     published.deployments.map((deployment) => deployment.id),
+  );
+  const publishedProviderProfileIds = new Set(
+    published.providerProfiles?.map((profile) => profile.id) ?? [],
+  );
+  const publishedExecutionChannelIds = new Set(
+    published.executionChannels?.map((channel) => channel.id) ?? [],
   );
 
   return {
@@ -194,6 +215,34 @@ export function forwardMigratePublishedCatalogPayload(
           unavailableReason: 'activation_evidence_missing' as const,
         })),
     ],
+    ...(published.providerProfiles && fallback.providerProfiles
+      ? {
+          providerProfiles: [
+            ...structuredClone(published.providerProfiles),
+            ...fallback.providerProfiles
+              .filter(
+                (profile) =>
+                  FORWARD_MIGRATED_PROVIDER_PROFILE_IDS.has(profile.id) &&
+                  !publishedProviderProfileIds.has(profile.id),
+              )
+              .map((profile) => structuredClone(profile)),
+          ],
+        }
+      : {}),
+    ...(published.executionChannels && fallback.executionChannels
+      ? {
+          executionChannels: [
+            ...structuredClone(published.executionChannels),
+            ...fallback.executionChannels
+              .filter(
+                (channel) =>
+                  FORWARD_MIGRATED_EXECUTION_CHANNEL_IDS.has(channel.id) &&
+                  !publishedExecutionChannelIds.has(channel.id),
+              )
+              .map((channel) => structuredClone(channel)),
+          ],
+        }
+      : {}),
   };
 }
 
@@ -336,6 +385,28 @@ export function createDefaultCatalogModels(): CatalogModel[] {
         >
       >
   > = [
+    {
+      id: 'deepseek-v4-pro',
+      displayName: 'DeepSeek V4 Pro',
+      manufacturer: 'DeepSeek',
+      stableModelName: 'deepseek-v4-pro',
+      version: 'v4-pro',
+      modality: 'llm',
+      operations: ['copy.generate', 'copy.adapt', 'text.respond'],
+      capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      qualityRank: 100,
+    },
+    {
+      id: 'deepseek-v4-flash',
+      displayName: 'DeepSeek V4 Flash',
+      manufacturer: 'DeepSeek',
+      stableModelName: 'deepseek-v4-flash',
+      version: 'v4-flash',
+      modality: 'llm',
+      operations: ['copy.generate', 'copy.adapt', 'text.respond'],
+      capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
+      qualityRank: 96,
+    },
     {
       id: 'llm-openai',
       displayName: 'OpenAI Direct',
@@ -540,6 +611,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
 
 export function createDefaultProviderProfiles(): ProviderProfileRevision[] {
   const definitions: Array<[string, string, string]> = [
+    ['deepseek', 'DeepSeek', 'DeepSeek'],
     ['openai', 'OpenAI', 'OpenAI'],
     ['anthropic', 'Anthropic', 'Anthropic'],
     ['google', 'Google', 'Google'],
@@ -573,6 +645,15 @@ export function createDefaultExecutionChannels(): ExecutionChannelRevision[] {
       NonNullable<ModelDeployment['credentialOwner']>,
     ]
   > = [
+    [
+      'deepseek-direct',
+      'provider-deepseek',
+      'DeepSeek',
+      'openai',
+      'direct',
+      'overseas',
+      'platform',
+    ],
     [
       'openai-direct',
       'provider-openai',
@@ -932,6 +1013,30 @@ export function createDefaultDeployments(
       'status' | 'activationEvidence' | 'unavailableReason'
     >
   > = [
+    {
+      id: 'deepseek-v4-pro-direct',
+      catalogModelId: 'deepseek-v4-pro',
+      providerProfileId: 'provider-deepseek',
+      executionChannelId: 'channel-deepseek-direct',
+      apiCounterparty: 'DeepSeek',
+      credentialOwner: 'platform',
+      lifecycleRevision: 'deployment-v1',
+      apiFamily: 'openai',
+      channel: 'direct',
+      region: 'overseas',
+    },
+    {
+      id: 'deepseek-v4-flash-direct',
+      catalogModelId: 'deepseek-v4-flash',
+      providerProfileId: 'provider-deepseek',
+      executionChannelId: 'channel-deepseek-direct',
+      apiCounterparty: 'DeepSeek',
+      credentialOwner: 'platform',
+      lifecycleRevision: 'deployment-v1',
+      apiFamily: 'openai',
+      channel: 'direct',
+      region: 'overseas',
+    },
     {
       id: 'openai-direct-recorded',
       catalogModelId: 'llm-openai',

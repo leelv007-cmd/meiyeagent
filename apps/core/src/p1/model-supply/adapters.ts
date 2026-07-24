@@ -183,6 +183,7 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
     if (request.submission.operation === 'text.respond') {
       return {
         kind: 'completed',
+        providerTaskRef: `${this.catalogModelId}-recorded-${digest(request.jobId).slice(0, 20)}`,
         text: request.submission.prompt,
         providerCost: {
           amount: 0.02,
@@ -194,6 +195,7 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
     if (request.submission.operation === 'copy.adapt') {
       return {
         kind: 'completed',
+        providerTaskRef: `${this.catalogModelId}-recorded-${digest(request.jobId).slice(0, 20)}`,
         platformVariants: {
           xiaohongshu: {
             title: '小红书｜到店体验笔记',
@@ -225,6 +227,7 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
     return {
       kind: 'completed',
       copyCandidates,
+      providerTaskRef: `${this.catalogModelId}-recorded-${digest(request.jobId).slice(0, 20)}`,
       providerCost: {
         amount: 0.02,
         currency: 'USD',
@@ -232,6 +235,16 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
       },
     };
   }
+}
+
+export class DeepSeekProDirectRecordedAdapter extends DirectLlmRecordedAdapter {
+  readonly catalogModelId = 'deepseek-v4-pro';
+  readonly apiFamily = 'openai' as const;
+}
+
+export class DeepSeekFlashDirectRecordedAdapter extends DirectLlmRecordedAdapter {
+  readonly catalogModelId = 'deepseek-v4-flash';
+  readonly apiFamily = 'openai' as const;
 }
 
 export class OpenAiDirectRecordedAdapter extends DirectLlmRecordedAdapter {
@@ -254,7 +267,7 @@ export class CustomDirectRecordedAdapter extends DirectLlmRecordedAdapter {
   readonly apiFamily = 'custom' as const;
 }
 
-class FixtureCanvasAgentRecordedAdapter extends OpenAiDirectRecordedAdapter {
+class FixtureCanvasAgentRecordedAdapter extends DeepSeekProDirectRecordedAdapter {
   override async execute(request: ProviderExecutionRequest) {
     const plan =
       request.submission.operation === 'text.respond'
@@ -560,6 +573,8 @@ import {
 
 export function defaultRecordedAdapters(): ProviderExecutionPort[] {
   return [
+    new DeepSeekProDirectRecordedAdapter(),
+    new DeepSeekFlashDirectRecordedAdapter(),
     new OpenAiDirectRecordedAdapter(),
     new AnthropicDirectRecordedAdapter(),
     new GeminiDirectRecordedAdapter(),
@@ -959,7 +974,7 @@ export function createModelExecutionRuntime(
     const fixture = new RecordedAdapterRouter([
       new FixtureCanvasAgentRecordedAdapter(),
       ...defaultRecordedAdapters().filter(
-        (adapter) => !(adapter instanceof OpenAiDirectRecordedAdapter),
+        (adapter) => !(adapter instanceof DeepSeekProDirectRecordedAdapter),
       ),
     ]);
     return withConfiguredMedia(

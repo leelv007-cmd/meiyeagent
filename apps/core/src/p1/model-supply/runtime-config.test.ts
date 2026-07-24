@@ -335,6 +335,24 @@ test('direct runtime activates only one explicitly configured LLM catalog model'
   );
 });
 
+test('DeepSeek direct defaults consume the finalized credential key', () => {
+  const direct = modelRuntimeAssemblyFromEnv({
+    DEEPSEEK_API_KEY: 'deepseek-configured-secret',
+    MODEL_DIRECT_CATALOG_MODEL_ID: 'deepseek-v4-pro',
+    MODEL_DIRECT_CREDENTIAL_VERSION: 'deepseek-key-v1',
+    MODEL_DIRECT_ENDPOINT_REVISION: 'deepseek-openai-compatible-v1',
+    MODEL_DIRECT_INPUT_COST_PER_MILLION: '1',
+    MODEL_DIRECT_OUTPUT_COST_PER_MILLION: '2',
+    MODEL_EXECUTION_MODE: 'direct',
+  });
+
+  const model = direct.models.find(
+    (candidate) => candidate.id === 'deepseek-v4-pro',
+  );
+  assert.equal(model?.stableModelName, 'deepseek-v4-pro');
+  assert.equal(model?.version, 'deepseek-openai-compatible-v1');
+});
+
 test('runtime assembly warns only when live activation evidence has configuration drift', () => {
   const configured = {
     MODEL_DIRECT_API_KEY: 'configured-secret',

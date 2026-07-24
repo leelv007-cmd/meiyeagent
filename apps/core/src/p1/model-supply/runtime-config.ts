@@ -637,10 +637,18 @@ function directOptions(env: NodeJS.ProcessEnv, models: CatalogModel[]) {
     );
   }
   const customProtocol = parseCustomProtocol(env, apiFamily);
+  const isDeepSeek = catalogModelId.startsWith('deepseek-v4-');
   return {
     apiFamily,
-    apiKey: required(env.MODEL_DIRECT_API_KEY, 'MODEL_DIRECT_API_KEY'),
-    baseUrl: required(env.MODEL_DIRECT_BASE_URL, 'MODEL_DIRECT_BASE_URL'),
+    apiKey: isDeepSeek
+      ? required(
+          env.DEEPSEEK_API_KEY || env.MODEL_DIRECT_API_KEY,
+          'DEEPSEEK_API_KEY',
+        )
+      : required(env.MODEL_DIRECT_API_KEY, 'MODEL_DIRECT_API_KEY'),
+    baseUrl: isDeepSeek
+      ? 'https://api.deepseek.com'
+      : required(env.MODEL_DIRECT_BASE_URL, 'MODEL_DIRECT_BASE_URL'),
     catalogModelId,
     credentialVersion: required(
       env.MODEL_DIRECT_CREDENTIAL_VERSION,
@@ -654,11 +662,20 @@ function directOptions(env: NodeJS.ProcessEnv, models: CatalogModel[]) {
       env.MODEL_DIRECT_INPUT_COST_PER_MILLION,
       'MODEL_DIRECT_INPUT_COST_PER_MILLION'
     ),
-    model: required(env.MODEL_DIRECT_MODEL, 'MODEL_DIRECT_MODEL'),
+    model: isDeepSeek
+      ? catalogModelId
+      : required(env.MODEL_DIRECT_MODEL, 'MODEL_DIRECT_MODEL'),
     outputCostPerMillion: nonNegativeNumber(
       env.MODEL_DIRECT_OUTPUT_COST_PER_MILLION,
       'MODEL_DIRECT_OUTPUT_COST_PER_MILLION'
     ),
+    ...(isDeepSeek
+      ? {
+          maxOutputTokens: 384_000,
+          reasoningEffort: 'high' as const,
+          thinking: { type: 'enabled' as const },
+        }
+      : {}),
     ...(customProtocol ? { customProtocol } : {}),
   };
 }

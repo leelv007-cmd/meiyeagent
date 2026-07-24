@@ -918,7 +918,7 @@ await registerDouyinPublishPollingSchedule(jobRuntime, {
 const createCopyProviders = (bridge: ProductCopyProviderBridge) => ({
   domestic: new ModelSupplyProductCopyProvider(
     bridge,
-    { catalogModelId: 'llm-domestic', mode: 'fixed' },
+    { catalogModelId: 'deepseek-v4-pro', mode: 'fixed' },
     'domestic',
     resolveCopySelection,
     resolveCopyPrompt
