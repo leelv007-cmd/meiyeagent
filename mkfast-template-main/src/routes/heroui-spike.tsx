@@ -7,12 +7,14 @@
  *
  *   pnpm --filter @meiye/web dev → /heroui-spike
  */
+import { useState } from 'react';
 import {
   createFileRoute,
   Link,
   notFound,
   Outlet,
 } from '@tanstack/react-router';
+import { Button, Modal, Popover, Tooltip } from '@heroui/react';
 import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { useTheme } from '@/components/theme/theme-provider';
 
@@ -52,12 +54,79 @@ function HeroUiSpikeLayout() {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <PortalProbe />
           <ThemeToggle />
         </div>
       </header>
       <Outlet />
     </div>
+  );
+}
+
+/**
+ * Portal token probe — the acceptance surface for C-02 blocker #2.
+ *
+ * modal / popover / tooltip all render through React Aria's <Overlay>, which
+ * portals to document.body: they leave the .meiye-heroui-glass subtree, so they
+ * are the case that decides whether the DESIGN.md token bridge actually reaches
+ * every floating surface. Opening all three at once lets one capture read the
+ * computed tokens off each of them and diff them against the shell.
+ */
+function PortalProbe() {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="heroui-spike-portal-probe"
+        className="meiye-glass-piece text-foreground rounded-full px-4 py-1.5 text-xs"
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        浮层探针
+      </button>
+
+      <Modal isOpen={isOpen} onOpenChange={setIsOpen}>
+        <Modal.Backdrop isDismissable={false}>
+          <Modal.Container size="sm">
+            <Modal.Dialog data-testid="heroui-spike-portal-modal">
+              <Modal.Header>
+                <Modal.Heading>浮层 token 探针</Modal.Heading>
+              </Modal.Header>
+              <Modal.Body>
+                <p className="text-muted text-sm">
+                  这张卡片挂在 document.body 上，用来回读 DESIGN.md token。
+                </p>
+              </Modal.Body>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
+
+      <Popover isOpen={isOpen} onOpenChange={setIsOpen}>
+        <Popover.Trigger>
+          <Button size="sm" variant="ghost">
+            气泡
+          </Button>
+        </Popover.Trigger>
+        <Popover.Content data-testid="heroui-spike-portal-popover">
+          <Popover.Dialog aria-label="气泡浮层探针">
+            <span className="text-foreground text-sm">气泡浮层</span>
+          </Popover.Dialog>
+        </Popover.Content>
+      </Popover>
+
+      <Tooltip isOpen={isOpen} onOpenChange={setIsOpen}>
+        <Tooltip.Trigger>
+          <Button size="sm" variant="ghost">
+            提示
+          </Button>
+        </Tooltip.Trigger>
+        <Tooltip.Content data-testid="heroui-spike-portal-tooltip">
+          提示浮层
+        </Tooltip.Content>
+      </Tooltip>
+    </>
   );
 }
 

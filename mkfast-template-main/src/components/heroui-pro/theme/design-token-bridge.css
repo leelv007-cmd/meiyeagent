@@ -12,9 +12,19 @@
  * DESIGN.md by src/components/heroui-pro/design-token-bridge.test.ts; drift in
  * either direction fails that test rather than silently shipping.
  *
- * Scoped with `:has()` to the shell element so nothing here reaches a page that
- * does not render HeroUI Pro. Declared unlayered so it wins over
- * @heroui/styles (@layer base) and the vendored Glass theme (@layer theme).
+ * The selector's *subject is `html`* and `:has()` is only its condition — that
+ * split is load-bearing, not incidental. Gating on the shell keeps these values
+ * off pages that do not render HeroUI Pro, while declaring them on the root
+ * element means they inherit into `document.body`, which is where React Aria
+ * portals modal / popover / tooltip overlays. Re-scoping this to the shell
+ * subtree (`.meiye-heroui-glass { … }`) would look equivalent and silently
+ * strand every floating surface on HeroUI's own defaults; C-02 keeps a
+ * regression assertion on it in design-token-bridge.test.ts, and reads the
+ * tokens back off live portals in
+ * .scratch/c02-reshell-prereqs-2026-07-25/portal-tokens-after.json.
+ *
+ * Declared unlayered so it wins over @heroui/styles (@layer base) and the
+ * vendored Glass theme (@layer theme).
  */
 
 html:has(.meiye-heroui-glass) {
