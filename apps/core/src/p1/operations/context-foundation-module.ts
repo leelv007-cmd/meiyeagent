@@ -28,6 +28,7 @@ const appendFactSchema = z
     source: storeFactSourceSchema,
     effectiveFrom: timestampSchema,
     expiresAt: timestampSchema.nullable(),
+    revisionKind: z.literal('revocation').optional(),
     expectedRevision: z.number().int().nonnegative(),
   })
   .strict();
@@ -163,6 +164,15 @@ export class ContextFoundationModule implements P1OperationModule {
           pool: 'store_personal' as const,
           sourceRef: `store_fact:${fact.factId}:${fact.revision}`,
           factRevision: { factId: fact.factId, revision: fact.revision },
+          factSnapshot: {
+            factId: fact.factId,
+            kind: fact.kind,
+            revision: fact.revision,
+            source: fact.source,
+            effectiveFrom: fact.effectiveFrom,
+            expiresAt: fact.expiresAt,
+            ...(fact.revisionKind ? { revisionKind: fact.revisionKind } : {}),
+          },
         })),
       ],
     });

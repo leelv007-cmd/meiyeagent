@@ -257,6 +257,15 @@ export class LedgerBackedHarnessContextPort
         pool: 'store_personal' as const,
         sourceRef: factReference(fact.factId, fact.revision),
         factRevision: { factId: fact.factId, revision: fact.revision },
+        factSnapshot: {
+          factId: fact.factId,
+          kind: fact.kind,
+          revision: fact.revision,
+          source: fact.source,
+          effectiveFrom: fact.effectiveFrom,
+          expiresAt: fact.expiresAt,
+          ...(fact.revisionKind ? { revisionKind: fact.revisionKind } : {}),
+        },
       })),
     ];
     const compiled = compileContextBundle({

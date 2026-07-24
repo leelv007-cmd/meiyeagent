@@ -48,7 +48,20 @@ test('six-dimension priority resolution is deterministic and protects facts from
     }),
   ]);
   contributions.push(
-    contribution(),
+    contribution({
+      factSnapshot: {
+        factId: 'offer-price',
+        kind: 'price',
+        revision: 2,
+        source: {
+          kind: 'user_confirmation',
+          referenceId: 'confirmation-2',
+          capturedAt: '2026-07-19T01:00:00.000Z',
+        },
+        effectiveFrom: '2026-07-19T01:00:00.000Z',
+        expiresAt: null,
+      },
+    }),
     contribution({
       value: { amount: 99, currency: 'CNY' },
       layer: 'industry_recipe',
@@ -81,6 +94,11 @@ test('six-dimension priority resolution is deterministic and protects facts from
   assert.deepEqual(
     compiled.payload.dimensions.store_facts_assets['offer.price']?.value,
     { amount: 239, currency: 'CNY' },
+  );
+  assert.equal(
+    compiled.payload.dimensions.store_facts_assets['offer.price']?.factSnapshot
+      ?.kind,
+    'price',
   );
 });
 
@@ -125,6 +143,57 @@ test('semantic object key and contribution order differences produce the same ca
 
   assert.equal(a.hash, b.hash);
   assert.deepEqual(a.payload, b.payload);
+});
+
+test('snapshot selection keeps the latest effective fact for the same kind and key', () => {
+  const older = contribution({
+    sourceRef: 'store_fact:a-older:1',
+    value: { amount: 199, currency: 'CNY' },
+    factRevision: { factId: 'a-older', revision: 1 },
+    factSnapshot: {
+      factId: 'a-older',
+      kind: 'price',
+      revision: 1,
+      source: {
+        kind: 'user_confirmation',
+        referenceId: 'confirmation-older',
+        capturedAt: '2026-07-18T01:00:00.000Z',
+      },
+      effectiveFrom: '2026-07-18T01:00:00.000Z',
+      expiresAt: null,
+    },
+  });
+  const newer = contribution({
+    sourceRef: 'store_fact:z-newer:1',
+    value: { amount: 239, currency: 'CNY' },
+    factRevision: { factId: 'z-newer', revision: 1 },
+    factSnapshot: {
+      factId: 'z-newer',
+      kind: 'price',
+      revision: 1,
+      source: {
+        kind: 'user_confirmation',
+        referenceId: 'confirmation-newer',
+        capturedAt: '2026-07-19T01:00:00.000Z',
+      },
+      effectiveFrom: '2026-07-19T01:00:00.000Z',
+      expiresAt: null,
+    },
+  });
+
+  const compiled = compileContextBundle({
+    workspaceId: 'workspace-a',
+    taskId: 'task-a',
+    sourceRevisions: revisions,
+    contributions: [older, newer],
+  });
+  assert.deepEqual(
+    compiled.payload.dimensions.store_facts_assets['offer.price']?.value,
+    { amount: 239, currency: 'CNY' },
+  );
+  assert.deepEqual(compiled.payload.referencedFactRevisions, [
+    { factId: 'z-newer', revision: 1 },
+  ]);
 });
 
 test('unavailable or unevidenced external signals cannot enter the bundle', () => {

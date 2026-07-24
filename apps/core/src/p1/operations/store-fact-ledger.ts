@@ -22,6 +22,7 @@ export interface AppendStoreFactInput {
   source: StoreFact['source'];
   effectiveFrom: string;
   expiresAt: string | null;
+  revisionKind?: StoreFact['revisionKind'];
   recordedAt: string;
   recordedBy: string;
   expectedRevision: number;
@@ -83,6 +84,7 @@ export function isStoreFactActive(fact: StoreFact, at: string) {
   const timestamp = Date.parse(at);
   return (
     Date.parse(fact.effectiveFrom) <= timestamp &&
+    fact.revisionKind !== 'revocation' &&
     !isStoreFactExpired(fact, at)
   );
 }
