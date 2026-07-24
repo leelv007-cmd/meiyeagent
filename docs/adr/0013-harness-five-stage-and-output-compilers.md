@@ -27,7 +27,7 @@ Status: accepted (2026-07-24)
 
 **④段择优收窄（D-113）**：默认交付 1 个主候选，不做默认抽卡；「择」仅发生在用户品味选择与质量门失败的有界重试；内部多候选直接侵蚀毛利（D-109 内部淘汰不重复扣用户）。
 
-**默认 LLM 供应商（D-129）**：文案生成与全部文本判断位（①③段/结构化判断信号/事实槽满足度/评估回炉）默认＝**DeepSeek**，OpenAI 兼容接口直走 AI SDK 现行 API（D-035）；需视觉输入的判断位除外，按 catalog 多模态位配置。默认型号＝deepseek-v4-pro（v4-flash 轻档备选），supply-registry catalog 运营参数后台可换（D-044）；接入细节（参数/限流/错误码/缓存/思考模式）以 `references/analysis/deepseek-api-docs-2026-07-24/` 官方文档镜像为准，不凭模型记忆。
+**默认 LLM 供应商（D-129）**：文案生成与全部文本判断位（①③段/结构化判断信号/事实槽满足度/评估回炉）默认＝**DeepSeek**，OpenAI 兼容接口直走 AI SDK 现行 API（D-035）；需视觉输入的判断位除外，按 catalog 多模态位配置。默认型号＝deepseek-v4-pro（v4-flash 轻档备选），supply-registry catalog 运营参数后台可换（D-044）；接入细节（参数/限流/错误码/缓存/思考模式）以 `references/analysis/deepseek-api-docs-2026-07-24/` 官方文档镜像为准，不凭模型记忆。图/视频默认型号＝seedream-5-pro 系/seedance-2 系，供给通道默认＝火山方舟直连（tuzi relay 容灾备选），同为 catalog 运营参数；exactText 校验＝生成链既有多模态模型 VLM 校验，不引独立 OCR 新件（D-129 补充）。
 
 ## 实施红线
 
