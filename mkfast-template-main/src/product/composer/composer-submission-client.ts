@@ -25,6 +25,7 @@ export const composerSubmissionBodySchema = z
     catalogModel: revisionReferenceSchema,
     identity: revisionReferenceSchema.optional(),
     idempotencyKey: identifierSchema,
+    creationMode: z.enum(['customized', 'free']),
     intent: z.string().trim().min(1).max(4_000),
     quote: revisionReferenceSchema,
     recipe: revisionReferenceSchema,

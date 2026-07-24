@@ -702,6 +702,7 @@ export function ComposerHome({
             }
           : {}),
         idempotencyKey: `composer-submit:${sessionIdRef.current}:${input.quote.revision}`,
+        creationMode: 'customized',
         intent: input.intent,
         quote: {
           id: input.quote.quoteId,

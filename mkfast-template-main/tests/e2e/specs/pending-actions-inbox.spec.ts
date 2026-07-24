@@ -104,6 +104,7 @@ async function submitHarnessTask(
         packageId,
         expectedRevision: 0,
         workflowRevision: 1,
+        creationMode: 'customized',
         rawInput,
         intent: {
           context: {

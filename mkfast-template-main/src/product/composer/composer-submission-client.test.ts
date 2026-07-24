@@ -11,6 +11,7 @@ function submissionBody() {
     briefConfirmation: { id: 'brief-confirm-1', revision: 'draft-r3' },
     briefContext: { id: 'brief-context-1', revision: 3 },
     catalogModel: { id: 'catalog-copy-1', revision: 'catalog-r4' },
+    creationMode: 'customized' as const,
     identity: { id: 'identity-brand', revision: '2' },
     idempotencyKey: 'composer-submit-1',
     intent: '写一条夏日护理预约文案',
