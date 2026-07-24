@@ -1,11 +1,13 @@
-import { creativeContentModuleIds, type CreativeOperation } from "@meiye/contracts";
+import {
+	creativeContentModuleIds,
+	type CreativeOperation,
+} from "@meiye/contracts";
 
 import type { BriefSubmissionGate } from "../creation-experience/brief-submission-gate.js";
 import { briefSourceRevisionId } from "../creation-experience/postgres-brief-revision-context.js";
 import type { BriefConfirmationRepository } from "../creation-experience/brief-confirmation-repository.js";
 import type { CreationExperienceCatalogRepository } from "../creation-experience/memory-repository.js";
 import { P1DomainError, type RouteSnapshot } from "../foundation/domain.js";
-import type { FoundationRepository } from "../foundation/ports.js";
 import type { ReferenceAssetResolverPort } from "../model-supply/reference-asset-resolver.js";
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
 import type { MarketingIdentityRepository } from "../operations/marketing-identity.js";
@@ -20,13 +22,11 @@ import type {
 	ComposerSubmissionRequest,
 	CreationExecutionSnapshot,
 } from "./creation-execution-snapshot.js";
+import type { ComposerRouteResolverPort } from "./composer-route-resolver.js";
 import type { CreationSubmissionAdmissionPort } from "./submission-coordinator.js";
 
 export interface ComposerSourceContentPackageReader {
-	get(input: {
-		packageId: string;
-		workspaceId: string;
-	}): Promise<{
+	get(input: { packageId: string; workspaceId: string }): Promise<{
 		id: string;
 		revision: string | number;
 		rightsState: "authorized" | "revoked";
@@ -55,7 +55,7 @@ export interface ComposerSubmissionAdmissionDependencies {
 	identities: Pick<MarketingIdentityRepository, "listActive">;
 	quotes: Pick<ProductBillingApplicationPort, "getQuote">;
 	rights: ContentPackageRightsResolverPort;
-	routes: Pick<FoundationRepository, "getRouteSnapshot">;
+	routeResolver: ComposerRouteResolverPort;
 	sourcePackages: ComposerSourceContentPackageReader;
 	now?: () => string;
 }
@@ -82,7 +82,9 @@ export class CapabilityHotAssemblyComposerReadiness
 			(candidate) => candidate.catalogModelId === input.catalogModel.id,
 		);
 		if (candidates.length === 0) {
-			throw invalid("Route snapshot has no candidate for the selected catalog model.");
+			throw invalid(
+				"Route snapshot has no candidate for the selected catalog model.",
+			);
 		}
 		const checked = await Promise.all(
 			candidates.map(async (candidate) => {
@@ -101,7 +103,9 @@ export class CapabilityHotAssemblyComposerReadiness
 			}),
 		);
 		if (!checked.some((decision) => decision?.admitted)) {
-			throw invalid("No route candidate currently has an accepting capability channel.");
+			throw invalid(
+				"No route candidate currently has an accepting capability channel.",
+			);
 		}
 	}
 }
@@ -116,7 +120,9 @@ export class ComposerSubmissionAdmissionGate
 {
 	private readonly now: () => string;
 
-	constructor(private readonly dependencies: ComposerSubmissionAdmissionDependencies) {
+	constructor(
+		private readonly dependencies: ComposerSubmissionAdmissionDependencies,
+	) {
 		this.now = dependencies.now ?? (() => new Date().toISOString());
 	}
 
@@ -130,28 +136,24 @@ export class ComposerSubmissionAdmissionGate
 			recipe.revisionId !== input.recipe.revision ||
 			recipe.status !== "published"
 		) {
-			throw invalid("Recipe revision is missing, unpublished, or does not match this submission.");
+			throw invalid(
+				"Recipe revision is missing, unpublished, or does not match this submission.",
+			);
 		}
 		const recipeLens = composerLensForRecipe(recipe.lensId);
-		if (
-			!recipeLens ||
-			input.lens !== recipeLens ||
-			recipe.targetWorkspaceKind !== recipe.lensId
-		) {
-			throw invalid("Recipe is not published for the selected Composer modality.");
+		if (!recipeLens || recipe.targetWorkspaceKind !== recipe.lensId) {
+			throw invalid(
+				"Recipe is not published for the selected Composer modality.",
+			);
 		}
 		const recipeBinding = deriveRecipeBinding(recipe);
-		if (recipe.modelPolicy.mode !== input.modelPolicy.mode) {
-			throw invalid("Recipe model policy mode no longer matches the submission.");
-		}
-		if (recipeLens !== "copy" && recipe.modelPolicy.mode !== "fixed") {
-			throw invalid("Image and video Composer recipes require a fixed model policy.");
-		}
 		if (
-			input.modelPolicy.mode === "fixed" &&
+			recipe.modelPolicy.mode === "fixed" &&
 			recipe.modelPolicy.catalogModelId !== input.catalogModel.id
 		) {
-			throw invalid("Recipe fixed model policy no longer matches the selected catalog model.");
+			throw invalid(
+				"Recipe fixed model policy no longer matches the selected catalog model.",
+			);
 		}
 
 		const surface = await this.dependencies.catalog.getSurfaceByRevisionId(
@@ -163,7 +165,9 @@ export class ComposerSubmissionAdmissionGate
 			surface.revisionId !== input.surface.revision ||
 			surface.status !== "published"
 		) {
-			throw invalid("Surface revision is missing, unpublished, or does not match this submission.");
+			throw invalid(
+				"Surface revision is missing, unpublished, or does not match this submission.",
+			);
 		}
 		if (
 			!surface.recipeRefs.some(
@@ -173,26 +177,9 @@ export class ComposerSubmissionAdmissionGate
 					reference.recipeRevisionId === recipe.revisionId,
 			)
 		) {
-			throw invalid("Surface does not expose the selected published Composer recipe.");
-		}
-
-		const route = await this.dependencies.routes.getRouteSnapshot(
-			input.workspaceId,
-			input.route.id,
-		);
-		if (
-			!route ||
-			route.workspaceId !== input.workspaceId ||
-			route.id !== input.route.id ||
-			route.catalogRevision !== input.route.revision ||
-			route.catalogRevision !== input.catalogModel.revision ||
-			route.requestedCatalogModelId !== input.catalogModel.id ||
-			!selectionModeMatches(input.modelPolicy.mode, route.selectionMode) ||
-			!route.allowedCandidates.some(
-				(candidate) => candidate.catalogModelId === input.catalogModel.id,
-			)
-		) {
-			throw invalid("Route snapshot is stale, cross-workspace, or incompatible with the selected model.");
+			throw invalid(
+				"Surface does not expose the selected published Composer recipe.",
+			);
 		}
 
 		const quote = await this.dependencies.quotes.getQuote(
@@ -205,11 +192,37 @@ export class ComposerSubmissionAdmissionGate
 			quote.revision !== input.quote.revision ||
 			quote.catalogModelId !== input.catalogModel.id ||
 			quote.catalogModelRevision !== input.catalogModel.revision ||
-			quote.routeSnapshotRef !== route.id ||
-			(quote.lifecycleStatus !== "confirmed" && quote.lifecycleStatus !== "reserved") ||
+			(quote.lifecycleStatus !== "confirmed" &&
+				quote.lifecycleStatus !== "reserved") ||
 			!quote.taskId?.trim()
 		) {
-			throw invalid("A current, explicitly confirmed ProductQuote bound to a Task is required.");
+			throw invalid(
+				"A current, explicitly confirmed ProductQuote bound to a Task is required.",
+			);
+		}
+
+		const route = await this.dependencies.routeResolver.resolve({
+			catalogModel: input.catalogModel,
+			operation: operationForLens(recipeBinding.lens),
+			...(quote.routeSnapshotRef
+				? { routeSnapshotId: quote.routeSnapshotRef }
+				: {}),
+			workspaceId: input.workspaceId,
+		});
+		if (
+			!route ||
+			route.workspaceId !== input.workspaceId ||
+			(quote.routeSnapshotRef && route.id !== quote.routeSnapshotRef) ||
+			route.catalogRevision !== input.catalogModel.revision ||
+			route.requestedCatalogModelId !== input.catalogModel.id ||
+			route.selectionMode !== "fixed" ||
+			!route.allowedCandidates.some(
+				(candidate) => candidate.catalogModelId === input.catalogModel.id,
+			)
+		) {
+			throw invalid(
+				"Route snapshot is stale, cross-workspace, or incompatible with the selected model.",
+			);
 		}
 
 		const activeIdentities = await this.dependencies.identities.listActive(
@@ -223,7 +236,9 @@ export class ComposerSubmissionAdmissionGate
 					String(identity.version) === input.identity.revision,
 			)
 		) {
-			throw invalid("Marketing identity is missing, inactive, or at a different revision.");
+			throw invalid(
+				"Marketing identity is missing, inactive, or at a different revision.",
+			);
 		}
 
 		const assetIds = input.sources.assets.map((asset) => asset.id);
@@ -237,7 +252,9 @@ export class ComposerSubmissionAdmissionGate
 		if (resolvedAssets.length !== assetIds.length) {
 			throw invalid("Source asset resolution returned an incomplete result.");
 		}
-		const byAssetId = new Map(resolvedAssets.map((asset) => [asset.assetId, asset]));
+		const byAssetId = new Map(
+			resolvedAssets.map((asset) => [asset.assetId, asset]),
+		);
 		for (const source of input.sources.assets) {
 			const resolved = byAssetId.get(source.id);
 			if (
@@ -245,7 +262,9 @@ export class ComposerSubmissionAdmissionGate
 				resolved.kind !== "resolved" ||
 				resolved.sha256 !== source.revision
 			) {
-				throw invalid("A source asset is missing, unreadable, unauthorized, or at a different revision.");
+				throw invalid(
+					"A source asset is missing, unreadable, unauthorized, or at a different revision.",
+				);
 			}
 		}
 
@@ -258,7 +277,9 @@ export class ComposerSubmissionAdmissionGate
 			rights.unauthorizedAssetIds.length > 0 ||
 			assetIds.some((assetId) => !knownAssetIds.has(assetId))
 		) {
-			throw invalid("Every source asset must be known and authorized in this workspace.");
+			throw invalid(
+				"Every source asset must be known and authorized in this workspace.",
+			);
 		}
 
 		let sourcePackage: Awaited<
@@ -278,39 +299,56 @@ export class ComposerSubmissionAdmissionGate
 					sourcePackage.status !== "review_ready") ||
 				String(sourcePackage.revision) !== input.sources.contentPackage.revision
 			) {
-				throw invalid("Source ContentPackage is missing, cross-workspace, or at a different revision.");
+				throw invalid(
+					"Source ContentPackage is missing, cross-workspace, or at a different revision.",
+				);
 			}
 		}
 
 		assertSourceRequirements({
 			assetContentTypes: resolvedAssets
-				.filter((asset): asset is Extract<(typeof resolvedAssets)[number], { kind: "resolved" }> =>
-					asset.kind === "resolved",
+				.filter(
+					(
+						asset,
+					): asset is Extract<
+						(typeof resolvedAssets)[number],
+						{ kind: "resolved" }
+					> => asset.kind === "resolved",
 				)
 				.map((asset) => asset.contentType),
 			hasContentPackage: Boolean(sourcePackage),
 			requirements: recipe.sourceRequirements,
 		});
 
-		const confirmation = await this.dependencies.briefConfirmations.getBriefConfirmation(
-			input.workspaceId,
-			input.briefConfirmation.id,
-		);
 		const sourceIds = [
 			...assetIds,
-			...(input.sources.contentPackage ? [input.sources.contentPackage.id] : []),
+			...(input.sources.contentPackage
+				? [input.sources.contentPackage.id]
+				: []),
 		];
-		if (
-			!confirmation ||
-			confirmation.boundRevisions.draftRevisionId !== input.briefConfirmation.revision ||
-			confirmation.boundRevisions.recipeRevisionId !== recipe.revisionId ||
-			confirmation.boundRevisions.surfaceRevisionId !== surface.revisionId ||
-			confirmation.boundRevisions.modelRevisionId !== input.catalogModel.revision ||
-			confirmation.boundRevisions.quoteRevisionId !== quote.revision ||
-			confirmation.boundRevisions.sourceRevisionId !== briefSourceRevisionId(sourceIds) ||
-			confirmation.boundRevisions.lensId !== recipe.lensId
-		) {
-			throw invalid("Durable Brief confirmation is missing or does not bind these exact submission facts.");
+		if (input.briefConfirmation) {
+			const confirmation =
+				await this.dependencies.briefConfirmations.getBriefConfirmation(
+					input.workspaceId,
+					input.briefConfirmation.id,
+				);
+			if (
+				!confirmation ||
+				confirmation.boundRevisions.draftRevisionId !==
+					input.briefConfirmation.revision ||
+				confirmation.boundRevisions.recipeRevisionId !== recipe.revisionId ||
+				confirmation.boundRevisions.surfaceRevisionId !== surface.revisionId ||
+				confirmation.boundRevisions.modelRevisionId !==
+					input.catalogModel.revision ||
+				confirmation.boundRevisions.quoteRevisionId !== quote.revision ||
+				confirmation.boundRevisions.sourceRevisionId !==
+					briefSourceRevisionId(sourceIds) ||
+				confirmation.boundRevisions.lensId !== recipe.lensId
+			) {
+				throw invalid(
+					"Durable Brief confirmation is missing or does not bind these exact submission facts.",
+				);
+			}
 		}
 
 		const deliverable = recipeBinding.deliverables[0]!;
@@ -318,7 +356,9 @@ export class ComposerSubmissionAdmissionGate
 			...(deliverable.aspectRatio
 				? { aspectRatio: deliverable.aspectRatio }
 				: {}),
-			briefConfirmationId: input.briefConfirmation.id,
+			...(input.briefConfirmation
+				? { briefConfirmationId: input.briefConfirmation.id }
+				: {}),
 			briefContextId: input.briefContext.id,
 			catalogModelId: input.catalogModel.id,
 			catalogRevision: input.catalogModel.revision,
@@ -341,10 +381,14 @@ export class ComposerSubmissionAdmissionGate
 		return {
 			modelPolicy: {
 				id: `recipe-model-policy:${recipe.recipeId}`,
-				mode: recipe.modelPolicy.mode,
+				mode: "fixed" as const,
 				revision: recipe.revisionId,
 			},
 			recipeBinding,
+			route: {
+				id: route.id,
+				revision: route.catalogRevision,
+			},
 			rights: {
 				revision: `rights:${fingerprintValue(
 					[
@@ -355,12 +399,12 @@ export class ComposerSubmissionAdmissionGate
 						})),
 						...(input.sources.contentPackage
 							? [
-								{
-									id: input.sources.contentPackage.id,
-									revision: input.sources.contentPackage.revision,
-									type: "content_package",
-								},
-							]
+									{
+										id: input.sources.contentPackage.id,
+										revision: input.sources.contentPackage.revision,
+										type: "content_package",
+									},
+								]
 							: []),
 					].sort((left, right) => left.id.localeCompare(right.id)),
 				)}`,
@@ -401,31 +445,48 @@ function deriveRecipeBinding(recipe: {
 		platform !== "douyin" &&
 		platform !== "video_account"
 	) {
-		throw invalid("Published Recipe must declare a supported delivery platform.");
+		throw invalid(
+			"Published Recipe must declare a supported delivery platform.",
+		);
 	}
 	if (!recipe.delivery.deliverableKind?.trim()) {
 		throw invalid("Published Recipe must declare its delivery kind.");
 	}
 	const quantity = recipe.delivery.quantity;
-	if (!Number.isInteger(quantity) || !quantity || quantity < 1 || quantity > 100) {
+	if (
+		!Number.isInteger(quantity) ||
+		!quantity ||
+		quantity < 1 ||
+		quantity > 100
+	) {
 		throw invalid("Published Recipe must declare a valid delivery quantity.");
 	}
 	const modules = recipe.contextPatches.contentModules;
 	if (
-		!Array.isArray(modules) ||
-		modules.length === 0 ||
-		modules.length > creativeContentModuleIds.length ||
-		modules.some(
-			(module) =>
-				typeof module !== "string" ||
-				!creativeContentModuleIds.includes(
-					module as (typeof creativeContentModuleIds)[number],
-				),
-		) ||
-		new Set(modules).size !== modules.length
+		modules !== undefined &&
+		(!Array.isArray(modules) ||
+			modules.length === 0 ||
+			modules.length > creativeContentModuleIds.length ||
+			modules.some(
+				(module) =>
+					typeof module !== "string" ||
+					!creativeContentModuleIds.includes(
+						module as (typeof creativeContentModuleIds)[number],
+					),
+			) ||
+			new Set(modules).size !== modules.length)
 	) {
-		throw invalid("Published Recipe must declare unique supported content modules.");
+		throw invalid(
+			"Published Recipe must declare unique supported content modules.",
+		);
 	}
+	const contentModules =
+		modules ??
+		(lens === "copy"
+			? ["store_intro"]
+			: lens === "image"
+				? ["social_cover"]
+				: ["shooting_checklist"]);
 	const aspectRatio = recipe.delivery.aspectRatio;
 	if (
 		aspectRatio !== undefined &&
@@ -441,12 +502,16 @@ function deriveRecipeBinding(recipe: {
 	const durationSeconds = recipe.delivery.durationSeconds;
 	if (
 		lens === "video" &&
-		(!Number.isInteger(durationSeconds) || !durationSeconds || durationSeconds < 1 || durationSeconds > 3_600)
+		(!Number.isInteger(durationSeconds) ||
+			!durationSeconds ||
+			durationSeconds < 1 ||
+			durationSeconds > 3_600)
 	) {
 		throw invalid("Published video Recipe must declare a valid duration.");
 	}
 	return {
-		contentModules: modules as CreationExecutionSnapshot["contentModules"],
+		contentModules:
+			contentModules as CreationExecutionSnapshot["contentModules"],
 		deliverables: [
 			{
 				id: `recipe-deliverable:${recipe.revisionId}`,
@@ -470,16 +535,6 @@ function operationForLens(
 	return "video.generate";
 }
 
-function selectionModeMatches(
-	modelPolicyMode: "auto" | "fixed",
-	routeSelectionMode: RouteSnapshot["selectionMode"],
-) {
-	return (
-		(modelPolicyMode === "fixed" && routeSelectionMode === "fixed") ||
-		(modelPolicyMode === "auto" && routeSelectionMode === "llm_auto")
-	);
-}
-
 function assertSourceRequirements(input: {
 	assetContentTypes: string[];
 	hasContentPackage: boolean;
@@ -487,9 +542,14 @@ function assertSourceRequirements(input: {
 }) {
 	for (const requirement of input.requirements) {
 		if (!requirement.required) continue;
-		const kinds = requirement.kinds?.map((kind) => kind.trim().toLowerCase()).filter(Boolean) ?? [];
+		const kinds =
+			requirement.kinds
+				?.map((kind) => kind.trim().toLowerCase())
+				.filter(Boolean) ?? [];
 		const hasMatchingAsset = input.assetContentTypes.some((contentType) =>
-			kinds.length === 0 ? true : kinds.some((kind) => contentTypeMatches(kind, contentType)),
+			kinds.length === 0
+				? true
+				: kinds.some((kind) => contentTypeMatches(kind, contentType)),
 		);
 		const contentPackageMatches =
 			input.hasContentPackage &&
@@ -497,7 +557,9 @@ function assertSourceRequirements(input: {
 				kinds.includes("content") ||
 				kinds.includes("content_package"));
 		if (!hasMatchingAsset && !contentPackageMatches) {
-			throw invalid(`Required source slot ${requirement.slot} is not satisfied by the current workspace sources.`);
+			throw invalid(
+				`Required source slot ${requirement.slot} is not satisfied by the current workspace sources.`,
+			);
 		}
 	}
 }

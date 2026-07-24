@@ -95,7 +95,7 @@ const creationSubmissionCommandBaseSchema = z
 		quote: revisionReferenceSchema,
 		route: revisionReferenceSchema,
 		briefContext: briefContextSchema,
-		briefConfirmation: revisionReferenceSchema,
+		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
 	})
 	.strict();
@@ -103,12 +103,21 @@ const creationSubmissionCommandBaseSchema = z
 export const creationSubmissionCommandSchema =
 	creationSubmissionCommandBaseSchema.superRefine(validateSubmission);
 
-const composerSubmissionRequestBaseSchema =
-	creationSubmissionCommandBaseSchema.omit({
+const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
+	.omit({
 		taskId: true,
 		workId: true,
 		contentPackageId: true,
 		expectedContentPackageRevision: true,
+	})
+	.partial({
+		contentModules: true,
+		deliverables: true,
+		lens: true,
+		modelPolicy: true,
+		platform: true,
+		rights: true,
+		route: true,
 	});
 
 export const composerSubmissionRequestSchema =
@@ -208,12 +217,13 @@ export function createCreationExecutionSnapshot(
 
 function validateSubmission(
 	command: {
-		contentModules: string[];
-		deliverables: Array<{ kind: string; order: number }>;
-		lens: "copy" | "image" | "video";
+		contentModules?: string[];
+		deliverables?: Array<{ kind: string; order: number }>;
+		lens?: "copy" | "image" | "video";
 	},
 	context: z.RefinementCtx,
 ) {
+	if (!command.contentModules || !command.deliverables || !command.lens) return;
 	const orders = command.deliverables.map((deliverable) => deliverable.order);
 	if (new Set(orders).size !== orders.length) {
 		context.addIssue({

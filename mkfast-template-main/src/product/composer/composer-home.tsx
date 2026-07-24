@@ -28,13 +28,7 @@ import {
   workbench_work_create_failed,
   workbench_work_created,
 } from '@/locale/paraglide/messages';
-import {
-  commandP1,
-  operationsCommand,
-  P1RequestError,
-  p1ErrorCode,
-  queryP1,
-} from '@/p1/client';
+import { commandP1, P1RequestError, p1ErrorCode, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   normalizeCatalog,
@@ -45,11 +39,14 @@ import type {
   BriefSourceSignal,
   BriefTriggerInput,
   BriefTriggerProjection,
+  BrowserRecipeProjection,
   CreationLensId,
+  MarketingIdentityAsset,
   ProductQuoteSnapshot,
 } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
 import { uploadProductAsset } from '@/api/product-assets';
+import { assetAuthorizationIdempotencyKey } from '@/product/asset-authorization-model';
 import {
   ComposerImageInput,
   type ComposerImageIdentity,
@@ -112,6 +109,7 @@ import {
 } from './composer-live';
 import { composerDraftToRecipeFields } from './recipe-patch-preview-client';
 import { buildDynamicSettingsRow } from './settings-row';
+import { submitComposerSubmission } from './composer-submission-client';
 
 function briefSourcesFromDraft(sources: unknown[]): BriefSourceSignal[] {
   return sources.flatMap((source, index) => {
@@ -217,6 +215,7 @@ export function ComposerHome({
   const intentRef = useRef<HTMLTextAreaElement | null>(null);
   const sourcePickerRef = useRef<HTMLElement | null>(null);
   const sourceFactsRef = useRef(new Map<string, ConfirmedAssetFacts>());
+  const sourceRevisionRef = useRef(new Map<string, string>());
   const catalogSelectionAppliedRef = useRef(false);
   const sessionIdRef = useRef(
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -261,6 +260,18 @@ export function ComposerHome({
     }),
     queryFn: ({ signal }) => fetchComposerSurface(signal),
   });
+  const identitiesQuery = useQuery({
+    queryKey: ['marketing-identities'],
+    queryFn: ({ signal }) =>
+      queryP1<MarketingIdentityAsset[]>(
+        'marketing-identity',
+        {
+          action: 'marketing_identities',
+          payload: { includeInactive: false },
+        },
+        signal
+      ),
+  });
   const usageQuery = useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'projection'),
     queryFn: ({ signal }) =>
@@ -291,37 +302,97 @@ export function ComposerHome({
         : { models: [] },
     [catalogQuery.data, lensId]
   );
+  const submissionRecipe = useMemo(() => {
+    if (!lensId || !surfaceQuery.data) return undefined;
+    const exact = lensState.draft.recipeRevisionId
+      ? surfaceQuery.data.recipes.find(
+          (recipe) =>
+            recipe.revisionId === lensState.draft.recipeRevisionId &&
+            recipe.lensId === lensId &&
+            recipe.status === 'published'
+        )
+      : undefined;
+    if (exact) return exact;
+    const visibleRevisions = new Set(
+      surfaceQuery.data.recipeRefs
+        .filter((reference) => reference.visible && reference.lensId === lensId)
+        .map((reference) => reference.recipeRevisionId)
+    );
+    return surfaceQuery.data.recipes.find(
+      (recipe) =>
+        recipe.lensId === lensId &&
+        recipe.status === 'published' &&
+        visibleRevisions.has(recipe.revisionId)
+    );
+  }, [lensId, lensState.draft.recipeRevisionId, surfaceQuery.data]);
   const selectedModel = useMemo(() => {
-    const explicitId = lensState.draft.settings.catalogModelId;
+    const explicitId =
+      lensState.draft.settings.catalogModelId ??
+      (submissionRecipe?.modelPolicy.mode === 'fixed'
+        ? submissionRecipe.modelPolicy.catalogModelId
+        : undefined);
     return (
       catalog.models.find(
         (model) => model.id === explicitId && model.available
       ) ?? selectAvailableCatalogModel(catalog)
     );
-  }, [catalog, lensState.draft.settings.catalogModelId]);
+  }, [
+    catalog,
+    lensState.draft.settings.catalogModelId,
+    submissionRecipe?.modelPolicy,
+  ]);
   const catalogRevision = catalogQuery.data?.revisionId ?? 'catalog-current';
+  const submissionQuantity =
+    lensState.draft.settings.quantity ??
+    submissionRecipe?.delivery.quantity ??
+    1;
+  const submissionAspectRatio =
+    lensState.draft.settings.aspectRatio ??
+    submissionRecipe?.delivery.aspectRatio ??
+    undefined;
+  const submissionDurationSeconds =
+    lensState.draft.settings.durationSeconds ??
+    submissionRecipe?.delivery.durationSeconds ??
+    undefined;
+  const submissionDelivery = {
+    deliverableKind:
+      lensState.draft.delivery.deliverableKind ??
+      submissionRecipe?.delivery.deliverableKind ??
+      null,
+    platform:
+      lensState.draft.delivery.platform ??
+      submissionRecipe?.delivery.platform ??
+      null,
+  };
+  const submissionSettings = {
+    ...lensState.draft.settings,
+    aspectRatio: submissionAspectRatio ?? null,
+    durationSeconds: submissionDurationSeconds ?? null,
+    quantity: submissionQuantity,
+  };
   const quoteInput = useMemo(() => {
     if (!lensId || !selectedModel) return null;
-    const aspectRatio = lensState.draft.settings.aspectRatio;
     return buildLiveQuoteInput({
       sessionId: sessionIdRef.current,
       lensId,
       catalogRevision,
       model: selectedModel,
-      quantity: lensState.draft.settings.quantity ?? 1,
-      durationSeconds: lensState.draft.settings.durationSeconds ?? undefined,
+      quantity: submissionQuantity,
+      durationSeconds: submissionDurationSeconds,
       aspectRatio:
-        aspectRatio === '1:1' || aspectRatio === '3:4' || aspectRatio === '9:16'
-          ? aspectRatio
+        submissionAspectRatio === '1:1' ||
+        submissionAspectRatio === '3:4' ||
+        submissionAspectRatio === '9:16'
+          ? submissionAspectRatio
           : undefined,
     });
   }, [
     catalogRevision,
     lensId,
-    lensState.draft.settings.durationSeconds,
-    lensState.draft.settings.aspectRatio,
-    lensState.draft.settings.quantity,
     selectedModel,
+    submissionAspectRatio,
+    submissionDurationSeconds,
+    submissionQuantity,
   ]);
   const quoteQuery = useQuery({
     enabled: quoteInput != null,
@@ -418,7 +489,8 @@ export function ComposerHome({
 
   const addSource = (assetId: string) => {
     const facts = sourceFactsRef.current.get(assetId);
-    if (!facts) return;
+    const revision = sourceRevisionRef.current.get(assetId);
+    if (!facts || !revision) return;
     setLensState((current) =>
       updateSources(current, [
         ...current.draft.sources.filter(
@@ -431,6 +503,7 @@ export function ComposerHome({
         {
           id: assetId,
           kind: 'asset',
+          revision,
           category: facts.category,
           containsPerson: facts.containsPerson,
           restricted:
@@ -445,6 +518,7 @@ export function ComposerHome({
 
   const removeSource = (assetId: string) => {
     sourceFactsRef.current.delete(assetId);
+    sourceRevisionRef.current.delete(assetId);
     setLensState((current) =>
       updateSources(
         current,
@@ -491,21 +565,23 @@ export function ComposerHome({
       },
       `composer-asset:${identity.contentHash}`
     );
+    sourceRevisionRef.current.set(identity.assetId, receipt.contentHash);
     sourceFactsRef.current.set(identity.assetId, facts);
     if (facts.consentScope === 'internal_only') {
       return { attached: false };
     }
+    const authorization = {
+      type: 'authorize_asset' as const,
+      assetId: identity.assetId,
+      consentScope: facts.consentScope,
+      rightsEvidence: facts.rightsEvidence,
+      rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
+      rightsPlatforms: facts.rightsPlatforms,
+      rightsValidUntil: facts.rightsValidUntil,
+    };
     await executeProductCommand(
-      {
-        type: 'authorize_asset',
-        assetId: identity.assetId,
-        consentScope: facts.consentScope,
-        rightsEvidence: facts.rightsEvidence,
-        rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
-        rightsPlatforms: facts.rightsPlatforms,
-        rightsValidUntil: facts.rightsValidUntil,
-      },
-      `composer-asset-authorize:${identity.contentHash}`
+      authorization,
+      await assetAuthorizationIdempotencyKey(authorization)
     );
     return { attached: true };
   };
@@ -515,17 +591,18 @@ export function ComposerHome({
     facts: ConfirmedAssetFacts
   ) => {
     if (facts.consentScope !== 'public_marketing') return;
+    const authorization = {
+      type: 'authorize_asset' as const,
+      assetId,
+      consentScope: facts.consentScope,
+      rightsEvidence: facts.rightsEvidence,
+      rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
+      rightsPlatforms: facts.rightsPlatforms,
+      rightsValidUntil: facts.rightsValidUntil,
+    };
     await executeProductCommand(
-      {
-        type: 'authorize_asset',
-        assetId,
-        consentScope: facts.consentScope,
-        rightsEvidence: facts.rightsEvidence,
-        rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
-        rightsPlatforms: facts.rightsPlatforms,
-        rightsValidUntil: facts.rightsValidUntil,
-      },
-      `composer-asset-authorize:${assetId}:${crypto.randomUUID()}`
+      authorization,
+      await assetAuthorizationIdempotencyKey(authorization)
     );
     sourceFactsRef.current.set(assetId, facts);
   };
@@ -533,132 +610,114 @@ export function ComposerHome({
   const createWork = useMutation({
     mutationFn: async (input: {
       briefConfirmationId?: string;
-      briefContextId?: string;
-      briefInput?: BriefTriggerInput;
+      briefContextId: string;
+      briefContextRevision: number;
+      briefInput: BriefTriggerInput;
+      identity: MarketingIdentityAsset;
       lensId: CreationLensId;
       intent: string;
       quote: ProductQuoteSnapshot;
+      recipe: BrowserRecipeProjection;
       videoConfirmAccepted?: boolean;
     }) => {
       if (fixtureSubmit) {
-        return { id: `fixture-work-${input.lensId}` };
+        return {
+          contentPackage: {
+            expectedRevision: 0,
+            id: `fixture-package-${input.lensId}`,
+          },
+          task: { id: `fixture-task-${input.lensId}` },
+          work: { id: `fixture-work-${input.lensId}` },
+        };
       }
-      if (input.briefContextId && input.briefInput) {
-        const current = await requestComposerBrief({
-          ...input.briefInput,
-          ...(input.briefConfirmationId
-            ? { confirmationId: input.briefConfirmationId }
-            : {}),
-        });
-        if (
-          current.requiresBrief ||
-          (input.briefConfirmationId && !current.confirmationValid)
-        ) {
-          throw new Error('Brief confirmation is no longer current.');
-        }
+      if (input.lensId === 'video' && !input.videoConfirmAccepted) {
+        throw new Error('Video quote confirmation is required.');
       }
-      const created = await operationsCommand<{ id: string }>(
-        'create_creative_work',
-        {
-          autoConfirmBrief: true,
-          intent: input.intent,
-          mode: 'direct',
-          operation: COMPOSER_OPERATION_BY_LENS[input.lensId],
-          contentModules: ['social_cover'],
-          sessionId: `composer:${sessionIdRef.current}`,
-          sourceReferences,
-          ...(input.briefConfirmationId
-            ? { briefConfirmationId: input.briefConfirmationId }
-            : {}),
-          ...(input.briefContextId
-            ? { briefContextId: input.briefContextId }
-            : {}),
-        },
-        `composer-create:${sessionIdRef.current}:${input.quote.revision}`
-      );
+      const currentBrief = await requestComposerBrief({
+        ...input.briefInput,
+        ...(input.briefConfirmationId
+          ? { confirmationId: input.briefConfirmationId }
+          : {}),
+      });
+      if (
+        currentBrief.requiresBrief ||
+        (input.briefConfirmationId && !currentBrief.confirmationValid)
+      ) {
+        throw new Error('Brief confirmation is no longer current.');
+      }
 
-      const amount = input.quote.confirmedAmount ?? 0;
+      const taskId = `composer-task:${sessionIdRef.current}:${input.quote.revision}`;
       await commandP1(
         'product-billing',
         {
           action: 'confirm',
           payload: {
             quoteId: input.quote.quoteId,
-            taskId: created.id,
+            taskId,
           },
         },
-        `composer-confirm:${input.quote.quoteId}:${created.id}`
+        `composer-confirm:${input.quote.quoteId}:${taskId}`
       );
-
-      const quoteAcceptedAt = new Date().toISOString();
-      const contract = {
-        operation: COMPOSER_OPERATION_BY_LENS[input.lensId],
-        catalogModelId: input.quote.catalogModelId,
-        catalogRevision: input.quote.catalogModelRevision ?? catalogRevision,
-        quoteRevision: input.quote.revision,
-        quoteAcceptedAt,
-        outputLabel:
-          input.quote.outputLabel ??
-          (input.lensId === 'copy'
-            ? '3 条内容候选'
-            : input.lensId === 'image_text'
-              ? '1 张 3:4 图片'
-              : '1 段竖屏视频'),
-        estimatedAmount: amount,
-        currency: input.quote.formula.currency ?? 'CNY',
-        outputCount:
-          input.quote.outputCount ?? lensState.draft.settings.quantity ?? 1,
-        ...(input.lensId === 'image_text' || input.lensId === 'video'
-          ? {
-              aspectRatio:
-                lensState.draft.settings.aspectRatio ??
-                (input.lensId === 'video' ? '9:16' : '3:4'),
-            }
-          : {}),
-        ...(input.lensId === 'video'
-          ? {
-              durationSeconds: lensState.draft.settings.durationSeconds ?? 15,
-            }
-          : {}),
-        dataClass: [],
-        watermarkEnabled: true,
-        aigcLabelEnabled: true,
-        contentModules: ['social_cover'],
-      };
-      let approvalReceiptId: string | undefined;
-      if (input.lensId === 'video') {
-        if (!input.videoConfirmAccepted) {
-          throw new Error('Video quote confirmation is required.');
-        }
-        const approval = await operationsCommand<{ id: string }>(
-          'approve_creative_generation',
-          {
-            approvalKey: `composer-video:${input.quote.revision}`,
-            contract,
-            workId: created.id,
-          },
-          `composer-video-approval:${created.id}:${input.quote.revision}`
-        );
-        approvalReceiptId = approval.id;
+      const catalogModelRevision = input.quote.catalogModelRevision;
+      if (!catalogModelRevision) {
+        throw new Error('Composer quote is missing its catalog revision.');
       }
-      await operationsCommand(
-        'submit_creative_work',
-        {
-          workId: created.id,
-          contract,
-          billingQuoteId: input.quote.quoteId,
-          submissionKey: `composer-submit:${created.id}:${input.quote.revision}`,
-          ...(input.briefConfirmationId
-            ? { briefConfirmationId: input.briefConfirmationId }
-            : {}),
-          ...(input.briefContextId
-            ? { briefContextId: input.briefContextId }
-            : {}),
-          ...(approvalReceiptId ? { approvalReceiptId } : {}),
+      const assets = lensState.draft.sources.flatMap((source) => {
+        if (!source || typeof source !== 'object' || Array.isArray(source)) {
+          return [];
+        }
+        const candidate = source as Record<string, unknown>;
+        return typeof candidate.id === 'string' &&
+          typeof candidate.revision === 'string'
+          ? [
+              {
+                id: candidate.id,
+                revision: candidate.revision,
+                role: 'reference' as const,
+              },
+            ]
+          : [];
+      });
+      if (assets.length !== sourceReferences.length) {
+        throw new Error('Composer source revisions are incomplete.');
+      }
+      return submitComposerSubmission({
+        ...(input.briefConfirmationId
+          ? {
+              briefConfirmation: {
+                id: input.briefConfirmationId,
+                revision: currentBrief.bindRevisions.draftRevisionId,
+              },
+            }
+          : {}),
+        briefContext: {
+          id: input.briefContextId,
+          revision: input.briefContextRevision,
         },
-        `composer-submit:${created.id}:${input.quote.revision}`
-      );
-      return created;
+        catalogModel: {
+          id: input.quote.catalogModelId,
+          revision: catalogModelRevision,
+        },
+        identity: {
+          id: input.identity.identityId,
+          revision: String(input.identity.version),
+        },
+        idempotencyKey: `composer-submit:${sessionIdRef.current}:${input.quote.revision}`,
+        intent: input.intent,
+        quote: {
+          id: input.quote.quoteId,
+          revision: input.quote.revision,
+        },
+        recipe: {
+          id: input.recipe.recipeId,
+          revision: input.recipe.revisionId,
+        },
+        sources: { assets },
+        surface: {
+          id: surfaceQuery.data!.surfaceId,
+          revision: surfaceQuery.data!.revisionId,
+        },
+      });
     },
     onSuccess: async (created, variables) => {
       const submitted = submitComposer(lensState, {
@@ -673,14 +732,14 @@ export function ComposerHome({
       }
       toast.success(workbench_work_created());
       const location = navigateAfterSubmitSuccess({
-        workId: created.id,
+        workId: created.work.id,
         sourceRoute: '/dashboard',
         panel: 'run',
       });
       await navigate({
         to: '/dashboard/results/$workId',
-        params: { workId: created.id },
-        search: location.search,
+        params: { workId: created.work.id },
+        search: { ...location.search, taskId: created.task.id },
         replace: false,
       });
     },
@@ -718,19 +777,30 @@ export function ComposerHome({
     videoConfirmAccepted?: boolean,
     briefConfirmationId?: string
   ) => {
+    const identity = identitiesQuery.data?.[0];
+    const briefInput = briefInputRef.current;
+    const briefContextRevision = briefContextRevisionRef.current;
+    if (
+      !identity ||
+      !submissionRecipe ||
+      !briefInput?.briefContextId ||
+      briefContextRevision === null
+    ) {
+      toast.error(workbench_operation_failed());
+      return;
+    }
     const intent =
       lensState.draft.userText.trim() || coldCards[0]?.title || '创作';
     createWork.mutate({
+      briefContextId: briefInput.briefContextId,
+      briefContextRevision,
+      briefInput,
+      identity,
       lensId: selectedLens,
       intent,
       quote: quoteQuery.data!,
+      recipe: submissionRecipe,
       videoConfirmAccepted,
-      ...(briefInputRef.current?.briefContextId
-        ? {
-            briefContextId: briefInputRef.current.briefContextId,
-            briefInput: briefInputRef.current,
-          }
-        : {}),
       ...(briefConfirmationId
         ? {
             briefConfirmationId,
@@ -769,7 +839,12 @@ export function ComposerHome({
       setSubmissionQuotaBlocked(true);
       return;
     }
-    if (!quoteQuery.data || !quoteView) {
+    if (
+      !quoteQuery.data ||
+      !quoteView ||
+      !submissionRecipe ||
+      !identitiesQuery.data?.[0]
+    ) {
       setShowRequiredHint(true);
       return;
     }
@@ -786,19 +861,18 @@ export function ComposerHome({
     let projection: BriefTriggerProjection | undefined;
     try {
       const briefContextId = `composer:${sessionIdRef.current}`;
-      const recipeRevisionId = lensState.draft.recipeRevisionId;
       const briefContext = await syncComposerBriefContext({
         briefContextId,
         draft: {
-          delivery: lensState.draft.delivery,
-          settings: lensState.draft.settings,
+          delivery: submissionDelivery,
+          settings: submissionSettings,
           sources: briefSourcesFromDraft(lensState.draft.sources),
           userText: lensState.draft.userText,
         },
         expectedRevision: briefContextRevisionRef.current,
         lensId: lensState.lensId,
         quoteId: quoteQuery.data.quoteId,
-        recipeRevisionId: recipeRevisionId ?? null,
+        recipeRevisionId: submissionRecipe.revisionId,
         sourceIds: sourceReferences.map((source) => source.id),
         surfaceRevisionId:
           surfaceQuery.data?.revisionId ?? initialSurfaceRevisionId ?? null,
@@ -809,11 +883,8 @@ export function ComposerHome({
         lensId: lensState.lensId,
         quote: quoteQuery.data,
         currentRevisions: briefContext.currentRevisions,
-        delivery: lensState.draft.delivery,
-        imageCount:
-          lensState.lensId === 'image_text'
-            ? (lensState.draft.settings.quantity ?? 1)
-            : 0,
+        delivery: submissionDelivery,
+        imageCount: lensState.lensId === 'image_text' ? submissionQuantity : 0,
         sources: briefSourcesFromDraft(lensState.draft.sources),
         highRiskFacts:
           /价格|价目|团购|优惠|\d+\s*元/u.test(lensState.draft.userText) &&
@@ -876,7 +947,7 @@ export function ComposerHome({
   };
 
   const handleBriefConfirm = async () => {
-    if (lensState.phase !== 'selected') return;
+    if (lensState.phase !== 'selected' || !submissionRecipe) return;
     const result = confirmBriefSurface(briefState);
     if (!result.ok) {
       setBriefState(result.state);
@@ -890,15 +961,15 @@ export function ComposerHome({
     const refreshedContext = await syncComposerBriefContext({
       briefContextId: briefInput.briefContextId,
       draft: {
-        delivery: lensState.draft.delivery,
-        settings: lensState.draft.settings,
+        delivery: submissionDelivery,
+        settings: submissionSettings,
         sources: briefSourcesFromDraft(lensState.draft.sources),
         userText: lensState.draft.userText,
       },
       expectedRevision: briefContextRevisionRef.current,
       lensId: lensState.lensId,
       quoteId: quoteQuery.data!.quoteId,
-      recipeRevisionId: lensState.draft.recipeRevisionId ?? null,
+      recipeRevisionId: submissionRecipe.revisionId,
       sourceIds: sourceReferences.map((source) => source.id),
       surfaceRevisionId:
         surfaceQuery.data?.revisionId ?? initialSurfaceRevisionId ?? null,
@@ -920,11 +991,8 @@ export function ComposerHome({
         lensId: lensState.lensId,
         quote: quoteQuery.data!,
         currentRevisions: refreshedContext.currentRevisions,
-        delivery: lensState.draft.delivery,
-        imageCount:
-          lensState.lensId === 'image_text'
-            ? (lensState.draft.settings.quantity ?? 1)
-            : 0,
+        delivery: submissionDelivery,
+        imageCount: lensState.lensId === 'image_text' ? submissionQuantity : 0,
         sources: briefSourcesFromDraft(lensState.draft.sources),
         highRiskFacts:
           /价格|价目|团购|优惠|\d+\s*元/u.test(lensState.draft.userText) &&

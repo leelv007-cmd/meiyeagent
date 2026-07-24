@@ -86,6 +86,7 @@ export interface CreationSubmissionAdmissionPort {
 			CreationExecutionSnapshot,
 			"contentModules" | "deliverables" | "lens" | "platform"
 		>;
+		route: { id: string; revision: string };
 		rights: { revision: string; summary: string };
 		taskId: string;
 	}>;
@@ -121,6 +122,7 @@ export class CreationSubmissionCoordinator {
 			lens: admitted.recipeBinding.lens,
 			modelPolicy: admitted.modelPolicy,
 			platform: admitted.recipeBinding.platform,
+			route: admitted.route,
 			rights: admitted.rights,
 		};
 		const command = creationSubmissionCommandSchema.parse({

@@ -140,6 +140,9 @@ export function useWorkflowEventStream(input: {
   const [copyCandidates, setCopyCandidates] = useState<
     WorkflowCopyTokenDraft[]
   >([]);
+  const [workflowState, setWorkflowState] = useState<
+    WorkflowStateEnvelope['status'] | undefined
+  >();
   const [transportStatus, setTransportStatus] =
     useState<WorkflowEventTransportStatus>('idle');
 
@@ -147,6 +150,7 @@ export function useWorkflowEventStream(input: {
     cursor.current = undefined;
     setLatestProgress(undefined);
     setCopyCandidates([]);
+    setWorkflowState(undefined);
     if (!input.enabled || !input.workflowId) {
       setTransportStatus('idle');
       return;
@@ -183,6 +187,7 @@ export function useWorkflowEventStream(input: {
           );
           return;
         }
+        setWorkflowState(frame.data.status);
         const envelope = videoWorkflowEnvelopeFromState(frame.data);
         if (envelope) {
           queryClient.setQueryData(input.workflowQueryKey, envelope);
@@ -230,5 +235,5 @@ export function useWorkflowEventStream(input: {
     workflowQueryKeyHash,
   ]);
 
-  return { copyCandidates, latestProgress, transportStatus };
+  return { copyCandidates, latestProgress, transportStatus, workflowState };
 }

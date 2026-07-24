@@ -94,14 +94,7 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 		headers,
 		body: JSON.stringify({
 			...submissionPayload(),
-			deliverables: [
-				{
-					id: "deliverable-image",
-					kind: "image",
-					order: 1,
-					quantity: 1,
-				},
-			],
+			identity: { id: "", revision: "identity-r3" },
 		}),
 	});
 	assert.equal(invalidScope.status, 400);
@@ -162,6 +155,25 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 		JSON.stringify(starter.starts[0]?.snapshot).includes("provider-secret"),
 		false,
 	);
+
+	const {
+		contentModules: _contentModules,
+		deliverables: _deliverables,
+		lens: _lens,
+		modelPolicy: _modelPolicy,
+		platform: _platform,
+		rights: _rights,
+		route: _route,
+		...browserOwnedPayload
+	} = submissionPayload();
+	const minimalBrowserReplay = await fetch(`${base}/submissions`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(browserOwnedPayload),
+	});
+	assert.equal(minimalBrowserReplay.status, 202);
+	assert.equal((await minimalBrowserReplay.json()).data.replayed, true);
+	assert.equal(starter.starts.length, 1);
 
 	const reorderedPayload = Object.fromEntries(
 		Object.entries(submissionPayload()).reverse(),
@@ -996,6 +1008,7 @@ function fixedAdmission(): CreationSubmissionAdmissionPort {
 					lens: "copy",
 					platform: { id: "douyin" },
 				},
+				route: { id: "route-1", revision: "catalog-r4" },
 				rights: {
 					revision: "server-rights-r1",
 					summary: "Server verified source assets.",
@@ -1009,7 +1022,7 @@ function fixedAdmission(): CreationSubmissionAdmissionPort {
 function modalityAdmission(): CreationSubmissionAdmissionPort {
 	return {
 		async admit(input) {
-			const kind = input.lens;
+			const kind = input.lens ?? "copy";
 			return {
 				modelPolicy: {
 					id: `server-policy-${kind}`,
@@ -1037,6 +1050,10 @@ function modalityAdmission(): CreationSubmissionAdmissionPort {
 									? "xiaohongshu"
 									: "video_account",
 					},
+				},
+				route: {
+					id: `route-${kind}-1`,
+					revision: `catalog-${kind}-r1`,
 				},
 				rights: {
 					revision: `rights-${kind}-r1`,

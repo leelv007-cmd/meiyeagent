@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   assetAuthorizationCommands,
+  assetAuthorizationIdempotencyKey,
   executeAssetAuthorization,
   systemInlineAuthEvidence,
 } from '@/product/asset-authorization-model';
@@ -77,6 +78,25 @@ test('metadata failure prevents authorization against stale asset facts', async 
     /metadata failed/u
   );
   assert.deepEqual(commandTypes, ['update_asset_metadata']);
+});
+
+test('authorization idempotency covers the complete command payload', async () => {
+  const command = {
+    type: 'authorize_asset' as const,
+    assetId: 'asset-real-1',
+    consentScope: 'public_marketing' as const,
+    rightsEvidence: 'system:inline-auth:composer:upload-1',
+  };
+  const first = await assetAuthorizationIdempotencyKey(command);
+  const replay = await assetAuthorizationIdempotencyKey({ ...command });
+  const nextEvidence = await assetAuthorizationIdempotencyKey({
+    ...command,
+    rightsEvidence: 'system:inline-auth:composer:upload-2',
+  });
+
+  assert.equal(replay, first);
+  assert.notEqual(nextEvidence, first);
+  assert.match(first, /^asset-authorize:[a-f0-9]{64}$/u);
 });
 
 test('shared composer and library seam supplies stable system evidence when external evidence is absent', () => {

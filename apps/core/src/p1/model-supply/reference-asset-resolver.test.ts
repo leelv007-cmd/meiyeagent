@@ -138,7 +138,7 @@ test('reference asset inspection verifies the private BFF channel without readin
         method = init?.method ?? '';
         assert.equal(
           String(input),
-          'http://app.example.test/api/core/p1/assets?objectKey=workspace-a%2Fassets%2Fstore-a.png',
+          'http://app.example.test/api/storage/file?key=workspace-a%2Fassets%2Fstore-a.png',
         );
         assert.equal(
           new Headers(init?.headers).get('x-service-token'),

@@ -185,6 +185,7 @@ import {
   CapabilityHotAssemblyComposerReadiness,
   ComposerSubmissionAdmissionGate,
 } from './p1/execution-spine/composer-submission-gate.js';
+import { ModelSupplyComposerRouteResolver } from './p1/execution-spine/composer-route-resolver.js';
 import { PostgresContentPackageRevisionWritePort } from './p1/execution-spine/content-package-revision-port.js';
 import { CreationStagePort } from './p1/execution-spine/creation-stage-port.js';
 import {
@@ -1571,7 +1572,10 @@ if (harnessRuntimeConfig) {
       identities: marketingIdentities,
       quotes: productQuoteService,
       rights: contentPackageRightsResolver,
-      routes: foundationRepository,
+      routeResolver: new ModelSupplyComposerRouteResolver(
+        p1ModelSupplyService,
+        foundationRepository
+      ),
       sourcePackages: sourceContentPackageAdmissionReader,
     })
   );

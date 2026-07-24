@@ -515,9 +515,9 @@ short-circuits are never treated as #161 pass evidence. Evidence and residuals:
 | # | Test name | Flow |
 |---|---|---|
 | 1 | Day-0 Landing intent restores without auto-submit | Capture Landing intent into same-browser handoff, sign in, confirm restore into Composer intent, require no automatic Result navigation. |
-| 2 | Copy continuous close-loop | Discover three modalities, submit copy via real commands, wait for merchant-ready Result, adjust, adopt, open Delivery, download the full package, record manual publication, record an outcome chip, confirm weekly-review next-round action, and restore after reload. Axe + merchant-language on Composer/Result/Delivery. |
-| 3 | Image-text continuous to delivery | Submit image_text, wait for Result, adopt, download 小红书 ZIP, restore. |
-| 4 | Video continuous to delivery | Submit video (抖音), wait for Result in dark theme, adopt, download 抖音 ZIP, restore. |
+| 2 | Copy continuous close-loop | Discover three modalities, submit copy through the Composer Submission BFF with only public references, require Core to freeze the confirmed quote/model/route and return canonical Work/Task/ContentPackage IDs, follow the Task Harness stream into the same Result route, then adjust, adopt, open Delivery, download the full package, record manual publication, record an outcome chip, confirm weekly-review next-round action, and restore after reload. Axe + merchant-language on Composer/Result/Delivery. |
+| 3 | Image-text continuous to delivery | Upload and authorize the Recipe-required image, submit image_text through the same Composer Submission BFF, follow the returned Task Harness stream to Result, adopt, download 小红书 ZIP, and restore after reload. |
+| 4 | Video continuous to delivery | Upload and authorize the Recipe-required source, submit video (抖音) through the same Composer Submission BFF, follow the returned Task Harness stream to Result in dark theme, adopt, download 抖音 ZIP, and restore after reload. |
 | 5 | Content + Assets merchant-safe axe matrix | Open Content, Assets, and Tasks/Weekly shell in light and dark; require zero axe serious/critical and no UUID/raw enum/provider slug leaks. |
 | 6 | Responsive 320/375/768/1440 + 200% zoom | On a ready Result, assert no horizontal overflow and no fully occluded primary CTA at each width and at 200% zoom. |
 | 7 | prefers-reduced-motion Result/Delivery usable | Emulate reduced motion, complete copy Result→adopt→Delivery; document Save-Data product-hook residual when absent. |

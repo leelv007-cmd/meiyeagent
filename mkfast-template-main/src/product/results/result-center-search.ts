@@ -10,6 +10,7 @@ import {
 export type ResultCenterSearch = {
   contentId?: string;
   versionId?: string;
+  taskId?: string;
   panel?: ResultPanel;
   focusKey?: string;
 } & ResultReturnSearch;
@@ -31,6 +32,7 @@ export function validateResultCenterSearch(
 ): ResultCenterSearch {
   const contentId = optionalString(search.contentId);
   const versionId = optionalString(search.versionId);
+  const taskId = optionalString(search.taskId);
   const panel = optionalPanel(search.panel);
   const focusKey = optionalString(search.focusKey);
   const returnState = parseResultReturnState(search);
@@ -38,6 +40,7 @@ export function validateResultCenterSearch(
   return {
     ...(contentId ? { contentId } : {}),
     ...(versionId ? { versionId } : {}),
+    ...(taskId ? { taskId } : {}),
     ...(panel ? { panel } : {}),
     ...(focusKey ? { focusKey } : {}),
     ...resultReturnSearch(returnState),

@@ -66,6 +66,7 @@ import {
 } from '@/product/results/result-return-navigation';
 import { parseResultCenterSearch } from '@/product/results/result-target-wiring';
 import { useResultReturnRestoreSession } from '@/product/results/use-result-return-restore-session';
+import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
 import type {
   CreativeWorkbenchProjection,
   ProductQuoteSnapshot,
@@ -118,6 +119,20 @@ function ResultCenterRoutePage() {
   ] = useState<string | null | undefined>(undefined);
   const deliveryViewport = useDeliveryViewport();
   const target = parseResultCenterSearch(workId, search);
+  const workbenchQueryKey = p1QueryKeys.request(
+    'operations',
+    'creative_workbench'
+  );
+  const contentPackagesQueryKey = p1QueryKeys.request(
+    'operations',
+    'content_packages'
+  );
+  const harnessStream = useWorkflowEventStream({
+    enabled: Boolean(search.taskId),
+    latestQueryKey: workbenchQueryKey,
+    workflowId: search.taskId ?? '',
+    workflowQueryKey: contentPackagesQueryKey,
+  });
   // ADR-0007 token stream — live partials for copy / image_text running phase.
   const copyCandidateStream = useCopyCandidateStream({ id: workId });
   /** One submit per job+submissionKey; avoids replaying stream on re-render. */
@@ -137,7 +152,7 @@ function ResultCenterRoutePage() {
   });
 
   const workbenchQuery = useQuery({
-    queryKey: p1QueryKeys.request('operations', 'creative_workbench'),
+    queryKey: workbenchQueryKey,
     queryFn: ({ signal }) =>
       operationsQuery<CreativeWorkbenchProjection>(
         'creative_workbench',
@@ -183,7 +198,7 @@ function ResultCenterRoutePage() {
   ]);
 
   const contentPackagesQuery = useQuery({
-    queryKey: p1QueryKeys.request('operations', 'content_packages'),
+    queryKey: contentPackagesQueryKey,
     queryFn: ({ signal }) =>
       operationsQuery<PublicContentPackage[]>('content_packages', {}, signal),
     retry: false,
@@ -333,6 +348,15 @@ function ResultCenterRoutePage() {
   // Video worksurface simply omits workflow-derived panels instead of hard-failing.
 
   const workspaceKind = selected?.workspaceKind ?? 'copy';
+  const harnessState =
+    harnessStream.workflowState ?? harnessStream.latestProgress?.state;
+  const resultProgressState = currentPackageVersion
+    ? ('success' as const)
+    : harnessState === 'failed'
+      ? ('failed' as const)
+      : harnessState === 'success'
+        ? ('success' as const)
+        : selected?.progressState;
   // ADR-0007 / P1-B2: user-visible copy increments are exclusive.
   // Prefer structured stream partials as the sole source while running;
   // never merge poll/workbench candidate snapshots into the stream face.
@@ -340,9 +364,11 @@ function ResultCenterRoutePage() {
   // streamActive or e2e will wait forever for tokens that cannot arrive.
   const streamActive =
     workspaceKind === 'copy' &&
-    (selected?.progressState === 'running' ||
-      selected?.progressState === 'waiting') &&
-    selected?.job?.contract.operation === 'copy.generate';
+    (resultProgressState === 'running' ||
+      resultProgressState === 'waiting' ||
+      harnessState === 'running' ||
+      harnessState === 'waiting') &&
+    (!selected?.job || selected.job.contract.operation === 'copy.generate');
   const structuredStreamCandidates = streamActive
     ? copyCandidateStream.object?.candidates?.filter(
         (candidate): candidate is NonNullable<typeof candidate> =>
@@ -352,7 +378,7 @@ function ResultCenterRoutePage() {
   // Poll/workbench harness candidates are intentionally not passed as a
   // second source — pickExclusiveTokenCandidates discards poll when empty.
   const exclusiveTokens = pickExclusiveTokenCandidates({
-    workflowTokenCandidates: null,
+    workflowTokenCandidates: harnessStream.copyCandidates,
     structuredStreamCandidates: structuredStreamCandidates ?? null,
     pollCandidates: null,
   });
@@ -362,7 +388,9 @@ function ResultCenterRoutePage() {
   const streamLoading = streamActive
     ? Boolean(copyCandidateStream.isLoading) ||
       selected?.progressState === 'running' ||
-      selected?.progressState === 'waiting'
+      selected?.progressState === 'waiting' ||
+      harnessState === 'running' ||
+      harnessState === 'waiting'
     : false;
   const deliveryTarget = deliveryTargetForIntent(
     workspaceKind,
@@ -907,7 +935,7 @@ function ResultCenterRoutePage() {
   const shellPhase = projectResultShellPhase({
     target,
     workspaceKind,
-    progressState: selected?.progressState,
+    progressState: resultProgressState,
     hasUsableCandidate: selected?.hasUsableCandidate,
     hasAdoptedCandidate: Boolean(currentPackageVersion),
   });
@@ -916,7 +944,7 @@ function ResultCenterRoutePage() {
   const runDetailFacts = runDetailFactsFromLiveSelection({
     workId,
     phase: shellPhase,
-    progressState: selected?.progressState,
+    progressState: resultProgressState,
     job: selected?.job ?? null,
     workspaceKind,
   });
@@ -951,9 +979,10 @@ function ResultCenterRoutePage() {
         target,
         workspaceKind,
         requestedPanel: search.panel,
-        progressState: selected?.progressState,
+        progressState: resultProgressState,
         hasUsableCandidate: selected?.hasUsableCandidate,
         hasAdoptedCandidate: Boolean(currentPackageVersion),
+        taskId: search.taskId,
         jobId: selected?.job?.id,
       }}
       partialCandidates={partialCandidates}

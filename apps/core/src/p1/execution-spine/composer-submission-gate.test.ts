@@ -42,7 +42,10 @@ test("Composer admission gate binds server facts before a submission can reserve
 						modelRevisionId: "catalog-r4",
 						quoteRevisionId: "quote-r5",
 						recipeRevisionId: "recipe-service-promotion@7",
-						sourceRevisionId: briefSourceRevisionId(["asset-1", "content-source-1"]),
+						sourceRevisionId: briefSourceRevisionId([
+							"asset-1",
+							"content-source-1",
+						]),
 						surfaceRevisionId: "surface-composer@2",
 					},
 					triggerCodes: [],
@@ -67,7 +70,9 @@ test("Composer admission gate binds server facts before a submission can reserve
 					modelPolicy: { catalogModelId: "catalog-copy-1", mode: "fixed" },
 					recipeId: "recipe-service-promotion",
 					revisionId: "recipe-service-promotion@7",
-					sourceRequirements: [{ kinds: ["image"], required: true, slot: "hero" }],
+					sourceRequirements: [
+						{ kinds: ["image"], required: true, slot: "hero" },
+					],
 					status: "published",
 					targetWorkspaceKind: "copy",
 				} as never;
@@ -112,10 +117,12 @@ test("Composer admission gate binds server facts before a submission can reserve
 				return { knownAssetIds: ["asset-1"], unauthorizedAssetIds: [] };
 			},
 		},
-		routes: {
-			async getRouteSnapshot() {
+		routeResolver: {
+			async resolve() {
 				return {
-					allowedCandidates: [{ catalogModelId: "catalog-copy-1", deploymentId: "deployment-1" }],
+					allowedCandidates: [
+						{ catalogModelId: "catalog-copy-1", deploymentId: "deployment-1" },
+					],
 					catalogRevision: "catalog-r4",
 					id: "route-1",
 					requestedCatalogModelId: "catalog-copy-1",
@@ -143,6 +150,10 @@ test("Composer admission gate binds server facts before a submission can reserve
 		id: "recipe-model-policy:recipe-service-promotion",
 		mode: "fixed",
 		revision: "recipe-service-promotion@7",
+	});
+	assert.deepEqual(admitted.route, {
+		id: "route-1",
+		revision: "catalog-r4",
 	});
 	assert.match(admitted.rights.revision, /^rights:[a-f0-9]{64}$/u);
 	assert.equal(
@@ -203,21 +214,49 @@ test("Composer admission gate fails closed for stale quote, rights, and source f
 			},
 		},
 		briefs: { async assertCurrent() {} },
-		briefConfirmations: { async getBriefConfirmation() { return null; } },
-		capabilities: { async assertReady() { capabilityChecks += 1; } },
-		catalog: {
-			async getRecipeByRevisionId() { return null; },
-			async getSurfaceByRevisionId() { return null; },
+		briefConfirmations: {
+			async getBriefConfirmation() {
+				return null;
+			},
 		},
-		identities: { async listActive() { return []; } },
-		quotes: { async getQuote() { return null; } },
+		capabilities: {
+			async assertReady() {
+				capabilityChecks += 1;
+			},
+		},
+		catalog: {
+			async getRecipeByRevisionId() {
+				return null;
+			},
+			async getSurfaceByRevisionId() {
+				return null;
+			},
+		},
+		identities: {
+			async listActive() {
+				return [];
+			},
+		},
+		quotes: {
+			async getQuote() {
+				return null;
+			},
+		},
 		rights: {
 			async resolve() {
 				return { knownAssetIds: [], unauthorizedAssetIds: ["asset-1"] };
 			},
 		},
-		routes: { async getRouteSnapshot() { return null; } },
-		sourcePackages: { async get() { return null; } },
+		routeResolver: {
+			async resolve() {
+				return null;
+			},
+		},
+		sourcePackages: {
+			async get() {
+				return null;
+			},
+		},
 	});
 
 	await assert.rejects(gate.admit(submission()), /Recipe revision/u);
@@ -270,7 +309,10 @@ test("Composer admission derives image and video delivery facts from the publish
 			catalog: {
 				async getRecipeByRevisionId() {
 					return {
-						contextPatches: { contentModules: ["social_cover", "price_card"] },
+						contextPatches:
+							kind === "image"
+								? {}
+								: { contentModules: ["social_cover", "price_card"] },
 						delivery: {
 							aspectRatio: "9:16",
 							deliverableKind: kind === "image" ? "image_set" : "video_package",
@@ -279,7 +321,10 @@ test("Composer admission derives image and video delivery facts from the publish
 							quantity: 2,
 						},
 						lensId: recipeLens,
-						modelPolicy: { catalogModelId: `catalog-${kind}-1`, mode: "fixed" },
+						modelPolicy:
+							kind === "image"
+								? { mode: "auto" }
+								: { catalogModelId: `catalog-${kind}-1`, mode: "fixed" },
 						recipeId: `recipe-${kind}`,
 						revisionId: `recipe-${kind}@1`,
 						sourceRequirements: [
@@ -329,11 +374,14 @@ test("Composer admission derives image and video delivery facts from the publish
 					return { knownAssetIds: ["asset-1"], unauthorizedAssetIds: [] };
 				},
 			},
-			routes: {
-				async getRouteSnapshot() {
+			routeResolver: {
+				async resolve() {
 					return {
 						allowedCandidates: [
-							{ catalogModelId: `catalog-${kind}-1`, deploymentId: `deployment-${kind}-1` },
+							{
+								catalogModelId: `catalog-${kind}-1`,
+								deploymentId: `deployment-${kind}-1`,
+							},
 						],
 						catalogRevision: `catalog-${kind}-r1`,
 						id: `route-${kind}-1`,
@@ -343,13 +391,19 @@ test("Composer admission derives image and video delivery facts from the publish
 					} as never;
 				},
 			},
-			sourcePackages: { async get() { return null; } },
+			sourcePackages: {
+				async get() {
+					return null;
+				},
+			},
 		});
 
 		const admitted = await gate.admit(input);
 		assert.equal(admitted.taskId, `task-${kind}-1`);
+		assert.equal(admitted.modelPolicy.mode, "fixed");
 		assert.deepEqual(admitted.recipeBinding, {
-			contentModules: ["social_cover", "price_card"],
+			contentModules:
+				kind === "image" ? ["social_cover"] : ["social_cover", "price_card"],
 			deliverables: [
 				{
 					id: `recipe-deliverable:recipe-${kind}@1`,
@@ -464,7 +518,10 @@ function submission(): ComposerSubmissionRequest {
 		modelPolicy: { id: "policy-copy", mode: "fixed", revision: "policy-r1" },
 		platform: { id: "douyin" },
 		quote: { id: "quote-1", revision: "quote-r5" },
-		recipe: { id: "recipe-service-promotion", revision: "recipe-service-promotion@7" },
+		recipe: {
+			id: "recipe-service-promotion",
+			revision: "recipe-service-promotion@7",
+		},
 		rights: { revision: "rights-r4", summary: "source assets are authorized" },
 		route: { id: "route-1", revision: "catalog-r4" },
 		sources: {

@@ -102,6 +102,7 @@ import { Route as AdminSupplyTasksTaskIdRouteImport } from './routes/admin/suppl
 import { Route as ApiCoreP1HarnessTasksRouteImport } from './routes/api/core/p1/harness/tasks'
 import { Route as ApiCoreP1HarnessRecommendationRouteImport } from './routes/api/core/p1/harness/recommendation'
 import { Route as ApiCoreP1CopyStreamRouteImport } from './routes/api/core/p1/copy/stream'
+import { Route as ApiCoreP1ComposerSubmissionsRouteImport } from './routes/api/core/p1/composer/submissions'
 import { Route as ApiCoreP1AssistantStreamRouteImport } from './routes/api/core/p1/assistant/stream'
 import { Route as ApiCoreDiagnosticsIdResumeRouteImport } from './routes/api/core/diagnostics/$id/resume'
 import { Route as ApiCoreDiagnosticsIdEventsRouteImport } from './routes/api/core/diagnostics/$id/events'
@@ -578,6 +579,12 @@ const ApiCoreP1CopyStreamRoute = ApiCoreP1CopyStreamRouteImport.update({
   path: '/api/core/p1/copy/stream',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCoreP1ComposerSubmissionsRoute =
+  ApiCoreP1ComposerSubmissionsRouteImport.update({
+    id: '/api/core/p1/composer/submissions',
+    path: '/api/core/p1/composer/submissions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1AssistantStreamRoute =
   ApiCoreP1AssistantStreamRouteImport.update({
     id: '/api/core/p1/assistant/stream',
@@ -709,6 +716,7 @@ export interface FileRoutesByFullPath {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
@@ -807,6 +815,7 @@ export interface FileRoutesByTo {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
@@ -909,6 +918,7 @@ export interface FileRoutesById {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
@@ -1012,6 +1022,7 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/composer/submissions'
     | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
@@ -1110,6 +1121,7 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/composer/submissions'
     | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
@@ -1211,6 +1223,7 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/composer/submissions'
     | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
@@ -1257,6 +1270,7 @@ export interface RootRouteChildren {
   ApiCoreProductCommandsRoute: typeof ApiCoreProductCommandsRoute
   ApiCoreProductStateRoute: typeof ApiCoreProductStateRoute
   ApiCoreP1AssistantStreamRoute: typeof ApiCoreP1AssistantStreamRoute
+  ApiCoreP1ComposerSubmissionsRoute: typeof ApiCoreP1ComposerSubmissionsRoute
   ApiCoreP1CopyStreamRoute: typeof ApiCoreP1CopyStreamRoute
   ApiCoreP1HarnessRecommendationRoute: typeof ApiCoreP1HarnessRecommendationRoute
   ApiCoreP1HarnessTasksRoute: typeof ApiCoreP1HarnessTasksRouteWithChildren
@@ -1916,6 +1930,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1CopyStreamRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/core/p1/composer/submissions': {
+      id: '/api/core/p1/composer/submissions'
+      path: '/api/core/p1/composer/submissions'
+      fullPath: '/api/core/p1/composer/submissions'
+      preLoaderRoute: typeof ApiCoreP1ComposerSubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/core/p1/assistant/stream': {
       id: '/api/core/p1/assistant/stream'
       path: '/api/core/p1/assistant/stream'
@@ -2183,6 +2204,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCoreProductCommandsRoute: ApiCoreProductCommandsRoute,
   ApiCoreProductStateRoute: ApiCoreProductStateRoute,
   ApiCoreP1AssistantStreamRoute: ApiCoreP1AssistantStreamRoute,
+  ApiCoreP1ComposerSubmissionsRoute: ApiCoreP1ComposerSubmissionsRoute,
   ApiCoreP1CopyStreamRoute: ApiCoreP1CopyStreamRoute,
   ApiCoreP1HarnessRecommendationRoute: ApiCoreP1HarnessRecommendationRoute,
   ApiCoreP1HarnessTasksRoute: ApiCoreP1HarnessTasksRouteWithChildren,

@@ -130,6 +130,12 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
           id: submission.work.id,
           intent: snapshot.intent.text,
           mode: "agent",
+          operation:
+            snapshot.lens === "copy"
+              ? "copy.generate"
+              : snapshot.lens === "image"
+                ? "image.generate"
+                : "video.generate",
           sessionId: `composer:${snapshot.surface.id}:${snapshot.surface.revision}`,
           sourceReferences: [
             ...snapshot.sources.assets.map((asset) => ({

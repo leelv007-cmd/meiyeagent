@@ -9,6 +9,19 @@ type AuthorizeAssetCommand = Extract<
   { type: 'authorize_asset' }
 >;
 
+export async function assetAuthorizationIdempotencyKey(
+  command: AuthorizeAssetCommand
+): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(JSON.stringify(command))
+  );
+  const fingerprint = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0')
+  ).join('');
+  return `asset-authorize:${fingerprint}`;
+}
+
 export interface AssetAuthorizationDraft {
   assetId: string;
   category: NonNullable<Asset['category']>;
