@@ -79,7 +79,7 @@ test('fixture Harness contract routes DeepSeek copy with provider identity and s
   if (response.kind !== 'completed') return;
   assert.equal(response.copyCandidates?.length, 3);
   assert.match(response.providerTaskRef ?? '', /^deepseek-v4-pro-recorded-/u);
-  assert.equal(response.providerCost.currency, 'USD');
+  assert.equal(response.providerCost.currency, 'CNY');
   assert.ok(response.providerCost.amount > 0);
   assert.ok((response.providerCost.usage.outputTokens ?? 0) > 0);
 });

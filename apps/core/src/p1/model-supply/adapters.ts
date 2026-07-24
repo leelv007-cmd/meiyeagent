@@ -125,7 +125,9 @@ export function recordedRequest(
       apiFamily: family,
       channel: 'direct',
       region:
-        catalogModelId.includes('seed') || catalogModelId.includes('kling')
+        catalogModelId.includes('deepseek') ||
+        catalogModelId.includes('seed') ||
+        catalogModelId.includes('kling')
           ? 'domestic'
           : 'overseas',
       status: 'active',
@@ -148,6 +150,7 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
 
   abstract readonly catalogModelId: string;
   abstract readonly apiFamily: 'openai' | 'anthropic' | 'gemini' | 'custom';
+  readonly currency: 'CNY' | 'USD' = 'USD';
 
   setNextScenario(scenario: LlmScenario) {
     this.nextScenario = scenario;
@@ -175,7 +178,7 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
         message: `${this.apiFamily} recorded ${scenario}`,
         providerCost: {
           amount: partial ? 0.01 : 0,
-          currency: 'USD',
+          currency: this.currency,
           usage: partial ? { inputTokens: 16, outputTokens: 7 } : {},
         },
       };
@@ -187,7 +190,7 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
         text: request.submission.prompt,
         providerCost: {
           amount: 0.02,
-          currency: 'USD',
+          currency: this.currency,
           usage: { inputTokens: 16, outputTokens: 32 },
         },
       };
@@ -218,7 +221,7 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
         },
         providerCost: {
           amount: 0.02,
-          currency: 'USD',
+          currency: this.currency,
           usage: { inputTokens: 32, outputTokens: 220 },
         },
       };
@@ -230,7 +233,7 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
       providerTaskRef: `${this.catalogModelId}-recorded-${digest(request.jobId).slice(0, 20)}`,
       providerCost: {
         amount: 0.02,
-        currency: 'USD',
+        currency: this.currency,
         usage: { inputTokens: 32, outputTokens: 180 },
       },
     };
@@ -240,11 +243,13 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
 export class DeepSeekProDirectRecordedAdapter extends DirectLlmRecordedAdapter {
   readonly catalogModelId = 'deepseek-v4-pro';
   readonly apiFamily = 'openai' as const;
+  override readonly currency = 'CNY' as const;
 }
 
 export class DeepSeekFlashDirectRecordedAdapter extends DirectLlmRecordedAdapter {
   readonly catalogModelId = 'deepseek-v4-flash';
   readonly apiFamily = 'openai' as const;
+  override readonly currency = 'CNY' as const;
 }
 
 export class OpenAiDirectRecordedAdapter extends DirectLlmRecordedAdapter {
@@ -280,7 +285,7 @@ class FixtureCanvasAgentRecordedAdapter extends DeepSeekProDirectRecordedAdapter
       text: JSON.stringify(plan),
       providerCost: {
         amount: 0,
-        currency: 'USD' as const,
+        currency: 'CNY' as const,
         usage: { inputTokens: 16, outputTokens: 24 },
       },
     } satisfies ProviderExecutionResponse;

@@ -14,7 +14,10 @@ import { ProductService } from './product/product-service.js';
 import { CutoverProductService } from './product/cutover-product-service.js';
 import type { ProductQualitySink } from './product/quality-sink.js';
 import { productPlanConfigFromEnv } from './product/plans.js';
-import { ModelSupplyProductCopyProvider } from './product/model-supply-copy-provider.js';
+import {
+  DOMESTIC_COPY_CATALOG_MODEL_ID,
+  ModelSupplyProductCopyProvider,
+} from './product/model-supply-copy-provider.js';
 import { ProductPublishContentSnapshotPort } from './product/publish-content-snapshot.js';
 import {
   ProductAssetDataClassResolver,
@@ -918,7 +921,7 @@ await registerDouyinPublishPollingSchedule(jobRuntime, {
 const createCopyProviders = (bridge: ProductCopyProviderBridge) => ({
   domestic: new ModelSupplyProductCopyProvider(
     bridge,
-    { catalogModelId: 'deepseek-v4-pro', mode: 'fixed' },
+    { catalogModelId: DOMESTIC_COPY_CATALOG_MODEL_ID, mode: 'fixed' },
     'domestic',
     resolveCopySelection,
     resolveCopyPrompt

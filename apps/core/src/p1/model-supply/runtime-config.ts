@@ -650,6 +650,7 @@ function directOptions(env: NodeJS.ProcessEnv, models: CatalogModel[]) {
       ? 'https://api.deepseek.com'
       : required(env.MODEL_DIRECT_BASE_URL, 'MODEL_DIRECT_BASE_URL'),
     catalogModelId,
+    ...(isDeepSeek ? { currency: 'CNY' as const } : {}),
     credentialVersion: required(
       env.MODEL_DIRECT_CREDENTIAL_VERSION,
       'MODEL_DIRECT_CREDENTIAL_VERSION'

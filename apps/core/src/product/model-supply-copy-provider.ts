@@ -8,6 +8,8 @@ import type { BeautyCopyPromptRevision } from '../p1/model-supply/quality-evalua
 import { ProductCopyProviderBridge } from '../p1/model-supply/index.js';
 import { BEAUTY_COPY_PROMPT } from './copy-prompt-library.js';
 
+export const DOMESTIC_COPY_CATALOG_MODEL_ID = 'deepseek-v4-pro';
+
 export class ModelSupplyProductCopyProvider implements CopyProvider {
   readonly name = 'model-supply';
   readonly model: string;

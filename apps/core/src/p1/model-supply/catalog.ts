@@ -651,7 +651,7 @@ export function createDefaultExecutionChannels(): ExecutionChannelRevision[] {
       'DeepSeek',
       'openai',
       'direct',
-      'overseas',
+      'domestic',
       'platform',
     ],
     [
@@ -962,7 +962,9 @@ export function createDefaultPriceRevisions(): PriceRevision[] {
     return [{
       id: `${model.id}:price-v1`,
       catalogModelId: model.id,
-      currency: 'USD' as const,
+      currency: model.id.startsWith('deepseek-v4-')
+        ? ('CNY' as const)
+        : ('USD' as const),
       amount: amountByModel[model.id] ?? 0.02,
       revision: 1,
       unit:
@@ -1023,7 +1025,7 @@ export function createDefaultDeployments(
       lifecycleRevision: 'deployment-v1',
       apiFamily: 'openai',
       channel: 'direct',
-      region: 'overseas',
+      region: 'domestic',
     },
     {
       id: 'deepseek-v4-flash-direct',
@@ -1035,7 +1037,7 @@ export function createDefaultDeployments(
       lifecycleRevision: 'deployment-v1',
       apiFamily: 'openai',
       channel: 'direct',
-      region: 'overseas',
+      region: 'domestic',
     },
     {
       id: 'openai-direct-recorded',
