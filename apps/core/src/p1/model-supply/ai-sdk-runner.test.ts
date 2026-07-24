@@ -83,6 +83,63 @@ test('formal non-streaming copy generation uses one structured object request', 
   assert.ok(responseFormat.json_schema?.schema);
 });
 
+test('DeepSeek V4 sends the mirrored thinking and long-output parameters', async () => {
+  let requestUrl = '';
+  let requestBody: Record<string, unknown> = {};
+  const generated = {
+    candidates: [
+      { body: 'First body.', conversionHook: 'Ask first', title: 'First' },
+      { body: 'Second body.', conversionHook: 'Save this', title: 'Second' },
+      { body: 'Third body.', conversionHook: 'Book later', title: 'Third' },
+    ],
+  };
+  const runner = new OpenAiCompatibleAiSdkRunner({
+    apiKey: 'deepseek-test-key',
+    baseUrl: 'https://api.deepseek.com',
+    catalogModelId: 'deepseek-v4-pro',
+    fetch: (async (input, init) => {
+      requestUrl = String(input);
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          choices: [{
+            finish_reason: 'stop',
+            index: 0,
+            message: {
+              content: JSON.stringify(generated),
+              role: 'assistant',
+            },
+          }],
+          created: 1,
+          id: 'deepseek-completion-1',
+          model: 'deepseek-v4-pro',
+          object: 'chat.completion',
+          usage: {
+            completion_tokens: 34,
+            prompt_tokens: 12,
+            total_tokens: 46,
+          },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch,
+    inputCostPerMillion: 1,
+    maxOutputTokens: 384_000,
+    model: 'deepseek-v4-pro',
+    outputCostPerMillion: 2,
+    reasoningEffort: 'high',
+    thinking: { type: 'enabled' },
+  });
+
+  await runner.generateCopy('Write three honest options.');
+
+  assert.equal(requestUrl, 'https://api.deepseek.com/chat/completions');
+  assert.equal(requestBody.model, 'deepseek-v4-pro');
+  assert.equal(requestBody.max_tokens, 384_000);
+  assert.equal(requestBody.reasoning_effort, 'high');
+  assert.deepEqual(requestBody.thinking, { type: 'enabled' });
+});
+
 test('formal platform adaptation returns all three distinct variants in one request', async () => {
   let requestCount = 0;
   const platformVariants = {

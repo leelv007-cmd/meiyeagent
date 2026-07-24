@@ -12,6 +12,35 @@ import {
   createDefaultRouteRevisions,
   forwardMigratePublishedCatalogPayload,
 } from './catalog.js';
+import { planModelSupplyCandidates } from './route-planning.js';
+
+test('DeepSeek V4 Pro is the default text tier and OpenAI is never the default resolution', () => {
+  const models = createDefaultCatalogModels();
+  const deepseekPro = models.find((model) => model.id === 'deepseek-v4-pro');
+  const deepseekFlash = models.find(
+    (model) => model.id === 'deepseek-v4-flash',
+  );
+  assert.equal(deepseekPro?.stableModelName, 'deepseek-v4-pro');
+  assert.equal(deepseekFlash?.stableModelName, 'deepseek-v4-flash');
+
+  const deployments = createDefaultDeployments({
+    activatedDeploymentIds: createDefaultDeployments()
+      .filter((deployment) => deployment.apiFamily !== 'audio')
+      .map((deployment) => deployment.id),
+  });
+  const resolved = planModelSupplyCandidates({
+    catalog: {
+      modelById: new Map(models.map((model) => [model.id, model])),
+      deployments,
+    },
+    operation: 'copy.generate',
+    selection: { mode: 'auto', profile: 'quality' },
+    dataClass: [],
+  });
+
+  assert.equal(resolved.candidates[0]?.model.id, 'deepseek-v4-pro');
+  assert.notEqual(resolved.candidates[0]?.model.id, 'llm-openai');
+});
 
 test('forward-migrates a pre-upgrade published catalog with new inactive fallback models and runtime identity', () => {
   const fallbackModels = createDefaultCatalogModels();
@@ -34,11 +63,14 @@ test('forward-migrates a pre-upgrade published catalog with new inactive fallbac
   const published = {
     models: fallbackModels.filter(
       (model) =>
-        model.id !== 'seedance-1-5-pro' && model.id !== 'grok-latest-video'
+        !model.id.startsWith('deepseek-v4-') &&
+        model.id !== 'seedance-1-5-pro' &&
+        model.id !== 'grok-latest-video'
     ),
     deployments: fallbackDeployments
       .filter(
         (deployment) =>
+          !deployment.catalogModelId.startsWith('deepseek-v4-') &&
           deployment.id !== 'seedance-1-5-pro-tuzi-relay' &&
           deployment.id !== 'grok-latest-managed'
       )
@@ -54,8 +86,12 @@ test('forward-migrates a pre-upgrade published catalog with new inactive fallbac
     capabilities: createDefaultCapabilityRevisions(),
     prices: createDefaultPriceRevisions(),
     routes: createDefaultRouteRevisions(),
-    providerProfiles: createDefaultProviderProfiles(),
-    executionChannels: createDefaultExecutionChannels(),
+    providerProfiles: createDefaultProviderProfiles().filter(
+      (profile) => profile.id !== 'provider-deepseek',
+    ),
+    executionChannels: createDefaultExecutionChannels().filter(
+      (channel) => channel.id !== 'channel-deepseek-direct',
+    ),
   };
   const publishedBefore = structuredClone(published);
 
@@ -63,6 +99,8 @@ test('forward-migrates a pre-upgrade published catalog with new inactive fallbac
     ...published,
     models: fallbackModels,
     deployments: fallbackDeployments,
+    providerProfiles: createDefaultProviderProfiles(),
+    executionChannels: createDefaultExecutionChannels(),
   });
 
   assert.equal(
@@ -78,6 +116,27 @@ test('forward-migrates a pre-upgrade published catalog with new inactive fallbac
   assert.equal(seedance15?.unavailableReason, 'activation_evidence_missing');
   assert.equal(seedance15?.providerModel, 'doubao-seedance-1-5-pro_720p');
   assert.equal(seedance15?.endpointRevision, 'tuzi-media-v1');
+  assert.equal(
+    migrated.models.find((model) => model.id === 'deepseek-v4-pro')
+      ?.stableModelName,
+    'deepseek-v4-pro',
+  );
+  assert.equal(
+    migrated.deployments.find(
+      (deployment) => deployment.id === 'deepseek-v4-pro-direct',
+    )?.status,
+    'inactive',
+  );
+  assert.ok(
+    migrated.providerProfiles?.some(
+      (profile) => profile.id === 'provider-deepseek',
+    ),
+  );
+  assert.ok(
+    migrated.executionChannels?.some(
+      (channel) => channel.id === 'channel-deepseek-direct',
+    ),
+  );
 
   const seedance2 = migrated.deployments.find(
     (deployment) => deployment.id === 'seedance-2-tuzi-relay'
@@ -258,9 +317,12 @@ test('default deployments stay unavailable and recorded activation is never misl
       },
     },
   });
-  assert.equal(live[0]?.activationEvidence.status, 'live_verified');
+  const liveOpenAi = live.find(
+    (deployment) => deployment.id === 'openai-direct-recorded',
+  );
+  assert.equal(liveOpenAi?.activationEvidence.status, 'live_verified');
   assert.equal(
-    live[0]?.activationEvidence.evidenceRef,
+    liveOpenAi?.activationEvidence.evidenceRef,
     'staging://model-activation/openai'
   );
 

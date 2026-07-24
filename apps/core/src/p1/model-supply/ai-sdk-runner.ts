@@ -43,6 +43,9 @@ export interface OpenAiCompatibleAiSdkOptions {
   model: string;
   inputCostPerMillion: number;
   outputCostPerMillion: number;
+  maxOutputTokens?: number;
+  reasoningEffort?: 'high' | 'max';
+  thinking?: { type: 'enabled' | 'disabled' };
   currency?: 'CNY' | 'USD';
   fetch?: typeof globalThis.fetch;
   /**
@@ -119,6 +122,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
   async generateCopy(prompt: string, abortSignal?: AbortSignal) {
     const result = await generateText({
       abortSignal,
+      ...languageModelCallSettings(this.options),
       instructions:
         'Return exactly three materially different beauty-business copy candidates. Every candidate must include a non-empty title, body, and conversionHook.',
       maxRetries: 0,
@@ -148,6 +152,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
   ) {
     const result = await generateText({
       abortSignal,
+      ...languageModelCallSettings(this.options),
       instructions:
         'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
       maxRetries: 0,
@@ -181,6 +186,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
   async adaptPlatformVariants(prompt: string, abortSignal?: AbortSignal) {
     const result = await generateText({
       abortSignal,
+      ...languageModelCallSettings(this.options),
       instructions:
         'Adapt the supplied canonical beauty-business content into exactly three complete platform variants: xiaohongshu, douyin, and video_account. Preserve facts, make the three bodies materially different, and include a non-empty title, body, conversionHook, and topics for each platform.',
       maxRetries: 0,
@@ -216,6 +222,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     if (input.onPartialOutput) {
       const result = streamText({
         abortSignal: input.abortSignal,
+        ...languageModelCallSettings(this.options),
         instructions: input.instructions,
         maxRetries: 0,
         model: this.model,
@@ -244,6 +251,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     }
     const result = await generateText({
       abortSignal: input.abortSignal,
+      ...languageModelCallSettings(this.options),
       instructions: input.instructions,
       maxRetries: 0,
       model: this.model,
@@ -282,6 +290,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     this.assertFixedModel(request.catalogModelId);
     const result = streamText({
       abortSignal,
+      ...languageModelCallSettings(this.options),
       instructions:
         'You are the assistant inside one beauty-content Work. Use tools only to read the supplied context or propose an inspectable field patch. Never submit generation, change models, or overwrite user input.',
       maxRetries: 0,
@@ -318,6 +327,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     this.assertFixedModel(request.catalogModelId);
     const result = streamText({
       abortSignal,
+      ...languageModelCallSettings(this.options),
       instructions:
         'Return exactly three materially different beauty-business copy candidates. Every candidate must include a non-empty title, body, and conversionHook.',
       maxRetries: 0,
@@ -363,6 +373,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     const referenceAssets = request.referenceAssets ?? [];
     const result = streamText({
       abortSignal,
+      ...languageModelCallSettings(this.options),
       instructions:
         'Return one plain-text response for the requested canvas task. Do not return candidate arrays or provider protocol fields.',
       maxRetries: 0,
@@ -685,6 +696,16 @@ export function createNativeLanguageModel(options: OpenAiCompatibleAiSdkOptions)
         supportsStructuredOutputs: true,
       }).chatModel(options.model);
     default:
+      if (options.catalogModelId.startsWith('deepseek-v4-')) {
+        return createOpenAICompatible({
+          apiKey: options.apiKey,
+          baseURL,
+          fetch: options.fetch,
+          includeUsage: true,
+          name: 'deepseek',
+          supportsStructuredOutputs: false,
+        }).chatModel(options.model);
+      }
       return createOpenAICompatible({
         apiKey: options.apiKey,
         baseURL,
@@ -694,6 +715,23 @@ export function createNativeLanguageModel(options: OpenAiCompatibleAiSdkOptions)
         supportsStructuredOutputs: true,
       }).chatModel(options.model);
   }
+}
+
+function languageModelCallSettings(options: OpenAiCompatibleAiSdkOptions) {
+  const deepseekOptions = {
+    ...(options.reasoningEffort
+      ? { reasoningEffort: options.reasoningEffort }
+      : {}),
+    ...(options.thinking ? { thinking: options.thinking } : {}),
+  };
+  return {
+    ...(options.maxOutputTokens
+      ? { maxOutputTokens: options.maxOutputTokens }
+      : {}),
+    ...(Object.keys(deepseekOptions).length > 0
+      ? { providerOptions: { deepseek: deepseekOptions } }
+      : {}),
+  };
 }
 
 function assertOptions(options: OpenAiCompatibleAiSdkOptions) {

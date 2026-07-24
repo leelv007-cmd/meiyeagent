@@ -68,6 +68,22 @@ test('three direct LLM families cover structured, stream and classified recorded
   }
 });
 
+test('fixture Harness contract routes DeepSeek copy with provider identity and supply cost without network', async () => {
+  const response = await createModelExecutionRuntime({
+    mode: 'fixture',
+  }).execution.execute(
+    recordedRequest('deepseek-v4-pro', 'copy.generate'),
+  );
+
+  assert.equal(response.kind, 'completed');
+  if (response.kind !== 'completed') return;
+  assert.equal(response.copyCandidates?.length, 3);
+  assert.match(response.providerTaskRef ?? '', /^deepseek-v4-pro-recorded-/u);
+  assert.equal(response.providerCost.currency, 'CNY');
+  assert.ok(response.providerCost.amount > 0);
+  assert.ok((response.providerCost.usage.outputTokens ?? 0) > 0);
+});
+
 test('recorded LLM copy is readable, grounded, and does not expose the internal prompt JSON', async () => {
   const adapter = new OpenAiDirectRecordedAdapter();
   const request = recordedRequest('llm-openai', 'copy.generate');
@@ -95,7 +111,7 @@ test('recorded LLM copy is readable, grounded, and does not expose the internal 
 });
 
 test('fixture-only recorded LLM emits strict Canvas Agent JSON without changing recorded mode', async () => {
-  const request = recordedRequest('llm-openai', 'text.respond');
+  const request = recordedRequest('deepseek-v4-pro', 'text.respond');
   request.submission.workspaceId = 'workspace-agent-fixture';
   request.submission.prompt = [
     'Return strict JSON for the fixed seven Canvas tools only:',

@@ -12,7 +12,7 @@
 
 | 键 | 用途（消费方） | 需你提供 | 缺省 fixture 档 | 状态 |
 |---|---|---|---|---|
-| **A-1** DeepSeek API key（键名净新增，由供应商注册票定稿，沿 `MODEL_DIRECT_*` 机制） | 文案与全部文本判断位默认 LLM＝deepseek-v4-pro（装配门、M 门 LLM 判断位、四类编译器） | 在 DeepSeek 开放平台开通并充值的 API key | 既有 fixture 文本供应商，全链可跑 | ☑ 已收 2026-07-25（存本地 `.env` DEEPSEEK_API_KEY） |
+| **A-1** `DEEPSEEK_API_KEY`（DeepSeek API key；沿 `MODEL_DIRECT_*` 装配机制消费） | 文案与全部文本判断位默认 LLM＝deepseek-v4-pro（装配门、M 门 LLM 判断位、四类编译器） | 在 DeepSeek 开放平台开通并充值的 API key | 既有 fixture 文本供应商，全链可跑 | ☑ 已收 2026-07-25（存本地 `.env`，凭证真值不入库） |
 | **A-2** `ARK_MEDIA_API_KEY` | 图 seedream-5-pro 系／视频 seedance-2 系／exactText 多模态 VLM（图片、图文、视频编译器票） | 火山方舟 API key（并确认账号已开通 seedream/seedance 对应模型） | recorded/fake provider 档 | ☑ 已配（`.env` 核实非空） |
 | **A-3** `ARK_SEEDREAM_MODEL`／`ARK_SEEDANCE_MODEL` | 上行 key 对应的具体 model ID | 方舟控制台里可用的 model ID 两个 | 同 A-2 | ☑ 已配（doubao-seedream-5-0-260128／doubao-seedance-2-0-mini-260615，符合 D-129 系别） |
 | **A-4** `TUZI_MEDIA_BASE_URL`/`TUZI_MEDIA_API_KEY` | 图/视频容灾通道（D-129：方舟直连主、tuzi 容灾） | tuzi relay key——**可暂缓**，缺席时按既有合同投影 single_channel/no_fallback，不阻塞任何票 | 单通道投影（既有） | ☑ 已配（`.env` TUZI_MEDIA_* 核实非空） |
