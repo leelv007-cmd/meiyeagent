@@ -2,6 +2,7 @@
 
 ## Current research bundles
 
+- [`turbodesk-article-creation-flow-2026-07-24/`](./turbodesk-article-creation-flow-2026-07-24/) — 讯飞绘文登录态实测：以“创作一篇7月份头皮护理小红书图文”为样本，记录快速模式故障、深度模式成功路径，以及从「添加人设」到专属选题、检索、写作和配图的全链应用；拆解任务协议、持久化、计费观察、身份与经营事实风险及可复刻架构。
 - [`beauty-marketing-validation-2026-07-17/`](./beauty-marketing-validation-2026-07-17/) — Current three-platform validation baseline for beauty marketing and store-visit acquisition: 8–12-store sampling contract, OpenCLI evidence boundaries, 30-day-window corpus contract and representative extracts, platform opportunities, and decision log.
 - [`hitl-research-2026-07-17/`](./hitl-research-2026-07-17/) — AI-native beauty marketing JTBD, personalized/industry asset orchestration, Human-in-the-loop patterns, conditional rights gates, component fit, source register, and OpenCLI snapshots.
 - [`harness-research-2026-07-17/`](./harness-research-2026-07-17/) — Harness 五段式实现选型调研：durable 载体（DBOS/Inngest/Trigger.dev/CF）、①③结构化节点（BAML vs AI SDK）、评估与审计（Langfuse/promptfoo/Vitest）、非代码可变层（admin-config/Mastra Studio/Dify），10 份报告 + xcheck 对抗验证 + 11 号决策简报；已拍板转正为 D-034~D-038。

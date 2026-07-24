@@ -2,6 +2,8 @@
 
 Status: accepted (2026-07-16)
 
+> 2026-07-24 修订（per D-103/D-110）：两条产品主线现为**定制创作＋自由创作**（D-103）；Pro Studio 降为自由创作下属的高级画布/交互面，不构成独立/第三条产品主线，并按 D-110 ③「移出首发投入焦点」——代码与 entitlement 付费墙保留不删，验证后按 D-103 收编。本文「Pro Studio 工程可以并行开发」及独立 Release boundary 口径不再作为首发投入依据，实施以 D-103/D-110 为准。
+
 ## Decision
 
 P1 主线保留 Composer 日常轻编辑：官方/工作区模板、文字与图片基础调整、裁切/顺序、预览、保存版本、导出和 AI 图片动作。无限画布、高阶精修、TTS+音效和在线画布 Agent 进入独立的 Pro Studio workspace add-on。Pro Studio 工程可以并行开发，但不得成为默认一级导航，也不得通过第二套内容事实绕开 ContentPackage；`AdvancedCanvasProject + revision` 是独立的服务器规范图结构，只有显式 adoption 才回写 ContentPackage。两线共享 Product Core 合同、Postgres、wiring 或主 Web 时必须声明文件 owner、合并顺序和冲突处理，不把“客群/DoD/发布面分离”误读成“资源零碰撞”。

@@ -8,9 +8,11 @@ The latest user-confirmed decisions are authoritative. For P1, read `.scratch/p1
 
 **2026-07-22 文档一致性覆盖**：当前一致性入口改为 `docs/reviews/doc-consistency-review-2026-07-22.md`；`docs/reviews/doc-consistency-review-2026-07-19.md` 与 `docs/reviews/implementation-gap-ledger-2026-07-19.md` 的旧判断保留为固定快照/历史增量。Pro Studio 的“K01–K11 engineering DoD 已完成”只表示 2026-07-19 原工程票据的历史证据，不能覆盖 D-099 rev2：K03 的上游 parity 完成结论已撤销，当前执行前沿为 K1–K7，G42 Agent 对话外壳延期独立处理；K02/K04–K11 的既有行为证据继续作为回归基线。旧评审、handoff、evidence 和票体不重写，当前状态以 D-099 rev2、P0/P1 当前 Spec、代码/测试和本报告为准。
 
-**2026-07-17 宣发产品方向**以 `PRODUCT.md` 和 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md`（合并权威版：第一部分产品设计 + 第二部分决策日志 D-001 起持续追加，原独立决策日志文件已并入删除）为当前产品权威；Wave 1 验证执行合同见其 D-026，视频成片入首发合同见 D-027（ADR-0008 同日追加修订节），文案与成片两层独立交付、组合由入口意图决定见 D-028，Day-0 与 Day-N 同界面（示例冷态 + 流内资产积累）见 D-029，定位边界（行业特征 × 个人 IP 的高效宣发工具平台，非店务/经营管理系统）见 D-030，前台无槽位填表、结构化输入融入对话流（AG-UI 模式参考）见 D-031，Agent Workflow 编排总纲（三层架构/确定性主干+智能节点/三进三出前后端合同/建造优先级：流式会话层+生成式 UI 组件提前、视频管线薄壳后第一优先）见 D-032，Task 统一交互单元与编排层 Harness 五段式见 D-033，Harness 实现选型与工程约束见 D-034~D-038（证据在 `references/analysis/harness-research-2026-07-17/`）。后续拍板已追加至 **D-039~D-046**：D-039 合规义务层承载；D-040 功能完善优先、合规与运营执行置后；D-041 DBOS Transact 锁定；D-042 双主题与 UIUX 收口；D-043 主路径折叠；D-044 平台默认供给与试用套餐；D-045 额度流水、兑换码与支付接缝；D-046 result 阶段常驻自由文本“调整方向”并派生新 Work/revision，不新增消息真相层。主链是广义宣发曝光与到店引流，按宣发任务、流量机会、表达身份、平台机制、门店事实/素材和转化动作编排；首发不默认包含付费媒体投放，医疗美容不计入默认首发，第一次结果给一个主推荐、备选按需展开，外部能力按已验证/辅助完成/不可用诚实呈现。“技师采集 → 顾客授权 → 店长策展”等固定岗位链已废止，顾客授权和专业核验只作为按素材/事实触发的条件门。旧设计中已核验的 ContentPackage、异步恢复、唯一写入边界和发布安全结论仍是实现约束，但不得反向决定前台信息架构。
+**2026-07-17 宣发产品方向**以 `PRODUCT.md` 和 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md`（合并权威版：第一部分产品设计 + 第二部分决策日志 D-001 起持续追加，原独立决策日志文件已并入删除）为当前产品权威；Wave 1 验证执行合同见其 D-026，视频成片入首发合同见 D-027（ADR-0008 同日追加修订节），文案与成片两层独立交付、组合由入口意图决定见 D-028，Day-0 与 Day-N 同界面（示例冷态 + 流内资产积累）见 D-029，定位边界（行业特征 × 个人 IP 的高效宣发工具平台，非店务/经营管理系统）见 D-030，前台无槽位填表、结构化输入融入对话流（AG-UI 模式参考）见 D-031，Agent Workflow 编排总纲（三层架构/确定性主干+智能节点/三进三出前后端合同/建造优先级：流式会话层+生成式 UI 组件提前、视频管线薄壳后第一优先）见 D-032，Task 统一交互单元与编排层 Harness 五段式见 D-033，Harness 实现选型与工程约束见 D-034~D-038（证据在 `references/analysis/harness-research-2026-07-17/`）。后续拍板已追加至 **D-039~D-046**：D-039 合规义务层承载；D-040 功能完善优先、合规与运营执行置后；D-041 DBOS Transact 锁定；D-042 双主题与 UIUX 收口；D-043 主路径折叠；D-044 平台默认供给与试用套餐；D-045 额度流水、兑换码与支付接缝；D-046 result 阶段常驻自由文本“调整方向”并派生新 Work/revision，不新增消息真相层。（2026-07-24 再追加 **D-100～D-126** 批次，见设计文档第二部分决策日志——D-110 立裁决元原则：D-101～D-109 及其延伸 D-111～D-126 与更早决策、正文旧口径或评审建议冲突时以新批次为准。）主链是广义宣发曝光与到店引流，按宣发任务、流量机会、表达身份、平台机制、门店事实/素材和转化动作编排；首发不默认包含付费媒体投放，医疗美容不计入默认首发，第一次结果给一个主推荐、备选按需展开，外部能力按已验证/辅助完成/不可用诚实呈现。“技师采集 → 顾客授权 → 店长策展”等固定岗位链已废止，顾客授权和专业核验只作为按素材/事实触发的条件门。旧设计中已核验的 ContentPackage、异步恢复、唯一写入边界和发布安全结论仍是实现约束，但不得反向决定前台信息架构。
 
 **2026-07-22 整改与产品化执行入口**：P0 使用 `docs/specs/beauty-marketing-agent-p0-remediation-spec-2026-07-22.md`，P1 使用 `docs/specs/beauty-marketing-agent-p1-productization-spec-2026-07-22.md`；两者取代历史 `beauty-content-agent-p0/p1-spec.md` 作为当前整改/产品化实施入口，但不抹除历史证据。Pro Studio 以 D-099、`docs/evidence/pro-studio/upstream-parity-gap-baseline-2026-07-22.md`（G01–G48）和 `docs/specs/pro-studio-parity-rework-spec-2026-07-22.md` rev2 为当前重做入口。Composer 营销 Task 使用 `CreationExecutionSnapshot + DBOS Harness`；Pro Studio 节点级生成使用 `AdvancedCanvasProjectRevision + GenerationCheckpoint`，共享 Product Core 底座，且只有显式 adoption 写 ContentPackage。若文档发生冲突，Pro Studio 专属范围由 ADR-0012/D-099 裁决，共享账本、对象存储、Capability、OwnedAsset 与 ContentPackage 写入不变量由 P0/P1 当前 Spec 裁决。
+
+**2026-07-24 决策批次覆盖**：设计文档决策日志已续至 **D-126**（D-110 元原则＝新批次优先于更早决策与旧口径）。要点：D-102 单店单人首发（Owner/Operator/Reviewer 降为内部 RBAC，前台只呈现当前账号本人）；D-103/D-111/D-114 定制创作＝agent 流式对话主容器＋自由创作参数面板双主线；D-105 FFmpeg 创意拼装退出视频主链（交付终点＝模型原生 VideoArtifact）；D-113 默认 1 主候选；D-121 内容工作区（账号 1:N、与租户严格分离、套餐 1/2/3）；D-123 文案/图片/视频三桶额度＋三类加油包（档位＝初级/中级/高级，数字＝运营后台手填）；D-126 Dashboard 首页轻推荐＋Day-0 示例店。本 Context 词条未逐条同步处，以设计文档决策日志为准。同日新增 **ADR-0013～0019** 七个实施投影 ADR（五段 Harness 与四类编译器/双主线交互/ContentWorkspace 租户分离/计费三桶四账本/解析管线四层/生成期零阻断发布收口/纵切交付与接缝属主）——实施 Agent 优先读这七个短 ADR 获取架构合同，细节与冲突裁决回决策日志。
 
 ## Language
 
@@ -523,15 +525,15 @@ The persistent projection of an L1 Publish Job in the selected Content version's
 _Avoid_: 只用 toast, 只显示成功失败, unknown 自动重发, reviewing 自动转 L3, 设置页发布状态
 
 **视频成片**:
-The finished-video workflow (per merged-authority D-027 a required deliverable of the Douyin / WeChat-Channels variants, produced by video-model APIs plus the compose pipeline): AIDA storyboard confirmation, first frame, clips, thin ffmpeg composition, optional product-brand watermark and product-visible AIGC-label switches, provider/platform provenance recording, storage, and handoff through the L3 package. A publication platform may apply its own label or gate later. Per D-028, voiceover scripts and video scripts are copy-layer deliverables produced by the LLM: from a copy-intent entry they are full-value deliverables in their own right, and they enter this workflow only as inputs when the user's intent is a finished video.
+The finished-video workflow (per merged-authority D-027 a required deliverable of the Douyin / WeChat-Channels variants, produced by video-model APIs plus the compose pipeline): AIDA storyboard confirmation, first frame, clips, thin ffmpeg composition, optional product-brand watermark and product-visible AIGC-label switches, provider/platform provenance recording, storage, and handoff through the L3 package. A publication platform may apply its own label or gate later. Per D-028, voiceover scripts and video scripts are copy-layer deliverables produced by the LLM: from a copy-intent entry they are full-value deliverables in their own right, and they enter this workflow only as inputs when the user's intent is a finished video.（2026-07-24 D-105 修订：视频交付终点＝满足能力合同的**模型原生 VideoArtifact**；首帧→片段→thin ffmpeg 合成、字幕/BGM/品牌水印烧录退出视频创作主链，FFmpeg/ffprobe 降为不可见 AssetValidation/DeliveryNormalization——播放检查、容器归一化、封面抽取；复杂后期交剪映等外部工具。AIGC 标识承接＝AI 生成软提示＋发布确认提醒，各发布平台上传素材时自动执行标识动作，不做我方像素烧录——D-117/D-118 裁决。）
 _Avoid_: 用户要成片时只交视频脚本 (video script only), lightweight video later, 把口播稿/视频脚本说成成片能力的降级形态
 
 **Agent 模式**:
-The default interaction mode inside the generation workbench. It uses a document-like creation record to turn intent, references, field-level AI suggestions, editable drafts, an explicit execution contract, Generation Jobs, and results into resumable work objects. Direct composition remains a visible secondary mode over the same draft, references, model selection, quote, and Job; Agent is never a separate top-level workbench or a floating/background-only capability.
+The default interaction mode of 定制创作 (2026-07-24, per D-111/D-114): an agent streaming conversation with an AGUI card flow hosted inside the generation workbench Composer — the session is a first-class container carrying intent, guided follow-up cards, streaming plan cards, HITL confirmation cards, quota cards, task cards, and result preview cards; deep work opens from a result card into the object workspace (结果中心＝放大镜). 自由创作 is the parameter-panel secondary entry of the same creation center (explicit user model choice, not agent-driven); both lines share result cards, object workspaces, and the same submission truth. Agent is never a separate top-level workbench or a floating/background-only capability.
 _Avoid_: Agent 工作台, 独立 Agent 首页, chat bubble clone, floating copilot, 无可见入口的后台 Agent, 与直接编排分裂的第二份草稿
 
 **Agent 创作记录**:
-The selected default structure of the unified multimodal composer. It is a continuous, non-chat timeline of intent, proposed field patches, editable draft artifacts, source provenance, the user-inspectable execution contract, stable Job state, and results. Every AI proposal can be accepted, edited, or ignored without silently overwriting user input, and long-running work resumes against its original immutable submission snapshot.
+The selected default structure of the unified multimodal composer. Per D-114 (2026-07-24) it is the 定制创作 session's streaming conversation card flow (AGUI) — structured cards, not a plain chat log — carrying intent, proposed field patches, editable draft artifacts, source provenance, the user-inspectable execution contract, stable Job state, and results. Every AI proposal can be accepted, edited, or ignored without silently overwriting user input, and long-running work resumes against its original immutable submission snapshot.
 _Avoid_: 普通聊天记录, 隐藏模型或报价, AI 静默覆盖, 每轮重新上传, 刷新后重投任务
 
 **统一多模态输入台**:
@@ -547,7 +549,7 @@ The single default desktop home surface whose Composer is the primary visual and
 _Avoid_: 任务列表首页, 第二工作台, 两个 H1, 以上次访问位置替代默认主面
 
 **创作上下文**:
-The resumable state carried inside the single generation-workbench shell, including its source object, interaction mode, working inputs, references, and current stable session, work, or job. Media type is a Composer choice rather than a separate top-level page.
+The resumable state carried inside the single generation-workbench shell, including its source object, interaction mode, working inputs, references, and current stable session, work, or job. Media type is a Composer choice rather than a separate top-level page (2026-07-24 per D-114/D-115: in 定制创作 the outputKind is compiled into ContentIntent from the user's intent rather than explicitly selected; explicit media choice remains the 自由创作 entry contract per D-081).
 _Avoid_: 本地 Tab 状态, 按图文视频复制工作台, 依赖浏览器返回恢复来源, 无地址临时会话
 
 **来源上下文**:
@@ -613,6 +615,8 @@ _Avoid_: 改代码配模型, 改 env 才生效, 商家设置代替平台管理, 
 **平台管理员**:
 The global product role that manages platform model channels and credentials, official template releases, platform plan definitions, operations, users, and audit through Management Mode. It is not a workspace membership and does not replace the P1 Product Owner's release authority.
 _Avoid_: 工作区 Admin, 门店 Owner, P1 Owner, 任意工作区成员继承平台权限
+
+> 2026-07-24 D-102 修订：以下 Owner/Operator/Reviewer 三个商家角色词条仅为**内部 default-deny RBAC** 语义保留；首发＝一账号一门店一实际操作者，前台只呈现当前账号本人，不做成员邀请/角色切换/团队审批，不把角色投影成商家要理解的组织产品。
 
 **工作区 Owner**:
 The merchant-scoped role that manages its workspace billing, BYOK credentials, external connections, membership, and workspace defaults without access to platform channels, official-template release, or global plan controls.
@@ -735,15 +739,15 @@ A conditional P1 surface for distinguishing multiple operating accounts or showi
 _Avoid_: account center, credential vault, basic account record
 
 **单店工作区**:
-The P1 commercial tenant containing one store and a fixed four-role membership boundary: Workspace Owner, Workspace Operator, and Workspace Reviewer on the merchant side, with Platform Admin kept in the separate global management context. It still allows multiple platform accounts and integration connections, but does not add multi-store, Agency, custom ACL, or feature-based seat tiers.
-_Avoid_: team workspace, arbitrary seat plan, multi-store workspace, custom ACL
+The P1 commercial tenant containing one store and a fixed four-role membership boundary: Workspace Owner, Workspace Operator, and Workspace Reviewer on the merchant side, with Platform Admin kept in the separate global management context. It still allows multiple platform accounts and integration connections, but the tenant object itself does not add multi-store, Agency, custom ACL, or feature-based seat tiers.（2026-07-24 修订：D-102＝首发单店单人，角色仅内部 RBAC、前台不投影；D-121＝租户之上新增独立对象「内容工作区 ContentWorkspace」——账号 1:N、每个 1:1 一店铺/品牌、套餐一等维度初级 1/中级 2/高级 3＋加油包，与租户严格分离、禁复用 workspaceId；多店铺/品牌能力住在 ContentWorkspace 层，不改变租户边界。）
+_Avoid_: team workspace, arbitrary seat plan, multi-store workspace (≠ D-121 ContentWorkspace), custom ACL
 
 **运营平台账号**:
 A store-owned identity or publishing target on a content platform whose capabilities and health appear on the account capability page. Group webhooks, MCP connections, and BYOK connections are different objects and never count as platform accounts.
 _Avoid_: account pack, integration count, workspace member
 
 **高用量 Pro**:
-The P1 high-activity single-store plan with the same Composer creative, template, model-choice, and connection capabilities as Growth, differentiated only by larger output allowances, execution priority, and workday priority support. Pro Studio is a separate workspace add-on and is not implied by this plan name.
+The P1 high-activity single-store plan with the same Composer creative, template, model-choice, and connection capabilities as Growth, differentiated only by larger output allowances, execution priority, and workday priority support. Pro Studio is a separate workspace add-on and is not implied by this plan name.（2026-07-24 D-123 修订：公开档位命名统一为**初级/中级/高级**＝工作区 1/2/3＋文案/图片/视频三桶额度与三类加油包；Growth/高用量 Pro 为历史命名，建套餐页以 D-123 为准。）
 _Avoid_: team Pro, feature-gated Pro, unlimited support
 
 **产出量额度**:

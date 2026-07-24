@@ -39,6 +39,8 @@ Xiaohongshu variant · Douyin variant · Video Account variant
 rights/compliance state · export receipts · reuse lineage
 ```
 
+> 2026-07-24 修订：输出形态已由 D-114/D-118 扩为四类 outputKind——`copy / image / image_text_note / video`（四类共享同一 ContentPackage 信封，D-104）；上方 `image_text | video` 为决策当时枚举、已不完整，建模以决策日志四类为准（D-103 明确不锁死具体字段名，此处只作口径指针）。
+
 十条状态契约（共 12 个状态字面量：draft/needs_input → generating/verifying → partial → review_ready → accepted → needs_replacement → cancelling/cancelled → save_unknown → export_failed；供应商 URL 过期用 owned archive 规则，不新增状态），每条含"必须行为"：不创建付费任务补齐缺项、使用原幂等键只查询、保留成功子任务只重试失败、幂等查询不重复版本、撤权阻止新导出。详见 Codex FINAL-REVIEW §7.3。
 
 ### D06 — 旧三套只迁移只读、不再双写

@@ -6,6 +6,8 @@ Status: accepted (2026-07-07, supersedes ADR-0002)
 
 （2026-07-17，per D-034）新五段式工作流的 durable 载体为 DBOS Transact；下文「pipeline step-runner on durable_jobs」记录的是决定时机制，pg-boss 收窄为存量队列。单 Node 服务 + 单 Postgres 拓扑不变。
 
+2026-07-24 update (per merged authority D-105): the P0 video compose worker / ffmpeg concat + subtitles/BGM pipeline exits the creative main chain. Finished video is a supplier model-native VideoArtifact; FFmpeg/ffprobe are demoted to invisible AssetValidation/DeliveryNormalization utilities, not a product workflow step. The "video compose is the first split-signal watch item" clause above is superseded accordingly.
+
 ADR-0002 mandated four independently deployed services (App Shell / Core API / Agent Service / Worker Pool) plus a dual database (D1 shell-local + Postgres facts). Its motive — the App Shell must never invisibly own product facts — remains fully endorsed. Its implementation conflated "boundary" with "deployment unit": for a 1-3 person pre-PMF team the four-way split buys identity propagation, cross-service consistency, quadruple environments and joint debugging, with no scale that needs it. ADR-0002's own considered options never evaluated deployment weight or geography.
 
 **Decision**

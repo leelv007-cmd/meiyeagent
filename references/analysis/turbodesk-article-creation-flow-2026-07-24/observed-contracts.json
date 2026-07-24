@@ -1,0 +1,490 @@
+{
+  "schema": "turbodesk-observation/v1",
+  "observedAt": "2026-07-24",
+  "timezone": "Asia/Shanghai",
+  "site": "https://turbodesk.xfyun.cn/",
+  "testCase": {
+    "prompt": "创作一篇7月份头皮护理小红书图文",
+    "promptHtml": "<p>创作一篇7月份头皮护理小红书图文</p>",
+    "platform": "小红书",
+    "wordNum": "500",
+    "autoImg": true
+  },
+  "redaction": {
+    "cookies": true,
+    "authorization": true,
+    "accountId": true,
+    "localIP": true,
+    "deviceIdentifiers": true
+  },
+  "tasks": {
+    "quickFailure": {
+      "taskId": 18210804,
+      "quick": true,
+      "result": "failed_or_stalled",
+      "evidence": {
+        "resultArticleList": null,
+        "retryError": "当前对话正在处理中，请稍后重试",
+        "stopEndpointObserved": true,
+        "lastRequestStatus": 6,
+        "editorContentLength": 0
+      }
+    },
+    "deepSuccess": {
+      "taskId": 18210820,
+      "quick": false,
+      "result": "succeeded",
+      "submittedAt": "2026-07-24T06:33:26.996Z",
+      "completedAt": "2026-07-24T06:37:51.671Z",
+      "durationMs": 264675,
+      "topic": "7月份头皮护理控油技巧分享",
+      "candidateCount": 2,
+      "actualPicturesPerCandidate": 4,
+      "uiClaimedCoverCount": 1,
+      "uiClaimedInlineCount": 4
+    }
+  },
+  "models": [
+    {
+      "label": "绘文 V4.1",
+      "key": "gpt-5.2",
+      "type": "个性化",
+      "selected": true,
+      "initialValue": 0,
+      "confirmedValue": 1
+    },
+    {
+      "label": "绘文 V4",
+      "key": "MaaS_o4_mini",
+      "type": "个性化",
+      "selected": false,
+      "initialValue": 1,
+      "confirmedValue": 0
+    },
+    {
+      "label": "DeepSeek V3",
+      "key": "DeepSeek V3",
+      "type": "通用",
+      "selected": true,
+      "initialValue": 1,
+      "confirmedValue": 1
+    },
+    {
+      "label": "Qwen 3",
+      "key": "qwen-max",
+      "type": "严谨",
+      "selected": false,
+      "initialValue": 0,
+      "confirmedValue": 0
+    },
+    {
+      "label": "Kimi K2",
+      "key": "k2",
+      "type": "灵动",
+      "selected": false,
+      "initialValue": 0,
+      "confirmedValue": 0
+    },
+    {
+      "label": "Doubao Pro",
+      "key": "doubao-seed-2.0-pro",
+      "type": "口语化",
+      "selected": false,
+      "initialValue": 0,
+      "confirmedValue": 0
+    },
+    {
+      "label": "Doubao Pro 2.1",
+      "key": "doubao-seed-2-1-pro",
+      "type": "口语化",
+      "selected": false,
+      "initialValue": 0,
+      "confirmedValue": 0
+    }
+  ],
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/agentHomepage/create",
+      "purpose": "create task from homepage",
+      "responseData": "numeric taskId"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent/config?taskId=:taskId",
+      "purpose": "restore task configuration"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent/persona",
+      "purpose": "load account persona"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent/chat/page?page=1&size=10&taskId=:taskId",
+      "purpose": "restore task chat history"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent/v2/chat",
+      "purpose": "clarification or generation orchestration",
+      "responseContentType": "text/event-stream"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent/v2/confirm/continue",
+      "purpose": "confirm parameters and continue"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent/v2/chat/retry",
+      "purpose": "retry current chat/run",
+      "responseContentType": "text/event-stream"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent/task/stop",
+      "purpose": "stop task"
+    },
+    {
+      "method": "GET",
+      "path": "/api/editor/article/:taskId",
+      "purpose": "load editor document"
+    },
+    {
+      "method": "POST",
+      "path": "/api/editor/article",
+      "purpose": "save editor document",
+      "bodyFields": [
+        "fileId",
+        "title",
+        "content"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/member/score",
+      "purpose": "load current points"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vip/score/point/consume",
+      "purpose": "load point catalog"
+    }
+  ],
+  "samples": {
+    "createTask": {
+      "type": "input",
+      "query": "<p>创作一篇7月份头皮护理小红书图文</p>",
+      "quick": false,
+      "search": false,
+      "styleId": -1,
+      "attachment": [],
+      "file": null
+    },
+    "clarificationChat": {
+      "cite": {
+        "type": "others",
+        "title": "",
+        "content": "",
+        "source": ""
+      },
+      "content": "<p>创作一篇7月份头皮护理小红书图文</p>",
+      "attachment": [],
+      "taskId": "18210820",
+      "quick": false,
+      "styleId": -1,
+      "file": null,
+      "autoImg": false,
+      "demo": false,
+      "localIP": "[REDACTED]",
+      "version": 2
+    },
+    "confirmContinue": {
+      "taskId": "18210820",
+      "chatId": 1748050,
+      "wordNum": "500",
+      "platform": "小红书",
+      "content": "",
+      "autoImg": true,
+      "showType": "writeConfirm"
+    },
+    "generationChat": {
+      "content": "创作类型：小红书，篇幅：500。无其他补充，请开始创作。",
+      "genArticle": true,
+      "autoImg": true,
+      "noSearch": true,
+      "taskId": "18210820",
+      "quick": false,
+      "styleId": -1,
+      "file": null,
+      "demo": false,
+      "localIP": "[REDACTED]",
+      "version": 2
+    }
+  },
+  "streamProtocol": {
+    "contentType": "text/event-stream",
+    "markers": [
+      "[TASK_STEP_START]",
+      "[TASK_ITEM_START]",
+      "[THINKING_START]",
+      "[REQUIREMENT_START]",
+      "[REQUIREMENT_END]",
+      "[THINKING_END]",
+      "[TASK_ITEM_END]",
+      "[CHAT_ID]",
+      "[CHAT_RETRY]",
+      "[TASK_STEP_END]",
+      "[EV_END]",
+      "[GPT_ERROR]"
+    ],
+    "structuredBlockCountsInFinalResponse": {
+      "TASK_TITLE": 5,
+      "SEARCH_TASK": 1,
+      "SEARCH_RESULT": 1,
+      "SEARCH_ANALYSIS": 1,
+      "WRITING_ARTICLES": 1,
+      "CORRECT_ARTICLES": 1,
+      "IMAGE_ARTICLES": 1,
+      "RESULT": 1
+    },
+    "additionalClarificationTypes": [
+      "REQUIREMENT",
+      "REQUIREMENT_BUTTON"
+    ]
+  },
+  "research": {
+    "queries": [
+      {
+        "keyword": "头皮护理 夏季出油原因 科学原理",
+        "observedResultCount": 9
+      },
+      {
+        "keyword": "头皮护理 控油成分 产品推荐",
+        "observedResultCount": 10
+      },
+      {
+        "keyword": "头皮护理 夏季控油技巧 用户心得",
+        "observedResultCount": 4
+      }
+    ],
+    "selectedSourceCount": 7,
+    "allSelectedSourcesSameDomain": true,
+    "selectedDomain": "baijiahao.baidu.com",
+    "selectedSources": [
+      {
+        "publisherLabel": "海内新闻",
+        "title": "洗发水去屑止痒哪款效果好?2026公认去屑止痒最持久有效的洗发水大...",
+        "url": "https://baijiahao.baidu.com/s?id=1871489772413483662&wfr=spider&for=pc",
+        "contentLength": 7051
+      },
+      {
+        "publisherLabel": "菏泽广电网",
+        "title": "什么洗发水去屑止痒控油又蓬松?2026最新测评推荐,公认有效的去屑...",
+        "url": "https://baijiahao.baidu.com/s?id=1871493221285302956&wfr=spider&for=pc",
+        "contentLength": 6282
+      },
+      {
+        "publisherLabel": "忻州网",
+        "title": "头屑头油用什么洗发水最有效?2026高口碑公认好用的洗发水品牌实测...",
+        "url": "https://baijiahao.baidu.com/s?id=1871491896664919862&wfr=spider&for=pc",
+        "contentLength": 7042
+      },
+      {
+        "publisherLabel": "视听甘肃",
+        "title": "2026好用的控油去屑洗发水是哪款?无硅油配方、温和不刺激的良心推荐",
+        "url": "https://baijiahao.baidu.com/s?id=1871504737496383506&wfr=spider&for=pc",
+        "contentLength": 6205
+      },
+      {
+        "publisherLabel": "菏泽广电网",
+        "title": "...控油哪个牌子好?去屑止痒控油蓬松真实,2026公认口碑品牌实测推荐",
+        "url": "https://baijiahao.baidu.com/s?id=1871486538330891161&wfr=spider&for=pc",
+        "contentLength": 5655
+      },
+      {
+        "publisherLabel": "海内新闻",
+        "title": "头屑多用什么洗发水最好?2026十款热门洗发水实测:控油去屑止痒全...",
+        "url": "https://baijiahao.baidu.com/s?id=1868937568991319276&wfr=spider&for=pc",
+        "contentLength": 6023
+      },
+      {
+        "publisherLabel": "视听甘肃",
+        "title": "控油止痒洗发水哪种好用?2026公认口碑好的去屑止痒洗发水!去屑...",
+        "url": "https://baijiahao.baidu.com/s?id=1871294597922294893&wfr=spider&for=pc",
+        "contentLength": 6004
+      }
+    ]
+  },
+  "articleCandidateObservedFields": [
+    "taskTitle",
+    "name",
+    "modelName",
+    "llm",
+    "writingStatus",
+    "writingStatusName",
+    "iconType",
+    "title",
+    "content",
+    "tags",
+    "correctedContent",
+    "articleType",
+    "pictures",
+    "query",
+    "withImg",
+    "styleId"
+  ],
+  "candidates": [
+    {
+      "modelName": "绘文 V4.1",
+      "title": "7月油头控油技巧：不塌",
+      "articleType": "xiaohongshu",
+      "contentLength": 860,
+      "tagsLength": 46,
+      "pictureCount": 4,
+      "withImg": true,
+      "styleId": -1,
+      "risk": "manual_review_required"
+    },
+    {
+      "modelName": "DeepSeek V3",
+      "title": "夏天头皮出油超快？2026高口碑控油去屑洗发水实测推荐",
+      "articleType": "xiaohongshu",
+      "contentLength": 676,
+      "tagsLength": 66,
+      "pictureCount": 4,
+      "withImg": true,
+      "styleId": -1,
+      "risk": "block_unsupported_product_and_efficacy_claims"
+    }
+  ],
+  "successfulPersistence": {
+    "chat": {
+      "total": 4,
+      "completed": true,
+      "records": [
+        {
+          "id": 1748048,
+          "type": "req",
+          "status": 0,
+          "contentLength": 23,
+          "refresh": false
+        },
+        {
+          "id": 1748050,
+          "type": "res",
+          "status": 0,
+          "contentLength": 1730,
+          "refresh": false
+        },
+        {
+          "id": 1748055,
+          "type": "req",
+          "status": 0,
+          "contentLength": 28,
+          "refresh": false
+        },
+        {
+          "id": 1748068,
+          "type": "res",
+          "status": 0,
+          "contentLength": 147574,
+          "refresh": true
+        }
+      ]
+    },
+    "editorArticle": {
+      "fileId": "18210820",
+      "title": "",
+      "version": 0,
+      "contentLength": 0,
+      "chatId": 0,
+      "contentType": "text/markdown"
+    }
+  },
+  "pointCatalog": [
+    {
+      "point": "writing-style",
+      "desc": "体裁创作",
+      "score": 6
+    },
+    {
+      "point": "custom-writing",
+      "desc": "自由创作",
+      "score": 6
+    },
+    {
+      "point": "imitation",
+      "desc": "仿写风格",
+      "score": 6
+    },
+    {
+      "point": "rewrite",
+      "desc": "改写内容",
+      "score": 6
+    },
+    {
+      "point": "gen-title",
+      "desc": "起标题",
+      "score": 1
+    },
+    {
+      "point": "article-ai-img",
+      "desc": "AI配图",
+      "score": 0
+    },
+    {
+      "point": "ai-img",
+      "desc": "AI配图",
+      "score": 1
+    },
+    {
+      "point": "old-kolors",
+      "desc": "绘图1.0",
+      "score": 4
+    },
+    {
+      "point": "kolors",
+      "desc": "绘图1.0",
+      "score": 1
+    },
+    {
+      "point": "jimeng",
+      "desc": "绘图2.0",
+      "score": 10
+    },
+    {
+      "point": "light-img-page-gen",
+      "desc": "套图生成（${page}页）",
+      "score": 2
+    },
+    {
+      "point": "light-img-ai-img",
+      "desc": "AI配图",
+      "score": 4
+    }
+  ],
+  "balanceObservation": {
+    "firstObserved": 2998,
+    "afterFailureExperiments": 2954,
+    "afterDeepSuccess": 2948,
+    "observedDeepSuccessDelta": 6,
+    "warning": "The total delta includes failure, retry, stop and diagnostic actions and is not a per-run price."
+  },
+  "implementationBoundary": {
+    "observed": [
+      "browser UI",
+      "network requests",
+      "SSE stream",
+      "refresh persistence"
+    ],
+    "notObserved": [
+      "server source code",
+      "database schema",
+      "queue implementation",
+      "model gateway internals",
+      "image model internals"
+    ]
+  }
+}
