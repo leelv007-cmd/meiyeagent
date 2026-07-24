@@ -2,7 +2,7 @@
 
 Status: accepted (2026-07-24)
 
-> 本 ADR 凝结自决策日志 D-119/D-120（含 D-113/D-117 关联合同；MinerU 实读笔记 `references/analysis/mineru-api-notes-2026-07-24.md`），是实施投影；冲突以决策日志为准。
+> 本 ADR 凝结自决策日志 D-119/D-120/D-129（含 D-113/D-117 关联合同；MinerU 实读笔记 `references/analysis/mineru-api-notes-2026-07-24.md`），是实施投影；冲突以决策日志为准。
 
 ## Context
 
@@ -12,7 +12,7 @@ Status: accepted (2026-07-24)
 
 **四层表结构（D-120）**：`OwnedAsset`（原件层：object key＋sha256＋权利标注，可重解析不重传）→`ParsedDocument`（解析层：中间 Markdown/JSON＋解析器版本＋sourceAssetId，解析器升级可重跑、审计可回放）→`AssetDraft`（草案层：领域草案＋provenance＋unconfirmed 字段集）→**领域表（确认层）**。**ContextBundle 与一切 workflow 只读确认层**——AI 读出什么与商家确认什么永远分层。
 
-**解析引擎路由**：文档型（照片/截图/PDF/office/复杂表格）统一走 MinerU 精准 API（token＋JSON＋批量；`is_ocr=true`/`model_version=vlm`/`enable_table=true` 为参数基线）；网页 URL 走 MinerU-HTML（反爬可达性待实测，兜底＝截图上传）；纯视觉图（门头/作品/客照）＝生成链既有多模态模型一次调用做四 slot 分类，**不为解析建独立 VLM 通道**；敏感证件（营业执照等）v1 不自动解析、手填。结构化段＝LLM 把中间表示转领域草案，MinerU 不可替代。
+**解析引擎路由**：文档型（照片/截图/PDF/office/复杂表格）统一走 MinerU 精准 API（token＋JSON＋批量；`is_ocr=true`/`model_version=vlm`/`enable_table=true` 为参数基线；部署形态＝官方 API 正式拍板，上传环节数据出域提示＝温柔文字免责、不设门槛不阻断——D-129）；网页 URL 走 MinerU-HTML（反爬可达性待实测，兜底＝截图上传）；纯视觉图（门头/作品/客照）＝生成链既有多模态模型一次调用做四 slot 分类，**不为解析建独立 VLM 通道**；敏感证件（营业执照等）v1 不自动解析、手填。结构化段＝LLM 把中间表示转领域草案，MinerU 不可替代。
 
 **定位总纲：MinerU＝体验提升工具，非核心卡点**。**手动输入容灾**：解析失败/回填不准时一键转手填（provenance=`user`），同 schema 同确认层，下游引用无差别；解析中动画常带「跳过，直接手动填写」出口；解析服务不可用不得影响录入与创作。
 
@@ -27,4 +27,4 @@ Status: accepted (2026-07-24)
 - 前端永不直调第三方解析 API；key/计量/审计只在服务端。
 - ContextBundle/workflow 读草案层或解析层＝缺陷；只吃确认层。
 - 解析失败/超时/限流永不阻断用户流程；手填轨常在。
-- 运维硬要求：MinerU Token 90 天硬过期须轮换热切换；限流 50 文件/分钟、5000 文件/天；自部署（开源需 GPU）为规模化迁移路径。
+- 运维硬要求：MinerU Token 90 天硬过期须轮换热切换；限流 50 文件/分钟、5000 文件/天；自部署（开源需 GPU）为规模化迁移路径（挂 E 门同批评估——D-129）。
