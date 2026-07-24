@@ -1,0 +1,63 @@
+/*
+ * HeroUI Pro V3 (Glass) stylesheet.
+ *
+ * Loaded as a route-level <link> by the dev-only spike routes, never from
+ * __root.tsx: the app's own pages keep shipping src/styles.css untouched, and
+ * the initial CSS bundle the bundle-budget gate measures does not move.
+ *
+ * Import order matters — @heroui/styles brings the v3 base + default theme,
+ * the vendored Glass sheet re-materialises it as 磨砂玻璃 (D-130 拍板 Glass;
+ * Brutalism and Mouve are deliberately not vendored), and the token bridge
+ * lands DESIGN.md 门店橱窗 values on top of both.
+ */
+@import "@heroui/styles/css";
+@import "./vendor/css/index.css";
+@import "./theme/design-token-bridge.css";
+
+@source "./vendor";
+@source "../../routes/heroui-spike";
+@source "../../routes/heroui-spike.tsx";
+
+/*
+ * DESIGN.md §4「玻璃有边法则」— 白 alpha 底 + blur + 1px 白描边, three tiers.
+ * Anything floating over the ambient layer uses these; 实体内容区 uses 白瓷.
+ */
+.meiye-glass-shell {
+  background: var(--meiye-glass-80);
+  -webkit-backdrop-filter: blur(64px);
+  backdrop-filter: blur(64px);
+  border: 1px solid var(--meiye-glass-edge);
+}
+
+.meiye-glass-piece {
+  background: var(--meiye-glass-50);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--meiye-glass-edge);
+}
+
+.meiye-glass-trace {
+  background: var(--meiye-glass-35);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--meiye-glass-edge);
+}
+
+.meiye-porcelain {
+  background: var(--meiye-paper);
+  box-shadow: var(--meiye-shadow-ambient);
+}
+
+/* DESIGN.md §3 — single family, weight contrast carries the personality. */
+.meiye-heroui-glass {
+  font-family:
+    Inter, "HarmonyOS Sans", MiSans, "PingFang SC", "Microsoft YaHei",
+    ui-sans-serif, system-ui, sans-serif;
+}
+
+/* DESIGN.md §3 Display — 问候语专用, 200 超细, 一屏最多一处. */
+.meiye-greeting {
+  font-size: clamp(1.75rem, 3.5vw, 2.75rem);
+  font-weight: 200;
+  line-height: 1.2;
+}
