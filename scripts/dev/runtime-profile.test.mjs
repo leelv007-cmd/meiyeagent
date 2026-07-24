@@ -45,6 +45,7 @@ test('development runtime activates the four-service fixture stack', () => {
   assert.equal(profile.CORE_SERVICE_URL, 'http://127.0.0.1:4102');
   assert.equal(profile.CANVAS_SERVICE_URL, 'http://127.0.0.1:4200');
   assert.equal(profile.MAIN_APP_ORIGIN, 'http://localhost:3000');
+  assert.equal(profile.CANVAS_ORIGIN, 'http://localhost:4200');
 });
 
 test('development runtime preserves an explicit separate DBOS database', () => {
