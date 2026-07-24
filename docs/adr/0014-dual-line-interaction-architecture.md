@@ -2,7 +2,7 @@
 
 Status: accepted (2026-07-24)
 
-> 本 ADR 凝结自决策日志 D-103/D-111/D-114/D-115/D-116/D-126（含 D-081/D-089/D-090/D-098 的 2026-07-24 修订标注），是实施投影；冲突以决策日志为准。
+> 本 ADR 凝结自决策日志 D-103/D-111/D-114/D-115/D-116/D-126/D-130（含 D-081/D-089/D-090/D-098 的 2026-07-24 修订标注），是实施投影；冲突以决策日志为准。
 
 ## Context
 
@@ -20,6 +20,8 @@ Status: accepted (2026-07-24)
 **Dashboard 工作台首页（D-126，非 Landing）**：热态＝一天一个主推荐（为什么今天发/用了本店什么/希望顾客做什么），点击＝**预填充 Composer 非自动执行**，v1 依据＝确定性规则＋行业先验（admin-config 受控，不建推荐算法不接实时热点）；冷态＝三行业示例店（provenance=platform_sample 永不进真实 ContextBundle，真实资产录入即替换），示例任务＝真实执行扣试用额度，不建演示模式第二链路。
 
 **流式合同**：token 级流式（ADR-0007/0010）由对话流承接——文案/图文自首个 token 起流式渲染，workflow 进度帧不得替代 token 流。
+
+**组件供给基准（D-130）**：前端组件优先取自 **HeroUI Pro V3**（`@ag-ui/pro`，HeroUI v3＋Tailwind v4＋React 19＋React Aria；用户专属授权，本地镜像 `references/repos/herouipro-v3/` 不入 git、不对外分发）。适用面＝REBUILD 换壳与 NEW 净新建；对话流主容器优先评估其 AI Chat 组件族（chat-conversation/prompt-input/chain-of-thought/markdown/code-block）；D-107 后台动态表单＝HeroUI 表单组件族组装，不引 JSON-Schema 表单框架。KEEP 桶存量组件不为换库专项迁移（触碰时换）；「门店橱窗」（DESIGN.md）仍为唯一视觉权威，组件经主题 token 适配接入（内置 Glass 主题为适配起点），不得原样拖入。
 
 ## 实施红线
 

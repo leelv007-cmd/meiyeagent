@@ -36,6 +36,7 @@ references/repos/vozeb/
 references/repos/harness-2026-07-17/
 # mkfast-app template mirror (depth-1, re-cloneable, credits/redemption reference, 2026-07-19)
 references/repos/mkfast-app/
+references/repos/herouipro-v3/
 # codex fleet run logs (bulky process artifacts, ~9M)
 .scratch/vozeb-xcheck-2026-07-15/logs/
 

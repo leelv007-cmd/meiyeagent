@@ -253,3 +253,7 @@ Generation Job 运行时，Result Card 边缘出现玫瑰辉光呼吸（4s ease-
 
 ### 玫瑰金火花（暗色档）
 一点胭脂法则在暗色下不变，只换档：`spark = oklch(0.72 0.11 18)`、`spark-wash = oklch(0.3 0.045 18)`、`spark-deep = oklch(0.88 0.05 18)`。AI 徽标（如版本历史「AI 生成」）用 spark-wash 底 + spark-deep 字，暗色下实测 ≥4.5:1。焦点环在暗色下带玫瑰微调 `product-focus = oklch(0.85 0.08 18)`。
+
+## 组件供给（D-130，2026-07-24）
+
+前端组件优先取自 **HeroUI Pro V3**（用户专属授权，本地镜像 `references/repos/herouipro-v3/`，不入 git）。本文件仍是**唯一视觉权威**：HeroUI 组件（含内置 Glass 主题，作磨砂玻璃语言的适配起点）一律经上述 token 适配后接入——玻璃有边法则、墨色梯度、一点胭脂法则、对比度硬要求对组件库产物同样强制，不得原样拖入。适用面＝换壳（REBUILD）与净新建（NEW）；存量组件不为换库专项迁移（触碰时换）。
