@@ -7,7 +7,7 @@
   "packageManager": "pnpm@10.30.3",
   "scripts": {
     "build": "pnpm -r --if-present build",
-    "check": "pnpm -r --if-present check && node scripts/uiux/secret-scan.mjs && node scripts/uiux/decision-ticket-guard.mjs && node scripts/uiux/heroui-mirror-guard.mjs",
+    "check": "node scripts/uiux/check-gates.mjs",
     "contentpackage:cutover": "pnpm --filter @meiye/core contentpackage:cutover",
     "dev": "node --env-file-if-exists=.env.example --env-file-if-exists=.env --run=dev:all",
     "dev:all": "pnpm -r --parallel --filter @meiye/web --filter @meiye/core --filter @meiye/canvas run \"/^dev(:worker)?$/\"",
