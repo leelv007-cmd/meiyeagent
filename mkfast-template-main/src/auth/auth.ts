@@ -14,6 +14,9 @@ import { emailHarmony } from 'better-auth-harmony';
 import { admin } from 'better-auth/plugins';
 import { recentAuthenticationHook } from '@/auth/recent-authentication-hook';
 import { apiKeyPlugin } from '@/auth/api-key-compatibility';
+import { assembleVerifiedUser } from '@/auth/user-assembly';
+import { ensurePersonalWorkspace } from '@/lib/auth/workspace-bootstrap';
+import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
 
 /**
  * Better Auth Configuration
@@ -75,6 +78,9 @@ export function createAuth() {
           template: 'verifyEmail',
           context: { url, name: user.name ?? '' },
         });
+      },
+      afterEmailVerification: async (user) => {
+        await assembleUser(user);
       },
       sendOnSignIn: true,
     },
@@ -169,11 +175,27 @@ export function createAuth() {
 
 export type Auth = ReturnType<typeof createAuth>;
 
+async function assembleUser(user: User) {
+  const database = getDb();
+  return assembleVerifiedUser(user, {
+    ensureWorkspace: (verifiedUser) =>
+      ensurePersonalWorkspace(verifiedUser, database),
+    provisionWorkspace: ({ ownerUserId, workspaceId }) =>
+      ensureVerifiedWorkspaceProvisioned({
+        coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
+        coreServiceUrl: serverEnv.CORE_SERVICE_URL,
+        database,
+        ownerUserId,
+        workspaceId,
+      }),
+  });
+}
+
 /**
  * Runs after a new user is created. Auto-subscribes to newsletter when enabled.
  */
 async function onCreateUser(user: User) {
-  if (import.meta.env.MODE === 'e2e') return;
+  await assembleUser(user);
   const newsletterConfig = websiteConfig.newsletter;
   if (
     !user.email ||

@@ -51,7 +51,7 @@ const PERSISTENT_STARTER_PERIOD_END = '9999-12-31T23:59:59.999Z';
 export const DEFAULT_PLAN_OFFERS: PlanOffer[] = [
   {
     id: 'trial',
-    allowance: { audio: 0, copy: 20, image: 5, video: 2 },
+    allowance: { audio: 0, copy: 5, image: 5, video: 1 },
     concurrencyLimit: 1,
     queuePriority: 1,
     supportLabel: 'standard',

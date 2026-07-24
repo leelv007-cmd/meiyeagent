@@ -378,7 +378,12 @@ describe('ProductEntitlementFoundationModule', () => {
     assert.ok(trial);
     assert.equal(trial.periodStrategy, 'fixed_days');
     assert.equal(trial.expireDays, 7);
-    assert.equal(trial.allowance.copy, 20);
+    assert.deepEqual(trial.allowance, {
+      audio: 0,
+      copy: 5,
+      image: 5,
+      video: 1,
+    });
 
     await assert.rejects(
       service.executeModule(
@@ -411,7 +416,7 @@ describe('ProductEntitlementFoundationModule', () => {
     };
     assert.equal(gifted.plan.tier, 'trial');
     assert.equal(gifted.plan.periodStrategy, 'fixed_days');
-    assert.equal(gifted.usage.copy.allowance, 20);
+    assert.equal(gifted.usage.copy.allowance, 5);
     const starts = Date.parse(gifted.plan.periodStartsAt);
     const ends = Date.parse(gifted.plan.periodEndsAt);
     assert.equal(ends - starts, 7 * 24 * 60 * 60 * 1000);
@@ -430,7 +435,7 @@ describe('ProductEntitlementFoundationModule', () => {
       { action: 'register_gift', payload: {} },
       'workspace-provision:trial:v1-retry-other-key',
     )) as { usage: { copy: { allowance: number } } };
-    assert.equal(secondKey.usage.copy.allowance, 20);
+    assert.equal(secondKey.usage.copy.allowance, 5);
   });
 
   it('hot-reads trial plan config into catalog', async () => {

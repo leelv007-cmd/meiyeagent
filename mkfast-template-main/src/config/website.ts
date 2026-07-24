@@ -70,8 +70,9 @@ export const websiteConfig: WebsiteConfig = {
     paginationSize: 6,
   },
   mail: {
-    enable: false,
-    provider: 'cloudflare',
+    enable: true,
+    provider: 'resend',
+    fromEmail: 'onboarding@resend.dev',
   },
   newsletter: {
     enable: false,

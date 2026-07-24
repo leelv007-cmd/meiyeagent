@@ -555,7 +555,7 @@ describe('Admin config application seam', () => {
             key: 'plan.allowances.trial',
             reason: 'Accept the fixed-days trial boundary',
             value: {
-              allowance: { audio: 0, copy: 20, image: 5, video: 2 },
+              allowance: { audio: 0, copy: 5, image: 5, video: 1 },
               concurrencyLimit: 1,
               expireDays: 366,
               queuePriority: 1,

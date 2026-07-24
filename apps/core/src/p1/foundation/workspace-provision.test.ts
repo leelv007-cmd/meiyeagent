@@ -38,10 +38,17 @@ describe('WorkspaceProvisionService', () => {
     const { provisioner, repository } = setup();
     const first = await provisioner.provisionTrial(owner);
     assert.equal(first.plan?.tier, 'trial');
-    assert.equal(first.usage.copy.allowance, 20);
+    assert.deepEqual(
+      {
+        copy: first.usage.copy.allowance,
+        image: first.usage.image.allowance,
+        video: first.usage.video.allowance,
+      },
+      { copy: 5, image: 5, video: 1 },
+    );
 
     const second = await provisioner.provisionTrial(owner);
-    assert.equal(second.usage.copy.allowance, 20);
+    assert.equal(second.usage.copy.allowance, 5);
 
     const events = await repository.listProductEntitlementEvents(
       owner.workspaceId,

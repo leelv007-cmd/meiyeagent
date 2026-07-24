@@ -8,13 +8,16 @@ import type {
 } from './types';
 import { ResendProvider } from './provider/resend';
 import { CloudflareProvider } from './provider/cloudflare';
+import { LogMailProvider } from './provider/log';
+import { serverEnv } from '@/env/server';
 
 let mailProvider: MailProvider | null = null;
 
 type ProviderFactory = () => MailProvider;
 
 const providerRegistry: Record<MailProviderName, ProviderFactory> = {
-  resend: () => new ResendProvider(),
+  resend: () =>
+    serverEnv.RESEND_API_KEY ? new ResendProvider() : new LogMailProvider(),
   cloudflare: () => new CloudflareProvider(),
 };
 
