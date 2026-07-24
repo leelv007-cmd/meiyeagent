@@ -9,14 +9,37 @@
  * the vendored Glass sheet re-materialises it as 磨砂玻璃 (D-130 拍板 Glass;
  * Brutalism and Mouve are deliberately not vendored), and the token bridge
  * lands DESIGN.md 门店橱窗 values on top of both.
+ *
+ * The six @heroui/styles imports below are `@heroui/styles/dist/index.css`
+ * inlined verbatim *minus* its leading `@import "tailwindcss"` /
+ * `@import "tw-animate-css"`. Pulling the package entry whole compiled a second
+ * complete Tailwind into this sheet — preflight, theme variables and every
+ * utility already shipped by src/styles.css — which cost 236KB of the 733KB
+ * artefact (79.7KB → 47.4KB gzip). What is left is HeroUI's own component CSS,
+ * not a duplicate of anything.
+ *
+ * src/styles.css is this app's one Tailwind root and its automatic
+ * source detection already covers src/routes/heroui-spike and ./vendor (which
+ * is why the @source directives that used to sit here are gone too), so the
+ * utilities the spike renders with come from there. @reference gives the
+ * `@apply` calls inside HeroUI's component CSS the same theme and the same
+ * tw-animate-css keyframe utilities to resolve against, and emits nothing; it
+ * sits below the imports because @import must lead the sheet.
  */
-@import "@heroui/styles/css";
+@layer theme, base, components, utilities;
+
+@import "@heroui/styles/base/base.css" layer(base);
+@import "@heroui/styles/base/scrollbar.css" layer(base);
+@import "@heroui/styles/components/index.css" layer(components);
+@import "@heroui/styles/themes/default/index.css" layer(theme);
+@import "@heroui/styles/utilities";
+@import "@heroui/styles/variants";
+
 @import "./vendor/css/index.css";
 @import "./theme/design-token-bridge.css";
 
-@source "./vendor";
-@source "../../routes/heroui-spike";
-@source "../../routes/heroui-spike.tsx";
+@reference "tailwindcss";
+@reference "tw-animate-css";
 
 /*
  * DESIGN.md §4「玻璃有边法则」— 白 alpha 底 + blur + 1px 白描边, three tiers.
