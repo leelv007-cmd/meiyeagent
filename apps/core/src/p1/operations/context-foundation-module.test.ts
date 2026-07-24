@@ -187,3 +187,75 @@ test('a fact crossing expiresAt makes the frozen bundle fence stale without anot
   assert.equal(fence.stale, true);
   assert.deepEqual(fence.changedSources, ['facts']);
 });
+
+test('canonical fact append accepts a superseding revocation revision', async () => {
+  const facts = new MemoryStoreFactLedger();
+  const module = new ContextFoundationModule(
+    facts,
+    new MemoryContextBundleRepository(),
+    new MemoryContextSourceRevisionRepository(),
+    () => '2026-07-18T03:00:00.000Z',
+  );
+  const base = {
+    factId: 'revoked-price',
+    kind: 'price',
+    key: 'offer.price',
+    scope: { storeId: 'store-a' },
+    source: {
+      kind: 'user_confirmation',
+      referenceId: 'confirmation-price',
+      capturedAt: '2026-07-18T01:00:00.000Z',
+    },
+    effectiveFrom: '2026-07-18T01:00:00.000Z',
+    expiresAt: null,
+  };
+  await module.execute({
+    context,
+    idempotencyKey: 'append-price',
+    input: {
+      action: 'store_fact_append',
+      payload: {
+        ...base,
+        value: { amount: 239, currency: 'CNY' },
+        expectedRevision: 0,
+      },
+    },
+  });
+  await module.execute({
+    context,
+    idempotencyKey: 'revoke-price',
+    input: {
+      action: 'store_fact_append',
+      payload: {
+        ...base,
+        value: null,
+        revisionKind: 'revocation',
+        source: {
+          ...base.source,
+          referenceId: 'confirmation-price-revocation',
+        },
+        effectiveFrom: '2026-07-18T02:00:00.000Z',
+        expectedRevision: 1,
+      },
+    },
+  });
+
+  assert.deepEqual(
+    await facts.listActive({
+      workspaceId: context.workspaceId,
+      scope: { storeId: 'store-a' },
+      at: '2026-07-18T03:00:00.000Z',
+    }),
+    [],
+  );
+  assert.deepEqual(
+    (await facts.history(context.workspaceId, 'revoked-price')).map((fact) => ({
+      revision: fact.revision,
+      revisionKind: fact.revisionKind,
+    })),
+    [
+      { revision: 1, revisionKind: undefined },
+      { revision: 2, revisionKind: 'revocation' },
+    ],
+  );
+});

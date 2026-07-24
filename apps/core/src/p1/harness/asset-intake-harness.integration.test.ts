@@ -12,6 +12,7 @@ import type {
   StructuredNodeRunnerRequest,
 } from '../model-supply/structured-node-runner.js';
 import { LedgerBackedHarnessContextPort } from './production-context-port.js';
+import { assessRecipeFactSatisfaction } from './fact-satisfaction.js';
 import {
   ProductionHarnessStagePorts,
   type HarnessCopyDeliveryPort,
@@ -154,6 +155,18 @@ test('corrected intake fact is the only price in the next frozen Task, output an
     layer: 'current_fact',
     pool: 'store_personal',
     sourceRef: factRef,
+    factSnapshot: {
+      factId: 'fact-price',
+      kind: 'price',
+      revision: 1,
+      source: {
+        kind: 'user_confirmation',
+        referenceId: 'decision-price',
+        capturedAt: now,
+      },
+      effectiveFrom: now,
+      expiresAt: null,
+    },
   });
   assert.deepEqual(bundle?.referencedFactRevisions, [
     { factId: 'fact-price', revision: 1 },
@@ -170,6 +183,26 @@ test('corrected intake fact is the only price in the next frozen Task, output an
     result,
   });
   assert.equal(downstreamEvidence.includes('239'), false);
+  assert.ok(bundle);
+  const satisfaction = await assessRecipeFactSatisfaction(
+    {
+      workflowId: 'task-after-correction',
+      workflowRevision: 1,
+      intent: '按已确认价格写团购文案。',
+      factTypes: ['price'],
+      bundle,
+      at: now,
+    },
+    new QueueRunner([
+      {
+        status: 'satisfied',
+        matchedFactRefs: [factRef],
+        missingFactTypes: [],
+      },
+    ]),
+    { async isAuthorized() { return true; } },
+  );
+  assert.equal(satisfaction.action, 'execute');
 });
 
 class QueueRunner implements StructuredNodeRunner {

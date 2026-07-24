@@ -34,6 +34,23 @@ test('store facts require immutable version, source, scope and a valid time wind
     false,
   );
   assert.equal(storeFactSchema.safeParse({ ...fact, revision: 0 }).success, false);
+  assert.equal(
+    storeFactSchema.safeParse({
+      ...fact,
+      value: null,
+      revision: 2,
+      revisionKind: 'revocation',
+    }).success,
+    true,
+  );
+  assert.equal(
+    storeFactSchema.safeParse({
+      ...fact,
+      revision: 2,
+      revisionKind: 'revocation',
+    }).success,
+    false,
+  );
 });
 
 test('ContextBundle contract freezes six dimensions and all eight source revisions', () => {

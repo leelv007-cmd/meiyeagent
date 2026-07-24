@@ -96,6 +96,31 @@ test(
         ).filter((fact) => fact.factId === 'moving-offer'),
         [],
       );
+      await ledger.append({
+        ...input,
+        factId: 'revoked-offer',
+        expectedRevision: 0,
+      });
+      await ledger.append({
+        ...input,
+        factId: 'revoked-offer',
+        value: null,
+        revisionKind: 'revocation',
+        source: { ...input.source, referenceId: 'revocation-confirmation' },
+        effectiveFrom: '2026-07-19T01:00:00.000Z',
+        recordedAt: '2026-07-19T01:00:00.000Z',
+        expectedRevision: 1,
+      });
+      assert.deepEqual(
+        (
+          await ledger.listActive({
+            workspaceId,
+            scope: { storeId: 'store-a', serviceId: 'service-a' },
+            at: '2026-07-19T02:00:00.000Z',
+          })
+        ).filter((fact) => fact.factId === 'revoked-offer'),
+        [],
+      );
     } finally {
       await ledger.deleteWorkspaceForTest(workspaceId);
       await pool.end();

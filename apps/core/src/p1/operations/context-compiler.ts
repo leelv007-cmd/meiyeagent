@@ -66,6 +66,13 @@ function compareContributions(
   left: ContextContribution,
   right: ContextContribution,
 ) {
+  if (left.factSnapshot && right.factSnapshot) {
+    const factOrder =
+      Date.parse(right.factSnapshot.effectiveFrom) -
+        Date.parse(left.factSnapshot.effectiveFrom) ||
+      right.factSnapshot.revision - left.factSnapshot.revision;
+    if (factOrder !== 0) return factOrder;
+  }
   return (
     priority(left) - priority(right) ||
     left.sourceRef.localeCompare(right.sourceRef) ||
@@ -100,6 +107,9 @@ export function compileContextBundle(
           layer: candidate.layer,
           pool: candidate.pool,
           sourceRef: candidate.sourceRef,
+          ...(candidate.factSnapshot
+            ? { factSnapshot: candidate.factSnapshot }
+            : {}),
         },
       });
       if (candidate.factRevision) {

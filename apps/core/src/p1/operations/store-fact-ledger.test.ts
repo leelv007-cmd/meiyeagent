@@ -103,6 +103,40 @@ test('an expired newer revision does not resurrect an older fact revision', asyn
   );
 });
 
+test('latest semantic revision revokes a fact without mutating prior revisions', async () => {
+  const ledger = new MemoryStoreFactLedger();
+  await ledger.append({ ...baseInput, expiresAt: null, expectedRevision: 0 });
+  await ledger.append({
+    ...baseInput,
+    value: null,
+    expiresAt: null,
+    revisionKind: 'revocation',
+    source: { ...baseInput.source, referenceId: 'revocation-1' },
+    effectiveFrom: '2026-07-19T01:00:00.000Z',
+    recordedAt: '2026-07-19T01:00:00.000Z',
+    expectedRevision: 1,
+  });
+
+  assert.deepEqual(
+    await ledger.listActive({
+      workspaceId: 'workspace-a',
+      scope: { storeId: 'store-a', serviceId: 'service-a' },
+      at: '2026-07-19T02:00:00.000Z',
+    }),
+    [],
+  );
+  assert.deepEqual(
+    (await ledger.history('workspace-a', baseInput.factId)).map((fact) => ({
+      revision: fact.revision,
+      revisionKind: fact.revisionKind,
+    })),
+    [
+      { revision: 1, revisionKind: undefined },
+      { revision: 2, revisionKind: 'revocation' },
+    ],
+  );
+});
+
 test('fact identities cannot collide across colon-delimited workspaces', async () => {
   const ledger = new MemoryStoreFactLedger();
   await ledger.append({

@@ -41,6 +41,7 @@ const RECIPE_ALLOWLIST = [
   'presentation',
   'delivery',
   'contextPatches',
+  'factTypes',
   'sourceRequirements',
   'modelPolicy',
   'settingsPatches',

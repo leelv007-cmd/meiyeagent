@@ -141,6 +141,7 @@ function normalizeRecipeBody(body: RecipeBodyInput): Omit<
     },
     delivery: { ...(body.delivery ?? {}) },
     contextPatches: { ...(body.contextPatches ?? {}) },
+    factTypes: [...(body.factTypes ?? [])],
     sourceRequirements: [...(body.sourceRequirements ?? [])],
     modelPolicy: {
       mode: body.modelPolicy.mode,
@@ -239,6 +240,7 @@ function bodyFromRecipe(record: ServerRecipeRecord): RecipeBodyInput {
     presentation: structuredClone(record.presentation),
     delivery: structuredClone(record.delivery),
     contextPatches: structuredClone(record.contextPatches),
+    factTypes: structuredClone(record.factTypes),
     sourceRequirements: structuredClone(record.sourceRequirements),
     modelPolicy: structuredClone(record.modelPolicy),
     settingsPatches: structuredClone(record.settingsPatches),

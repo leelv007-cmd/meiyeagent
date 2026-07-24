@@ -117,6 +117,7 @@ export interface CreationRecipeVersion {
   delivery: RecipeDeliveryDefaults;
   /** User-visible context patches only. */
   contextPatches: Record<string, unknown>;
+  factTypes: import('./context-bundle.js').StoreFactKind[];
   sourceRequirements: RecipeSourceRequirement[];
   /** Legacy recipes may omit this and fail closed at unified submit. */
   requiredSourcePolicy?: RecipeRequiredSourcePolicy;
@@ -151,6 +152,8 @@ export interface BrowserRecipeProjection {
   presentation: RecipePresentation;
   delivery: RecipeDeliveryDefaults;
   contextPatches: Record<string, unknown>;
+  /** Legacy browser projections may omit this; formal server Recipes always emit it. */
+  factTypes?: import('./context-bundle.js').StoreFactKind[];
   sourceRequirements: RecipeSourceRequirement[];
   requiredSourcePolicy?: RecipeRequiredSourcePolicy;
   modelPolicy: RecipeModelPolicy;

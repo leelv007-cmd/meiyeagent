@@ -47,6 +47,7 @@ export type {
   RecipePresentation,
   RecipeRevisionId,
   RecipeSourceRequirement,
+  StoreFactKind,
   SurfaceId,
   SurfaceRecipeRef,
   SurfaceRevisionId,
@@ -62,6 +63,7 @@ import type {
   RecipePresentation,
   RecipeRevisionId,
   RecipeSourceRequirement,
+  StoreFactKind,
   SurfaceId,
   SurfaceRecipeRef,
   SurfaceRevisionId,
@@ -91,6 +93,7 @@ export interface RecipeBodyInput {
   presentation: RecipePresentation;
   delivery?: RecipeDeliveryDefaults;
   contextPatches?: Record<string, unknown>;
+  factTypes?: StoreFactKind[];
   sourceRequirements?: RecipeSourceRequirement[];
   modelPolicy: RecipeModelPolicy;
   settingsPatches?: Record<string, unknown>;
@@ -162,6 +165,7 @@ export interface ServerRecipeRecord {
   presentation: RecipePresentation;
   delivery: RecipeDeliveryDefaults;
   contextPatches: Record<string, unknown>;
+  factTypes: StoreFactKind[];
   sourceRequirements: RecipeSourceRequirement[];
   modelPolicy: RecipeModelPolicy;
   settingsPatches: Record<string, unknown>;

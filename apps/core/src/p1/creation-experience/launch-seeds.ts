@@ -15,6 +15,7 @@ import type {
   RecipeId,
   RecipePresentation,
   RecipeSourceRequirement,
+  StoreFactKind,
   SurfaceId,
   SurfaceRecipeRef,
   SurfaceToolRef,
@@ -62,6 +63,7 @@ export interface LaunchRecipeSeedSpec {
   lensId: CreationLensId;
   presentation: RecipePresentation;
   delivery: RecipeDeliveryDefaults;
+  factTypes: StoreFactKind[];
   sourceRequirements: RecipeSourceRequirement[];
   contextPatches?: Record<string, unknown>;
   settingsPatches?: Record<string, unknown>;
@@ -105,6 +107,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       quantity: 1,
       aspectRatio: '3:4',
     },
+    factTypes: [],
     sourceRequirements: [
       {
         slot: 'case_image',
@@ -140,9 +143,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       deliverableKind: 'copy_document',
       quantity: 1,
     },
-    sourceRequirements: [
-      { slot: 'project_facts', required: false, kinds: ['text'] },
-    ],
+    factTypes: ['service'],
+    sourceRequirements: [],
     contextPatches: {
       distributionTarget: 'wechat_moments',
       lengthHint: '80-180',
@@ -170,8 +172,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       quantity: 4,
       aspectRatio: '3:4',
     },
+    factTypes: ['service', 'price', 'group_buy', 'fulfillment'],
     sourceRequirements: [
-      { slot: 'campaign_facts', required: true, kinds: ['text'] },
       { slot: 'campaign_asset', required: false, kinds: ['image'] },
     ],
     contextPatches: {
@@ -201,8 +203,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       quantity: 1,
       aspectRatio: '3:4',
     },
+    factTypes: ['price', 'discount', 'fulfillment'],
     sourceRequirements: [
-      { slot: 'promotion_facts', required: true, kinds: ['text'] },
       { slot: 'hero_visual', required: false, kinds: ['image'] },
     ],
     contextPatches: {
@@ -236,6 +238,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       aspectRatio: '9:16',
       durationSeconds: 15,
     },
+    factTypes: [],
     sourceRequirements: [
       {
         slot: 'case_media',
@@ -270,6 +273,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       deliverableKind: 'copy_document',
       quantity: 1,
     },
+    factTypes: [],
     sourceRequirements: [
       {
         slot: 'source_content',
@@ -303,6 +307,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       deliverableKind: 'image_text_package',
       quantity: 1,
     },
+    factTypes: [],
     sourceRequirements: [
       {
         slot: 'source_content',
@@ -336,6 +341,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       deliverableKind: 'video_package',
       quantity: 1,
     },
+    factTypes: [],
     sourceRequirements: [
       {
         slot: 'source_content',
@@ -373,6 +379,7 @@ export function recipeBodyFromSpec(spec: LaunchRecipeSeedSpec): RecipeBodyInput 
     presentation: { ...spec.presentation },
     delivery: { ...spec.delivery },
     contextPatches: { ...(spec.contextPatches ?? {}) },
+    factTypes: [...spec.factTypes],
     sourceRequirements: spec.sourceRequirements.map((slot) => ({ ...slot })),
     modelPolicy: { mode: 'auto' },
     settingsPatches: { ...(spec.settingsPatches ?? {}) },
@@ -395,6 +402,7 @@ export function listLaunchRecipeSpecs(): LaunchRecipeSeedSpec[] {
     ...spec,
     presentation: { ...spec.presentation },
     delivery: { ...spec.delivery },
+    factTypes: [...spec.factTypes],
     sourceRequirements: spec.sourceRequirements.map((slot) => ({ ...slot })),
     contextPatches: { ...(spec.contextPatches ?? {}) },
     settingsPatches: { ...(spec.settingsPatches ?? {}) },

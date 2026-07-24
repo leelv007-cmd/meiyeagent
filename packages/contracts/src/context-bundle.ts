@@ -16,6 +16,18 @@ export const STORE_FACT_KINDS = [
   'other',
 ] as const;
 
+export const STORE_FACT_KIND_LABELS = {
+  service: '服务项目',
+  price: '价格',
+  discount: '优惠',
+  group_buy: '团购信息',
+  qualification: '资质',
+  fulfillment: '履约信息',
+  staff_experience: '员工经验',
+  customer_case: '顾客案例',
+  other: '其他门店信息',
+} as const satisfies Record<(typeof STORE_FACT_KINDS)[number], string>;
+
 export const storeFactKindSchema = z.enum(STORE_FACT_KINDS);
 export const storeFactSourceSchema = z
   .object({
@@ -51,12 +63,20 @@ export const storeFactSchema = z
     source: storeFactSourceSchema,
     effectiveFrom: timestampSchema,
     expiresAt: timestampSchema.nullable(),
+    revisionKind: z.literal('revocation').optional(),
     revision: z.number().int().positive(),
     recordedAt: timestampSchema,
     recordedBy: idSchema,
   })
   .strict()
   .superRefine((fact, context) => {
+    if (fact.revisionKind === 'revocation' && fact.value !== null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A revocation revision must carry a null value.',
+        path: ['value'],
+      });
+    }
     if (
       fact.expiresAt !== null &&
       Date.parse(fact.expiresAt) <= Date.parse(fact.effectiveFrom)
@@ -141,8 +161,35 @@ export const contextContributionSchema = z
       .object({ factId: idSchema, revision: z.number().int().positive() })
       .strict()
       .optional(),
+    factSnapshot: z
+      .object({
+        factId: idSchema,
+        kind: storeFactKindSchema,
+        revision: z.number().int().positive(),
+        source: storeFactSourceSchema,
+        effectiveFrom: timestampSchema,
+        expiresAt: timestampSchema.nullable(),
+        revisionKind: z.literal('revocation').optional(),
+      })
+      .strict()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((contribution, context) => {
+    if (
+      contribution.factSnapshot &&
+      (contribution.factRevision?.factId !==
+        contribution.factSnapshot.factId ||
+        contribution.factRevision.revision !==
+          contribution.factSnapshot.revision)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'factSnapshot must match factRevision.',
+        path: ['factSnapshot'],
+      });
+    }
+  });
 
 export const resolvedContextValueSchema = z
   .object({
@@ -150,6 +197,7 @@ export const resolvedContextValueSchema = z
     layer: contextPriorityLayerSchema,
     pool: contextPoolSchema,
     sourceRef: idSchema,
+    factSnapshot: contextContributionSchema.shape.factSnapshot,
   })
   .strict();
 
