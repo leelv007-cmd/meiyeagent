@@ -1,0 +1,35 @@
+{
+  "$comment": "Applied verbatim by scripts/sync-heroui-pro.ts after the copy. Each patch must match exactly once or the sync fails loudly — on a version bump that failure is the signal to re-check whether upstream fixed it. Patches exist only to satisfy this app's compiler policy; none of them change component behaviour.",
+  "patches": [
+    {
+      "file": "components/segment/segment.tsx",
+      "reason": "TS6133 under noUnusedLocals: upstream imports ReactNode but never uses it.",
+      "find": "  type ReactNode,\n",
+      "replace": ""
+    },
+    {
+      "file": "components/sheet/sheet.tsx",
+      "reason": "TS6133 under noUnusedLocals: dead refs — dragStartPointRef is never touched, and draggingRef is only read by the equally dead lastDragPoint local removed below.",
+      "find": "  const dragStartPointRef = useRef<{ x: number; y: number } | null>(null);\n  const draggingRef = useRef<HTMLDivElement | null>(null);\n",
+      "replace": ""
+    },
+    {
+      "file": "components/sheet/sheet.tsx",
+      "reason": "TS6133 under noUnusedLocals: dead local, never read.",
+      "find": "      const lastDragPoint = draggingRef.current;\n",
+      "replace": ""
+    },
+    {
+      "file": "components/sheet/sheet.tsx",
+      "reason": "TS6133 under noUnusedParameters: onNestedDrag ignores its event.",
+      "find": "  function onNestedDrag(e: React.PointerEvent<HTMLDivElement>, pct: number) {",
+      "replace": "  function onNestedDrag(_e: React.PointerEvent<HTMLDivElement>, pct: number) {"
+    },
+    {
+      "file": "components/sheet/sheet.tsx",
+      "reason": "TS6133 under noUnusedParameters: onNestedRelease ignores its event.",
+      "find": "  function onNestedRelease(\n    e: React.PointerEvent<HTMLDivElement>,\n    open: boolean\n  ) {",
+      "replace": "  function onNestedRelease(\n    _e: React.PointerEvent<HTMLDivElement>,\n    open: boolean\n  ) {"
+    }
+  ]
+}

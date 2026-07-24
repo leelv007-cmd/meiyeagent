@@ -1,0 +1,174 @@
+/*
+ * DESIGN.md 门店橱窗 → HeroUI v3 token bridge (D-130, Glass).
+ *
+ * DESIGN.md at the repo root stays the single visual authority. HeroUI Pro
+ * components never ship their own look into this product: every HeroUI v3 base
+ * token is re-pointed at a 门店橱窗 value here, so the component library reads
+ * as 玻璃 + 白瓷 + 墨色梯度 + 玫瑰金火花 instead of HeroUI's blue-accented Glass
+ * default.
+ *
+ * The `--meiye-*` block below is a verbatim copy of the DESIGN.md contract —
+ * frontmatter `colors` for light, §7「暗色主题」for dark. It is asserted against
+ * DESIGN.md by src/components/heroui-pro/design-token-bridge.test.ts; drift in
+ * either direction fails that test rather than silently shipping.
+ *
+ * Scoped with `:has()` to the shell element so nothing here reaches a page that
+ * does not render HeroUI Pro. Declared unlayered so it wins over
+ * @heroui/styles (@layer base) and the vendored Glass theme (@layer theme).
+ */
+
+html:has(.meiye-heroui-glass) {
+  color-scheme: light;
+
+  /* ── 门店橱窗 palette — DESIGN.md frontmatter `colors` ── */
+  --meiye-ink: oklch(0.22 0 0);
+  --meiye-ink-90: oklch(0 0 0 / 0.9);
+  --meiye-ink-60: oklch(0 0 0 / 0.6);
+  --meiye-ink-40: oklch(0 0 0 / 0.4);
+  --meiye-paper: oklch(1 0 0);
+  --meiye-canvas: oklch(0.965 0 0);
+  --meiye-glass-80: oklch(1 0 0 / 0.8);
+  --meiye-glass-50: oklch(1 0 0 / 0.5);
+  --meiye-glass-35: oklch(1 0 0 / 0.35);
+  --meiye-tint-active: oklch(0.42 0 0 / 0.08);
+  --meiye-tint-hover: oklch(0.42 0 0 / 0.04);
+  --meiye-hairline: oklch(0 0 0 / 0.04);
+  --meiye-rose-gold: oklch(0.63 0.13 18);
+  --meiye-rose-wash: oklch(0.95 0.025 18);
+  --meiye-rose-deep: oklch(0.45 0.1 18);
+  --meiye-mask-scrim: oklch(0 0 0 / 0.4);
+  --meiye-status-success: oklch(0.53 0.14 150);
+  --meiye-status-progress: oklch(0.5 0.19 262);
+  --meiye-status-warning: oklch(0.55 0.13 85);
+  --meiye-status-danger: oklch(0.55 0.2 27);
+  /* DESIGN.md §4「玻璃有边法则」— light edge, quoted in §7 as the 0.55 baseline */
+  --meiye-glass-edge: oklch(1 0 0 / 0.55);
+  /* DESIGN.md §5 Buttons — Primary hover 提亮 */
+  --meiye-ink-hover: oklch(0.32 0 0);
+  /* DESIGN.md §4 Shadow Vocabulary */
+  --meiye-shadow-ambient: 0 2px 20px oklch(0 0 0 / 0.03);
+  --meiye-shadow-overlay: 0 4px 20px oklch(0 0 0 / 0.12);
+  --meiye-shadow-rose-glow: 0 6px 16px oklch(0.63 0.13 18 / 0.24);
+  /* DESIGN.md §4 — 件级玻璃 blur(24px); §7 keeps the same radius in dark */
+  --meiye-blur-piece: 24px;
+
+  /* ── HeroUI v3 base tokens ── */
+  /* Primitives */
+  --snow: var(--meiye-paper);
+  --eclipse: var(--meiye-ink);
+
+  /* Radius — DESIGN.md `rounded.md` 12px. HeroUI derives the widget radius as
+     calc(--radius * 2) = 24px, which lands on `rounded.2xl`. */
+  --radius: 12px;
+  --field-radius: 12px;
+
+  /* Base surfaces — 实体内容区一律白瓷, canvas 只在无氛围层时做页面底 */
+  --background: var(--meiye-canvas);
+  --foreground: var(--meiye-ink-90);
+  --muted: var(--meiye-ink-60);
+  --surface: var(--meiye-paper);
+  --surface-foreground: var(--meiye-ink-90);
+  --surface-secondary: var(--meiye-canvas);
+  --surface-secondary-foreground: var(--meiye-ink-90);
+  --surface-tertiary: oklch(0.985 0 0);
+  --surface-tertiary-foreground: var(--meiye-ink-90);
+  --surface-shadow: var(--meiye-shadow-ambient);
+  --overlay: var(--meiye-paper);
+  --overlay-foreground: var(--meiye-ink-90);
+  --overlay-shadow: var(--meiye-shadow-overlay);
+  --backdrop: var(--meiye-mask-scrim);
+
+  /* Controls — 全中性墨色梯度; 一点胭脂法则 keeps 玫瑰金 off every control */
+  --default: var(--meiye-tint-hover);
+  --default-foreground: var(--meiye-ink-90);
+  --default-hover: var(--meiye-tint-active);
+  --accent: var(--meiye-ink);
+  --accent-foreground: var(--meiye-paper);
+  --accent-hover: var(--meiye-ink-hover);
+  --segment: var(--meiye-tint-active);
+  --segment-foreground: var(--meiye-ink-90);
+
+  /* Edges — 发丝线是分隔线唯一色 */
+  --border: var(--meiye-hairline);
+  --border-width: 1px;
+  --separator: var(--meiye-hairline);
+  --focus: var(--meiye-ink);
+  /* 玫瑰金绝不做链接色 */
+  --link: var(--meiye-ink-90);
+
+  /* Fields — 白瓷底 + 1px 发丝线; 占位走墨-60 (DESIGN.md §5 Composer) */
+  --field-background: var(--meiye-paper);
+  --field-foreground: var(--meiye-ink-90);
+  --field-placeholder: var(--meiye-ink-60);
+  --field-border: var(--meiye-hairline);
+  --field-border-width: 1px;
+  --border-width-field: 1px;
+  --field-border-focus: var(--meiye-ink);
+  --field-shadow: var(--meiye-shadow-ambient);
+
+  /* Status — 规范化状态标签的五 tone 语义色 */
+  --success: var(--meiye-status-success);
+  --success-foreground: var(--meiye-paper);
+  --warning: var(--meiye-status-warning);
+  --warning-foreground: var(--meiye-paper);
+  --danger: var(--meiye-status-danger);
+  --danger-foreground: var(--meiye-paper);
+
+  /* Glass material — 玻璃三档 + 白描边; DESIGN.md forbids coloured control
+     backgrounds, so the Glass theme's blue background gradient is dropped. */
+  --glass-blur: var(--meiye-blur-piece);
+  --glass-pinned-surface: var(--meiye-paper);
+  --glass-pinned-surface-secondary: var(--meiye-canvas);
+  --background-gradient: none;
+
+  /* Charts — DESIGN.md supplies no chart palette and forbids colour on chrome
+     (颜色由内容供给), so series run down the neutral ink ramp. */
+  --chart-1: oklch(0.22 0 0);
+  --chart-2: oklch(0.38 0 0);
+  --chart-3: oklch(0.52 0 0);
+  --chart-4: oklch(0.66 0 0);
+  --chart-5: oklch(0.8 0 0);
+}
+
+html.dark:has(.meiye-heroui-glass) {
+  color-scheme: dark;
+
+  /* ── 暗色对应物 — DESIGN.md §7「暗色主题」实测值 ── */
+  --meiye-ink: oklch(0.94 0 0);
+  --meiye-ink-90: oklch(1 0 0 / 0.92);
+  --meiye-ink-60: oklch(1 0 0 / 0.66);
+  --meiye-ink-40: oklch(1 0 0 / 0.4);
+  --meiye-paper: oklch(0.21 0 0);
+  --meiye-canvas: oklch(0.17 0 0);
+  --meiye-glass-80: oklch(0.19 0 0 / 0.85);
+  --meiye-glass-50: oklch(1 0 0 / 0.08);
+  --meiye-glass-35: oklch(1 0 0 / 0.05);
+  --meiye-glass-edge: oklch(1 0 0 / 0.18);
+  --meiye-mask-scrim: oklch(0 0 0 / 0.55);
+  --meiye-rose-gold: oklch(0.72 0.11 18);
+  --meiye-rose-wash: oklch(0.3 0.045 18);
+  --meiye-rose-deep: oklch(0.88 0.05 18);
+  /* 焦点环在暗色下带玫瑰微调 */
+  --meiye-focus: oklch(0.85 0.08 18);
+  /* Not specified by DESIGN.md; codified dark values from
+     src/styles.css `.dark .meiye-product-shell` so the spike matches the
+     product shell already shipping in this app. */
+  --meiye-tint-active: oklch(1 0 0 / 0.1);
+  --meiye-tint-hover: oklch(1 0 0 / 0.06);
+  --meiye-hairline: oklch(1 0 0 / 0.1);
+  --meiye-ink-hover: oklch(1 0 0);
+
+  /* ── HeroUI v3 base tokens that differ in dark ── */
+  --surface-tertiary: oklch(0.25 0 0);
+  --accent-foreground: var(--meiye-canvas);
+  --focus: var(--meiye-focus);
+  --field-border-focus: var(--meiye-focus);
+  --success-foreground: var(--meiye-canvas);
+  --warning-foreground: var(--meiye-canvas);
+  --danger-foreground: var(--meiye-canvas);
+  --chart-1: oklch(0.94 0 0);
+  --chart-2: oklch(0.8 0 0);
+  --chart-3: oklch(0.66 0 0);
+  --chart-4: oklch(0.52 0 0);
+  --chart-5: oklch(0.38 0 0);
+}

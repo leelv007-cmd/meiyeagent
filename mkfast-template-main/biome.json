@@ -37,7 +37,8 @@
       "!src/storage/types.ts",
       "!src/routeTree.gen.ts",
       "!src/components/ui",
-      "!src/components/data-table"
+      "!src/components/data-table",
+      "!src/components/heroui-pro/vendor"
     ]
   },
   "formatter": {

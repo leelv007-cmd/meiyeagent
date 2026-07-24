@@ -16,11 +16,13 @@ import { Route as PwaProofRouteImport } from './routes/pwa-proof'
 import { Route as PrototypeMarketingHomeRouteImport } from './routes/prototype-marketing-home'
 import { Route as ProStudioRouteImport } from './routes/pro-studio'
 import { Route as ManifestDotjsonRouteImport } from './routes/manifest[.]json'
+import { Route as HerouiSpikeRouteImport } from './routes/heroui-spike'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as HerouiSpikeIndexRouteImport } from './routes/heroui-spike/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as SettingsSecurityRouteImport } from './routes/settings/security'
@@ -35,6 +37,8 @@ import { Route as SettingsConnectionsRouteImport } from './routes/settings/conne
 import { Route as SettingsBillingRouteImport } from './routes/settings/billing'
 import { Route as SettingsApikeysRouteImport } from './routes/settings/apikeys'
 import { Route as SettingsAccountRouteImport } from './routes/settings/account'
+import { Route as HerouiSpikeDashboardRouteImport } from './routes/heroui-spike/dashboard'
+import { Route as HerouiSpikeChatRouteImport } from './routes/heroui-spike/chat'
 import { Route as DashboardWorksRouteImport } from './routes/dashboard/works'
 import { Route as DashboardTasksRouteImport } from './routes/dashboard/tasks'
 import { Route as DashboardStoreRouteImport } from './routes/dashboard/store'
@@ -145,6 +149,11 @@ const ManifestDotjsonRoute = ManifestDotjsonRouteImport.update({
   path: '/manifest.json',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HerouiSpikeRoute = HerouiSpikeRouteImport.update({
+  id: '/heroui-spike',
+  path: '/heroui-spike',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -169,6 +178,11 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => SettingsRoute,
+} as any)
+const HerouiSpikeIndexRoute = HerouiSpikeIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HerouiSpikeRoute,
 } as any)
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
@@ -239,6 +253,16 @@ const SettingsAccountRoute = SettingsAccountRouteImport.update({
   id: '/account',
   path: '/account',
   getParentRoute: () => SettingsRoute,
+} as any)
+const HerouiSpikeDashboardRoute = HerouiSpikeDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => HerouiSpikeRoute,
+} as any)
+const HerouiSpikeChatRoute = HerouiSpikeChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => HerouiSpikeRoute,
 } as any)
 const DashboardWorksRoute = DashboardWorksRouteImport.update({
   id: '/works',
@@ -627,6 +651,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
+  '/heroui-spike': typeof HerouiSpikeRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
   '/pro-studio': typeof ProStudioRoute
   '/prototype-marketing-home': typeof PrototypeMarketingHomeRoute
@@ -669,6 +694,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/store': typeof DashboardStoreRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
+  '/heroui-spike/chat': typeof HerouiSpikeChatRoute
+  '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/apikeys': typeof SettingsApikeysRoute
   '/settings/billing': typeof SettingsBillingRoute
@@ -683,6 +710,7 @@ export interface FileRoutesByFullPath {
   '/settings/security': typeof SettingsSecurityRoute
   '/admin/': typeof AdminIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/heroui-spike/': typeof HerouiSpikeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
@@ -768,6 +796,8 @@ export interface FileRoutesByTo {
   '/dashboard/store': typeof DashboardStoreRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
+  '/heroui-spike/chat': typeof HerouiSpikeChatRoute
+  '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/apikeys': typeof SettingsApikeysRoute
   '/settings/billing': typeof SettingsBillingRoute
@@ -782,6 +812,7 @@ export interface FileRoutesByTo {
   '/settings/security': typeof SettingsSecurityRoute
   '/admin': typeof AdminIndexRoute
   '/dashboard': typeof DashboardIndexRoute
+  '/heroui-spike': typeof HerouiSpikeIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
@@ -829,6 +860,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
+  '/heroui-spike': typeof HerouiSpikeRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
   '/pro-studio': typeof ProStudioRoute
   '/prototype-marketing-home': typeof PrototypeMarketingHomeRoute
@@ -871,6 +903,8 @@ export interface FileRoutesById {
   '/dashboard/store': typeof DashboardStoreRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
+  '/heroui-spike/chat': typeof HerouiSpikeChatRoute
+  '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/apikeys': typeof SettingsApikeysRoute
   '/settings/billing': typeof SettingsBillingRoute
@@ -885,6 +919,7 @@ export interface FileRoutesById {
   '/settings/security': typeof SettingsSecurityRoute
   '/admin/': typeof AdminIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/heroui-spike/': typeof HerouiSpikeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
@@ -933,6 +968,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/dashboard'
+    | '/heroui-spike'
     | '/manifest.json'
     | '/pro-studio'
     | '/prototype-marketing-home'
@@ -975,6 +1011,8 @@ export interface FileRouteTypes {
     | '/dashboard/store'
     | '/dashboard/tasks'
     | '/dashboard/works'
+    | '/heroui-spike/chat'
+    | '/heroui-spike/dashboard'
     | '/settings/account'
     | '/settings/apikeys'
     | '/settings/billing'
@@ -989,6 +1027,7 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/admin/'
     | '/dashboard/'
+    | '/heroui-spike/'
     | '/settings/'
     | '/api/auth/$'
     | '/api/core/diagnostics'
@@ -1074,6 +1113,8 @@ export interface FileRouteTypes {
     | '/dashboard/store'
     | '/dashboard/tasks'
     | '/dashboard/works'
+    | '/heroui-spike/chat'
+    | '/heroui-spike/dashboard'
     | '/settings/account'
     | '/settings/apikeys'
     | '/settings/billing'
@@ -1088,6 +1129,7 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/admin'
     | '/dashboard'
+    | '/heroui-spike'
     | '/settings'
     | '/api/auth/$'
     | '/api/core/diagnostics'
@@ -1134,6 +1176,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/dashboard'
+    | '/heroui-spike'
     | '/manifest.json'
     | '/pro-studio'
     | '/prototype-marketing-home'
@@ -1176,6 +1219,8 @@ export interface FileRouteTypes {
     | '/dashboard/store'
     | '/dashboard/tasks'
     | '/dashboard/works'
+    | '/heroui-spike/chat'
+    | '/heroui-spike/dashboard'
     | '/settings/account'
     | '/settings/apikeys'
     | '/settings/billing'
@@ -1190,6 +1235,7 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/admin/'
     | '/dashboard/'
+    | '/heroui-spike/'
     | '/settings/'
     | '/api/auth/$'
     | '/api/core/diagnostics'
@@ -1237,6 +1283,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   AuthRoute: typeof AuthRouteWithChildren
   DashboardRoute: typeof DashboardRouteWithChildren
+  HerouiSpikeRoute: typeof HerouiSpikeRouteWithChildren
   ManifestDotjsonRoute: typeof ManifestDotjsonRoute
   ProStudioRoute: typeof ProStudioRoute
   PrototypeMarketingHomeRoute: typeof PrototypeMarketingHomeRoute
@@ -1328,6 +1375,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManifestDotjsonRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/heroui-spike': {
+      id: '/heroui-spike'
+      path: '/heroui-spike'
+      fullPath: '/heroui-spike'
+      preLoaderRoute: typeof HerouiSpikeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -1362,6 +1416,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
+    }
+    '/heroui-spike/': {
+      id: '/heroui-spike/'
+      path: '/'
+      fullPath: '/heroui-spike/'
+      preLoaderRoute: typeof HerouiSpikeIndexRouteImport
+      parentRoute: typeof HerouiSpikeRoute
     }
     '/dashboard/': {
       id: '/dashboard/'
@@ -1460,6 +1521,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/account'
       preLoaderRoute: typeof SettingsAccountRouteImport
       parentRoute: typeof SettingsRoute
+    }
+    '/heroui-spike/dashboard': {
+      id: '/heroui-spike/dashboard'
+      path: '/dashboard'
+      fullPath: '/heroui-spike/dashboard'
+      preLoaderRoute: typeof HerouiSpikeDashboardRouteImport
+      parentRoute: typeof HerouiSpikeRoute
+    }
+    '/heroui-spike/chat': {
+      id: '/heroui-spike/chat'
+      path: '/chat'
+      fullPath: '/heroui-spike/chat'
+      preLoaderRoute: typeof HerouiSpikeChatRouteImport
+      parentRoute: typeof HerouiSpikeRoute
     }
     '/dashboard/works': {
       id: '/dashboard/works'
@@ -2100,6 +2175,22 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
   DashboardRouteChildren,
 )
 
+interface HerouiSpikeRouteChildren {
+  HerouiSpikeChatRoute: typeof HerouiSpikeChatRoute
+  HerouiSpikeDashboardRoute: typeof HerouiSpikeDashboardRoute
+  HerouiSpikeIndexRoute: typeof HerouiSpikeIndexRoute
+}
+
+const HerouiSpikeRouteChildren: HerouiSpikeRouteChildren = {
+  HerouiSpikeChatRoute: HerouiSpikeChatRoute,
+  HerouiSpikeDashboardRoute: HerouiSpikeDashboardRoute,
+  HerouiSpikeIndexRoute: HerouiSpikeIndexRoute,
+}
+
+const HerouiSpikeRouteWithChildren = HerouiSpikeRoute._addFileChildren(
+  HerouiSpikeRouteChildren,
+)
+
 interface SettingsRouteChildren {
   SettingsAccountRoute: typeof SettingsAccountRoute
   SettingsApikeysRoute: typeof SettingsApikeysRoute
@@ -2171,6 +2262,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   AuthRoute: AuthRouteWithChildren,
   DashboardRoute: DashboardRouteWithChildren,
+  HerouiSpikeRoute: HerouiSpikeRouteWithChildren,
   ManifestDotjsonRoute: ManifestDotjsonRoute,
   ProStudioRoute: ProStudioRoute,
   PrototypeMarketingHomeRoute: PrototypeMarketingHomeRoute,

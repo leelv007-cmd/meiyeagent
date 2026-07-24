@@ -1,0 +1,22 @@
+{
+  "$comment": "Pinned source of the vendored HeroUI Pro V3 components. See ./README.md. Upgrading = re-pull the mirror at the pinned ref, bump `version`/`mirrorCommit`, re-run `pnpm --filter @meiye/web heroui:sync`.",
+  "package": "@ag-ui/pro",
+  "version": "1.0.0-beta.7",
+  "mirrorPath": "references/repos/herouipro-v3",
+  "mirrorCommit": "0358aeb",
+  "theme": "glass",
+  "components": [
+    "chat-loader",
+    "chat-message",
+    "empty-state",
+    "item-card",
+    "item-card-group",
+    "list-view",
+    "prompt-input",
+    "prompt-suggestion",
+    "segment",
+    "sidebar",
+    "trend-chip",
+    "widget"
+  ]
+}
