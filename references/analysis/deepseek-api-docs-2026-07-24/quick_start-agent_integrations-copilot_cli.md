@@ -28,11 +28,21 @@ Markdown Content:
 
 Linux / Mac：
 
-`export COPILOT_PROVIDER_TYPE=anthropicexport COPILOT_PROVIDER_BASE_URL=https://api.deepseek.com/anthropicexport COPILOT_PROVIDER_API_KEY=sk-your-deepseek-api-keyexport COPILOT_MODEL=deepseek-v4-pro`
+```sh
+export COPILOT_PROVIDER_TYPE=anthropic
+export COPILOT_PROVIDER_BASE_URL=https://api.deepseek.com/anthropic
+export COPILOT_PROVIDER_API_KEY=sk-your-deepseek-api-key
+export COPILOT_MODEL=deepseek-v4-pro
+```
 
 Windows（PowerShell）：
 
-`$env:COPILOT_PROVIDER_TYPE="anthropic"$env:COPILOT_PROVIDER_BASE_URL="https://api.deepseek.com/anthropic"$env:COPILOT_PROVIDER_API_KEY="sk-your-deepseek-api-key"$env:COPILOT_MODEL="deepseek-v4-pro"`
+```powershell
+$env:COPILOT_PROVIDER_TYPE="anthropic"
+$env:COPILOT_PROVIDER_BASE_URL="https://api.deepseek.com/anthropic"
+$env:COPILOT_PROVIDER_API_KEY="sk-your-deepseek-api-key"
+$env:COPILOT_MODEL="deepseek-v4-pro"
+```
 
 可选模型：`deepseek-v4-pro`、`deepseek-v4-flash`，修改 `COPILOT_MODEL` 即可切换。
 

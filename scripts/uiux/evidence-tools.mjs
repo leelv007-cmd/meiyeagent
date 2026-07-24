@@ -52,10 +52,11 @@ const SECRET_RULES = [
   {
     rule: 'api-key',
     pattern: /\bsk-(?:proj-)?(?![xX]{20,}\b)[A-Za-z0-9_-]{20,}\b/,
-    // These are the two literal, non-provider fixture values used by the
-    // credential-account contract tests. Keep this list exact: test files and
-    // directories are never blanket-exempted from the secret scanner.
+    // These are audited literal placeholders and non-provider fixture values.
+    // Keep this list exact: files and directories are never blanket-exempted
+    // from the secret scanner.
     ignoredLiterals: new Set([
+      'sk-your-deepseek-api-key',
       'sk-live-secret-version-one',
       'sk-live-secret-version-two',
     ]),

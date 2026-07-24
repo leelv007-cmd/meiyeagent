@@ -102,6 +102,23 @@ test('secret findings ignore an explicit all-x documentation placeholder', () =>
   );
 });
 
+test('DeepSeek placeholder exemption still catches realistic keys', () => {
+  const realisticKey = `sk-${'c'.repeat(32)}`;
+  const findings = findSecretFindings([
+    {
+      path: 'docs/deepseek.md',
+      text: [
+        'COPILOT_PROVIDER_API_KEY=sk-your-deepseek-api-key',
+        `COPILOT_PROVIDER_API_KEY=${realisticKey}`,
+      ].join('\n'),
+    },
+  ]);
+
+  assert.deepEqual(findings, [
+    { path: 'docs/deepseek.md', line: 2, rule: 'api-key' },
+  ]);
+});
+
 test('secret findings allow only the audited invalid credential fixtures', () => {
   const realLookingKey = `sk-${'b'.repeat(24)}`;
   const findings = findSecretFindings([
