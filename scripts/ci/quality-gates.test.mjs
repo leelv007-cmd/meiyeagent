@@ -201,6 +201,7 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /needs\.root-quality\.result/);
   assert.match(coreQuality, /needs\.core-persistence\.result/);
   assert.match(coreQuality, /needs\.production-main-journey\.result/);
+  assert.match(coreQuality, /needs\.production-dependency-audit\.result/);
   assert.match(coreQuality, /node scripts\/ci\/assert-required-jobs\.mjs/);
   for (const artifactName of [
     'root-required-quality-evidence',
@@ -211,8 +212,13 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   }
   assert.match(coreQuality, /if-no-files-found: error/);
   assert.match(coreQuality, /release-candidate/);
+  assert.match(coreQuality, /^ {2}production-dependency-audit:/m);
   assert.match(coreQuality, /pnpm audit --prod --json/);
   assert.match(coreQuality, /assert-production-audit\.mjs/);
+  assert.match(
+    coreQuality,
+    /docs\/ops\/production-dependency-audit-waivers\.json/
+  );
   assert.match(coreQuality, /name: production-dependency-audit/);
   assert.match(
     coreQuality,

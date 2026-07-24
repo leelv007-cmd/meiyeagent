@@ -4,6 +4,10 @@ const requiredJobs = [
   ['root-quality', 'REQUIRED_ROOT_QUALITY_RESULT'],
   ['core-persistence', 'REQUIRED_CORE_PERSISTENCE_RESULT'],
   ['production-main-journey', 'REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT'],
+  [
+    'production-dependency-audit',
+    'REQUIRED_PRODUCTION_DEPENDENCY_AUDIT_RESULT',
+  ],
 ];
 
 const failures = requiredJobs.flatMap(([jobName, environmentKey]) => {

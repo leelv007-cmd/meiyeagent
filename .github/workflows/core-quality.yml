@@ -109,6 +109,36 @@ jobs:
         env:
           NODE_OPTIONS: --test-reporter=spec
 
+  production-dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit production dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p output/security
+          audit_status=0
+          pnpm audit --prod --json | tee output/security/pnpm-audit.json || audit_status=$?
+          echo "pnpm audit raw exit code: $audit_status"
+          node scripts/ci/assert-production-audit.mjs \
+            output/security/pnpm-audit.json \
+            docs/ops/production-dependency-audit-waivers.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-dependency-audit
+          path: output/security/pnpm-audit.json
+          if-no-files-found: error
+
   root-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -259,6 +289,7 @@ jobs:
       - root-quality
       - core-persistence
       - production-main-journey
+      - production-dependency-audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -268,6 +299,7 @@ jobs:
           REQUIRED_CORE_PERSISTENCE_RESULT: ${{ needs.core-persistence.result }}
           REQUIRED_CORE_RESULT: ${{ needs.core.result }}
           REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT: ${{ needs.production-main-journey.result }}
+          REQUIRED_PRODUCTION_DEPENDENCY_AUDIT_RESULT: ${{ needs.production-dependency-audit.result }}
           REQUIRED_REDLINE_EVALS_RESULT: ${{ needs.redline-evals.result }}
           REQUIRED_ROOT_QUALITY_RESULT: ${{ needs.root-quality.result }}
 
@@ -312,15 +344,6 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
       - run: pnpm install --frozen-lockfile
-      - name: Audit production dependencies
-        shell: bash
-        run: |
-          set -o pipefail
-          mkdir -p output/security
-          audit_status=0
-          pnpm audit --prod --json | tee output/security/pnpm-audit.json || audit_status=$?
-          echo "pnpm audit raw exit code: $audit_status"
-          node scripts/ci/assert-production-audit.mjs output/security/pnpm-audit.json
       - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
       - name: Provision E2E business and DBOS databases
         run: ./scripts/ci/provision-test-db.sh
@@ -328,12 +351,6 @@ jobs:
         run: bash scripts/ci/run-release-candidate-quality.sh
         env:
           RELEASE_COMMIT_SHA: ${{ github.sha }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: production-dependency-audit
-          path: output/security/pnpm-audit.json
-          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
