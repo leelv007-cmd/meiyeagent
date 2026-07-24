@@ -12,18 +12,18 @@
 
 | 键 | 用途（消费方） | 需你提供 | 缺省 fixture 档 | 状态 |
 |---|---|---|---|---|
-| **A-1** DeepSeek API key（键名净新增，由供应商注册票定稿，沿 `MODEL_DIRECT_*` 机制） | 文案与全部文本判断位默认 LLM＝deepseek-v4-pro（装配门、M 门 LLM 判断位、四类编译器） | 在 DeepSeek 开放平台开通并充值的 API key | 既有 fixture 文本供应商，全链可跑 | ☐ |
-| **A-2** `ARK_MEDIA_API_KEY` | 图 seedream-5-pro 系／视频 seedance-2 系／exactText 多模态 VLM（图片、图文、视频编译器票） | 火山方舟 API key（并确认账号已开通 seedream/seedance 对应模型） | recorded/fake provider 档 | ☐ |
-| **A-3** `ARK_SEEDREAM_MODEL`／`ARK_SEEDANCE_MODEL` | 上行 key 对应的具体 model ID | 方舟控制台里可用的 model ID 两个 | 同 A-2 | ☐ |
-| **A-4** `TUZI_MEDIA_BASE_URL`/`TUZI_MEDIA_API_KEY` | 图/视频容灾通道（D-129：方舟直连主、tuzi 容灾） | tuzi relay key——**可暂缓**，缺席时按既有合同投影 single_channel/no_fallback，不阻塞任何票 | 单通道投影（既有） | ☐ 可暂缓 |
-| **A-5** MinerU API token（键名净新增，由解析管线票定稿） | MinerU 官方精准 API 文档解析（录入/解析管线票） | mineru.net 申请的 API token | 预置解析结果 fixture | ☐ |
+| **A-1** DeepSeek API key（键名净新增，由供应商注册票定稿，沿 `MODEL_DIRECT_*` 机制） | 文案与全部文本判断位默认 LLM＝deepseek-v4-pro（装配门、M 门 LLM 判断位、四类编译器） | 在 DeepSeek 开放平台开通并充值的 API key | 既有 fixture 文本供应商，全链可跑 | ☑ 已收 2026-07-25（存本地 `.env` DEEPSEEK_API_KEY） |
+| **A-2** `ARK_MEDIA_API_KEY` | 图 seedream-5-pro 系／视频 seedance-2 系／exactText 多模态 VLM（图片、图文、视频编译器票） | 火山方舟 API key（并确认账号已开通 seedream/seedance 对应模型） | recorded/fake provider 档 | ☑ 已配（`.env` 核实非空） |
+| **A-3** `ARK_SEEDREAM_MODEL`／`ARK_SEEDANCE_MODEL` | 上行 key 对应的具体 model ID | 方舟控制台里可用的 model ID 两个 | 同 A-2 | ☑ 已配（doubao-seedream-5-0-260128／doubao-seedance-2-0-mini-260615，符合 D-129 系别） |
+| **A-4** `TUZI_MEDIA_BASE_URL`/`TUZI_MEDIA_API_KEY` | 图/视频容灾通道（D-129：方舟直连主、tuzi 容灾） | tuzi relay key——**可暂缓**，缺席时按既有合同投影 single_channel/no_fallback，不阻塞任何票 | 单通道投影（既有） | ☑ 已配（`.env` TUZI_MEDIA_* 核实非空） |
+| **A-5** MinerU API token（键名净新增，由解析管线票定稿） | MinerU 官方精准 API 文档解析（录入/解析管线票） | mineru.net 申请的 API token | 预置解析结果 fixture | ☐ **仍待补**（未提供；开发以解析 fixture 先行，不阻塞） |
 
 ## B. 基础设施凭证
 
 | 键 | 用途（消费方） | 需你提供 | 缺省 fixture 档 | 状态 |
 |---|---|---|---|---|
-| **B-1** `RESEND_API_KEY` ＋发信域名 | 注册邮件与通知（装配门、注册承接票） | Resend API key＋一个能改 DNS 的发信域名（域名验证步骤我可以给） | 邮件落日志不真发（既有） | ☐ |
-| **B-2** `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_R2_BUCKET_NAME` | R2 对象存储（媒体产物持久化，D-038 大产物对象存储） | CF 账号已有：需建一个 R2 bucket＋签发 token（步骤我可以给） | 本地文件存储档（既有） | ☐ |
+| **B-1** `RESEND_API_KEY` ＋发信域名 | 注册邮件与通知（装配门、注册承接票） | Resend API key＋一个能改 DNS 的发信域名（域名验证步骤我可以给） | 邮件落日志不真发（既有） | ◐ key 已收（`mkfast .env.local`）；**发信域名待补**，开发先用 Resend 测试域 |
+| **B-2** `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_R2_BUCKET_NAME` | R2 对象存储（媒体产物持久化，D-038 大产物对象存储） | CF 账号已有：需建一个 R2 bucket＋签发 token（步骤我可以给） | 本地文件存储档（既有） | ◐ token 已收（本地两处 env）；R2 bucket＋ACCOUNT_ID 由装配票用 token 开通/查询后回填 |
 | **B-3** `LANGFUSE_*` | 提示词版本化/评测（Skills、评估门） | **无需动作**——本地钉扎 compose 自生成 key；生产部署挂 E 门 | 本地 compose（既有） | ☑ 无需 |
 | **B-4** `BETTER_AUTH_SECRET`/`DATABASE_URL`/`HARNESS_DBOS_*` | 认证/持久层/编排 | **无需动作**——本地生成、本地真机 PG（CI 真机 job 既有） | 本地真机 PG | ☑ 无需 |
 
@@ -33,9 +33,9 @@
 |---|---|---|---|---|
 | **C-1** 套餐三桶数字（文案/图/视频点 × 1/2/3 档） | 计费三桶票、运营手填后台 | **可后补**——上线前在后台填真值即可 | 既有 STARTER/GROWTH/PRO allowance 种子 | ☐ 可后补 |
 | **C-2** 三类加油包定价 | 同上 | **可后补**同上 | 样例值 | ☐ 可后补 |
-| **C-3** 试用额度默认值与开关初值 | 装配门 trial 档、示例任务真实扣点 | 一组你认可的试用额度（例：文案 X 条/图 Y 张/视频 Z 条） | 样例值 | ☐ |
-| **C-4** 兑换码规则（位数/批次/有效期） | 试点注册承接票（D-045/D-124 R门①） | 一句话规则即可 | 样例规则 | ☐ |
-| **C-5** 三行业示例店（行业选定＋示例素材/事实） | D-126 冷态首页票（platform_sample） | 三个行业名（建议：美发/美甲美睫/皮肤管理），有真实素材更好、没有则 AI 样例 | AI 生成样例素材 | ☐ |
+| **C-3** 试用额度默认值与开关初值 | 装配门 trial 档、示例任务真实扣点 | 一组你认可的试用额度（例：文案 X 条/图 Y 张/视频 Z 条） | 样例值 | ☑ 已定：文案 5／图 5／视频 1 |
+| **C-4** 兑换码规则（位数/批次/有效期） | 试点注册承接票（D-045/D-124 R门①） | 一句话规则即可 | 样例规则 | ☑ 已定：手动申请（运营人工发码，无自动生成规则） |
+| **C-5** 三行业示例店（行业选定＋示例素材/事实） | D-126 冷态首页票（platform_sample） | 三个行业名（建议：美发/美甲美睫/皮肤管理），有真实素材更好、没有则 AI 样例 | AI 生成样例素材 | ☑ 已定：护发／皮肤管理／生发 |
 | **C-6** 行业先验配置（今日推荐 v1） | D-126 热态推荐票（确定性规则＋行业先验受控配置） | **可后补**——先验我按行业整理初版、你审定 | 规则＋样例先验 | ☐ 可后补 |
 | **C-7** 产品对外名称 | R 门前专项（Landing 文案/发信名/命名） | R 门收口前定稿即可，不阻塞拆票 | 占位名（现状） | ☐ 可后补 |
 
