@@ -21,7 +21,7 @@ Status: accepted (2026-07-24)
 
 **流式合同**：token 级流式（ADR-0007/0010）由对话流承接——文案/图文自首个 token 起流式渲染，workflow 进度帧不得替代 token 流。
 
-**组件供给基准（D-130）**：前端组件优先取自 **HeroUI Pro V3**（`@ag-ui/pro`，HeroUI v3＋Tailwind v4＋React 19＋React Aria；用户专属授权，本地镜像 `references/repos/herouipro-v3/` 不入 git、不对外分发）。适用面＝REBUILD 换壳与 NEW 净新建；对话流主容器优先评估其 AI Chat 组件族（chat-conversation/prompt-input/chain-of-thought/markdown/code-block）；D-107 后台动态表单＝HeroUI 表单组件族组装，不引 JSON-Schema 表单框架。KEEP 桶存量组件不为换库专项迁移（触碰时换）；「门店橱窗」（DESIGN.md）仍为唯一视觉权威，组件经主题 token 适配接入（内置 Glass 主题为适配起点），不得原样拖入。**Landing 页例外**：不受组件基准约束，保持现状仅改文案与前后链接（D-125 阶段一），专项优化后置（阶段二）；其余页面组件**与动效**均优先取自该库（动效随 Motion 体系，不另引动画库）。模板起点：`template/template-chat`＝工作区交互页（对话流主容器）参照；`template/template-dashboard`＝运营后台可视化参照；email/finances 两模板未指派、不擅自启用。
+**组件供给基准（D-130）**：前端组件优先取自 **HeroUI Pro V3**（`@ag-ui/pro`，HeroUI v3＋Tailwind v4＋React 19＋React Aria；用户专属授权，本地镜像 `references/repos/herouipro-v3/` 不入 git、不对外分发）。适用面＝REBUILD 换壳与 NEW 净新建；对话流主容器优先评估其 AI Chat 组件族（chat-conversation/prompt-input/chain-of-thought/markdown/code-block）；D-107 后台动态表单＝HeroUI 表单组件族组装，不引 JSON-Schema 表单框架。KEEP 桶存量组件不为换库专项迁移（触碰时换）；「门店橱窗」（DESIGN.md）仍为唯一视觉权威，组件经主题 token 适配接入（主题拍板＝Glass——D-130 补充，Brutalism/Mouve 不启用），不得原样拖入。**Landing 页例外**：不受组件基准约束，保持现状仅改文案与前后链接（D-125 阶段一），专项优化后置（阶段二）；其余页面组件**与动效**均优先取自该库（动效随 Motion 体系，不另引动画库）。模板起点：`template/template-chat`＝工作区交互页（对话流主容器）参照；`template/template-dashboard`＝运营后台可视化参照；email/finances 两模板未指派、不擅自启用。
 
 ## 实施红线
 
