@@ -153,13 +153,6 @@ function sourceReferencesFromDraft(sources: unknown[]) {
 function groundingBlockerFromMissing(
   missing: readonly CreativeGroundingRequirement[]
 ): ComposerGroundingBlocker | null {
-  if (
-    missing.includes('confirmed_store') ||
-    missing.includes('confirmed_project') ||
-    missing.includes('confirmed_qualification')
-  ) {
-    return 'store';
-  }
   return missing.includes('real_authorized_asset') ? 'source' : null;
 }
 
@@ -343,8 +336,10 @@ export function ComposerHome({
   ]);
   const catalogRevision = catalogQuery.data?.revisionId ?? 'catalog-current';
   const submissionQuantity =
+    (lensState.draft.fieldMeta.quantity?.dirty
+      ? lensState.draft.settings.quantity
+      : submissionRecipe?.delivery.quantity) ??
     lensState.draft.settings.quantity ??
-    submissionRecipe?.delivery.quantity ??
     1;
   const submissionAspectRatio =
     lensState.draft.settings.aspectRatio ??
@@ -613,7 +608,7 @@ export function ComposerHome({
       briefContextId: string;
       briefContextRevision: number;
       briefInput: BriefTriggerInput;
-      identity: MarketingIdentityAsset;
+      identity?: MarketingIdentityAsset;
       lensId: CreationLensId;
       intent: string;
       quote: ProductQuoteSnapshot;
@@ -698,10 +693,14 @@ export function ComposerHome({
           id: input.quote.catalogModelId,
           revision: catalogModelRevision,
         },
-        identity: {
-          id: input.identity.identityId,
-          revision: String(input.identity.version),
-        },
+        ...(input.identity
+          ? {
+              identity: {
+                id: input.identity.identityId,
+                revision: String(input.identity.version),
+              },
+            }
+          : {}),
         idempotencyKey: `composer-submit:${sessionIdRef.current}:${input.quote.revision}`,
         intent: input.intent,
         quote: {
@@ -781,7 +780,6 @@ export function ComposerHome({
     const briefInput = briefInputRef.current;
     const briefContextRevision = briefContextRevisionRef.current;
     if (
-      !identity ||
       !submissionRecipe ||
       !briefInput?.briefContextId ||
       briefContextRevision === null
@@ -839,12 +837,7 @@ export function ComposerHome({
       setSubmissionQuotaBlocked(true);
       return;
     }
-    if (
-      !quoteQuery.data ||
-      !quoteView ||
-      !submissionRecipe ||
-      !identitiesQuery.data?.[0]
-    ) {
+    if (!quoteQuery.data || !quoteView || !submissionRecipe) {
       setShowRequiredHint(true);
       return;
     }

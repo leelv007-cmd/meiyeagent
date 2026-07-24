@@ -22,6 +22,7 @@ import type {
 	ComposerSubmissionRequest,
 	CreationExecutionSnapshot,
 } from "./creation-execution-snapshot.js";
+import { OFFICIAL_NEUTRAL_IDENTITY } from "./creation-execution-snapshot.js";
 import type { ComposerRouteResolverPort } from "./composer-route-resolver.js";
 import type { CreationSubmissionAdmissionPort } from "./submission-coordinator.js";
 
@@ -225,20 +226,23 @@ export class ComposerSubmissionAdmissionGate
 			);
 		}
 
-		const activeIdentities = await this.dependencies.identities.listActive(
-			input.workspaceId,
-			this.now(),
-		);
-		if (
-			!activeIdentities.some(
-				(identity) =>
-					identity.identityId === input.identity.id &&
-					String(identity.version) === input.identity.revision,
-			)
-		) {
-			throw invalid(
-				"Marketing identity is missing, inactive, or at a different revision.",
+		const identity = input.identity ?? OFFICIAL_NEUTRAL_IDENTITY;
+		if (input.identity) {
+			const activeIdentities = await this.dependencies.identities.listActive(
+				input.workspaceId,
+				this.now(),
 			);
+			if (
+				!activeIdentities.some(
+					(candidate) =>
+						candidate.identityId === input.identity?.id &&
+						String(candidate.version) === input.identity?.revision,
+				)
+			) {
+				throw invalid(
+					"Marketing identity is missing, inactive, or at a different revision.",
+				);
+			}
 		}
 
 		const assetIds = input.sources.assets.map((asset) => asset.id);
@@ -379,6 +383,7 @@ export class ComposerSubmissionAdmissionGate
 			route,
 		});
 		return {
+			identity,
 			modelPolicy: {
 				id: `recipe-model-policy:${recipe.recipeId}`,
 				mode: "fixed" as const,
@@ -443,7 +448,8 @@ function deriveRecipeBinding(recipe: {
 	if (
 		platform !== "xiaohongshu" &&
 		platform !== "douyin" &&
-		platform !== "video_account"
+		platform !== "video_account" &&
+		platform !== "wechat_moments"
 	) {
 		throw invalid(
 			"Published Recipe must declare a supported delivery platform.",

@@ -9,6 +9,7 @@ import {
 } from '@meiye/contracts';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution-snapshot.js';
 import type { ContextBundleRepository } from '../operations/context-bundle-repository.js';
 import {
   compileContextBundle,
@@ -392,6 +393,7 @@ export class LedgerBackedHarnessContextPort
       : [];
     const snapshot = request.executionSnapshot;
     if (!snapshot) return activeIdentities;
+    if (isOfficialNeutralIdentity(snapshot.identity)) return [];
 
     const identity = activeIdentities.find(
       (candidate) =>
@@ -400,7 +402,7 @@ export class LedgerBackedHarnessContextPort
     );
     if (!identity) {
       throw new HarnessSnapshotIdentityError(
-        snapshotIdentityReference(snapshot),
+        snapshotIdentityReference(snapshot)!,
       );
     }
     return [identity];
@@ -428,10 +430,13 @@ export class LedgerBackedHarnessContextPort
     const identityRefs = Object.values(bundle.dimensions.expression_identity)
       .map((item) => item.sourceRef)
       .filter((sourceRef) => sourceRef.startsWith('marketing_identity:'));
-    if (
-      identityRefs.length !== 1 ||
-      identityRefs[0] !== expectedIdentityRef
-    ) {
+    if (expectedIdentityRef === null) {
+      if (identityRefs.length !== 0) {
+        throw new HarnessSnapshotIdentityError('official-neutral');
+      }
+      return;
+    }
+    if (identityRefs.length !== 1 || identityRefs[0] !== expectedIdentityRef) {
       throw new HarnessSnapshotIdentityError(expectedIdentityRef);
     }
   }
@@ -619,6 +624,7 @@ function identityReference(identity: MarketingIdentityAsset) {
 function snapshotIdentityReference(
   snapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>,
 ) {
+  if (isOfficialNeutralIdentity(snapshot.identity)) return null;
   return `marketing_identity:${snapshot.identity.id}:${snapshot.identity.revision}`;
 }
 

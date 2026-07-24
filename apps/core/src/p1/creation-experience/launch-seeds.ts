@@ -141,7 +141,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       quantity: 1,
     },
     sourceRequirements: [
-      { slot: 'project_facts', required: true, kinds: ['text'] },
+      { slot: 'project_facts', required: false, kinds: ['text'] },
     ],
     contextPatches: {
       distributionTarget: 'wechat_moments',

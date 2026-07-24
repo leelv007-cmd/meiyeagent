@@ -467,7 +467,35 @@ function ResultCenterRoutePage() {
           lifecycle: 'adopted' as const,
           platformPreviews: platformPreviewsFromContentPackage(contentPackage),
         }
-      : selected?.copyWorksurface;
+      : (selected?.copyWorksurface ??
+        (currentPackageVersion && contentPackage
+          ? {
+              workId,
+              baseRevisionId: currentPackageVersion.id,
+              document: {
+                body: currentPackageVersion.body,
+                conversionHook: currentPackageVersion.conversionHook ?? '',
+                orderedAssetIds: [...currentPackageVersion.orderedAssetIds],
+                title: currentPackageVersion.title,
+                topics: [...currentPackageVersion.topics],
+              },
+              alternativeCandidates: contentPackage.versions
+                .filter((version) => version.id !== currentPackageVersion.id)
+                .map((version) => ({
+                  body: version.body,
+                  candidateId: version.id,
+                  conversionHook: version.conversionHook ?? '',
+                  title: version.title,
+                  topics: [...version.topics],
+                })),
+              lifecycle:
+                contentPackage.status === 'accepted'
+                  ? ('adopted' as const)
+                  : ('candidate' as const),
+              platformPreviews:
+                platformPreviewsFromContentPackage(contentPackage),
+            }
+          : undefined));
   const imageWorksurface =
     selected?.imageWorksurface && currentPackageVersion
       ? {

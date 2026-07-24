@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import type { Pool } from 'pg';
 
 import { P1DomainError } from '../foundation/domain.js';
@@ -39,7 +40,14 @@ async function ensureLaunchCatalogOnce(
         return recipe;
       }),
     );
-    return { recipes, surface: existingSurface };
+    if (
+      recipes.length === LAUNCH_RECIPE_SPECS.length &&
+      recipes.every((recipe, index) =>
+        matchesLaunchRecipe(recipe, LAUNCH_RECIPE_SPECS[index]!)
+      )
+    ) {
+      return { recipes, surface: existingSurface };
+    }
   }
 
   const recipes: ServerRecipeRecord[] = [];
@@ -50,6 +58,16 @@ async function ensureLaunchCatalogOnce(
         ...LAUNCH_ACTOR,
         body: recipeBodyFromSpec(spec),
         expectedRevision: null,
+        recipeId: spec.recipeId,
+      });
+    } else if (
+      head.status === 'published' &&
+      !matchesLaunchRecipe(head, spec)
+    ) {
+      head = await service.draftRecipe({
+        ...LAUNCH_ACTOR,
+        body: recipeBodyFromSpec(spec),
+        expectedRevision: head.revision,
         recipeId: spec.recipeId,
       });
     }
@@ -77,20 +95,33 @@ async function ensureLaunchCatalogOnce(
   }
 
   let surface: ServerSurfaceRecord | null = existingSurface;
+  const recipeRefs = LAUNCH_RECIPE_SPECS.map((spec, index) => ({
+    featured: spec.featured,
+    lensId: spec.lensId,
+    order: spec.cardOrder,
+    recipeRevisionId: recipes[index]!.revisionId,
+    visible: true,
+  }));
+  const toolEntryRefs = LAUNCH_TOOL_ENTRY_REFS.map((entry) => ({ ...entry }));
   if (!surface) {
     surface = await service.draftSurface({
       ...LAUNCH_ACTOR,
       body: {
-        recipeRefs: LAUNCH_RECIPE_SPECS.map((spec, index) => ({
-          featured: spec.featured,
-          lensId: spec.lensId,
-          order: spec.cardOrder,
-          recipeRevisionId: recipes[index]!.revisionId,
-          visible: true,
-        })),
-        toolEntryRefs: LAUNCH_TOOL_ENTRY_REFS.map((entry) => ({ ...entry })),
+        recipeRefs,
+        toolEntryRefs,
       },
       expectedRevision: null,
+      surfaceId: LAUNCH_SURFACE_ID,
+    });
+  } else if (
+    surface.status === 'published' &&
+    (!isDeepStrictEqual(surface.recipeRefs, recipeRefs) ||
+      !isDeepStrictEqual(surface.toolEntryRefs, toolEntryRefs))
+  ) {
+    surface = await service.draftSurface({
+      ...LAUNCH_ACTOR,
+      body: { recipeRefs, toolEntryRefs },
+      expectedRevision: surface.revision,
       surfaceId: LAUNCH_SURFACE_ID,
     });
   }
@@ -115,6 +146,37 @@ async function ensureLaunchCatalogOnce(
     );
   }
   return { recipes, surface };
+}
+
+function matchesLaunchRecipe(
+  recipe: ServerRecipeRecord,
+  spec: (typeof LAUNCH_RECIPE_SPECS)[number]
+) {
+  const body = recipeBodyFromSpec(spec);
+  return isDeepStrictEqual(
+    {
+      lensId: recipe.lensId,
+      ...(recipe.familyId ? { familyId: recipe.familyId } : {}),
+      presentation: recipe.presentation,
+      delivery: recipe.delivery,
+      contextPatches: recipe.contextPatches,
+      sourceRequirements: recipe.sourceRequirements,
+      modelPolicy: recipe.modelPolicy,
+      settingsPatches: recipe.settingsPatches,
+      ...(recipe.outputContractRef
+        ? { outputContractRef: recipe.outputContractRef }
+        : {}),
+      ...(recipe.quotePolicyRevisionRef
+        ? { quotePolicyRevisionRef: recipe.quotePolicyRevisionRef }
+        : {}),
+      ...(recipe.workflowRevisionRef
+        ? { workflowRevisionRef: recipe.workflowRevisionRef }
+        : {}),
+      promptRevisionRef: recipe.promptRevisionRef,
+      targetWorkspaceKind: recipe.targetWorkspaceKind,
+    },
+    body
+  );
 }
 
 async function ensureLaunchCatalog(

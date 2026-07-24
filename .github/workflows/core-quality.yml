@@ -267,11 +267,12 @@ jobs:
           set -o pipefail;
           ./scripts/ci/provision-test-db.sh 2>&1 |
           tee output/ci/production-main-journey/provision.log
-      - name: Run production-build main journey
+      - name: Run required assembly gate and production-build main journey
         run: bash scripts/ci/run-pr-production-journey.sh
         env:
           CI_EVIDENCE_DIR: output/ci/production-main-journey
           RELEASE_COMMIT_SHA: ${{ github.sha }}
+          REQUIRED_E2E_SPEC: tests/e2e/specs/assembly-gate-required-journey.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -23,7 +23,7 @@ export const composerSubmissionBodySchema = z
       })
       .strict(),
     catalogModel: revisionReferenceSchema,
-    identity: revisionReferenceSchema,
+    identity: revisionReferenceSchema.optional(),
     idempotencyKey: identifierSchema,
     intent: z.string().trim().min(1).max(4_000),
     quote: revisionReferenceSchema,

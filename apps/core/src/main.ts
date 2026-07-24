@@ -1485,6 +1485,7 @@ if (harnessRuntimeConfig) {
         workspaceId,
         actorId,
         selection: { mode: 'auto', profile: 'quality' },
+        productUsageQuantity: 0,
       });
     },
   };

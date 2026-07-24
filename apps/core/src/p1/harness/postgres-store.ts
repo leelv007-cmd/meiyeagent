@@ -660,7 +660,7 @@ export class PostgresHarnessStore
     workspaceId: string;
     packageId: string;
     expectedRevision: number;
-    platform: 'xiaohongshu' | 'douyin' | 'video_account';
+    platform?: 'xiaohongshu' | 'douyin' | 'video_account';
     occurredAt: string;
     workflowRevision: number;
     winner: {
@@ -866,7 +866,7 @@ export class PostgresHarnessStore
           revision: nextRevision,
           source: {
             ...contentPackage.source,
-            targetPlatform: input.platform,
+            ...(input.platform ? { targetPlatform: input.platform } : {}),
             workflowId: input.workflowId,
             workflowRevision: input.workflowRevision,
           },
@@ -1279,7 +1279,7 @@ function deliveryRequestFingerprint(input: {
   workflowId: string;
   packageId: string;
   expectedRevision: number;
-  platform: 'xiaohongshu' | 'douyin' | 'video_account';
+  platform?: 'xiaohongshu' | 'douyin' | 'video_account';
   workflowRevision: number;
   winner: {
     candidateId: string;

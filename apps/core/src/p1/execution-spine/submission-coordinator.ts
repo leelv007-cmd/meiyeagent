@@ -81,6 +81,7 @@ export interface CreationSubmissionAdmissionPort {
 	 * root or writes any Work, Task, ContentPackage, or usage reservation.
 	 */
 	admit(input: ComposerSubmissionRequest): Promise<{
+		identity: { id: string; revision: string };
 		modelPolicy: { id: string; mode: "auto" | "fixed"; revision: string };
 		recipeBinding: Pick<
 			CreationExecutionSnapshot,
@@ -119,6 +120,7 @@ export class CreationSubmissionCoordinator {
 			...request,
 			contentModules: admitted.recipeBinding.contentModules,
 			deliverables: admitted.recipeBinding.deliverables,
+			identity: admitted.identity,
 			lens: admitted.recipeBinding.lens,
 			modelPolicy: admitted.modelPolicy,
 			platform: admitted.recipeBinding.platform,
