@@ -346,4 +346,16 @@ describe('tools strip caps + Pro Studio banner', () => {
       'locked'
     );
   });
+
+  // R-08 / #211: the rendered banner — not just the view model — refuses to
+  // promise entry while the canonical projection has no answer.
+  it('an unknown entitlement renders an entry that promises nothing', () => {
+    render(<ComposerToolsStrip viewport="desktop" proStudioStatus="unknown" />);
+    const banner = screen.getByTestId('composer-pro-studio-banner');
+    expect(banner).toHaveAttribute('data-status', 'unknown');
+    expect(banner).toHaveAttribute('data-can-enter', 'false');
+    expect(banner).not.toHaveTextContent('进入专业工作区');
+    // The frozen entry still stands, and still only via the canonical gate.
+    expect(banner).toHaveAttribute('data-href', '/pro-studio');
+  });
 });

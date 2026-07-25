@@ -1,9 +1,15 @@
 /**
  * R-08 / #211 — read the canonical Pro Studio entitlement projection.
  *
- * One query key for every consumer, so the workbench entry, the fullscreen
- * catalog and the `/pro-studio` gate cannot drift apart. A failed or pending
- * read resolves to `unknown`; it never falls back to a seeded verdict.
+ * All three consumers share one contract module (`lib/pro-studio-entitlement`),
+ * so they cannot drift apart. This hook is the shared *read* for the two that
+ * live inside the query client — the workbench entry and the fullscreen catalog
+ * — which therefore also share one query key. The `/pro-studio` route gate does
+ * not use the hook: it owns its own fetch so it can poll while a checkout
+ * settles, but it parses the same payload through the same module.
+ *
+ * A failed or pending read resolves to `unknown`; it never falls back to a
+ * seeded verdict.
  */
 import { useQuery } from '@tanstack/react-query';
 
