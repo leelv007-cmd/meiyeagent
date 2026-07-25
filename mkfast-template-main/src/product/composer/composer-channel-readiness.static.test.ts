@@ -1,22 +1,42 @@
 /**
- * F-J-01 / G-UI-MERCHANT-NO-FALLBACK: composer primary model select must
- * project single-channel / multi-channel readiness (dual-end with admin).
+ * F-J-01 / G-UI-MERCHANT-NO-FALLBACK: the merchant must be told the channel
+ * readiness of the model that will actually run (dual-end with admin).
+ *
+ * T30 / #224 moved the carrier, not the guarantee. The model picker was one of
+ * the T08 signed fields, so the reshell stopped rendering it as an editable
+ * control; readiness now rides the read-only signed preview. This file pins the
+ * new location and additionally pins that the picker did not come back.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-const home = readFileSync(
-  fileURLToPath(new URL('./composer-home.tsx', import.meta.url)),
-  'utf8'
-);
+function read(file: string) {
+  return readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+}
 
-test('composer catalog model select projects channel readiness (merchant dual-end)', () => {
-  assert.match(home, /composer-catalog-model-select/);
-  assert.match(home, /composer-model-channel-readiness/);
-  assert.match(home, /data-channel-readiness=/);
-  assert.match(home, /model_card_channel_single/);
-  assert.match(home, /model_card_channel_multi/);
-  assert.match(home, /channelReadiness === ['"]single_channel['"]/);
+const home = read('./composer-home.tsx');
+const conversation = read('./composer-conversation.tsx');
+
+test('composer projects channel readiness for the model that will run', () => {
+  // The readiness value reaches the surface from the resolved catalog model.
+  assert.match(
+    home,
+    /modelChannelReadiness=\{selectedModel\?\.channelReadiness/
+  );
+
+  assert.match(conversation, /composer-model-channel-readiness/);
+  assert.match(conversation, /data-channel-readiness=/);
+  assert.match(conversation, /model_card_channel_single/);
+  assert.match(conversation, /model_card_channel_multi/);
+  assert.match(
+    conversation,
+    /modelChannelReadiness === ['"]single_channel['"]/
+  );
+});
+
+test('the retired model select stays retired (T08 signed fields are not a form)', () => {
+  assert.doesNotMatch(home, /composer-catalog-model-select/);
+  assert.doesNotMatch(conversation, /composer-catalog-model-select/);
 });

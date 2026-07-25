@@ -1,26 +1,29 @@
 /**
- * Composer home host (Z1 / #105 cutover).
+ * Composer home host — D-114 定制创作主容器 (T30 / #224 reshell).
  *
- * Primary creation entry mounted by dashboard/index.
- * Consumes WT-C modules only; submit success navigates to Result Center
- * via typed ResultCenterNavigation (never the legacy query-string work bridge).
+ * Primary creation entry mounted by dashboard/index. The live seams are
+ * unchanged: three-in/three-out HTTP+SSE is still the only backend language,
+ * T08 still signs and freezes the submission, T11 still owns routing.
+ *
+ * What the reshell changed (ADR-0014):
+ *  - 提交后不跳转. The run streams in this container and finishes as a 成品预览卡;
+ *    clicking that card is what opens the Result Center.
+ *  - The settings grid is gone. Its five controls were exactly the T08 signed
+ *    fields, so editing them here was a D-031 槽位填表 over a contract the server
+ *    owns. 「发到哪」stays as one chip question; the rest read back read-only.
+ *  - reuse_panel 的三段选择表单收进对话流 (chips + one sentence).
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
   creation_entry_intent_aria,
   creation_entry_intent_placeholder,
   creation_entry_submit,
-  model_card_channel_multi,
-  model_card_channel_single,
   workbench_grounding_go_to_store,
   workbench_grounding_source_required,
   workbench_grounding_store_required,
@@ -43,6 +46,7 @@ import type {
   CreationLensId,
   MarketingIdentityAsset,
   ProductQuoteSnapshot,
+  QuestionCard,
 } from '@meiye/contracts';
 import { composerSubmissionSignedFieldsSchema } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
@@ -59,8 +63,14 @@ import {
   missingCreativeGrounding,
   type CreativeGroundingRequirement,
 } from '@/product/creative-brief-editor';
+import {
+  readPendingHarnessDecision,
+  submitHarnessDecision,
+} from '@/product/harness-client';
 import { LandingHandoffRestore } from '@/product/landing-handoff-restore';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
+import { projectResultTokenStream } from '@/product/results/result-token-stream';
+import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
 
 import { BriefSurface } from './brief-surface-panel';
 import { applyCatalogRecipeSelection } from './catalog-selection';
@@ -114,8 +124,54 @@ import {
   syncComposerBriefContext,
 } from './composer-live';
 import { composerDraftToRecipeFields } from './recipe-patch-preview-client';
-import { buildDynamicSettingsRow } from './settings-row';
 import { submitComposerSubmission } from './composer-submission-client';
+import {
+  ComposerConversation,
+  ComposerPromptBar,
+  type ComposerCreationMode,
+  type ComposerReuseChip,
+} from './composer-conversation';
+import {
+  ComposerQuestionCard,
+  composerQuestionDecision,
+} from './composer-question-card';
+import { projectComposerSignedPreview } from './composer-signed-preview';
+import {
+  applyComposerProgress,
+  applyComposerQuestion,
+  applyComposerWorkflowState,
+  bindComposerTask,
+  COMPOSER_SESSION_STORAGE_KEY,
+  createComposerSession,
+  failComposerSession,
+  openComposerTurn,
+  restoreComposerSession,
+  serializeComposerSession,
+  type ComposerSession,
+} from './composer-session';
+
+/**
+ * 旧内容换平台 as conversation. Tapping a chip writes the merchant's own
+ * sentence into the draft — the retired panel instead demanded source + form +
+ * carrier before anything could start (D-031 违规位 ①, 归桶矩阵 §6.10).
+ */
+const COMPOSER_REUSE_CHIPS: ComposerReuseChip[] = [
+  {
+    id: 'xiaohongshu',
+    label: '发小红书',
+    intent: '把我之前发过的一条内容改成适合小红书的版本',
+  },
+  {
+    id: 'douyin',
+    label: '发抖音',
+    intent: '把我之前发过的一条内容改成适合抖音的版本',
+  },
+  {
+    id: 'wechat_moments',
+    label: '发朋友圈',
+    intent: '把我之前发过的一条内容改成适合朋友圈转发的版本',
+  },
+];
 
 function briefSourcesFromDraft(sources: unknown[]): BriefSourceSignal[] {
   return sources.flatMap((source, index) => {
@@ -195,10 +251,12 @@ function sameBriefRevisions(
 export type ComposerHomeProps = {
   /** Optional viewport override for tests. */
   viewportWidth?: number;
-  /** When true, skip live create and only freeze+navigate with fixture workId. */
+  /** When true, skip live create and bind the session to a fixture task. */
   fixtureSubmit?: boolean;
   initialRecipeRevisionId?: string;
   initialSurfaceRevisionId?: string;
+  /** Injectable for tests; browser sessionStorage is used by default. */
+  sessionStore?: Storage;
 };
 
 export function ComposerHome({
@@ -206,6 +264,7 @@ export function ComposerHome({
   fixtureSubmit = false,
   initialRecipeRevisionId,
   initialSurfaceRevisionId,
+  sessionStore,
 }: ComposerHomeProps = {}) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -235,6 +294,13 @@ export function ComposerHome({
   const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
     useState<ComposerGroundingBlocker | null>(null);
   const [uploadsReady, setUploadsReady] = useState(true);
+  // D-111 双入口: the entry declares itself, the server decides the route.
+  const [creationMode, setCreationMode] =
+    useState<ComposerCreationMode>('customized');
+  const [session, setSession] = useState<ComposerSession>(() =>
+    createComposerSession(sessionIdRef.current)
+  );
+  const [questionPending, setQuestionPending] = useState(false);
 
   const width =
     viewportWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
@@ -443,20 +509,18 @@ export function ComposerHome({
         : listColdCardsFromSeeds(),
     [surfaceQuery.data]
   );
-  const settingsFields = useMemo(
+  // Read-only echo of the fields the server signs and admission freezes (T08).
+  // Deliberately a projection, never inputs: the retired settings grid edited
+  // these five values in place, which is the D-031 槽位填表 this shell removes.
+  const signedPreview = useMemo(
     () =>
-      buildDynamicSettingsRow({
-        lensId,
-        catalogModel: selectedModel
-          ? { id: selectedModel.id, displayName: selectedModel.displayName }
-          : null,
-        aspectRatio: lensState.draft.settings.aspectRatio,
-        quantity: lensState.draft.settings.quantity,
-        durationSeconds: lensState.draft.settings.durationSeconds,
-        platform: lensState.draft.delivery.platform,
-        deliverableKind: lensState.draft.delivery.deliverableKind,
-      }),
-    [lensId, lensState.draft, selectedModel]
+      signedSubmission
+        ? projectComposerSignedPreview({
+            signed: signedSubmission,
+            modelName: selectedModel?.displayName,
+          })
+        : null,
+    [selectedModel?.displayName, signedSubmission]
   );
   const usageResource =
     lensId === 'image_text' ? 'image' : lensId === 'video' ? 'video' : 'copy';
@@ -519,6 +583,138 @@ export function ComposerHome({
     if (lensState.draft.quoteRevisionId === nextView.revision) return;
     setLensState((current) => bindQuoteView(current, nextView));
   }, [quoteQuery.data, lensState]);
+
+  const store = useMemo(() => {
+    if (sessionStore) return sessionStore;
+    return typeof window === 'undefined' ? null : window.sessionStorage;
+  }, [sessionStore]);
+
+  // Refresh restore. Only the task handle was persisted; the transcript comes
+  // back because the workflow event log replays from the start for a subscriber
+  // without `last-event-id`.
+  useEffect(() => {
+    if (!store) return;
+    const restored = restoreComposerSession({
+      raw: store.getItem(COMPOSER_SESSION_STORAGE_KEY),
+      nowIso: new Date().toISOString(),
+    });
+    if (restored.kind !== 'restored') {
+      if (restored.kind !== 'missing') {
+        store.removeItem(COMPOSER_SESSION_STORAGE_KEY);
+      }
+      return;
+    }
+    sessionIdRef.current = restored.session.sessionId;
+    setSession(restored.session);
+    setLensState((current) =>
+      updateUserText(current, restored.session.turns[0]?.kind === 'merchant'
+        ? restored.session.turns[0].text
+        : '')
+    );
+  }, [store]);
+
+  useEffect(() => {
+    if (!store) return;
+    const persisted = serializeComposerSession(
+      session,
+      new Date().toISOString()
+    );
+    if (!persisted) return;
+    store.setItem(COMPOSER_SESSION_STORAGE_KEY, JSON.stringify(persisted));
+  }, [session, store]);
+
+  const taskId = session.task?.taskId ?? '';
+  // Harness tasks are not a P1 query module — the existing harness surfaces key
+  // them by hand (see product/harness-question-card.tsx).
+  const workflowQueryKey = useMemo(
+    () => ['harness', 'workflow', taskId] as const,
+    [taskId]
+  );
+  const decisionQueryKey = useMemo(
+    () => ['harness', 'decision', taskId] as const,
+    [taskId]
+  );
+  const workflowStream = useWorkflowEventStream({
+    enabled: Boolean(taskId),
+    workflowId: taskId,
+    workflowQueryKey,
+  });
+
+  useEffect(() => {
+    if (!workflowStream.latestProgress) return;
+    setSession((current) =>
+      applyComposerProgress(current, workflowStream.latestProgress!)
+    );
+  }, [workflowStream.latestProgress]);
+
+  useEffect(() => {
+    if (!workflowStream.workflowState) return;
+    setSession((current) =>
+      applyComposerWorkflowState(current, workflowStream.workflowState!)
+    );
+  }, [workflowStream.workflowState]);
+
+  // 需要用户的一个问题 — the third inbound seam message. Polled while the run is
+  // live so a suspended workflow surfaces its card without a page action.
+  const decisionQuery = useQuery({
+    enabled: Boolean(taskId) && session.phase !== 'delivered',
+    queryKey: decisionQueryKey,
+    queryFn: ({ signal }) => readPendingHarnessDecision(taskId, signal),
+    refetchInterval: session.phase === 'delivered' ? false : 2_000,
+  });
+  const pendingQuestion: QuestionCard | null =
+    decisionQuery.data?.question ?? null;
+
+  useEffect(() => {
+    setSession((current) =>
+      applyComposerQuestion(current, pendingQuestion?.questionId ?? null)
+    );
+  }, [pendingQuestion?.questionId]);
+
+  const tokenStream = useMemo(
+    () =>
+      projectResultTokenStream({
+        workspaceKind: lensId === 'image_text' ? 'image_text' : 'copy',
+        partialCandidates: workflowStream.copyCandidates,
+        progressState: workflowStream.workflowState,
+        loading: session.phase === 'running' || session.phase === 'submitting',
+        completed: session.phase === 'delivered',
+        reconnecting: workflowStream.transportStatus === 'degraded',
+      }),
+    [
+      lensId,
+      session.phase,
+      workflowStream.copyCandidates,
+      workflowStream.transportStatus,
+      workflowStream.workflowState,
+    ]
+  );
+
+  const answerQuestion = useCallback(
+    async (input: { skipped: boolean; value: string }) => {
+      if (!pendingQuestion || !taskId) return;
+      setQuestionPending(true);
+      try {
+        await submitHarnessDecision(
+          taskId,
+          composerQuestionDecision({
+            question: pendingQuestion,
+            idempotencyKey: `composer-decision:${pendingQuestion.questionId}:${
+              input.skipped ? 'skip' : 'answer'
+            }`,
+            skipped: input.skipped,
+            value: input.value,
+          })
+        );
+        await decisionQuery.refetch();
+      } catch {
+        toast.error(workbench_operation_failed());
+      } finally {
+        setQuestionPending(false);
+      }
+    },
+    [decisionQuery, pendingQuestion, taskId]
+  );
 
   const addSource = (assetId: string) => {
     const facts = sourceFactsRef.current.get(assetId);
@@ -732,7 +928,7 @@ export function ComposerHome({
             }
           : {}),
         idempotencyKey: `composer-submit:${sessionIdRef.current}:${input.quote.revision}`,
-        creationMode: 'customized',
+        creationMode,
         intent: input.intent,
         quote: {
           id: input.quote.quoteId,
@@ -749,7 +945,7 @@ export function ComposerHome({
         },
       });
     },
-    onSuccess: async (created, variables) => {
+    onSuccess: (created, variables) => {
       const submitted = submitComposer(lensState, {
         videoConfirmAccepted:
           variables.lensId === 'video'
@@ -761,20 +957,19 @@ export function ComposerHome({
         setLensState(submitted.state);
       }
       toast.success(workbench_work_created());
-      const location = navigateAfterSubmitSuccess({
-        workId: created.work.id,
-        sourceRoute: '/dashboard',
-        panel: 'run',
-      });
-      await navigate({
-        to: '/dashboard/results/$workId',
-        params: { workId: created.work.id },
-        search: { ...location.search, taskId: created.task.id },
-        replace: false,
-      });
+      // ADR-0014「提交后不跳转」— the run streams here and finishes as a
+      // 成品预览卡. Opening the Result Center stays a merchant action.
+      setSession((current) =>
+        bindComposerTask(current, {
+          taskId: created.task.id,
+          workId: created.work.id,
+          packageId: created.contentPackage.id,
+        })
+      );
     },
     onMutate: () => setSubmissionGroundingBlocked(null),
     onError: (error) => {
+      setSession((current) => failComposerSession(current));
       if (p1ErrorCode(error) === 'CREATIVE_GROUNDING_INCOMPLETE') {
         const blocker =
           groundingBlockerFromError(error) ??
@@ -849,6 +1044,20 @@ export function ComposerHome({
     setLensState(updateUserText(lensState, value));
   };
 
+  const openDelivery = (input: { workId: string; taskId: string }) => {
+    const location = navigateAfterSubmitSuccess({
+      workId: input.workId,
+      sourceRoute: '/dashboard',
+      panel: 'run',
+    });
+    void navigate({
+      to: '/dashboard/results/$workId',
+      params: { workId: input.workId },
+      search: { ...location.search, taskId: input.taskId },
+      replace: false,
+    });
+  };
+
   const attemptSubmit = async () => {
     const gate = canSubmit(lensState);
     if (!gate.allowed && gate.reason !== 'video_confirm_required') {
@@ -880,6 +1089,10 @@ export function ComposerHome({
       setSubmissionGroundingBlocked(groundingBlocker);
       return;
     }
+
+    // The merchant's sentence opens the conversation before any backend round
+    // trip, so the container reads as a reply rather than a blank wait.
+    setSession((current) => openComposerTurn(current, lensState.draft.userText));
 
     setBriefPending(true);
     let projection: BriefTriggerProjection | undefined;
@@ -1089,7 +1302,10 @@ export function ComposerHome({
 
   return (
     <div
-      className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6"
+      // `meiye-heroui-glass` is the shell class the DESIGN.md → HeroUI token
+      // bridge keys on. The bridge's selector subject stays `html`, so portalled
+      // overlays inherit the same tokens (C-02 regression guard).
+      className="meiye-heroui-glass mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6"
       data-testid="composer-home"
       data-viewport={viewportKind}
     >
@@ -1139,39 +1355,27 @@ export function ComposerHome({
         />
       ) : null}
 
-      <Card className="meiye-composer meiye-entry-card border-0 shadow-none">
-        <CardContent className="space-y-5 p-5 sm:p-6">
-          <LensRadiogroup
-            value={lensId}
-            onChange={handleLensChange}
-            showRequiredHint={showRequiredHint}
-            disabled={createWork.isPending || lensState.phase === 'frozen'}
-          />
+      {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
+          streaming candidate all land here; nothing navigates away. */}
+      <ComposerConversation
+        onOpenDelivery={openDelivery}
+        questionSlot={
+          pendingQuestion ? (
+            <ComposerQuestionCard
+              disabled={createWork.isPending}
+              onDecide={(input) => void answerQuestion(input)}
+              pending={questionPending}
+              question={pendingQuestion}
+            />
+          ) : null
+        }
+        session={session}
+        stream={tokenStream}
+      />
 
-          <LensSwitchPreviewPanel state={lensState} onChange={setLensState} />
-
-          <Textarea
-            aria-label={creation_entry_intent_aria()}
-            className="min-h-28 resize-none rounded-2xl text-base leading-7"
-            data-testid="composer-intent-input"
-            disabled={createWork.isPending || lensState.phase === 'frozen'}
-            onChange={(event) => handleIntentChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (
-                (event.metaKey || event.ctrlKey) &&
-                event.key === 'Enter' &&
-                !createWork.isPending
-              ) {
-                event.preventDefault();
-                void attemptSubmit();
-              }
-            }}
-            placeholder={creation_entry_intent_placeholder()}
-            ref={intentRef}
-            rows={4}
-            value={userText}
-          />
-
+      <ComposerPromptBar
+        ariaLabel={creation_entry_intent_aria()}
+        attachmentSlot={
           <div data-testid="composer-source-picker">
             <ComposerImageInput
               focusRef={sourcePickerRef}
@@ -1185,247 +1389,115 @@ export function ComposerHome({
               }
               onUpload={uploadComposerImage}
             >
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted text-xs">
                 可选：上传门店图片、顾客案例或价目素材
               </p>
             </ComposerImageInput>
           </div>
+        }
+        creationMode={creationMode}
+        destination={lensState.draft.delivery.platform ?? null}
+        destinationCapability={
+          destination
+            ? composerDestinationCapability(destination.distributionTarget)
+            : null
+        }
+        disabled={
+          createWork.isPending ||
+          briefPending ||
+          !uploadsReady ||
+          lensState.phase === 'frozen' ||
+          quotaBlocked ||
+          (lensId != null && !quoteView)
+        }
+        lensSlot={
+          <>
+            <LensRadiogroup
+              value={lensId}
+              onChange={handleLensChange}
+              showRequiredHint={showRequiredHint}
+              disabled={createWork.isPending || lensState.phase === 'frozen'}
+            />
+            <LensSwitchPreviewPanel state={lensState} onChange={setLensState} />
+          </>
+        }
+        onCreationModeChange={setCreationMode}
+        onDestinationChange={(platform) =>
+          setLensState((current) =>
+            updateDeliverySuggestion(current, { platform })
+          )
+        }
+        onReuseChip={(chip) => {
+          // 旧内容换平台 becomes one sentence in the merchant's own draft.
+          setLensState((current) =>
+            updateDeliverySuggestion(
+              updateUserText(
+                current,
+                current.draft.userText.trim()
+                  ? `${current.draft.userText.trim()}\n${chip.intent}`
+                  : chip.intent
+              ),
+              { platform: chip.id }
+            )
+          );
+          intentRef.current?.focus();
+        }}
+        modelChannelReadiness={selectedModel?.channelReadiness ?? null}
+        onSubmit={() => void attemptSubmit()}
+        onValueChange={handleIntentChange}
+        placeholder={creation_entry_intent_placeholder()}
+        reuseChips={COMPOSER_REUSE_CHIPS}
+        running={session.phase === 'running'}
+        signedPreview={signedPreview}
+        submitLabel={creation_entry_submit()}
+        textAreaRef={intentRef}
+        value={userText}
+      />
 
-          {quoteView ? (
-            <p
-              className="text-sm text-muted-foreground"
-              data-quote-revision={quoteQuery.data?.revision}
-              data-submission-contract-hash={
-                quoteQuery.data?.submissionContractHash
-              }
-              data-testid="composer-quote-line"
-            >
-              {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}
-            </p>
-          ) : lensId ? (
-            <output className="text-sm text-muted-foreground">
-              {catalogQuery.isError || quoteQuery.isError
-                ? '当前模型或报价暂不可用'
-                : '正在读取模型与报价…'}
-            </output>
-          ) : null}
+      {quoteView ? (
+        <p
+          className="text-muted text-xs"
+          data-quote-revision={quoteQuery.data?.revision}
+          data-submission-contract-hash={quoteQuery.data?.submissionContractHash}
+          data-testid="composer-quote-line"
+        >
+          {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}
+        </p>
+      ) : lensId ? (
+        <output className="text-muted text-xs">
+          {catalogQuery.isError || quoteQuery.isError
+            ? '当前模型或报价暂不可用'
+            : '正在读取模型与报价…'}
+        </output>
+      ) : null}
 
-          {settingsFields.length > 0 ? (
-            <div
-              className="grid gap-2 sm:grid-cols-2"
-              data-testid="composer-settings-row"
-            >
-              {settingsFields.map((field) => (
-                <div
-                  className="rounded-xl border border-border/60 px-3 py-2"
-                  data-testid={`composer-setting-${field.def.key}`}
-                  key={field.def.key}
-                >
-                  <label
-                    className="text-xs text-muted-foreground"
-                    htmlFor={`composer-setting-input-${field.def.key}`}
-                  >
-                    {field.def.label}
-                  </label>
-                  {field.def.key === 'catalogModel' ? (
-                    <>
-                      <select
-                        className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
-                        data-testid="composer-catalog-model-select"
-                        id="composer-setting-input-catalogModel"
-                        value={selectedModel?.id ?? ''}
-                        onChange={(event) => {
-                          const next = catalog.models.find(
-                            (model) => model.id === event.target.value
-                          );
-                          if (!next) return;
-                          setLensState((current) =>
-                            updateSettings(
-                              current,
-                              {
-                                catalogModelId: next.id,
-                                catalogModelName: next.displayName,
-                                catalogModelRevision: catalogRevision,
-                                modelPolicyMode: 'fixed',
-                              },
-                              'user'
-                            )
-                          );
-                        }}
-                      >
-                        {catalog.models
-                          .filter((model) => model.available)
-                          .map((model) => {
-                            const channelLabel =
-                              model.channelReadiness === 'multi_channel_ready'
-                                ? model_card_channel_multi()
-                                : model.channelReadiness === 'single_channel'
-                                  ? model_card_channel_single()
-                                  : undefined;
-                            return (
-                              <option key={model.id} value={model.id}>
-                                {channelLabel
-                                  ? `${model.displayName} · ${channelLabel}`
-                                  : model.displayName}
-                              </option>
-                            );
-                          })}
-                      </select>
-                      {selectedModel?.channelReadiness === 'single_channel' ||
-                      selectedModel?.channelReadiness ===
-                        'multi_channel_ready' ? (
-                        <p
-                          className="mt-1 text-xs text-muted-foreground"
-                          data-channel-readiness={
-                            selectedModel.channelReadiness
-                          }
-                          data-testid="composer-model-channel-readiness"
-                        >
-                          {selectedModel.channelReadiness ===
-                          'multi_channel_ready'
-                            ? model_card_channel_multi()
-                            : model_card_channel_single()}
-                        </p>
-                      ) : null}
-                    </>
-                  ) : field.def.key === 'aspectRatio' ? (
-                    <select
-                      className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
-                      id="composer-setting-input-aspectRatio"
-                      value={lensState.draft.settings.aspectRatio ?? ''}
-                      onChange={(event) =>
-                        setLensState((current) =>
-                          updateSettings(
-                            current,
-                            { aspectRatio: event.target.value },
-                            'user'
-                          )
-                        )
-                      }
-                    >
-                      <option value="1:1">1:1</option>
-                      <option value="3:4">3:4</option>
-                      <option value="9:16">9:16</option>
-                    </select>
-                  ) : field.def.key === 'quantity' ||
-                    field.def.key === 'durationSeconds' ? (
-                    <input
-                      className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
-                      id={`composer-setting-input-${field.def.key}`}
-                      min={1}
-                      type="number"
-                      value={field.value ?? 1}
-                      onChange={(event) =>
-                        setLensState((current) =>
-                          updateSettings(
-                            current,
-                            {
-                              [field.def.key]: Math.max(
-                                1,
-                                Number(event.target.value) || 1
-                              ),
-                            },
-                            'user'
-                          )
-                        )
-                      }
-                    />
-                  ) : field.def.key === 'platform' ? (
-                    <select
-                      className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
-                      id="composer-setting-input-platform"
-                      value={lensState.draft.delivery.platform ?? ''}
-                      onChange={(event) =>
-                        setLensState((current) =>
-                          updateDeliverySuggestion(current, {
-                            platform: event.target.value || null,
-                          })
-                        )
-                      }
-                    >
-                      <option value="">未指定</option>
-                      <option value="xiaohongshu">小红书</option>
-                      <option value="douyin">抖音</option>
-                      <option value="wechat_moments">朋友圈</option>
-                      <option value="video_account">视频号</option>
-                      <option value="offline_material">线下物料</option>
-                      <option value="generic">通用素材</option>
-                    </select>
-                  ) : (
-                    <input
-                      className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm"
-                      id={`composer-setting-input-${field.def.key}`}
-                      value={field.value ?? ''}
-                      onChange={(event) =>
-                        setLensState((current) =>
-                          updateDeliverySuggestion(current, {
-                            deliverableKind: event.target.value || null,
-                          })
-                        )
-                      }
-                    />
-                  )}
-                  {field.def.key === 'platform' && destination ? (
-                    <p
-                      className="mt-1 text-xs text-muted-foreground"
-                      data-testid="composer-destination-capability"
-                    >
-                      {composerDestinationCapability(
-                        destination.distributionTarget
-                      )}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              data-testid="composer-submit"
-              disabled={
-                createWork.isPending ||
-                briefPending ||
-                !uploadsReady ||
-                lensState.phase === 'frozen' ||
-                quotaBlocked ||
-                (lensId != null && !quoteView)
-              }
-              onClick={() => void attemptSubmit()}
-              type="button"
-            >
-              {creation_entry_submit()}
-            </Button>
-            {submissionGroundingBlocked === 'store' ? (
-              <p
-                className="text-sm text-destructive"
-                data-testid="composer-grounding-blocker"
-                role="alert"
-              >
-                {workbench_grounding_store_required()}{' '}
-                <Link
-                  className="font-medium underline underline-offset-4"
-                  to="/dashboard/store"
-                >
-                  {workbench_grounding_go_to_store()}
-                </Link>
-              </p>
-            ) : submissionGroundingBlocked === 'source' ? (
-              <p
-                className="text-sm text-destructive"
-                data-testid="composer-grounding-blocker"
-                role="alert"
-              >
-                {workbench_grounding_source_required()}
-              </p>
-            ) : createWork.isError ? (
-              <p className="text-sm text-destructive" role="alert">
-                {workbench_operation_failed()}
-              </p>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
+      {submissionGroundingBlocked === 'store' ? (
+        <p
+          className="text-destructive text-sm"
+          data-testid="composer-grounding-blocker"
+          role="alert"
+        >
+          {workbench_grounding_store_required()}{' '}
+          <Link
+            className="font-medium underline underline-offset-4"
+            to="/dashboard/store"
+          >
+            {workbench_grounding_go_to_store()}
+          </Link>
+        </p>
+      ) : submissionGroundingBlocked === 'source' ? (
+        <p
+          className="text-destructive text-sm"
+          data-testid="composer-grounding-blocker"
+          role="alert"
+        >
+          {workbench_grounding_source_required()}
+        </p>
+      ) : createWork.isError ? (
+        <p className="text-destructive text-sm" role="alert">
+          {workbench_operation_failed()}
+        </p>
+      ) : null}
 
       {quotaBlocked ? (
         <QuotaBlockingCard
@@ -1463,6 +1535,16 @@ export function ComposerHome({
               draft: composerDraftToRecipeFields(state),
             })
           }
+          onReuseRequested={() => {
+            // 旧内容换平台 is answered in the conversation, not in a panel.
+            setLensState((current) =>
+              updateUserText(
+                current,
+                current.draft.userText.trim() || COMPOSER_REUSE_CHIPS[0]!.intent
+              )
+            );
+            intentRef.current?.focus();
+          }}
           singleColumn={singleColumn}
           useBottomSheet={viewportKind === 'mobile'}
         />

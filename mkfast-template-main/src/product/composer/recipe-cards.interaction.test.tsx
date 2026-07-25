@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { COLD_CARD_TITLES } from './launch-card-seeds';
 import {
@@ -188,43 +188,37 @@ describe('Recipe cards conflict confirm + undo', () => {
   });
 });
 
-describe('Reuse content panel', () => {
-  it('opens with no default form/carrier; CTA incomplete until both chosen', async () => {
+describe('Reuse content hands off to the conversation (D-031)', () => {
+  it('emits the reuse intent and renders no source/form/carrier form', async () => {
     const user = userEvent.setup();
+    const onReuseRequested = vi.fn();
     render(
-      <RecipeCardsPanel
-        lensId={null}
-        reuseSources={[{ id: 'w1', label: '上周朋友圈' }]}
-      />
+      <RecipeCardsPanel lensId={null} onReuseRequested={onReuseRequested} />
     );
 
     await user.click(
       screen.getByTestId(`composer-recipe-card-${'reuse_content'}`)
     );
 
-    const panel = screen.getByTestId('composer-reuse-content-panel');
-    expect(panel).toBeInTheDocument();
+    expect(onReuseRequested).toHaveBeenCalledTimes(1);
 
-    const confirm = screen.getByTestId('composer-reuse-confirm');
-    expect(confirm).toBeDisabled();
-    expect(confirm).toHaveTextContent('先选择创作形式和目标载体');
-
-    // No lens preselected.
+    // The retired three-step panel must not come back in any form.
+    expect(
+      screen.queryByTestId('composer-reuse-content-panel')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('composer-reuse-confirm')).not.toBeInTheDocument();
     for (const id of ['copy', 'image_text', 'video']) {
-      expect(screen.getByTestId(`composer-reuse-lens-${id}`)).not.toBeChecked();
+      expect(
+        screen.queryByTestId(`composer-reuse-lens-${id}`)
+      ).not.toBeInTheDocument();
     }
-
-    await user.click(screen.getByTestId('composer-reuse-source-w1'));
-    await user.click(screen.getByTestId('composer-reuse-lens-copy'));
-    // Still incomplete without carrier.
-    expect(screen.getByTestId('composer-reuse-confirm')).toBeDisabled();
-
-    await user.click(
-      screen.getByTestId('composer-reuse-carrier-wechat_moments')
-    );
-    expect(screen.getByTestId('composer-reuse-confirm')).not.toBeDisabled();
-    expect(screen.getByTestId('composer-reuse-confirm')).toHaveTextContent(
-      '选择文案并套用'
+    expect(
+      screen.queryByTestId('composer-reuse-carrier-wechat_moments')
+    ).not.toBeInTheDocument();
+    // Selecting it never strands the panel in the retired reuse phase.
+    expect(screen.getByTestId('composer-recipe-cards-panel')).toHaveAttribute(
+      'data-phase',
+      'idle'
     );
   });
 });

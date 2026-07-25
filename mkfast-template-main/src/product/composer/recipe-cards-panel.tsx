@@ -27,24 +27,16 @@ import {
   cancelApply,
   clearAnnouncement,
   confirmApply,
-  confirmReusePanel,
   createRecipeApplySession,
-  openReusePanel,
   requestApplyRecipe,
   undoApply,
   type RecipeApplySession,
-  type ReusePanelSelection,
 } from './recipe-apply';
 import { RecipeApplyTip } from './recipe-apply-tip';
 import { RecipeCardGrid } from './recipe-card-grid';
 import { listVisibleRecipeCards, type RecipeCardView } from './recipe-cards';
 import type { RecipeCardTarget } from './launch-card-seeds';
 import { RecipePatchPreviewSurface } from './recipe-patch-preview-surface';
-import {
-  ReuseContentPanel,
-  emptyReuseSelection,
-  type ReuseSourceOption,
-} from './reuse-content-panel';
 import {
   createComposerLensState,
   type ComposerLensState,
@@ -59,7 +51,11 @@ export type RecipeCardsPanelProps = {
   /** Optional brief chips (T1 re-hang). */
   brief?: CreativeBrief;
   autoConfirmingBrief?: boolean;
-  reuseSources?: ReuseSourceOption[];
+  /**
+   * Called when the merchant picks the 旧内容换平台 card. The host answers it in
+   * the conversation; this panel no longer owns a reuse form.
+   */
+  onReuseRequested?: () => void;
   className?: string;
   singleColumn?: boolean;
   /**
@@ -85,7 +81,7 @@ export function RecipeCardsPanel({
   recipes,
   brief,
   autoConfirmingBrief,
-  reuseSources = [],
+  onReuseRequested,
   className,
   singleColumn,
   useBottomSheet = false,
@@ -96,8 +92,6 @@ export function RecipeCardsPanel({
   const [session, setSession] = useState<RecipeApplySession>(() =>
     createRecipeApplySession(controlledLens ?? createComposerLensState())
   );
-  const [reuseSelection, setReuseSelection] =
-    useState<ReusePanelSelection>(emptyReuseSelection);
   const [sheet, setSheet] = useState<ComposerBottomSheetState>(() =>
     createComposerBottomSheetState()
   );
@@ -134,8 +128,10 @@ export function RecipeCardsPanel({
 
   const handleSelectCard = async (card: RecipeCardView) => {
     if (card.kind === 'reuse_collection') {
-      setReuseSelection(emptyReuseSelection());
-      publish(openReusePanel(activeSession));
+      // D-031 / 归桶矩阵 §6.10: the three-step source/form/carrier panel is gone.
+      // 「旧内容换平台」is answered in the conversation with one sentence + chips,
+      // so this card only hands the intent back to the container.
+      onReuseRequested?.();
       return;
     }
     if (!card.recipe) return;
@@ -170,71 +166,6 @@ export function RecipeCardsPanel({
     publish(undoApply(activeSession));
   };
 
-  const handleReuseConfirm = () => {
-    if (!reuseSelection.lensId) return;
-    // Resolve variant from cards/surface recipes.
-    const variant =
-      cards
-        .flatMap((c) =>
-          c.reuseVariants
-            ? Object.values(c.reuseVariants)
-            : c.recipe
-              ? [c.recipe]
-              : []
-        )
-        .find((r) => r && r.lensId === reuseSelection.lensId) ??
-      (recipes ?? surface?.recipes ?? [])
-        .filter(
-          (r) =>
-            r.lensId === reuseSelection.lensId &&
-            (r.familyId === 'reuse_content' ||
-              r.recipeId.startsWith('recipe.reuse_content'))
-        )
-        .map((r) => ({
-          recipeId: r.recipeId,
-          revisionId: r.revisionId,
-          lensId: r.lensId,
-          familyId: r.familyId,
-          presentation: r.presentation,
-          delivery: r.delivery,
-          modelPolicy: r.modelPolicy,
-          settingsPatches: r.settingsPatches ?? {},
-          sourceRequirements: r.sourceRequirements ?? [],
-          quotePolicyRevisionRef: r.quotePolicyRevisionRef,
-        }))[0];
-
-    if (!variant) {
-      // Build a minimal stub so tests without surface still work.
-      const stub = {
-        recipeId:
-          `recipe.reuse_content.${reuseSelection.lensId}_adapt` as const,
-        revisionId: `recipe.reuse_content.${reuseSelection.lensId}_adapt@1`,
-        lensId: reuseSelection.lensId,
-        familyId: 'reuse_content',
-        presentation: {
-          title: '旧内容换平台',
-          summary: '选择旧内容，再决定改成哪种形式',
-          actionLabel: '选择创作形式',
-        },
-        delivery: {},
-        modelPolicy: { mode: 'auto' as const },
-        settingsPatches: {},
-        sourceRequirements: [
-          {
-            slot: 'source_content',
-            required: true,
-            kinds: ['content', 'work', 'content_package'],
-          },
-        ],
-      };
-      const result = confirmReusePanel(activeSession, reuseSelection, stub);
-      publish(result.session);
-      return;
-    }
-
-    const result = confirmReusePanel(activeSession, reuseSelection, variant);
-    publish(result.session);
-  };
 
   // Clear one-shot announcement after paint so polite region fires once.
   useEffect(() => {
@@ -251,11 +182,8 @@ export function RecipeCardsPanel({
     activeSession.phase === 'confirming' &&
     activeSession.preview &&
     activeSession.pendingRecipe;
-  const reuseOpen = activeSession.phase === 'reuse_panel';
-  const showInlineOverlay = !useBottomSheet && (confirming || reuseOpen);
-  const showGrid =
-    activeSession.phase !== 'confirming' &&
-    activeSession.phase !== 'reuse_panel';
+  const showInlineOverlay = !useBottomSheet && Boolean(confirming);
+  const showGrid = activeSession.phase !== 'confirming';
 
   const overlayBody = confirming ? (
     <RecipePatchPreviewSurface
@@ -263,14 +191,6 @@ export function RecipeCardsPanel({
       recipeTitle={activeSession.pendingRecipe!.presentation.title}
       onConfirm={handleConfirmPatch}
       onCancel={handleCancelPatch}
-    />
-  ) : reuseOpen ? (
-    <ReuseContentPanel
-      selection={reuseSelection}
-      onChange={setReuseSelection}
-      onConfirm={handleReuseConfirm}
-      onCancel={handleCancelPatch}
-      sourceOptions={reuseSources}
     />
   ) : null;
 
