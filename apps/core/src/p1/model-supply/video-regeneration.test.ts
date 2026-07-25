@@ -193,8 +193,8 @@ describe('quote→confirm→settle contract (both scopes)', () => {
     assert.equal(fullSettled.settle.settlementStatus, 'reconciled');
     assert.equal(shotSettled.settle.scope, 'shot');
     assert.equal(fullSettled.settle.scope, 'full_compose');
-    assert.equal(shotSettled.usage.settledQuantity, 3);
-    assert.equal(fullSettled.usage.settledQuantity, 12);
+    assert.equal(shotSettled.usage.settledQuantity, 6);
+    assert.equal(fullSettled.usage.settledQuantity, 24);
   });
 
   it('each regen creates a new derived task with a new independent quote', () => {

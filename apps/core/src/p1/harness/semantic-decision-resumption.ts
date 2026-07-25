@@ -26,6 +26,11 @@ export function buildSemanticDecisionResumption(input: {
   command: StructuredDecisionInput;
   createdAt: string;
 }) {
+  if (!input.request.usageReservation) {
+    throw new Error(
+      'Semantic decision resumption requires explicit product usage units.',
+    );
+  }
   const value = input.command.decision.value;
   const reference = {
     id: decisionReferenceId(input.request.executionSnapshot.id, input.command),
@@ -69,7 +74,7 @@ export function buildSemanticDecisionResumption(input: {
     task: { id: snapshot.task.id },
     work: { id: snapshot.work.id },
     contentPackage: { ...snapshot.contentPackage },
-    usageReservation: { id: `usage-reservation-${snapshot.task.id}` },
+    usageReservation: structuredClone(input.request.usageReservation),
   };
   const idempotencyKey = `semantic-decision:${input.command.idempotencyKey}`;
   return {

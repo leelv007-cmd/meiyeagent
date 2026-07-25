@@ -5,7 +5,11 @@ import type {
   TrustedUsageEvidenceKind,
 } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
-import type { ProductQuoteService } from './quote-service.js';
+import {
+  productUsageUnitsForQuote,
+  type ProductQuoteService,
+  type TrustedUsageEvidence,
+} from './quote-service.js';
 
 export type BillingResource = NonNullable<ProductUsageRecord['resource']>;
 
@@ -51,11 +55,7 @@ export interface BillingLifecyclePort {
     deploymentId: string;
     status: 'completed' | 'failed';
     providerCost?: BillingAttemptCost;
-    trustedUsage?: {
-      kind: TrustedUsageEvidenceKind;
-      actualSeconds: number;
-      evidenceRef?: string;
-    };
+    trustedUsage?: TrustedUsageEvidence;
   }): void | Promise<void>;
 }
 
@@ -145,7 +145,13 @@ export class ProductBillingLifecycle implements BillingLifecyclePort {
         `Product quote ${quote.quoteId} is not bound to task ${input.taskId}.`,
       );
     }
-    this.quotes.reserve({ quoteId: quote.quoteId, resource: input.resource });
+    this.quotes.reserve({
+      quoteId: quote.quoteId,
+      units: productUsageUnitsForQuote(quote).map((unit) => ({
+        ...unit,
+        resource: input.resource,
+      })),
+    });
   }
 
   dispatchAttempt(input: {
@@ -186,11 +192,7 @@ export class ProductBillingLifecycle implements BillingLifecyclePort {
     deploymentId: string;
     status: 'completed' | 'failed';
     providerCost?: BillingAttemptCost;
-    trustedUsage?: {
-      kind: TrustedUsageEvidenceKind;
-      actualSeconds: number;
-      evidenceRef?: string;
-    };
+    trustedUsage?: TrustedUsageEvidence;
   }) {
     const quote = this.requireTaskQuote(input.workspaceId, input.taskId);
     if (quote.lifecycleStatus === 'settled' || quote.lifecycleStatus === 'refunded') {

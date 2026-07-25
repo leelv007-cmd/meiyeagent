@@ -16,7 +16,12 @@ export interface CreationSubmissionRecord {
 	work: { id: string };
 	task: { id: string };
 	contentPackage: { id: string; expectedRevision: number };
-	usageReservation: { id: string };
+	usageReservation: { id: string; units: CreationSubmissionUsageUnit[] };
+}
+
+export interface CreationSubmissionUsageUnit {
+	resource: "copy" | "image" | "video";
+	quantity: number;
 }
 
 /**
@@ -182,7 +187,10 @@ export class CreationSubmissionCoordinator {
 			work: { id: snapshot.work.id },
 			task: { id: snapshot.task.id },
 			contentPackage: { ...snapshot.contentPackage },
-			usageReservation: { id: `usage-reservation-${snapshot.task.id}` },
+			usageReservation: {
+				id: `usage-reservation-${snapshot.task.id}`,
+				units: productUsageUnits(snapshot),
+			},
 		};
 		const claimed = await this.store.claim({
 			workspaceId: command.workspaceId,
@@ -240,6 +248,22 @@ export class CreationSubmissionCoordinator {
 			throw error;
 		}
 	}
+}
+
+function productUsageUnits(
+	snapshot: CreationExecutionSnapshot,
+): CreationSubmissionUsageUnit[] {
+	const deliverable = snapshot.deliverables[0];
+	if (!deliverable) {
+		throw new Error("Creation submission requires one deliverable.");
+	}
+	if (snapshot.lens === "video") {
+		if (!Number.isSafeInteger(deliverable.durationSeconds)) {
+			throw new Error("Video submission requires whole duration seconds.");
+		}
+		return [{ resource: "video", quantity: deliverable.durationSeconds as number }];
+	}
+	return [{ resource: snapshot.lens, quantity: deliverable.quantity }];
 }
 
 function operationForRequest(

@@ -116,7 +116,7 @@ describe(
       );
       assert.equal(
         (await readProcess.getUsage('restart-task', workspaceId))?.settledQuantity,
-        3,
+        6,
       );
       assert.equal(
         (await readProcess.listProviderCosts('restart-task', workspaceId))[0]
@@ -145,7 +145,7 @@ describe(
       });
       await service.reserve({
         quoteId: quote.quoteId,
-        resource: 'copy',
+        units: [{ resource: 'copy', quantity: 3 }],
         usageId: 'monthly-output-usage',
         workspaceId,
       });
@@ -209,7 +209,7 @@ describe(
       );
       assert.deepEqual(
         (await service.getUsageProjection(workspaceId)).video,
-        { reserved: 0, committed: 3, released: 2 },
+        { reserved: 0, committed: 6, released: 4 },
       );
     });
 
@@ -357,7 +357,7 @@ describe(
       );
       assert.equal(
         (await service.getUsage('shared-task', workspaceId))?.reservedQuantity,
-        5,
+        10,
       );
     });
 

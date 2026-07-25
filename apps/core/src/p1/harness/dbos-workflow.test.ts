@@ -4,8 +4,10 @@ import test from 'node:test';
 import {
   commitHarnessBillingOrSchedule,
   failHarnessWorkflowPreservingExecutionError,
+  harnessBillingSettlementInput,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
 
 const settlement = {
   workspaceId: 'workspace-billing-failure',
@@ -81,4 +83,42 @@ test('refund failure still records terminal state and preserves the execution er
     'step:persist-terminal-failure',
     'terminal',
   ]);
+});
+
+test('execution receipt forwards trusted per-bucket product units to settlement', () => {
+  const request = {
+    workspaceId: 'workspace-note-units',
+    executionSnapshot: {
+      quote: { id: 'quote-note-units', revision: 'quote-r1' },
+    },
+  } as HarnessWorkflowInput;
+
+  assert.deepEqual(
+    harnessBillingSettlementInput(request, 'task-note-units', {
+      billingReceipt: {
+        trustedUsage: {
+          kind: 'product_units',
+          units: [
+            { resource: 'copy', quantity: 2 },
+            { resource: 'image', quantity: 5 },
+          ],
+          evidenceRef: 'note-receipts:task-note-units',
+        },
+      },
+    }),
+    {
+      workspaceId: 'workspace-note-units',
+      taskId: 'task-note-units',
+      quoteId: 'quote-note-units',
+      quoteRevision: 'quote-r1',
+      trustedUsage: {
+        kind: 'product_units',
+        units: [
+          { resource: 'copy', quantity: 2 },
+          { resource: 'image', quantity: 5 },
+        ],
+        evidenceRef: 'note-receipts:task-note-units',
+      },
+    },
+  );
 });

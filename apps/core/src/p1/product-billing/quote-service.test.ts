@@ -63,7 +63,13 @@ async function runLifecycle(
   const confirmed = quotes.confirm({ quoteId: quoted.quoteId, taskId });
   const reserved = quotes.reserve({
     quoteId: quoted.quoteId,
-    resource: input.billingMode === 'per_output_second' ? 'video' : 'copy',
+    units: [{
+      resource: input.billingMode === 'per_output_second' ? 'video' : 'copy',
+      quantity:
+        input.billingMode === 'per_output_second'
+          ? (quoted.quotedSeconds as number)
+          : (input.outputCount ?? 1),
+    }],
   });
   const dispatched = quotes.dispatch({
     quoteId: quoted.quoteId,
@@ -119,7 +125,7 @@ describe('ProductQuoteService lifecycle', () => {
 
     assert.equal(result.reserved.quote.lifecycleStatus, 'reserved');
     assert.equal(result.reserved.usage.status, 'reserved');
-    assert.equal(result.reserved.usage.reservedQuantity, 1);
+    assert.equal(result.reserved.usage.reservedQuantity, 3);
 
     assert.equal(result.dispatched.quote.lifecycleStatus, 'dispatched');
     assert.ok(result.dispatched.providerCost);
@@ -127,7 +133,7 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(result.settled.quote.lifecycleStatus, 'settled');
     assert.equal(result.settled.quote.settlementStatus, 'reconciled');
     assert.equal(result.settled.quote.settledAmount, 1);
-    assert.equal(result.settled.usage.settledQuantity, 1);
+    assert.equal(result.settled.usage.settledQuantity, 3);
     assert.equal(result.settled.usage.status, 'committed');
     // per_request does not set billedSeconds from duration
     assert.equal(result.settled.quote.billedSeconds, undefined);
@@ -163,7 +169,10 @@ describe('ProductQuoteService lifecycle', () => {
       }
     }
 
-    quotes.reserve({ quoteId: quote.quoteId, resource: 'copy' });
+    quotes.reserve({
+      quoteId: quote.quoteId,
+      units: [{ resource: 'copy', quantity: 3 }],
+    });
     quotes.dispatch({
       attemptId: 'attempt-task-binding',
       deploymentId: 'dep-a',
@@ -207,11 +216,11 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(result.quoted.confirmedAmount, 0.5 * expectedQuoted);
     assert.equal(result.quoted.authorizedCeiling, 5);
 
-    assert.equal(result.reserved.usage.reservedQuantity, 5);
+    assert.equal(result.reserved.usage.reservedQuantity, 10);
     assert.equal(result.settled.quote.billedSeconds, 10);
     assert.equal(result.settled.quote.settledAmount, 5);
     assert.equal(result.settled.quote.settlementStatus, 'reconciled');
-    assert.equal(result.settled.usage.settledQuantity, 5);
+    assert.equal(result.settled.usage.settledQuantity, 10);
   });
 
   it('low actual seconds auto-refunds the difference', async () => {
@@ -227,8 +236,54 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(result.settled.quote.settledAmount, 2);
     assert.equal(result.settled.quote.refundedAmount, 3);
     assert.equal(result.settled.usage.status, 'partially_refunded');
-    assert.equal(result.settled.usage.refundedQuantity, 3);
-    assert.equal(result.settled.usage.settledQuantity, 2);
+    assert.equal(result.settled.usage.refundedQuantity, 6);
+    assert.equal(result.settled.usage.settledQuantity, 4);
+  });
+
+  it('trusted product units settle each reserved bucket and refund the unused declaration', () => {
+    const quotes = service();
+    const quoted = quotes.buildQuote({
+      ...perRequestInput('quote-note-units'),
+      outputCount: 1,
+      outputLabel: '图文笔记',
+      unitRate: 0.12,
+    });
+    quotes.confirm({ quoteId: quoted.quoteId, taskId: 'task-note-units' });
+    const reserved = quotes.reserve({
+      quoteId: quoted.quoteId,
+      units: [
+        { resource: 'copy', quantity: 2 },
+        { resource: 'image', quantity: 12 },
+      ],
+    });
+    quotes.dispatch({
+      quoteId: quoted.quoteId,
+      deploymentId: 'dep-a',
+      attemptId: 'attempt-note-units',
+    });
+
+    const settled = quotes.settle({
+      quoteId: quoted.quoteId,
+      attemptId: 'attempt-note-units',
+      trustedUsage: {
+        kind: 'product_units',
+        units: [{ resource: 'image', quantity: 5 }],
+      },
+    });
+
+    assert.deepEqual(reserved.usage.reservedUnits, [
+      { resource: 'copy', quantity: 2 },
+      { resource: 'image', quantity: 12 },
+    ]);
+    assert.equal(settled.quote.settledAmount, 0.12);
+    assert.equal(settled.usage.status, 'partially_refunded');
+    assert.deepEqual(settled.usage.settledUnits, [
+      { resource: 'copy', quantity: 2 },
+      { resource: 'image', quantity: 5 },
+    ]);
+    assert.deepEqual(settled.usage.refundedUnits, [
+      { resource: 'image', quantity: 7 },
+    ]);
   });
 
   it('high actual seconds does not silent-surcharge (platform absorbs)', async () => {
@@ -244,8 +299,8 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(result.settled.quote.settledAmount, 5);
     assert.equal(result.settled.quote.platformAbsorbedAmount, 5);
     assert.equal(result.settled.quote.refundedAmount, 0);
-    assert.equal(result.settled.usage.settledQuantity, 5);
-    assert.equal(result.settled.usage.reservedQuantity, 5);
+    assert.equal(result.settled.usage.settledQuantity, 10);
+    assert.equal(result.settled.usage.reservedQuantity, 10);
 
     const costs = quotes.listProviderCosts('task-high');
     assert.equal(costs.length, 1);
@@ -270,7 +325,10 @@ describe('ProductQuoteService lifecycle', () => {
     const quotes = service();
     quotes.buildQuote(perSecondInput('quote-evidence'));
     quotes.confirm({ quoteId: 'quote-evidence', taskId: 'task-evidence' });
-    quotes.reserve({ quoteId: 'quote-evidence', resource: 'video' });
+    quotes.reserve({
+      quoteId: 'quote-evidence',
+      units: [{ resource: 'video', quantity: 10 }],
+    });
     quotes.dispatch({
       quoteId: 'quote-evidence',
       deploymentId: 'dep-video-a',
@@ -285,7 +343,10 @@ describe('ProductQuoteService lifecycle', () => {
     // Fresh task with trusted media_duration
     quotes.buildQuote(perSecondInput('quote-evidence-2'));
     quotes.confirm({ quoteId: 'quote-evidence-2', taskId: 'task-evidence-2' });
-    quotes.reserve({ quoteId: 'quote-evidence-2', resource: 'video' });
+    quotes.reserve({
+      quoteId: 'quote-evidence-2',
+      units: [{ resource: 'video', quantity: 10 }],
+    });
     quotes.dispatch({
       quoteId: 'quote-evidence-2',
       deploymentId: 'dep-video-a',
@@ -304,7 +365,10 @@ describe('ProductQuoteService lifecycle', () => {
     const input = perSecondInput('quote-fb');
     quotes.buildQuote(input);
     quotes.confirm({ quoteId: 'quote-fb', taskId: 'task-fb' });
-    const reserved = quotes.reserve({ quoteId: 'quote-fb', resource: 'video' });
+    const reserved = quotes.reserve({
+      quoteId: 'quote-fb',
+      units: [{ resource: 'video', quantity: 10 }],
+    });
     quotes.dispatch({
       quoteId: 'quote-fb',
       deploymentId: 'dep-video-a',
@@ -359,8 +423,8 @@ describe('ProductQuoteService lifecycle', () => {
       trustedUsage: { kind: 'provider_usage', actualSeconds: 10 },
     });
     // One settle only — no double charge
-    assert.equal(settled.usage.settledQuantity, 5);
-    assert.equal(quotes.getUsage('task-fb')?.settledQuantity, 5);
+    assert.equal(settled.usage.settledQuantity, 10);
+    assert.equal(quotes.getUsage('task-fb')?.settledQuantity, 10);
 
     const costs = quotes.listProviderCosts('task-fb');
     assert.equal(costs.length, 2);
@@ -370,8 +434,14 @@ describe('ProductQuoteService lifecycle', () => {
     const quotes = service();
     quotes.buildQuote(perRequestInput('quote-idemp'));
     quotes.confirm({ quoteId: 'quote-idemp', taskId: 'task-idemp' });
-    const r1 = quotes.reserve({ quoteId: 'quote-idemp' });
-    const r2 = quotes.reserve({ quoteId: 'quote-idemp' });
+    const r1 = quotes.reserve({
+      quoteId: 'quote-idemp',
+      units: [{ resource: 'copy', quantity: 3 }],
+    });
+    const r2 = quotes.reserve({
+      quoteId: 'quote-idemp',
+      units: [{ resource: 'copy', quantity: 3 }],
+    });
     assert.deepEqual(r1.usage, r2.usage);
 
     quotes.dispatch({
@@ -396,7 +466,10 @@ describe('ProductQuoteService lifecycle', () => {
     const quotes = service();
     quotes.buildQuote(perSecondInput('quote-fail'));
     quotes.confirm({ quoteId: 'quote-fail', taskId: 'task-fail' });
-    quotes.reserve({ quoteId: 'quote-fail', resource: 'video' });
+    quotes.reserve({
+      quoteId: 'quote-fail',
+      units: [{ resource: 'video', quantity: 10 }],
+    });
     quotes.dispatch({
       quoteId: 'quote-fail',
       deploymentId: 'dep-video-a',
@@ -418,7 +491,10 @@ describe('ProductQuoteService lifecycle', () => {
       quoteId: 'quote-partial-fail',
       taskId: 'task-partial-fail',
     });
-    quotes.reserve({ quoteId: 'quote-partial-fail', resource: 'video' });
+    quotes.reserve({
+      quoteId: 'quote-partial-fail',
+      units: [{ resource: 'video', quantity: 10 }],
+    });
     quotes.dispatch({
       quoteId: 'quote-partial-fail',
       deploymentId: 'dep-video-a',
@@ -434,6 +510,8 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(failed.quote.settledAmount, 2);
     assert.equal(failed.quote.refundedAmount, 3);
     assert.equal(failed.usage.status, 'partially_refunded');
+    assert.equal(failed.usage.settledQuantity, 4);
+    assert.equal(failed.usage.refundedQuantity, 6);
   });
 
   it('min charge and rounding affect quotedSeconds', () => {

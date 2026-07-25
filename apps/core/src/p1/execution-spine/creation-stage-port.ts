@@ -24,7 +24,10 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 	async start(submission: CreationSubmissionRecord) {
 		const started = await this.admission.submit({
 			taskId: submission.task.id,
-			...toHarnessWorkflowInput(submission.snapshot),
+			...toHarnessWorkflowInput(
+				submission.snapshot,
+				submission.usageReservation,
+			),
 		});
 		if (started.workflowId !== submission.task.id) {
 			throw new Error("Harness admission must preserve the Coordinator task ID.");
@@ -34,6 +37,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 
 export function toHarnessWorkflowInput(
 	snapshot: CreationExecutionSnapshot,
+	usageReservation?: CreationSubmissionRecord["usageReservation"],
 ): HarnessWorkflowInput {
 	return {
 		actorId: snapshot.actorId,
@@ -52,5 +56,6 @@ export function toHarnessWorkflowInput(
 			assetReferences: snapshot.sources.assets.map((asset) => asset.id),
 		},
 		executionSnapshot: snapshot,
+		...(usageReservation ? { usageReservation } : {}),
 	};
 }

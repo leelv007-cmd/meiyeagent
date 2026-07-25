@@ -33,7 +33,7 @@ const noOpGrantLots = {
 };
 
 test(
-  "Postgres Coordinator consumes the trial GrantLot and blocks the next agent submission atomically",
+  "Postgres Coordinator reserves one copy unit for a fractional monetary quote and blocks the next submission",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async (t) => {
     const pool = new Pool({ connectionString });
@@ -103,7 +103,10 @@ test(
           workspaceId,
           submission.snapshot.quote.id,
           submission.task.id,
+          { outputCount: 1, unitRate: 0.02 },
         );
+        assert.equal(quote.confirmedAmount, 0.02);
+        assert.equal(quote.outputCount, 1);
         submission.snapshot = createSnapshot({
           quoteId: quote.quoteId,
           quoteRevision: quote.revision,
@@ -238,6 +241,223 @@ test(
 );
 
 test(
+  "Postgres Coordinator consumes every bucket supplied by composite submission facts",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const grantLots = new PostgresGrantLotLedger(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, grantLots),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-composite-${suffix}`;
+    const quoteId = `spine-composite-quote-${suffix}`;
+    const submission = reserveRecord(
+      workspaceId,
+      quoteId,
+      suffix,
+      "image",
+    );
+    submission.usageReservation.units = [
+      { resource: "copy", quantity: 1 },
+      { resource: "image", quantity: 2 },
+    ];
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await grantLots.migrate();
+      await store.applySchema();
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Composite usage test')",
+        [workspaceId],
+      );
+      for (const unit of submission.usageReservation.units) {
+        await grantLots.grant({
+          id: `composite-${unit.resource}-${suffix}`,
+          workspaceId,
+          resource: unit.resource,
+          amount: unit.quantity,
+          expirationDate: null,
+          transactionType: "PURCHASE_PACKAGE",
+          sourceRef: `composite-${unit.resource}-${suffix}`,
+          createdAt: "2026-07-22T09:00:00.000Z",
+        });
+      }
+      const quote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+        submission.task.id,
+        { outputCount: 1, unitRate: 0.12 },
+      );
+      submission.snapshot = createSnapshot({
+        lens: "image",
+        quoteId,
+        quoteRevision: quote.revision,
+        submission,
+        workspaceId,
+      });
+
+      assert.equal(
+        (
+          await store.claim({
+            idempotencyKey: "composite-submit",
+            payloadHash: "composite-submit",
+            submission,
+            workspaceId,
+          })
+        ).kind,
+        "created",
+      );
+      assert.deepEqual(
+        (await billingRepository.getUsage(workspaceId, submission.task.id))
+          ?.reservedUnits,
+        submission.usageReservation.units,
+      );
+      const billingProjection = await new DurableProductBillingService(
+        billingRepository,
+      ).getUsageProjection(workspaceId);
+      assert.deepEqual(billingProjection.copy, {
+        reserved: 1,
+        committed: 0,
+        released: 0,
+      });
+      assert.deepEqual(billingProjection.image, {
+        reserved: 2,
+        committed: 0,
+        released: 0,
+      });
+      const projection = await grantLots.rebuildProjection({
+        workspaceId,
+        asOf: "2026-07-22T09:01:00.000Z",
+        actorId: "owner",
+        correlationId: "composite-projection",
+      });
+      assert.equal(
+        projection.find((item) => item.resource === "copy")?.remainingAmount,
+        0,
+      );
+      assert.equal(
+        projection.find((item) => item.resource === "image")?.remainingAmount,
+        0,
+      );
+      const billing = new DurableProductBillingService(billingRepository);
+      await billing.settleTask({
+        workspaceId,
+        taskId: submission.task.id,
+        attemptId: `composite-receipt-${suffix}`,
+        deploymentId: "coordinator",
+        status: "completed",
+      });
+      const committed = await billing.getUsageProjection(workspaceId);
+      assert.deepEqual(committed.copy, {
+        reserved: 0,
+        committed: 1,
+        released: 0,
+      });
+      assert.deepEqual(committed.image, {
+        reserved: 0,
+        committed: 2,
+        released: 0,
+      });
+      assert.deepEqual(
+        await billing.getMonthlyOutput(workspaceId, "2026-07"),
+        { copy: 1, image: 2, video: 0 },
+      );
+    } finally {
+      await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool.query(
+        "DELETE FROM p1_grant_lot_transactions WHERE workspace_id = $1",
+        [workspaceId],
+      ).catch(() => undefined);
+      await pool.query(
+        "DELETE FROM p1_grant_lots WHERE workspace_id = $1",
+        [workspaceId],
+      ).catch(() => undefined);
+      await pool.query("DELETE FROM workspaces WHERE id = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "Postgres Coordinator fails closed when composite submission facts omit usage units",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const grantLots = new PostgresGrantLotLedger(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, grantLots),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-missing-units-${suffix}`;
+    const quoteId = `spine-missing-units-quote-${suffix}`;
+    const submission = reserveRecord(workspaceId, quoteId, suffix, "image");
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await grantLots.migrate();
+      await store.applySchema();
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Missing units test')",
+        [workspaceId],
+      );
+      const quote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+        submission.task.id,
+        { outputCount: 1, unitRate: 0.12 },
+      );
+      submission.snapshot = createSnapshot({
+        lens: "image",
+        quoteId,
+        quoteRevision: quote.revision,
+        submission,
+        workspaceId,
+      });
+      delete (
+        submission.usageReservation as {
+          units?: CreationSubmissionRecord["usageReservation"]["units"];
+        }
+      ).units;
+
+      await assert.rejects(
+        store.claim({
+          idempotencyKey: "missing-units-submit",
+          payloadHash: "missing-units-submit",
+          submission,
+          workspaceId,
+        }),
+        /requires explicit product usage units/,
+      );
+      assert.equal(
+        await billingRepository.getUsage(workspaceId, submission.task.id),
+        null,
+      );
+    } finally {
+      await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool.query("DELETE FROM workspaces WHERE id = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
   "Postgres Coordinator store atomically reserves product shells and reclaims only an expired Harness lease",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
@@ -303,7 +523,10 @@ test(
 
       const resumption = buildSemanticDecisionResumption({
         request: {
-          ...toHarnessWorkflowInput(submission.snapshot),
+          ...toHarnessWorkflowInput(
+            submission.snapshot,
+            submission.usageReservation,
+          ),
           executionSnapshot: submission.snapshot,
         },
         command: {
@@ -936,7 +1159,13 @@ function reserveRecord(
       workspaceId,
     }),
     task: { id: taskId },
-    usageReservation: { id: `spine-usage-${suffix}` },
+    usageReservation: {
+      id: `spine-usage-${suffix}`,
+      units:
+        lens === "video"
+          ? [{ resource: "video", quantity: 8 }]
+          : [{ resource: lens, quantity: 1 }],
+    },
     work: { id: `spine-work-${suffix}` },
   };
   return submission;
@@ -980,9 +1209,10 @@ async function seedQuote(
   workspaceId: string,
   quoteId: string,
   taskId: string,
+  options?: { outputCount?: number; unitRate?: number },
 ) {
   const billing = new DurableProductBillingService(repository);
-  await seedUnconfirmedQuote(repository, workspaceId, quoteId);
+  await seedUnconfirmedQuote(repository, workspaceId, quoteId, options);
   return billing.confirm({ quoteId, taskId, workspaceId });
 }
 
@@ -990,6 +1220,7 @@ async function seedUnconfirmedQuote(
   repository: PostgresProductBillingRepository,
   workspaceId: string,
   quoteId: string,
+  options?: { outputCount?: number; unitRate?: number },
 ) {
   return new DurableProductBillingService(repository).buildQuote({
     billingMode: "per_request",
@@ -999,7 +1230,10 @@ async function seedUnconfirmedQuote(
     quoteId,
     quotePolicyRevision: "quote-policy-1",
     routeSnapshotRef: "route-1",
-    unitRate: 1,
+    ...(options?.outputCount !== undefined
+      ? { outputCount: options.outputCount }
+      : {}),
+    unitRate: options?.unitRate ?? 1,
     workspaceId,
   });
 }

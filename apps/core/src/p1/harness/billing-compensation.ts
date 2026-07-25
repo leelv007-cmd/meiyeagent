@@ -1,15 +1,11 @@
-import type { TrustedUsageEvidenceKind } from '@meiye/contracts';
+import type { TrustedUsageEvidence } from '../product-billing/quote-service.js';
 
 export interface HarnessBillingSettlementInput {
   workspaceId: string;
   taskId: string;
   quoteId: string;
   quoteRevision: string;
-  trustedUsage?: {
-    kind: TrustedUsageEvidenceKind;
-    actualSeconds: number;
-    evidenceRef?: string;
-  };
+  trustedUsage?: TrustedUsageEvidence;
 }
 
 export interface HarnessBillingCompensationTask

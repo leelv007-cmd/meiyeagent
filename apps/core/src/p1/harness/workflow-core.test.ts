@@ -308,7 +308,13 @@ test('one blocking question suspends and resumes before context injection', asyn
 });
 
 test('a snapshot-backed semantic answer resubmits the same task and work before continuing', async () => {
-  const originalRequest = snapshotTaskInput();
+  const originalRequest = {
+    ...snapshotTaskInput(),
+    usageReservation: {
+      id: 'usage-reservation-task-copy',
+      units: [{ resource: 'copy' as const, quantity: 1 }],
+    },
+  };
   const originalSnapshot = structuredClone(originalRequest.executionSnapshot);
   const stages = fixtureStages();
   let intentRound = 0;

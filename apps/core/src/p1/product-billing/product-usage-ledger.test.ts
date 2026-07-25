@@ -4,30 +4,29 @@ import { describe, it } from 'node:test';
 import { P1DomainError } from '../foundation/domain.js';
 import { MemoryProductUsageLedger } from './product-usage-ledger.js';
 
-describe('MemoryProductUsageLedger fractional units', () => {
-  it('reserves and settles fractional product units for per_output_second', () => {
+describe('MemoryProductUsageLedger product units', () => {
+  it('reserves and settles whole video seconds', () => {
     const ledger = new MemoryProductUsageLedger();
     const reserved = ledger.reserve({
       id: 'usage-1',
       taskId: 'task-1',
       workspaceId: 'ws-1',
       quoteId: 'quote-1',
-      quantity: 5.5,
+      units: [{ resource: 'video', quantity: 10 }],
       billingMode: 'per_output_second',
-      resource: 'video',
       createdAt: '2026-07-20T12:00:00.000Z',
     });
-    assert.equal(reserved.reservedQuantity, 5.5);
+    assert.equal(reserved.reservedQuantity, 10);
     assert.equal(reserved.status, 'reserved');
 
     const settled = ledger.settle({
       taskId: 'task-1',
-      settledQuantity: 3.25,
+      settledUnits: [{ resource: 'video', quantity: 4 }],
       settlementStatus: 'reconciled',
       updatedAt: '2026-07-20T12:01:00.000Z',
     });
-    assert.equal(settled.settledQuantity, 3.25);
-    assert.equal(settled.refundedQuantity, 2.25);
+    assert.equal(settled.settledQuantity, 4);
+    assert.equal(settled.refundedQuantity, 6);
     assert.equal(settled.status, 'partially_refunded');
   });
 
@@ -38,7 +37,7 @@ describe('MemoryProductUsageLedger fractional units', () => {
       taskId: 'task-2',
       workspaceId: 'ws-1',
       quoteId: 'quote-2',
-      quantity: 1,
+      units: [{ resource: 'copy', quantity: 1 }],
       billingMode: 'per_request',
       createdAt: '2026-07-20T12:00:00.000Z',
     });
@@ -46,7 +45,7 @@ describe('MemoryProductUsageLedger fractional units', () => {
       () =>
         ledger.settle({
           taskId: 'task-2',
-          settledQuantity: 2,
+          settledUnits: [{ resource: 'copy', quantity: 2 }],
           settlementStatus: 'reconciled',
           updatedAt: '2026-07-20T12:01:00.000Z',
         }),
@@ -62,7 +61,7 @@ describe('MemoryProductUsageLedger fractional units', () => {
       taskId: 'task-3',
       workspaceId: 'ws-1',
       quoteId: 'quote-3',
-      quantity: 1,
+      units: [{ resource: 'copy', quantity: 1 }],
       billingMode: 'per_request',
       createdAt: '2026-07-20T12:00:00.000Z',
     });
@@ -73,7 +72,7 @@ describe('MemoryProductUsageLedger fractional units', () => {
           taskId: 'task-3',
           workspaceId: 'ws-1',
           quoteId: 'quote-3',
-          quantity: 2,
+          units: [{ resource: 'copy', quantity: 2 }],
           billingMode: 'per_request',
           createdAt: '2026-07-20T12:00:00.000Z',
         }),
@@ -90,13 +89,13 @@ describe('MemoryProductUsageLedger fractional units', () => {
       taskId: 'task-0',
       workspaceId: 'ws-1',
       quoteId: 'quote-0',
-      quantity: 0,
+      units: [],
       billingMode: 'per_request',
       createdAt: '2026-07-20T12:00:00.000Z',
     });
     const zeroSettled = ledger.settle({
       taskId: 'task-0',
-      settledQuantity: 0,
+      settledUnits: [],
       settlementStatus: 'reconciled',
       updatedAt: '2026-07-20T12:01:00.000Z',
     });
@@ -108,13 +107,13 @@ describe('MemoryProductUsageLedger fractional units', () => {
       taskId: 'task-1unit',
       workspaceId: 'ws-1',
       quoteId: 'quote-1unit',
-      quantity: 1,
+      units: [{ resource: 'copy', quantity: 1 }],
       billingMode: 'per_request',
       createdAt: '2026-07-20T12:00:00.000Z',
     });
     const oneSettled = ledger.settle({
       taskId: 'task-1unit',
-      settledQuantity: 1,
+      settledUnits: [{ resource: 'copy', quantity: 1 }],
       settlementStatus: 'reconciled',
       updatedAt: '2026-07-20T12:01:00.000Z',
     });

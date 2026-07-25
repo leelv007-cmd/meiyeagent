@@ -191,17 +191,61 @@ export class PostgresProductBillingRepository
       committed: string;
       released: string;
     }>(
-      `SELECT payload->>'resource' AS resource,
-              COALESCE(sum(CASE WHEN status = 'reserved'
-                THEN (payload->>'reservedQuantity')::numeric ELSE 0 END), 0)::text AS reserved,
-              COALESCE(sum(CASE WHEN status IN ('committed', 'partially_refunded')
-                THEN (payload->>'settledQuantity')::numeric ELSE 0 END), 0)::text AS committed,
-              COALESCE(sum(CASE WHEN status IN ('refunded', 'partially_refunded')
-                THEN (payload->>'refundedQuantity')::numeric ELSE 0 END), 0)::text AS released
-         FROM p1_product_billing_usage
-        WHERE workspace_id = $1
-          AND payload->>'resource' IN ('copy', 'image', 'video', 'audio')
-        GROUP BY payload->>'resource'`,
+      `WITH usage_rows AS (
+         SELECT status, payload
+           FROM p1_product_billing_usage
+          WHERE workspace_id = $1
+       ),
+       usage_units AS (
+         SELECT 'reserved' AS disposition, unit
+           FROM usage_rows
+           CROSS JOIN LATERAL jsonb_array_elements(
+             COALESCE(
+               payload->'reservedUnits',
+               jsonb_build_array(jsonb_build_object(
+                 'resource', payload->>'resource',
+                 'quantity', (payload->>'reservedQuantity')::numeric
+               ))
+             )
+           ) AS unit
+          WHERE status = 'reserved'
+         UNION ALL
+         SELECT 'committed' AS disposition, unit
+           FROM usage_rows
+           CROSS JOIN LATERAL jsonb_array_elements(
+             COALESCE(
+               payload->'settledUnits',
+               jsonb_build_array(jsonb_build_object(
+                 'resource', payload->>'resource',
+                 'quantity', (payload->>'settledQuantity')::numeric
+               ))
+             )
+           ) AS unit
+          WHERE status IN ('committed', 'partially_refunded')
+         UNION ALL
+         SELECT 'released' AS disposition, unit
+           FROM usage_rows
+           CROSS JOIN LATERAL jsonb_array_elements(
+             COALESCE(
+               payload->'refundedUnits',
+               jsonb_build_array(jsonb_build_object(
+                 'resource', payload->>'resource',
+                 'quantity', (payload->>'refundedQuantity')::numeric
+               ))
+             )
+           ) AS unit
+          WHERE status IN ('refunded', 'partially_refunded')
+       )
+       SELECT unit->>'resource' AS resource,
+              COALESCE(sum(CASE WHEN disposition = 'reserved'
+                THEN (unit->>'quantity')::numeric ELSE 0 END), 0)::text AS reserved,
+              COALESCE(sum(CASE WHEN disposition = 'committed'
+                THEN (unit->>'quantity')::numeric ELSE 0 END), 0)::text AS committed,
+              COALESCE(sum(CASE WHEN disposition = 'released'
+                THEN (unit->>'quantity')::numeric ELSE 0 END), 0)::text AS released
+         FROM usage_units
+        WHERE unit->>'resource' IN ('copy', 'image', 'video', 'audio')
+        GROUP BY unit->>'resource'`,
       [workspaceId],
     );
     const projection = emptyUsageProjection();
@@ -234,11 +278,36 @@ export class PostgresProductBillingRepository
       video: string;
     }>(
       `SELECT
-         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'copy'
-           THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS copy,
-         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'image'
-           THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS image,
-         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'video'
+         COALESCE(sum(CASE WHEN
+           u.payload->>'resource' = 'copy' OR
+           COALESCE(u.payload->'settledUnits', '[]'::jsonb)
+             @> '[{"resource":"copy"}]'::jsonb
+           THEN COALESCE(
+             (SELECT (unit->>'quantity')::int
+                FROM jsonb_array_elements(
+                  COALESCE(u.payload->'settledUnits', '[]'::jsonb)
+                ) AS unit
+               WHERE unit->>'resource' = 'copy'),
+             (q.payload->>'outputCount')::int,
+             1
+           ) ELSE 0 END), 0)::text AS copy,
+         COALESCE(sum(CASE WHEN
+           u.payload->>'resource' = 'image' OR
+           COALESCE(u.payload->'settledUnits', '[]'::jsonb)
+             @> '[{"resource":"image"}]'::jsonb
+           THEN COALESCE(
+             (SELECT (unit->>'quantity')::int
+                FROM jsonb_array_elements(
+                  COALESCE(u.payload->'settledUnits', '[]'::jsonb)
+                ) AS unit
+               WHERE unit->>'resource' = 'image'),
+             (q.payload->>'outputCount')::int,
+             1
+           ) ELSE 0 END), 0)::text AS image,
+         COALESCE(sum(CASE WHEN
+           u.payload->>'resource' = 'video' OR
+           COALESCE(u.payload->'settledUnits', '[]'::jsonb)
+             @> '[{"resource":"video"}]'::jsonb
            THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS video
        FROM p1_product_billing_usage u
        JOIN p1_product_billing_quotes q

@@ -3,6 +3,7 @@ import {
   structuredDecisionInputSchema,
   workflowProgressEnvelopeSchema,
   workflowTokenEnvelopeSchema,
+  type ProductUsageUnit,
   type QuestionCard,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
@@ -313,6 +314,19 @@ function billingTrustedUsage(
     return undefined;
   }
   const usage = receipt.trustedUsage;
+  if ('kind' in usage && usage.kind === 'product_units') {
+    const units = productUsageUnits(
+      'units' in usage ? usage.units : undefined,
+    );
+    if (!units) return undefined;
+    return {
+      kind: 'product_units',
+      units,
+      ...('evidenceRef' in usage && typeof usage.evidenceRef === 'string'
+        ? { evidenceRef: usage.evidenceRef }
+        : {}),
+    };
+  }
   if (
     !('kind' in usage) ||
     usage.kind !== 'media_duration' ||
@@ -330,6 +344,28 @@ function billingTrustedUsage(
       ? { evidenceRef: usage.evidenceRef }
       : {}),
   };
+}
+
+function productUsageUnits(value: unknown): ProductUsageUnit[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const resources = new Set<ProductUsageUnit['resource']>();
+  const units: ProductUsageUnit[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const candidate = entry as { quantity?: unknown; resource?: unknown };
+    if (
+      !['copy', 'image', 'video'].includes(candidate.resource as string) ||
+      !Number.isSafeInteger(candidate.quantity) ||
+      (candidate.quantity as number) < 1
+    ) {
+      return null;
+    }
+    const resource = candidate.resource as ProductUsageUnit['resource'];
+    if (resources.has(resource)) return null;
+    resources.add(resource);
+    units.push({ resource, quantity: candidate.quantity as number });
+  }
+  return units;
 }
 
 function dbosBillingStep<T>(name: string, operation: () => Promise<T>) {

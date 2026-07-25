@@ -26,7 +26,10 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 		work: { id: "work-1" },
 		task: { id: "task-1" },
 		contentPackage: { id: "package-1", expectedRevision: 0 },
-		usageReservation: { id: "usage-reservation-task-1" },
+		usageReservation: {
+			id: "usage-reservation-task-1",
+			units: [{ resource: "copy", quantity: 1 }],
+		},
 	});
 
 	assert.deepEqual(calls, [
@@ -48,6 +51,10 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 				assetReferences: ["asset-1"],
 			},
 			executionSnapshot: snapshot,
+			usageReservation: {
+				id: "usage-reservation-task-1",
+				units: [{ resource: "copy", quantity: 1 }],
+			},
 		},
 	]);
 });
