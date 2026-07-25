@@ -16,9 +16,7 @@ async function submitCustomizedCopy(page: Page) {
   await page.goto('/dashboard');
   const lens = page.getByTestId('composer-lens-option-copy');
   await lens.click();
-  await page
-    .getByTestId('composer-intent-input')
-    .fill('写一条周末预约文案');
+  await page.getByTestId('composer-intent-input').fill('写一条周末预约文案');
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
   });
@@ -26,7 +24,7 @@ async function submitCustomizedCopy(page: Page) {
     (response) =>
       response.request().method() === 'POST' &&
       response.url().includes('/api/core/p1/composer/submissions'),
-    { timeout: 120_000 },
+    { timeout: 120_000 }
   );
   await page.getByTestId('composer-submit').click();
   const response = await responsePromise;
@@ -56,7 +54,7 @@ async function waitForQuestion(page: Page, taskId: string) {
       async () => {
         question = await page.evaluate(async (id) => {
           const response = await fetch(
-            `/api/core/p1/harness/tasks/${encodeURIComponent(id)}/decision`,
+            `/api/core/p1/harness/tasks/${encodeURIComponent(id)}/decision`
           );
           if (!response.ok) return null;
           const envelope = (await response.json()) as {
@@ -66,7 +64,7 @@ async function waitForQuestion(page: Page, taskId: string) {
         }, taskId);
         return question?.questionId ?? null;
       },
-      { timeout: 60_000 },
+      { timeout: 60_000 }
     )
     .not.toBeNull();
   return question!;
@@ -74,14 +72,14 @@ async function waitForQuestion(page: Page, taskId: string) {
 
 async function ignoreThroughHttpAndCollectSse(
   page: Page,
-  input: { question: QuestionCard; taskId: string },
+  input: { question: QuestionCard; taskId: string }
 ) {
   return page.evaluate(
     ({ currentQuestion, currentTaskId }) =>
       new Promise<{ messages: string[]; status: string }>((resolve, reject) => {
         const messages: string[] = [];
         const stream = new EventSource(
-          `/api/core/p1/workflows/${encodeURIComponent(currentTaskId)}/events`,
+          `/api/core/p1/workflows/${encodeURIComponent(currentTaskId)}/events`
         );
         const timeout = window.setTimeout(() => {
           stream.close();
@@ -131,19 +129,23 @@ async function ignoreThroughHttpAndCollectSse(
                 },
                 decision: { state: 'ignored', value: '这次先跳过' },
               }),
-            },
-          ).then(async (response) => {
-            if (!response.ok) {
-              throw new Error(`Decision HTTP failed: ${await response.text()}`);
             }
-          }).catch((error: unknown) => {
-            window.clearTimeout(timeout);
-            stream.close();
-            reject(error);
-          });
+          )
+            .then(async (response) => {
+              if (!response.ok) {
+                throw new Error(
+                  `Decision HTTP failed: ${await response.text()}`
+                );
+              }
+            })
+            .catch((error: unknown) => {
+              window.clearTimeout(timeout);
+              stream.close();
+              reject(error);
+            });
         };
       }),
-    { currentQuestion: input.question, currentTaskId: input.taskId },
+    { currentQuestion: input.question, currentTaskId: input.taskId }
   );
 }
 
@@ -168,7 +170,7 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
     });
     expect(stream.status).toBe('success');
     expect(stream.messages).toContain(
-      '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。',
+      '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。'
     );
     for (const message of stream.messages) {
       expect(message).not.toMatch(/route|schema|asset|workflow|revision|id/iu);
@@ -190,39 +192,43 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
 
     const streamPromise = page.evaluate(
       (taskId) =>
-        new Promise<{ messages: string[]; status: string }>((resolve, reject) => {
-          const messages: string[] = [];
-          const stream = new EventSource(
-            `/api/core/p1/workflows/${encodeURIComponent(taskId)}/events`,
-          );
-          const timeout = window.setTimeout(() => {
-            stream.close();
-            reject(new Error('Workflow SSE did not continue after the answer.'));
-          }, 120_000);
-          stream.addEventListener('workflow.progress', (event) => {
-            const data = JSON.parse((event as MessageEvent<string>).data) as {
-              message: string;
-            };
-            messages.push(data.message);
-          });
-          stream.addEventListener('workflow.state', (event) => {
-            const data = JSON.parse((event as MessageEvent<string>).data) as {
-              status: string;
-            };
-            if (data.status === 'success' || data.status === 'failed') {
-              window.clearTimeout(timeout);
+        new Promise<{ messages: string[]; status: string }>(
+          (resolve, reject) => {
+            const messages: string[] = [];
+            const stream = new EventSource(
+              `/api/core/p1/workflows/${encodeURIComponent(taskId)}/events`
+            );
+            const timeout = window.setTimeout(() => {
               stream.close();
-              resolve({ messages, status: data.status });
-            }
-          });
-          stream.onerror = () => {
-            if (stream.readyState === EventSource.CLOSED) {
-              window.clearTimeout(timeout);
-              reject(new Error('Workflow SSE closed before terminal state.'));
-            }
-          };
-        }),
-      submission.taskId,
+              reject(
+                new Error('Workflow SSE did not continue after the answer.')
+              );
+            }, 120_000);
+            stream.addEventListener('workflow.progress', (event) => {
+              const data = JSON.parse((event as MessageEvent<string>).data) as {
+                message: string;
+              };
+              messages.push(data.message);
+            });
+            stream.addEventListener('workflow.state', (event) => {
+              const data = JSON.parse((event as MessageEvent<string>).data) as {
+                status: string;
+              };
+              if (data.status === 'success' || data.status === 'failed') {
+                window.clearTimeout(timeout);
+                stream.close();
+                resolve({ messages, status: data.status });
+              }
+            });
+            stream.onerror = () => {
+              if (stream.readyState === EventSource.CLOSED) {
+                window.clearTimeout(timeout);
+                reject(new Error('Workflow SSE closed before terminal state.'));
+              }
+            };
+          }
+        ),
+      submission.taskId
     );
 
     const trigger = page.getByRole('button', { name: /^1 项$/u });
@@ -233,7 +239,7 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
     await expect(current).toBeVisible();
     await expect(current).toHaveAttribute(
       'data-pending-action-ref',
-      question.questionId,
+      question.questionId
     );
     await current
       .locator('input[placeholder="输入这次任务的答案"]')

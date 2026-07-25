@@ -163,7 +163,10 @@ async function recoverChannel(page: Page, channelId: string) {
 
   // Recovery is only real if it reached the immutable audit trail, same bar as
   // the isolation it reverses.
-  const auditLink = actions.getByRole('link', { name: '查看审计', exact: true });
+  const auditLink = actions.getByRole('link', {
+    name: '查看审计',
+    exact: true,
+  });
   await expect(auditLink).toBeVisible({ timeout: 30_000 });
   await auditLink.click();
   await expect(page).toHaveURL(/\/admin\/audit\/?$/u);
