@@ -547,6 +547,7 @@ const adminConfigRuntime = {
     ])
   ),
   'plan.addons': DEFAULT_ADD_ON_OFFERS,
+  'plan.trial.enabled': true,
   'plan.allowances.trial': planConfigDefaults.trial,
   'plan.allowances.starter': planConfigDefaults.starter,
   'plan.allowances.growth': planConfigDefaults.growth,
@@ -1269,6 +1270,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         'plan.addons',
+        'plan.trial.enabled',
         'plan.allowances.trial',
         'plan.allowances.starter',
         'plan.allowances.growth',
@@ -1289,6 +1291,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'model.execution.mode',
         'model.media.execution.mode',
         'plan.addons',
+        'plan.trial.enabled',
         'plan.allowances.trial',
         'plan.allowances.starter',
         'plan.allowances.growth',
@@ -1321,6 +1324,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       catalogSource: new AdminConfigEntitlementCatalogSource(
         adminConfigRepository,
       ),
+      monthlyOutput: productQuoteService,
       modelDefaults: {
         async getDefaults() {
           const keys = [
@@ -1498,7 +1502,7 @@ if (harnessRuntimeConfig) {
   const creationSubmissionStore = new PostgresCreationSubmissionStore(
     pool,
     new PostgresCreationSubmissionPersistence(
-      new PostgresProductBillingUsageReservation(pool)
+      new PostgresProductBillingUsageReservation(pool, grantLotLedger)
     )
   );
   await creationSubmissionStore.migrate();
@@ -1575,6 +1579,35 @@ if (harnessRuntimeConfig) {
     harnessStages,
     harnessStore,
     creationSubmissionStore,
+    {
+      async commit({ workspaceId, taskId }) {
+        await productQuoteService.settleTask({
+          workspaceId,
+          taskId,
+          attemptId: `harness-receipt:${taskId}`,
+          deploymentId: 'coordinator',
+          status: 'completed',
+        });
+      },
+      async refund({ workspaceId, taskId }) {
+        await productQuoteService.settleTask({
+          workspaceId,
+          taskId,
+          attemptId: `harness-receipt:${taskId}`,
+          deploymentId: 'coordinator',
+          status: 'failed',
+        });
+        const createdAt = new Date().toISOString();
+        await grantLotLedger.refundUsageOperation({
+          workspaceId,
+          usageOperationId: `product-usage:${taskId}`,
+          refundOperationId: `product-usage-refund:${taskId}`,
+          actorId: 'system-harness',
+          correlationId: `harness:${taskId}`,
+          createdAt,
+        });
+      },
+    },
   );
   await DBOS.launch();
   const workflowResumer = {

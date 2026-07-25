@@ -13,6 +13,10 @@ export interface ProductBillingTransaction {
     taskId: string,
   ): Promise<ProductQuoteSnapshot | null>;
   getUsage(workspaceId: string, taskId: string): Promise<ProductUsageRecord | null>;
+  getMonthlyOutput(
+    workspaceId: string,
+    month: string,
+  ): Promise<{ copy: number; image: number; video: number }>;
   listProviderCosts(
     workspaceId: string,
     taskId: string,
@@ -166,6 +170,48 @@ export class PostgresProductBillingRepository
     return result.rows[0]?.payload
       ? structuredClone(result.rows[0].payload)
       : null;
+  }
+
+  async getMonthlyOutput(workspaceId: string, month: string) {
+    const match = /^(\d{4})-(\d{2})$/u.exec(month);
+    const year = Number(match?.[1]);
+    const monthNumber = Number(match?.[2]);
+    if (!match || monthNumber < 1 || monthNumber > 12) {
+      throw new Error('month must use YYYY-MM.');
+    }
+    const nextYear = monthNumber === 12 ? year + 1 : year;
+    const nextMonth = monthNumber === 12 ? 1 : monthNumber + 1;
+    const startsAt = `${month}-01T00:00:00+08:00`;
+    const endsAt =
+      `${String(nextYear).padStart(4, '0')}-` +
+      `${String(nextMonth).padStart(2, '0')}-01T00:00:00+08:00`;
+    const result = await this.database.query<{
+      copy: string;
+      image: string;
+      video: string;
+    }>(
+      `SELECT
+         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'copy'
+           THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS copy,
+         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'image'
+           THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS image,
+         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'video'
+           THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS video
+       FROM p1_product_billing_usage u
+       JOIN p1_product_billing_quotes q
+         ON q.workspace_id = u.workspace_id AND q.quote_id = u.quote_id
+       WHERE u.workspace_id = $1
+         AND u.status = 'committed'
+         AND (u.payload->>'updatedAt')::timestamptz >= $2::timestamptz
+         AND (u.payload->>'updatedAt')::timestamptz < $3::timestamptz`,
+      [workspaceId, startsAt, endsAt],
+    );
+    const row = result.rows[0];
+    return {
+      copy: Number(row?.copy ?? 0),
+      image: Number(row?.image ?? 0),
+      video: Number(row?.video ?? 0),
+    };
   }
 
   async listProviderCosts(workspaceId: string, taskId: string) {

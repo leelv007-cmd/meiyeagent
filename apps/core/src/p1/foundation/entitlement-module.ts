@@ -259,8 +259,18 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
     private readonly options: {
       recordedCommerceEnabled?: boolean;
       catalogSource?: {
-        get(): Promise<{ plans: PlanOffer[]; addOns: AddOnOffer[] }>;
+        get(): Promise<{
+          plans: PlanOffer[];
+          addOns: AddOnOffer[];
+          trialEnabled?: boolean;
+        }>;
         getPaymentMapping?(): Promise<PaymentMappingConfig | null>;
+      };
+      monthlyOutput?: {
+        getMonthlyOutput(
+          workspaceId: string,
+          month: string,
+        ): Promise<{ copy: number; image: number; video: number }>;
       };
       /** Optional platform default model binding for workspace provision (Tb). */
       modelDefaults?: PlatformDefaultModelPort;
@@ -272,7 +282,10 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
         ? {
             get: async () => {
               const catalog = await options.catalogSource!.get();
-              return { plans: catalog.plans };
+              return {
+                plans: catalog.plans,
+                trialEnabled: catalog.trialEnabled,
+              };
             },
           }
         : undefined,
@@ -478,13 +491,28 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           : ('disabled' as const),
         plans: structuredClone(catalog.plans),
         addOns: structuredClone(catalog.addOns),
+        trialEnabled: catalog.trialEnabled,
       };
     }
     if (action === 'projection') {
-      return this.entitlements.getProjection(
+      const month =
+        typeof payload.month === 'string'
+          ? payload.month
+          : monthInShanghai(this.clock());
+      const projection = await this.entitlements.getProjection(
         args.context,
-        typeof payload.month === 'string' ? payload.month : undefined,
+        month,
       );
+      const output = this.options.monthlyOutput
+        ? await this.options.monthlyOutput.getMonthlyOutput(
+            args.context.workspaceId,
+            month,
+          )
+        : { copy: 0, image: 0, video: 0 };
+      return {
+        ...projection,
+        monthlyOutput: { month, ...output },
+      };
     }
     throw new P1DomainError(
       'INVALID_STATE',
@@ -567,8 +595,23 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
     return this.options.catalogSource?.get() ?? {
       plans: structuredClone(DEFAULT_PLAN_OFFERS),
       addOns: structuredClone(DEFAULT_ADD_ON_OFFERS),
+      trialEnabled: true,
     };
   }
+}
+
+function monthInShanghai(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  if (!year || !month) {
+    throw new P1DomainError('INVALID_STATE', 'Current billing month is unavailable.');
+  }
+  return `${year}-${month}`;
 }
 
 function optionalProviderPeriod(

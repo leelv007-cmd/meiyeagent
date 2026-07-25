@@ -72,6 +72,10 @@ export interface ProductBillingApplicationPort {
     taskId: string,
     workspaceId?: string,
   ): MaybePromise<ProductUsageRecord | null>;
+  getMonthlyOutput?(
+    workspaceId: string,
+    month: string,
+  ): MaybePromise<{ copy: number; image: number; video: number }>;
 }
 
 /** Durable, transaction-scoped use of the canonical ProductQuote algorithms. */
@@ -175,6 +179,10 @@ export class DurableProductBillingService
 
   getUsage(taskId: string, workspaceId?: string) {
     return this.repository.getUsage(this.workspace(workspaceId), taskId);
+  }
+
+  getMonthlyOutput(workspaceId: string, month: string) {
+    return this.repository.getMonthlyOutput(this.workspace(workspaceId), month);
   }
 
   async assertAcceptedQuote(input: {

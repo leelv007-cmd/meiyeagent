@@ -136,6 +136,7 @@ describe('Admin config application seam', () => {
         'plan.allowances.starter',
         'plan.allowances.trial',
         'plan.payment-mapping',
+        'plan.trial.enabled',
         'platform.defaultModel.audio',
         'platform.defaultModel.copy',
         'platform.defaultModel.image',
@@ -243,6 +244,48 @@ describe('Admin config application seam', () => {
     assert.deepEqual(
       history.map((revision) => revision.revision),
       [1],
+    );
+  });
+
+  it('governs the global trial switch with CAS and audited history', async () => {
+    const repository = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [new AdminConfigFoundationModule(repository)],
+    });
+    const apply = (value: boolean, expectedRevision: number | null) =>
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: 'plan.trial.enabled',
+            value,
+            expectedRevision,
+            reason: `Set new workspace trials to ${String(value)}`,
+          },
+        },
+        `trial-switch-${String(value)}-${String(expectedRevision)}`,
+      );
+
+    await apply(false, null);
+    await assert.rejects(apply(true, null), /Config head changed/u);
+    await apply(true, 1);
+    const history = await repository.history(
+      'global',
+      '__global__',
+      'plan.trial.enabled',
+    );
+    assert.deepEqual(
+      history.map(({ actorId, revision, value }) => ({
+        actorId,
+        revision,
+        value,
+      })),
+      [
+        { actorId: 'platform-admin', revision: 1, value: false },
+        { actorId: 'platform-admin', revision: 2, value: true },
+      ],
     );
   });
 

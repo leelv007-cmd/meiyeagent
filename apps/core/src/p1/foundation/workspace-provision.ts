@@ -59,7 +59,9 @@ export class WorkspaceProvisionService {
     private readonly entitlements: ProductEntitlementApplicationService,
     private readonly options: {
       clock?: () => Date;
-      catalog?: { get(): Promise<{ plans: PlanOffer[] }> };
+      catalog?: {
+        get(): Promise<{ plans: PlanOffer[]; trialEnabled?: boolean }>;
+      };
       modelDefaults?: PlatformDefaultModelPort;
     } = {}
   ) {}
@@ -70,7 +72,10 @@ export class WorkspaceProvisionService {
   ): Promise<ProductEntitlementProjection> {
     const catalog = this.options.catalog
       ? await this.options.catalog.get()
-      : { plans: DEFAULT_PLAN_OFFERS };
+      : { plans: DEFAULT_PLAN_OFFERS, trialEnabled: true };
+    if (catalog.trialEnabled === false) {
+      return this.entitlements.getProjection(context);
+    }
     const trialOffer = catalog.plans.find((plan) => plan.id === 'trial');
     if (!trialOffer) {
       throw new P1DomainError(

@@ -125,6 +125,49 @@ describe(
       );
     });
 
+    it('counts only committed ProductUsage receipts in the Asia/Shanghai month', async () => {
+      const workspaceId = workspace();
+      let now = new Date('2026-07-31T15:59:00.000Z');
+      const service = new DurableProductBillingService(repository, () => now);
+      const quote = await service.buildQuote({
+        billingMode: 'per_request',
+        catalogModelId: 'copy-model',
+        outputCount: 3,
+        quoteId: 'monthly-output-quote',
+        quotePolicyRevision: 'product-policy-1',
+        unitRate: 1,
+        workspaceId,
+      });
+      await service.confirm({
+        quoteId: quote.quoteId,
+        taskId: 'monthly-output-task',
+        workspaceId,
+      });
+      await service.reserve({
+        quoteId: quote.quoteId,
+        resource: 'copy',
+        usageId: 'monthly-output-usage',
+        workspaceId,
+      });
+
+      assert.deepEqual(
+        await service.getMonthlyOutput(workspaceId, '2026-07'),
+        { copy: 0, image: 0, video: 0 },
+      );
+
+      now = new Date('2026-07-31T16:01:00.000Z');
+      await service.settle({ quoteId: quote.quoteId, workspaceId });
+
+      assert.deepEqual(
+        await service.getMonthlyOutput(workspaceId, '2026-07'),
+        { copy: 0, image: 0, video: 0 },
+      );
+      assert.deepEqual(
+        await service.getMonthlyOutput(workspaceId, '2026-08'),
+        { copy: 3, image: 0, video: 0 },
+      );
+    });
+
     it('requires a fresh quote and billing task for a paid reroll', async () => {
       const workspaceId = workspace();
       const firstProcess = new DurableProductBillingService(repository);

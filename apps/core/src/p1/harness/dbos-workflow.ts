@@ -51,6 +51,11 @@ export type HarnessDbosWorkflowInput =
   | HarnessWorkflowInput
   | { workflowId: string; request: HarnessWorkflowInput };
 
+export interface HarnessBillingSettlementPort {
+  commit(input: { workspaceId: string; taskId: string }): Promise<void>;
+  refund(input: { workspaceId: string; taskId: string }): Promise<void>;
+}
+
 const PROGRESS_STREAM = 'progress';
 const DECISION_TIMEOUT_SECONDS = 48 * 60 * 60;
 
@@ -58,6 +63,7 @@ export function registerHarnessDbosWorkflow(
   ports: HarnessStagePorts,
   persistence: HarnessWorkflowPersistence,
   semanticResumptions?: HarnessSemanticDecisionResumptionStore,
+  billing?: HarnessBillingSettlementPort,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -148,18 +154,42 @@ export function registerHarnessDbosWorkflow(
       },
     };
     try {
-      return await runHarnessWorkflow(workflowId, request, ports, runtime);
-    } catch (error) {
-      await DBOS.runStep(
-        () =>
-          persistence.recordTerminalFailure({
-            workspaceId: request.workspaceId,
-            workflowId,
-            failure: normalizeHarnessTerminalFailure(error),
-          }),
-        { name: 'persist-terminal-failure' },
-      );
-      throw error;
+      let result;
+      try {
+        result = await runHarnessWorkflow(workflowId, request, ports, runtime);
+      } catch (error) {
+        if (billing) {
+          await DBOS.runStep(
+            () =>
+              billing.refund({
+                workspaceId: request.workspaceId,
+                taskId: workflowId,
+              }),
+            { name: 'refund-product-usage' },
+          );
+        }
+        await DBOS.runStep(
+          () =>
+            persistence.recordTerminalFailure({
+              workspaceId: request.workspaceId,
+              workflowId,
+              failure: normalizeHarnessTerminalFailure(error),
+            }),
+          { name: 'persist-terminal-failure' },
+        );
+        throw error;
+      }
+      if (billing) {
+        await DBOS.runStep(
+          () =>
+            billing.commit({
+              workspaceId: request.workspaceId,
+              taskId: workflowId,
+            }),
+          { name: 'commit-product-usage' },
+        );
+      }
+      return result;
     } finally {
       await DBOS.closeStream(PROGRESS_STREAM);
     }

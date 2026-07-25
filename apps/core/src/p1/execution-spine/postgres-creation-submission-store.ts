@@ -3,6 +3,7 @@ import { isComposerVariantPlatform } from "@meiye/contracts";
 import type { Pool, PoolClient } from "pg";
 
 import { P1DomainError } from "../foundation/domain.js";
+import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import { insertContentPackageRow } from "../operations/postgres-content-package-write-adapter.js";
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
@@ -49,7 +50,10 @@ export interface CreationUsageReservationPort {
  * PostgreSQL transaction as the Snapshot, Work, Task and ContentPackage shell.
  */
 export class PostgresProductBillingUsageReservation implements CreationUsageReservationPort {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly grantLots?: PostgresGrantLotLedger,
+  ) {}
 
   async reserve(client: PoolClient, submission: CreationSubmissionRecord) {
     const snapshot = submission.snapshot;
@@ -104,6 +108,17 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
         "IDEMPOTENCY_CONFLICT",
         `Product usage for task ${submission.task.id} has a different reservation identity.`,
       );
+    }
+    if (this.grantLots) {
+      await this.grantLots.consumeWithClient(client, {
+        workspaceId: snapshot.workspaceId,
+        resource: billingResource(snapshot.lens),
+        amount: quote.outputCount ?? 1,
+        transactionId: `product-usage:${submission.task.id}`,
+        actorId: snapshot.actorId,
+        correlationId: `coordinator:${submission.task.id}`,
+        createdAt: snapshot.createdAt,
+      });
     }
   }
 }

@@ -332,6 +332,12 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     valueSchema: trialPlanAllowanceSchema,
   },
   {
+    key: 'plan.trial.enabled',
+    scope: 'global',
+    description: 'Trial grants for newly registered workspaces.',
+    valueSchema: z.boolean(),
+  },
+  {
     key: 'platform.defaultModel.copy',
     scope: 'global',
     description:

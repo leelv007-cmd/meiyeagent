@@ -51,18 +51,31 @@ test(
   async () => {
     const workflowId = `harness-smoke-${randomUUID()}`;
     const traces: string[] = [];
+    const billingReceipts: string[] = [];
     DBOS.setConfig({
       name: 'beauty-marketing-harness-smoke',
       systemDatabaseUrl: systemDatabaseUrl!,
       applicationVersion: 'harness-smoke-v1',
     });
-    const workflow = registerHarnessDbosWorkflow(smokePorts(), {
-      async registerPending() {},
-      async recordStageTrace(input) {
-        traces.push(input.stage);
+    const workflow = registerHarnessDbosWorkflow(
+      smokePorts(),
+      {
+        async registerPending() {},
+        async recordStageTrace(input) {
+          traces.push(input.stage);
+        },
+        async recordTerminalFailure() {},
       },
-      async recordTerminalFailure() {},
-    });
+      undefined,
+      {
+        async commit({ taskId }) {
+          billingReceipts.push(`committed:${taskId}`);
+        },
+        async refund({ taskId }) {
+          billingReceipts.push(`refunded:${taskId}`);
+        },
+      },
+    );
 
     try {
       await DBOS.launch();
@@ -99,6 +112,7 @@ test(
         'execution_selection',
         'assembly_delivery',
       ]);
+      assert.deepEqual(billingReceipts, [`committed:${workflowId}`]);
       const events = [];
       const source = new HarnessWorkflowEventSource(
         new HarnessDbosWorkflowEventReader({

@@ -21,8 +21,139 @@ import {
 } from "./submission-coordinator.js";
 import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { buildSemanticDecisionResumption } from "../harness/semantic-decision-resumption.js";
+import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
+
+test(
+  "Postgres Coordinator consumes the trial GrantLot and blocks the next agent submission atomically",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const grantLots = new PostgresGrantLotLedger(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, grantLots),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-trial-${suffix}`;
+    const first = reserveRecord(workspaceId, `spine-quote-a-${suffix}`, `a-${suffix}`);
+    const second = reserveRecord(workspaceId, `spine-quote-b-${suffix}`, `b-${suffix}`);
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await grantLots.migrate();
+      await store.applySchema();
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Coordinator trial test')",
+        [workspaceId],
+      );
+      await grantLots.grant({
+        id: `trial-copy-${suffix}`,
+        workspaceId,
+        resource: "copy",
+        amount: 1,
+        expirationDate: "2026-08-01T00:00:00.000Z",
+        transactionType: "REGISTER_GIFT",
+        createdAt: "2026-07-22T09:00:00.000Z",
+      });
+      for (const submission of [first, second]) {
+        const quote = await seedQuote(
+          billingRepository,
+          workspaceId,
+          submission.snapshot.quote.id,
+          submission.task.id,
+        );
+        submission.snapshot = createSnapshot({
+          quoteId: quote.quoteId,
+          quoteRevision: quote.revision,
+          submission,
+          workspaceId,
+        });
+      }
+
+      assert.equal(
+        (
+          await store.claim({
+            idempotencyKey: "trial-copy-first",
+            payloadHash: "trial-copy-first",
+            submission: first,
+            workspaceId,
+          })
+        ).kind,
+        "created",
+      );
+      assert.equal(
+        (await grantLots.rebuildProjection({
+          workspaceId,
+          asOf: "2026-07-22T09:01:00.000Z",
+          actorId: "owner",
+          correlationId: "trial-projection",
+        })).find((item) => item.resource === "copy")?.remainingAmount,
+        0,
+      );
+
+      await assert.rejects(
+        store.claim({
+          idempotencyKey: "trial-copy-second",
+          payloadHash: "trial-copy-second",
+          submission: second,
+          workspaceId,
+        }),
+        /Insufficient copy allowance/u,
+      );
+      assert.equal(
+        await billingRepository.getUsage(workspaceId, second.task.id),
+        null,
+      );
+      await grantLots.grant({
+        id: `addon-copy-${suffix}`,
+        workspaceId,
+        resource: "copy",
+        amount: 1,
+        expirationDate: null,
+        transactionType: "PURCHASE_PACKAGE",
+        sourceRef: `addon-copy-${suffix}`,
+        createdAt: "2026-07-22T09:02:00.000Z",
+      });
+      assert.equal(
+        (
+          await store.claim({
+            idempotencyKey: "trial-copy-second",
+            payloadHash: "trial-copy-second",
+            submission: second,
+            workspaceId,
+          })
+        ).kind,
+        "created",
+      );
+      assert.equal(
+        (await billingRepository.getUsage(workspaceId, second.task.id))?.status,
+        "reserved",
+      );
+    } finally {
+      for (const submission of [second, first]) {
+        await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      }
+      await pool.query(
+        "DELETE FROM p1_grant_lot_transactions WHERE workspace_id = $1",
+        [workspaceId],
+      ).catch(() => undefined);
+      await pool.query(
+        "DELETE FROM p1_grant_lots WHERE workspace_id = $1",
+        [workspaceId],
+      ).catch(() => undefined);
+      await pool.query("DELETE FROM workspaces WHERE id = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
 
 test(
   "Postgres Coordinator store atomically reserves product shells and reclaims only an expired Harness lease",
