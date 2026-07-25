@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
+import { setTheme } from '../fixtures/page-health';
 
 /**
  * T30 / #224 — D-114 定制创作主容器 acceptance.
@@ -304,9 +305,17 @@ test.describe('D-114 Composer conversation container', () => {
       const user = await registerE2EUser(request);
       await loginByForm(page, user);
       await seedConfirmedStore(page);
+      await setTheme(page, theme);
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.emulateMedia({ colorScheme: theme });
       await page.goto('/dashboard');
+
+      // Prove the theme landed. The first version switched the
+      // emulated colour scheme, which cannot move a class-based
+      // theme: it shipped a byte-identical light/dark screenshot
+      // pair and still passed.
+      await expect(page.locator('html')).toHaveClass(
+        new RegExp(`\\b${theme}\\b`, 'u')
+      );
 
       const home = page.getByTestId('composer-home');
       await expect(home).toBeVisible();
@@ -340,9 +349,17 @@ test.describe('D-114 Composer conversation container', () => {
       const user = await registerE2EUser(request);
       await loginByForm(page, user);
       await seedConfirmedStore(page);
+      await setTheme(page, theme);
       await page.setViewportSize({ width: 1440, height: 900 });
-      await page.emulateMedia({ colorScheme: theme });
       await page.goto('/dashboard');
+
+      // Prove the theme landed. The first version switched the
+      // emulated colour scheme, which cannot move a class-based
+      // theme: it shipped a byte-identical light/dark screenshot
+      // pair and still passed.
+      await expect(page.locator('html')).toHaveClass(
+        new RegExp(`\\b${theme}\\b`, 'u')
+      );
 
       await expect(page.getByTestId('composer-home')).toBeVisible();
       await expect(page.getByTestId('composer-prompt-bar')).toBeVisible();
