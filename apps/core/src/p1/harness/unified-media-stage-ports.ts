@@ -27,10 +27,15 @@ import type { HarnessWorkflowInput } from "./task-admission.js";
 import { executeImageSelection } from "./execution-selection.js";
 import { nativeSupplyOperation } from "./image-intent-compiler.js";
 import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
-import { merchantExactTextMismatch } from "./merchant-delivery-language.js";
+import {
+	merchantExactTextMismatch,
+	merchantVideoGenerationFailure,
+} from "./merchant-delivery-language.js";
 import {
 	assertImageRevisionAssemblyComplete,
+	assertVideoRevisionAssemblyComplete,
 	buildImagePlatformVariants,
+	buildVideoPlatformVariants,
 } from "./output-compiler.js";
 
 type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
@@ -197,15 +202,47 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 			assertImageRevisionAssemblyComplete(revision);
 			return this.contentPackages.write(revision);
 		}
-		return this.contentPackages.write({
+		const projected = projectMarketingPackageEvidence({
+			declaration: input.declaration,
+			request: input.request,
+			context: input.context,
+			at: now,
+		});
+		const marketing = {
+			...projected,
+			rightsRefs: [
+				...new Set([...projected.rightsRefs, snapshot.rights.revision]),
+			],
+		};
+		const version = {
+			body: input.brief.storyboard
+				.map(({ description }) => description)
+				.join("；"),
+			conversionHook:
+				marketing.promotionOffer?.callToAction.label ??
+				"私信了解详情并预约",
+			createdAt: now,
+			harnessCandidateId: input.selection.asset.id,
+			harnessScore: 0,
+			id: `${input.workflowId}:${input.selection.asset.id}`,
+			orderedAssetIds: [input.selection.asset.id],
+			source: "ai_generated" as const,
+			title: "视频成品",
+			topics: [],
+		};
+		const revision = {
 			expectedRevision: input.request.expectedRevision,
 			generated: {
 				assetIds: [input.selection.asset.id],
 				childRuns: [input.selection.childRun],
 				ownedAssets: [input.selection.asset],
 			},
+			harnessSelection: {
+				recommendedCandidateId: input.selection.asset.id,
+			},
 			idempotencyKey: `harness-media:${input.workflowId}:${input.brief.kind}`,
-			kind: "video",
+			kind: "video" as const,
+			marketing,
 			occurredAt: now,
 			packageId: input.request.packageId,
 			platform: mediaPlatform(snapshot.platform.id),
@@ -226,20 +263,19 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 				? { sourceContentPackage: snapshot.sources.contentPackage }
 				: {}),
 			taskId: snapshot.task.id,
-			version: {
-				body: "",
-				createdAt: now,
-				id: `${input.workflowId}:${input.selection.asset.id}`,
-				orderedAssetIds: [input.selection.asset.id],
-				source: "ai_generated",
-				title: "视频成品",
-				topics: [],
-			},
+			version,
+			variants: buildVideoPlatformVariants({
+				currentVersionId: version.id,
+				packageId: input.request.packageId,
+				versions: [version],
+			}),
 			workId: snapshot.work.id,
 			workflowId: input.workflowId,
 			workflowRevision: input.request.workflowRevision,
 			workspaceId: input.request.workspaceId,
-		});
+		};
+		assertVideoRevisionAssemblyComplete(revision);
+		return this.contentPackages.write(revision);
 	}
 }
 
@@ -468,6 +504,9 @@ function requireCompletedMediaResult(
 	kind: MediaBrief["kind"],
 ) {
 	if (result.status === "failed") {
+		const timedOut = /(?:time.?out|timed.?out)/iu.test(
+			result.failureCode ?? "",
+		);
 		throw new HarnessMediaExecutionError(
 			"MEDIA_GENERATION_FAILED",
 			result.failureCode ??
@@ -475,6 +514,9 @@ function requireCompletedMediaResult(
 			502,
 			result.jobId,
 			result.attempt.acceptance,
+			kind === "video"
+				? merchantVideoGenerationFailure(timedOut ? "timed_out" : "failed")
+				: undefined,
 		);
 	}
 	if (result.status !== "completed" || !result.asset) {
@@ -504,6 +546,7 @@ export class HarnessMediaExecutionError extends Error {
 		readonly status: 202 | 409 | 502,
 		readonly jobId?: string,
 		readonly acceptance?: string,
+		readonly merchantMessage?: string,
 	) {
 		super(message);
 		this.name = "HarnessMediaExecutionError";

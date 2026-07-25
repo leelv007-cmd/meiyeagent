@@ -546,6 +546,67 @@ it('accepts recorded synthetic video compliance only with the explicit E2E overr
   assert.ok(artifact.sizeBytes > videoBytes.byteLength);
 });
 
+it('exports a native single-call video with the shared video manifest builder', async () => {
+  const storage = new MemoryModelAssetStorage();
+  const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
+  const video = await storage.persistGeneratedAsset({
+    bytes: videoBytes,
+    contentType: 'video/mp4',
+    workspaceId: 'workspace-video-native',
+  });
+  const adapter = new ContentPackageZipExportAdapter(storage, {
+    async readOwnedAsset({ assetId }) {
+      assert.equal(assetId, video.id);
+      return {
+        asset: { ...video, contentType: 'video/mp4' as const },
+        bytes: videoBytes,
+      };
+    },
+  });
+  const input = {
+    compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    contentPackageRevision: 5,
+    kind: 'video' as const,
+    packageId: 'package-video-native',
+    platform: 'douyin' as const,
+    rightsState: 'authorized',
+    version: {
+      body: '门店护理场景与主视觉展示。',
+      conversionHook: '私信预约',
+      createdAt: '2026-07-25T09:00:00.000Z',
+      id: 'version-video-native',
+      orderedAssetIds: [video.id],
+      title: '夏日护理活动',
+      topics: [],
+    },
+    videoDeliveryDurationSeconds: 6,
+    videoDeliveryWorkflowId: 'task-video-native',
+    workspaceId: 'workspace-video-native',
+  };
+
+  const artifact = await adapter.export(input);
+  const replayed = await adapter.export(input);
+
+  assert.equal(artifact.contentType, 'application/zip');
+  assert.equal(replayed.artifactObjectKey, artifact.artifactObjectKey);
+  assert.equal(replayed.sha256, artifact.sha256);
+  const archiveBytes = storage.read(artifact.artifactObjectKey);
+  assert.ok(archiveBytes);
+  const files = unzipSync(archiveBytes);
+  assert.deepEqual(files['video.mp4'], videoBytes);
+  const manifestBytes = files['manifest.json'];
+  assert.ok(manifestBytes);
+  const manifest = JSON.parse(new TextDecoder().decode(manifestBytes));
+  assert.equal(manifest.schema, 'beauty-delivery-manifest/v1');
+  assert.equal(manifest.kind, 'video');
+  assert.equal(manifest.contentPackageRevision, 5);
+  assert.ok(manifest.files.length > 0);
+  for (const file of manifest.files as Array<{ path: string }>) {
+    assert.ok(files[file.path]);
+  }
+  assert.equal(manifest.rightsSummary.state, 'authorized');
+});
+
 it('exports an unlabeled video package as a full delivery ZIP with manifest revision', async () => {
   const storage = new MemoryModelAssetStorage();
   const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);

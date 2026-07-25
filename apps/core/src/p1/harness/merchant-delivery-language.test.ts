@@ -7,6 +7,7 @@ import {
   merchantPartialFailure,
   merchantProgressMessage,
   merchantTaskSummary,
+  merchantVideoGenerationFailure,
   merchantVisibleLanguageIssues,
 } from './merchant-delivery-language.js';
 
@@ -32,11 +33,23 @@ test('five merchant-facing positions stay free of engineering language', () => {
       expected: ['价格 398'],
       observed: ['价格 389'],
     }),
+    merchantVideoGenerationFailure('failed'),
+    merchantVideoGenerationFailure('timed_out'),
   ];
 
   for (const message of messages) {
     assert.deepEqual(merchantVisibleLanguageIssues(message), []);
   }
+});
+
+test('video failure language offers safe retry and fallback choices', () => {
+  const failed = merchantVideoGenerationFailure('failed');
+  const timedOut = merchantVideoGenerationFailure('timed_out');
+
+  assert.match(failed, /重新生成/u);
+  assert.match(failed, /更换参考素材/u);
+  assert.match(timedOut, /重新生成/u);
+  assert.match(timedOut, /图片发布方案/u);
 });
 
 test('task summary positively carries strategy, version guidance and usage advice', () => {

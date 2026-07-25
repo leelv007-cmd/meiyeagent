@@ -327,7 +327,7 @@ export class ContentPackageZipExportAdapter
     );
     const videoAssetId = input.version.orderedAssetIds[0];
     if (!videoAssetId) {
-      throw new Error('A video full package requires a composed video asset.');
+      throw new Error('A video full package requires a video asset.');
     }
     const { asset: videoAsset, bytes: videoBytes } =
       await this.assets.readOwnedAsset({
@@ -352,34 +352,43 @@ export class ContentPackageZipExportAdapter
       throw new UnverifiedVideoComplianceError();
     }
     const delivery = videoAsset.compositionEvidence?.delivery;
-    if (
-      !delivery ||
-      delivery.outputVideoSha256 !== videoAsset.sha256 ||
-      delivery.compositionRevision !==
-        input.videoDeliveryCompositionRevision ||
-      delivery.workflowId !== input.videoDeliveryWorkflowId ||
-      delivery.storyboardRevision !== input.videoDeliveryRevision ||
-      videoAsset.compositionEvidence?.durationSeconds !==
-        input.videoDeliveryDurationSeconds ||
-      delivery.subtitles.durationSeconds !==
-        videoAsset.compositionEvidence?.durationSeconds
-    ) {
-      throw new Error('Verified video delivery evidence is unavailable.');
-    }
-    if (
-      !hasVerifiedVideoCompliance(
-        videoAsset,
-        input.compliance,
-        allowRecordedSynthetic,
-      )
-    ) {
-      throw new UnverifiedVideoComplianceError();
-    }
-
+    const nativeSingleCall = isNativeSingleCallVideoExport(input, videoAsset);
     let cover:
       | { bytes: Uint8Array; mimeType: 'image/jpeg' | 'image/png' }
       | undefined;
-    const coverAssetId = input.coverAssetId ?? delivery.cover.id;
+    let subtitles = input.subtitles;
+    if (!nativeSingleCall) {
+      if (
+        !delivery ||
+        delivery.outputVideoSha256 !== videoAsset.sha256 ||
+        delivery.compositionRevision !==
+          input.videoDeliveryCompositionRevision ||
+        delivery.workflowId !== input.videoDeliveryWorkflowId ||
+        delivery.storyboardRevision !== input.videoDeliveryRevision ||
+        videoAsset.compositionEvidence?.durationSeconds !==
+          input.videoDeliveryDurationSeconds ||
+        delivery.subtitles.durationSeconds !==
+          videoAsset.compositionEvidence?.durationSeconds
+      ) {
+        throw new Error('Verified video delivery evidence is unavailable.');
+      }
+      if (
+        !hasVerifiedVideoCompliance(
+          videoAsset,
+          input.compliance,
+          allowRecordedSynthetic,
+        )
+      ) {
+        throw new UnverifiedVideoComplianceError();
+      }
+      subtitles = {
+        format: delivery.subtitles.format,
+        text: delivery.subtitles.text,
+      };
+    }
+
+    const coverAssetId =
+      input.coverAssetId ?? (nativeSingleCall ? undefined : delivery?.cover.id);
     if (coverAssetId) {
       const { asset, bytes } = await this.assets.readOwnedAsset({
         assetId: coverAssetId,
@@ -390,9 +399,11 @@ export class ContentPackageZipExportAdapter
       }
       cover = { bytes, mimeType: asset.contentType };
       if (
-        asset.sha256 !== delivery.cover.sha256 ||
-        asset.sizeBytes !== delivery.cover.sizeBytes ||
-        asset.objectKey !== delivery.cover.objectKey
+        !nativeSingleCall &&
+        delivery &&
+        (asset.sha256 !== delivery.cover.sha256 ||
+          asset.sizeBytes !== delivery.cover.sizeBytes ||
+          asset.objectKey !== delivery.cover.objectKey)
       ) throw new Error('Video cover receipt does not match delivery evidence.');
     }
 
@@ -414,10 +425,7 @@ export class ContentPackageZipExportAdapter
       platform: input.platform,
       rightsState: input.rightsState ?? this.options.rightsState,
       storeName: input.storeName ?? this.options.storeName ?? '门店',
-      subtitles: {
-        format: delivery.subtitles.format,
-        text: delivery.subtitles.text,
-      },
+      ...(subtitles ? { subtitles } : {}),
       variantVersionId: input.version.id,
       video: { bytes: videoBytes },
     });
@@ -442,6 +450,17 @@ export class ContentPackageZipExportAdapter
         : {}),
     };
   }
+}
+
+function isNativeSingleCallVideoExport(
+  input: ContentPackageVideoFullExportInput,
+  asset: ContentPackageExportAsset,
+) {
+  return (
+    !asset.compositionEvidence?.delivery &&
+    input.videoDeliveryCompositionRevision === undefined &&
+    input.videoDeliveryRevision === undefined
+  );
 }
 
 function hasVerifiedVideoCompliance(
