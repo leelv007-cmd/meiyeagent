@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { cleanupE2EUsers } from '../fixtures/auth';
+import { seedConfirmedStore } from '../fixtures/product';
 import { createE2EUser } from '../fixtures/test-data';
 
 test.describe('M-01 signed platform contract', () => {
@@ -34,6 +35,7 @@ test.describe('M-01 signed platform contract', () => {
       registrationResponse.ok(),
       await registrationResponse.text()
     ).toBeTruthy();
+    await seedConfirmedStore(page);
     await page.goto('/dashboard');
 
     const billingActions: string[] = [];
