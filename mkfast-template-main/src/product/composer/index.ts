@@ -3,7 +3,7 @@
  *
  * Pure models + thin components + ComposerHome host (cutover mount point).
  *
- * #96: six-card grid, RecipePatchPreview surface, reuse panel, apply tip,
+ * #96: six-card grid, RecipePatchPreview surface, apply tip,
  * T1 brief chips re-hang (no expand-four-card path).
  * #97: mobile two-col layout, fullscreen dual-tab catalog, single bottom sheet,
  * home tools strip + Pro Studio gate, typed ToolHandoff.
@@ -180,13 +180,9 @@ export {
   type RecipePatchPreviewSurfaceProps,
 } from './recipe-patch-preview-surface';
 
-export {
-  ReuseContentPanel,
-  emptyReuseSelection,
-  type ReuseCarrierOption,
-  type ReuseContentPanelProps,
-  type ReuseSourceOption,
-} from './reuse-content-panel';
+// T30 / #224: the reuse slot panel is unmounted (D-031). It is intentionally
+// not re-exported — reuse is answered in the conversation. The module itself
+// belongs to the delete-after-reshell batch, which is a separate ticket.
 
 export {
   RecipeApplyTip,
