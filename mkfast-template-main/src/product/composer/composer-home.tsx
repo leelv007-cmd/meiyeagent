@@ -49,6 +49,7 @@ import type {
   MarketingIdentityProjection,
   ProductQuoteSnapshot,
   QuestionCard,
+  ResultPanel,
 } from '@meiye/contracts';
 import { composerSubmissionSignedFieldsSchema } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
@@ -115,6 +116,7 @@ import {
 } from './recipe-cards';
 import { RecipeCardsPanel } from './recipe-cards-panel';
 import { QuotaBlockingCard } from './quota-blocking-card';
+import { projectQuotaPassiveView } from './quota-blocking';
 import {
   buildLiveBriefInput,
   buildLiveQuoteInput,
@@ -140,6 +142,8 @@ import {
   ComposerQuestionCard,
   composerQuestionDecision,
 } from './composer-question-card';
+import { composerQuestionHold } from './composer-question-timeout';
+import type { ComposerDeliveryOpenInput } from './composer-delivery-card';
 import { projectComposerSignedPreview } from './composer-signed-preview';
 import {
   applyComposerProgress,
@@ -154,6 +158,17 @@ import {
   serializeComposerSession,
   type ComposerSession,
 } from './composer-session';
+
+/** Which Result Center panel each 成品交付卡 action opens (T31 / #225). */
+const DELIVERY_ACTION_PANELS: Record<
+  ComposerDeliveryOpenInput['action'],
+  ResultPanel
+> = {
+  adjust: 'adjust',
+  adopt: 'result',
+  export: 'delivery',
+  open: 'run',
+};
 
 /**
  * 旧内容换平台 as conversation. Tapping a chip writes the merchant's own
@@ -745,10 +760,16 @@ export function ComposerHome({
 
   useEffect(() => {
     if (!workflowStream.workflowState) return;
+    // 成品版本 rides the same terminal frame as the status, so the delivery card
+    // binds its actions to the revision the server actually delivered.
     setSession((current) =>
-      applyComposerWorkflowState(current, workflowStream.workflowState!)
+      applyComposerWorkflowState(
+        current,
+        workflowStream.workflowState!,
+        workflowStream.harnessDelivery
+      )
     );
-  }, [workflowStream.workflowState]);
+  }, [workflowStream.workflowState, workflowStream.harnessDelivery]);
 
   // 需要用户的一个问题 — the third inbound seam message. Polled while the run is
   // live so a suspended workflow surfaces its card without a page action.
@@ -1155,16 +1176,31 @@ export function ComposerHome({
     setLensState(updateUserText(lensState, value));
   };
 
-  const openDelivery = (input: { workId: string; taskId: string }) => {
+  /**
+   * The delivery card is the only navigation out of the conversation
+   * (ADR-0014 提交后不跳转). Each action opens the Result Center panel that owns
+   * it, bound to the revision the workflow actually delivered — the card never
+   * mutates, so adoption keeps running through the canonical command path.
+   */
+  const openDelivery = (input: ComposerDeliveryOpenInput) => {
     const location = navigateAfterSubmitSuccess({
       workId: input.workId,
       sourceRoute: '/dashboard',
-      panel: 'run',
+      panel: DELIVERY_ACTION_PANELS[input.action],
     });
     void navigate({
       to: '/dashboard/results/$workId',
       params: { workId: input.workId },
-      search: { ...location.search, taskId: input.taskId },
+      search: {
+        ...location.search,
+        taskId: input.taskId,
+        ...(input.revision
+          ? {
+              contentId: input.revision.packageId,
+              versionId: input.revision.versionId,
+            }
+          : {}),
+      },
       replace: false,
     });
   };
@@ -1496,6 +1532,16 @@ export function ComposerHome({
           pendingQuestion ? (
             <ComposerQuestionCard
               disabled={createWork.isPending}
+              // D-116 safety edge ②: quota or an external effect means D-112
+              // wants an explicit confirmation, so the card stops releasing
+              // itself. v1's composer only signs export / assisted_handoff, so
+              // the external branch is not reachable from here yet.
+              hold={composerQuestionHold({
+                externalEffect: Boolean(
+                  destination?.distributionTarget.startsWith('publish:')
+                ),
+                quotaBlocked,
+              })}
               onDecide={(input) => void answerQuestion(input)}
               pending={questionPending}
               question={pendingQuestion}
@@ -1636,27 +1682,33 @@ export function ComposerHome({
         </p>
       ) : null}
 
-      {quotaBlocked ? (
-        <QuotaBlockingCard
-          blocked
-          onRedeem={async ({ command, idempotencyKey }) => {
-            try {
-              await commandP1('redemptions', command, idempotencyKey);
-              await queryClient.invalidateQueries({
-                queryKey: p1QueryKeys.request('entitlements', 'projection'),
-              });
-              return { ok: true };
-            } catch (error) {
-              return {
-                ok: false,
-                message:
-                  error instanceof Error ? error.message : '兑换失败，请重试',
-              };
-            }
-          }}
-          onUnlocked={() => setSubmissionQuotaBlocked(false)}
-        />
-      ) : null}
+      {/* 额度：被动展示，不足才阻塞 (D-043 决定②). Always mounted — the passive
+          line is not a card and gates nothing; only a shortfall raises the
+          blocking card. */}
+      <QuotaBlockingCard
+        blocked={quotaBlocked}
+        passive={projectQuotaPassiveView({
+          available: usageQuery.data?.usage[usageResource].available ?? null,
+          cost: usageCost,
+          resource: usageResource,
+        })}
+        onRedeem={async ({ command, idempotencyKey }) => {
+          try {
+            await commandP1('redemptions', command, idempotencyKey);
+            await queryClient.invalidateQueries({
+              queryKey: p1QueryKeys.request('entitlements', 'projection'),
+            });
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              message:
+                error instanceof Error ? error.message : '兑换失败，请重试',
+            };
+          }
+        }}
+        onUnlocked={() => setSubmissionQuotaBlocked(false)}
+      />
 
       {surfaceQuery.data ? (
         <RecipeCardsPanel

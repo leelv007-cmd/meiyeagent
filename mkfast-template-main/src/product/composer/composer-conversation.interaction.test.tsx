@@ -9,6 +9,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { cardLanguageIssues } from './card-language';
 import {
   ComposerConversation,
   ComposerPromptBar,
@@ -262,6 +263,203 @@ describe('the transcript is a card flow', () => {
     expect(onOpenDelivery).toHaveBeenCalledWith({
       workId: 'work-1',
       taskId: 'task-1',
+      action: 'open',
+      revision: null,
     });
+  });
+});
+
+/**
+ * T31 / #225 — the three outbound seam messages each get their card.
+ */
+describe('进度宣告卡', () => {
+  const emptyStream = projectResultTokenStream({ workspaceKind: 'copy' });
+
+  function withStages(...messages: string[]) {
+    let session = running();
+    messages.forEach((message, index) => {
+      session = applyComposerProgress(session, {
+        eventId: `workflow-1:event:${index + 1}`,
+        workflowId: 'workflow-1',
+        workflowType: 'creation',
+        sequence: index + 1,
+        stage: 'context_injection',
+        state: 'success',
+        occurredAt: '2026-07-25T08:00:00.000Z',
+        message,
+      });
+    });
+    return session;
+  }
+
+  it('groups the 白话进度 announcements into one card, in order', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={withStages(
+          '已听懂这次想表达的重点',
+          '已整理本次可用的门店资料'
+        )}
+        stream={emptyStream}
+      />
+    );
+
+    const card = screen.getByTestId('composer-progress-card');
+    expect(card).toHaveAttribute('data-running', 'true');
+    const lines = within(card).getAllByTestId('composer-stage-line');
+    expect(lines.map((line) => line.textContent)).toEqual([
+      '已听懂这次想表达的重点',
+      '已整理本次可用的门店资料',
+    ]);
+  });
+
+  it('carries no engineering language, cost or internal id', () => {
+    const session = withStages(
+      '已听懂这次想表达的重点',
+      '已整理本次可用的门店资料'
+    );
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+    const card = screen.getByTestId('composer-progress-card');
+    expect(
+      cardLanguageIssues(card.textContent ?? '', [
+        TASK.taskId,
+        TASK.workId,
+        TASK.packageId,
+      ])
+    ).toEqual([]);
+  });
+
+  it('stops marking a stage live once the run is no longer moving', () => {
+    const session = applyComposerWorkflowState(
+      withStages('已整理本次可用的门店资料'),
+      'success'
+    );
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+    expect(screen.getByTestId('composer-progress-card')).toHaveAttribute(
+      'data-running',
+      'false'
+    );
+  });
+});
+
+describe('成品交付卡', () => {
+  const DELIVERY = {
+    packageId: 'package-1',
+    versionId: 'version-7',
+    revision: 3,
+  };
+  const SUMMARY =
+    '第 3 版已经准备好。策略依据：周末到店高峰。版本定位：这是本次适合小红书的主推荐。使用建议：建议先核对内容和预约引导，确认后再发布。';
+
+  function delivered() {
+    const session = applyComposerProgress(running(), {
+      eventId: 'workflow-1:event:9',
+      workflowId: 'workflow-1',
+      workflowType: 'creation',
+      sequence: 9,
+      stage: 'assembly_delivery',
+      state: 'success',
+      occurredAt: '2026-07-25T08:00:00.000Z',
+      message: SUMMARY,
+    });
+    return applyComposerWorkflowState(session, 'success', DELIVERY);
+  }
+
+  const finishedStream = projectResultTokenStream({
+    workspaceKind: 'copy',
+    completed: true,
+    partialCandidates: [
+      { candidateId: 'c1', title: '周末预约', body: '到店立减，先到先得。' },
+    ],
+  });
+
+  it('states the 任务总结 and shows what was delivered', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={delivered()}
+        stream={finishedStream}
+      />
+    );
+
+    expect(screen.getByTestId('composer-delivery-card')).toHaveTextContent(
+      '第 3 版'
+    );
+    expect(screen.getByTestId('composer-delivery-statement')).toHaveTextContent(
+      '策略依据'
+    );
+    expect(screen.getByTestId('composer-delivery-excerpt')).toHaveTextContent(
+      '到店立减'
+    );
+  });
+
+  it('binds every action to the revision the server delivered', async () => {
+    const user = userEvent.setup();
+    const onOpenDelivery = vi.fn();
+    render(
+      <ComposerConversation
+        onOpenDelivery={onOpenDelivery}
+        session={delivered()}
+        stream={finishedStream}
+      />
+    );
+
+    for (const action of ['adopt', 'adjust', 'export'] as const) {
+      onOpenDelivery.mockClear();
+      await user.click(
+        screen.getByTestId(`composer-delivery-action-${action}`)
+      );
+      expect(onOpenDelivery).toHaveBeenCalledWith({
+        workId: 'work-1',
+        taskId: 'task-1',
+        action,
+        revision: DELIVERY,
+      });
+    }
+  });
+
+  it('withholds the actions when no revision was confirmed', () => {
+    // An action pointed at a revision the server never confirmed would be the
+    // second truth ADR-0014 forbids — better no button than a wrong binding.
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={applyComposerWorkflowState(running(), 'success')}
+        stream={finishedStream}
+      />
+    );
+    expect(screen.queryByTestId('composer-delivery-actions')).toBeNull();
+    expect(screen.getByTestId('composer-delivery-card')).toBeInTheDocument();
+  });
+
+  it('carries no engineering language, cost or internal id', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={delivered()}
+        stream={finishedStream}
+      />
+    );
+    const card = screen.getByTestId('composer-delivery-turn');
+    expect(
+      cardLanguageIssues(card.textContent ?? '', [
+        TASK.taskId,
+        TASK.workId,
+        DELIVERY.packageId,
+        DELIVERY.versionId,
+      ])
+    ).toEqual([]);
   });
 });

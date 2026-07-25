@@ -13,7 +13,11 @@
  * (ADR-0014 红线「禁止第二套提交真相」).
  */
 
-import type { HarnessStage, WorkflowProgressEnvelope } from '@meiye/contracts';
+import type {
+  ContentPackageRevisionDelivery,
+  HarnessStage,
+  WorkflowProgressEnvelope,
+} from '@meiye/contracts';
 
 export const COMPOSER_SESSION_STORAGE_VERSION = 'composer-session/v1';
 export const COMPOSER_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -68,13 +72,21 @@ export type ComposerCandidateTurn = {
   taskId: string;
 };
 
-/** 成品预览卡 — clicking it is what opens the Result Center. */
+/**
+ * 成品交付卡 — the third outbound seam message rendered as a card.
+ *
+ * `revision` is the ContentPackage revision the workflow actually delivered,
+ * taken from the terminal state snapshot. Until that frame lands it is null and
+ * the card offers no revision-bound action: an action pointed at a revision the
+ * server never confirmed is exactly the second truth ADR-0014 forbids.
+ */
 export type ComposerDeliveryTurn = {
   kind: 'delivery';
   id: string;
   workId: string;
   taskId: string;
   packageId: string;
+  revision: ContentPackageRevisionDelivery | null;
 };
 
 export type ComposerTurn =
@@ -98,6 +110,13 @@ export type ComposerSession = {
   turns: ComposerTurn[];
   /** Highest accepted progress sequence — replayed frames are idempotent. */
   progressSequence: number;
+  /**
+   * 任务总结 — the 拟人化交付陈述 (策略依据/版本定位/使用建议) core writes as the
+   * `assembly_delivery` success message. Held on the session rather than as a
+   * stage row so the delivery card can state it next to the deliverable it
+   * describes, which is where D-116 puts it.
+   */
+  deliveryStatement: string | null;
 };
 
 export function createComposerSession(sessionId: string): ComposerSession {
@@ -107,6 +126,7 @@ export function createComposerSession(sessionId: string): ComposerSession {
     task: null,
     turns: [],
     progressSequence: -1,
+    deliveryStatement: null,
   };
 }
 
@@ -184,6 +204,10 @@ export function applyComposerProgress(
     progressSequence: frame.sequence,
   };
   if (!frame.message) return next;
+  if (frame.stage === 'assembly_delivery' && frame.state === 'success') {
+    // The 任务总结 belongs to the deliverable, not to the progress rail.
+    return { ...next, deliveryStatement: frame.message };
+  }
   const turn = progressTurn(frame, frame.message);
   const candidateIndex = next.turns.findIndex(
     (item) => item.kind === 'candidate'
@@ -235,14 +259,30 @@ export function applyComposerQuestion(
  */
 export function applyComposerWorkflowState(
   session: ComposerSession,
-  status: 'waiting' | 'running' | 'suspended' | 'success' | 'failed'
+  status: 'waiting' | 'running' | 'suspended' | 'success' | 'failed',
+  delivery?: ContentPackageRevisionDelivery
 ): ComposerSession {
   if (status === 'failed') return { ...session, phase: 'failed' };
   if (status !== 'success') return session;
   const task = session.task;
   if (!task) return session;
-  if (session.turns.some((turn) => turn.kind === 'delivery')) {
-    return { ...session, phase: 'delivered' };
+  const revision = delivery ?? null;
+  const existing = session.turns.find(
+    (turn): turn is ComposerDeliveryTurn => turn.kind === 'delivery'
+  );
+  if (existing) {
+    // A late state frame may be the one that carries the revision — bind it,
+    // but never downgrade a revision already confirmed.
+    if (!revision || existing.revision) {
+      return { ...session, phase: 'delivered' };
+    }
+    return {
+      ...session,
+      phase: 'delivered',
+      turns: session.turns.map((turn) =>
+        turn.kind === 'delivery' ? { ...turn, revision } : turn
+      ),
+    };
   }
   return {
     ...session,
@@ -255,6 +295,7 @@ export function applyComposerWorkflowState(
         workId: task.workId,
         taskId: task.taskId,
         packageId: task.packageId,
+        revision,
       },
     ],
   };

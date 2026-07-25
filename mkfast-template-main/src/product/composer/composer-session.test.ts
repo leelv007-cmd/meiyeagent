@@ -162,6 +162,8 @@ test('success promotes the run into a delivery card instead of navigating', () =
     workId: 'work-1',
     taskId: 'task-1',
     packageId: 'package-1',
+    // No 成品版本 frame in this fold, so the card gets no revision to bind to.
+    revision: null,
   });
   // A stale question never survives delivery.
   assert.equal(
@@ -176,6 +178,86 @@ test('success promotes the run into a delivery card instead of navigating', () =
     1
   );
   assert.equal(session.phase, delivered.phase);
+});
+
+test('the 任务总结 lands on the delivery card, not in the progress rail', () => {
+  // D-116 names 任务总结 as its own delivery-language output: 策略依据/版本定位/
+  // 使用建议 describe the deliverable, so the card that carries the deliverable
+  // is where the merchant reads them.
+  const summary =
+    '第 3 版已经准备好。策略依据：周末到店高峰。版本定位：这是本次适合小红书的主推荐。使用建议：建议先核对内容和预约引导，确认后再发布。';
+  const session = applyComposerProgress(
+    runningSession(),
+    progress({ message: summary, sequence: 4, stage: 'assembly_delivery' })
+  );
+  assert.equal(session.deliveryStatement, summary);
+  assert.equal(
+    session.turns.some((turn) => turn.kind === 'stage'),
+    false
+  );
+  // A non-terminal frame on the same stage is still a progress announcement.
+  const running = applyComposerProgress(
+    runningSession(),
+    progress({
+      message: '正在整理成品',
+      sequence: 5,
+      stage: 'assembly_delivery',
+      state: 'running',
+    })
+  );
+  assert.equal(running.deliveryStatement, null);
+  assert.equal(
+    running.turns.some((turn) => turn.kind === 'stage'),
+    true
+  );
+});
+
+test('the delivery card binds the revision the server actually delivered', () => {
+  const delivery = {
+    packageId: 'package-1',
+    versionId: 'version-7',
+    revision: 3,
+  };
+  let session = applyComposerWorkflowState(
+    runningSession(),
+    'success',
+    delivery
+  );
+  const card = session.turns.at(-1);
+  assert.equal(card?.kind, 'delivery');
+  assert.deepEqual(card?.kind === 'delivery' ? card.revision : null, delivery);
+
+  // A replayed terminal frame that arrived without the snapshot must not blank
+  // out a revision already confirmed — the actions would silently unbind.
+  session = applyComposerWorkflowState(session, 'success');
+  const after = session.turns.at(-1);
+  assert.deepEqual(
+    after?.kind === 'delivery' ? after.revision : null,
+    delivery
+  );
+});
+
+test('a delivery card created before the revision arrived binds it late', () => {
+  // The status can land first; the card must not stay unbound forever.
+  let session = applyComposerWorkflowState(runningSession(), 'success');
+  const unbound = session.turns.at(-1);
+  assert.equal(unbound?.kind === 'delivery' ? unbound.revision : 'x', null);
+
+  const delivery = {
+    packageId: 'package-1',
+    versionId: 'version-7',
+    revision: 1,
+  };
+  session = applyComposerWorkflowState(session, 'success', delivery);
+  const bound = session.turns.at(-1);
+  assert.deepEqual(
+    bound?.kind === 'delivery' ? bound.revision : null,
+    delivery
+  );
+  assert.equal(
+    session.turns.filter((turn) => turn.kind === 'delivery').length,
+    1
+  );
 });
 
 test('failure keeps the transcript so the merchant can retry in place', () => {

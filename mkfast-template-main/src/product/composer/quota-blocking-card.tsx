@@ -20,6 +20,7 @@ import {
   setQuotaRedeemCode,
   showQuotaBlocking,
   type QuotaBlockingState,
+  type QuotaPassiveView,
   QUOTA_BLOCK_OPEN_PLANS_LABEL,
 } from './quota-blocking';
 
@@ -39,6 +40,12 @@ export type QuotaBlockingCardProps = {
   onUnlocked?: () => void;
   /** Optional plans link href (defaults to settings credits). */
   plansHref?: string;
+  /**
+   * 被动展示 (D-043 决定②/③). Present on the main path, where it states what
+   * this run will use and what is left and gates nothing — the merchant's tap
+   * on 生成 is the confirmation. Omit it and the card shows only when blocked.
+   */
+  passive?: QuotaPassiveView;
   className?: string;
 };
 
@@ -47,6 +54,7 @@ export function QuotaBlockingCard({
   onRedeem,
   onUnlocked,
   plansHref = '/settings/credits',
+  passive,
   className,
 }: QuotaBlockingCardProps) {
   const [state, setState] = useState<QuotaBlockingState>(() =>
@@ -63,13 +71,23 @@ export function QuotaBlockingCard({
   }, [blocked, state.blocked, state.unlocked]);
 
   const view = projectQuotaBlockingView(state);
+  const idle = !blocked && !state.blocked && !state.unlocked;
 
-  if (!blocked && !state.blocked && !state.unlocked) {
-    return null;
-  }
-
-  if (!view.visible) {
-    return null;
+  // Main path: a passive line, no card chrome, no action, nothing to dismiss.
+  // 「无冲突路径 0 张阻塞卡」 (D-043 决定①) is a claim about what blocks, and
+  // this blocks nothing — it is the 额度 the merchant is entitled to see.
+  if (idle || !view.visible) {
+    if (!passive?.visible) return null;
+    return (
+      <p
+        className={cn('text-muted text-xs', className)}
+        data-quota-short={passive.short ? 'true' : 'false'}
+        data-testid="composer-quota-passive"
+      >
+        {passive.notice}
+        {passive.shortNotice ? ` · ${passive.shortNotice}` : ''}
+      </p>
+    );
   }
 
   const handleRedeem = async () => {
