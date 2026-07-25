@@ -8,7 +8,7 @@
 
 依赖：`git merge-base --is-ancestor 422fc00f HEAD` → exit 0
 
-最终 rebase 基线：`313ee234`（包含 T14 合入后的前向 revert；本分支用 rebase 重放，不做 revert-the-revert）
+最终 rebase 基线：`09683313`（包含 T14 合入后的前向 revert、T41 与 T27；本分支用 rebase 重放，不做 revert-the-revert）
 
 rebase 证明：`git merge-base --is-ancestor main HEAD` → exit 0
 
@@ -140,7 +140,7 @@ supplyFreezes: 2
   tests/e2e/specs/intent-routing-http-sse.spec.ts
 ```
 
-结果：2 passed（1.4m）。冷启租户第一条文案与定制入口通用模式均完成，不再出现 `ProductUsage task ... already has another supply freeze`。
+结果：3 passed（2.0m）。冷启租户第一条文案、定制入口通用模式与回答语义问题后同 Task 续跑均完成，不再出现 `ProductUsage task ... already has another supply freeze`。
 
 受影响包类型检查：
 
@@ -156,7 +156,7 @@ pnpm --filter @meiye/core typecheck
 DATABASE_URL="$TEST_DATABASE_URL" pnpm --filter @meiye/core test
 ```
 
-运行前已验证 `DATABASE_URL` 与 `TEST_DATABASE_URL` 均指向车道隔离库 `meiye_be2`。结果：2124 tests，2114 pass，0 fail，10 skip；10 个 skip 均为需显式 opt-in 的 provider-live/MinIO 测试，不属于 T14 DoD。
+运行前已验证 `DATABASE_URL` 与 `TEST_DATABASE_URL` 均指向车道隔离库 `meiye_be2`。结果：2137 tests，2127 pass，0 fail，10 skip；10 个 skip 均为需显式 opt-in 的 provider-live/MinIO 测试，不属于 T14 DoD。
 
 差异卫生：
 
