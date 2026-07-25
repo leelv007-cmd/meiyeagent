@@ -333,6 +333,13 @@ export class ProductQuoteService {
       throw new P1DomainError('INVALID_STATE', 'taskId is required to confirm.');
     }
 
+    if (quote.taskId && quote.taskId !== input.taskId) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        `Quote ${input.quoteId} is already bound to task ${quote.taskId}.`,
+      );
+    }
+
     // Idempotent: same task already bound to this quote past quoted.
     if (
       quote.taskId === input.taskId &&

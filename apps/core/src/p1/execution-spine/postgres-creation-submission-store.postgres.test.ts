@@ -6,7 +6,10 @@ import { Pool } from "pg";
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
 import { PostgresOperationsRepository } from "../operations/postgres-repository.js";
-import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
+import {
+  createCreationExecutionSnapshot,
+  type ComposerSubmissionRequest,
+} from "./creation-execution-snapshot.js";
 import {
   PostgresCreationSubmissionPersistence,
   PostgresCreationSubmissionStore,
@@ -335,6 +338,163 @@ test(
 );
 
 test(
+  "Postgres Coordinator replays a settled submission before mutable admission and reserves once",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-replay-${suffix}`;
+    const quoteId = `spine-quote-${suffix}`;
+    const taskId = `spine-task-${suffix}`;
+    const cleanupSubmission = reserveRecord(
+      workspaceId,
+      quoteId,
+      suffix,
+    );
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      const quote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+        taskId,
+      );
+      const request = coordinatorRequest({
+        quoteId,
+        quoteRevision: quote.revision,
+        suffix,
+        workspaceId,
+      });
+      let admissionCalls = 0;
+      let harnessStarts = 0;
+      const coordinator = new CreationSubmissionCoordinator(
+        store,
+        {
+          async start() {
+            harnessStarts += 1;
+          },
+        },
+        {
+          createId(prefix) {
+            return prefix === "work"
+              ? `spine-work-${suffix}`
+              : `spine-package-${suffix}`;
+          },
+          now() {
+            return "2026-07-22T09:00:00.000Z";
+          },
+        },
+        {
+          async admit() {
+            admissionCalls += 1;
+            const current = await billingRepository.getQuote(
+              workspaceId,
+              quoteId,
+            );
+            if (current?.lifecycleStatus !== "confirmed") {
+              throw new Error(
+                `Mutable admission rejected ${current?.lifecycleStatus ?? "missing"} quote.`,
+              );
+            }
+            return {
+              identity: { id: "identity-1", revision: "identity-r1" },
+              modelPolicy: {
+                id: "policy-1",
+                mode: "fixed",
+                revision: "policy-r1",
+              },
+              recipeBinding: {
+                contentModules: ["social_cover"],
+                deliverables: [
+                  {
+                    aspectRatio: "3:4",
+                    id: "copy-main",
+                    kind: "copy",
+                    order: 0,
+                    quantity: 1,
+                  },
+                ],
+                lens: "copy",
+              },
+              rights: {
+                revision: "rights-r1",
+                summary: "authorized source assets",
+              },
+              route: { id: "route-1", revision: "route-r1" },
+              taskId,
+            };
+          },
+        },
+      );
+
+      const created = await coordinator.submit(request);
+      assert.equal(created.replayed, false);
+      const billing = new DurableProductBillingService(billingRepository);
+      await billing.dispatchAttempt({
+        attemptId: `attempt-${suffix}`,
+        deploymentId: "copy-deployment-1",
+        providerCost: {
+          currency: "CNY",
+          estimatedCostMicros: 100,
+          evidenceKind: "estimated",
+          supplierPriceRevision: "supplier-price-1",
+          unit: "request",
+          unitPriceMicros: 100,
+        },
+        taskId,
+        workspaceId,
+      });
+      await billing.settleTask({
+        attemptId: `attempt-${suffix}`,
+        deploymentId: "copy-deployment-1",
+        status: "completed",
+        taskId,
+        workspaceId,
+      });
+      assert.equal(
+        (await billing.getQuote(quoteId, workspaceId))?.lifecycleStatus,
+        "settled",
+      );
+
+      const replays = await Promise.all(
+        Array.from({ length: 12 }, () => coordinator.submit(request)),
+      );
+      assert.ok(replays.every((replayed) => replayed.replayed));
+      assert.equal(admissionCalls, 1);
+      assert.equal(harnessStarts, 1);
+      const counts = await pool.query<{
+        submissions: number;
+        usage: number;
+      }>(
+        `SELECT
+           (SELECT count(*)::int FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1) AS submissions,
+           (SELECT count(*)::int FROM p1_product_billing_usage
+             WHERE workspace_id = $1 AND task_id = $2) AS usage`,
+        [workspaceId, taskId],
+      );
+      assert.deepEqual(counts.rows[0], { submissions: 1, usage: 1 });
+    } finally {
+      await cleanup(pool, workspaceId, cleanupSubmission).catch(
+        () => undefined,
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   "Postgres Coordinator reserves image and video shells with the same immutable snapshot and usage lineage",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
@@ -524,6 +684,39 @@ function reserveRecord(
     work: { id: `spine-work-${suffix}` },
   };
   return submission;
+}
+
+function coordinatorRequest(input: {
+  quoteId: string;
+  quoteRevision: string;
+  suffix: string;
+  workspaceId: string;
+}): ComposerSubmissionRequest {
+  return {
+    actorId: "owner-1",
+    briefConfirmation: { id: "brief-1", revision: "brief-r1" },
+    briefContext: { id: "brief-context-1", revision: 1 },
+    catalogModel: { id: "copy-model-1", revision: "catalog-r1" },
+    contentPackagePlatform: "douyin",
+    creationMode: "customized",
+    deliverable: {
+      aspectRatio: "3:4",
+      kind: "copy_document",
+      quantity: 1,
+    },
+    distributionTarget: "export",
+    idempotencyKey: `submission-${input.suffix}`,
+    intent: "为夏日护理项目写一条预约文案",
+    quote: { id: input.quoteId, revision: input.quoteRevision },
+    recipe: { id: "recipe-1", revision: "recipe-r1" },
+    sources: {
+      assets: [
+        { id: "asset-1", revision: "asset-r1", role: "reference" },
+      ],
+    },
+    surface: { id: "surface-1", revision: "surface-r1" },
+    workspaceId: input.workspaceId,
+  };
 }
 
 async function seedQuote(

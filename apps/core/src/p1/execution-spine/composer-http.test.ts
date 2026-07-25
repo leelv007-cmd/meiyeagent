@@ -632,6 +632,24 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		{ state: "reserved" | "starting" | "started"; leaseId?: string }
 	>();
 
+	async readReceipt(input: {
+		workspaceId: string;
+		idempotencyKey: string;
+		payloadHash: string;
+	}) {
+		const existing = this.claims.get(
+			`${input.workspaceId}:${input.idempotencyKey}`,
+		);
+		if (!existing) return { kind: "missing" as const };
+		if (existing.payloadHash !== input.payloadHash) {
+			return { kind: "conflict" as const };
+		}
+		return {
+			kind: "existing" as const,
+			submission: structuredClone(existing.submission),
+		};
+	}
+
 	async claim(input: CreationSubmissionStoreClaim) {
 		const key = `${input.workspaceId}:${input.idempotencyKey}`;
 		const existing = this.claims.get(key);
@@ -777,6 +795,44 @@ test("a rejected Composer admission does not claim a shell or start Harness", as
 	);
 	assert.equal(submissions.count(), 0);
 	assert.equal(starter.starts.length, 0);
+});
+
+test("an exact replay returns its receipt before mutable admission runs again", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	let admissionCalls = 0;
+	let quoteLifecycle: "confirmed" | "settled" = "confirmed";
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		{
+			async admit(input) {
+				admissionCalls += 1;
+				if (quoteLifecycle !== "confirmed") {
+					throw new Error(`Quote is ${quoteLifecycle}`);
+				}
+				return fixedAdmission().admit(input);
+			},
+		},
+	);
+	const command = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	const created = await coordinator.submit(command);
+	assert.equal(created.replayed, false);
+	quoteLifecycle = "settled";
+	const replays = await Promise.all(
+		Array.from({ length: 12 }, () => coordinator.submit(command)),
+	);
+
+	assert.ok(replays.every((replayed) => replayed.replayed));
+	assert.equal(admissionCalls, 1);
+	assert.equal(submissions.count(), 1);
+	assert.equal(starter.starts.length, 1);
 });
 
 test("durable recovery reclaims a committed submission whose first Harness start failed", async () => {

@@ -133,6 +133,64 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(result.settled.quote.billedSeconds, undefined);
   });
 
+  it('keeps a confirmed quote bound to one task while same-task confirmations replay', async () => {
+    const quotes = service();
+    const quote = quotes.buildQuote(perRequestInput('quote-task-binding'));
+    quotes.confirm({ quoteId: quote.quoteId, taskId: 'task-bound' });
+
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 12 }, (_, index) =>
+        Promise.resolve().then(() =>
+          quotes.confirm({
+            quoteId: quote.quoteId,
+            taskId: index % 3 === 0 ? 'task-bound' : 'task-conflict',
+          }),
+        ),
+      ),
+    );
+    const bound = quotes.getQuote(quote.quoteId);
+    assert.equal(bound?.taskId, 'task-bound');
+    for (const [index, attempt] of attempts.entries()) {
+      const taskId = index % 3 === 0 ? 'task-bound' : 'task-conflict';
+      if (taskId === 'task-bound') {
+        assert.equal(attempt.status, 'fulfilled');
+      } else {
+        assert.ok(
+          attempt.status === 'rejected' &&
+            attempt.reason instanceof P1DomainError &&
+            attempt.reason.code === 'IDEMPOTENCY_CONFLICT',
+        );
+      }
+    }
+
+    quotes.reserve({ quoteId: quote.quoteId, resource: 'copy' });
+    quotes.dispatch({
+      attemptId: 'attempt-task-binding',
+      deploymentId: 'dep-a',
+      quoteId: quote.quoteId,
+    });
+    const settled = quotes.settle({
+      quoteId: quote.quoteId,
+      trustedUsage: { actualSeconds: 0, kind: 'provider_usage' },
+    });
+    assert.equal(
+      quotes.confirm({ quoteId: quote.quoteId, taskId: 'task-bound' })
+        .lifecycleStatus,
+      'settled',
+    );
+    assert.throws(
+      () =>
+        quotes.confirm({
+          quoteId: quote.quoteId,
+          taskId: 'task-conflict',
+        }),
+      (error: unknown) =>
+        error instanceof P1DomainError &&
+        error.code === 'IDEMPOTENCY_CONFLICT',
+    );
+    assert.equal(quotes.getUsage('task-bound')?.id, settled.usage.id);
+  });
+
   it('quote→confirm→reserve→dispatch→settle for per_output_second', async () => {
     const quotes = service();
     const input = perSecondInput();
