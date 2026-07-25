@@ -18,6 +18,9 @@ import {
   example_store_industry_hair_care,
   example_store_industry_hair_growth,
   example_store_industry_skin_management,
+  example_store_service_hair_care,
+  example_store_service_hair_growth,
+  example_store_service_skin_management,
 } from '@/locale/paraglide/messages';
 import type { Locale } from '@/lib/locale';
 import {
@@ -198,7 +201,24 @@ export function todayRecommendationIntent(recommendation: {
   });
 }
 
+/**
+ * The sample the merchant just picked already says which kind of service the
+ * draft is about, so the draft carries it instead of making the chain stop and
+ * ask. Store facts still stay with the merchant.
+ */
+export function exampleStoreServiceLabel(industry: ExampleStoreIndustry) {
+  switch (industry) {
+    case 'hair_care':
+      return example_store_service_hair_care();
+    case 'skin_management':
+      return example_store_service_skin_management();
+    case 'hair_growth':
+      return example_store_service_hair_growth();
+  }
+}
+
 export function exampleRemixIntent(example: {
+  industry: ExampleStoreIndustry;
   platform: 'xiaohongshu' | 'douyin';
   title: string;
 }) {
@@ -207,6 +227,7 @@ export function exampleRemixIntent(example: {
       ? creation_entry_platform_xiaohongshu()
       : creation_entry_platform_douyin();
   return creation_entry_example_remix_intent({
+    category: exampleStoreServiceLabel(example.industry),
     platform,
     title: shortLabel(example.title),
   });

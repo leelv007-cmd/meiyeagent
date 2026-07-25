@@ -277,7 +277,11 @@ export function ExampleStorePreview({
             <Button
               disabled={!selected}
               onClick={() => {
-                if (selected) onRemix(exampleRemixIntent(selected));
+                if (selected) {
+                  onRemix(
+                    exampleRemixIntent({ ...selected, industry: example.industry })
+                  );
+                }
               }}
               type="button"
               variant="outline"

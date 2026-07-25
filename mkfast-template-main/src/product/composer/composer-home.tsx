@@ -1111,7 +1111,13 @@ export function ComposerHome({
       <DashboardHomeSurface
         loading={product.loading}
         onPrefill={(intent) => {
-          setLensState((current) => updateUserText(current, intent));
+          // Same idiom as the landing handoff restore above: pick the lens the
+          // recommendation/sample is written for, then seed the draft. Leaving
+          // the lens unselected would make the merchant re-pick it before the
+          // draft can be submitted.
+          setLensState((current) =>
+            updateUserText(selectLens(current, 'copy'), intent)
+          );
           intentRef.current?.focus();
         }}
         onRefresh={product.refresh}

@@ -176,12 +176,31 @@ test('example browsing states in both locales that it uses no allowance', () => 
 
 test('example remix keeps the selected angle and only the reusable structure', () => {
   const intent = exampleRemixIntent({
+    industry: 'hair_care',
     platform: 'xiaohongshu',
     title: '阴天也透亮的显白猫眼',
   });
   assert.match(intent, /阴天也透亮的显白猫眼/);
   assert.match(intent, /开场钩子/);
   assert.doesNotMatch(intent, /弥鹿|299|素材/);
+});
+
+test('example remix says which service the draft is about', () => {
+  // A draft that names its own service does not make the chain stop and ask.
+  for (const [industry, service] of [
+    ['hair_care', '头皮护理'],
+    ['skin_management', '皮肤管理'],
+    ['hair_growth', '养发护理'],
+  ] as const) {
+    const intent = exampleRemixIntent({
+      industry,
+      platform: 'douyin',
+      title: '第一次做护理，70 分钟里发生了什么',
+    });
+    assert.match(intent, new RegExp(service));
+    // Store facts still belong to the merchant, never to the sample.
+    assert.match(intent, /门店与价格事实由我稍后补充/);
+  }
 });
 
 test('example remix draft handoff accepts only a bounded explicit intent', () => {
