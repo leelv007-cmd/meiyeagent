@@ -245,7 +245,7 @@ export type ComposerPromptBarProps = {
   running: boolean;
   creationMode: ComposerCreationMode;
   onCreationModeChange: (mode: ComposerCreationMode) => void;
-  /** D-081 lens radiogroup — 自由创作线存续, hidden on the customized line. */
+  /** D-081 lens radiogroup. See the render site for why it is on both lines. */
   lensSlot?: React.ReactNode;
   attachmentSlot?: React.ReactNode;
   destination: string | null;
@@ -315,7 +315,16 @@ export function ComposerPromptBar({
         </Segment.Item>
       </Segment>
 
-      {creationMode === 'free' ? lensSlot : null}
+      {/*
+        ADR-0014 wants outputKind compiled from the intent so the customized
+        line never asks 对口, but that compiler (T18 ①段) is not wired to the
+        recipe/quote selection yet: without a lens there is no catalog
+        operation and no quote, and picking a default here would be inventing a
+        product decision this ticket does not own. So the selector stays on
+        both lines for now — D-081's radiogroup contract, which D-043 already
+        counts as one of its two activations.
+      */}
+      {lensSlot}
 
       <PromptInput
         isDisabled={disabled}
