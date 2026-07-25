@@ -301,6 +301,75 @@ test("media delivery blocks malicious visible copy before the canonical writer",
 	assert.equal(writes, 0);
 });
 
+test("image exact text is included in the visible-copy delivery gate", async () => {
+	const request = harnessInput("image", "package-image-exact-text-redline");
+	const brief = imageBriefWithExactText("卫健委批准");
+	const media = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				return completedResult("image");
+			},
+		},
+		{
+			async verify(input) {
+				return {
+					passed: true,
+					expected: input.expected,
+					observed: input.expected,
+					reason: "Exact text matches.",
+				};
+			},
+		},
+	);
+	const selection = await media.execute({
+		brief,
+		context: contextSnapshot(),
+		request,
+		workflowId: request.executionSnapshot!.task.id,
+	});
+	let writes = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{ create() { throw new Error("Media delivery does not compile a copy brief."); } },
+		media,
+		{
+			async write(input) {
+				writes += 1;
+				return {
+					packageId: input.packageId,
+					revision: input.expectedRevision + 1,
+					versionId: input.version.id,
+				};
+			},
+		},
+		() => "2026-07-22T09:00:01.000Z",
+	);
+
+	await assert.rejects(
+		ports.assembleMediaAndDeliver({
+			workflowId: request.executionSnapshot!.task.id,
+			request,
+			declaration: {
+				normalizedIntent: "制作医美活动海报",
+				taskType: "promotion_groupbuy_conversion",
+				deliveryLayer: "finished_media",
+				relevantAssetCategories: ["promotion_activity"],
+				usedAssetCategories: ["promotion_activity"],
+				route: "customized",
+				routingSource: "model",
+				implicitConstraints: [],
+			},
+			context: contextSnapshot(),
+			brief,
+			selection,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("critical_fact_source"),
+	);
+	assert.equal(writes, 0);
+});
+
 test("the video-native compiler has no ffmpeg or composition dependency", async () => {
 	const source = await readFile(
 		new URL("./unified-media-stage-ports.ts", import.meta.url),

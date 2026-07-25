@@ -152,6 +152,39 @@ test('canonical external gates reject missing approval and a stale revision', as
   );
 });
 
+test('authorize rejects malicious visible copy and reports the triggering claim', async () => {
+  const repository = new MemoryApprovalReceiptRepository();
+  const service = new ContentPackageApprovalService(repository);
+  const receipt = await service.approve({
+    ...binding,
+    actorId: 'owner-a',
+    idempotencyKey: 'approve-visible-redline',
+    requestId: seedApprovalRequest(repository),
+  });
+  const authorization = policyInput();
+  authorization.policy.candidate.visibleText = [
+    { field: 'title', text: '卫健委批准的正规医美机构' },
+  ];
+
+  await assert.rejects(
+    service.authorize({
+      ...authorization,
+      receiptId: receipt.id,
+    }),
+    (error: unknown) => {
+      const rejected = error as ApprovalReceiptError & {
+        triggeredClaims?: Array<{ kind: string; value: string }>;
+      };
+      return (
+        rejected instanceof ApprovalReceiptError &&
+        rejected.gateId === 'critical_fact_source' &&
+        rejected.triggeredClaims?.[0]?.kind === 'qualification' &&
+        rejected.triggeredClaims[0]?.value.includes('卫健委批准')
+      );
+    },
+  );
+});
+
 test('an approval cannot be reused for another account, platform, time, cost, or purpose', async () => {
   const repository = new MemoryApprovalReceiptRepository();
   const service = new ContentPackageApprovalService(repository);

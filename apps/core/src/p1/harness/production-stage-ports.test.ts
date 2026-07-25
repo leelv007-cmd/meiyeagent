@@ -538,6 +538,19 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
   assert.deepEqual(executionDelivery.inputs[0]?.marketing?.rightsRefs, [
     'asset-1',
   ]);
+  assert.deepEqual(
+    (
+      executionDelivery.inputs[0] as unknown as {
+        claimExtraction?: { claims: unknown[]; inputHash: string; revision: string };
+      }
+    )?.claimExtraction,
+    {
+      claims: [],
+      inputHash:
+        '903cda994883323cb975b5ea3a016f98d2ad8e572fb8c6385405457489bcc2bd',
+      revision: 'visible-claim-extractor-v1',
+    },
+  );
   assert.equal(
     executionDelivery.inputs[0]?.version.conversionHook,
     '私信预约',
@@ -642,7 +655,12 @@ test('assembly blocks unsupported visible claims before writing a deliverable re
       error instanceof HarnessSelectionError &&
       error.gateIds.includes('critical_fact_source') &&
       error.merchantMessage ===
-        '成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。',
+        '成品文案含有未被门店已确认资料支持的资质，暂不能交付。' &&
+      error.triggeredClaims?.some(
+        (claim) =>
+          claim.kind === 'qualification' &&
+          claim.value.includes('国家认证五星机构'),
+      ) === true,
   );
   assert.equal(executionDelivery.inputs.length, 0);
 });

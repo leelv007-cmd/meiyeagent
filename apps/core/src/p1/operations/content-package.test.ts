@@ -375,6 +375,182 @@ describe('ContentPackage application service contract', () => {
     );
   });
 
+  it('blocks unsupported visible claims before saving a merchant package edit', async () => {
+    const { context, operations, operationsService } = setup();
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'image_text'
+    );
+
+    await assert.rejects(
+      operationsService.editContentPackageVersion(
+        { ...context, actor: 'owner' },
+        {
+          baseVersionId: contentPackage.currentVersionId!,
+          changes: {
+            body: '卫健委批准的正规医美机构',
+            orderedAssetIds: ['owned-image_text-1'],
+            title: '三甲医院合作单位',
+            topics: [],
+          },
+          expectedRevision: contentPackage.revision,
+          packageId: contentPackage.id,
+        }
+      ),
+      (error: unknown) =>
+        error instanceof OperationsError &&
+        error.code === 'CONTENT_PACKAGE_POLICY_REJECTED' &&
+        error.details?.gateId === 'critical_fact_source'
+    );
+    const stored = await operationsService.getContentPackage(
+      { ...context, actor: 'owner' },
+      contentPackage.id
+    );
+    assert.equal(stored.revision, contentPackage.revision);
+  });
+
+  it('blocks unsupported visible claims before saving a merchant variant edit', async () => {
+    const { context, operations, operationsService } = setup();
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'image_text'
+    );
+    const state = await operations.loadWorkspace(context.workspaceId);
+    assert.ok(state);
+    const stored = state.contentPackages.find(
+      (candidate) => candidate.id === contentPackage.id
+    );
+    assert.ok(stored);
+    const variantVersionId = `${stored.id}-douyin-v1`;
+    stored.variants = (
+      ['xiaohongshu', 'douyin', 'video_account'] as const
+    ).map((platform) => {
+      const currentVersionId = `${stored.id}-${platform}-v1`;
+      return {
+        currentVersionId,
+        id: `${stored.id}-${platform}`,
+        platform,
+        versions: [
+          {
+            body: '门店基础正文',
+            createdAt: NOW,
+            id: currentVersionId,
+            orderedAssetIds: ['owned-image_text-1'],
+            title: '门店基础标题',
+            topics: [],
+          },
+        ],
+      };
+    });
+    await operations.saveWorkspace(state);
+
+    await assert.rejects(
+      operationsService.editContentPackageVariant(
+        { ...context, actor: 'owner' },
+        {
+          baseVersionId: variantVersionId,
+          changes: {
+            body: '满1000减300',
+            orderedAssetIds: ['owned-image_text-1'],
+            title: '秒杀价388',
+            topics: [],
+          },
+          expectedRevision: stored.revision,
+          packageId: stored.id,
+          platform: 'douyin',
+        }
+      ),
+      (error: unknown) =>
+        error instanceof OperationsError &&
+        error.code === 'CONTENT_PACKAGE_POLICY_REJECTED' &&
+        error.details?.gateId === 'critical_fact_source'
+    );
+    const reloaded = await operationsService.getContentPackage(
+      { ...context, actor: 'owner' },
+      stored.id
+    );
+    assert.equal(reloaded.revision, stored.revision);
+  });
+
+  it('blocks unsupported visible claims before starting a ZIP export', async () => {
+    let exportEffects = 0;
+    const { context, operations, operationsService } = setup({
+      contentPackageExporter: {
+        async export() {
+          exportEffects += 1;
+          return {
+            artifactAssetId: 'blocked-export',
+            artifactObjectKey: 'workspace-content-package/exports/blocked.zip',
+            contentType: 'application/zip',
+            sha256: 'a'.repeat(64),
+            sizeBytes: 128,
+          };
+        },
+      },
+    });
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'image_text'
+    );
+    const state = await operations.loadWorkspace(context.workspaceId);
+    assert.ok(state);
+    const stored = state.contentPackages.find(
+      (candidate) => candidate.id === contentPackage.id
+    );
+    assert.ok(stored);
+    const versionId = `${stored.id}-xiaohongshu-redline`;
+    stored.variants = (
+      ['xiaohongshu', 'douyin', 'video_account'] as const
+    ).map((platform) => {
+      const currentVersionId =
+        platform === 'xiaohongshu'
+          ? versionId
+          : `${stored.id}-${platform}-safe`;
+      return {
+        currentVersionId,
+        id: `${stored.id}-${platform}`,
+        platform,
+        versions: [
+          {
+            body:
+              platform === 'xiaohongshu'
+                ? '新客免费领取一次深层清洁'
+                : '门店基础正文',
+            createdAt: NOW,
+            id: currentVersionId,
+            orderedAssetIds: ['owned-image_text-1'],
+            title:
+              platform === 'xiaohongshu' ? '卫健委批准' : '门店基础标题',
+            topics: [],
+          },
+        ],
+      };
+    });
+    await operations.saveWorkspace(state);
+
+    await assert.rejects(
+      operationsService.exportContentPackage(
+        { ...context, actor: 'owner' },
+        {
+          expectedRevision: stored.revision,
+          packageId: stored.id,
+          platform: 'xiaohongshu',
+        }
+      ),
+      (error: unknown) =>
+        error instanceof OperationsError &&
+        error.code === 'CONTENT_PACKAGE_POLICY_REJECTED' &&
+        error.details?.gateId === 'critical_fact_source'
+    );
+    assert.equal(exportEffects, 0);
+  });
+
   it('blocks frozen workspaces with a recheck inside the workspace lock and keeps legacy workspaces writable', async () => {
     let owner: 'legacy' | 'frozen' | 'contentpackage' = 'contentpackage';
     const { context, operations, operationsService } = setup({

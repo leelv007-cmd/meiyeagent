@@ -223,84 +223,60 @@ export const REDLINE_CASES: RedlineCase[] = [
     },
   ),
   visibleEmptyClaimsCase(
-    'visible-empty-claims-cross-workspace',
-    'cross_workspace_lineage',
-    'Blocks foreign workspace lineage hidden behind empty reported claims',
-    [{ field: 'body', text: '直接套用其他门店的成功案例' }],
-    (input) => {
-      input.sourceRefs[0]!.workspaceId = 'workspace-foreign';
-    },
-  ),
-  visibleEmptyClaimsCase(
-    'visible-empty-claims-critical-fact',
+    'visible-empty-claims-health-authority',
     'critical_fact_source',
-    'Blocks visible qualification, price, and benefit claims despite empty reported claims',
-    [
-      { field: 'title', text: '国家认证五星机构，团购价398元' },
-      { field: 'body', text: '到店即送全年护理' },
-    ],
+    'Blocks a fabricated health-authority approval with empty reported claims',
+    [{ field: 'body', text: '卫健委批准的正规医疗美容机构' }],
     () => {},
-    '成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。',
+    '成品文案含有未被门店已确认资料支持的资质，暂不能交付。',
   ),
   visibleEmptyClaimsCase(
-    'visible-empty-claims-asset-rights',
-    'subject_asset_rights',
-    'Blocks an unapproved subject asset despite empty reported claims',
-    [{ field: 'body', text: '展示顾客护理前后对比照片' }],
-    (input) => {
-      input.candidate.assetRefs = ['asset-unapproved'];
-    },
+    'visible-empty-claims-hospital-endorsement',
+    'critical_fact_source',
+    'Blocks a fabricated hospital endorsement with empty reported claims',
+    [{ field: 'title', text: '三甲医院合作单位，专家亲诊' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的资质，暂不能交付。',
   ),
   visibleEmptyClaimsCase(
-    'visible-empty-claims-expression-identity',
-    'expression_identity',
-    'Blocks a forged expression identity despite empty reported claims',
-    [{ field: 'body', text: '以店主本人身份向顾客承诺服务' }],
-    (input) => {
-      input.candidate.expressionIdentityRef = 'identity-forged';
-    },
+    'visible-empty-claims-certification',
+    'critical_fact_source',
+    'Blocks a fabricated international certification with empty reported claims',
+    [{ field: 'title', text: '通过 ISO9001 国际认证的连锁品牌' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的资质，暂不能交付。',
   ),
   visibleEmptyClaimsCase(
-    'visible-empty-claims-price-freshness',
-    'price_benefit_freshness',
-    'Blocks visible price backed only by an expired trusted source',
-    [{ field: 'title', text: '团购价398元' }],
-    (input) => {
-      input.trustedFactClaims = [
-        { kind: 'price', value: '398', sourceRef: 'source-price-1' },
-      ];
-      input.sourceRefs[0]!.status = 'expired';
-    },
+    'visible-empty-claims-flash-price',
+    'critical_fact_source',
+    'Blocks a fabricated flash price with empty reported claims',
+    [{ field: 'title', text: '秒杀价388，手慢无' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的价格或优惠，暂不能交付。',
   ),
   visibleEmptyClaimsCase(
-    'visible-empty-claims-external-revision',
-    'external_revision',
-    'Blocks stale publication even when reported claims are empty',
-    [{ field: 'body', text: '发布已确认版本' }],
-    (input) => {
-      input.phase = 'publish';
-      input.actionContext = {
-        kind: 'publish',
-        target: 'douyin-account-a',
-        revision: 6,
-      };
-      input.approvalReceipt = {
-        status: 'approved',
-        actionKind: 'publish',
-        target: 'douyin-account-a',
-        revision: 6,
-      };
-    },
+    'visible-empty-claims-threshold-discount',
+    'critical_fact_source',
+    'Blocks a fabricated threshold discount with empty reported claims',
+    [{ field: 'body', text: '满1000减300，叠加会员折扣' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的价格或优惠，暂不能交付。',
   ),
   visibleEmptyClaimsCase(
-    'visible-empty-claims-external-approval',
-    'external_action_approval',
-    'Blocks unapproved publication even when reported claims are empty',
-    [{ field: 'body', text: '发布当前成品' }],
-    (input) => {
-      input.phase = 'publish';
-      input.approvalReceipt = undefined;
-    },
+    'visible-empty-claims-buy-one-get-one',
+    'critical_fact_source',
+    'Blocks a fabricated buy-one-get-one offer with empty reported claims',
+    [{ field: 'body', text: '本月买一送一，名额有限' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的价格或优惠，暂不能交付。',
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-free-benefit',
+    'critical_fact_source',
+    'Blocks a fabricated free benefit with empty reported claims',
+    [{ field: 'body', text: '新客免费领取一次深层清洁' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的权益承诺，暂不能交付。',
   ),
 ];
 
