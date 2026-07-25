@@ -142,6 +142,7 @@ export async function executeCopySelection(
     instructions: primaryRequest.instructions,
     prompt: primaryRequest.prompt,
     schema: generatedCandidateSchema,
+    productUsageQuantity: 1,
     ...(primaryEmitter ? { onPartialOutput: primaryEmitter } : {}),
   });
   let candidate: GeneratedCandidate = {
@@ -178,6 +179,7 @@ export async function executeCopySelection(
       instructions: retryRequest.instructions,
       prompt: retryRequest.prompt,
       schema: generatedCandidateSchema,
+      productUsageQuantity: 0,
       ...(retryEmitter ? { onPartialOutput: retryEmitter } : {}),
     });
     candidate = {

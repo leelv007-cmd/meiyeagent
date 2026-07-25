@@ -33,7 +33,7 @@ test("image and video use the existing Model Supply path with stable submission 
 			brief: mediaBrief(kind),
 			context: {} as HarnessContextSnapshot,
 			request,
-			workflowId: `workflow-${kind}`,
+			workflowId: `task-${kind}`,
 		});
 
 		assert.deepEqual(submissions, [
@@ -41,9 +41,9 @@ test("image and video use the existing Model Supply path with stable submission 
 				actorId: "owner-1",
 				billingQuoteRevision: "quote-r1",
 				billingTaskId: `task-${kind}`,
-				correlationId: `workflow-${kind}`,
+				correlationId: `task-${kind}`,
 				dataClass: [],
-				idempotencyKey: `harness-media:workflow-${kind}:${kind}`,
+				idempotencyKey: `harness-media:task-${kind}:${kind}`,
 				input:
 					kind === "image"
 						? {
@@ -57,7 +57,6 @@ test("image and video use the existing Model Supply path with stable submission 
 								referenceAssetIds: ["asset-1"],
 							},
 				operation: kind === "image" ? "image.generate" : "video.generate",
-				productUsageQuantity: 0,
 				prompt:
 					kind === "image"
 						? mediaBrief(kind).prompt

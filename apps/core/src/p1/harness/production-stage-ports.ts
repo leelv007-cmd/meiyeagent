@@ -87,12 +87,7 @@ export interface HarnessCopyDeliveryPort {
 }
 
 export interface HarnessStructuredNodeRunnerFactory {
-  create(input: {
-    workspaceId: string;
-    actorId: string;
-    billingTaskId?: string;
-    billingQuoteRevision?: string;
-  }): StructuredNodeRunner;
+  create(input: { workspaceId: string; actorId: string }): StructuredNodeRunner;
 }
 
 export class HarnessCopyScopeError extends Error {
@@ -453,16 +448,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   }
 
   private runner(request: HarnessWorkflowInput) {
-    const snapshot = request.executionSnapshot;
     return this.runners.create({
       workspaceId: request.workspaceId,
       actorId: request.actorId,
-      ...(snapshot
-        ? {
-            billingTaskId: snapshot.task.id,
-            billingQuoteRevision: snapshot.quote.revision,
-          }
-        : {}),
     });
   }
 

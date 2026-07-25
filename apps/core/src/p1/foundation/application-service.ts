@@ -44,8 +44,6 @@ function payloadHash(value: unknown) {
 
 type WriteOwner = 'legacy' | 'frozen' | 'p1';
 
-export const ZERO_VALUE_USAGE_RESERVATION_PREFIX = 'zero-value-usage:';
-
 const NEW_P1_SIDE_EFFECTS = new Set([
   'advanced-canvas:adopt_advanced_canvas_output',
   'asset-memory:confirm_asset_intake_fact',
@@ -643,7 +641,7 @@ export class P1ApplicationService {
             'Generation reservation amount does not match.',
           );
         }
-        if (!reservation && input.usageAmount > 0) {
+        if (!reservation) {
           const projection = projectUsage(usage);
           if (projection.available < input.usageAmount) {
             throw new P1DomainError(
@@ -1048,30 +1046,20 @@ export class P1ApplicationService {
           (event) => event.reservationId === job.usageReservationId &&
             (event.action === 'commit' || event.action === 'refund' || event.action === 'expire')
         );
-        if (
-          !reservation &&
-          !isZeroValueUsageReservation(job.usageReservationId)
-        ) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Usage reservation was not found.',
-          );
-        }
+        if (!reservation) throw new P1DomainError('INVALID_STATE', 'Usage reservation was not found.');
         if (!terminal) {
-          if (reservation) {
-            await store.appendUsageEvent({
-              id: `asset:${asset.id}:commit`,
-              workspaceId: context.workspaceId,
-              resource: job.operation,
-              action: 'commit',
-              amount: reservation.amount,
-              reservationId: job.usageReservationId,
-              reason: 'owned_asset_delivered',
-              actorId: context.userId,
-              correlationId: context.correlationId,
-              createdAt: now,
-            });
-          }
+          await store.appendUsageEvent({
+            id: `asset:${asset.id}:commit`,
+            workspaceId: context.workspaceId,
+            resource: job.operation,
+            action: 'commit',
+            amount: reservation.amount,
+            reservationId: job.usageReservationId,
+            reason: 'owned_asset_delivered',
+            actorId: context.userId,
+            correlationId: context.correlationId,
+            createdAt: now,
+          });
         } else if (terminal.action !== 'commit') {
           throw new P1DomainError('INVALID_STATE', 'Usage reservation was already released.');
         }
@@ -1100,15 +1088,7 @@ export class P1ApplicationService {
         const reservation = events.find(
           (event) => event.action === 'reserve' && event.reservationId === job.usageReservationId
         );
-        if (
-          !reservation &&
-          !isZeroValueUsageReservation(job.usageReservationId)
-        ) {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'Usage reservation was not found.',
-          );
-        }
+        if (!reservation) throw new P1DomainError('INVALID_STATE', 'Usage reservation was not found.');
         const terminal = events.find(
           (event) => event.reservationId === job.usageReservationId &&
             (event.action === 'commit' || event.action === 'refund' || event.action === 'expire')
@@ -1118,14 +1098,12 @@ export class P1ApplicationService {
         }
         const now = new Date().toISOString();
         if (!terminal) {
-          if (reservation) {
-            await store.appendUsageEvent({
-              id: `job:${job.id}:refund`, workspaceId: context.workspaceId, resource: job.operation,
-              action: 'refund', amount: reservation.amount, reservationId: job.usageReservationId,
-              reason: input.reason, actorId: context.userId, correlationId: context.correlationId,
-              createdAt: now,
-            });
-          }
+          await store.appendUsageEvent({
+            id: `job:${job.id}:refund`, workspaceId: context.workspaceId, resource: job.operation,
+            action: 'refund', amount: reservation.amount, reservationId: job.usageReservationId,
+            reason: input.reason, actorId: context.userId, correlationId: context.correlationId,
+            createdAt: now,
+          });
         }
         const failed = { ...job, status: 'failed' as const, updatedAt: now };
         await store.updateGenerationJob(failed);
@@ -1162,9 +1140,6 @@ export class P1ApplicationService {
             event.reservationId === job.usageReservationId
         );
         if (!reservation) {
-          if (isZeroValueUsageReservation(job.usageReservationId)) {
-            return { kind: 'already_released' as const, amount: 0 };
-          }
           throw new P1DomainError(
             'INVALID_STATE',
             'Usage reservation was not found.'
@@ -1386,7 +1361,6 @@ async function settleUsageReservation(
       event.reservationId === job.usageReservationId,
   );
   if (!reservation) {
-    if (isZeroValueUsageReservation(job.usageReservationId)) return null;
     throw new P1DomainError('INVALID_STATE', 'Usage reservation was not found.');
   }
   const terminal = events.find(
@@ -1419,10 +1393,6 @@ async function settleUsageReservation(
   };
   await store.appendUsageEvent(event);
   return event;
-}
-
-function isZeroValueUsageReservation(reservationId: string) {
-  return reservationId.startsWith(ZERO_VALUE_USAGE_RESERVATION_PREFIX);
 }
 
 export function projectUsage(events: UsageEvent[]): UsageProjection {

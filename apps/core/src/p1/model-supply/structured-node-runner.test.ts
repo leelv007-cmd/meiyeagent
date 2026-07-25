@@ -6,7 +6,6 @@ import {
   ModelSupplyApplicationService,
   RecordedProviderExecutionPort,
   type ModelSupplyLedgerPort,
-  type ModelSupplyLedgerCheckpointInput,
   type ModelSupplyResult,
 } from './index.js';
 import {
@@ -140,20 +139,6 @@ test('structured runner replays one effect without a second model call or billin
   assert.equal(executor.calls, 1);
   assert.equal(ledger.checkpoints, 1);
   assert.equal(ledger.settlements, 1);
-  assert.deepEqual(
-    ledger.submissions.map((submission) => ({
-      billingQuoteRevision: submission.billingQuoteRevision,
-      billingTaskId: submission.billingTaskId,
-      productUsageQuantity: submission.productUsageQuantity,
-    })),
-    [
-      {
-        billingQuoteRevision: 'quote-r1',
-        billingTaskId: 'task-1',
-        productUsageQuantity: 0,
-      },
-    ],
-  );
 });
 
 test('structured runner rejects one effect key reused with another payload', async () => {
@@ -177,7 +162,7 @@ test('structured runner rejects one effect key reused with another payload', asy
   assert.equal(ledger.settlements, 1);
 });
 
-test('structured runner keeps both the primary and policy retry cost-only', async () => {
+test('structured runner can execute one policy retry without a second product charge', async () => {
   const ledger = new CountingLedger();
   const executor = new CountingStructuredExecutor({ normalized: '安全版本' });
   const runner = createRunner(ledger, executor);
@@ -191,21 +176,18 @@ test('structured runner keeps both the primary and policy retry cost-only', asyn
   await runner.run({
     ...base,
     effectIdempotencyKey: 'wf:workflow-3:s4:copy:c01',
+    productUsageQuantity: 1,
     prompt: '{"attempt":"primary"}',
   });
   await runner.run({
     ...base,
     effectIdempotencyKey: 'wf:workflow-3:s4:copy:c01-retry',
+    productUsageQuantity: 0,
     prompt: '{"attempt":"policy-retry"}',
   });
 
   assert.equal(executor.calls, 2);
-  assert.deepEqual(
-    ledger.submissions.map(
-      (submission) => submission.productUsageQuantity,
-    ),
-    [0, 0],
-  );
+  assert.deepEqual(ledger.productUsageQuantities, [1, 0]);
 });
 
 test('structured runner fences every auto provider attempt before fallback', async () => {
@@ -269,8 +251,6 @@ function createRunner(
     workspaceId: 'workspace-1',
     actorId: 'user-1',
     selection: { mode: 'fixed', catalogModelId: 'llm-harness' },
-    billingTaskId: 'task-1',
-    billingQuoteRevision: 'quote-r1',
   });
 }
 
@@ -322,8 +302,6 @@ function createAutoRunner(
     workspaceId: 'workspace-1',
     actorId: 'user-1',
     selection: { mode: 'auto', profile: 'quality' },
-    billingTaskId: 'task-1',
-    billingQuoteRevision: 'quote-r1',
   });
 }
 
@@ -388,11 +366,10 @@ function rejectedBeforeAcceptance(message: string) {
 class CountingLedger implements ModelSupplyLedgerPort {
   checkpoints = 0;
   settlements = 0;
-  submissions: ModelSupplyLedgerCheckpointInput['submission'][] = [];
+  readonly productUsageQuantities: number[] = [];
 
-  async checkpointAttempt(input: ModelSupplyLedgerCheckpointInput) {
+  async checkpointAttempt() {
     this.checkpoints += 1;
-    this.submissions.push(structuredClone(input.submission));
     return { replayed: false };
   }
 
@@ -400,6 +377,7 @@ class CountingLedger implements ModelSupplyLedgerPort {
     result: ModelSupplyResult;
   }) {
     this.settlements += 1;
+    this.productUsageQuantities.push(_input.result.usage.quantity);
   }
 }
 

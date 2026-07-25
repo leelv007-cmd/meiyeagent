@@ -93,8 +93,6 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 			},
 			this.runners.create({
 				actorId: input.request.actorId,
-				billingQuoteRevision: requireSnapshot(input.request).quote.revision,
-				billingTaskId: requireSnapshot(input.request).task.id,
 				workspaceId: input.request.workspaceId,
 			}),
 			metrics,
@@ -269,7 +267,7 @@ function mediaSubmission(
 	}
 	return {
 		actorId: request.actorId,
-		billingTaskId: snapshot.task.id,
+		billingTaskId: workflowId,
 		billingQuoteRevision: snapshot.quote.revision,
 		correlationId: workflowId,
 		dataClass: [],
@@ -287,7 +285,6 @@ function mediaSubmission(
 					referenceAssetIds: [...brief.referenceAssetIds],
 				},
 		operation: brief.kind === "image" ? "image.generate" : "video.generate",
-		productUsageQuantity: 0,
 		prompt:
 			brief.kind === "image"
 				? brief.prompt
