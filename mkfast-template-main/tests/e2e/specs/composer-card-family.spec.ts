@@ -352,10 +352,19 @@ test.describe('T31 三类卡与确认卡', () => {
     );
     const waited = (Date.now() - openedAt) / 1_000;
     const posted = released.postDataJSON() as {
-      decision?: { state?: string };
+      idempotencyKey?: string;
+      decision?: { state?: string; value?: string };
+      patch?: { value?: string };
     };
     // 默认值路径: the ignored route is the harness's own「不补充也继续」.
     expect(posted.decision?.state).toBe('ignored');
+    // Nobody said anything, so nothing may be recorded as if they had. This
+    // value is not only ledger provenance — core writes it into the workflow's
+    // own intent context as `Merchant decision (<field>): <value>`.
+    expect(posted.decision?.value).toBe('未作答');
+    expect(posted.patch?.value).toBe('未作答');
+    // A countdown release stays separable from an explicit 「继续」.
+    expect(posted.idempotencyKey).toContain('timed_out');
     // It waited out the countdown rather than firing on mount.
     expect(waited, `released after ${waited}s`).toBeGreaterThan(15);
     expect(waited, `released after ${waited}s`).toBeLessThan(90);
