@@ -382,9 +382,6 @@ export function ComposerPromptBar({
             />
           </PromptInput.Content>
           <PromptInput.Toolbar>
-            <PromptInput.ToolbarStart>
-              {attachmentSlot}
-            </PromptInput.ToolbarStart>
             <PromptInput.ToolbarEnd>
               <PromptInput.Send
                 aria-label={submitLabel}
@@ -395,6 +392,16 @@ export function ComposerPromptBar({
           </PromptInput.Toolbar>
         </PromptInput.Shell>
       </PromptInput>
+
+      {/*
+        Outside the Shell on purpose. The upload surface carries the T5 授权
+        disclosure, which expands into a full card; inside PromptInput.Toolbar
+        it is laid out as a toolbar item, so the expanded panel is clipped by
+        the toolbar row and the Shell's own layers swallow clicks meant for the
+        confirm button. A full-width block keeps it in the composer card — where
+        it belongs — without borrowing the toolbar's geometry.
+      */}
+      {attachmentSlot ? <div className="mt-1">{attachmentSlot}</div> : null}
 
       {/* 「发到哪」— one question, one tap. The双字段 split stays server-side. */}
       <div
