@@ -1138,6 +1138,9 @@ export function ComposerHome({
       briefInputRef.current = briefInput;
       projection = await requestComposerBrief(briefInput);
     } catch {
+      // The merchant turn is already in the transcript; mark the attempt failed
+      // so the container does not sit in `submitting` forever.
+      setSession((current) => failComposerSession(current));
       toast.error(workbench_operation_failed());
       return;
     } finally {
@@ -1572,7 +1575,12 @@ export function ComposerHome({
         <BriefSurface
           view={briefView}
           onConfirm={handleBriefConfirm}
-          onCancel={() => setBriefState(cancelBriefSurface(briefState).state)}
+          onCancel={() => {
+            setBriefState(cancelBriefSurface(briefState).state);
+            // Cancelling abandons this attempt, so the transcript goes back to
+            // empty rather than keeping a turn that never ran.
+            setSession(createComposerSession(sessionIdRef.current));
+          }}
           disabled={createWork.isPending}
         />
       ) : null}
