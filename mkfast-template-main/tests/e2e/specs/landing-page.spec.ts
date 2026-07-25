@@ -75,7 +75,7 @@ test.describe('LIKEPAGE marketing landing page', () => {
     monitor.expectNoErrors('nav anchors');
   });
 
-  test('pricing tiers speak the pilot contract without a purchase promise', async ({
+  test('pricing tiers render the approved wording with the pilot disclosure', async ({
     page,
   }) => {
     const monitor = installPageHealthMonitor(page);
@@ -87,29 +87,31 @@ test.describe('LIKEPAGE marketing landing page', () => {
     await expect(pricing).toContainText('免费');
     await expect(pricing).toContainText('Growth');
     await expect(pricing).toContainText('¥399');
-    await expect(pricing).toContainText('推荐');
-    await expect(pricing).toContainText('未开放');
+    await expect(pricing).toContainText('上线特惠');
+    await expect(pricing).toContainText('敬请期待');
 
-    // D-124: the pilot ships zero payment, so the page may not run a promo and
-    // may not imply a tier can be bought. Activation is the redemption code.
-    const pricingText = (await pricing.innerText()).replace(/\s+/g, '');
-    expect(pricingText).not.toContain('上线特惠');
-    expect(pricingText).not.toContain('敬请期待');
-    expect(pricingText).not.toMatch(/立即(购买|订阅|升级)/);
-    expect(pricingText).toContain('兑换码');
-    // The paid tier's CTA no longer speaks in upgrade/subscribe verbs.
+    // The paid tier's CTA is exactly the approved label and reaches
+    // registration; the lifetime tier is a disabled non-link.
     const paidCta = pricing.locator('a[href="/auth/register"]').last();
-    await expect(paidCta).toContainText('兑换码');
-    await expect(paidCta).not.toContainText('升级');
+    await expect(paidCta).toHaveText('升级 Growth');
 
     const registerLinks = pricing.locator('a[href="/auth/register"]');
     expect(await registerLinks.count()).toBeGreaterThanOrEqual(2);
 
     const lifetime = pricing.locator('[aria-disabled="true"]');
     await expect(lifetime.first()).toBeVisible();
+    await expect(lifetime.first()).toHaveText('敬请期待');
     expect(
       await lifetime.first().evaluate((el) => el.closest('a') === null)
     ).toBe(true);
+
+    // D-124: the badge stands on the footnote's disclosure — online payment is
+    // not open during the pilot and credits come from a redemption code. That
+    // sentence is what keeps the block honest, so it has to be on the page.
+    const pricingText = (await pricing.innerText()).replace(/\s+/g, '');
+    expect(pricingText).toContain('线上支付未开放');
+    expect(pricingText).toContain('兑换码');
+    expect(pricingText).not.toMatch(/立即(购买|订阅|升级)/);
     monitor.expectNoErrors('pricing tiers');
   });
 
@@ -241,7 +243,7 @@ test.describe('LIKEPAGE marketing landing page', () => {
     const pricing = page.locator('#pricing');
     await pricing.scrollIntoViewIfNeeded();
     await expect(pricing).toContainText('¥399');
-    await expect(pricing).toContainText('未开放');
+    await expect(pricing).toContainText('线上支付未开放');
     monitor.expectNoErrors('reduced motion');
   });
 });

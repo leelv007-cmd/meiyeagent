@@ -131,14 +131,23 @@ test('pricing stays readable without checkout and every public pricing CTA reach
   assert.ok((ctaHtml.match(/href="\/pricing"/g) ?? []).length >= 1);
   assert.ok((ctaHtml.match(/href="\/auth\/register"/g) ?? []).length >= 2);
   assert.match(ctaHtml, /aria-disabled="true"/u);
-  assert.match(ctaHtml, />未开放</u);
-  assert.doesNotMatch(ctaHtml, /<a[^>]*>[^<]*未开放/u);
+  assert.match(ctaHtml, />敬请期待</u);
+  assert.doesNotMatch(ctaHtml, /<a[^>]*>[^<]*敬请期待/u);
 
-  // T36 / D-124: the rendered landing must not contradict /pricing's own
-  // "purchase not open" projection, and must carry no fabricated promo.
-  assert.doesNotMatch(ctaHtml, /上线特惠/u);
-  assert.doesNotMatch(ctaHtml, /立即(?:购买|订阅|升级)/u);
+  // The user's own pricing wording renders: the launch-special badge and an
+  // 升级 Growth CTA that reaches registration.
+  assert.match(ctaHtml, />上线特惠</u);
+  assert.match(
+    ctaHtml,
+    /<a[^>]*href="\/auth\/register"[^>]*>升级 Growth<\/a>/u
+  );
+
+  // T36 / D-124: the badge stands on the footnote's disclosure, so the rendered
+  // landing still has to say online payment is not open and credits come from a
+  // redemption code — it may not contradict /pricing's own projection.
+  assert.match(ctaHtml, /线上支付未开放/u);
   assert.match(ctaHtml, /兑换码/u);
+  assert.doesNotMatch(ctaHtml, /立即(?:购买|订阅|升级)/u);
   assert.doesNotMatch(pricingHtml, /上线特惠/u);
 });
 
