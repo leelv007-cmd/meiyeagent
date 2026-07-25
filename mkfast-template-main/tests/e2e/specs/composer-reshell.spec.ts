@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
+import { answerComposerQuestions } from '../fixtures/ui-journey';
 
 /**
  * T30 / #224 — D-114 定制创作主容器 acceptance.
@@ -115,6 +116,14 @@ test.describe('D-114 Composer conversation container', () => {
     );
     expect(announced).not.toContain(run.taskId);
 
+    // 只需确认一件事. This intent names no service category, so D-111 asks for
+    // one and the run suspends until the merchant answers — in the conversation,
+    // not on another screen. Answering here is the journey, not a workaround.
+    expect(
+      await answerComposerQuestions(page),
+      'a run that suspends on a question must surface it as a card in the flow'
+    ).toBeGreaterThan(0);
+
     // token 流式中间态: the candidate area must show partial text before the
     // run finishes, not a single final flash.
     const stream = page.getByTestId('composer-candidate-stream');
@@ -170,6 +179,9 @@ test.describe('D-114 Composer conversation container', () => {
     await expect(page.getByTestId('composer-stage-line').first()).toBeVisible({
       timeout: 120_000,
     });
+    // The pending question survives the refresh too — it is server state the
+    // restored session re-subscribes to, not something the tab was holding.
+    await answerComposerQuestions(page);
     await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
       timeout: 180_000,
     });
@@ -316,6 +328,36 @@ test.describe('D-114 Composer conversation container', () => {
           document.documentElement.clientWidth
       );
       expect(overflow).toBeLessThanOrEqual(1);
+
+      // 走查截图 — the ticket asks for a visual pass, not just assertions.
+      await page.screenshot({
+        fullPage: true,
+        path: `../.scratch/t30-composer-reshell-2026-07-25/composer-mobile-${theme}.png`,
+      });
+    });
+
+    test(`the container renders on desktop in the ${theme} theme`, async ({
+      page,
+      request,
+    }) => {
+      const user = await registerE2EUser(request);
+      await loginByForm(page, user);
+      await seedConfirmedStore(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.emulateMedia({ colorScheme: theme });
+      await page.goto('/dashboard');
+
+      await expect(page.getByTestId('composer-home')).toBeVisible();
+      await expect(page.getByTestId('composer-prompt-bar')).toBeVisible();
+      // The retired slot forms must be absent in the walkthrough shot too.
+      await expect(page.getByTestId('composer-settings-row')).toHaveCount(0);
+      await expect(
+        page.getByTestId('composer-reuse-content-panel')
+      ).toHaveCount(0);
+      await page.screenshot({
+        fullPage: true,
+        path: `../.scratch/t30-composer-reshell-2026-07-25/composer-desktop-${theme}.png`,
+      });
     });
   }
 });

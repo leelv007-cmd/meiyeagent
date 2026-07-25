@@ -115,48 +115,15 @@ export async function submitComposerJourney(
     page.getByTestId('composer-quote-line'),
     'submit must bind the server quote before creation'
   ).toBeVisible({ timeout: 30_000 });
-  const createResponsePromise = page.waitForResponse(
-    (response) => {
-      if (
-        response.request().method() !== 'POST' ||
-        !response.url().includes('/api/core/p1/commands')
-      ) {
-        return false;
-      }
-      try {
-        const body = response.request().postDataJSON() as {
-          action?: unknown;
-          module?: unknown;
-        };
-        return (
-          body.module === 'operations' && body.action === 'create_creative_work'
-        );
-      } catch {
-        return false;
-      }
-    },
-    { timeout: 60_000 }
-  );
-  const submitResponsePromise = page.waitForResponse(
-    (response) => {
-      if (
-        response.request().method() !== 'POST' ||
-        !response.url().includes('/api/core/p1/commands')
-      ) {
-        return false;
-      }
-      try {
-        const body = response.request().postDataJSON() as {
-          action?: unknown;
-          module?: unknown;
-        };
-        return (
-          body.module === 'operations' && body.action === 'submit_creative_work'
-        );
-      } catch {
-        return false;
-      }
-    },
+  // T08 new seam. The client no longer emits the old two-command dance
+  // (`operations.create_creative_work` then `operations.submit_creative_work`
+  // on `/api/core/p1/commands`) — `composer/z1-cutover-retirement.static.test.ts`
+  // asserts those actions are never emitted again — so waiting for them could
+  // only ever time out. One POST now carries the whole submission.
+  const submissionResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
     { timeout: 60_000 }
   );
   await page.getByTestId('composer-submit').click();
@@ -176,36 +143,41 @@ export async function submitComposerJourney(
     await confirm.click();
   }
 
-  const createResponse = await createResponsePromise;
+  const submissionResponse = await submissionResponsePromise;
+  const submissionBody = await submissionResponse.text();
+  // 202 is the honesty gate, and a stronger one than the old `job.status`:
+  // `CreationSubmissionCoordinator.submit` awaits `startHarness` before it
+  // answers, so a 202 means the Harness workflow really started — not merely
+  // that a Job row was written.
   expect(
-    createResponse.ok(),
-    `create_creative_work failed: ${await createResponse.text()}`
-  ).toBeTruthy();
-  const submitResponse = await submitResponsePromise;
-  const submitResponseBody = await submitResponse.text();
-  const submitEnvelope = JSON.parse(submitResponseBody) as {
+    submissionResponse.status(),
+    `composer submission must be accepted with 202; body=${submissionBody}`
+  ).toBe(202);
+  const submission = JSON.parse(submissionBody) as {
     data?: {
-      job?: {
-        errorCode?: string;
-        errorMessage?: string;
-        failureReason?: string;
-        status?: string;
-      };
-      error?: { message?: string };
+      contentPackage?: { id?: string };
+      snapshot?: { id?: string };
+      task?: { id?: string };
+      usageReservation?: { id?: string };
+      work?: { id?: string };
     };
     error?: { message?: string };
   };
-  expect(
-    submitResponse.ok(),
-    `submit_creative_work failed: ${submitResponseBody}`
-  ).toBeTruthy();
-  // Fixture mode can settle before the HTTP response returns; accept the full
-  // async lifecycle envelope (running) or an auditable completed fast-path.
-  // Never accept missing job / failed / submitting-only without a real Job.
-  expect(
-    submitEnvelope.data?.job?.status,
-    `submit_creative_work must return a real Job (running or completed fast-path); body=${submitResponseBody}`
-  ).toMatch(/^(running|completed)$/u);
+  // The one response carries every id the old pair of responses used to split
+  // between them; a blank in any of them is a half-built submission.
+  for (const [field, value] of [
+    ['task', submission.data?.task?.id],
+    ['work', submission.data?.work?.id],
+    ['contentPackage', submission.data?.contentPackage?.id],
+    ['snapshot', submission.data?.snapshot?.id],
+    ['usageReservation', submission.data?.usageReservation?.id],
+  ] as const) {
+    expect(
+      value,
+      `the 202 must carry a real ${field} id; body=${submissionBody}`
+    ).toBeTruthy();
+  }
+  const submittedWorkId = submission.data!.work!.id!;
 
   // ADR-0014「提交后不跳转」. Submitting keeps the merchant in the conversation;
   // the run finishes as a 成品预览卡 and clicking that card is what opens the
@@ -215,6 +187,7 @@ export async function submitComposerJourney(
     page,
     'submitting must not navigate away from the Composer conversation'
   ).not.toHaveURL(/\/dashboard\/results\//u);
+  await answerComposerQuestions(page);
   const deliveryCard = page.getByTestId('composer-delivery-card');
   await expect(deliveryCard).toBeVisible({ timeout: 120_000 });
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);
@@ -227,10 +200,65 @@ export async function submitComposerJourney(
     /^\/dashboard\/results\/([^/]+)$/u
   );
   expect(
-    match?.[1],
-    'result route must carry the exact created workId'
-  ).toBeTruthy();
-  return decodeURIComponent(match![1]!);
+    match?.[1] ? decodeURIComponent(match[1]) : undefined,
+    'result route must carry the exact workId the 202 returned'
+  ).toBe(submittedWorkId);
+  return submittedWorkId;
+}
+
+/**
+ * 只需确认一件事 — answer whatever the run asks, then hand back.
+ *
+ * A live run suspends on a Harness structured decision whenever D-111 cannot
+ * infer a field from the intent (observed: `…:s1:industry_category`, free-text,
+ * no options). Until it is answered the DBOS workflow stays PENDING, so no
+ * token and no 成品预览卡 ever arrive — a journey that does not answer is not
+ * slow, it is stuck. Whether a run asks at all depends on the intent, so this
+ * tolerates zero questions and returns how many it actually answered.
+ *
+ * Not on the D-043 budget path: the counter stops at first token, and a run
+ * that asks has not produced one yet. Journeys that assert an activation
+ * budget must use an intent the router can resolve on its own.
+ */
+export async function answerComposerQuestions(
+  page: Page,
+  { timeoutMs = 120_000 }: { timeoutMs?: number } = {}
+): Promise<number> {
+  const question = page.getByTestId('composer-question-card');
+  const delivery = page.getByTestId('composer-delivery-card');
+  const stream = page.getByTestId('composer-candidate-stream');
+  const deadline = Date.now() + timeoutMs;
+  let answered = 0;
+
+  while (Date.now() < deadline) {
+    if (await delivery.isVisible()) break;
+    // The stream section only exists once the turn is on screen; asking for its
+    // attribute before that would block on the default timeout instead of
+    // falling through to the poll below.
+    const streamed = (await stream.count())
+      ? await stream.getAttribute('data-has-token')
+      : null;
+    if (streamed === 'true') break;
+    if (!(await question.isVisible())) {
+      await page.waitForTimeout(1_000);
+      continue;
+    }
+    // Pin the id so a follow-up question is not mistaken for this one lingering.
+    const questionId = await question.getAttribute('data-question-id');
+    const freeText = page.getByTestId('composer-question-answer');
+    if (await freeText.isVisible()) {
+      await freeText.fill('皮肤管理');
+      await page.getByTestId('composer-question-submit').click();
+    } else {
+      await page.getByTestId('composer-question-skip').click();
+    }
+    await expect(
+      page.locator(`[data-question-id="${questionId}"]`),
+      'the answered question must leave the conversation'
+    ).toHaveCount(0, { timeout: 60_000 });
+    answered += 1;
+  }
+  return answered;
 }
 
 /**
