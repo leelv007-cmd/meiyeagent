@@ -18,9 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   admin_redemption_actions,
-  admin_redemption_batch_count,
   admin_redemption_code,
-  admin_redemption_code_optional,
   admin_redemption_code_placeholder,
   admin_redemption_codes_count,
   admin_redemption_codes_title,
@@ -77,23 +75,17 @@ const STATUS_LABELS: Record<string, () => string> = {
   expired: admin_redemption_status_expired,
 };
 
-export function canCreateRedemptionBatch(input: {
+export function canRecordRedemptionCode(input: {
   amounts: Record<GrantResource, string>;
-  batchCount: string;
-  explicitCode: string;
+  code: string;
   expiresAt: string;
 }) {
   const amountValues = Object.values(input.amounts).map(Number);
-  const count = Number(input.batchCount);
-  const normalizedExplicitCode = input.explicitCode.trim().toUpperCase();
+  const normalizedCode = input.code.trim().toUpperCase();
   return (
     amountValues.every((amount) => Number.isInteger(amount) && amount >= 0) &&
     amountValues.some((amount) => amount > 0) &&
-    (normalizedExplicitCode.length === 0 ||
-      (count === 1 && /^[A-Z0-9_-]{4,64}$/.test(normalizedExplicitCode))) &&
-    Number.isInteger(count) &&
-    count >= 1 &&
-    count <= 200 &&
+    /^[A-Z0-9_-]{4,64}$/.test(normalizedCode) &&
     (!input.expiresAt || Number.isFinite(Date.parse(input.expiresAt)))
   );
 }
@@ -106,8 +98,7 @@ export function AdminRedemptionControl() {
     video: '0',
     audio: '0',
   });
-  const [batchCount, setBatchCount] = useState('1');
-  const [explicitCode, setExplicitCode] = useState('');
+  const [code, setCode] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
 
   const listQuery = useQuery({
@@ -121,7 +112,6 @@ export function AdminRedemptionControl() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const count = Number(batchCount);
       const grants = Object.fromEntries(
         Object.entries(amounts)
           .map(([resource, amount]) => [resource, Number(amount)] as const)
@@ -130,13 +120,10 @@ export function AdminRedemptionControl() {
       return commandP1<RedemptionCodeRow[]>(
         'redemptions',
         {
-          action: count > 1 ? 'batch_create' : 'create',
+          action: 'create',
           payload: {
             grants,
-            count,
-            ...(explicitCode.trim() && count === 1
-              ? { code: explicitCode.trim() }
-              : {}),
+            code: code.trim(),
             ...(expiresAt
               ? { expiresAt: new Date(expiresAt).toISOString() }
               : {}),
@@ -147,7 +134,7 @@ export function AdminRedemptionControl() {
     },
     onSuccess: () => {
       toast.success(admin_redemption_create_success());
-      setExplicitCode('');
+      setCode('');
       void queryClient.invalidateQueries({
         queryKey: ['admin', 'redemptions', 'list'],
       });
@@ -182,10 +169,9 @@ export function AdminRedemptionControl() {
   });
 
   const rows = listQuery.data ?? [];
-  const canCreate = canCreateRedemptionBatch({
+  const canCreate = canRecordRedemptionCode({
     amounts,
-    batchCount,
-    explicitCode,
+    code,
     expiresAt,
   });
 
@@ -221,31 +207,12 @@ export function AdminRedemptionControl() {
             </div>
           ))}
           <div className="grid gap-2">
-            <Label htmlFor="redeem-count">
-              {admin_redemption_batch_count()}
-            </Label>
-            <Input
-              id="redeem-count"
-              inputMode="numeric"
-              min={1}
-              max={200}
-              step={1}
-              type="number"
-              value={batchCount}
-              onChange={(event) => setBatchCount(event.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="redeem-code">
-              {admin_redemption_code_optional()}
-            </Label>
+            <Label htmlFor="redeem-code">{admin_redemption_code()}</Label>
             <Input
               id="redeem-code"
               maxLength={64}
-              value={explicitCode}
-              onChange={(event) =>
-                setExplicitCode(event.target.value.toUpperCase())
-              }
+              value={code}
+              onChange={(event) => setCode(event.target.value.toUpperCase())}
               placeholder={admin_redemption_code_placeholder()}
             />
           </div>

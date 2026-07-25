@@ -11,7 +11,7 @@
  * store transaction callback.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   MemoryGrantLotLedger,
   type GrantLotResource,
@@ -48,7 +48,7 @@ export interface RedemptionCode {
 }
 
 export interface CreateRedemptionCodeInput {
-  code?: string;
+  code: string;
   grants: Partial<Record<GrantLotResource, number>>;
   expiresAt?: string | null;
   batchId?: string;
@@ -108,6 +108,9 @@ export interface RedemptionStore {
 }
 
 function normalizeCode(code: string) {
+  if (typeof code !== 'string') {
+    throw new P1DomainError('INVALID_STATE', 'Redemption code is required.');
+  }
   const normalized = code.trim().toUpperCase();
   if (!/^[A-Z0-9_-]{4,64}$/.test(normalized)) {
     throw new P1DomainError(
@@ -116,10 +119,6 @@ function normalizeCode(code: string) {
     );
   }
   return normalized;
-}
-
-function generateCode() {
-  return randomBytes(5).toString('hex').toUpperCase();
 }
 
 function assertGrants(grants: Partial<Record<GrantLotResource, number>>) {
@@ -409,17 +408,11 @@ export class RedemptionApplicationService {
   ) {}
 
   async createCodes(
-    input: CreateRedemptionCodeInput & { count?: number },
+    input: CreateRedemptionCodeInput,
     command?: RedemptionCommandIdentity
   ): Promise<RedemptionCode[]> {
     assertGrants(input.grants);
-    const count = input.count ?? 1;
-    if (!Number.isInteger(count) || count < 1 || count > 200) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Batch count must be an integer from 1 to 200.'
-      );
-    }
+    const code = normalizeCode(input.code);
     const now = input.createdAt ?? this.clock().toISOString();
     assertTimestamp(now, 'createdAt');
     if (input.expiresAt !== undefined && input.expiresAt !== null) {
@@ -431,32 +424,19 @@ export class RedemptionApplicationService {
         );
       }
     }
-    const batchId =
-      input.batchId ??
-      (count > 1 ? `batch-${randomBytes(6).toString('hex')}` : undefined);
-    const codes: RedemptionCode[] = [];
-    for (let index = 0; index < count; index += 1) {
-      if (input.code && count > 1) {
-        throw new P1DomainError(
-          'INVALID_STATE',
-          'Explicit code cannot be used with batch count > 1.'
-        );
-      }
-      const code = normalizeCode(input.code ?? generateCode());
-      codes.push({
-        id: `rc-${digest(`${code}:${now}:${index}`).slice(0, 20)}`,
-        code,
-        status: 'active',
-        grants: { ...input.grants },
-        expiresAt: input.expiresAt ?? null,
-        revision: 1,
-        createdAt: now,
-        createdBy: input.createdBy,
-        ...(batchId ? { batchId } : {}),
-      });
-    }
+    const recorded: RedemptionCode = {
+      id: `rc-${digest(`${code}:${now}`).slice(0, 20)}`,
+      code,
+      status: 'active',
+      grants: { ...input.grants },
+      expiresAt: input.expiresAt ?? null,
+      revision: 1,
+      createdAt: now,
+      createdBy: input.createdBy,
+      ...(input.batchId ? { batchId: input.batchId } : {}),
+    };
     return this.store.create(
-      codes,
+      [recorded],
       command
         ? {
             ...command,
@@ -464,8 +444,7 @@ export class RedemptionApplicationService {
               JSON.stringify({
                 action: 'create',
                 batchId: input.batchId ?? null,
-                code: input.code ? normalizeCode(input.code) : null,
-                count,
+                code,
                 createdAt: input.createdAt ?? null,
                 createdBy: input.createdBy,
                 expiresAt: input.expiresAt ?? null,

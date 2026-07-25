@@ -134,6 +134,7 @@ describe('PostgresRedemptionStore', () => {
       const store = new PostgresRedemptionStore(pool);
       const workspaceId = `redemption-command-${randomUUID()}`;
       const batchId = `completion-loss-${randomUUID()}`;
+      const code = `C${randomUUID().replaceAll('-', '').slice(0, 12)}`;
       await new PostgresGrantLotLedger(pool).migrate();
       await store.migrate();
       await pool.query(
@@ -168,7 +169,7 @@ describe('PostgresRedemptionStore', () => {
         idempotencyKey: 'create-after-command-completion-loss',
         input: {
           action: 'create',
-          payload: { batchId, grants: { copy: 20 } },
+          payload: { batchId, code, grants: { copy: 20 } },
         },
       };
 

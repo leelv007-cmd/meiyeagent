@@ -1,4 +1,5 @@
 import { UsersTable } from '@/components/admin/users/users-table';
+import { AdminCreateUserForm } from '@/components/admin/users/admin-create-user-form';
 import { useUsers } from '@/hooks/use-users';
 import type { ColumnFiltersState, SortingState } from '@tanstack/react-table';
 import {
@@ -86,20 +87,25 @@ export function AdminUsersContent() {
   };
 
   return (
-    <UsersTable
-      data={data?.items ?? []}
-      total={data?.total ?? 0}
-      pageIndex={page}
-      pageSize={size}
-      search={search}
-      sorting={effectiveSort}
-      filters={serverFilters}
-      loading={isLoading}
-      onSearch={(newSearch) => setQueryStates({ search: newSearch, page: 0 })}
-      onPageChange={(newPage) => setQueryStates({ page: newPage })}
-      onPageSizeChange={(newSize) => setQueryStates({ size: newSize, page: 0 })}
-      onSortingChange={handleSortChange}
-      onFiltersChange={handleFilterChange}
-    />
+    <div className="space-y-4">
+      <AdminCreateUserForm />
+      <UsersTable
+        data={data?.items ?? []}
+        total={data?.total ?? 0}
+        pageIndex={page}
+        pageSize={size}
+        search={search}
+        sorting={effectiveSort}
+        filters={serverFilters}
+        loading={isLoading}
+        onSearch={(newSearch) => setQueryStates({ search: newSearch, page: 0 })}
+        onPageChange={(newPage) => setQueryStates({ page: newPage })}
+        onPageSizeChange={(newSize) =>
+          setQueryStates({ size: newSize, page: 0 })
+        }
+        onSortingChange={handleSortChange}
+        onFiltersChange={handleFilterChange}
+      />
+    </div>
   );
 }

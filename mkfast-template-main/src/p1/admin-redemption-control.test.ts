@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { canCreateRedemptionBatch } from './admin-redemption-control';
+import { canRecordRedemptionCode } from './admin-redemption-control';
 
 const validAmounts = {
   copy: '20',
@@ -27,7 +27,7 @@ describe('admin redemption form contract', () => {
 
     assert.equal(
       zh.admin_redemption_create_description,
-      '生成一次性条数额度；工作区负责人可在账户设置中兑换。'
+      '录入运营已发放的一次性条数额度；工作区负责人可在账户设置中兑换。'
     );
     assert.equal(
       zh.settings_redemption_description,
@@ -35,7 +35,7 @@ describe('admin redemption form contract', () => {
     );
     assert.equal(
       en.admin_redemption_create_description,
-      'Create one-time allowances. The person responsible for the workspace can redeem them from account settings.'
+      'Record one-time allowances issued by operations. The person responsible for the workspace can redeem them from account settings.'
     );
     assert.equal(
       en.settings_redemption_description,
@@ -54,40 +54,36 @@ describe('admin redemption form contract', () => {
 
   it('rejects partial grants when any amount is not a non-negative integer', () => {
     assert.equal(
-      canCreateRedemptionBatch({
+      canRecordRedemptionCode({
         amounts: { ...validAmounts, copy: '1.5', image: '1' },
-        batchCount: '1',
-        explicitCode: '',
+        code: 'WELCOME20',
         expiresAt: '',
       }),
       false
     );
     assert.equal(
-      canCreateRedemptionBatch({
+      canRecordRedemptionCode({
         amounts: { ...validAmounts, copy: '-1', image: '1' },
-        batchCount: '1',
-        explicitCode: '',
+        code: 'WELCOME20',
         expiresAt: '',
       }),
       false
     );
   });
 
-  it('accepts a complete grant and only allows explicit codes for one item', () => {
+  it('requires one manually supplied code', () => {
     assert.equal(
-      canCreateRedemptionBatch({
+      canRecordRedemptionCode({
         amounts: validAmounts,
-        batchCount: '1',
-        explicitCode: 'WELCOME20',
+        code: 'WELCOME20',
         expiresAt: '2026-08-01T00:00',
       }),
       true
     );
     assert.equal(
-      canCreateRedemptionBatch({
+      canRecordRedemptionCode({
         amounts: validAmounts,
-        batchCount: '2',
-        explicitCode: 'WELCOME20',
+        code: '',
         expiresAt: '',
       }),
       false

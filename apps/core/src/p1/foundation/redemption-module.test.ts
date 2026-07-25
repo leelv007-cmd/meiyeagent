@@ -17,7 +17,7 @@ const context = (actor: P1Context['actor']): P1Context => ({
 });
 
 describe('RedemptionFoundationModule authorization and contracts', () => {
-  it('replays a generated create command after the store committed it', async () => {
+  it('replays a manual record command after the store committed it', async () => {
     const store = new MemoryRedemptionStore();
     const service = new RedemptionApplicationService(
       store,
@@ -32,6 +32,7 @@ describe('RedemptionFoundationModule authorization and contracts', () => {
         action: 'create',
         payload: {
           batchId: 'completion-loss-create',
+          code: 'COMPLETION-LOSS-CREATE',
           grants: { copy: 20 },
         },
       },
@@ -107,6 +108,43 @@ describe('RedemptionFoundationModule authorization and contracts', () => {
         }),
       (error: unknown) =>
         error instanceof P1DomainError && error.code === 'FORBIDDEN'
+    );
+  });
+
+  it('exposes manual record instead of generated batch creation', async () => {
+    const module = new RedemptionFoundationModule(
+      new RedemptionApplicationService(
+        new MemoryRedemptionStore(),
+        new MemoryGrantLotLedger(),
+        () => new Date('2026-07-19T12:00:00.000Z')
+      )
+    );
+
+    await assert.rejects(
+      () =>
+        module.execute({
+          context: context('admin'),
+          idempotencyKey: 'generated-batch-is-not-supported',
+          input: {
+            action: 'batch_create',
+            payload: { count: 2, grants: { copy: 5 } },
+          },
+        }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE'
+    );
+    await assert.rejects(
+      () =>
+        module.execute({
+          context: context('admin'),
+          idempotencyKey: 'missing-manual-code',
+          input: {
+            action: 'create',
+            payload: { grants: { copy: 5 } },
+          },
+        }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE'
     );
   });
 });

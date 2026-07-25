@@ -8,6 +8,10 @@ import {
   requireRecentAuthentication,
   requiresRecentAuthentication,
 } from './recent-authentication';
+import {
+  applyAdminAssistedAccountPolicy,
+  stripAdminProvisioningAttribution,
+} from './admin-provisioning-attribution';
 
 type SessionLoader = (
   context: Parameters<typeof getSessionFromCtx>[0],
@@ -18,7 +22,13 @@ export function createRecentAuthenticationHook(
   loadSession: SessionLoader = getSessionFromCtx
 ) {
   return createAuthMiddleware(async (context) => {
-    if (!context.path || !requiresRecentAuthentication(context.path)) return;
+    if (!context.path) return;
+
+    if (context.path.startsWith('/admin/') && context.body?.data) {
+      context.body.data = stripAdminProvisioningAttribution(context.body.data);
+    }
+
+    if (!requiresRecentAuthentication(context.path)) return;
 
     const current = await loadSession(context, {
       disableCookieCache: true,
@@ -33,6 +43,13 @@ export function createRecentAuthenticationHook(
         code: error.code,
         message: error.message,
       });
+    }
+
+    if (context.path === '/admin/create-user') {
+      context.body.data = applyAdminAssistedAccountPolicy(
+        context.body.data,
+        current.user.id
+      );
     }
   });
 }
