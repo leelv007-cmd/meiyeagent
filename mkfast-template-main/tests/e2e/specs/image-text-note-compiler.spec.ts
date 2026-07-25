@@ -165,6 +165,9 @@ async function submitNoteJourney(page: Page) {
   );
   await page.getByTestId('composer-submit').click();
   const response = await responsePromise;
+  const submissionBody = response.request().postDataJSON() as {
+    catalogModel?: { id?: string };
+  };
   const envelope = (await response.json()) as {
     data?: {
       contentPackage?: { id?: string };
@@ -173,17 +176,7 @@ async function submitNoteJourney(page: Page) {
     };
     error?: { message?: string };
   };
-  if (
-    !response.ok() &&
-    [
-      'Usage amount must be a positive integer.',
-      'Image-text note submissions require the unit-aware reservation path.',
-    ].includes(envelope.error?.message ?? '')
-  ) {
-    // INC-t26: this lane does not yet have the canonical multi-unit reservation
-    // writer. Mark only the two proven pre-hotfix failures as expected-red.
-    test.fail(true, 'INC-t26 unit quantity hotfix has not landed on this lane');
-  }
+  expect(submissionBody.catalogModel?.id).toBe('seedream-5-pro');
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   expect(envelope.data?.contentPackage?.id).toBeTruthy();
   expect(envelope.data?.task?.id).toBeTruthy();
