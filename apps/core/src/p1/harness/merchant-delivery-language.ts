@@ -28,6 +28,10 @@ export function merchantProgressMessage(stage: HarnessStage) {
   return PROGRESS_MESSAGES[stage];
 }
 
+export function merchantIdentityVoiceNotice() {
+  return '这次先用门店官方口吻生成；以后想换成你的个人口吻，直接在对话里告诉我就好。';
+}
+
 export function merchantConfirmationQuestion(question: string) {
   return `为了让成品更贴合你的想法，想确认一下：${question}`;
 }

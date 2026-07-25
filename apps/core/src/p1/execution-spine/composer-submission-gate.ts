@@ -55,7 +55,8 @@ export interface ComposerSubmissionAdmissionDependencies {
 		CreationExperienceCatalogRepository,
 		"getRecipeByRevisionId" | "getSurfaceByRevisionId"
 	>;
-	identities: Pick<MarketingIdentityRepository, "listActive">;
+	identities: Pick<MarketingIdentityRepository, "listActive"> &
+		Partial<Pick<MarketingIdentityRepository, "project">>;
 	quotes: Pick<ProductBillingApplicationPort, "getQuote"> &
 		Partial<Pick<ProductBillingApplicationPort, "confirm">>;
 	rights: ContentPackageRightsResolverPort;
@@ -277,6 +278,7 @@ export class ComposerSubmissionAdmissionGate
 		}
 
 		const identity = input.identity ?? OFFICIAL_NEUTRAL_IDENTITY;
+		let identityDecision: { id: string; revision: number } | undefined;
 		if (input.identity) {
 			const activeIdentities = await this.dependencies.identities.listActive(
 				input.workspaceId,
@@ -293,6 +295,27 @@ export class ComposerSubmissionAdmissionGate
 					"Marketing identity is missing, inactive, or at a different revision.",
 				);
 			}
+		}
+		if (input.identityDecision) {
+			const projection = await this.dependencies.identities.project?.(
+				input.workspaceId,
+				input.actorId,
+				this.now(),
+			);
+			if (
+				!projection?.defaultDecision ||
+				projection.defaultDecision.decisionId !== input.identityDecision.id ||
+				projection.defaultDecision.decisionRevision !==
+					input.identityDecision.revision ||
+				projection.defaultDecision.identity.identityId !== identity.id ||
+				String(projection.defaultDecision.identity.version) !==
+					identity.revision
+			) {
+				throw invalid(
+					"Marketing identity default decision is missing, stale, or does not match this submission.",
+				);
+			}
+			identityDecision = input.identityDecision;
 		}
 
 		const assetIds = input.sources.assets.map((asset) => asset.id);
@@ -447,6 +470,7 @@ export class ComposerSubmissionAdmissionGate
 		}
 		return {
 			identity,
+			...(identityDecision ? { identityDecision } : {}),
 			modelPolicy: {
 				id: `recipe-model-policy:${recipe.recipeId}`,
 				mode: "fixed" as const,

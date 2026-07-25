@@ -252,6 +252,54 @@ export const marketingIdentityQuerySchema = z
   })
   .strict();
 
+export const marketingIdentityReferenceSchema = z
+  .object({
+    identityId: idSchema,
+    version: z.number().int().positive(),
+  })
+  .strict();
+
+export const setDefaultMarketingIdentityCommandSchema = z
+  .object({
+    expectedDecisionRevision: z.number().int().nonnegative(),
+    identity: marketingIdentityReferenceSchema,
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export const selectMarketingIdentityForSessionCommandSchema = z
+  .object({
+    identity: marketingIdentityReferenceSchema.nullable(),
+    reason: z.string().trim().min(1).max(500),
+    sessionId: idSchema,
+  })
+  .strict();
+
+export const rollbackDefaultMarketingIdentityCommandSchema = z
+  .object({
+    expectedDecisionRevision: z.number().int().positive(),
+    reason: z.string().trim().min(1).max(500),
+    targetDecisionRevision: z.number().int().positive(),
+  })
+  .strict();
+
+export const marketingIdentityDefaultDecisionSchema = z
+  .object({
+    decisionId: idSchema,
+    decisionRevision: z.number().int().positive(),
+    identity: marketingIdentityReferenceSchema,
+  })
+  .strict();
+
+export const marketingIdentityProjectionSchema = z
+  .object({
+    identities: z.array(marketingIdentityAssetSchema),
+    defaultDecision: marketingIdentityDefaultDecisionSchema.nullable(),
+    defaultIdentity: marketingIdentityReferenceSchema.nullable(),
+    decisionRevision: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const promotionalMaterialPurposeSchema = z.enum([
   'xiaohongshu_cover',
   'douyin_cover',
@@ -565,6 +613,24 @@ export type TransitionMarketingIdentityCommand = z.infer<
 >;
 export type MarketingIdentityQuery = z.infer<
   typeof marketingIdentityQuerySchema
+>;
+export type MarketingIdentityReference = z.infer<
+  typeof marketingIdentityReferenceSchema
+>;
+export type SetDefaultMarketingIdentityCommand = z.infer<
+  typeof setDefaultMarketingIdentityCommandSchema
+>;
+export type SelectMarketingIdentityForSessionCommand = z.infer<
+  typeof selectMarketingIdentityForSessionCommandSchema
+>;
+export type RollbackDefaultMarketingIdentityCommand = z.infer<
+  typeof rollbackDefaultMarketingIdentityCommandSchema
+>;
+export type MarketingIdentityDefaultDecision = z.infer<
+  typeof marketingIdentityDefaultDecisionSchema
+>;
+export type MarketingIdentityProjection = z.infer<
+  typeof marketingIdentityProjectionSchema
 >;
 export type PromotionalMaterialSpec = z.infer<
   typeof promotionalMaterialSpecSchema

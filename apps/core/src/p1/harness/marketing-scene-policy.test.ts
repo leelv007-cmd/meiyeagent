@@ -210,6 +210,29 @@ test('material package freezes the four first-release Light Composer specs', () 
       { purpose: 'offline_a4_poster', width: 2480, height: 3508 },
     ],
   );
+  assert.equal(evidence.identityFallback, 'brand_official');
+  assert.deepEqual(evidence.identityRefs, []);
+});
+
+test('a registered identity disables the official neutral voice fallback', () => {
+  const snapshot = context();
+  snapshot.policyReferences.identityRefs = [
+    {
+      id: 'marketing_identity:brand-1:2',
+      workspaceId: 'workspace-1',
+      status: 'registered',
+    },
+  ];
+
+  const evidence = projectMarketingPackageEvidence({
+    declaration: declaration('routine_marketing_materials'),
+    request: request('做一组宣传物料'),
+    context: snapshot,
+    at: '2026-07-18T00:00:00.000Z',
+  });
+
+  assert.equal(evidence.identityFallback, 'none');
+  assert.deepEqual(evidence.identityRefs, ['marketing_identity:brand-1:2']);
 });
 
 function declaration(taskType: IntentDeclaration['taskType']): IntentDeclaration {

@@ -101,6 +101,45 @@ test('five semantic stages run in order with stable effect keys and a delivery f
   ]);
 });
 
+test('official-neutral execution reports a conversational identity reminder without blocking delivery', async () => {
+  const request = snapshotTaskInput();
+  request.executionSnapshot = {
+    ...request.executionSnapshot!,
+    identity: { id: 'official-neutral', revision: '1' },
+  };
+  const messages: string[] = [];
+
+  const result = await runHarnessWorkflow(
+    'task-neutral',
+    request,
+    fixtureStages(),
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress(event) {
+        messages.push(event.message);
+      },
+      async token() {},
+      async awaitDecision() {
+        throw new Error(
+          'Official-neutral creation must not wait for a decision.'
+        );
+      },
+      async recordTrace() {},
+    }
+  );
+
+  assert.deepEqual(result.delivery, {
+    packageId: 'package-1',
+    versionId: 'version-3',
+    revision: 3,
+  });
+  assert.ok(
+    messages.some((message) => message.includes('这次先用门店官方口吻生成'))
+  );
+});
+
 test('image and video snapshots use the same five Harness stages with modality-stable effects', async () => {
   for (const kind of ['image', 'video'] as const) {
     const keys: string[] = [];
@@ -125,7 +164,7 @@ test('image and video snapshots use the same five Harness stages with modality-s
         async recordTrace(input) {
           traces.push({ stage: input.stage, payload: input.payload });
         },
-      },
+      }
     );
 
     assert.deepEqual(keys, [
@@ -144,7 +183,10 @@ test('image and video snapshots use the same five Harness stages with modality-s
       'assembly_delivery:success',
     ]);
     assert.equal(result.deliveryLayer, 'finished_media');
-    assert.equal(result.recommendation.recommendedCandidateId, `${kind}-asset-1`);
+    assert.equal(
+      result.recommendation.recommendedCandidateId,
+      `${kind}-asset-1`
+    );
     assert.deepEqual(
       traces.map(({ stage }) => stage),
       [
@@ -153,11 +195,11 @@ test('image and video snapshots use the same five Harness stages with modality-s
         'brief_compilation',
         'execution_selection',
         'assembly_delivery',
-      ],
+      ]
     );
     assert.match(
       JSON.stringify(traces[0]?.payload),
-      new RegExp(`"modality":"${kind}"`, 'u'),
+      new RegExp(`"modality":"${kind}"`, 'u')
     );
   }
 });
@@ -322,10 +364,13 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
   assert.equal(resubmissions, 1);
   assert.equal(injectedRequest?.executionSnapshot?.task.id, 'task-copy');
   assert.equal(injectedRequest?.executionSnapshot?.work.id, 'work-copy');
-  assert.equal(injectedRequest?.executionSnapshot?.contentPackage.id, 'package-copy');
+  assert.equal(
+    injectedRequest?.executionSnapshot?.contentPackage.id,
+    'package-copy'
+  );
   assert.notEqual(
     injectedRequest?.executionSnapshot?.id,
-    originalRequest.executionSnapshot?.id,
+    originalRequest.executionSnapshot?.id
   );
   assert.deepEqual(injectedRequest?.executionSnapshot?.semanticDecision, {
     sourceSnapshotId: originalRequest.executionSnapshot?.id,
@@ -334,7 +379,7 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
   assert.equal(
     (injectedRequest?.intent.context as Record<string, unknown> | undefined)
       ?.industry_category,
-    '美甲',
+    '美甲'
   );
   assert.deepEqual(originalRequest.executionSnapshot, originalSnapshot);
   assert.ok(progress.includes('已收到，继续为你生成。'));
@@ -390,20 +435,68 @@ test('directly applying a semantic answer to an existing snapshot remains forbid
       },
       async recordTrace() {},
     }),
-    HarnessSnapshotDecisionError,
+    HarnessSnapshotDecisionError
   );
 });
 
 test('intent routing golden cases cover every D-111 quadrant twice', async () => {
   const cases = [
-    { id: 'useful-store', intent: '按本店已确认的护理项目写朋友圈', initial: 'customized', decision: null, final: 'customized' },
-    { id: 'useful-ip', intent: '用已确认的老板娘口吻介绍开店初心', initial: 'customized', decision: null, final: 'customized' },
-    { id: 'no-gain-promotion', intent: '给新团购写一条推广文案', initial: 'guidance', decision: 'accepted', final: 'free' },
-    { id: 'no-gain-product', intent: '介绍一个还没录入资料的新项目', initial: 'guidance', decision: 'accepted', final: 'free' },
-    { id: 'completed-promotion', intent: '补齐团购项目和价格后生成文案', initial: 'guidance', decision: 'accepted', final: 'customized' },
-    { id: 'completed-ip', intent: '补齐主理人口吻后写开店故事', initial: 'guidance', decision: 'accepted', final: 'customized' },
-    { id: 'skipped-product', intent: '先跳过新品资料直接生成', initial: 'guidance', decision: 'ignored', final: 'free' },
-    { id: 'skipped-industry', intent: '先跳过行业信息直接生成', initial: 'guidance', decision: 'ignored', final: 'free' },
+    {
+      id: 'useful-store',
+      intent: '按本店已确认的护理项目写朋友圈',
+      initial: 'customized',
+      decision: null,
+      final: 'customized',
+    },
+    {
+      id: 'useful-ip',
+      intent: '用已确认的老板娘口吻介绍开店初心',
+      initial: 'customized',
+      decision: null,
+      final: 'customized',
+    },
+    {
+      id: 'no-gain-promotion',
+      intent: '给新团购写一条推广文案',
+      initial: 'guidance',
+      decision: 'accepted',
+      final: 'free',
+    },
+    {
+      id: 'no-gain-product',
+      intent: '介绍一个还没录入资料的新项目',
+      initial: 'guidance',
+      decision: 'accepted',
+      final: 'free',
+    },
+    {
+      id: 'completed-promotion',
+      intent: '补齐团购项目和价格后生成文案',
+      initial: 'guidance',
+      decision: 'accepted',
+      final: 'customized',
+    },
+    {
+      id: 'completed-ip',
+      intent: '补齐主理人口吻后写开店故事',
+      initial: 'guidance',
+      decision: 'accepted',
+      final: 'customized',
+    },
+    {
+      id: 'skipped-product',
+      intent: '先跳过新品资料直接生成',
+      initial: 'guidance',
+      decision: 'ignored',
+      final: 'free',
+    },
+    {
+      id: 'skipped-industry',
+      intent: '先跳过行业信息直接生成',
+      initial: 'guidance',
+      decision: 'ignored',
+      final: 'free',
+    },
   ] as const;
 
   for (const golden of cases) {
@@ -422,12 +515,14 @@ test('intent routing golden cases cover every D-111 quadrant twice', async () =>
       return {
         declaration: {
           normalizedIntent: golden.intent,
-          taskType: golden.intent.includes('口吻') || golden.intent.includes('开店')
-            ? 'brand_personal_ip'
-            : 'promotion_groupbuy_conversion',
+          taskType:
+            golden.intent.includes('口吻') || golden.intent.includes('开店')
+              ? 'brand_personal_ip'
+              : 'promotion_groupbuy_conversion',
           deliveryLayer: 'copy',
           relevantAssetCategories: ['promotion_activity'],
-          usedAssetCategories: route === 'customized' ? ['promotion_activity'] : [],
+          usedAssetCategories:
+            route === 'customized' ? ['promotion_activity'] : [],
           route,
           routingSource: 'model',
           implicitConstraints: [],
@@ -490,17 +585,17 @@ test('intent routing golden cases cover every D-111 quadrant twice', async () =>
         },
         async recordTrace(trace) {
           if (trace.stage === 'intent_naming') {
-            finalRoute = (
-              trace.payload as { declaration: { route: string } }
-            ).declaration.route;
+            finalRoute = (trace.payload as { declaration: { route: string } })
+              .declaration.route;
           }
         },
-      },
+      }
     );
     assert.equal(initialDeclarations[0], golden.initial, golden.id);
     assert.equal(finalRoute, golden.final, golden.id);
-    const notice = messages.find((message) =>
-      message.includes('更贴合本店') || message.includes('通用模式'),
+    const notice = messages.find(
+      (message) =>
+        message.includes('更贴合本店') || message.includes('通用模式')
     );
     assert.ok(notice, golden.id);
     assert.doesNotMatch(notice, /route|schema|asset|id|fallback/iu);
@@ -532,10 +627,11 @@ test('fallback prompt version and hash enter stage traces without prompt content
   });
 
   const promptTraces = traces.filter(({ stage }) =>
-    ['intent_naming', 'brief_compilation'].includes(stage),
+    ['intent_naming', 'brief_compilation'].includes(stage)
   );
   for (const trace of promptTraces) {
-    const prompt = (trace.payload as { prompt: Record<string, unknown> }).prompt;
+    const prompt = (trace.payload as { prompt: Record<string, unknown> })
+      .prompt;
     assert.deepEqual(prompt, {
       name:
         trace.stage === 'intent_naming'
@@ -628,12 +724,8 @@ test('source revision fence recompiles brief and selection with new effect keys'
   assert.ok(keys.includes('wf:task-35:s4:copy-r2:selection'));
   assert.ok(traceIds.includes('trace-task-35-execution_selection-r1'));
   assert.ok(traceIds.includes('trace-task-35-execution_selection-r2'));
-  assert.ok(
-    progressMessages.includes('资料有更新，已同步到本次创作')
-  );
-  assert.ok(
-    progressMessages.includes('已按最新资料更新推荐文案')
-  );
+  assert.ok(progressMessages.includes('资料有更新，已同步到本次创作'));
+  assert.ok(progressMessages.includes('已按最新资料更新推荐文案'));
   for (const message of progressMessages) {
     assert.doesNotMatch(
       message,
@@ -801,7 +893,7 @@ function snapshotTaskInput(): HarnessWorkflowInput {
       briefContext: { id: 'brief-context-1', revision: 1 },
       contentModules: ['social_cover'],
     },
-    '2026-07-25T09:00:00.000Z',
+    '2026-07-25T09:00:00.000Z'
   );
   return {
     ...taskInput(),
@@ -848,9 +940,7 @@ function mediaTaskInput(kind: 'image' | 'video'): HarnessWorkflowInput {
         },
       ],
       sources: {
-        assets: [
-          { id: 'asset-1', revision: 'asset-r1', role: 'reference' },
-        ],
+        assets: [{ id: 'asset-1', revision: 'asset-r1', role: 'reference' }],
       },
       rights: { revision: 'rights-r1', summary: 'authorized' },
       identity: { id: 'identity-1', revision: 'identity-r1' },
@@ -862,7 +952,7 @@ function mediaTaskInput(kind: 'image' | 'video'): HarnessWorkflowInput {
       briefConfirmation: { id: 'brief-1', revision: 'brief-r1' },
       contentModules: ['social_cover'],
     },
-    '2026-07-22T09:00:00.000Z',
+    '2026-07-22T09:00:00.000Z'
   );
   return { ...taskInput(), executionSnapshot: snapshot };
 }
@@ -903,7 +993,8 @@ function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
             rightsRefs: [],
             outputPlan: { kind: 'single' },
           },
-          prompt: '为夏日护理项目生成竖版门店活动海报，保留品牌主视觉和预约行动号召。',
+          prompt:
+            '为夏日护理项目生成竖版门店活动海报，保留品牌主视觉和预约行动号召。',
           referenceAssetIds: ['asset-1'],
           parameters: { ratio: '9:16', resolution: '1080p' },
           constraints: ['不得编造价格'],
@@ -911,7 +1002,8 @@ function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
       }
       return {
         kind,
-        firstFramePrompt: '夏日护理项目门店开场，展示明确的品牌主视觉和预约行动号召。',
+        firstFramePrompt:
+          '夏日护理项目门店开场，展示明确的品牌主视觉和预约行动号召。',
         storyboard: [
           {
             index: 1,

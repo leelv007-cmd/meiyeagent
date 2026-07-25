@@ -14,6 +14,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 	let capabilityChecks = 0;
 	const briefChecks: unknown[] = [];
 	let sourcePackageRights: "authorized" | "revoked" = "authorized";
+	let defaultProjectionEnabled = true;
 	const gate = new ComposerSubmissionAdmissionGate({
 		assets: {
 			async resolve() {
@@ -103,6 +104,22 @@ test("Composer admission gate binds server facts before a submission can reserve
 			async listActive() {
 				return [{ identityId: "identity-brand", version: 3 }] as never;
 			},
+			async project() {
+				return {
+					identities: [],
+					defaultDecision: defaultProjectionEnabled
+						? {
+								decisionId: "default-decision-1",
+								decisionRevision: 7,
+								identity: { identityId: "identity-brand", version: 3 },
+							}
+						: null,
+					defaultIdentity: defaultProjectionEnabled
+						? { identityId: "identity-brand", version: 3 }
+						: null,
+					decisionRevision: 7,
+				} as never;
+			},
 		},
 		quotes: {
 			async getQuote() {
@@ -154,7 +171,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 		},
 	});
 
-	const admitted = await gate.admit(submission());
+	const admitted = await gate.admit(defaultSubmission());
 	assert.match(admitted.taskId, /^composer-task:[a-f0-9]{64}$/u);
 	assert.deepEqual(admitted.modelPolicy, {
 		id: "recipe-model-policy:recipe-service-promotion",
@@ -164,6 +181,10 @@ test("Composer admission gate binds server facts before a submission can reserve
 	assert.deepEqual(admitted.route, {
 		id: "route-1",
 		revision: "catalog-r4",
+	});
+	assert.deepEqual(admitted.identityDecision, {
+		id: "default-decision-1",
+		revision: 7,
 	});
 	assert.match(admitted.rights.revision, /^rights:[a-f0-9]{64}$/u);
 	assert.equal(
@@ -198,6 +219,13 @@ test("Composer admission gate binds server facts before a submission can reserve
 			workspaceId: "workspace-1",
 		},
 	]);
+
+	defaultProjectionEnabled = false;
+	await assert.rejects(
+		gate.admit(defaultSubmission()),
+		/default decision is missing, stale, or does not match/u,
+	);
+	defaultProjectionEnabled = true;
 
 	await assert.rejects(
 		gate.admit({
@@ -562,6 +590,13 @@ function submission(): ComposerSubmissionRequest {
 		},
 		surface: { id: "surface-composer", revision: "surface-composer@2" },
 		workspaceId: "workspace-1",
+	};
+}
+
+function defaultSubmission(): ComposerSubmissionRequest {
+	return {
+		...submission(),
+		identityDecision: { id: "default-decision-1", revision: 7 },
 	};
 }
 

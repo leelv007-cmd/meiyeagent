@@ -50,7 +50,7 @@ export function projectMarketingPackageEvidence(input: {
     rightsRefs,
     identityRefs,
     identityFallback:
-      scene === 'brand_personal_ip' && identityRefs.length === 0
+      identityRefs.length === 0
         ? ('brand_official' as const)
         : ('none' as const),
   };

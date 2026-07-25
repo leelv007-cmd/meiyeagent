@@ -394,6 +394,7 @@ function briefExecutionContract(snapshot: CreationExecutionSnapshot) {
     contentModules: snapshot.contentModules,
     deliverables: snapshot.deliverables,
     identity: snapshot.identity,
+    identityDecision: snapshot.identityDecision,
     lens: snapshot.lens,
     modelPolicy: snapshot.modelPolicy,
     operation: snapshot.operation,

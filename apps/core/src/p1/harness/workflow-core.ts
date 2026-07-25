@@ -17,6 +17,7 @@ import type { HarnessWorkflowInput } from './task-admission.js';
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
 import {
+  merchantIdentityVoiceNotice,
   merchantProgressMessage,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
@@ -295,7 +296,7 @@ export async function runHarnessWorkflow(
   await reportProgress({
     stage: 'context_injection',
     state: 'success',
-    message: merchantProgressMessage('context_injection'),
+    message: merchantContextMessage(activeRequest),
   });
 
   let compiledBrief = await runtime.runStep(
@@ -542,7 +543,7 @@ async function runMediaHarnessWorkflow(
   await reportProgress({
     stage: 'context_injection',
     state: 'success',
-    message: merchantProgressMessage('context_injection'),
+    message: merchantContextMessage(activeRequest),
   });
 
   let compiledBrief = await runtime.runStep(
@@ -757,6 +758,13 @@ function mediaBriefTrace(brief: MediaBrief) {
 
 function mediaSelectionMessage(kind: MediaBrief['kind']) {
   return kind === 'image' ? '已核验图片生成结果' : '已核验视频生成结果';
+}
+
+function merchantContextMessage(request: HarnessWorkflowInput) {
+  const progress = merchantProgressMessage('context_injection');
+  return request.executionSnapshot?.identity.id === 'official-neutral'
+    ? `${progress}。${merchantIdentityVoiceNotice()}`
+    : progress;
 }
 
 const TASK_TYPE_LABELS: Record<IntentDeclaration['taskType'], string> = {

@@ -196,6 +196,30 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     'workspace.read'
   );
   assert.equal(
+    requiredP1Capability(
+      'command',
+      'marketing-identity',
+      'set_default_marketing_identity'
+    ),
+    'personal.preferences.manage'
+  );
+  assert.equal(
+    requiredP1Capability(
+      'command',
+      'marketing-identity',
+      'rollback_default_marketing_identity'
+    ),
+    'personal.preferences.manage'
+  );
+  assert.equal(
+    requiredP1Capability(
+      'command',
+      'marketing-identity',
+      'select_marketing_identity_for_session'
+    ),
+    'content.create'
+  );
+  assert.equal(
     requiredP1Capability('command', 'operations', 'create_task'),
     'content.create'
   );

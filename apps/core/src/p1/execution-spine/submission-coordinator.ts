@@ -94,6 +94,7 @@ export interface CreationSubmissionAdmissionPort {
 	 */
 	admit(input: ComposerSubmissionRequest): Promise<{
 		identity: { id: string; revision: string };
+		identityDecision?: { id: string; revision: number };
 		modelPolicy: { id: string; mode: "auto" | "fixed"; revision: string };
 		recipeBinding: Pick<
 			CreationExecutionSnapshot,
@@ -148,6 +149,7 @@ export class CreationSubmissionCoordinator {
 			contentModules: admitted.recipeBinding.contentModules,
 			deliverables: admitted.recipeBinding.deliverables,
 			identity: admitted.identity,
+			identityDecision: admitted.identityDecision,
 			lens: admitted.recipeBinding.lens,
 			modelPolicy: admitted.modelPolicy,
 			operation:
