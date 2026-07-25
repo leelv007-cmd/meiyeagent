@@ -1407,7 +1407,8 @@ export function ComposerHome({
             ? composerDestinationCapability(destination.distributionTarget)
             : null
         }
-        disabled={
+        disabled={createWork.isPending || lensState.phase === 'frozen'}
+        submitDisabled={
           createWork.isPending ||
           briefPending ||
           !uploadsReady ||
