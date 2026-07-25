@@ -15,8 +15,9 @@ test('the gate catches what D-116 forbids in visible card copy', () => {
     'provider',
     'HTTP code',
   ]);
-  // 成本价 — D-123 keeps the internal baseline off the front end entirely.
-  assert.deepEqual(cardLanguageIssues('本次成本价 0.8'), ['internal cost']);
+  // Internal cost words (成本价 / 毛利) stay off the front end; the sample
+  // carries no figure so the repo-wide cost-boundary scan stays clean.
+  assert.deepEqual(cardLanguageIssues('本次按成本价结算'), ['internal cost']);
   assert.deepEqual(cardLanguageIssues('本次消耗 ¥1.20'), ['money amount']);
   // 内部 ID.
   assert.deepEqual(
