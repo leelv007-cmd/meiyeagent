@@ -442,20 +442,25 @@ operator path is complete.
 
 **File:** `specs/landing-page.spec.ts` | **Priority:** P0
 
-Locks the 丽客美页 LIKEPAGE landing rebuild at `/` (ai-saas template structure,
+Locks the 丽客美页 LIKEPAGE landing at `/` (ai-saas template structure,
 champagne-amber palette, register-first CTAs). Sections and animations come
-from the ported template; copy authority is
-`docs/design/landing-copy-2026-07-21.md`.
+from the ported template. Since T36 the copy authority is the shipped
+capability contract, not the pre-gate copy doc: `delivery-capability-groups`
+(`launchAutomaticVerifiedCount() === 0`, so no publish:<platform> claim),
+the four outputKinds, and the locked platform carriers. The frame itself is
+frozen until the D-125 stage-two window.
 
 | # | Test name | Flow |
 |---|---|---|
 | 1 | Landing sections render in order | Open `/`, verify hero slogan 美页出发/丽客进门, then the section anchors `#features`, `#showcase`, `#pricing`, `#faq` all exist in DOM order with their headings visible on scroll. |
 | 2 | Nav anchors scroll to their sections | Click 功能/作品/定价/常见问题 in the header and verify the target section becomes visible (viewport intersects the anchor element). |
-| 3 | Pricing tiers speak the launch contract | In `#pricing`, verify Starter shows 免费, Growth shows ¥399 with 上线特惠 and a register link, and 终身版 is disabled 敬请期待 with no link. |
-| 4 | Every live CTA stays inside the allowed destinations | Collect all `<a href>` values on `/`; assert each is a section anchor or one of `/auth/register`, `/auth/login`, `/pricing`, `/contact`, `/terms`, `/privacy`, `/cookie`, `/`. |
-| 5 | Bottom form invites registration | Fill the bottom email input, submit, and verify navigation to `/auth/register` with no browser errors. |
-| 6 | Theme toggle flips the landing skin | Click the floating theme switch, verify `html.dark` toggles and the page stays healthy. |
-| 7 | Reduced motion renders all sections | Emulate `prefers-reduced-motion: reduce`, reload `/`, and verify all section anchors and pricing copy render with no browser errors. |
+| 3 | Pricing tiers render the approved wording with the pilot disclosure | In `#pricing`, verify Starter 免费, Growth ¥399 under the 上线特惠 badge with a CTA whose text is exactly 升级 Growth pointing at `/auth/register`, and 终身版 disabled at 敬请期待 with no link. The wording is the user's own call; what keeps it honest is the footnote, so also assert 线上支付未开放 and 兑换码 are on the page and that no 立即购买/订阅/升级 imperative appears. |
+| 4 | Rendered copy claims only capability the delivery gate grants | Read the page text and assert no 一键发布/自动发布/直接发布/替你发布 claim survives, that all four output kinds and the three locked platforms are named, and that 辅助交接 and 兑换码 appear as the real delivery and activation routes. |
+| 5 | Every live CTA stays inside the allowed destinations | Collect all `<a href>` values on `/`; assert each is in the allowlist, that no bare `#` placeholder exists, that every in-page anchor matches exactly one element, and that every internal route answers with a non-error status. |
+| 6 | Mobile viewport keeps every section and avoids sideways scroll | Load `/` at 390×844, verify all four section anchors still render and the document has no horizontal overflow. |
+| 7 | Bottom form invites registration | Fill the bottom email input, submit, and verify navigation to `/auth/register` with no browser errors. |
+| 8 | Theme toggle flips the landing skin | Click the floating theme switch, verify `html.dark` toggles and the page stays healthy. |
+| 9 | Reduced motion renders all sections | Emulate `prefers-reduced-motion: reduce`, reload `/`, and verify all section anchors and pricing copy render with no browser errors. |
 
 ## 33. P0 Merchant Result And Mobile Truth
 

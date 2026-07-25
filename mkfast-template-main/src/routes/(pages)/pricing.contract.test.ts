@@ -45,9 +45,25 @@ test('landing pricing speaks the launch contract in the landing scope', () => {
   assert.match(home, /Routes\.Pricing/u);
   assert.match(home, /aria-disabled/u);
 
+  // The pricing block's wording is the user's own call (landing-copy doc §2.10):
+  // Growth ¥399 under a 上线特惠 badge with an 升级 Growth CTA, and the lifetime
+  // tier disabled behind 敬请期待. Asserted by equality, not by presence.
   assert.equal(zh.landing_pricing_growth_price, '¥399');
-  assert.match(zh.landing_pricing_growth_badge, /上线特惠/u);
-  assert.match(zh.landing_pricing_coming_soon, /敬请期待/u);
+  assert.equal(zh.landing_pricing_growth_badge, '上线特惠');
+  assert.equal(zh.landing_pricing_growth_cta, '升级 Growth');
+  assert.equal(zh.landing_pricing_coming_soon, '敬请期待');
+  // The Growth CTA reaches registration, and the lifetime tier has no href at
+  // all — pricing.tsx renders an aria-disabled span whenever href is absent.
+  assert.match(
+    home,
+    /name: landing_pricing_growth_name\(\)[\s\S]*?href: Routes\.Register/u
+  );
+  assert.match(home, /icon: Building2,\s*\n\s*disabled: true,/u);
+  assert.doesNotMatch(
+    home,
+    /icon: Building2,[\s\S]*?href:/u,
+    'the lifetime tier must not gain a link'
+  );
   for (const key of [
     'landing_pricing_growth_price',
     'landing_pricing_growth_badge',
@@ -56,6 +72,42 @@ test('landing pricing speaks the launch contract in the landing scope', () => {
     assert.equal(typeof en[key], 'string', `en missing ${key}`);
     assert.ok(en[key].length > 0, `en empty ${key}`);
   }
+});
+
+test('landing pricing discloses the pilot payment stance in the footnote', () => {
+  // The 上线特惠 badge and the 升级 Growth CTA are the user's own wording and
+  // are restored; the footnote is what carries the clarification that online
+  // payment is not open during the pilot (D-124) and that credits come from a
+  // redemption code (D-128). That disclosure is load-bearing — it is the reason
+  // the badge is allowed to stand, so it may not be weakened.
+  const zh = JSON.parse(read('project.inlang/messages/zh.json'));
+  const en = JSON.parse(read('project.inlang/messages/en.json'));
+  const landingPricingKeys = Object.keys(zh).filter((key) =>
+    key.startsWith('landing_pricing_')
+  );
+  assert.ok(landingPricingKeys.length > 0);
+
+  for (const key of landingPricingKeys) {
+    // No invented urgency beyond the approved launch-special framing.
+    assert.doesNotMatch(zh[key], /限时|特价|折扣|优惠价/u, key);
+    assert.doesNotMatch(en[key], /limited time|discount/iu, key);
+    // No hard-sell purchase imperative — there is no checkout to reach.
+    assert.doesNotMatch(
+      zh[key],
+      /立即(?:购买|订阅|升级)|马上(?:购买|订阅)/u,
+      key
+    );
+  }
+
+  // No subscription-management promise while there is no subscription.
+  assert.doesNotMatch(zh.landing_pricing_growth_note, /取消|暂停/u);
+
+  // The footnote states the pilot payment stance, matching /pricing's own
+  // "purchase not open" projection instead of contradicting it.
+  assert.match(zh.landing_pricing_footnote_prefix, /未开放/u);
+  assert.match(zh.landing_pricing_footnote_prefix, /兑换码/u);
+  assert.match(en.landing_pricing_footnote_prefix, /not open/iu);
+  assert.match(en.landing_pricing_footnote_prefix, /redemption code/iu);
 });
 
 test('dead "不可用" CTA is gone; availability is computed, not faked', () => {

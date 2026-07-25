@@ -14,7 +14,6 @@ import { Testimonials } from '@/components/landing/testimonials';
 import { TextReveal } from '@/components/landing/text-reveal';
 import { ThemeSwitch } from '@/components/landing/theme-switch';
 import { ToolsCarousel } from '@/components/landing/tools-carousel';
-import { TrustedBy } from '@/components/landing/trusted-by';
 
 export function LandingPage() {
   return (
@@ -34,7 +33,6 @@ export function LandingPage() {
             </div>
           </section>
           <ImageReveal />
-          <TrustedBy />
           <ToolsCarousel />
           <ShowcaseCards />
           <Stats />

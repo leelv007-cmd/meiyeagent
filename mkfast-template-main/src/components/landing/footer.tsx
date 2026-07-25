@@ -1,15 +1,9 @@
 import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
-  IconBook2,
-  IconBrandTiktok,
-  IconBrandWechat,
-} from '@tabler/icons-react';
-import {
   landing_footer_col_company,
   landing_footer_col_product,
   landing_footer_copyright,
-  landing_footer_follow,
   landing_footer_link_contact,
   landing_footer_link_cookie,
   landing_footer_link_faq,
@@ -18,9 +12,6 @@ import {
   landing_footer_link_privacy,
   landing_footer_link_showcase,
   landing_footer_link_terms,
-  landing_footer_social_douyin,
-  landing_footer_social_wechat,
-  landing_footer_social_xhs,
 } from '@/locale/paraglide/messages';
 import { Routes } from '@/lib/routes';
 
@@ -52,12 +43,6 @@ export function Footer(): ReactNode {
         { label: landing_footer_link_cookie(), to: Routes.CookiePolicy },
       ],
     },
-  ];
-
-  const socialLinks = [
-    { icon: IconBrandWechat, href: '#', label: landing_footer_social_wechat() },
-    { icon: IconBrandTiktok, href: '#', label: landing_footer_social_douyin() },
-    { icon: IconBook2, href: '#', label: landing_footer_social_xhs() },
   ];
 
   return (
@@ -105,24 +90,6 @@ export function Footer(): ReactNode {
                 </ul>
               </div>
             ))}
-          </div>
-
-          <div className="lg:text-right">
-            <h3 className="text-sm text-muted-foreground">
-              {landing_footer_follow()}
-            </h3>
-            <div className="mt-4 flex gap-3 lg:justify-end">
-              {socialLinks.map((social) => (
-                <a
-                  key={social.label}
-                  href={social.href}
-                  className="flex h-11 w-11 items-center justify-center rounded-full bg-foreground/10 text-foreground/40 transition-colors hover:bg-foreground/20"
-                  aria-label={social.label}
-                >
-                  <social.icon className="h-5 w-5" stroke={1.5} />
-                </a>
-              ))}
-            </div>
           </div>
         </div>
       </div>
