@@ -2,17 +2,41 @@ import type {
   CatalogModelView,
   ModelOperation,
 } from '@/p1/settings-view-model';
+import type { CreativeOperation } from '@meiye/contracts';
 import {
   creative_output_copy,
   creative_output_image,
   creative_output_video,
+  p1_admin_model_operation_audio_sfx,
+  p1_admin_model_operation_audio_speech,
+  p1_admin_model_operation_copy,
+  p1_admin_model_operation_image_edit,
+  p1_admin_model_operation_image_generate,
+  p1_admin_model_operation_image_reference_transform,
+  p1_admin_model_operation_video,
   workbench_quote_usage_copy,
   workbench_quote_usage_image,
   workbench_quote_usage_video,
 } from '@/locale/paraglide/messages';
 
+const CREATIVE_OPERATION_LABELS: Record<CreativeOperation, () => string> = {
+  'audio.sfx': p1_admin_model_operation_audio_sfx,
+  'audio.speech': p1_admin_model_operation_audio_speech,
+  'copy.adapt': p1_admin_model_operation_copy,
+  'copy.generate': p1_admin_model_operation_copy,
+  'image.edit': p1_admin_model_operation_image_edit,
+  'image.generate': p1_admin_model_operation_image_generate,
+  'image.reference_transform':
+    p1_admin_model_operation_image_reference_transform,
+  'video.generate': p1_admin_model_operation_video,
+};
+
+export function creativeOperationLabel(operation: CreativeOperation) {
+  return CREATIVE_OPERATION_LABELS[operation]();
+}
+
 export function creativeOutputLabel(
-  operation: ModelOperation,
+  operation: CreativeOperation,
   count: number,
   aspectRatio?: string
 ) {

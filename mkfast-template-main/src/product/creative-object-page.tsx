@@ -35,12 +35,6 @@ import {
   legacy_projection_result_count,
   legacy_projection_results_empty,
   legacy_projection_results_title,
-  p1_admin_model_operation_audio_sfx,
-  p1_admin_model_operation_audio_speech,
-  p1_admin_model_operation_copy,
-  p1_admin_model_operation_image_edit,
-  p1_admin_model_operation_image_generate,
-  p1_admin_model_operation_video,
   product_navigation_workbench,
 } from '@/locale/paraglide/messages';
 import { operationsQuery } from '@/p1/client';
@@ -62,7 +56,7 @@ import {
 import type { CreationCatalogResponse } from './creation-catalog-model';
 import { useVideoWorkflowListObserver } from './creative-job-observer';
 import { creativeWorkDisplay } from './creative-work-display';
-import { creativeOutputLabel } from './creative-quote';
+import { creativeOperationLabel, creativeOutputLabel } from './creative-quote';
 import {
   creativeWorkProjectionState,
   legacyRecordProjectionState,
@@ -88,16 +82,6 @@ const pageCopy: Record<
     title: legacy_projection_page_job_title,
   },
 };
-
-const OPERATION_LABELS = {
-  'copy.adapt': p1_admin_model_operation_copy,
-  'copy.generate': p1_admin_model_operation_copy,
-  'image.edit': p1_admin_model_operation_image_edit,
-  'image.generate': p1_admin_model_operation_image_generate,
-  'video.generate': p1_admin_model_operation_video,
-  'audio.speech': p1_admin_model_operation_audio_speech,
-  'audio.sfx': p1_admin_model_operation_audio_sfx,
-} as const;
 
 export function CreativeObjectPage({
   id,
@@ -363,7 +347,7 @@ export function CreativeObjectProjection({
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <Badge variant="outline">
-                  {OPERATION_LABELS[job.contract.operation]()}
+                  {creativeOperationLabel(job.contract.operation)}
                 </Badge>
                 <p className="text-muted-foreground">
                   {legacy_projection_result_count({

@@ -2774,6 +2774,7 @@
   "p1_admin_model_operation_audio_speech": "语音生成",
   "p1_admin_model_operation_copy": "文案生成",
   "p1_admin_model_operation_image_edit": "图片编辑",
+  "p1_admin_model_operation_image_reference_transform": "多图合成",
   "p1_admin_model_operation_image_generate": "图片生成",
   "p1_admin_model_operation_video": "视频生成",
   "p1_admin_model_preflight_description": "确认所有 available 模型都有 live_verified 证据，recorded 模型有 recorded 或更高级别证据。",

@@ -2774,6 +2774,7 @@
   "p1_admin_model_operation_audio_speech": "Speech generation",
   "p1_admin_model_operation_copy": "Copy generation",
   "p1_admin_model_operation_image_edit": "Image editing",
+  "p1_admin_model_operation_image_reference_transform": "Multi-image composition",
   "p1_admin_model_operation_image_generate": "Image generation",
   "p1_admin_model_operation_video": "Video generation",
   "p1_admin_model_preflight_description": "Confirm every available model has live_verified evidence and every recorded model has recorded or stronger evidence.",

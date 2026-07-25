@@ -135,6 +135,7 @@ function workspaceKindForWork(work: CreativeWork): ResultWorkspaceKind {
   switch (work.operation) {
     case 'image.generate':
     case 'image.edit':
+    case 'image.reference_transform':
       return 'image';
     case 'video.generate':
       return 'video';

@@ -21,10 +21,6 @@ import {
   canonical_media_kind_video,
   creative_object_mode_agent,
   creative_object_mode_direct,
-  p1_admin_model_operation_copy,
-  p1_admin_model_operation_image_edit,
-  p1_admin_model_operation_image_generate,
-  p1_admin_model_operation_video,
   p1_canvas_asset_source_ai,
   p1_canvas_asset_source_real,
   p1_canvas_authorization_authorized,
@@ -42,7 +38,7 @@ import {
 } from '@/locale/paraglide/messages';
 import { taskView, type RawTask } from '@/p1/operations-view-model';
 import { productStatusView } from '@/lib/uiux/status';
-import { creativeOutputLabel } from './creative-quote';
+import { creativeOperationLabel, creativeOutputLabel } from './creative-quote';
 import { canvasName } from '@/p1/canvas-name';
 import {
   creativeWorkDisplay,
@@ -157,15 +153,6 @@ export interface CanonicalLegacyContentDetail {
 
 function byRecent(left: CanonicalHistoryItem, right: CanonicalHistoryItem) {
   return right.updatedAt.localeCompare(left.updatedAt);
-}
-
-function operationLabel(operation: CreativeJob['contract']['operation']) {
-  if (operation.startsWith('copy.')) return p1_admin_model_operation_copy();
-  if (operation === 'image.edit') return p1_admin_model_operation_image_edit();
-  if (operation === 'image.generate') {
-    return p1_admin_model_operation_image_generate();
-  }
-  return p1_admin_model_operation_video();
 }
 
 function taskStatusLabel(status: RawTask['status']) {
@@ -404,7 +391,7 @@ export function canonicalHistoryItems(
     ...history.jobs.map((job): CanonicalHistoryItem => {
       const jobMedia = mediaForIds(media, job.outputAssetIds);
       return {
-        detail: `${operationLabel(job.contract.operation)} · ${
+        detail: `${creativeOperationLabel(job.contract.operation)} · ${
           productStatusView(job.status).label
         }`,
         href: `/dashboard/jobs/${job.id}`,
