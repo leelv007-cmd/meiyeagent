@@ -1,22 +1,38 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const coreSource = join(here, '../../..');
 const repositoryRoot = join(here, '../../../../..');
 
 const FROZEN_CONTENT_PACKAGE_WRITE_BYPASSES = [
-  'src/pro-studio-runtime/postgres-adoption-service.ts',
+  'apps/core/src/pro-studio-runtime/postgres-adoption-service.ts',
 ] as const;
+
+function childSourceRoots(parent: string): string[] {
+  return readdirSync(parent, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(parent, entry.name, 'src'))
+    .filter((path) => existsSync(path));
+}
+
+const productionSourceRoots = [
+  ...childSourceRoots(join(repositoryRoot, 'apps')),
+  ...childSourceRoots(join(repositoryRoot, 'packages')),
+  join(repositoryRoot, 'mkfast-template-main/src'),
+];
 
 function productionTypescriptFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) return productionTypescriptFiles(path);
-    if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) {
+    if (
+      (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) ||
+      entry.name.endsWith('.test.ts') ||
+      entry.name.endsWith('.test.tsx')
+    ) {
       return [];
     }
     return [path];
@@ -24,9 +40,10 @@ function productionTypescriptFiles(directory: string): string[] {
 }
 
 function filesMatching(pattern: RegExp) {
-  return productionTypescriptFiles(coreSource)
+  return productionSourceRoots
+    .flatMap((root) => productionTypescriptFiles(root))
     .filter((path) => pattern.test(readFileSync(path, 'utf8')))
-    .map((path) => relative(coreSource, path))
+    .map((path) => relative(repositoryRoot, path))
     .sort();
 }
 
@@ -35,11 +52,11 @@ test('ContentPackage SQL writes stay in the canonical adapter plus the fixed FRE
     /\b(?:insert\s+into|update|delete\s+from)\s+(?:public\.)?p1_content_packages\b/i,
   );
   assert.deepEqual(writers, [
-    'src/p1/operations/postgres-content-package-write-adapter.ts',
+    'apps/core/src/p1/operations/postgres-content-package-write-adapter.ts',
     ...FROZEN_CONTENT_PACKAGE_WRITE_BYPASSES,
   ]);
   assert.deepEqual(FROZEN_CONTENT_PACKAGE_WRITE_BYPASSES, [
-    'src/pro-studio-runtime/postgres-adoption-service.ts',
+    'apps/core/src/pro-studio-runtime/postgres-adoption-service.ts',
   ]);
 });
 
@@ -48,11 +65,11 @@ test('StoreFact SQL and semantic appends have one controlled path', () => {
     filesMatching(
       /\b(?:insert\s+into|update|delete\s+from)\s+(?:public\.)?p1_store_fact_(?:heads|workspace_heads|revisions)\b/i,
     ),
-    ['src/p1/operations/postgres-store-fact-ledger.ts'],
+    ['apps/core/src/p1/operations/postgres-store-fact-ledger.ts'],
   );
   assert.deepEqual(
     filesMatching(/\b(?:this\.)?(?:facts|ledger)\.append\s*\(/),
-    ['src/p1/operations/store-fact-semantic-mutation-policy.ts'],
+    ['apps/core/src/p1/operations/store-fact-semantic-mutation-policy.ts'],
   );
 });
 
