@@ -106,5 +106,28 @@ typechecks passed for both `@meiye/contracts` and `@meiye/core`.
 
 ## Repository baseline
 
-The repository-wide `pnpm test` result is recorded after the final committed
-source state below.
+Command, run after commits `457e9a87` and `89e15494`:
+
+```text
+pnpm test
+```
+
+Result: exit code `0`. All four workspace test commands and the root script
+suite completed:
+
+```text
+@meiye/contracts: 68 passed, 0 failed
+@meiye/web: 1258 passed, 0 failed
+@meiye/core: 2155 passed, 10 explicit live skips, 0 failed
+@meiye/canvas: 278 passed, 0 failed
+root scripts: 99 passed, 1 explicit skip, 0 failed
+```
+
+Final static validation commands:
+
+```text
+pnpm --filter @meiye/contracts --filter @meiye/core typecheck
+git diff --check
+```
+
+Each command completed with exit code `0`.
