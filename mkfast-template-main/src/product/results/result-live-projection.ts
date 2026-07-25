@@ -564,3 +564,70 @@ export function buildLiveVideoWorksurface(
       : { status: composedCandidate ? 'candidate_ready' : 'none' },
   });
 }
+
+/** Project a model-native single-call video directly from its ContentPackage. */
+export function buildNativeVideoWorksurface(
+  selection: ResultCenterLiveSelection,
+  contentPackage: PublicContentPackage | undefined
+): VideoWorksurfaceState | undefined {
+  if (
+    selection.workspaceKind !== 'video' ||
+    contentPackage?.kind !== 'video'
+  ) {
+    return undefined;
+  }
+  const version = contentPackage.versions.find(
+    (candidate) => candidate.id === contentPackage.currentVersionId
+  );
+  const asset = contentPackage.generated.ownedAssets
+    ?.filter((candidate) => candidate.contentType === 'video/mp4')
+    .at(-1);
+  const run = contentPackage.generated.childRuns.find((candidate) =>
+    (candidate.assetIds ?? []).some((assetId) => assetId === asset?.id)
+  );
+  const catalogModelId =
+    run?.actualCatalogModelId ?? selection.job?.contract.catalogModelId;
+  if (!version || !asset || !run || !catalogModelId) return undefined;
+
+  return buildVideoWorksurfaceState({
+    workId: selection.work.id,
+    workflow: {
+      workflowId: run.runId,
+      workId: selection.work.id,
+      status: 'completed',
+      storyboardVersion: Math.max(1, contentPackage.revision),
+      storyboardRevision: version.id,
+      catalogModelId,
+      confirmed: true,
+      shots: [
+        {
+          shotId: version.id,
+          promptPreview: version.body,
+          candidatesPerShot: 1,
+          selectedCandidateIndex: 0,
+          candidateCount: 1,
+        },
+      ],
+      revision: contentPackage.revision,
+      updatedAt: contentPackage.updatedAt,
+    },
+    baseRevisionId: version.id,
+    contentId: contentPackage.id,
+    versionId: version.id,
+    selectedObjectId: asset.id,
+    composedCandidate: {
+      assetId: asset.id,
+      playableUrl: `/api/core/p1/assets?objectKey=${encodeURIComponent(asset.objectKey)}`,
+      durationSeconds: selection.job?.contract.durationSeconds ?? 0,
+    },
+    adoption: {
+      status:
+        contentPackage.status === 'accepted' ? 'adopted' : 'candidate_ready',
+      contentPackageId: contentPackage.id,
+      contentRevision: contentPackage.revision,
+      composedAssetId: asset.id,
+      adoptedAt:
+        contentPackage.status === 'accepted' ? contentPackage.updatedAt : null,
+    },
+  });
+}
