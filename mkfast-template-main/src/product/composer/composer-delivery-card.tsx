@@ -80,8 +80,11 @@ export function ComposerDeliveryCard({
           {revision ? `成品已就绪 · 第 ${revision.revision} 版` : '成品已就绪'}
         </p>
         {statement ? (
+          // 任务总结 is a first-class delivery output (D-116: 策略依据/版本定位/
+          // 使用建议), not card chrome — muted footnote type would make the one
+          // thing the merchant is meant to read the hardest thing to read.
           <p
-            className="text-muted mt-1 text-xs leading-relaxed"
+            className="text-foreground/80 mt-1.5 text-sm leading-relaxed"
             data-testid="composer-delivery-statement"
           >
             {statement}

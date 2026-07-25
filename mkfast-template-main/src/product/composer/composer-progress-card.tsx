@@ -59,9 +59,12 @@ export function ComposerProgressCard({
                 )}
               </span>
               <p
+                // 白话进度 is an output surface D-116 expects the merchant to
+                // read, so past stages stay legible rather than dropping to
+                // footnote grey; only the emphasis differs from the live one.
                 className={cn(
                   'text-xs',
-                  live ? 'text-foreground' : 'text-muted'
+                  live ? 'text-foreground' : 'text-foreground/70'
                 )}
                 data-stage={stage.stage}
                 // Kept from the pre-card stage line: the D-114 container spec
