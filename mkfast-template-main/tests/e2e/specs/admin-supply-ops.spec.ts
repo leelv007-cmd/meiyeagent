@@ -130,6 +130,48 @@ async function expectNoExceptionWorkflowControls(surface: Locator) {
   ).toHaveCount(0);
 }
 
+/**
+ * Hand an isolated channel back through the governed `channel_recover` action.
+ *
+ * The isolation test drives a real lifecycle command against a real channel, and
+ * `channel_isolate` used to be the end of it: whichever channel sat at index 1 of
+ * the target select — in a fresh lane database that is the Day-0 default text
+ * channel — stayed `isolated` forever. Every later execution-chain journey in the
+ * same database then failed capability assembly, which is how two lanes got
+ * poisoned on 2026-07-25 while three others stayed green. Restoring here also
+ * exercises the `data-reversible-drain="true"` promise the test asserts above but
+ * never used to prove.
+ */
+async function recoverChannel(page: Page, channelId: string) {
+  await page.goto('/admin/supply');
+  const actions = page.getByTestId('supply-governed-actions-panel');
+  await expect(actions).toBeVisible({ timeout: 30_000 });
+  const recover = actions.locator(
+    '[data-testid="supply-governed-action-row"][data-action-id="channel_recover"]'
+  );
+  await expect(recover).toBeVisible();
+  await recover.getByLabel('渠道恢复目标').selectOption(channelId);
+  const reason = `Playwright 渠道恢复复位 ${randomUUID()}`;
+  await recover.getByLabel('渠道恢复原因').fill(reason);
+  await recover.getByRole('button', { name: '渠道恢复', exact: true }).click();
+
+  const review = page.getByRole('dialog', { name: '渠道恢复' });
+  await expect(review).toBeVisible();
+  await review
+    .getByRole('button', { name: '确认渠道恢复', exact: true })
+    .click();
+
+  // Recovery is only real if it reached the immutable audit trail, same bar as
+  // the isolation it reverses.
+  const auditLink = actions.getByRole('link', { name: '查看审计', exact: true });
+  await expect(auditLink).toBeVisible({ timeout: 30_000 });
+  await auditLink.click();
+  await expect(page).toHaveURL(/\/admin\/audit\/?$/u);
+  await expect(page.getByText(reason, { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
   test.beforeAll(async ({ request }) => {
     await cleanupE2EUsers(request);
@@ -194,6 +236,10 @@ test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
     const target = isolate.getByLabel('渠道隔离目标');
     await expect(target).toBeVisible();
     await target.selectOption({ index: 1 });
+    // The isolation lands in shared lifecycle state, so remember exactly which
+    // channel was drained and hand it back at the end — see the recovery below.
+    const isolatedChannelId = await target.inputValue();
+    expect(isolatedChannelId).not.toBe('');
     const reason = `Playwright 渠道隔离验收 ${randomUUID()}`;
     await isolate.getByLabel('渠道隔离原因').fill(reason);
     await isolate
@@ -210,18 +256,22 @@ test.describe('admin supply operations acceptance (#122/#123/#128)', () => {
       .getByRole('button', { name: '确认渠道隔离', exact: true })
       .click();
 
-    const auditLink = actions.getByRole('link', {
-      name: '查看审计',
-      exact: true,
-    });
-    await expect(auditLink).toBeVisible({ timeout: 30_000 });
-    await auditLink.click();
+    try {
+      const auditLink = actions.getByRole('link', {
+        name: '查看审计',
+        exact: true,
+      });
+      await expect(auditLink).toBeVisible({ timeout: 30_000 });
+      await auditLink.click();
 
-    await expect(page).toHaveURL(/\/admin\/audit\/?$/u);
-    await expect(page.getByText(reason, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
-    await expectD048BanOnSurface(page.locator('main'));
+      await expect(page).toHaveURL(/\/admin\/audit\/?$/u);
+      await expect(page.getByText(reason, { exact: true })).toBeVisible({
+        timeout: 30_000,
+      });
+      await expectD048BanOnSurface(page.locator('main'));
+    } finally {
+      await recoverChannel(page, isolatedChannelId);
+    }
   });
 
   test('daily operator surfaces expose no technical editors or exception ownership workflow', async ({
