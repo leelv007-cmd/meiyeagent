@@ -1375,6 +1375,8 @@ export function ComposerHome({
 
       <ComposerPromptBar
         ariaLabel={creation_entry_intent_aria()}
+        // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
+        className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
         attachmentSlot={
           <div data-testid="composer-source-picker">
             <ComposerImageInput
