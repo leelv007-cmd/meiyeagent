@@ -43,6 +43,12 @@ export const COMPOSER_OPERATION_BY_LENS = {
   video: 'video.generate',
 } as const satisfies Record<CreationLensId, string>;
 
+export const COMPOSER_PLATFORM_DEFAULT_MODEL_BY_LENS = {
+  copy: 'deepseek-v4-pro',
+  image_text: 'seedream-5-pro',
+  video: 'seedance-2',
+} as const satisfies Record<CreationLensId, string>;
+
 export async function fetchComposerSurface(
   signal?: AbortSignal,
   query: ComposerQueryTransport = queryP1
@@ -88,6 +94,21 @@ export async function fetchComposerCatalog(
     },
     signal
   )) as RawComposerCatalog;
+}
+
+export async function fetchComposerPreferences(
+  lensId: CreationLensId,
+  signal?: AbortSignal,
+  query: ComposerQueryTransport = queryP1
+) {
+  return query(
+    'model-supply',
+    {
+      action: 'preferences',
+      payload: { operation: COMPOSER_OPERATION_BY_LENS[lensId] },
+    },
+    signal
+  );
 }
 
 export function buildLiveQuoteInput(input: {

@@ -16,12 +16,13 @@ export interface CreationModelSelection {
     | 'current_selection'
     | 'user_default'
     | 'workspace_default'
-    | 'catalog_recommended';
+    | 'platform_default';
 }
 
 export function resolveCreationModelSelection(input: {
   catalog: CatalogModelView[];
   currentSelection?: string;
+  platformDefault?: string;
   userDefault?: string;
   workspaceDefault?: string;
 }): CreationModelSelection | undefined {
@@ -39,10 +40,9 @@ export function resolveCreationModelSelection(input: {
   if (workspaceDefault) {
     return { model: workspaceDefault, source: 'workspace_default' };
   }
-  // First-time merchant path: recommended executable model without defaults.
-  const firstExecutable = input.catalog.find(executable);
-  if (firstExecutable) {
-    return { model: firstExecutable, source: 'catalog_recommended' };
+  const platformDefault = eligible(input.platformDefault);
+  if (platformDefault) {
+    return { model: platformDefault, source: 'platform_default' };
   }
   return undefined;
 }
