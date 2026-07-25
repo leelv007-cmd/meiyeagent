@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  merchantConfirmationQuestion,
+  merchantPartialFailure,
+  merchantProgressMessage,
+  merchantTaskSummary,
+  merchantVisibleLanguageIssues,
+} from './merchant-delivery-language.js';
+
+test('five merchant-facing positions stay free of engineering language', () => {
+  const messages = [
+    merchantProgressMessage('intent_naming'),
+    merchantProgressMessage('context_injection'),
+    merchantProgressMessage('brief_compilation'),
+    merchantProgressMessage('execution_selection'),
+    merchantConfirmationQuestion('这次更想突出项目效果还是到店体验？'),
+    merchantTaskSummary({
+      revision: 3,
+      strategyBasis: '结合周末到店场景与本店已确认资料',
+      versionPositioning: '这是本次最适合直接发布的主版本',
+      useSuggestion: '建议周五傍晚发布，并配一张真实门店图',
+    }),
+    merchantPartialFailure({
+      completed: '文案已经准备好',
+      failed: '配图暂时没有成功',
+      nextStep: '可以先用自备图发布，稍后再补生成图片',
+    }),
+  ];
+
+  for (const message of messages) {
+    assert.deepEqual(merchantVisibleLanguageIssues(message), []);
+  }
+});
+
+test('task summary positively carries strategy, version guidance and usage advice', () => {
+  const summary = merchantTaskSummary({
+    revision: 2,
+    strategyBasis: '结合换季需求和本店护理特色',
+    versionPositioning: '主版本适合小红书种草',
+    useSuggestion: '搭配一张护理前沟通场景图',
+  });
+
+  assert.match(summary, /策略依据：结合换季需求和本店护理特色/u);
+  assert.match(summary, /版本定位：主版本适合小红书种草/u);
+  assert.match(summary, /使用建议：搭配一张护理前沟通场景图/u);
+  assert.match(summary, /第 2 版/u);
+});
+
+test('language check catches internal ids, providers and transport codes', () => {
+  const issues = merchantVisibleLanguageIssues(
+    'workspace id ws-1 的 DeepSeek provider 返回 HTTP 502',
+  );
+
+  assert.deepEqual(issues, [
+    'workspace id',
+    'provider',
+    'DeepSeek',
+    'HTTP code',
+  ]);
+});

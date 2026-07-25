@@ -162,6 +162,34 @@ test('structured runner rejects one effect key reused with another payload', asy
   assert.equal(ledger.settlements, 1);
 });
 
+test('structured runner can execute one policy retry without a second product charge', async () => {
+  const ledger = new CountingLedger();
+  const executor = new CountingStructuredExecutor({ normalized: '安全版本' });
+  const runner = createRunner(ledger, executor);
+  const base = {
+    schemaName: 'copy_candidate_v1',
+    schemaRevision: 'copy-candidate-v1',
+    instructions: 'Return grounded copy.',
+    schema: z.object({ normalized: z.string() }).strict(),
+  };
+
+  await runner.run({
+    ...base,
+    effectIdempotencyKey: 'wf:workflow-3:s4:copy:c01',
+    productUsageQuantity: 1,
+    prompt: '{"attempt":"primary"}',
+  });
+  await runner.run({
+    ...base,
+    effectIdempotencyKey: 'wf:workflow-3:s4:copy:c01-retry',
+    productUsageQuantity: 0,
+    prompt: '{"attempt":"policy-retry"}',
+  });
+
+  assert.equal(executor.calls, 2);
+  assert.deepEqual(ledger.productUsageQuantities, [1, 0]);
+});
+
 test('structured runner fences every auto provider attempt before fallback', async () => {
   let revoked = false;
   let fenceCalls = 0;
@@ -338,6 +366,7 @@ function rejectedBeforeAcceptance(message: string) {
 class CountingLedger implements ModelSupplyLedgerPort {
   checkpoints = 0;
   settlements = 0;
+  readonly productUsageQuantities: number[] = [];
 
   async checkpointAttempt() {
     this.checkpoints += 1;
@@ -348,6 +377,7 @@ class CountingLedger implements ModelSupplyLedgerPort {
     result: ModelSupplyResult;
   }) {
     this.settlements += 1;
+    this.productUsageQuantities.push(_input.result.usage.quantity);
   }
 }
 

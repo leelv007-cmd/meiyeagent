@@ -4087,6 +4087,7 @@ export class ModelSupplyControlPlaneService {
           selection: { mode: 'fixed', catalogModelId: selected.id },
           dataClass: [],
           prompt: buildBeautyEvaluationPrompt(fixture, promptRevision),
+          copyCandidateCount: 3,
           promptRevision: promptRevision.promptRevision,
           exampleSetRevision: promptRevision.exampleSetRevision,
         });

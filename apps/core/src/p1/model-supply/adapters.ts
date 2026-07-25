@@ -36,7 +36,7 @@ function digest(value: string | Uint8Array) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function recordedBeautyCopy(prompt: string) {
+function recordedBeautyCopy(prompt: string, count: 1 | 3 = 1) {
   let parsed: Record<string, unknown> = {};
   try {
     const value = JSON.parse(prompt) as unknown;
@@ -83,7 +83,7 @@ function recordedBeautyCopy(prompt: string) {
       body: `想做${project}，可以先告诉${store}你在意的风格和时间。${knownPrice}，到店后再按真实情况确认，这样沟通更省时。`,
       conversionHook: '到店前留言',
     },
-  ];
+  ].slice(0, count);
 }
 
 export function recordedRequest(
@@ -226,7 +226,10 @@ abstract class DirectLlmRecordedAdapter implements ProviderExecutionPort {
         },
       };
     }
-    const copyCandidates = recordedBeautyCopy(request.submission.prompt);
+    const copyCandidates = recordedBeautyCopy(
+      request.submission.prompt,
+      request.submission.copyCandidateCount,
+    );
     return {
       kind: 'completed',
       copyCandidates,
@@ -410,7 +413,11 @@ export class OpenAiCompatibleLlmExecutionPort implements ProviderExecutionPort {
                   request.resolvedReferenceAssets ??
                   [],
               )
-            : await runner.generateCopy(request.submission.prompt);
+            : await runner.generateCopy(
+                request.submission.prompt,
+                undefined,
+                request.submission.copyCandidateCount,
+              );
       const inputTokens = result.usage.inputTokens;
       const outputTokens = result.usage.outputTokens;
       return {

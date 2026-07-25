@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Acceptance } from '../model-supply/index.js';
 import type { StructuredNodeRunner } from '../model-supply/structured-node-runner.js';
 import type { ExecutionBrief } from './structured-nodes.js';
+import { compileCopyGenerationRequest } from './output-compiler.js';
 
 const generatedCandidateSchema = z
   .object({
@@ -45,6 +46,11 @@ export const COPY_SCORING_RUBRIC = {
     usefulness: 'The copy gives the merchant a complete usable message and CTA.',
     platformFit: 'The structure and expression fit the requested platform.',
   },
+} as const;
+
+const COPY_SINGLE_PRIMARY_RUBRIC = {
+  version: 'copy-single-primary-v1',
+  rule: 'One policy-valid primary result is delivered without comparative scoring.',
 } as const;
 
 type GeneratedCandidate = z.infer<typeof generatedCandidateSchema> & {
@@ -120,81 +126,88 @@ export async function executeCopySelection(
     validator: CandidatePolicyValidator;
   },
 ) {
-  const candidates: GeneratedCandidate[] = [];
-  for (let index = 1; index <= 3; index += 1) {
-    const candidateId = `c${String(index).padStart(2, '0')}`;
-    const emitPartial = copyCandidateTokenEmitter(candidateId, input.onToken);
-    const generated = await ports.runner.run({
-      effectIdempotencyKey: `wf:${input.workflowId}:s4:${input.unitId}:${candidateId}`,
-      schemaName: 'harness_copy_candidate_v1',
-      schemaRevision: 'copy-candidate-v1',
-      instructions:
-        'Generate one materially distinct, grounded beauty-business copy candidate. Use only supplied source, asset and identity references; never invent reference IDs.',
-      prompt: JSON.stringify({
-        candidateId,
-        brief: input.brief,
-        context: input.generationContext,
-      }),
-      schema: generatedCandidateSchema,
-      ...(emitPartial ? { onPartialOutput: emitPartial } : {}),
-    });
-    candidates.push({
-      ...generated.output,
-      candidateId,
-      workspaceId: input.workspaceId,
-      intendedUse: input.intendedUse,
-    });
-  }
-
-  const scores: Array<
-    z.infer<typeof scoreOutputSchema> & { candidateId: string }
-  > = [];
+  const primaryRequest = compileCopyGenerationRequest({
+    brief: input.brief,
+    context: input.generationContext,
+  });
+  const primaryEmitter = copyCandidateTokenEmitter(
+    primaryRequest.candidateId,
+    input.onToken,
+  );
+  const primary = await ports.runner.run({
+    effectIdempotencyKey:
+      `wf:${input.workflowId}:s4:${input.unitId}:${primaryRequest.candidateId}`,
+    schemaName: 'harness_copy_candidate_v1',
+    schemaRevision: 'copy-candidate-v1',
+    instructions: primaryRequest.instructions,
+    prompt: primaryRequest.prompt,
+    schema: generatedCandidateSchema,
+    productUsageQuantity: 1,
+    ...(primaryEmitter ? { onPartialOutput: primaryEmitter } : {}),
+  });
+  let candidate: GeneratedCandidate = {
+    ...primary.output,
+    candidateId: primaryRequest.candidateId,
+    workspaceId: input.workspaceId,
+    intendedUse: input.intendedUse,
+  };
   const blockedCandidates: Array<{
     candidateId: string;
     gateIds: string[];
     alternativePath: string[];
   }> = [];
-
-  for (const candidate of candidates) {
-    const policy = ports.validator.validate(structuredClone(candidate));
-    if (!policy.passed) {
-      blockedCandidates.push({
-        candidateId: candidate.candidateId,
-        gateIds: policy.failures.map(({ gateId }) => gateId),
-        alternativePath: unique(
-          policy.failures.flatMap(({ alternativePath }) => alternativePath),
-        ),
-      });
-      continue;
-    }
-    const scored = scoreOutputSchema.parse(
-      await ports.scorer.score({
-        effectIdempotencyKey: `wf:${input.workflowId}:s4:${input.unitId}:score-${candidate.candidateId}`,
-        candidate,
-        brief: input.brief,
-        rubric: COPY_SCORING_RUBRIC,
-      }),
+  let policy = ports.validator.validate(structuredClone(candidate));
+  if (!policy.passed) {
+    blockedCandidates.push(blockedCandidate(candidate.candidateId, policy.failures));
+    const retryRequest = compileCopyGenerationRequest({
+      brief: input.brief,
+      context: input.generationContext,
+      policyFailures: policy.failures.map(({ gateId, reason }) => ({
+        gateId,
+        reason,
+      })),
+    });
+    const retryEmitter = copyCandidateTokenEmitter(
+      retryRequest.candidateId,
+      input.onToken,
     );
-    scores.push({ candidateId: candidate.candidateId, ...scored });
+    const retry = await ports.runner.run({
+      effectIdempotencyKey:
+        `wf:${input.workflowId}:s4:${input.unitId}:${retryRequest.candidateId}`,
+      schemaName: 'harness_copy_candidate_v1',
+      schemaRevision: 'copy-candidate-v1',
+      instructions: retryRequest.instructions,
+      prompt: retryRequest.prompt,
+      schema: generatedCandidateSchema,
+      productUsageQuantity: 0,
+      ...(retryEmitter ? { onPartialOutput: retryEmitter } : {}),
+    });
+    candidate = {
+      ...retry.output,
+      candidateId: retryRequest.candidateId,
+      workspaceId: input.workspaceId,
+      intendedUse: input.intendedUse,
+    };
+    policy = ports.validator.validate(structuredClone(candidate));
   }
-
-  const winningScore = [...scores].sort(
-    (left, right) =>
-      right.score - left.score ||
-      left.candidateId.localeCompare(right.candidateId),
-  )[0];
-  if (!winningScore) {
+  if (!policy.passed) {
+    blockedCandidates.push(blockedCandidate(candidate.candidateId, policy.failures));
     throw new HarnessSelectionError(
       unique(blockedCandidates.flatMap(({ gateIds }) => gateIds)),
     );
   }
-  const winner = candidates.find(
-    ({ candidateId }) => candidateId === winningScore.candidateId,
-  )!;
-  const rubricHash = sha256(JSON.stringify(COPY_SCORING_RUBRIC));
+  const scores = [
+    {
+      candidateId: candidate.candidateId,
+      score: 0,
+      dimensions: { grounding: 0, usefulness: 0, platformFit: 0 },
+      reason: 'Single primary result; comparative scoring was not run.',
+    },
+  ];
+  const rubricHash = sha256(JSON.stringify(COPY_SINGLE_PRIMARY_RUBRIC));
   const trace: DecisionTraceFragment = {
     stage: 'execution_selection',
-    winnerCandidateId: winner.candidateId,
+    winnerCandidateId: candidate.candidateId,
     candidateScores: scores.map(({ candidateId, score, dimensions, reason }) => ({
       candidateId,
       score,
@@ -205,20 +218,32 @@ export async function executeCopySelection(
       candidateId,
       gateIds,
     })),
-    rubricVersion: COPY_SCORING_RUBRIC.version,
+    rubricVersion: COPY_SINGLE_PRIMARY_RUBRIC.version,
     rubricHash,
   };
   return {
-    candidates: candidates.flatMap((candidate) => {
-      const scored = scores.find(
-        ({ candidateId }) => candidateId === candidate.candidateId,
-      );
-      return scored ? [{ ...candidate, score: scored.score }] : [];
-    }),
-    winner,
+    candidates: [{ ...candidate, score: 0 }],
+    winner: candidate,
     scores,
     blockedCandidates,
     trace,
+  };
+}
+
+function blockedCandidate(
+  candidateId: string,
+  failures: Array<{
+    gateId: string;
+    reason: string;
+    alternativePath: string[];
+  }>,
+) {
+  return {
+    candidateId,
+    gateIds: failures.map(({ gateId }) => gateId),
+    alternativePath: unique(
+      failures.flatMap(({ alternativePath }) => alternativePath),
+    ),
   };
 }
 

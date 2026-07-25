@@ -44,6 +44,7 @@ export class ModelSupplyProductCopyProvider implements CopyProvider {
       dataClass: [...request.dataClasses],
       exampleSetRevision: promptRevision.exampleSetRevision,
       idempotencyKey: request.idempotencyKey,
+      copyCandidateCount: 3,
       prompt: JSON.stringify({
         assets: request.assets.map((asset) => ({
           id: asset.id,

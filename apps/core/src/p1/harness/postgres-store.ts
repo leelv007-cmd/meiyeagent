@@ -18,6 +18,7 @@ import {
 import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
 import { TaskBlockingNodeConflictError } from '../operations/repository.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { buildCopyPlatformVariants } from './output-compiler.js';
 
 import type {
   HarnessDecisionStore,
@@ -876,6 +877,11 @@ export class PostgresHarnessStore
           },
           status: 'review_ready',
           updatedAt: input.occurredAt,
+          variants: buildCopyPlatformVariants({
+            currentVersionId: versionId,
+            packageId: input.packageId,
+            versions: candidateVersions,
+          }),
           versions: [...contentPackage.versions, ...candidateVersions],
         });
         const written = input.reuseSeed

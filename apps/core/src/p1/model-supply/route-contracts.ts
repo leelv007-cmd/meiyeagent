@@ -43,6 +43,8 @@ export interface ModelSupplySubmission {
   };
   /** Product entitlement units billed for this provider execution. Defaults to 1. */
   productUsageQuantity?: 0 | 1;
+  /** Explicit bounded quality-probe breadth; ordinary copy generation omits this and defaults to one. */
+  copyCandidateCount?: 1 | 3;
   promptRevision?: string;
   exampleSetRevision?: string;
   input?: {
