@@ -216,8 +216,11 @@ export class PostgresEntitlementPoolsMigration
         payload jsonb NOT NULL,
         frozen_at timestamptz NOT NULL
       );
-      CREATE UNIQUE INDEX IF NOT EXISTS p1_supply_request_freezes_product_usage_idx
-        ON p1_supply_request_freezes (workspace_id, product_usage_task_id)
+      DROP INDEX IF EXISTS p1_supply_request_freezes_product_usage_idx;
+      CREATE INDEX IF NOT EXISTS p1_supply_request_freezes_product_usage_lookup_idx
+        ON p1_supply_request_freezes (
+          workspace_id, product_usage_task_id, frozen_at, freeze_id
+        )
         WHERE product_usage_task_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS p1_supply_request_freezes_supplier_task_idx
         ON p1_supply_request_freezes (supplier_request_task_id);
@@ -1665,21 +1668,6 @@ export class PostgresSupplyFreezeStore {
         }
         return structuredClone(existing.rows[0].payload);
       }
-      if (fact.productUsageTaskId) {
-        const productUsage = await client.query<
-          PayloadRow<SupplyRequestFreeze>
-        >(
-          `SELECT payload
-             FROM p1_supply_request_freezes
-            WHERE workspace_id = $1 AND product_usage_task_id = $2`,
-          [fact.workspaceId, fact.productUsageTaskId]
-        );
-        if (productUsage.rows[0]) {
-          conflict(
-            `ProductUsage task ${fact.productUsageTaskId} already has another supply freeze.`
-          );
-        }
-      }
       await client.query(
         `INSERT INTO p1_supply_request_freezes (
            freeze_id, workspace_id, supply_pool_id, route_snapshot_ref,
@@ -1717,12 +1705,27 @@ export class PostgresSupplyFreezeStore {
     workspaceId: string,
     productUsageTaskId: string
   ): Promise<SupplyRequestFreeze | null> {
+    // Compatibility accessor for callers that need the first immutable link.
+    // Task-level audits must use listByProductUsageTask because one user-side
+    // ProductUsage can own multiple supply requests.
+    const freezes = await this.listByProductUsageTask(
+      workspaceId,
+      productUsageTaskId,
+    );
+    return freezes[0] ?? null;
+  }
+
+  async listByProductUsageTask(
+    workspaceId: string,
+    productUsageTaskId: string,
+  ): Promise<SupplyRequestFreeze[]> {
     const result = await this.pool.query<PayloadRow<SupplyRequestFreeze>>(
       `SELECT payload
          FROM p1_supply_request_freezes
-        WHERE workspace_id = $1 AND product_usage_task_id = $2`,
+        WHERE workspace_id = $1 AND product_usage_task_id = $2
+        ORDER BY frozen_at ASC, freeze_id ASC`,
       [workspaceId, productUsageTaskId]
     );
-    return result.rows[0] ? structuredClone(result.rows[0].payload) : null;
+    return result.rows.map((row) => structuredClone(row.payload));
   }
 }

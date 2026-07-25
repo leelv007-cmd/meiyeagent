@@ -35,13 +35,15 @@ test('fixture harness runtime assembles and completes its structured model path'
   const delivery = new RecordingDelivery();
   const ports = new ProductionHarnessStagePorts(
     {
-      create({ workspaceId, actorId }) {
+      create({ workspaceId, actorId, billingTaskId, billingQuoteRevision }) {
         return new ModelSupplyStructuredNodeRunner({
           application,
           executor,
           workspaceId,
           actorId,
           selection: { mode: 'auto', profile: 'quality' },
+          billingTaskId: billingTaskId ?? 'fixture-task',
+          billingQuoteRevision: billingQuoteRevision ?? 'fixture-quote-r1',
         });
       },
     },

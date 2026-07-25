@@ -802,7 +802,7 @@ describe('durable composed-video application seam', () => {
   ] as const;
 
   for (const failure of outerCompositionFailures) {
-    it(`restores committed video usage after ${failure.id} composition failure`, async () => {
+    it(`restores grant-lot video usage after ${failure.id} composition failure`, async () => {
       const fixture = await setupOuterVideoFailure(failure);
 
       const failed = await fixture.run();
@@ -831,7 +831,7 @@ describe('durable composed-video application seam', () => {
         (await fixture.repository.listUsageEvents(failed.workspaceId, 'video'))
           .filter((event) => event.action !== 'adjust')
           .map((event) => event.action),
-        ['reserve', 'commit', 'compensate'],
+        [],
       );
       const grantTransactions = fixture.grantLots.listTransactions(
         failed.workspaceId,

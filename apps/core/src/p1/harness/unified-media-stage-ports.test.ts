@@ -37,7 +37,7 @@ test("image and video use the existing Model Supply path with stable submission 
 			brief: mediaBrief(kind),
 			context: contextSnapshot(),
 			request,
-			workflowId: `task-${kind}`,
+			workflowId: `workflow-${kind}`,
 		});
 
 		assert.deepEqual(submissions, [
@@ -45,9 +45,9 @@ test("image and video use the existing Model Supply path with stable submission 
 				actorId: "owner-1",
 				billingQuoteRevision: "quote-r1",
 				billingTaskId: `task-${kind}`,
-				correlationId: `task-${kind}`,
+				correlationId: `workflow-${kind}`,
 				dataClass: [],
-				idempotencyKey: `harness-media:task-${kind}:${kind}`,
+				idempotencyKey: `harness-media:workflow-${kind}:${kind}`,
 				input:
 					kind === "image"
 						? {
@@ -61,6 +61,7 @@ test("image and video use the existing Model Supply path with stable submission 
 								referenceAssetIds: ["asset-1"],
 							},
 				operation: kind === "image" ? "image.edit" : "video.generate",
+				productUsageQuantity: 0,
 				prompt:
 					kind === "image"
 						? `${mediaBrief(kind).prompt}\n${JSON.stringify({
@@ -318,11 +319,14 @@ test("exact text blocks the first image, retries once, and keeps both provider c
 		"harness-media:task-image:image:exact-text-retry",
 	);
 	assert.match(submissions[1]?.prompt ?? "", /价格数字不一致/u);
-	assert.equal(
-		submissions.some((submission) =>
-			Object.hasOwn(submission, "productUsageQuantity"),
-		),
-		false,
+	// T19 originally asserted the key was ABSENT. T14 (merged after it) makes every
+	// media sub-job explicitly cost-only, so absence is no longer the right shape —
+	// and absence was never the safe one: before T14 an absent value fell through to
+	// a `?? 1` default, i.e. a real user-side debit. Pinning the value to 0 says what
+	// this test's own name claims, and it fails if anyone reintroduces a debit here.
+	assert.deepEqual(
+		submissions.map((submission) => submission.productUsageQuantity),
+		[0, 0],
 	);
 });
 

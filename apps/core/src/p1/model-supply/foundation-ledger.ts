@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
   P1ApplicationService,
+  ZERO_VALUE_USAGE_RESERVATION_PREFIX,
 } from '../foundation/application-service.js';
 import {
   resolveGenerationOpeningEntitlement,
@@ -111,10 +112,14 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
     const resource = usageResource(input.submission.operation);
     const usageQuantity = input.submission.productUsageQuantity ?? 1;
     // Once the grant-lot ledger is assembled it is the sole allowance
-    // authority. The legacy usage reservation remains a zero-value carrier for
-    // dispatch, provider, and settlement audit facts.
+    // authority. The generation job keeps a stable zero-value reservation
+    // identity without creating a second ProductUsage event stream.
     const legacyUsageQuantity = this.grantLots ? 0 : usageQuantity;
-    const usageReservationId = usageReservationIdFor(input.jobId);
+    const usageOperationId = usageReservationIdFor(input.jobId);
+    const usageReservationId = usageReservationIdFor(
+      input.jobId,
+      legacyUsageQuantity,
+    );
     // S2b: snapshot conversion goes through canonical adapters (read-old → write-new).
     const routeSnapshot = modelSupplyCheckpointToFoundationRoute({
       snapshot: input.snapshot,
@@ -161,7 +166,7 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
             workspaceId: input.submission.workspaceId,
             resource,
             amount: usageQuantity,
-            transactionId: usageReservationId,
+            transactionId: usageOperationId,
             actorId: input.submission.actorId,
             correlationId:
               input.submission.correlationId ?? `model:${input.jobId}`,
@@ -490,6 +495,16 @@ export class FoundationModelSupplyLedger implements ModelSupplyLedgerPort {
         ? { usageQuantity: cost.usage.mediaUnits, usageUnit: 'media_unit' }
         : {}),
     };
+    if (input.result.usage.quantity === 0) {
+      await this.billingLifecycle.dispatchAttempt({
+        attemptId: attempt.id,
+        deploymentId: attempt.deploymentId,
+        providerCost,
+        taskId,
+        workspaceId: input.submission.workspaceId,
+      });
+      return;
+    }
     if (canFallback) {
       await this.billingLifecycle.dispatchAttempt({
         attemptId: attempt.id,
@@ -799,8 +814,11 @@ function sameImmutableFreeze(
   return isDeepStrictEqual(existingFacts, replayedFacts);
 }
 
-function usageReservationIdFor(jobId: string) {
-  return `model-usage-${digest(jobId).slice(0, 28)}`;
+function usageReservationIdFor(jobId: string, quantity = 1) {
+  const id = digest(jobId).slice(0, 28);
+  return quantity === 0
+    ? `${ZERO_VALUE_USAGE_RESERVATION_PREFIX}${id}`
+    : `model-usage-${id}`;
 }
 
 function contextFor(input: ModelSupplyLedgerCheckpointInput): P1Context {

@@ -86,7 +86,9 @@ test(
 
     const migrationClient = await pool.connect();
     try {
-      await new PostgresEntitlementPoolsMigration().migrate(migrationClient);
+      const migration = new PostgresEntitlementPoolsMigration();
+      await migration.migrate(migrationClient);
+      await migration.migrate(migrationClient);
     } finally {
       migrationClient.release();
     }
@@ -867,6 +869,52 @@ test(
         await store.getByProductUsageTask('workspace-a', 'product-usage-task-1'),
         freeze,
       );
+      const secondFreeze = buildSupplyRequestFreeze({
+        ...freeze,
+        id: 'freeze-2',
+        routeSnapshotRef: 'route-snapshot-2',
+        credentialAccountVersion: 'credential-b:v1',
+        supplierRequestTaskId: 'supplier-task-2',
+        supplierPriceRevision: {
+          ...freeze.supplierPriceRevision,
+          id: 'supplier-price-2',
+          deploymentId: 'deployment-image-b',
+          revisionId: 'supplier-price-2:r1',
+        },
+        providerCostAttemptId: 'provider-attempt-2',
+        frozenAt: '2026-07-20T03:02:00.000Z',
+      });
+      assert.notDeepEqual(secondFreeze, freeze);
+      assert.notEqual(secondFreeze.routeSnapshotRef, freeze.routeSnapshotRef);
+      assert.notEqual(
+        secondFreeze.supplierPriceRevision.deploymentId,
+        freeze.supplierPriceRevision.deploymentId,
+      );
+      assert.notEqual(
+        secondFreeze.providerCostAttemptId,
+        freeze.providerCostAttemptId,
+      );
+      assert.deepEqual(await store.append(secondFreeze), secondFreeze);
+      assert.deepEqual(await store.append(secondFreeze), secondFreeze);
+      assert.deepEqual(
+        await store.listByProductUsageTask(
+          'workspace-a',
+          'product-usage-task-1',
+        ),
+        [
+          freeze,
+          secondFreeze,
+        ],
+      );
+      const persistedTaskFreezes = await pool.query<{ count: number }>(
+        `SELECT count(*)::integer AS count
+           FROM p1_supply_request_freezes
+          WHERE workspace_id = $1 AND product_usage_task_id = $2`,
+        ['workspace-a', 'product-usage-task-1'],
+      );
+      assert.deepEqual(persistedTaskFreezes.rows, [
+        { count: 2 },
+      ]);
       await assert.rejects(
         store.append({ ...freeze, routeSnapshotRef: 'route-snapshot-other' }),
         (error: unknown) =>

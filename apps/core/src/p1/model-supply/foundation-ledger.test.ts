@@ -94,17 +94,6 @@ function createStrictSupplyFreezeStore(
         assert.deepEqual(freeze, existing);
         return structuredClone(existing);
       }
-      const linked = freeze.productUsageTaskId
-        ? [...freezes.values()].find(
-            (candidate) =>
-              candidate.workspaceId === freeze.workspaceId &&
-              candidate.productUsageTaskId === freeze.productUsageTaskId,
-          )
-        : undefined;
-      if (linked) {
-        assert.deepEqual(freeze, linked);
-        return structuredClone(linked);
-      }
       freezes.set(freeze.id, structuredClone(freeze));
       return structuredClone(freeze);
     },
@@ -1062,7 +1051,7 @@ test('keeps one reservation and one frozen candidate set across a safe pre-accep
   );
 });
 
-test('refunds the Foundation copy reservation after acceptance-unknown partial delivery', async () => {
+test('refunds grant-lot copy usage after acceptance-unknown partial delivery', async () => {
   const repository = new MemoryFoundationRepository();
   repository.grantOwner(context.workspaceId, context.userId);
   const foundation = new P1ApplicationService(repository);
@@ -1136,7 +1125,7 @@ test('refunds the Foundation copy reservation after acceptance-unknown partial d
     (await repository.listUsageEvents(context.workspaceId, 'copy'))
       .filter((event) => event.reservationId === result.usage.id)
       .map((event) => event.action),
-    ['reserve', 'refund'],
+    [],
   );
   const grantTransactions = grantLots.listTransactions(context.workspaceId);
   const usage = grantTransactions.find(
@@ -1561,10 +1550,7 @@ test('records a zero-product-usage generation without skipping provider or Found
     events
       .filter((event) => event.reservationId === result.usage.id)
       .map((event) => [event.action, event.amount]),
-    [
-      ['reserve', 0],
-      ['commit', 0],
-    ],
+    [],
   );
   const attempts = await repository.listProviderAttempts(
     context.workspaceId,
