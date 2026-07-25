@@ -91,7 +91,9 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
 
     // Baseline: the copy bucket's allowance as the merchant reads it.
     const merchantCopyAllowance = page
-      .locator('section', { has: page.getByRole('heading', { name: '文案条数' }) })
+      .locator('section', {
+        has: page.getByRole('heading', { name: '文案条数' }),
+      })
       .getByText(/^套餐总量 \d+$/)
       .first();
     const readMerchantAllowance = async () => {
@@ -130,7 +132,9 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
     await expect(dialog).toBeVisible();
     await page
       .getByLabel('执行原因（写入审计）')
-      .fill('T35 acceptance: move the trial copy allowance through admin-config');
+      .fill(
+        'T35 acceptance: move the trial copy allowance through admin-config'
+      );
     await dialog.getByRole('button', { name: '确认执行' }).click();
     await expect(dialog).toBeHidden();
 
@@ -167,7 +171,9 @@ test('model assembly separates the catalog layer from the channel layer', async 
       [catalogLayer, 'platform.defaultModel.copy', 'model.execution.mode'],
       [channelLayer, 'model.execution.mode', 'platform.defaultModel.copy'],
     ] as const) {
-      await expect(layer.getByText(own, { exact: false }).first()).toBeVisible();
+      await expect(
+        layer.getByText(own, { exact: false }).first()
+      ).toBeVisible();
       await expect(layer.getByText(foreign, { exact: false })).toHaveCount(0);
     }
   } finally {
