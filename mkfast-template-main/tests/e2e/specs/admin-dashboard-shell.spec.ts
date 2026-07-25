@@ -104,12 +104,26 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
     await page.goto('/admin/plans');
     const copyField = page.locator('#plan-trial-copy');
     await expect(copyField).toBeVisible({ timeout: 30_000 });
-    // Collides with no seed: the shipped copy allowances are 5/30/100/300 and
-    // the add-on quantities 20/10, so a stale fallback cannot fake this green.
-    const target = 73;
+    const trialForm = copyField.locator('xpath=ancestor::form[1]');
+
+    // Settle the editor before typing. It re-runs form.reset when the
+    // admin-config row lands, so a value entered beforehand is silently
+    // reverted and the submit then writes the unchanged number — a no-op that
+    // never advances the CAS revision, which surfaces 30s later as a product
+    // failure rather than as the race it is. The audit meta line only renders
+    // once that row is in hand, so it is the signal to wait on.
+    const revisionLine = trialForm.getByText(/^v\d+ · /);
+    await expect(revisionLine).toBeVisible({ timeout: 30_000 });
+    const revisionBefore = await revisionLine.innerText();
+
+    // 71-79 collides with no seed: the shipped copy allowances are 5/30/100/300
+    // and the add-on quantities 20/10, so a stale fallback cannot fake this
+    // green. Always move off the stored value — this config is global and
+    // outlives the run, so re-entering it would be that same no-op.
+    const stored = Number(await copyField.inputValue());
+    const target = stored >= 71 && stored < 79 ? stored + 1 : 71;
     await copyField.fill(String(target));
 
-    const trialForm = copyField.locator('xpath=ancestor::form[1]');
     // Fail loudly rather than hang: the editor goes read-only when
     // admin-config carries no revision for the key, and a disabled button
     // would otherwise just burn the test timeout.
@@ -117,9 +131,9 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
       name: '审阅套餐变更',
     });
     await expect(saveButton).toBeEnabled({ timeout: 30_000 });
-    const revisionLine = trialForm.getByText(/^v\d+ · /);
-    await expect(revisionLine).toBeVisible({ timeout: 30_000 });
-    const revisionBefore = await revisionLine.innerText();
+    // Last check before the write: whatever we are about to submit is still
+    // the number we typed.
+    await expect(copyField).toHaveValue(String(target));
 
     await saveButton.click();
 
@@ -132,7 +146,15 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
       .fill(
         'T35 acceptance: move the trial copy allowance through admin-config'
       );
-    await dialog.getByRole('button', { name: '确认执行' }).click();
+    // Plan changes override the dialog's generic confirm label, and the suite
+    // sets no actionTimeout, so assert the button before clicking — otherwise a
+    // label mismatch hangs the click until the test-level timeout instead of
+    // failing here with something readable.
+    const confirmButton = dialog.getByRole('button', {
+      name: '确认配置变更',
+    });
+    await expect(confirmButton).toBeVisible({ timeout: 15_000 });
+    await confirmButton.click();
     await expect(dialog).toBeHidden();
 
     // CAS revision advanced: the editor's audit meta line changed.
