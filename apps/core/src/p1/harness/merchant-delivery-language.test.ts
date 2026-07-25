@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  merchantAssetRightsSoftPrompt,
   merchantConfirmationQuestion,
   merchantExactTextMismatch,
+  merchantParseDisclosure,
+  merchantParseFallback,
+  merchantParseProgress,
   merchantPartialFailure,
   merchantProgressMessage,
   merchantTaskSummary,
@@ -32,6 +36,12 @@ test('five merchant-facing positions stay free of engineering language', () => {
       expected: ['价格 398'],
       observed: ['价格 389'],
     }),
+    merchantParseDisclosure(),
+    merchantParseProgress({ completed: 2, total: 4 }),
+    merchantParseFallback('failed'),
+    merchantParseFallback('timeout'),
+    merchantParseFallback('rate_limited'),
+    merchantAssetRightsSoftPrompt(),
   ];
 
   for (const message of messages) {
@@ -64,4 +74,21 @@ test('language check catches internal ids, providers and transport codes', () =>
     'DeepSeek',
     'HTTP code',
   ]);
+});
+
+test('parse disclosure and rights reminder are soft prompts, not gates', () => {
+  assert.match(merchantParseDisclosure(), /可以随时跳过/u);
+  assert.match(merchantAssetRightsSoftPrompt(), /不影响继续/u);
+  assert.deepEqual(
+    merchantVisibleLanguageIssues(
+      `${merchantParseDisclosure()} ${merchantAssetRightsSoftPrompt()}`,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    merchantVisibleLanguageIssues(
+      'MinerU parse pipeline returned a candidate schema.',
+    ),
+    ['candidate', 'schema', 'MinerU', 'parse', 'pipeline'],
+  );
 });

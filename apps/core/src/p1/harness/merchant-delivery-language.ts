@@ -21,6 +21,9 @@ const FORBIDDEN_LANGUAGE = [
   { label: 'schema', pattern: /\bschema\b/iu },
   { label: 'DBOS', pattern: /\bdbos\b/iu },
   { label: 'LLM', pattern: /\bllm\b/iu },
+  { label: 'MinerU', pattern: /\bmineru\b/iu },
+  { label: 'parse', pattern: /\bparse\b/iu },
+  { label: 'pipeline', pattern: /\bpipeline\b/iu },
   { label: 'internal cost', pattern: /成本价|毛利/iu },
 ] as const;
 
@@ -62,6 +65,31 @@ export function merchantExactTextMismatch(input: {
   const observed =
     input.observed.length > 0 ? input.observed.join('、') : '未识别到对应文字';
   return `图片中的文字没有通过逐字核对：需要“${expected}”，实际为“${observed}”。这张图没有交付，请调整为不带价格文字，或稍后重新生成。`;
+}
+
+export function merchantParseDisclosure() {
+  return '为了帮你少打字，上传的内容会交给第三方解析服务处理；也可以随时跳过，直接手动填写。';
+}
+
+export function merchantParseProgress(input: {
+  completed: number;
+  total: number;
+}) {
+  return `正在整理你上传的资料，已完成 ${input.completed}/${input.total} 份；离开后也会继续处理。`;
+}
+
+export function merchantParseFallback(reason: 'failed' | 'timeout' | 'rate_limited') {
+  const detail =
+    reason === 'timeout'
+      ? '这份资料暂时没有按时整理好'
+      : reason === 'rate_limited'
+        ? '现在上传资料的人有点多'
+        : '这份资料暂时没有整理成功';
+  return `${detail}，可以一键转为手动填写，已经上传的内容会为你保留。`;
+}
+
+export function merchantAssetRightsSoftPrompt() {
+  return '如果照片里有顾客，请确认已经获得对方同意；这一步可以稍后补充，不影响继续整理。';
 }
 
 export function merchantVisibleLanguageIssues(message: string) {
