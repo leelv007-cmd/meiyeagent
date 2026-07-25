@@ -54,6 +54,11 @@ test(
           'REVOKE INSERT, UPDATE, DELETE ON p1_content_packages FROM PUBLIC',
         )
         .catch(() => undefined);
+      // DROP ROLE refuses while the role still holds its SELECT grant, so the
+      // cleanup silently failed and every run leaked one cluster-wide role
+      // (12 of them by the time this merged). Roles are global, not per
+      // database, so the leak crosses every lane.
+      await client.query(`DROP OWNED BY ${role}`).catch(() => undefined);
       await client.query(`DROP ROLE IF EXISTS ${role}`).catch(() => undefined);
       client.release();
       await pool.end();
