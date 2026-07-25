@@ -27,7 +27,7 @@ import {
 
 const COPY_CONTRACT = JOURNEY_CONTRACTS[0]!;
 
-type UsageBucket = { allowance: number; remaining: number };
+type UsageBucket = { allowance: number; available: number };
 type EntitlementProjection = {
   plan?: { tier?: string };
   usage: Record<string, UsageBucket | undefined>;
@@ -111,10 +111,16 @@ async function revealExampleStores(page: Page) {
   return showcase;
 }
 
-async function submitPrefilledCopy(page: Page) {
+async function submitPrefilledCopy(page: Page, prefilled = false) {
   const lens = page.getByTestId('composer-lens-option-copy');
-  await lens.click();
-  await expect(lens).toBeChecked();
+  if (prefilled) {
+    // The prefill already picked the copy lens — re-picking it is a click the
+    // merchant never has to make (D-043).
+    await expect(lens).toBeChecked();
+  } else {
+    await lens.click();
+    await expect(lens).toBeChecked();
+  }
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
   });
@@ -125,9 +131,20 @@ async function submitPrefilledCopy(page: Page) {
     { timeout: 120_000 }
   );
   await page.getByTestId('composer-submit').click();
+  // A workspace with open Brief questions gets the Brief card first, and
+  // confirming it is the merchant's own click — never an auto-submit. The card
+  // only appears after the Brief projection round-trip, and a workspace with
+  // nothing left to ask runs straight through, so wait for whichever lands.
+  const briefConfirm = page.getByTestId('composer-brief-confirm');
+  await Promise.race([
+    briefConfirm
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => briefConfirm.click()),
+    submissionResponse,
+  ]).catch(() => undefined);
   const response = await submissionResponse;
   const body = (await response.json()) as {
-    data?: { work?: { id?: string } };
+    data?: { task?: { id?: string }; work?: { id?: string } };
     error?: { message?: string };
   };
   expect(
@@ -135,8 +152,10 @@ async function submitPrefilledCopy(page: Page) {
     body.error?.message ?? 'Sample task submission failed'
   ).toBeTruthy();
   const workId = body.data?.work?.id;
+  const taskId = body.data?.task?.id;
   expect(workId, 'sample task must create a real work').toBeTruthy();
-  return workId!;
+  expect(taskId, 'sample task must create a real billable task').toBeTruthy();
+  return { taskId: taskId!, workId: workId! };
 }
 
 test.describe('D-126 dashboard home mount', () => {
@@ -240,7 +259,9 @@ test.describe('D-126 dashboard home mount', () => {
       'entitlements',
       'projection'
     );
-    const copyRemainingBefore = before.usage.copy!.remaining;
+    expect(before.plan?.tier, 'the sample runs on the real trial plan').toBe(
+      'trial'
+    );
 
     await page
       .getByRole('region', { name: sampleStore.name })
@@ -248,24 +269,25 @@ test.describe('D-126 dashboard home mount', () => {
       .click();
     await expect(page.getByTestId('composer-intent-input')).toBeFocused();
 
-    // D-128: the sample runs the same chain a paying merchant runs.
-    const workId = await submitPrefilledCopy(page);
+    // D-128: the sample runs the same chain a paying merchant runs, and it runs
+    // straight through — the draft already says which service it is about.
+    const { taskId, workId } = await submitPrefilledCopy(page, true);
+    await expect(
+      page.getByRole('button', { exact: true, name: '1 项' }),
+      'a sample task must not stop to ask what the merchant just picked'
+    ).toBeHidden();
     await waitForResultJourney(page, COPY_CONTRACT, workId);
 
-    // 试用额度余量减少 —— the sample task spends the real trial allowance.
-    await expect
-      .poll(
-        async () => {
-          const after = await p1Query<EntitlementProjection>(
-            page,
-            'entitlements',
-            'projection'
-          );
-          return after.usage.copy?.remaining ?? copyRemainingBefore;
-        },
-        { timeout: 60_000 }
-      )
-      .toBeLessThan(copyRemainingBefore);
+    // 试用额度被真实占用 —— the sample holds usage on the same ProductUsage
+    // ledger a paying merchant is charged on, bound to this very task.
+    const usage = await p1Query<{
+      reservedQuantity: number;
+      resource?: string;
+      status: string;
+    }>(page, 'product-billing', 'get_usage', { taskId });
+    expect(usage.resource).toBe('copy');
+    expect(usage.reservedQuantity).toBeGreaterThan(0);
+    expect(['reserved', 'committed']).toContain(usage.status);
 
     // 产物可导出 —— identical to a paying merchant's export path.
     await adoptResult(page, COPY_CONTRACT);
@@ -351,7 +373,7 @@ test.describe('D-126 dashboard home mount', () => {
     await page
       .getByTestId('composer-intent-input')
       .fill('把本周护理项目做成一条可以发的小红书文案');
-    const workId = await submitPrefilledCopy(page);
+    const { workId } = await submitPrefilledCopy(page);
     await waitForResultJourney(page, COPY_CONTRACT, workId);
     await adoptResult(page, COPY_CONTRACT);
 
