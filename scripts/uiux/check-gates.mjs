@@ -13,6 +13,11 @@ export const CHECK_GATES = [
     args: ['scripts/uiux/secret-scan.mjs'],
   },
   {
+    name: 'D-123 cost boundary',
+    command: 'node',
+    args: ['scripts/uiux/d123-cost-boundary.mjs'],
+  },
+  {
     name: 'decision ticket guard',
     command: 'node',
     args: ['scripts/uiux/decision-ticket-guard.mjs'],
