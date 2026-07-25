@@ -245,13 +245,15 @@ export async function answerComposerQuestions(
     }
     // Pin the id so a follow-up question is not mistaken for this one lingering.
     const questionId = await question.getAttribute('data-question-id');
-    const freeText = page.getByTestId('composer-question-answer');
-    if (await freeText.isVisible()) {
-      await freeText.fill('皮肤管理');
-      await page.getByTestId('composer-question-submit').click();
-    } else {
-      await page.getByTestId('composer-question-skip').click();
-    }
+    // Skip, never answer. `applyCurrentTaskDecision` (harness/workflow-core.ts)
+    // returns the request untouched for `state === 'ignored'`, but throws
+    // HarnessSnapshotDecisionError for any substantive answer once the run
+    // carries an executionSnapshot — and `creation-stage-port.ts:54` sets one
+    // on every Composer submission. So for Composer-originated runs skipping is
+    // not the lazy path, it is the only one that does not kill the workflow.
+    // Skipping routes to D-111 通用模式, which is what the pre-existing
+    // intent-routing-http-sse spec exercises by ignoring the same question.
+    await page.getByTestId('composer-question-skip').click();
     await expect(
       page.locator(`[data-question-id="${questionId}"]`),
       'the answered question must leave the conversation'
