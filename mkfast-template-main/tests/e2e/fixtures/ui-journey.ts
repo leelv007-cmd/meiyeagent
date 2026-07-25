@@ -548,9 +548,10 @@ export async function openDeliveryPanel(page: Page, modality: JourneyModality) {
   );
 }
 
-async function assertZipDownload(
+export async function assertZipDownload(
   download: Download,
-  contract: JourneyContract
+  contract: JourneyContract,
+  expectedRevision?: number
 ) {
   expect(await download.failure()).toBeNull();
   expect(download.suggestedFilename()).toMatch(contract.packageFileName);
@@ -579,8 +580,11 @@ async function assertZipDownload(
     }>;
     kind?: string;
     platform?: string;
+    contentPackageRevision?: number;
     rightsSummary?: {
       aigcLabelEnabled?: boolean;
+      factSummary?: string;
+      state?: string;
       watermarkEnabled?: boolean;
     };
     schema?: string;
@@ -588,12 +592,17 @@ async function assertZipDownload(
   expect(manifest.schema).toBe('beauty-delivery-manifest/v1');
   expect(manifest.kind).toBe(contract.modality);
   expect(manifest.platform).toBe(contract.deliveryTarget);
+  if (expectedRevision !== undefined) {
+    expect(manifest.contentPackageRevision).toBe(expectedRevision);
+  }
   expect(manifest.rightsSummary).toEqual(
     expect.objectContaining({
       aigcLabelEnabled: expect.any(Boolean),
+      state: expect.any(String),
       watermarkEnabled: expect.any(Boolean),
     })
   );
+  expect(manifest.rightsSummary?.state?.trim().length ?? 0).toBeGreaterThan(0);
   expect(new TextDecoder().decode(captionBytes).trim().length).toBeGreaterThan(
     0
   );
@@ -664,7 +673,8 @@ async function assertTextDownload(
 
 export async function downloadFullPackage(
   page: Page,
-  contract: JourneyContract
+  contract: JourneyContract,
+  expectedRevision?: number
 ) {
   const button = page.getByTestId('delivery-action-full_package');
   await expect(button).toHaveAccessibleName(contract.packageButtonName);
@@ -684,7 +694,7 @@ export async function downloadFullPackage(
   }
   const download = await downloadPromise;
   if (contract.packageFormat === 'zip') {
-    await assertZipDownload(download, contract);
+    await assertZipDownload(download, contract, expectedRevision);
   } else {
     await assertTextDownload(download, contract.packageFileName);
   }

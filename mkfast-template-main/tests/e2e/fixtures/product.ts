@@ -6,11 +6,11 @@ import type {
 import { expect, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
-const PNG_FIXTURE = await readFile(
-  new URL(
+const PNG_FIXTURES = await Promise.all(
+  [
     '../../../public/model-previews/image-beauty-preview.png',
-    import.meta.url
-  )
+    '../../../public/model-previews/copy-planning-preview.png',
+  ].map((path) => readFile(new URL(path, import.meta.url)))
 );
 
 export async function productCommand(
@@ -92,7 +92,9 @@ export async function seedConfirmedStore(page: Page) {
 export async function seedComposerInlineAuthorize(
   page: Page,
   options: {
+    expectedAssetId?: string;
     fileName?: string;
+    fixtureIndex?: 0 | 1;
   } = {}
 ) {
   const fileName =
@@ -100,10 +102,13 @@ export async function seedComposerInlineAuthorize(
   if (!page.url().includes('/dashboard')) {
     await page.goto('/dashboard');
   }
+  const existingAssetIds = new Set(
+    (await productState(page)).assets.map(({ id }) => id)
+  );
   const galleryInput = page.locator('#composer-gallery-input');
   await expect(galleryInput).toBeAttached({ timeout: 30_000 });
   await galleryInput.setInputFiles({
-    buffer: PNG_FIXTURE,
+    buffer: PNG_FIXTURES[options.fixtureIndex ?? 0]!,
     mimeType: 'image/png',
     name: fileName,
   });
@@ -121,6 +126,9 @@ export async function seedComposerInlineAuthorize(
         const state = await productState(page);
         return state.assets.some(
           (asset) =>
+            (options.expectedAssetId
+              ? asset.id === options.expectedAssetId
+              : !existingAssetIds.has(asset.id)) &&
             asset.consentScope === 'public_marketing' &&
             Boolean(asset.rightsEvidence?.trim())
         );
@@ -130,6 +138,9 @@ export async function seedComposerInlineAuthorize(
     .toBe(true);
   const authorized = (await productState(page)).assets.find(
     (asset) =>
+      (options.expectedAssetId
+        ? asset.id === options.expectedAssetId
+        : !existingAssetIds.has(asset.id)) &&
       asset.consentScope === 'public_marketing' &&
       Boolean(asset.rightsEvidence?.trim())
   );
@@ -183,7 +194,7 @@ export async function seedAuthorizedGrounding(
   const uploadInput = page.locator('#canonical-asset-upload');
   await expect(uploadInput).toBeEnabled({ timeout: 30_000 });
   await uploadInput.setInputFiles({
-    buffer: PNG_FIXTURE,
+    buffer: PNG_FIXTURES[0]!,
     mimeType,
     name: assetLabel,
   });
