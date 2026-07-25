@@ -43,6 +43,7 @@ function promptBar(overrides: Partial<Parameters<typeof ComposerPromptBar>[0]> =
       destination={null}
       destinationCapability={null}
       disabled={false}
+      submitDisabled={false}
       onCreationModeChange={() => {}}
       onDestinationChange={() => {}}
       onReuseChip={() => {}}

@@ -240,7 +240,14 @@ export type ComposerPromptBarProps = {
   value: string;
   onValueChange: (value: string) => void;
   onSubmit: () => void;
+  /**
+   * Locks the textarea. Kept narrow on purpose: the old shell only ever
+   * disabled the submit button, so gating typing on things like "the quote has
+   * not arrived yet" would stop a merchant mid-sentence.
+   */
   disabled: boolean;
+  /** Gates starting a run. Wider than `disabled` — quota, quote, uploads. */
+  submitDisabled: boolean;
   /** Streaming lock — the send button becomes a stop affordance. */
   running: boolean;
   creationMode: ComposerCreationMode;
@@ -274,6 +281,7 @@ export function ComposerPromptBar({
   onValueChange,
   onSubmit,
   disabled,
+  submitDisabled,
   running,
   creationMode,
   onCreationModeChange,
@@ -367,7 +375,7 @@ export function ComposerPromptBar({
               <PromptInput.Send
                 aria-label={submitLabel}
                 data-testid="composer-submit"
-                isDisabled={disabled}
+                isDisabled={submitDisabled}
               />
             </PromptInput.ToolbarEnd>
           </PromptInput.Toolbar>
