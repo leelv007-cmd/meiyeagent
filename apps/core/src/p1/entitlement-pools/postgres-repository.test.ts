@@ -27,6 +27,18 @@ test('entitlement pool migration creates durable heads and keeps ledger chains s
   assert.match(sql, /CREATE TABLE IF NOT EXISTS p1_supply_request_freezes/);
   assert.match(sql, /product_usage_task_id text/);
   assert.match(sql, /provider_cost_attempt_id text/);
+  assert.match(
+    sql,
+    /DROP INDEX IF EXISTS p1_supply_request_freezes_product_usage_idx/,
+  );
+  assert.match(
+    sql,
+    /CREATE INDEX IF NOT EXISTS p1_supply_request_freezes_product_usage_lookup_idx/,
+  );
+  assert.doesNotMatch(
+    sql,
+    /CREATE UNIQUE INDEX IF NOT EXISTS p1_supply_request_freezes_product_usage_idx/,
+  );
   assert.doesNotMatch(
     sql,
     /REFERENCES\s+(?:p1_)?(?:product_usage|provider_cost|grant_lot)/i,

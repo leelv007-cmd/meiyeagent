@@ -5,9 +5,16 @@ import { Pool } from 'pg';
 import { z } from 'zod';
 
 import { P1ApplicationService } from '../foundation/application-service.js';
-import { REGISTER_GIFT_GRANT_KEY } from '../foundation/domain.js';
+import {
+  P1DomainError,
+  REGISTER_GIFT_GRANT_KEY,
+} from '../foundation/domain.js';
 import { ProductEntitlementApplicationService } from '../foundation/entitlement-service.js';
 import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
+import {
+  PostgresEntitlementPoolsMigration,
+  PostgresSupplyFreezeStore,
+} from '../entitlement-pools/postgres-repository.js';
 import {
   executeCopySelection,
   type CandidatePolicyValidator,
@@ -38,8 +45,21 @@ test(
     const actorId = `usage-invariant-owner-${suffix}`;
     const taskId = `usage-invariant-task-${suffix}`;
     const quoteId = `usage-invariant-quote-${suffix}`;
+    const supplySchema = `p1_usage_invariant_${suffix.replaceAll('-', '')}`;
     const foundationRepository = new PostgresFoundationRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
+    await pool.query(`CREATE SCHEMA "${supplySchema}"`);
+    const supplyPool = new Pool({
+      connectionString,
+      options: `-c search_path=${supplySchema}`,
+    });
+    const migrationClient = await supplyPool.connect();
+    try {
+      await new PostgresEntitlementPoolsMigration().migrate(migrationClient);
+    } finally {
+      migrationClient.release();
+    }
+    const supplyFreezes = new PostgresSupplyFreezeStore(supplyPool);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS "user" (
@@ -96,6 +116,8 @@ test(
       );
       await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
       await pool.query('DELETE FROM "user" WHERE id = $1', [actorId]);
+      await supplyPool.end();
+      await pool.query(`DROP SCHEMA "${supplySchema}" CASCADE`);
       await pool.end();
     });
 
@@ -149,6 +171,17 @@ test(
       taskId,
       workspaceId,
     });
+    await assert.rejects(
+      billing.beforeSubmit({
+        quoteId,
+        quoteRevision: `${quote.revision}:changed`,
+        resource: 'copy',
+        taskId,
+        workspaceId,
+      }),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE',
+    );
 
     const model: CatalogModel = {
       id: 'usage-invariant-model',
@@ -164,7 +197,13 @@ test(
       channel: 'direct',
       region: 'domestic',
       status: 'active',
+      credentialVersion: 'usage-invariant-credential-v1',
       priceRevision: 'usage-invariant-price',
+      unitPrice: {
+        amountMicros: 1,
+        currency: 'CNY',
+        unit: 'request',
+      },
     };
     const executor = new CountingStructuredExecutor();
     const createRunner = () =>
@@ -177,7 +216,11 @@ test(
             foundation,
             entitlements,
             undefined,
-            { billingLifecycle: billing },
+            {
+              billingLifecycle: billing,
+              productUsage: billing,
+              supplyFreezes,
+            },
           ),
         }),
         executor,
@@ -253,6 +296,20 @@ test(
         WHERE workspace_id = $1 AND stage = 'observed'`,
       [workspaceId],
     );
+    const taskSupplyFreezes = await supplyPool.query<{
+      count: number;
+      provider_attempt_count: number;
+      supplier_request_count: number;
+    }>(
+      `SELECT count(*)::integer AS count,
+              count(DISTINCT provider_cost_attempt_id)::integer
+                AS provider_attempt_count,
+              count(DISTINCT supplier_request_task_id)::integer
+                AS supplier_request_count
+         FROM p1_supply_request_freezes
+        WHERE workspace_id = $1 AND product_usage_task_id = $2`,
+      [workspaceId, taskId],
+    );
 
     assert.deepEqual(
       {
@@ -261,6 +318,7 @@ test(
         executorCalls: executor.calls,
         legacyUsageEvents: legacyUsage.rows[0]?.count,
         supplyCosts: supplyCosts.rows[0]?.count,
+        supplyFreezes: taskSupplyFreezes.rows[0],
       },
       {
         canonicalCosts: {
@@ -273,10 +331,15 @@ test(
         executorCalls: 8,
         legacyUsageEvents: 0,
         supplyCosts: 8,
+        supplyFreezes: {
+          count: 8,
+          provider_attempt_count: 8,
+          supplier_request_count: 8,
+        },
       },
     );
     t.diagnostic(
-      '8-job ledger: canonicalUsage=1 reservedQuantity=1 canonicalCosts=8 jobs=8 observed=8 tasks=1 executorCalls=8 legacyUsageEvents=0 supplyCosts=8',
+      '8-job ledger: canonicalUsage=1 reservedQuantity=1 canonicalCosts=8 jobs=8 observed=8 tasks=1 executorCalls=8 legacyUsageEvents=0 supplyCosts=8 supplyFreezes=8 supplierRequests=8 providerAttempts=8',
     );
 
     await t.test(
@@ -318,7 +381,11 @@ test(
               foundation,
               entitlements,
               undefined,
-              { billingLifecycle: billing },
+              {
+                billingLifecycle: billing,
+                productUsage: billing,
+                supplyFreezes,
+              },
             ),
           }),
           executor: retryExecutor,
@@ -397,6 +464,12 @@ test(
               AND action IN ('reserve', 'commit')`,
           [workspaceId, `wf:${retryWorkflowId}:%`],
         );
+        const retrySupplyFreezes = await supplyPool.query<{ count: number }>(
+          `SELECT count(*)::integer AS count
+             FROM p1_supply_request_freezes
+            WHERE workspace_id = $1 AND product_usage_task_id = $2`,
+          [workspaceId, retryTaskId],
+        );
 
         assert.equal(selection.winner.candidateId, 'c01-retry');
         assert.deepEqual(selection.blockedCandidates, [
@@ -412,16 +485,18 @@ test(
             canonicalUsage: retryUsage.rows[0],
             executorCalls: retryExecutor.calls,
             legacyUsageEvents: retryLegacyUsage.rows[0]?.count,
+            supplyFreezes: retrySupplyFreezes.rows[0]?.count,
           },
           {
             canonicalCosts: { count: 2, observed_count: 2 },
             canonicalUsage: { count: 1, reserved_quantity: 1 },
             executorCalls: 2,
             legacyUsageEvents: 0,
+            supplyFreezes: 2,
           },
         );
         retryTest.diagnostic(
-          'blocked retry ledger: canonicalUsage=1 reservedQuantity=1 canonicalCosts=2 observed=2 executorCalls=2 legacyUsageEvents=0',
+          'blocked retry ledger: canonicalUsage=1 reservedQuantity=1 canonicalCosts=2 observed=2 executorCalls=2 legacyUsageEvents=0 supplyFreezes=2',
         );
       },
     );

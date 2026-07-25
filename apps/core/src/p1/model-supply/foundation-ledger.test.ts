@@ -94,17 +94,6 @@ function createStrictSupplyFreezeStore(
         assert.deepEqual(freeze, existing);
         return structuredClone(existing);
       }
-      const linked = freeze.productUsageTaskId
-        ? [...freezes.values()].find(
-            (candidate) =>
-              candidate.workspaceId === freeze.workspaceId &&
-              candidate.productUsageTaskId === freeze.productUsageTaskId,
-          )
-        : undefined;
-      if (linked) {
-        assert.deepEqual(freeze, linked);
-        return structuredClone(linked);
-      }
       freezes.set(freeze.id, structuredClone(freeze));
       return structuredClone(freeze);
     },
