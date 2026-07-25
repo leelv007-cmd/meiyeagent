@@ -513,7 +513,6 @@ export function AdminPlanControl() {
     });
   };
   const addOnConfig = configFor('plan.addons');
-  const trialEnabledConfig = configFor(TRIAL_ENABLED_KEY);
   const allAddOns = storedAddOns(addOnConfig, catalogQuery.data?.addOns ?? []);
   const compliance: Array<{
     id: string;
