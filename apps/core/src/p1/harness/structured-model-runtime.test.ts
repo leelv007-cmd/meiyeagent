@@ -106,7 +106,7 @@ test('fixture harness runtime assembles and completes its structured model path'
   );
   assert.deepEqual(
     tokens.map(({ sequence }) => sequence),
-    [...tokens.keys()].map((index) => index + 4),
+    [...tokens.keys()].map((index) => index + 5),
   );
 });
 

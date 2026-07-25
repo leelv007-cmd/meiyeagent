@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  HarnessSnapshotDecisionError,
   runHarnessWorkflow,
   type HarnessMediaStagePorts,
   type HarnessStagePorts,
@@ -9,6 +10,7 @@ import {
 } from './workflow-core.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import { buildSemanticDecisionResumption } from './semantic-decision-resumption.js';
 
 test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
   const calls: string[] = [];
@@ -238,6 +240,158 @@ test('one blocking question suspends and resumes before context injection', asyn
       revision: 4,
     },
   ]);
+});
+
+test('a snapshot-backed semantic answer resubmits the same task and work before continuing', async () => {
+  const originalRequest = snapshotTaskInput();
+  const originalSnapshot = structuredClone(originalRequest.executionSnapshot);
+  const stages = fixtureStages();
+  let intentRound = 0;
+  let injectedRequest: HarnessWorkflowInput | undefined;
+  stages.nameIntent = async ({ request }) => {
+    intentRound += 1;
+    return {
+      declaration: {
+        normalizedIntent: request.rawInput,
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: intentRound === 1 ? [] : ['industry_category'],
+        route: intentRound === 1 ? 'guidance' : 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion:
+        intentRound === 1
+          ? {
+              questionId: 'task-copy:s1:industry_category',
+              workflowId: 'task-copy',
+              workflowRevision: 1,
+              question: '这次内容主要属于哪一类美业服务？',
+              options: [],
+              freeText: { enabled: true },
+              response: {
+                field: 'industry_category',
+                reason: '补充本次内容所属的美业服务类别',
+              },
+              scope: 'current_task',
+            }
+          : null,
+    };
+  };
+  const injectContext = stages.injectContext;
+  stages.injectContext = async (input) => {
+    injectedRequest = input.request;
+    return injectContext(input);
+  };
+  const progress: string[] = [];
+  let resubmissions = 0;
+
+  await runHarnessWorkflow('task-copy', originalRequest, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress(event) {
+      progress.push(event.message);
+    },
+    async token() {},
+    async awaitDecision(question) {
+      return {
+        idempotencyKey: 'decision-industry-1',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: '美甲',
+          reason: question.response.reason,
+        },
+        decision: { state: 'accepted', value: '美甲' },
+      };
+    },
+    async resubmitSemanticDecision(input) {
+      resubmissions += 1;
+      return buildSemanticDecisionResumption({
+        request: input.request,
+        command: input.command,
+        createdAt: '2026-07-25T09:05:00.000Z',
+      }).request;
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(resubmissions, 1);
+  assert.equal(injectedRequest?.executionSnapshot?.task.id, 'task-copy');
+  assert.equal(injectedRequest?.executionSnapshot?.work.id, 'work-copy');
+  assert.equal(injectedRequest?.executionSnapshot?.contentPackage.id, 'package-copy');
+  assert.notEqual(
+    injectedRequest?.executionSnapshot?.id,
+    originalRequest.executionSnapshot?.id,
+  );
+  assert.deepEqual(injectedRequest?.executionSnapshot?.semanticDecision, {
+    sourceSnapshotId: originalRequest.executionSnapshot?.id,
+    reference: injectedRequest?.decisionReferences?.[0],
+  });
+  assert.equal(
+    (injectedRequest?.intent.context as Record<string, unknown> | undefined)
+      ?.industry_category,
+    '美甲',
+  );
+  assert.deepEqual(originalRequest.executionSnapshot, originalSnapshot);
+  assert.ok(progress.includes('已收到，继续为你生成。'));
+});
+
+test('directly applying a semantic answer to an existing snapshot remains forbidden', async () => {
+  const stages = fixtureStages();
+  stages.nameIntent = async () => ({
+    declaration: {
+      normalizedIntent: '给门店写一条日常内容',
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: [],
+      route: 'guidance',
+      routingSource: 'model',
+      implicitConstraints: [],
+    },
+    blockingQuestion: {
+      questionId: 'task-copy:s1:industry_category',
+      workflowId: 'task-copy',
+      workflowRevision: 1,
+      question: '这次内容主要属于哪一类美业服务？',
+      options: [],
+      freeText: { enabled: true },
+      response: {
+        field: 'industry_category',
+        reason: '补充本次内容所属的美业服务类别',
+      },
+      scope: 'current_task',
+    },
+  });
+
+  await assert.rejects(
+    runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        return {
+          idempotencyKey: 'decision-industry-1',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: question.response.field,
+            value: '美甲',
+            reason: question.response.reason,
+          },
+          decision: { state: 'accepted', value: '美甲' },
+        };
+      },
+      async recordTrace() {},
+    }),
+    HarnessSnapshotDecisionError,
+  );
 });
 
 test('intent routing golden cases cover every D-111 quadrant twice', async () => {
@@ -610,6 +764,60 @@ function taskInput() {
       },
       assetReferences: [],
     },
+  };
+}
+
+function snapshotTaskInput(): HarnessWorkflowInput {
+  const snapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-1',
+      workspaceId: 'workspace-1',
+      idempotencyKey: 'submission-copy-1',
+      taskId: 'task-copy',
+      workId: 'work-copy',
+      contentPackageId: 'package-copy',
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent: '给门店写一条日常内容',
+      surface: { id: 'surface-1', revision: 'surface-r1' },
+      recipe: { id: 'recipe-copy-1', revision: 'recipe-copy-r1' },
+      lens: 'copy',
+      platform: { id: 'xiaohongshu' },
+      deliverables: [
+        {
+          id: 'copy-main',
+          kind: 'copy',
+          order: 0,
+          quantity: 1,
+        },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-1', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'auto' },
+      catalogModel: { id: 'model-copy-1', revision: 'model-copy-r1' },
+      quote: { id: 'quote-1', revision: 'quote-r1' },
+      route: { id: 'route-1', revision: 'route-r1' },
+      briefContext: { id: 'brief-context-1', revision: 1 },
+      contentModules: ['social_cover'],
+    },
+    '2026-07-25T09:00:00.000Z',
+  );
+  return {
+    ...taskInput(),
+    packageId: snapshot.contentPackage.id,
+    expectedRevision: snapshot.contentPackage.expectedRevision,
+    workflowRevision: snapshot.revision,
+    rawInput: snapshot.intent.text,
+    intent: {
+      context: {
+        workId: snapshot.work.id,
+        intent: snapshot.intent.text,
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+    executionSnapshot: snapshot,
   };
 }
 

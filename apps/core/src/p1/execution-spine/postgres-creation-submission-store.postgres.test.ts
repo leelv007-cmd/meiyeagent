@@ -19,6 +19,8 @@ import {
   CreationSubmissionCoordinator,
   type CreationSubmissionRecord,
 } from "./submission-coordinator.js";
+import { toHarnessWorkflowInput } from "./creation-stage-port.js";
+import { buildSemanticDecisionResumption } from "../harness/semantic-decision-resumption.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -86,8 +88,46 @@ test(
       });
       assert.equal(conflict.kind, "conflict");
 
+      const resumption = buildSemanticDecisionResumption({
+        request: {
+          ...toHarnessWorkflowInput(submission.snapshot),
+          executionSnapshot: submission.snapshot,
+        },
+        command: {
+          idempotencyKey: "decision-industry-1",
+          questionId: `${submission.task.id}:s1:industry_category`,
+          workflowRevision: submission.snapshot.revision,
+          patch: {
+            field: "industry_category",
+            value: "美甲",
+            reason: "补充本次内容所属的美业服务类别",
+          },
+          decision: { state: "accepted", value: "美甲" },
+        },
+        createdAt: "2026-07-22T09:05:00.000Z",
+      });
+      resumption.submission.usageReservation = submission.usageReservation;
+      const semanticClaims = await Promise.all([
+        store.claimSemanticDecisionResumption({
+          sourceSnapshotId: submission.snapshot.id,
+          workspaceId,
+          idempotencyKey: resumption.idempotencyKey,
+          payloadHash: resumption.payloadHash,
+          submission: resumption.submission,
+        }),
+        store.claimSemanticDecisionResumption({
+          sourceSnapshotId: submission.snapshot.id,
+          workspaceId,
+          idempotencyKey: resumption.idempotencyKey,
+          payloadHash: resumption.payloadHash,
+          submission: resumption.submission,
+        }),
+      ]);
+      assert.deepEqual(semanticClaims.sort(), ["created", "replayed"]);
+
       const persisted = await pool.query<{
         packages: number;
+        submissions: number;
         tasks: number;
         usage: number;
         works: number;
@@ -95,6 +135,8 @@ test(
         `SELECT
            (SELECT count(*)::int FROM p1_content_packages
              WHERE workspace_id = $1 AND id = $2) AS packages,
+           (SELECT count(*)::int FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1 AND task_id = $3) AS submissions,
            (SELECT count(*)::int FROM p1_content_tasks
              WHERE workspace_id = $1 AND id = $3) AS tasks,
            (SELECT count(*)::int FROM p1_creative_works
@@ -110,6 +152,7 @@ test(
       );
       assert.deepEqual(persisted.rows[0], {
         packages: 1,
+        submissions: 2,
         tasks: 1,
         usage: 1,
         works: 1,
