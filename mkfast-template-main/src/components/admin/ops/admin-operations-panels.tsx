@@ -133,7 +133,7 @@ function PanelBody({
   return <>{children}</>;
 }
 
-export function AdminUsagePanel() {
+function AdminUsagePanel() {
   const catalogQuery = useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'catalog'),
     queryFn: ({ signal }) =>
@@ -184,7 +184,7 @@ export function AdminUsagePanel() {
   );
 }
 
-export function AdminTasksPanel() {
+function AdminTasksPanel() {
   const metricsQuery = useQuery({
     queryKey: adminOperationalMetricsQueryKey,
     queryFn: ({ signal }) => readAdminOperationalMetrics(signal),
@@ -262,7 +262,7 @@ export function AdminTasksPanel() {
   );
 }
 
-export function AdminTenantsPanel() {
+function AdminTenantsPanel() {
   const snapshotQuery = useAdminSupplyControlSnapshot();
   const view = snapshotQuery.data
     ? buildEntitlementStatusView({ snapshot: snapshotQuery.data })

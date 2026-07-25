@@ -76,18 +76,6 @@ export function AdminPanelContent({
   );
 }
 
-export function AdminPanelFooter({
-  children,
-  className,
-  ...props
-}: ComponentPropsWithRef<'div'>) {
-  return (
-    <Widget.Footer className={className} {...props}>
-      {children}
-    </Widget.Footer>
-  );
-}
-
 /**
  * `Badge` 的后台对应物 —— HeroUI v3 `Chip`（D-130 组件基准），配色全部来自
  * token 桥落下的 DESIGN.md 值，因此跟着双主题走、不自带颜色。
@@ -102,7 +90,7 @@ const CHIP_VARIANTS = {
   outline: { color: 'default', variant: 'tertiary' },
 } as const;
 
-export type AdminStatusChipVariant = keyof typeof CHIP_VARIANTS;
+type AdminStatusChipVariant = keyof typeof CHIP_VARIANTS;
 
 export function AdminStatusChip({
   children,
