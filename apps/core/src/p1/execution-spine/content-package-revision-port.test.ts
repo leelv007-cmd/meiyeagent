@@ -141,6 +141,32 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 			error instanceof ContentPackageRevisionWriteError &&
 			error.code === "CONTENT_PACKAGE_EXECUTION_MISMATCH",
 	);
+	const resumedInput = {
+		...input,
+		idempotencyKey: "harness-copy:semantic-decision",
+		snapshotId: "snapshot-decision-1",
+		snapshot: {
+			...input.snapshot,
+			id: "snapshot-decision-1",
+			semanticDecision: { sourceSnapshotId: "snapshot-task-1" },
+		},
+	};
+	const resumedDelivery = await writer.write(resumedInput);
+	assert.deepEqual(resumedDelivery, {
+		packageId: "package-1",
+		revision: 1,
+		versionId: "version-1",
+	});
+	assert.equal(
+		writer.get("workspace-1", "package-1")?.source.creationExecutionSnapshot?.id,
+		"snapshot-task-1",
+	);
+	writer.seed({
+		...writer.get("workspace-1", "package-1")!,
+		currentVersionId: undefined,
+		revision: 0,
+		versions: [],
+	});
 	await assert.rejects(
 		writer.write({
 			...input,

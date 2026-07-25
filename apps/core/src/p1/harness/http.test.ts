@@ -343,6 +343,7 @@ class MemoryHarnessStore
   >();
   private readonly decisions = new Map<string, string>();
   private readonly resumedEvents = new Set<string>();
+  private readonly resumeClaims = new Set<string>();
   private readonly pending = new Map<string, QuestionCard>();
   private readonly audits = new Map<
     string,
@@ -455,7 +456,33 @@ class MemoryHarnessStore
     _taskId: string,
     eventId: string,
   ) {
-    this.resumedEvents.add(JSON.stringify([workspaceId, eventId]));
+    const identity = JSON.stringify([workspaceId, eventId]);
+    this.resumeClaims.delete(identity);
+    this.resumedEvents.add(identity);
+  }
+
+  async claimDecisionResume(
+    workspaceId: string,
+    _taskId: string,
+    eventId: string,
+  ) {
+    const identity = JSON.stringify([workspaceId, eventId]);
+    if (
+      this.resumeClaims.has(identity) ||
+      this.resumedEvents.has(identity)
+    ) {
+      return false;
+    }
+    this.resumeClaims.add(identity);
+    return true;
+  }
+
+  async releaseDecisionResume(
+    workspaceId: string,
+    _taskId: string,
+    eventId: string,
+  ) {
+    this.resumeClaims.delete(JSON.stringify([workspaceId, eventId]));
   }
 
   async appendAudit(event: {

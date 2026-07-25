@@ -99,13 +99,13 @@ test(
         },
       });
       const command = decisionInput(questionId);
-      assert.equal(
-        (await decisions.submit(workspaceId, taskId, command)).replayed,
-        false,
-      );
-      assert.equal(
-        (await decisions.submit(workspaceId, taskId, command)).replayed,
-        true,
+      const concurrent = await Promise.all([
+        decisions.submit(workspaceId, taskId, command),
+        decisions.submit(workspaceId, taskId, command),
+      ]);
+      assert.deepEqual(
+        concurrent.map((result) => result.replayed).sort(),
+        [false, true],
       );
       assert.equal(
         (await decisions.submit(otherWorkspaceId, taskId, command)).replayed,
@@ -147,6 +147,38 @@ test(
         audits: 2,
         outbox: 2,
       });
+      const decisionEvidence = await pool.query<{
+        audit_payload: {
+          eventId: string;
+          questionId: string;
+        };
+        decision_payload: {
+          decision: { value: string };
+          patch: { field: string; value: string };
+        };
+      }>(
+        `select events.payload as decision_payload,
+                (select audit.payload
+                   from harness_runtime.audit_events audit
+                  where audit.workflow_id=$1
+                    and audit.event_type='structured_decision_recorded'
+                  limit 1) as audit_payload
+           from harness_runtime.decision_events events
+          where events.task_id=$1`,
+        [runtimeTaskId],
+      );
+      assert.equal(
+        decisionEvidence.rows[0]?.decision_payload.patch.field,
+        command.patch.field,
+      );
+      assert.equal(
+        decisionEvidence.rows[0]?.decision_payload.decision.value,
+        command.decision.value,
+      );
+      assert.equal(
+        decisionEvidence.rows[0]?.audit_payload.questionId,
+        command.questionId,
+      );
       const ownOutbox = await pool.query<{ audit_id: string }>(
         `select o.audit_id
          from harness_runtime.langfuse_outbox o

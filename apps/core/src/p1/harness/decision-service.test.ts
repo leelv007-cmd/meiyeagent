@@ -51,6 +51,36 @@ test('duplicate decision is idempotent and does not resume twice', async () => {
   ]);
 });
 
+test('concurrent duplicate decisions claim one workflow resume', async () => {
+  const order: string[] = [];
+  const store = new MemoryDecisionStore(order);
+  let releaseResume!: () => void;
+  const resumeBlocked = new Promise<void>((resolve) => {
+    releaseResume = resolve;
+  });
+  let resumes = 0;
+  const service = new HarnessDecisionService(store, {
+    async resume() {
+      resumes += 1;
+      await resumeBlocked;
+    },
+  });
+
+  const first = service.submit('workspace-1', 'task-35', decisionInput());
+  const second = service.submit('workspace-1', 'task-35', decisionInput());
+  await new Promise((resolve) => setImmediate(resolve));
+  releaseResume();
+  const results = await Promise.all([first, second]);
+
+  assert.equal(resumes, 1);
+  assert.equal(store.events.length, 1);
+  assert.equal(store.traces.length, 1);
+  assert.deepEqual(
+    results.map((result) => result.replayed).sort(),
+    [false, true],
+  );
+});
+
 test('a persisted decision retries a failed workflow resume', async () => {
   const order: string[] = [];
   const store = new MemoryDecisionStore(order);
@@ -154,6 +184,16 @@ class MemoryDecisionStore implements HarnessDecisionStore {
   ) {
     this.resumeRequired = false;
     this.order.push(`resumed:${eventId}`);
+  }
+
+  async claimDecisionResume() {
+    if (!this.resumeRequired) return false;
+    this.resumeRequired = false;
+    return true;
+  }
+
+  async releaseDecisionResume() {
+    this.resumeRequired = true;
   }
 
   async readPending() {

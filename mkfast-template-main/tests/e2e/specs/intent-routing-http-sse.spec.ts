@@ -34,15 +34,18 @@ async function submitCustomizedCopy(page: Page) {
     data?: {
       contentPackage?: { id?: string };
       task?: { id?: string };
+      work?: { id?: string };
     };
     error?: { message?: string };
   };
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   expect(envelope.data?.task?.id).toBeTruthy();
   expect(envelope.data?.contentPackage?.id).toBeTruthy();
+  expect(envelope.data?.work?.id).toBeTruthy();
   return {
     packageId: envelope.data!.contentPackage!.id!,
     taskId: envelope.data!.task!.id!,
+    workId: envelope.data!.work!.id!,
   };
 }
 
@@ -171,26 +174,77 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
       expect(message).not.toMatch(/route|schema|asset|workflow|revision|id/iu);
     }
 
-    const contentPackage = await page.evaluate(async (packageId) => {
-      const response = await fetch('/api/core/p1/query', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          module: 'operations',
-          action: 'content_package',
-          payload: { packageId },
+    expect(submission.taskId).toBe(question.questionId.split(':s1:')[0]);
+  });
+
+  test('answering the inbox semantic question keeps the same task moving forward', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    const submission = await submitCustomizedCopy(page);
+    const question = await waitForQuestion(page, submission.taskId);
+    expect(question.response.field).toBe('industry_category');
+
+    const streamPromise = page.evaluate(
+      (taskId) =>
+        new Promise<{ messages: string[]; status: string }>((resolve, reject) => {
+          const messages: string[] = [];
+          const stream = new EventSource(
+            `/api/core/p1/workflows/${encodeURIComponent(taskId)}/events`,
+          );
+          const timeout = window.setTimeout(() => {
+            stream.close();
+            reject(new Error('Workflow SSE did not continue after the answer.'));
+          }, 120_000);
+          stream.addEventListener('workflow.progress', (event) => {
+            const data = JSON.parse((event as MessageEvent<string>).data) as {
+              message: string;
+            };
+            messages.push(data.message);
+          });
+          stream.addEventListener('workflow.state', (event) => {
+            const data = JSON.parse((event as MessageEvent<string>).data) as {
+              status: string;
+            };
+            if (data.status === 'success' || data.status === 'failed') {
+              window.clearTimeout(timeout);
+              stream.close();
+              resolve({ messages, status: data.status });
+            }
+          });
+          stream.onerror = () => {
+            if (stream.readyState === EventSource.CLOSED) {
+              window.clearTimeout(timeout);
+              reject(new Error('Workflow SSE closed before terminal state.'));
+            }
+          };
         }),
-      });
-      const envelope = (await response.json()) as {
-        data?: { revision?: number; currentVersionId?: string | null };
-        error?: { message?: string };
-      };
-      if (!response.ok || !envelope.data) {
-        throw new Error(envelope.error?.message ?? 'Content package query failed');
-      }
-      return envelope.data;
-    }, submission.packageId);
-    expect(contentPackage.revision).toBeGreaterThan(0);
-    expect(contentPackage.currentVersionId).toBeTruthy();
+      submission.taskId,
+    );
+
+    const trigger = page.getByRole('button', { name: /^1 项$/u });
+    await expect(trigger).toBeVisible({ timeout: 30_000 });
+    await trigger.click();
+    const inbox = page.getByTestId('pending-actions');
+    const current = inbox.locator('[data-current="true"]');
+    await expect(current).toBeVisible();
+    await expect(current).toHaveAttribute(
+      'data-pending-action-ref',
+      question.questionId,
+    );
+    await current
+      .locator('input[placeholder="输入这次任务的答案"]')
+      .fill('美甲');
+    await current.getByRole('button', { name: '确认并继续' }).click();
+
+    const stream = await streamPromise;
+    expect(stream.status).toBe('success');
+    expect(stream.messages).toContain('已收到，继续为你生成。');
+    expect(stream.messages.join('\n')).not.toMatch(/生成失败|支持编号/u);
+    expect(submission.taskId).toBe(question.questionId.split(':s1:')[0]);
+    expect(submission.workId).toBeTruthy();
   });
 });
