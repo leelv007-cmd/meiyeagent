@@ -1,7 +1,6 @@
 import type { User } from 'better-auth';
 import { betterAuth } from 'better-auth/minimal';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { tanstackStartCookies } from 'better-auth/tanstack-start';
 import { getDb } from '@/db';
 import { sendEmail } from '@/mail';
 import { subscribe } from '@/newsletter';
@@ -10,13 +9,11 @@ import { serverEnv } from '@/env/server';
 import { websiteConfig } from '@/config/website';
 import { resolveEmailVerificationPolicy } from '@/auth/email-verification-policy';
 import { safeErrorFields } from '@/auth/safe-log';
-import { emailHarmony } from 'better-auth-harmony';
-import { admin } from 'better-auth/plugins';
 import { recentAuthenticationHook } from '@/auth/recent-authentication-hook';
-import { apiKeyPlugin } from '@/auth/api-key-compatibility';
 import { assembleVerifiedUser } from '@/auth/user-assembly';
 import { ensurePersonalWorkspace } from '@/lib/auth/workspace-bootstrap';
 import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
+import { createAuthPlugins } from '@/auth/plugins';
 
 /**
  * Better Auth Configuration
@@ -141,30 +138,7 @@ export function createAuth() {
     hooks: {
       before: recentAuthenticationHook,
     },
-    plugins: [
-      // https://www.better-auth.com/docs/integrations/tanstack
-      tanstackStartCookies(),
-      // https://www.better-auth.com/docs/plugins/admin
-      // support user management, ban/unban user, manage user roles, etc.
-      admin({
-        // https://www.better-auth.com/docs/plugins/admin#default-ban-reason
-        // defaultBanReason: 'Spamming',
-        defaultBanExpiresIn: undefined,
-        bannedUserMessage:
-          'You have been banned from this application. Please contact support if you believe this is an error.',
-      }),
-      // https://www.better-auth.com/docs/plugins/api-key
-      // support API key management for user authentication
-      apiKeyPlugin,
-      // https://github.com/gekorm/better-auth-harmony
-      // email normalization and validation to prevent duplicate registrations
-      emailHarmony({
-        // Don't allow login with any version of the unnormalized email address
-        // e.g., user signed up with johndoe@googlemail.com can't login with john.doe@gmail.com
-        // e.g., user signed up with johndoe@googlemail.com can't login with johndoe+abc@gmail.com
-        allowNormalizedSignin: false,
-      }),
-    ],
+    plugins: createAuthPlugins(),
     onAPIError: {
       // https://www.better-auth.com/docs/reference/options#onapierror
       errorURL: '/auth/error',

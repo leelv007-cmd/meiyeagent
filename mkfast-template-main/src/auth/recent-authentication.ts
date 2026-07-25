@@ -1,3 +1,9 @@
+import {
+  p1ModuleRequestSchema,
+  requiredP1Capability,
+  type P1ModuleRequest,
+} from '@meiye/contracts';
+
 export const RECENT_AUTHENTICATION_WINDOW_MS = 15 * 60 * 1000;
 
 const RECENT_AUTHENTICATION_PATHS = new Set([
@@ -17,6 +23,12 @@ const RECENT_AUTHENTICATION_PATHS = new Set([
   '/admin/set-user-password',
 ]);
 
+const RECENT_AUTHENTICATION_P1_CAPABILITIES = new Set([
+  'account.commerce.govern',
+  'config.publish',
+  'credential.govern',
+]);
+
 export class RecentAuthenticationRequiredError extends Error {
   readonly code = 'RECENT_AUTHENTICATION_REQUIRED';
 
@@ -28,6 +40,32 @@ export class RecentAuthenticationRequiredError extends Error {
 
 export function requiresRecentAuthentication(path: string) {
   return RECENT_AUTHENTICATION_PATHS.has(path);
+}
+
+export function requiresRecentAuthenticationForP1Command(
+  module: P1ModuleRequest['module'],
+  action: string
+) {
+  const capability = requiredP1Capability('command', module, action);
+  return (
+    capability !== null && RECENT_AUTHENTICATION_P1_CAPABILITIES.has(capability)
+  );
+}
+
+export function requiresRecentAuthenticationForP1RequestBody(body?: string) {
+  if (!body) return false;
+  try {
+    const request = p1ModuleRequestSchema.safeParse(JSON.parse(body));
+    return (
+      request.success &&
+      requiresRecentAuthenticationForP1Command(
+        request.data.module,
+        request.data.action
+      )
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function recentAuthenticationRequiredResponse() {

@@ -5,6 +5,8 @@ import {
   RecentAuthenticationRequiredError,
   recentAuthenticationRequiredResponse,
   requireRecentAuthentication,
+  requiresRecentAuthenticationForP1Command,
+  requiresRecentAuthenticationForP1RequestBody,
   requiresRecentAuthentication,
 } from './recent-authentication';
 import { createRecentAuthenticationHook } from './recent-authentication-hook';
@@ -77,6 +79,40 @@ describe('route-level recent authentication', () => {
     }
   });
 
+  it('guards credential, platform configuration and commerce commands by capability', () => {
+    for (const [module, action] of [
+      ['integrations', 'admin_store_provider_credential'],
+      ['admin-config', 'config_apply'],
+      ['redemptions', 'create'],
+    ] as const) {
+      assert.equal(
+        requiresRecentAuthenticationForP1Command(module, action),
+        true,
+        `${module}.${action}`
+      );
+      assert.equal(
+        requiresRecentAuthenticationForP1RequestBody(
+          JSON.stringify({ action, module, payload: {} })
+        ),
+        true,
+        `${module}.${action} request body`
+      );
+    }
+
+    for (const [module, action] of [
+      ['integrations', 'create_connection'],
+      ['admin-config', 'config_defaults'],
+      ['redemptions', 'redeem'],
+    ] as const) {
+      assert.equal(
+        requiresRecentAuthenticationForP1Command(module, action),
+        false,
+        `${module}.${action}`
+      );
+    }
+    assert.equal(requiresRecentAuthenticationForP1RequestBody('{'), false);
+  });
+
   it('returns a stable 403 contract that clients can route to reauthentication', async () => {
     const response = recentAuthenticationRequiredResponse();
 
@@ -102,7 +138,13 @@ describe('route-level recent authentication', () => {
       } as never;
     });
 
-    for (const path of ['/api-key/create', '/delete-user']) {
+    for (const path of [
+      '/api-key/create',
+      '/delete-user',
+      '/admin/set-role',
+      '/admin/ban-user',
+      '/admin/revoke-user-session',
+    ]) {
       await assert.rejects(hook({ path } as never), (error: unknown) => {
         assert.equal((error as { statusCode?: number }).statusCode, 403);
         assert.equal(
@@ -120,6 +162,18 @@ describe('route-level recent authentication', () => {
       },
       {
         path: '/delete-user',
+        options: { disableCookieCache: true },
+      },
+      {
+        path: '/admin/set-role',
+        options: { disableCookieCache: true },
+      },
+      {
+        path: '/admin/ban-user',
+        options: { disableCookieCache: true },
+      },
+      {
+        path: '/admin/revoke-user-session',
         options: { disableCookieCache: true },
       },
     ]);
