@@ -45,3 +45,19 @@ test('promptfoo language gate rejects engineering terms and incomplete summaries
     passed: false,
   });
 });
+
+test('promptfoo language gate accepts one expanded required fragment', () => {
+  assert.deepEqual(
+    evaluateMerchantLanguageCase({
+      caseId: 'expanded-task-summary',
+      message: '版本定位：主版本适合小红书种草',
+      requiredFragments: '版本定位：',
+    }),
+    {
+      caseId: 'expanded-task-summary',
+      forbiddenTerms: [],
+      missingFragments: [],
+      passed: true,
+    },
+  );
+});

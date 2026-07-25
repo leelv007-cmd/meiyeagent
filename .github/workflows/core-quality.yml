@@ -22,6 +22,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run recorded gate parity and provider tests
         run: pnpm eval:redlines
+      - name: Run pinned merchant-language promptfoo gate
+        env:
+          PROMPTFOO_DISABLE_REMOTE_GENERATION: true
+        run: >-
+          pnpm dlx promptfoo@0.121.19 eval
+          -c promptfooconfig.merchant-language.yaml
+          --no-cache
+          -o output/evals/promptfoo-merchant-language.json
       - name: Run BeautyPreferenceMemoryEval
         run: pnpm eval:preference-memory
       - name: Write recorded EvalRun artifact
