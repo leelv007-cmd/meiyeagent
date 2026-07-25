@@ -11,6 +11,9 @@ function submissionBody() {
     briefConfirmation: { id: 'brief-confirm-1', revision: 'draft-r3' },
     briefContext: { id: 'brief-context-1', revision: 3 },
     catalogModel: { id: 'catalog-copy-1', revision: 'catalog-r4' },
+    contentPackagePlatform: 'douyin' as const,
+    distributionTarget: 'export' as const,
+    deliverable: { kind: 'copy_document' as const, quantity: 1 },
     identity: { id: 'identity-brand', revision: '2' },
     idempotencyKey: 'composer-submit-1',
     intent: '写一条夏日护理预约文案',
@@ -32,12 +35,14 @@ function submissionBody() {
   };
 }
 
-test('browser submission carries only public references', () => {
+test('browser submission carries signed public fields without server truth', () => {
   const parsed = composerSubmissionBodySchema.parse(submissionBody());
   assert.equal('route' in parsed, false);
   assert.equal('rights' in parsed, false);
   assert.equal('deliverables' in parsed, false);
   assert.equal('modelPolicy' in parsed, false);
+  assert.equal(parsed.contentPackagePlatform, 'douyin');
+  assert.equal(parsed.distributionTarget, 'export');
 });
 
 test('submits the exact Composer body and returns the durable handles', async () => {

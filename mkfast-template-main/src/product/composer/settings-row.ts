@@ -96,7 +96,7 @@ const FIELD_DEFS: Record<SettingsFieldKey, SettingsFieldDef> = {
   platform: {
     key: 'platform',
     kind: 'text',
-    label: '平台',
+    label: '发到哪 / 用在哪',
   },
   deliverableKind: {
     key: 'deliverableKind',
