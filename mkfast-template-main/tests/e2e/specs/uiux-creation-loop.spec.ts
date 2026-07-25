@@ -372,7 +372,9 @@ test.describe('S2 cold start and unified creation loop', () => {
     });
     await expect(industries.getByRole('radio')).toHaveCount(3);
     for (const industry of ['护发', '皮肤管理', '生发']) {
-      await expect(industries.getByRole('radio', { name: industry })).toBeVisible();
+      await expect(
+        industries.getByRole('radio', { name: industry })
+      ).toBeVisible();
     }
 
     const sampleStores = (await productState(page)).exampleStores;
@@ -548,7 +550,9 @@ test.describe('S2 cold start and unified creation loop', () => {
     await expect(page.getByText('门店本周主推低损伤染发。')).toBeVisible();
     await expect(page.getByText('私信预约发质判断。')).toBeVisible();
     // D-126: the CTA prefills the Composer draft in place — it does not navigate.
-    await expect(page.getByRole('link', { name: '查看完整成品' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: '查看完整成品' })).toHaveCount(
+      0
+    );
     await page.getByTestId('today-recommendation-use').click();
     const prefilled = page.getByLabel('描述这次想创作的内容');
     await expect(prefilled).toBeFocused();

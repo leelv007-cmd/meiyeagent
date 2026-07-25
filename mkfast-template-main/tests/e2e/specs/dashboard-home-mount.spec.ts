@@ -89,7 +89,6 @@ async function creativeWorkbench(page: Page) {
   }>(page, 'operations', 'creative_workbench');
 }
 
-
 /**
  * 可发布 是一件已完成的成品，不是候选列表——商户一次「采用」都还没点，
  * 标题/正文/转化语就已经齐全。这条是 OI-15 的防线：成品的存在不许被
@@ -229,9 +228,7 @@ test.describe('D-126 dashboard home mount', () => {
       'hair_growth',
     ]);
     for (const label of ['护发', '皮肤管理', '生发']) {
-      await expect(
-        showcase.getByRole('radio', { name: label })
-      ).toBeVisible();
+      await expect(showcase.getByRole('radio', { name: label })).toBeVisible();
     }
     const sampleStore = stores[0]!;
     const sampleRegion = page.getByRole('region', { name: sampleStore.name });
@@ -375,9 +372,10 @@ test.describe('D-126 dashboard home mount', () => {
       ...workbench.jobs.map((job) => job.id),
     ];
     for (const id of projectionIds) {
-      expect(sampleIds.has(id), `${id} leaked into the merchant workspace`).toBe(
-        false
-      );
+      expect(
+        sampleIds.has(id),
+        `${id} leaked into the merchant workspace`
+      ).toBe(false);
       expect(id.startsWith('platform-sample:')).toBe(false);
     }
 
@@ -425,7 +423,10 @@ test.describe('D-126 dashboard home mount', () => {
     await expect(page.getByTestId('composer-intent-input')).toBeVisible();
   });
 
-  for (const theme of ['light', 'dark'] as const satisfies readonly ThemeMode[]) {
+  for (const theme of [
+    'light',
+    'dark',
+  ] as const satisfies readonly ThemeMode[]) {
     test(`cold home renders on mobile in the ${theme} theme`, async ({
       page,
       request,
@@ -450,7 +451,10 @@ test.describe('D-126 dashboard home mount', () => {
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - window.innerWidth
       );
-      expect(overflow, 'cold home must not scroll horizontally').toBeLessThanOrEqual(1);
+      expect(
+        overflow,
+        'cold home must not scroll horizontally'
+      ).toBeLessThanOrEqual(1);
 
       // Durable walkthrough evidence — Playwright wipes test-results/ per run.
       // Kept out of the tracked tree (OI-26): a spec that rewrites committed

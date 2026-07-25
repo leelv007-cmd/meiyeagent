@@ -199,6 +199,7 @@ export function ExampleStorePreview({
             {example.contentPreviews.map((content) => {
               const previewUrl = content.previewUrl;
               return (
+                // biome-ignore lint/a11y/useSemanticElements: card-shaped option inside the deliberate ARIA radiogroup above; a native <input type="radio"> cannot render the preview-card content.
                 <button
                   aria-checked={selected?.id === content.id}
                   // A native button: the shared Button caps its height and
@@ -279,7 +280,10 @@ export function ExampleStorePreview({
               onClick={() => {
                 if (selected) {
                   onRemix(
-                    exampleRemixIntent({ ...selected, industry: example.industry })
+                    exampleRemixIntent({
+                      ...selected,
+                      industry: example.industry,
+                    })
                   );
                 }
               }}

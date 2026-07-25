@@ -338,83 +338,86 @@ async function assertNativeVideoZip(
   }
 }
 
-test.describe.serial('T21 video-native compiler', () => {
-  test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
-  test.afterAll(async ({ request }) => cleanupE2EUsers(request));
+test.describe
+  .serial('T21 video-native compiler', () => {
+    test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
+    test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-  test('Composer → storyboard → one native call → revision → refresh → export', async ({
-    page,
-    request,
-  }) => {
-    test.setTimeout(480_000);
-    const user = await registerE2EUser(request);
-    await loginByForm(page, user);
-
-    const submission = await submitVideoJourney(page);
-    const stream = await collectWorkflowSse(page, submission.taskId);
-    expect(stream.status).toBe('success');
-    expect(
-      stream.progress
-        .filter(({ state }) => state === 'success')
-        .map(({ stage }) => stage)
-    ).toEqual(EXPECTED_STAGES);
-
-    const contentPackage = await queryOperations<ContentPackageProjection>(
+    test('Composer → storyboard → one native call → revision → refresh → export', async ({
       page,
-      'content_package',
-      { packageId: submission.packageId }
-    );
-    expect(contentPackage.kind).toBe('video');
-    expect(contentPackage.generated.assetIds).toHaveLength(1);
-    expect(contentPackage.generated.ownedAssets).toHaveLength(1);
-    expect(contentPackage.generated.ownedAssets[0]?.contentType).toBe(
-      'video/mp4'
-    );
-    expect(contentPackage.generated.childRuns).toHaveLength(1);
-    expect(contentPackage.generated.childRuns[0]).toMatchObject({
-      productUsage: { quantity: 0, status: 'committed' },
-      runId: expect.any(String),
-      runType: 'model_job',
-      status: 'succeeded',
-    });
-    expect(contentPackage.marketing?.contextBundle?.bundleId).toBeTruthy();
-    expect(contentPackage.marketing?.contextBundle?.hash).toBeTruthy();
-    expect(contentPackage.marketing?.contextBundle?.revision).toBeGreaterThan(
-      0
-    );
-    expect(contentPackage.marketing?.factRefs).toEqual(expect.any(Array));
-    expect(
-      contentPackage.marketing?.rightsRefs?.length ?? 0
-    ).toBeGreaterThan(0);
-    expect(
-      contentPackage.variants.map(({ platform }) => platform).sort()
-    ).toEqual(['douyin', 'video_account', 'xiaohongshu']);
-    const primary = contentPackage.versions[0];
-    expect(primary?.title?.trim()).toBeTruthy();
-    expect(primary?.body?.trim()).toBeTruthy();
-    expect(primary?.conversionHook?.trim()).toBeTruthy();
-    expect(primary?.orderedAssetIds).toEqual(
-      contentPackage.generated.assetIds
-    );
-    expect(primary?.harnessCandidateId).toBe(
-      contentPackage.harnessSelection?.recommendedCandidateId
-    );
+      request,
+    }) => {
+      test.setTimeout(480_000);
+      const user = await registerE2EUser(request);
+      await loginByForm(page, user);
 
-    await page.goto(`/dashboard/results/${encodeURIComponent(submission.workId)}`);
-    await expect(page.getByTestId('result-center-shell')).toBeVisible({
-      timeout: 60_000,
-    });
-    await page.reload();
-    await expect(page.getByTestId('video-worksurface')).toBeVisible({
-      timeout: 60_000,
-    });
+      const submission = await submitVideoJourney(page);
+      const stream = await collectWorkflowSse(page, submission.taskId);
+      expect(stream.status).toBe('success');
+      expect(
+        stream.progress
+          .filter(({ state }) => state === 'success')
+          .map(({ stage }) => stage)
+      ).toEqual(EXPECTED_STAGES);
 
-    const adopted = await adoptRecommendedCandidate(page, contentPackage);
-    expect(adopted.status).toBe('accepted');
-    expect(adopted.harnessSelection?.adoptedCandidateId).toBe(
-      contentPackage.harnessSelection?.recommendedCandidateId
-    );
-    const download = await exportFullPackage(page, adopted);
-    await assertNativeVideoZip(download, adopted.revision);
+      const contentPackage = await queryOperations<ContentPackageProjection>(
+        page,
+        'content_package',
+        { packageId: submission.packageId }
+      );
+      expect(contentPackage.kind).toBe('video');
+      expect(contentPackage.generated.assetIds).toHaveLength(1);
+      expect(contentPackage.generated.ownedAssets).toHaveLength(1);
+      expect(contentPackage.generated.ownedAssets[0]?.contentType).toBe(
+        'video/mp4'
+      );
+      expect(contentPackage.generated.childRuns).toHaveLength(1);
+      expect(contentPackage.generated.childRuns[0]).toMatchObject({
+        productUsage: { quantity: 0, status: 'committed' },
+        runId: expect.any(String),
+        runType: 'model_job',
+        status: 'succeeded',
+      });
+      expect(contentPackage.marketing?.contextBundle?.bundleId).toBeTruthy();
+      expect(contentPackage.marketing?.contextBundle?.hash).toBeTruthy();
+      expect(contentPackage.marketing?.contextBundle?.revision).toBeGreaterThan(
+        0
+      );
+      expect(contentPackage.marketing?.factRefs).toEqual(expect.any(Array));
+      expect(contentPackage.marketing?.rightsRefs?.length ?? 0).toBeGreaterThan(
+        0
+      );
+      expect(
+        contentPackage.variants.map(({ platform }) => platform).sort()
+      ).toEqual(['douyin', 'video_account', 'xiaohongshu']);
+      const primary = contentPackage.versions[0];
+      expect(primary?.title?.trim()).toBeTruthy();
+      expect(primary?.body?.trim()).toBeTruthy();
+      expect(primary?.conversionHook?.trim()).toBeTruthy();
+      expect(primary?.orderedAssetIds).toEqual(
+        contentPackage.generated.assetIds
+      );
+      expect(primary?.harnessCandidateId).toBe(
+        contentPackage.harnessSelection?.recommendedCandidateId
+      );
+
+      await page.goto(
+        `/dashboard/results/${encodeURIComponent(submission.workId)}`
+      );
+      await expect(page.getByTestId('result-center-shell')).toBeVisible({
+        timeout: 60_000,
+      });
+      await page.reload();
+      await expect(page.getByTestId('video-worksurface')).toBeVisible({
+        timeout: 60_000,
+      });
+
+      const adopted = await adoptRecommendedCandidate(page, contentPackage);
+      expect(adopted.status).toBe('accepted');
+      expect(adopted.harnessSelection?.adoptedCandidateId).toBe(
+        contentPackage.harnessSelection?.recommendedCandidateId
+      );
+      const download = await exportFullPackage(page, adopted);
+      await assertNativeVideoZip(download, adopted.revision);
+    });
   });
-});

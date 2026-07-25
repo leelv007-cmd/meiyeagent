@@ -84,10 +84,7 @@ test('cold home offers an opt-in entry once every sample is hidden', () => {
       sampleStore('hair_growth', true),
     ],
   });
-  assert.equal(
-    exampleShowcaseVisibility({ loading: false, state }),
-    'opt_in'
-  );
+  assert.equal(exampleShowcaseVisibility({ loading: false, state }), 'opt_in');
 });
 
 test('a workspace with real work never sees samples again', () => {

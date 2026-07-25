@@ -570,10 +570,7 @@ export function buildNativeVideoWorksurface(
   selection: ResultCenterLiveSelection,
   contentPackage: PublicContentPackage | undefined
 ): VideoWorksurfaceState | undefined {
-  if (
-    selection.workspaceKind !== 'video' ||
-    contentPackage?.kind !== 'video'
-  ) {
+  if (selection.workspaceKind !== 'video' || contentPackage?.kind !== 'video') {
     return undefined;
   }
   const version = contentPackage.versions.find(

@@ -43,9 +43,7 @@ export function ComposerIdentityCard({
                 size="sm"
                 type="button"
                 variant={
-                  selection.selected?.id === identity.id
-                    ? 'default'
-                    : 'outline'
+                  selection.selected?.id === identity.id ? 'default' : 'outline'
                 }
               >
                 {identity.label}

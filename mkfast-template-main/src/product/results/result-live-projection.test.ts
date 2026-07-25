@@ -544,10 +544,7 @@ test('projects a model-native video from the canonical ContentPackage without a 
     },
   } as unknown as PublicContentPackage;
 
-  const state = buildNativeVideoWorksurface(
-    result.selected!,
-    contentPackage
-  );
+  const state = buildNativeVideoWorksurface(result.selected!, contentPackage);
 
   assert.equal(state?.workflowId, 'model-job-video-native');
   assert.equal(state?.storyboard.length, 1);
