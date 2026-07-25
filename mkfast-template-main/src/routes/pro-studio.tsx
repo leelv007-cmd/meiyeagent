@@ -1,32 +1,21 @@
+/**
+ * Pro Studio entry gate (FREEZE / entry-keep-running — ADR-0012, D-127).
+ *
+ * R-08 / #211: this page reads the canonical entitlement projection through the
+ * shared three-state contract, so what it shows is exactly what the gate will
+ * decide. `unknown` never renders the launch action.
+ */
 import { authRouteMiddleware } from '@/middlewares/auth-middleware';
+import {
+  canEnterProStudio,
+  fetchProStudioEntitlement,
+  proStudioEntitlementReason,
+  readProStudioEntitlementProjection,
+  type ProStudioEntitlementProjection,
+} from '@/lib/pro-studio-entitlement';
 import { pro_studio_offer_description } from '@/locale/paraglide/messages';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-
-type ProStudioEntry =
-  | {
-      activatedAt: string;
-      launchUrl: string;
-      offerId: string;
-      status: 'active';
-    }
-  | {
-      launchUrl: string;
-      offer: {
-        canPurchase: boolean;
-        demoUrl: string;
-        description: string;
-        id: string;
-        priceLabel: string;
-        purchasePath: string;
-        purchaseReason?:
-          | 'activation_pending'
-          | 'already_purchased'
-          | 'owner_required'
-          | 'unavailable';
-      };
-      status: 'locked';
-    };
 
 export const Route = createFileRoute('/pro-studio')({
   ssr: false,
@@ -35,8 +24,10 @@ export const Route = createFileRoute('/pro-studio')({
 });
 
 function ProStudioEntryPage() {
-  const [entry, setEntry] = useState<ProStudioEntry | null>(null);
-  const [error, setError] = useState('');
+  const [entry, setEntry] = useState<ProStudioEntitlementProjection>({
+    state: 'unknown',
+    reason: 'projection_pending',
+  });
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -44,23 +35,21 @@ function ProStudioEntryPage() {
     const waitingForPayment =
       new URLSearchParams(window.location.search).get('checkout') === 'success';
     const loadEntry = () => {
-      fetch('/api/pro-studio/entry', { credentials: 'same-origin' })
-        .then(async (response) => {
-          if (!response.ok) throw new Error('入口状态加载失败，请稍后重试。');
-          return (await response.json()) as ProStudioEntry;
-        })
+      fetchProStudioEntitlement()
+        .then(readProStudioEntitlementProjection)
+        .catch(
+          (): ProStudioEntitlementProjection => ({
+            state: 'unknown',
+            reason: 'projection_unreachable',
+          })
+        )
         .then((next) => {
           setEntry(next);
           attempts += 1;
-          if (waitingForPayment && next.status === 'locked' && attempts < 30) {
+          if (waitingForPayment && next.state !== 'active' && attempts < 30) {
             timeout = setTimeout(loadEntry, 1_000);
           }
-        })
-        .catch((reason: unknown) =>
-          setError(
-            reason instanceof Error ? reason.message : '入口状态加载失败。'
-          )
-        );
+        });
     };
     loadEntry();
     return () => {
@@ -91,16 +80,27 @@ function ProStudioEntryPage() {
               改动需要先看计划、再确认、最后执行。
             </p>
           </div>
-          <aside className="rounded-3xl border border-[oklch(1_0_0_/_0.08)] bg-[oklch(0.2_0.012_260)] p-7 shadow-[0_12px_40px_oklch(0_0_0_/_0.35)]">
-            {!entry && !error ? (
-              <p className="text-[oklch(0.72_0.01_90)]">正在读取工作区权益…</p>
-            ) : null}
-            {error ? (
-              <p className="text-[oklch(0.72_0.12_25)]" role="alert">
-                {error}
+          <aside
+            className="rounded-3xl border border-[oklch(1_0_0_/_0.08)] bg-[oklch(0.2_0.012_260)] p-7 shadow-[0_12px_40px_oklch(0_0_0_/_0.35)]"
+            data-testid="pro-studio-entry-gate"
+            data-entitlement-state={entry.state}
+            data-can-enter={canEnterProStudio(entry.state) ? 'true' : 'false'}
+          >
+            {entry.state === 'unknown' ? (
+              <p
+                className={
+                  entry.reason === 'projection_pending'
+                    ? 'text-[oklch(0.72_0.01_90)]'
+                    : 'text-[oklch(0.72_0.12_25)]'
+                }
+                {...(entry.reason === 'projection_pending'
+                  ? {}
+                  : { role: 'alert' as const })}
+              >
+                {proStudioEntitlementReason(entry)}
               </p>
             ) : null}
-            {entry?.status === 'active' ? (
+            {entry.state === 'active' ? (
               <>
                 <p className="text-sm font-medium text-[oklch(0.72_0.12_150)]">
                   工作区已解锁
@@ -121,7 +121,7 @@ function ProStudioEntryPage() {
                 </form>
               </>
             ) : null}
-            {entry?.status === 'locked' ? (
+            {entry.state === 'locked' ? (
               <>
                 <p className="inline-flex items-center gap-1.5 rounded-md bg-[var(--spark-wash)] px-2 py-0.5 text-xs font-medium text-[var(--spark-deep)]">
                   <span aria-hidden="true">✦</span>

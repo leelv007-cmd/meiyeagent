@@ -5,7 +5,16 @@
  * Pro Studio is a full-width banner → /pro-studio canonical gate only.
  * Capability-unpublished tools are hidden (not counted, not shown).
  * Entitlement-locked tools may show with lock reason.
+ *
+ * R-08 / #211: the Pro Studio banner state is read from the canonical
+ * entitlement projection only. Absent an answer it is `unknown` — never the
+ * seed-defaulted `active` that promised entry before the gate refused it.
  */
+
+import {
+  canEnterProStudio,
+  type ProStudioEntitlementState,
+} from '@/lib/pro-studio-entitlement';
 
 import {
   PRO_STUDIO_CANONICAL_PATH,
@@ -14,6 +23,7 @@ import {
 import {
   COMPOSER_TOOL_ENTRY_SEEDS,
   type ComposerToolEntrySeed,
+  type OrdinaryToolEntrySeed,
 } from './tool-entry-seeds';
 import {
   openToolWithHandoff,
@@ -27,8 +37,6 @@ export const ORDINARY_TOOL_CAP = {
 } as const;
 
 export type ComposerViewportKind = 'desktop' | 'mobile';
-
-export type ProStudioGateStatus = 'locked' | 'active';
 
 export type ComposerToolChipView = {
   id: string;
@@ -47,7 +55,9 @@ export type ProStudioBannerView = {
   summary: string;
   /** Always the canonical gate path. */
   href: string;
-  status: ProStudioGateStatus;
+  status: ProStudioEntitlementState;
+  /** Mirrors the route gate verdict — presentation may never promise more. */
+  canEnter: boolean;
   lockReason?: string;
   ctaLabel: string;
 };
@@ -66,8 +76,11 @@ export type ComposerToolsStripInput = {
   viewport: ComposerViewportKind;
   /** Override seeds (tests / surface projection). */
   tools?: readonly ComposerToolEntrySeed[];
-  /** Pro Studio entitlement from /api/pro-studio/entry. */
-  proStudioStatus?: ProStudioGateStatus;
+  /**
+   * Pro Studio entitlement from the canonical projection
+   * (`lib/pro-studio-entitlement`). Omitted = not read yet = `unknown`.
+   */
+  proStudioStatus?: ProStudioEntitlementState;
   proStudioLockReason?: string;
   /** Opaque return key for catalog / tool handoff. */
   returnKey?: string;
@@ -98,7 +111,7 @@ export function listOrdinaryHomeTools(
   const seeds = input.tools ?? COMPOSER_TOOL_ENTRY_SEEDS;
   return seeds
     .filter(
-      (tool) =>
+      (tool): tool is OrdinaryToolEntrySeed =>
         !tool.isProStudioBanner &&
         isPublishedVisible(tool, input.capabilityGateOpen)
     )
@@ -118,6 +131,21 @@ export function listOrdinaryHomeTools(
     }));
 }
 
+/** CTA copy per entitlement state. Only `active` may promise entry (R-08). */
+const PRO_STUDIO_CTA_LABEL: Record<ProStudioEntitlementState, string> = {
+  active: '进入专业工作区',
+  locked: '了解并解锁',
+  unknown: '查看权益状态',
+};
+
+const PRO_STUDIO_FALLBACK_REASON: Record<
+  Exclude<ProStudioEntitlementState, 'active'>,
+  string
+> = {
+  locked: '尚未开通 Pro Studio',
+  unknown: '权益状态读取中，暂不可进入',
+};
+
 /** Pro Studio full-width banner projection. Hidden when capability unpublished. */
 export function projectProStudioBanner(
   input: ComposerToolsStripInput
@@ -129,14 +157,12 @@ export function projectProStudioBanner(
   if (!entry) return null;
   if (!isPublishedVisible(entry, input.capabilityGateOpen)) return null;
 
-  const status: ProStudioGateStatus =
-    input.proStudioStatus ?? (entry.entitlementLocked ? 'locked' : 'active');
+  // No seed fallback: absent a canonical answer the honest state is `unknown`.
+  const status: ProStudioEntitlementState = input.proStudioStatus ?? 'unknown';
   const lockReason =
-    status === 'locked'
-      ? (input.proStudioLockReason ??
-        entry.lockReason ??
-        '套餐未解锁 Pro Studio')
-      : undefined;
+    status === 'active'
+      ? undefined
+      : (input.proStudioLockReason ?? PRO_STUDIO_FALLBACK_REASON[status]);
 
   return {
     id: 'tool.pro_studio',
@@ -144,8 +170,9 @@ export function projectProStudioBanner(
     summary: entry.summary,
     href: PRO_STUDIO_CANONICAL_PATH,
     status,
+    canEnter: canEnterProStudio(status),
     ...(lockReason ? { lockReason } : {}),
-    ctaLabel: status === 'locked' ? '了解并解锁' : '进入专业工作区',
+    ctaLabel: PRO_STUDIO_CTA_LABEL[status],
   };
 }
 

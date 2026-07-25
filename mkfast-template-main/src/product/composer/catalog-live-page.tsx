@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
+import { useProStudioEntitlement } from '@/hooks/use-pro-studio-entitlement';
+
 import { saveCatalogReturnSnapshot } from './catalog-return-store';
 import type { CatalogSearch } from './catalog-route-model';
 import {
@@ -60,15 +62,22 @@ export function CatalogLivePage({
     queryKey: ['composer', 'fullscreen-catalog', search.surfaceRevisionId],
     queryFn: ({ signal }) => fetchComposerCatalogSource(signal, query),
   });
+  const entitlement = useProStudioEntitlement();
   const source = useMemo(
     () =>
       sourceQuery.data
-        ? catalogItemSourceFromLive(
-            sourceQuery.data.surface,
-            sourceQuery.data.tools
-          )
+        ? {
+            ...catalogItemSourceFromLive(
+              sourceQuery.data.surface,
+              sourceQuery.data.tools
+            ),
+            proStudioStatus: entitlement.projection.state,
+            ...(entitlement.reason
+              ? { proStudioLockReason: entitlement.reason }
+              : {}),
+          }
         : undefined,
-    [sourceQuery.data]
+    [entitlement.projection.state, entitlement.reason, sourceQuery.data]
   );
 
   useEffect(() => {
@@ -85,7 +94,10 @@ export function CatalogLivePage({
   };
 
   const selectItem = (item: CatalogItemView) => {
-    if (item.locked || !sourceQuery.data) return;
+    if (!sourceQuery.data) return;
+    // Pro Studio stays reachable in every state: the canonical gate page is
+    // where the merchant sees the real entitlement and can unlock (R-08).
+    if (item.locked && !item.isProStudioBanner) return;
     if (item.kind === 'template') {
       if (!item.recipeRevisionId) return;
       onSelectRecipe({

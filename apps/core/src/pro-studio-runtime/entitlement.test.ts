@@ -62,6 +62,20 @@ test('an unpurchased workspace receives a useful introduction instead of a dead 
   });
 });
 
+test('a cold projection refuses entry — the gate never reads absence as active', async () => {
+  const entitlements = service();
+
+  await assert.rejects(
+    () => entitlements.assertCanEnter(owner),
+    (error: Error & { code?: string }) =>
+      error.code === 'PRO_STUDIO_ENTITLEMENT_REQUIRED',
+  );
+  assert.equal(
+    await entitlements.isActionAllowed(owner, 'pro_studio.enter'),
+    false,
+  );
+});
+
 test('only the workspace owner can purchase the add-on', async () => {
   const entitlements = service();
 
