@@ -57,6 +57,7 @@ import {
   type ComposerImageIdentity,
 } from '@/product/composer-image-input';
 import { executeProductCommand, useProductState } from '@/product/client';
+import { DashboardHomeSurface } from '@/product/dashboard-home-surface';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
 import {
   missingCreativeGrounding,
@@ -1320,6 +1321,18 @@ export function ComposerHome({
           }
           intentRef.current?.focus();
         }}
+      />
+
+      {/* D-126 hot/cold home. Both CTAs prefill this same draft — never submit. */}
+      <DashboardHomeSurface
+        loading={product.loading}
+        onPrefill={(intent) => {
+          setLensState((current) => updateUserText(current, intent));
+          intentRef.current?.focus();
+        }}
+        onRefresh={product.refresh}
+        onStart={() => intentRef.current?.focus()}
+        state={product.state}
       />
 
       {showProgressiveFact ? (

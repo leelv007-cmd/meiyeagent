@@ -12,6 +12,7 @@ import {
   example_store_content_preview_alt,
   example_store_content_title,
   example_store_eyebrow,
+  example_store_facts_title,
   example_store_handoff_readonly,
   example_store_handoff_title,
   example_store_hide,
@@ -38,20 +39,7 @@ import { useEffect, useState } from 'react';
 
 import { exampleRemixIntent } from './creation-entry-model';
 
-type ExampleStore = ProductState['exampleStore'];
-
-const EXAMPLE_ASSET_PREVIEW_BY_ID: Record<string, string | undefined> = {
-  'example-asset-1': '/seed/store/store-cateye-texture.webp',
-  'example-asset-2': '/seed/store/store-natural-light.webp',
-  'example-asset-3': '/seed/store/store-artist-working.webp',
-  'example-asset-4': '/seed/store/store-final-result.webp',
-};
-
-const EXAMPLE_CONTENT_PREVIEW_BY_ID: Record<string, string | undefined> = {
-  'example-content-1': '/seed/store/store-content-cloudy-cateye.webp',
-  'example-content-2': '/seed/store/store-content-lightband.webp',
-  'example-content-3': '/seed/store/store-content-howtochoose.webp',
-};
+type ExampleStore = ProductState['exampleStores'][number];
 
 export function ExampleStorePreview({
   example,
@@ -141,6 +129,20 @@ export function ExampleStorePreview({
       ) : null}
 
       <div>
+        <h4 className="text-sm font-semibold">{example_store_facts_title()}</h4>
+        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+          {example.facts.map((fact) => (
+            <div className="rounded-xl bg-surface-1 p-3 text-sm" key={fact.id}>
+              <dt className="font-medium">{fact.label}</dt>
+              <dd className="mt-1 leading-6 text-muted-foreground">
+                {fact.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <div>
         <h4 className="text-sm font-semibold">
           {example_store_assets_title()}
         </h4>
@@ -149,14 +151,14 @@ export function ExampleStorePreview({
             <li className="flow-root" key={asset.id}>
               <div className="group flex min-h-20 items-center gap-4 rounded-xl p-2 transition-colors hover:bg-muted/50">
                 <div className="flex aspect-square size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-1">
-                  {EXAMPLE_ASSET_PREVIEW_BY_ID[asset.id] ? (
+                  {asset.previewUrl ? (
                     <img
                       alt={example_store_asset_preview_alt({
                         name: asset.label,
                       })}
                       className="size-full object-cover"
                       loading="lazy"
-                      src={EXAMPLE_ASSET_PREVIEW_BY_ID[asset.id]}
+                      src={asset.previewUrl}
                     />
                   ) : (
                     <IconPhoto
@@ -194,7 +196,7 @@ export function ExampleStorePreview({
             role="radiogroup"
           >
             {example.contentPreviews.map((content) => {
-              const previewUrl = EXAMPLE_CONTENT_PREVIEW_BY_ID[content.id];
+              const previewUrl = content.previewUrl;
               return (
                 <Button
                   aria-checked={selected?.id === content.id}
@@ -221,15 +223,16 @@ export function ExampleStorePreview({
                       <IconFileText aria-hidden="true" className="size-8" />
                     </span>
                   )}
-                  <span className="flex min-w-0 items-center gap-3 p-3">
+                  <span className="flex min-w-0 items-start gap-3 p-3">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">
-                        {content.title}
-                      </span>
+                      <span className="block font-medium">{content.title}</span>
                       <span className="mt-1 block text-xs font-normal text-muted-foreground">
                         {content.platform === 'xiaohongshu'
                           ? creation_entry_platform_xiaohongshu()
                           : creation_entry_platform_douyin()}
+                      </span>
+                      <span className="mt-2 block text-xs leading-5 font-normal text-muted-foreground">
+                        {content.summary}
                       </span>
                     </span>
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors group-hover:text-foreground">

@@ -6,21 +6,24 @@ import { useQuery } from '@tanstack/react-query';
 import { IconArrowRight, IconSparkles } from '@tabler/icons-react';
 
 import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   today_recommendation_cold_description,
   today_recommendation_cold_title,
   today_recommendation_customer_action,
   today_recommendation_facts,
-  today_recommendation_open,
+  today_recommendation_facts_count,
   today_recommendation_source,
   today_recommendation_start,
   today_recommendation_stale_description,
   today_recommendation_stale_title,
   today_recommendation_title,
+  today_recommendation_use,
+  today_recommendation_use_description,
   today_recommendation_why,
 } from '@/locale/paraglide/messages';
+import { todayRecommendationIntent } from '@/product/creation-entry-model';
 import { readTodayRecommendation } from '@/product/harness-client';
 import { HotTopicOpportunityCardView } from './hot-topic-opportunity-card';
 
@@ -38,7 +41,14 @@ export function todayRecommendationView(
   return { kind: 'current', recommendation: state.recommendation };
 }
 
-export function TodayRecommendationCard({ onStart }: { onStart: () => void }) {
+export function TodayRecommendationCard({
+  onStart,
+  onUse,
+}: {
+  onStart: () => void;
+  /** D-126: prefills the Composer draft — never auto-submits, never charges. */
+  onUse: (intent: string) => void;
+}) {
   const recommendation = useQuery({
     queryKey: ['harness', 'today-recommendation'],
     queryFn: ({ signal }) => readTodayRecommendation(signal),
@@ -50,6 +60,7 @@ export function TodayRecommendationCard({ onStart }: { onStart: () => void }) {
     <Card
       className="meiye-porcelain meiye-entry-card meiye-today-recommendation overflow-hidden"
       data-layer="base"
+      data-testid="today-recommendation"
     >
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2 text-foreground">
@@ -65,7 +76,10 @@ export function TodayRecommendationCard({ onStart }: { onStart: () => void }) {
       </CardHeader>
       <CardContent>
         {view.kind === 'current' ? (
-          <CurrentRecommendation recommendation={view.recommendation} />
+          <CurrentRecommendation
+            onUse={onUse}
+            recommendation={view.recommendation}
+          />
         ) : (
           <div className="space-y-2">
             <h3 className="text-lg font-semibold">
@@ -89,8 +103,10 @@ export function TodayRecommendationCard({ onStart }: { onStart: () => void }) {
 }
 
 function CurrentRecommendation({
+  onUse,
   recommendation,
 }: {
+  onUse: (intent: string) => void;
   recommendation: TodayRecommendation;
 }) {
   return (
@@ -110,12 +126,13 @@ function CurrentRecommendation({
         </div>
         <div className="rounded-xl bg-muted/70 p-3">
           <dt className="font-medium">{today_recommendation_facts()}</dt>
-          <dd className="mt-1 flex flex-wrap gap-1">
-            {recommendation.factReferences.map((reference) => (
-              <Badge key={reference} variant="secondary">
-                {reference}
-              </Badge>
-            ))}
+          {/* D-116: fact references are internal ids — show the count, not them. */}
+          <dd className="mt-1">
+            <Badge variant="secondary">
+              {today_recommendation_facts_count({
+                count: recommendation.factReferences.length,
+              })}
+            </Badge>
           </dd>
         </div>
         <div className="rounded-xl bg-muted/70 p-3">
@@ -132,16 +149,23 @@ function CurrentRecommendation({
         presentation="compact"
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <Button
+            data-testid="today-recommendation-use"
+            onClick={() => onUse(todayRecommendationIntent(recommendation))}
+            size="sm"
+            type="button"
+          >
+            {today_recommendation_use()}
+            <IconArrowRight aria-hidden="true" />
+          </Button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {today_recommendation_use_description()}
+          </p>
+        </div>
         <p className="text-xs text-muted-foreground">
           {today_recommendation_source()}：{recommendation.sourceLabel}
         </p>
-        <a
-          className={buttonVariants({ size: 'sm' })}
-          href={`/dashboard/content?packageId=${encodeURIComponent(recommendation.packageId)}`}
-        >
-          {today_recommendation_open()}
-          <IconArrowRight aria-hidden="true" />
-        </a>
       </div>
     </article>
   );
