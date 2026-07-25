@@ -254,13 +254,67 @@ test.describe('registration and redemption chain (#219)', () => {
       await registrationResponse.text()
     ).toBeTruthy();
     const registrationBody = (await registrationResponse.json()) as {
-      user?: { provisionedByUserId?: string | null };
+      user?: {
+        id?: string;
+        provisionedByUserId?: string | null;
+      };
     };
     expect(registrationBody.user?.provisionedByUserId ?? null).toBeNull();
+    expect(registrationBody.user?.id).toBeTruthy();
 
     const naturalShape = await provisioningShape(page);
     expect(naturalShape).toEqual(assistedShape);
 
+    await signOut(page);
+    await loginByForm(page, admin);
+    const attributionForgery = await page.evaluate(
+      async ({ email, name, userId }) => {
+        const updateResponse = await fetch('/api/auth/admin/update-user', {
+          body: JSON.stringify({
+            data: {
+              name,
+              provisionedByUserId: 'forged-admin-user',
+            },
+            userId,
+          }),
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        });
+        const listResponse = await fetch(
+          `/api/auth/admin/list-users?limit=100&searchField=email&searchValue=${encodeURIComponent(email)}`,
+          { credentials: 'same-origin' }
+        );
+        return {
+          listBody: (await listResponse.json()) as {
+            users?: Array<{
+              email?: string;
+              provisionedByUserId?: string | null;
+            }>;
+          },
+          listOk: listResponse.ok,
+          updateBody: await updateResponse.text(),
+          updateOk: updateResponse.ok,
+        };
+      },
+      {
+        email: merchant.email,
+        name: merchant.name,
+        userId: registrationBody.user!.id!,
+      }
+    );
+    expect(attributionForgery.updateOk, attributionForgery.updateBody).toBe(
+      true
+    );
+    expect(attributionForgery.listOk).toBe(true);
+    expect(
+      attributionForgery.listBody.users?.find(
+        (user) => user.email === merchant.email
+      )?.provisionedByUserId ?? null
+    ).toBeNull();
+
+    await signOut(page);
+    await loginByForm(page, merchant);
     await page.goto('/settings/account');
     const codeInput = page.locator('#workspace-redemption-code');
     await codeInput.fill(redeemCode);

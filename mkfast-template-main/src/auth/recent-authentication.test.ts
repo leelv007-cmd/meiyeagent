@@ -152,4 +152,32 @@ describe('route-level recent authentication', () => {
       provisionedByUserId: 'admin-user',
     });
   });
+
+  it('strips forged attribution from admin user update routes', async () => {
+    const hook = createRecentAuthenticationHook(async () => {
+      return {
+        session: {
+          createdAt: new Date(),
+        },
+        user: {
+          id: 'admin-user',
+        },
+      } as never;
+    });
+    const context = {
+      path: '/admin/update-user',
+      body: {
+        data: {
+          name: 'Merchant',
+          provisionedByUserId: 'forged-user',
+        },
+      },
+    };
+
+    await hook(context as never);
+
+    assert.deepEqual(context.body.data, {
+      name: 'Merchant',
+    });
+  });
 });
