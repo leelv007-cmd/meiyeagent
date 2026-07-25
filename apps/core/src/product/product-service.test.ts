@@ -2598,20 +2598,31 @@ describe('product golden journey', () => {
     const service = new ProductService(repository);
     await service.execute(
       merchant,
-      { type: 'hide_example', hidden: false },
+      {
+        asset: {
+          consentScope: 'internal_only',
+          containsPerson: false,
+          containsSensitiveData: false,
+          id: 'merchant-own-asset',
+          mediaType: 'image',
+          minorStatus: 'none',
+          objectKey: 'workspace-a/assets/merchant-own.png',
+          rightsOwner: '暮色美甲',
+          sourceType: 'real',
+          tags: [],
+        },
+        type: 'add_asset',
+      },
       'any-path-seed'
     );
     const persisted = (await repository.load('workspace-a'))!;
+    // Clone the merchant's own asset rather than hand-rolling one: the injected
+    // row differs from a legitimate asset only by its reserved-namespace id,
+    // which is exactly the distinction the filter is supposed to make.
     persisted.assets.push({
+      ...persisted.assets[0]!,
       id: 'platform-sample:asset/any-path',
-      kind: 'image',
-      name: '示例素材',
-      authorizationStatus: 'authorized',
-      aigcStatus: 'unknown',
-      consentScope: 'internal_only',
-      createdAt: '2026-07-25T00:00:00.000Z',
-      replacementRequired: false,
-    } as (typeof persisted.assets)[number]);
+    });
 
     class LeakyProductService extends ProductService {
       protected override async executeCommand() {
@@ -2629,6 +2640,12 @@ describe('product golden journey', () => {
         .map((asset) => asset.id)
         .filter((id) => id.startsWith('platform-sample:')),
       []
+    );
+    // Selectivity, not emptiness: the merchant's own asset must survive the
+    // same exit the injected one was stripped at.
+    assert.ok(
+      result.state.assets.some((asset) => asset.id === 'merchant-own-asset'),
+      'the merchant own asset must stay in the projection'
     );
     // The example stores themselves are merchant-facing on purpose — the
     // showcase renders them; only reserved-namespace workspace material goes.
