@@ -21,6 +21,7 @@ import type {
   LegacyGrantLotMigrationInput,
 } from './grant-lot.js';
 import type { FoundationRepository } from './ports.js';
+import type { ProductUsageProjection } from '../product-billing/postgres-repository.js';
 
 export interface GrantLotGrantPort {
   withResourceLocks<T>(
@@ -71,6 +72,12 @@ export interface GrantLotGrantPort {
   }): Promise<unknown> | unknown;
 }
 
+export interface ProductUsageProjectionPort {
+  getUsageProjection(
+    workspaceId: string
+  ): Promise<ProductUsageProjection> | ProductUsageProjection;
+}
+
 /**
  * Keeps entitlement events and grant lots convergent. The source entitlement
  * command is already idempotent; a retry replays it and resumes this
@@ -81,7 +88,8 @@ export class GrantLotAwareProductEntitlementService extends ProductEntitlementAp
     private readonly entitlementRepository: FoundationRepository,
     private readonly grantLots: GrantLotGrantPort,
     payments?: AutoTopUpPaymentPort,
-    private readonly grantClock: () => Date = () => new Date()
+    private readonly grantClock: () => Date = () => new Date(),
+    private readonly productUsage?: ProductUsageProjectionPort
   ) {
     super(entitlementRepository, payments, grantClock);
   }
@@ -170,6 +178,9 @@ export class GrantLotAwareProductEntitlementService extends ProductEntitlementAp
       const byResource = new Map(
         grantProjection.map((resource) => [resource.resource, resource])
       );
+      const productUsage = await this.productUsage?.getUsageProjection(
+        context.workspaceId
+      );
       return {
         ...projection,
         usage: Object.fromEntries(
@@ -189,14 +200,23 @@ export class GrantLotAwareProductEntitlementService extends ProductEntitlementAp
               ];
             }
             const allowance = Math.max(legacy.allowance, grants.remainingAmount);
+            const canonical = productUsage?.[resource];
+            const classified =
+              (canonical?.reserved ?? 0) + (canonical?.committed ?? 0);
+            const netGrantUsage = Math.max(
+              0,
+              grants.usedAmount - grants.refundedAmount
+            );
             return [
               resource,
               {
                 ...legacy,
                 allowance,
-                reserved: 0,
-                committed: Math.max(0, allowance - grants.remainingAmount),
-                released: 0,
+                reserved: canonical?.reserved ?? 0,
+                committed:
+                  (canonical?.committed ?? 0) +
+                  Math.max(0, netGrantUsage - classified),
+                released: canonical?.released ?? 0,
                 available: grants.remainingAmount,
               },
             ];

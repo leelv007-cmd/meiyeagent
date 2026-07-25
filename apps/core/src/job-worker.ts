@@ -274,7 +274,10 @@ const productEntitlementPolicy = new ProductStateEntitlementPolicy(
 );
 const foundationEntitlementPolicy = new GrantLotAwareProductEntitlementService(
   foundationRepository,
-  grantLotLedger
+  grantLotLedger,
+  undefined,
+  undefined,
+  billingLifecycle
 );
 const recordedCommerceEnabled =
   process.env.P1_RECORDED_COMMERCE_ENABLED === '1';

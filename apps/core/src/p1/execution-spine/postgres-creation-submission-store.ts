@@ -52,7 +52,7 @@ export interface CreationUsageReservationPort {
 export class PostgresProductBillingUsageReservation implements CreationUsageReservationPort {
   constructor(
     private readonly pool: Pool,
-    private readonly grantLots?: PostgresGrantLotLedger,
+    private readonly grantLots: Pick<PostgresGrantLotLedger, 'consumeWithClient'>,
   ) {}
 
   async reserve(client: PoolClient, submission: CreationSubmissionRecord) {
@@ -109,11 +109,11 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
         `Product usage for task ${submission.task.id} has a different reservation identity.`,
       );
     }
-    if (this.grantLots) {
+    if (reserved.usage.reservedQuantity > 0) {
       await this.grantLots.consumeWithClient(client, {
         workspaceId: snapshot.workspaceId,
         resource: billingResource(snapshot.lens),
-        amount: quote.outputCount ?? 1,
+        amount: reserved.usage.reservedQuantity,
         transactionId: `product-usage:${submission.task.id}`,
         actorId: snapshot.actorId,
         correlationId: `coordinator:${submission.task.id}`,

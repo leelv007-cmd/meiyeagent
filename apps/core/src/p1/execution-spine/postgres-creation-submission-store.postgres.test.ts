@@ -22,16 +22,27 @@ import {
 import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { buildSemanticDecisionResumption } from "../harness/semantic-decision-resumption.js";
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
+import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
+import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
+const noOpGrantLots = {
+  async consumeWithClient() {
+    return [];
+  },
+};
 
 test(
   "Postgres Coordinator consumes the trial GrantLot and blocks the next agent submission atomically",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
-  async () => {
+  async (t) => {
     const pool = new Pool({ connectionString });
     const operations = new PostgresOperationsRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
+    const billing = new DurableProductBillingService(
+      billingRepository,
+      () => new Date("2026-07-22T09:01:00.000Z"),
+    );
     const grantLots = new PostgresGrantLotLedger(pool);
     const store = new PostgresCreationSubmissionStore(
       pool,
@@ -41,6 +52,20 @@ test(
     );
     const suffix = randomUUID();
     const workspaceId = `spine-trial-${suffix}`;
+    const entitlementRepository = new MemoryFoundationRepository();
+    const context = {
+      workspaceId,
+      userId: "owner",
+      correlationId: "trial-projection",
+    };
+    entitlementRepository.grantOwner(workspaceId, context.userId);
+    const entitlements = new GrantLotAwareProductEntitlementService(
+      entitlementRepository,
+      grantLots,
+      undefined,
+      () => new Date("2026-07-22T09:01:00.000Z"),
+      billing,
+    );
     const first = reserveRecord(workspaceId, `spine-quote-a-${suffix}`, `a-${suffix}`);
     const second = reserveRecord(workspaceId, `spine-quote-b-${suffix}`, `b-${suffix}`);
 
@@ -53,15 +78,25 @@ test(
         "INSERT INTO workspaces (id, name) VALUES ($1, 'Coordinator trial test')",
         [workspaceId],
       );
-      await grantLots.grant({
-        id: `trial-copy-${suffix}`,
-        workspaceId,
-        resource: "copy",
-        amount: 1,
-        expirationDate: "2026-08-01T00:00:00.000Z",
-        transactionType: "REGISTER_GIFT",
-        createdAt: "2026-07-22T09:00:00.000Z",
-      });
+      await entitlements.activatePlan(
+        context,
+        {
+          paymentEventId: `trial-copy-${suffix}`,
+          policy: {
+            revision: `trial-copy-${suffix}`,
+            tier: "trial",
+            periodId: "2026-07",
+            periodStartsAt: "2026-07-22T09:00:00.000Z",
+            periodEndsAt: "2026-08-01T00:00:00.000Z",
+            periodStrategy: "fixed_days",
+            allowance: { audio: 0, copy: 1, image: 0, video: 0 },
+            concurrencyLimit: 1,
+            queuePriority: 1,
+            supportLabel: "standard",
+          },
+        },
+        `trial-copy-${suffix}`,
+      );
       for (const submission of [first, second]) {
         const quote = await seedQuote(
           billingRepository,
@@ -97,6 +132,26 @@ test(
         })).find((item) => item.resource === "copy")?.remainingAmount,
         0,
       );
+      const reservedEntitlement = (await entitlements.getProjection(context))
+        .usage.copy;
+      const reservedBilling = (
+        await billing.getUsageProjection(workspaceId)
+      ).copy;
+      assert.deepEqual(reservedEntitlement, {
+        allowance: 1,
+        reserved: 1,
+        committed: 0,
+        released: 0,
+        available: 0,
+      });
+      assert.deepEqual(reservedBilling, {
+        reserved: 1,
+        committed: 0,
+        released: 0,
+      });
+      t.diagnostic(
+        `reserved entitlement=${JSON.stringify(reservedEntitlement)} billing=${JSON.stringify(reservedBilling)}`,
+      );
 
       await assert.rejects(
         store.claim({
@@ -110,6 +165,33 @@ test(
       assert.equal(
         await billingRepository.getUsage(workspaceId, second.task.id),
         null,
+      );
+      await billing.settleTask({
+        workspaceId,
+        taskId: first.task.id,
+        attemptId: `receipt-${first.task.id}`,
+        deploymentId: "coordinator",
+        status: "completed",
+      });
+      const committedEntitlement = (await entitlements.getProjection(context))
+        .usage.copy;
+      const committedBilling = (
+        await billing.getUsageProjection(workspaceId)
+      ).copy;
+      assert.deepEqual(committedEntitlement, {
+        allowance: 1,
+        reserved: 0,
+        committed: 1,
+        released: 0,
+        available: 0,
+      });
+      assert.deepEqual(committedBilling, {
+        reserved: 0,
+        committed: 1,
+        released: 0,
+      });
+      t.diagnostic(
+        `committed entitlement=${JSON.stringify(committedEntitlement)} billing=${JSON.stringify(committedBilling)}`,
       );
       await grantLots.grant({
         id: `addon-copy-${suffix}`,
@@ -165,7 +247,7 @@ test(
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
-        new PostgresProductBillingUsageReservation(pool),
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
       ),
       { harnessStartLeaseMs: 60_000 },
     );
@@ -445,7 +527,7 @@ test(
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
-        new PostgresProductBillingUsageReservation(pool),
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
       ),
     );
     const suffix = randomUUID();
@@ -521,7 +603,7 @@ test(
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
-        new PostgresProductBillingUsageReservation(pool),
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
       ),
     );
     const suffix = randomUUID();
@@ -678,7 +760,7 @@ test(
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
-        new PostgresProductBillingUsageReservation(pool),
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
       ),
     );
     const workspaceId = `spine-media-${randomUUID()}`;
@@ -779,7 +861,7 @@ test(
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
-        new PostgresProductBillingUsageReservation(pool),
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
       ),
     );
     const suffix = randomUUID();

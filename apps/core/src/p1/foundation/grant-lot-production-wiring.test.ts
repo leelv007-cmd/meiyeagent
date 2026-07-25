@@ -16,6 +16,12 @@ describe('grant-lot production assembly', () => {
       );
       assert.match(
         source,
+        entrypoint === 'main.ts'
+          ? /new GrantLotAwareProductEntitlementService\(\s*foundationRepository,\s*grantLotLedger,\s*recordedCommerceEnabled\s*\?\s*new RecordedAutoTopUpPaymentPort\(\)\s*:\s*undefined,\s*undefined,\s*productQuoteService\s*\)/s
+          : /new GrantLotAwareProductEntitlementService\(\s*foundationRepository,\s*grantLotLedger,\s*undefined,\s*undefined,\s*billingLifecycle\s*\)/s
+      );
+      assert.match(
+        source,
         /new FoundationModelSupplyLedger\(\s*foundation(?:LedgerService)?,\s*executionEntitlementPolicy,\s*grantLotLedger/s
       );
       assert.match(
