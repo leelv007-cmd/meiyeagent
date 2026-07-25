@@ -375,8 +375,19 @@ evidence.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Example storefront stays opt-in and isolated below the canonical Composer | Open an empty workspace, verify the honest Day-0 recommendation invitation and editable Composer are present, reveal the existing read-only example storefront, remix its structure into the Composer, and prove browsing, remixing, hiding, and reloading create no Work, Job, Asset, ContentPackage, or store fact. |
-| 2 | Today recommendation follows the persisted fact revision state | Read revision 0 as an honest invitation, then read a server recommendation bound to revision 1 and verify why-now, fact references, customer action, source, ContentPackage link, and the compact active opportunity summary. Advance to revision 2 and verify the revision-1 recommendation and its opportunity are withheld instead of being described as current personalization. |
+| 1 | Example storefront stays opt-in and isolated below the canonical Composer | Open an empty workspace, verify the honest Day-0 recommendation invitation and editable Composer are present, reveal the read-only three-industry sample showcase (护发／皮肤管理／生发), switch industry, remix a sample structure into the Composer, and prove browsing, remixing, hiding, and reloading create no Work, Job, Asset, ContentPackage, or store fact. |
+| 2 | Today recommendation follows the persisted fact revision state | Read revision 0 as an honest invitation, then read a server recommendation bound to revision 1 and verify why-now, the merchant-language fact count (never a `store_fact:` id), customer action, source, and the compact active opportunity summary. Verify the CTA prefills the Composer draft in place instead of navigating. Advance to revision 2 and verify the revision-1 recommendation and its opportunity are withheld instead of being described as current personalization. |
+
+## 25b. D-126 Dashboard Home Mount (Hot / Cold)
+
+**File:** `specs/dashboard-home-mount.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Cold tenant sees three sample stores and runs a sample task on the real chain | Register a cold tenant, verify the Day-0 recommendation invitation and the opt-in sample entry, reveal all three C-5 industries, and read the sample store's profile, confirmed facts, material, and works. Assert the trial tier allowance is 5/5/1, remix a sample task so the Composer draft is prefilled, submit it through the real submission chain, wait for the Result Center, and prove the trial copy remainder dropped and the artifact downloads through the same export path a paying merchant uses. |
+| 2 | platform_sample material never reaches the merchant workspace | Collect every platform-sample id from the revealed showcase, seed the merchant's own confirmed store, and assert the merchant's own facts are present (positive control) while no sample id appears in product state assets/contents/handoffs or in the creative workbench assets/contents/works/jobs projection. A workspace with real facts stops offering samples entirely. |
+| 3 | Hot tenant gets one recommendation whose CTA prefills the Composer | Seed confirmed store facts, drive the real five-stage Harness to a delivered package (no route stubbing), poll the real recommendation API until it is grounded, and verify the card shows all three explanation elements plus a merchant-language fact count. Click the CTA and prove the Composer draft is prefilled and focused on the same page — no navigation, no auto-submit. |
+| 4–5 | Cold home renders on mobile in the light/dark theme | Load the cold home at 375×812 in each theme, reveal all three industries, verify the recommendation card is present, assert no horizontal overflow, and capture a full-page screenshot as walkthrough evidence. |
 
 ## 26. Pending Action Inbox And Per-Task Blocking
 
