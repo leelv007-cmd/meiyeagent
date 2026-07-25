@@ -11,6 +11,7 @@ import {
 import type { Pool, PoolClient } from "pg";
 
 import { harnessRuntimeId } from "../harness/workspace-scope.js";
+import { updateContentPackageRow } from "../operations/postgres-content-package-write-adapter.js";
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
 
 export interface ContentPackageRevisionWriteInput {
@@ -262,20 +263,15 @@ export class PostgresContentPackageRevisionWritePort
 				updatedAt: input.occurredAt,
 				versions: [...contentPackage.versions, ...versions],
 			});
-			const written = await client.query(
-				`UPDATE p1_content_packages
-				    SET payload=$3::jsonb, revision=$4, updated_at=$5
-				  WHERE workspace_id=$1 AND id=$2 AND revision=$6`,
-				[
-					input.workspaceId,
-					input.packageId,
-					JSON.stringify(updated),
-					revision,
-					input.occurredAt,
-					input.expectedRevision,
-				],
-			);
-			if (written.rowCount !== 1) {
+			const written = await updateContentPackageRow(client, {
+				expectedRevision: input.expectedRevision,
+				id: input.packageId,
+				payload: updated,
+				revision,
+				updatedAt: input.occurredAt,
+				workspaceId: input.workspaceId,
+			});
+			if (!written) {
 				throw new Error("ContentPackage OCC failed while holding its write lock.");
 			}
 			await writeHarnessDeliveryAuditAndOutbox(

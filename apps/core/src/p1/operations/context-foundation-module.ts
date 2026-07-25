@@ -15,6 +15,7 @@ import {
 import type { StoreFactLedger } from './store-fact-ledger.js';
 import type { ContextSourceRevisionRepository } from './context-source-revisions.js';
 import { storeFactContextRevision } from './store-fact-ledger.js';
+import { StoreFactSemanticMutationPolicy } from './store-fact-semantic-mutation-policy.js';
 
 const idSchema = z.string().trim().min(1);
 const timestampSchema = z.iso.datetime();
@@ -86,6 +87,7 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 
 export class ContextFoundationModule implements P1OperationModule {
   readonly name = 'context';
+  private readonly factMutations: StoreFactSemanticMutationPolicy;
 
   constructor(
     private readonly facts: StoreFactLedger,
@@ -93,7 +95,9 @@ export class ContextFoundationModule implements P1OperationModule {
     private readonly sourceRevisions: ContextSourceRevisionRepository,
     private readonly now: () => string = () => new Date().toISOString(),
     private readonly recipeRevision?: (workspaceId: string) => Promise<number>,
-  ) {}
+  ) {
+    this.factMutations = new StoreFactSemanticMutationPolicy(facts);
+  }
 
   private async currentSourceRevisions(workspaceId: string) {
     const revisions = await this.sourceRevisions.current(workspaceId);
@@ -111,7 +115,7 @@ export class ContextFoundationModule implements P1OperationModule {
     const name = action(args.input);
     if (name === 'store_fact_append') {
       const input = parse(appendFactSchema, payload(args.input));
-      return this.facts.append({
+      return this.factMutations.append({
         ...input,
         workspaceId: args.context.workspaceId,
         recordedAt: this.now(),

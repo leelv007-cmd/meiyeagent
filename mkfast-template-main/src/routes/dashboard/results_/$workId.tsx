@@ -32,6 +32,7 @@ import {
   latestContentPackageForWork,
   platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
+  resultContentPackageMutationFacts,
   runDetailFactsFromLiveSelection,
 } from '@/product/results/result-live-projection';
 import {
@@ -270,6 +271,8 @@ function ResultCenterRoutePage() {
   const currentPackageVersion = contentPackage?.versions.find(
     (version) => version.id === contentPackage.currentVersionId
   );
+  const packageMutationFacts =
+    resultContentPackageMutationFacts(contentPackage);
   const outcome: ResultTargetResolveOutcome = targetResolverQuery.data ?? {
     kind: 'not_found',
     code: 'NOT_FOUND',
@@ -765,15 +768,30 @@ function ResultCenterRoutePage() {
   };
   const adoptCopyCandidate = async () => {
     if (!copyAsset) return;
-    const adopted = await adopt(
-      imageAssetIds.length > 0
-        ? {
-            copyAssetId: copyAsset.id,
-            kind: 'image_text',
-            orderedAssetIds: imageAssetIds,
-          }
-        : { copyAssetId: copyAsset.id, kind: 'copy' }
-    );
+    const harnessCandidateId = currentPackageVersion?.harnessCandidateId;
+    let adopted: PublicContentPackage;
+    if (contentPackage?.harnessSelection && harnessCandidateId) {
+      adopted = await operationsCommand<PublicContentPackage>(
+        'adopt_harness_candidate',
+        {
+          candidateId: harnessCandidateId,
+          expectedRevision: contentPackage.revision,
+          packageId: contentPackage.id,
+        },
+        `adopt-harness:${contentPackage.id}:${contentPackage.revision}:${harnessCandidateId}`
+      );
+      await refreshCanonicalResult();
+    } else {
+      adopted = await adopt(
+        imageAssetIds.length > 0
+          ? {
+              copyAssetId: copyAsset.id,
+              kind: 'image_text',
+              orderedAssetIds: imageAssetIds,
+            }
+          : { copyAssetId: copyAsset.id, kind: 'copy' }
+      );
+    }
     try {
       await generateCopyPlatformVariants(adopted);
     } catch (error) {
@@ -965,7 +983,7 @@ function ResultCenterRoutePage() {
     workspaceKind,
     progressState: resultProgressState,
     hasUsableCandidate: selected?.hasUsableCandidate,
-    hasAdoptedCandidate: Boolean(currentPackageVersion),
+    ...packageMutationFacts,
   });
   const revisionTimelineFacts =
     revisionTimelineFactsFromContentPackage(contentPackage);
@@ -1009,7 +1027,7 @@ function ResultCenterRoutePage() {
         requestedPanel: search.panel,
         progressState: resultProgressState,
         hasUsableCandidate: selected?.hasUsableCandidate,
-        hasAdoptedCandidate: Boolean(currentPackageVersion),
+        ...packageMutationFacts,
         taskId: search.taskId,
         jobId: selected?.job?.id,
       }}

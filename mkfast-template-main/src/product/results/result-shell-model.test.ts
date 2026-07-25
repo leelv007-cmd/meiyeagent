@@ -146,7 +146,10 @@ test('actions: ready usable candidate → adopt primary with copy label', () => 
   assert.equal(actions.primaryAction?.id, 'adopt_candidate');
   assert.equal(actions.primaryAction?.label, '采用此版本');
   assert.ok(actions.secondaryActions.some((a) => a.id === 'continue_adjust'));
-  assert.ok(actions.secondaryActions.some((a) => a.id === 'deliver'));
+  assert.equal(
+    actions.secondaryActions.some((a) => a.id === 'deliver'),
+    false
+  );
 });
 
 test('actions: image adopt label differs', () => {
@@ -169,13 +172,31 @@ test('actions: video adopt label differs', () => {
   assert.equal(actions.primaryAction?.label, '使用此成片');
 });
 
-test('actions: adopted → deliver primary', () => {
+test('actions: adopted without a platform variant cannot enter delivery', () => {
   const facts = baseFacts({
     progressState: 'success',
     hasUsableCandidate: false,
     hasAdoptedCandidate: true,
     deliveryAttempt: 'none',
   });
+  const actions = projectResultShellActions('ready', facts);
+  assert.equal(actions.primaryAction?.id, 'continue_adjust');
+  assert.equal(
+    actions.secondaryActions.some((candidate) => candidate.id === 'deliver'),
+    false
+  );
+});
+
+test('actions: adopted with a platform variant → deliver primary', () => {
+  const facts = {
+    ...baseFacts({
+      progressState: 'success',
+      hasUsableCandidate: false,
+      hasAdoptedCandidate: true,
+      deliveryAttempt: 'none',
+    }),
+    hasDeliverableVariant: true,
+  } as ResultShellFacts & { hasDeliverableVariant: boolean };
   const actions = projectResultShellActions('ready', facts);
   assert.equal(actions.primaryAction?.id, 'deliver');
 });
@@ -244,6 +265,7 @@ test('actions: every merchant phase keeps a single primary and real History/Run 
       facts: baseFacts({
         progressState: 'success',
         hasAdoptedCandidate: true,
+        hasDeliverableVariant: true,
         deliveryAttempt: 'none',
       }),
       primary: 'deliver',

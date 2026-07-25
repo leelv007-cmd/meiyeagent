@@ -11,6 +11,7 @@ import {
 import type { Pool, PoolClient } from 'pg';
 
 import type { P1Context } from '../foundation/domain.js';
+import { updateContentPackageRow } from '../operations/postgres-content-package-write-adapter.js';
 import {
   assistedReceiptSchema,
   consumeOneShotHandoffLink,
@@ -809,20 +810,15 @@ export class PostgresCanonicalAssistedReceiptRepository
     before: ContentPackage,
     after: ContentPackage,
   ) {
-    const updated = await client.query(
-      `UPDATE p1_content_packages
-          SET payload = $4::jsonb, revision = $3, updated_at = $5::timestamptz
-        WHERE workspace_id = $1 AND id = $2 AND revision = $6`,
-      [
-        before.workspaceId,
-        before.id,
-        after.revision,
-        JSON.stringify(after),
-        after.updatedAt,
-        before.revision,
-      ],
-    );
-    if (updated.rowCount !== 1) {
+    const updated = await updateContentPackageRow(client, {
+      expectedRevision: before.revision,
+      id: before.id,
+      payload: after,
+      revision: after.revision,
+      updatedAt: after.updatedAt,
+      workspaceId: before.workspaceId,
+    });
+    if (!updated) {
       throw new CanonicalAssistedDeliveryError(
         'CANONICAL_REVISION_MISMATCH',
         'ContentPackage revision changed during the assisted transaction.',
