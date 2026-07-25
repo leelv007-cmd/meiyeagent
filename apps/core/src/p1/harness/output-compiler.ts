@@ -63,7 +63,7 @@ export const OUTPUT_COMPILER_CONTRACTS = {
   video: contract({
     candidateStrategy: 'single_primary',
     deliveryPackageKind: 'video',
-    implementation: 'reserved',
+    implementation: 'available',
     orchestration: 'native_single_call',
     owner: 'T21',
   }),
@@ -149,6 +149,31 @@ export function buildImagePlatformVariants(input: {
   );
   if (!current) {
     throw new Error('Image platform variants require the current version.');
+  }
+  return ['xiaohongshu', 'douyin', 'video_account'].map((platform) => {
+    const versions = input.versions.map((version) => ({
+      ...structuredClone(version),
+      id: `${version.id}-${platform}`,
+    }));
+    return contentPackageVariantSchema.parse({
+      currentVersionId: `${current.id}-${platform}`,
+      id: `${input.packageId}-${platform}`,
+      platform,
+      versions,
+    });
+  });
+}
+
+export function buildVideoPlatformVariants(input: {
+  currentVersionId: string;
+  packageId: string;
+  versions: ContentPackageVersion[];
+}): ContentPackage['variants'] {
+  const current = input.versions.find(
+    (version) => version.id === input.currentVersionId,
+  );
+  if (!current) {
+    throw new Error('Video platform variants require the current version.');
   }
   return ['xiaohongshu', 'douyin', 'video_account'].map((platform) => {
     const versions = input.versions.map((version) => ({
@@ -272,6 +297,67 @@ export function assertImageRevisionAssemblyComplete(input: {
   ) {
     throw new Error(
       'Image revision assembly requires one complete current variant per platform.',
+    );
+  }
+}
+
+export function assertVideoRevisionAssemblyComplete(input: {
+  marketing?: {
+    contextBundle?: {
+      bundleId?: string;
+      hash?: string;
+      revision?: number;
+    };
+    factRefs?: string[];
+    rightsRefs?: string[];
+  };
+  variants?: ContentPackage['variants'];
+  version: Pick<
+    ContentPackageVersion,
+    'body' | 'conversionHook' | 'orderedAssetIds' | 'title'
+  >;
+}) {
+  if (
+    !input.marketing?.contextBundle?.bundleId ||
+    !input.marketing.contextBundle.hash ||
+    !input.marketing.contextBundle.revision ||
+    !Array.isArray(input.marketing.factRefs)
+  ) {
+    throw new Error('Video revision assembly requires frozen evidence.');
+  }
+  if (!input.version.conversionHook?.trim()) {
+    throw new Error('Video revision assembly requires a conversion CTA.');
+  }
+  if (
+    !Array.isArray(input.marketing.rightsRefs) ||
+    input.marketing.rightsRefs.length === 0
+  ) {
+    throw new Error('Video revision assembly requires rights references.');
+  }
+  if (input.version.orderedAssetIds.length === 0) {
+    throw new Error('Video revision assembly requires a generated video asset.');
+  }
+  const expectedPlatforms = ['xiaohongshu', 'douyin', 'video_account'] as const;
+  const actualPlatforms = input.variants?.map(({ platform }) => platform) ?? [];
+  if (
+    !input.variants ||
+    input.variants.length !== expectedPlatforms.length ||
+    new Set(actualPlatforms).size !== expectedPlatforms.length ||
+    expectedPlatforms.some((platform) => !actualPlatforms.includes(platform)) ||
+    input.variants.some(
+      (variant) =>
+        !variant.versions.some(
+          (version) =>
+            version.id === variant.currentVersionId &&
+            Boolean(version.title.trim()) &&
+            Boolean(version.body.trim()) &&
+            Boolean(version.conversionHook?.trim()) &&
+            version.orderedAssetIds.length > 0,
+        ),
+    )
+  ) {
+    throw new Error(
+      'Video revision assembly requires one complete current variant per platform.',
     );
   }
 }

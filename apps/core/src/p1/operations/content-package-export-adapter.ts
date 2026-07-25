@@ -172,6 +172,9 @@ export class OperationsContentPackageExportAssetReader
         objectKey: stored.objectKey,
         sha256: stored.sha256,
         sizeBytes: stored.sizeBytes,
+        ...(stored.sourceTaskRef
+          ? { sourceTaskRef: stored.sourceTaskRef }
+          : {}),
       },
       bytes,
     };
@@ -327,7 +330,7 @@ export class ContentPackageZipExportAdapter
     );
     const videoAssetId = input.version.orderedAssetIds[0];
     if (!videoAssetId) {
-      throw new Error('A video full package requires a composed video asset.');
+      throw new Error('A video full package requires a video asset.');
     }
     const { asset: videoAsset, bytes: videoBytes } =
       await this.assets.readOwnedAsset({
@@ -337,10 +340,13 @@ export class ContentPackageZipExportAdapter
     if (videoAsset.contentType !== 'video/mp4') {
       throw new Error('The selected video asset is not an MP4 file.');
     }
+    const delivery = videoAsset.compositionEvidence?.delivery;
+    const nativeSingleCall = isNativeSingleCallVideoExport(input, videoAsset);
     const allowRecordedSynthetic =
       this.options.allowRecordedSyntheticVideoCompliance === true &&
       this.options.appEnv === 'e2e';
     if (
+      !nativeSingleCall &&
       (input.compliance.aigcLabelEnabled ||
         input.compliance.watermarkEnabled) &&
       !hasVerifiedVideoCompliance(
@@ -351,35 +357,42 @@ export class ContentPackageZipExportAdapter
     ) {
       throw new UnverifiedVideoComplianceError();
     }
-    const delivery = videoAsset.compositionEvidence?.delivery;
-    if (
-      !delivery ||
-      delivery.outputVideoSha256 !== videoAsset.sha256 ||
-      delivery.compositionRevision !==
-        input.videoDeliveryCompositionRevision ||
-      delivery.workflowId !== input.videoDeliveryWorkflowId ||
-      delivery.storyboardRevision !== input.videoDeliveryRevision ||
-      videoAsset.compositionEvidence?.durationSeconds !==
-        input.videoDeliveryDurationSeconds ||
-      delivery.subtitles.durationSeconds !==
-        videoAsset.compositionEvidence?.durationSeconds
-    ) {
-      throw new Error('Verified video delivery evidence is unavailable.');
-    }
-    if (
-      !hasVerifiedVideoCompliance(
-        videoAsset,
-        input.compliance,
-        allowRecordedSynthetic,
-      )
-    ) {
-      throw new UnverifiedVideoComplianceError();
-    }
-
     let cover:
       | { bytes: Uint8Array; mimeType: 'image/jpeg' | 'image/png' }
       | undefined;
-    const coverAssetId = input.coverAssetId ?? delivery.cover.id;
+    let subtitles = input.subtitles;
+    if (!nativeSingleCall) {
+      if (
+        !delivery ||
+        delivery.outputVideoSha256 !== videoAsset.sha256 ||
+        delivery.compositionRevision !==
+          input.videoDeliveryCompositionRevision ||
+        delivery.workflowId !== input.videoDeliveryWorkflowId ||
+        delivery.storyboardRevision !== input.videoDeliveryRevision ||
+        videoAsset.compositionEvidence?.durationSeconds !==
+          input.videoDeliveryDurationSeconds ||
+        delivery.subtitles.durationSeconds !==
+          videoAsset.compositionEvidence?.durationSeconds
+      ) {
+        throw new Error('Verified video delivery evidence is unavailable.');
+      }
+      if (
+        !hasVerifiedVideoCompliance(
+          videoAsset,
+          input.compliance,
+          allowRecordedSynthetic,
+        )
+      ) {
+        throw new UnverifiedVideoComplianceError();
+      }
+      subtitles = {
+        format: delivery.subtitles.format,
+        text: delivery.subtitles.text,
+      };
+    }
+
+    const coverAssetId =
+      input.coverAssetId ?? (nativeSingleCall ? undefined : delivery?.cover.id);
     if (coverAssetId) {
       const { asset, bytes } = await this.assets.readOwnedAsset({
         assetId: coverAssetId,
@@ -390,9 +403,11 @@ export class ContentPackageZipExportAdapter
       }
       cover = { bytes, mimeType: asset.contentType };
       if (
-        asset.sha256 !== delivery.cover.sha256 ||
-        asset.sizeBytes !== delivery.cover.sizeBytes ||
-        asset.objectKey !== delivery.cover.objectKey
+        !nativeSingleCall &&
+        delivery &&
+        (asset.sha256 !== delivery.cover.sha256 ||
+          asset.sizeBytes !== delivery.cover.sizeBytes ||
+          asset.objectKey !== delivery.cover.objectKey)
       ) throw new Error('Video cover receipt does not match delivery evidence.');
     }
 
@@ -414,10 +429,7 @@ export class ContentPackageZipExportAdapter
       platform: input.platform,
       rightsState: input.rightsState ?? this.options.rightsState,
       storeName: input.storeName ?? this.options.storeName ?? '门店',
-      subtitles: {
-        format: delivery.subtitles.format,
-        text: delivery.subtitles.text,
-      },
+      ...(subtitles ? { subtitles } : {}),
       variantVersionId: input.version.id,
       video: { bytes: videoBytes },
     });
@@ -442,6 +454,24 @@ export class ContentPackageZipExportAdapter
         : {}),
     };
   }
+}
+
+function isNativeSingleCallVideoExport(
+  input: ContentPackageVideoFullExportInput,
+  asset: ContentPackageExportAsset,
+) {
+  const sourceTaskRef = asset.sourceTaskRef?.trim();
+  // Missing composition fields never opt an asset into this branch: a durable
+  // provider task receipt is the positive native-generation marker.
+  // Native provider videos rely on platform upload labeling, so their manifest
+  // records compliance without requiring legacy composition burn-in evidence.
+  return (
+    Boolean(sourceTaskRef) &&
+    !sourceTaskRef?.startsWith('recorded-composition:') &&
+    asset.compositionEvidence === undefined &&
+    input.videoDeliveryCompositionRevision === undefined &&
+    input.videoDeliveryRevision === undefined
+  );
 }
 
 function hasVerifiedVideoCompliance(

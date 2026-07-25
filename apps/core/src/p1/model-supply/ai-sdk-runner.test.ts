@@ -1,16 +1,70 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readUIMessageStream, type UIMessage, type UIMessageChunk } from 'ai';
+import { z } from 'zod';
 import {
   ModelSupplyApplicationService,
   RecordedProviderExecutionPort,
 } from './index.js';
 import {
+  FixtureAiStructuredObjectExecutor,
   FixtureAiStreamingRunner,
   FixtureAiStructuredObjectExecutor,
   OpenAiCompatibleAiSdkRunner,
 } from './ai-sdk-runner.js';
 import { executionBriefSchema } from '../harness/structured-nodes.js';
+
+test('fixture structured execution compiles the frozen video delivery into one storyboard', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const schema = z.object({
+    kind: z.literal('video'),
+    storyboard: z
+      .array(
+        z.object({
+          index: z.number().int().positive(),
+          description: z.string().min(1),
+          narration: z.string().optional(),
+          durationSeconds: z.number().positive(),
+        }),
+      )
+      .length(1),
+    firstFramePrompt: z.string().min(20),
+    referenceAssetIds: z.array(z.string()),
+    parameters: z.object({
+      durationSeconds: z.number().positive(),
+      ratio: z.string().min(1),
+    }),
+    constraints: z.array(z.string()),
+  });
+
+  const result = await executor.generate({
+    instructions: 'Compile one complete video execution brief.',
+    prompt: JSON.stringify({
+      declaration: { normalizedIntent: '把护理案例做成抖音项目成片' },
+      executionContract: {
+        deliverables: [
+          {
+            aspectRatio: '9:16',
+            durationSeconds: 15,
+            kind: 'video',
+          },
+        ],
+        sources: { assets: [{ id: 'asset-video-reference-1' }] },
+      },
+    }),
+    schema,
+    schemaName: 'harness_video_brief_v1',
+  });
+
+  assert.equal(result.output.storyboard[0]?.durationSeconds, 15);
+  assert.deepEqual(result.output.referenceAssetIds, [
+    'asset-video-reference-1',
+  ]);
+  assert.deepEqual(result.output.parameters, {
+    durationSeconds: 15,
+    ratio: '9:16',
+  });
+});
 
 test('formal non-streaming copy generation uses one structured object request', async () => {
   const requests: Array<Record<string, unknown>> = [];

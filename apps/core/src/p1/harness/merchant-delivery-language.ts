@@ -64,6 +64,14 @@ export function merchantExactTextMismatch(input: {
   return `图片中的文字没有通过逐字核对：需要“${expected}”，实际为“${observed}”。这张图没有交付，请调整为不带价格文字，或稍后重新生成。`;
 }
 
+export function merchantVideoGenerationFailure(
+  reason: 'failed' | 'timed_out',
+) {
+  return reason === 'timed_out'
+    ? '这次视频等待时间过长，暂时没有生成成品。你可以重新生成，或先改用图片发布方案。'
+    : '这次视频没有顺利生成成品。你可以重新生成，或更换参考素材后再试。';
+}
+
 export function merchantVisibleLanguageIssues(message: string) {
   return FORBIDDEN_LANGUAGE.filter(({ pattern }) => pattern.test(message)).map(
     ({ label }) => label,

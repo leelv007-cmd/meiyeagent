@@ -428,6 +428,7 @@ export const contentPackageGeneratedSchema = z.object({
         sha256: z.string().trim().min(1),
         sizeBytes: z.number().int().positive().optional(),
         sourceAssetId: contentPackageIdSchema.optional(),
+        sourceTaskRef: contentPackageIdSchema.optional(),
       })
     )
     .optional(),

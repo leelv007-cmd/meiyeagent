@@ -952,6 +952,47 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         constraints: ['不得改动真实案例证据，不得写错精确文字'],
       };
     }
+    case 'harness_video_brief_v1': {
+      const executionContract = fixtureRecord(payload.executionContract);
+      const declaration = fixtureRecord(payload.declaration);
+      const sources = fixtureRecord(executionContract.sources);
+      const sourceAssets = Array.isArray(sources.assets)
+        ? sources.assets.map(fixtureRecord)
+        : [];
+      const deliverables = Array.isArray(executionContract.deliverables)
+        ? executionContract.deliverables.map(fixtureRecord)
+        : [];
+      const videoDeliverable =
+        deliverables.find((deliverable) => deliverable.kind === 'video') ?? {};
+      const durationSeconds =
+        typeof videoDeliverable.durationSeconds === 'number'
+          ? videoDeliverable.durationSeconds
+          : 15;
+      const ratio =
+        typeof videoDeliverable.aspectRatio === 'string'
+          ? videoDeliverable.aspectRatio
+          : '9:16';
+      const merchantIntent =
+        typeof declaration.normalizedIntent === 'string'
+          ? declaration.normalizedIntent
+          : '制作一条门店项目成片';
+      return {
+        kind: 'video',
+        storyboard: [
+          {
+            index: 1,
+            description: `以已授权案例素材开场，说明本次主题：${merchantIntent}`,
+            narration: merchantIntent,
+            durationSeconds,
+          },
+        ],
+        firstFramePrompt:
+          '使用已授权案例素材呈现门店项目主视觉，画面主体清晰并保留安全文字区域。',
+        referenceAssetIds: sourceAssets.map((asset) => String(asset.id)),
+        parameters: { durationSeconds, ratio },
+        constraints: ['不得编造价格或效果，不得使用未授权素材'],
+      };
+    }
     case 'harness_copy_candidate_v1': {
       const candidateId =
         typeof payload.candidateId === 'string' ? payload.candidateId : 'c01';

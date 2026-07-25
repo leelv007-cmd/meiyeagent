@@ -4,8 +4,10 @@ import test from 'node:test';
 import {
   assertCopyRevisionAssemblyComplete,
   assertImageRevisionAssemblyComplete,
+  assertVideoRevisionAssemblyComplete,
   buildCopyPlatformVariants,
   buildImagePlatformVariants,
+  buildVideoPlatformVariants,
   OUTPUT_COMPILER_CONTRACTS,
   OUTPUT_COMPILER_KINDS,
   outputCompilerContract,
@@ -123,7 +125,7 @@ test('compiler tiers reserve downstream owners without inventing their implement
         manifestBuilderOwner: 'result-delivery/export',
         manifestSchema: 'beauty-delivery-manifest/v1',
       },
-      implementation: 'reserved',
+      implementation: 'available',
       orchestration: 'native_single_call',
       owner: 'T21',
       stages: [
@@ -135,6 +137,83 @@ test('compiler tiers reserve downstream owners without inventing their implement
       ],
     },
   });
+});
+
+test('video revision assembly accepts one complete current variant per platform', () => {
+  const version = {
+    body: '夏日护理活动短视频',
+    conversionHook: '私信预约',
+    createdAt: '2026-07-25T00:00:00.000Z',
+    id: 'video-version-1',
+    orderedAssetIds: ['asset-video-1'],
+    source: 'ai_generated' as const,
+    title: '夏日护理活动',
+    topics: [],
+  };
+  const variants = buildVideoPlatformVariants({
+    currentVersionId: version.id,
+    packageId: 'package-video-1',
+    versions: [version],
+  });
+  const revision = {
+    marketing: {
+      contextBundle: {
+        bundleId: 'bundle-1',
+        hash: 'a'.repeat(64),
+        revision: 1,
+      },
+      factRefs: ['fact:service:1'],
+      rightsRefs: ['asset-video-1'],
+    },
+    variants,
+    version,
+  };
+
+  assert.doesNotThrow(() => assertVideoRevisionAssemblyComplete(revision));
+});
+
+test('video revision assembly rejects each missing required part', () => {
+  const version = {
+    body: '夏日护理活动短视频',
+    conversionHook: '私信预约',
+    createdAt: '2026-07-25T00:00:00.000Z',
+    id: 'video-version-1',
+    orderedAssetIds: ['asset-video-1'],
+    source: 'ai_generated' as const,
+    title: '夏日护理活动',
+    topics: [],
+  };
+  const variants = buildVideoPlatformVariants({
+    currentVersionId: version.id,
+    packageId: 'package-video-1',
+    versions: [version],
+  });
+  const complete = {
+    marketing: {
+      contextBundle: {
+        bundleId: 'bundle-1',
+        hash: 'a'.repeat(64),
+        revision: 1,
+      },
+      factRefs: ['fact:service:1'],
+      rightsRefs: ['asset-video-1'],
+    },
+    variants,
+    version,
+  };
+
+  for (const incomplete of [
+    {
+      ...complete,
+      marketing: { ...complete.marketing, contextBundle: undefined },
+    },
+    { ...complete, version: { ...version, conversionHook: '' } },
+    { ...complete, marketing: { ...complete.marketing, rightsRefs: [] } },
+    { ...complete, version: { ...version, orderedAssetIds: [] } },
+    { ...complete, variants: variants.slice(0, 2) },
+  ]) {
+    assert.throws(() => assertVideoRevisionAssemblyComplete(incomplete));
+  }
 });
 
 test('image revision assembly accepts one complete current variant per platform', () => {

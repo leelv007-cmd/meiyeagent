@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createCreationExecutionSnapshot } from "../execution-spine/creation-execution-snapshot.js";
 import {
 	MemoryContentPackageRevisionWritePort,
+	type ContentPackageRevisionWriteInput,
 } from "../execution-spine/content-package-revision-port.js";
 import type { ModelSupplyResult, ModelSupplySubmission } from "../model-supply/index.js";
 import { buildContentPackage } from "../operations/content-package.js";
@@ -119,6 +121,7 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 		const request = harnessInput(kind, packageId);
 		const snapshot = request.executionSnapshot!;
 		const writer = new MemoryContentPackageRevisionWritePort();
+		let writtenRevision: ContentPackageRevisionWriteInput | undefined;
 		writer.seed(
 			buildContentPackage({
 				id: packageId,
@@ -148,7 +151,12 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 			unsupportedCopyPorts(),
 			{ create() { throw new Error("Media delivery does not compile a copy brief."); } },
 			media,
-			writer,
+			{
+				async write(input) {
+					writtenRevision = structuredClone(input);
+					return writer.write(input);
+				},
+			},
 			() => "2026-07-22T09:00:01.000Z",
 		);
 		const brief = mediaBrief(kind);
@@ -184,6 +192,17 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 			revision: 1,
 			versionId: `${snapshot.task.id}:${kind}-asset-1`,
 		});
+		assert.equal(writtenRevision?.taskId, snapshot.task.id);
+		assert.equal(writtenRevision?.snapshotId, snapshot.id);
+		assert.equal(writtenRevision?.snapshot.revision, snapshot.revision);
+		assert.equal(
+			writtenRevision?.generated.childRuns[0]?.providerAttempts?.length,
+			1,
+		);
+		assert.equal(
+			writtenRevision?.generated.childRuns[0]?.providerCosts?.length,
+			1,
+		);
 		const contentPackage = writer.get("workspace-1", packageId);
 		assert.ok(contentPackage);
 		assert.equal(contentPackage?.revision, 1);
@@ -194,27 +213,50 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 		});
 		assert.deepEqual(contentPackage?.generated.assetIds, [`${kind}-asset-1`]);
 		assert.equal(contentPackage?.generated.ownedAssets?.[0]?.id, `${kind}-asset-1`);
+		assert.equal(
+			contentPackage?.generated.ownedAssets?.[0]?.sourceTaskRef,
+			`provider-task-${kind}-1`,
+		);
 		assert.deepEqual(contentPackage?.generated.childRuns[0]?.productUsage, {
-			quantity: 1,
+			quantity: 0,
 			status: "committed",
 		});
 		assert.equal(contentPackage?.generated.childRuns[0]?.providerCost?.amount, 1.2);
 		assert.equal(contentPackage?.generated.childRuns[0]?.providerAttempts?.length, 1);
 		assert.equal(contentPackage?.generated.childRuns[0]?.providerCosts?.length, 1);
+		assert.equal(contentPackage?.marketing?.contextBundle.bundleId, "bundle-1");
+		assert.ok(contentPackage?.marketing?.rightsRefs.length);
+		assert.equal(contentPackage?.variants?.length, 3);
+		assert.ok(contentPackage?.versions[0]?.body.trim());
+		assert.ok(contentPackage?.versions[0]?.conversionHook?.trim());
+		assert.deepEqual(contentPackage?.harnessSelection, {
+			recommendedCandidateId: `${kind}-asset-1`,
+		});
+		assert.equal(
+			contentPackage?.versions[0]?.harnessCandidateId,
+			`${kind}-asset-1`,
+		);
 		if (kind === "image") {
-			assert.equal(contentPackage?.marketing?.contextBundle.bundleId, "bundle-1");
-			assert.ok(contentPackage?.marketing?.rightsRefs.length);
-			assert.equal(contentPackage?.variants?.length, 3);
-			assert.ok(contentPackage?.versions[0]?.conversionHook?.trim());
-			assert.deepEqual(contentPackage?.harnessSelection, {
-				recommendedCandidateId: "image-asset-1",
-			});
-			assert.equal(
-				contentPackage?.versions[0]?.harnessCandidateId,
-				"image-asset-1",
-			);
+			assert.equal(contentPackage?.versions[0]?.title, "夏日护理活动海报");
+		} else {
+			assert.equal(contentPackage?.versions[0]?.title, "视频成品");
 		}
 	}
+});
+
+test("the video-native compiler has no ffmpeg or composition dependency", async () => {
+	const source = await readFile(
+		new URL("./unified-media-stage-ports.ts", import.meta.url),
+		"utf8",
+	);
+	const imports = [...source.matchAll(/from\s+["']([^"']+)["']/gu)].map(
+		(match) => match[1] ?? "",
+	);
+
+	assert.deepEqual(
+		imports.filter((specifier) => /ffmpeg|composition/iu.test(specifier)),
+		[],
+	);
 });
 
 test("an unknown durable media outcome stays on its stable reconciliation key", async () => {
@@ -241,6 +283,45 @@ test("an unknown durable media outcome stays on its stable reconciliation key", 
 	);
 	assert.equal(submissions.length, 1);
 	assert.equal(submissions[0]?.idempotencyKey, "harness-media:task-video:video");
+});
+
+test("terminal video failure and timeout expose merchant-safe recovery choices", async () => {
+	for (const [failureCode, expectedChoice] of [
+		["PROVIDER_REJECTED", "更换参考素材"],
+		["LOGICAL_TIMEOUT", "图片发布方案"],
+	] as const) {
+		const adapter = new ModelSupplyHarnessMediaExecutionPort({
+			async submit() {
+				return {
+					...completedResult("video"),
+					asset: undefined,
+					failureCode,
+					status: "failed" as const,
+				};
+			},
+		});
+
+		await assert.rejects(
+			adapter.execute({
+				brief: mediaBrief("video"),
+				context: contextSnapshot(),
+				request: harnessInput("video", "package-video"),
+				workflowId: "task-video",
+			}),
+			(error: unknown) => {
+				assert.ok(error instanceof HarnessMediaExecutionError);
+				assert.equal(error.code, "MEDIA_GENERATION_FAILED");
+				assert.match(error.merchantMessage ?? "", /重新生成/u);
+				assert.match(error.merchantMessage ?? "", new RegExp(expectedChoice, "u"));
+				assert.doesNotMatch(error.merchantMessage ?? "", new RegExp(failureCode, "u"));
+				assert.deepEqual(
+					merchantVisibleLanguageIssues(error.merchantMessage ?? ""),
+					[],
+				);
+				return true;
+			},
+		);
+	}
 });
 
 test("an unknown media result reconciles the same durable job without resubmission", async () => {
@@ -619,10 +700,11 @@ function completedResult(
 			objectKey: `owned/${kind}-asset-${suffix}`,
 			sha256: `${kind}-sha-${suffix}`,
 			sizeBytes: 1024,
+			sourceTaskRef: `provider-task-${kind}-${suffix}`,
 		},
 		usage: {
 			id: `usage-${kind}-${suffix}`,
-			quantity: 1,
+			quantity: 0,
 			status: "committed",
 		},
 		providerCost,

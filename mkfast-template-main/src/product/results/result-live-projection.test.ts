@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { CreativeWorkbenchProjection } from '@meiye/contracts';
+import type {
+  CreativeWorkbenchProjection,
+  PublicContentPackage,
+} from '@meiye/contracts';
 
 import {
   buildLiveVideoWorksurface,
+  buildNativeVideoWorksurface,
   contentPackageRefreshToken,
   factSourcesFromGroundingSnapshot,
   latestContentPackageForWork,
@@ -500,6 +504,59 @@ test('joins only the public video workflow with the exact canonical asset', () =
     '/api/core/p1/assets?objectKey=video%2Fowned-video-1.mp4'
   );
   assert.equal(state?.loopPhase, 'adopted');
+});
+
+test('projects a model-native video from the canonical ContentPackage without a legacy workflow', () => {
+  const result = projectResultCenterLiveProjection(
+    projection,
+    'work-video-target'
+  );
+  assert.ok(result.selected);
+  const contentPackage = {
+    id: 'package-video-native',
+    kind: 'video',
+    currentVersionId: 'version-video-native',
+    revision: 1,
+    status: 'review_ready',
+    updatedAt: '2026-07-25T09:00:00.000Z',
+    versions: [
+      {
+        id: 'version-video-native',
+        body: '门店项目成片分镜',
+        orderedAssetIds: ['asset-video-native'],
+      },
+    ],
+    generated: {
+      ownedAssets: [
+        {
+          id: 'asset-video-native',
+          contentType: 'video/mp4',
+          objectKey: 'owned/video-native.mp4',
+        },
+      ],
+      childRuns: [
+        {
+          actualCatalogModelId: 'seedance-2',
+          assetIds: ['asset-video-native'],
+          runId: 'model-job-video-native',
+        },
+      ],
+    },
+  } as unknown as PublicContentPackage;
+
+  const state = buildNativeVideoWorksurface(
+    result.selected!,
+    contentPackage
+  );
+
+  assert.equal(state?.workflowId, 'model-job-video-native');
+  assert.equal(state?.storyboard.length, 1);
+  assert.equal(state?.composedCandidate?.assetId, 'asset-video-native');
+  assert.equal(
+    state?.composedCandidate?.playableUrl,
+    '/api/core/p1/assets?objectKey=owned%2Fvideo-native.mp4'
+  );
+  assert.equal(state?.loopPhase, 'candidate_ready');
 });
 
 test('refuses a public video workflow that belongs to another work', () => {

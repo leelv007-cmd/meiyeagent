@@ -26,6 +26,7 @@ import {
 } from '@/product/creative-job-observer';
 import {
   buildLiveVideoWorksurface,
+  buildNativeVideoWorksurface,
   contentPackageRefreshToken,
   factSourcesFromGroundingSnapshot,
   revisionTimelineFactsFromContentPackage,
@@ -330,7 +331,11 @@ function ResultCenterRoutePage() {
     );
   }
 
-  if (selected?.workspaceKind === 'video' && workflowQuery.isPending) {
+  if (
+    selected?.workspaceKind === 'video' &&
+    selectedVideoWorkflowId &&
+    workflowQuery.isPending
+  ) {
     return (
       <DashboardLayout
         breadcrumbs={[]}
@@ -402,7 +407,8 @@ function ResultCenterRoutePage() {
   const canonicalDeliveryPlatform =
     deliveryTarget === 'wechat_moments' ? null : deliveryTarget;
   const baseVideoWorksurface = selected
-    ? buildLiveVideoWorksurface(selected, workflowQuery.data)
+    ? (buildLiveVideoWorksurface(selected, workflowQuery.data) ??
+      buildNativeVideoWorksurface(selected, contentPackage))
     : undefined;
   const packageComposedAsset = contentPackage?.generated.ownedAssets
     ?.filter((asset) => asset.contentType === 'video/mp4')
@@ -1246,54 +1252,67 @@ function ResultCenterRoutePage() {
           search: (current) => ({ ...current, panel: 'delivery' }),
         })
       }
-      onVideoRequestRegenerationQuote={async (
-        request: VideoRegenerationQuoteRequest
-      ) => {
-        const fingerprint = `video-regen-quote:${request.sourceRunId}:${request.scope}:${request.shotId ?? ''}`;
-        const key = intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
-        intentKeys.current.set(fingerprint, key);
-        const quoted = await commandP1<VideoRegenerationServerQuote>(
-          'video-regeneration',
-          { action: 'quote', payload: request },
-          key
-        );
-        intentKeys.current.delete(fingerprint);
-        return quoted;
-      }}
-      onVideoConfirmRegeneration={async ({ quoteId, taskId }) => {
-        const fingerprint = `video-regen-confirm:${quoteId}:${taskId}`;
-        const key = intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
-        intentKeys.current.set(fingerprint, key);
-        setVideoRegenerationPackageBaseline(contentPackageToken);
-        try {
-          await commandP1(
-            'video-regeneration',
-            { action: 'confirm', payload: { quoteId, taskId } },
-            key
-          );
-        } catch (error) {
-          setVideoRegenerationPackageBaseline(undefined);
-          throw error;
-        }
-        intentKeys.current.delete(fingerprint);
-        await refreshCanonicalVideo();
-      }}
-      onVideoCanonicalEdit={async (command: VideoCanonicalEditCommand) => {
-        const fingerprint = `video-canonical-edit:${JSON.stringify(command)}`;
-        const key = intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
-        intentKeys.current.set(fingerprint, key);
-        const { workflowId, expectedRevision, ...edit } = command;
-        await commandP1(
-          'model-supply',
-          {
-            action: 'video_workflow_edit',
-            payload: { edit, expectedRevision, workflowId },
-          },
-          key
-        );
-        intentKeys.current.delete(fingerprint);
-        await refreshCanonicalVideo();
-      }}
+      onVideoRequestRegenerationQuote={
+        selectedVideoWorkflowId
+          ? async (request: VideoRegenerationQuoteRequest) => {
+              const fingerprint = `video-regen-quote:${request.sourceRunId}:${request.scope}:${request.shotId ?? ''}`;
+              const key =
+                intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
+              intentKeys.current.set(fingerprint, key);
+              const quoted = await commandP1<VideoRegenerationServerQuote>(
+                'video-regeneration',
+                { action: 'quote', payload: request },
+                key
+              );
+              intentKeys.current.delete(fingerprint);
+              return quoted;
+            }
+          : undefined
+      }
+      onVideoConfirmRegeneration={
+        selectedVideoWorkflowId
+          ? async ({ quoteId, taskId }) => {
+              const fingerprint = `video-regen-confirm:${quoteId}:${taskId}`;
+              const key =
+                intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
+              intentKeys.current.set(fingerprint, key);
+              setVideoRegenerationPackageBaseline(contentPackageToken);
+              try {
+                await commandP1(
+                  'video-regeneration',
+                  { action: 'confirm', payload: { quoteId, taskId } },
+                  key
+                );
+              } catch (error) {
+                setVideoRegenerationPackageBaseline(undefined);
+                throw error;
+              }
+              intentKeys.current.delete(fingerprint);
+              await refreshCanonicalVideo();
+            }
+          : undefined
+      }
+      onVideoCanonicalEdit={
+        selectedVideoWorkflowId
+          ? async (command: VideoCanonicalEditCommand) => {
+              const fingerprint = `video-canonical-edit:${JSON.stringify(command)}`;
+              const key =
+                intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
+              intentKeys.current.set(fingerprint, key);
+              const { workflowId, expectedRevision, ...edit } = command;
+              await commandP1(
+                'model-supply',
+                {
+                  action: 'video_workflow_edit',
+                  payload: { edit, expectedRevision, workflowId },
+                },
+                key
+              );
+              intentKeys.current.delete(fingerprint);
+              await refreshCanonicalVideo();
+            }
+          : undefined
+      }
       onVideoProStudio={() => {
         window.location.assign('/pro-studio');
       }}
