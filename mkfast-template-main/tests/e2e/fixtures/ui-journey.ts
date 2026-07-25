@@ -207,6 +207,19 @@ export async function submitComposerJourney(
     `submit_creative_work must return a real Job (running or completed fast-path); body=${submitResponseBody}`
   ).toMatch(/^(running|completed)$/u);
 
+  // ADR-0014「提交后不跳转」. Submitting keeps the merchant in the conversation;
+  // the run finishes as a 成品预览卡 and clicking that card is what opens the
+  // Result Center. Assert all three: we did NOT navigate, the card appeared,
+  // and the id it carries is the one the submission produced.
+  await expect(
+    page,
+    'submitting must not navigate away from the Composer conversation'
+  ).not.toHaveURL(/\/dashboard\/results\//u);
+  const deliveryCard = page.getByTestId('composer-delivery-card');
+  await expect(deliveryCard).toBeVisible({ timeout: 120_000 });
+  await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);
+
+  await deliveryCard.click();
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+(?:\?|$)/u, {
     timeout: 60_000,
   });

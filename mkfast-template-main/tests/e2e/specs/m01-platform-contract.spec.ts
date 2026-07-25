@@ -67,8 +67,21 @@ test.describe('M-01 signed platform contract', () => {
     );
     expect(initialHash).toMatch(/^[a-f0-9]{64}$/u);
 
-    const platform = page.locator('#composer-setting-input-platform');
-    await platform.selectOption('xiaohongshu');
+    // T30 / #224: 「发到哪」is one chip question in the conversation, not a
+    // settings-grid select — the destination is a signed field the server
+    // freezes, so it is asked once and never rendered as an editable form row.
+    const destination = (platform: string) =>
+      page.getByTestId(`composer-destination-option-${platform}`);
+    await expect(
+      page.locator('#composer-setting-input-platform'),
+      'the retired platform select must not come back (D-031)'
+    ).toHaveCount(0);
+
+    await destination('xiaohongshu').click();
+    await expect(destination('xiaohongshu')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
     await expect(
       page.getByTestId('composer-destination-capability')
     ).toHaveText('生成后导出');
@@ -79,7 +92,7 @@ test.describe('M-01 signed platform contract', () => {
       'data-submission-contract-hash'
     );
 
-    await platform.selectOption('wechat_moments');
+    await destination('wechat_moments').click();
     await expect(
       page.getByTestId('composer-destination-capability')
     ).toHaveText('生成后协办交接');
@@ -87,7 +100,7 @@ test.describe('M-01 signed platform contract', () => {
       .poll(() => quoteLine.getAttribute('data-submission-contract-hash'))
       .not.toBe(xhsHash);
 
-    await platform.selectOption('xiaohongshu');
+    await destination('xiaohongshu').click();
     await expect
       .poll(() => quoteLine.getAttribute('data-submission-contract-hash'))
       .toBe(xhsHash);
