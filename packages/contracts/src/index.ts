@@ -25,6 +25,7 @@ export * from './result-center.js';
 export * from './video-workflow.js';
 export * from './public-content-package.js';
 export * from './asset-storage.js';
+export * from './image-intent.js';
 
 export interface ApiMeta {
   correlationId: string;
