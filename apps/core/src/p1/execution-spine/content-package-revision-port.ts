@@ -11,6 +11,11 @@ import {
 import type { Pool, PoolClient } from "pg";
 
 import { harnessRuntimeId } from "../harness/workspace-scope.js";
+import {
+	HarnessCopyWorkAssetWriteError,
+	type HarnessCopyWorkAsset,
+	writeHarnessCopyWorkAsset,
+} from "../operations/harness-copy-work-asset.js";
 import { updateContentPackageRow } from "../operations/postgres-content-package-write-adapter.js";
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
 
@@ -29,6 +34,7 @@ export interface ContentPackageRevisionWriteInput {
 	packageId: string;
 	platform?: ContentPackagePlatform;
 	variants?: ContentPackage["variants"];
+	workAsset?: HarnessCopyWorkAsset;
 	snapshotId: string;
 	snapshot: {
 		id: string;
@@ -229,6 +235,9 @@ export class PostgresContentPackageRevisionWritePort
 				revision,
 				versionId: input.version.id,
 			};
+			if (input.workAsset) {
+				await writeHarnessCopyWorkAsset(client, input.workAsset);
+			}
 			const updated = contentPackageSchema.parse({
 				...contentPackage,
 				currentVersionId: input.version.id,
@@ -318,6 +327,7 @@ export class MemoryContentPackageRevisionWritePort
 		{ delivery: ContentPackageRevisionDelivery; fingerprint: string }
 	>();
 	private readonly packages = new Map<string, ContentPackage>();
+	private readonly workAssets = new Map<string, HarnessCopyWorkAsset>();
 
 	constructor(private readonly assetRights?: ContentPackageRightsResolverPort) {}
 
@@ -330,6 +340,11 @@ export class MemoryContentPackageRevisionWritePort
 
 	get(workspaceId: string, packageId: string) {
 		const value = this.packages.get(`${workspaceId}:${packageId}`);
+		return value ? structuredClone(value) : null;
+	}
+
+	getWorkAsset(workspaceId: string, assetId: string) {
+		const value = this.workAssets.get(`${workspaceId}:${assetId}`);
 		return value ? structuredClone(value) : null;
 	}
 
@@ -444,6 +459,21 @@ export class MemoryContentPackageRevisionWritePort
 			variants: input.variants ?? contentPackage.variants,
 			versions: [...contentPackage.versions, ...versions],
 		});
+		if (input.workAsset) {
+			const assetKey = `${input.workspaceId}:${input.workAsset.id}`;
+			const priorAsset = this.workAssets.get(assetKey);
+			if (
+				priorAsset &&
+				JSON.stringify(canonicalValue(priorAsset)) !==
+					JSON.stringify(canonicalValue(input.workAsset))
+			) {
+				throw new HarnessCopyWorkAssetWriteError(
+					"HARNESS_COPY_ASSET_CONFLICT",
+					"The deterministic Harness Copy asset ID already has different content.",
+				);
+			}
+			this.workAssets.set(assetKey, structuredClone(input.workAsset));
+		}
 		this.packages.set(packageKey, updated);
 		this.receipts.set(receiptKey, { delivery, fingerprint });
 		return structuredClone(delivery);

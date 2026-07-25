@@ -1,9 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { ContentPackage } from '@meiye/contracts';
+import { readFile } from 'node:fs/promises';
 import { cleanupE2EUsers } from '../fixtures/auth';
 import { createE2EUser } from '../fixtures/test-data';
 import {
   assertThreeModalDiscovery,
+  downloadFullPackage,
   JOURNEY_CONTRACTS,
+  openDeliveryPanel,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
 
@@ -88,7 +92,8 @@ test.describe('required assembly gate', () => {
     await cleanupE2EUsers(request);
   });
 
-  test('registers a cold tenant and produces its first copy with zero configuration', async ({
+  test('registers a cold tenant and delivers its first copy with zero configuration', async ({
+    context,
     page,
   }) => {
     test.setTimeout(240_000);
@@ -174,5 +179,83 @@ test.describe('required assembly gate', () => {
       '写一条介绍本周护理服务的朋友圈文案'
     );
     await waitForResultJourney(page, copyContract, workId);
+    const primary = page.getByTestId('result-primary-action');
+    await expect(primary).toHaveText('采用此版本');
+    await expect(primary).toBeEnabled();
+    const adoptionResponsePromise = page.waitForResponse(
+      (response) => {
+        if (
+          response.request().method() !== 'POST' ||
+          !response.url().includes('/api/core/p1/commands')
+        ) {
+          return false;
+        }
+        try {
+          return (
+            response.request().postDataJSON() as { action?: unknown }
+          ).action === 'adopt_harness_candidate';
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 60_000 }
+    );
+    await primary.click();
+    const adoptionResponse = await adoptionResponsePromise;
+    expect(
+      adoptionResponse.ok(),
+      await adoptionResponse.text()
+    ).toBeTruthy();
+    const contentPackage = (
+      await p1Query<ContentPackage[]>(
+        page,
+        'operations',
+        'content_packages'
+      )
+    ).find((candidate) => candidate.source.workId === workId);
+    expect(contentPackage).toMatchObject({
+      harnessSelection: {
+        adoptedCandidateId: expect.any(String),
+      },
+      status: 'accepted',
+    });
+    expect(contentPackage?.versions).toHaveLength(1);
+    expect(contentPackage?.variants).toHaveLength(3);
+    expect(
+      contentPackage?.variants.map((variant) => variant.platform).sort()
+    ).toEqual(['douyin', 'video_account', 'xiaohongshu']);
+    for (const variant of contentPackage?.variants ?? []) {
+      expect(variant.currentVersionId).toBeTruthy();
+    }
+    await expect(primary).toHaveText('交付');
+
+    await openDeliveryPanel(page, copyContract.modality);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const currentVersion = contentPackage?.versions.find(
+      (version) => version.id === contentPackage.currentVersionId
+    );
+    expect(currentVersion?.body).toBeTruthy();
+    const copy = page.getByTestId('delivery-action-copy');
+    await expect(copy).toBeEnabled();
+    await copy.click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toContain(currentVersion?.body ?? '');
+
+    const singleDownloadPromise = page.waitForEvent('download');
+    const singleDownload = page.getByTestId(
+      'delivery-action-single_download'
+    );
+    await expect(singleDownload).toBeEnabled();
+    await singleDownload.click();
+    const downloaded = await singleDownloadPromise;
+    expect(downloaded.suggestedFilename()).toMatch(/-copy\.txt$/u);
+    const downloadedPath = await downloaded.path();
+    expect(downloadedPath).toBeTruthy();
+    expect(await readFile(downloadedPath!, 'utf8')).toContain(
+      currentVersion?.body ?? ''
+    );
+
+    await downloadFullPackage(page, copyContract);
   });
 });

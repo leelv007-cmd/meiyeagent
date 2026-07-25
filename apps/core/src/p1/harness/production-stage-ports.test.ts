@@ -505,9 +505,25 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
   assert.equal(executionDelivery.inputs[0]?.taskId, snapshot.task.id);
   assert.equal(executionDelivery.inputs[0]?.workId, snapshot.work.id);
   assert.deepEqual(executionDelivery.inputs[0]?.generated, {
-    assetIds: [],
+    assetIds: [executionDelivery.inputs[0]?.workAsset?.id],
     childRuns: [],
   });
+  assert.deepEqual(executionDelivery.inputs[0]?.workAsset, {
+    body: '候选一正文',
+    candidateIndex: 0,
+    conversionHook: '私信预约',
+    createdAt: '2026-07-22T10:00:00.000Z',
+    id: executionDelivery.inputs[0]?.generated.assetIds[0],
+    jobId: snapshot.task.id,
+    kind: 'text',
+    title: '候选一',
+    workId: snapshot.work.id,
+    workspaceId: 'workspace-1',
+  });
+  assert.match(
+    executionDelivery.inputs[0]?.workAsset?.id ?? '',
+    /^work-1-harness-copy-[a-f0-9]{20}$/u,
+  );
   assert.deepEqual(executionDelivery.inputs[0]?.harnessSelection, {
     recommendedCandidateId: 'candidate-1',
   });

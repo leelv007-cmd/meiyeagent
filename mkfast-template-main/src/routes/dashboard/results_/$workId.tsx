@@ -632,6 +632,12 @@ function ResultCenterRoutePage() {
     );
     await refreshCanonicalResult();
   };
+  const copyAsset = selected?.assets.find(
+    (asset) =>
+      asset.kind === 'text' &&
+      (asset.id === selected.job?.recommendedAssetId ||
+        !selected.job?.recommendedAssetId)
+  );
   const downloadableAsset = selected?.assets.find((asset) => asset.objectKey);
   const downloadableObjectKey =
     downloadableAsset?.objectKey ??
@@ -645,12 +651,21 @@ function ResultCenterRoutePage() {
     anchor.download = fileName ?? '';
     anchor.click();
   };
-  const copyAsset = selected?.assets.find(
-    (asset) =>
-      asset.kind === 'text' &&
-      (asset.id === selected.job?.recommendedAssetId ||
-        !selected.job?.recommendedAssetId)
-  );
+  const downloadCopyAsset = () => {
+    if (!copyAsset?.body) return;
+    const url = URL.createObjectURL(
+      new Blob(
+        [
+          [copyAsset.title, copyAsset.body, copyAsset.conversionHook]
+            .filter(Boolean)
+            .join('\n\n'),
+        ],
+        { type: 'text/plain;charset=utf-8' }
+      )
+    );
+    startDownload(url, `${contentPackage?.id ?? workId}-copy.txt`);
+    URL.revokeObjectURL(url);
+  };
   const imageAssetIds =
     selected?.assets
       .filter((asset) => asset.kind === 'image')
@@ -1396,7 +1411,7 @@ function ResultCenterRoutePage() {
       deliveryPanelFacts={{
         target: deliveryTarget,
         hasCopyableText: Boolean(copyAsset),
-        hasSingleDownload: Boolean(singleDownloadUrl),
+        hasSingleDownload: Boolean(singleDownloadUrl || copyAsset?.body),
         hasFullPackage:
           deliveryTarget === 'wechat_moments'
             ? Boolean(copyAsset || singleDownloadUrl)
@@ -1431,6 +1446,10 @@ function ResultCenterRoutePage() {
         }
         if (actionId === 'single_download' && singleDownloadUrl) {
           startDownload(singleDownloadUrl);
+          return 'download_done';
+        }
+        if (actionId === 'single_download' && copyAsset?.body) {
+          downloadCopyAsset();
           return 'download_done';
         }
         if (
