@@ -607,9 +607,12 @@ export function ComposerHome({
     sessionIdRef.current = restored.session.sessionId;
     setSession(restored.session);
     setLensState((current) =>
-      updateUserText(current, restored.session.turns[0]?.kind === 'merchant'
-        ? restored.session.turns[0].text
-        : '')
+      updateUserText(
+        current,
+        restored.session.turns[0]?.kind === 'merchant'
+          ? restored.session.turns[0].text
+          : ''
+      )
     );
   }, [store]);
 
@@ -1092,7 +1095,9 @@ export function ComposerHome({
 
     // The merchant's sentence opens the conversation before any backend round
     // trip, so the container reads as a reply rather than a blank wait.
-    setSession((current) => openComposerTurn(current, lensState.draft.userText));
+    setSession((current) =>
+      openComposerTurn(current, lensState.draft.userText)
+    );
 
     setBriefPending(true);
     let projection: BriefTriggerProjection | undefined;
@@ -1466,7 +1471,9 @@ export function ComposerHome({
         <p
           className="text-muted text-xs"
           data-quote-revision={quoteQuery.data?.revision}
-          data-submission-contract-hash={quoteQuery.data?.submissionContractHash}
+          data-submission-contract-hash={
+            quoteQuery.data?.submissionContractHash
+          }
           data-testid="composer-quote-line"
         >
           {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}

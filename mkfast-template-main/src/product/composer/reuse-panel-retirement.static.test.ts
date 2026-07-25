@@ -33,7 +33,10 @@ function walk(dir: string): string[] {
 }
 
 const runtimeFiles = walk(SRC_ROOT)
-  .map((file) => ({ file, key: relative(SRC_ROOT, file).replaceAll('\\', '/') }))
+  .map((file) => ({
+    file,
+    key: relative(SRC_ROOT, file).replaceAll('\\', '/'),
+  }))
   .filter(({ key }) => !EXEMPT.has(key))
   .filter(({ key }) => !key.includes('.test.'))
   .map(({ file, key }) => ({ key, source: readFileSync(file, 'utf8') }));

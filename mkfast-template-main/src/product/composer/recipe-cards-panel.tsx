@@ -166,7 +166,6 @@ export function RecipeCardsPanel({
     publish(undoApply(activeSession));
   };
 
-
   // Clear one-shot announcement after paint so polite region fires once.
   useEffect(() => {
     if (!activeSession.announcement) return;
