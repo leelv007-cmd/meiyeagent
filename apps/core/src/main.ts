@@ -1478,14 +1478,30 @@ if (harnessRuntimeConfig) {
   );
   await creationSubmissionStore.migrate();
   const structuredNodeRunnerFactory = {
-    create({ workspaceId, actorId }: { workspaceId: string; actorId: string }) {
+    create({
+      workspaceId,
+      actorId,
+      billingTaskId,
+      billingQuoteRevision,
+    }: {
+      workspaceId: string;
+      actorId: string;
+      billingTaskId?: string;
+      billingQuoteRevision?: string;
+    }) {
+      if (!billingTaskId || !billingQuoteRevision) {
+        throw new Error(
+          'Structured model jobs require the Coordinator billing lineage.',
+        );
+      }
       return new ModelSupplyStructuredNodeRunner({
         application: p1ModelSupplyService,
         executor: structuredExecutor,
         workspaceId,
         actorId,
         selection: { mode: 'auto', profile: 'quality' },
-        productUsageQuantity: 0,
+        billingTaskId,
+        billingQuoteRevision,
       });
     },
   };

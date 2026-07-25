@@ -34,10 +34,6 @@ test('copy compiler makes one model call and returns one primary candidate', asy
     runner.requests.map((request) => request.effectIdempotencyKey),
     ['wf:workflow-34:s4:copy-primary:c01'],
   );
-  assert.deepEqual(
-    runner.requests.map((request) => request.productUsageQuantity),
-    [1],
-  );
   assert.deepEqual(scorer.effectKeys, []);
   assert.match(runner.requests[0]!.instructions, /single primary/iu);
   assert.match(runner.requests[0]!.prompt, /identity-owner-1/u);
@@ -78,10 +74,6 @@ test('one policy failure retries once with feedback and delivers the safe result
     ).size,
     2,
   );
-  assert.deepEqual(
-    runner.requests.map((request) => request.productUsageQuantity),
-    [1, 0],
-  );
   assert.match(runner.requests[1]!.instructions, /Correct every supplied policy failure/u);
   assert.deepEqual(JSON.parse(runner.requests[1]!.prompt).policyFailures, [
     {
@@ -116,10 +108,6 @@ test('two policy failures stop after one retry with every gate id', async () => 
     },
   );
   assert.equal(runner.requests.length, 2);
-  assert.deepEqual(
-    runner.requests.map((request) => request.productUsageQuantity),
-    [1, 0],
-  );
   assert.deepEqual(scorer.effectKeys, []);
 });
 
