@@ -33,6 +33,10 @@ import {
   type RecordCreationExperienceEventInput,
 } from './creation-experience-events.js';
 import { buildRecipePatchPreview } from './recipe-patch-preview.js';
+import {
+  RecipeStudioService,
+  type RecipeStudioCompileInput,
+} from './recipe-studio.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import {
   MemoryBriefRevisionContextRepository,
@@ -353,6 +357,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
   private readonly briefRevisionContexts: BriefRevisionContextRepository;
   private readonly briefRevisionResolver: BriefRevisionResolver;
   private readonly eventAudit: CreationExperienceEventAuditPort;
+  private readonly recipeStudio: RecipeStudioService;
 
   constructor(
     repository: CreationExperienceCatalogRepository = new MemoryCreationExperienceCatalogRepository(),
@@ -375,6 +380,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       options.briefRevisionResolver ?? new MissingBriefRevisionResolver();
     this.eventAudit =
       options.eventAudit ?? new MemoryCreationExperienceEventAudit();
+    this.recipeStudio = new RecipeStudioService(this.service);
   }
 
   async execute(args: {
@@ -395,6 +401,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         // Browser/command path must never set server-only hidden prompts.
         const safeBody = { ...(body as RecipeBodyInput) };
         delete safeBody.hiddenPromptBody;
+        delete safeBody.studioRelease;
         const input: DraftRecipeInput = {
           recipeId: stringField(value, 'recipeId'),
           expectedRevision: expectedRevisionOf(value),
@@ -402,6 +409,107 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
           body: safeBody,
         };
         return this.service.draftRecipe(input);
+      }
+      case 'recipe_studio_compile': {
+        const input: RecipeStudioCompileInput = {
+          ...(value as unknown as RecipeStudioCompileInput),
+          recipeId: stringField(value, 'recipeId'),
+          expectedRevision: expectedRevisionOf(value),
+          ...audit(),
+        };
+        return this.recipeStudio.compile(input);
+      }
+      case 'recipe_studio_validate': {
+        const expectedRevision = numberField(value, 'expectedRevision');
+        if (expectedRevision === null) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'expectedRevision is required.',
+          );
+        }
+        return this.recipeStudio.validate({
+          recipeId: stringField(value, 'recipeId'),
+          expectedRevision,
+          ...audit(),
+        });
+      }
+      case 'recipe_studio_record_eval': {
+        const expectedRevision = numberField(value, 'expectedRevision');
+        if (expectedRevision === null) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'expectedRevision is required.',
+          );
+        }
+        return this.recipeStudio.recordEvaluation({
+          recipeId: stringField(value, 'recipeId'),
+          expectedRevision,
+          ...audit(),
+          evalRun: value.evalRun as never,
+        });
+      }
+      case 'recipe_studio_internal_test': {
+        const expectedRevision = numberField(value, 'expectedRevision');
+        if (expectedRevision === null) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'expectedRevision is required.',
+          );
+        }
+        return this.recipeStudio.recordInternalTest({
+          recipeId: stringField(value, 'recipeId'),
+          expectedRevision,
+          ...audit(),
+          label: stringField(value, 'label') as 'internal-test',
+          runId: stringField(value, 'runId'),
+          passed: value.passed === true,
+        });
+      }
+      case 'recipe_studio_production_switch': {
+        const expectedRevision = numberField(value, 'expectedRevision');
+        const expectedSurfaceRevision = numberField(
+          value,
+          'expectedSurfaceRevision',
+        );
+        if (expectedRevision === null || expectedSurfaceRevision === null) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Recipe and Surface expected revisions are required.',
+          );
+        }
+        return this.recipeStudio.switchProduction({
+          recipeId: stringField(value, 'recipeId'),
+          expectedRevision,
+          surfaceId: stringField(value, 'surfaceId'),
+          expectedSurfaceRevision,
+          ...audit(),
+        });
+      }
+      case 'recipe_studio_production_rollback': {
+        const expectedRevision = numberField(value, 'expectedRevision');
+        const expectedSurfaceRevision = numberField(
+          value,
+          'expectedSurfaceRevision',
+        );
+        const targetRevision = numberField(value, 'targetRevision');
+        if (
+          expectedRevision === null ||
+          expectedSurfaceRevision === null ||
+          targetRevision === null
+        ) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Recipe, Surface, and rollback target revisions are required.',
+          );
+        }
+        return this.recipeStudio.rollbackProduction({
+          recipeId: stringField(value, 'recipeId'),
+          expectedRevision,
+          targetRevision,
+          surfaceId: stringField(value, 'surfaceId'),
+          expectedSurfaceRevision,
+          ...audit(),
+        });
       }
       case 'recipe_preview': {
         const input: RecipeTransitionInput = {

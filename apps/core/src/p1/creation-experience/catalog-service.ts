@@ -161,9 +161,13 @@ function normalizeRecipeBody(body: RecipeBodyInput): Omit<
       ? { workflowRevisionRef: body.workflowRevisionRef }
       : {}),
     promptRevisionRef: body.promptRevisionRef.trim(),
+    skillRevisionRefs: [...(body.skillRevisionRefs ?? [])],
     targetWorkspaceKind: body.targetWorkspaceKind,
     ...(body.hiddenPromptBody !== undefined
       ? { hiddenPromptBody: body.hiddenPromptBody }
+      : {}),
+    ...(body.studioRelease !== undefined
+      ? { studioRelease: structuredClone(body.studioRelease) }
       : {}),
   };
 }
@@ -171,7 +175,11 @@ function normalizeRecipeBody(body: RecipeBodyInput): Omit<
 function recipeContentPayload(
   body: ReturnType<typeof normalizeRecipeBody>,
 ): Record<string, unknown> {
-  const { hiddenPromptBody: _hidden, ...rest } = body;
+  const {
+    hiddenPromptBody: _hidden,
+    studioRelease: _studioRelease,
+    ...rest
+  } = body;
   return rest;
 }
 
@@ -255,9 +263,13 @@ function bodyFromRecipe(record: ServerRecipeRecord): RecipeBodyInput {
       ? { workflowRevisionRef: record.workflowRevisionRef }
       : {}),
     promptRevisionRef: record.promptRevisionRef,
+    skillRevisionRefs: structuredClone(record.skillRevisionRefs),
     targetWorkspaceKind: record.targetWorkspaceKind,
     ...(record.hiddenPromptBody !== undefined
       ? { hiddenPromptBody: record.hiddenPromptBody }
+      : {}),
+    ...(record.studioRelease !== undefined
+      ? { studioRelease: structuredClone(record.studioRelease) }
       : {}),
   };
 }

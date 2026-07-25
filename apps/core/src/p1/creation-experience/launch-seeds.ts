@@ -408,6 +408,7 @@ export function recipeBodyFromSpec(spec: LaunchRecipeSeedSpec): RecipeBodyInput 
       ? { workflowRevisionRef: spec.workflowRevisionRef }
       : {}),
     promptRevisionRef: spec.promptRevisionRef,
+    skillRevisionRefs: [],
     targetWorkspaceKind: spec.lensId,
   };
 }
