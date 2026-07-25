@@ -103,7 +103,17 @@ export async function assertThreeModalDiscovery(page: Page) {
 export async function submitComposerJourney(
   page: Page,
   contract: JourneyContract,
-  intent: string
+  intent: string,
+  options: {
+    /**
+     * Called once the 成品预览卡 is on screen and before it is clicked. Under
+     * ADR-0014 submitting no longer navigates, so reaching Result Center costs
+     * one more click than it used to — but that click is a navigation, not an
+     * activation (same rule uiux-day0-contract states for the video path), so
+     * a caller measuring a C6 click budget stops its counter here.
+     */
+    onDeliveryCardVisible?: () => void | Promise<void>;
+  } = {}
 ) {
   const lens = page.getByTestId(`composer-lens-option-${contract.modality}`);
   await lens.click();
@@ -197,6 +207,7 @@ export async function submitComposerJourney(
   await expect(deliveryCard).toBeVisible({ timeout: 120_000 });
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);
 
+  await options.onDeliveryCardVisible?.();
   await deliveryCard.click();
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+(?:\?|$)/u, {
     timeout: 60_000,

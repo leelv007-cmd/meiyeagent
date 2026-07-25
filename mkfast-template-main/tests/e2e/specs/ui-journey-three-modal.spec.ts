@@ -86,7 +86,11 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
         const workId = await submitComposerJourney(
           page,
           contract,
-          `Z1 皮肤护理 ${intentSeed} ${contract.modality} ${surface.name} ${crypto.randomUUID()}`
+          `Z1 皮肤护理 ${intentSeed} ${contract.modality} ${surface.name} ${crypto.randomUUID()}`,
+          // ADR-0014: opening Result Center from the 成品预览卡 is a navigation,
+          // not an activation. Freeze the count at the point the merchant has
+          // their result, which is what the C6 budget is about.
+          { onDeliveryCardVisible: () => activationCounter.stop() }
         );
         await waitForResultJourney(page, contract, workId);
         if (surface.name === 'mobile-dark') {
@@ -102,7 +106,6 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
             actions.getByTestId('result-secondary-action')
           ).toHaveCount(0);
         }
-        activationCounter.stop();
         expect(
           activationCounter.count(),
           `${contract.modality} C6 activation budget: ${JSON.stringify(activationCounter.events())}`
