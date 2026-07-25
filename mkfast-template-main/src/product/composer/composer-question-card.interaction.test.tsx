@@ -69,16 +69,50 @@ describe('the card states its default and releases itself', () => {
     render(<ComposerQuestionCard onDecide={onDecide} question={QUESTION} />);
 
     await user.click(screen.getByTestId('composer-question-continue'));
-    expect(onDecide).toHaveBeenCalledWith({ skipped: true, value: '' });
+    expect(onDecide).toHaveBeenCalledWith({ settlement: 'skipped', value: '' });
     // 「不补充也继续」 is the harness's own ignored route, not a new state.
     expect(
       composerQuestionDecision({
         question: QUESTION,
         idempotencyKey: 'k',
-        skipped: true,
+        settlement: 'skipped',
         value: '',
       }).decision.state
     ).toBe('ignored');
+  });
+
+  it('is one control, not two synonyms for the same decision', () => {
+    render(<ComposerQuestionCard onDecide={() => {}} question={QUESTION} />);
+    // 「继续」 and 「这次先跳过」 posted the identical ignored decision under
+    // different words — a choice the merchant did not actually have.
+    expect(
+      screen.getByTestId('composer-question-continue')
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('composer-question-skip')).toBeNull();
+  });
+
+  it('records a countdown release without quoting the merchant', () => {
+    // The value lands in the ledger *and* in the workflow's intent context as
+    // `Merchant decision (<field>): <value>`, so a timeout must not be written
+    // down as 「这次先跳过」 — nobody said that.
+    const skipped = composerQuestionDecision({
+      question: QUESTION,
+      idempotencyKey: 'k',
+      settlement: 'skipped',
+      value: '',
+    });
+    const timedOut = composerQuestionDecision({
+      question: QUESTION,
+      idempotencyKey: 'k',
+      settlement: 'timed_out',
+      value: '',
+    });
+    expect(skipped.decision.state).toBe('ignored');
+    expect(timedOut.decision.state).toBe('ignored');
+    // Same route, distinguishable record.
+    expect(timedOut.decision.value).not.toBe(skipped.decision.value);
+    expect(timedOut.decision.value).toBe('未作答');
+    expect(timedOut.patch.value).toBe('未作答');
   });
 
   it('releases itself when the countdown runs out — 引导不变成阻断', async () => {
@@ -97,7 +131,10 @@ describe('the card states its default and releases itself', () => {
 
     await tick(1);
     expect(onDecide).toHaveBeenCalledTimes(1);
-    expect(onDecide).toHaveBeenCalledWith({ skipped: true, value: '' });
+    expect(onDecide).toHaveBeenCalledWith({
+      settlement: 'timed_out',
+      value: '',
+    });
     expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
       '按通用模式继续'
     );
@@ -157,9 +194,12 @@ describe('D-116 safety edges', () => {
 });
 
 describe('the answer wins the race with the countdown', () => {
+  /** A submit that never settles — the card stays mid-flight for the test. */
+  const inFlight = () => vi.fn(() => new Promise<void>(() => {}));
+
   it('an answer at the last second settles the card; the timeout is a no-op', async () => {
     vi.useFakeTimers();
-    const onDecide = vi.fn();
+    const onDecide = inFlight();
     render(
       <ComposerQuestionCard
         onDecide={onDecide}
@@ -168,7 +208,8 @@ describe('the answer wins the race with the countdown', () => {
       />
     );
 
-    // t=29: the merchant taps an option one second before the release.
+    // t=29: the merchant taps an option one second before the release, and the
+    // POST is still in flight when the countdown would have fired.
     await tick(29);
     expect(onDecide).not.toHaveBeenCalled();
     await act(async () => {
@@ -176,7 +217,10 @@ describe('the answer wins the race with the countdown', () => {
     });
 
     expect(onDecide).toHaveBeenCalledTimes(1);
-    expect(onDecide).toHaveBeenCalledWith({ skipped: false, value: '美发' });
+    expect(onDecide).toHaveBeenCalledWith({
+      settlement: 'answered',
+      value: '美发',
+    });
 
     // t=30 and well past: the countdown must not post the competing 跳过.
     await tick(10);
@@ -190,14 +234,110 @@ describe('the answer wins the race with the countdown', () => {
     );
   });
 
-  it('a second click cannot post a second decision either', async () => {
-    const user = userEvent.setup();
-    const onDecide = vi.fn();
+  it('a tap while the release is still in flight posts nothing extra', async () => {
+    // The true interleave: the countdown has already fired and its decision is
+    // mid-POST when the merchant taps. Nothing has resolved, so only the
+    // synchronous claim can order these two — delete `settledRef` and this goes
+    // red with two posts for one question.
+    vi.useFakeTimers();
+    const onDecide = inFlight();
+    render(
+      <ComposerQuestionCard
+        onDecide={onDecide}
+        question={QUESTION}
+        timeoutSeconds={1}
+      />
+    );
+
+    await tick(1);
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(onDecide).toHaveBeenCalledWith({
+      settlement: 'timed_out',
+      value: '',
+    });
+
+    await act(async () => {
+      screen.getByTestId('composer-question-option-option-1').click();
+    });
+    expect(onDecide).toHaveBeenCalledTimes(1);
+  });
+
+  it('two decisions inside one tick post exactly once', async () => {
+    // No render happens between these two handlers, so `settlement` state is
+    // still null for both — the ref is the only thing that can stop the second.
+    const onDecide = vi.fn(() => new Promise<void>(() => {}));
     render(<ComposerQuestionCard onDecide={onDecide} question={QUESTION} />);
 
-    await user.click(screen.getByTestId('composer-question-skip'));
-    await user.click(screen.getByTestId('composer-question-continue'));
+    await act(async () => {
+      screen.getByTestId('composer-question-option-option-1').click();
+      screen.getByTestId('composer-question-continue').click();
+    });
     expect(onDecide).toHaveBeenCalledTimes(1);
+    expect(onDecide).toHaveBeenCalledWith({
+      settlement: 'answered',
+      value: '美发',
+    });
+  });
+});
+
+describe('a decision that never reached the ledger rolls back', () => {
+  it('the answer path: the card does not claim a run that did not continue', async () => {
+    const onDecide = vi.fn(() => Promise.reject(new Error('network down')));
+    render(<ComposerQuestionCard onDecide={onDecide} question={QUESTION} />);
+
+    await act(async () => {
+      screen.getByTestId('composer-question-option-option-1').click();
+    });
+
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    // Nothing landed, so nothing may claim it did.
+    expect(screen.queryByTestId('composer-question-settled')).toBeNull();
+    expect(screen.getByTestId('composer-question-card')).toHaveAttribute(
+      'data-settlement',
+      ''
+    );
+    expect(screen.getByTestId('composer-question-failed')).toHaveTextContent(
+      '没提交成功'
+    );
+    // And the card is interactive again — a retry must be possible.
+    expect(screen.getByTestId('composer-question-continue')).toBeEnabled();
+    await act(async () => {
+      screen.getByTestId('composer-question-option-option-2').click();
+    });
+    expect(onDecide).toHaveBeenCalledTimes(2);
+  });
+
+  it('the timeout path: rolls back and re-arms, so guidance still never blocks', async () => {
+    vi.useFakeTimers();
+    const onDecide = vi
+      .fn<(input: { settlement: string; value: string }) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValue(undefined);
+    render(
+      <ComposerQuestionCard
+        onDecide={onDecide}
+        question={QUESTION}
+        timeoutSeconds={2}
+      />
+    );
+
+    await tick(2);
+    expect(onDecide).toHaveBeenCalledTimes(1);
+    // The failed release is not reported as a release.
+    expect(screen.queryByTestId('composer-question-settled')).toBeNull();
+    expect(screen.getByTestId('composer-question-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('composer-question-card')).toHaveAttribute(
+      'data-auto-continue',
+      'true'
+    );
+
+    // Re-armed: the countdown runs again and the second attempt lands, so a
+    // failed auto-release still ends up continuing (D-116 引导不变成阻断).
+    await tick(2);
+    expect(onDecide).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
+      '按通用模式继续'
+    );
   });
 });
 

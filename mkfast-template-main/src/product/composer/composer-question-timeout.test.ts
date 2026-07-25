@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { cardLanguageIssues } from './card-language';
 import {
   COMPOSER_QUESTION_DEFAULT_LABEL,
+  COMPOSER_QUESTION_FAILURE_NOTICE,
   COMPOSER_QUESTION_TIMEOUT_SECONDS,
   composerQuestionHold,
   projectComposerQuestionCard,
@@ -83,6 +84,21 @@ test('a settled card stops counting and states which decision landed', () => {
     settlement: 'timed_out',
   });
   assert.match(timedOut.settledNotice ?? '', /按通用模式继续/u);
+});
+
+test('a failed submit is reported as failed, not as a settlement', () => {
+  const view = projectComposerQuestionCard({
+    editing: false,
+    failed: true,
+    hold: null,
+    remainingSeconds: 30,
+    settlement: null,
+  });
+  assert.equal(view.failureNotice, COMPOSER_QUESTION_FAILURE_NOTICE);
+  assert.equal(view.settledNotice, null);
+  // Still releasable: a failed attempt must not turn guidance into a block.
+  assert.equal(view.autoContinueEnabled, true);
+  assert.deepEqual(cardLanguageIssues(view.failureNotice ?? ''), []);
 });
 
 test('every sentence this card can show passes the merchant language gate', () => {

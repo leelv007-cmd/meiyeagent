@@ -56,6 +56,13 @@ const SETTLEMENT_NOTICES: Record<ComposerQuestionSettlement, string> = {
   timed_out: '没有收到补充，已按通用模式继续',
 };
 
+/**
+ * The decision never reached the ledger. The card must say so rather than keep
+ * a settled notice up: claiming「已按…继续」when nothing was posted is the one
+ * lie this surface can tell, and the run is genuinely still waiting.
+ */
+export const COMPOSER_QUESTION_FAILURE_NOTICE = '刚才没提交成功，请再试一次';
+
 export type ComposerQuestionCardView = {
   /** Whether the countdown may still reach zero and release the card. */
   autoContinueEnabled: boolean;
@@ -65,6 +72,8 @@ export type ComposerQuestionCardView = {
   holdNotice: string | null;
   /** Terminal line once the card has settled, in merchant language. */
   settledNotice: string | null;
+  /** Set when the last attempt failed to reach the ledger. */
+  failureNotice: string | null;
   /** The value 「继续」 and a timeout both apply. */
   defaultLabel: string;
 };
@@ -75,6 +84,8 @@ export function projectComposerQuestionCard(input: {
   /** True once the merchant has touched the answer — D-116 safety edge ①. */
   editing: boolean;
   settlement: ComposerQuestionSettlement | null;
+  /** The last submit attempt was rejected and rolled back. */
+  failed?: boolean;
 }): ComposerQuestionCardView {
   const autoContinueEnabled =
     !input.hold && !input.editing && input.settlement === null;
@@ -87,6 +98,7 @@ export function projectComposerQuestionCard(input: {
     settledNotice: input.settlement
       ? SETTLEMENT_NOTICES[input.settlement]
       : null,
+    failureNotice: input.failed ? COMPOSER_QUESTION_FAILURE_NOTICE : null,
     defaultLabel: COMPOSER_QUESTION_DEFAULT_LABEL,
   };
 }

@@ -28,17 +28,37 @@ import {
   type ComposerQuestionSettlement,
 } from './composer-question-timeout';
 
+/** The merchant tapped 「继续」 — they really performed that act. */
 export const COMPOSER_QUESTION_SKIP_VALUE = '这次先跳过';
 
+/**
+ * Nobody answered. The value core records lands in the ledger *and* in the
+ * workflow's own intent context (`Merchant decision (<field>): <value>`), so
+ * recording 「这次先跳过」 for a countdown would put a sentence in the
+ * merchant's mouth that they never said. This states the absence instead.
+ *
+ * It is not the empty string only because the seam forbids one:
+ * `assistantPatchDecisionSchema.value` is `min(1)` (packages/contracts).
+ */
+export const COMPOSER_QUESTION_TIMEOUT_VALUE = '未作答';
+
+/**
+ * Both non-answers are `ignored` — the harness route is the same — but they are
+ * distinguishable in the ledger by value and by idempotency key, so a later
+ * reader can tell a merchant who chose to move on from one who never saw this.
+ */
 export function composerQuestionDecision(input: {
   question: QuestionCard;
   value: string;
-  skipped: boolean;
+  settlement: ComposerQuestionSettlement;
   idempotencyKey: string;
 }): StructuredDecisionInput {
-  const value = input.skipped
-    ? COMPOSER_QUESTION_SKIP_VALUE
-    : input.value.trim();
+  const value =
+    input.settlement === 'skipped'
+      ? COMPOSER_QUESTION_SKIP_VALUE
+      : input.settlement === 'timed_out'
+        ? COMPOSER_QUESTION_TIMEOUT_VALUE
+        : input.value.trim();
   if (!value) throw new Error('An answered question requires a value.');
   return {
     idempotencyKey: input.idempotencyKey,
@@ -50,7 +70,7 @@ export function composerQuestionDecision(input: {
       reason: input.question.response.reason,
     },
     decision: {
-      state: input.skipped ? 'ignored' : 'accepted',
+      state: input.settlement === 'answered' ? 'accepted' : 'ignored',
       value,
     },
   };
@@ -67,7 +87,14 @@ export function ComposerQuestionCard({
   disabled?: boolean;
   /** Withholds auto-release per D-116 safety edge ② — host-computed. */
   hold?: ComposerQuestionHold | null;
-  onDecide: (input: { skipped: boolean; value: string }) => void;
+  /**
+   * Posts the decision. Rejecting means nothing reached the ledger, and the
+   * card rolls its settlement back rather than keep claiming the run moved on.
+   */
+  onDecide: (input: {
+    settlement: ComposerQuestionSettlement;
+    value: string;
+  }) => void | Promise<void>;
   pending?: boolean;
   question: QuestionCard;
   /** Overridable so a test does not have to wait out the real countdown. */
@@ -78,25 +105,38 @@ export function ComposerQuestionCard({
   const [remaining, setRemaining] = useState(timeoutSeconds);
   const [settlement, setSettlement] =
     useState<ComposerQuestionSettlement | null>(null);
+  const [failed, setFailed] = useState(false);
   /**
    * Race guard. The merchant answering at t=29 and the countdown reaching zero
-   * at t=30 are a real race, and the answer must win. Settlement is recorded
-   * synchronously on the click — before any await — so the timer sees it and
-   * never posts the competing 「跳过」 at all. (Core would refuse the second
-   * decision anyway: consumption is CAS exactly-once. This keeps the card's own
-   * terminal state truthful about which decision actually landed.)
+   * at t=30 are a real race, and the answer must win. Settlement is claimed
+   * synchronously — before any await — so the timer sees it and never posts the
+   * competing 「跳过」 at all. (Core would refuse the second decision anyway:
+   * consumption is CAS exactly-once. This keeps the card's own terminal state
+   * truthful about which decision actually landed.)
+   *
+   * Claimed, not committed: if the post fails the claim is released, because a
+   * decision that never reached the ledger must not keep the card settled.
    */
   const settledRef = useRef(false);
   const busy = pending || disabled;
 
-  const decide = (
-    input: { skipped: boolean; value: string },
-    as: ComposerQuestionSettlement
-  ) => {
+  const decide = async (value: string, as: ComposerQuestionSettlement) => {
     if (settledRef.current) return;
     settledRef.current = true;
     setSettlement(as);
-    onDecide(input);
+    setFailed(false);
+    try {
+      await onDecide({ settlement: as, value });
+    } catch {
+      // Nothing landed. Release the claim, drop the settled notice, say so —
+      // and re-arm the countdown so a failed auto-release still ends up
+      // continuing rather than turning the guidance into the block D-116
+      // forbids.
+      settledRef.current = false;
+      setSettlement(null);
+      setFailed(true);
+      setRemaining(timeoutSeconds);
+    }
   };
   /** Keeps the timeout effect off `decide` in its dependency list. */
   const decideRef = useRef(decide);
@@ -104,6 +144,7 @@ export function ComposerQuestionCard({
 
   const view = projectComposerQuestionCard({
     editing,
+    failed,
     hold,
     remainingSeconds: remaining,
     settlement,
@@ -116,6 +157,7 @@ export function ComposerQuestionCard({
     setEditing(false);
     setRemaining(timeoutSeconds);
     setSettlement(null);
+    setFailed(false);
   }, [question.questionId, timeoutSeconds]);
 
   // Tick, then fire on the next pass. Releasing from inside the state updater
@@ -125,7 +167,7 @@ export function ComposerQuestionCard({
   useEffect(() => {
     if (!view.autoContinueEnabled || disabled) return;
     if (remaining <= 0) {
-      decideRef.current({ skipped: true, value: '' }, 'timed_out');
+      void decideRef.current('', 'timed_out');
       return;
     }
     const timer = setTimeout(() => setRemaining((value) => value - 1), 1_000);
@@ -163,9 +205,7 @@ export function ComposerQuestionCard({
               data-testid={`composer-question-option-${option.id}`}
               disabled={busy}
               key={option.id}
-              onClick={() =>
-                decide({ skipped: false, value: option.label }, 'answered')
-              }
+              onClick={() => void decide(option.label, 'answered')}
               size="sm"
               type="button"
               variant="secondary"
@@ -194,9 +234,7 @@ export function ComposerQuestionCard({
           <Button
             data-testid="composer-question-submit"
             disabled={busy || !answer.trim()}
-            onClick={() =>
-              decide({ skipped: false, value: answer }, 'answered')
-            }
+            onClick={() => void decide(answer, 'answered')}
             size="sm"
             type="button"
           >
@@ -205,29 +243,34 @@ export function ComposerQuestionCard({
         </div>
       ) : null}
 
+      {/*
+        One control, not two. 「继续」 and 「这次先跳过」 posted the identical
+        ignored decision under different words, which reads as a choice the
+        merchant does not actually have. The default line directly above states
+        what this applies, so 「继续」 alone is unambiguous (D-116 手动「继续」键).
+      */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {/* 手动「继续」键 — applies the default now instead of waiting it out. */}
         <Button
           data-testid="composer-question-continue"
           disabled={busy || settlement !== null}
-          onClick={() => decide({ skipped: true, value: '' }, 'skipped')}
+          onClick={() => void decide('', 'skipped')}
           size="sm"
           type="button"
           variant="secondary"
         >
           继续
         </Button>
-        <Button
-          data-testid="composer-question-skip"
-          disabled={busy || settlement !== null}
-          onClick={() => decide({ skipped: true, value: '' }, 'skipped')}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          这次先跳过
-        </Button>
       </div>
+
+      {view.failureNotice ? (
+        <p
+          className="text-destructive mt-2 text-xs"
+          data-testid="composer-question-failed"
+          role="alert"
+        >
+          {view.failureNotice}
+        </p>
+      ) : null}
 
       {view.settledNotice ? (
         <p

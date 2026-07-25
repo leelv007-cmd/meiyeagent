@@ -142,7 +142,10 @@ import {
   ComposerQuestionCard,
   composerQuestionDecision,
 } from './composer-question-card';
-import { composerQuestionHold } from './composer-question-timeout';
+import {
+  composerQuestionHold,
+  type ComposerQuestionSettlement,
+} from './composer-question-timeout';
 import type { ComposerDeliveryOpenInput } from './composer-delivery-card';
 import { projectComposerSignedPreview } from './composer-signed-preview';
 import {
@@ -808,7 +811,10 @@ export function ComposerHome({
   );
 
   const answerQuestion = useCallback(
-    async (input: { skipped: boolean; value: string }) => {
+    async (input: {
+      settlement: ComposerQuestionSettlement;
+      value: string;
+    }) => {
       if (!pendingQuestion || !taskId) return;
       setQuestionPending(true);
       try {
@@ -816,16 +822,21 @@ export function ComposerHome({
           taskId,
           composerQuestionDecision({
             question: pendingQuestion,
-            idempotencyKey: `composer-decision:${pendingQuestion.questionId}:${
-              input.skipped ? 'skip' : 'answer'
-            }`,
-            skipped: input.skipped,
+            // The settlement is part of the key: an explicit 「继续」 and a
+            // countdown release are different acts and must stay separable in
+            // the ledger, even though both route as ignored.
+            idempotencyKey: `composer-decision:${pendingQuestion.questionId}:${input.settlement}`,
+            settlement: input.settlement,
             value: input.value,
           })
         );
         await decisionQuery.refetch();
-      } catch {
+      } catch (error) {
         toast.error(workbench_operation_failed());
+        // Rethrow: the card claimed a settlement synchronously so the countdown
+        // could not race it, and nothing reached the ledger, so that claim has
+        // to be released rather than left standing as 「已按…继续」.
+        throw error;
       } finally {
         setQuestionPending(false);
       }
@@ -1542,7 +1553,9 @@ export function ComposerHome({
                 ),
                 quotaBlocked,
               })}
-              onDecide={(input) => void answerQuestion(input)}
+              // Returned, not voided: the card awaits this and rolls its
+              // settlement back if the post never reaches the ledger.
+              onDecide={answerQuestion}
               pending={questionPending}
               question={pendingQuestion}
             />

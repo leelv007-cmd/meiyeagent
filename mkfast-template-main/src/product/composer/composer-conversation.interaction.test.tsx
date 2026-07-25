@@ -174,6 +174,22 @@ describe('the transcript is a card flow', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('still renders T10 Day-0 identity card when there is no transcript yet', () => {
+    // The empty-transcript early return must not swallow the identity slot:
+    // on Day-0 the identity choice is the only thing in the container, and
+    // folding turns must not have narrowed that guard back to `turnCount === 0`.
+    render(
+      <ComposerConversation
+        identitySlot={<div data-testid="t31-identity-probe">身份</div>}
+        onOpenDelivery={() => {}}
+        session={createComposerSession('session-1')}
+        stream={emptyStream}
+      />
+    );
+    expect(screen.getByTestId('composer-conversation')).toBeInTheDocument();
+    expect(screen.getByTestId('t31-identity-probe')).toBeInTheDocument();
+  });
+
   it('hosts identity selection as a conversation card, never a form', () => {
     render(
       <ComposerConversation
