@@ -166,7 +166,7 @@ export function assertCopyRevisionAssemblyComplete(input: {
   if (!Array.isArray(input.marketing.rightsRefs)) {
     throw new Error('Copy revision assembly requires rights references.');
   }
-  const expectedPlatforms = ['xiaohongshu', 'douyin', 'video_account'];
+  const expectedPlatforms = ['xiaohongshu', 'douyin', 'video_account'] as const;
   const actualPlatforms = input.variants?.map(({ platform }) => platform) ?? [];
   if (
     !input.variants ||
