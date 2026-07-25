@@ -14,6 +14,7 @@ import {
   projectBrowserSurface,
 } from './browser-projection.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
+import { validateRecipeForComposer } from './recipe-validator.js';
 import { TOOL_ENTRY_ID_SET } from './static-seeds.js';
 import type {
   CatalogSessionFreeze,
@@ -649,22 +650,7 @@ export class CreationExperienceCatalogService {
   }
 
   private validateRecipeRecord(record: ServerRecipeRecord): CatalogValidationResult {
-    const errors: string[] = [];
-    if (!record.presentation.title.trim()) errors.push('presentation.title is required');
-    if (!record.presentation.summary.trim()) errors.push('presentation.summary is required');
-    if (!record.promptRevisionRef.trim()) errors.push('promptRevisionRef is required');
-    if (!(creationLensIds as readonly string[]).includes(record.lensId)) {
-      errors.push(`unknown lensId "${record.lensId}"`);
-    }
-    if (!(creationLensIds as readonly string[]).includes(record.targetWorkspaceKind)) {
-      errors.push(`unknown targetWorkspaceKind "${record.targetWorkspaceKind}"`);
-    }
-    if (
-      record.modelPolicy.mode === 'fixed' &&
-      !record.modelPolicy.catalogModelId?.trim()
-    ) {
-      errors.push('fixed modelPolicy requires catalogModelId');
-    }
+    const { errors } = validateRecipeForComposer(record);
     return { ok: errors.length === 0, errors };
   }
 

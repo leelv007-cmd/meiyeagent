@@ -6,6 +6,7 @@ import type {
   BriefTriggerInput,
   BriefTriggerProjection,
   BrowserSurfaceProjection,
+  ComposerSubmissionSignedFields,
   CreationLensId,
   CreativeToolEntry,
   ProductQuoteSnapshot,
@@ -97,6 +98,7 @@ export function buildLiveQuoteInput(input: {
   quantity?: number;
   durationSeconds?: number;
   aspectRatio?: '1:1' | '3:4' | '9:16';
+  submission: ComposerSubmissionSignedFields;
 }) {
   const quantity = Math.max(1, input.quantity ?? 1);
   const operation = COMPOSER_OPERATION_BY_LENS[input.lensId];
@@ -111,10 +113,14 @@ export function buildLiveQuoteInput(input: {
       String(quantity),
       String(input.durationSeconds ?? (input.lensId === 'video' ? 15 : 0)),
       ...(input.aspectRatio ? [input.aspectRatio] : []),
+      input.submission.contentPackagePlatform,
+      input.submission.distributionTarget,
+      input.submission.deliverable.kind,
     ].join(':'),
     catalogModelId: input.model.id,
     operation,
     quantity,
+    submission: input.submission,
     ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
     ...(input.lensId === 'video'
       ? {

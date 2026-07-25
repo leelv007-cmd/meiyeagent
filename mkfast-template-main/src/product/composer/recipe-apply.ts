@@ -244,7 +244,7 @@ export function applyRecipeToLensState(
       assetRights: preservedRights,
       recipeRevisionId: recipe.revisionId,
       delivery: {
-        platform: delivery.platform ?? draft.delivery.platform,
+        platform: delivery.contentPackagePlatform ?? draft.delivery.platform,
         deliverableKind:
           delivery.deliverableKind ?? draft.delivery.deliverableKind,
       },

@@ -70,6 +70,8 @@ export interface ProductQuoteSnapshot {
   catalogModelRevision?: string;
   /** Product QuotePolicy revision (not SupplierPriceRevision). */
   quotePolicyRevision: string;
+  /** Hash of the user-confirmed Composer fields covered by this preview. */
+  submissionContractHash?: string;
   /** Server-resolved extra-confirm threshold frozen from quotePolicyRevision. */
   extraConfirmThreshold?: number;
   billingMode: ProductBillingMode;
@@ -209,6 +211,7 @@ export interface BuildProductQuoteInput {
   catalogModelId: string;
   catalogModelRevision?: string;
   quotePolicyRevision: string;
+  submissionContractHash?: string;
   billingMode: ProductBillingMode;
   outputCount?: number;
   outputLabel?: string;

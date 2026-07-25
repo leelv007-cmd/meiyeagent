@@ -93,7 +93,8 @@ export const LAUNCH_CARD_SEEDS: readonly LaunchCardSeedSpec[] = [
     summary: '用案例图生成笔记与封面',
     actionLabel: '选择图文并套用',
     delivery: {
-      platform: 'xiaohongshu',
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'export',
       deliverableKind: 'note',
       quantity: 1,
       aspectRatio: '3:4',
@@ -112,7 +113,8 @@ export const LAUNCH_CARD_SEEDS: readonly LaunchCardSeedSpec[] = [
     summary: '用项目资料生成朋友圈文案',
     actionLabel: '选择文案并套用',
     delivery: {
-      platform: 'wechat_moments',
+      contentPackagePlatform: 'wechat_moments',
+      distributionTarget: 'assisted_handoff',
       deliverableKind: 'copy_document',
       quantity: 1,
     },
@@ -130,6 +132,8 @@ export const LAUNCH_CARD_SEEDS: readonly LaunchCardSeedSpec[] = [
     summary: '用项目或活动信息生成 4 张套图',
     actionLabel: '选择图文并套用',
     delivery: {
+      contentPackagePlatform: 'generic',
+      distributionTarget: 'export',
       deliverableKind: 'image_set',
       quantity: 4,
       aspectRatio: '3:4',
@@ -149,6 +153,8 @@ export const LAUNCH_CARD_SEEDS: readonly LaunchCardSeedSpec[] = [
     summary: '用优惠和期限生成活动海报',
     actionLabel: '选择图文并套用',
     delivery: {
+      contentPackagePlatform: 'offline_material',
+      distributionTarget: 'export',
       deliverableKind: 'poster',
       quantity: 1,
       aspectRatio: '3:4',
@@ -168,7 +174,8 @@ export const LAUNCH_CARD_SEEDS: readonly LaunchCardSeedSpec[] = [
     summary: '用案例素材生成 15 秒竖版成片',
     actionLabel: '选择视频并套用',
     delivery: {
-      platform: 'douyin',
+      contentPackagePlatform: 'douyin',
+      distributionTarget: 'export',
       deliverableKind: 'video_package',
       quantity: 1,
       aspectRatio: '9:16',

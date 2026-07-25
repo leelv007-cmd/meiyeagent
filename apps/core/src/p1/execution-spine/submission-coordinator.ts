@@ -1,3 +1,5 @@
+import { pickComposerSubmissionSignedFields } from "@meiye/contracts";
+
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
 
 import {
@@ -85,7 +87,7 @@ export interface CreationSubmissionAdmissionPort {
 		modelPolicy: { id: string; mode: "auto" | "fixed"; revision: string };
 		recipeBinding: Pick<
 			CreationExecutionSnapshot,
-			"contentModules" | "deliverables" | "lens" | "platform"
+			"contentModules" | "deliverables" | "lens"
 		>;
 		route: { id: string; revision: string };
 		rights: { revision: string; summary: string };
@@ -123,12 +125,19 @@ export class CreationSubmissionCoordinator {
 			identity: admitted.identity,
 			lens: admitted.recipeBinding.lens,
 			modelPolicy: admitted.modelPolicy,
-			platform: admitted.recipeBinding.platform,
+			platform: {
+				id:
+					request.contentPackagePlatform === "offline_material" ||
+					request.contentPackagePlatform === "generic"
+						? ("offline" as const)
+						: request.contentPackagePlatform,
+			},
 			route: admitted.route,
 			rights: admitted.rights,
 		};
 		const command = creationSubmissionCommandSchema.parse({
 			...serverBoundRequest,
+			signedSubmission: pickComposerSubmissionSignedFields(request),
 			taskId: admitted.taskId,
 			workId: this.ids.createId("work"),
 			contentPackageId: this.ids.createId("content-package"),

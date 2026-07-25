@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { pickComposerSubmissionSignedFields } from "@meiye/contracts";
 
 import { briefSourceRevisionId } from "../creation-experience/postgres-brief-revision-context.js";
+import { fingerprintValue } from "../job-runtime/job-contracts.js";
 import {
 	CapabilityHotAssemblyComposerReadiness,
 	ComposerSubmissionAdmissionGate,
@@ -62,12 +64,15 @@ test("Composer admission gate binds server facts before a submission can reserve
 				return {
 					contextPatches: { contentModules: ["social_cover"] },
 					delivery: {
+						contentPackagePlatform: "douyin",
+						distributionTarget: "export",
 						deliverableKind: "copy_document",
-						platform: "douyin",
 						quantity: 1,
 					},
 					lensId: "copy",
 					modelPolicy: { catalogModelId: "catalog-copy-1", mode: "fixed" },
+					presentation: { title: "促销文案", summary: "生成促销文案" },
+					promptRevisionRef: "prompt-copy@1",
 					recipeId: "recipe-service-promotion",
 					revisionId: "recipe-service-promotion@7",
 					sourceRequirements: [
@@ -104,12 +109,17 @@ test("Composer admission gate binds server facts before a submission can reserve
 				return {
 					catalogModelId: "catalog-copy-1",
 					catalogModelRevision: "catalog-r4",
-					lifecycleStatus: "confirmed",
+					lifecycleStatus: "quoted",
 					quoteId: "quote-1",
 					revision: "quote-r5",
 					routeSnapshotRef: "route-1",
-					taskId: "task-confirmed-1",
+					submissionContractHash: fingerprintValue(
+						pickComposerSubmissionSignedFields(submission()),
+					),
 				} as never;
+			},
+			async confirm(input) {
+				return { lifecycleStatus: "confirmed", taskId: input.taskId } as never;
 			},
 		},
 		rights: {
@@ -145,7 +155,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 	});
 
 	const admitted = await gate.admit(submission());
-	assert.equal(admitted.taskId, "task-confirmed-1");
+	assert.match(admitted.taskId, /^composer-task:[a-f0-9]{64}$/u);
 	assert.deepEqual(admitted.modelPolicy, {
 		id: "recipe-model-policy:recipe-service-promotion",
 		mode: "fixed",
@@ -172,7 +182,6 @@ test("Composer admission gate binds server facts before a submission can reserve
 			},
 		],
 		lens: "copy",
-		platform: { id: "douyin" },
 	});
 	assert.deepEqual(briefChecks, [
 		{
@@ -189,6 +198,15 @@ test("Composer admission gate binds server facts before a submission can reserve
 			workspaceId: "workspace-1",
 		},
 	]);
+
+	await assert.rejects(
+		gate.admit({
+			...submission(),
+			contentPackagePlatform: "xiaohongshu",
+		}),
+		/exact submitted fields/u,
+	);
+	assert.equal(capabilityChecks, 1);
 
 	sourcePackageRights = "revoked";
 	await assert.rejects(
@@ -315,9 +333,11 @@ test("Composer admission derives image and video delivery facts from the publish
 								: { contentModules: ["social_cover", "price_card"] },
 						delivery: {
 							aspectRatio: "9:16",
+							contentPackagePlatform:
+								kind === "image" ? "xiaohongshu" : "video_account",
+							distributionTarget: "export",
 							deliverableKind: kind === "image" ? "image_set" : "video_package",
 							...(kind === "video" ? { durationSeconds: 8 } : {}),
-							platform: kind === "image" ? "xiaohongshu" : "video_account",
 							quantity: 2,
 						},
 						lensId: recipeLens,
@@ -325,6 +345,8 @@ test("Composer admission derives image and video delivery facts from the publish
 							kind === "image"
 								? { mode: "auto" }
 								: { catalogModelId: `catalog-${kind}-1`, mode: "fixed" },
+						presentation: { title: `${kind} title`, summary: `${kind} summary` },
+						promptRevisionRef: `prompt-${kind}@1`,
 						recipeId: `recipe-${kind}`,
 						revisionId: `recipe-${kind}@1`,
 						sourceRequirements: [
@@ -361,11 +383,19 @@ test("Composer admission derives image and video delivery facts from the publish
 					return {
 						catalogModelId: `catalog-${kind}-1`,
 						catalogModelRevision: `catalog-${kind}-r1`,
-						lifecycleStatus: "confirmed",
+						lifecycleStatus: "quoted",
 						quoteId: "quote-1",
 						revision: "quote-r5",
 						routeSnapshotRef: `route-${kind}-1`,
-						taskId: `task-${kind}-1`,
+						submissionContractHash: fingerprintValue(
+							pickComposerSubmissionSignedFields(input),
+						),
+					} as never;
+				},
+				async confirm(confirmInput) {
+					return {
+						lifecycleStatus: "confirmed",
+						taskId: confirmInput.taskId,
 					} as never;
 				},
 			},
@@ -399,7 +429,7 @@ test("Composer admission derives image and video delivery facts from the publish
 		});
 
 		const admitted = await gate.admit(input);
-		assert.equal(admitted.taskId, `task-${kind}-1`);
+		assert.match(admitted.taskId, /^composer-task:[a-f0-9]{64}$/u);
 		assert.equal(admitted.modelPolicy.mode, "fixed");
 		assert.deepEqual(admitted.recipeBinding, {
 			contentModules:
@@ -415,7 +445,6 @@ test("Composer admission derives image and video delivery facts from the publish
 				},
 			],
 			lens: kind,
-			platform: { id: kind === "image" ? "xiaohongshu" : "video_account" },
 		});
 		assert.deepEqual(briefChecks, [
 			{
@@ -509,6 +538,9 @@ function submission(): ComposerSubmissionRequest {
 		briefConfirmation: { id: "brief-confirmation-1", revision: "brief-r2" },
 		briefContext: { id: "brief-context-1", revision: 4 },
 		catalogModel: { id: "catalog-copy-1", revision: "catalog-r4" },
+		contentPackagePlatform: "douyin",
+		distributionTarget: "export",
+		deliverable: { kind: "copy_document", quantity: 1 },
 		contentModules: ["social_cover"],
 		deliverables: [{ id: "copy-main", kind: "copy", order: 1, quantity: 1 }],
 		identity: { id: "identity-brand", revision: "3" },
@@ -516,7 +548,6 @@ function submission(): ComposerSubmissionRequest {
 		intent: "为夏日护理项目写一条预约文案",
 		lens: "copy",
 		modelPolicy: { id: "policy-copy", mode: "fixed", revision: "policy-r1" },
-		platform: { id: "douyin" },
 		quote: { id: "quote-1", revision: "quote-r5" },
 		recipe: {
 			id: "recipe-service-promotion",
@@ -537,6 +568,15 @@ function mediaSubmission(kind: "image" | "video"): ComposerSubmissionRequest {
 	return {
 		...submission(),
 		catalogModel: { id: `catalog-${kind}-1`, revision: `catalog-${kind}-r1` },
+		contentPackagePlatform:
+			kind === "image" ? "xiaohongshu" : "video_account",
+		distributionTarget: "export",
+		deliverable: {
+			kind: kind === "image" ? "image_set" : "video_package",
+			quantity: 2,
+			aspectRatio: "9:16",
+			...(kind === "video" ? { durationSeconds: 8 } : {}),
+		},
 		deliverables: [
 			{
 				id: `browser-${kind}-main`,

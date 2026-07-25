@@ -119,7 +119,8 @@ describe('launch seeds (D-082 / D-083)', () => {
     );
 
     assert.deepEqual(specs['recipe.case_to_xhs_note']?.delivery, {
-      platform: 'xiaohongshu',
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'export',
       deliverableKind: 'note',
       quantity: 1,
       aspectRatio: '3:4',
@@ -130,18 +131,23 @@ describe('launch seeds (D-082 / D-083)', () => {
     );
 
     assert.deepEqual(specs['recipe.project_intro']?.delivery, {
-      platform: 'wechat_moments',
+      contentPackagePlatform: 'wechat_moments',
+      distributionTarget: 'assisted_handoff',
       deliverableKind: 'copy_document',
       quantity: 1,
     });
 
     assert.deepEqual(specs['recipe.campaign_visual_set']?.delivery, {
+      contentPackagePlatform: 'generic',
+      distributionTarget: 'export',
       deliverableKind: 'image_set',
       quantity: 4,
       aspectRatio: '3:4',
     });
 
     assert.deepEqual(specs['recipe.promotion_poster']?.delivery, {
+      contentPackagePlatform: 'offline_material',
+      distributionTarget: 'export',
       deliverableKind: 'poster',
       quantity: 1,
       aspectRatio: '3:4',
@@ -152,7 +158,8 @@ describe('launch seeds (D-082 / D-083)', () => {
     );
 
     assert.deepEqual(specs['recipe.douyin_project_video']?.delivery, {
-      platform: 'douyin',
+      contentPackagePlatform: 'douyin',
+      distributionTarget: 'export',
       deliverableKind: 'video_package',
       quantity: 1,
       aspectRatio: '9:16',
@@ -216,6 +223,13 @@ describe('launch seeds (D-082 / D-083)', () => {
     const { service, result } = await seedLaunchCatalogInMemory();
     assert.equal(result.recipes.length, 8);
     assert.ok(result.recipes.every((r) => r.status === 'published'));
+    const validations = await Promise.all(
+      result.recipes.map((recipe) =>
+        service.validateRecipe(recipe.recipeId, recipe.revision),
+      ),
+    );
+    assert.equal(validations.length, 8);
+    assert.ok(validations.every((validation) => validation.ok));
     assert.equal(result.surface.status, 'published');
     assert.equal(result.surface.surfaceId, LAUNCH_SURFACE_ID);
     assert.equal(result.surface.recipeRefs.length, 8);

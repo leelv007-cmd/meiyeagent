@@ -1,4 +1,7 @@
-import type { ApiEnvelope } from '@meiye/contracts';
+import {
+  composerSubmissionSignedFieldsSchema,
+  type ApiEnvelope,
+} from '@meiye/contracts';
 import { z } from 'zod';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
@@ -13,8 +16,8 @@ const revisionReferenceSchema = z
   })
   .strict();
 
-export const composerSubmissionBodySchema = z
-  .object({
+export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
+  .extend({
     briefConfirmation: revisionReferenceSchema.optional(),
     briefContext: z
       .object({
@@ -22,12 +25,10 @@ export const composerSubmissionBodySchema = z
         revision: z.number().int().nonnegative(),
       })
       .strict(),
-    catalogModel: revisionReferenceSchema,
     identity: revisionReferenceSchema.optional(),
     idempotencyKey: identifierSchema,
     intent: z.string().trim().min(1).max(4_000),
     quote: revisionReferenceSchema,
-    recipe: revisionReferenceSchema,
     sources: z
       .object({
         assets: z

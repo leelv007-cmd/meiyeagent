@@ -9,6 +9,10 @@
  * Diffs are actual — never fixed "will change X" copy when values match.
  */
 
+import {
+  composerContentPackagePlatformSchema,
+  composerDeliverableKindSchema,
+} from '@meiye/contracts';
 import type {
   CreationLensId,
   RecipeDeliveryDefaults,
@@ -344,6 +348,12 @@ export function composerDraftToRecipeFields(
   state: ComposerLensState
 ): RecipeDraftFields {
   const draft = state.draft;
+  const contentPackagePlatform = composerContentPackagePlatformSchema.safeParse(
+    draft.delivery.platform
+  );
+  const deliverableKind = composerDeliverableKindSchema.safeParse(
+    draft.delivery.deliverableKind
+  );
   return {
     userText: draft.userText,
     sources: draft.sources,
@@ -351,8 +361,12 @@ export function composerDraftToRecipeFields(
     recipeRevisionId: draft.recipeRevisionId as RecipeRevisionId | null,
     surfaceRevisionId: draft.surfaceRevisionId as SurfaceRevisionId | null,
     delivery: {
-      platform: draft.delivery.platform ?? undefined,
-      deliverableKind: draft.delivery.deliverableKind ?? undefined,
+      ...(contentPackagePlatform.success
+        ? { contentPackagePlatform: contentPackagePlatform.data }
+        : {}),
+      ...(deliverableKind.success
+        ? { deliverableKind: deliverableKind.data }
+        : {}),
       quantity: draft.settings.quantity ?? undefined,
       aspectRatio: draft.settings.aspectRatio ?? undefined,
       durationSeconds: draft.settings.durationSeconds ?? undefined,

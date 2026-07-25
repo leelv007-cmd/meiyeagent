@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isComposerVariantPlatform } from "@meiye/contracts";
 import type { Pool, PoolClient } from "pg";
 
 import { P1DomainError } from "../foundation/domain.js";
@@ -197,9 +198,9 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
         ...(snapshot.sources.contentPackage
           ? { sourceContentPackage: snapshot.sources.contentPackage }
           : {}),
-        ...(snapshot.platform.id === 'wechat_moments'
-          ? {}
-          : { targetPlatform: snapshot.platform.id }),
+        ...(isComposerVariantPlatform(snapshot.contentPackagePlatform)
+          ? { targetPlatform: snapshot.contentPackagePlatform }
+          : {}),
         workId: submission.work.id,
         workflowId: submission.task.id,
         workflowRevision: snapshot.revision,

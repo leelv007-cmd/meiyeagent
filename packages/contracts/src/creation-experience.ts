@@ -1,3 +1,9 @@
+import type {
+  ComposerContentPackagePlatform,
+  ComposerDeliverableKind,
+  ComposerDistributionTarget,
+} from './composer-submission.js';
+
 /**
  * Creation Experience cross-lane contract
  * (S1 / #87 skeleton → A1 / #88 aggregate → A2 / #89 seeds → A3 / #90 Brief+events).
@@ -45,8 +51,11 @@ export interface RecipePresentation {
 }
 
 export interface RecipeDeliveryDefaults {
-  platform?: string;
-  deliverableKind?: string;
+  /** @deprecated Use contentPackagePlatform. Published recipes fail validation without it. */
+  platform?: ComposerContentPackagePlatform;
+  contentPackagePlatform?: ComposerContentPackagePlatform;
+  distributionTarget?: ComposerDistributionTarget;
+  deliverableKind?: ComposerDeliverableKind;
   quantity?: number;
   aspectRatio?: string;
   durationSeconds?: number;

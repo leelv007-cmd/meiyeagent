@@ -1,4 +1,10 @@
-import { creativeContentModuleIds } from "@meiye/contracts";
+import {
+	composerContentPackagePlatformSchema,
+	composerDistributionTargetSchema,
+	composerSubmissionDeliverableSchema,
+	composerSubmissionSignedFieldsSchema,
+	creativeContentModuleIds,
+} from "@meiye/contracts";
 import { z } from "zod";
 
 const identifierSchema = z.string().trim().min(1).max(200);
@@ -8,6 +14,7 @@ const platformSchema = z.enum([
 	"douyin",
 	"video_account",
 	"wechat_moments",
+	"offline",
 ]);
 const creationLensSchema = z.enum(["copy", "image", "video"]);
 
@@ -105,6 +112,7 @@ const creationSubmissionCommandBaseSchema = z
 		recipe: revisionReferenceSchema,
 		lens: creationLensSchema,
 		platform: z.object({ id: platformSchema }).strict(),
+		signedSubmission: composerSubmissionSignedFieldsSchema.optional(),
 		deliverables: z.array(deliverableSchema).min(1).max(20),
 		sources: sourceReferencesSchema,
 		rights: rightsSummarySchema,
@@ -116,6 +124,13 @@ const creationSubmissionCommandBaseSchema = z
 		briefContext: briefContextSchema,
 		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
+	})
+	// Legacy internal commands may omit signed fields. Composer requests make
+	// the same extensible shape required below and freeze it as one object.
+	.extend(composerSubmissionSignedFieldsSchema.partial().shape)
+	.extend({
+		catalogModel: revisionReferenceSchema,
+		recipe: revisionReferenceSchema,
 	})
 	.strict();
 
@@ -135,10 +150,11 @@ const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
 		identity: true,
 		lens: true,
 		modelPolicy: true,
-		platform: true,
 		rights: true,
 		route: true,
-	});
+	})
+	.omit({ platform: true, signedSubmission: true })
+	.extend(composerSubmissionSignedFieldsSchema.shape);
 
 export const composerSubmissionRequestSchema =
 	composerSubmissionRequestBaseSchema.superRefine(validateSubmission);
@@ -178,6 +194,10 @@ export const creationExecutionSnapshotSchema = z
 		recipe: revisionReferenceSchema,
 		lens: creationLensSchema,
 		platform: z.object({ id: platformSchema }).strict(),
+		contentPackagePlatform: composerContentPackagePlatformSchema,
+		distributionTarget: composerDistributionTargetSchema,
+		deliverable: composerSubmissionDeliverableSchema,
+		signedSubmission: composerSubmissionSignedFieldsSchema.optional(),
 		deliverables: z.array(deliverableSchema).min(1).max(20),
 		sources: sourceReferencesSchema,
 		rights: rightsSummarySchema,
@@ -190,7 +210,8 @@ export const creationExecutionSnapshotSchema = z
 		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
 	})
-	.strict();
+	.strict()
+	.superRefine(validateFrozenDeliverable);
 
 export type CreationExecutionSnapshot = z.infer<
 	typeof creationExecutionSnapshotSchema
@@ -220,6 +241,20 @@ export function createCreationExecutionSnapshot(
 			recipe: command.recipe,
 			lens: command.lens,
 			platform: command.platform,
+			contentPackagePlatform:
+				command.contentPackagePlatform ??
+				(command.platform.id === "offline"
+					? "offline_material"
+					: command.platform.id),
+			distributionTarget:
+				command.distributionTarget ??
+				(command.platform.id === "wechat_moments"
+					? "assisted_handoff"
+					: "export"),
+			deliverable:
+				command.deliverable ??
+				legacySignedDeliverable(command.deliverables[0]),
+			signedSubmission: command.signedSubmission,
 			deliverables: command.deliverables,
 			sources: command.sources,
 			rights: command.rights,
@@ -238,7 +273,18 @@ export function createCreationExecutionSnapshot(
 function validateSubmission(
 	command: {
 		contentModules?: string[];
-		deliverables?: Array<{ kind: string; order: number }>;
+		deliverable?: {
+			aspectRatio?: string;
+			durationSeconds?: number;
+			quantity: number;
+		};
+		deliverables?: Array<{
+			aspectRatio?: string;
+			durationSeconds?: number;
+			kind: string;
+			order: number;
+			quantity: number;
+		}>;
 		lens?: "copy" | "image" | "video";
 	},
 	context: z.RefinementCtx,
@@ -273,6 +319,60 @@ function validateSubmission(
 			path: ["contentModules"],
 		});
 	}
+}
+
+function validateFrozenDeliverable(
+	snapshot: {
+		deliverable: {
+			aspectRatio?: string;
+			durationSeconds?: number;
+			quantity: number;
+		};
+		deliverables: Array<{
+			aspectRatio?: string;
+			durationSeconds?: number;
+			quantity: number;
+		}>;
+	},
+	context: z.RefinementCtx,
+) {
+	const executionDeliverable = snapshot.deliverables[0];
+	if (
+		executionDeliverable &&
+		(snapshot.deliverable.quantity !== executionDeliverable.quantity ||
+			snapshot.deliverable.aspectRatio !== executionDeliverable.aspectRatio ||
+			snapshot.deliverable.durationSeconds !==
+				executionDeliverable.durationSeconds)
+	) {
+		context.addIssue({
+			code: "custom",
+			message: "Execution deliverable must preserve the user-confirmed settings.",
+			path: ["deliverables"],
+		});
+	}
+}
+
+function legacySignedDeliverable(
+	deliverable: z.infer<typeof deliverableSchema> | undefined,
+): z.infer<typeof composerSubmissionDeliverableSchema> {
+	if (!deliverable) {
+		throw new Error("Creation command requires one deliverable.");
+	}
+	return {
+		kind:
+			deliverable.kind === "copy"
+				? "copy_document"
+				: deliverable.kind === "video"
+					? "video_package"
+					: "image_text_package",
+		quantity: deliverable.quantity,
+		...(deliverable.aspectRatio
+			? { aspectRatio: deliverable.aspectRatio }
+			: {}),
+		...(deliverable.durationSeconds
+			? { durationSeconds: deliverable.durationSeconds }
+			: {}),
+	};
 }
 
 function deepFreeze<T>(value: T): T {

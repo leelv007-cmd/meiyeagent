@@ -37,7 +37,8 @@ function sampleRecipeBody(
       actionLabel: '选择图文并套用',
     },
     delivery: {
-      platform: 'xiaohongshu',
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'export',
       deliverableKind: 'note',
       quantity: 1,
       aspectRatio: '3:4',
@@ -89,6 +90,33 @@ async function publishRecipe(
 }
 
 describe('Creation Experience Catalog aggregate', () => {
+  it('rejects wechat_moments as a variant publish target', async () => {
+    const { service } = createService();
+    const draft = await service.draftRecipe({
+      recipeId: 'recipe.invalid-moments-publish',
+      expectedRevision: null,
+      body: sampleRecipeBody({
+        delivery: {
+          contentPackagePlatform: 'wechat_moments',
+          distributionTarget: 'publish:xiaohongshu',
+          deliverableKind: 'note',
+          quantity: 1,
+          aspectRatio: '3:4',
+        },
+      }),
+      ...audit(),
+    });
+    await service.previewRecipe({
+      recipeId: draft.recipeId,
+      expectedRevision: draft.revision,
+      ...audit(),
+    });
+
+    const validation = await service.validateRecipe(draft.recipeId);
+    assert.equal(validation.ok, false);
+    assert.match(validation.errors.join(' '), /publish distribution/u);
+  });
+
   it('walks draft → preview → validate → publish for a recipe', async () => {
     const { service } = createService();
     const draft = await service.draftRecipe({

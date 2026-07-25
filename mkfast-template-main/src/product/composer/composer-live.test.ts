@@ -93,6 +93,18 @@ describe('Composer live public contracts', () => {
       sessionId: 'session-1',
       lensId: 'video',
       catalogRevision: 'catalog-r1',
+      submission: {
+        catalogModel: { id: 'model-video', revision: 'catalog-r1' },
+        recipe: { id: 'recipe-video', revision: 'recipe-video@1' },
+        contentPackagePlatform: 'douyin',
+        distributionTarget: 'export',
+        deliverable: {
+          kind: 'video_package',
+          quantity: 1,
+          aspectRatio: '9:16',
+          durationSeconds: 15,
+        },
+      },
       model: {
         id: 'model-video',
         displayName: '视频模型',
@@ -110,10 +122,23 @@ describe('Composer live public contracts', () => {
       },
     });
     assert.deepEqual(input, {
-      quoteId: 'composer:session-1:video:model-video:catalog-r1:1:15',
+      quoteId:
+        'composer:session-1:video:model-video:catalog-r1:1:15:douyin:export:video_package',
       catalogModelId: 'model-video',
       operation: 'video.generate',
       quantity: 1,
+      submission: {
+        catalogModel: { id: 'model-video', revision: 'catalog-r1' },
+        recipe: { id: 'recipe-video', revision: 'recipe-video@1' },
+        contentPackagePlatform: 'douyin',
+        distributionTarget: 'export',
+        deliverable: {
+          kind: 'video_package',
+          quantity: 1,
+          aspectRatio: '9:16',
+          durationSeconds: 15,
+        },
+      },
       targetSeconds: 15,
     });
 
@@ -150,6 +175,7 @@ describe('Composer live public contracts', () => {
       model,
       quantity: 3,
       sessionId: 'session-image',
+      submission: imageSubmission('3:4'),
     });
     const square = buildLiveQuoteInput({
       aspectRatio: '1:1',
@@ -158,11 +184,26 @@ describe('Composer live public contracts', () => {
       model,
       quantity: 3,
       sessionId: 'session-image',
+      submission: imageSubmission('1:1'),
     });
 
     assert.equal(portrait.aspectRatio, '3:4');
     assert.notEqual(portrait.quoteId, square.quoteId);
   });
+
+  function imageSubmission(aspectRatio: '1:1' | '3:4') {
+    return {
+      catalogModel: { id: 'model-image', revision: 'catalog-r1' },
+      recipe: { id: 'recipe-image', revision: 'recipe-image@1' },
+      contentPackagePlatform: 'xiaohongshu' as const,
+      distributionTarget: 'export' as const,
+      deliverable: {
+        kind: 'image_set' as const,
+        quantity: 3,
+        aspectRatio,
+      },
+    };
+  }
 
   it('projects Brief from live draft, source and quote signals', async () => {
     const input = buildLiveBriefInput({

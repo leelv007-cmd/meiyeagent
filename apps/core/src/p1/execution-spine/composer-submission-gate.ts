@@ -1,5 +1,5 @@
 import {
-	creativeContentModuleIds,
+	pickComposerSubmissionSignedFields,
 	type CreativeOperation,
 } from "@meiye/contracts";
 
@@ -7,6 +7,7 @@ import type { BriefSubmissionGate } from "../creation-experience/brief-submissio
 import { briefSourceRevisionId } from "../creation-experience/postgres-brief-revision-context.js";
 import type { BriefConfirmationRepository } from "../creation-experience/brief-confirmation-repository.js";
 import type { CreationExperienceCatalogRepository } from "../creation-experience/memory-repository.js";
+import { validateRecipeForComposer } from "../creation-experience/recipe-validator.js";
 import { P1DomainError, type RouteSnapshot } from "../foundation/domain.js";
 import type { ReferenceAssetResolverPort } from "../model-supply/reference-asset-resolver.js";
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
@@ -54,7 +55,8 @@ export interface ComposerSubmissionAdmissionDependencies {
 		"getRecipeByRevisionId" | "getSurfaceByRevisionId"
 	>;
 	identities: Pick<MarketingIdentityRepository, "listActive">;
-	quotes: Pick<ProductBillingApplicationPort, "getQuote">;
+	quotes: Pick<ProductBillingApplicationPort, "getQuote"> &
+		Partial<Pick<ProductBillingApplicationPort, "confirm">>;
 	rights: ContentPackageRightsResolverPort;
 	routeResolver: ComposerRouteResolverPort;
 	sourcePackages: ComposerSourceContentPackageReader;
@@ -147,7 +149,37 @@ export class ComposerSubmissionAdmissionGate
 				"Recipe is not published for the selected Composer modality.",
 			);
 		}
-		const recipeBinding = deriveRecipeBinding(recipe);
+		const signedFields = pickComposerSubmissionSignedFields(input);
+		const recipeValidation = validateRecipeForComposer(recipe, signedFields);
+		if (!recipeValidation.binding) {
+			throw invalid(
+				`Recipe and submitted delivery contract do not match: ${recipeValidation.errors.join("; ")}`,
+			);
+		}
+		const recipeBinding = {
+			contentModules: recipeValidation.binding.contentModules,
+			deliverables: [
+				{
+					id: `recipe-deliverable:${recipe.revisionId}`,
+					kind: recipeValidation.binding.lens,
+					order: 0,
+					quantity: recipeValidation.binding.deliverable.quantity,
+					...(recipeValidation.binding.deliverable.aspectRatio
+						? {
+								aspectRatio:
+									recipeValidation.binding.deliverable.aspectRatio,
+							}
+						: {}),
+					...(recipeValidation.binding.deliverable.durationSeconds
+						? {
+								durationSeconds:
+									recipeValidation.binding.deliverable.durationSeconds,
+							}
+						: {}),
+				},
+			],
+			lens: recipeValidation.binding.lens,
+		};
 		if (
 			recipe.modelPolicy.mode === "fixed" &&
 			recipe.modelPolicy.catalogModelId !== input.catalogModel.id
@@ -193,12 +225,25 @@ export class ComposerSubmissionAdmissionGate
 			quote.revision !== input.quote.revision ||
 			quote.catalogModelId !== input.catalogModel.id ||
 			quote.catalogModelRevision !== input.catalogModel.revision ||
-			(quote.lifecycleStatus !== "confirmed" &&
-				quote.lifecycleStatus !== "reserved") ||
-			!quote.taskId?.trim()
+			quote.submissionContractHash !== fingerprintValue(signedFields) ||
+			(quote.lifecycleStatus !== "quoted" &&
+				quote.lifecycleStatus !== "confirmed" &&
+				quote.lifecycleStatus !== "reserved")
 		) {
 			throw invalid(
-				"A current, explicitly confirmed ProductQuote bound to a Task is required.",
+				"A current ProductQuote preview for these exact submitted fields is required.",
+			);
+		}
+		const taskId = `composer-task:${fingerprintValue({
+			idempotencyKey: input.idempotencyKey,
+			workspaceId: input.workspaceId,
+		})}`;
+		if (
+			quote.lifecycleStatus !== "quoted" &&
+			quote.taskId !== taskId
+		) {
+			throw invalid(
+				"ProductQuote is already bound to a different Composer submission.",
 			);
 		}
 
@@ -382,6 +427,19 @@ export class ComposerSubmissionAdmissionGate
 			catalogModel: input.catalogModel,
 			route,
 		});
+		const confirmedQuote =
+			quote.lifecycleStatus === "quoted"
+				? await this.dependencies.quotes.confirm?.({
+						quoteId: quote.quoteId,
+						taskId,
+						workspaceId: input.workspaceId,
+					})
+				: quote;
+		if (!confirmedQuote || confirmedQuote.taskId !== taskId) {
+			throw invalid(
+				"ProductQuote confirmation did not bind the admitted Composer task.",
+			);
+		}
 		return {
 			identity,
 			modelPolicy: {
@@ -415,7 +473,7 @@ export class ComposerSubmissionAdmissionGate
 				)}`,
 				summary: `Server verified ${assetIds.length} source asset${assetIds.length === 1 ? "" : "s"} in workspace ${input.workspaceId}.`,
 			},
-			taskId: quote.taskId,
+			taskId,
 		};
 	}
 }
@@ -425,112 +483,6 @@ function composerLensForRecipe(lens: string) {
 	if (lens === "image_text") return "image" as const;
 	if (lens === "video") return "video" as const;
 	return null;
-}
-
-function deriveRecipeBinding(recipe: {
-	contextPatches: Record<string, unknown>;
-	delivery: {
-		aspectRatio?: string;
-		deliverableKind?: string;
-		durationSeconds?: number;
-		platform?: string;
-		quantity?: number;
-	};
-	lensId: string;
-	revisionId: string;
-}): Pick<
-	CreationExecutionSnapshot,
-	"contentModules" | "deliverables" | "lens" | "platform"
-> {
-	const lens = composerLensForRecipe(recipe.lensId);
-	if (!lens) throw invalid("Recipe has no supported Composer modality.");
-	const platform = recipe.delivery.platform;
-	if (
-		platform !== "xiaohongshu" &&
-		platform !== "douyin" &&
-		platform !== "video_account" &&
-		platform !== "wechat_moments"
-	) {
-		throw invalid(
-			"Published Recipe must declare a supported delivery platform.",
-		);
-	}
-	if (!recipe.delivery.deliverableKind?.trim()) {
-		throw invalid("Published Recipe must declare its delivery kind.");
-	}
-	const quantity = recipe.delivery.quantity;
-	if (
-		!Number.isInteger(quantity) ||
-		!quantity ||
-		quantity < 1 ||
-		quantity > 100
-	) {
-		throw invalid("Published Recipe must declare a valid delivery quantity.");
-	}
-	const modules = recipe.contextPatches.contentModules;
-	if (
-		modules !== undefined &&
-		(!Array.isArray(modules) ||
-			modules.length === 0 ||
-			modules.length > creativeContentModuleIds.length ||
-			modules.some(
-				(module) =>
-					typeof module !== "string" ||
-					!creativeContentModuleIds.includes(
-						module as (typeof creativeContentModuleIds)[number],
-					),
-			) ||
-			new Set(modules).size !== modules.length)
-	) {
-		throw invalid(
-			"Published Recipe must declare unique supported content modules.",
-		);
-	}
-	const contentModules =
-		modules ??
-		(lens === "copy"
-			? ["store_intro"]
-			: lens === "image"
-				? ["social_cover"]
-				: ["shooting_checklist"]);
-	const aspectRatio = recipe.delivery.aspectRatio;
-	if (
-		aspectRatio !== undefined &&
-		aspectRatio !== "1:1" &&
-		aspectRatio !== "3:4" &&
-		aspectRatio !== "9:16"
-	) {
-		throw invalid("Published Recipe declares an unsupported aspect ratio.");
-	}
-	if ((lens === "image" || lens === "video") && !aspectRatio) {
-		throw invalid("Published media Recipe must declare an aspect ratio.");
-	}
-	const durationSeconds = recipe.delivery.durationSeconds;
-	if (
-		lens === "video" &&
-		(!Number.isInteger(durationSeconds) ||
-			!durationSeconds ||
-			durationSeconds < 1 ||
-			durationSeconds > 3_600)
-	) {
-		throw invalid("Published video Recipe must declare a valid duration.");
-	}
-	return {
-		contentModules:
-			contentModules as CreationExecutionSnapshot["contentModules"],
-		deliverables: [
-			{
-				id: `recipe-deliverable:${recipe.revisionId}`,
-				kind: lens,
-				order: 0,
-				quantity,
-				...(aspectRatio ? { aspectRatio } : {}),
-				...(durationSeconds ? { durationSeconds } : {}),
-			},
-		],
-		lens,
-		platform: { id: platform },
-	};
 }
 
 function operationForLens(

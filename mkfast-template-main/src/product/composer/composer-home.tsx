@@ -44,6 +44,7 @@ import type {
   MarketingIdentityAsset,
   ProductQuoteSnapshot,
 } from '@meiye/contracts';
+import { composerSubmissionSignedFieldsSchema } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
 import { uploadProductAsset } from '@/api/product-assets';
 import { assetAuthorizationIdempotencyKey } from '@/product/asset-authorization-model';
@@ -88,6 +89,10 @@ import {
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { isTwoColumnMobileViewport } from './mobile-layout';
+import {
+  composerDestinationCapability,
+  composerDestinationContract,
+} from './destination-contract';
 import { projectComposerQuoteView } from './quote-wiring';
 import {
   listColdCardsFromSeeds,
@@ -349,6 +354,10 @@ export function ComposerHome({
     lensState.draft.settings.durationSeconds ??
     submissionRecipe?.delivery.durationSeconds ??
     undefined;
+  const destination = composerDestinationContract(
+    lensState.draft.delivery.platform ??
+      submissionRecipe?.delivery.contentPackagePlatform
+  );
   const submissionDelivery = {
     deliverableKind:
       lensState.draft.delivery.deliverableKind ??
@@ -356,7 +365,7 @@ export function ComposerHome({
       null,
     platform:
       lensState.draft.delivery.platform ??
-      submissionRecipe?.delivery.platform ??
+      submissionRecipe?.delivery.contentPackagePlatform ??
       null,
   };
   const submissionSettings = {
@@ -365,13 +374,40 @@ export function ComposerHome({
     durationSeconds: submissionDurationSeconds ?? null,
     quantity: submissionQuantity,
   };
+  const signedSubmissionParse =
+    selectedModel && submissionRecipe && destination
+      ? composerSubmissionSignedFieldsSchema.safeParse({
+          catalogModel: {
+            id: selectedModel.id,
+            revision: catalogRevision,
+          },
+          recipe: {
+            id: submissionRecipe.recipeId,
+            revision: submissionRecipe.revisionId,
+          },
+          ...destination,
+          deliverable: {
+            kind: submissionDelivery.deliverableKind,
+            quantity: submissionQuantity,
+            ...(submissionAspectRatio
+              ? { aspectRatio: submissionAspectRatio }
+              : {}),
+            ...(submissionDurationSeconds
+              ? { durationSeconds: submissionDurationSeconds }
+              : {}),
+          },
+        })
+      : null;
+  const signedSubmission =
+    signedSubmissionParse?.success === true ? signedSubmissionParse.data : null;
   const quoteInput = useMemo(() => {
-    if (!lensId || !selectedModel) return null;
+    if (!lensId || !selectedModel || !signedSubmission) return null;
     return buildLiveQuoteInput({
       sessionId: sessionIdRef.current,
       lensId,
       catalogRevision,
       model: selectedModel,
+      submission: signedSubmission,
       quantity: submissionQuantity,
       durationSeconds: submissionDurationSeconds,
       aspectRatio:
@@ -385,6 +421,7 @@ export function ComposerHome({
     catalogRevision,
     lensId,
     selectedModel,
+    signedSubmission,
     submissionAspectRatio,
     submissionDurationSeconds,
     submissionQuantity,
@@ -641,18 +678,9 @@ export function ComposerHome({
         throw new Error('Brief confirmation is no longer current.');
       }
 
-      const taskId = `composer-task:${sessionIdRef.current}:${input.quote.revision}`;
-      await commandP1(
-        'product-billing',
-        {
-          action: 'confirm',
-          payload: {
-            quoteId: input.quote.quoteId,
-            taskId,
-          },
-        },
-        `composer-confirm:${input.quote.quoteId}:${taskId}`
-      );
+      if (!signedSubmission) {
+        throw new Error('Composer delivery contract is incomplete.');
+      }
       const catalogModelRevision = input.quote.catalogModelRevision;
       if (!catalogModelRevision) {
         throw new Error('Composer quote is missing its catalog revision.');
@@ -677,6 +705,7 @@ export function ComposerHome({
         throw new Error('Composer source revisions are incomplete.');
       }
       return submitComposerSubmission({
+        ...signedSubmission,
         ...(input.briefConfirmationId
           ? {
               briefConfirmation: {
@@ -1145,6 +1174,10 @@ export function ComposerHome({
           {quoteView ? (
             <p
               className="text-sm text-muted-foreground"
+              data-quote-revision={quoteQuery.data?.revision}
+              data-submission-contract-hash={
+                quoteQuery.data?.submissionContractHash
+              }
               data-testid="composer-quote-line"
             >
               {quoteView.billingNote ?? `预计消耗 ${quoteView.amount}`}
@@ -1295,6 +1328,8 @@ export function ComposerHome({
                       <option value="douyin">抖音</option>
                       <option value="wechat_moments">朋友圈</option>
                       <option value="video_account">视频号</option>
+                      <option value="offline_material">线下物料</option>
+                      <option value="generic">通用素材</option>
                     </select>
                   ) : (
                     <input
@@ -1310,6 +1345,16 @@ export function ComposerHome({
                       }
                     />
                   )}
+                  {field.def.key === 'platform' && destination ? (
+                    <p
+                      className="mt-1 text-xs text-muted-foreground"
+                      data-testid="composer-destination-capability"
+                    >
+                      {composerDestinationCapability(
+                        destination.distributionTarget
+                      )}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </div>

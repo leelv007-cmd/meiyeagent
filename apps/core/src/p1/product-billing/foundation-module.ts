@@ -9,7 +9,10 @@ import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import type { ConfirmQuoteInput } from './quote-service.js';
 import type { ProductBillingApplicationPort } from './durable-service.js';
-import type { ProductQuoteSnapshot } from '@meiye/contracts';
+import {
+  composerSubmissionSignedFieldsSchema,
+  type ProductQuoteSnapshot,
+} from '@meiye/contracts';
 import {
   publicProductQuoteOperations,
   type ProductQuoteAuthority,
@@ -135,6 +138,13 @@ function publicQuoteIntent(
       ? { quantity: numberField(value, 'quantity', { optional: true }) }
       : {}),
     quoteId: stringField(value, 'quoteId'),
+    ...(value.submission !== undefined
+      ? {
+          submission: composerSubmissionSignedFieldsSchema.parse(
+            value.submission,
+          ),
+        }
+      : {}),
     ...(numberField(value, 'targetSeconds', { optional: true }) !== undefined
       ? { targetSeconds: numberField(value, 'targetSeconds', { optional: true }) }
       : {}),
