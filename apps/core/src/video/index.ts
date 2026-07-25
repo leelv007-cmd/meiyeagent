@@ -1,4 +1,3 @@
-export * from './ark-provider.js';
 export * from './composer.js';
 export * from './media-tools.js';
 export * from './proof.js';
