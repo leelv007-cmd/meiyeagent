@@ -993,6 +993,151 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         constraints: ['不得编造价格或效果，不得使用未授权素材'],
       };
     }
+    case 'harness_note_plan_v1': {
+      const intent =
+        typeof payload.intent === 'string'
+          ? payload.intent
+          : '介绍本店护理项目';
+      const conversion = /团购|优惠|活动|价格/u.test(intent);
+      const personal = /主理人|老板娘|个人\s*IP/iu.test(intent);
+      const roles = conversion
+        ? [
+            'cover',
+            'pain_scene',
+            'solution_show',
+            'price_offer',
+            'cta_guide',
+          ]
+        : personal
+          ? ['cover', 'work_case', 'cta_guide']
+          : ['cover', 'solution_show', 'cta_guide'];
+      const purposeByRole = {
+        cover: 'capture_attention',
+        pain_scene: 'name_customer_pain',
+        solution_show: 'explain_solution',
+        work_case: 'prove_with_case',
+        price_offer: 'present_offer',
+        cta_guide: 'drive_action',
+      } as const;
+      return {
+        schema: 'note-plan/v1',
+        themeAnchor: intent,
+        style: {
+          id: 'planning',
+          name: '规划中',
+          positioning: '等待风格草稿',
+        },
+        pages: roles.map((pageRole, index) => {
+          const exactText =
+            pageRole === 'price_offer'
+              ? [...intent.matchAll(/\d+(?:\s*元)?/gu)].map(([text]) => text)
+              : [];
+          return {
+            id: `page-${index + 1}`,
+            order: index + 1,
+            revision: 1,
+            pageRole,
+            pagePurpose:
+              purposeByRole[pageRole as keyof typeof purposeByRole],
+            imageIntent: {
+              operation: 'image.generate',
+              purpose: `${pageRole}配图`,
+              subject: '门店本次推广项目',
+              scene: '符合商家描述的真实门店场景',
+              composition: '主体清晰并保留安全文字区域',
+              references: [],
+              exactText: exactText.map((text) => ({
+                text,
+                treatment: 'exact',
+              })),
+              changes: [],
+              invariants: [],
+              factRefs: Array.isArray(payload.factRefs)
+                ? payload.factRefs
+                : [],
+              rightsRefs: Array.isArray(payload.rightsRefs)
+                ? payload.rightsRefs
+                : [],
+              outputPlan: { kind: 'single' },
+            },
+            textBlock: {
+              title: `${pageRole}标题`,
+              body: `${pageRole}正文`,
+              exactText,
+            },
+            dependencies:
+              index === 0
+                ? []
+                : [
+                    {
+                      pageId: `page-${index}`,
+                      kind: 'text_sequence',
+                    },
+                  ],
+          };
+        }),
+      };
+    }
+    case 'harness_note_text_block_v1': {
+      const page = fixtureRecord(payload.page);
+      const style = fixtureRecord(payload.style);
+      const previous = fixtureRecord(payload.previousTextBlock);
+      const role =
+        typeof page.pageRole === 'string' ? page.pageRole : '内容';
+      const styleName =
+        typeof style.name === 'string' ? style.name : '图文版本';
+      const previousBody =
+        typeof previous.body === 'string' ? previous.body : '';
+      const existing = fixtureRecord(page.textBlock);
+      const exactText = Array.isArray(existing.exactText)
+        ? existing.exactText
+        : [];
+      return {
+        title: `${styleName}｜${role}`,
+        body: `${previousBody ? `承接上一页：${previousBody.slice(-20)}。` : ''}${styleName}围绕${role}说明本店已确认信息。`,
+        exactText,
+      };
+    }
+    case 'harness_note_consistency_v1': {
+      const attempt =
+        payload.attempt === 'after_regeneration'
+          ? 'after_regeneration'
+          : 'initial';
+      const plan = fixtureRecord(payload.plan);
+      const themeAnchor =
+        typeof plan.themeAnchor === 'string' ? plan.themeAnchor : '';
+      const pages = Array.isArray(plan.pages)
+        ? plan.pages.map(fixtureRecord)
+        : [];
+      const conflict =
+        attempt === 'initial' && /图文冲突样本/u.test(themeAnchor);
+      return {
+        evaluatedAt:
+          typeof payload.evaluatedAt === 'string'
+            ? payload.evaluatedAt
+            : new Date().toISOString(),
+        dimensions: [
+          'theme_continuity',
+          'visual_consistency',
+          'non_repetition',
+          'role_coverage',
+          'image_text_cross_reference',
+        ].map((dimension) => ({
+          dimension,
+          passed: !conflict || dimension !== 'image_text_cross_reference',
+          reason:
+            conflict && dimension === 'image_text_cross_reference'
+              ? '第二页图文指向冲突，需要回炉'
+              : `${dimension}通过`,
+          pageIds:
+            conflict && dimension === 'image_text_cross_reference'
+              ? [String(pages[1]?.id ?? '')].filter(Boolean)
+              : [],
+        })),
+        regenerationPageIds:
+          conflict && pages[1]?.id ? [String(pages[1].id)] : [],
+      };
+    }
     case 'harness_copy_candidate_v1': {
       const candidateId =
         typeof payload.candidateId === 'string' ? payload.candidateId : 'c01';

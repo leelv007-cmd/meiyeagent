@@ -54,6 +54,27 @@ export function merchantNeutralIndustryContinuationNotice() {
   return '这次先按通用方式继续生成，不需要补充行业信息。';
 }
 
+export function merchantNoteStyleQuestion() {
+  return {
+    question: '两种图文方向都已准备好，这次想用哪一种？',
+    responseReason: '按你选中的版本继续配图',
+  } as const;
+}
+
+export function merchantNoteProgressMessage(
+  state: 'styles_ready' | 'style_selected' | 'consistency_checked',
+) {
+  return {
+    styles_ready: '两种图文方向已经整理好，请选一个继续配图。',
+    style_selected: '已按你选的方向继续准备整套图文。',
+    consistency_checked: '已逐页核对图文对应关系和整篇一致性。',
+  }[state];
+}
+
+export function merchantNoteSelectionReason(selected: boolean) {
+  return selected ? '店主选择了这一图文方向' : '保留为未选中的风格草稿';
+}
+
 export function merchantTaskSummary(input: {
   revision: number;
   strategyBasis: string;

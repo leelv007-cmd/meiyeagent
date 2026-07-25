@@ -142,6 +142,7 @@ import {
 import {
   ComposerQuestionCard,
   composerQuestionDecision,
+  composerQuestionEditingDecision,
 } from './composer-question-card';
 import {
   composerQuestionHold,
@@ -845,6 +846,25 @@ export function ComposerHome({
       }
     },
     [decisionQuery, pendingQuestion, taskId]
+  );
+
+  const markQuestionEditing = useCallback(
+    async (value: string) => {
+      if (!pendingQuestion || !taskId) return;
+      try {
+        await submitHarnessDecision(
+          taskId,
+          composerQuestionEditingDecision({
+            question: pendingQuestion,
+            idempotencyKey: `composer-decision:${pendingQuestion.questionId}:editing`,
+            value,
+          })
+        );
+      } catch {
+        toast.error(workbench_operation_failed());
+      }
+    },
+    [pendingQuestion, taskId]
   );
 
   const addSource = (assetId: string) => {

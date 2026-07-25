@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import {
 	isComposerVariantPlatform,
+	MAX_NOTE_PLAN_PAGE_COUNT,
 	pickComposerSubmissionSignedFields,
 	type ContentPackage,
 	type DiagnosticRun,
@@ -262,7 +263,7 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.doesNotMatch(projectionBody, /providerCost/u);
 });
 
-test("authenticated Composer HTTP carries copy, image, and video through one snapshot, SSE, and public package contract", async (t) => {
+test("authenticated Composer HTTP carries all four output kinds through one snapshot, SSE, and public package contract", async (t) => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();
 	let sequence = 0;
@@ -339,7 +340,7 @@ test("authenticated Composer HTTP carries copy, image, and video through one sna
 		workflowEvents: new WorkflowEventApplicationService([
 			{
 				async owns(workspaceId, workflowId) {
-					return workspaceId === "workspace-1" && /^task-(copy|image|video)$/u.test(workflowId);
+					return workspaceId === "workspace-1" && /^task-(copy|image|image_text_note|video)$/u.test(workflowId);
 				},
 				async *stream(input) {
 					yield progressFrame(input.workflowId, 0);
@@ -360,7 +361,7 @@ test("authenticated Composer HTTP carries copy, image, and video through one sna
 		"x-workspace-role": "owner",
 	};
 
-	for (const kind of ["copy", "image", "video"] as const) {
+	for (const kind of ["copy", "image", "image_text_note", "video"] as const) {
 		const submitted = await fetch(`${base}/submissions`, {
 			method: "POST",
 			headers,
@@ -418,7 +419,7 @@ test("authenticated Composer HTTP carries copy, image, and video through one sna
 		assert.match(projectionBody, new RegExp(`snapshot-task-${kind}`, "u"));
 		assert.doesNotMatch(projectionBody, /provider-secret|route-secret/u);
 	}
-	assert.equal(starter.starts.length, 3);
+	assert.equal(starter.starts.length, 4);
 });
 
 test("Core Composer SSE aborts its durable subscription when the client disconnects", async (t) => {
@@ -1158,6 +1159,17 @@ function modalityAdmission(): CreationSubmissionAdmissionPort {
 					summary: "Server verified source assets.",
 				},
 				taskId: `task-${kind}`,
+				...(kind === "image_text_note"
+					? {
+							usageUnits: [
+								{ resource: "copy" as const, quantity: 2 },
+								{
+									resource: "image" as const,
+									quantity: MAX_NOTE_PLAN_PAGE_COUNT,
+								},
+							],
+						}
+					: {}),
 			};
 		},
 	};
@@ -1210,7 +1222,7 @@ function submissionPayload(): ComposerSubmissionBody {
 }
 
 function modalitySubmissionPayload(
-	kind: "copy" | "image" | "video",
+	kind: "copy" | "image" | "image_text_note" | "video",
 ): ComposerSubmissionBody {
 	return {
 		...submissionPayload(),
@@ -1218,7 +1230,7 @@ function modalitySubmissionPayload(
 		contentPackagePlatform:
 			kind === "copy"
 				? "douyin"
-				: kind === "image"
+				: kind === "image" || kind === "image_text_note"
 					? "xiaohongshu"
 					: "video_account",
 		deliverable: {
@@ -1227,6 +1239,8 @@ function modalitySubmissionPayload(
 					? "copy_document"
 					: kind === "image"
 						? "image_set"
+						: kind === "image_text_note"
+							? "note"
 						: "video_package",
 			quantity: 1,
 			...(kind === "copy" ? {} : { aspectRatio: "9:16" as const }),

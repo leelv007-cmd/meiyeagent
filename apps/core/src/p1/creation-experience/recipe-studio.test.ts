@@ -369,7 +369,7 @@ describe('Recipe Studio controlled compiler', () => {
       },
     });
     assert.deepEqual(admission.errors, []);
-    assert.equal(admission.binding?.lens, 'image');
+    assert.equal(admission.binding?.lens, 'image_text_note');
 
     const submission: ComposerSubmissionRequest = {
       actorId: 'merchant-1',
@@ -462,7 +462,7 @@ describe('Recipe Studio controlled compiler', () => {
     });
     const admitted = await gate.admit(submission);
     assert.match(admitted.taskId, /^composer-task:[a-f0-9]{64}$/u);
-    assert.equal(admitted.recipeBinding.lens, 'image');
+    assert.equal(admitted.recipeBinding.lens, 'image_text_note');
   });
 
   it('blocks production switching before eval and internal-test gates pass', async () => {

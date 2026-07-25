@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { NOTE_PLAN_CONSISTENCY_DIMENSIONS } from '@meiye/contracts';
 
 import {
   assertCopyRevisionAssemblyComplete,
   assertImageRevisionAssemblyComplete,
+  assertImageTextNoteRevisionAssemblyComplete,
   assertVideoRevisionAssemblyComplete,
   buildCopyPlatformVariants,
   buildImagePlatformVariants,
+  buildImageTextNotePlatformVariants,
   buildVideoPlatformVariants,
   OUTPUT_COMPILER_CONTRACTS,
   OUTPUT_COMPILER_KINDS,
@@ -101,7 +104,7 @@ test('compiler tiers reserve downstream owners without inventing their implement
         manifestBuilderOwner: 'result-delivery/export',
         manifestSchema: 'beauty-delivery-manifest/v1',
       },
-      implementation: 'reserved',
+      implementation: 'available',
       orchestration: 'multi_stage',
       owner: 'T20',
       stages: [
@@ -405,3 +408,154 @@ test('copy assembly rejects revisions missing evidence, CTA, variants, or rights
     /requires rights references/u,
   );
 });
+
+test('image-text note assembly accepts only a complete page-mapped revision', () => {
+  const version = imageTextNoteVersion();
+  const variants = buildImageTextNotePlatformVariants({
+    currentVersionId: version.id,
+    packageId: 'package-note-1',
+    versions: [version],
+  });
+  const complete = {
+    marketing: {
+      contextBundle: {
+        bundleId: 'bundle-note-1',
+        hash: 'a'.repeat(64),
+        revision: 1,
+      },
+      factRefs: ['fact:service:1'],
+      rightsRefs: ['rights-r1'],
+    },
+    variants,
+    version,
+  };
+
+  assert.doesNotThrow(() =>
+    assertImageTextNoteRevisionAssemblyComplete(complete),
+  );
+  for (const incomplete of [
+    {
+      ...complete,
+      marketing: { ...complete.marketing, contextBundle: undefined },
+    },
+    { ...complete, version: { ...version, conversionHook: '' } },
+    { ...complete, marketing: { ...complete.marketing, rightsRefs: [] } },
+    { ...complete, variants: variants.slice(0, 2) },
+    {
+      ...complete,
+      version: {
+        ...version,
+        note: {
+          ...version.note,
+          plan: {
+            ...version.note.plan,
+            pages: version.note.plan.pages.map((page, index) =>
+              index === 0 ? { ...page, imageAssetId: undefined } : page,
+            ),
+          },
+        },
+      },
+    },
+    { ...complete, version: { ...version, orderedAssetIds: ['asset-page-2'] } },
+    {
+      ...complete,
+      version: {
+        ...version,
+        note: { ...version.note, evaluation: undefined },
+      },
+    },
+  ]) {
+    assert.throws(() =>
+      assertImageTextNoteRevisionAssemblyComplete(incomplete),
+    );
+  }
+});
+
+function imageTextNoteVersion() {
+  const page = (
+    id: string,
+    order: number,
+    pageRole: 'cover' | 'cta_guide',
+    pagePurpose: 'capture_attention' | 'drive_action',
+    imageAssetId: string,
+  ) => ({
+    id,
+    order,
+    revision: 1,
+    pageRole,
+    pagePurpose,
+    imageIntent: {
+      operation: 'image.generate' as const,
+      purpose: `${pageRole}配图`,
+      subject: '护理项目',
+      scene: '真实门店场景',
+      composition: '主体清晰',
+      references: [],
+      exactText: [],
+      changes: [],
+      invariants: [],
+      factRefs: [],
+      rightsRefs: [],
+      outputPlan: { kind: 'single' as const },
+    },
+    textBlock: {
+      title: `${pageRole}标题`,
+      body: `${pageRole}正文`,
+      exactText: [],
+    },
+    dependencies:
+      order === 1
+        ? []
+        : [{ pageId: 'page-1', kind: 'text_sequence' as const }],
+    imageAssetId,
+  });
+  return {
+    body: '封面正文\n\n行动正文',
+    conversionHook: '私信预约',
+    createdAt: '2026-07-26T00:00:00.000Z',
+    id: 'note-version-1',
+    orderedAssetIds: ['asset-page-1', 'asset-page-2'],
+    source: 'ai_generated' as const,
+    title: '护理项目怎么选',
+    topics: [],
+    note: {
+      schema: 'image-text-note-version/v1' as const,
+      plan: {
+        schema: 'note-plan/v1' as const,
+        themeAnchor: '护理项目怎么选',
+        style: {
+          id: 'practical_guide',
+          name: '干货科普版',
+          positioning: '适合收藏',
+        },
+        pages: [
+          page(
+            'page-1',
+            1,
+            'cover',
+            'capture_attention',
+            'asset-page-1',
+          ),
+          page(
+            'page-2',
+            2,
+            'cta_guide',
+            'drive_action',
+            'asset-page-2',
+          ),
+        ],
+      },
+      evaluation: {
+        evaluatedAt: '2026-07-26T00:00:00.000Z',
+        dimensions: NOTE_PLAN_CONSISTENCY_DIMENSIONS.map((dimension) => ({
+          dimension,
+          passed: true,
+          reason: `${dimension}通过`,
+          pageIds: [],
+        })),
+        regenerationPageIds: [],
+      },
+      regenerationReceipts: [],
+    },
+  };
+}

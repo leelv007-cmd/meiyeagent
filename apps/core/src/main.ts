@@ -38,6 +38,7 @@ import {
 import {
   AdminConfigFoundationModule,
   AdminConfigEntitlementCatalogSource,
+  AdminConfigNotePlanSettingsSource,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   ModeGateExecutionPort,
   ModeGateMediaLifecyclePort,
@@ -1576,6 +1577,9 @@ if (harnessRuntimeConfig) {
   );
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).
+  const notePlanSettings = new AdminConfigNotePlanSettingsSource(
+    adminConfigRepository
+  );
   const harnessStages = new UnifiedHarnessStagePorts(
     copyHarnessStages,
     structuredNodeRunnerFactory,
@@ -1586,7 +1590,8 @@ if (harnessRuntimeConfig) {
         : new ModelSupplyImageExactTextVerifier(p1ModelSupplyService)
     ),
     contentPackageRevisionWriter,
-    () => new Date().toISOString()
+    () => new Date().toISOString(),
+    notePlanSettings,
   );
   DBOS.setConfig(harnessRuntimeConfig.dbos);
   const harnessBilling = new HarnessProductBillingSettlementExecutor(
@@ -1653,6 +1658,7 @@ if (harnessRuntimeConfig) {
       ),
       catalog: creationExperienceRuntime.repository,
       identities: marketingIdentities,
+      noteSettings: notePlanSettings,
       quotes: productQuoteService,
       rights: contentPackageRightsResolver,
       routeResolver: new ModelSupplyComposerRouteResolver(

@@ -184,6 +184,22 @@ export const questionCardSchema = z
         reason: z.string().trim().min(1).max(500),
       })
       .strict(),
+    continuation: z
+      .object({
+        autoContinue: z.boolean(),
+        timeoutSeconds: z.number().int().positive().max(3_600),
+        defaultValue: z.string().trim().min(1).max(2_000),
+        pauseOnEdit: z.literal(true),
+        blocker: z
+          .enum([
+            'editing_paused',
+            'quota_confirmation_required',
+            'external_side_effect_confirmation_required',
+          ])
+          .nullable(),
+      })
+      .strict()
+      .optional(),
     scope: z.enum(['current_task', 'current_series', 'workspace']),
   })
   .strict()
@@ -200,6 +216,17 @@ export const questionCardSchema = z
         code: 'custom',
         message: 'Disabled free-text input cannot have a placeholder.',
         path: ['freeText', 'placeholder'],
+      });
+    }
+    if (
+      card.continuation &&
+      card.continuation.autoContinue !== (card.continuation.blocker === null)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Question auto-continuation must agree with its safety blocker.',
+        path: ['continuation', 'autoContinue'],
       });
     }
   });

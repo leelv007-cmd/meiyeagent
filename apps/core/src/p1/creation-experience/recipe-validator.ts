@@ -12,7 +12,7 @@ export type ComposerRecipeBinding = {
   contentPackagePlatform: ComposerSubmissionSignedFields['contentPackagePlatform'];
   deliverable: ComposerSubmissionSignedFields['deliverable'];
   distributionTarget: ComposerSubmissionSignedFields['distributionTarget'];
-  lens: 'copy' | 'image' | 'video';
+  lens: 'copy' | 'image' | 'image_text_note' | 'video';
 };
 
 export function validateRecipeForComposer(
@@ -38,11 +38,15 @@ export function validateRecipeForComposer(
   if (!recipe.promptRevisionRef.trim()) {
     errors.push('promptRevisionRef is required');
   }
+  const deliveryKind =
+    signedFields?.deliverable.kind ?? recipe.delivery.deliverableKind;
   const lens =
     recipe.lensId === 'copy'
       ? ('copy' as const)
       : recipe.lensId === 'image_text'
-        ? ('image' as const)
+        ? deliveryKind === 'note' || deliveryKind === 'image_text_package'
+          ? ('image_text_note' as const)
+          : ('image' as const)
         : recipe.lensId === 'video'
           ? ('video' as const)
           : null;
@@ -128,7 +132,7 @@ export function validateRecipeForComposer(
     errors.push('deliverable.kind must match the Recipe modality');
   }
   if (
-    (lens === 'image' || lens === 'video') &&
+    (lens === 'image' || lens === 'image_text_note' || lens === 'video') &&
     !deliverable.aspectRatio
   ) {
     errors.push('media deliverables require aspectRatio');
@@ -145,7 +149,7 @@ export function validateRecipeForComposer(
     configuredModules ??
     (lens === 'copy'
       ? ['store_intro']
-      : lens === 'image'
+      : lens === 'image' || lens === 'image_text_note'
         ? ['social_cover']
         : ['shooting_checklist']);
   if (
@@ -182,8 +186,11 @@ export function validateRecipeForComposer(
 
 function deliverableLens(
   kind: ComposerSubmissionSignedFields['deliverable']['kind'],
-): 'copy' | 'image' | 'video' {
+): 'copy' | 'image' | 'image_text_note' | 'video' {
   if (kind === 'copy_document') return 'copy';
   if (kind === 'video_package') return 'video';
+  if (kind === 'note' || kind === 'image_text_package') {
+    return 'image_text_note';
+  }
   return 'image';
 }

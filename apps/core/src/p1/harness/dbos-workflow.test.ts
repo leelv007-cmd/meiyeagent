@@ -2,12 +2,59 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  autoContinuationDecision,
   commitHarnessBillingOrSchedule,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+
+test('safe confirmation timeout synthesizes the default decision while blocked cards stay pending', () => {
+  const question = {
+    questionId: 'task-note:confirm',
+    workflowId: 'task-note',
+    workflowRevision: 1,
+    question: '我先按建议补齐并继续，可以吗？',
+    options: [{ id: 'continue', label: '按建议继续' }],
+    freeText: { enabled: true },
+    response: {
+      field: 'note_plan_confirmation',
+      reason: '确认本次图文计划',
+    },
+    continuation: {
+      autoContinue: true,
+      timeoutSeconds: 30,
+      defaultValue: '按建议继续',
+      pauseOnEdit: true as const,
+      blocker: null,
+    },
+    scope: 'current_task' as const,
+  };
+
+  assert.deepEqual(autoContinuationDecision(question), {
+    idempotencyKey: 'auto-continue:task-note:confirm',
+    questionId: 'task-note:confirm',
+    workflowRevision: 1,
+    patch: {
+      field: 'note_plan_confirmation',
+      value: '按建议继续',
+      reason: '确认本次图文计划',
+    },
+    decision: { state: 'accepted', value: '按建议继续' },
+  });
+  assert.equal(
+    autoContinuationDecision({
+      ...question,
+      continuation: {
+        ...question.continuation,
+        autoContinue: false,
+        blocker: 'editing_paused',
+      },
+    }),
+    null,
+  );
+});
 
 const settlement = {
   workspaceId: 'workspace-billing-failure',

@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 import type {
 	ContentPackage,
 	ContentPackageRevisionDelivery,
+	NotePlan,
 } from "@meiye/contracts";
+import { questionCardSchema } from "@meiye/contracts";
 import { z } from "zod";
 
 import type {
@@ -24,6 +26,9 @@ import type {
 	HarnessContextSnapshot,
 	HarnessMediaSelectionResult,
 	HarnessMediaStagePorts,
+	HarnessNoteBrief,
+	HarnessNoteSelectionResult,
+	HarnessNoteStagePorts,
 	HarnessStagePorts,
 } from "./workflow-core.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
@@ -35,14 +40,24 @@ import { nativeSupplyOperation } from "./image-intent-compiler.js";
 import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
 import {
 	merchantExactTextMismatch,
+	merchantNoteConfirmationCard,
+	merchantNoteSelectionReason,
 	merchantVideoGenerationFailure,
 } from "./merchant-delivery-language.js";
 import {
 	assertImageRevisionAssemblyComplete,
+	assertImageTextNoteRevisionAssemblyComplete,
 	assertVideoRevisionAssemblyComplete,
 	buildImagePlatformVariants,
+	buildImageTextNotePlatformVariants,
 	buildVideoPlatformVariants,
 } from "./output-compiler.js";
+import {
+	NotePlanCompiler,
+	noteConfirmationPolicy,
+	type NotePlanSettingsSource,
+} from "./note-plan-compiler.js";
+import { ModelSupplyNotePlanStructuredPort } from "./note-plan-structured-port.js";
 
 type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
 
@@ -59,17 +74,59 @@ export interface HarnessMediaExecutionPort {
  * Adds image/video dispatch to the existing copy Harness ports. The shared
  * snapshot remains the only source of model, quote, platform and source facts.
  */
-export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
+export class UnifiedHarnessStagePorts
+	implements HarnessMediaStagePorts, HarnessNoteStagePorts
+{
 	constructor(
 		private readonly copy: HarnessStagePorts,
 		private readonly runners: HarnessStructuredNodeRunnerFactory,
 		private readonly media: HarnessMediaExecutionPort,
 		private readonly contentPackages: ContentPackageRevisionWritePort,
 		private readonly now: () => string,
+		private readonly noteSettings?: NotePlanSettingsSource,
 	) {}
 
-	nameIntent(input: Parameters<HarnessStagePorts["nameIntent"]>[0]) {
-		return this.copy.nameIntent(input);
+	async nameIntent(input: Parameters<HarnessStagePorts["nameIntent"]>[0]) {
+		const result = await this.copy.nameIntent(input);
+		if (
+			input.request.executionSnapshot?.lens !== "image_text_note" ||
+			input.request.decisionReferences?.some(
+				({ field }) => field === "note_plan_confirmation",
+			)
+		) {
+			return result;
+		}
+		const settings = await this.requireNoteSettings().read();
+		const policy = noteConfirmationPolicy({
+			timeoutSeconds: settings.confirmationTimeoutSeconds,
+			isEditing: false,
+			exceedsAllowance: false,
+			hasExternalSideEffect:
+				input.request.executionSnapshot.distributionTarget.startsWith(
+					"publish:",
+				),
+		});
+		const language = merchantNoteConfirmationCard();
+		return {
+			...result,
+			blockingQuestion: questionCardSchema.parse({
+				questionId: `${input.workflowId}:note-confirmation`,
+				workflowId: input.workflowId,
+				workflowRevision: input.request.workflowRevision,
+				question: language.question,
+				options: language.options,
+				freeText: language.freeText,
+				response: language.response,
+				continuation: {
+					autoContinue: policy.autoContinue,
+					timeoutSeconds: policy.timeoutSeconds,
+					defaultValue: language.defaultValue,
+					pauseOnEdit: true,
+					blocker: policy.blocker,
+				},
+				scope: "current_task",
+			}),
+		};
 	}
 
 	injectContext(input: Parameters<HarnessStagePorts["injectContext"]>[0]) {
@@ -287,6 +344,246 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 		assertVideoRevisionAssemblyComplete(revision);
 		return this.contentPackages.write(revision);
 	}
+
+	async compileNoteBrief(
+		input: Parameters<HarnessNoteStagePorts["compileNoteBrief"]>[0],
+	): Promise<HarnessNoteBrief> {
+		const settings = await this.requireNoteSettings().read();
+		const compiler = this.noteCompiler(input);
+		return {
+			kind: "image_text_note",
+			candidates: await compiler.compileDrafts({
+				intent: input.declaration.normalizedIntent,
+				factRefs:
+					input.context.activeFactReferences?.map(
+						({ sourceRef }) => sourceRef,
+					) ?? [],
+				rightsRefs: input.context.policyReferences.rightsRefs.map(
+					({ assetId }) => assetId,
+				),
+				styles: settings.styles,
+			}),
+		};
+	}
+
+	async executeNoteAndSelect(
+		input: Parameters<HarnessNoteStagePorts["executeNoteAndSelect"]>[0],
+	): Promise<HarnessNoteSelectionResult> {
+		const selected = await this.noteCompiler(input).selectAndGenerate({
+			candidates: input.brief.candidates,
+			selectedStyleId: input.selectedStyleId,
+		});
+		return {
+			...selected,
+			trace: {
+				stage: "execution_selection",
+				winnerCandidateId: selected.selectedStyleId,
+				candidateScores: input.brief.candidates.candidates.map(
+					({ styleId }) => ({
+						candidateId: styleId,
+						score: styleId === selected.selectedStyleId ? 100 : 0,
+						dimensions: {
+							grounding: 1,
+							usefulness: 1,
+							platformFit: 1,
+						},
+						reason: merchantNoteSelectionReason(
+							styleId === selected.selectedStyleId,
+						),
+					}),
+				),
+				blockedCandidates: [],
+				rubricVersion: "note-style-user-choice-v1",
+				rubricHash: createHash("sha256")
+					.update("note-style-user-choice-v1")
+					.digest("hex"),
+			},
+		};
+	}
+
+	async assembleNoteAndDeliver(
+		input: Parameters<HarnessNoteStagePorts["assembleNoteAndDeliver"]>[0],
+	): Promise<ContentPackageRevisionDelivery> {
+		const now = this.now();
+		const snapshot = requireSnapshot(input.request);
+		const projected = projectMarketingPackageEvidence({
+			declaration: input.declaration,
+			request: input.request,
+			context: input.context,
+			at: now,
+		});
+		const marketing = {
+			...projected,
+			rightsRefs: [
+				...new Set([...projected.rightsRefs, snapshot.rights.revision]),
+			],
+		};
+		const versionFor = (
+			candidate: HarnessNoteBrief["candidates"]["candidates"][number],
+			selected: boolean,
+		) => {
+			const note = selected
+				? input.selection.version
+				: {
+						schema: "image-text-note-version/v1" as const,
+						plan: candidate.plan,
+						regenerationReceipts: [],
+					};
+			const orderedAssetIds = selected
+				? note.plan.pages.map(({ imageAssetId }) => imageAssetId!)
+				: [];
+			return {
+				body: note.plan.pages
+					.map(({ textBlock }) => textBlock.body)
+					.join("\n\n"),
+				conversionHook:
+					marketing.promotionOffer?.callToAction.label ??
+					"私信了解详情并预约",
+				createdAt: now,
+				harnessCandidateId: candidate.styleId,
+				harnessScore: selected ? 100 : 0,
+				id: noteVersionId(
+					input.workflowId,
+					input.request.packageId,
+					candidate.styleId,
+				),
+				note,
+				orderedAssetIds,
+				source: "ai_generated" as const,
+				title: note.plan.themeAnchor,
+				topics: [],
+			};
+		};
+		const versions = input.brief.candidates.candidates.map((candidate) =>
+			versionFor(
+				candidate,
+				candidate.styleId === input.selection.selectedStyleId,
+			),
+		);
+		const winner = versions.find(
+			({ harnessCandidateId }) =>
+				harnessCandidateId === input.selection.selectedStyleId,
+		);
+		if (!winner) {
+			throw new Error("The selected NotePlan style must be delivered.");
+		}
+		const revision = {
+			additionalVersions: versions.filter(({ id }) => id !== winner.id),
+			expectedRevision: input.request.expectedRevision,
+			generated: {
+				assetIds: input.selection.ownedAssets.map(({ id }) => id),
+				childRuns: input.selection.childRuns,
+				ownedAssets: input.selection.ownedAssets,
+			},
+			harnessSelection: {
+				recommendedCandidateId: input.selection.selectedStyleId,
+			},
+			idempotencyKey: `harness-note:${input.workflowId}`,
+			kind: "image_text" as const,
+			marketing,
+			occurredAt: now,
+			packageId: input.request.packageId,
+			platform: mediaPlatform(snapshot.platform.id),
+			snapshotId: snapshot.id,
+			snapshot: {
+				id: snapshot.id,
+				revision: snapshot.revision,
+				schemaVersion: snapshot.schemaVersion,
+			},
+			...(snapshot.sources.contentPackage
+				? { sourceContentPackage: snapshot.sources.contentPackage }
+				: {}),
+			taskId: snapshot.task.id,
+			version: winner,
+			variants: buildImageTextNotePlatformVariants({
+				currentVersionId: winner.id,
+				packageId: input.request.packageId,
+				versions,
+			}),
+			workId: snapshot.work.id,
+			workflowId: input.workflowId,
+			workflowRevision: input.request.workflowRevision,
+			workspaceId: input.request.workspaceId,
+		};
+		assertImageTextNoteRevisionAssemblyComplete(revision);
+		return this.contentPackages.write(revision);
+	}
+
+	private requireNoteSettings() {
+		if (!this.noteSettings) {
+			throw new Error("Image-text note settings are unavailable.");
+		}
+		return this.noteSettings;
+	}
+
+	private noteCompiler(input: {
+		workflowId: string;
+		request: HarnessWorkflowInput;
+		context: HarnessContextSnapshot;
+	}) {
+		const snapshot = requireSnapshot(input.request);
+		const runner = this.runners.create({
+			actorId: input.request.actorId,
+			billingQuoteRevision: snapshot.quote.revision,
+			billingTaskId: snapshot.task.id,
+			workspaceId: input.request.workspaceId,
+		});
+		return new NotePlanCompiler(
+			new ModelSupplyNotePlanStructuredPort(
+				runner,
+				input.workflowId,
+				this.now,
+			),
+			{
+				generate: async ({ page, reason }) => {
+					const result = await this.media.execute({
+						brief: notePageImageBrief(page, snapshot),
+						context: input.context,
+						request: input.request,
+						workflowId:
+							`${input.workflowId}:note:${page.id}:${reason}:r${page.revision}`,
+					});
+					return {
+						asset: result.asset,
+						childRun: result.childRun,
+					};
+				},
+			},
+		);
+	}
+}
+
+function notePageImageBrief(
+	page: NotePlan["pages"][number],
+	snapshot: NonNullable<HarnessWorkflowInput["executionSnapshot"]>,
+): Extract<ExecutionBrief, { kind: "image" }> {
+	const aspectRatio = snapshot.deliverable.aspectRatio ?? "3:4";
+	return {
+		kind: "image",
+		intent: page.imageIntent,
+		prompt:
+			`为图文笔记第 ${page.order} 页生成配图：${page.imageIntent.purpose}。` +
+			`图文必须围绕“${page.textBlock.title}”一致表达。`,
+		referenceAssetIds: page.imageIntent.references.map(
+			({ assetId }) => assetId,
+		),
+		parameters: {
+			ratio: aspectRatio,
+			resolution: "2048",
+		},
+		constraints: ["不得改写精确文字，不得使用未授权素材"],
+	};
+}
+
+function noteVersionId(
+	workflowId: string,
+	packageId: string,
+	styleId: string,
+) {
+	return `${packageId}-note-${createHash("sha256")
+		.update(JSON.stringify({ workflowId, styleId }))
+		.digest("hex")
+		.slice(0, 16)}`;
 }
 
 function assertMediaVisibleDelivery(
@@ -641,7 +938,8 @@ function mediaSubmission(
 	}
 	return {
 		actorId: request.actorId,
-		billingTaskId: snapshot.task.id,
+		billingTaskId:
+			snapshot.lens === "image_text_note" ? workflowId : snapshot.task.id,
 		billingQuoteRevision: snapshot.quote.revision,
 		correlationId: workflowId,
 		dataClass: [],
@@ -693,9 +991,11 @@ function assertBriefMatchesSnapshot(
 	snapshot: NonNullable<HarnessWorkflowInput["executionSnapshot"]>,
 ) {
 	const deliverable = snapshot.deliverables[0];
+	const expectedKind =
+		deliverable?.kind === "image_text_note" ? "image" : deliverable?.kind;
 	if (
 		!deliverable ||
-		deliverable.kind !== brief.kind ||
+		expectedKind !== brief.kind ||
 		brief.parameters.ratio !== deliverable.aspectRatio
 	) {
 		throw new HarnessMediaExecutionError(

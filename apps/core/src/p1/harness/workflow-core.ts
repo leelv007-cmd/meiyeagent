@@ -2,6 +2,7 @@ import type {
   ContentPackage,
   ContentPackageRevisionDelivery,
   CreativeRecommendationDecisionTrace,
+  NoteStyleCandidates,
   QuestionCard,
   StructuredDecisionInput,
 } from '@meiye/contracts';
@@ -21,6 +22,8 @@ import {
   merchantGenericModeNotice,
   merchantIdentityVoiceNotice,
   merchantNeutralIndustryContinuationNotice,
+  merchantNoteProgressMessage,
+  merchantNoteStyleQuestion,
   merchantProgressMessage,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
@@ -60,6 +63,26 @@ export interface HarnessMediaSelectionResult {
   childRun: ContentPackage['generated']['childRuns'][number];
   kind: MediaBrief['kind'];
   trace: DecisionTraceFragment;
+}
+
+export interface HarnessNoteBrief {
+  kind: 'image_text_note';
+  candidates: NoteStyleCandidates;
+}
+
+export interface HarnessNoteSelectionResult {
+  auditSignals: Array<{
+    eventType:
+      | 'note_consistency_evaluated'
+      | 'note_page_regenerated'
+      | 'note_style_selected';
+    payload: Record<string, unknown>;
+  }>;
+  childRuns: ContentPackage['generated']['childRuns'];
+  ownedAssets: NonNullable<ContentPackage['generated']['ownedAssets']>;
+  selectedStyleId: string;
+  trace: DecisionTraceFragment;
+  version: NonNullable<ContentPackage['versions'][number]['note']>;
 }
 
 export interface HarnessContextSnapshot {
@@ -155,6 +178,30 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
+export interface HarnessNoteStagePorts extends HarnessStagePorts {
+  compileNoteBrief(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    declaration: IntentDeclaration;
+    context: HarnessContextSnapshot;
+  }): Promise<HarnessNoteBrief>;
+  executeNoteAndSelect(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    brief: HarnessNoteBrief;
+    context: HarnessContextSnapshot;
+    selectedStyleId: string;
+  }): Promise<HarnessNoteSelectionResult>;
+  assembleNoteAndDeliver(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    declaration: IntentDeclaration;
+    context: HarnessContextSnapshot;
+    brief: HarnessNoteBrief;
+    selection: HarnessNoteSelectionResult;
+  }): Promise<ContentPackageRevisionDelivery>;
+}
+
 export interface HarnessWorkflowRuntime {
   runStep<Output>(
     effectIdempotencyKey: string,
@@ -220,6 +267,14 @@ export async function runHarnessWorkflow(
   ports: HarnessStagePorts,
   runtime: HarnessWorkflowRuntime,
 ) {
+  if (request.executionSnapshot?.lens === 'image_text_note') {
+    return runNoteHarnessWorkflow(
+      workflowId,
+      request,
+      requireNoteStagePorts(ports),
+      runtime,
+    );
+  }
   if (request.executionSnapshot?.lens === 'image' || request.executionSnapshot?.lens === 'video') {
     return runMediaHarnessWorkflow(
       workflowId,
@@ -486,6 +541,230 @@ export async function runHarnessWorkflow(
   };
 }
 
+async function runNoteHarnessWorkflow(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+  ports: HarnessNoteStagePorts,
+  runtime: HarnessWorkflowRuntime,
+) {
+  let eventSequence = 0;
+  const reportProgress = (
+    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
+  ) => runtime.progress({ ...event, sequence: eventSequence++ });
+  const intent = await runtime.runStep(
+    harnessEffectKey(workflowId, 1, 'intent', '0'),
+    () => ports.nameIntent({ workflowId, request }),
+  );
+  if (intent.declaration.deliveryLayer !== 'finished_media') {
+    throw new HarnessMediaScopeError(
+      'An image-text note must resolve to the finished_media delivery layer.',
+    );
+  }
+  const routed = await resolveIntentRoute({
+    workflowId,
+    request,
+    intent,
+    ports,
+    runtime,
+    reportProgress,
+  });
+  let activeRequest = routed.request;
+  await trace(runtime, workflowId, 'intent_naming', {
+    executionRoot: mediaExecutionRoot(activeRequest),
+    declaration: routed.declaration,
+    questionId: intent.blockingQuestion?.questionId ?? null,
+  });
+  await reportProgress({
+    stage: 'intent_naming',
+    state: 'success',
+    message: merchantRouteMessage(routed.declaration),
+  });
+
+  let context = await runtime.runStep(
+    harnessEffectKey(workflowId, 2, 'context', '0'),
+    () =>
+      ports.injectContext({
+        workflowId,
+        request: activeRequest,
+        declaration: routed.declaration,
+      }),
+  );
+  await trace(runtime, workflowId, 'context_injection', {
+    executionRoot: mediaExecutionRoot(activeRequest),
+    bundleId: context.bundle.bundleId,
+    revision: context.bundle.revision,
+    hash: context.bundle.hash,
+    sourceRevisions: recommendationSourceRevisions(context),
+  }, `r${context.bundle.revision}`);
+  await reportProgress({
+    stage: 'context_injection',
+    state: 'success',
+    message: merchantContextMessage(activeRequest),
+  });
+
+  let brief = await runtime.runStep(
+    harnessEffectKey(workflowId, 3, 'image_text_note', '0'),
+    () =>
+      ports.compileNoteBrief({
+        workflowId,
+        request: activeRequest,
+        declaration: routed.declaration,
+        context,
+      }),
+  );
+  await trace(runtime, workflowId, 'brief_compilation', {
+    executionRoot: mediaExecutionRoot(activeRequest),
+    kind: brief.kind,
+    themeAnchors: brief.candidates.candidates.map(
+      ({ plan }) => plan.themeAnchor,
+    ),
+    styles: brief.candidates.candidates.map(({ styleId }) => styleId),
+    pageRoles: brief.candidates.candidates[0]?.plan.pages.map(
+      ({ pageRole }) => pageRole,
+    ),
+  }, `r${context.bundle.revision}`);
+  await reportProgress({
+    stage: 'brief_compilation',
+    state: 'suspended',
+    message: merchantNoteProgressMessage('styles_ready'),
+  });
+  let selectedStyleId = noteStyleIdFromDecision(
+    brief,
+    await runtime.awaitDecision(noteStyleQuestion(workflowId, request, brief)),
+  );
+  await reportProgress({
+    stage: 'brief_compilation',
+    state: 'success',
+    message: merchantNoteProgressMessage('style_selected'),
+  });
+
+  const fenced = await runtime.runStep(
+    harnessEffectKey(workflowId, 2, 'fence', `r${context.bundle.revision}`),
+    () =>
+      ports.fenceContext({
+        workflowId,
+        request: activeRequest,
+        declaration: routed.declaration,
+        context,
+      }),
+  );
+  if (fenced.bundle.hash !== context.bundle.hash) {
+    context = fenced;
+    brief = await runtime.runStep(
+      harnessEffectKey(
+        workflowId,
+        3,
+        `image_text_note-r${context.bundle.revision}`,
+        '0',
+      ),
+      () =>
+        ports.compileNoteBrief({
+          workflowId,
+          request: activeRequest,
+          declaration: routed.declaration,
+          context,
+        }),
+    );
+    if (
+      !brief.candidates.candidates.some(
+        ({ styleId }) => styleId === selectedStyleId,
+      )
+    ) {
+      selectedStyleId = brief.candidates.candidates[0]!.styleId;
+    }
+    await trace(runtime, workflowId, 'context_injection', {
+      executionRoot: mediaExecutionRoot(activeRequest),
+      bundleId: context.bundle.bundleId,
+      revision: context.bundle.revision,
+      hash: context.bundle.hash,
+      recompiled: true,
+    }, `r${context.bundle.revision}`);
+  }
+
+  const selection = await runtime.runStep(
+    harnessEffectKey(workflowId, 4, 'image_text_note', 'selection'),
+    () =>
+      ports.executeNoteAndSelect({
+        workflowId,
+        request: activeRequest,
+        brief,
+        context,
+        selectedStyleId,
+      }),
+  );
+  await trace(runtime, workflowId, 'execution_selection', {
+    executionRoot: mediaExecutionRoot(activeRequest),
+    ...selection.trace,
+    auditSignals: selection.auditSignals,
+  }, `r${context.bundle.revision}`);
+  await reportProgress({
+    stage: 'execution_selection',
+    state: 'success',
+    message: merchantNoteProgressMessage('consistency_checked'),
+  });
+
+  const delivery = await runtime.runStep(
+    harnessEffectKey(workflowId, 5, 'package', '0'),
+    () =>
+      ports.assembleNoteAndDeliver({
+        workflowId,
+        request: activeRequest,
+        declaration: routed.declaration,
+        context,
+        brief,
+        selection,
+      }),
+  );
+  const recommendation = {
+    recommendedCandidateId: selection.selectedStyleId,
+    decisionTrace: mediaRecommendationDecisionTrace(
+      routed.declaration,
+      brief,
+      delivery,
+      activeRequest,
+    ),
+  };
+  await trace(runtime, workflowId, 'assembly_delivery', {
+    executionRoot: mediaExecutionRoot(activeRequest),
+    delivery,
+    recommendation,
+  });
+  await reportProgress({
+    stage: 'assembly_delivery',
+    state: 'success',
+    message: merchantTaskSummary({
+      revision: delivery.revision,
+      strategyBasis: '结合本次主题、页级角色与已确认资料',
+      versionPositioning: '这是你选中的整套图文版本',
+      useSuggestion: '建议逐页核对画面、文字和预约引导，确认后再发布',
+    }),
+  });
+  return {
+    billingReceipt: {
+      trustedUsage: {
+        kind: 'product_units' as const,
+        units: [
+          {
+            resource: 'copy' as const,
+            quantity: brief.candidates.candidates.length,
+          },
+          {
+            resource: 'image' as const,
+            quantity: selection.version.plan.pages.length,
+          },
+        ],
+        evidenceRef: `note-plan-pages:${selection.version.plan.pages
+          .map(({ id, revision }) => `${id}@${revision}`)
+          .join(',')}`,
+      },
+    },
+    delivery,
+    deliveryLayer: routed.declaration.deliveryLayer,
+    recommendation,
+    trace: selection.trace,
+  };
+}
+
 async function runMediaHarnessWorkflow(
   workflowId: string,
   request: HarnessWorkflowInput,
@@ -735,6 +1014,61 @@ export class HarnessMediaScopeError extends Error {
   }
 }
 
+function requireNoteStagePorts(ports: HarnessStagePorts): HarnessNoteStagePorts {
+  if (
+    !('compileNoteBrief' in ports) ||
+    !('executeNoteAndSelect' in ports) ||
+    !('assembleNoteAndDeliver' in ports)
+  ) {
+    throw new HarnessMediaScopeError(
+      'Image-text note Harness stages are not configured.',
+    );
+  }
+  return ports as HarnessNoteStagePorts;
+}
+
+function noteStyleQuestion(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+  brief: HarnessNoteBrief,
+): QuestionCard {
+  const language = merchantNoteStyleQuestion();
+  return {
+    questionId: `${workflowId}:note-style`,
+    workflowId,
+    workflowRevision: request.workflowRevision,
+    question: language.question,
+    options: brief.candidates.candidates.map((candidate) => ({
+      id: candidate.styleId,
+      label: candidate.styleName,
+      description: candidate.positioning,
+    })),
+    freeText: { enabled: false },
+    response: {
+      field: 'note_style',
+      reason: language.responseReason,
+    },
+    scope: 'current_task',
+  };
+}
+
+function noteStyleIdFromDecision(
+  brief: HarnessNoteBrief,
+  decision: StructuredDecisionInput,
+) {
+  const selected = brief.candidates.candidates.find(
+    (candidate) =>
+      candidate.styleId === decision.decision.value ||
+      candidate.styleName === decision.decision.value,
+  );
+  if (!selected) {
+    throw new HarnessMediaScopeError(
+      'The selected image-text note style is unavailable.',
+    );
+  }
+  return selected.styleId;
+}
+
 function requireMediaStagePorts(ports: HarnessStagePorts): HarnessMediaStagePorts {
   if (
     !('compileMediaBrief' in ports) ||
@@ -823,7 +1157,7 @@ function platformLabel(platform: CopyBrief['platform']) {
 
 function mediaRecommendationDecisionTrace(
   declaration: IntentDeclaration,
-  brief: MediaBrief,
+  brief: MediaBrief | HarnessNoteBrief,
   delivery: ContentPackageRevisionDelivery,
   request: HarnessWorkflowInput,
 ): CreativeRecommendationDecisionTrace {

@@ -6,6 +6,8 @@ import {
   runHarnessWorkflow,
   type HarnessMediaSelectionResult,
   type HarnessMediaStagePorts,
+  type HarnessNoteBrief,
+  type HarnessNoteStagePorts,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
@@ -225,6 +227,74 @@ test('image and video snapshots use the same five Harness stages with modality-s
       new RegExp(`"modality":"${kind}"`, 'u')
     );
   }
+});
+
+test('image-text note uses the fourth Harness fork and waits for style choice before page generation', async () => {
+  const keys: string[] = [];
+  const progress: string[] = [];
+  const request = mediaTaskInput('image_text_note');
+  const result = await runHarnessWorkflow(
+    'task-image-text-note',
+    request,
+    noteStages(),
+    {
+      async runStep(key, operation) {
+        keys.push(key);
+        return operation();
+      },
+      async progress(event) {
+        progress.push(`${event.stage}:${event.state}`);
+      },
+      async token() {},
+      async awaitDecision(question) {
+        assert.equal(question.response.field, 'note_style');
+        assert.deepEqual(
+          question.options.map(({ id }) => id),
+          ['facts', 'story'],
+        );
+        return {
+          idempotencyKey: 'choose-story',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: 'note_style',
+            value: '故事版',
+            reason: '选择图文方向',
+          },
+          decision: { state: 'accepted', value: '故事版' },
+        };
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.deepEqual(keys, [
+    'wf:task-image-text-note:s1:intent:0',
+    'wf:task-image-text-note:s2:context:0',
+    'wf:task-image-text-note:s3:image_text_note:0',
+    'wf:task-image-text-note:s2:fence:r1',
+    'wf:task-image-text-note:s4:image_text_note:selection',
+    'wf:task-image-text-note:s5:package:0',
+  ]);
+  assert.deepEqual(progress, [
+    'intent_naming:success',
+    'context_injection:success',
+    'brief_compilation:suspended',
+    'brief_compilation:success',
+    'execution_selection:success',
+    'assembly_delivery:success',
+  ]);
+  assert.equal(result.recommendation.recommendedCandidateId, 'story');
+  assert.deepEqual(result.billingReceipt, {
+    trustedUsage: {
+      kind: 'product_units',
+      units: [
+        { resource: 'copy', quantity: 2 },
+        { resource: 'image', quantity: 2 },
+      ],
+      evidenceRef: 'note-plan-pages:page-1@1,page-2@1',
+    },
+  });
 });
 
 test('one blocking question suspends and resumes before context injection', async () => {
@@ -1227,7 +1297,9 @@ function fixtureIndustryGapStages() {
   return stages;
 }
 
-function mediaTaskInput(kind: 'image' | 'video'): HarnessWorkflowInput {
+function mediaTaskInput(
+  kind: 'image' | 'image_text_note' | 'video',
+): HarnessWorkflowInput {
   const snapshot = createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
@@ -1269,6 +1341,149 @@ function mediaTaskInput(kind: 'image' | 'video'): HarnessWorkflowInput {
     '2026-07-22T09:00:00.000Z'
   );
   return { ...taskInput(), executionSnapshot: snapshot };
+}
+
+function noteStages(): HarnessNoteStagePorts {
+  const brief = noteBrief();
+  return {
+    ...fixtureStages(),
+    async nameIntent() {
+      return {
+        declaration: {
+          normalizedIntent: '制作护理科普图文',
+          taskType: 'daily_service_exposure',
+          deliveryLayer: 'finished_media',
+          relevantAssetCategories: ['product_service'],
+          usedAssetCategories: ['product_service'],
+          route: 'customized',
+          routingSource: 'model',
+          implicitConstraints: [],
+        },
+        blockingQuestion: null,
+      };
+    },
+    async compileNoteBrief() {
+      return brief;
+    },
+    async executeNoteAndSelect(input) {
+      assert.equal(input.selectedStyleId, 'story');
+      return {
+        auditSignals: [],
+        childRuns: [],
+        ownedAssets: [],
+        selectedStyleId: input.selectedStyleId,
+        version: {
+          schema: 'image-text-note-version/v1',
+          plan: brief.candidates.candidates[1]!.plan,
+          regenerationReceipts: [],
+        },
+        trace: {
+          stage: 'execution_selection',
+          winnerCandidateId: input.selectedStyleId,
+          candidateScores: [],
+          blockedCandidates: [],
+          rubricVersion: 'note-style-user-choice-v1',
+          rubricHash: 'note-style-rubric',
+        },
+      };
+    },
+    async assembleNoteAndDeliver() {
+      return {
+        packageId: 'package-1',
+        versionId: 'note-version-1',
+        revision: 3,
+      };
+    },
+  };
+}
+
+function noteBrief(): HarnessNoteBrief {
+  const plan = (styleId: string, styleName: string) => ({
+    schema: 'note-plan/v1' as const,
+    themeAnchor: '护理科普',
+    style: {
+      id: styleId,
+      name: styleName,
+      positioning: `${styleName}定位`,
+    },
+    pages: [
+      {
+        id: 'page-1',
+        order: 1,
+        revision: 1,
+        pageRole: 'cover' as const,
+        pagePurpose: 'capture_attention' as const,
+        imageIntent: {
+          operation: 'image.generate' as const,
+          purpose: '封面配图',
+          subject: '护理项目',
+          scene: '真实门店场景',
+          composition: '主体清晰',
+          references: [],
+          exactText: [],
+          changes: [],
+          invariants: [],
+          factRefs: [],
+          rightsRefs: [],
+          outputPlan: { kind: 'single' as const },
+        },
+        textBlock: {
+          title: `${styleName}标题`,
+          body: `${styleName}正文`,
+          exactText: [],
+        },
+        dependencies: [],
+      },
+      {
+        id: 'page-2',
+        order: 2,
+        revision: 1,
+        pageRole: 'cta_guide' as const,
+        pagePurpose: 'drive_action' as const,
+        imageIntent: {
+          operation: 'image.generate' as const,
+          purpose: '行动页配图',
+          subject: '预约行动',
+          scene: '真实门店场景',
+          composition: '主体清晰',
+          references: [],
+          exactText: [],
+          changes: [],
+          invariants: [],
+          factRefs: [],
+          rightsRefs: [],
+          outputPlan: { kind: 'single' as const },
+        },
+        textBlock: {
+          title: '预约建议',
+          body: '私信了解详情',
+          exactText: [],
+        },
+        dependencies: [
+          { pageId: 'page-1', kind: 'text_sequence' as const },
+        ],
+      },
+    ],
+  });
+  return {
+    kind: 'image_text_note',
+    candidates: {
+      candidates: [
+        {
+          styleId: 'facts',
+          styleName: '干货版',
+          positioning: '适合收藏',
+          plan: plan('facts', '干货版'),
+        },
+        {
+          styleId: 'story',
+          styleName: '故事版',
+          positioning: '适合互动',
+          plan: plan('story', '故事版'),
+        },
+      ],
+    },
+  };
 }
 
 function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {

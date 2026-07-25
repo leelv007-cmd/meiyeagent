@@ -109,6 +109,7 @@ export interface CreationSubmissionAdmissionPort {
 		route: { id: string; revision: string };
 		rights: { revision: string; summary: string };
 		taskId: string;
+		usageUnits?: CreationSubmissionUsageUnit[];
 	}>;
 }
 
@@ -189,7 +190,7 @@ export class CreationSubmissionCoordinator {
 			contentPackage: { ...snapshot.contentPackage },
 			usageReservation: {
 				id: `usage-reservation-${snapshot.task.id}`,
-				units: productUsageUnits(snapshot),
+				units: admitted.usageUnits ?? productUsageUnits(snapshot),
 			},
 		};
 		const claimed = await this.store.claim({
@@ -263,6 +264,11 @@ function productUsageUnits(
 		}
 		return [{ resource: "video", quantity: deliverable.durationSeconds as number }];
 	}
+	if (snapshot.lens === "image_text_note") {
+		throw new Error(
+			"Image-text note submissions require explicit product usage units.",
+		);
+	}
 	return [{ resource: snapshot.lens, quantity: deliverable.quantity }];
 }
 
@@ -271,7 +277,9 @@ function operationForRequest(
 	referenceCount: number,
 ) {
 	if (lens === "copy") return "copy.generate" as const;
-	if (lens === "image") return selectImageIntentOperation({ referenceCount });
+	if (lens === "image" || lens === "image_text_note") {
+		return selectImageIntentOperation({ referenceCount });
+	}
 	return "video.generate" as const;
 }
 

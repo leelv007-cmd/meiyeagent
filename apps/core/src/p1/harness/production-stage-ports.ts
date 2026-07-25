@@ -195,6 +195,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         creationMode: input.request.creationMode ?? 'customized',
         deliveryLayer:
           input.request.executionSnapshot?.lens === 'image' ||
+          input.request.executionSnapshot?.lens === 'image_text_note' ||
           input.request.executionSnapshot?.lens === 'video'
             ? 'finished_media'
             : 'copy',
@@ -209,6 +210,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     if (
       result.declaration.deliveryLayer !== 'copy' &&
       input.request.executionSnapshot?.lens !== 'image' &&
+      input.request.executionSnapshot?.lens !== 'image_text_note' &&
       input.request.executionSnapshot?.lens !== 'video'
     ) {
       throw new HarnessCopyScopeError();
