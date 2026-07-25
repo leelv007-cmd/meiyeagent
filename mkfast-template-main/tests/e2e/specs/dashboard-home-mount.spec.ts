@@ -112,14 +112,25 @@ async function assertDeliverableWithoutAdopt(page: Page) {
       .getByRole('button', { name: '采用此版本', exact: true })
   ).toHaveCount(0);
 
-  // 成品是真写出来的：标题、正文、转化语、备选都在场。
+  // 成品是真写出来的：对客可见的标题、正文、转化语三样都在且非空。
   const worksurface = page.getByTestId(COPY_CONTRACT.resultSurfaceTestId);
   await expect(worksurface.getByTestId('copy-field-title')).toHaveValue(/\S/u);
   await expect(worksurface.getByTestId('copy-field-body')).toHaveValue(/\S/u);
   await expect(worksurface.getByTestId('copy-field-hook')).toHaveValue(/\S/u);
-  await expect(
-    worksurface.getByTestId('copy-alternatives-toggle')
-  ).toContainText(/备选（[1-9]\d*）/u);
+
+  // 单主候选是既定口径，不是 T18 的临时行为：D-113「④段默认交付 1 个主候选，
+  // 『择』仅限用户品味选择与质量门有界重试」，D-118 分型为「copy/image/video
+  // 默认 1 主候选」，D-126 又写明「1 候选执行确认由 D-113 收编」。T18 的输出
+  // 编译器把它落成 candidateStrategy: 'single_primary'。
+  // 所以「备选（N）」入口是有意缺席，不是漏了——这里把缺席本身钉成契约：
+  // 谁把候选墙加回来，这三条就得红一条。文本那条是兜底，防止换个 testid 重新长出来。
+  await expect(worksurface.getByTestId('copy-alternatives-panel')).toHaveCount(
+    0
+  );
+  await expect(worksurface.getByTestId('copy-alternatives-toggle')).toHaveCount(
+    0
+  );
+  await expect(worksurface.getByText(/备选（\d+）/u)).toHaveCount(0);
 }
 
 async function revealExampleStores(page: Page) {
