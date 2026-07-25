@@ -392,10 +392,10 @@ test.describe('S2 cold start and unified creation loop', () => {
       example.getByText('只读 · 浏览不消耗额度', { exact: true })
     ).toBeVisible();
     for (const asset of hairCare.assetPreviews) {
-      await expect(example.getByText(asset.label)).toBeVisible();
+      await expect(example.getByText(asset.label).first()).toBeVisible();
     }
     for (const fact of hairCare.facts) {
-      await expect(example.getByText(fact.value)).toBeVisible();
+      await expect(example.getByText(fact.value).first()).toBeVisible();
     }
     const exampleContents = example.getByRole('radiogroup', {
       name: '示例内容',
@@ -432,9 +432,8 @@ test.describe('S2 cold start and unified creation loop', () => {
     await expect(remixedIntent).toHaveValue(
       `做一条抖音美业内容，内容角度围绕“${growthContent.title}”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。`
     );
-    await expect(
-      page.getByRole('button', { name: '建立创作记录' })
-    ).toBeEnabled();
+    // Remixing only fills the draft — submission stays the merchant's own click.
+    await expect(page.getByTestId('composer-submit')).toBeVisible();
     expect(await creativeProjection(page)).toMatchObject({
       assets: [],
       contents: [],
@@ -532,7 +531,7 @@ test.describe('S2 cold start and unified creation loop', () => {
     // D-116: the merchant sees how many confirmed facts were used, never their ids.
     await expect(page.getByText('本店 1 条已确认事实')).toBeVisible();
     await expect(page.getByText('store_fact:offer-price:1')).toBeHidden();
-    await expect(page.getByText('私信预约')).toBeVisible();
+    await expect(page.getByText('私信预约', { exact: true })).toBeVisible();
     await expect(page.getByText('把新团购做一套能发的')).toBeVisible();
     await expect(
       page.getByRole('heading', { name: '热点机会卡' })
