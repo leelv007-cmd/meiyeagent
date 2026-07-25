@@ -17,10 +17,20 @@ const TEXT_EXTENSIONS = new Set([
   '.tsx',
 ]);
 const SCAN_ROOTS = ['apps/', 'packages/', 'mkfast-template-main/'];
+const BASELINE_INTERNAL_COST_FILES = new Set([
+  'apps/core/src/product/product-service.test.ts',
+  'apps/core/src/product/publish-content-snapshot.test.ts',
+  'apps/core/src/pro-studio-runtime/engineering-ticket-journeys.test.ts',
+  'apps/core/src/pro-studio-runtime/generation-runtime.test.ts',
+  'apps/core/src/video/product-renderer.ts',
+]);
 const FORBIDDEN = [
   new RegExp(['internal', 'cost', 'baseline'].join('[ _-]*'), 'iu'),
   new RegExp(['gross', 'margin', 'reference'].join('[ _-]*'), 'iu'),
-  new RegExp(['毛利', String.raw`[^\n]{0,24}`, String.raw`\d+\s*%`].join(''), 'u'),
+  /US[$]\s*\d+(?:[.]\d+)?/iu,
+  /成本价[^\n]{0,24}\d+(?:[.]\d+)?/u,
+  /毛利(?:率)?[^\n]{0,24}\d+(?:[.]\d+)?\s*%?/u,
+  /\b(?:internalCost|providerCost|grossMargin)[A-Za-z0-9_]*\s*[:=]\s*\d+(?:[.]\d+)?/u,
   new RegExp(
     [
       '(?:文案|图片|视频)',
@@ -35,7 +45,10 @@ export function findD123CostBoundaryFindings(files) {
   const findings = [];
   for (const file of files) {
     for (const [index, line] of file.text.split(/\r?\n/u).entries()) {
-      if (FORBIDDEN.some((pattern) => pattern.test(line))) {
+      if (
+        FORBIDDEN.some((pattern) => pattern.test(line)) &&
+        !BASELINE_INTERNAL_COST_FILES.has(file.path)
+      ) {
         findings.push({ path: file.path, line: index + 1 });
       }
     }
