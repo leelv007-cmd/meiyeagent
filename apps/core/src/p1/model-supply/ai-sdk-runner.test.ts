@@ -7,7 +7,6 @@ import {
   RecordedProviderExecutionPort,
 } from './index.js';
 import {
-  FixtureAiStructuredObjectExecutor,
   FixtureAiStreamingRunner,
   FixtureAiStructuredObjectExecutor,
   OpenAiCompatibleAiSdkRunner,
