@@ -9,7 +9,6 @@ import {
 import { setTheme, type ThemeMode } from '../fixtures/page-health';
 import { seedConfirmedStore } from '../fixtures/product';
 import {
-  adoptResult,
   downloadFullPackage,
   JOURNEY_CONTRACTS,
   openDeliveryPanel,
@@ -102,6 +101,34 @@ async function readTodayRecommendation(page: Page) {
     };
     return response.ok ? (envelope.data?.recommendation ?? null) : null;
   });
+}
+
+/**
+ * 可发布 is a finished piece, not a candidate list: the merchant's next step is
+ * 交付, and 采用此版本 is not on the way there. Pinned on purpose — if the main
+ * path ever goes back to "adopt first", these journeys must go red rather than
+ * quietly stay green.
+ */
+async function assertDeliverableWithoutAdopt(page: Page) {
+  await expect(page.getByTestId('result-merchant-status')).toContainText(
+    /可发布|已发布就绪/u,
+    { timeout: 180_000 }
+  );
+  await expect(page.getByTestId('copy-adopt-action')).toBeHidden();
+  await expect(
+    page
+      .getByTestId('result-shell-actions')
+      .getByRole('button', { name: '采用此版本', exact: true })
+  ).toHaveCount(0);
+
+  // 成品是真写出来的：标题、正文、转化语、备选都在场。
+  const worksurface = page.getByTestId(COPY_CONTRACT.resultSurfaceTestId);
+  await expect(worksurface.getByTestId('copy-field-title')).toHaveValue(/\S/u);
+  await expect(worksurface.getByTestId('copy-field-body')).toHaveValue(/\S/u);
+  await expect(worksurface.getByTestId('copy-field-hook')).toHaveValue(/\S/u);
+  await expect(
+    worksurface.getByTestId('copy-alternatives-toggle')
+  ).toContainText(/备选（[1-9]\d*）/u);
 }
 
 async function revealExampleStores(page: Page) {
@@ -290,7 +317,7 @@ test.describe('D-126 dashboard home mount', () => {
     expect(['reserved', 'committed']).toContain(usage.status);
 
     // 产物可导出 —— identical to a paying merchant's export path.
-    await adoptResult(page, COPY_CONTRACT);
+    await assertDeliverableWithoutAdopt(page);
     await openDeliveryPanel(page, COPY_CONTRACT.modality);
     await downloadFullPackage(page, COPY_CONTRACT);
   });
@@ -375,7 +402,9 @@ test.describe('D-126 dashboard home mount', () => {
       .fill('把本周护理项目做成一条可以发的小红书文案');
     const { workId } = await submitPrefilledCopy(page);
     await waitForResultJourney(page, COPY_CONTRACT, workId);
-    await adoptResult(page, COPY_CONTRACT);
+    await assertDeliverableWithoutAdopt(page);
+    await openDeliveryPanel(page, COPY_CONTRACT.modality);
+    await downloadFullPackage(page, COPY_CONTRACT);
 
     await expect
       .poll(() => readTodayRecommendation(page), { timeout: 180_000 })
