@@ -1,3 +1,4 @@
+import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { ComposerHome } from '@/product/composer/composer-home';
 import { CanonicalHistoryPage } from '@/product/canonical-history-page';
 import { desktopRelayLanding } from '@/product/device-relay';
@@ -11,6 +12,10 @@ import { useEffect } from 'react';
  * - Primary creation entry = Composer surface (`src/product/composer/**`)
  * - Legacy `?workId=` result bridge UNHOOKED: redirects to Result Center
  * - recent/content/tasks/notifications resolve via same deep link path
+ * - T30 / #224: the Glass sheet rides a route-level <link>, not src/styles.css.
+ *   HeroUI v3's --background/--foreground/--border/--radius collide with the
+ *   shadcn tokens every other page still uses, so importing it globally would
+ *   restyle surfaces this ticket does not own (see components/heroui-pro/README).
  */
 
 interface DashboardSearch {
@@ -25,6 +30,7 @@ interface DashboardSearch {
 }
 
 export const Route = createFileRoute('/dashboard/')({
+  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   validateSearch: (search: Record<string, unknown>): DashboardSearch => ({
     ...(typeof search.catalogRecipeRevisionId === 'string' &&
     search.catalogRecipeRevisionId.length > 0
