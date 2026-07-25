@@ -461,7 +461,7 @@ none of these can pass on fixture data (ADR-0019 / D-131).
 | # | Test name | Flow |
 |---|---|---|
 | 1 | Every admin page renders the template-dashboard shell in both themes | Sign in as an administrator and walk `/admin`, `/admin/models`, `/admin/templates`, `/admin/integrations`, `/admin/plans`, `/admin/users` and `/admin/audit`; require the Glass token-bridge host class and a HeroUI sidebar item on each, require the merchant shell no longer wraps 后台, and require a resolved background in both light and dark. |
-| 2 | A hand-entered three-bucket number reaches the merchant through governed config | Read the merchant's copy allowance on `/settings/account`, raise the trial copy bucket on `/admin/plans`, pass impact review with an audit reason, require the editor's CAS revision line to advance, and require the merchant allowance to follow with nothing redeployed. |
+| 2 | A hand-entered three-bucket number reaches the merchant through governed config | Hand-enter the trial copy bucket on `/admin/plans`, pass impact review with an audit reason, require the editor's CAS revision line to advance, then register a store and require its `/settings/account` to read that number with nothing redeployed. The governed key feeds the catalog and provisioning materialises it at activation, so the number reaches stores provisioned after the change — an already-provisioned workspace is not rewritten, by design. |
 | 3 | Model assembly separates the catalog layer from the channel layer | On `/admin/models`, require the CatalogModel and ExecutionChannel layers to render as separate panels and require each to carry only its own governed keys. |
 
 ## 32. LIKEPAGE Marketing Landing Page

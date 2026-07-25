@@ -9,7 +9,8 @@
  *      shell no longer wraps /admin;
  *   2. the hand-entry panel moves a three-bucket number through the governed
  *      admin-config API (CAS revision advances, reason lands in the audit) and
- *      the merchant-side allowance follows without a release;
+ *      a store registering afterwards is provisioned with that number, with
+ *      nothing redeployed;
  *   3. the model assembly page presents CatalogModel and ExecutionChannel as two
  *      layers, each separately operable.
  */
@@ -80,7 +81,18 @@ test('every admin page renders the template-dashboard shell in both themes', asy
   }
 });
 
+/**
+ * The governed key `plan.allowances.trial` feeds the catalog
+ * (entitlement-catalog-source.ts); workspace-provision reads that catalog when
+ * it activates the trial and materialises the number into the workspace's plan
+ * event, which is what entitlement-service projects. Editing the config
+ * therefore never rewrites an already-provisioned workspace — the hand-entered
+ * number shows up for a store provisioned after the change. That is the chain
+ * this journey walks.
+ */
 test('a hand-entered three-bucket number reaches the merchant through governed config', async ({
+  baseURL,
+  browser,
   page,
   request,
 }) => {
@@ -89,27 +101,12 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
   try {
     await loginByForm(page, admin);
 
-    // Baseline: the copy bucket's allowance as the merchant reads it.
-    const merchantCopyAllowance = page
-      .locator('section', {
-        has: page.getByRole('heading', { name: '文案条数' }),
-      })
-      .getByText(/^套餐总量 \d+$/)
-      .first();
-    const readMerchantAllowance = async () => {
-      await page.goto('/settings/account');
-      await expect(merchantCopyAllowance).toBeVisible({ timeout: 30_000 });
-      return Number(
-        (await merchantCopyAllowance.innerText()).replace(/\D+/gu, '')
-      );
-    };
-    const before = await readMerchantAllowance();
-    expect(Number.isFinite(before)).toBe(true);
-
     await page.goto('/admin/plans');
     const copyField = page.locator('#plan-trial-copy');
-    await expect(copyField).toBeVisible();
-    const target = before + 7;
+    await expect(copyField).toBeVisible({ timeout: 30_000 });
+    // Collides with no seed: the shipped copy allowances are 5/30/100/300 and
+    // the add-on quantities 20/10, so a stale fallback cannot fake this green.
+    const target = 73;
     await copyField.fill(String(target));
 
     const trialForm = copyField.locator('xpath=ancestor::form[1]');
@@ -143,8 +140,30 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
       .poll(async () => revisionLine.innerText(), { timeout: 30_000 })
       .not.toBe(revisionBefore);
 
-    // …and the merchant reads the new allowance with nothing redeployed.
-    expect(await readMerchantAllowance()).toBe(target);
+    // …and a store registering now is provisioned off the edited catalog, with
+    // nothing redeployed. Its own context so the admin session stays intact.
+    const merchant = await registerE2EUser(request);
+    // newContext() does not inherit use.baseURL, so pass it through or the
+    // relative goto below would throw on an invalid URL.
+    const merchantContext = await browser.newContext({ baseURL });
+    try {
+      const merchantPage = await merchantContext.newPage();
+      await loginByForm(merchantPage, merchant);
+      await merchantPage.goto('/settings/account');
+      // Assert on what the merchant actually reads, not an internal field.
+      const merchantCopyAllowance = merchantPage
+        .locator('section', {
+          has: merchantPage.getByRole('heading', { name: '文案条数' }),
+        })
+        .getByText(/^套餐总量 \d+$/)
+        .first();
+      await expect(merchantCopyAllowance).toBeVisible({ timeout: 30_000 });
+      await expect(merchantCopyAllowance).toHaveText(`套餐总量 ${target}`, {
+        timeout: 30_000,
+      });
+    } finally {
+      await merchantContext.close();
+    }
   } finally {
     await cleanupE2EUsers(request);
   }
