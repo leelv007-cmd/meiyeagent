@@ -7,12 +7,14 @@ import {
   admin_users_columns_created_at,
   admin_users_columns_email,
   admin_users_columns_name,
+  admin_users_columns_provisioned_by,
   admin_users_columns_role,
   admin_users_columns_status,
   admin_users_email_copied,
   admin_users_inactive,
   admin_users_no_results,
   admin_users_search,
+  admin_users_self_registered,
   admin_users_user,
 } from '@/locale/paraglide/messages';
 import { UserDetailViewer } from '@/components/admin/users/user-detail-viewer';
@@ -206,6 +208,26 @@ export function UsersTable({
         meta: { label: admin_users_columns_role() },
         minSize: 100,
         size: 120,
+      },
+      {
+        id: 'provisionedByUserId',
+        accessorKey: 'provisionedByUserId',
+        enableHiding: true,
+        enableSorting: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            label={admin_users_columns_provisioned_by()}
+          />
+        ),
+        cell: ({ row }) => (
+          <span className="font-mono text-xs text-muted-foreground">
+            {row.original.provisionedByUserId ?? admin_users_self_registered()}
+          </span>
+        ),
+        meta: { label: admin_users_columns_provisioned_by() },
+        minSize: 160,
+        size: 200,
       },
       {
         id: 'createdAt',

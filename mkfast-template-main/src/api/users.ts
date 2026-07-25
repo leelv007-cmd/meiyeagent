@@ -100,6 +100,7 @@ export const listUsers = createServerFn({ method: 'GET' })
         banned: row.banned,
         banReason: row.banReason,
         banExpires: row.banExpires,
+        provisionedByUserId: row.provisionedByUserId,
       })) as User[],
       total: Number(count),
     };

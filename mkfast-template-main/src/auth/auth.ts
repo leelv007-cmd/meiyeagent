@@ -113,6 +113,11 @@ export function createAuth() {
           type: 'string',
           required: false,
         },
+        provisionedByUserId: {
+          type: 'string',
+          required: false,
+          input: false,
+        },
       },
       // https://www.better-auth.com/docs/concepts/users-accounts#delete-user
       deleteUser: {

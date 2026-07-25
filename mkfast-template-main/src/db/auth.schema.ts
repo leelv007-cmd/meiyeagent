@@ -30,6 +30,7 @@ export const user = pgTable(
     banExpires: timestamp('ban_expires', { withTimezone: true }),
     normalizedEmail: text('normalized_email').unique(),
     customerId: text('customer_id'),
+    provisionedByUserId: text('provisioned_by_user_id'),
   },
   (table) => [
     uniqueIndex('user_customer_id_uidx')

@@ -124,4 +124,32 @@ describe('route-level recent authentication', () => {
       },
     ]);
   });
+
+  it('attributes admin-created users to the authenticated actor', async () => {
+    const hook = createRecentAuthenticationHook(async () => {
+      return {
+        session: {
+          createdAt: new Date(),
+        },
+        user: {
+          id: 'admin-user',
+        },
+      } as never;
+    });
+    const context = {
+      path: '/admin/create-user',
+      body: {
+        data: {
+          provisionedByUserId: 'forged-user',
+        },
+      },
+    };
+
+    await hook(context as never);
+
+    assert.deepEqual(context.body.data, {
+      emailVerified: true,
+      provisionedByUserId: 'admin-user',
+    });
+  });
 });

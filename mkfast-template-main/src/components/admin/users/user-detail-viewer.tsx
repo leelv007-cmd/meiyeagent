@@ -13,8 +13,10 @@ import {
   admin_users_banned,
   admin_users_close,
   admin_users_columns_email,
+  admin_users_columns_provisioned_by,
   admin_users_email_copied,
   admin_users_joined,
+  admin_users_self_registered,
   admin_users_unban_button,
   admin_users_unban_error,
   admin_users_unban_success,
@@ -201,6 +203,14 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
             )}
           </div>
           <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-muted-foreground">
+                {admin_users_columns_provisioned_by()}:
+              </span>
+              <span className="font-mono text-xs">
+                {user.provisionedByUserId ?? admin_users_self_registered()}
+              </span>
+            </div>
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">
                 {admin_users_joined()}:

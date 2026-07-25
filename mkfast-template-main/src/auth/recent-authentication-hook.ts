@@ -8,6 +8,7 @@ import {
   requireRecentAuthentication,
   requiresRecentAuthentication,
 } from './recent-authentication';
+import { secureAdminProvisioningData } from './admin-provisioning-attribution';
 
 type SessionLoader = (
   context: Parameters<typeof getSessionFromCtx>[0],
@@ -33,6 +34,13 @@ export function createRecentAuthenticationHook(
         code: error.code,
         message: error.message,
       });
+    }
+
+    if (context.path === '/admin/create-user') {
+      context.body.data = secureAdminProvisioningData(
+        context.body.data,
+        current.user.id
+      );
     }
   });
 }
