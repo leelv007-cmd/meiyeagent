@@ -10,16 +10,16 @@ import {
   ImpactReviewDialog,
   type ImpactReviewRequest,
 } from '@/components/admin/impact-review-dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -513,6 +513,7 @@ export function AdminPlanControl() {
     });
   };
   const addOnConfig = configFor('plan.addons');
+  const trialEnabledConfig = configFor(TRIAL_ENABLED_KEY);
   const allAddOns = storedAddOns(addOnConfig, catalogQuery.data?.addOns ?? []);
   const compliance: Array<{
     id: string;
@@ -568,14 +569,18 @@ export function AdminPlanControl() {
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         {(catalogQuery.data?.plans ?? []).map((plan) => (
-          <Card key={plan.id}>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="capitalize">{plan.id}</CardTitle>
-                <Badge variant="outline">{admin_plan_published()}</Badge>
+          <AdminPanel key={plan.id}>
+            <AdminPanelHeader>
+              <div className="flex w-full items-center justify-between gap-3">
+                <AdminPanelTitle className="capitalize">
+                  {plan.id}
+                </AdminPanelTitle>
+                <AdminStatusChip variant="outline">
+                  {admin_plan_published()}
+                </AdminStatusChip>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
+            </AdminPanelHeader>
+            <AdminPanelContent className="space-y-3 text-sm">
               <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <div>
                   <dt className="text-muted-foreground">{admin_plan_copy()}</dt>
@@ -623,16 +628,18 @@ export function AdminPlanControl() {
                 onReview={reviewChange}
                 plan={plan}
               />
-            </CardContent>
-          </Card>
+            </AdminPanelContent>
+          </AdminPanel>
         ))}
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>{admin_plan_trial_enabled()}</CardTitle>
-          <CardDescription>{admin_plan_trial_description()}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <AdminPanel data-testid="admin-plan-trial-switch">
+        <AdminPanelHeader>
+          <AdminPanelTitle>{admin_plan_trial_enabled()}</AdminPanelTitle>
+          <AdminPanelDescription>
+            {admin_plan_trial_description()}
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           <ComplianceToggle
             config={configFor('plan.trial.enabled')}
             fallbackChecked={catalogQuery.data?.trialEnabled ?? true}
@@ -640,13 +647,13 @@ export function AdminPlanControl() {
             label={admin_plan_trial_enabled()}
             onReview={reviewChange}
           />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>{admin_plan_add_ons()}</CardTitle>
-        </CardHeader>
-        <CardContent>
+        </AdminPanelContent>
+      </AdminPanel>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{admin_plan_add_ons()}</AdminPanelTitle>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {(catalogQuery.data?.addOns ?? []).map((offer) => (
               <li className="rounded-lg border p-3 text-sm" key={offer.id}>
@@ -671,16 +678,16 @@ export function AdminPlanControl() {
               </li>
             ))}
           </ul>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>{admin_plan_compliance_title()}</CardTitle>
-          <CardDescription>
+        </AdminPanelContent>
+      </AdminPanel>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{admin_plan_compliance_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {admin_plan_compliance_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 lg:grid-cols-3">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="grid gap-3 lg:grid-cols-3">
           {compliance.map((item) => (
             <ComplianceToggle
               config={configFor(item.key)}
@@ -690,8 +697,8 @@ export function AdminPlanControl() {
               onReview={reviewChange}
             />
           ))}
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
       <details className="rounded-lg border p-4">
         <summary className="cursor-pointer font-medium">
           {admin_plan_advanced_config()}

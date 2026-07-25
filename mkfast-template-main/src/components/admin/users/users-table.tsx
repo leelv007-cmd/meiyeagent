@@ -52,7 +52,7 @@ import {
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import { formatDate, formatDateTime } from '@/lib/formatter';
 import { cn } from '@/lib/utils';
 function TableRowSkeleton({ columns }: { columns: number }) {
@@ -156,7 +156,7 @@ export function UsersTable({
           const u = row.original;
           return (
             <div className="flex items-center gap-2">
-              <Badge
+              <AdminStatusChip
                 variant="outline"
                 className="text-sm border-transparent px-1.5 py-2 hover:cursor-pointer hover:underline hover:underline-offset-4"
                 onClick={() => {
@@ -170,7 +170,7 @@ export function UsersTable({
                   <IconMailQuestion className="stroke-red-500 dark:stroke-red-400" />
                 )}
                 {u.email}
-              </Badge>
+              </AdminStatusChip>
             </div>
           );
         },
@@ -192,7 +192,7 @@ export function UsersTable({
         cell: ({ row }) => {
           const r = row.original.role ?? 'user';
           return (
-            <Badge
+            <AdminStatusChip
               variant="outline"
               className={cn(
                 'px-1.5 border-transparent',
@@ -202,7 +202,7 @@ export function UsersTable({
               )}
             >
               {r === 'admin' ? admin_users_admin() : admin_users_user()}
-            </Badge>
+            </AdminStatusChip>
           );
         },
         meta: { label: admin_users_columns_role() },
@@ -259,7 +259,7 @@ export function UsersTable({
         cell: ({ row }) => {
           const banned = row.original.banned;
           return (
-            <Badge
+            <AdminStatusChip
               variant="outline"
               className={cn(
                 'px-1.5 border-transparent',
@@ -279,7 +279,7 @@ export function UsersTable({
                   {admin_users_active()}
                 </>
               )}
-            </Badge>
+            </AdminStatusChip>
           );
         },
         meta: { label: admin_users_columns_status() },

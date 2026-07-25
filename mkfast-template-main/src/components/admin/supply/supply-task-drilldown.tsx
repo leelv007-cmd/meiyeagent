@@ -2,14 +2,14 @@
  * Task drilldown detail (J4 / D-070).
  * Summary cards · latency segments · durable timeline · foldable error · artifact.
  */
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import type { TaskDrilldownView } from '@/p1/admin-supply-task-drilldown-model';
 
 export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
@@ -30,46 +30,50 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
         data-testid="supply-task-summary-cards"
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
       >
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm">状态</CardTitle>
-            <CardDescription>{view.summary.lifecycle}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Badge data-testid="supply-task-status">
+        <AdminPanel>
+          <AdminPanelHeader className="pb-1">
+            <AdminPanelTitle className="text-sm">状态</AdminPanelTitle>
+            <AdminPanelDescription>
+              {view.summary.lifecycle}
+            </AdminPanelDescription>
+          </AdminPanelHeader>
+          <AdminPanelContent>
+            <AdminStatusChip data-testid="supply-task-status">
               {view.summary.status}
-            </Badge>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm">操作 / 模型</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs">
+            </AdminStatusChip>
+          </AdminPanelContent>
+        </AdminPanel>
+        <AdminPanel>
+          <AdminPanelHeader className="pb-1">
+            <AdminPanelTitle className="text-sm">操作 / 模型</AdminPanelTitle>
+          </AdminPanelHeader>
+          <AdminPanelContent className="text-xs">
             <div>{view.summary.operation}</div>
             <div className="font-mono">{view.summary.catalogModelId}</div>
             <div className="text-muted-foreground">
               {view.summary.channelKind} · attempt {view.summary.attemptCount}
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm">部署 / 数据等级</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs font-mono">
+          </AdminPanelContent>
+        </AdminPanel>
+        <AdminPanel>
+          <AdminPanelHeader className="pb-1">
+            <AdminPanelTitle className="text-sm">
+              部署 / 数据等级
+            </AdminPanelTitle>
+          </AdminPanelHeader>
+          <AdminPanelContent className="text-xs font-mono">
             <div>{view.summary.deploymentId}</div>
             <div>{view.summary.dataClass}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-sm">成本</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs" data-testid="supply-task-cost">
+          </AdminPanelContent>
+        </AdminPanel>
+        <AdminPanel>
+          <AdminPanelHeader className="pb-1">
+            <AdminPanelTitle className="text-sm">成本</AdminPanelTitle>
+          </AdminPanelHeader>
+          <AdminPanelContent className="text-xs" data-testid="supply-task-cost">
             {view.summary.costLabel}
-          </CardContent>
-        </Card>
+          </AdminPanelContent>
+        </AdminPanel>
       </div>
 
       <section data-testid="supply-task-latency" className="space-y-2">

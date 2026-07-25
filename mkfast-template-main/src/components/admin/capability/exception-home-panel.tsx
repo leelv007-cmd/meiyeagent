@@ -1,13 +1,13 @@
 import { AvailabilityStatusBadge } from '@/components/admin/capability/capability-status-badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import type { CapabilityAvailabilityStatus } from '@meiye/contracts';
 import {
   exceptionFreshnessLabel,
@@ -40,20 +40,20 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
             <AvailabilityStatusBadge
               status={severityAsAvailability(row.severity)}
             />
-            <Badge
+            <AdminStatusChip
               variant="outline"
               data-testid="exception-severity-label"
               data-severity={row.severity}
             >
               {exceptionSeverityLabel(row.severity)}
-            </Badge>
-            <Badge
+            </AdminStatusChip>
+            <AdminStatusChip
               variant="outline"
               data-testid="exception-freshness"
               data-freshness={row.freshness}
             >
               新鲜度 · {exceptionFreshnessLabel(row.freshness)}
-            </Badge>
+            </AdminStatusChip>
           </div>
           <p className="text-xs text-muted-foreground">
             根因键{' '}
@@ -63,9 +63,12 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
           </p>
         </div>
         {row.nextActionLabel ? (
-          <Badge variant="secondary" data-testid="exception-next-action">
+          <AdminStatusChip
+            variant="secondary"
+            data-testid="exception-next-action"
+          >
             下一步 · {row.nextActionLabel}
-          </Badge>
+          </AdminStatusChip>
         ) : null}
       </div>
 
@@ -102,14 +105,14 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
           <ul className="mt-1 flex flex-wrap gap-1">
             {row.affectedCapabilityIds.map((id) => (
               <li key={id}>
-                <Badge
+                <AdminStatusChip
                   variant="outline"
                   className="font-mono text-[10px]"
                   data-testid="exception-affected-capability"
                   data-capability-id={id}
                 >
                   {id}
-                </Badge>
+                </AdminStatusChip>
               </li>
             ))}
           </ul>
@@ -183,33 +186,37 @@ function EmptyExceptionState({ view }: { view: ExceptionHomeView }) {
         data-testid="exception-panorama-stats"
       >
         {view.panoramaStats.map((stat) => (
-          <Card
+          <AdminPanel
             key={stat.id}
             data-testid="exception-stat-card"
             data-stat-id={stat.id}
           >
-            <CardHeader className="pb-2">
-              <CardDescription>{stat.label}</CardDescription>
-              <CardTitle
+            <AdminPanelHeader className="pb-2">
+              <AdminPanelDescription>{stat.label}</AdminPanelDescription>
+              <AdminPanelTitle
                 className="text-2xl tabular-nums"
                 data-testid="exception-stat-value"
               >
                 {stat.value}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+              </AdminPanelTitle>
+            </AdminPanelHeader>
+            <AdminPanelContent>
               <p className="text-xs text-muted-foreground">{stat.hint}</p>
-            </CardContent>
-          </Card>
+            </AdminPanelContent>
+          </AdminPanel>
         ))}
       </section>
 
-      <Card data-testid="exception-catalog-entry">
-        <CardHeader>
-          <CardTitle className="text-base">{view.catalogEntry.label}</CardTitle>
-          <CardDescription>{view.catalogEntry.description}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <AdminPanel data-testid="exception-catalog-entry">
+        <AdminPanelHeader>
+          <AdminPanelTitle className="text-base">
+            {view.catalogEntry.label}
+          </AdminPanelTitle>
+          <AdminPanelDescription>
+            {view.catalogEntry.description}
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           <a
             href={view.catalogEntry.path}
             className="text-sm font-medium text-primary underline-offset-4 hover:underline"
@@ -217,8 +224,8 @@ function EmptyExceptionState({ view }: { view: ExceptionHomeView }) {
           >
             前往能力目录
           </a>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
     </div>
   );
 }
@@ -266,14 +273,16 @@ export function ExceptionHomePanel({ view }: { view: ExceptionHomeView }) {
             ))}
           </ul>
 
-          <Card data-testid="exception-catalog-entry">
-            <CardHeader>
-              <CardTitle className="text-base">
+          <AdminPanel data-testid="exception-catalog-entry">
+            <AdminPanelHeader>
+              <AdminPanelTitle className="text-base">
                 {view.catalogEntry.label}
-              </CardTitle>
-              <CardDescription>{view.catalogEntry.description}</CardDescription>
-            </CardHeader>
-            <CardContent>
+              </AdminPanelTitle>
+              <AdminPanelDescription>
+                {view.catalogEntry.description}
+              </AdminPanelDescription>
+            </AdminPanelHeader>
+            <AdminPanelContent>
               <a
                 href={view.catalogEntry.path}
                 className="text-sm font-medium text-primary underline-offset-4 hover:underline"
@@ -281,8 +290,8 @@ export function ExceptionHomePanel({ view }: { view: ExceptionHomeView }) {
               >
                 前往能力目录
               </a>
-            </CardContent>
-          </Card>
+            </AdminPanelContent>
+          </AdminPanel>
         </div>
       )}
     </div>

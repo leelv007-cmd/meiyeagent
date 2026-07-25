@@ -12,15 +12,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -221,13 +221,13 @@ export function AdminActivationProbeControl() {
   const runs = runsQuery.data ?? [];
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-start justify-between gap-4">
+    <AdminPanel>
+      <AdminPanelHeader className="flex-row items-start justify-between gap-4">
         <div>
-          <CardTitle>{admin_activation_probe_title()}</CardTitle>
-          <CardDescription>
+          <AdminPanelTitle>{admin_activation_probe_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {admin_activation_probe_description()}
-          </CardDescription>
+          </AdminPanelDescription>
         </div>
         <Button
           disabled={statusQuery.isFetching || runsQuery.isFetching}
@@ -238,8 +238,8 @@ export function AdminActivationProbeControl() {
           <IconRefresh />
           {admin_activation_probe_refresh()}
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-6">
+      </AdminPanelHeader>
+      <AdminPanelContent className="space-y-6">
         <p className="text-sm text-muted-foreground">
           {admin_activation_probe_onboarding_flow()}
         </p>
@@ -267,7 +267,7 @@ export function AdminActivationProbeControl() {
                     </p>
                   </TableCell>
                   <TableCell>
-                    <Badge
+                    <AdminStatusChip
                       variant={
                         status.configurationRevision ? 'outline' : 'destructive'
                       }
@@ -275,10 +275,10 @@ export function AdminActivationProbeControl() {
                       {status.configurationRevision
                         ? admin_activation_probe_configuration_ready()
                         : admin_activation_probe_configuration_missing()}
-                    </Badge>
+                    </AdminStatusChip>
                   </TableCell>
                   <TableCell>
-                    <Badge
+                    <AdminStatusChip
                       variant={
                         status.stale
                           ? 'destructive'
@@ -292,7 +292,7 @@ export function AdminActivationProbeControl() {
                         : status.evidence
                           ? admin_activation_probe_evidence_live()
                           : admin_activation_probe_evidence_unverified()}
-                    </Badge>
+                    </AdminStatusChip>
                     {status.evidence ? (
                       <p className="mt-1 max-w-52 truncate font-mono text-xs text-muted-foreground">
                         {status.evidence.evidenceRef}
@@ -302,7 +302,7 @@ export function AdminActivationProbeControl() {
                   <TableCell>
                     {status.latestProbe ? (
                       <>
-                        <Badge
+                        <AdminStatusChip
                           variant={
                             status.latestProbe.outcome === 'passed'
                               ? 'secondary'
@@ -310,7 +310,7 @@ export function AdminActivationProbeControl() {
                           }
                         >
                           {outcomeLabel(status.latestProbe.outcome)}
-                        </Badge>
+                        </AdminStatusChip>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {formatLocaleDateTime(status.latestProbe.createdAt)}
                         </p>
@@ -406,7 +406,7 @@ export function AdminActivationProbeControl() {
                       </TableCell>
                       <TableCell>{run.deploymentId}</TableCell>
                       <TableCell>
-                        <Badge
+                        <AdminStatusChip
                           variant={
                             run.outcome === 'passed'
                               ? 'secondary'
@@ -414,7 +414,7 @@ export function AdminActivationProbeControl() {
                           }
                         >
                           {outcomeLabel(run.outcome)}
-                        </Badge>
+                        </AdminStatusChip>
                       </TableCell>
                       <TableCell>{costLabel(run.providerCost)}</TableCell>
                       <TableCell>{run.latencyMs} ms</TableCell>
@@ -448,7 +448,7 @@ export function AdminActivationProbeControl() {
             </Table>
           </div>
         </section>
-      </CardContent>
+      </AdminPanelContent>
 
       <AlertDialog
         open={Boolean(selected)}
@@ -483,6 +483,6 @@ export function AdminActivationProbeControl() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </AdminPanel>
   );
 }

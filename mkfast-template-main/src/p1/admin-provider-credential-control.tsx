@@ -1,15 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   admin_provider_credential_activation_note,
@@ -164,14 +164,14 @@ export function AdminProviderCredentialControl() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{admin_provider_credentials_title()}</CardTitle>
-        <CardDescription>
+    <AdminPanel>
+      <AdminPanelHeader>
+        <AdminPanelTitle>{admin_provider_credentials_title()}</AdminPanelTitle>
+        <AdminPanelDescription>
           {admin_provider_credentials_description()}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4 lg:grid-cols-3">
+        </AdminPanelDescription>
+      </AdminPanelHeader>
+      <AdminPanelContent className="grid gap-4 lg:grid-cols-3">
         {slots.map((slot) => {
           const credential = query.data?.find(
             (item) => item.id === `platform:${slot}`
@@ -193,7 +193,9 @@ export function AdminProviderCredentialControl() {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">{slot}</span>
-                <Badge variant="outline">{trunkStatusLabel(trunk)}</Badge>
+                <AdminStatusChip variant="outline">
+                  {trunkStatusLabel(trunk)}
+                </AdminStatusChip>
               </div>
               <p className="font-mono text-sm">
                 {credential?.credential
@@ -202,23 +204,25 @@ export function AdminProviderCredentialControl() {
               </p>
               <div className="flex flex-wrap gap-1">
                 {credential?.effectiveSource ? (
-                  <Badge variant={envFallback ? 'destructive' : 'secondary'}>
+                  <AdminStatusChip
+                    variant={envFallback ? 'destructive' : 'secondary'}
+                  >
                     {providerCredentialSource(credential.effectiveSource)}
-                  </Badge>
+                  </AdminStatusChip>
                 ) : null}
                 {hasCredential ? (
-                  <Badge variant="outline">
+                  <AdminStatusChip variant="outline">
                     {drain === 'draining' ? '排空中' : '未排空'}
-                  </Badge>
+                  </AdminStatusChip>
                 ) : null}
                 {hasCredential ? (
-                  <Badge
+                  <AdminStatusChip
                     variant={gateOk ? 'secondary' : 'outline'}
                     data-testid="provider-credential-activation-gate"
                     data-satisfied={String(gateOk)}
                   >
                     激活门：{gateOk ? '满足' : '未满足'}
-                  </Badge>
+                  </AdminStatusChip>
                 ) : null}
               </div>
               {credential?.credential ? (
@@ -306,8 +310,8 @@ export function AdminProviderCredentialControl() {
             </div>
           );
         })}
-      </CardContent>
-    </Card>
+      </AdminPanelContent>
+    </AdminPanel>
   );
 }
 

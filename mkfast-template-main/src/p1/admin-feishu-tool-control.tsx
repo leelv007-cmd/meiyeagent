@@ -4,15 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
   Table,
@@ -164,14 +164,14 @@ export function AdminFeishuToolControl() {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{p1_admin_feishu_manual_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{p1_admin_feishu_manual_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_feishu_manual_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="min-w-64 space-y-2">
             <Label htmlFor="admin-feishu-connection">
               {p1_admin_feishu_connection()}
@@ -211,19 +211,19 @@ export function AdminFeishuToolControl() {
             <IconRefresh />
             {p1_admin_feishu_refresh()}
           </Button>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{p1_admin_feishu_revisions_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{p1_admin_feishu_revisions_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_feishu_revisions_description({
               count: revisions.length,
             })}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           <Table>
             <TableHeader>
               <TableRow>
@@ -255,13 +255,13 @@ export function AdminFeishuToolControl() {
                     </TableCell>
                     <TableCell>{revision.risk}</TableCell>
                     <TableCell>
-                      <Badge
+                      <AdminStatusChip
                         variant={compatibilityVariant(
                           revision.compatibility.status
                         )}
                       >
                         {revision.compatibility.status}
-                      </Badge>
+                      </AdminStatusChip>
                       {revision.compatibility.reason ? (
                         <p className="mt-1 text-xs text-destructive">
                           {revision.compatibility.reason}
@@ -269,9 +269,9 @@ export function AdminFeishuToolControl() {
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusVariant(revision.status)}>
+                      <AdminStatusChip variant={statusVariant(revision.status)}>
                         {revision.status}
-                      </Badge>
+                      </AdminStatusChip>
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {revision.schemaHash.slice(0, 16)}
@@ -293,8 +293,8 @@ export function AdminFeishuToolControl() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
     </div>
   );
 }

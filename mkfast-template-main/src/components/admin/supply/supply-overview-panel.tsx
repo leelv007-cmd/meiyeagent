@@ -1,25 +1,25 @@
 /**
  * Supply control center overview panel (J4 / D-070).
  */
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import type { SupplyOverviewView } from '@/p1/admin-supply-overview-model';
 
 function StatusBadge({ status, label }: { status: string; label: string }) {
   return (
-    <Badge
+    <AdminStatusChip
       variant="outline"
       data-testid="supply-readiness-badge"
       data-status={status}
     >
       {label}
-    </Badge>
+    </AdminStatusChip>
   );
 }
 
@@ -44,21 +44,21 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
         <h3 className="text-sm font-semibold">三模态 operation readiness</h3>
         <div className="grid gap-3 sm:grid-cols-3">
           {view.operationReadiness.map((row) => (
-            <Card
+            <AdminPanel
               key={row.operation}
               data-testid="supply-readiness-card"
               data-operation={row.operation}
               data-status={row.status}
             >
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">
+              <AdminPanelHeader className="pb-2">
+                <AdminPanelTitle className="text-sm">
                   {row.modalityLabel} · {row.operation}
-                </CardTitle>
-                <CardDescription>
+                </AdminPanelTitle>
+                <AdminPanelDescription>
                   候选 {row.candidateCount} · 健康阻断 {row.healthBlockingCount}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs">
+                </AdminPanelDescription>
+              </AdminPanelHeader>
+              <AdminPanelContent className="space-y-2 text-xs">
                 <StatusBadge status={row.status} label={row.label} />
                 <p data-testid="supply-dual-channel-note">
                   {row.dualChannel.label}：{row.dualChannel.note}
@@ -66,8 +66,8 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
                 <p className="font-mono text-muted-foreground">
                   RoutePolicy {row.publishedRoutePolicyRevisionId ?? '—'}
                 </p>
-              </CardContent>
-            </Card>
+              </AdminPanelContent>
+            </AdminPanel>
           ))}
         </div>
       </section>
@@ -89,7 +89,9 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
                   {row.catalogModelDisplayName ?? '未配置'} (
                   {row.catalogModelId ?? '—'})
                 </span>
-                <Badge variant="secondary">{row.label}</Badge>
+                <AdminStatusChip variant="secondary">
+                  {row.label}
+                </AdminStatusChip>
                 <span className="text-muted-foreground">
                   故障域 {row.independentFaultDomainCount} ·{' '}
                   {row.faultDomainKind}

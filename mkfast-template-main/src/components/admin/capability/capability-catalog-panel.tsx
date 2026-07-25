@@ -1,13 +1,13 @@
 import { InventoryStatusBadge } from '@/components/admin/capability/capability-status-badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import type { CapabilityCatalogView } from '@/p1/admin-capability-catalog-model';
 
 /**
@@ -48,19 +48,24 @@ export function CapabilityCatalogPanel({
       </p>
 
       {view.domains.map((section) => (
-        <Card
+        <AdminPanel
           key={section.domain}
           data-testid="catalog-l1-section"
           data-domain={section.domain}
         >
-          <CardHeader className="space-y-2">
+          <AdminPanelHeader className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="text-base">{section.title}</CardTitle>
-              <Badge variant="secondary" data-testid="catalog-l1-badge">
+              <AdminPanelTitle className="text-base">
+                {section.title}
+              </AdminPanelTitle>
+              <AdminStatusChip
+                variant="secondary"
+                data-testid="catalog-l1-badge"
+              >
                 L1 能力域
-              </Badge>
+              </AdminStatusChip>
             </div>
-            <CardDescription className="space-y-1">
+            <AdminPanelDescription className="space-y-1">
               <p data-testid="catalog-function-summary">
                 <span className="font-medium text-foreground">功能：</span>
                 {section.functionSummary}
@@ -69,9 +74,9 @@ export function CapabilityCatalogPanel({
                 <span className="font-medium text-foreground">用户影响：</span>
                 {section.userImpact}
               </p>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
+            </AdminPanelDescription>
+          </AdminPanelHeader>
+          <AdminPanelContent className="space-y-5">
             <section
               className="space-y-2"
               data-testid="catalog-l2-capabilities"
@@ -114,13 +119,13 @@ export function CapabilityCatalogPanel({
                 <ul className="flex flex-wrap gap-2">
                   {section.technicalDependencies.map((dep) => (
                     <li key={dep.id}>
-                      <Badge
+                      <AdminStatusChip
                         variant="outline"
                         data-testid="catalog-tech-dep"
                         data-dep-id={dep.id}
                       >
                         {dep.label}
-                      </Badge>
+                      </AdminStatusChip>
                     </li>
                   ))}
                 </ul>
@@ -151,12 +156,12 @@ export function CapabilityCatalogPanel({
                             {drill.title}
                           </span>
                           {drill.hostsOperationsHealth ? (
-                            <Badge
+                            <AdminStatusChip
                               variant="secondary"
                               data-testid="catalog-health-block-badge"
                             >
                               含运行健康
-                            </Badge>
+                            </AdminStatusChip>
                           ) : null}
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
@@ -174,8 +179,8 @@ export function CapabilityCatalogPanel({
                 </ul>
               )}
             </section>
-          </CardContent>
-        </Card>
+          </AdminPanelContent>
+        </AdminPanel>
       ))}
 
       <section

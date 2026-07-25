@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import {
   domainLabel,
   getDrilldownDomainContext,
@@ -31,17 +31,20 @@ export function CapabilityDrilldownBanner({
       data-hosts-health={page.hostsOperationsHealth ? 'true' : 'false'}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="secondary" data-testid="drilldown-l1-badge">
+        <AdminStatusChip variant="secondary" data-testid="drilldown-l1-badge">
           {domainLabel(page.domain)}
-        </Badge>
+        </AdminStatusChip>
         <span className="text-muted-foreground">·</span>
         <span className="font-medium" data-testid="drilldown-page-title">
           {page.title}
         </span>
         {page.hostsOperationsHealth ? (
-          <Badge variant="outline" data-testid="drilldown-health-badge">
+          <AdminStatusChip
+            variant="outline"
+            data-testid="drilldown-health-badge"
+          >
             运行健康区块
-          </Badge>
+          </AdminStatusChip>
         ) : null}
       </div>
       <p

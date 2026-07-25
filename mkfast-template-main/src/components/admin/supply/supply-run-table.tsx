@@ -2,7 +2,7 @@
  * High-density supply run table (J4 / D-070).
  * Facets + pagination/sort reflected via URL state helpers (pure props).
  */
-import { Badge } from '@/components/ui/badge';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import type {
   SupplyRunTablePage,
   SupplyRunTableUrlState,
@@ -227,29 +227,29 @@ export function SupplyRunTable({
         className="flex flex-wrap gap-2 text-xs"
       >
         {page.state.operation ? (
-          <Badge variant="secondary" data-facet="operation">
+          <AdminStatusChip variant="secondary" data-facet="operation">
             op={page.state.operation}
-          </Badge>
+          </AdminStatusChip>
         ) : null}
         {page.state.status ? (
-          <Badge variant="secondary" data-facet="status">
+          <AdminStatusChip variant="secondary" data-facet="status">
             status={page.state.status}
-          </Badge>
+          </AdminStatusChip>
         ) : null}
         {page.state.modality ? (
-          <Badge variant="secondary" data-facet="modality">
+          <AdminStatusChip variant="secondary" data-facet="modality">
             modality={page.state.modality}
-          </Badge>
+          </AdminStatusChip>
         ) : null}
         {page.state.channelKind ? (
-          <Badge variant="secondary" data-facet="channelKind">
+          <AdminStatusChip variant="secondary" data-facet="channelKind">
             channel={page.state.channelKind}
-          </Badge>
+          </AdminStatusChip>
         ) : null}
         {page.state.q ? (
-          <Badge variant="secondary" data-facet="q">
+          <AdminStatusChip variant="secondary" data-facet="q">
             q={page.state.q}
-          </Badge>
+          </AdminStatusChip>
         ) : null}
         <span className="text-muted-foreground">
           facets ops[{page.facets.operations.join('|')}] status[
@@ -300,7 +300,9 @@ export function SupplyRunTable({
                   <span className="text-muted-foreground">{row.modality}</span>
                 </td>
                 <td className="p-2">
-                  <Badge variant="outline">{row.status}</Badge>
+                  <AdminStatusChip variant="outline">
+                    {row.status}
+                  </AdminStatusChip>
                 </td>
                 <td className="p-2 font-mono">
                   {row.channelKind}

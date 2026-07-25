@@ -6,7 +6,7 @@
  * Live path (F-J-02) always mounts with idle / error / ready honest states;
  * fixture path supplies a ready demo view.
  */
-import { Badge } from '@/components/ui/badge';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import {
   Table,
   TableBody,
@@ -103,7 +103,9 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
                     {row.deploymentId}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{row.band}</Badge>
+                    <AdminStatusChip variant="secondary">
+                      {row.band}
+                    </AdminStatusChip>
                   </TableCell>
                 </TableRow>
               ))}
@@ -143,9 +145,9 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
               <li
                 key={`ns-${row.layer}-${row.deploymentId}-${row.reasons.join()}`}
               >
-                <Badge variant="outline" className="mr-1">
+                <AdminStatusChip variant="outline" className="mr-1">
                   {row.layer ?? 'unknown'}
-                </Badge>
+                </AdminStatusChip>
                 <span className="font-mono text-xs">{row.deploymentId}</span>:{' '}
                 {row.reasons.join(', ')}
               </li>
@@ -188,13 +190,13 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
                         </TableCell>
                         <TableCell>{fact.kind}</TableCell>
                         <TableCell>
-                          <Badge
+                          <AdminStatusChip
                             variant={
                               fact.status === 'fresh' ? 'secondary' : 'outline'
                             }
                           >
                             {fact.status}
-                          </Badge>
+                          </AdminStatusChip>
                         </TableCell>
                       </TableRow>
                     ))

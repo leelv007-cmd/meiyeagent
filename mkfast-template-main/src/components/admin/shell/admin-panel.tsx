@@ -10,6 +10,7 @@
  */
 import { Widget } from '@/components/heroui-pro';
 import { cn } from '@/lib/utils';
+import { Chip } from '@heroui/react';
 import type { ComponentPropsWithRef, ReactNode } from 'react';
 
 export function AdminPanel({
@@ -88,17 +89,17 @@ export function AdminPanelFooter({
 }
 
 /**
- * `Badge` 的后台对应物。
+ * `Badge` 的后台对应物 —— HeroUI v3 `Chip`（D-130 组件基准），配色全部来自
+ * token 桥落下的 DESIGN.md 值，因此跟着双主题走、不自带颜色。
  *
- * variant 词表与 shadcn Badge 逐一对齐（default/secondary/destructive/outline），
- * 让面板里的状态映射函数原样保留；配色取 token 桥落下的 DESIGN.md 值，
- * 所以它跟着双主题走，不自带颜色。
+ * variant 词表刻意与 shadcn Badge 逐一对齐（default/secondary/destructive/
+ * outline），面板里既有的「状态 → variant」映射函数因此一行都不用改。
  */
 const CHIP_VARIANTS = {
-  default: 'bg-accent text-accent-foreground border-transparent',
-  secondary: 'bg-surface-secondary text-foreground border-transparent',
-  destructive: 'bg-danger text-danger-foreground border-transparent',
-  outline: 'border-border text-foreground',
+  default: { color: 'accent', variant: 'primary' },
+  secondary: { color: 'default', variant: 'secondary' },
+  destructive: { color: 'danger', variant: 'primary' },
+  outline: { color: 'default', variant: 'tertiary' },
 } as const;
 
 export type AdminStatusChipVariant = keyof typeof CHIP_VARIANTS;
@@ -112,16 +113,17 @@ export function AdminStatusChip({
   children: ReactNode;
   variant?: AdminStatusChipVariant;
 }) {
+  const chip = CHIP_VARIANTS[variant];
   return (
-    <span
-      className={cn(
-        'inline-flex w-fit shrink-0 items-center justify-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap',
-        CHIP_VARIANTS[variant],
-        className
-      )}
+    // 展开在前：span 自带的 `color` 属性否则会盖掉 Chip 的配色 variant。
+    <Chip
       {...props}
+      className={cn('w-fit shrink-0 whitespace-nowrap', className)}
+      color={chip.color}
+      size="sm"
+      variant={chip.variant}
     >
       {children}
-    </span>
+    </Chip>
   );
 }

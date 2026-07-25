@@ -1,14 +1,14 @@
 import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { SupplyAuditTable } from '@/components/admin/supply/supply-audit-table';
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import {
   Table,
   TableBody,
@@ -98,14 +98,14 @@ function AdminSupplyAuditProjection() {
   });
 
   return (
-    <Card data-testid="admin-supply-audit-projection">
-      <CardHeader>
-        <CardTitle>模型供应治理审计</CardTitle>
-        <CardDescription>
+    <AdminPanel data-testid="admin-supply-audit-projection">
+      <AdminPanelHeader>
+        <AdminPanelTitle>模型供应治理审计</AdminPanelTitle>
+        <AdminPanelDescription>
           受治理动作的不可变原因、目标、操作者与关联证据。
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </AdminPanelDescription>
+      </AdminPanelHeader>
+      <AdminPanelContent>
         {auditQuery.isPending ? (
           <p className="text-sm text-muted-foreground">{common_loading()}</p>
         ) : auditQuery.isError ? (
@@ -113,8 +113,8 @@ function AdminSupplyAuditProjection() {
         ) : (
           <SupplyAuditTable changes={auditQuery.data?.recentChanges ?? []} />
         )}
-      </CardContent>
-    </Card>
+      </AdminPanelContent>
+    </AdminPanel>
   );
 }
 
@@ -157,12 +157,14 @@ function AdminByokAuditProjection() {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{p1_admin_audit_byok_title()}</CardTitle>
-        <CardDescription>{p1_admin_audit_byok_description()}</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <AdminPanel>
+      <AdminPanelHeader>
+        <AdminPanelTitle>{p1_admin_audit_byok_title()}</AdminPanelTitle>
+        <AdminPanelDescription>
+          {p1_admin_audit_byok_description()}
+        </AdminPanelDescription>
+      </AdminPanelHeader>
+      <AdminPanelContent>
         {auditQuery.isPending ? (
           <p className="text-sm text-muted-foreground">{common_loading()}</p>
         ) : auditQuery.isError ? (
@@ -170,8 +172,8 @@ function AdminByokAuditProjection() {
         ) : (
           <ByokAuditTable events={auditQuery.data ?? []} />
         )}
-      </CardContent>
-    </Card>
+      </AdminPanelContent>
+    </AdminPanel>
   );
 }
 
@@ -197,7 +199,7 @@ function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
           events.map((event) => (
             <TableRow key={event.id}>
               <TableCell>
-                <Badge
+                <AdminStatusChip
                   variant={
                     event.action === 'byok.completed'
                       ? 'secondary'
@@ -207,7 +209,7 @@ function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
                   }
                 >
                   {byokActionLabel(event.action)}
-                </Badge>
+                </AdminStatusChip>
               </TableCell>
               <TableCell className="max-w-96 text-xs">
                 <dl className="grid gap-1">
