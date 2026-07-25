@@ -109,7 +109,7 @@ test.use({
   isMobile: true,
 });
 
-test('keeps the four merchant destinations and camera authorization reachable on mobile', async ({
+test('keeps identity, assets, and camera authorization reachable on mobile', async ({
   page,
   request,
 }) => {
@@ -120,17 +120,16 @@ test('keeps the four merchant destinations and camera authorization reachable on
     const mobileNav = page.getByRole('navigation', { name: '移动端导航' });
     await expect(mobileNav).toBeVisible();
     await expect(
-      mobileNav.getByTestId('mobile-progress-entry')
-    ).toHaveAttribute('href', /^\/dashboard\/tasks(?:\?|$)/u);
-    for (const label of ['创作', '进度', '内容', '门店']) {
+      mobileNav.getByTestId('mobile-identity-assets-entry')
+    ).toHaveAttribute('href', /^\/dashboard\/assets(?:\?|$)/u);
+    for (const label of ['创作', '身份素材', '内容', '门店']) {
       await expect(mobileNav.getByText(label, { exact: true })).toBeVisible();
     }
 
-    await mobileNav.getByText('进度', { exact: true }).click();
-    await expect(page).toHaveURL(/\/dashboard\/tasks(?:\?|$)/u);
-    await expect(mobileNav.getByTestId('mobile-progress-entry')).toHaveClass(
-      /font-medium/u
-    );
+    await mobileNav.getByText('身份素材', { exact: true }).click();
+    await expect(page).toHaveURL(/\/dashboard\/assets(?:\?|$)/u);
+    await expect(page.getByRole('region', { name: '表达身份' })).toBeVisible();
+    await expect(page.getByText('素材', { exact: true }).first()).toBeVisible();
 
     await mobileNav.getByText('创作', { exact: true }).click();
     await expect(
@@ -418,11 +417,11 @@ test.fixme(
   }
 );
 
-test('keeps mobile Progress honest during a slow canonical query and restores a typed Result source anchor', async ({
+test('keeps mobile identity and assets reachable during a slow canonical query', async ({
   page,
   request,
 }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(60_000);
   const user = await registerE2EUser(request);
   let releaseWorkbenchQuery = () => {};
   try {
@@ -443,135 +442,29 @@ test('keeps mobile Progress honest during a slow canonical query and restores a 
     });
 
     await loginByForm(page, user);
-    await seedConfirmedStore(page);
-    await seedTaskInboxRows(page, 18);
     await page.goto(
       '/dashboard/tasks?date=all&mode=inbox&relatedKind=all&risk=all&source=manual&status=all'
     );
     const mobileNav = page.getByRole('navigation', { name: '移动端导航' });
-    const progressEntry = mobileNav.getByTestId('mobile-progress-entry');
-    await expect(progressEntry).toBeDisabled();
-    await expect(progressEntry).not.toHaveAttribute('href');
-    const entryBox = await progressEntry.boundingBox();
-    if (!entryBox) throw new Error('Mobile progress entry was not rendered');
-    await page.mouse.click(
-      entryBox.x + entryBox.width / 2,
-      entryBox.y + entryBox.height / 2
+    const identityAssetsEntry = mobileNav.getByTestId(
+      'mobile-identity-assets-entry'
+    );
+    await expect(identityAssetsEntry).toHaveAttribute(
+      'href',
+      '/dashboard/assets'
     );
     await expect(page).toHaveURL(/\/dashboard\/tasks/u);
 
     holdWorkbenchQuery = false;
     releaseWorkbenchQuery();
-    await expect(progressEntry).toHaveAttribute(
+    await expect(identityAssetsEntry).toHaveAttribute(
       'href',
-      /^\/dashboard\/tasks(?:\?|$)/u
+      '/dashboard/assets'
     );
     await page.unroute('**/api/core/p1/query');
-
-    await page.goto('/dashboard');
-    const workId = await submitComposerJourney(
-      page,
-      {
-        deliveryTarget: 'wechat_moments',
-        modality: 'copy',
-        workspace: 'copy',
-        expectedActivations: 2,
-        packageFormat: 'text',
-        packageButtonName: /朋友圈分段包/u,
-        packageFileName: /朋友圈分段包\.txt$/u,
-        resultSurfaceTestId: 'copy-image-text-worksurface',
-      },
-      `皮肤护理 移动返回真实文案 ${crypto.randomUUID()}`
-    );
-
-    await page.goto(
-      '/dashboard/tasks?date=all&mode=inbox&relatedKind=all&risk=all&source=manual&status=all'
-    );
-    await expect(page.getByText('移动返回锚点任务 18')).toBeVisible();
-    const sourceScrollY = await page.evaluate(async () => {
-      const maximum =
-        document.documentElement.scrollHeight - window.innerHeight;
-      const previousBehavior = document.documentElement.style.scrollBehavior;
-      document.documentElement.style.scrollBehavior = 'auto';
-      window.scrollTo(0, Math.min(320, Math.max(maximum, 0)));
-      await new Promise<void>((resolve) =>
-        window.requestAnimationFrame(() => resolve())
-      );
-      const scrollY = window.scrollY;
-      document.documentElement.style.scrollBehavior = previousBehavior;
-      return scrollY;
-    });
-    expect(sourceScrollY).toBeGreaterThan(0);
-
-    const returnSearch = new URLSearchParams({
-      returnDate: 'all',
-      returnFocusKey: 'mobile-progress-entry',
-      returnPanel: 'inbox',
-      returnRelatedKind: 'all',
-      returnRisk: 'all',
-      returnScrollY: String(sourceScrollY),
-      returnSource: 'manual',
-      returnStatus: 'all',
-      returnTo: 'task-inbox',
-    });
-    await page.goto(
-      `/dashboard/results/${encodeURIComponent(workId)}?${returnSearch}`
-    );
-    await expect(page.getByTestId('result-back')).toBeVisible({
-      timeout: 60_000,
-    });
-    await page.reload();
-    await expect(page).toHaveURL((url) => {
-      return (
-        url.pathname === `/dashboard/results/${workId}` &&
-        url.searchParams.get('returnTo') === 'task-inbox' &&
-        url.searchParams.get('returnScrollY') === String(sourceScrollY)
-      );
-    });
-    await page.getByTestId('result-back').click();
-
-    await expect(page).toHaveURL((url) => {
-      const search = url.searchParams;
-      return (
-        url.pathname === '/dashboard/tasks' &&
-        search.get('date') === 'all' &&
-        search.get('mode') === 'inbox' &&
-        search.get('relatedKind') === 'all' &&
-        search.get('risk') === 'all' &&
-        search.get('source') === 'manual' &&
-        search.get('status') === 'all' &&
-        search.get('restoreScrollY') === String(sourceScrollY) &&
-        search.get('restoreFocusKey') === 'mobile-progress-entry'
-      );
-    });
-    await expect
-      .poll(() => page.evaluate(() => window.scrollY))
-      .toBe(sourceScrollY);
-    await expect(progressEntry).toBeFocused();
-    await expect(
-      page.getByRole('button', { name: '任务收件箱', exact: true })
-    ).toHaveAttribute('aria-pressed', 'true');
-
-    await expect
-      .poll(() =>
-        page.evaluate(() => document.documentElement.dataset.globalCommandReady)
-      )
-      .toBe('true');
-    await page.keyboard.press('Meta+K');
-    const dialog = page.getByRole('dialog', {
-      name: '全局命令：导航或添加到创作',
-    });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toHaveAttribute('aria-modal', 'true');
-    await expect
-      .poll(() =>
-        dialog.evaluate((element) => element.contains(document.activeElement))
-      )
-      .toBe(true);
-    await expect(page.locator('[aria-modal="true"]:visible')).toHaveCount(1);
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
-    await expect(progressEntry).toBeFocused();
+    await identityAssetsEntry.click();
+    await expect(page).toHaveURL(/\/dashboard\/assets/u);
+    await expect(page.getByRole('region', { name: '表达身份' })).toBeVisible();
   } finally {
     releaseWorkbenchQuery();
     await cleanupE2EUsers(request);

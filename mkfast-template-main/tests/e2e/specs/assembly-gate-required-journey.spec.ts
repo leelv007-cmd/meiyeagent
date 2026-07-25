@@ -205,8 +205,9 @@ test.describe('required assembly gate', () => {
         }
         try {
           return (
-            response.request().postDataJSON() as { action?: unknown }
-          ).action === 'adopt_harness_candidate';
+            (response.request().postDataJSON() as { action?: unknown })
+              .action === 'adopt_harness_candidate'
+          );
         } catch {
           return false;
         }
@@ -215,20 +216,17 @@ test.describe('required assembly gate', () => {
     );
     await primary.click();
     const adoptionResponse = await adoptionResponsePromise;
-    expect(
-      adoptionResponse.ok(),
-      await adoptionResponse.text()
-    ).toBeTruthy();
+    expect(adoptionResponse.ok(), await adoptionResponse.text()).toBeTruthy();
     const contentPackage = (
-      await p1Query<ContentPackage[]>(
-        page,
-        'operations',
-        'content_packages'
-      )
+      await p1Query<ContentPackage[]>(page, 'operations', 'content_packages')
     ).find((candidate) => candidate.source.workId === workId);
     expect(contentPackage).toMatchObject({
       harnessSelection: {
         adoptedCandidateId: expect.any(String),
+      },
+      marketing: {
+        identityFallback: 'brand_official',
+        identityRefs: [],
       },
       status: 'accepted',
     });
@@ -240,6 +238,14 @@ test.describe('required assembly gate', () => {
     for (const variant of contentPackage?.variants ?? []) {
       expect(variant.currentVersionId).toBeTruthy();
     }
+    expect(
+      await p1Query<unknown[]>(
+        page,
+        'marketing-identity',
+        'marketing_identities',
+        { includeInactive: true }
+      )
+    ).toEqual([]);
     await expect(primary).toHaveText('交付');
 
     await openDeliveryPanel(page, copyContract.modality);
@@ -256,9 +262,7 @@ test.describe('required assembly gate', () => {
       .toContain(currentVersion?.body ?? '');
 
     const singleDownloadPromise = page.waitForEvent('download');
-    const singleDownload = page.getByTestId(
-      'delivery-action-single_download'
-    );
+    const singleDownload = page.getByTestId('delivery-action-single_download');
     await expect(singleDownload).toBeEnabled();
     await singleDownload.click();
     const downloaded = await singleDownloadPromise;

@@ -162,6 +162,8 @@ function CandidateStream({ stream }: { stream: ResultTokenStreamProjection }) {
 export type ComposerConversationProps = {
   session: ComposerSession;
   stream: ResultTokenStreamProjection;
+  /** Optional one-tap identity choice shown as the first conversation card. */
+  identitySlot?: React.ReactNode;
   /** 引导补问卡 (T11 skip UI lives inside this node). */
   questionSlot?: React.ReactNode;
   /** Opens the Result Center for a finished run — the only navigation. */
@@ -171,6 +173,7 @@ export type ComposerConversationProps = {
 export function ComposerConversation({
   session,
   stream,
+  identitySlot,
   questionSlot,
   onOpenDelivery,
 }: ComposerConversationProps) {
@@ -186,7 +189,7 @@ export function ComposerConversation({
     endRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [turnCount]);
 
-  if (turnCount === 0) return null;
+  if (turnCount === 0 && !identitySlot) return null;
 
   const renderTurn = (turn: ComposerTurn) => {
     switch (turn.kind) {
@@ -238,6 +241,7 @@ export function ComposerConversation({
       data-phase={session.phase}
       data-testid="composer-conversation"
     >
+      {identitySlot}
       {session.turns.map(renderTurn)}
       <div ref={endRef} />
     </section>

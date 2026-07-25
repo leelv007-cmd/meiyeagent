@@ -3,6 +3,7 @@ export const TELEMETRY_SCHEMA_VERSION = 'uiux-telemetry-v1';
 const fieldAllowlist = {
   api_request: ['durationMs', 'endpoint', 'method', 'status'],
   chunk_error: ['errorCode', 'route'],
+  identity_state: ['state'],
   model_selection: ['availability', 'modelId', 'operation'],
   page_error: ['errorCode', 'route'],
   permission_denied: ['capability', 'surface'],

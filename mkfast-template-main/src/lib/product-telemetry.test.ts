@@ -42,3 +42,17 @@ test('normalizes canonical object routes without retaining private ids', () => {
     '/dashboard/handoff/:token'
   );
 });
+
+test('identity state telemetry records only the explicit three-state outcome', () => {
+  const event = buildTelemetryEvent(
+    'identity_state',
+    {
+      identityId: 'private-identity-id',
+      state: 'query_failed',
+    },
+    { releaseVersion: 'candidate-a', schemaRevision: 'uiux-p1-v1' }
+  );
+
+  assert.equal(event.state, 'query_failed');
+  assert.equal('identityId' in event, false);
+});

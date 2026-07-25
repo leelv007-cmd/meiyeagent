@@ -26,6 +26,13 @@ export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
       })
       .strict(),
     identity: revisionReferenceSchema.optional(),
+    identityDecision: z
+      .object({
+        id: identifierSchema,
+        revision: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
     idempotencyKey: identifierSchema,
     creationMode: z.enum(['customized', 'free']),
     intent: z.string().trim().min(1).max(4_000),
