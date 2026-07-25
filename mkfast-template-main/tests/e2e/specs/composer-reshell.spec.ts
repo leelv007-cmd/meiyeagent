@@ -54,6 +54,20 @@ async function startCopyRun(page: Page, intent: string) {
   );
   await page.getByTestId('composer-submit').click();
 
+  // D-094 / D-116: some paths interpose one Brief confirmation before the
+  // submission is posted. Confirm it if it appears, otherwise carry on.
+  const briefSurface = page.getByTestId('composer-brief-surface');
+  const next = await Promise.race([
+    briefSurface
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'brief' as const)
+      .catch(() => 'submission' as const),
+    requestPromise.then(() => 'submission' as const),
+  ]);
+  if (next === 'brief') {
+    await page.getByTestId('composer-brief-confirm').click();
+  }
+
   const request = await requestPromise;
   const body = request.postDataJSON() as SubmissionBody;
   const response = await responsePromise;
