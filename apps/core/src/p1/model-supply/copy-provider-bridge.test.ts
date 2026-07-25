@@ -29,7 +29,7 @@ test('Product CopyProvider bridge returns content plus requested/actual route an
     exampleSetRevision: 'examples-v4',
   });
 
-  assert.equal(result.candidates.length, 3);
+  assert.equal(result.candidates.length, 1);
   assert.equal(result.evidence.requestedSelection.catalogModelId, 'llm-openai');
   assert.equal(result.evidence.actualCatalogModelId, 'llm-openai');
   assert.equal(result.evidence.routeSnapshot.promptRevision, 'prompt-v7');

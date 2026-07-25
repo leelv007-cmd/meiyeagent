@@ -45,9 +45,16 @@ export const generatedCopyCandidateSchema = z.object({
   conversionHook: z.string().trim().min(1),
 });
 
-export const generatedCopyCandidatesSchema = z.object({
-  candidates: z.array(generatedCopyCandidateSchema).length(3),
-});
+export function copyCandidatesSchemaFor(count: number) {
+  return z.object({
+    candidates: z.array(generatedCopyCandidateSchema).length(count),
+  });
+}
+
+export const DEFAULT_COPY_CANDIDATE_COUNT = 1;
+export const generatedCopyCandidatesSchema = copyCandidatesSchemaFor(
+  DEFAULT_COPY_CANDIDATE_COUNT,
+);
 
 export type GeneratedCopyCandidateContent = z.infer<
   typeof generatedCopyCandidateSchema

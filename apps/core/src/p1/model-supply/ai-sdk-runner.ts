@@ -3,6 +3,8 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
   assistantFieldPatchSchema,
+  copyCandidatesSchemaFor,
+  DEFAULT_COPY_CANDIDATE_COUNT,
   generatedCopyCandidatesSchema,
   generatedPlatformVariantsSchema,
   type AssistantStreamRequest,
@@ -89,7 +91,8 @@ export interface AiStreamingRunner {
   };
   generateCopy(
     prompt: string,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    candidateCount?: 1 | 3,
   ): Promise<GeneratedCopyResult>;
   streamAssistant(
     request: AssistantStreamRequest,
@@ -119,21 +122,26 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     this.model = createNativeLanguageModel(options);
   }
 
-  async generateCopy(prompt: string, abortSignal?: AbortSignal) {
+  async generateCopy(
+    prompt: string,
+    abortSignal?: AbortSignal,
+    candidateCount: 1 | 3 = DEFAULT_COPY_CANDIDATE_COUNT,
+  ) {
+    const schema = copyCandidatesSchemaFor(candidateCount);
     const result = await generateText({
       abortSignal,
       ...languageModelCallSettings(this.options),
       instructions:
-        'Return exactly three materially different beauty-business copy candidates. Every candidate must include a non-empty title, body, and conversionHook.',
+        `Return exactly ${candidateCount} materially distinct beauty-business copy ${candidateCount === 1 ? 'candidate' : 'candidates'}. Every candidate must include a non-empty title, body, and conversionHook.`,
       maxRetries: 0,
       model: this.model,
       output: Output.object({
         name: 'beauty_copy_candidates',
-        schema: generatedCopyCandidatesSchema,
+        schema,
       }),
       prompt,
     });
-    const output = generatedCopyCandidatesSchema.parse(result.output);
+    const output = schema.parse(result.output);
     assertDistinctBodies(output);
     return {
       ...output,
@@ -329,7 +337,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       abortSignal,
       ...languageModelCallSettings(this.options),
       instructions:
-        'Return exactly three materially different beauty-business copy candidates. Every candidate must include a non-empty title, body, and conversionHook.',
+        `Return exactly ${DEFAULT_COPY_CANDIDATE_COUNT} primary beauty-business copy candidate. The candidate must include a non-empty title, body, and conversionHook.`,
       maxRetries: 0,
       model: this.model,
       output: Output.object({
@@ -537,10 +545,7 @@ export class FixtureAiStreamingRunner implements AiStreamingRunner {
     const chunks = [
       '{"candidates":[{"title":"透亮猫眼｜真实到店记录",',
       '"body":"从门店真实项目出发，先写清效果与到店前需要确认的信息。",',
-      '"conversionHook":"先沟通需求"},{"title":"预约前先看这几点",',
-      '"body":"把风格、时间和价格口径提前说清楚，不做夸大承诺。","conversionHook":"收藏后再预约"},',
-      '{"title":"本地项目体验笔记","body":"记录可核对的门店与项目细节，实际感受因人而异。",',
-      '"conversionHook":"到店前留言"}]}',
+      '"conversionHook":"先沟通需求"}]}',
     ];
     return {
       response: pacedResponse(
@@ -791,16 +796,6 @@ function fixtureCopyResult(prompt: string): GeneratedCopyResult {
         title: '透亮猫眼｜真实到店记录',
         body: '从门店真实项目出发，先写清效果与到店前需要确认的信息。',
         conversionHook: '先沟通需求',
-      },
-      {
-        title: '预约前先看这几点',
-        body: '把风格、时间和价格口径提前说清楚，不做夸大承诺。',
-        conversionHook: '收藏后再预约',
-      },
-      {
-        title: '本地项目体验笔记',
-        body: '记录可核对的门店与项目细节，实际感受因人而异。',
-        conversionHook: '到店前留言',
       },
     ],
     providerTaskRef: `fixture-${Buffer.from(prompt).toString('base64url').slice(0, 20)}`,

@@ -42,7 +42,7 @@ test('three direct LLM families cover structured, stream and classified recorded
     );
     assert.equal(structured.kind, 'completed');
     if (structured.kind === 'completed')
-      assert.equal(structured.copyCandidates?.length, 3);
+      assert.equal(structured.copyCandidates?.length, 1);
 
     for (const scenario of [
       '401',
@@ -68,6 +68,21 @@ test('three direct LLM families cover structured, stream and classified recorded
   }
 });
 
+test('recorded LLM preserves an explicit three-candidate quality probe', async () => {
+  const adapter = new OpenAiDirectRecordedAdapter();
+  const request = recordedRequest('llm-openai', 'copy.generate');
+  request.submission.copyCandidateCount = 3;
+  const response = await adapter.execute(request);
+
+  assert.equal(response.kind, 'completed');
+  if (response.kind !== 'completed') return;
+  assert.equal(response.copyCandidates?.length, 3);
+  assert.equal(
+    new Set(response.copyCandidates?.map((candidate) => candidate.body)).size,
+    3,
+  );
+});
+
 test('fixture Harness contract routes DeepSeek copy with provider identity and supply cost without network', async () => {
   const response = await createModelExecutionRuntime({
     mode: 'fixture',
@@ -77,7 +92,7 @@ test('fixture Harness contract routes DeepSeek copy with provider identity and s
 
   assert.equal(response.kind, 'completed');
   if (response.kind !== 'completed') return;
-  assert.equal(response.copyCandidates?.length, 3);
+  assert.equal(response.copyCandidates?.length, 1);
   assert.match(response.providerTaskRef ?? '', /^deepseek-v4-pro-recorded-/u);
   assert.equal(response.providerCost.currency, 'CNY');
   assert.ok(response.providerCost.amount > 0);
@@ -99,7 +114,7 @@ test('recorded LLM copy is readable, grounded, and does not expose the internal 
   const response = await adapter.execute(request);
   assert.equal(response.kind, 'completed');
   if (response.kind !== 'completed') return;
-  assert.equal(response.copyCandidates?.length, 3);
+  assert.equal(response.copyCandidates?.length, 1);
   assert.ok(
     response.copyCandidates?.every(
       (candidate) =>
@@ -946,7 +961,7 @@ test('Bifrost and LiteLLM share failure, isolation, cooldown, and redacted evide
   }
 });
 
-test('OpenAI-compatible direct execution makes one request, parses exactly three candidates and calculates observed cost', async () => {
+test('OpenAI-compatible direct execution makes one request, parses exactly one primary candidate and calculates observed cost', async () => {
   let calls = 0;
   const adapter = new OpenAiCompatibleLlmExecutionPort({
     catalogModelId: 'llm-openai',
@@ -976,8 +991,6 @@ test('OpenAI-compatible direct execution makes one request, parses exactly three
                 content: JSON.stringify({
                   candidates: [
                     { title: 'A', body: 'A body', conversionHook: 'A hook' },
-                    { title: 'B', body: 'B body', conversionHook: 'B hook' },
-                    { title: 'C', body: 'C body', conversionHook: 'C hook' },
                   ],
                 }),
               },
@@ -998,7 +1011,7 @@ test('OpenAI-compatible direct execution makes one request, parses exactly three
   assert.equal(calls, 1);
   assert.equal(response.kind, 'completed');
   if (response.kind === 'completed') {
-    assert.equal(response.copyCandidates?.length, 3);
+    assert.equal(response.copyCandidates?.length, 1);
     assert.equal(response.providerTaskRef, 'completion-1');
     assert.deepEqual(response.providerCost.usage, {
       inputTokens: 100,
@@ -1077,8 +1090,6 @@ test('published direct LLM binding overrides boot endpoint, provider model, and 
               content: JSON.stringify({
                 candidates: [
                   { title: 'A', body: 'A body', conversionHook: 'A hook' },
-                  { title: 'B', body: 'B body', conversionHook: 'B hook' },
-                  { title: 'C', body: 'C body', conversionHook: 'C hook' },
                 ],
               }),
             },
@@ -1211,7 +1222,7 @@ test('OpenAI-compatible text.respond returns one plain-text deliverable', async 
   }
 });
 
-test('OpenAI-compatible direct execution rejects title-only candidate variations', async () => {
+test('OpenAI-compatible direct execution rejects candidates beyond the exact default count', async () => {
   const adapter = new OpenAiCompatibleLlmExecutionPort({
     catalogModelId: 'llm-openai',
     baseUrl: 'https://llm.example.test/v1',
@@ -1265,7 +1276,7 @@ test('OpenAI-compatible direct execution rejects title-only candidate variations
   assert.equal(response.kind, 'failure');
   if (response.kind === 'failure') {
     assert.equal(response.acceptance, 'acceptance_unknown');
-    assert.match(response.message, /materially distinct/);
+    assert.match(response.message, /OpenAI-compatible AI SDK request failed/u);
   }
 });
 

@@ -38,6 +38,7 @@ import type {
 } from './workflow-core.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { projectMarketingPackageEvidence } from './marketing-scene-policy.js';
+import { buildCopyPlatformVariants } from './output-compiler.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
@@ -535,6 +536,11 @@ export function copyContentPackageRevisionWriteInput(
       : {}),
     taskId: snapshot.task.id,
     version: winner,
+    variants: buildCopyPlatformVariants({
+      currentVersionId: winner.id,
+      packageId: input.request.packageId,
+      versions,
+    }),
     workId: snapshot.work.id,
     workflowId: input.workflowId,
     workflowRevision: input.request.workflowRevision,

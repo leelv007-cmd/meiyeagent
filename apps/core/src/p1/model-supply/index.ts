@@ -566,7 +566,10 @@ export class RecordedProviderExecutionPort implements ProviderExecutionPort {
           },
         };
       }
-      const variants = ['真实门店版', '熟客推荐版', '同城到店版'];
+      const variants = ['真实门店版', '避坑清单版', '行动指引版'].slice(
+        0,
+        request.submission.copyCandidateCount ?? 1,
+      );
       return {
         kind: 'completed',
         copyCandidates: variants.map((variant, index) => ({

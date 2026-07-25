@@ -15,6 +15,8 @@ export interface ProductCopyProviderRequest {
   requestedSelection: RequestedSelection;
   dataClass: DataClass[];
   prompt: string;
+  /** Compatibility-only explicit breadth for callers that still own an N-candidate workflow. */
+  copyCandidateCount?: 1 | 3;
   promptRevision: string;
   exampleSetRevision: string;
 }
@@ -50,6 +52,9 @@ export class ProductCopyProviderBridge {
       selection: request.requestedSelection,
       dataClass: [...request.dataClass],
       prompt: request.prompt,
+      ...(request.copyCandidateCount
+        ? { copyCandidateCount: request.copyCandidateCount }
+        : {}),
       promptRevision: request.promptRevision,
       exampleSetRevision: request.exampleSetRevision,
     });

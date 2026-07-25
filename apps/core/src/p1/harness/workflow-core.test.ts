@@ -60,10 +60,10 @@ test('five semantic stages run in order with stable effect keys and a delivery f
     progress.map(({ message }) => message),
     [
       '这次会参考你的活动资料，让内容更贴合本店。',
-      '已整理本次创作资料',
-      '已整理本次创作要求',
-      '已选出本次推荐文案',
-      '已生成第 3 版，等待你采用',
+      '已整理本次可用的门店资料',
+      '已把想法整理成创作要求',
+      '已准备好本次主推荐',
+      '第 3 版已经准备好。策略依据：结合本次活动与转化重点和已确认的门店资料。版本定位：这是本次适合小红书的主推荐。使用建议：建议先核对内容和预约引导，确认后再发布。',
     ]
   );
   for (const { message } of progress) {

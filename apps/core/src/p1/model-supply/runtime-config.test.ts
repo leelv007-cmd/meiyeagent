@@ -60,7 +60,7 @@ test('runtime env assembly exposes honest disabled, recorded, and gateway modes'
     dataClass: [],
     prompt: JSON.stringify({ grounding: { name: '测试门店' } }),
   });
-  assert.equal(recordedProbe.copyCandidates.length, 3);
+  assert.equal(recordedProbe.copyCandidates.length, 1);
   assert.equal(
     recordedProbe.snapshot.allowedCandidates?.[0]?.deploymentStatus,
     'inactive'
@@ -131,7 +131,7 @@ test('runtime env assembly exposes honest disabled, recorded, and gateway modes'
     customProbe.snapshot.allowedCandidates?.[0]?.apiFamily,
     'custom'
   );
-  assert.equal(customProbe.copyCandidates.length, 3);
+  assert.equal(customProbe.copyCandidates.length, 1);
   assert.ok(customProbe.providerCost.amount > 0);
   const gateway = modelRuntimeAssemblyFromEnv({
     MODEL_EXECUTION_MODE: 'gateway',

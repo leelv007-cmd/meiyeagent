@@ -19,16 +19,6 @@ test('formal non-streaming copy generation uses one structured object request', 
         conversionHook: 'Ask first',
         title: 'First angle',
       },
-      {
-        body: 'Second materially different body.',
-        conversionHook: 'Save this',
-        title: 'Second angle',
-      },
-      {
-        body: 'Third distinct local-business body.',
-        conversionHook: 'Book later',
-        title: 'Third angle',
-      },
     ],
   };
   const runner = new OpenAiCompatibleAiSdkRunner({
@@ -67,7 +57,7 @@ test('formal non-streaming copy generation uses one structured object request', 
     outputCostPerMillion: 2,
   });
 
-  const result = await runner.generateCopy('Write three honest options.');
+  const result = await runner.generateCopy('Write one honest primary option.');
 
   assert.equal(requests.length, 1);
   assert.deepEqual(result.candidates, generated.candidates);
@@ -89,8 +79,6 @@ test('DeepSeek V4 sends the mirrored thinking and long-output parameters', async
   const generated = {
     candidates: [
       { body: 'First body.', conversionHook: 'Ask first', title: 'First' },
-      { body: 'Second body.', conversionHook: 'Save this', title: 'Second' },
-      { body: 'Third body.', conversionHook: 'Book later', title: 'Third' },
     ],
   };
   const runner = new OpenAiCompatibleAiSdkRunner({
@@ -131,7 +119,7 @@ test('DeepSeek V4 sends the mirrored thinking and long-output parameters', async
     thinking: { type: 'enabled' },
   });
 
-  await runner.generateCopy('Write three honest options.');
+  await runner.generateCopy('Write one honest primary option.');
 
   assert.equal(requestUrl, 'https://api.deepseek.com/chat/completions');
   assert.equal(requestBody.model, 'deepseek-v4-pro');
@@ -221,7 +209,7 @@ test('fixture copy generation streams paced JSON before returning the same resul
     started.response.headers.get('x-meiye-stream-protocol'),
     'ai-sdk-object-json-v1'
   );
-  assert.equal(streamed.candidates.length, 3);
+  assert.equal(streamed.candidates.length, 1);
   assert.deepEqual(streamed.candidates, result.candidates);
 });
 
@@ -539,7 +527,7 @@ test('formal model supply stream performs one provider effect and persists only 
   assert.ok(chunks.length >= 2);
   assert.equal(runner.calls, 1);
   assert.equal(completed.status, 'completed');
-  assert.equal(completed.copyCandidates?.length, 3);
+  assert.equal(completed.copyCandidates?.length, 1);
   assert.equal(saved.length, 1);
 
   runner.failure = { afterChunk: false, statusCode: 429 };

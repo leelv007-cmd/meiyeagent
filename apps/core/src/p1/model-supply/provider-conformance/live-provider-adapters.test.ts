@@ -131,8 +131,6 @@ test('official text probe records a non-empty result hash without raw copy', asy
               content: JSON.stringify({
                 candidates: [
                   { title: 'A', body: 'A body', conversionHook: 'A hook' },
-                  { title: 'B', body: 'B body', conversionHook: 'B hook' },
-                  { title: 'C', body: 'C body', conversionHook: 'C hook' },
                 ],
               }),
             },

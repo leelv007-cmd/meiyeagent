@@ -32,8 +32,8 @@ const contract = {
   dataClass: [],
   estimatedAmount: 1,
   operation: 'copy.generate' as const,
-  outputCount: 3,
-  outputLabel: '3 条内容候选',
+  outputCount: 1,
+  outputLabel: '1 条主推荐',
   quoteAcceptedAt: '2026-07-13T00:00:00.000Z',
   quoteRevision: 'quote-live-v1',
   watermarkEnabled: false,
@@ -149,7 +149,7 @@ test('AI HTTP streams enforce identity and forward paced fixture chunks', async 
   const copyReader = copy.body.getReader();
   const decoder = new TextDecoder();
   const copyChunks: string[] = [];
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 3; index += 1) {
     const chunk = await copyReader.read();
     assert.equal(chunk.done, false);
     copyChunks.push(decoder.decode(chunk.value, { stream: true }));
@@ -166,7 +166,7 @@ test('AI HTTP streams enforce identity and forward paced fixture chunks', async 
   settleCopy({} as Awaited<CopyStart['completion']>);
   assert.equal((await finalRead).done, true);
   assert.ok(copyChunks.length >= 2);
-  assert.equal(JSON.parse(copyChunks.join('')).candidates.length, 3);
+  assert.equal(JSON.parse(copyChunks.join('')).candidates.length, 1);
   assert.deepEqual(copyCalls, [
     { workId: 'work-a', submissionKey: 'stable-copy-stream-key' },
   ]);

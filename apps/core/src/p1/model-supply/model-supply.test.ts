@@ -185,7 +185,7 @@ test('historical Canvas submissions keep input assets without inventing empty no
   assert.equal('inputNodeBindings' in result, false);
 });
 
-test('Auto applies data-class hard filtering, saves actual model and creates three material copy candidates', async () => {
+test('Auto applies data-class hard filtering, saves actual model and creates one primary copy candidate', async () => {
   const result = await service().submit({
     workspaceId: 'workspace-a',
     actorId: 'owner-a',
@@ -201,8 +201,7 @@ test('Auto applies data-class hard filtering, saves actual model and creates thr
   assert.equal(result.status, 'completed');
   assert.equal(result.snapshot.actualCatalogModelId, 'copy-domestic');
   assert.equal(result.snapshot.reason, 'auto_quality_after_hard_filters');
-  assert.equal(result.copyCandidates?.length, 3);
-  assert.equal(new Set(result.copyCandidates?.map((candidate) => candidate.body)).size, 3);
+  assert.equal(result.copyCandidates?.length, 1);
   assert.equal(result.snapshot.promptRevision, 'prompt-v3');
   assert.equal(result.usage.status, 'committed');
   assert.equal(result.providerCost.status, 'observed');
@@ -248,7 +247,7 @@ test('OpenAI, Anthropic and Gemini direct profiles share the recorded LLM contra
     });
     assert.equal(result.status, 'completed');
     assert.equal(result.snapshot.actualCatalogModelId, catalogModelId);
-    assert.equal(result.copyCandidates?.length, 3);
+    assert.equal(result.copyCandidates?.length, 1);
   }
 });
 
@@ -472,11 +471,7 @@ test('custom LLM executes only by fixed selection and freezes its API family', a
     prompt: '为测试门店生成三条文案',
   });
   assert.equal(result.snapshot.allowedCandidates?.[0]?.apiFamily, 'custom');
-  assert.equal(result.copyCandidates?.length, 3);
-  assert.equal(
-    new Set(result.copyCandidates?.map((candidate) => candidate.body)).size,
-    3,
-  );
+  assert.equal(result.copyCandidates?.length, 1);
   assert.ok(result.providerCost.amount > 0);
 });
 
@@ -1039,7 +1034,7 @@ test('Bifrost and LiteLLM isolated PoC ports satisfy the same LLM result contrac
     });
     assert.equal(result.status, 'completed');
     assert.equal(result.snapshot.actualCatalogModelId, 'copy-quality');
-    assert.equal(result.copyCandidates?.length, 3);
+    assert.equal(result.copyCandidates?.length, 1);
   }
 });
 

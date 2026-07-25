@@ -23,6 +23,7 @@ import {
   type StructuredNodeRunner,
   type StructuredNodeRunnerResult,
 } from '../model-supply/structured-node-runner.js';
+import { merchantConfirmationQuestion } from './merchant-delivery-language.js';
 /*
  * Only model/schema failures may enter the deterministic guidance fallback.
  * Authorization and source-fence errors must keep failing closed.
@@ -566,7 +567,7 @@ function toQuestionCard(
     questionId: `${workflowId}:s1:${gap.field}`,
     workflowId,
     workflowRevision,
-    question: gap.question,
+    question: merchantConfirmationQuestion(gap.question),
     options: gap.options.map((label, index) => ({
       id: `option-${index + 1}`,
       label,

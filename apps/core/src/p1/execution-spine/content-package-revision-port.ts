@@ -28,6 +28,7 @@ export interface ContentPackageRevisionWriteInput {
 	occurredAt: string;
 	packageId: string;
 	platform?: ContentPackagePlatform;
+	variants?: ContentPackage["variants"];
 	snapshotId: string;
 	snapshot: {
 		id: string;
@@ -261,6 +262,7 @@ export class PostgresContentPackageRevisionWritePort
 				},
 				status: "review_ready",
 				updatedAt: input.occurredAt,
+				variants: input.variants ?? contentPackage.variants,
 				versions: [...contentPackage.versions, ...versions],
 			});
 			const written = await updateContentPackageRow(client, {
@@ -436,6 +438,7 @@ export class MemoryContentPackageRevisionWritePort
 			},
 			status: "review_ready",
 			updatedAt: input.occurredAt,
+			variants: input.variants ?? contentPackage.variants,
 			versions: [...contentPackage.versions, ...versions],
 		});
 		this.packages.set(packageKey, updated);

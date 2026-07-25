@@ -92,6 +92,22 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 		workflowRevision: 1,
 		workspaceId: "workspace-1",
 	};
+	const inputWithVariants = {
+		...input,
+		variants: (["xiaohongshu", "douyin", "video_account"] as const).map(
+			(platform) => ({
+				currentVersionId: `version-1-${platform}`,
+				id: `package-1-${platform}`,
+				platform,
+				versions: [
+					{
+						...input.version,
+						id: `version-1-${platform}`,
+					},
+				],
+			}),
+		),
+	};
 
 	await assert.rejects(
 		writer.write({
@@ -169,7 +185,7 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 			error instanceof ContentPackageRevisionWriteError &&
 			error.code === "CONTENT_PACKAGE_ASSET_MISMATCH",
 	);
-	const delivered = await writer.write(input);
+	const delivered = await writer.write(inputWithVariants);
 	assert.deepEqual(delivered, {
 		packageId: "package-1",
 		revision: 1,
@@ -177,7 +193,7 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 	});
 	assert.deepEqual(
 		await writer.write({
-			...input,
+			...inputWithVariants,
 			occurredAt: "2026-07-22T10:00:00.000Z",
 		}),
 		delivered,
@@ -194,10 +210,14 @@ test("Copy revision writes are idempotent and retain existing owned receipts", a
 		writer.get("workspace-1", "package-1")?.source.sourceContentPackage,
 		{ id: "source-package-1", revision: "3" },
 	);
+	assert.deepEqual(
+		writer.get("workspace-1", "package-1")?.variants,
+		inputWithVariants.variants,
+	);
 	selectedAssetAvailable = false;
 	await assert.rejects(
 		writer.write({
-			...input,
+			...inputWithVariants,
 			idempotencyKey: "harness-copy:after-selected-asset-revocation",
 		}),
 		(error: unknown) =>

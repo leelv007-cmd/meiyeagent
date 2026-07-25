@@ -109,7 +109,8 @@ test('intent naming turns one blocking gap into one QuestionCard', async () => {
     questionId: 'workflow-question:s1:offer_price',
     workflowId: 'workflow-question',
     workflowRevision: 5,
-    question: '这次团购价按哪个金额写？',
+    question:
+      '为了让成品更贴合你的想法，想确认一下：这次团购价按哪个金额写？',
     options: [
       { id: 'option-1', label: '¥398' },
       { id: 'option-2', label: '¥498' },

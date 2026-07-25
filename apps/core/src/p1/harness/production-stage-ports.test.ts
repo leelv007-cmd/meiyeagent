@@ -501,6 +501,30 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
     ),
     ['candidate-2'],
   );
+  assert.deepEqual(
+    executionDelivery.inputs[0]?.variants?.map((variant) => ({
+      currentVersionId: variant.currentVersionId,
+      platform: variant.platform,
+      versionCount: variant.versions.length,
+    })),
+    [
+      {
+        currentVersionId: `${executionDelivery.inputs[0]?.version.id}-xiaohongshu`,
+        platform: 'xiaohongshu',
+        versionCount: 2,
+      },
+      {
+        currentVersionId: `${executionDelivery.inputs[0]?.version.id}-douyin`,
+        platform: 'douyin',
+        versionCount: 2,
+      },
+      {
+        currentVersionId: `${executionDelivery.inputs[0]?.version.id}-video_account`,
+        platform: 'video_account',
+        versionCount: 2,
+      },
+    ],
+  );
 });
 
 test('a source ContentPackage enters the Copy Brief and fails closed after revocation', async () => {
@@ -703,7 +727,7 @@ test('only selected source-package assets can cross Brief, selection, and delive
     executionDelivery.inputs[0]?.additionalVersions?.map(
       (version) => version.orderedAssetIds,
     ),
-    [['selected-asset-1'], ['selected-asset-1']],
+    [],
   );
 
   const sourceOnlyRunner = new QueueRunner([
@@ -951,7 +975,7 @@ test('a Composer Copy snapshot rejects brief assets outside its frozen sources',
   assert.equal(executionDelivery.inputs.length, 0);
 });
 
-test('production ports compose #31, canonical gates, N-to-1 and copy delivery', async () => {
+test('production ports compose #31, canonical gates, a single primary result and copy delivery', async () => {
   const runner = new QueueRunner([
     {
       normalizedIntent: '推广本店团购',
@@ -1015,18 +1039,14 @@ test('production ports compose #31, canonical gates, N-to-1 and copy delivery', 
     },
   );
 
-  assert.equal(result.trace.winnerCandidateId, 'c02');
-  assert.equal(delivery.inputs[0]?.winner.candidateId, 'c02');
+  assert.equal(result.trace.winnerCandidateId, 'c01');
+  assert.equal(delivery.inputs[0]?.winner.candidateId, 'c01');
   assert.deepEqual(
     delivery.inputs[0]?.candidates.map(({ candidateId, score }) => ({
       candidateId,
       score,
     })),
-    [
-      { candidateId: 'c01', score: 70 },
-      { candidateId: 'c02', score: 92 },
-      { candidateId: 'c03', score: 92 },
-    ],
+    [{ candidateId: 'c01', score: 0 }],
   );
   assert.equal(delivery.inputs[0]?.marketing.promotionOffer?.status, 'unpriced');
   assert.deepEqual(traces.get('intent_naming')?.metrics, {
@@ -1047,11 +1067,6 @@ test('production ports compose #31, canonical gates, N-to-1 and copy delivery', 
       'wf:task-production:s1:intent:0',
       'wf:task-production:s3:copy-primary:0',
       'wf:task-production:s4:copy-primary:c01',
-      'wf:task-production:s4:copy-primary:c02',
-      'wf:task-production:s4:copy-primary:c03',
-      'wf:task-production:s4:copy-primary:score-c01',
-      'wf:task-production:s4:copy-primary:score-c02',
-      'wf:task-production:s4:copy-primary:score-c03',
     ],
   );
 });
@@ -1416,7 +1431,7 @@ async function assertUnpricedCandidateBlocked(output: CandidateFixture) {
     ),
     /Every generated candidate was blocked/u,
   );
-  assert.equal(runner.requests.length, 3);
+  assert.equal(runner.requests.length, 1);
 }
 
 function unpricedPorts(runner: QueueRunner) {

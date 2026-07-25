@@ -12,74 +12,51 @@ import type {
   StructuredNodeRunnerRequest,
 } from '../model-supply/structured-node-runner.js';
 
-test('three candidates produce deterministic scores, winner and DecisionTraceFragment', async () => {
-  const runner = new QueueRunner([
-    candidate('候选 A', '正文 A', []),
-    candidate('候选 B', '正文 B', []),
-    candidate('候选 C', '正文 C', []),
-  ]);
-  const scorer = new FixedScorer({ c01: 80, c02: 92, c03: 92 });
+test('copy compiler makes one model call and returns one primary candidate', async () => {
+  const runner = new QueueRunner([candidate('主推荐', '正文 A', [])]);
+  const scorer = new FixedScorer({});
 
   const result = await executeCopySelection(
     selectionInput(),
     { runner, scorer, validator: new PassValidator() },
   );
 
-  assert.equal(result.winner.candidateId, 'c02');
+  assert.equal(result.winner.candidateId, 'c01');
   assert.deepEqual(
     result.scores.map(({ candidateId, score }) => ({ candidateId, score })),
-    [
-      { candidateId: 'c01', score: 80 },
-      { candidateId: 'c02', score: 92 },
-      { candidateId: 'c03', score: 92 },
-    ],
+    [{ candidateId: 'c01', score: 0 }],
   );
-  assert.equal(result.trace.winnerCandidateId, 'c02');
-  assert.equal(result.trace.rubricVersion, 'copy-quality-v1');
+  assert.equal(result.trace.winnerCandidateId, 'c01');
+  assert.equal(result.trace.rubricVersion, 'copy-single-primary-v1');
   assert.match(result.trace.rubricHash, /^[a-f0-9]{64}$/u);
   assert.deepEqual(
     runner.requests.map((request) => request.effectIdempotencyKey),
-    [
-      'wf:workflow-34:s4:copy-primary:c01',
-      'wf:workflow-34:s4:copy-primary:c02',
-      'wf:workflow-34:s4:copy-primary:c03',
-    ],
+    ['wf:workflow-34:s4:copy-primary:c01'],
   );
-  assert.deepEqual(scorer.effectKeys, [
-    'wf:workflow-34:s4:copy-primary:score-c01',
-    'wf:workflow-34:s4:copy-primary:score-c02',
-    'wf:workflow-34:s4:copy-primary:score-c03',
-  ]);
+  assert.deepEqual(scorer.effectKeys, []);
+  assert.match(runner.requests[0]!.instructions, /single primary/iu);
+  assert.match(runner.requests[0]!.prompt, /identity-owner-1/u);
+  assert.match(runner.requests[0]!.prompt, /xiaohongshu/u);
 });
 
-test('one rights-blocked candidate does not block safe candidates', async () => {
+test('the single primary candidate still passes the canonical policy gate', async () => {
   const runner = new QueueRunner([
-    candidate('候选 A', '正文 A', ['asset-withdrawn']),
-    candidate('候选 B', '正文 B', []),
-    candidate('候选 C', '正文 C', []),
+    candidate('主推荐', '正文 A', ['asset-withdrawn']),
   ]);
-  const scorer = new FixedScorer({ c02: 70, c03: 65 });
-  const result = await executeCopySelection(selectionInput(), {
-    runner,
-    scorer,
-    validator: new WithdrawnAssetValidator(),
-  });
+  const scorer = new FixedScorer({});
 
-  assert.equal(result.winner.candidateId, 'c02');
-  assert.deepEqual(result.blockedCandidates, [
-    {
-      candidateId: 'c01',
-      gateIds: ['subject_asset_rights'],
-      alternativePath: ['换安全素材', '匿名化', '请求授权', '放弃该表达'],
-    },
-  ]);
-  assert.deepEqual(scorer.effectKeys, [
-    'wf:workflow-34:s4:copy-primary:score-c02',
-    'wf:workflow-34:s4:copy-primary:score-c03',
-  ]);
+  await assert.rejects(
+    executeCopySelection(selectionInput(), {
+      runner,
+      scorer,
+      validator: new WithdrawnAssetValidator(),
+    }),
+    /Every generated candidate was blocked/u,
+  );
+  assert.deepEqual(scorer.effectKeys, []);
 });
 
-test('copy generation publishes append-only semantic deltas for every candidate', async () => {
+test('copy generation publishes append-only semantic deltas for the primary candidate', async () => {
   const emitted: Array<{
     candidateId: string;
     channel: 'copy.title' | 'copy.body' | 'copy.cta';
@@ -87,8 +64,6 @@ test('copy generation publishes append-only semantic deltas for every candidate'
   }> = [];
   const runner = new StreamingQueueRunner([
     candidate('候选 A', '正文 A', []),
-    candidate('候选 B', '正文 B', []),
-    candidate('候选 C', '正文 C', []),
   ]);
 
   await executeCopySelection(
@@ -100,7 +75,7 @@ test('copy generation publishes append-only semantic deltas for every candidate'
     },
     {
       runner,
-      scorer: new FixedScorer({ c01: 80, c02: 90, c03: 70 }),
+      scorer: new FixedScorer({}),
       validator: new PassValidator(),
     },
   );
@@ -113,7 +88,7 @@ test('copy generation publishes append-only semantic deltas for every candidate'
   ]);
   assert.deepEqual(
     [...new Set(emitted.map(({ candidateId }) => candidateId))],
-    ['c01', 'c02', 'c03'],
+    ['c01'],
   );
 });
 

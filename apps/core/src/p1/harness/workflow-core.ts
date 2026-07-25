@@ -16,6 +16,10 @@ import type {
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
+import {
+  merchantProgressMessage,
+  merchantTaskSummary,
+} from './merchant-delivery-language.js';
 
 type CopyBrief = Extract<ExecutionBrief, { kind: 'copy' }>;
 type MediaBrief = Exclude<ExecutionBrief, { kind: 'copy' }>;
@@ -279,7 +283,7 @@ export async function runHarnessWorkflow(
   await reportProgress({
     stage: 'context_injection',
     state: 'success',
-    message: '已整理本次创作资料',
+    message: merchantProgressMessage('context_injection'),
   });
 
   let compiledBrief = await runtime.runStep(
@@ -307,7 +311,7 @@ export async function runHarnessWorkflow(
   await reportProgress({
     stage: 'brief_compilation',
     state: 'success',
-    message: '已整理本次创作要求',
+    message: merchantProgressMessage('brief_compilation'),
   });
 
   let selection = await executeSelection(
@@ -329,7 +333,7 @@ export async function runHarnessWorkflow(
   await reportProgress({
     stage: 'execution_selection',
     state: 'success',
-    message: '已选出本次推荐文案',
+    message: merchantProgressMessage('execution_selection'),
   });
 
   const fenced = await runtime.runStep(
@@ -444,7 +448,12 @@ export async function runHarnessWorkflow(
   await reportProgress({
     stage: 'assembly_delivery',
     state: 'success',
-    message: `已生成第 ${delivery.revision} 版，等待你采用`,
+    message: merchantTaskSummary({
+      revision: delivery.revision,
+      strategyBasis: copyStrategyBasis(routed.declaration),
+      versionPositioning: `这是本次适合${platformLabel(brief.platform)}的主推荐`,
+      useSuggestion: '建议先核对内容和预约引导，确认后再发布',
+    }),
   });
 
   return {
@@ -521,7 +530,7 @@ async function runMediaHarnessWorkflow(
   await reportProgress({
     stage: 'context_injection',
     state: 'success',
-    message: '已整理本次创作资料',
+    message: merchantProgressMessage('context_injection'),
   });
 
   let compiledBrief = await runtime.runStep(
@@ -546,7 +555,7 @@ async function runMediaHarnessWorkflow(
   await reportProgress({
     stage: 'brief_compilation',
     state: 'success',
-    message: '已整理本次创作要求',
+    message: merchantProgressMessage('brief_compilation'),
   });
 
   let selection = await runtime.runStep(
@@ -664,7 +673,15 @@ async function runMediaHarnessWorkflow(
   await reportProgress({
     stage: 'assembly_delivery',
     state: 'success',
-    message: `已生成第 ${delivery.revision} 版，等待你采用`,
+    message: merchantTaskSummary({
+      revision: delivery.revision,
+      strategyBasis: '结合本次创作目标与已确认的门店资料',
+      versionPositioning:
+        brief.kind === 'image'
+          ? '这是本次可优先使用的主图片'
+          : '这是本次可优先使用的主视频',
+      useSuggestion: '建议先核对画面、文字和使用场景，确认后再发布',
+    }),
   });
 
   return {
@@ -728,6 +745,28 @@ function mediaBriefTrace(brief: MediaBrief) {
 
 function mediaSelectionMessage(kind: MediaBrief['kind']) {
   return kind === 'image' ? '已核验图片生成结果' : '已核验视频生成结果';
+}
+
+const TASK_TYPE_LABELS: Record<IntentDeclaration['taskType'], string> = {
+  daily_service_exposure: '日常项目曝光重点',
+  traffic_opportunity: '当前流量机会',
+  brand_personal_ip: '品牌与个人表达方向',
+  promotion_groupbuy_conversion: '本次活动与转化重点',
+  routine_marketing_materials: '常用宣发物料需求',
+};
+
+function copyStrategyBasis(declaration: IntentDeclaration) {
+  return `结合${TASK_TYPE_LABELS[declaration.taskType]}和已确认的门店资料`;
+}
+
+function platformLabel(platform: CopyBrief['platform']) {
+  return {
+    douyin: '抖音',
+    offline: '线下物料',
+    video_account: '视频号',
+    wechat_moments: '朋友圈',
+    xiaohongshu: '小红书',
+  }[platform];
 }
 
 function mediaRecommendationDecisionTrace(
