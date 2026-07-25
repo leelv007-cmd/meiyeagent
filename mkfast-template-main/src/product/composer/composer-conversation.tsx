@@ -37,6 +37,18 @@ import type { ComposerSignedPreview } from './composer-signed-preview';
 
 export type ComposerCreationMode = 'customized' | 'free';
 
+export const COMPOSER_INTENT_INPUT_TESTID = 'composer-intent-input';
+
+/** Focus the intent box. See the TextArea render site for why this is not a ref. */
+export function focusComposerIntentInput() {
+  if (typeof document === 'undefined') return;
+  document
+    .querySelector<HTMLTextAreaElement>(
+      `[data-testid="${COMPOSER_INTENT_INPUT_TESTID}"]`
+    )
+    ?.focus();
+}
+
 /** 「发到哪」— one merchant question, mapped to the双字段 server-side (M-01). */
 export type ComposerDestinationOption = {
   id: string;
@@ -268,7 +280,6 @@ export type ComposerPromptBarProps = {
    * instead — the guarantee survives the control that used to carry it.
    */
   modelChannelReadiness?: string | null;
-  textAreaRef?: React.Ref<HTMLTextAreaElement>;
   placeholder: string;
   ariaLabel: string;
   submitLabel: string;
@@ -294,7 +305,6 @@ export function ComposerPromptBar({
   onReuseChip,
   signedPreview,
   modelChannelReadiness,
-  textAreaRef,
   placeholder,
   ariaLabel,
   submitLabel,
@@ -360,11 +370,16 @@ export function ComposerPromptBar({
               }
             }}
           >
+            {/*
+              No `ref` here on purpose: PromptInput.TextArea spreads incoming
+              props after its own `ref`, so passing one silently replaces the
+              ref its autosize depends on and the box stops growing. Callers
+              focus it through COMPOSER_INTENT_INPUT_TESTID instead.
+            */}
             <PromptInput.TextArea
               aria-label={ariaLabel}
-              data-testid="composer-intent-input"
+              data-testid={COMPOSER_INTENT_INPUT_TESTID}
               placeholder={placeholder}
-              ref={textAreaRef}
             />
           </PromptInput.Content>
           <PromptInput.Toolbar>
