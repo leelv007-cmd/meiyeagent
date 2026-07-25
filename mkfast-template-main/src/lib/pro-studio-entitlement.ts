@@ -162,7 +162,8 @@ export function proStudioEntitlementReason(
       case 'unavailable':
         return '开通入口暂不可用';
       default:
-        return '当前套餐未包含 Pro Studio';
+        // Pro Studio is a standalone add-on, not a plan tier — say so honestly.
+        return '尚未开通 Pro Studio';
     }
   }
   return projection.reason === 'projection_pending'

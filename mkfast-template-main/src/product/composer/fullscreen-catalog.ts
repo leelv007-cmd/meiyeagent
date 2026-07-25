@@ -342,7 +342,7 @@ function projectToolItems(source: CatalogItemSource): CatalogItemView[] {
               lockReason:
                 source.proStudioLockReason ??
                 (status === 'locked'
-                  ? '套餐未解锁 Pro Studio'
+                  ? '尚未开通 Pro Studio'
                   : '权益状态读取中，暂不可进入'),
             }),
         proStudioStatus: status,

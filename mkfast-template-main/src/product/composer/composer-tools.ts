@@ -142,7 +142,7 @@ const PRO_STUDIO_FALLBACK_REASON: Record<
   Exclude<ProStudioEntitlementState, 'active'>,
   string
 > = {
-  locked: '套餐未解锁 Pro Studio',
+  locked: '尚未开通 Pro Studio',
   unknown: '权益状态读取中，暂不可进入',
 };
 
