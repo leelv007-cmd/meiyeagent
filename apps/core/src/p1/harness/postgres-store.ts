@@ -19,6 +19,7 @@ import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledge
 import { TaskBlockingNodeConflictError } from '../operations/repository.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { buildCopyPlatformVariants } from './output-compiler.js';
+import type { VisibleClaimExtraction } from './policy-gates.js';
 
 import type {
   HarnessDecisionStore,
@@ -723,6 +724,7 @@ export class PostgresHarnessStore
       score: number;
     }>;
     recommendation: Omit<CreativeRecommendationDecisionTrace, 'deliverables'>;
+    claimExtraction: VisibleClaimExtraction;
     marketing?: MarketingPackageEvidence;
     assetIds?: string[];
     reuseSeed?: ReuseTaskSeed;
@@ -963,6 +965,7 @@ export class PostgresHarnessStore
                 },
               },
               ...(input.marketing ? { marketing: input.marketing } : {}),
+              claimExtraction: input.claimExtraction,
             },
           },
         );
@@ -978,6 +981,7 @@ export class PostgresHarnessStore
               workspaceId: input.workspaceId,
               expectedRevision: input.expectedRevision,
               requestFingerprint: deliveryRequestFingerprint(input),
+              claimExtraction: input.claimExtraction,
               packageId: input.packageId,
               versionId,
               revision: nextRevision,
@@ -1335,6 +1339,7 @@ function deliveryRequestFingerprint(input: {
     score: number;
   }>;
   recommendation: Omit<CreativeRecommendationDecisionTrace, 'deliverables'>;
+  claimExtraction: VisibleClaimExtraction;
   marketing?: MarketingPackageEvidence;
   assetIds?: string[];
   reuseSeed?: ReuseTaskSeed;
@@ -1351,6 +1356,7 @@ function deliveryRequestFingerprint(input: {
         winner: input.winner,
         candidates: input.candidates,
         recommendation: input.recommendation,
+        claimExtraction: input.claimExtraction,
         marketing: input.marketing ?? null,
         assetIds: [...new Set(input.assetIds ?? [])],
         reuseSeed: input.reuseSeed ?? null,

@@ -12,6 +12,7 @@ export interface RedlineCase {
   vars: {
     caseId: string;
     expectedGateId: HarnessGateId;
+    expectedReason?: string;
     input: HarnessPolicyInput;
   };
 }
@@ -34,6 +35,34 @@ function recordedCase(
       },
     ],
     vars: { caseId, expectedGateId, input },
+  };
+}
+
+function visibleEmptyClaimsCase(
+  caseId: string,
+  expectedGateId: HarnessGateId,
+  description: string,
+  visibleText: Array<{ field: string; text: string }>,
+  mutate: (input: HarnessPolicyInput) => void,
+  expectedReason?: string,
+): RedlineCase {
+  const redlineCase = recordedCase(
+    caseId,
+    expectedGateId,
+    description,
+    (input) => {
+      input.phase = 'delivery';
+      input.candidate.factClaims = [];
+      input.candidate.visibleText = visibleText;
+      mutate(input);
+    },
+  );
+  return {
+    ...redlineCase,
+    vars: {
+      ...redlineCase.vars,
+      ...(expectedReason ? { expectedReason } : {}),
+    },
   };
 }
 
@@ -192,6 +221,62 @@ export const REDLINE_CASES: RedlineCase[] = [
         revision: 7,
       };
     },
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-health-authority',
+    'critical_fact_source',
+    'Blocks a fabricated health-authority approval with empty reported claims',
+    [{ field: 'body', text: '卫健委批准的正规医疗美容机构' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的资质，暂不能交付。',
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-hospital-endorsement',
+    'critical_fact_source',
+    'Blocks a fabricated hospital endorsement with empty reported claims',
+    [{ field: 'title', text: '三甲医院合作单位，专家亲诊' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的资质，暂不能交付。',
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-certification',
+    'critical_fact_source',
+    'Blocks a fabricated international certification with empty reported claims',
+    [{ field: 'title', text: '通过 ISO9001 国际认证的连锁品牌' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的资质，暂不能交付。',
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-flash-price',
+    'critical_fact_source',
+    'Blocks a fabricated flash price with empty reported claims',
+    [{ field: 'title', text: '秒杀价388，手慢无' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的价格或优惠，暂不能交付。',
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-threshold-discount',
+    'critical_fact_source',
+    'Blocks a fabricated threshold discount with empty reported claims',
+    [{ field: 'body', text: '满1000减300，叠加会员折扣' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的价格或优惠，暂不能交付。',
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-buy-one-get-one',
+    'critical_fact_source',
+    'Blocks a fabricated buy-one-get-one offer with empty reported claims',
+    [{ field: 'body', text: '本月买一送一，名额有限' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的价格或优惠，暂不能交付。',
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-free-benefit',
+    'critical_fact_source',
+    'Blocks a fabricated free benefit with empty reported claims',
+    [{ field: 'body', text: '新客免费领取一次深层清洁' }],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的权益承诺，暂不能交付。',
   ),
 ];
 

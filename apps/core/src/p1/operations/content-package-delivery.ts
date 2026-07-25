@@ -47,6 +47,7 @@ export interface ContentPackageApprovalPolicyPort {
       | 'identityRefs'
       | 'rightsRefs'
       | 'sourceRefs'
+      | 'trustedFactClaims'
     >;
   }>;
 }
@@ -827,9 +828,13 @@ export class ContextBundleApprovalPolicyResolver
     const variant = input.contentPackage.variants.find((candidate) =>
       candidate.versions.some((version) => version.id === input.variantVersionId)
     );
-    const version = variant?.versions.find(
-      (candidate) => candidate.id === input.variantVersionId
-    );
+    const version =
+      input.contentPackage.versions.find(
+        (candidate) => candidate.id === input.variantVersionId
+      ) ??
+      variant?.versions.find(
+        (candidate) => candidate.id === input.variantVersionId
+      );
     if (!version) {
       throw new ContentPackageDeliveryError(
         'CONTENT_PACKAGE_VARIANT_NOT_FOUND',
@@ -841,6 +846,18 @@ export class ContextBundleApprovalPolicyResolver
       bundle.dimensions.expression_identity
     ).filter((value) => value.sourceRef.startsWith('marketing_identity:'));
     const expressionIdentityRef = identityValues[0]?.sourceRef;
+    const trustedFactClaims = factValues.flatMap(([key, value]) => {
+      const kind = policyFactKind(key);
+      return kind
+        ? [
+            {
+              kind,
+              sourceRef: value.sourceRef,
+              value: JSON.stringify(value.value),
+            },
+          ]
+        : [];
+    });
     return {
       contextBundle: {
         bundleId: bundle.bundleId,
@@ -856,20 +873,16 @@ export class ContextBundleApprovalPolicyResolver
         candidate: {
           assetRefs: [...version.orderedAssetIds],
           candidateId: version.id,
-          factClaims: factValues.flatMap(([key, value]) => {
-            const kind = policyFactKind(key);
-            return kind
-              ? [
-                  {
-                    kind,
-                    sourceRef: value.sourceRef,
-                    value: JSON.stringify(value.value),
-                  },
-                ]
-              : [];
-          }),
+          factClaims: [],
           intendedUse: input.intendedUse,
           ...(expressionIdentityRef ? { expressionIdentityRef } : {}),
+          visibleText: [
+            { field: 'title', text: version.title },
+            { field: 'body', text: version.body },
+            ...(version.conversionHook
+              ? [{ field: 'cta', text: version.conversionHook }]
+              : []),
+          ],
           workspaceId: bundle.workspaceId,
         },
         identityRefs: identityValues.map((value) => ({
@@ -892,6 +905,7 @@ export class ContextBundleApprovalPolicyResolver
           status: 'current' as const,
           workspaceId: bundle.workspaceId,
         })),
+        trustedFactClaims,
       },
     };
   }
@@ -1220,12 +1234,14 @@ function auditEvent(
 function policyFactKind(key: string) {
   const normalized = key.toLowerCase();
   if (normalized.includes('price')) return 'price' as const;
-  if (normalized.includes('benefit') || normalized.includes('discount')) {
-    return 'benefit' as const;
-  }
-  if (normalized.includes('offer') || normalized.includes('group_buy')) {
+  if (
+    normalized.includes('offer') ||
+    normalized.includes('group_buy') ||
+    normalized.includes('discount')
+  ) {
     return 'offer' as const;
   }
+  if (normalized.includes('benefit')) return 'benefit' as const;
   if (normalized.includes('qualification')) return 'qualification' as const;
   return null;
 }

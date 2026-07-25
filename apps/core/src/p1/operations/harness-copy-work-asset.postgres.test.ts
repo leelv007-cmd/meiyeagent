@@ -9,6 +9,7 @@ import {
 	PostgresContentPackageRevisionWritePort,
 	type ContentPackageRevisionWriteInput,
 } from "../execution-spine/content-package-revision-port.js";
+import { harnessRuntimeId } from "../harness/workspace-scope.js";
 import { buildContentPackage } from "./content-package.js";
 import {
 	harnessCopyWorkAssetId,
@@ -91,6 +92,17 @@ test("Harness Copy delivery lands one deterministic winner text asset atomically
 		topics: [],
 	};
 	const input: ContentPackageRevisionWriteInput = {
+		claimExtraction: {
+			claims: [
+				{
+					field: "title",
+					kind: "qualification",
+					value: "卫健委批准",
+				},
+			],
+			inputHash: "a".repeat(64),
+			revision: "visible-claim-extractor-v2",
+		},
 		expectedRevision: 0,
 		generated: { assetIds: [assetId], childRuns: [] },
 		harnessSelection: { recommendedCandidateId: "candidate-winner" },
@@ -174,6 +186,13 @@ test("Harness Copy delivery lands one deterministic winner text asset atomically
 		assert.equal(deliveredPackage.variants.length, 3);
 		assert.equal(deliveredPackage.harnessSelection?.adoptedCandidateId, undefined);
 		assert.deepEqual(deliveredPackage.generated.assetIds, [assetId]);
+		const audit = await pool.query<{ claim_extraction: unknown }>(
+			`SELECT payload->'claimExtraction' AS claim_extraction
+			   FROM harness_runtime.audit_events
+			  WHERE workflow_id=$1 AND event_type='package_delivered'`,
+			[harnessRuntimeId(workspaceId, taskId)],
+		);
+		assert.deepEqual(audit.rows[0]?.claim_extraction, input.claimExtraction);
 	} finally {
 		await pool.query(
 			`DELETE FROM harness_runtime.langfuse_outbox

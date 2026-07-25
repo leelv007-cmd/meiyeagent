@@ -22,9 +22,15 @@ import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution
 
 import {
   executeCopySelection,
+  HarnessSelectionError,
   StructuredCandidateScorer,
 } from './execution-selection.js';
-import { createHarnessCandidateValidator } from './policy-gates.js';
+import {
+  createHarnessCandidateValidator,
+  validateHarnessPolicy,
+  type HarnessFactClaim,
+  type VisibleClaimExtraction,
+} from './policy-gates.js';
 import {
   compileExecutionBrief,
   InMemoryStructuredNodeMetrics,
@@ -43,6 +49,7 @@ import {
   assertCopyRevisionAssemblyComplete,
   buildCopyPlatformVariants,
 } from './output-compiler.js';
+import { containsConcreteOfferText } from './visible-claim-patterns.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
@@ -82,6 +89,7 @@ export interface HarnessCopyDeliveryPort {
     }>;
     recommendation: Omit<CreativeRecommendationDecisionTrace, 'deliverables'>;
     assetIds: string[];
+    claimExtraction: VisibleClaimExtraction;
     marketing: MarketingPackageEvidence;
     reuseSeed?: ReuseTaskSeed;
   }): Promise<ContentPackageRevisionDelivery>;
@@ -410,11 +418,14 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         input.brief.assetRefs,
         sourceContentPackage?.assets,
       );
+      const claimExtraction =
+        assertDeliverableCandidatesPassVisibleRedlines(input);
       return this.executionDelivery.write(
         copyContentPackageRevisionWriteInput(
           input,
           occurredAt,
           sourceContentPackage?.assets,
+          claimExtraction,
         ),
       );
     }
@@ -425,6 +436,8 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       at: occurredAt,
     });
     const platform = publicationPlatform(input.brief.platform);
+    const claimExtraction =
+      assertDeliverableCandidatesPassVisibleRedlines(input);
     return this.delivery.deliverCopyRevision({
       workflowId: input.workflowId,
       workspaceId: input.request.workspaceId,
@@ -436,6 +449,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       winner: input.selection.winner,
       candidates: input.selection.candidates,
       assetIds: [...input.brief.assetRefs],
+      claimExtraction,
       marketing,
       ...(input.request.reuseSeed
         ? { reuseSeed: input.request.reuseSeed }
@@ -491,10 +505,110 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   }
 }
 
+function assertDeliverableCandidatesPassVisibleRedlines(
+  input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+) {
+  const result = validateHarnessVisibleDelivery({
+    assetRefs: input.brief.assetRefs,
+    brief: input.brief,
+    candidateId: input.selection.winner.candidateId,
+    context: input.context,
+    expressionIdentityRef: input.brief.identityRefs[0],
+    visibleText: input.selection.candidates.flatMap((candidate) => [
+      { field: `${candidate.candidateId}.title`, text: candidate.title },
+      { field: `${candidate.candidateId}.body`, text: candidate.body },
+      { field: `${candidate.candidateId}.cta`, text: candidate.conversionHook },
+    ]),
+    workspaceId: input.request.workspaceId,
+  });
+  if (!result.passed) {
+    throw new HarnessSelectionError(
+      [...new Set(result.failures.map(({ gateId }) => gateId))],
+      result.failures[0]?.reason,
+      result.failures.flatMap(({ triggeredClaims }) => triggeredClaims ?? []),
+    );
+  }
+  return result.claimExtraction!;
+}
+
+export function validateHarnessVisibleDelivery(input: {
+  assetRefs: string[];
+  brief: Record<string, unknown>;
+  candidateId: string;
+  context: HarnessContextSnapshot;
+  expressionIdentityRef?: string;
+  visibleText: Array<{ field: string; text: string }>;
+  workspaceId: string;
+}) {
+  return validateHarnessPolicy({
+    phase: 'delivery',
+    bundle: {
+      workspaceId: input.workspaceId,
+      revision: input.context.bundle.revision,
+    },
+    brief: structuredClone(input.brief),
+    candidate: {
+      assetRefs: [...input.assetRefs],
+      candidateId: input.candidateId,
+      factClaims: [],
+      intendedUse: 'public_content',
+      ...(input.expressionIdentityRef
+        ? { expressionIdentityRef: input.expressionIdentityRef }
+        : {}),
+      visibleText: structuredClone(input.visibleText),
+      workspaceId: input.workspaceId,
+    },
+    trustedFactClaims: trustedClaimsFromContext(input.context),
+    ...input.context.policyReferences,
+  });
+}
+
+function trustedClaimsFromContext(
+  context: HarnessContextSnapshot,
+): HarnessFactClaim[] {
+  const facts =
+    context.activeFacts ??
+    Object.entries(context.bundle.dimensions.store_facts_assets).map(
+      ([key, value]) => ({
+        key,
+        value: value.value,
+        sourceRef: value.sourceRef,
+      }),
+    );
+  return facts.flatMap(({ key, value, sourceRef }) => {
+    const kind = policyFactKind(key);
+    return kind
+      ? [{ kind, sourceRef, value: JSON.stringify(value) }]
+      : [];
+  });
+}
+
+function policyFactKind(key: string): HarnessFactClaim['kind'] | null {
+  const normalized = key.toLowerCase();
+  if (normalized.includes('price')) return 'price';
+  if (
+    normalized.includes('offer') ||
+    normalized.includes('group_buy') ||
+    normalized.includes('discount')
+  ) {
+    return 'offer';
+  }
+  if (normalized.includes('benefit')) return 'benefit';
+  if (
+    normalized.includes('qualification') ||
+    normalized.includes('certification') ||
+    normalized.includes('license')
+  ) {
+    return 'qualification';
+  }
+  return null;
+}
+
 export function copyContentPackageRevisionWriteInput(
   input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
   occurredAt: string,
   sourceAssets: ReadonlyArray<{ id: string; role: 'source' | 'selected' }> = [],
+  claimExtraction?: VisibleClaimExtraction,
 ): ContentPackageRevisionWriteInput {
   const snapshot = input.request.executionSnapshot;
   if (!snapshot) {
@@ -533,6 +647,7 @@ export function copyContentPackageRevisionWriteInput(
   });
   const revision: ContentPackageRevisionWriteInput = {
     additionalVersions: versions.filter((candidate) => candidate.id !== winner.id),
+    ...(claimExtraction ? { claimExtraction } : {}),
     expectedRevision: input.request.expectedRevision,
     generated: { assetIds: [workAssetId], childRuns: [] },
     harnessSelection: {
@@ -746,76 +861,6 @@ function containsConcreteOfferCopy(candidate: unknown) {
 }
 
 const USER_VISIBLE_COPY_FIELDS = ['title', 'body', 'conversionHook'] as const;
-const FULL_WIDTH_DIGIT_PATTERN = /[０-９]/u;
-const CHINESE_OFFER_NUMBER = String.raw`[〇零一二两三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟]+`;
-const OFFER_NUMBER = String.raw`(?:\d+(?:\.\d+)?|${CHINESE_OFFER_NUMBER})`;
-const PROMOTION_CONTEXT = String.raw`(?:优惠|仅|只要|限时|立减|直减|减免|券|特价|特惠|折|现价|到手价|团购价|优惠价|售价|低至|省)`;
-const CURRENCY_SYMBOL = String.raw`\p{Sc}`;
-const CURRENCY_LABEL =
-  '(?:RMB|CNY|USD|EUR|GBP|JPY|HKD|TWD|AUD|CAD|SGD|KRW|yuan|人民币|人民幣|美元|美金|港元|港币|港幣|日元|日圆|日圓|欧元|歐元|英镑|英鎊|韩元|韓元)';
-const OFFER_UNIT = '(?:元|圆|圓|[块塊](?:[钱錢])?|折|券)';
-const CONCRETE_OFFER_PATTERNS = [
-  new RegExp(
-    String.raw`(?:${CURRENCY_SYMBOL}\s*${OFFER_NUMBER}|${OFFER_NUMBER}\s*${CURRENCY_SYMBOL}|${CURRENCY_LABEL}\s*${OFFER_NUMBER}|${OFFER_NUMBER}\s*${CURRENCY_LABEL}|${OFFER_NUMBER}\s*${OFFER_UNIT})`,
-    'iu',
-  ),
-  new RegExp(
-    String.raw`${CHINESE_OFFER_NUMBER}(?:点${CHINESE_OFFER_NUMBER})?折`,
-    'u',
-  ),
-  new RegExp(
-    String.raw`(?:价格|只要|仅需|现价|到手价|团购价|特价|特惠|优惠价|售价|低至|立减|直减|减免|省)[\s:：，,]*${OFFER_NUMBER}`,
-    'u',
-  ),
-  new RegExp(String.raw`满\s*${OFFER_NUMBER}\s*减\s*${OFFER_NUMBER}`, 'u'),
-  new RegExp(
-    String.raw`${CHINESE_OFFER_NUMBER}\s*减\s*${CHINESE_OFFER_NUMBER}`,
-    'u',
-  ),
-  new RegExp(
-    String.raw`第\s*${OFFER_NUMBER}\s*(?:件|杯|份|位|单)\s*半价`,
-    'u',
-  ),
-  new RegExp(String.raw`买\s*${OFFER_NUMBER}\s*送\s*${OFFER_NUMBER}`, 'u'),
-];
-const PROMOTION_CONTEXT_PATTERN = new RegExp(PROMOTION_CONTEXT, 'u');
-const PROMOTIONAL_QUANTITY_PATTERN = new RegExp(
-  String.raw`${OFFER_NUMBER}\s*(?:%|次)`,
-  'u',
-);
-const CLAUSE_BOUNDARY_PATTERN = /[.。！？!?\n；;…]+/u;
-const BENIGN_QUANTITY_PATTERNS = [
-  new RegExp(String.raw`(?:好评率|满意度)\s*${OFFER_NUMBER}\s*%`, 'gu'),
-  new RegExp(String.raw`第\s*${OFFER_NUMBER}\s*次`, 'gu'),
-  new RegExp(String.raw`每(?:天|日|周|月|年)\s*${OFFER_NUMBER}\s*次`, 'gu'),
-];
-
-function containsConcreteOfferText(value: string) {
-  // Full-width digits are treated as an adversarial obfuscation. Ordinary ASCII
-  // dates, step ordinals and counts still need nearby offer language to fail.
-  if (FULL_WIDTH_DIGIT_PATTERN.test(value)) return true;
-  const normalized = value.normalize('NFKC');
-  return (
-    CONCRETE_OFFER_PATTERNS.some((pattern) => pattern.test(normalized)) ||
-    containsContextualOfferQuantity(normalized)
-  );
-}
-
-function containsContextualOfferQuantity(value: string) {
-  // A fixed character window creates an identical bypass at its next boundary.
-  // Keep known service metrics, then fail closed on offer quantities in a clause.
-  const withoutBenignQuantities = BENIGN_QUANTITY_PATTERNS.reduce(
-    (text, pattern) => text.replace(pattern, ''),
-    value,
-  );
-  return withoutBenignQuantities
-    .split(CLAUSE_BOUNDARY_PATTERN)
-    .some(
-      (clause) =>
-        PROMOTION_CONTEXT_PATTERN.test(clause) &&
-        PROMOTIONAL_QUANTITY_PATTERN.test(clause),
-    );
-}
 
 function copyUnit(revision: number) {
   return revision === 1 ? 'copy-primary' : `copy-primary-r${revision}`;

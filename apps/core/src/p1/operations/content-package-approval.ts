@@ -16,6 +16,7 @@ import {
   validateHarnessPolicy,
   type HarnessGateId,
   type HarnessPolicyInput,
+  type VisibleClaimExtraction,
 } from '../harness/policy-gates.js';
 import type { ContextInvalidationSink } from './context-invalidation.js';
 import { TaskBlockingNodeConflictError } from './repository.js';
@@ -51,7 +52,8 @@ export class ApprovalReceiptError extends Error {
       | 'APPROVAL_POLICY_REJECTED'
       | 'APPROVAL_REQUEST_NOT_PENDING',
     message: string,
-    readonly gateId?: HarnessGateId
+    readonly gateId?: HarnessGateId,
+    readonly triggeredClaims: VisibleClaimExtraction['claims'] = [],
   ) {
     super(message);
     this.name = 'ApprovalReceiptError';
@@ -69,6 +71,7 @@ interface ApprovalAuthorizationInput extends ApprovalBinding {
     | 'identityRefs'
     | 'rightsRefs'
     | 'sourceRefs'
+    | 'trustedFactClaims'
   >;
   receiptId?: string;
 }
@@ -176,7 +179,8 @@ export class ContentPackageApprovalService implements ContextInvalidationSink {
       throw new ApprovalReceiptError(
         'APPROVAL_POLICY_REJECTED',
         policyFailure.reason,
-        policyFailure.gateId
+        policyFailure.gateId,
+        policyFailure.triggeredClaims,
       );
     }
     if (!receipt || !sameBinding(receipt.binding, input)) {

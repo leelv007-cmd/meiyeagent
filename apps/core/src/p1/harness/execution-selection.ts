@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
+import type { VisibleClaimExtraction } from './policy-gates.js';
+
 import type { Acceptance } from '../model-supply/index.js';
 import type { StructuredNodeRunner } from '../model-supply/structured-node-runner.js';
 import type { ExecutionBrief } from './structured-nodes.js';
@@ -103,6 +105,7 @@ export class HarnessSelectionError extends Error {
   constructor(
     readonly gateIds: string[],
     readonly merchantMessage?: string,
+    readonly triggeredClaims: VisibleClaimExtraction['claims'] = [],
   ) {
     super('Every generated candidate was blocked by canonical policy.');
     this.name = 'HarnessSelectionError';

@@ -16,7 +16,10 @@ import {
 	InMemoryStructuredNodeMetrics,
 	type ExecutionBrief,
 } from "./structured-nodes.js";
-import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
+import {
+	type HarnessStructuredNodeRunnerFactory,
+	validateHarnessVisibleDelivery,
+} from "./production-stage-ports.js";
 import type {
 	HarnessContextSnapshot,
 	HarnessMediaSelectionResult,
@@ -24,7 +27,10 @@ import type {
 	HarnessStagePorts,
 } from "./workflow-core.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
-import { executeImageSelection } from "./execution-selection.js";
+import {
+	executeImageSelection,
+	HarnessSelectionError,
+} from "./execution-selection.js";
 import { nativeSupplyOperation } from "./image-intent-compiler.js";
 import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
 import {
@@ -162,7 +168,9 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 				title: input.brief.intent.purpose,
 				topics: [],
 			};
+			const claimExtraction = assertMediaVisibleDelivery(input, version);
 			const revision = {
+				claimExtraction,
 				expectedRevision: input.request.expectedRevision,
 				generated: {
 					assetIds: [input.selection.asset.id],
@@ -230,7 +238,9 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 			title: "视频成品",
 			topics: [],
 		};
+		const claimExtraction = assertMediaVisibleDelivery(input, version);
 		const revision = {
+			claimExtraction,
 			expectedRevision: input.request.expectedRevision,
 			generated: {
 				assetIds: [input.selection.asset.id],
@@ -277,6 +287,45 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 		assertVideoRevisionAssemblyComplete(revision);
 		return this.contentPackages.write(revision);
 	}
+}
+
+function assertMediaVisibleDelivery(
+	input: Parameters<HarnessMediaStagePorts["assembleMediaAndDeliver"]>[0],
+	version: {
+		body: string;
+		conversionHook: string;
+		id: string;
+		title: string;
+	},
+) {
+	const result = validateHarnessVisibleDelivery({
+		assetRefs: [],
+		brief: input.brief,
+		candidateId: version.id,
+		context: input.context,
+		visibleText: [
+			{ field: "title", text: version.title },
+			{ field: "body", text: version.body },
+			{ field: "cta", text: version.conversionHook },
+			...(input.brief.kind === "image"
+				? input.brief.intent.exactText
+						.filter(({ treatment }) => treatment === "exact")
+						.map(({ text }, index) => ({
+							field: `image.exactText.${index}`,
+							text,
+						}))
+				: []),
+		],
+		workspaceId: input.request.workspaceId,
+	});
+	if (!result.passed) {
+		throw new HarnessSelectionError(
+			[...new Set(result.failures.map(({ gateId }) => gateId))],
+			result.failures[0]?.reason,
+			result.failures.flatMap(({ triggeredClaims }) => triggeredClaims ?? []),
+		);
+	}
+	return result.claimExtraction!;
 }
 
 function mediaPlatform(

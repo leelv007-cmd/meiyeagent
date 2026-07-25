@@ -79,7 +79,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Run opt-in Volcengine red-team
-        continue-on-error: true
         env:
           PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION: true
           VOLCENGINE_API_BASE_URL: ${{ secrets.VOLCENGINE_API_BASE_URL }}

@@ -1062,6 +1062,13 @@ const sourceContentPackageAdmissionReader = {
       : null;
   },
 };
+const contentPackageApprovalPolicy = new ContextBundleApprovalPolicyResolver(
+  contextBundleRepository,
+  {
+    sourceRevisions: contextSourceRevisions,
+    facts: storeFactLedger,
+  }
+);
 operationsService = new OperationsApplicationService(operationsRepository, {
   billingLifecycle,
   canvasExportAssetAccess,
@@ -1073,6 +1080,7 @@ operationsService = new OperationsApplicationService(operationsRepository, {
       appEnv: process.env.APP_ENV,
     },
   ),
+  contentPackageApprovalPolicy,
   contentPackageRightsResolver,
   contentPackageMigration,
   contentWriteOwnership: contentPackageWriteOwnership,
@@ -1171,13 +1179,7 @@ const reuseTaskHarnessAdapter = new ReuseTaskHarnessAdapter(
 const contentPackageDelivery = new ContentPackageDeliveryService(
   operationsRepository,
   {
-    approvalPolicy: new ContextBundleApprovalPolicyResolver(
-      contextBundleRepository,
-      {
-        sourceRevisions: contextSourceRevisions,
-        facts: storeFactLedger,
-      }
-    ),
+    approvalPolicy: contentPackageApprovalPolicy,
     capability: async (platform) =>
       contentPackageDeliveryCapability({
         accountAndScopeVerified: false,

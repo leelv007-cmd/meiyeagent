@@ -26,6 +26,8 @@ import {
 import { VisualAdoptionError } from '../result-delivery/errors.js';
 import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import { appendPendingApprovalRequest } from './content-package-approval.js';
+import type { ContentPackageApprovalPolicyPort } from './content-package-delivery.js';
+import { validateContentPackageVisibleCopyPolicy } from './content-package-visible-copy-policy.js';
 import {
   buildContentPackage,
   assertContentPackageExportAllowed,
@@ -291,6 +293,7 @@ interface OperationsDependencies {
   canvasExporter: CanvasExportPort;
   creationExecutor?: import('./types.js').CreationExecutorPort;
   contentPackageExporter?: ContentPackageExportPort;
+  contentPackageApprovalPolicy?: ContentPackageApprovalPolicyPort;
   contentPackageRightsResolver?: ContentPackageRightsResolverPort;
   groundingResolver?: CreativeGroundingResolverPort;
   imageGenerator: ImageGenerationPort;
@@ -1104,6 +1107,35 @@ export class OperationsApplicationService {
       workspaceId: context.workspaceId,
     };
     state.auditEvents.push(event);
+  }
+
+  private async assertContentPackageVisibleCopyPolicy(input: {
+    contentPackage: ContentPackage;
+    phase: 'delivery' | 'export';
+    target: string;
+    versionId: string;
+  }) {
+    const result = await validateContentPackageVisibleCopyPolicy({
+      approvalPolicy: this.dependencies.contentPackageApprovalPolicy,
+      contentPackage: input.contentPackage,
+      intendedUse: 'public_content',
+      phase: input.phase,
+      target: input.target,
+      versionId: input.versionId,
+    });
+    const failure = result.failures[0];
+    if (failure) {
+      throw new OperationsError(
+        'CONTENT_PACKAGE_POLICY_REJECTED',
+        failure.reason,
+        409,
+        {
+          gateId: failure.gateId,
+          triggeredClaims: failure.triggeredClaims ?? [],
+        }
+      );
+    }
+    return result.claimExtraction!;
   }
 
   private async requireContentPackageRevision(
@@ -8872,6 +8904,13 @@ export class OperationsApplicationService {
             userId: context.userId,
           })
         );
+      const claimExtraction =
+        await this.assertContentPackageVisibleCopyPolicy({
+          contentPackage: updated,
+          phase: 'delivery',
+          target: 'package_edit',
+          versionId,
+        });
       const revised = this.incrementContentPackageRevision(current, updated);
       state.contentPackages[index] = revised;
       this.audit(
@@ -8886,6 +8925,7 @@ export class OperationsApplicationService {
           ...(input.intent
             ? { quickEditAction: input.intent.action, scope: input.intent.scope }
             : {}),
+          claimExtraction,
         }
       );
       return {
@@ -9272,6 +9312,13 @@ export class OperationsApplicationService {
             userId: context.userId,
           })
         );
+      const claimExtraction =
+        await this.assertContentPackageVisibleCopyPolicy({
+          contentPackage: updated,
+          phase: 'delivery',
+          target: `variant_edit:${input.platform}`,
+          versionId,
+        });
       const revised = this.incrementContentPackageRevision(current, updated);
       state.contentPackages[packageIndex] = revised;
       this.audit(
@@ -9287,6 +9334,7 @@ export class OperationsApplicationService {
           ...(input.intent
             ? { quickEditAction: input.intent.action, scope: input.intent.scope }
             : {}),
+          claimExtraction,
         }
       );
       return {
@@ -9348,6 +9396,13 @@ export class OperationsApplicationService {
         409
       );
     }
+    const claimExtraction =
+      await this.assertContentPackageVisibleCopyPolicy({
+        contentPackage,
+        phase: 'export',
+        target: input.platform,
+        versionId: version.id,
+      });
     const approvalTaskId = contentPackage.source.workflowId;
     const createsApprovalRequest =
       approvalTaskId !== undefined &&
@@ -9491,6 +9546,7 @@ export class OperationsApplicationService {
           stored.id,
           {
             artifactAssetId: exportedArtifact.artifactAssetId,
+            claimExtraction,
             platform: input.platform,
           }
         );

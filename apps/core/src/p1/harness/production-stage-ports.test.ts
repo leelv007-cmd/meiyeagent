@@ -14,6 +14,7 @@ import {
   runHarnessWorkflow,
   type HarnessContextSnapshot,
 } from './workflow-core.js';
+import { HarnessSelectionError } from './execution-selection.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type {
   StructuredNodeRunner,
@@ -537,6 +538,19 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
   assert.deepEqual(executionDelivery.inputs[0]?.marketing?.rightsRefs, [
     'asset-1',
   ]);
+  assert.deepEqual(
+    (
+      executionDelivery.inputs[0] as unknown as {
+        claimExtraction?: { claims: unknown[]; inputHash: string; revision: string };
+      }
+    )?.claimExtraction,
+    {
+      claims: [],
+      inputHash:
+        '0ec2a44efd3caf81a634640d01f6de957802a78b3520da0c4934b3f6a4ed725b',
+      revision: 'visible-claim-extractor-v2',
+    },
+  );
   assert.equal(
     executionDelivery.inputs[0]?.version.conversionHook,
     '私信预约',
@@ -569,6 +583,192 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
         currentVersionId: `${executionDelivery.inputs[0]?.version.id}-video_account`,
         platform: 'video_account',
         versionCount: 2,
+      },
+    ],
+  );
+});
+
+test('assembly blocks unsupported visible claims before writing a deliverable revision', async () => {
+  const executionDelivery = new RecordingRevisionWriter();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => new QueueRunner([]) },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+  );
+  const snapshot = composerSnapshot();
+
+  await assert.rejects(
+    ports.assembleAndDeliver({
+      workflowId: snapshot.task.id,
+      request: composerRequest(snapshot),
+      declaration: {
+        normalizedIntent: '宣传本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      context: contextSnapshot(),
+      brief: {
+        kind: 'copy',
+        instructions: 'x'.repeat(80),
+        platform: 'douyin',
+        cta: '立即抢购',
+        factRefs: [],
+        assetRefs: [],
+        identityRefs: [],
+        constraints: [],
+      },
+      selection: {
+        candidates: [
+          {
+            candidateId: 'candidate-redline',
+            title: '国家认证五星机构，团购价398元',
+            body: '到店即送全年护理',
+            conversionHook: '立即抢购',
+            score: 91,
+          },
+        ],
+        winner: {
+          candidateId: 'candidate-redline',
+          title: '国家认证五星机构，团购价398元',
+          body: '到店即送全年护理',
+          conversionHook: '立即抢购',
+        },
+        trace: {} as never,
+      },
+    }),
+    (error: unknown) =>
+      error instanceof HarnessSelectionError &&
+      error.gateIds.includes('critical_fact_source') &&
+      error.merchantMessage ===
+        '成品文案含有未被门店已确认资料支持的资质、价格或优惠、权益承诺，暂不能交付。' &&
+      error.triggeredClaims?.some(
+        (claim) =>
+          claim.kind === 'qualification' &&
+          claim.value.includes('国家认证'),
+      ) === true,
+  );
+  assert.equal(executionDelivery.inputs.length, 0);
+});
+
+test('assembly delivers legitimate promotion copy backed by confirmed facts', async () => {
+  const executionDelivery = new RecordingRevisionWriter();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => new QueueRunner([]) },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+  );
+  const snapshot = composerSnapshot();
+  const context = contextSnapshot();
+  const activeFacts = [
+    {
+      key: 'offer.price',
+      value: { amount: 398, currency: 'CNY' },
+      sourceRef: 'store_fact:offer-price:1',
+      effectiveFrom: '2026-07-22T00:00:00.000Z',
+      expiresAt: null,
+    },
+    {
+      key: 'offer.discount',
+      value: { amount: 50, kind: 'discount' },
+      sourceRef: 'store_fact:offer-discount:1',
+      effectiveFrom: '2026-07-22T00:00:00.000Z',
+      expiresAt: null,
+    },
+  ];
+  context.activeFacts = activeFacts;
+  context.policyReferences.sourceRefs = activeFacts.map(
+    ({ sourceRef }) => ({
+      id: sourceRef,
+      revision: 1,
+      status: 'current' as const,
+      workspaceId: 'workspace-1',
+    }),
+  );
+
+  await ports.assembleAndDeliver({
+    workflowId: snapshot.task.id,
+    request: composerRequest(snapshot),
+    declaration: {
+      normalizedIntent: '宣传本店团购',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: [],
+      route: 'customized',
+      routingSource: 'model',
+      implicitConstraints: [],
+    },
+    context,
+    brief: {
+      kind: 'copy',
+      instructions: 'x'.repeat(80),
+      platform: 'douyin',
+      cta: '立即预约',
+      factRefs: activeFacts.map(({ sourceRef }) => sourceRef),
+      assetRefs: [],
+      identityRefs: [],
+      constraints: [],
+    },
+    selection: {
+      candidates: [
+        {
+          candidateId: 'candidate-grounded-offer',
+          title: '光子嫩肤团购价398元',
+          body: '限时优惠，立减50元，效果自然',
+          conversionHook: '立即预约',
+          score: 91,
+        },
+      ],
+      winner: {
+        candidateId: 'candidate-grounded-offer',
+        title: '光子嫩肤团购价398元',
+        body: '限时优惠，立减50元，效果自然',
+        conversionHook: '立即预约',
+      },
+      trace: {} as never,
+    },
+  });
+
+  assert.equal(executionDelivery.inputs.length, 1);
+  assert.deepEqual(
+    executionDelivery.inputs[0]?.claimExtraction?.claims.map(
+      ({ field, kind, value }) => ({ field, kind, value }),
+    ),
+    [
+      {
+        field: 'candidate-grounded-offer.title',
+        kind: 'offer',
+        value: '光子嫩肤团购价398元',
+      },
+      {
+        field: 'candidate-grounded-offer.body',
+        kind: 'offer',
+        value: '限时优惠,立减50元,效果自然',
       },
     ],
   );
