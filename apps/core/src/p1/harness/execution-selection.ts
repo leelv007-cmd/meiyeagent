@@ -100,10 +100,58 @@ export class HarnessSelectionError extends Error {
   readonly code = 'HARNESS_ALL_CANDIDATES_BLOCKED';
   readonly status = 409;
 
-  constructor(readonly gateIds: string[]) {
+  constructor(
+    readonly gateIds: string[],
+    readonly merchantMessage?: string,
+  ) {
     super('Every generated candidate was blocked by canonical policy.');
     this.name = 'HarnessSelectionError';
   }
+}
+
+export interface ImageExactTextAssessment {
+  passed: boolean;
+  expected: string[];
+  observed: string[];
+  reason: string;
+}
+
+export async function executeImageSelection<Result>(input: {
+  candidateId(result: Result): string;
+  generate(attempt: {
+    attempt: 'primary' | 'retry';
+    exactTextFailure?: ImageExactTextAssessment;
+  }): Promise<Result>;
+  verify(result: Result): Promise<ImageExactTextAssessment>;
+  merchantFailure(assessment: ImageExactTextAssessment): string;
+}) {
+  const primary = await input.generate({ attempt: 'primary' });
+  const primaryAssessment = await input.verify(primary);
+  if (primaryAssessment.passed) {
+    return { result: primary, executions: [primary], blockedCandidates: [] };
+  }
+
+  const retry = await input.generate({
+    attempt: 'retry',
+    exactTextFailure: primaryAssessment,
+  });
+  const retryAssessment = await input.verify(retry);
+  if (!retryAssessment.passed) {
+    throw new HarnessSelectionError(
+      ['image_exact_text'],
+      input.merchantFailure(retryAssessment),
+    );
+  }
+  return {
+    result: retry,
+    executions: [primary, retry],
+    blockedCandidates: [
+      {
+        candidateId: input.candidateId(primary),
+        gateIds: ['image_exact_text'],
+      },
+    ],
+  };
 }
 
 export async function executeCopySelection(

@@ -889,6 +889,20 @@ function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
       if (kind === 'image') {
         return {
           kind,
+          intent: {
+            operation: 'image.generate',
+            purpose: '门店活动图片',
+            subject: '门店项目',
+            scene: '真实门店场景',
+            composition: '竖版主体居中',
+            references: [],
+            exactText: [],
+            changes: [],
+            invariants: [],
+            factRefs: [],
+            rightsRefs: [],
+            outputPlan: { kind: 'single' },
+          },
           prompt: '为夏日护理项目生成竖版门店活动海报，保留品牌主视觉和预约行动号召。',
           referenceAssetIds: ['asset-1'],
           parameters: { ratio: '9:16', resolution: '1080p' },

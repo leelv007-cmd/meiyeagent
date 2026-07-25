@@ -454,7 +454,7 @@ test("Composer admission derives image and video delivery facts from the publish
 				catalogRevision: `catalog-${kind}-r1`,
 				expectedContextRevision: 4,
 				intent: "为夏日护理项目写一条预约文案",
-				operation: kind === "image" ? "image.generate" : "video.generate",
+				operation: kind === "image" ? "image.edit" : "video.generate",
 				outputCount: 2,
 				quoteRevision: "quote-r5",
 				sourceReferenceIds: ["asset-1"],

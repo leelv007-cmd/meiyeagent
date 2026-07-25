@@ -4,6 +4,7 @@ export const creativeOperationSchema = z.enum([
   'copy.adapt',
   'image.generate',
   'image.edit',
+  'image.reference_transform',
   'video.generate',
   'audio.speech',
   'audio.sfx',

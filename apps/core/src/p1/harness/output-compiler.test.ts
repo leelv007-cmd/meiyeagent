@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import {
   assertCopyRevisionAssemblyComplete,
+  assertImageRevisionAssemblyComplete,
   buildCopyPlatformVariants,
+  buildImagePlatformVariants,
   OUTPUT_COMPILER_CONTRACTS,
   OUTPUT_COMPILER_KINDS,
   outputCompilerContract,
@@ -73,7 +75,7 @@ test('compiler tiers reserve downstream owners without inventing their implement
         manifestBuilderOwner: 'result-delivery/export',
         manifestSchema: 'beauty-delivery-manifest/v1',
       },
-      implementation: 'reserved',
+      implementation: 'available',
       orchestration: 'degraded_five_stage',
       owner: 'T19',
       stages: [
@@ -133,6 +135,101 @@ test('compiler tiers reserve downstream owners without inventing their implement
       ],
     },
   });
+});
+
+test('image revision assembly accepts one complete current variant per platform', () => {
+  const version = {
+    body: '夏日护理活动主视觉',
+    conversionHook: '私信预约',
+    createdAt: '2026-07-25T00:00:00.000Z',
+    id: 'image-version-1',
+    orderedAssetIds: ['asset-image-1'],
+    source: 'ai_generated' as const,
+    title: '夏日护理活动',
+    topics: [],
+  };
+  const variants = buildImagePlatformVariants({
+    currentVersionId: version.id,
+    packageId: 'package-image-1',
+    versions: [version],
+  });
+  const revision = {
+    marketing: {
+      contextBundle: {
+        bundleId: 'bundle-1',
+        hash: 'a'.repeat(64),
+        revision: 1,
+      },
+      factRefs: ['fact:service:1'],
+      rightsRefs: ['asset-image-1'],
+    },
+    variants,
+    version,
+  };
+
+  assert.doesNotThrow(() => assertImageRevisionAssemblyComplete(revision));
+});
+
+test('image revision assembly rejects each missing required part', () => {
+  const version = {
+    body: '夏日护理活动主视觉',
+    conversionHook: '私信预约',
+    createdAt: '2026-07-25T00:00:00.000Z',
+    id: 'image-version-1',
+    orderedAssetIds: ['asset-image-1'],
+    source: 'ai_generated' as const,
+    title: '夏日护理活动',
+    topics: [],
+  };
+  const variants = buildImagePlatformVariants({
+    currentVersionId: version.id,
+    packageId: 'package-image-1',
+    versions: [version],
+  });
+  const complete = {
+    marketing: {
+      contextBundle: {
+        bundleId: 'bundle-1',
+        hash: 'a'.repeat(64),
+        revision: 1,
+      },
+      factRefs: ['fact:service:1'],
+      rightsRefs: ['asset-image-1'],
+    },
+    variants,
+    version,
+  };
+
+  const missingEvidence = {
+    ...complete,
+    marketing: { ...complete.marketing, contextBundle: undefined },
+  };
+  const missingCta = {
+    ...complete,
+    version: { ...version, conversionHook: '' },
+  };
+  const missingRights = {
+    ...complete,
+    marketing: { ...complete.marketing, rightsRefs: [] },
+  };
+  const missingAsset = {
+    ...complete,
+    version: { ...version, orderedAssetIds: [] },
+  };
+  const missingVariant = {
+    ...complete,
+    variants: variants.slice(0, 2),
+  };
+
+  for (const incomplete of [
+    missingEvidence,
+    missingCta,
+    missingRights,
+    missingAsset,
+    missingVariant,
+  ]) {
+    assert.throws(() => assertImageRevisionAssemblyComplete(incomplete));
+  }
 });
 
 test('copy assembly prepares one non-empty version for every v1 platform', () => {

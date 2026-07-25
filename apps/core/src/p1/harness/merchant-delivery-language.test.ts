@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   merchantConfirmationQuestion,
+  merchantExactTextMismatch,
   merchantPartialFailure,
   merchantProgressMessage,
   merchantTaskSummary,
@@ -26,6 +27,10 @@ test('five merchant-facing positions stay free of engineering language', () => {
       completed: '文案已经准备好',
       failed: '配图暂时没有成功',
       nextStep: '可以先用自备图发布，稍后再补生成图片',
+    }),
+    merchantExactTextMismatch({
+      expected: ['价格 398'],
+      observed: ['价格 389'],
     }),
   ];
 

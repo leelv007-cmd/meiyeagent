@@ -27,5 +27,8 @@ export function normalizeHarnessTerminalFailure(
       ? { acceptance: value.acceptance }
       : {}),
     ...(Array.isArray(value.gateIds) ? { gateIds: value.gateIds } : {}),
+    ...(typeof value.merchantMessage === 'string'
+      ? { merchantMessage: value.merchantMessage }
+      : {}),
   };
 }

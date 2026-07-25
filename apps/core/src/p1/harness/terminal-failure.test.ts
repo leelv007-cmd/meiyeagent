@@ -14,6 +14,20 @@ test('terminal failures retain only controlled workflow details', () => {
   );
   assert.deepEqual(
     normalizeHarnessTerminalFailure(
+      new HarnessSelectionError(
+        ['image_exact_text'],
+        '图片中的价格没有通过逐字核对，这张图没有交付。',
+      ),
+    ),
+    {
+      code: 'HARNESS_ALL_CANDIDATES_BLOCKED',
+      status: 409,
+      gateIds: ['image_exact_text'],
+      merchantMessage: '图片中的价格没有通过逐字核对，这张图没有交付。',
+    },
+  );
+  assert.deepEqual(
+    normalizeHarnessTerminalFailure(
       new HarnessSelectionError(['critical_fact_source']),
     ),
     {

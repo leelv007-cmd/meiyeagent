@@ -876,6 +876,81 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         identityRefs: [],
         constraints: ['不得编造价格、效果或顾客案例'],
       };
+    case 'harness_image_brief_v1': {
+      const executionContract = fixtureRecord(payload.executionContract);
+      const declaration = fixtureRecord(payload.declaration);
+      const sources = fixtureRecord(executionContract.sources);
+      const sourceAssets = Array.isArray(sources.assets)
+        ? sources.assets.map(fixtureRecord)
+        : [];
+      const operation =
+        executionContract.operation === 'image.edit' ||
+        executionContract.operation === 'image.reference_transform'
+          ? executionContract.operation
+          : 'image.generate';
+      const merchantIntent =
+        typeof declaration.normalizedIntent === 'string'
+          ? declaration.normalizedIntent
+          : '制作一张门店活动图片';
+      const exactText = [
+        ...merchantIntent.matchAll(
+          /(?:价格|活动价|团购价)\s*[:：]?\s*\d+(?:\s*元)?/gu,
+        ),
+      ].map(([text]) => ({ text, treatment: 'exact' as const }));
+      const references = sourceAssets.map((asset, index) => {
+        const slot =
+          operation === 'image.edit'
+            ? 'work_case'
+            : index === 0
+              ? 'style_ref'
+              : 'composition_ref';
+        return {
+          assetId: String(asset.id),
+          assetRevision: String(asset.revision),
+          slot,
+          mimeType: 'image/png',
+          sizeBytes: 1_024,
+          factRefs: slot === 'work_case' ? ['fact:work-case:confirmed'] : [],
+          rightsRefs: [],
+        };
+      });
+      return {
+        kind: 'image',
+        intent: {
+          operation,
+          purpose: merchantIntent,
+          subject: '门店本次推广项目',
+          scene: '符合商家描述的真实门店场景',
+          composition: '主体清晰并保留安全文字区域',
+          references,
+          exactText,
+          changes:
+            operation === 'image.edit'
+              ? [{ target: 'layout', instruction: '按商家要求调整画面布局' }]
+              : [],
+          invariants:
+            operation === 'image.edit'
+              ? [
+                  {
+                    target: 'work_case_surface',
+                    requirement: '保持真实案例甲面、发型或皮肤状态不变',
+                  },
+                ]
+              : [],
+          factRefs:
+            operation === 'image.edit' ? ['fact:work-case:confirmed'] : [],
+          rightsRefs: [],
+          outputPlan: { kind: 'single' },
+        },
+        prompt: `请制作一张可直接交付的美业图片：${merchantIntent}。严格遵守已确认事实和参考素材语义。`,
+        referenceAssetIds: sourceAssets.map((asset) => String(asset.id)),
+        parameters: {
+          ratio: '3:4',
+          resolution: '2048',
+        },
+        constraints: ['不得改动真实案例证据，不得写错精确文字'],
+      };
+    }
     case 'harness_copy_candidate_v1': {
       const candidateId =
         typeof payload.candidateId === 'string' ? payload.candidateId : 'c01';

@@ -4,6 +4,7 @@ import {
 	composerSubmissionDeliverableSchema,
 	composerSubmissionSignedFieldsSchema,
 	creationModeSchema,
+	creativeOperationSchema,
 	creativeContentModuleIds,
 } from "@meiye/contracts";
 import { z } from "zod";
@@ -113,6 +114,7 @@ const creationSubmissionCommandBaseSchema = z
 		surface: revisionReferenceSchema,
 		recipe: revisionReferenceSchema,
 		lens: creationLensSchema,
+		operation: creativeOperationSchema.optional(),
 		platform: z.object({ id: platformSchema }).strict(),
 		signedSubmission: composerSubmissionSignedFieldsSchema.optional(),
 		deliverables: z.array(deliverableSchema).min(1).max(20),
@@ -155,7 +157,7 @@ const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
 		rights: true,
 		route: true,
 	})
-	.omit({ platform: true, signedSubmission: true })
+	.omit({ operation: true, platform: true, signedSubmission: true })
 	.extend(composerSubmissionSignedFieldsSchema.shape);
 
 export const composerSubmissionRequestSchema =
@@ -196,6 +198,7 @@ export const creationExecutionSnapshotSchema = z
 		surface: revisionReferenceSchema,
 		recipe: revisionReferenceSchema,
 		lens: creationLensSchema,
+		operation: creativeOperationSchema,
 		platform: z.object({ id: platformSchema }).strict(),
 		contentPackagePlatform: composerContentPackagePlatformSchema,
 		distributionTarget: composerDistributionTargetSchema,
@@ -258,6 +261,7 @@ export function createCreationExecutionSnapshot(
 			surface: command.surface,
 			recipe: command.recipe,
 			lens: command.lens,
+			operation: command.operation ?? operationForLens(command.lens),
 			platform: command.platform,
 			contentPackagePlatform:
 				command.contentPackagePlatform ??
@@ -286,6 +290,12 @@ export function createCreationExecutionSnapshot(
 			contentModules: command.contentModules,
 		}),
 	);
+}
+
+function operationForLens(lens: z.infer<typeof creationLensSchema>) {
+	if (lens === "copy") return "copy.generate" as const;
+	if (lens === "image") return "image.generate" as const;
+	return "video.generate" as const;
 }
 
 function validateSubmission(

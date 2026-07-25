@@ -124,6 +124,38 @@ test('intent naming turns one blocking gap into one QuestionCard', async () => {
   });
 });
 
+test('the server-owned delivery layer cannot be changed by intent model output', async () => {
+  const runner = new FixtureStructuredNodeRunner({
+    normalizedIntent: '生成一张护理海报',
+    taskType: 'routine_marketing_materials',
+    deliveryLayer: 'copy',
+    relevantAssetCategories: ['industry_category'],
+    usedAssetCategories: ['industry_category'],
+    route: 'customized',
+    implicitConstraints: [],
+    blockingGap: null,
+  });
+
+  const named = await nameHarnessIntent(
+    {
+      workflowId: 'workflow-server-delivery-layer',
+      workflowRevision: 1,
+      deliveryLayer: 'finished_media',
+      intent: {
+        context: {
+          workId: 'work-server-delivery-layer',
+          intent: '生成一张护理海报',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    runner,
+  );
+
+  assert.equal(named.declaration.deliveryLayer, 'finished_media');
+});
+
 test('brief compilation produces complete copy, image and video unit briefs', async () => {
   const outputs = {
     copy: {
@@ -139,6 +171,20 @@ test('brief compilation produces complete copy, image and video unit briefs', as
     },
     image: {
       kind: 'image',
+      intent: {
+        operation: 'image.generate',
+        purpose: '门店项目封面',
+        subject: '护理项目',
+        scene: '真实门店环境',
+        composition: '竖版主体居中',
+        references: [],
+        exactText: [],
+        changes: [],
+        invariants: [],
+        factRefs: [],
+        rightsRefs: [],
+        outputPlan: { kind: 'single' },
+      },
       prompt: '竖版门店项目封面，真实环境照片为主体，留出中文标题安全区。',
       referenceAssetIds: ['asset-room-1'],
       parameters: { ratio: '3:4', resolution: '2048' },
@@ -208,9 +254,10 @@ test('brief compilation produces complete copy, image and video unit briefs', as
       runner.requests[0]?.effectIdempotencyKey,
       `wf:workflow-brief:s3:${kind}-primary:0`
     );
-    const expectedTotal = { copy: 8, image: 7, video: 12 }[kind];
+    const expectedComplete = { copy: 8, image: 14, video: 12 }[kind];
+    const expectedTotal = { copy: 8, image: 20, video: 12 }[kind];
     assert.deepEqual(metrics.snapshot().nestedCompleteness, {
-      complete: expectedTotal,
+      complete: expectedComplete,
       total: expectedTotal,
     });
   }
@@ -291,9 +338,11 @@ test('brief compilation receives the frozen structured Composer contract before 
     identity: { id: 'identity-1', revision: 'identity-r1' },
     lens: 'copy',
     modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
+    operation: 'copy.generate',
     platform: { id: 'douyin' },
     quote: { id: 'quote-1', revision: 'quote-r1' },
     route: { id: 'route-1', revision: 'route-r1' },
+    sources: { assets: [] },
   });
 });
 

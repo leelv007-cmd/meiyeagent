@@ -20,7 +20,7 @@ import type {
   StructuredNodeRunnerRequest,
 } from '../model-supply/structured-node-runner.js';
 
-test('production tracer rejects a finished-media intent before execution', async () => {
+test('production tracer keeps its server-owned copy delivery layer', async () => {
   const runner = new QueueRunner([
     {
       normalizedIntent: '制作团购成片',
@@ -48,9 +48,13 @@ test('production tracer rejects a finished-media intent before execution', async
     () => '2026-07-18T00:01:00.000Z',
   );
 
-  await assert.rejects(
-    ports.nameIntent({ workflowId: 'task-media', request: taskInput() }),
-    /copy delivery layer/u,
+  const named = await ports.nameIntent({
+    workflowId: 'task-media',
+    request: taskInput(),
+  });
+  assert.equal(
+    named.declaration.deliveryLayer,
+    'copy',
   );
   assert.equal(delivery.inputs.length, 0);
 });

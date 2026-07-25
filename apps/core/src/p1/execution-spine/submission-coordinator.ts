@@ -1,6 +1,7 @@
 import { pickComposerSubmissionSignedFields } from "@meiye/contracts";
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
+import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
 
 import {
 	type CreationExecutionSnapshot,
@@ -98,6 +99,7 @@ export interface CreationSubmissionAdmissionPort {
 			CreationExecutionSnapshot,
 			"contentModules" | "deliverables" | "lens"
 		>;
+		operation?: CreationExecutionSnapshot["operation"];
 		route: { id: string; revision: string };
 		rights: { revision: string; summary: string };
 		taskId: string;
@@ -148,6 +150,12 @@ export class CreationSubmissionCoordinator {
 			identity: admitted.identity,
 			lens: admitted.recipeBinding.lens,
 			modelPolicy: admitted.modelPolicy,
+			operation:
+				admitted.operation ??
+				operationForRequest(
+					admitted.recipeBinding.lens,
+					request.sources.assets.length,
+				),
 			platform: {
 				id:
 					request.contentPackagePlatform === "offline_material" ||
@@ -230,6 +238,15 @@ export class CreationSubmissionCoordinator {
 			throw error;
 		}
 	}
+}
+
+function operationForRequest(
+	lens: CreationExecutionSnapshot["lens"],
+	referenceCount: number,
+) {
+	if (lens === "copy") return "copy.generate" as const;
+	if (lens === "image") return selectImageIntentOperation({ referenceCount });
+	return "video.generate" as const;
 }
 
 function receiptPayload(request: ComposerSubmissionRequest) {

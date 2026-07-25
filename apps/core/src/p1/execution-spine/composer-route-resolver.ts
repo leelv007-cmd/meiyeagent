@@ -1,4 +1,4 @@
-import type { CreativeOperation } from "@meiye/contracts";
+import type { CreativeOperation, SupplyOperation } from "@meiye/contracts";
 
 import { P1DomainError, type RouteSnapshot } from "../foundation/domain.js";
 import type { FoundationRepository } from "../foundation/ports.js";
@@ -7,6 +7,7 @@ import {
 	fromModelSupplyRouteSnapshot,
 	toFoundationRouteCheckpoint,
 } from "../route-snapshot-normalize.js";
+import { nativeSupplyOperation } from "../harness/image-intent-compiler.js";
 
 export interface ComposerRouteResolverPort {
 	resolve(input: {
@@ -21,7 +22,7 @@ interface FixedRouteFreezer {
 	freezeFixedRouteForExecution(input: {
 		catalogModelId: string;
 		dataClass: [];
-		operation: CreativeOperation;
+		operation: SupplyOperation;
 		workspaceId: string;
 	}): Promise<ModelSupplyRouteSnapshot>;
 }
@@ -57,7 +58,7 @@ export class ModelSupplyComposerRouteResolver
 		const frozen = await this.freezer.freezeFixedRouteForExecution({
 			catalogModelId: input.catalogModel.id,
 			dataClass: [],
-			operation: input.operation,
+			operation: nativeSupplyOperation(input.operation),
 			workspaceId: input.workspaceId,
 		});
 		if (

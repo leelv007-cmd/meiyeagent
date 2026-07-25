@@ -11,9 +11,13 @@ import type { ExecutionBrief } from "./structured-nodes.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
 import {
 	HarnessMediaExecutionError,
+	type ImageExactTextVerifier,
 	ModelSupplyHarnessMediaExecutionPort,
+	ModelSupplyImageExactTextVerifier,
 	UnifiedHarnessStagePorts,
 } from "./unified-media-stage-ports.js";
+import { HarnessSelectionError } from "./execution-selection.js";
+import { merchantVisibleLanguageIssues } from "./merchant-delivery-language.js";
 import type {
 	HarnessContextSnapshot,
 	HarnessStagePorts,
@@ -31,7 +35,7 @@ test("image and video use the existing Model Supply path with stable submission 
 		const request = harnessInput(kind, `package-${kind}`);
 		const selection = await adapter.execute({
 			brief: mediaBrief(kind),
-			context: {} as HarnessContextSnapshot,
+			context: contextSnapshot(),
 			request,
 			workflowId: `task-${kind}`,
 		});
@@ -56,10 +60,12 @@ test("image and video use the existing Model Supply path with stable submission 
 								ratio: "9:16",
 								referenceAssetIds: ["asset-1"],
 							},
-				operation: kind === "image" ? "image.generate" : "video.generate",
+				operation: kind === "image" ? "image.edit" : "video.generate",
 				prompt:
 					kind === "image"
-						? mediaBrief(kind).prompt
+						? `${mediaBrief(kind).prompt}\n${JSON.stringify({
+								imageIntent: mediaBrief(kind).intent,
+							})}`
 						: `${mediaBrief(kind).firstFramePrompt}\n1. ${mediaBrief(kind).storyboard[0]?.description}`,
 				selection: { catalogModelId: `model-${kind}-1`, mode: "fixed" },
 				workspaceId: "workspace-1",
@@ -70,6 +76,39 @@ test("image and video use the existing Model Supply path with stable submission 
 		assert.equal(selection.childRun.productUsage?.status, "committed");
 		assert.equal(selection.childRun.providerAttempts?.length, 1);
 		assert.equal(selection.childRun.providerCosts?.length, 1);
+	}
+});
+
+test("three canonical image operations map to the two existing provider operations", async () => {
+	for (const [operation, referenceCount, nativeOperation] of [
+		["image.generate", 0, "image.generate"],
+		["image.edit", 1, "image.edit"],
+		["image.reference_transform", 2, "image.edit"],
+	] as const) {
+		const submissions: ModelSupplySubmission[] = [];
+		const adapter = new ModelSupplyHarnessMediaExecutionPort({
+			async submit(input) {
+				submissions.push(structuredClone(input));
+				return completedResult("image");
+			},
+		});
+		await adapter.execute({
+			brief: imageBriefFor(operation, referenceCount),
+			context: contextSnapshot(),
+			request: harnessInput(
+				"image",
+				`package-${operation}`,
+				operation,
+				referenceCount,
+			),
+			workflowId: `task-${operation}`,
+		});
+
+		assert.equal(submissions[0]?.operation, nativeOperation);
+		assert.equal(
+			submissions[0]?.input?.referenceAssetIds?.length,
+			referenceCount,
+		);
 	}
 });
 
@@ -114,7 +153,7 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 		const brief = mediaBrief(kind);
 		const selection = await media.execute({
 			brief,
-			context: {} as HarnessContextSnapshot,
+			context: contextSnapshot(),
 			request,
 			workflowId: snapshot.task.id,
 		});
@@ -131,7 +170,7 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 				routingSource: "model" as const,
 				implicitConstraints: [],
 			},
-			context: {} as HarnessContextSnapshot,
+			context: contextSnapshot(),
 			brief,
 			selection,
 		};
@@ -161,6 +200,19 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 		assert.equal(contentPackage?.generated.childRuns[0]?.providerCost?.amount, 1.2);
 		assert.equal(contentPackage?.generated.childRuns[0]?.providerAttempts?.length, 1);
 		assert.equal(contentPackage?.generated.childRuns[0]?.providerCosts?.length, 1);
+		if (kind === "image") {
+			assert.equal(contentPackage?.marketing?.contextBundle.bundleId, "bundle-1");
+			assert.ok(contentPackage?.marketing?.rightsRefs.length);
+			assert.equal(contentPackage?.variants?.length, 3);
+			assert.ok(contentPackage?.versions[0]?.conversionHook?.trim());
+			assert.deepEqual(contentPackage?.harnessSelection, {
+				recommendedCandidateId: "image-asset-1",
+			});
+			assert.equal(
+				contentPackage?.versions[0]?.harnessCandidateId,
+				"image-asset-1",
+			);
+		}
 	}
 });
 
@@ -190,10 +242,182 @@ test("an unknown durable media outcome stays on its stable reconciliation key", 
 	assert.equal(submissions[0]?.idempotencyKey, "harness-media:task-video:video");
 });
 
+test("an unknown media result reconciles the same durable job without resubmission", async () => {
+	const submitted = completedResult("image");
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return { ...submitted, status: "unknown", asset: undefined };
+		},
+		async getDurableMediaJob(workspaceId, jobId) {
+			assert.equal(workspaceId, "workspace-1");
+			assert.equal(jobId, submitted.jobId);
+			return { result: submitted };
+		},
+	});
+
+	const selection = await adapter.execute({
+		brief: mediaBrief("image"),
+		context: contextSnapshot(),
+		request: harnessInput("image", "package-image"),
+		workflowId: "task-image",
+	});
+
+	assert.equal(selection.asset.id, "image-asset-1");
+});
+
+test("exact text blocks the first image, retries once, and keeps both provider costs without job-side debit flags", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	let generation = 0;
+	let verification = 0;
+	const verifier: ImageExactTextVerifier = {
+		async verify(input) {
+			verification += 1;
+			return verification === 1
+				? {
+						passed: false,
+						expected: input.expected,
+						observed: ["价格 389"],
+						reason: "价格数字不一致",
+					}
+				: {
+						passed: true,
+						expected: input.expected,
+						observed: ["价格 398"],
+						reason: "逐字一致",
+					};
+		},
+	};
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit(input) {
+				submissions.push(structuredClone(input));
+				generation += 1;
+				return completedResult("image", String(generation));
+			},
+		},
+		verifier,
+	);
+	const request = harnessInput("image", "package-image");
+	const brief = imageBriefWithExactText("价格 398");
+	const selection = await adapter.execute({
+		brief,
+		context: contextSnapshot(),
+		request,
+		workflowId: "task-image",
+	});
+
+	assert.equal(selection.asset.id, "image-asset-2");
+	assert.deepEqual(selection.trace.blockedCandidates, [
+		{ candidateId: "image-asset-1", gateIds: ["image_exact_text"] },
+	]);
+	assert.equal(selection.childRun.providerAttempts?.length, 2);
+	assert.equal(selection.childRun.providerCosts?.length, 2);
+	assert.equal(submissions.length, 2);
+	assert.equal(
+		submissions[1]?.idempotencyKey,
+		"harness-media:task-image:image:exact-text-retry",
+	);
+	assert.match(submissions[1]?.prompt ?? "", /价格数字不一致/u);
+	assert.equal(
+		submissions.some((submission) =>
+			Object.hasOwn(submission, "productUsageQuantity"),
+		),
+		false,
+	);
+});
+
+test("a second exact-text mismatch hard-blocks delivery with merchant-safe wording", async () => {
+	let generation = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				generation += 1;
+				return completedResult("image", String(generation));
+			},
+		},
+		{
+			async verify(input) {
+				return {
+					passed: false,
+					expected: input.expected,
+					observed: ["价格 389"],
+					reason: "价格数字不一致",
+				};
+			},
+		},
+	);
+
+	await assert.rejects(
+		adapter.execute({
+			brief: imageBriefWithExactText("价格 398"),
+			context: contextSnapshot(),
+			request: harnessInput("image", "package-image"),
+			workflowId: "task-image",
+		}),
+		(error: unknown) => {
+			assert.ok(error instanceof HarnessSelectionError);
+			assert.deepEqual(error.gateIds, ["image_exact_text"]);
+			assert.match(error.merchantMessage ?? "", /价格 398/u);
+			assert.match(error.merchantMessage ?? "", /价格 389/u);
+			assert.deepEqual(
+				merchantVisibleLanguageIssues(error.merchantMessage ?? ""),
+				[],
+			);
+			return true;
+		},
+	);
+	assert.equal(generation, 2);
+});
+
+test("the production exact-text verifier reuses multimodal text.respond without extending supply operations", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	const verifier = new ModelSupplyImageExactTextVerifier({
+		async submit(input) {
+			submissions.push(structuredClone(input));
+			return {
+				...completedResult("image"),
+				asset: undefined,
+				operation: "text.respond",
+				text: JSON.stringify({ observedText: ["价格 398"] }),
+			};
+		},
+	});
+	const request = harnessInput("image", "package-image");
+	const assessment = await verifier.verify({
+		assetId: "image-asset-1",
+		expected: ["价格 398"],
+		request,
+		workflowId: "task-image",
+	});
+
+	assert.equal(assessment.passed, true);
+	assert.equal(submissions[0]?.operation, "text.respond");
+	assert.deepEqual(submissions[0]?.input?.inputAssets, [
+		{ assetId: "image-asset-1", role: "reference_image" },
+	]);
+	assert.equal(
+		Object.hasOwn(submissions[0] ?? {}, "productUsageQuantity"),
+		false,
+	);
+});
+
 function harnessInput(
 	kind: "image" | "video",
 	packageId: string,
+	imageOperation:
+		| "image.generate"
+		| "image.edit"
+		| "image.reference_transform" = "image.edit",
+	imageReferenceCount = 1,
 ): HarnessWorkflowInput {
+	const sourceAssets = Array.from(
+		{ length: kind === "image" ? imageReferenceCount : 1 },
+		(_, index) => ({
+			id: `asset-${index + 1}`,
+			revision: `asset-r${index + 1}`,
+			role: "reference" as const,
+		}),
+	);
 	const snapshot = createCreationExecutionSnapshot(
 		{
 			actorId: "owner-1",
@@ -208,6 +432,7 @@ function harnessInput(
 			surface: { id: "surface-1", revision: "surface-r1" },
 			recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
 			lens: kind,
+			operation: kind === "image" ? imageOperation : "video.generate",
 			platform: { id: "douyin" },
 			deliverables: [
 				{
@@ -220,9 +445,7 @@ function harnessInput(
 				},
 			],
 			sources: {
-				assets: [
-					{ id: "asset-1", revision: "asset-r1", role: "reference" },
-				],
+				assets: sourceAssets,
 			},
 			rights: { revision: "rights-r1", summary: "authorized" },
 			identity: { id: "identity-1", revision: "identity-r1" },
@@ -250,7 +473,7 @@ function harnessInput(
 				intent: snapshot.intent.text,
 				sourceSummaries: [],
 			},
-			assetReferences: ["asset-1"],
+			assetReferences: sourceAssets.map(({ id }) => id),
 		},
 		executionSnapshot: snapshot,
 	};
@@ -263,13 +486,7 @@ function mediaBrief(
 ): Exclude<ExecutionBrief, { kind: "copy" }>;
 function mediaBrief(kind: "image" | "video"): Exclude<ExecutionBrief, { kind: "copy" }> {
 	if (kind === "image") {
-		return {
-			kind,
-			prompt: "为夏日护理项目生成竖版门店活动海报，保留品牌主视觉和预约行动号召。",
-			referenceAssetIds: ["asset-1"],
-			parameters: { ratio: "9:16", resolution: "1080p" },
-			constraints: ["不得编造价格"],
-		};
+		return imageBriefFor("image.edit", 1);
 	}
 	return {
 		kind,
@@ -287,25 +504,102 @@ function mediaBrief(kind: "image" | "video"): Exclude<ExecutionBrief, { kind: "c
 	};
 }
 
-function completedResult(kind: "image" | "video"): ModelSupplyResult {
+function imageBriefFor(
+	operation:
+		| "image.generate"
+		| "image.edit"
+		| "image.reference_transform",
+	referenceCount: number,
+): Extract<ExecutionBrief, { kind: "image" }> {
+	const referenceAssetIds = Array.from(
+		{ length: referenceCount },
+		(_, index) => `asset-${index + 1}`,
+	);
+	return {
+		kind: "image",
+		intent: {
+			operation,
+			purpose: "夏日护理活动海报",
+			subject: "夏日护理项目",
+			scene: "门店护理区",
+			composition: "竖版主视觉",
+			references: referenceAssetIds.map((assetId, index) => ({
+				assetId,
+				assetRevision: `asset-r${index + 1}`,
+				slot:
+					operation === "image.edit"
+						? ("work_case" as const)
+						: index === 0
+							? ("style_ref" as const)
+							: ("composition_ref" as const),
+				mimeType: "image/png",
+				sizeBytes: 1_024,
+				factRefs:
+					operation === "image.edit" ? ["fact:work-case:1"] : [],
+				rightsRefs: [],
+			})),
+			exactText: [],
+			changes:
+				operation === "image.edit"
+					? [{ target: "layout", instruction: "调整活动信息布局" }]
+					: [],
+			invariants:
+				operation === "image.edit"
+					? [
+							{
+								target: "work_case_surface",
+								requirement: "保持真实甲面不变",
+							},
+						]
+					: [],
+			factRefs:
+				operation === "image.edit" ? ["fact:work-case:1"] : [],
+			rightsRefs: [],
+			outputPlan: { kind: "single" },
+		},
+		prompt:
+			"为夏日护理项目生成竖版门店活动海报，保留品牌主视觉和预约行动号召。",
+		referenceAssetIds,
+		parameters: { ratio: "9:16", resolution: "1080p" },
+		constraints: ["不得编造价格"],
+	};
+}
+
+function imageBriefWithExactText(
+	text: string,
+): Extract<ExecutionBrief, { kind: "image" }> {
+	const brief = mediaBrief("image");
+	return {
+		...brief,
+		intent: {
+			...brief.intent,
+			exactText: [{ text, treatment: "exact" }],
+		},
+	};
+}
+
+function completedResult(
+	kind: "image" | "video",
+	suffix = "1",
+): ModelSupplyResult {
 	const attempt = {
 		acceptance: "accepted" as const,
 		catalogModelId: `model-${kind}-1`,
 		createdAt: "2026-07-22T09:00:00.000Z",
 		deploymentId: `deployment-${kind}-1`,
-		id: `attempt-${kind}-1`,
-		jobId: `job-${kind}-1`,
+		id: `attempt-${kind}-${suffix}`,
+		jobId: `job-${kind}-${suffix}`,
 		status: "completed" as const,
 	};
 	const providerCost = {
 		amount: 1.2,
 		currency: "CNY" as const,
-		id: `cost-${kind}-1`,
+		id: `cost-${kind}-${suffix}`,
 		status: "observed" as const,
 		usage: { mediaUnits: 1 },
 	};
 	return {
-		jobId: `job-${kind}-1`,
+		jobId: `job-${kind}-${suffix}`,
 		status: "completed",
 		snapshot: {
 			actualCatalogModelId: `model-${kind}-1`,
@@ -317,12 +611,16 @@ function completedResult(kind: "image" | "video"): ModelSupplyResult {
 		attempts: [attempt],
 		asset: {
 			contentType: kind === "image" ? "image/png" : "video/mp4",
-			id: `${kind}-asset-1`,
-			objectKey: `owned/${kind}-asset-1`,
-			sha256: `${kind}-sha-1`,
+			id: `${kind}-asset-${suffix}`,
+			objectKey: `owned/${kind}-asset-${suffix}`,
+			sha256: `${kind}-sha-${suffix}`,
 			sizeBytes: 1024,
 		},
-		usage: { id: `usage-${kind}-1`, quantity: 1, status: "committed" },
+		usage: {
+			id: `usage-${kind}-${suffix}`,
+			quantity: 1,
+			status: "committed",
+		},
 		providerCost,
 		providerCosts: [providerCost],
 	};
@@ -339,5 +637,46 @@ function unsupportedCopyPorts(): HarnessStagePorts {
 		compileBrief: unsupported,
 		executeAndSelect: unsupported,
 		assembleAndDeliver: unsupported,
+	};
+}
+
+function contextSnapshot(): HarnessContextSnapshot {
+	return {
+		bundle: {
+			bundleId: "bundle-1",
+			revision: 1,
+			hash: "a".repeat(64),
+			serializerVersion: "context-bundle-c14n-v1",
+			workspaceId: "workspace-1",
+			taskId: "task-image",
+			frozenAt: "2026-07-22T09:00:00.000Z",
+			frozenBy: "owner-1",
+			previousRevision: null,
+			referencedFactRevisions: [],
+			sourceRevisions: {
+				facts: 0,
+				assets: 1,
+				identity: 1,
+				rights: 1,
+				preferences: 0,
+				recipe: 1,
+				platformRules: 1,
+				currentSignal: 1,
+			},
+			dimensions: {
+				promotion_task: {},
+				traffic_opportunity: {},
+				expression_identity: {},
+				platform_mechanism: {},
+				store_facts_assets: {},
+				conversion_action: {},
+			},
+		},
+		activeFacts: [],
+		policyReferences: {
+			sourceRefs: [],
+			rightsRefs: [],
+			identityRefs: [],
+		},
 	};
 }

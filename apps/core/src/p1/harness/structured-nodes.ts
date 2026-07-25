@@ -1,5 +1,6 @@
 import {
   contextBundleSchema,
+  imageIntentSchema,
   questionCardSchema,
   taskIntentInputSchema,
   type ContextBundle,
@@ -159,6 +160,7 @@ const copyBriefSchema = z
 const imageBriefSchema = z
   .object({
     kind: z.literal('image'),
+    intent: imageIntentSchema,
     prompt: z.string().trim().min(20),
     referenceAssetIds: z.array(z.string().trim().min(1)),
     parameters: z
@@ -327,6 +329,9 @@ export async function nameHarnessIntent(
   return {
     declaration: {
       ...declaration,
+      ...(input.deliveryLayer
+        ? { deliveryLayer: input.deliveryLayer }
+        : {}),
       routingSource: fallbackUsed ? ('fallback' as const) : ('model' as const),
     },
     blockingQuestion: blockingGap
@@ -391,9 +396,11 @@ function briefExecutionContract(snapshot: CreationExecutionSnapshot) {
     identity: snapshot.identity,
     lens: snapshot.lens,
     modelPolicy: snapshot.modelPolicy,
+    operation: snapshot.operation,
     platform: snapshot.platform,
     quote: snapshot.quote,
     route: snapshot.route,
+    sources: snapshot.sources,
   };
 }
 
@@ -454,6 +461,22 @@ const briefCompletenessShapes = {
   },
   image: {
     kind: {},
+    intent: {
+      fields: {
+        operation: {},
+        purpose: {},
+        subject: {},
+        scene: {},
+        composition: {},
+        references: {},
+        exactText: {},
+        changes: {},
+        invariants: {},
+        factRefs: {},
+        rightsRefs: {},
+        outputPlan: {},
+      },
+    },
     prompt: {},
     referenceAssetIds: {},
     parameters: { fields: { ratio: {}, resolution: {} } },

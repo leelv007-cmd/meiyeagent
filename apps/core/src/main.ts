@@ -172,7 +172,9 @@ import {
 import { LedgerBackedHarnessContextPort } from './p1/harness/production-context-port.js';
 import { ProductionHarnessStagePorts } from './p1/harness/production-stage-ports.js';
 import {
+  FixtureImageExactTextVerifier,
   ModelSupplyHarnessMediaExecutionPort,
+  ModelSupplyImageExactTextVerifier,
   UnifiedHarnessStagePorts,
 } from './p1/harness/unified-media-stage-ports.js';
 import { PostgresHarnessStore } from './p1/harness/postgres-store.js';
@@ -1520,7 +1522,12 @@ if (harnessRuntimeConfig) {
   const harnessStages = new UnifiedHarnessStagePorts(
     copyHarnessStages,
     structuredNodeRunnerFactory,
-    new ModelSupplyHarnessMediaExecutionPort(p1ModelSupplyService),
+    new ModelSupplyHarnessMediaExecutionPort(
+      p1ModelSupplyService,
+      modelRuntime.mode === 'fixture'
+        ? new FixtureImageExactTextVerifier()
+        : new ModelSupplyImageExactTextVerifier(p1ModelSupplyService)
+    ),
     contentPackageRevisionWriter,
     () => new Date().toISOString()
   );

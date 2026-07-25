@@ -18,6 +18,7 @@ import {
 	decideChannelAdmission,
 	type CapabilityHotAssemblyPort,
 } from "../supply-registry/hot-assembly.js";
+import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
 
 import type {
 	ComposerSubmissionRequest,
@@ -238,6 +239,10 @@ export class ComposerSubmissionAdmissionGate
 			idempotencyKey: input.idempotencyKey,
 			workspaceId: input.workspaceId,
 		})}`;
+		const operation = operationForRequest(
+			recipeBinding.lens,
+			input.sources.assets.length,
+		);
 		if (
 			quote.lifecycleStatus !== "quoted" &&
 			quote.taskId !== taskId
@@ -249,7 +254,7 @@ export class ComposerSubmissionAdmissionGate
 
 		const route = await this.dependencies.routeResolver.resolve({
 			catalogModel: input.catalogModel,
-			operation: operationForLens(recipeBinding.lens),
+			operation,
 			...(quote.routeSnapshotRef
 				? { routeSnapshotId: quote.routeSnapshotRef }
 				: {}),
@@ -416,7 +421,7 @@ export class ComposerSubmissionAdmissionGate
 				: {}),
 			expectedContextRevision: input.briefContext.revision,
 			intent: input.intent,
-			operation: operationForLens(recipeBinding.lens),
+			operation,
 			outputCount: deliverable.quantity,
 			sourceReferenceIds: sourceIds,
 			quoteRevision: quote.revision,
@@ -447,6 +452,7 @@ export class ComposerSubmissionAdmissionGate
 				mode: "fixed" as const,
 				revision: recipe.revisionId,
 			},
+			operation,
 			recipeBinding,
 			route: {
 				id: route.id,
@@ -485,11 +491,12 @@ function composerLensForRecipe(lens: string) {
 	return null;
 }
 
-function operationForLens(
+function operationForRequest(
 	lens: CreationExecutionSnapshot["lens"],
+	referenceCount: number,
 ): CreativeOperation {
 	if (lens === "copy") return "copy.generate";
-	if (lens === "image") return "image.generate";
+	if (lens === "image") return selectImageIntentOperation({ referenceCount });
 	return "video.generate";
 }
 

@@ -54,6 +54,16 @@ export function merchantPartialFailure(input: {
   return `${input.completed}；${input.failed}。接下来：${input.nextStep}。`;
 }
 
+export function merchantExactTextMismatch(input: {
+  expected: string[];
+  observed: string[];
+}) {
+  const expected = input.expected.join('、');
+  const observed =
+    input.observed.length > 0 ? input.observed.join('、') : '未识别到对应文字';
+  return `图片中的文字没有通过逐字核对：需要“${expected}”，实际为“${observed}”。这张图没有交付，请调整为不带价格文字，或稍后重新生成。`;
+}
+
 export function merchantVisibleLanguageIssues(message: string) {
   return FORBIDDEN_LANGUAGE.filter(({ pattern }) => pattern.test(message)).map(
     ({ label }) => label,

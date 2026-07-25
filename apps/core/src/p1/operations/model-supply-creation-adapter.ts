@@ -9,6 +9,7 @@ import type {
   ReferenceAssetResolverPort,
 } from '../model-supply/index.js';
 import { OperationsError } from './application-service.js';
+import { nativeSupplyOperation } from '../harness/image-intent-compiler.js';
 import type {
   AcceptedProductQuoteInspectionAuthority,
   CreationExecutionResult,
@@ -350,7 +351,7 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
   ) {
     const catalog = await this.controlPlane.getCatalog(
       workspaceId,
-      contract.operation
+      nativeSupplyOperation(contract.operation)
     );
     if (catalog.revisionId !== contract.catalogRevision) {
       throw new OperationsError(
@@ -566,7 +567,7 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
             ? { durationSeconds: input.contract.durationSeconds }
             : {}),
         },
-        operation: input.contract.operation,
+        operation: nativeSupplyOperation(input.contract.operation),
         prompt: structuredCreativeIntent(
           input.intent,
           input.contract,

@@ -4,6 +4,7 @@ import type {
 	ContentPackage,
 	ContentPackageRevisionDelivery,
 } from "@meiye/contracts";
+import { z } from "zod";
 
 import type {
 	ModelSupplyResult,
@@ -23,6 +24,14 @@ import type {
 	HarnessStagePorts,
 } from "./workflow-core.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
+import { executeImageSelection } from "./execution-selection.js";
+import { nativeSupplyOperation } from "./image-intent-compiler.js";
+import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
+import { merchantExactTextMismatch } from "./merchant-delivery-language.js";
+import {
+	assertImageRevisionAssemblyComplete,
+	buildImagePlatformVariants,
+} from "./output-compiler.js";
 
 type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
 
@@ -119,6 +128,73 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 	): Promise<ContentPackageRevisionDelivery> {
 		const now = this.now();
 		const snapshot = requireSnapshot(input.request);
+		if (input.brief.kind === "image") {
+			const projected = projectMarketingPackageEvidence({
+				declaration: input.declaration,
+				request: input.request,
+				context: input.context,
+				at: now,
+			});
+			const marketing = {
+				...projected,
+				rightsRefs: [
+					...new Set([...projected.rightsRefs, snapshot.rights.revision]),
+				],
+			};
+			const version = {
+				body: `${input.brief.intent.subject}；${input.brief.intent.scene}。`,
+				conversionHook:
+					marketing.promotionOffer?.callToAction.label ??
+					"私信了解详情并预约",
+				createdAt: now,
+				harnessCandidateId: input.selection.asset.id,
+				harnessScore: 0,
+				id: `${input.workflowId}:${input.selection.asset.id}`,
+				orderedAssetIds: [input.selection.asset.id],
+				source: "ai_generated" as const,
+				title: input.brief.intent.purpose,
+				topics: [],
+			};
+			const revision = {
+				expectedRevision: input.request.expectedRevision,
+				generated: {
+					assetIds: [input.selection.asset.id],
+					childRuns: [input.selection.childRun],
+					ownedAssets: [input.selection.asset],
+				},
+				harnessSelection: {
+					recommendedCandidateId: input.selection.asset.id,
+				},
+				idempotencyKey: `harness-media:${input.workflowId}:image`,
+				kind: "image_text" as const,
+				marketing,
+				occurredAt: now,
+				packageId: input.request.packageId,
+				platform: mediaPlatform(snapshot.platform.id),
+				snapshotId: snapshot.id,
+				snapshot: {
+					id: snapshot.id,
+					revision: snapshot.revision,
+					schemaVersion: snapshot.schemaVersion,
+				},
+				...(snapshot.sources.contentPackage
+					? { sourceContentPackage: snapshot.sources.contentPackage }
+					: {}),
+				taskId: snapshot.task.id,
+				version,
+				variants: buildImagePlatformVariants({
+					currentVersionId: version.id,
+					packageId: input.request.packageId,
+					versions: [version],
+				}),
+				workId: snapshot.work.id,
+				workflowId: input.workflowId,
+				workflowRevision: input.request.workflowRevision,
+				workspaceId: input.request.workspaceId,
+			};
+			assertImageRevisionAssemblyComplete(revision);
+			return this.contentPackages.write(revision);
+		}
 		return this.contentPackages.write({
 			expectedRevision: input.request.expectedRevision,
 			generated: {
@@ -127,7 +203,7 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 				ownedAssets: [input.selection.asset],
 			},
 			idempotencyKey: `harness-media:${input.workflowId}:${input.brief.kind}`,
-			kind: input.brief.kind === "video" ? "video" : "image_text",
+			kind: "video",
 			occurredAt: now,
 			packageId: input.request.packageId,
 			platform: mediaPlatform(snapshot.platform.id),
@@ -154,7 +230,7 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 				id: `${input.workflowId}:${input.selection.asset.id}`,
 				orderedAssetIds: [input.selection.asset.id],
 				source: "ai_generated",
-				title: input.brief.kind === "image" ? "图片成品" : "视频成品",
+				title: "视频成品",
 				topics: [],
 			},
 			workId: snapshot.work.id,
@@ -165,7 +241,9 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 	}
 }
 
-function mediaPlatform(platform: string) {
+function mediaPlatform(
+	platform: string,
+): "xiaohongshu" | "douyin" | "video_account" {
 	if (
 		platform === "xiaohongshu" ||
 		platform === "douyin" ||
@@ -176,9 +254,28 @@ function mediaPlatform(platform: string) {
 	throw new Error(`Platform ${platform} does not support media delivery.`);
 }
 
-/** Narrow adapter over the existing Model Supply durable media path. */
-export class ModelSupplyHarnessMediaExecutionPort
-	implements HarnessMediaExecutionPort
+export interface ImageExactTextVerifier {
+	verify(input: {
+		assetId: string;
+		expected: string[];
+		request: HarnessWorkflowInput;
+		workflowId: string;
+	}): Promise<{
+		passed: boolean;
+		expected: string[];
+		observed: string[];
+		reason: string;
+	}>;
+}
+
+const exactTextObservationSchema = z
+	.object({
+		observedText: z.array(z.string()),
+	})
+	.strict();
+
+export class ModelSupplyImageExactTextVerifier
+	implements ImageExactTextVerifier
 {
 	constructor(
 		private readonly models: Pick<
@@ -187,42 +284,216 @@ export class ModelSupplyHarnessMediaExecutionPort
 		>,
 	) {}
 
+	async verify(input: {
+		assetId: string;
+		expected: string[];
+		request: HarnessWorkflowInput;
+		workflowId: string;
+	}) {
+		if (input.expected.length === 0) {
+			return {
+				passed: true,
+				expected: [],
+				observed: [],
+				reason: "No exact text was requested.",
+			};
+		}
+		const result = await this.models.submit({
+			actorId: input.request.actorId,
+			billingTaskId: input.workflowId,
+			billingQuoteRevision: requireSnapshot(input.request).quote.revision,
+			correlationId: input.workflowId,
+			dataClass: [],
+			idempotencyKey: `harness-media:${input.workflowId}:image:exact-text:${input.assetId}`,
+			input: {
+				inputAssets: [{ assetId: input.assetId, role: "reference_image" }],
+			},
+			operation: "text.respond",
+			prompt: JSON.stringify({
+				task: "Read all visible text in the supplied image.",
+				expectedExactText: input.expected,
+				responseContract: { observedText: ["each visible text segment verbatim"] },
+			}),
+			selection: { mode: "auto", profile: "quality" },
+			workspaceId: input.request.workspaceId,
+		});
+		if (result.status !== "completed" || !result.text?.trim()) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_EXACT_TEXT_VERIFICATION_FAILED",
+				"Image text verification did not return an observation.",
+				502,
+				result.jobId,
+				result.attempt.acceptance,
+			);
+		}
+		const observed = exactTextObservationSchema.parse(
+			JSON.parse(jsonObject(result.text)),
+		).observedText;
+		const passed = input.expected.every((expected) =>
+			observed.includes(expected),
+		);
+		return {
+			passed,
+			expected: [...input.expected],
+			observed,
+			reason: passed
+				? "Every exact text value matched."
+				: "The generated image did not preserve every exact text value.",
+		};
+	}
+}
+
+export class FixtureImageExactTextVerifier implements ImageExactTextVerifier {
+	async verify(input: {
+		expected: string[];
+	}) {
+		return {
+			passed: true,
+			expected: [...input.expected],
+			observed: [...input.expected],
+			reason: "Fixture observation matches the requested exact text.",
+		};
+	}
+}
+
+/** Narrow adapter over the existing Model Supply durable media path. */
+export class ModelSupplyHarnessMediaExecutionPort
+	implements HarnessMediaExecutionPort
+{
+	constructor(
+		private readonly models: Pick<
+			{
+				submit(input: ModelSupplySubmission): Promise<ModelSupplyResult>;
+				getDurableMediaJob?(
+					workspaceId: string,
+					jobId: string,
+				): Promise<{ result: ModelSupplyResult }>;
+			},
+			"submit" | "getDurableMediaJob"
+		>,
+		private readonly exactText?: ImageExactTextVerifier,
+	) {}
+
 	async execute(input: {
 		brief: MediaBrief;
 		context: HarnessContextSnapshot;
 		request: HarnessWorkflowInput;
 		workflowId: string;
 	}): Promise<HarnessMediaSelectionResult> {
-		const result = await this.models.submit(
+		if (input.brief.kind === "image") {
+			const expected = input.brief.intent.exactText
+				.filter(({ treatment }) => treatment === "exact")
+				.map(({ text }) => text);
+			if (expected.length > 0 && !this.exactText) {
+				throw new HarnessMediaExecutionError(
+					"MEDIA_EXACT_TEXT_VERIFIER_UNAVAILABLE",
+					"Image text verification is unavailable.",
+					502,
+				);
+			}
+			const selected = await executeImageSelection<ModelSupplyResult>({
+				candidateId(result) {
+					return requireCompletedMediaResult(result, "image").asset!.id;
+				},
+				generate: async ({ attempt, exactTextFailure }) =>
+					this.submitAndAwait(
+						mediaSubmission(
+							input.workflowId,
+							input.request,
+							input.brief,
+							attempt,
+							exactTextFailure?.reason,
+						),
+					),
+				verify: async (result) => {
+					const completed = requireCompletedMediaResult(result, "image");
+					if (expected.length === 0) {
+						return {
+							passed: true,
+							expected: [],
+							observed: [],
+							reason: "No exact text was requested.",
+						};
+					}
+					return this.exactText!.verify({
+						assetId: completed.asset!.id,
+						expected,
+						request: input.request,
+						workflowId: input.workflowId,
+					});
+				},
+				merchantFailure: merchantExactTextMismatch,
+			});
+			const completed = requireCompletedMediaResult(selected.result, "image");
+			return mediaSelection(
+				completed,
+				"image",
+				selected.executions,
+				selected.blockedCandidates,
+			);
+		}
+		const result = await this.submitAndAwait(
 			mediaSubmission(input.workflowId, input.request, input.brief),
 		);
-		if (result.status === "failed") {
-			throw new HarnessMediaExecutionError(
-				"MEDIA_GENERATION_FAILED",
-				result.failureCode ?? "Media generation failed before a usable asset was recorded.",
-				502,
-				result.jobId,
-				result.attempt.acceptance,
-			);
-		}
-		if (result.status !== "completed" || !result.asset) {
-			throw new HarnessMediaExecutionError(
-				"MEDIA_RECONCILIATION_PENDING",
-				"Media provider acceptance is recorded; recovery must query the same job before any retry.",
-				202,
-				result.jobId,
-				result.attempt.acceptance,
-			);
-		}
-		assertAssetKind(input.brief.kind, result.asset.contentType);
-		return mediaSelection(result, input.brief.kind);
+		const completed = requireCompletedMediaResult(result, input.brief.kind);
+		return mediaSelection(completed, input.brief.kind, [completed], []);
 	}
+
+	private async submitAndAwait(submission: ModelSupplySubmission) {
+		let result = await this.models.submit(submission);
+		if (
+			result.status === "unknown" &&
+			this.models.getDurableMediaJob
+		) {
+			for (let attempt = 0; attempt < 600; attempt += 1) {
+				const current = await this.models.getDurableMediaJob(
+					submission.workspaceId,
+					result.jobId,
+				);
+				result = current.result;
+				if (result.status === "completed" || result.status === "failed") {
+					break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 250));
+			}
+		}
+		return result;
+	}
+}
+
+function requireCompletedMediaResult(
+	result: ModelSupplyResult,
+	kind: MediaBrief["kind"],
+) {
+	if (result.status === "failed") {
+		throw new HarnessMediaExecutionError(
+			"MEDIA_GENERATION_FAILED",
+			result.failureCode ??
+				"Media generation failed before a usable asset was recorded.",
+			502,
+			result.jobId,
+			result.attempt.acceptance,
+		);
+	}
+	if (result.status !== "completed" || !result.asset) {
+		throw new HarnessMediaExecutionError(
+			"MEDIA_RECONCILIATION_PENDING",
+			"Media provider acceptance is recorded; recovery must query the same job before any retry.",
+			202,
+			result.jobId,
+			result.attempt.acceptance,
+		);
+	}
+	assertAssetKind(kind, result.asset.contentType);
+	return result;
 }
 
 export class HarnessMediaExecutionError extends Error {
 	constructor(
 		readonly code:
 			| "MEDIA_BRIEF_KIND_MISMATCH"
+			| "MEDIA_EXACT_TEXT_VERIFICATION_FAILED"
+			| "MEDIA_EXACT_TEXT_VERIFIER_UNAVAILABLE"
 			| "MEDIA_GENERATION_FAILED"
 			| "MEDIA_RECONCILIATION_PENDING"
 			| "MEDIA_SELECTION_MISSING"
@@ -263,6 +534,8 @@ function mediaSubmission(
 	workflowId: string,
 	request: HarnessWorkflowInput,
 	brief: MediaBrief,
+	attempt: "primary" | "retry" = "primary",
+	exactTextFailure?: string,
 ): ModelSupplySubmission {
 	const snapshot = requireSnapshot(request);
 	if (snapshot.modelPolicy.mode !== "fixed") {
@@ -278,7 +551,10 @@ function mediaSubmission(
 		billingQuoteRevision: snapshot.quote.revision,
 		correlationId: workflowId,
 		dataClass: [],
-		idempotencyKey: `harness-media:${workflowId}:${brief.kind}`,
+		idempotencyKey:
+			attempt === "primary"
+				? `harness-media:${workflowId}:${brief.kind}`
+				: `harness-media:${workflowId}:${brief.kind}:exact-text-retry`,
 		input:
 			brief.kind === "image"
 				? {
@@ -291,10 +567,21 @@ function mediaSubmission(
 					ratio: brief.parameters.ratio,
 					referenceAssetIds: [...brief.referenceAssetIds],
 				},
-		operation: brief.kind === "image" ? "image.generate" : "video.generate",
+		operation:
+			brief.kind === "image"
+				? nativeSupplyOperation(brief.intent.operation)
+				: "video.generate",
 		prompt:
 			brief.kind === "image"
-				? brief.prompt
+				? [
+						brief.prompt,
+						JSON.stringify({
+							imageIntent: brief.intent,
+							...(exactTextFailure
+								? { exactTextFailureToCorrect: exactTextFailure }
+								: {}),
+						}),
+					].join("\n")
 				: `${brief.firstFramePrompt}\n${brief.storyboard
 						.map((shot) => `${shot.index}. ${shot.description}`)
 						.join("\n")}`,
@@ -332,6 +619,16 @@ function assertBriefMatchesSnapshot(
 			409,
 		);
 	}
+	if (
+		brief.kind === "image" &&
+		brief.intent.operation !== snapshot.operation
+	) {
+		throw new HarnessMediaExecutionError(
+			"MEDIA_SNAPSHOT_MISMATCH",
+			"The image intent operation no longer matches the frozen merchant request.",
+			409,
+		);
+	}
 	const sourceAssetIds = new Set(snapshot.sources.assets.map((asset) => asset.id));
 	if (brief.referenceAssetIds.some((assetId) => !sourceAssetIds.has(assetId))) {
 		throw new HarnessMediaExecutionError(
@@ -345,6 +642,8 @@ function assertBriefMatchesSnapshot(
 function mediaSelection(
 	result: ModelSupplyResult,
 	kind: MediaBrief["kind"],
+	executions: ModelSupplyResult[],
+	blockedCandidates: Array<{ candidateId: string; gateIds: string[] }>,
 ): HarnessMediaSelectionResult {
 	const asset = result.asset;
 	if (!asset) {
@@ -375,7 +674,7 @@ function mediaSelection(
 				quantity: result.usage.quantity,
 				status: result.usage.status,
 			},
-			providerAttempts: uniqueProviderAttempts(result).map((attempt) => ({
+			providerAttempts: uniqueExecutionsProviderAttempts(executions).map((attempt) => ({
 				acceptance: attempt.acceptance,
 				catalogModelId: attempt.catalogModelId,
 				createdAt: attempt.createdAt,
@@ -392,7 +691,7 @@ function mediaSelection(
 				currency: result.providerCost.currency,
 				status: result.providerCost.status,
 			},
-			providerCosts: uniqueProviderCosts(result).map((cost) => ({
+			providerCosts: uniqueExecutionsProviderCosts(executions).map((cost) => ({
 				amount: cost.amount,
 				currency: cost.currency,
 				id: cost.id,
@@ -423,7 +722,7 @@ function mediaSelection(
 		},
 		kind,
 		trace: {
-			blockedCandidates: [],
+			blockedCandidates,
 			candidateScores: [],
 			rubricHash: createHash("sha256")
 				.update(
@@ -467,4 +766,36 @@ function uniqueProviderCosts(result: ModelSupplyResult) {
 			[result.providerCost, ...result.providerCosts].map((cost) => [cost.id, cost]),
 		).values(),
 	];
+}
+
+function uniqueExecutionsProviderAttempts(results: ModelSupplyResult[]) {
+	return [
+		...new Map(
+			results.flatMap(uniqueProviderAttempts).map((attempt) => [
+				attempt.id,
+				attempt,
+			]),
+		).values(),
+	];
+}
+
+function uniqueExecutionsProviderCosts(results: ModelSupplyResult[]) {
+	return [
+		...new Map(
+			results.flatMap(uniqueProviderCosts).map((cost) => [cost.id, cost]),
+		).values(),
+	];
+}
+
+function jsonObject(value: string) {
+	const start = value.indexOf("{");
+	const end = value.lastIndexOf("}");
+	if (start < 0 || end < start) {
+		throw new HarnessMediaExecutionError(
+			"MEDIA_EXACT_TEXT_VERIFICATION_FAILED",
+			"Image text verification returned an invalid observation.",
+			502,
+		);
+	}
+	return value.slice(start, end + 1);
 }
