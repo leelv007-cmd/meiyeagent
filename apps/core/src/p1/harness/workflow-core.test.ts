@@ -15,7 +15,7 @@ import { buildSemanticDecisionResumption } from './semantic-decision-resumption.
 test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
   const calls: string[] = [];
   const progress: Array<{ stage: string; state: string; message: string }> = [];
-  const traces: string[] = [];
+  const traces: Array<{ stage: string; payload: unknown }> = [];
   const runtime: HarnessWorkflowRuntime = {
     runStep: async (effectIdempotencyKey, operation) => {
       calls.push(effectIdempotencyKey);
@@ -29,7 +29,7 @@ test('five semantic stages run in order with stable effect keys and a delivery f
       throw new Error('Unexpected decision wait.');
     },
     async recordTrace(input) {
-      traces.push(input.stage);
+      traces.push({ stage: input.stage, payload: input.payload });
     },
   };
 
@@ -92,13 +92,21 @@ test('five semantic stages run in order with stable effect keys and a delivery f
       deliverables: ['copy_revision:3'],
     },
   });
-  assert.deepEqual(traces, [
+  assert.deepEqual(traces.map(({ stage }) => stage), [
     'intent_naming',
     'context_injection',
     'brief_compilation',
     'execution_selection',
     'assembly_delivery',
   ]);
+  assert.equal(
+    (
+      traces[1]?.payload as {
+        sourceRevisions: { facts: number };
+      }
+    ).sourceRevisions.facts,
+    7,
+  );
 });
 
 test('image and video snapshots use the same five Harness stages with modality-stable effects', async () => {
@@ -691,6 +699,7 @@ function fixtureStages(): HarnessStagePorts {
             conversion_action: {},
           },
         },
+        factsRevision: 7,
         policyReferences: { sourceRefs: [], rightsRefs: [], identityRefs: [] },
       };
     },

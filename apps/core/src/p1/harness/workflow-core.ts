@@ -60,6 +60,7 @@ export interface HarnessMediaSelectionResult {
 
 export interface HarnessContextSnapshot {
   bundle: BriefContextBundle;
+  factsRevision?: number;
   activeFactReferences?: Array<{ key: string; sourceRef: string }>;
   activeFacts?: Array<{
     key: string;
@@ -290,7 +291,7 @@ export async function runHarnessWorkflow(
     bundleId: bundle.bundle.bundleId,
     revision: bundle.bundle.revision,
     hash: bundle.bundle.hash,
-    sourceRevisions: bundle.bundle.sourceRevisions,
+    sourceRevisions: recommendationSourceRevisions(bundle),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
     stage: 'context_injection',
@@ -369,7 +370,7 @@ export async function runHarnessWorkflow(
       bundleId: bundle.bundle.bundleId,
       revision: bundle.bundle.revision,
       hash: bundle.bundle.hash,
-      sourceRevisions: bundle.bundle.sourceRevisions,
+      sourceRevisions: recommendationSourceRevisions(bundle),
       recompiled: true,
     }, `r${bundle.bundle.revision}`);
     await reportProgress({
@@ -537,7 +538,7 @@ async function runMediaHarnessWorkflow(
     bundleId: bundle.bundle.bundleId,
     revision: bundle.bundle.revision,
     hash: bundle.bundle.hash,
-    sourceRevisions: bundle.bundle.sourceRevisions,
+    sourceRevisions: recommendationSourceRevisions(bundle),
   }, `r${bundle.bundle.revision}`);
   await reportProgress({
     stage: 'context_injection',
@@ -607,7 +608,7 @@ async function runMediaHarnessWorkflow(
       bundleId: bundle.bundle.bundleId,
       revision: bundle.bundle.revision,
       hash: bundle.bundle.hash,
-      sourceRevisions: bundle.bundle.sourceRevisions,
+      sourceRevisions: recommendationSourceRevisions(bundle),
       recompiled: true,
     }, `r${bundle.bundle.revision}`);
     await reportProgress({
@@ -964,6 +965,15 @@ export function merchantRouteMessage(declaration: IntentDeclaration) {
     (category) => ASSET_CATEGORY_LABELS[category],
   );
   return `这次会参考你的${labels.join('、')}，让内容更贴合本店。`;
+}
+
+function recommendationSourceRevisions(context: HarnessContextSnapshot) {
+  return context.factsRevision === undefined
+    ? context.bundle.sourceRevisions
+    : {
+        ...context.bundle.sourceRevisions,
+        facts: context.factsRevision,
+      };
 }
 
 function recommendationDecisionTrace(
