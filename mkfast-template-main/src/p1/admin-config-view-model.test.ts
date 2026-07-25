@@ -16,6 +16,7 @@ describe('admin config form values', () => {
       parseAdminConfigDraft('compliance.watermark.default', 'true'),
       true
     );
+    assert.equal(parseAdminConfigDraft('plan.trial.enabled', 'false'), false);
     assert.deepEqual(
       parseAdminConfigDraft(
         'plan.allowances.starter',

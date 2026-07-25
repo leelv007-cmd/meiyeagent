@@ -94,6 +94,45 @@ async function applyConfig(
 }
 
 describe('ProductEntitlementFoundationModule', () => {
+  it('adds the canonical monthly output shape using the Shanghai merchant month', async () => {
+    const clock = () => new Date('2026-07-31T16:01:00.000Z');
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    const entitlements = new ProductEntitlementApplicationService(
+      repository,
+      new RecordedAutoTopUpPaymentPort(),
+      clock,
+    );
+    const requested: Array<{ workspaceId: string; month: string }> = [];
+    const service = new P1ApplicationService(repository, {
+      operations: [
+        new ProductEntitlementFoundationModule(entitlements, clock, {
+          monthlyOutput: {
+            async getMonthlyOutput(workspaceId, month) {
+              requested.push({ workspaceId, month });
+              return { copy: 4, image: 2, video: 1 };
+            },
+          },
+        }),
+      ],
+    });
+
+    const projection = (await service.queryModule(owner, 'entitlements', {
+      action: 'projection',
+      payload: {},
+    })) as { monthlyOutput: unknown };
+
+    assert.deepEqual(projection.monthlyOutput, {
+      month: '2026-08',
+      copy: 4,
+      image: 2,
+      video: 1,
+    });
+    assert.deepEqual(requested, [
+      { workspaceId: owner.workspaceId, month: '2026-08' },
+    ]);
+  });
+
   it('defaults historical plan config to zero audio allowance', async () => {
     const { config, service } = setupHotCatalog();
     await config.apply({
@@ -135,7 +174,6 @@ describe('ProductEntitlementFoundationModule', () => {
       },
       null,
     );
-
     const catalog = (await service.queryModule(
       owner,
       'entitlements',
@@ -452,15 +490,18 @@ describe('ProductEntitlementFoundationModule', () => {
       },
       null,
     );
+    await applyConfig(service, 'plan.trial.enabled', false, null);
     const catalog = (await service.queryModule(owner, 'entitlements', {
       action: 'catalog',
       payload: {},
     })) as {
       plans: Array<{ id: string; allowance: { copy: number }; expireDays?: number }>;
+      trialEnabled: boolean;
     };
     const trial = catalog.plans.find((plan) => plan.id === 'trial');
     assert.equal(trial?.allowance.copy, 40);
     assert.equal(trial?.expireDays, 14);
+    assert.equal(catalog.trialEnabled, false);
   });
 
   it('provisions platform model defaults once under the dedicated stable key', async () => {

@@ -157,6 +157,8 @@
   "admin_plan_standard_support": "标准支持",
   "admin_plan_summary": "并发 {concurrency} · 排队优先级 {priority} · {support}",
   "admin_plan_support": "支持等级",
+  "admin_plan_trial_description": "只影响新注册门店是否获得试用额度，不追溯回收已有额度。",
+  "admin_plan_trial_enabled": "新门店试用额度",
   "admin_plan_validation_currency": "请输入三位币种代码。",
   "admin_plan_validation_nonnegative": "请输入非负数。",
   "admin_plan_validation_positive": "请输入大于 0 的整数。",

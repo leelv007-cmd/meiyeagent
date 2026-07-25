@@ -16,6 +16,16 @@ const CANONICAL_PRODUCT_USAGE_RESERVE_CALLERS = [
   'apps/core/src/p1/product-billing/quote-service.ts',
 ] as const;
 
+const CANONICAL_GRANT_LOT_SQL_WRITERS = [
+  'apps/core/src/p1/foundation/postgres-grant-lot.ts',
+  'mkfast-template-main/src/routes/api/e2e/users.ts',
+] as const;
+
+const CANONICAL_GRANT_LOT_CONSUME_CALLERS = [
+  'apps/core/src/p1/execution-spine/postgres-creation-submission-store.ts',
+  'apps/core/src/p1/model-supply/foundation-ledger.ts',
+] as const;
+
 function childSourceRoots(parent: string): string[] {
   return readdirSync(parent, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -66,4 +76,29 @@ test('ProductUsage reserve calls stay in the Coordinator billing chain', () => {
     filesMatching(/\b(?:this\.)?usage\.reserve\s*\(/),
     [...CANONICAL_PRODUCT_USAGE_RESERVE_CALLERS],
   );
+});
+
+test('GrantLot writes and consume calls stay in the guarded billing chains', () => {
+  assert.deepEqual(
+    filesMatching(
+      /\b(?:insert\s+into|update|delete\s+from)\s+(?:public\.)?p1_grant_lots\b/i,
+    ),
+    [...CANONICAL_GRANT_LOT_SQL_WRITERS],
+  );
+  assert.deepEqual(
+    filesMatching(/\bgrantLots\.consume(?:WithClient)?\s*\(/),
+    [...CANONICAL_GRANT_LOT_CONSUME_CALLERS],
+  );
+});
+
+test('Harness media child jobs cannot consume ProductUsage or GrantLot twice', () => {
+  const source = readFileSync(
+    join(
+      repositoryRoot,
+      'apps/core/src/p1/harness/unified-media-stage-ports.ts',
+    ),
+    'utf8',
+  );
+  assert.match(source, /\bproductUsageQuantity:\s*0\b/u);
+  assert.doesNotMatch(source, /\bproductUsageQuantity:\s*1\b/u);
 });

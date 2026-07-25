@@ -6,12 +6,13 @@ import test from 'node:test';
 
 import { CHECK_GATES, runGates } from './check-gates.mjs';
 
-test('root check defines all four required gates in order', () => {
+test('root check defines all required gates in order', () => {
   assert.deepEqual(
     CHECK_GATES.map(({ name }) => name),
     [
       'workspace checks',
       'secret scan',
+      'D-123 cost boundary',
       'decision ticket guard',
       'HeroUI mirror guard',
     ]

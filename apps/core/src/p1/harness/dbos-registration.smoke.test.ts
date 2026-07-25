@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import { HarnessWorkflowEventSource } from '../workflow-events.js';
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { HarnessDbosWorkflowEventReader } from './dbos-workflow-events.js';
 import {
   normalizeHarnessDbosWorkflowInput,
@@ -50,19 +51,65 @@ test(
   { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-smoke-${randomUUID()}`;
+    const executionSnapshot = createCreationExecutionSnapshot(
+      {
+        actorId: 'owner-smoke',
+        workspaceId: 'workspace-smoke',
+        idempotencyKey: `submission-${workflowId}`,
+        taskId: workflowId,
+        workId: 'work-smoke',
+        contentPackageId: 'package-smoke',
+        expectedContentPackageRevision: 0,
+        creationMode: 'customized',
+        intent: '把新团购做一套能发的',
+        surface: { id: 'surface-smoke', revision: 'surface-r1' },
+        recipe: { id: 'recipe-smoke', revision: 'recipe-r1' },
+        lens: 'copy',
+        platform: { id: 'xiaohongshu' },
+        deliverables: [
+          { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
+        ],
+        sources: { assets: [] },
+        rights: { revision: 'rights-r1', summary: 'authorized' },
+        identity: { id: 'identity-smoke', revision: 'identity-r1' },
+        modelPolicy: { id: 'policy-smoke', revision: 'policy-r1', mode: 'auto' },
+        catalogModel: { id: 'model-smoke', revision: 'model-r1' },
+        quote: { id: `quote-${workflowId}`, revision: 'quote-r1' },
+        route: { id: 'route-smoke', revision: 'route-r1' },
+        briefContext: { id: 'brief-smoke', revision: 1 },
+        contentModules: ['social_cover'],
+      },
+      '2026-07-26T09:00:00.000Z',
+    );
     const traces: string[] = [];
+    const billingReceipts: string[] = [];
     DBOS.setConfig({
       name: 'beauty-marketing-harness-smoke',
       systemDatabaseUrl: systemDatabaseUrl!,
       applicationVersion: 'harness-smoke-v1',
     });
-    const workflow = registerHarnessDbosWorkflow(smokePorts(), {
-      async registerPending() {},
-      async recordStageTrace(input) {
-        traces.push(input.stage);
+    const workflow = registerHarnessDbosWorkflow(
+      smokePorts(),
+      {
+        async registerPending() {},
+        async recordStageTrace(input) {
+          traces.push(input.stage);
+        },
+        async recordTerminalFailure() {},
       },
-      async recordTerminalFailure() {},
-    });
+      undefined,
+      {
+        async commit({ taskId }) {
+          billingReceipts.push(`committed:${taskId}`);
+        },
+        async refund({ taskId }) {
+          billingReceipts.push(`refunded:${taskId}`);
+        },
+        async scheduleCompensation({ action, taskId }) {
+          billingReceipts.push(`scheduled:${action}:${taskId}`);
+        },
+      },
+    );
 
     try {
       await DBOS.launch();
@@ -86,6 +133,7 @@ test(
             },
             assetReferences: [],
           },
+          executionSnapshot,
         },
       });
 
@@ -99,6 +147,7 @@ test(
         'execution_selection',
         'assembly_delivery',
       ]);
+      assert.deepEqual(billingReceipts, [`committed:${workflowId}`]);
       const events = [];
       const source = new HarnessWorkflowEventSource(
         new HarnessDbosWorkflowEventReader({

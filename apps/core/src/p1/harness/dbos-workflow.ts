@@ -23,6 +23,11 @@ import {
   buildSemanticDecisionResumption,
   type HarnessSemanticDecisionResumptionStore,
 } from './semantic-decision-resumption.js';
+import type {
+  HarnessBillingCompensationTask,
+  HarnessBillingSettlementExecutor,
+  HarnessBillingSettlementInput,
+} from './billing-compensation.js';
 
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
@@ -51,6 +56,11 @@ export type HarnessDbosWorkflowInput =
   | HarnessWorkflowInput
   | { workflowId: string; request: HarnessWorkflowInput };
 
+export interface HarnessBillingSettlementPort
+  extends HarnessBillingSettlementExecutor {
+  scheduleCompensation(input: HarnessBillingCompensationTask): Promise<void>;
+}
+
 const PROGRESS_STREAM = 'progress';
 const DECISION_TIMEOUT_SECONDS = 48 * 60 * 60;
 
@@ -58,6 +68,7 @@ export function registerHarnessDbosWorkflow(
   ports: HarnessStagePorts,
   persistence: HarnessWorkflowPersistence,
   semanticResumptions?: HarnessSemanticDecisionResumptionStore,
+  billing?: HarnessBillingSettlementPort,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -148,18 +159,52 @@ export function registerHarnessDbosWorkflow(
       },
     };
     try {
-      return await runHarnessWorkflow(workflowId, request, ports, runtime);
-    } catch (error) {
-      await DBOS.runStep(
-        () =>
-          persistence.recordTerminalFailure({
-            workspaceId: request.workspaceId,
-            workflowId,
-            failure: normalizeHarnessTerminalFailure(error),
-          }),
-        { name: 'persist-terminal-failure' },
+      let result;
+      try {
+        result = await runHarnessWorkflow(workflowId, request, ports, runtime);
+      } catch (error) {
+        const settlement = harnessBillingSettlementInput(
+          request,
+          workflowId,
+        );
+        if (billing && settlement) {
+          await failHarnessWorkflowPreservingExecutionError({
+            billing,
+            input: settlement,
+            error,
+            runStep: dbosBillingStep,
+            recordTerminalFailure: () =>
+              persistence.recordTerminalFailure({
+                workspaceId: request.workspaceId,
+                workflowId,
+                failure: normalizeHarnessTerminalFailure(error),
+              }),
+          });
+        }
+        await DBOS.runStep(
+          () =>
+            persistence.recordTerminalFailure({
+              workspaceId: request.workspaceId,
+              workflowId,
+              failure: normalizeHarnessTerminalFailure(error),
+            }),
+          { name: 'persist-terminal-failure' },
+        );
+        throw error;
+      }
+      const settlement = harnessBillingSettlementInput(
+        request,
+        workflowId,
+        result,
       );
-      throw error;
+      if (billing && settlement) {
+        await commitHarnessBillingOrSchedule({
+          billing,
+          input: settlement,
+          runStep: dbosBillingStep,
+        });
+      }
+      return result;
     } finally {
       await DBOS.closeStream(PROGRESS_STREAM);
     }
@@ -167,6 +212,128 @@ export function registerHarnessDbosWorkflow(
   return DBOS.registerWorkflow(workflow, {
     name: 'beautyMarketingHarnessWorkflow',
   });
+}
+
+type BillingRunStep = <T>(
+  name: string,
+  operation: () => Promise<T>,
+) => Promise<T>;
+
+export async function commitHarnessBillingOrSchedule(input: {
+  billing: HarnessBillingSettlementPort;
+  input: HarnessBillingSettlementInput;
+  runStep: BillingRunStep;
+}) {
+  try {
+    await input.runStep('commit-product-usage', () =>
+      input.billing.commit(input.input),
+    );
+  } catch {
+    await input.runStep('schedule-product-usage-commit', () =>
+      input.billing.scheduleCompensation({
+        action: 'commit',
+        attempts: 0,
+        ...input.input,
+      }),
+    );
+  }
+}
+
+export async function refundHarnessBillingPreservingFailure(input: {
+  billing: HarnessBillingSettlementPort;
+  input: HarnessBillingSettlementInput;
+  runStep: BillingRunStep;
+}) {
+  try {
+    await input.runStep('refund-product-usage', () =>
+      input.billing.refund(input.input),
+    );
+  } catch {
+    try {
+      await input.runStep('schedule-product-usage-refund', () =>
+        input.billing.scheduleCompensation({
+          action: 'refund',
+          attempts: 0,
+          ...input.input,
+        }),
+      );
+    } catch {
+      // Terminal failure persistence and the original execution error take
+      // precedence when the compensation store is also unavailable.
+    }
+  }
+}
+
+export async function failHarnessWorkflowPreservingExecutionError(input: {
+  billing: HarnessBillingSettlementPort;
+  input: HarnessBillingSettlementInput;
+  error: unknown;
+  runStep: BillingRunStep;
+  recordTerminalFailure: () => Promise<void>;
+}): Promise<never> {
+  await refundHarnessBillingPreservingFailure(input);
+  await input.runStep(
+    'persist-terminal-failure',
+    input.recordTerminalFailure,
+  );
+  throw input.error;
+}
+
+export function harnessBillingSettlementInput(
+  request: HarnessWorkflowInput,
+  workflowId: string,
+  result?: unknown,
+): HarnessBillingSettlementInput | null {
+  const snapshot = request.executionSnapshot;
+  if (!snapshot) return null;
+  const trustedUsage = billingTrustedUsage(result);
+  return {
+    workspaceId: request.workspaceId,
+    taskId: workflowId,
+    quoteId: snapshot.quote.id,
+    quoteRevision: snapshot.quote.revision,
+    ...(trustedUsage ? { trustedUsage } : {}),
+  };
+}
+
+function billingTrustedUsage(
+  result: unknown,
+): HarnessBillingSettlementInput['trustedUsage'] {
+  if (!result || typeof result !== 'object' || !('billingReceipt' in result)) {
+    return undefined;
+  }
+  const receipt = result.billingReceipt;
+  if (
+    !receipt ||
+    typeof receipt !== 'object' ||
+    !('trustedUsage' in receipt) ||
+    !receipt.trustedUsage ||
+    typeof receipt.trustedUsage !== 'object'
+  ) {
+    return undefined;
+  }
+  const usage = receipt.trustedUsage;
+  if (
+    !('kind' in usage) ||
+    usage.kind !== 'media_duration' ||
+    !('actualSeconds' in usage) ||
+    typeof usage.actualSeconds !== 'number' ||
+    !Number.isFinite(usage.actualSeconds) ||
+    usage.actualSeconds <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    kind: 'media_duration',
+    actualSeconds: usage.actualSeconds,
+    ...('evidenceRef' in usage && typeof usage.evidenceRef === 'string'
+      ? { evidenceRef: usage.evidenceRef }
+      : {}),
+  };
+}
+
+function dbosBillingStep<T>(name: string, operation: () => Promise<T>) {
+  return DBOS.runStep(operation, { name });
 }
 
 export class DbosHarnessWorkflowStarter implements HarnessWorkflowStarter {

@@ -67,6 +67,7 @@ const configSchemas = {
         ids.add(offer.id);
       }
     }),
+  'plan.trial.enabled': z.boolean(),
   'plan.allowances.growth': planAllowanceSchema,
   'plan.allowances.pro': planAllowanceSchema,
   'plan.allowances.starter': planAllowanceSchema,

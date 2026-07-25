@@ -62,6 +62,8 @@ import {
   admin_plan_standard_support,
   admin_plan_summary,
   admin_plan_support,
+  admin_plan_trial_description,
+  admin_plan_trial_enabled,
   admin_plan_validation_currency,
   admin_plan_validation_nonnegative,
   admin_plan_validation_positive,
@@ -107,6 +109,7 @@ interface PlanCatalog {
   addOns: AddOnOffer[];
   mode: 'disabled' | 'recorded';
   plans: PlanOffer[];
+  trialEnabled: boolean;
 }
 
 interface AdminConfigItem {
@@ -119,6 +122,7 @@ interface AdminConfigItem {
 }
 
 const CONFIG_KEYS = [
+  'plan.trial.enabled',
   'plan.allowances.trial',
   'plan.allowances.starter',
   'plan.allowances.growth',
@@ -416,16 +420,20 @@ function AddOnPriceEditor({
 
 function ComplianceToggle({
   config,
+  fallbackChecked = false,
   id,
   label,
   onReview,
 }: {
   config?: AdminConfigItem;
+  fallbackChecked?: boolean;
   id: string;
   label: string;
   onReview: (item: AdminConfigItem, value: unknown, label: string) => void;
 }) {
-  const checked = Boolean(config?.storedValue ?? config?.effectiveValue);
+  const checked = Boolean(
+    config?.storedValue ?? config?.effectiveValue ?? fallbackChecked
+  );
   return (
     <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
       <div>
@@ -619,6 +627,21 @@ export function AdminPlanControl() {
           </Card>
         ))}
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>{admin_plan_trial_enabled()}</CardTitle>
+          <CardDescription>{admin_plan_trial_description()}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ComplianceToggle
+            config={configFor('plan.trial.enabled')}
+            fallbackChecked={catalogQuery.data?.trialEnabled ?? true}
+            id="plan-trial-enabled"
+            label={admin_plan_trial_enabled()}
+            onReview={reviewChange}
+          />
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>{admin_plan_add_ons()}</CardTitle>

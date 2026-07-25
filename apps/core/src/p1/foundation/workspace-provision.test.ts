@@ -10,6 +10,10 @@ import {
   WorkspaceProvisionService,
   type PlatformDefaultModelPort,
 } from './workspace-provision.js';
+import {
+  DEFAULT_PLAN_OFFERS,
+  type PlanOffer,
+} from './entitlement-module.js';
 
 const owner = {
   workspaceId: 'workspace-provision',
@@ -17,7 +21,15 @@ const owner = {
   correlationId: 'corr-provision',
 };
 
-function setup(modelDefaults?: PlatformDefaultModelPort) {
+function setup(
+  modelDefaults?: PlatformDefaultModelPort,
+  catalog?: {
+    get(): Promise<{
+      plans: PlanOffer[];
+      trialEnabled?: boolean;
+    }>;
+  },
+) {
   const clock = () => new Date('2026-07-11T12:00:00.000Z');
   const repository = new MemoryFoundationRepository();
   repository.grantOwner(owner.workspaceId, owner.userId);
@@ -28,6 +40,7 @@ function setup(modelDefaults?: PlatformDefaultModelPort) {
   );
   const provisioner = new WorkspaceProvisionService(entitlements, {
     clock,
+    catalog,
     modelDefaults,
   });
   return { entitlements, provisioner, repository };
@@ -61,6 +74,56 @@ describe('WorkspaceProvisionService', () => {
       ).length,
       1,
     );
+  });
+
+  it('disables only new trial grants without reclaiming an existing workspace', async () => {
+    let trialEnabled = true;
+    const { provisioner } = setup(undefined, {
+      async get() {
+        return {
+          plans: structuredClone(DEFAULT_PLAN_OFFERS),
+          trialEnabled,
+        };
+      },
+    });
+    const existing = await provisioner.provisionTrial(owner);
+    assert.equal(existing.usage.copy.available, 5);
+
+    trialEnabled = false;
+    const preserved = await provisioner.provisionTrial(owner);
+    assert.equal(preserved.plan?.tier, 'trial');
+    assert.equal(preserved.usage.copy.available, 5);
+
+    const nextWorkspace = {
+      ...owner,
+      workspaceId: 'workspace-provision-disabled',
+    };
+    const disabledRepository = new MemoryFoundationRepository();
+    disabledRepository.grantOwner(
+      nextWorkspace.workspaceId,
+      nextWorkspace.userId,
+    );
+    const disabledEntitlements = new ProductEntitlementApplicationService(
+      disabledRepository,
+      new RecordedAutoTopUpPaymentPort(),
+      () => new Date('2026-07-11T12:00:00.000Z'),
+    );
+    const disabledProvisioner = new WorkspaceProvisionService(
+      disabledEntitlements,
+      {
+        catalog: {
+          async get() {
+            return {
+              plans: structuredClone(DEFAULT_PLAN_OFFERS),
+              trialEnabled: false,
+            };
+          },
+        },
+      },
+    );
+    const disabled = await disabledProvisioner.provisionTrial(nextWorkspace);
+    assert.equal(disabled.plan, null);
+    assert.equal(disabled.usage.copy.available, 0);
   });
 
   it('sets platform default model preferences without BYOK credentials', async () => {

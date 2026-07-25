@@ -481,106 +481,124 @@ export class PostgresGrantLotLedger {
   }): Promise<GrantLotTransaction[]> {
     assertPositiveInteger(input.amount, 'Usage amount');
     assertTimestamp(input.createdAt, 'createdAt');
-    return this.transaction(async (client) => {
-      await this.lockGrantResource(client, input.workspaceId, input.resource);
-      await lockOperation(client, input.workspaceId, input.transactionId);
-      const replay = await client.query<GrantTransactionRow>(
-        `SELECT * FROM p1_grant_lot_transactions
+    return this.transaction((client) => this.consumeWithClient(client, input));
+  }
+
+  async consumeWithClient(
+    client: PoolClient,
+    input: {
+      workspaceId: string;
+      resource: GrantLotResource;
+      amount: number;
+      transactionId: string;
+      actorId: string;
+      correlationId: string;
+      createdAt: string;
+    }
+  ): Promise<GrantLotTransaction[]> {
+    assertPositiveInteger(input.amount, 'Usage amount');
+    assertTimestamp(input.createdAt, 'createdAt');
+    await this.lockGrantResource(client, input.workspaceId, input.resource);
+    await lockOperation(client, input.workspaceId, input.transactionId);
+    const replay = await client.query<GrantTransactionRow>(
+      `SELECT * FROM p1_grant_lot_transactions
           WHERE workspace_id = $1
             AND transaction_type = 'USAGE'
             AND operation_id = $2
           ORDER BY id ASC`,
-        [input.workspaceId, input.transactionId]
-      );
-      if (replay.rowCount) {
-        const transactions = replay.rows.map(grantTransactionFromRow);
-        if (
-          transactions.some((row) => row.resource !== input.resource) ||
-          transactions.reduce((total, row) => total + row.amount, 0) !==
-            input.amount
-        ) {
-          throw new P1DomainError(
-            'IDEMPOTENCY_CONFLICT',
-            'Usage operation was replayed with different facts.'
-          );
-        }
-        return transactions;
+      [input.workspaceId, input.transactionId]
+    );
+    if (replay.rowCount) {
+      const transactions = replay.rows.map(grantTransactionFromRow);
+      if (
+        transactions.some((row) => row.resource !== input.resource) ||
+        transactions.reduce((total, row) => total + row.amount, 0) !==
+          input.amount
+      ) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Usage operation was replayed with different facts.'
+        );
       }
+      return transactions;
+    }
 
-      await expireLotsWithClient(client, {
-        workspaceId: input.workspaceId,
-        now: input.createdAt,
-        actorId: input.actorId,
-        correlationId: input.correlationId,
-      });
-      const selected = await client.query<GrantLotRow>(
-        `SELECT * FROM p1_grant_lots
+    await expireLotsWithClient(client, {
+      workspaceId: input.workspaceId,
+      now: input.createdAt,
+      actorId: input.actorId,
+      correlationId: input.correlationId,
+    });
+    const selected = await client.query<GrantLotRow>(
+      `SELECT * FROM p1_grant_lots
           WHERE workspace_id = $1
             AND resource = $2
             AND remaining_amount > 0
             AND (expiration_date IS NULL OR expiration_date > $3::timestamptz)
           ORDER BY expiration_date ASC NULLS LAST, created_at ASC, id ASC
           FOR UPDATE`,
-        [input.workspaceId, input.resource, input.createdAt]
+      [input.workspaceId, input.resource, input.createdAt]
+    );
+    const allocations = allocateFifoConsumption(
+      selected.rows.map(grantLotFromRow),
+      input.amount
+    );
+    if (
+      allocations.reduce((total, allocation) => total + allocation.amount, 0) !==
+      input.amount
+    ) {
+      throw new P1DomainError(
+        'INSUFFICIENT_ENTITLEMENT',
+        `Insufficient ${input.resource} allowance.`
       );
-      const allocations = allocateFifoConsumption(
-        selected.rows.map(grantLotFromRow),
-        input.amount
-      );
-      if (
-        allocations.reduce((total, allocation) => total + allocation.amount, 0) !==
-        input.amount
-      ) {
+    }
+
+    const written: GrantLotTransaction[] = [];
+    for (const [index, allocation] of allocations.entries()) {
+      const lot = selected.rows.find((row) => row.id === allocation.lotId);
+      if (!lot) {
         throw new P1DomainError(
-          'INSUFFICIENT_ENTITLEMENT',
-          `Insufficient ${input.resource} allowance.`
+          'INVALID_STATE',
+          'Selected grant lot disappeared.'
         );
       }
-
-      const written: GrantLotTransaction[] = [];
-      for (const [index, allocation] of allocations.entries()) {
-        const lot = selected.rows.find((row) => row.id === allocation.lotId);
-        if (!lot) {
-          throw new P1DomainError('INVALID_STATE', 'Selected grant lot disappeared.');
-        }
-        const updated = await client.query(
-          `UPDATE p1_grant_lots
+      const updated = await client.query(
+        `UPDATE p1_grant_lots
               SET remaining_amount = remaining_amount - $3,
                   revision = revision + 1
             WHERE workspace_id = $1
               AND id = $2
               AND revision = $4
               AND remaining_amount >= $3`,
-          [
-            input.workspaceId,
-            allocation.lotId,
-            allocation.amount,
-            Number(lot.revision),
-          ]
+        [
+          input.workspaceId,
+          allocation.lotId,
+          allocation.amount,
+          Number(lot.revision),
+        ]
+      );
+      if (updated.rowCount !== 1) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Grant lot revision changed during consumption.'
         );
-        if (updated.rowCount !== 1) {
-          throw new P1DomainError(
-            'IDEMPOTENCY_CONFLICT',
-            'Grant lot revision changed during consumption.'
-          );
-        }
-        const transaction: GrantLotTransaction = {
-          id: `${input.transactionId}:${index}`,
-          workspaceId: input.workspaceId,
-          resource: input.resource,
-          transactionType: 'USAGE',
-          amount: allocation.amount,
-          lotId: allocation.lotId,
-          operationId: input.transactionId,
-          actorId: input.actorId,
-          correlationId: input.correlationId,
-          createdAt: input.createdAt,
-        };
-        await insertTransaction(client, transaction);
-        written.push(transaction);
       }
-      return written;
-    });
+      const transaction: GrantLotTransaction = {
+        id: `${input.transactionId}:${index}`,
+        workspaceId: input.workspaceId,
+        resource: input.resource,
+        transactionType: 'USAGE',
+        amount: allocation.amount,
+        lotId: allocation.lotId,
+        operationId: input.transactionId,
+        actorId: input.actorId,
+        correlationId: input.correlationId,
+        createdAt: input.createdAt,
+      };
+      await insertTransaction(client, transaction);
+      written.push(transaction);
+    }
+    return written;
   }
 
   async refundUsage(input: {
@@ -610,11 +628,15 @@ export class PostgresGrantLotLedger {
     workspaceId: string;
     usageOperationId: string;
     refundOperationId: string;
+    amount?: number;
     actorId: string;
     correlationId: string;
     createdAt: string;
   }): Promise<GrantLotTransaction[]> {
     assertTimestamp(input.createdAt, 'createdAt');
+    if (input.amount !== undefined) {
+      assertPositiveInteger(input.amount, 'Refund amount');
+    }
     return this.transaction(async (client) => {
       await lockOperation(client, input.workspaceId, 'grant-lot-projection');
       await lockOperation(client, input.workspaceId, input.usageOperationId);
@@ -627,16 +649,32 @@ export class PostgresGrantLotLedger {
         [input.workspaceId, input.usageOperationId]
       );
       const refunds: GrantLotTransaction[] = [];
+      let remaining = input.amount;
       for (const [index, usage] of usages.rows.entries()) {
+        if (remaining === 0) break;
+        const amount =
+          remaining === undefined
+            ? Number(usage.amount)
+            : Math.min(Number(usage.amount), remaining);
         const refund = await refundUsageWithClient(client, {
           workspaceId: input.workspaceId,
           usageTransactionId: usage.id,
           refundTransactionId: `${input.refundOperationId}:${index}`,
+          amount,
           actorId: input.actorId,
           correlationId: input.correlationId,
           createdAt: input.createdAt,
         });
-        if (refund) refunds.push(refund);
+        if (refund) {
+          refunds.push(refund);
+          if (remaining !== undefined) remaining -= refund.amount;
+        }
+      }
+      if (remaining !== undefined && remaining !== 0) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Refund amount exceeds the usage operation.'
+        );
       }
       await expireLotsWithClient(client, {
         workspaceId: input.workspaceId,
@@ -914,6 +952,7 @@ async function refundUsageWithClient(
     workspaceId: string;
     usageTransactionId: string;
     refundTransactionId: string;
+    amount?: number;
     actorId: string;
     correlationId: string;
     createdAt: string;
@@ -948,12 +987,19 @@ async function refundUsageWithClient(
   );
   const row = usage.rows[0];
   if (!row) return null;
+  const amount = input.amount ?? Number(row.amount);
+  if (!Number.isInteger(amount) || amount <= 0 || amount > Number(row.amount)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Grant lot refund amount must be within the usage transaction.'
+    );
+  }
   const refund: GrantLotTransaction = {
     id: input.refundTransactionId,
     workspaceId: input.workspaceId,
     resource: row.resource,
     transactionType: 'REFUND',
-    amount: row.amount,
+    amount,
     lotId: row.lot_id,
     relatedTransactionId: row.id,
     operationId: input.refundTransactionId,

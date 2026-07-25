@@ -125,6 +125,94 @@ describe(
       );
     });
 
+    it('counts only committed ProductUsage receipts in the Asia/Shanghai month', async () => {
+      const workspaceId = workspace();
+      let now = new Date('2026-07-31T15:59:00.000Z');
+      const service = new DurableProductBillingService(repository, () => now);
+      const quote = await service.buildQuote({
+        billingMode: 'per_request',
+        catalogModelId: 'copy-model',
+        outputCount: 3,
+        quoteId: 'monthly-output-quote',
+        quotePolicyRevision: 'product-policy-1',
+        unitRate: 1,
+        workspaceId,
+      });
+      await service.confirm({
+        quoteId: quote.quoteId,
+        taskId: 'monthly-output-task',
+        workspaceId,
+      });
+      await service.reserve({
+        quoteId: quote.quoteId,
+        resource: 'copy',
+        usageId: 'monthly-output-usage',
+        workspaceId,
+      });
+
+      assert.deepEqual(
+        await service.getMonthlyOutput(workspaceId, '2026-07'),
+        { copy: 0, image: 0, video: 0 },
+      );
+
+      now = new Date('2026-07-31T16:01:00.000Z');
+      await service.settle({ quoteId: quote.quoteId, workspaceId });
+
+      assert.deepEqual(
+        await service.getMonthlyOutput(workspaceId, '2026-07'),
+        { copy: 0, image: 0, video: 0 },
+      );
+      assert.deepEqual(
+        await service.getMonthlyOutput(workspaceId, '2026-08'),
+        { copy: 3, image: 0, video: 0 },
+      );
+    });
+
+    it('counts partially refunded video delivery and projects its settled usage', async () => {
+      const workspaceId = workspace();
+      const service = new DurableProductBillingService(
+        repository,
+        () => new Date('2026-07-26T08:00:00.000Z'),
+      );
+      const quote = await service.buildQuote(
+        quoteInput(workspaceId, 'monthly-partial-video'),
+      );
+      await service.confirm({
+        quoteId: quote.quoteId,
+        taskId: 'monthly-partial-video-task',
+        workspaceId,
+      });
+      await service.beforeSubmit({
+        quoteId: quote.quoteId,
+        quoteRevision: quote.revision,
+        resource: 'video',
+        taskId: 'monthly-partial-video-task',
+        workspaceId,
+      });
+      await service.settleTask({
+        attemptId: 'monthly-partial-video-attempt',
+        deploymentId: 'coordinator',
+        status: 'completed',
+        taskId: 'monthly-partial-video-task',
+        trustedUsage: { actualSeconds: 6, kind: 'media_duration' },
+        workspaceId,
+      });
+
+      assert.equal(
+        (await service.getUsage('monthly-partial-video-task', workspaceId))
+          ?.status,
+        'partially_refunded',
+      );
+      assert.deepEqual(
+        await service.getMonthlyOutput(workspaceId, '2026-07'),
+        { copy: 0, image: 0, video: 1 },
+      );
+      assert.deepEqual(
+        (await service.getUsageProjection(workspaceId)).video,
+        { reserved: 0, committed: 3, released: 2 },
+      );
+    });
+
     it('requires a fresh quote and billing task for a paid reroll', async () => {
       const workspaceId = workspace();
       const firstProcess = new DurableProductBillingService(repository);

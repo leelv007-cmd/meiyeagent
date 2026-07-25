@@ -322,6 +322,12 @@ export type ProductEntitlementEvent =
 
 export interface ProductEntitlementProjection {
   workspaceId: string;
+  monthlyOutput?: {
+    month: string;
+    copy: number;
+    image: number;
+    video: number;
+  };
   plan: ProductPlanPolicy | null;
   concurrencyLimit: number;
   queuePriority: number;

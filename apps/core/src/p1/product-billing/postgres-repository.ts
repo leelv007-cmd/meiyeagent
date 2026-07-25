@@ -6,6 +6,17 @@ import type {
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
 
+export type ProductUsageResource = NonNullable<ProductUsageRecord['resource']>;
+export interface ProductUsageBucketProjection {
+  reserved: number;
+  committed: number;
+  released: number;
+}
+export type ProductUsageProjection = Record<
+  ProductUsageResource,
+  ProductUsageBucketProjection
+>;
+
 export interface ProductBillingTransaction {
   getQuote(workspaceId: string, quoteId: string): Promise<ProductQuoteSnapshot | null>;
   getQuoteByTask(
@@ -13,6 +24,11 @@ export interface ProductBillingTransaction {
     taskId: string,
   ): Promise<ProductQuoteSnapshot | null>;
   getUsage(workspaceId: string, taskId: string): Promise<ProductUsageRecord | null>;
+  getUsageProjection(workspaceId: string): Promise<ProductUsageProjection>;
+  getMonthlyOutput(
+    workspaceId: string,
+    month: string,
+  ): Promise<{ copy: number; image: number; video: number }>;
   listProviderCosts(
     workspaceId: string,
     taskId: string,
@@ -168,6 +184,79 @@ export class PostgresProductBillingRepository
       : null;
   }
 
+  async getUsageProjection(workspaceId: string): Promise<ProductUsageProjection> {
+    const result = await this.database.query<{
+      resource: ProductUsageResource;
+      reserved: string;
+      committed: string;
+      released: string;
+    }>(
+      `SELECT payload->>'resource' AS resource,
+              COALESCE(sum(CASE WHEN status = 'reserved'
+                THEN (payload->>'reservedQuantity')::numeric ELSE 0 END), 0)::text AS reserved,
+              COALESCE(sum(CASE WHEN status IN ('committed', 'partially_refunded')
+                THEN (payload->>'settledQuantity')::numeric ELSE 0 END), 0)::text AS committed,
+              COALESCE(sum(CASE WHEN status IN ('refunded', 'partially_refunded')
+                THEN (payload->>'refundedQuantity')::numeric ELSE 0 END), 0)::text AS released
+         FROM p1_product_billing_usage
+        WHERE workspace_id = $1
+          AND payload->>'resource' IN ('copy', 'image', 'video', 'audio')
+        GROUP BY payload->>'resource'`,
+      [workspaceId],
+    );
+    const projection = emptyUsageProjection();
+    for (const row of result.rows) {
+      projection[row.resource] = {
+        reserved: Number(row.reserved),
+        committed: Number(row.committed),
+        released: Number(row.released),
+      };
+    }
+    return projection;
+  }
+
+  async getMonthlyOutput(workspaceId: string, month: string) {
+    const match = /^(\d{4})-(\d{2})$/u.exec(month);
+    const year = Number(match?.[1]);
+    const monthNumber = Number(match?.[2]);
+    if (!match || monthNumber < 1 || monthNumber > 12) {
+      throw new Error('month must use YYYY-MM.');
+    }
+    const nextYear = monthNumber === 12 ? year + 1 : year;
+    const nextMonth = monthNumber === 12 ? 1 : monthNumber + 1;
+    const startsAt = `${month}-01T00:00:00+08:00`;
+    const endsAt =
+      `${String(nextYear).padStart(4, '0')}-` +
+      `${String(nextMonth).padStart(2, '0')}-01T00:00:00+08:00`;
+    const result = await this.database.query<{
+      copy: string;
+      image: string;
+      video: string;
+    }>(
+      `SELECT
+         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'copy'
+           THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS copy,
+         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'image'
+           THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS image,
+         COALESCE(sum(CASE WHEN u.payload->>'resource' = 'video'
+           THEN COALESCE((q.payload->>'outputCount')::int, 1) ELSE 0 END), 0)::text AS video
+       FROM p1_product_billing_usage u
+       JOIN p1_product_billing_quotes q
+         ON q.workspace_id = u.workspace_id AND q.quote_id = u.quote_id
+       WHERE u.workspace_id = $1
+         AND u.status IN ('committed', 'partially_refunded')
+         AND (u.payload->>'updatedAt')::timestamptz >= $2::timestamptz
+         AND (u.payload->>'updatedAt')::timestamptz < $3::timestamptz`,
+      [workspaceId, startsAt, endsAt],
+    );
+    const row = result.rows[0];
+    return {
+      copy: Number(row?.copy ?? 0),
+      image: Number(row?.image ?? 0),
+      video: Number(row?.video ?? 0),
+    };
+  }
+
   async listProviderCosts(workspaceId: string, taskId: string) {
     const result = await this.database.query<JsonRow<ProviderCostSnapshot>>(
       `SELECT payload
@@ -243,4 +332,14 @@ export class PostgresProductBillingRepository
       ],
     );
   }
+}
+
+function emptyUsageProjection(): ProductUsageProjection {
+  const empty = () => ({ reserved: 0, committed: 0, released: 0 });
+  return {
+    copy: empty(),
+    image: empty(),
+    video: empty(),
+    audio: empty(),
+  };
 }

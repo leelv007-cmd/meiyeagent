@@ -13,8 +13,12 @@ const PLAN_IDS = ['trial', 'starter', 'growth', 'pro'] as const;
 export class AdminConfigEntitlementCatalogSource {
   constructor(private readonly repository: AdminConfigRepository) {}
 
-  async get(): Promise<{ plans: PlanOffer[]; addOns: AddOnOffer[] }> {
-    const [trial, starter, growth, pro, addOns] = await Promise.all([
+  async get(): Promise<{
+    plans: PlanOffer[];
+    addOns: AddOnOffer[];
+    trialEnabled: boolean;
+  }> {
+    const [trial, starter, growth, pro, addOns, trialEnabled] = await Promise.all([
       this.repository.get(
         'global',
         GLOBAL_WORKSPACE_ID,
@@ -36,6 +40,7 @@ export class AdminConfigEntitlementCatalogSource {
         'plan.allowances.pro',
       ),
       this.repository.get('global', GLOBAL_WORKSPACE_ID, 'plan.addons'),
+      this.repository.get('global', GLOBAL_WORKSPACE_ID, 'plan.trial.enabled'),
     ]);
     const revisions: Record<(typeof PLAN_IDS)[number], typeof trial> = {
       trial,
@@ -61,6 +66,8 @@ export class AdminConfigEntitlementCatalogSource {
       addOns: structuredClone(
         (addOns?.value as AddOnOffer[] | undefined) ?? DEFAULT_ADD_ON_OFFERS,
       ),
+      trialEnabled:
+        typeof trialEnabled?.value === 'boolean' ? trialEnabled.value : true,
     };
   }
 

@@ -160,10 +160,13 @@ import {
 import { HarnessApplicationService } from './p1/harness/application-service.js';
 import { HarnessDecisionService } from './p1/harness/decision-service.js';
 import { HarnessDbosWorkflowEventReader } from './p1/harness/dbos-workflow-events.js';
+import { HarnessBillingCompensationWorker } from './p1/harness/billing-compensation.js';
 import { HarnessLangfuseOutboxWorker } from './p1/harness/outbox-worker.js';
 import { langfuseSenderFromEnv } from './p1/harness/langfuse-sender.js';
 import { langfusePromptResolverFromEnv } from './p1/harness/langfuse-prompts.js';
 import { PostgresHarnessResumeReconcilerStore } from './p1/harness/postgres-resume-reconciler-store.js';
+import { PostgresHarnessBillingCompensationStore } from './p1/harness/postgres-billing-compensation-store.js';
+import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-billing-settlement.js';
 import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
 import {
   DbosHarnessWorkflowStarter,
@@ -547,6 +550,7 @@ const adminConfigRuntime = {
     ])
   ),
   'plan.addons': DEFAULT_ADD_ON_OFFERS,
+  'plan.trial.enabled': true,
   'plan.allowances.trial': planConfigDefaults.trial,
   'plan.allowances.starter': planConfigDefaults.starter,
   'plan.allowances.growth': planConfigDefaults.growth,
@@ -566,7 +570,9 @@ const productEntitlementPolicy = new ProductStateEntitlementPolicy(
 const productEntitlements = new GrantLotAwareProductEntitlementService(
   foundationRepository,
   grantLotLedger,
-  recordedCommerceEnabled ? new RecordedAutoTopUpPaymentPort() : undefined
+  recordedCommerceEnabled ? new RecordedAutoTopUpPaymentPort() : undefined,
+  undefined,
+  productQuoteService
 );
 const executionEntitlementPolicy = new CompositeProductEntitlementPolicy(
   productEntitlementPolicy,
@@ -1269,6 +1275,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         'plan.addons',
+        'plan.trial.enabled',
         'plan.allowances.trial',
         'plan.allowances.starter',
         'plan.allowances.growth',
@@ -1289,6 +1296,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'model.execution.mode',
         'model.media.execution.mode',
         'plan.addons',
+        'plan.trial.enabled',
         'plan.allowances.trial',
         'plan.allowances.starter',
         'plan.allowances.growth',
@@ -1321,6 +1329,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       catalogSource: new AdminConfigEntitlementCatalogSource(
         adminConfigRepository,
       ),
+      monthlyOutput: productQuoteService,
       modelDefaults: {
         async getDefaults() {
           const keys = [
@@ -1498,7 +1507,7 @@ if (harnessRuntimeConfig) {
   const creationSubmissionStore = new PostgresCreationSubmissionStore(
     pool,
     new PostgresCreationSubmissionPersistence(
-      new PostgresProductBillingUsageReservation(pool)
+      new PostgresProductBillingUsageReservation(pool, grantLotLedger)
     )
   );
   await creationSubmissionStore.migrate();
@@ -1571,10 +1580,24 @@ if (harnessRuntimeConfig) {
     () => new Date().toISOString()
   );
   DBOS.setConfig(harnessRuntimeConfig.dbos);
+  const harnessBilling = new HarnessProductBillingSettlementExecutor(
+    productQuoteService,
+    grantLotLedger,
+  );
+  const billingCompensations =
+    new PostgresHarnessBillingCompensationStore(pool);
+  await billingCompensations.migrate();
   const harnessWorkflow = registerHarnessDbosWorkflow(
     harnessStages,
     harnessStore,
     creationSubmissionStore,
+    {
+      commit: (input) => harnessBilling.commit(input),
+      refund: (input) => harnessBilling.refund(input),
+      async scheduleCompensation(input) {
+        await billingCompensations.enqueue(input);
+      },
+    },
   );
   await DBOS.launch();
   const workflowResumer = {
@@ -1642,6 +1665,10 @@ if (harnessRuntimeConfig) {
     new PostgresHarnessResumeReconcilerStore(pool),
     workflowResumer,
   );
+  const billingCompensationWorker = new HarnessBillingCompensationWorker(
+    billingCompensations,
+    harnessBilling,
+  );
   let compensationRunning = false;
   const runCompensation = async () => {
     if (compensationRunning) return;
@@ -1650,6 +1677,7 @@ if (harnessRuntimeConfig) {
       const results = await Promise.allSettled([
         outboxWorker.runOnce(),
         resumeReconciler.runOnce(),
+        billingCompensationWorker.runOnce(),
       ]);
       for (const result of results) {
         if (result.status === 'rejected') {

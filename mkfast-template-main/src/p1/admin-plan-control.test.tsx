@@ -99,6 +99,14 @@ test('renders dedicated plan fields, add-on pricing, compliance switches, and au
     },
     {
       actorId: 'platform-admin',
+      createdAt: '2026-07-15T10:02:30.000Z',
+      effectiveValue: true,
+      key: 'plan.trial.enabled',
+      revision: 3,
+      storedValue: true,
+    },
+    {
+      actorId: 'platform-admin',
       createdAt: '2026-07-15T10:03:00.000Z',
       effectiveValue: [
         {
@@ -174,6 +182,7 @@ test('renders dedicated plan fields, add-on pricing, compliance switches, and au
   assert.match(html, /id="plan-growth-support"/u);
   assert.match(html, /id="addon-copy-20-price"/u);
   assert.match(html, /id="addon-copy-20-currency"/u);
+  assert.match(html, /id="plan-trial-enabled"[^>]*checked/u);
   assert.match(html, /id="compliance-watermark-default"[^>]*checked/u);
   assert.doesNotMatch(html, /id="compliance-aigc-label-default"[^>]*checked/u);
   assert.match(html, /id="compliance-regulated-mode-default"[^>]*checked/u);
