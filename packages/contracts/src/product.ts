@@ -423,8 +423,35 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+/** D-126 cold-start sample industries (C-5). */
+export type ExampleStoreIndustry =
+  | 'hair_care'
+  | 'skin_management'
+  | 'hair_growth';
+
+export const EXAMPLE_STORE_INDUSTRIES: readonly ExampleStoreIndustry[] = [
+  'hair_care',
+  'skin_management',
+  'hair_growth',
+];
+
+/**
+ * D-126: platform-maintained sample material. Never enters a tenant's real
+ * ContextBundle and never shows up in tenant workspace projections.
+ */
+export const PLATFORM_SAMPLE_PROVENANCE = 'platform_sample';
+
+/** Every platform-sample entity id lives in this reserved namespace. */
+export const PLATFORM_SAMPLE_ID_PREFIX = 'platform-sample:';
+
+export function isPlatformSampleId(id: string) {
+  return id.startsWith(PLATFORM_SAMPLE_ID_PREFIX);
+}
+
 export interface ExampleStore {
   id: string;
+  industry: ExampleStoreIndustry;
+  provenance: typeof PLATFORM_SAMPLE_PROVENANCE;
   name: string;
   readOnly: true;
   hidden: boolean;
@@ -432,14 +459,27 @@ export interface ExampleStore {
   contentCards: number;
   packages: number;
   profile: { city: string; project: string; confirmedPrice: number };
-  assetPreviews: Array<{ id: string; label: string; authorizationStatus: 'authorized' }>;
-  contentPreviews: Array<{ id: string; title: string; platform: Platform }>;
+  /** Confirmed store facts the sample content is grounded in (D-119 look-alike). */
+  facts: Array<{ id: string; label: string; value: string }>;
+  assetPreviews: Array<{
+    id: string;
+    label: string;
+    authorizationStatus: 'authorized';
+    previewUrl?: string;
+  }>;
+  contentPreviews: Array<{
+    id: string;
+    title: string;
+    platform: Platform;
+    summary: string;
+    previewUrl?: string;
+  }>;
   handoffPreview: { id: string; title: string; platform: Platform };
 }
 
 export interface ProductState {
   workspaceId: string;
-  exampleStore: ExampleStore;
+  exampleStores: ExampleStore[];
   storeDraft?: StoreDraft;
   store?: StoreProfile;
   qualification?: QualificationProfile;

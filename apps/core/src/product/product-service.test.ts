@@ -659,8 +659,9 @@ describe('product golden journey', () => {
     });
 
     const initial = await service.bootstrap(merchant);
-    assert.equal(initial.exampleStore.readOnly, true);
-    assert.equal(initial.exampleStore.hidden, true);
+    assert.equal(initial.exampleStores.length, 3);
+    assert.ok(initial.exampleStores.every((example) => example.readOnly));
+    assert.ok(initial.exampleStores.every((example) => example.hidden));
     assert.equal(initial.entitlement.content.remaining, 30);
     assert.equal(initial.entitlement.image.remaining, 10);
     assert.equal(initial.entitlement.concurrencyLimit, 1);
@@ -1554,7 +1555,7 @@ describe('product golden journey', () => {
       { hidden: true, type: 'hide_example' },
       'legacy-resumed-command'
     );
-    assert.equal(resumed.state.exampleStore.hidden, true);
+    assert.ok(resumed.state.exampleStores.every((example) => example.hidden));
   });
 
   it('rechecks write ownership after acquiring the workspace lock', async () => {

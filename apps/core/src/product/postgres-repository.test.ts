@@ -70,9 +70,13 @@ describe('Postgres product repository', { skip: databaseUrl ? false : 'TEST_DATA
     const first = await service.execute(context, { type: 'hide_example', hidden: true }, 'hide-example');
     const duplicate = await service.execute(context, { type: 'hide_example', hidden: true }, 'hide-example');
 
-    assert.equal(first.state.exampleStore.hidden, true);
-    assert.equal(duplicate.state.exampleStore.hidden, true);
-    assert.equal((await service.bootstrap(context)).exampleStore.hidden, true);
+    assert.ok(first.state.exampleStores.every((example) => example.hidden));
+    assert.ok(duplicate.state.exampleStores.every((example) => example.hidden));
+    assert.ok(
+      (await service.bootstrap(context)).exampleStores.every(
+        (example) => example.hidden
+      )
+    );
     await assert.rejects(
       service.execute(
         context,
@@ -132,15 +136,15 @@ describe('Postgres product repository', { skip: databaseUrl ? false : 'TEST_DATA
       await assert.rejects(
         service.execute(
           context,
-          { type: 'hide_example', hidden: !before.exampleStore.hidden },
+          { type: 'hide_example', hidden: !before.exampleStores[0]!.hidden },
           idempotencyKey
         ),
         /forced idempotency persistence failure/
       );
       const afterFailure = await service.bootstrap(context);
-      assert.equal(
-        afterFailure.exampleStore.hidden,
-        before.exampleStore.hidden
+      assert.deepEqual(
+        afterFailure.exampleStores.map((example) => example.hidden),
+        before.exampleStores.map((example) => example.hidden)
       );
     } finally {
       await pool.query(`

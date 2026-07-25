@@ -137,9 +137,9 @@ test('product HTTP boundary trusts service-authenticated identity and hides cros
   const workspaceAAfterPayload = (await workspaceAAfter.json()) as {
     data: ProductState;
   };
-  assert.equal(
-    workspaceAAfterPayload.data.exampleStore.hidden,
-    payload.data.exampleStore.hidden
+  assert.deepEqual(
+    workspaceAAfterPayload.data.exampleStores.map((example) => example.hidden),
+    payload.data.exampleStores.map((example) => example.hidden)
   );
 
   const retiredSynchronousRender = await fetch(
