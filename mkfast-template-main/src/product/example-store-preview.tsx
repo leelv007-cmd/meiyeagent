@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import {
   creation_entry_platform_douyin,
   creation_entry_platform_xiaohongshu,
@@ -198,16 +199,20 @@ export function ExampleStorePreview({
             {example.contentPreviews.map((content) => {
               const previewUrl = content.previewUrl;
               return (
-                <Button
+                <button
                   aria-checked={selected?.id === content.id}
-                  className="group h-auto min-w-0 flex-col items-stretch justify-start gap-0 rounded-none p-0 text-left whitespace-normal"
+                  // A native button: the shared Button caps its height and
+                  // clips this card-shaped option.
+                  className={cn(
+                    'group flex min-w-0 flex-col items-stretch text-left transition-colors',
+                    selected?.id === content.id
+                      ? 'bg-secondary text-secondary-foreground'
+                      : 'bg-background hover:bg-muted/50'
+                  )}
                   key={content.id}
                   onClick={() => setSelectedContentId(content.id)}
                   role="radio"
                   type="button"
-                  variant={
-                    selected?.id === content.id ? 'secondary' : 'outline'
-                  }
                 >
                   {previewUrl ? (
                     <img
@@ -219,8 +224,9 @@ export function ExampleStorePreview({
                       src={previewUrl}
                     />
                   ) : (
-                    <span className="grid aspect-[3/4] w-full place-items-center bg-surface-1 text-primary">
-                      <IconFileText aria-hidden="true" className="size-8" />
+                    // No platform artwork yet: a short band, not a tall void.
+                    <span className="grid h-16 w-full place-items-center bg-surface-1 text-primary">
+                      <IconFileText aria-hidden="true" className="size-6" />
                     </span>
                   )}
                   <span className="flex min-w-0 items-start gap-3 p-3">
@@ -246,7 +252,7 @@ export function ExampleStorePreview({
                       )}
                     </span>
                   </span>
-                </Button>
+                </button>
               );
             })}
           </div>
