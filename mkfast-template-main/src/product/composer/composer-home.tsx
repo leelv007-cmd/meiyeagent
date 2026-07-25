@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useProStudioEntitlement } from '@/hooks/use-pro-studio-entitlement';
 import { emitTelemetry } from '@/lib/product-telemetry';
 import {
   creation_entry_intent_aria,
@@ -332,6 +333,8 @@ export function ComposerHome({
     }),
     queryFn: ({ signal }) => fetchComposerSurface(signal),
   });
+  // R-08 / #211: the Pro Studio entry states what the gate will decide.
+  const proStudioEntitlement = useProStudioEntitlement();
   const identitiesQuery = useQuery({
     queryKey: ['marketing-identity-projection'],
     queryFn: ({ signal }) =>
@@ -1698,6 +1701,10 @@ export function ComposerHome({
 
       <ComposerToolsStrip
         viewport={viewportKind}
+        proStudioStatus={proStudioEntitlement.projection.state}
+        {...(proStudioEntitlement.reason
+          ? { proStudioLockReason: proStudioEntitlement.reason }
+          : {})}
         surfaceRevisionId={surfaceQuery.data?.revisionId}
         onOpenTool={(href) => {
           if (typeof window !== 'undefined') {

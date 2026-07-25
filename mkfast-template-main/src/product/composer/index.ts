@@ -330,7 +330,6 @@ export {
   type ComposerToolsStripView,
   type ComposerViewportKind,
   type ProStudioBannerView,
-  type ProStudioGateStatus,
 } from './composer-tools';
 
 export {

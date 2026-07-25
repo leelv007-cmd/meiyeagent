@@ -56,6 +56,14 @@ test('Pro Studio projects as full-width banner to canonical gate', () => {
   assert.equal(locked!.status, 'locked');
   assert.equal(locked!.lockReason, '需要 Owner 购买');
   assert.equal(locked!.href, '/pro-studio');
+
+  // R-08 / #211: without a canonical answer the banner is `unknown` and says so.
+  const unread = projectProStudioBanner({ viewport: 'desktop' });
+  assert.ok(unread);
+  assert.equal(unread!.status, 'unknown');
+  assert.equal(unread!.canEnter, false);
+  assert.equal(unread!.ctaLabel, '查看权益状态');
+  assert.ok(unread!.lockReason);
 });
 
 test('capability-unpublished tools are hidden and not counted', () => {

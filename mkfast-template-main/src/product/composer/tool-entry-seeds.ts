@@ -30,7 +30,7 @@ export const TOOL_CATALOG_CATEGORY_LABELS: Record<ToolCatalogCategory, string> =
     pro: '专业工作区',
   };
 
-export type ComposerToolEntrySeed = {
+type ComposerToolEntrySeedBase = {
   id: (typeof STANDALONE_TOOL_ENTRY_IDS)[number];
   label: string;
   summary: string;
@@ -40,19 +40,32 @@ export type ComposerToolEntrySeed = {
   /** Task-language categories this tool belongs to (excluding synthetic "all"). */
   categories: Exclude<ToolCatalogCategory, 'all'>[];
   /**
-   * When true, surface as Pro Studio full-width banner — not ordinary tool chip.
-   * Ordinary strip never mixes Pro Studio into the ≤2/≤3 slots (D-078/D-092).
-   */
-  isProStudioBanner: boolean;
-  /**
    * Capability / entitlement gate. Unpublished or capability-gated tools stay
    * hidden from published-visible counts (D-093).
    */
   capabilityPublished: boolean;
+};
+
+export type OrdinaryToolEntrySeed = ComposerToolEntrySeedBase & {
+  isProStudioBanner: false;
   /** Entitlement lock (visible with reason when capability is published). */
   entitlementLocked: boolean;
   lockReason?: string;
 };
+
+/**
+ * Pro Studio surfaces as a full-width banner, not an ordinary tool chip
+ * (D-078/D-092), and carries **no** entitlement verdict: R-08 traced the
+ * "先扬后抑" entry to a seed default that read as active. Its state comes only
+ * from the canonical entitlement projection (`lib/pro-studio-entitlement`).
+ */
+export type ProStudioBannerEntrySeed = ComposerToolEntrySeedBase & {
+  isProStudioBanner: true;
+};
+
+export type ComposerToolEntrySeed =
+  | OrdinaryToolEntrySeed
+  | ProStudioBannerEntrySeed;
 
 /**
  * Planned standalone tools. The three ordinary tools remain unpublished until
@@ -105,15 +118,11 @@ export const COMPOSER_TOOL_ENTRY_SEEDS: readonly ComposerToolEntrySeed[] = [
     categories: ['pro'],
     isProStudioBanner: true,
     capabilityPublished: true,
-    entitlementLocked: false,
   },
 ];
 
 export function listComposerToolEntrySeeds(): ComposerToolEntrySeed[] {
-  return COMPOSER_TOOL_ENTRY_SEEDS.map((entry) => ({
-    ...entry,
-    categories: [...entry.categories],
-  }));
+  return COMPOSER_TOOL_ENTRY_SEEDS.map((entry) => structuredClone(entry));
 }
 
 export function getComposerToolEntrySeed(

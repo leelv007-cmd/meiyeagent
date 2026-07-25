@@ -151,8 +151,11 @@ function ProStudioBanner({
       type="button"
       data-testid="composer-pro-studio-banner"
       data-status={banner.status}
+      data-can-enter={banner.canEnter ? 'true' : 'false'}
       data-href={banner.href}
-      aria-label={`${banner.label}。${banner.summary}。${banner.ctaLabel}`}
+      aria-label={`${banner.label}。${
+        banner.canEnter ? banner.summary : (banner.lockReason ?? banner.summary)
+      }。${banner.ctaLabel}`}
       className={cn(
         'flex min-h-12 w-full flex-col items-start gap-1 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-left',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -164,9 +167,9 @@ function ProStudioBanner({
         {banner.label}
       </span>
       <span className="text-xs leading-5 text-muted-foreground">
-        {banner.status === 'locked'
-          ? (banner.lockReason ?? banner.summary)
-          : banner.summary}
+        {banner.canEnter
+          ? banner.summary
+          : (banner.lockReason ?? banner.summary)}
       </span>
       <span className="mt-1 text-xs font-medium text-primary">
         {banner.ctaLabel}
