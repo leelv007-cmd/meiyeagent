@@ -411,6 +411,31 @@ describe('Recipe Studio controlled compiler', () => {
       capabilities: { async assertReady() {} },
       catalog: repository,
       identities: { async listActive() { return []; } },
+      noteSettings: {
+        async read() {
+          return {
+            confirmationTimeoutSeconds: 30,
+            styles: {
+              styles: [
+                {
+                  id: 'facts',
+                  name: '干货版',
+                  writingGuide: '解释清楚',
+                  structureTemplate: '结论先行',
+                  platforms: ['xiaohongshu'],
+                },
+                {
+                  id: 'story',
+                  name: '叙事版',
+                  writingGuide: '场景叙事',
+                  structureTemplate: '场景展开',
+                  platforms: ['xiaohongshu'],
+                },
+              ],
+            },
+          };
+        },
+      },
       quotes: {
         async getQuote() {
           return {
