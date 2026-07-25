@@ -116,6 +116,7 @@ import {
 } from './p1/product-billing/index.js';
 import {
   ModelSupplyImageGenerationAdapter,
+  AdminConfigAssetIntakeGuidanceSource,
   ContentPackageArtifactReferenceVerifier,
   ContentPackageZipExportAdapter,
   OperationsContentPackageExportAssetReader,
@@ -126,6 +127,7 @@ import {
   OperationsProductPackageRightsAdapter,
   ProductContentPackageRightsResolver,
   PostgresAssetIntakeRepository,
+  PostgresParseRepository,
   PostgresOperationsRepository,
   PostgresContextBundleRepository,
   PostgresContextSourceRevisionRepository,
@@ -134,6 +136,12 @@ import {
   PostgresContentPackageWriteOwnership,
   ProductOperationsBatchExecutionAdapter,
   PersistentCanvasExportAdapter,
+  documentParseProviderFromEnv,
+  FixtureAssetDraftCompiler,
+  FixtureVisualAssetClassifier,
+  PARSE_BATCH_JOB_KIND,
+  ParseBatchJobEffect,
+  ParseService,
   createOperationsTriggerJobHandler,
 } from './p1/operations/index.js';
 import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from './pro-studio-runtime/provider-reference-policy.js';
@@ -248,6 +256,7 @@ const storeFactLedger = new PostgresStoreFactLedger(pool);
 const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
 const assetIntakeRepository = new PostgresAssetIntakeRepository(pool);
+const parseRepository = new PostgresParseRepository(pool);
 const reuseMemoryRepository = new PostgresReuseMemoryRepository(pool);
 const contentPackageWriteOwnership =
   new PostgresContentPackageWriteOwnership(pool);
@@ -300,6 +309,7 @@ await migratePostgresSchema(pool, [
   contextBundleRepository,
   contextSourceRevisions,
   assetIntakeRepository,
+  parseRepository,
   reuseMemoryRepository,
   contentPackageWriteOwnership,
   modelRepository,
@@ -442,6 +452,14 @@ const integrationService = new IntegrationApplicationService({
   secrets: integrationSecrets,
 });
 const tracerJobs = new TracerJobApplicationService(repository);
+const parseService = new ParseService(
+  parseRepository,
+  documentParseProviderFromEnv(process.env),
+  new FixtureAssetDraftCompiler(),
+  new FixtureVisualAssetClassifier(),
+  { isAuthorized: async () => false },
+  new AdminConfigAssetIntakeGuidanceSource(adminConfigRepository),
+);
 const mediaGeneration = gatedMediaExecution
   ? new DurableMediaGenerationApplicationService({
       jobs: tracerJobs,
@@ -478,6 +496,10 @@ const videoContentPackages = new OperationsVideoContentPackageAdapter(
 const tracer = new DurableTracerWorker(
   repository,
   new RecordedProductTracerEffect()
+);
+const parseBatchWorker = new DurableTracerWorker(
+  repository,
+  new ParseBatchJobEffect(parseService),
 );
 const composedVideo = new DurableTracerWorker(
   repository,
@@ -660,6 +682,7 @@ const worker = new P1JobWorkerEntrypoint(
         )
       ),
     [OPERATIONS_TRIGGER_JOB_KIND]: createOperationsTriggerJobHandler(operations),
+    [PARSE_BATCH_JOB_KIND]: parseBatchWorker.handle.bind(parseBatchWorker),
     ...(assetRegistrationCleanup
       ? {
           [S3_ASSET_REGISTRATION_CLEANUP_JOB_KIND]:
