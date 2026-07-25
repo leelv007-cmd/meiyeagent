@@ -358,21 +358,95 @@ test(
       assert.equal(first.launch?.surface.status, 'published');
       assert.equal(first.launch?.surface.revision, 3);
 
+      const studioDraft = await first.catalog.draftRecipe({
+        actorId: 'ops-recipe-studio',
+        body: {
+          lensId: 'copy',
+          modelPolicy: { mode: 'auto' },
+          presentation: {
+            summary: 'Recipe Studio restart preservation',
+            title: 'Recipe Studio extra card',
+          },
+          promptRevisionRef: 'prompt.recipe-studio-extra@1',
+          skillRevisionRefs: ['skill.recipe-studio-extra@1'],
+          targetWorkspaceKind: 'copy',
+          delivery: {
+            contentPackagePlatform: 'xiaohongshu',
+            deliverableKind: 'copy_document',
+            distributionTarget: 'export',
+            quantity: 1,
+          },
+        },
+        correlationId: 'corr-recipe-studio-extra',
+        expectedRevision: null,
+        reason: 'publish an operator-authored card',
+        recipeId: 'recipe.recipe-studio-extra',
+      });
+      const studioPreview = await first.catalog.previewRecipe({
+        actorId: 'ops-recipe-studio',
+        correlationId: 'corr-recipe-studio-extra',
+        expectedRevision: studioDraft.revision,
+        reason: 'preview an operator-authored card',
+        recipeId: studioDraft.recipeId,
+      });
+      const studioRecipe = await first.catalog.publishRecipe({
+        actorId: 'ops-recipe-studio',
+        correlationId: 'corr-recipe-studio-extra',
+        expectedRevision: studioPreview.revision,
+        reason: 'publish an operator-authored card',
+        recipeId: studioDraft.recipeId,
+      });
+      const expandedDraft = await first.catalog.draftSurface({
+        actorId: 'ops-recipe-studio',
+        body: {
+          recipeRefs: [
+            ...first.launch!.surface.recipeRefs,
+            {
+              featured: false,
+              lensId: studioRecipe.lensId,
+              order: 6,
+              recipeRevisionId: studioRecipe.revisionId,
+              visible: true,
+            },
+          ],
+          toolEntryRefs: first.launch!.surface.toolEntryRefs,
+        },
+        correlationId: 'corr-recipe-studio-extra',
+        expectedRevision: first.launch!.surface.revision,
+        reason: 'switch production label',
+        surfaceId: first.launch!.surface.surfaceId,
+      });
+      const expandedPreview = await first.catalog.previewSurface({
+        actorId: 'ops-recipe-studio',
+        correlationId: 'corr-recipe-studio-extra',
+        expectedRevision: expandedDraft.revision,
+        reason: 'preview production label',
+        surfaceId: expandedDraft.surfaceId,
+      });
+      const expandedSurface = await first.catalog.publishSurface({
+        actorId: 'ops-recipe-studio',
+        correlationId: 'corr-recipe-studio-extra',
+        expectedRevision: expandedPreview.revision,
+        reason: 'publish production label',
+        surfaceId: expandedDraft.surfaceId,
+      });
+
       const restarted = await createDurableCreationExperienceRuntime({
         pool: runtimePool,
         ...unusedRevisionSources,
       });
       assert.equal(
         restarted.launch?.surface.revisionId,
-        first.launch?.surface.revisionId,
+        expandedSurface.revisionId,
       );
+      assert.equal(restarted.launch?.surface.recipeRefs.length, 9);
       assert.equal(
         (
           await restarted.catalog.listSurfaceHistory(
             first.launch!.surface.surfaceId,
           )
         ).length,
-        3,
+        6,
       );
       for (const recipe of first.launch!.recipes) {
         assert.equal(

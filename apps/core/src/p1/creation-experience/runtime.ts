@@ -40,13 +40,17 @@ async function ensureLaunchCatalogOnce(
         return recipe;
       }),
     );
-    if (
-      recipes.length === LAUNCH_RECIPE_SPECS.length &&
-      recipes.every((recipe, index) =>
-        matchesLaunchRecipe(recipe, LAUNCH_RECIPE_SPECS[index]!)
+    const launchRecipes = LAUNCH_RECIPE_SPECS.map((spec) =>
+      recipes.find(
+        (recipe) =>
+          recipe.recipeId === spec.recipeId && matchesLaunchRecipe(recipe, spec)
       )
-    ) {
-      return { recipes, surface: existingSurface };
+    );
+    if (launchRecipes.every((recipe) => recipe !== undefined)) {
+      return {
+        recipes: launchRecipes as ServerRecipeRecord[],
+        surface: existingSurface,
+      };
     }
   }
 
@@ -174,6 +178,7 @@ function matchesLaunchRecipe(
         ? { workflowRevisionRef: recipe.workflowRevisionRef }
         : {}),
       promptRevisionRef: recipe.promptRevisionRef,
+      skillRevisionRefs: recipe.skillRevisionRefs,
       targetWorkspaceKind: recipe.targetWorkspaceKind,
     },
     body

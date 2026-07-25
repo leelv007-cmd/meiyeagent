@@ -137,6 +137,8 @@ export interface CreationRecipeVersion {
   workflowRevisionRef?: string;
   /** Server prompt revision ref — never a prompt body. */
   promptRevisionRef: string;
+  /** Immutable product Skill revisions selected by the compiled Recipe. */
+  skillRevisionRefs?: string[];
   targetWorkspaceKind: CreationLensId;
   contentHash: string;
   actorId: string;
@@ -171,6 +173,7 @@ export interface BrowserRecipeProjection {
   quotePolicyRevisionRef?: string;
   workflowRevisionRef?: string;
   promptRevisionRef: string;
+  skillRevisionRefs?: string[];
   targetWorkspaceKind: CreationLensId;
   contentHash: string;
 }

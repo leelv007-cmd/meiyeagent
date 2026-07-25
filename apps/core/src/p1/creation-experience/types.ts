@@ -101,12 +101,15 @@ export interface RecipeBodyInput {
   quotePolicyRevisionRef?: string;
   workflowRevisionRef?: string;
   promptRevisionRef: string;
+  skillRevisionRefs?: string[];
   targetWorkspaceKind: CreationLensId;
   /**
    * Server-only test/debug hook. NEVER projected to browser.
    * Production drafts must leave this undefined.
    */
   hiddenPromptBody?: string;
+  /** Server-only Recipe Studio release evidence. NEVER projected to browser. */
+  studioRelease?: RecipeStudioReleaseState;
 }
 
 export interface DraftRecipeInput extends CatalogCasMeta {
@@ -173,6 +176,7 @@ export interface ServerRecipeRecord {
   quotePolicyRevisionRef?: string;
   workflowRevisionRef?: string;
   promptRevisionRef: string;
+  skillRevisionRefs: string[];
   targetWorkspaceKind: CreationLensId;
   contentHash: string;
   actorId: string;
@@ -183,6 +187,43 @@ export interface ServerRecipeRecord {
   publishedAt?: string;
   /** Server-only — never serialized to browser projection. */
   hiddenPromptBody?: string;
+  /** Server-only — immutable gate evidence carried by append-only revisions. */
+  studioRelease?: RecipeStudioReleaseState;
+}
+
+export interface RecipeStudioCompilationReceipt {
+  receiptId: string;
+  compiledAt: string;
+  industryKey: string;
+  stageRegistryRevision: 'recipe-studio-stage-registry@1';
+  validatorRevision: 'recipe-validator@1';
+  promptRevisionRef: string;
+  skillRevisionRefs: string[];
+  workflowRevisionRef: string;
+  outputContractRef: string;
+  quotePolicyRevisionRef: string;
+}
+
+export interface RecipeStudioReleaseState {
+  phase: 'compiled' | 'validated' | 'evaluated' | 'internal_tested';
+  compilationReceipt: RecipeStudioCompilationReceipt;
+  validation: {
+    checkedAt: string;
+    passed: true;
+  } | null;
+  evaluation: {
+    checkedAt: string;
+    runId: string;
+    suiteId: string;
+    suiteRevision: string;
+    passed: true;
+  } | null;
+  internalTest: {
+    checkedAt: string;
+    label: 'internal-test';
+    runId: string;
+    passed: true;
+  } | null;
 }
 
 export interface ServerSurfaceRecord {

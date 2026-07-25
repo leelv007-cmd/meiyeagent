@@ -49,6 +49,7 @@ const RECIPE_ALLOWLIST = [
   'quotePolicyRevisionRef',
   'workflowRevisionRef',
   'promptRevisionRef',
+  'skillRevisionRefs',
   'targetWorkspaceKind',
   'contentHash',
 ] as const;

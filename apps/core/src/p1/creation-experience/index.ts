@@ -6,6 +6,25 @@ export {
   FORBIDDEN_BROWSER_RECIPE_KEYS,
 } from './browser-projection.js';
 export { CreationExperienceCatalogService } from './catalog-service.js';
+export {
+  RECIPE_STUDIO_STAGES,
+  RecipeStudioService,
+  type RecipeStudioCompileInput,
+  type RecipeStudioBlock,
+  type RecipeStudioEvaluationInput,
+  type RecipeStudioInternalTestInput,
+  type RecipeStudioIntentType,
+  type RecipeStudioOutputKind,
+  type RecipeStudioProductionInput,
+  type RecipeStudioRollbackInput,
+  type RecipeStudioStage,
+  type RecipeStudioStorySegment,
+  type RecipeStudioTransitionInput,
+} from './recipe-studio.js';
+export {
+  RECIPE_STUDIO_SAMPLE_DEFINITIONS,
+  listRecipeStudioSampleDefinitions,
+} from './recipe-studio-samples.js';
 export { CreationExperienceFoundationModule } from './foundation-module.js';
 export {
   MemoryCreationExperienceCatalogRepository,
@@ -105,6 +124,8 @@ export {
   type FreezeSessionInput,
   type RecipeBodyInput,
   type RecipeTransitionInput,
+  type RecipeStudioCompilationReceipt,
+  type RecipeStudioReleaseState,
   type RollbackRecipeInput,
   type RollbackSurfaceInput,
   type ServerRecipeRecord,
