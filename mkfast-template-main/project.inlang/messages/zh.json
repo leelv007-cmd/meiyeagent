@@ -297,6 +297,7 @@
   "admin_runtime_mode_recorded_label": "演示录制",
   "admin_runtime_mode_tuzi_description": "通过 Tuzi 中继通道执行真实图片与视频生成。",
   "admin_runtime_mode_tuzi_label": "Tuzi 真实生成",
+  "admin_shell_navigation_group": "运营管理",
   "admin_supply_description": "总览三模态 readiness、双渠道覆盖、六实体关系、生效 revision、运行表与任务下钻、五关联视图与权益池状态。外部网关 Console 仅作技术证据深链。",
   "admin_supply_title": "模型供应与网关控制中心",
   "admin_templates_description": "治理官方模板族和不可变版本。",

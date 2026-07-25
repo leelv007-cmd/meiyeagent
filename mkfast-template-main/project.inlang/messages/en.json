@@ -297,6 +297,7 @@
   "admin_runtime_mode_recorded_label": "Recorded demo",
   "admin_runtime_mode_tuzi_description": "Use the Tuzi relay channel for live image and video generation.",
   "admin_runtime_mode_tuzi_label": "Tuzi live generation",
+  "admin_shell_navigation_group": "Operations",
   "admin_supply_description": "Overview of tri-modal readiness, dual-channel coverage, six-entity relations, effective revisions, run table and task drilldown, five association views, and entitlement/pool status. External gateway consoles are evidence deep-links only.",
   "admin_supply_title": "Model supply & gateway control center",
   "admin_templates_description": "Govern official template families and immutable versions.",
