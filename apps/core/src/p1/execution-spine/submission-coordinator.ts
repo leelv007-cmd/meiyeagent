@@ -305,7 +305,10 @@ function submissionResponse(
 			schemaVersion: submission.snapshot.schemaVersion,
 		},
 		task: submission.task,
-		usageReservation: submission.usageReservation,
+		// Browser contract: the client parses this strictly with only `id`.
+		// Per-bucket units are coordinator-internal; leaking them here broke
+		// every Composer submission after the INC-t26 hotfix.
+		usageReservation: { id: submission.usageReservation.id },
 		work: submission.work,
 	};
 }

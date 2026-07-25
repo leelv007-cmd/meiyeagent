@@ -128,10 +128,9 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 			schemaVersion: "creation-execution-snapshot/v1",
 		},
 		task: { id: "task-1" },
-		usageReservation: {
-			id: "usage-reservation-task-1",
-			units: [{ resource: "copy", quantity: 1 }],
-		},
+		// Browser contract: only `id` — the web client parses this strictly,
+		// and leaking coordinator-internal `units` broke every submission.
+		usageReservation: { id: "usage-reservation-task-1" },
 		work: { id: "work-1" },
 	});
 	assert.equal(starter.starts.length, 1);
@@ -376,6 +375,10 @@ test("authenticated Composer HTTP carries copy, image, and video through one sna
 		assert.equal(body.data.replayed, false);
 		assert.equal(body.data.task.id, `task-${kind}`);
 		assert.equal(body.data.usageReservation.id, `usage-reservation-task-${kind}`);
+		// Browser contract regression (INC-t26 hotfix leak): the client parses
+		// usageReservation strictly with only `id` — any extra key (`units`)
+		// makes every real submission fail client-side after a 202.
+		assert.deepEqual(Object.keys(body.data.usageReservation), ['id']);
 		assert.equal(body.data.snapshot.id, `snapshot-task-${kind}`);
 
 		const replayed = await fetch(`${base}/submissions`, {
