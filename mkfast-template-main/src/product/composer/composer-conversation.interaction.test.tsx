@@ -173,6 +173,25 @@ describe('the transcript is a card flow', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('hosts identity selection as a conversation card, never a form', () => {
+    render(
+      <ComposerConversation
+        identitySlot={
+          <section data-testid="identity-choice">
+            <button type="button">老板娘口吻</button>
+          </section>
+        }
+        onOpenDelivery={() => {}}
+        session={createComposerSession('session-1')}
+        stream={emptyStream}
+      />
+    );
+
+    const conversation = screen.getByTestId('composer-conversation');
+    expect(within(conversation).getByTestId('identity-choice')).toBeVisible();
+    expect(conversation.querySelector('form')).toBeNull();
+  });
+
   it('streams one primary candidate and folds alternatives away', () => {
     const stream = projectResultTokenStream({
       workspaceKind: 'copy',

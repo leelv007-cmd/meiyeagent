@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useIsMobile } from '@/hooks/use-mobile';
+import { emitTelemetry } from '@/lib/product-telemetry';
 import {
   creation_entry_intent_aria,
   creation_entry_intent_placeholder,
@@ -45,6 +46,7 @@ import type {
   BrowserRecipeProjection,
   CreationLensId,
   MarketingIdentityAsset,
+  MarketingIdentityProjection,
   ProductQuoteSnapshot,
   QuestionCard,
 } from '@meiye/contracts';
@@ -99,6 +101,8 @@ import {
 } from './lens-state-machine';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
+import { ComposerIdentityCard } from './composer-identity-card';
+import { projectIdentitySelection } from './identity-selection';
 import { isTwoColumnMobileViewport } from './mobile-layout';
 import {
   composerDestinationCapability,
@@ -301,6 +305,9 @@ export function ComposerHome({
     createComposerSession(sessionIdRef.current)
   );
   const [questionPending, setQuestionPending] = useState(false);
+  const [sessionIdentityId, setSessionIdentityId] = useState<
+    string | null | undefined
+  >(undefined);
 
   const width =
     viewportWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
@@ -326,16 +333,98 @@ export function ComposerHome({
     queryFn: ({ signal }) => fetchComposerSurface(signal),
   });
   const identitiesQuery = useQuery({
-    queryKey: ['marketing-identities'],
+    queryKey: ['marketing-identity-projection'],
     queryFn: ({ signal }) =>
-      queryP1<MarketingIdentityAsset[]>(
+      queryP1<MarketingIdentityProjection>(
         'marketing-identity',
         {
-          action: 'marketing_identities',
-          payload: { includeInactive: false },
+          action: 'marketing_identity_projection',
+          payload: {},
         },
         signal
       ),
+  });
+  const identitySelection = useMemo(
+    () =>
+      projectIdentitySelection({
+        query: identitiesQuery.isPending
+          ? { state: 'loading' }
+          : identitiesQuery.isError
+            ? { state: 'failed' }
+            : {
+                state: 'ready',
+                identities: (identitiesQuery.data?.identities ?? []).map(
+                  (identity) => ({
+                    id: identity.identityId,
+                    revision: String(identity.version),
+                    label: identity.displayName,
+                  })
+                ),
+                defaultIdentityId:
+                  identitiesQuery.data?.defaultIdentity?.identityId ?? null,
+              },
+        sessionIdentityId,
+      }),
+    [
+      identitiesQuery.data,
+      identitiesQuery.isError,
+      identitiesQuery.isPending,
+      sessionIdentityId,
+    ]
+  );
+  const sessionIdentityDecision = useMutation({
+    mutationFn: (identityId: string | null) => {
+      const identity = identitySelection.identities.find(
+        (candidate) => candidate.id === identityId
+      );
+      return commandP1(
+        'marketing-identity',
+        {
+          action: 'select_marketing_identity_for_session',
+          payload: {
+            identity: identity
+              ? { identityId: identity.id, version: Number(identity.revision) }
+              : null,
+            reason: identity
+              ? 'Use the selected voice for this Composer session.'
+              : 'Use the official neutral store voice for this Composer session.',
+            sessionId: sessionIdRef.current,
+          },
+        },
+        `identity-session:${sessionIdRef.current}:${identity?.id ?? 'official-neutral'}`
+      );
+    },
+    onError: () => toast.error('本次身份选择未能记入决策记录，请重试。'),
+  });
+  const defaultIdentityDecision = useMutation({
+    mutationFn: (identityId: string) => {
+      const identity = identitySelection.identities.find(
+        (candidate) => candidate.id === identityId
+      );
+      if (!identity) throw new Error('Selected identity is unavailable.');
+      return commandP1(
+        'marketing-identity',
+        {
+          action: 'set_default_marketing_identity',
+          payload: {
+            expectedDecisionRevision:
+              identitiesQuery.data?.defaultDecision?.decisionRevision ?? 0,
+            identity: {
+              identityId: identity.id,
+              version: Number(identity.revision),
+            },
+            reason: 'Remember the voice chosen in Composer.',
+          },
+        },
+        `identity-default:${identity.id}:${identity.revision}:${Date.now()}`
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['marketing-identity-projection'],
+      });
+    },
+    onError: () => toast.error('默认身份未能保存，请重试。'),
   });
   const usageQuery = useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'projection'),
@@ -531,6 +620,10 @@ export function ComposerHome({
       usageQuery.data.usage[usageResource].available < usageCost
   );
   const quotaBlocked = quotaInsufficient || submissionQuotaBlocked;
+
+  useEffect(() => {
+    emitTelemetry('identity_state', { state: identitySelection.state });
+  }, [identitySelection.state]);
 
   useEffect(() => {
     if (
@@ -846,6 +939,7 @@ export function ComposerHome({
       briefContextRevision: number;
       briefInput: BriefTriggerInput;
       identity?: MarketingIdentityAsset;
+      identityDecision?: { id: string; revision: number };
       lensId: CreationLensId;
       intent: string;
       quote: ProductQuoteSnapshot;
@@ -930,6 +1024,9 @@ export function ComposerHome({
               },
             }
           : {}),
+        ...(input.identityDecision
+          ? { identityDecision: input.identityDecision }
+          : {}),
         idempotencyKey: `composer-submit:${sessionIdRef.current}:${input.quote.revision}`,
         creationMode,
         intent: input.intent,
@@ -1005,7 +1102,9 @@ export function ComposerHome({
     videoConfirmAccepted?: boolean,
     briefConfirmationId?: string
   ) => {
-    const identity = identitiesQuery.data?.[0];
+    const identity = identitiesQuery.data?.identities.find(
+      (candidate) => candidate.identityId === identitySelection.selected?.id
+    );
     const briefInput = briefInputRef.current;
     const briefContextRevision = briefContextRevisionRef.current;
     if (
@@ -1023,6 +1122,15 @@ export function ComposerHome({
       briefContextRevision,
       briefInput,
       identity,
+      ...(identitySelection.source === 'default' &&
+      identitiesQuery.data?.defaultDecision
+        ? {
+            identityDecision: {
+              id: identitiesQuery.data.defaultDecision.decisionId,
+              revision: identitiesQuery.data.defaultDecision.decisionRevision,
+            },
+          }
+        : {}),
       lensId: selectedLens,
       intent,
       quote: quoteQuery.data!,
@@ -1369,6 +1477,20 @@ export function ComposerHome({
       {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
           streaming candidate all land here; nothing navigates away. */}
       <ComposerConversation
+        identitySlot={
+          <ComposerIdentityCard
+            defaultPending={defaultIdentityDecision.isPending}
+            onRemember={(identityId) =>
+              defaultIdentityDecision.mutate(identityId)
+            }
+            onRetry={() => void identitiesQuery.refetch()}
+            onSelect={(identityId) => {
+              setSessionIdentityId(identityId);
+              sessionIdentityDecision.mutate(identityId);
+            }}
+            selection={identitySelection}
+          />
+        }
         onOpenDelivery={openDelivery}
         questionSlot={
           pendingQuestion ? (

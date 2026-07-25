@@ -16,6 +16,10 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 		command(),
 		"2026-07-22T09:00:00.000Z",
 	);
+	assert.deepEqual(snapshot.identityDecision, {
+		id: "default-decision-1",
+		revision: 7,
+	});
 
 	await stage.start({
 		snapshot,
@@ -79,6 +83,7 @@ function command() {
 		},
 		rights: { revision: "rights-r1", summary: "authorized" },
 		identity: { id: "identity-1", revision: "identity-r1" },
+		identityDecision: { id: "default-decision-1", revision: 7 },
 		modelPolicy: {
 			id: "policy-1",
 			revision: "policy-r1",

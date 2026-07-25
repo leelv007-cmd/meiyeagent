@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   merchantConfirmationQuestion,
   merchantExactTextMismatch,
+  merchantIdentityVoiceNotice,
   merchantPartialFailure,
   merchantProgressMessage,
   merchantTaskSummary,
@@ -17,6 +18,7 @@ test('five merchant-facing positions stay free of engineering language', () => {
     merchantProgressMessage('context_injection'),
     merchantProgressMessage('brief_compilation'),
     merchantProgressMessage('execution_selection'),
+    merchantIdentityVoiceNotice(),
     merchantConfirmationQuestion('这次更想突出项目效果还是到店体验？'),
     merchantTaskSummary({
       revision: 3,
@@ -50,6 +52,14 @@ test('video failure language offers safe retry and fallback choices', () => {
   assert.match(failed, /更换参考素材/u);
   assert.match(timedOut, /重新生成/u);
   assert.match(timedOut, /图片发布方案/u);
+});
+
+test('missing identity reminder stays conversational and non-blocking', () => {
+  const notice = merchantIdentityVoiceNotice();
+
+  assert.match(notice, /这次先用门店官方口吻生成/u);
+  assert.match(notice, /直接在对话里告诉我/u);
+  assert.doesNotMatch(notice, /填写|表单|必须|请选择创作类型/u);
 });
 
 test('task summary positively carries strategy, version guidance and usage advice', () => {

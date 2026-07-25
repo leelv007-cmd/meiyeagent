@@ -27,6 +27,13 @@ const revisionReferenceSchema = z
 	})
 	.strict();
 
+const identityDecisionReferenceSchema = z
+	.object({
+		id: identifierSchema,
+		revision: z.number().int().positive(),
+	})
+	.strict();
+
 export const OFFICIAL_NEUTRAL_IDENTITY = {
 	id: "official-neutral",
 	revision: "1",
@@ -121,6 +128,7 @@ const creationSubmissionCommandBaseSchema = z
 		sources: sourceReferencesSchema,
 		rights: rightsSummarySchema,
 		identity: revisionReferenceSchema,
+		identityDecision: identityDecisionReferenceSchema.optional(),
 		modelPolicy: modelPolicySchema,
 		catalogModel: revisionReferenceSchema,
 		quote: revisionReferenceSchema,
@@ -208,6 +216,7 @@ export const creationExecutionSnapshotSchema = z
 		sources: sourceReferencesSchema,
 		rights: rightsSummarySchema,
 		identity: revisionReferenceSchema,
+		identityDecision: identityDecisionReferenceSchema.optional(),
 		modelPolicy: modelPolicySchema,
 		catalogModel: revisionReferenceSchema,
 		quote: revisionReferenceSchema,
@@ -281,6 +290,7 @@ export function createCreationExecutionSnapshot(
 			sources: command.sources,
 			rights: command.rights,
 			identity: command.identity,
+			identityDecision: command.identityDecision,
 			modelPolicy: command.modelPolicy,
 			catalogModel: command.catalogModel,
 			quote: command.quote,

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { registerMarketingIdentityCommandSchema } from '@meiye/contracts';
+import {
+  registerMarketingIdentityCommandSchema,
+  type MarketingIdentityAsset,
+  type MarketingIdentityProjection,
+} from '@meiye/contracts';
 
 import {
   MarketingIdentityFoundationModule,
@@ -43,16 +47,16 @@ test('identity lifecycle is append-only and withdrawn identities are not active'
   const repository = new MemoryMarketingIdentityRepository();
   const module = new MarketingIdentityFoundationModule(
     repository,
-    () => '2026-07-18T01:00:00.000Z',
+    () => '2026-07-18T01:00:00.000Z'
   );
-  const created = await module.execute({
+  const created = (await module.execute({
     context,
     input: registration(),
     idempotencyKey: 'register-1',
-  });
+  })) as MarketingIdentityAsset;
   assert.equal(created.version, 1);
 
-  const departed = await module.execute({
+  const departed = (await module.execute({
     context,
     input: {
       action: 'transition_marketing_identity',
@@ -64,22 +68,22 @@ test('identity lifecycle is append-only and withdrawn identities are not active'
       },
     },
     idempotencyKey: 'depart-1',
-  });
+  })) as MarketingIdentityAsset;
   assert.equal(departed.version, 2);
   assert.equal(departed.status, 'departed');
   assert.deepEqual(
     await repository.listActive('workspace-1', '2026-07-18T02:00:00.000Z'),
-    [],
+    []
   );
   assert.equal(
     (
       await repository.list(
         'workspace-1',
         { identityId: 'identity-1', includeInactive: true },
-        '2026-07-18T02:00:00.000Z',
+        '2026-07-18T02:00:00.000Z'
       )
     )[0]?.version,
-    2,
+    2
   );
 });
 
@@ -90,7 +94,7 @@ test('identity commands reject stale expected versions', async () => {
     actorId: context.userId,
     occurredAt: '2026-07-18T01:00:00.000Z',
     command: registerMarketingIdentityCommandSchema.parse(
-      registration().payload,
+      registration().payload
     ),
   });
 
@@ -106,6 +110,203 @@ test('identity commands reject stale expected versions', async () => {
         reason: '授权撤回',
       },
     }),
-    MarketingIdentityVersionConflictError,
+    MarketingIdentityVersionConflictError
   );
+});
+
+test('session selection is ledgered without changing the remembered default', async () => {
+  const repository = new MemoryMarketingIdentityRepository();
+  const module = new MarketingIdentityFoundationModule(
+    repository,
+    () => '2026-07-18T01:00:00.000Z'
+  );
+  await module.execute({
+    context,
+    input: registration('identity-brand'),
+    idempotencyKey: 'register-brand',
+  });
+  await module.execute({
+    context,
+    input: registration('identity-person'),
+    idempotencyKey: 'register-person',
+  });
+
+  await module.execute({
+    context,
+    input: {
+      action: 'set_default_marketing_identity',
+      payload: {
+        expectedDecisionRevision: 0,
+        identity: { identityId: 'identity-brand', version: 1 },
+        reason: 'Remember the brand voice.',
+      },
+    },
+    idempotencyKey: 'default-brand',
+  });
+  await module.execute({
+    context,
+    input: {
+      action: 'select_marketing_identity_for_session',
+      payload: {
+        identity: { identityId: 'identity-person', version: 1 },
+        reason: 'Use the owner voice for this session.',
+        sessionId: 'composer-session-1',
+      },
+    },
+    idempotencyKey: 'session-person',
+  });
+
+  const projection = (await module.query({
+    context,
+    input: {
+      action: 'marketing_identity_projection',
+      payload: {},
+    },
+  })) as MarketingIdentityProjection;
+  assert.deepEqual(projection.defaultIdentity, {
+    identityId: 'identity-brand',
+    version: 1,
+  });
+  assert.equal(projection.decisionRevision, 2);
+  assert.deepEqual(projection.defaultDecision, {
+    decisionId: 'default-brand',
+    decisionRevision: 1,
+    identity: { identityId: 'identity-brand', version: 1 },
+  });
+  assert.deepEqual(
+    (await repository.listDecisions(context.workspaceId, context.userId)).map(
+      (event) => event.action
+    ),
+    ['set_default_marketing_identity', 'select_marketing_identity_for_session']
+  );
+});
+
+test('a stale or inactive default is omitted from the canonical projection', async () => {
+  const repository = new MemoryMarketingIdentityRepository();
+  const module = new MarketingIdentityFoundationModule(
+    repository,
+    () => '2026-07-18T01:00:00.000Z'
+  );
+  await module.execute({
+    context,
+    input: registration(),
+    idempotencyKey: 'register-identity',
+  });
+  await module.execute({
+    context,
+    input: {
+      action: 'set_default_marketing_identity',
+      payload: {
+        expectedDecisionRevision: 0,
+        identity: { identityId: 'identity-1', version: 1 },
+        reason: 'Remember the owner voice.',
+      },
+    },
+    idempotencyKey: 'default-identity',
+  });
+  await module.execute({
+    context,
+    input: {
+      action: 'transition_marketing_identity',
+      payload: {
+        identityId: 'identity-1',
+        expectedVersion: 1,
+        transition: 'revoke',
+        reason: '授权撤回',
+      },
+    },
+    idempotencyKey: 'revoke-identity',
+  });
+
+  const projection = (await module.query({
+    context,
+    input: { action: 'marketing_identity_projection', payload: {} },
+  })) as MarketingIdentityProjection;
+  assert.equal(projection.defaultIdentity, null);
+  assert.deepEqual(projection.defaultDecision, {
+    decisionId: 'default-identity',
+    decisionRevision: 1,
+    identity: { identityId: 'identity-1', version: 1 },
+  });
+  assert.deepEqual(projection.identities, []);
+});
+
+test('default decisions use CAS and retain actor, time, before/after and rollback audit', async () => {
+  const repository = new MemoryMarketingIdentityRepository();
+  const module = new MarketingIdentityFoundationModule(
+    repository,
+    () => '2026-07-18T01:00:00.000Z'
+  );
+  await module.execute({
+    context,
+    input: registration('identity-brand'),
+    idempotencyKey: 'register-brand',
+  });
+  await module.execute({
+    context,
+    input: registration('identity-person'),
+    idempotencyKey: 'register-person',
+  });
+
+  const first = await repository.setDefault({
+    workspaceId: context.workspaceId,
+    actorId: context.userId,
+    occurredAt: '2026-07-18T01:01:00.000Z',
+    decisionId: 'default-brand',
+    command: {
+      expectedDecisionRevision: 0,
+      identity: { identityId: 'identity-brand', version: 1 },
+      reason: 'Remember the brand voice.',
+    },
+  });
+  const second = await repository.setDefault({
+    workspaceId: context.workspaceId,
+    actorId: context.userId,
+    occurredAt: '2026-07-18T01:02:00.000Z',
+    decisionId: 'default-person',
+    command: {
+      expectedDecisionRevision: first.decisionRevision,
+      identity: { identityId: 'identity-person', version: 1 },
+      reason: 'Remember the owner voice.',
+    },
+  });
+  await assert.rejects(
+    repository.setDefault({
+      workspaceId: context.workspaceId,
+      actorId: context.userId,
+      occurredAt: '2026-07-18T01:03:00.000Z',
+      decisionId: 'stale-default',
+      command: {
+        expectedDecisionRevision: first.decisionRevision,
+        identity: { identityId: 'identity-brand', version: 1 },
+        reason: 'Stale browser choice.',
+      },
+    }),
+    /default changed/u
+  );
+  const rollback = await repository.rollbackDefault({
+    workspaceId: context.workspaceId,
+    actorId: context.userId,
+    occurredAt: '2026-07-18T01:04:00.000Z',
+    decisionId: 'rollback-brand',
+    command: {
+      expectedDecisionRevision: second.decisionRevision,
+      reason: 'Restore the prior brand voice.',
+      targetDecisionRevision: first.decisionRevision,
+    },
+  });
+
+  assert.deepEqual(rollback, {
+    decisionId: 'rollback-brand',
+    decisionRevision: 3,
+    workspaceId: context.workspaceId,
+    actorId: context.userId,
+    action: 'rollback_default_marketing_identity',
+    identity: { identityId: 'identity-brand', version: 1 },
+    previousIdentity: { identityId: 'identity-person', version: 1 },
+    reason: 'Restore the prior brand voice.',
+    rolledBackToDecisionRevision: 1,
+    sessionId: null,
+    occurredAt: '2026-07-18T01:04:00.000Z',
+  });
 });

@@ -10,6 +10,7 @@ import {
 } from './structured-nodes.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
+import { MemoryMarketingIdentityRepository } from '../operations/marketing-identity.js';
 
 const taskFixtures = [
   ['daily_service_exposure', '把新项目写成一条朋友圈文案'],
@@ -109,8 +110,7 @@ test('intent naming turns one blocking gap into one QuestionCard', async () => {
     questionId: 'workflow-question:s1:offer_price',
     workflowId: 'workflow-question',
     workflowRevision: 5,
-    question:
-      '为了让成品更贴合你的想法，想确认一下：这次团购价按哪个金额写？',
+    question: '为了让成品更贴合你的想法，想确认一下：这次团购价按哪个金额写？',
     options: [
       { id: 'option-1', label: '¥398' },
       { id: 'option-2', label: '¥498' },
@@ -150,7 +150,7 @@ test('the server-owned delivery layer cannot be changed by intent model output',
         assetReferences: [],
       },
     },
-    runner,
+    runner
   );
 
   assert.equal(named.declaration.deliveryLayer, 'finished_media');
@@ -264,6 +264,47 @@ test('brief compilation produces complete copy, image and video unit briefs', as
 });
 
 test('brief compilation receives the frozen structured Composer contract before model output', async () => {
+  const identities = new MemoryMarketingIdentityRepository();
+  await identities.register({
+    workspaceId: 'workspace-1',
+    actorId: 'owner-1',
+    occurredAt: '2026-07-22T08:00:00.000Z',
+    command: {
+      identityId: 'identity-1',
+      kind: 'brand',
+      expectedVersion: 0,
+      displayName: '青禾门店',
+      owner: '青禾门店',
+      professionalBoundaries: ['不作医疗承诺'],
+      allowedPlatforms: ['xiaohongshu'],
+      allowedScenes: ['daily_service_exposure'],
+      expressionSamples: ['用门店官方口吻介绍服务。'],
+      effectiveFrom: '2026-07-22T00:00:00.000Z',
+      expiresAt: null,
+      departureHandling: '停用后不再用于新内容',
+      sourceRef: 'source-identity-1',
+      brandClaims: ['社区护理门店'],
+      forbiddenClaims: ['医疗疗效'],
+      visualPrinciples: ['真实门店'],
+      seriesAnchors: ['护理日常'],
+    },
+  });
+  await identities.setDefault({
+    workspaceId: 'workspace-1',
+    actorId: 'owner-1',
+    occurredAt: '2026-07-22T08:10:00.000Z',
+    decisionId: 'default-decision-1',
+    command: {
+      expectedDecisionRevision: 0,
+      identity: { identityId: 'identity-1', version: 1 },
+      reason: 'Remember the voice chosen in Composer.',
+    },
+  });
+  const projection = await identities.project(
+    'workspace-1',
+    'owner-1',
+    '2026-07-22T09:00:00.000Z'
+  );
   const runner = new FixtureStructuredNodeRunner({
     kind: 'copy',
     instructions:
@@ -295,7 +336,14 @@ test('brief compilation receives the frozen structured Composer contract before 
       ],
       sources: { assets: [] },
       rights: { revision: 'rights-r1', summary: 'authorized' },
-      identity: { id: 'identity-1', revision: 'identity-r1' },
+      identity: {
+        id: projection.defaultIdentity!.identityId,
+        revision: String(projection.defaultIdentity!.version),
+      },
+      identityDecision: {
+        id: projection.defaultDecision!.decisionId,
+        revision: projection.defaultDecision!.decisionRevision,
+      },
       modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
       catalogModel: { id: 'model-1', revision: 'model-r1' },
       quote: { id: 'quote-1', revision: 'quote-r1' },
@@ -335,7 +383,8 @@ test('brief compilation receives the frozen structured Composer contract before 
     catalogModel: { id: 'model-1', revision: 'model-r1' },
     contentModules: ['social_cover'],
     deliverables: [{ id: 'copy-primary', kind: 'copy', quantity: 1, order: 1 }],
-    identity: { id: 'identity-1', revision: 'identity-r1' },
+    identity: { id: 'identity-1', revision: '1' },
+    identityDecision: { id: 'default-decision-1', revision: 1 },
     lens: 'copy',
     modelPolicy: { id: 'policy-1', revision: 'policy-r1', mode: 'fixed' },
     operation: 'copy.generate',
@@ -344,6 +393,49 @@ test('brief compilation receives the frozen structured Composer contract before 
     route: { id: 'route-1', revision: 'route-r1' },
     sources: { assets: [] },
   });
+
+  const { identityDecision: _identityDecision, ...snapshotWithoutDefaultRead } =
+    snapshot;
+  const controlRunner = new FixtureStructuredNodeRunner({
+    kind: 'copy',
+    instructions:
+      '使用门店官方中性口吻完成文案。先说明顾客常见困扰，再结合已确认的门店事实解释服务价值；不编造价格、疗效或资质，不使用任何个人身份表达，结尾给出低压力的预约建议。',
+    platform: 'xiaohongshu',
+    cta: '私信预约',
+    factRefs: [],
+    assetRefs: [],
+    identityRefs: [],
+    constraints: [],
+  });
+  await compileExecutionBrief(
+    {
+      workflowId: 'workflow-without-default-read',
+      unitId: 'copy-primary',
+      unitKind: 'copy',
+      declaration: {
+        normalizedIntent: '介绍护理服务并邀请预约',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: [],
+        usedAssetCategories: [],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      bundle: contextBundleFixture(),
+      executionSnapshot: {
+        ...snapshotWithoutDefaultRead,
+        identity: { id: 'official-neutral', revision: '1' },
+      },
+    },
+    controlRunner
+  );
+  const controlPrompt = JSON.parse(controlRunner.requests[0]?.prompt ?? '{}');
+  assert.notDeepEqual(
+    controlPrompt.executionContract.identityDecision,
+    prompt.executionContract.identityDecision,
+    'Removing the default read must remove the decision provenance from compiler input.'
+  );
 });
 
 test('nested completeness reports partial non-empty output independently from schema validity', async () => {
@@ -417,12 +509,12 @@ test('structured nodes execute the prompt content frozen at task admission', asy
         isFallback: false,
       },
     },
-    runner,
+    runner
   );
 
   assert.equal(
     runner.requests[0]?.instructions,
-    'This is the immutable intent prompt accepted with the task.',
+    'This is the immutable intent prompt accepted with the task.'
   );
 });
 
@@ -496,7 +588,7 @@ test('free entry is declared without asking the model to choose the route', asyn
         assetReferences: [],
       },
     },
-    runner,
+    runner
   );
   assert.equal(named.declaration.route, 'free');
   assert.equal(named.declaration.routingSource, 'entry');
@@ -526,7 +618,7 @@ test('model failures choose intent-specific conservative guidance', async () => 
           assetReferences: [],
         },
       },
-      runner,
+      runner
     );
     assert.equal(named.declaration.route, 'guidance');
     assert.equal(named.declaration.routingSource, 'fallback');
@@ -556,9 +648,9 @@ test('authorization and source-fence errors never become routing fallback', asyn
           assetReferences: ['asset-unverified'],
         },
       },
-      runner,
+      runner
     ),
-    /SOURCE_REFERENCE_UNVERIFIED/u,
+    /SOURCE_REFERENCE_UNVERIFIED/u
   );
 });
 

@@ -442,6 +442,12 @@ export function requiredP1Capability(
 
   if (module === 'marketing-identity') {
     if (kind === 'query') return 'workspace.read';
+    if (
+      action === 'set_default_marketing_identity' ||
+      action === 'rollback_default_marketing_identity'
+    ) {
+      return 'personal.preferences.manage';
+    }
     return 'content.create';
   }
 

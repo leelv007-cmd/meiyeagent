@@ -1,11 +1,20 @@
 import {
   marketingIdentityAssetSchema,
+  marketingIdentityProjectionSchema,
   marketingIdentityQuerySchema,
   registerMarketingIdentityCommandSchema,
+  rollbackDefaultMarketingIdentityCommandSchema,
+  selectMarketingIdentityForSessionCommandSchema,
+  setDefaultMarketingIdentityCommandSchema,
   transitionMarketingIdentityCommandSchema,
   type MarketingIdentityAsset,
+  type MarketingIdentityProjection,
   type MarketingIdentityQuery,
+  type MarketingIdentityReference,
   type RegisterMarketingIdentityCommand,
+  type RollbackDefaultMarketingIdentityCommand,
+  type SelectMarketingIdentityForSessionCommand,
+  type SetDefaultMarketingIdentityCommand,
   type TransitionMarketingIdentityCommand,
 } from '@meiye/contracts';
 import type { Pool, PoolClient } from 'pg';
@@ -30,9 +39,59 @@ export interface MarketingIdentityRepository {
   list(
     workspaceId: string,
     query: MarketingIdentityQuery,
-    at: string,
+    at: string
   ): Promise<MarketingIdentityAsset[]>;
-  listActive(workspaceId: string, at: string): Promise<MarketingIdentityAsset[]>;
+  listActive(
+    workspaceId: string,
+    at: string
+  ): Promise<MarketingIdentityAsset[]>;
+  setDefault(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: SetDefaultMarketingIdentityCommand;
+  }): Promise<MarketingIdentityDecisionEvent>;
+  selectForSession(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: SelectMarketingIdentityForSessionCommand;
+  }): Promise<MarketingIdentityDecisionEvent>;
+  rollbackDefault(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: RollbackDefaultMarketingIdentityCommand;
+  }): Promise<MarketingIdentityDecisionEvent>;
+  project(
+    workspaceId: string,
+    actorId: string,
+    at: string
+  ): Promise<MarketingIdentityProjection>;
+  listDecisions(
+    workspaceId: string,
+    actorId: string
+  ): Promise<MarketingIdentityDecisionEvent[]>;
+}
+
+export interface MarketingIdentityDecisionEvent {
+  decisionId: string;
+  decisionRevision: number;
+  workspaceId: string;
+  actorId: string;
+  action:
+    | 'set_default_marketing_identity'
+    | 'rollback_default_marketing_identity'
+    | 'select_marketing_identity_for_session';
+  identity: MarketingIdentityReference | null;
+  previousIdentity: MarketingIdentityReference | null;
+  reason: string;
+  rolledBackToDecisionRevision: number | null;
+  sessionId: string | null;
+  occurredAt: string;
 }
 
 export class MarketingIdentityVersionConflictError extends Error {
@@ -42,10 +101,10 @@ export class MarketingIdentityVersionConflictError extends Error {
   constructor(
     readonly identityId: string,
     readonly expectedVersion: number,
-    readonly currentVersion: number,
+    readonly currentVersion: number
   ) {
     super(
-      `Marketing identity ${identityId} expected version ${expectedVersion}, current version is ${currentVersion}.`,
+      `Marketing identity ${identityId} expected version ${expectedVersion}, current version is ${currentVersion}.`
     );
     this.name = 'MarketingIdentityVersionConflictError';
   }
@@ -61,7 +120,7 @@ function isActive(identity: MarketingIdentityAsset, at: string) {
 }
 
 function transitionStatus(
-  transition: TransitionMarketingIdentityCommand['transition'],
+  transition: TransitionMarketingIdentityCommand['transition']
 ): MarketingIdentityAsset['status'] {
   if (transition === 'revoke') return 'revoked';
   if (transition === 'depart') return 'departed';
@@ -72,6 +131,10 @@ export class MemoryMarketingIdentityRepository
   implements MarketingIdentityRepository
 {
   private readonly identities = new Map<string, MarketingIdentityAsset[]>();
+  private readonly decisions = new Map<
+    string,
+    MarketingIdentityDecisionEvent[]
+  >();
 
   private key(workspaceId: string, identityId: string) {
     return `${workspaceId}\u0000${identityId}`;
@@ -89,7 +152,7 @@ export class MemoryMarketingIdentityRepository
       throw new MarketingIdentityVersionConflictError(
         input.command.identityId,
         input.command.expectedVersion,
-        current.length,
+        current.length
       );
     }
     const { expectedVersion: _expectedVersion, ...attributes } = input.command;
@@ -121,13 +184,13 @@ export class MemoryMarketingIdentityRepository
       throw new MarketingIdentityVersionConflictError(
         input.command.identityId,
         input.command.expectedVersion,
-        current.version,
+        current.version
       );
     }
     if (current.status !== 'active') {
       throw new P1DomainError(
         'INVALID_STATE',
-        'Only an active marketing identity can change lifecycle state.',
+        'Only an active marketing identity can change lifecycle state.'
       );
     }
     const next = marketingIdentityAssetSchema.parse({
@@ -141,25 +204,208 @@ export class MemoryMarketingIdentityRepository
     return structuredClone(next);
   }
 
-  async list(
-    workspaceId: string,
-    query: MarketingIdentityQuery,
-    at: string,
-  ) {
+  async list(workspaceId: string, query: MarketingIdentityQuery, at: string) {
     return [...this.identities.entries()]
       .filter(([key]) => key.startsWith(`${workspaceId}\u0000`))
       .map(([, history]) => history.at(-1))
-      .filter((identity): identity is MarketingIdentityAsset => Boolean(identity))
+      .filter((identity): identity is MarketingIdentityAsset =>
+        Boolean(identity)
+      )
       .filter(
         (identity) =>
           (!query.identityId || identity.identityId === query.identityId) &&
-          (query.includeInactive || isActive(identity, at)),
+          (query.includeInactive || isActive(identity, at))
       )
       .map((identity) => structuredClone(identity));
   }
 
   listActive(workspaceId: string, at: string) {
     return this.list(workspaceId, { includeInactive: false }, at);
+  }
+
+  setDefault(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: SetDefaultMarketingIdentityCommand;
+  }) {
+    return this.recordDefaultDecision(input);
+  }
+
+  selectForSession(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: SelectMarketingIdentityForSessionCommand;
+  }) {
+    return this.recordDecision({
+      ...input,
+      action: 'select_marketing_identity_for_session',
+      identity: input.command.identity,
+      previousIdentity: null,
+      reason: input.command.reason,
+      rolledBackToDecisionRevision: null,
+      sessionId: input.command.sessionId,
+    });
+  }
+
+  rollbackDefault(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: RollbackDefaultMarketingIdentityCommand;
+  }) {
+    return this.recordDefaultDecision(input);
+  }
+
+  async project(workspaceId: string, actorId: string, at: string) {
+    const identities = await this.listActive(workspaceId, at);
+    const events = await this.listDecisions(workspaceId, actorId);
+    const defaultEvent = latestDefaultDecision(events);
+    const remembered = defaultEvent?.identity;
+    const defaultIdentity =
+      remembered &&
+      identities.some(
+        (identity) =>
+          identity.identityId === remembered.identityId &&
+          identity.version === remembered.version
+      )
+        ? remembered
+        : null;
+    return marketingIdentityProjectionSchema.parse({
+      identities,
+      defaultDecision: defaultEvent
+        ? {
+            decisionId: defaultEvent.decisionId,
+            decisionRevision: defaultEvent.decisionRevision,
+            identity: defaultEvent.identity,
+          }
+        : null,
+      defaultIdentity,
+      decisionRevision: events.at(-1)?.decisionRevision ?? 0,
+    });
+  }
+
+  async listDecisions(workspaceId: string, actorId: string) {
+    return structuredClone(
+      this.decisions.get(this.decisionKey(workspaceId, actorId)) ?? []
+    );
+  }
+
+  private decisionKey(workspaceId: string, actorId: string) {
+    return `${workspaceId}\u0000${actorId}`;
+  }
+
+  private async recordDecision(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    action: MarketingIdentityDecisionEvent['action'];
+    identity: MarketingIdentityReference | null;
+    previousIdentity: MarketingIdentityReference | null;
+    reason: string;
+    rolledBackToDecisionRevision: number | null;
+    sessionId: string | null;
+  }) {
+    if (input.identity) {
+      await assertActiveIdentity(
+        this,
+        input.workspaceId,
+        input.identity,
+        input.occurredAt
+      );
+    }
+    const key = this.decisionKey(input.workspaceId, input.actorId);
+    const events = this.decisions.get(key) ?? [];
+    const event: MarketingIdentityDecisionEvent = {
+      decisionId: input.decisionId,
+      decisionRevision: events.length + 1,
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      action: input.action,
+      identity: input.identity,
+      previousIdentity: input.previousIdentity,
+      reason: input.reason,
+      rolledBackToDecisionRevision: input.rolledBackToDecisionRevision,
+      sessionId: input.sessionId,
+      occurredAt: input.occurredAt,
+    };
+    this.decisions.set(key, [...events, event]);
+    return structuredClone(event);
+  }
+
+  private async recordDefaultDecision(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command:
+      | SetDefaultMarketingIdentityCommand
+      | RollbackDefaultMarketingIdentityCommand;
+  }) {
+    const key = this.decisionKey(input.workspaceId, input.actorId);
+    const events = this.decisions.get(key) ?? [];
+    const current = latestDefaultDecision(events);
+    if (
+      (current?.decisionRevision ?? 0) !==
+      input.command.expectedDecisionRevision
+    ) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Marketing identity default changed before this decision was applied.'
+      );
+    }
+    const targetRevision =
+      'targetDecisionRevision' in input.command
+        ? input.command.targetDecisionRevision
+        : null;
+    const target =
+      targetRevision !== null
+        ? events.find(
+            (event) =>
+              event.decisionRevision === targetRevision &&
+              event.action !== 'select_marketing_identity_for_session'
+          )
+        : null;
+    if (targetRevision !== null && !target) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        'Marketing identity default decision was not found.'
+      );
+    }
+    const identity =
+      targetRevision !== null
+        ? target!.identity
+        : 'identity' in input.command
+          ? input.command.identity
+          : null;
+    if (identity) {
+      await assertActiveIdentity(
+        this,
+        input.workspaceId,
+        identity,
+        input.occurredAt
+      );
+    }
+    return this.recordDecision({
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      occurredAt: input.occurredAt,
+      decisionId: input.decisionId,
+      action:
+        targetRevision !== null
+          ? 'rollback_default_marketing_identity'
+          : 'set_default_marketing_identity',
+      identity,
+      previousIdentity: current?.identity ?? null,
+      reason: input.command.reason,
+      rolledBackToDecisionRevision: targetRevision,
+      sessionId: null,
+    });
   }
 }
 
@@ -184,6 +430,74 @@ export class PostgresMarketingIdentityRepository
 
       CREATE INDEX IF NOT EXISTS p1_marketing_identity_latest_idx
         ON p1_marketing_identity_versions (workspace_id, identity_id, version DESC);
+
+      CREATE TABLE IF NOT EXISTS p1_marketing_identity_decisions (
+        workspace_id text NOT NULL,
+        actor_id text NOT NULL,
+        decision_id text NOT NULL,
+        decision_revision bigint NOT NULL CHECK (decision_revision > 0),
+        action text NOT NULL CHECK (
+          action IN (
+            'set_default_marketing_identity',
+            'rollback_default_marketing_identity',
+            'select_marketing_identity_for_session'
+          )
+        ),
+        identity_id text,
+        identity_version bigint CHECK (identity_version > 0),
+        previous_identity_id text,
+        previous_identity_version bigint CHECK (previous_identity_version > 0),
+        reason text NOT NULL,
+        rolled_back_to_decision_revision bigint,
+        session_id text,
+        occurred_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, actor_id, decision_id),
+        UNIQUE (workspace_id, actor_id, decision_revision),
+        CHECK ((identity_id IS NULL) = (identity_version IS NULL)),
+        CHECK (
+          (previous_identity_id IS NULL) = (previous_identity_version IS NULL)
+        )
+      );
+
+      CREATE TABLE IF NOT EXISTS p1_marketing_identity_default_heads (
+        workspace_id text NOT NULL,
+        actor_id text NOT NULL,
+        decision_revision bigint NOT NULL CHECK (decision_revision >= 0),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (workspace_id, actor_id)
+      );
+
+      ALTER TABLE p1_marketing_identity_decisions
+        ADD COLUMN IF NOT EXISTS previous_identity_id text,
+        ADD COLUMN IF NOT EXISTS previous_identity_version bigint,
+        ADD COLUMN IF NOT EXISTS reason text NOT NULL DEFAULT 'legacy decision',
+        ADD COLUMN IF NOT EXISTS rolled_back_to_decision_revision bigint;
+      ALTER TABLE p1_marketing_identity_decisions
+        ALTER COLUMN reason DROP DEFAULT;
+      ALTER TABLE p1_marketing_identity_decisions
+        DROP CONSTRAINT IF EXISTS p1_marketing_identity_decisions_action_check;
+      ALTER TABLE p1_marketing_identity_decisions
+        ADD CONSTRAINT p1_marketing_identity_decisions_action_check CHECK (
+          action IN (
+            'set_default_marketing_identity',
+            'rollback_default_marketing_identity',
+            'select_marketing_identity_for_session'
+          )
+        );
+      INSERT INTO p1_marketing_identity_default_heads (
+        workspace_id, actor_id, decision_revision
+      )
+      SELECT DISTINCT ON (workspace_id, actor_id)
+        workspace_id, actor_id, decision_revision
+      FROM p1_marketing_identity_decisions
+      WHERE action <> 'select_marketing_identity_for_session'
+      ORDER BY workspace_id, actor_id, decision_revision DESC
+      ON CONFLICT (workspace_id, actor_id) DO NOTHING;
+
+      CREATE INDEX IF NOT EXISTS p1_marketing_identity_decision_projection_idx
+        ON p1_marketing_identity_decisions (
+          workspace_id, actor_id, decision_revision DESC
+        );
     `);
   }
 
@@ -193,25 +507,30 @@ export class PostgresMarketingIdentityRepository
     occurredAt: string;
     command: RegisterMarketingIdentityCommand;
   }) {
-    return this.write(input.workspaceId, input.command.identityId, async (client, current) => {
-      const currentVersion = current?.version ?? 0;
-      if (currentVersion !== input.command.expectedVersion) {
-        throw new MarketingIdentityVersionConflictError(
-          input.command.identityId,
-          input.command.expectedVersion,
-          currentVersion,
-        );
+    return this.write(
+      input.workspaceId,
+      input.command.identityId,
+      async (client, current) => {
+        const currentVersion = current?.version ?? 0;
+        if (currentVersion !== input.command.expectedVersion) {
+          throw new MarketingIdentityVersionConflictError(
+            input.command.identityId,
+            input.command.expectedVersion,
+            currentVersion
+          );
+        }
+        const { expectedVersion: _expectedVersion, ...attributes } =
+          input.command;
+        return marketingIdentityAssetSchema.parse({
+          ...attributes,
+          workspaceId: input.workspaceId,
+          version: 1,
+          status: 'active',
+          createdAt: input.occurredAt,
+          createdBy: input.actorId,
+        });
       }
-      const { expectedVersion: _expectedVersion, ...attributes } = input.command;
-      return marketingIdentityAssetSchema.parse({
-        ...attributes,
-        workspaceId: input.workspaceId,
-        version: 1,
-        status: 'active',
-        createdAt: input.occurredAt,
-        createdBy: input.actorId,
-      });
-    });
+    );
   }
 
   async transition(input: {
@@ -220,45 +539,48 @@ export class PostgresMarketingIdentityRepository
     occurredAt: string;
     command: TransitionMarketingIdentityCommand;
   }) {
-    return this.write(input.workspaceId, input.command.identityId, async (_client, current) => {
-      if (!current) {
-        throw new P1DomainError('NOT_FOUND', 'Marketing identity was not found.');
+    return this.write(
+      input.workspaceId,
+      input.command.identityId,
+      async (_client, current) => {
+        if (!current) {
+          throw new P1DomainError(
+            'NOT_FOUND',
+            'Marketing identity was not found.'
+          );
+        }
+        if (current.version !== input.command.expectedVersion) {
+          throw new MarketingIdentityVersionConflictError(
+            input.command.identityId,
+            input.command.expectedVersion,
+            current.version
+          );
+        }
+        if (current.status !== 'active') {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Only an active marketing identity can change lifecycle state.'
+          );
+        }
+        return marketingIdentityAssetSchema.parse({
+          ...current,
+          version: current.version + 1,
+          status: transitionStatus(input.command.transition),
+          createdAt: input.occurredAt,
+          createdBy: input.actorId,
+        });
       }
-      if (current.version !== input.command.expectedVersion) {
-        throw new MarketingIdentityVersionConflictError(
-          input.command.identityId,
-          input.command.expectedVersion,
-          current.version,
-        );
-      }
-      if (current.status !== 'active') {
-        throw new P1DomainError(
-          'INVALID_STATE',
-          'Only an active marketing identity can change lifecycle state.',
-        );
-      }
-      return marketingIdentityAssetSchema.parse({
-        ...current,
-        version: current.version + 1,
-        status: transitionStatus(input.command.transition),
-        createdAt: input.occurredAt,
-        createdBy: input.actorId,
-      });
-    });
+    );
   }
 
-  async list(
-    workspaceId: string,
-    query: MarketingIdentityQuery,
-    at: string,
-  ) {
+  async list(workspaceId: string, query: MarketingIdentityQuery, at: string) {
     const result = await this.pool.query<{ payload: unknown }>(
       `SELECT DISTINCT ON (identity_id) payload
          FROM p1_marketing_identity_versions
         WHERE workspace_id = $1
           AND ($2::text IS NULL OR identity_id = $2)
         ORDER BY identity_id, version DESC`,
-      [workspaceId, query.identityId ?? null],
+      [workspaceId, query.identityId ?? null]
     );
     return result.rows
       .map((row) => marketingIdentityAssetSchema.parse(row.payload))
@@ -269,13 +591,403 @@ export class PostgresMarketingIdentityRepository
     return this.list(workspaceId, { includeInactive: false }, at);
   }
 
+  setDefault(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: SetDefaultMarketingIdentityCommand;
+  }) {
+    return this.recordDefaultDecision(input);
+  }
+
+  selectForSession(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: SelectMarketingIdentityForSessionCommand;
+  }) {
+    return this.recordDecision({
+      ...input,
+      action: 'select_marketing_identity_for_session',
+      identity: input.command.identity,
+      previousIdentity: null,
+      reason: input.command.reason,
+      rolledBackToDecisionRevision: null,
+      sessionId: input.command.sessionId,
+    });
+  }
+
+  rollbackDefault(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command: RollbackDefaultMarketingIdentityCommand;
+  }) {
+    return this.recordDefaultDecision(input);
+  }
+
+  async project(workspaceId: string, actorId: string, at: string) {
+    const identities = await this.listActive(workspaceId, at);
+    const events = await this.listDecisions(workspaceId, actorId);
+    const defaultEvent = latestDefaultDecision(events);
+    const remembered = defaultEvent?.identity;
+    const defaultIdentity =
+      remembered &&
+      identities.some(
+        (identity) =>
+          identity.identityId === remembered.identityId &&
+          identity.version === remembered.version
+      )
+        ? remembered
+        : null;
+    return marketingIdentityProjectionSchema.parse({
+      identities,
+      defaultDecision: defaultEvent
+        ? {
+            decisionId: defaultEvent.decisionId,
+            decisionRevision: defaultEvent.decisionRevision,
+            identity: defaultEvent.identity,
+          }
+        : null,
+      defaultIdentity,
+      decisionRevision: events.at(-1)?.decisionRevision ?? 0,
+    });
+  }
+
+  async listDecisions(workspaceId: string, actorId: string) {
+    const result = await this.pool.query<{
+      decision_id: string;
+      decision_revision: string;
+      action: MarketingIdentityDecisionEvent['action'];
+      identity_id: string | null;
+      identity_version: string | null;
+      previous_identity_id: string | null;
+      previous_identity_version: string | null;
+      reason: string;
+      rolled_back_to_decision_revision: string | null;
+      session_id: string | null;
+      occurred_at: Date;
+    }>(
+      `SELECT decision_id, decision_revision, action, identity_id,
+              identity_version, previous_identity_id,
+              previous_identity_version, reason,
+              rolled_back_to_decision_revision, session_id, occurred_at
+         FROM p1_marketing_identity_decisions
+        WHERE workspace_id = $1 AND actor_id = $2
+        ORDER BY decision_revision`,
+      [workspaceId, actorId]
+    );
+    return result.rows.map((row) => ({
+      decisionId: row.decision_id,
+      decisionRevision: Number(row.decision_revision),
+      workspaceId,
+      actorId,
+      action: row.action,
+      identity:
+        row.identity_id && row.identity_version
+          ? {
+              identityId: row.identity_id,
+              version: Number(row.identity_version),
+            }
+          : null,
+      previousIdentity:
+        row.previous_identity_id && row.previous_identity_version
+          ? {
+              identityId: row.previous_identity_id,
+              version: Number(row.previous_identity_version),
+            }
+          : null,
+      reason: row.reason,
+      rolledBackToDecisionRevision:
+        row.rolled_back_to_decision_revision === null
+          ? null
+          : Number(row.rolled_back_to_decision_revision),
+      sessionId: row.session_id,
+      occurredAt: row.occurred_at.toISOString(),
+    }));
+  }
+
+  private async recordDecision(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    action: MarketingIdentityDecisionEvent['action'];
+    identity: MarketingIdentityReference | null;
+    previousIdentity: MarketingIdentityReference | null;
+    reason: string;
+    rolledBackToDecisionRevision: number | null;
+    sessionId: string | null;
+  }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `${input.workspaceId}:${input.actorId}:marketing-identity-decision`,
+      ]);
+      await this.assertActiveIdentityWithClient(
+        client,
+        input.workspaceId,
+        input.identity,
+        input.occurredAt
+      );
+      const event: MarketingIdentityDecisionEvent = {
+        decisionId: input.decisionId,
+        decisionRevision: await this.nextDecisionRevision(
+          client,
+          input.workspaceId,
+          input.actorId
+        ),
+        workspaceId: input.workspaceId,
+        actorId: input.actorId,
+        action: input.action,
+        identity: input.identity,
+        previousIdentity: input.previousIdentity,
+        reason: input.reason,
+        rolledBackToDecisionRevision: input.rolledBackToDecisionRevision,
+        sessionId: input.sessionId,
+        occurredAt: input.occurredAt,
+      };
+      await this.insertDecision(client, event);
+      await client.query('COMMIT');
+      return event;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async recordDefaultDecision(input: {
+    workspaceId: string;
+    actorId: string;
+    occurredAt: string;
+    decisionId: string;
+    command:
+      | SetDefaultMarketingIdentityCommand
+      | RollbackDefaultMarketingIdentityCommand;
+  }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `${input.workspaceId}:${input.actorId}:marketing-identity-decision`,
+      ]);
+      await client.query(
+        `INSERT INTO p1_marketing_identity_default_heads (
+           workspace_id, actor_id, decision_revision
+         ) VALUES ($1, $2, 0)
+         ON CONFLICT (workspace_id, actor_id) DO NOTHING`,
+        [input.workspaceId, input.actorId]
+      );
+      const headResult = await client.query<{ decision_revision: string }>(
+        `SELECT decision_revision
+           FROM p1_marketing_identity_default_heads
+          WHERE workspace_id = $1 AND actor_id = $2
+          FOR UPDATE`,
+        [input.workspaceId, input.actorId]
+      );
+      const currentRevision = Number(
+        headResult.rows[0]?.decision_revision ?? 0
+      );
+      if (currentRevision !== input.command.expectedDecisionRevision) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Marketing identity default changed before this decision was applied.'
+        );
+      }
+      const previousIdentity =
+        currentRevision === 0
+          ? null
+          : await this.identityForDecisionRevision(
+              client,
+              input.workspaceId,
+              input.actorId,
+              currentRevision
+            );
+      const targetRevision =
+        'targetDecisionRevision' in input.command
+          ? input.command.targetDecisionRevision
+          : null;
+      const identity =
+        targetRevision !== null
+          ? await this.identityForDecisionRevision(
+              client,
+              input.workspaceId,
+              input.actorId,
+              targetRevision
+            )
+          : 'identity' in input.command
+            ? input.command.identity
+            : null;
+      if (targetRevision !== null && !identity) {
+        throw new P1DomainError(
+          'NOT_FOUND',
+          'Marketing identity default decision was not found.'
+        );
+      }
+      await this.assertActiveIdentityWithClient(
+        client,
+        input.workspaceId,
+        identity,
+        input.occurredAt
+      );
+      const event: MarketingIdentityDecisionEvent = {
+        decisionId: input.decisionId,
+        decisionRevision: await this.nextDecisionRevision(
+          client,
+          input.workspaceId,
+          input.actorId
+        ),
+        workspaceId: input.workspaceId,
+        actorId: input.actorId,
+        action:
+          targetRevision !== null
+            ? 'rollback_default_marketing_identity'
+            : 'set_default_marketing_identity',
+        identity,
+        previousIdentity,
+        reason: input.command.reason,
+        rolledBackToDecisionRevision: targetRevision,
+        sessionId: null,
+        occurredAt: input.occurredAt,
+      };
+      await this.insertDecision(client, event);
+      await client.query(
+        `UPDATE p1_marketing_identity_default_heads
+            SET decision_revision = $3, updated_at = now()
+          WHERE workspace_id = $1 AND actor_id = $2`,
+        [input.workspaceId, input.actorId, event.decisionRevision]
+      );
+      await client.query('COMMIT');
+      return event;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async identityForDecisionRevision(
+    client: PoolClient,
+    workspaceId: string,
+    actorId: string,
+    decisionRevision: number
+  ): Promise<MarketingIdentityReference | null> {
+    const result = await client.query<{
+      action: MarketingIdentityDecisionEvent['action'];
+      identity_id: string | null;
+      identity_version: string | null;
+    }>(
+      `SELECT action, identity_id, identity_version
+         FROM p1_marketing_identity_decisions
+        WHERE workspace_id = $1
+          AND actor_id = $2
+          AND decision_revision = $3`,
+      [workspaceId, actorId, decisionRevision]
+    );
+    const row = result.rows[0];
+    if (
+      !row ||
+      row.action === 'select_marketing_identity_for_session' ||
+      !row.identity_id ||
+      !row.identity_version
+    ) {
+      return null;
+    }
+    return {
+      identityId: row.identity_id,
+      version: Number(row.identity_version),
+    };
+  }
+
+  private async assertActiveIdentityWithClient(
+    client: PoolClient,
+    workspaceId: string,
+    reference: MarketingIdentityReference | null,
+    at: string
+  ) {
+    if (!reference) return;
+    const result = await client.query<{ payload: unknown }>(
+      `SELECT payload
+         FROM p1_marketing_identity_versions
+        WHERE workspace_id = $1 AND identity_id = $2
+        ORDER BY version DESC
+        LIMIT 1`,
+      [workspaceId, reference.identityId]
+    );
+    const identity = result.rows[0]
+      ? marketingIdentityAssetSchema.parse(result.rows[0].payload)
+      : null;
+    if (
+      !identity ||
+      identity.version !== reference.version ||
+      !isActive(identity, at)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Marketing identity is missing, inactive, or at a different revision.'
+      );
+    }
+  }
+
+  private async nextDecisionRevision(
+    client: PoolClient,
+    workspaceId: string,
+    actorId: string
+  ) {
+    const result = await client.query<{ revision: string }>(
+      `SELECT (COALESCE(MAX(decision_revision), 0) + 1)::text AS revision
+         FROM p1_marketing_identity_decisions
+        WHERE workspace_id = $1 AND actor_id = $2`,
+      [workspaceId, actorId]
+    );
+    return Number(result.rows[0]?.revision ?? 1);
+  }
+
+  private async insertDecision(
+    client: PoolClient,
+    event: MarketingIdentityDecisionEvent
+  ) {
+    await client.query(
+      `INSERT INTO p1_marketing_identity_decisions (
+         workspace_id, actor_id, decision_id, decision_revision, action,
+         identity_id, identity_version, previous_identity_id,
+         previous_identity_version, reason, rolled_back_to_decision_revision,
+         session_id, occurred_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+       )`,
+      [
+        event.workspaceId,
+        event.actorId,
+        event.decisionId,
+        event.decisionRevision,
+        event.action,
+        event.identity?.identityId ?? null,
+        event.identity?.version ?? null,
+        event.previousIdentity?.identityId ?? null,
+        event.previousIdentity?.version ?? null,
+        event.reason,
+        event.rolledBackToDecisionRevision,
+        event.sessionId,
+        event.occurredAt,
+      ]
+    );
+  }
+
   private async write(
     workspaceId: string,
     identityId: string,
     create: (
       client: PoolClient,
-      current: MarketingIdentityAsset | null,
-    ) => Promise<MarketingIdentityAsset>,
+      current: MarketingIdentityAsset | null
+    ) => Promise<MarketingIdentityAsset>
   ) {
     const client = await this.pool.connect();
     try {
@@ -290,7 +1002,7 @@ export class PostgresMarketingIdentityRepository
           ORDER BY version DESC
           LIMIT 1
           FOR UPDATE`,
-        [workspaceId, identityId],
+        [workspaceId, identityId]
       );
       const current = result.rows[0]
         ? marketingIdentityAssetSchema.parse(result.rows[0].payload)
@@ -307,7 +1019,7 @@ export class PostgresMarketingIdentityRepository
           identity.status,
           JSON.stringify(identity),
           identity.createdAt,
-        ],
+        ]
       );
       await client.query(
         `INSERT INTO p1_context_source_revisions (
@@ -316,7 +1028,7 @@ export class PostgresMarketingIdentityRepository
          ON CONFLICT (workspace_id, source_key)
          DO UPDATE SET revision = p1_context_source_revisions.revision + 1,
                        updated_at = now()`,
-        [workspaceId],
+        [workspaceId]
       );
       await client.query('COMMIT');
       return identity;
@@ -331,7 +1043,10 @@ export class PostgresMarketingIdentityRepository
 
 function action(input: Record<string, unknown>) {
   if (typeof input.action !== 'string' || input.action.trim().length === 0) {
-    throw new P1DomainError('INVALID_STATE', 'A marketing identity action is required.');
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'A marketing identity action is required.'
+    );
   }
   return input.action;
 }
@@ -339,7 +1054,10 @@ function action(input: Record<string, unknown>) {
 function payload(input: Record<string, unknown>) {
   const value = input.payload;
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new P1DomainError('INVALID_STATE', 'A marketing identity payload is required.');
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'A marketing identity payload is required.'
+    );
   }
   return value;
 }
@@ -347,7 +1065,10 @@ function payload(input: Record<string, unknown>) {
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value);
   if (!parsed.success) {
-    throw new P1DomainError('INVALID_STATE', 'Invalid marketing identity payload.');
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Invalid marketing identity payload.'
+    );
   }
   return parsed.data;
 }
@@ -357,7 +1078,7 @@ export class MarketingIdentityFoundationModule implements P1OperationModule {
 
   constructor(
     private readonly identities: MarketingIdentityRepository,
-    private readonly now: () => string = () => new Date().toISOString(),
+    private readonly now: () => string = () => new Date().toISOString()
   ) {}
 
   execute(args: {
@@ -371,7 +1092,10 @@ export class MarketingIdentityFoundationModule implements P1OperationModule {
         workspaceId: args.context.workspaceId,
         actorId: args.context.userId,
         occurredAt: this.now(),
-        command: parse(registerMarketingIdentityCommandSchema, payload(args.input)),
+        command: parse(
+          registerMarketingIdentityCommandSchema,
+          payload(args.input)
+        ),
       });
     }
     if (name === 'transition_marketing_identity') {
@@ -379,20 +1103,108 @@ export class MarketingIdentityFoundationModule implements P1OperationModule {
         workspaceId: args.context.workspaceId,
         actorId: args.context.userId,
         occurredAt: this.now(),
-        command: parse(transitionMarketingIdentityCommandSchema, payload(args.input)),
+        command: parse(
+          transitionMarketingIdentityCommandSchema,
+          payload(args.input)
+        ),
       });
     }
-    throw new P1DomainError('INVALID_STATE', `Unknown marketing identity command ${name}.`);
+    if (name === 'set_default_marketing_identity') {
+      return this.identities.setDefault({
+        workspaceId: args.context.workspaceId,
+        actorId: args.context.userId,
+        occurredAt: this.now(),
+        decisionId: args.idempotencyKey,
+        command: parse(
+          setDefaultMarketingIdentityCommandSchema,
+          payload(args.input)
+        ),
+      });
+    }
+    if (name === 'select_marketing_identity_for_session') {
+      return this.identities.selectForSession({
+        workspaceId: args.context.workspaceId,
+        actorId: args.context.userId,
+        occurredAt: this.now(),
+        decisionId: args.idempotencyKey,
+        command: parse(
+          selectMarketingIdentityForSessionCommandSchema,
+          payload(args.input)
+        ),
+      });
+    }
+    if (name === 'rollback_default_marketing_identity') {
+      return this.identities.rollbackDefault({
+        workspaceId: args.context.workspaceId,
+        actorId: args.context.userId,
+        occurredAt: this.now(),
+        decisionId: args.idempotencyKey,
+        command: parse(
+          rollbackDefaultMarketingIdentityCommandSchema,
+          payload(args.input)
+        ),
+      });
+    }
+    throw new P1DomainError(
+      'INVALID_STATE',
+      `Unknown marketing identity command ${name}.`
+    );
   }
 
   query(args: { context: P1Context; input: Record<string, unknown> }) {
-    if (action(args.input) !== 'marketing_identities') {
-      throw new P1DomainError('INVALID_STATE', 'Unknown marketing identity query.');
+    const name = action(args.input);
+    if (name === 'marketing_identity_projection') {
+      parse(z.object({}).strict(), payload(args.input));
+      return this.identities.project(
+        args.context.workspaceId,
+        args.context.userId,
+        this.now()
+      );
+    }
+    if (name === 'marketing_identity_decisions') {
+      parse(z.object({}).strict(), payload(args.input));
+      return this.identities.listDecisions(
+        args.context.workspaceId,
+        args.context.userId
+      );
+    }
+    if (name !== 'marketing_identities') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Unknown marketing identity query.'
+      );
     }
     return this.identities.list(
       args.context.workspaceId,
       parse(marketingIdentityQuerySchema, payload(args.input)),
-      this.now(),
+      this.now()
+    );
+  }
+}
+
+function latestDefaultDecision(events: MarketingIdentityDecisionEvent[]) {
+  return events
+    .filter((event) => event.action !== 'select_marketing_identity_for_session')
+    .at(-1);
+}
+
+async function assertActiveIdentity(
+  repository: Pick<MarketingIdentityRepository, 'listActive'>,
+  workspaceId: string,
+  reference: MarketingIdentityReference,
+  at: string
+) {
+  const identities = await repository.listActive(workspaceId, at);
+  if (
+    !identities.some(
+      (identity) =>
+        identity.identityId === reference.identityId &&
+        identity.version === reference.version
+    )
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Marketing identity is missing, inactive, or at a different revision.'
     );
   }
 }

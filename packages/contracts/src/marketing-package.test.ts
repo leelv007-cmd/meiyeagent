@@ -5,11 +5,14 @@ import {
   PROMOTIONAL_MATERIAL_SPECS,
   editContentPackageVersionCommandSchema,
   hotTopicOpportunityCardSchema,
+  marketingIdentityProjectionSchema,
   marketingPackageEvidenceSchema,
   promotionalMaterialReceiptExtensionSchema,
   promotionOfferCardSchema,
   quickEditExportUseDeliverySchema,
   quickEditIntentSchema,
+  selectMarketingIdentityForSessionCommandSchema,
+  setDefaultMarketingIdentityCommandSchema,
 } from './index.js';
 
 const capabilities = {
@@ -157,4 +160,56 @@ test('a historical light composer carrier remains readable without trusted linea
   assert.equal(result.kind, 'light_composer');
   assert.equal(result.sourcePackageId, undefined);
   assert.equal(result.sourceVersionId, undefined);
+});
+
+test('identity default and session selection stay separate revision-bound decisions', () => {
+  const identity = { identityId: 'identity-brand', version: 3 };
+  assert.deepEqual(
+    setDefaultMarketingIdentityCommandSchema.parse({
+      expectedDecisionRevision: 0,
+      identity,
+      reason: 'Remember the owner voice selected in Composer.',
+    }),
+    {
+      expectedDecisionRevision: 0,
+      identity,
+      reason: 'Remember the owner voice selected in Composer.',
+    }
+  );
+  assert.deepEqual(
+    selectMarketingIdentityForSessionCommandSchema.parse({
+      identity,
+      reason: 'Use the owner voice for this creation only.',
+      sessionId: 'composer-session-1',
+    }),
+    {
+      identity,
+      reason: 'Use the owner voice for this creation only.',
+      sessionId: 'composer-session-1',
+    }
+  );
+  assert.equal(
+    setDefaultMarketingIdentityCommandSchema.safeParse({
+      identity: { identityId: 'identity-brand' },
+    }).success,
+    false
+  );
+});
+
+test('canonical identity projection carries the remembered default revision', () => {
+  const projection = marketingIdentityProjectionSchema.parse({
+    identities: [],
+    defaultDecision: {
+      decisionId: 'decision-default-2',
+      decisionRevision: 2,
+      identity: { identityId: 'identity-brand', version: 3 },
+    },
+    defaultIdentity: { identityId: 'identity-brand', version: 3 },
+    decisionRevision: 2,
+  });
+
+  assert.deepEqual(projection.defaultIdentity, {
+    identityId: 'identity-brand',
+    version: 3,
+  });
 });
