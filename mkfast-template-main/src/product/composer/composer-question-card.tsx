@@ -110,7 +110,7 @@ export function ComposerQuestionCard({
    * Race guard. The merchant answering at t=29 and the countdown reaching zero
    * at t=30 are a real race, and the answer must win. Settlement is claimed
    * synchronously — before any await — so the timer sees it and never posts the
-   * competing 「跳过」 at all. (Core would refuse the second decision anyway:
+   * competing default at all. (Core would refuse the second decision anyway:
    * consumption is CAS exactly-once. This keeps the card's own terminal state
    * truthful about which decision actually landed.)
    *
