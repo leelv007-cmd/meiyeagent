@@ -8,8 +8,10 @@ import {
   merchantParseDisclosure,
   merchantParseFallback,
   merchantParseProgress,
+  merchantParseTaskFailed,
   merchantPartialFailure,
   merchantProgressMessage,
+  merchantSensitiveDocumentFallback,
   merchantTaskSummary,
   merchantVisibleLanguageIssues,
 } from './merchant-delivery-language.js';
@@ -41,6 +43,8 @@ test('five merchant-facing positions stay free of engineering language', () => {
     merchantParseFallback('failed'),
     merchantParseFallback('timeout'),
     merchantParseFallback('rate_limited'),
+    merchantSensitiveDocumentFallback(),
+    merchantParseTaskFailed(),
     merchantAssetRightsSoftPrompt(),
   ];
 
@@ -90,5 +94,18 @@ test('parse disclosure and rights reminder are soft prompts, not gates', () => {
       'MinerU parse pipeline returned a candidate schema.',
     ),
     ['candidate', 'schema', 'MinerU', 'parse', 'pipeline'],
+  );
+});
+
+test('sensitive documents and stopped batches explain the honest next step', () => {
+  assert.match(merchantSensitiveDocumentFallback(), /不会交给外部服务/u);
+  assert.doesNotMatch(merchantSensitiveDocumentFallback(), /失败|没有整理成功/u);
+  assert.match(merchantParseTaskFailed(), /已经停止/u);
+  assert.match(merchantParseTaskFailed(), /手动填写/u);
+  assert.deepEqual(
+    merchantVisibleLanguageIssues(
+      `${merchantSensitiveDocumentFallback()} ${merchantParseTaskFailed()}`,
+    ),
+    [],
   );
 });

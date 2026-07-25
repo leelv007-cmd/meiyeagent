@@ -321,7 +321,7 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
       }
       case 'asset_draft_view': {
         const input = parse(assetDraftViewQuerySchema, value);
-        return this.requireParsing().draft(
+        return this.requireParsing().draftView(
           args.context.workspaceId,
           input.draftId,
           input.revision,

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   assetDraftSchema,
+  assetDraftViewSchema,
   parseAssetBatchCommandSchema,
   parseTaskSchema,
 } from './parse-service.js';
@@ -40,6 +41,58 @@ test('parsed draft fields stay unconfirmed and carry photo provenance', () => {
       origin: 'manual',
     }),
   );
+});
+
+test('fallback drafts stay distinct from merchant-authored drafts', () => {
+  const fallback = assetDraftSchema.parse({
+    draftId: 'draft-fallback',
+    revision: 1,
+    workspaceId: 'workspace-a',
+    taskId: 'task-fallback',
+    sourceAssetId: 'asset-fallback',
+    parsedDocumentId: null,
+    target: 'price_list',
+    origin: 'fallback',
+    fields: [
+      {
+        key: 'fallback.message',
+        value: '请直接确认关键信息。',
+        provenance: 'ai_suggestion',
+        status: 'unconfirmed',
+      },
+    ],
+    factCandidates: [],
+    visualClassification: null,
+    createdAt: now,
+  });
+
+  assert.equal(fallback.origin, 'fallback');
+  assert.throws(() =>
+    assetDraftSchema.parse({
+      ...fallback,
+      origin: 'manual',
+    }),
+  );
+});
+
+test('draft views disclose whether parsed content came from a fixture', () => {
+  const view = assetDraftViewSchema.parse({
+    draftId: 'draft-fixture',
+    revision: 1,
+    workspaceId: 'workspace-a',
+    taskId: 'task-fixture',
+    sourceAssetId: 'asset-fixture',
+    parsedDocumentId: 'parsed-fixture',
+    target: 'price_list',
+    origin: 'parsed',
+    fields: [],
+    factCandidates: [],
+    visualClassification: null,
+    parser: { kind: 'fixture' },
+    createdAt: now,
+  });
+
+  assert.equal(view.parser?.kind, 'fixture');
 });
 
 test('single and batch task modes cannot silently swap cardinality', () => {

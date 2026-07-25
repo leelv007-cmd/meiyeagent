@@ -36,6 +36,8 @@ export const VISUAL_ASSET_SLOTS = [
   'subject_person',
 ] as const;
 
+export const PARSE_PROVIDER_KINDS = ['mineru_official', 'fixture'] as const;
+
 export const parseSourceAssetInputSchema = z
   .object({
     assetId: idSchema,
@@ -65,7 +67,7 @@ export const parsedDocumentSchema = z
     sourceAssetId: idSchema,
     parser: z
       .object({
-        kind: z.enum(['mineru_official', 'fixture']),
+        kind: z.enum(PARSE_PROVIDER_KINDS),
         version: idSchema,
         providerTaskRef: idSchema,
       })
@@ -119,7 +121,7 @@ export const assetDraftSchema = z
     sourceAssetId: idSchema,
     parsedDocumentId: idSchema.nullable(),
     target: z.enum(ASSET_DRAFT_TARGETS),
-    origin: z.enum(['parsed', 'manual', 'ai_suggestion']),
+    origin: z.enum(['parsed', 'manual', 'fallback', 'ai_suggestion']),
     fields: z.array(assetDraftFieldSchema),
     factCandidates: z.array(storeFactCandidateDraftSchema),
     visualClassification: visualAssetClassificationSchema.nullable(),
@@ -150,6 +152,17 @@ export const assetDraftSchema = z
       });
     }
   });
+
+export const assetDraftViewSchema = assetDraftSchema
+  .extend({
+    parser: z
+      .object({
+        kind: z.enum(PARSE_PROVIDER_KINDS),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
 
 export const parseTaskSchema = z
   .object({
@@ -330,6 +343,7 @@ export type ParseSourceAssetInput = z.infer<
 export type ParseOwnedAsset = z.infer<typeof parseOwnedAssetSchema>;
 export type ParsedDocument = z.infer<typeof parsedDocumentSchema>;
 export type AssetDraft = z.infer<typeof assetDraftSchema>;
+export type AssetDraftView = z.infer<typeof assetDraftViewSchema>;
 export type ParseTask = z.infer<typeof parseTaskSchema>;
 export type ParseSingleAssetCommand = z.infer<
   typeof parseSingleAssetCommandSchema

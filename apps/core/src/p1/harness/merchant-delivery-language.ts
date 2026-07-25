@@ -88,6 +88,14 @@ export function merchantParseFallback(reason: 'failed' | 'timeout' | 'rate_limit
   return `${detail}，可以一键转为手动填写，已经上传的内容会为你保留。`;
 }
 
+export function merchantSensitiveDocumentFallback() {
+  return '证件类资料不会交给外部服务整理，请直接确认关键信息；已经上传的内容会为你保留。';
+}
+
+export function merchantParseTaskFailed() {
+  return '这批资料的自动整理已经停止，请直接转为手动填写；已经上传的内容会为你保留。';
+}
+
 export function merchantAssetRightsSoftPrompt() {
   return '如果照片里有顾客，请确认已经获得对方同意；这一步可以稍后补充，不影响继续整理。';
 }

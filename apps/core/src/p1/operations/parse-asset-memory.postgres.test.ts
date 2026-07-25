@@ -112,8 +112,12 @@ test(
             revision: parsed.draft.revision,
           },
         },
-      })) as { fields: Array<{ status: string }> };
+      })) as {
+        fields: Array<{ status: string }>;
+        parser: { kind: string } | null;
+      };
       assert.ok(draftView.fields.every((field) => field.status === 'unconfirmed'));
+      assert.equal(draftView.parser?.kind, 'fixture');
       const experience = (await module.query({
         context,
         input: {
@@ -225,7 +229,7 @@ test(
           payload: { taskId: 't24-unavailable-task', source: manualSource },
         },
       })) as { draft: { origin: string } };
-      assert.equal(fallback.draft.origin, 'manual');
+      assert.equal(fallback.draft.origin, 'fallback');
       const manualDraft = (await unavailableModule.execute({
         context,
         idempotencyKey: 't24-manual-draft',

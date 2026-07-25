@@ -1,5 +1,6 @@
 import {
   assetDraftSchema,
+  assetDraftViewSchema,
   assetIntakeExperienceSchema,
   assetIntakeGuidanceConfigSchema,
   ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
@@ -19,6 +20,7 @@ import {
   type PrepareManualAssetDraftCommand,
   type StoreFactCandidateDraft,
 } from '@meiye/contracts';
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 import {
@@ -26,6 +28,8 @@ import {
   merchantParseDisclosure,
   merchantParseFallback,
   merchantParseProgress,
+  merchantParseTaskFailed,
+  merchantSensitiveDocumentFallback,
 } from '../harness/merchant-delivery-language.js';
 import type {
   TracerExternalEffect,
@@ -36,6 +40,7 @@ import type {
 export const PARSE_BATCH_JOB_KIND = 'asset.parse-batch';
 
 export type ParseFailureReason = 'failed' | 'timeout' | 'rate_limited';
+type DraftFallbackReason = ParseFailureReason | 'sensitive_policy';
 
 export class ParseProviderError extends Error {
   constructor(
@@ -243,6 +248,29 @@ export interface ParseSourceAssetAuthorizer {
     workspaceId: string,
     source: ParseSourceAssetInput,
   ): Promise<boolean>;
+}
+
+export class StoredParseSourceAssetAuthorizer
+  implements ParseSourceAssetAuthorizer
+{
+  constructor(
+    private readonly storage: {
+      read(objectKey: string): Promise<{ bytes: Uint8Array }>;
+    },
+  ) {}
+
+  async isAuthorized(workspaceId: string, source: ParseSourceAssetInput) {
+    if (!source.objectKey.startsWith(`${workspaceId}/`)) return false;
+    try {
+      const stored = await this.storage.read(source.objectKey);
+      return (
+        stored.bytes.byteLength === source.sizeBytes &&
+        createHash('sha256').update(stored.bytes).digest('hex') === source.sha256
+      );
+    } catch {
+      return false;
+    }
+  }
 }
 
 export interface DocumentParseProvider {
@@ -586,7 +614,7 @@ export class ParseService {
             workspaceId,
             sourceAssetId,
           )
-        )?.origin === 'manual';
+        )?.origin === 'fallback';
     }
     for (const [index, sourceAssetId] of current.sourceAssetIds.entries()) {
       if (index < current.progress.completed) continue;
@@ -610,6 +638,26 @@ export class ParseService {
     return this.repository.updateTask({
       ...current,
       status: fallback ? 'completed_with_fallback' : 'completed',
+      updatedAt: this.now(),
+    });
+  }
+
+  async failBatchTask(workspaceId: string, taskId: string) {
+    const task = await this.requireTask(workspaceId, taskId);
+    if (
+      task.status === 'completed' ||
+      task.status === 'completed_with_fallback' ||
+      task.status === 'failed'
+    ) {
+      return task;
+    }
+    return this.repository.updateTask({
+      ...task,
+      status: 'failed',
+      progress: {
+        ...task.progress,
+        message: merchantParseTaskFailed(),
+      },
       updatedAt: this.now(),
     });
   }
@@ -679,6 +727,21 @@ export class ParseService {
       );
     }
     return draft;
+  }
+
+  async draftView(
+    workspaceId: string,
+    draftIdValue: string,
+    revision?: number,
+  ) {
+    const draft = await this.draft(workspaceId, draftIdValue, revision);
+    const document = draft.parsedDocumentId
+      ? await this.repository.getDocument(workspaceId, draft.parsedDocumentId)
+      : null;
+    return assetDraftViewSchema.parse({
+      ...draft,
+      parser: document ? { kind: document.parser.kind } : null,
+    });
   }
 
   async experience(input: { industry: string; assetType: string }) {
@@ -778,8 +841,15 @@ export class ParseService {
     if (source.inputKind === 'sensitive_document') {
       return {
         fallback: true,
-        draft: await this.fallbackDraft(task, source, 'failed'),
+        draft: await this.fallbackDraft(task, source, 'sensitive_policy'),
       };
+    }
+    let current = await this.repository.latestDraftForSource(
+      source.workspaceId,
+      source.assetId,
+    );
+    if (current?.origin === 'manual') {
+      return { fallback: false, draft: current };
     }
     try {
       const parsedDocumentId = documentId(task.taskId, source.assetId);
@@ -811,7 +881,7 @@ export class ParseService {
           createdAt: this.now(),
         });
       }
-      const current = await this.repository.latestDraftForSource(
+      current = await this.repository.latestDraftForSource(
         source.workspaceId,
         source.assetId,
       );
@@ -899,7 +969,7 @@ export class ParseService {
   private async fallbackDraft(
     task: ParseTask,
     source: ParseOwnedAsset,
-    reason: ParseFailureReason,
+    reason: DraftFallbackReason,
   ) {
     const current = await this.repository.latestDraftForSource(
       source.workspaceId,
@@ -914,18 +984,21 @@ export class ParseService {
       sourceAssetId: source.assetId,
       parsedDocumentId: null,
       target: source.target,
-      origin: 'manual',
+      origin: 'fallback',
       fields: [
         {
           key: fallbackFieldKey(source.target),
           value: null,
-          provenance: 'user',
+          provenance: 'ai_suggestion',
           status: 'unconfirmed',
         },
         {
           key: 'fallback.message',
-          value: merchantParseFallback(reason),
-          provenance: 'user',
+          value:
+            reason === 'sensitive_policy'
+              ? merchantSensitiveDocumentFallback()
+              : merchantParseFallback(reason),
+          provenance: 'ai_suggestion',
           status: 'unconfirmed',
         },
       ],
@@ -970,10 +1043,16 @@ export class ParseBatchJobEffect implements TracerExternalEffect {
   }
 
   private async run(request: TracerExternalRequest) {
-    const task = await this.service.runBatchTask(
-      request.workspaceId,
-      request.jobId,
-    );
+    let task: ParseTask;
+    try {
+      task = await this.service.runBatchTask(
+        request.workspaceId,
+        request.jobId,
+      );
+    } catch (error) {
+      await this.service.failBatchTask(request.workspaceId, request.jobId);
+      throw error;
+    }
     return {
       acceptance: 'accepted' as const,
       delivery: 'completed' as const,

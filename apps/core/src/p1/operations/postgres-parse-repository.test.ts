@@ -7,6 +7,7 @@ import {
   FixtureAssetDraftCompiler,
   FixtureDocumentParseProvider,
   FixtureVisualAssetClassifier,
+  ParseBatchJobEffect,
   ParseService,
 } from './parse-service.js';
 import { PostgresParseRepository } from './postgres-parse-repository.js';
@@ -110,6 +111,74 @@ test(
             ],
           ),
         /foreign key/u,
+      );
+    } finally {
+      await repository.deleteWorkspaceForTest(workspaceId);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres marks the parse projection failed when its durable carrier dies',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async (t) => {
+    const pool = new Pool({ connectionString });
+    const repository = new PostgresParseRepository(pool);
+    const workspaceId = `t24-parse-failed-${randomUUID()}`;
+    await repository.migrate();
+    const service = new ParseService(
+      repository,
+      new FixtureDocumentParseProvider(),
+      new FixtureAssetDraftCompiler(),
+      new FixtureVisualAssetClassifier(),
+      { isAuthorized: async () => true },
+      undefined,
+      undefined,
+      () => now,
+    );
+    try {
+      await repository.recordTask({
+        taskId: 'dead-carrier-pg',
+        workspaceId,
+        mode: 'batch_async',
+        status: 'queued',
+        sourceAssetIds: ['missing-a', 'missing-b'],
+        progress: {
+          completed: 0,
+          total: 2,
+          message: '正在整理你上传的资料，已完成 0/2 份；离开后也会继续处理。',
+        },
+        disclosure:
+          '为了帮你少打字，上传的内容会交给第三方解析服务处理；也可以随时跳过，直接手动填写。',
+        createdAt: now,
+        updatedAt: now,
+      });
+      const effect = new ParseBatchJobEffect(service);
+
+      await assert.rejects(
+        effect.execute({
+          workspaceId,
+          jobId: 'dead-carrier-pg',
+          kind: 'asset.parse-batch',
+          payload: { taskId: 'dead-carrier-pg' },
+          idempotencyKey: 'dead-carrier-pg',
+          effectIdempotencyKey: 'dead-carrier-pg:effect',
+        }),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'SOURCE_NOT_FOUND',
+      );
+      const failed = await repository.getTask(workspaceId, 'dead-carrier-pg');
+      assert.equal(failed?.status, 'failed');
+      assert.match(failed?.progress.message ?? '', /已经停止/u);
+      assert.match(failed?.progress.message ?? '', /手动填写/u);
+      t.diagnostic(
+        `dead_carrier_projection=${JSON.stringify({
+          status: failed?.status,
+          completed: failed?.progress.completed,
+        })}`,
       );
     } finally {
       await repository.deleteWorkspaceForTest(workspaceId);

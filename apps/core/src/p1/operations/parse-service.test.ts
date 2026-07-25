@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import type {
@@ -11,8 +12,10 @@ import {
   FixtureDocumentParseProvider,
   FixtureVisualAssetClassifier,
   MemoryParseRepository,
+  ParseBatchJobEffect,
   ParseProviderError,
   ParseService,
+  StoredParseSourceAssetAuthorizer,
   type DocumentParseProvider,
 } from './parse-service.js';
 
@@ -54,10 +57,20 @@ test('single fixture parse persists original, parsed and unconfirmed draft layer
     )?.parser.kind,
     'fixture',
   );
+  assert.equal(
+    (
+      await service.draftView(
+        context.workspaceId,
+        result.draft.draftId,
+        result.draft.revision,
+      )
+    ).parser?.kind,
+    'fixture',
+  );
 });
 
 for (const reason of ['failed', 'timeout', 'rate_limited'] as const) {
-  test(`parse ${reason} returns the same-schema manual fallback without blocking`, async () => {
+  test(`parse ${reason} returns a distinct fallback draft without blocking`, async () => {
     const service = fixtureService(new MemoryParseRepository(), {
       async parse() {
         throw new ParseProviderError(reason, reason);
@@ -69,7 +82,7 @@ for (const reason of ['failed', 'timeout', 'rate_limited'] as const) {
     });
 
     assert.equal(result.task.status, 'completed_with_fallback');
-    assert.equal(result.draft.origin, 'manual');
+    assert.equal(result.draft.origin, 'fallback');
     assert.equal(result.draft.parsedDocumentId, null);
     assert.equal(result.draft.fields[0]?.key, 'offer.price');
     assert.equal(result.draft.fields[0]?.value, null);
@@ -79,6 +92,60 @@ for (const reason of ['failed', 'timeout', 'rate_limited'] as const) {
     );
   });
 }
+
+test('a fallback draft can recover into a parsed revision on retry', async () => {
+  let calls = 0;
+  const repository = new MemoryParseRepository();
+  const provider: DocumentParseProvider = {
+    async parse(input) {
+      calls += 1;
+      if (calls === 1) {
+        throw new ParseProviderError('rate_limited', 'rate limited');
+      }
+      return new FixtureDocumentParseProvider().parse(input);
+    },
+  };
+  const service = fixtureService(repository, provider);
+  const first = await service.parseSingle(context, {
+    taskId: 'fallback-first',
+    source: source('fallback-recovery'),
+  });
+  const recovered = await service.parseSingle(context, {
+    taskId: 'fallback-retry',
+    source: source('fallback-recovery'),
+  });
+
+  assert.equal(first.draft.origin, 'fallback');
+  assert.equal(recovered.draft.origin, 'parsed');
+  assert.equal(recovered.draft.revision, 2);
+  assert.equal(recovered.draft.fields[0]?.provenance, 'photo_extract');
+  assert.equal(calls, 2);
+});
+
+test('sensitive documents explain the policy choice without calling the provider', async () => {
+  let calls = 0;
+  const service = fixtureService(new MemoryParseRepository(), {
+    async parse(input) {
+      calls += 1;
+      return new FixtureDocumentParseProvider().parse(input);
+    },
+  });
+  const result = await service.parseSingle(context, {
+    taskId: 'sensitive-document',
+    source: {
+      ...source('sensitive-document'),
+      inputKind: 'sensitive_document',
+    },
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(result.draft.origin, 'fallback');
+  assert.match(String(result.draft.fields[1]?.value), /不会交给外部服务/u);
+  assert.doesNotMatch(
+    String(result.draft.fields[1]?.value),
+    /失败|没有整理成功/u,
+  );
+});
 
 test('manual intake stays available when the parse provider is unavailable', async () => {
   const service = fixtureService(new MemoryParseRepository(), {
@@ -101,6 +168,37 @@ test('manual intake stays available when the parse provider is unavailable', asy
   assert.equal(manual.origin, 'manual');
   assert.equal(manual.fields[0]?.provenance, 'user');
   assert.equal(manual.factCandidates[0]?.source.kind, 'user_confirmation');
+});
+
+test('a merchant-authored draft skips the parse provider on a later retry', async () => {
+  let calls = 0;
+  const repository = new MemoryParseRepository();
+  const service = fixtureService(repository, {
+    async parse(input) {
+      calls += 1;
+      return new FixtureDocumentParseProvider().parse(input);
+    },
+  });
+  const input = source('manual-retry');
+  const manual = await service.prepareManualDraft(context, {
+    taskId: 'manual-first',
+    source: input,
+    fields: [
+      {
+        key: 'offer.price',
+        value: { amount: 299, currency: 'CNY' },
+      },
+    ],
+    factCandidates: [priceFact('manual-retry', 299)],
+  });
+  const retried = await service.parseSingle(context, {
+    taskId: 'manual-retry',
+    source: input,
+  });
+
+  assert.equal(calls, 0);
+  assert.deepEqual(retried.draft, manual);
+  assert.equal(retried.task.status, 'completed');
 });
 
 test('a late parsed result is stored for audit but never overwrites a manual draft', async () => {
@@ -142,6 +240,7 @@ test('a late parsed result is stored for audit but never overwrites a manual dra
   const completed = await parsing;
 
   assert.deepEqual(completed.draft, manual);
+  assert.equal(completed.task.status, 'completed');
   assert.equal(
     (
       await repository.getDocument(
@@ -196,6 +295,115 @@ test('batch parse is queued, exposes durable progress and recovers on refresh', 
   assert.deepEqual(
     await service.runBatchTask(context.workspaceId, queued.taskId),
     completed,
+  );
+});
+
+test('a dead batch carrier marks its durable projection failed with a merchant next step', async () => {
+  class MissingSourceRepository extends MemoryParseRepository {
+    missing = false;
+
+    override async getSource(workspaceId: string, assetId: string) {
+      if (this.missing && assetId === 'dead-b') return null;
+      return super.getSource(workspaceId, assetId);
+    }
+  }
+
+  const repository = new MissingSourceRepository();
+  const service = fixtureService(
+    repository,
+    new FixtureDocumentParseProvider(),
+    { async submit() { return {} as never; } },
+  );
+  await service.startBatch(context, {
+    taskId: 'dead-batch',
+    sources: [source('dead-a'), source('dead-b')],
+  });
+  repository.missing = true;
+  const effect = new ParseBatchJobEffect(service);
+
+  await assert.rejects(
+    effect.execute({
+      workspaceId: context.workspaceId,
+      jobId: 'dead-batch',
+      kind: 'asset.parse-batch',
+      payload: { taskId: 'dead-batch' },
+      idempotencyKey: 'dead-batch',
+      effectIdempotencyKey: 'dead-batch:effect',
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'SOURCE_NOT_FOUND',
+  );
+  const failed = await service.task(context.workspaceId, 'dead-batch');
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.progress.completed, 1);
+  assert.match(failed.progress.message, /已经停止/u);
+  assert.match(failed.progress.message, /手动填写/u);
+});
+
+test('stored parse authorizer accepts an exact workspace-owned byte receipt', async () => {
+  const bytes = new TextEncoder().encode('verified parse asset');
+  const authorizer = new StoredParseSourceAssetAuthorizer({
+    async read() {
+      return { bytes };
+    },
+  });
+
+  assert.equal(
+    await authorizer.isAuthorized(context.workspaceId, {
+      ...source('authorized'),
+      sizeBytes: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    }),
+    true,
+  );
+});
+
+test('stored parse authorizer rejects foreign, missing, and mismatched receipts', async () => {
+  const bytes = new TextEncoder().encode('verified parse asset');
+  let reads = 0;
+  const authorizer = new StoredParseSourceAssetAuthorizer({
+    async read(objectKey) {
+      reads += 1;
+      if (objectKey.endsWith('missing.png')) throw new Error('missing');
+      return { bytes };
+    },
+  });
+  const exact = {
+    ...source('negative'),
+    sizeBytes: bytes.byteLength,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+
+  assert.equal(
+    await authorizer.isAuthorized(context.workspaceId, {
+      ...exact,
+      objectKey: 'workspace-b/owned/negative.png',
+    }),
+    false,
+  );
+  assert.equal(reads, 0);
+  assert.equal(
+    await authorizer.isAuthorized(context.workspaceId, {
+      ...exact,
+      sizeBytes: bytes.byteLength + 1,
+    }),
+    false,
+  );
+  assert.equal(
+    await authorizer.isAuthorized(context.workspaceId, {
+      ...exact,
+      sha256: 'f'.repeat(64),
+    }),
+    false,
+  );
+  assert.equal(
+    await authorizer.isAuthorized(context.workspaceId, {
+      ...exact,
+      objectKey: `${context.workspaceId}/owned/missing.png`,
+    }),
+    false,
   );
 });
 

@@ -1,6 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { ASSET_INTAKE_GUIDANCE_CONFIG_KEY } from '@meiye/contracts';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { PostgresDiagnosticRepository } from './diagnostics/postgres-repository.js';
 import { assertStrongSecret } from './security/secret-hardening.js';
@@ -216,6 +216,7 @@ import {
   documentParseProviderFromEnv,
   FixtureAssetDraftCompiler,
   FixtureVisualAssetClassifier,
+  StoredParseSourceAssetAuthorizer,
   OperationsProductSearchProjection,
   OperationsProductPackageRightsAdapter,
   ProductContentPackageRightsResolver,
@@ -765,21 +766,7 @@ const parseService = new ParseService(
   documentParseProviderFromEnv(process.env),
   new FixtureAssetDraftCompiler(),
   new FixtureVisualAssetClassifier(),
-  {
-    async isAuthorized(workspaceId, source) {
-      if (!source.objectKey.startsWith(`${workspaceId}/`)) return false;
-      try {
-        const stored = await assetStorage.read(source.objectKey);
-        return (
-          stored.bytes.byteLength === source.sizeBytes &&
-          createHash('sha256').update(stored.bytes).digest('hex') ===
-            source.sha256
-        );
-      } catch {
-        return false;
-      }
-    },
-  },
+  new StoredParseSourceAssetAuthorizer(assetStorage),
   new AdminConfigAssetIntakeGuidanceSource(adminConfigRepository),
   tracerJobs,
 );
