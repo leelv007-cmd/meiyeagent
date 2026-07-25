@@ -12,20 +12,20 @@
 
 | 键 | 用途（消费方） | 需你提供 | 缺省 fixture 档 | 状态 |
 |---|---|---|---|---|
-| **A-1** `DEEPSEEK_API_KEY`（DeepSeek API key；沿 `MODEL_DIRECT_*` 装配机制消费） | 文案与全部文本判断位默认 LLM＝deepseek-v4-pro（装配门、M 门 LLM 判断位、四类编译器） | 在 DeepSeek 开放平台开通并充值的 API key | 既有 fixture 文本供应商，全链可跑 | ☑ 已收 2026-07-25（存本地 `.env`，凭证真值不入库） |
-| **A-2** `ARK_MEDIA_API_KEY` | 图 seedream-5-pro 系／视频 seedance-2 系／exactText 多模态 VLM（图片、图文、视频编译器票） | 火山方舟 API key（并确认账号已开通 seedream/seedance 对应模型） | recorded/fake provider 档 | ☑ 已配（`.env` 核实非空） |
-| **A-3** `ARK_SEEDREAM_MODEL`／`ARK_SEEDANCE_MODEL` | 上行 key 对应的具体 model ID | 方舟控制台里可用的 model ID 两个 | 同 A-2 | ☑ 已配（doubao-seedream-5-0-260128／doubao-seedance-2-0-mini-260615，符合 D-129 系别） |
-| **A-4** `TUZI_MEDIA_BASE_URL`/`TUZI_MEDIA_API_KEY` | 图/视频容灾通道（D-129：方舟直连主、tuzi 容灾） | tuzi relay key——**可暂缓**，缺席时按既有合同投影 single_channel/no_fallback，不阻塞任何票 | 单通道投影（既有） | ☑ 已配（`.env` TUZI_MEDIA_* 核实非空） |
-| **A-5** MinerU API token（键名净新增，由解析管线票定稿） | MinerU 官方精准 API 文档解析（录入/解析管线票） | mineru.net 申请的 API token | 预置解析结果 fixture | ☑ 已收 2026-07-25（存本地 `.env` MINERU_API_TOKEN；键名终稿由 #218 定） |
+| **A-1** `DEEPSEEK_API_KEY`（DeepSeek API key；沿 `MODEL_DIRECT_*` 装配机制消费） | 文案与全部文本判断位默认 LLM＝deepseek-v4-pro（装配门、M 门 LLM 判断位、四类编译器） | 在 DeepSeek 开放平台开通并充值的 API key | 既有 fixture 文本供应商，全链可跑 | ☑ `live_verified` 2026-07-25T17:50:30.619Z（v4-pro 真实文本；证据：`.scratch/provisioning-live-2026-07-25/remaining-provider-live-receipt.json`） |
+| **A-2** `ARK_MEDIA_API_KEY` | 图 seedream-5-pro 系／视频 seedance-2 系／exactText 多模态 VLM（图片、图文、视频编译器票） | 火山方舟 API key（并确认账号已开通 seedream/seedance 对应模型） | recorded/fake provider 档 | ☑ `live_verified` 2026-07-25T17:48:01.223Z（Seedream 一图＋exactText 真实识别；证据：`.scratch/provisioning-live-2026-07-25/ark-live-receipt.json`） |
+| **A-3** `ARK_SEEDREAM_MODEL`／`ARK_SEEDANCE_MODEL` | 上行 key 对应的具体 model ID | 方舟控制台里可用的 model ID 两个 | 同 A-2 | ☑ `live_verified` 2026-07-25T17:48:01.223Z（Seedream 一图＋Seedance 4 秒视频；证据：`.scratch/provisioning-live-2026-07-25/ark-live-receipt.json`） |
+| **A-4** `TUZI_MEDIA_BASE_URL`/`TUZI_MEDIA_API_KEY` | 图/视频容灾通道（D-129：方舟直连主、tuzi 容灾） | tuzi relay key——**可暂缓**，缺席时按既有合同投影 single_channel/no_fallback，不阻塞任何票 | 单通道投影（既有） | ◐ 暂缺（用户 2026-07-26 拍板：方舟直连为主，容灾渠道暂缺；tuzi 模型命名与方舟不同，非 key 失效；`single_channel/no_fallback` 为接受态；历史探针证据：`.scratch/provisioning-live-2026-07-25/remaining-provider-live-receipt.json`） |
+| **A-5** MinerU API token（键名净新增，由解析管线票定稿） | MinerU 官方精准 API 文档解析（录入/解析管线票） | mineru.net 申请的 API token | 预置解析结果 fixture | ◐ 未核销，fixture 先行（token 已收 2026-07-25，键名终稿与 live 核销待 #218） |
 
 ## B. 基础设施凭证
 
 | 键 | 用途（消费方） | 需你提供 | 缺省 fixture 档 | 状态 |
 |---|---|---|---|---|
-| **B-1** `RESEND_API_KEY` ＋发信域名 | 注册邮件与通知（装配门、注册承接票） | Resend API key＋一个能改 DNS 的发信域名（域名验证步骤我可以给） | 邮件落日志不真发（既有） | ☑ key＋域名齐（域名＝tqai.uk，存 `.env.local`；DNS/SPF/DKIM 验证动作随 #199 live 核销执行） |
-| **B-2** `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_R2_BUCKET_NAME` | R2 对象存储（媒体产物持久化，D-038 大产物对象存储） | CF 账号已有：需建一个 R2 bucket＋签发 token（步骤我可以给） | 本地文件存储档（既有） | ◐ token 已收（本地两处 env）；R2 bucket＋ACCOUNT_ID 由装配票用 token 开通/查询后回填 |
-| **B-3** `LANGFUSE_*` | 提示词版本化/评测（Skills、评估门） | **无需动作**——本地钉扎 compose 自生成 key；生产部署挂 E 门 | 本地 compose（既有） | ☑ 无需 |
-| **B-4** `BETTER_AUTH_SECRET`/`DATABASE_URL`/`HARNESS_DBOS_*` | 认证/持久层/编排 | **无需动作**——本地生成、本地真机 PG（CI 真机 job 既有） | 本地真机 PG | ☑ 无需 |
+| **B-1** `RESEND_API_KEY` ＋发信域名 | 注册邮件与通知（装配门、注册承接票） | Resend API key＋一个能改 DNS 的发信域名（域名验证步骤我可以给） | 邮件落日志不真发（既有） | ☑ `live_verified` 2026-07-25T18:44:36.721Z（`tqai.uk` SPF/DKIM Verified；注册邮件真发至 Resend `delivered` 测试地址并获脱敏回执；DMARC 未配置，不设门；证据：`.scratch/provisioning-live-2026-07-25/resend-live-receipt.json`） |
+| **B-2** `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_R2_BUCKET_NAME` | R2 对象存储（媒体产物持久化，D-038 大产物对象存储） | CF 账号已有：需建一个 R2 bucket＋签发 token（步骤我可以给） | 本地文件存储档（既有） | ☑ `live_verified` 2026-07-25T17:52:27Z（token 查询唯一 ACCOUNT_ID；目标 bucket 已存在；远端上传/下载哈希一致并删除后不可读；本地两处 env 已回填；证据：`.scratch/provisioning-live-2026-07-25/r2-live-receipt.json`） |
+| **B-3** `LANGFUSE_*` | 提示词版本化/评测（Skills、评估门） | **无需动作**——本地钉扎 compose 自生成 key；生产部署挂 E 门 | 本地 compose（既有） | ☑ 无需 live 核销（本地 compose 自供给；生产挂 E 门） |
+| **B-4** `BETTER_AUTH_SECRET`/`DATABASE_URL`/`HARNESS_DBOS_*` | 认证/持久层/编排 | **无需动作**——本地生成、本地真机 PG（CI 真机 job 既有） | 本地真机 PG | ☑ 无需 live 核销（本地生成＋本车道真机 PG） |
 
 ## C. 运营供给项（数字＝运营参数，开发用种子样例值验收；D-123/D-128 口径）
 
