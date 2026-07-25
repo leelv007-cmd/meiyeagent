@@ -792,11 +792,27 @@ export class ProductService implements ProductApplicationService {
     );
   }
 
+  /**
+   * D-126 single exit. Every merchant-facing CommandResult leaves the service
+   * here, so an early return added inside executeCommand cannot forget the
+   * projection filter — including replays served from the idempotency store.
+   * The persisted state stays authoritative and unfiltered.
+   */
   async execute(
     context: ProductContext,
     command: ProductCommand,
     idempotencyKey: string
-  ) {
+  ): Promise<CommandResult> {
+    const result = await this.executeCommand(context, command, idempotencyKey);
+    const projected = withoutPlatformSamples(result.state);
+    return projected === result.state ? result : { ...result, state: projected };
+  }
+
+  protected async executeCommand(
+    context: ProductContext,
+    command: ProductCommand,
+    idempotencyKey: string
+  ): Promise<CommandResult> {
     await this.authorize(context);
     if (!idempotencyKey)
       throw new DomainError(

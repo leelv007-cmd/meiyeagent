@@ -2588,6 +2588,115 @@ describe('product golden journey', () => {
         error instanceof DomainError && error.code === 'VIDEO_RETRY_NOT_ALLOWED'
     );
   });
+
+  it('strips reserved-namespace material from whatever any command path returns', async () => {
+    // Path-agnostic: this pins the invariant at the public exit, not one
+    // command. A fourth return path added inside executeCommand is covered by
+    // construction — it cannot reach a caller without passing through here.
+    const repository = new MemoryProductRepository();
+    repository.grantMembership('user-a', 'workspace-a');
+    const service = new ProductService(repository);
+    await service.execute(
+      merchant,
+      { type: 'hide_example', hidden: false },
+      'any-path-seed'
+    );
+    const persisted = (await repository.load('workspace-a'))!;
+    persisted.assets.push({
+      id: 'platform-sample:asset/any-path',
+      kind: 'image',
+      name: '示例素材',
+      authorizationStatus: 'authorized',
+      aigcStatus: 'unknown',
+      consentScope: 'internal_only',
+      createdAt: '2026-07-25T00:00:00.000Z',
+      replacementRequired: false,
+    } as (typeof persisted.assets)[number]);
+
+    class LeakyProductService extends ProductService {
+      protected override async executeCommand() {
+        return { output: {}, state: persisted };
+      }
+    }
+    const leaky = new LeakyProductService(repository);
+    const result = await leaky.execute(
+      merchant,
+      { type: 'hide_example', hidden: false },
+      'any-path-invariant'
+    );
+    assert.deepEqual(
+      result.state.assets
+        .map((asset) => asset.id)
+        .filter((id) => id.startsWith('platform-sample:')),
+      []
+    );
+    // The example stores themselves are merchant-facing on purpose — the
+    // showcase renders them; only reserved-namespace workspace material goes.
+    assert.equal(result.state.exampleStores.length, 3);
+  });
+
+  it('keeps reserved-namespace material out of every merchant-facing result', async () => {
+    const repository = new MemoryProductRepository();
+    repository.grantMembership('user-a', 'workspace-a');
+    const provider = {
+      name: 'isolation-copy-provider',
+      model: 'isolation-copy-v1',
+      region: 'local' as const,
+      async generate(request: CopyProviderRequest) {
+        return ['facts', 'experience', 'booking'].map((angle) => ({
+          assetOrder: request.brief.assetIds,
+          body: `${request.brief.hook} ${angle}`,
+          conversionHook: angle,
+          title: `${request.brief.hook}-${angle}`,
+          topics: ['杭州美业'],
+        }));
+      },
+    };
+    const providers: CopyProviderRegistry = {
+      domestic: provider,
+      standard: provider,
+    };
+    const service = new ProductService(
+      repository,
+      undefined,
+      undefined,
+      providers
+    );
+    await prepareCopyFixture(service, false);
+
+    // Deliberate injection: reserved-namespace material sitting in the
+    // workspace arrays is exactly what the projection filter exists to strip.
+    const persisted = (await repository.load('workspace-a'))!;
+    persisted.assets.push({
+      ...persisted.assets[0]!,
+      id: 'platform-sample:asset/leak',
+    });
+    await repository.save(persisted);
+
+    const generated = await service.execute(
+      merchant,
+      copyCommand('隔离回归'),
+      'sample-isolation-generate-copy'
+    );
+    assert.deepEqual(
+      generated.state.assets
+        .map((asset) => asset.id)
+        .filter((id) => id.startsWith('platform-sample:')),
+      []
+    );
+    // Positive control: the merchant's own asset survives the same filter.
+    assert.ok(
+      generated.state.assets.some((asset) => asset.id === 'asset-copy'),
+      'the merchant own asset must stay in the projection'
+    );
+    // The persisted state keeps everything — samples are never written away.
+    const after = (await repository.load('workspace-a'))!;
+    assert.ok(
+      after.assets.some((asset) => asset.id === 'platform-sample:asset/leak'),
+      'persisted state stays authoritative'
+    );
+  });
+
 });
 
 function copyCommand(hook: string) {
