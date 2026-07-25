@@ -12,6 +12,7 @@ import type {
   ContentPackageRevisionWriteInput,
   ContentPackageRevisionWritePort,
 } from '../execution-spine/content-package-revision-port.js';
+import { harnessCopyWorkAssetId } from '../operations/harness-copy-work-asset.js';
 import {
   SourceContentPackageUnavailableError,
   type ExecutionSourceContentPackageResolverPort,
@@ -513,10 +514,15 @@ export function copyContentPackageRevisionWriteInput(
   if (!winner) {
     throw new Error('The Harness winner must be a delivered candidate.');
   }
+  const workAssetId = harnessCopyWorkAssetId({
+    revisionId: winner.id,
+    workId: snapshot.work.id,
+    workspaceId: input.request.workspaceId,
+  });
   const revision: ContentPackageRevisionWriteInput = {
     additionalVersions: versions.filter((candidate) => candidate.id !== winner.id),
     expectedRevision: input.request.expectedRevision,
-    generated: { assetIds: [], childRuns: [] },
+    generated: { assetIds: [workAssetId], childRuns: [] },
     harnessSelection: {
       recommendedCandidateId: input.selection.winner.candidateId,
     },
@@ -551,6 +557,18 @@ export function copyContentPackageRevisionWriteInput(
       packageId: input.request.packageId,
       versions,
     }),
+    workAsset: {
+      body: winner.body,
+      candidateIndex: 0,
+      conversionHook: winner.conversionHook,
+      createdAt: occurredAt,
+      id: workAssetId,
+      jobId: snapshot.task.id,
+      kind: 'text',
+      title: winner.title,
+      workId: snapshot.work.id,
+      workspaceId: input.request.workspaceId,
+    },
     workId: snapshot.work.id,
     workflowId: input.workflowId,
     workflowRevision: input.request.workflowRevision,
