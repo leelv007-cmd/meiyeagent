@@ -91,10 +91,24 @@ async function setHead(
 ): Promise<void> {
   const result =
     expectedHeadRevisionId === null
-      ? await client.query(
+      ? /*
+         * Re-applying the SAME revision has to succeed as a no-op. Boot applies
+         * the recorded catalog revision from two places (main.ts and
+         * job-worker.ts), so whichever runs second used to find the row already
+         * present: `DO NOTHING` returned zero rows, the strict rowCount check
+         * below read that as a lost race, and the caller got
+         * IDEMPOTENCY_CONFLICT for an operation that had in fact already been
+         * applied — with the same revision id. That broke every cold-tenant
+         * journey in a lane where the web server and the worker boot together.
+         * A head that already points at a DIFFERENT revision is still a real
+         * conflict and still throws.
+         */
+        await client.query(
           `INSERT INTO ${table} (workspace_id, revision_id, updated_at)
            VALUES ($1, $2, now())
-           ON CONFLICT (workspace_id) DO NOTHING
+           ON CONFLICT (workspace_id) DO UPDATE
+             SET updated_at = now()
+             WHERE ${table}.revision_id = EXCLUDED.revision_id
            RETURNING revision_id`,
           [workspaceId, revisionId]
         )

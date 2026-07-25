@@ -249,6 +249,53 @@ describe(
       );
     });
 
+    it('re-applying the same first revision is idempotent, a different one is a conflict', async () => {
+      /*
+       * Boot applies the recorded catalog revision from two places (main.ts and
+       * job-worker.ts), both with a null expected head. The second caller finds
+       * the row already present, and `ON CONFLICT DO NOTHING` used to return
+       * zero rows, which the rowCount check read as a lost race — so an
+       * operation that had already been applied, with the same revision id,
+       * failed as IDEMPOTENCY_CONFLICT. In a lane where the web server and the
+       * worker boot together that broke every cold-tenant journey. Idempotence
+       * here must not soften the real CAS: a head already pointing at a
+       * DIFFERENT revision is still a conflict.
+       */
+      const workspaceId = `supply-boot-${randomUUID()}`;
+      const revision = registryRevision('catalog-boot-r1', 1);
+      try {
+        await repository.setCurrentRegistryRevision(workspaceId, revision, null);
+        await repository.setCurrentRegistryRevision(workspaceId, revision, null);
+
+        assert.equal(
+          (await repository.getCurrentRegistryRevision(workspaceId))
+            ?.catalogRevisionId,
+          'catalog-boot-r1'
+        );
+
+        await assert.rejects(
+          () =>
+            repository.setCurrentRegistryRevision(
+              workspaceId,
+              registryRevision('catalog-boot-r2', 2),
+              null
+            ),
+          (error) =>
+            error instanceof P1DomainError &&
+            error.code === 'IDEMPOTENCY_CONFLICT'
+        );
+
+        assert.equal(
+          (await repository.getCurrentRegistryRevision(workspaceId))
+            ?.catalogRevisionId,
+          'catalog-boot-r1',
+          'a rejected conflicting write must leave the head untouched'
+        );
+      } finally {
+        await repository.deleteWorkspaceForTest(workspaceId);
+      }
+    });
+
     it('persists CredentialAccount metadata across restart and allows only one writer per record revision', async () => {
       const first = credentialAccount(credentialWorkspaceId, 1);
       assert.equal(
