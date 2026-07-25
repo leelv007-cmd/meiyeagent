@@ -34,6 +34,9 @@ export interface ContentPackageRevisionWriteInput {
 		id: string;
 		revision: number;
 		schemaVersion: "creation-execution-snapshot/v1";
+		semanticDecision?: {
+			sourceSnapshotId: string;
+		};
 	};
 	sourceContentPackage?: {
 		id: string;
@@ -490,10 +493,12 @@ function assertExecutionBinding(
 ) {
 	const snapshot = contentPackage.source.creationExecutionSnapshot;
 	const sourceContentPackage = contentPackage.source.sourceContentPackage;
+	const boundSnapshotId =
+		input.snapshot.semanticDecision?.sourceSnapshotId ?? input.snapshotId;
 	if (
 		!snapshot ||
 		input.snapshotId !== input.snapshot.id ||
-		snapshot.id !== input.snapshotId ||
+		snapshot.id !== boundSnapshotId ||
 		snapshot.revision !== input.snapshot.revision ||
 		snapshot.schemaVersion !== input.snapshot.schemaVersion ||
 		input.taskId !== input.workflowId ||

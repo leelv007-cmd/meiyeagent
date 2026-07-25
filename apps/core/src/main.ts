@@ -1528,6 +1528,7 @@ if (harnessRuntimeConfig) {
   const harnessWorkflow = registerHarnessDbosWorkflow(
     harnessStages,
     harnessStore,
+    creationSubmissionStore,
   );
   await DBOS.launch();
   const workflowResumer = {

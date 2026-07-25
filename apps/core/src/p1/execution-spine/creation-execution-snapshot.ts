@@ -212,6 +212,20 @@ export const creationExecutionSnapshotSchema = z
 		briefContext: briefContextSchema,
 		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
+		semanticDecision: z
+			.object({
+				sourceSnapshotId: identifierSchema,
+				reference: z
+					.object({
+						id: identifierSchema,
+						field: identifierSchema,
+						value: z.string().trim().min(1).max(4_000),
+						revision: z.number().int().nonnegative(),
+					})
+					.strict(),
+			})
+			.strict()
+			.optional(),
 	})
 	.strict()
 	.superRefine(validateFrozenDeliverable);

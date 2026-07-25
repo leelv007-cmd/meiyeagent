@@ -46,6 +46,16 @@ export interface HarnessDecisionStore {
       | 'idempotency_conflict';
     resumeRequired: boolean;
   }>;
+  claimDecisionResume(
+    workspaceId: string,
+    taskId: string,
+    eventId: string,
+  ): Promise<boolean>;
+  releaseDecisionResume(
+    workspaceId: string,
+    taskId: string,
+    eventId: string,
+  ): Promise<void>;
   markDecisionResumed(
     workspaceId: string,
     taskId: string,
@@ -146,11 +156,23 @@ export class HarnessDecisionService {
     if (result.outcome !== 'created' && result.outcome !== 'replayed') {
       throw decisionConflict(result.outcome);
     }
-    if (result.resumeRequired) {
+    if (
+      result.resumeRequired &&
+      (await this.store.claimDecisionResume(
+        workspaceId,
+        taskId,
+        event.id,
+      ))
+    ) {
       try {
         await this.workflow.resume(workspaceId, taskId, command);
         await this.store.markDecisionResumed(workspaceId, taskId, event.id);
       } catch (error) {
+        await this.store.releaseDecisionResume(
+          workspaceId,
+          taskId,
+          event.id,
+        );
         throw new HarnessDecisionResumeError({ cause: error });
       }
     }

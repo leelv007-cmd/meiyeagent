@@ -533,6 +533,13 @@ export function copyContentPackageRevisionWriteInput(
       id: snapshot.id,
       revision: snapshot.revision,
       schemaVersion: snapshot.schemaVersion,
+      ...(snapshot.semanticDecision
+        ? {
+            semanticDecision: {
+              sourceSnapshotId: snapshot.semanticDecision.sourceSnapshotId,
+            },
+          }
+        : {}),
     },
     ...(snapshot.sources.contentPackage
       ? { sourceContentPackage: snapshot.sources.contentPackage }

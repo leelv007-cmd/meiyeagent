@@ -19,6 +19,10 @@ import type {
 import type { HarnessDecisionStore } from './decision-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import { harnessRuntimeId } from './workspace-scope.js';
+import {
+  buildSemanticDecisionResumption,
+  type HarnessSemanticDecisionResumptionStore,
+} from './semantic-decision-resumption.js';
 
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
@@ -53,6 +57,7 @@ const DECISION_TIMEOUT_SECONDS = 48 * 60 * 60;
 export function registerHarnessDbosWorkflow(
   ports: HarnessStagePorts,
   persistence: HarnessWorkflowPersistence,
+  semanticResumptions?: HarnessSemanticDecisionResumptionStore,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -104,6 +109,33 @@ export function registerHarnessDbosWorkflow(
         );
         return assertMatchingDecision(question, decision);
       },
+      ...(semanticResumptions
+        ? {
+            async resubmitSemanticDecision(input) {
+              const createdAt = new Date(await DBOS.now()).toISOString();
+              return DBOS.runStep(
+                async () => {
+                  const resumption = buildSemanticDecisionResumption({
+                    request: input.request,
+                    command: input.command,
+                    createdAt,
+                  });
+                  await semanticResumptions.claimSemanticDecisionResumption({
+                    sourceSnapshotId: input.request.executionSnapshot.id,
+                    workspaceId: input.request.workspaceId,
+                    idempotencyKey: resumption.idempotencyKey,
+                    payloadHash: resumption.payloadHash,
+                    submission: resumption.submission,
+                  });
+                  return resumption.request;
+                },
+                {
+                  name: `persist-semantic-resubmission-${input.command.idempotencyKey}`,
+                },
+              );
+            },
+          }
+        : {}),
       recordTrace(input) {
         return DBOS.runStep(
           () =>

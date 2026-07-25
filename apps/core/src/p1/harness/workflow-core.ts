@@ -169,6 +169,18 @@ export interface HarnessWorkflowRuntime {
     delta: string;
   }): Promise<void>;
   awaitDecision(question: QuestionCard): Promise<StructuredDecisionInput>;
+  /**
+   * Creates the immutable successor submission used after a semantic answer.
+   * Runtimes that cannot persist a new execution snapshot must leave this
+   * undefined so the existing snapshot-mutation guard remains fail-closed.
+   */
+  resubmitSemanticDecision?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput & {
+      executionSnapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>;
+    };
+    command: StructuredDecisionInput;
+  }): Promise<HarnessWorkflowInput>;
   recordTrace(input: {
     id: string;
     taskId: string;
@@ -803,13 +815,25 @@ function unpackBrief(input: CopyBrief | MeasuredCopyBrief) {
     : { brief: input, metrics: undefined };
 }
 
-function applyCurrentTaskDecision(
+async function applyCurrentTaskDecision(
+  workflowId: string,
   request: HarnessWorkflowInput,
   command: StructuredDecisionInput,
-): HarnessWorkflowInput {
+  runtime: HarnessWorkflowRuntime,
+): Promise<HarnessWorkflowInput> {
   if (command.decision.state === 'ignored') return request;
   if (request.executionSnapshot) {
-    throw new HarnessSnapshotDecisionError();
+    if (!runtime.resubmitSemanticDecision) {
+      throw new HarnessSnapshotDecisionError();
+    }
+    return runtime.resubmitSemanticDecision({
+      workflowId,
+      request: {
+        ...request,
+        executionSnapshot: request.executionSnapshot,
+      },
+      command,
+    });
   }
   const value = command.decision.value;
   return {
@@ -862,13 +886,23 @@ async function resolveIntentRoute(input: {
   const decision = await input.runtime.awaitDecision(
     input.intent.blockingQuestion,
   );
-  const activeRequest = applyCurrentTaskDecision(input.request, decision);
+  const activeRequest = await applyCurrentTaskDecision(
+    input.workflowId,
+    input.request,
+    decision,
+    input.runtime,
+  );
   if (decision.decision.state === 'ignored') {
     return {
       declaration: freeRouteDeclaration(input.intent.declaration),
       request: activeRequest,
     };
   }
+  await input.reportProgress({
+    stage: 'intent_naming',
+    state: 'success',
+    message: '已收到，继续为你生成。',
+  });
 
   const reassessed = await input.runtime.runStep(
     harnessEffectKey(input.workflowId, 1, 'intent', '1'),

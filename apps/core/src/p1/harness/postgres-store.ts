@@ -105,7 +105,7 @@ export class PostgresHarnessStore
         payload_fingerprint text not null,
         payload jsonb not null,
         resume_status text not null default 'pending'
-          check (resume_status in ('pending', 'sent')),
+          check (resume_status in ('pending', 'sending', 'sent')),
         created_at timestamptz not null default now(),
         unique (task_id, idempotency_key)
       );
@@ -142,6 +142,11 @@ export class PostgresHarnessStore
 
       alter table harness_runtime.decision_events
         add column if not exists resume_status text not null default 'pending';
+      alter table harness_runtime.decision_events
+        drop constraint if exists decision_events_resume_status_check;
+      alter table harness_runtime.decision_events
+        add constraint decision_events_resume_status_check
+        check (resume_status in ('pending', 'sending', 'sent'));
 
       alter table harness_runtime.task_requests
         add column if not exists runtime_id text;
@@ -585,7 +590,43 @@ export class PostgresHarnessStore
     await this.pool.query(
       `update harness_runtime.decision_events
        set resume_status='sent'
-       where id=$1`,
+       where id=$1 and resume_status='sending'`,
+      [this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId)],
+    );
+  }
+
+  async claimDecisionResume(
+    workspaceId: string,
+    taskId: string,
+    eventId: string,
+  ) {
+    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+      workspaceId,
+      taskId,
+    );
+    const result = await this.pool.query(
+      `update harness_runtime.decision_events
+       set resume_status='sending'
+       where id=$1 and resume_status='pending'
+       returning id`,
+      [this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId)],
+    );
+    return result.rowCount === 1;
+  }
+
+  async releaseDecisionResume(
+    workspaceId: string,
+    taskId: string,
+    eventId: string,
+  ) {
+    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+      workspaceId,
+      taskId,
+    );
+    await this.pool.query(
+      `update harness_runtime.decision_events
+       set resume_status='pending'
+       where id=$1 and resume_status='sending'`,
       [this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId)],
     );
   }

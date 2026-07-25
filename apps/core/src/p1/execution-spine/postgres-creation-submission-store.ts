@@ -400,6 +400,110 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
   }
 
+  /**
+   * Persists the immutable successor snapshot for a semantic answer without
+   * creating another Work, Task, ContentPackage, or usage reservation. The
+   * existing DBOS workflow continues with this submission, so its dispatch
+   * state is already started.
+   */
+  async claimSemanticDecisionResumption(input: {
+    sourceSnapshotId: string;
+    workspaceId: string;
+    idempotencyKey: string;
+    payloadHash: string;
+    submission: CreationSubmissionRecord;
+  }) {
+    const client = await this.pool.connect();
+    let inTransaction = false;
+    try {
+      await client.query("BEGIN");
+      inTransaction = true;
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+        [input.workspaceId, input.idempotencyKey],
+      );
+      const existing = await client.query<StoredSubmissionRow>(
+        `SELECT payload_hash, submission, harness_state, harness_lease_id,
+                harness_lease_expires_at, harness_started_lease_id
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND idempotency_key = $2
+          FOR UPDATE`,
+        [input.workspaceId, input.idempotencyKey],
+      );
+      const row = existing.rows[0];
+      if (row) {
+        if (row.payload_hash !== input.payloadHash) {
+          throw new Error(
+            "Semantic decision idempotency key conflicts with another resumption.",
+          );
+        }
+        await client.query("COMMIT");
+        inTransaction = false;
+        return "replayed" as const;
+      }
+
+      const source = await client.query<{
+        task_id: string | null;
+        work_id: string | null;
+        content_package_id: string | null;
+        usage_reservation_id: string | null;
+      }>(
+        `SELECT task_id, work_id, content_package_id, usage_reservation_id
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND id = $2
+          FOR UPDATE`,
+        [input.workspaceId, input.sourceSnapshotId],
+      );
+      const sourceRow = source.rows[0];
+      if (
+        !sourceRow ||
+        input.submission.snapshot.semanticDecision?.sourceSnapshotId !==
+          input.sourceSnapshotId ||
+        sourceRow.task_id !== input.submission.task.id ||
+        sourceRow.work_id !== input.submission.work.id ||
+        sourceRow.content_package_id !== input.submission.contentPackage.id ||
+        sourceRow.usage_reservation_id !== input.submission.usageReservation.id
+      ) {
+        throw new Error(
+          "Semantic decision resumption must preserve the source task, work, content package, and usage reservation.",
+        );
+      }
+
+      await client.query(
+        `INSERT INTO execution_spine.creation_submissions
+           (id, workspace_id, idempotency_key, payload_hash, submission,
+            harness_state, task_id, work_id, content_package_id,
+            usage_reservation_id, quote_id, route_snapshot_id,
+            snapshot_revision, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5::jsonb, 'started', $6, $7, $8, $9,
+                 $10, $11, $12, $13::timestamptz, $13::timestamptz)`,
+        [
+          input.submission.snapshot.id,
+          input.workspaceId,
+          input.idempotencyKey,
+          input.payloadHash,
+          JSON.stringify(input.submission),
+          input.submission.task.id,
+          input.submission.work.id,
+          input.submission.contentPackage.id,
+          input.submission.usageReservation.id,
+          input.submission.snapshot.quote.id,
+          input.submission.snapshot.route.id,
+          input.submission.snapshot.revision,
+          input.submission.snapshot.createdAt,
+        ],
+      );
+      await client.query("COMMIT");
+      inTransaction = false;
+      return "created" as const;
+    } catch (error) {
+      if (inTransaction) await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async claimHarnessStart(input: {
     workspaceId: string;
     submissionId: string;
