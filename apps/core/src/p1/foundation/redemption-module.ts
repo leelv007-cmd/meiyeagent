@@ -1,6 +1,6 @@
 /**
  * Td-3/Td-4: P1 operation module for redemption codes.
- * Manage (create/batch/void/list) = platform admin.
+ * Manage (manual create/void/list) = platform admin.
  * Redeem = workspace.billing.manage (owner path via authorizeP1Request).
  */
 
@@ -37,8 +37,7 @@ export class RedemptionFoundationModule implements P1OperationModule {
     const action = string(args.input, 'action');
     const payload = object(args.input.payload ?? {}, 'payload');
     switch (action) {
-      case 'create':
-      case 'batch_create': {
+      case 'create': {
         this.requireAdmin(args.context);
         const grants = object(payload.grants ?? {}, 'grants') as Partial<
           Record<GrantLotResource, number>
@@ -46,15 +45,14 @@ export class RedemptionFoundationModule implements P1OperationModule {
         return this.redemptions.createCodes(
           {
             grants,
+            code: string(payload, 'code'),
             createdBy: args.context.userId,
-            ...(typeof payload.code === 'string' ? { code: payload.code } : {}),
             ...(typeof payload.expiresAt === 'string' || payload.expiresAt === null
               ? { expiresAt: payload.expiresAt as string | null }
               : {}),
             ...(typeof payload.batchId === 'string'
               ? { batchId: payload.batchId }
               : {}),
-            ...(typeof payload.count === 'number' ? { count: payload.count } : {}),
           },
           {
             scope: args.context.workspaceId,

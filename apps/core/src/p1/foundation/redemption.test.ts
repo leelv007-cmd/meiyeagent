@@ -150,6 +150,7 @@ describe('redemption domain', () => {
   it('voids with CAS revision and rejects redeem of voided/expired codes', async () => {
     const { service } = setup();
     const [created] = await service.createCodes({
+      code: 'EXPIRED-VIDEO-2',
       grants: { video: 2 },
       createdBy: 'admin-1',
       createdAt: '2026-07-17T00:00:00.000Z',
@@ -168,6 +169,7 @@ describe('redemption domain', () => {
     );
 
     const [active] = await service.createCodes({
+      code: 'ACTIVE-VIDEO-1',
       grants: { video: 1 },
       createdBy: 'admin-1',
     });
@@ -197,22 +199,25 @@ describe('redemption domain', () => {
     );
   });
 
-  it('batch-creates unique codes under one batchId', async () => {
+  it('records only an operator-supplied code', async () => {
     const { service } = setup();
-    const batch = await service.createCodes({
+    const recorded = await service.createCodes({
+      code: 'PILOT-5-5-1',
       grants: { copy: 10 },
       createdBy: 'admin-1',
-      count: 3,
-      batchId: 'promo-july',
     });
-    assert.equal(batch.length, 3);
-    assert.equal(new Set(batch.map((row) => row.code)).size, 3);
-    assert.equal(
-      batch.every((row) => row.batchId === 'promo-july'),
-      true
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0]?.code, 'PILOT-5-5-1');
+
+    await assert.rejects(
+      () =>
+        service.createCodes({
+          grants: { copy: 10 },
+          createdBy: 'admin-1',
+        } as never),
+      (error: unknown) =>
+        error instanceof P1DomainError && error.code === 'INVALID_STATE'
     );
-    const listed = await service.list({ batchId: 'promo-july' });
-    assert.equal(listed.length, 3);
   });
 
   it('rolls back every grant lot when a multi-resource redemption cannot complete', async () => {
@@ -270,6 +275,7 @@ describe('redemption domain', () => {
     await assert.rejects(
       () =>
         service.createCodes({
+          code: 'UNKNOWN-RESOURCE',
           grants: { unknown: 1 } as never,
           createdBy: 'admin-1',
         }),
