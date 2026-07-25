@@ -185,7 +185,7 @@ test(
         const checkpoint = await pool.query<{
           job_status: string;
           acceptance: string;
-          usage_action: string;
+          usage_action: string | null;
         }>(
           `SELECT jobs.status AS job_status, attempts.acceptance,
                   usage.action AS usage_action
@@ -193,17 +193,17 @@ test(
              JOIN p1_provider_attempts attempts
                ON attempts.workspace_id = jobs.workspace_id
               AND attempts.job_id = jobs.id
-             JOIN p1_usage_events usage
+             LEFT JOIN p1_usage_events usage
                ON usage.workspace_id = jobs.workspace_id
               AND usage.reservation_id = jobs.usage_reservation_id
             WHERE jobs.workspace_id = $1 AND jobs.id = $2
-              AND usage.action = 'reserve'`,
+              AND (usage.action IS NULL OR usage.action = 'reserve')`,
           [workspaceId, request.jobId],
         );
         assert.deepEqual(checkpoint.rows[0], {
           job_status: 'running',
           acceptance: 'pending',
-          usage_action: 'reserve',
+          usage_action: null,
         });
         return new RecordedProviderExecutionPort().execute(request);
       },
@@ -338,6 +338,9 @@ test(
     assert.equal(replayed.asset?.sha256, completed.asset?.sha256);
     assert.equal(zeroUsage.usage.quantity, 0);
     assert.equal(failed.usage.status, 'refunded');
+    assert.equal(completed.providerCost.status, 'observed');
+    assert.equal(zeroUsage.providerCost.status, 'observed');
+    assert.equal(failed.providerCost.status, 'estimated');
     assert.equal(executions, 2);
     assert.deepEqual(
       (
@@ -348,10 +351,7 @@ test(
           [workspaceId, zeroUsage.usage.id],
         )
       ).rows,
-      [
-        { action: 'reserve', amount: 0 },
-        { action: 'commit', amount: 0 },
-      ],
+      [],
     );
     assert.match(
       (
@@ -387,7 +387,7 @@ test(
           [workspaceId],
         )
       ).rows[0]?.count,
-      2,
+      0,
     );
     const grantTransactions = await grantLots.listTransactions(workspaceId);
     assert.ok(
@@ -529,7 +529,7 @@ test(
           [redemptionWorkspaceId, redeemed.usage.id],
         )
       ).rows,
-      [{ amount: 0 }],
+      [],
     );
     const redemptionRetrySubmission = {
       ...redemptionSubmission,
