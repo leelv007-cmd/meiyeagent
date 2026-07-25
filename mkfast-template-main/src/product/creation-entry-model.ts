@@ -13,7 +13,11 @@ import {
   creation_entry_suggestion_repeat_label,
   creation_entry_suggestion_task_source,
   creation_entry_task_intent,
+  creation_entry_today_recommendation_intent,
   example_store_browsing_no_allowance,
+  example_store_industry_hair_care,
+  example_store_industry_hair_growth,
+  example_store_industry_skin_management,
 } from '@/locale/paraglide/messages';
 import type { Locale } from '@/lib/locale';
 import {
@@ -23,6 +27,7 @@ import {
 import {
   isRestrictedProductAsset,
   type Asset,
+  type ExampleStoreIndustry,
   type Platform,
 } from '@meiye/contracts';
 
@@ -163,6 +168,34 @@ export function exampleStoreVisibility(input: {
     return 'hidden';
   }
   return 'visible';
+}
+
+export function exampleStoreIndustryLabel(industry: ExampleStoreIndustry) {
+  switch (industry) {
+    case 'hair_care':
+      return example_store_industry_hair_care();
+    case 'skin_management':
+      return example_store_industry_skin_management();
+    case 'hair_growth':
+      return example_store_industry_hair_growth();
+  }
+}
+
+/**
+ * D-126 hot state: the CTA prefills the Composer draft, it never submits.
+ * The intent carries the three explanation elements the merchant just read so
+ * the draft still reads like their own sentence.
+ */
+export function todayRecommendationIntent(recommendation: {
+  customerAction: string;
+  title: string;
+  whyNow: string;
+}) {
+  return creation_entry_today_recommendation_intent({
+    customerAction: shortLabel(recommendation.customerAction),
+    title: shortLabel(recommendation.title),
+    whyNow: shortLabel(recommendation.whyNow),
+  });
 }
 
 export function exampleRemixIntent(example: {
