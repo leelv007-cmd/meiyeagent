@@ -157,6 +157,8 @@
   "admin_plan_standard_support": "Standard support",
   "admin_plan_summary": "Concurrency {concurrency} · Queue priority {priority} · {support}",
   "admin_plan_support": "Support level",
+  "admin_plan_trial_description": "Controls trial grants for newly registered stores without reclaiming existing allowance.",
+  "admin_plan_trial_enabled": "Trial allowance for new stores",
   "admin_plan_validation_currency": "Use a three-letter currency code.",
   "admin_plan_validation_nonnegative": "Enter a non-negative number.",
   "admin_plan_validation_positive": "Enter an integer greater than zero.",
