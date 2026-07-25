@@ -31,6 +31,15 @@ export interface CreationSubmissionStoreClaim {
 }
 
 export interface CreationSubmissionStore {
+	readReceipt(input: {
+		workspaceId: string;
+		idempotencyKey: string;
+		payloadHash: string;
+	}): Promise<
+		| { kind: "missing" }
+		| { kind: "existing"; submission: CreationSubmissionRecord }
+		| { kind: "conflict" }
+	>;
 	claim(
 		input: CreationSubmissionStoreClaim,
 	): Promise<
@@ -117,6 +126,20 @@ export class CreationSubmissionCoordinator {
 
 	async submit(input: ComposerSubmissionRequest) {
 		const request = composerSubmissionRequestSchema.parse(input);
+		const payloadHash = fingerprintValue(receiptPayload(request));
+		const receipt = await this.store.readReceipt({
+			workspaceId: request.workspaceId,
+			idempotencyKey: request.idempotencyKey,
+			payloadHash,
+		});
+		if (receipt.kind === "conflict") {
+			throw new CreationSubmissionConflictError();
+		}
+		if (receipt.kind === "existing") {
+			await this.startHarness(receipt.submission);
+			return submissionResponse(receipt.submission, true);
+		}
+
 		const admitted = await this.admission.admit(request);
 		const serverBoundRequest = {
 			...request,
@@ -151,29 +174,20 @@ export class CreationSubmissionCoordinator {
 			contentPackage: { ...snapshot.contentPackage },
 			usageReservation: { id: `usage-reservation-${snapshot.task.id}` },
 		};
-		const { idempotencyKey: _idempotencyKey, ...canonicalPayload } =
-			serverBoundRequest;
 		const claimed = await this.store.claim({
 			workspaceId: command.workspaceId,
 			idempotencyKey: command.idempotencyKey,
-			payloadHash: fingerprintValue(canonicalPayload),
+			payloadHash,
 			submission,
 		});
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
 		await this.startHarness(claimed.submission);
-		return {
-			contentPackage: claimed.submission.contentPackage,
-			replayed: claimed.kind === "existing",
-			snapshot: {
-				id: claimed.submission.snapshot.id,
-				schemaVersion: claimed.submission.snapshot.schemaVersion,
-			},
-			task: claimed.submission.task,
-			usageReservation: claimed.submission.usageReservation,
-			work: claimed.submission.work,
-		};
+		return submissionResponse(
+			claimed.submission,
+			claimed.kind === "existing",
+		);
 	}
 
 	/** Replays only committed, reclaimable starts after a process crash. */
@@ -216,4 +230,39 @@ export class CreationSubmissionCoordinator {
 			throw error;
 		}
 	}
+}
+
+function receiptPayload(request: ComposerSubmissionRequest) {
+	// Fingerprint only the canonical browser-owned request. Workspace/key are
+	// receipt lookup roots; mutable admission owns the omitted server fields.
+	const {
+		actorId: _actorId,
+		contentModules: _contentModules,
+		deliverables: _deliverables,
+		idempotencyKey: _idempotencyKey,
+		lens: _lens,
+		modelPolicy: _modelPolicy,
+		rights: _rights,
+		route: _route,
+		workspaceId: _workspaceId,
+		...payload
+	} = request;
+	return payload;
+}
+
+function submissionResponse(
+	submission: CreationSubmissionRecord,
+	replayed: boolean,
+) {
+	return {
+		contentPackage: submission.contentPackage,
+		replayed,
+		snapshot: {
+			id: submission.snapshot.id,
+			schemaVersion: submission.snapshot.schemaVersion,
+		},
+		task: submission.task,
+		usageReservation: submission.usageReservation,
+		work: submission.work,
+	};
 }

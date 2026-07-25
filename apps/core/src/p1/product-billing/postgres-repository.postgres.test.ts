@@ -273,6 +273,64 @@ describe(
       );
     });
 
+    it('keeps one quote bound under concurrent confirms and reserves exactly once', async () => {
+      const workspaceId = workspace();
+      const service = new DurableProductBillingService(repository);
+      const quote = await service.buildQuote(
+        quoteInput(workspaceId, 'concurrent-binding'),
+      );
+      const taskIds = Array.from({ length: 18 }, (_, index) =>
+        index % 3 === 0 ? 'binding-task-b' : 'binding-task-a',
+      );
+      const confirms = await Promise.allSettled(
+        taskIds.map((taskId) =>
+          new DurableProductBillingService(repository).confirm({
+            quoteId: quote.quoteId,
+            taskId,
+            workspaceId,
+          }),
+        ),
+      );
+      const bound = await service.getQuote(quote.quoteId, workspaceId);
+      const boundTaskId = bound?.taskId;
+      assert.ok(boundTaskId);
+      for (const [index, result] of confirms.entries()) {
+        if (taskIds[index] === boundTaskId) {
+          assert.equal(result.status, 'fulfilled');
+        } else {
+          assert.ok(
+            result.status === 'rejected' &&
+              result.reason instanceof P1DomainError &&
+              result.reason.code === 'IDEMPOTENCY_CONFLICT',
+          );
+        }
+      }
+
+      const reservations = await Promise.all(
+        Array.from({ length: 12 }, () =>
+          new DurableProductBillingService(repository).beforeSubmit({
+            quoteId: quote.quoteId,
+            quoteRevision: quote.revision,
+            resource: 'video',
+            taskId: boundTaskId,
+            workspaceId,
+          }),
+        ),
+      );
+      assert.equal(reservations.length, 12);
+      const usageRows = await pool.query<{ count: number }>(
+        `SELECT count(*)::int AS count
+           FROM p1_product_billing_usage
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [workspaceId, boundTaskId],
+      );
+      assert.equal(usageRows.rows[0]?.count, 1);
+      assert.equal(
+        (await service.getQuote(quote.quoteId, workspaceId))?.taskId,
+        boundTaskId,
+      );
+    });
+
     it('isolates workspaces and rolls back a failed transaction', async () => {
       const workspaceId = workspace();
       const otherWorkspaceId = workspace();

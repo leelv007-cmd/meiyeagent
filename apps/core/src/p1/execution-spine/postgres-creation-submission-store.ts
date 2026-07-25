@@ -310,6 +310,28 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     await this.migrate();
   }
 
+  async readReceipt(input: {
+    workspaceId: string;
+    idempotencyKey: string;
+    payloadHash: string;
+  }) {
+    const existing = await this.pool.query<StoredSubmissionRow>(
+      `SELECT payload_hash, submission, harness_state, harness_lease_id,
+              harness_lease_expires_at, harness_started_lease_id
+         FROM execution_spine.creation_submissions
+        WHERE workspace_id = $1 AND idempotency_key = $2`,
+      [input.workspaceId, input.idempotencyKey],
+    );
+    const row = existing.rows[0];
+    if (!row) return { kind: "missing" as const };
+    return row.payload_hash === input.payloadHash
+      ? {
+          kind: "existing" as const,
+          submission: storedSubmission(row.submission),
+        }
+      : { kind: "conflict" as const };
+  }
+
   async claim(input: CreationSubmissionStoreClaim) {
     const client = await this.pool.connect();
     let inTransaction = false;
