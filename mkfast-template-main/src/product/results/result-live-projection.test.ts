@@ -9,6 +9,7 @@ import {
   factSourcesFromGroundingSnapshot,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
+  resultContentPackageMutationFacts,
   revisionTimelineFactsFromContentPackage,
   runDetailFactsFromLiveSelection,
 } from './result-live-projection';
@@ -51,6 +52,48 @@ test('changes the package refresh token when an asynchronous video rerun arrives
 
   assert.notEqual(rerun, baseline);
   assert.equal(contentPackageRefreshToken(undefined), null);
+});
+
+test('Harness package is adopted only after the canonical adoption command records the candidate', () => {
+  const reviewReady = {
+    currentVersionId: 'version-1',
+    harnessSelection: { recommendedCandidateId: 'candidate-1' },
+    status: 'review_ready' as const,
+    variants: [],
+  };
+  assert.deepEqual(resultContentPackageMutationFacts(reviewReady), {
+    hasAdoptedCandidate: false,
+    hasDeliverableVariant: false,
+  });
+
+  assert.deepEqual(
+    resultContentPackageMutationFacts({
+      ...reviewReady,
+      harnessSelection: {
+        ...reviewReady.harnessSelection,
+        adoptedCandidateId: 'candidate-1',
+      },
+      status: 'accepted',
+    }),
+    {
+      hasAdoptedCandidate: true,
+      hasDeliverableVariant: false,
+    }
+  );
+});
+
+test('empty variants never project a deliverable package', () => {
+  assert.deepEqual(
+    resultContentPackageMutationFacts({
+      currentVersionId: 'version-1',
+      status: 'accepted',
+      variants: [],
+    }),
+    {
+      hasAdoptedCandidate: true,
+      hasDeliverableVariant: false,
+    }
+  );
 });
 
 const projection: CreativeWorkbenchProjection = {

@@ -139,6 +139,10 @@ test(
         `select
            (select count(*)::int from harness_runtime.decision_traces where task_id=$1) as traces,
            (select count(*)::int from harness_runtime.audit_events where workflow_id=$1 and event_type='package_delivered') as deliveries,
+           (select count(*)::int
+              from harness_runtime.langfuse_outbox outbox
+              join harness_runtime.audit_events audit on audit.id=outbox.audit_id
+             where audit.workflow_id=$1 and audit.event_type='package_delivered') as outboxes,
            (select count(*)::int from harness_runtime.audit_events where workflow_id=$2 and event_type='revision_conflict') as conflicts`,
         [
           harnessRuntimeId('workspace-1', workflowId),
@@ -148,6 +152,7 @@ test(
       assert.deepEqual(evidence.rows[0], {
         traces: 1,
         deliveries: 1,
+        outboxes: 1,
         conflicts: 1,
       });
     } finally {

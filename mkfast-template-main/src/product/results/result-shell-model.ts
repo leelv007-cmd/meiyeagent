@@ -76,6 +76,8 @@ export type ResultShellFacts = {
   hasUsableCandidate?: boolean;
   /** Whether a candidate has been adopted into ContentPackage. */
   hasAdoptedCandidate?: boolean;
+  /** Whether the adopted package has a concrete platform variant to deliver. */
+  hasDeliverableVariant?: boolean;
   /** Delivery attempt projection (not a second Result status). */
   deliveryAttempt?: ResultShellDeliveryAttemptState;
   /** Delivery capability sub-projection (D-086). */
@@ -320,15 +322,15 @@ export function projectResultShellActions(
             true,
             adoptLabel(facts.workspaceKind)
           ),
-          secondaryActions: [
-            action('continue_adjust', 'secondary'),
-            action('deliver', 'secondary'),
-          ],
+          secondaryActions: [action('continue_adjust', 'secondary')],
           overflowActions: historyAndRun,
         };
       }
-      if (facts.hasAdoptedCandidate && delivery === 'none') {
-        // Adopted but not yet delivery-ready materials — still offer deliver.
+      if (
+        facts.hasAdoptedCandidate &&
+        facts.hasDeliverableVariant &&
+        delivery === 'none'
+      ) {
         return {
           primaryAction: action('deliver', 'primary'),
           secondaryActions: [
@@ -340,10 +342,7 @@ export function projectResultShellActions(
       }
       return {
         primaryAction: action('continue_adjust', 'primary'),
-        secondaryActions: [
-          action('deliver', 'secondary'),
-          action('create_from_this', 'secondary'),
-        ],
+        secondaryActions: [action('create_from_this', 'secondary')],
         overflowActions: historyAndRun,
       };
     }

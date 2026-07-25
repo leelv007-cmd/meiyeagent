@@ -18,6 +18,7 @@ import {
   StoreFactRevisionConflictError,
   type StoreFactLedger,
 } from './store-fact-ledger.js';
+import { StoreFactSemanticMutationPolicy } from './store-fact-semantic-mutation-policy.js';
 
 export type AssetIntakeErrorCode =
   | 'ASSISTED_INPUT_INVALID'
@@ -335,12 +336,16 @@ function factDraftMatches(
 }
 
 export class AssetIntakeService {
+  private readonly factMutations: StoreFactSemanticMutationPolicy;
+
   constructor(
     private readonly repository: AssetIntakeRepository,
     private readonly facts: StoreFactLedger,
     private readonly now: () => string = () => new Date().toISOString(),
     private readonly screenshotAssets?: AssistedScreenshotAssetAuthorizer,
-  ) {}
+  ) {
+    this.factMutations = new StoreFactSemanticMutationPolicy(facts);
+  }
 
   async recordBatch(input: AssetIntakeBatch, commandFingerprint?: string) {
     const parsed = assetIntakeBatchSchema.parse(input);
@@ -760,7 +765,7 @@ export class AssetIntakeService {
     let fact = recovered;
     if (!fact) {
       try {
-        fact = await this.facts.append({
+        fact = await this.factMutations.append({
           ...reservation.draft,
           factId: input.factId,
           workspaceId: context.workspaceId,

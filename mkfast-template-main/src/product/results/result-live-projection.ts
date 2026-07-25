@@ -78,6 +78,27 @@ export function contentPackageRefreshToken(
     : null;
 }
 
+export function resultContentPackageMutationFacts(
+  contentPackage:
+    | Pick<
+        PublicContentPackage,
+        'currentVersionId' | 'harnessSelection' | 'status' | 'variants'
+      >
+    | undefined
+) {
+  const hasCanonicalAdoption =
+    Boolean(contentPackage?.currentVersionId) &&
+    (contentPackage?.harnessSelection
+      ? Boolean(contentPackage.harnessSelection.adoptedCandidateId)
+      : contentPackage?.status === 'accepted' ||
+        contentPackage?.status === 'export_failed');
+  return {
+    hasAdoptedCandidate: hasCanonicalAdoption,
+    hasDeliverableVariant:
+      hasCanonicalAdoption && Boolean(contentPackage?.variants.length),
+  };
+}
+
 /**
  * Only expose a platform preview after the canonical ContentPackage records
  * the server-produced copy.adapt output. Acceptance seed shells are export

@@ -71,6 +71,80 @@ test('adopting a persisted Harness alternative updates the package and writes an
   );
 });
 
+test('concurrent replay of one Harness adoption writes one revision, audit, and receipt', async () => {
+  const repository = new MemoryOperationsRepository();
+  repository.grantMembership(context.userId, context.workspaceId);
+  const service = new OperationsApplicationService(repository, {
+    canvasExporter: new RecordedCanvasExportAdapter(),
+    imageGenerator: new RecordedImageGenerationAdapter(),
+    notifier: { async send() {} },
+  });
+  const created = await service.createContentPackage(context, {
+    kind: 'image_text',
+    source: { assetIds: [], workId: 'work-1', workflowId: 'work-1' },
+  });
+  const state = await repository.loadWorkspace(context.workspaceId);
+  assert.ok(state);
+  const timestamp = '2026-07-19T00:00:00.000Z';
+  state.contentPackages[0] = {
+    ...state.contentPackages[0]!,
+    currentVersionId: 'version-c02',
+    harnessSelection: { recommendedCandidateId: 'c02' },
+    revision: 1,
+    status: 'review_ready',
+    versions: [
+      candidateVersion('c01', 70, timestamp),
+      candidateVersion('c02', 92, timestamp),
+      candidateVersion('c03', 88, timestamp),
+    ],
+  };
+  await repository.saveWorkspace(state);
+  const module = new OperationsFoundationModule(service);
+  const command = {
+    action: 'adopt_harness_candidate',
+    payload: {
+      candidateId: 'c03',
+      expectedRevision: 1,
+      packageId: created.id,
+    },
+  };
+
+  const [first, replay] = await Promise.all([
+    module.execute({
+      context,
+      idempotencyKey: 'adopt-c03-once',
+      input: command,
+    }),
+    module.execute({
+      context,
+      idempotencyKey: 'adopt-c03-once',
+      input: command,
+    }),
+  ]);
+
+  assert.deepEqual(replay, first);
+  const persisted = await repository.loadWorkspace(context.workspaceId);
+  assert.equal(persisted?.contentPackages[0]?.revision, 2);
+  assert.equal(
+    persisted?.auditEvents.filter(
+      ({ action }) => action === 'content_package.harness_candidate_adopted',
+    ).length,
+    1,
+  );
+  assert.equal(
+    persisted?.commandReceipts.filter(
+      ({ idempotencyKey }) => idempotencyKey === 'adopt-c03-once',
+    ).length,
+    1,
+  );
+  assert.equal(
+    persisted?.commandReceipts.find(
+      ({ idempotencyKey }) => idempotencyKey === 'adopt-c03-once',
+    )?.status,
+    'completed',
+  );
+});
+
 test('an accepted Harness package can reselect a frozen candidate as one immutable version', async () => {
   const repository = new MemoryOperationsRepository();
   repository.grantMembership(context.userId, context.workspaceId);

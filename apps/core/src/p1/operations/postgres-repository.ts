@@ -1,5 +1,10 @@
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { assertOwnedAssetRegistrationAllowed } from "../model-supply/postgres-owned-asset-cleanup-claim.js";
+import {
+	insertContentPackageRow,
+	installContentPackageWriteBoundary,
+	updateContentPackageRow,
+} from "./postgres-content-package-write-adapter.js";
 import { chineseBigrams, mapProductSearchQuery } from "./search.js";
 import {
 	ContentPackageRevisionConflictError,
@@ -330,12 +335,6 @@ export class PostgresOperationsRepository implements OperationsRepository {
       );
       ALTER TABLE p1_content_packages
         ADD COLUMN IF NOT EXISTS revision bigint;
-      UPDATE p1_content_packages
-         SET payload = jsonb_set(payload, '{revision}', '0'::jsonb, true)
-       WHERE payload->'revision' IS NULL;
-      UPDATE p1_content_packages
-         SET revision = (payload->>'revision')::bigint
-       WHERE revision IS NULL;
       ALTER TABLE p1_content_packages
         ALTER COLUMN revision SET DEFAULT 0,
         ALTER COLUMN revision SET NOT NULL;
@@ -422,6 +421,7 @@ export class PostgresOperationsRepository implements OperationsRepository {
       CREATE UNIQUE INDEX IF NOT EXISTS p1_retrieval_evaluations_workspace_revision_idx
         ON p1_retrieval_evaluations (workspace_id, revision);
 		`);
+		await installContentPackageWriteBoundary(database);
 		if (this.capabilities.trigram) {
 			await database.query(`
         CREATE INDEX IF NOT EXISTS p1_search_documents_trgm_idx
@@ -596,14 +596,14 @@ export class PostgresOperationsRepository implements OperationsRepository {
 			}
 			const updatedAt = row.updatedAt || row.createdAt;
 			if (revision === 0) {
-				const inserted = await this.database.query(
-					`INSERT INTO p1_content_packages
-					   (workspace_id, id, payload, revision, updated_at)
-					 VALUES ($1, $2, $3::jsonb, 0, $4::timestamptz)
-					 ON CONFLICT (workspace_id, id) DO NOTHING`,
-					[workspaceId, row.id, JSON.stringify(row), updatedAt],
-				);
-				if (inserted.rowCount === 1) continue;
+				const inserted = await insertContentPackageRow(this.database, {
+					id: row.id,
+					payload: row,
+					revision,
+					updatedAt,
+					workspaceId,
+				});
+				if (inserted) continue;
 			}
 
 			const unchanged = await this.database.query<{ revision: string }>(
@@ -618,24 +618,15 @@ export class PostgresOperationsRepository implements OperationsRepository {
 			if (unchanged.rowCount === 1) continue;
 
 			const expectedRevision = revision - 1;
-			const updated = await this.database.query(
-				`UPDATE p1_content_packages
-				    SET payload = $4::jsonb,
-				        revision = $3,
-				        updated_at = $5::timestamptz
-				  WHERE workspace_id = $1
-				    AND id = $2
-				    AND revision = $6`,
-				[
-					workspaceId,
-					row.id,
-					revision,
-					JSON.stringify(row),
-					updatedAt,
-					expectedRevision,
-				],
-			);
-			if (updated.rowCount === 1) continue;
+			const updated = await updateContentPackageRow(this.database, {
+				expectedRevision,
+				id: row.id,
+				payload: row,
+				revision,
+				updatedAt,
+				workspaceId,
+			});
+			if (updated) continue;
 			const current = await this.database.query<{ revision: string }>(
 				`SELECT revision::text AS revision
 				   FROM p1_content_packages

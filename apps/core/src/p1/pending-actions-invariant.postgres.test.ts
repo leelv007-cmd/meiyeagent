@@ -286,6 +286,36 @@ function contentPackage(input: {
           },
         ],
       },
+      {
+        currentVersionId: `xiaohongshu-version-${input.packageId}`,
+        id: `xiaohongshu-${input.packageId}`,
+        platform: 'xiaohongshu',
+        versions: [
+          {
+            body: '小红书正文',
+            createdAt: now,
+            id: `xiaohongshu-version-${input.packageId}`,
+            orderedAssetIds: [],
+            title: '小红书标题',
+            topics: [],
+          },
+        ],
+      },
+      {
+        currentVersionId: `video-account-version-${input.packageId}`,
+        id: `video-account-${input.packageId}`,
+        platform: 'video_account',
+        versions: [
+          {
+            body: '视频号正文',
+            createdAt: now,
+            id: `video-account-version-${input.packageId}`,
+            orderedAssetIds: [],
+            title: '视频号标题',
+            topics: [],
+          },
+        ],
+      },
     ],
     versions: [],
     workspaceId: input.workspaceId,

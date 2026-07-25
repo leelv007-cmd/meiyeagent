@@ -11,6 +11,10 @@ import type { Pool, PoolClient } from 'pg';
 import { createHash } from 'node:crypto';
 
 import { buildContentPackage } from '../operations/content-package.js';
+import {
+  insertContentPackageRow,
+  updateContentPackageRow,
+} from '../operations/postgres-content-package-write-adapter.js';
 import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledger.js';
 import { TaskBlockingNodeConflictError } from '../operations/repository.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
@@ -875,33 +879,22 @@ export class PostgresHarnessStore
           versions: [...contentPackage.versions, ...candidateVersions],
         });
         const written = input.reuseSeed
-          ? await client.query(
-              `insert into p1_content_packages
-                 (workspace_id, id, payload, revision, updated_at)
-               values ($1, $2, $3::jsonb, $4, $5)
-               on conflict (workspace_id, id) do nothing`,
-              [
-                input.workspaceId,
-                input.packageId,
-                JSON.stringify(updated),
-                nextRevision,
-                input.occurredAt,
-              ],
-            )
-          : await client.query(
-              `update p1_content_packages
-               set payload=$3, revision=$4, updated_at=$5
-               where workspace_id=$1 and id=$2 and revision=$6`,
-              [
-                input.workspaceId,
-                input.packageId,
-                JSON.stringify(updated),
-                nextRevision,
-                input.occurredAt,
-                input.expectedRevision,
-              ],
-            );
-        if (written.rowCount !== 1) {
+          ? await insertContentPackageRow(client, {
+              id: input.packageId,
+              payload: updated,
+              revision: nextRevision,
+              updatedAt: input.occurredAt,
+              workspaceId: input.workspaceId,
+            })
+          : await updateContentPackageRow(client, {
+              expectedRevision: input.expectedRevision,
+              id: input.packageId,
+              payload: updated,
+              revision: nextRevision,
+              updatedAt: input.occurredAt,
+              workspaceId: input.workspaceId,
+            });
+        if (!written) {
           throw new Error('ContentPackage CAS failed while holding the workspace lock.');
         }
         await this.writeGeneralTrace(

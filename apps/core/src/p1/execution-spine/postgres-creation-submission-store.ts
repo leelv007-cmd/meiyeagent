@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from "pg";
 
 import { P1DomainError } from "../foundation/domain.js";
 import { buildContentPackage } from "../operations/content-package.js";
+import { insertContentPackageRow } from "../operations/postgres-content-package-write-adapter.js";
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
 import { creationExecutionSnapshotSchema } from "./creation-execution-snapshot.js";
@@ -214,20 +215,18 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
         ? { reusedFromPackageId: snapshot.sources.contentPackage.id }
         : {},
     };
-    await insertOnce(
-      client,
-      `INSERT INTO p1_content_packages
-         (workspace_id, id, payload, revision, updated_at)
-       VALUES ($1, $2, $3::jsonb, 0, $4::timestamptz)
-       ON CONFLICT (workspace_id, id) DO NOTHING`,
-      [
-        snapshot.workspaceId,
-        submission.contentPackage.id,
-        JSON.stringify(contentPackageWithLineage),
-        timestamp,
-      ],
-      `ContentPackage ${submission.contentPackage.id} already exists.`,
-    );
+    const inserted = await insertContentPackageRow(client, {
+      id: submission.contentPackage.id,
+      payload: contentPackageWithLineage,
+      revision: 0,
+      updatedAt: timestamp,
+      workspaceId: snapshot.workspaceId,
+    });
+    if (!inserted) {
+      throw new Error(
+        `ContentPackage ${submission.contentPackage.id} already exists.`,
+      );
+    }
     await this.usage.reserve(client, submission);
   }
 }
