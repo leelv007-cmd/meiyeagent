@@ -85,20 +85,34 @@ test.describe('M-01 signed platform contract', () => {
     await expect(
       page.getByTestId('composer-destination-capability')
     ).toHaveText('生成后导出');
-    await expect
-      .poll(() => quoteLine.getAttribute('data-submission-contract-hash'))
-      .not.toBe(initialHash);
-    const xhsHash = await quoteLine.getAttribute(
-      'data-submission-contract-hash'
-    );
+    // Capture inside the poll. While the quote refetches, the attribute is
+    // briefly absent, and `null` trivially satisfies `.not.toBe(previous)` —
+    // so a poll that only checks difference can pass mid-refetch and the read
+    // that follows grabs the gap instead of the new hash.
+    const contractHashOtherThan = async (previous: string | null) => {
+      let captured: string | null = null;
+      await expect
+        .poll(async () => {
+          const value = await quoteLine.getAttribute(
+            'data-submission-contract-hash'
+          );
+          if (!value || !/^[a-f0-9]{64}$/u.test(value) || value === previous) {
+            return false;
+          }
+          captured = value;
+          return true;
+        })
+        .toBe(true);
+      return captured as unknown as string;
+    };
+
+    const xhsHash = await contractHashOtherThan(initialHash);
 
     await destination('wechat_moments').click();
     await expect(
       page.getByTestId('composer-destination-capability')
     ).toHaveText('生成后协办交接');
-    await expect
-      .poll(() => quoteLine.getAttribute('data-submission-contract-hash'))
-      .not.toBe(xhsHash);
+    await contractHashOtherThan(xhsHash);
 
     await destination('xiaohongshu').click();
     await expect
