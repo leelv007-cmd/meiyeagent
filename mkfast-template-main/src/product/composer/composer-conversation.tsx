@@ -175,7 +175,9 @@ export function ComposerConversation({
     // Structured card flow, not a chat log — follow the newest turn without
     // hijacking the page scroll on first paint.
     if (turnCount === 0) return;
-    endRef.current?.scrollIntoView({ block: 'nearest' });
+    // Optional-call: following the newest turn is a nicety, and jsdom has no
+    // scrollIntoView.
+    endRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [turnCount]);
 
   if (turnCount === 0) return null;
@@ -323,7 +325,24 @@ export function ComposerPromptBar({
         value={value}
       >
         <PromptInput.Shell className="meiye-porcelain">
-          <PromptInput.Content>
+          <PromptInput.Content
+            onKeyDownCapture={(event) => {
+              // Upstream PromptInput submits on bare Enter. The shipped submit
+              // contract is Cmd/Ctrl+Enter, and the D-043 activation counter
+              // only counts that — letting bare Enter through would submit
+              // uncounted and would swallow newlines mid-sentence. Stopping in
+              // the capture phase leaves the textarea's default newline intact
+              // while Cmd/Ctrl+Enter and Shift+Enter keep their behaviour.
+              if (
+                event.key === 'Enter' &&
+                !event.shiftKey &&
+                !event.metaKey &&
+                !event.ctrlKey
+              ) {
+                event.stopPropagation();
+              }
+            }}
+          >
             <PromptInput.TextArea
               aria-label={ariaLabel}
               data-testid="composer-intent-input"

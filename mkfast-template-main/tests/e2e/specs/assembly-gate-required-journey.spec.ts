@@ -76,6 +76,18 @@ async function submitFirstCopy(page: Page, intent: string) {
   ).toBeTruthy();
   const workId = body.data?.work?.id;
   expect(workId).toBeTruthy();
+
+  // ADR-0014「提交后不跳转」. The first-activation evidence is unchanged — a real
+  // work id came back from a real submission — but the merchant now sees it
+  // land in the conversation. Prove we stayed, that the 成品预览卡 arrived, and
+  // that clicking it opens the Result Center for exactly this work.
+  await expect(
+    page,
+    'submitting must not navigate away from the Composer conversation'
+  ).not.toHaveURL(/\/dashboard\/results\//u);
+  const deliveryCard = page.getByTestId('composer-delivery-card');
+  await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
+  await deliveryCard.click();
   await expect(page).toHaveURL(
     new RegExp(`/dashboard/results/${encodeURIComponent(workId!)}`, 'u'),
     { timeout: 60_000 }

@@ -56,10 +56,41 @@ async function day0SeedPrep(
   return user;
 }
 
+/**
+ * ADR-0014「提交后不跳转」— the D-043 stop condition is the first token the
+ * merchant can actually see, and it now streams inside the conversation. This
+ * is a stronger endpoint than the old one: the merchant reaches a usable draft
+ * without any navigation at all.
+ */
 async function assertResultFirstToken(
   page: Page,
   _workspace: 'copy' | 'image'
 ) {
+  await expect(
+    page,
+    'submitting must not navigate away from the Composer conversation'
+  ).not.toHaveURL(/\/dashboard\/results\//u);
+  await expect(page.getByTestId('composer-conversation')).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(firstTokenLocator(page)).toHaveAttribute(
+    'data-has-token',
+    'true',
+    { timeout: 90_000 }
+  );
+  await expect(page.getByTestId('composer-candidate-primary')).toBeVisible();
+}
+
+/**
+ * The Result Center is still the 交付结果面 — it is now reached by clicking the
+ * 成品预览卡, and the work it opens must be the one this run produced.
+ */
+async function assertDeliveryCardOpensResultCenter(page: Page) {
+  const deliveryCard = page.getByTestId('composer-delivery-card');
+  await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
+  await expect(page).not.toHaveURL(/\/dashboard\/results\//u);
+
+  await deliveryCard.click();
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+/u, {
     timeout: 60_000,
   });
@@ -67,14 +98,27 @@ async function assertResultFirstToken(
   await expect(page.getByTestId('result-merchant-status')).toContainText(
     /生成中|可发布/u
   );
-  await expect(firstTokenLocator(page)).toHaveAttribute(
-    'data-has-token',
-    'true',
-    { timeout: 90_000 }
-  );
 }
 
+/**
+ * Video has no token stream (ADR-0010 long-task path), so its first usable
+ * result is the 成片 itself. The run announces itself in the conversation, and
+ * the 成品预览卡 is what opens the video worksurface — clicking it is a
+ * navigation, not an activation, so the click budget is unaffected.
+ */
 async function assertVideoFirstUsableResult(page: Page) {
+  await expect(
+    page,
+    'submitting must not navigate away from the Composer conversation'
+  ).not.toHaveURL(/\/dashboard\/results\//u);
+  await expect(page.getByTestId('composer-conversation')).toBeVisible({
+    timeout: 60_000,
+  });
+
+  const deliveryCard = page.getByTestId('composer-delivery-card');
+  await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
+  await deliveryCard.click();
+
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+/u, {
     timeout: 60_000,
   });
@@ -210,6 +254,11 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       const events = await creativeEventTypes(page);
       expect(events).toContain('first_work_created');
       expect(events).not.toContain('cold_start_skipped');
+
+      // The other half of the replaced navigation assertion: the Result Center
+      // is still reachable, by clicking the 成品预览卡. Measurement has already
+      // stopped, so this click is outside the budget.
+      await assertDeliveryCardOpensResultCenter(page);
     });
   });
 
@@ -273,6 +322,9 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       const events = await creativeEventTypes(page);
       expect(events).toContain('first_work_created');
       expect(events).not.toContain('cold_start_skipped');
+
+      // The other half of the replaced navigation assertion.
+      await assertDeliveryCardOpensResultCenter(page);
     });
   });
 
