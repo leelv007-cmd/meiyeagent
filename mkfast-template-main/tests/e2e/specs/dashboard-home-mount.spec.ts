@@ -91,28 +91,29 @@ async function creativeWorkbench(page: Page) {
 
 
 /**
- * 可发布 is a finished piece, not a candidate list: the merchant's next step is
- * 交付, and 采用此版本 is not on the way there. Pinned on purpose — if the main
- * path ever goes back to "adopt first", these journeys must go red rather than
- * quietly stay green.
+ * 可发布 是一件已完成的成品，不是候选列表——商户一次「采用」都还没点，
+ * 标题/正文/转化语就已经齐全。这条是 OI-15 的防线：成品的存在不许被
+ * 任何前置动作扣为人质。
+ *
+ * T42 之前「采用此版本」是条死路（挂得出来、点不动），当时这里断言它缺席；
+ * T42 把它修成真正可用的动作，所以断言反过来钉「可用」——退回死路要红。
+ * 「交付是否必须先采用」是产品口径问题（见 result-shell-model.ts 的 ready
+ * 分支：交付确实排在 hasAdoptedCandidate 之后），本 helper 不替它表态。
  */
-async function assertDeliverableWithoutAdopt(page: Page) {
+async function assertFinishedPieceBeforeAdopt(page: Page) {
   await expect(page.getByTestId('result-merchant-status')).toContainText(
     /可发布|已发布就绪/u,
     { timeout: 180_000 }
   );
-  // Timing decides whether the adopt button is absent or mounted-but-disabled,
-  // so pin the property that holds either way: no usable adopt action.
-  await expect(
-    page.locator('[data-testid="copy-adopt-action"]:not([disabled])')
-  ).toHaveCount(0);
+
+  // T42 的修复本身：采用是一个能用的动作，不是 OI-15 那条挂着点不动的死路。
   await expect(
     page
       .getByTestId('result-shell-actions')
       .getByRole('button', { name: '采用此版本', exact: true })
-  ).toHaveCount(0);
+  ).toBeEnabled();
 
-  // 成品是真写出来的：对客可见的标题、正文、转化语三样都在且非空。
+  // 成品是真写出来的，且是在任何一次采用点击之前：标题、正文、转化语三样都非空。
   const worksurface = page.getByTestId(COPY_CONTRACT.resultSurfaceTestId);
   await expect(worksurface.getByTestId('copy-field-title')).toHaveValue(/\S/u);
   await expect(worksurface.getByTestId('copy-field-body')).toHaveValue(/\S/u);
@@ -320,7 +321,7 @@ test.describe('D-126 dashboard home mount', () => {
 
     // 成品真的写出来了，而且采用不是必经动作。导出止步于此：这条 Day-0 脊柱
     // 目前不往 canonical ContentPackage 写内容，交付面板里三条出口都拿不到文件。
-    await assertDeliverableWithoutAdopt(page);
+    await assertFinishedPieceBeforeAdopt(page);
   });
 
   test('platform_sample material never reaches the merchant workspace', async ({
@@ -401,7 +402,7 @@ test.describe('D-126 dashboard home mount', () => {
       .fill('把本周护理项目做成一条可以发的小红书文案');
     const { workId } = await submitPrefilledCopy(page);
     await waitForResultJourney(page, COPY_CONTRACT, workId);
-    await assertDeliverableWithoutAdopt(page);
+    await assertFinishedPieceBeforeAdopt(page);
 
     // 这条 fixture 链路今天产不出主推荐（brief 交回的事实引用恒为空），所以首页
     // 必须诚实地说"还没有"，并把下一步给出来 —— 不是空壳，也不是卡在加载态。
