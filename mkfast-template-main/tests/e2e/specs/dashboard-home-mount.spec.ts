@@ -453,9 +453,11 @@ test.describe('D-126 dashboard home mount', () => {
       expect(overflow, 'cold home must not scroll horizontally').toBeLessThanOrEqual(1);
 
       // Durable walkthrough evidence — Playwright wipes test-results/ per run.
+      // Kept out of the tracked tree (OI-26): a spec that rewrites committed
+      // files turns every run into a dirty worktree for whoever shares it.
       await page.screenshot({
         fullPage: true,
-        path: `../.scratch/t29-dashboard-home-2026-07-25/cold-home-mobile-${theme}.png`,
+        path: `../.scratch/t29-dashboard-home-2026-07-25/shots/cold-home-mobile-${theme}.png`,
       });
     });
   }
