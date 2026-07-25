@@ -1,5 +1,7 @@
 import {
   assetIntakeMissingFactKeysQuerySchema,
+  assetDraftViewQuerySchema,
+  assetIntakeExperienceQuerySchema,
   assetIntakeViewQuerySchema,
   confirmAssetIntakeFactCommandSchema,
   confirmPreferenceCommandSchema,
@@ -7,8 +9,13 @@ import {
   correctAssetIntakeFactCommandSchema,
   createReuseTaskCommandSchema,
   deactivateSeriesCommandSchema,
+  parseAssetBatchCommandSchema,
+  parseSingleAssetCommandSchema,
+  parseTaskViewQuerySchema,
   preferenceViewQuerySchema,
   prepareAssistedPriceIntakeCommandSchema,
+  prepareManualAssetDraftCommandSchema,
+  promoteAssetDraftCommandSchema,
   proposePreferenceCommandSchema,
   proposeReusableAssetCommandSchema,
   recordAssetIntakeBatchCommandSchema,
@@ -27,6 +34,7 @@ import type { P1OperationModule } from '../foundation/ports.js';
 import type { AssetIntakeService } from './asset-intake-service.js';
 import type { ContextBundleRepository } from './context-bundle-repository.js';
 import type { ReuseMemoryService } from './reuse-memory-service.js';
+import type { ParseService } from './parse-service.js';
 
 export interface ReuseTaskSubmissionPort {
   submit(input: {
@@ -89,6 +97,7 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
     private readonly reuse: ReuseMemoryService,
     private readonly reuseTasks?: ReuseTaskSubmissionPort,
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly parsing?: ParseService,
   ) {}
 
   async execute(args: {
@@ -99,6 +108,62 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
     const name = action(args.input);
     const value = payload(args.input);
     switch (name) {
+      case 'parse_single_asset':
+        return this.requireParsing().parseSingle(
+          args.context,
+          parse(parseSingleAssetCommandSchema, value),
+        );
+      case 'parse_asset_batch':
+        return this.requireParsing().startBatch(
+          args.context,
+          parse(parseAssetBatchCommandSchema, value),
+        );
+      case 'prepare_manual_asset_draft':
+        return this.requireParsing().prepareManualDraft(
+          args.context,
+          parse(prepareManualAssetDraftCommandSchema, value),
+        );
+      case 'promote_asset_draft': {
+        const input = parse(promoteAssetDraftCommandSchema, value);
+        const draft = await this.requireParsing().draft(
+          args.context.workspaceId,
+          input.draftId,
+          input.draftRevision,
+        );
+        if (draft.factCandidates.length === 0) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'This draft has no facts to confirm.',
+          );
+        }
+        return this.intake.recordBatch({
+          batchId: input.batchId,
+          workspaceId: args.context.workspaceId,
+          taskId: draft.taskId,
+          source: {
+            sourceId: draft.sourceAssetId,
+            kind:
+              draft.target === 'group_buy'
+                ? 'group_buy_screenshot'
+                : draft.target === 'price_list'
+                  ? 'price_list'
+                  : 'gallery',
+            referenceId: draft.sourceAssetId,
+            capabilityStatus: 'assisted',
+            sourceWorkspaceId: args.context.workspaceId,
+            capturedAt: draft.createdAt,
+            example: false,
+          },
+          summary: `已整理出 ${draft.factCandidates.length} 项待确认资料。`,
+          candidates: draft.factCandidates.map((fact, index) => ({
+            candidateId: `${draft.draftId}:fact:${index + 1}`,
+            status: 'pending' as const,
+            objectKind: 'store_fact' as const,
+            fact,
+          })),
+          createdAt: this.now(),
+        });
+      }
       case 'record_asset_intake_batch': {
         const input = parse(recordAssetIntakeBatchCommandSchema, value);
         if (
@@ -247,6 +312,25 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
     const name = action(args.input);
     const value = payload(args.input);
     switch (name) {
+      case 'parse_task_view': {
+        const input = parse(parseTaskViewQuerySchema, value);
+        return this.requireParsing().task(
+          args.context.workspaceId,
+          input.taskId,
+        );
+      }
+      case 'asset_draft_view': {
+        const input = parse(assetDraftViewQuerySchema, value);
+        return this.requireParsing().draftView(
+          args.context.workspaceId,
+          input.draftId,
+          input.revision,
+        );
+      }
+      case 'asset_intake_experience': {
+        const input = parse(assetIntakeExperienceQuerySchema, value);
+        return this.requireParsing().experience(input);
+      }
       case 'asset_intake_view': {
         const input = parse(assetIntakeViewQuerySchema, value);
         return this.intake.view(args.context.workspaceId, input.batchId);
@@ -296,5 +380,15 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
           `Unknown asset-memory query ${name}.`,
         );
     }
+  }
+
+  private requireParsing() {
+    if (!this.parsing) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'The asset parsing service is unavailable.',
+      );
+    }
+    return this.parsing;
   }
 }

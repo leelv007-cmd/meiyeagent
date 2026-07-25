@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { ASSET_INTAKE_GUIDANCE_CONFIG_KEY } from '@meiye/contracts';
 import { z } from 'zod';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
@@ -114,6 +115,7 @@ describe('Admin config application seam', () => {
     assert.deepEqual(
       projected.map((item) => item.key),
       [
+        ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         'byok.adapter.assembly',
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',

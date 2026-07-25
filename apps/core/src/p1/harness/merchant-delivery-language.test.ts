@@ -2,11 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  merchantAssetRightsSoftPrompt,
   merchantConfirmationQuestion,
   merchantExactTextMismatch,
   merchantIdentityVoiceNotice,
+  merchantParseDisclosure,
+  merchantParseFallback,
+  merchantParseProgress,
+  merchantParseTaskFailed,
   merchantPartialFailure,
   merchantProgressMessage,
+  merchantSensitiveDocumentFallback,
   merchantTaskSummary,
   merchantVideoGenerationFailure,
   merchantVisibleLanguageIssues,
@@ -37,6 +43,14 @@ test('five merchant-facing positions stay free of engineering language', () => {
     }),
     merchantVideoGenerationFailure('failed'),
     merchantVideoGenerationFailure('timed_out'),
+    merchantParseDisclosure(),
+    merchantParseProgress({ completed: 2, total: 4 }),
+    merchantParseFallback('failed'),
+    merchantParseFallback('timeout'),
+    merchantParseFallback('rate_limited'),
+    merchantSensitiveDocumentFallback(),
+    merchantParseTaskFailed(),
+    merchantAssetRightsSoftPrompt(),
   ];
 
   for (const message of messages) {
@@ -87,4 +101,34 @@ test('language check catches internal ids, providers and transport codes', () =>
     'DeepSeek',
     'HTTP code',
   ]);
+});
+
+test('parse disclosure and rights reminder are soft prompts, not gates', () => {
+  assert.match(merchantParseDisclosure(), /可以随时跳过/u);
+  assert.match(merchantAssetRightsSoftPrompt(), /不影响继续/u);
+  assert.deepEqual(
+    merchantVisibleLanguageIssues(
+      `${merchantParseDisclosure()} ${merchantAssetRightsSoftPrompt()}`,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    merchantVisibleLanguageIssues(
+      'MinerU parse pipeline returned a candidate schema.',
+    ),
+    ['candidate', 'schema', 'MinerU', 'parse', 'pipeline'],
+  );
+});
+
+test('sensitive documents and stopped batches explain the honest next step', () => {
+  assert.match(merchantSensitiveDocumentFallback(), /不会交给外部服务/u);
+  assert.doesNotMatch(merchantSensitiveDocumentFallback(), /失败|没有整理成功/u);
+  assert.match(merchantParseTaskFailed(), /已经停止/u);
+  assert.match(merchantParseTaskFailed(), /手动填写/u);
+  assert.deepEqual(
+    merchantVisibleLanguageIssues(
+      `${merchantSensitiveDocumentFallback()} ${merchantParseTaskFailed()}`,
+    ),
+    [],
+  );
 });

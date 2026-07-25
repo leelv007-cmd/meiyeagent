@@ -1,4 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { ASSET_INTAKE_GUIDANCE_CONFIG_KEY } from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { PostgresDiagnosticRepository } from './diagnostics/postgres-repository.js';
@@ -211,6 +212,11 @@ import {
   ModelSupplyImageGenerationAdapter,
   MediaCustodyStorageAdapter,
   MarketingIdentityFoundationModule,
+  AdminConfigAssetIntakeGuidanceSource,
+  documentParseProviderFromEnv,
+  FixtureAssetDraftCompiler,
+  FixtureVisualAssetClassifier,
+  StoredParseSourceAssetAuthorizer,
   OperationsProductSearchProjection,
   OperationsProductPackageRightsAdapter,
   ProductContentPackageRightsResolver,
@@ -236,11 +242,13 @@ import {
   PostgresContextBundleRepository,
   PostgresContextSourceRevisionRepository,
   PostgresMarketingIdentityRepository,
+  PostgresParseRepository,
   PostgresReuseMemoryRepository,
   PostgresStoreFactLedger,
   contentPackageDeliveryCapability,
   ProductOperationsBatchExecutionAdapter,
   PersistentCanvasExportAdapter,
+  ParseService,
 } from './p1/operations/index.js';
 import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from './pro-studio-runtime/provider-reference-policy.js';
 import {
@@ -338,6 +346,7 @@ const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
 const marketingIdentities = new PostgresMarketingIdentityRepository(pool);
 const assetIntakeRepository = new PostgresAssetIntakeRepository(pool);
+const parseRepository = new PostgresParseRepository(pool);
 const reuseMemoryRepository = new PostgresReuseMemoryRepository(pool);
 const contentPackageWriteOwnership = new PostgresContentPackageWriteOwnership(
   pool
@@ -736,6 +745,7 @@ await migratePostgresSchema(pool, [
   contextSourceRevisions,
   marketingIdentities,
   assetIntakeRepository,
+  parseRepository,
   reuseMemoryRepository,
   contentPackageWriteOwnership,
   contentPackageMigrationRuns,
@@ -751,6 +761,15 @@ await migratePostgresSchema(pool, [
 await migrateProStudioSchema(pool);
 await migrateProStudioWorkspaceState(pool);
 const tracerJobs = new TracerJobApplicationService(tracerJobRepository);
+const parseService = new ParseService(
+  parseRepository,
+  documentParseProviderFromEnv(process.env),
+  new FixtureAssetDraftCompiler(),
+  new FixtureVisualAssetClassifier(),
+  new StoredParseSourceAssetAuthorizer(assetStorage),
+  new AdminConfigAssetIntakeGuidanceSource(adminConfigRepository),
+  tracerJobs,
+);
 if (gatedMediaExecution) {
   p1ModelSupplyService.attachDurableMediaRuntime(
     new DurableMediaGenerationApplicationService({
@@ -1247,6 +1266,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         providerCredentialRuntime,
       ),
       hotReadKeys: [
+        ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         'plan.addons',
         'plan.allowances.trial',
@@ -1262,6 +1282,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'compliance.watermark.default',
       ],
       wiredKeys: [
+        ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         'byok.adapter.assembly',
         'douyin.adapter.assembly',
@@ -1415,7 +1436,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       assetIntakeService,
       contextBundleRepository,
       reuseMemoryService,
-      reuseTaskHarnessAdapter
+      reuseTaskHarnessAdapter,
+      undefined,
+      parseService
     ),
     new OperationsFoundationModule(operationsService, {
       adminActorIds: modelAdminActorIds,

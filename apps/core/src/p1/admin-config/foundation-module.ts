@@ -1,7 +1,12 @@
-import { P1DomainError, type P1Context } from '../foundation/domain.js';
-import type { P1OperationModule } from '../foundation/ports.js';
+import {
+  ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+  assetIntakeGuidanceConfigSchema,
+} from '@meiye/contracts';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
+
+import { P1DomainError, type P1Context } from '../foundation/domain.js';
+import type { P1OperationModule } from '../foundation/ports.js';
 import { createDefaultDeployments } from '../model-supply/catalog.js';
 import type {
   CloudflareInventorySnapshot,
@@ -229,6 +234,12 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     description: `Probe-backed activation evidence for ${deployment.id}.`,
     valueSchema: activationEvidenceConfigSchema,
   })),
+  {
+    key: ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+    scope: 'global',
+    description: 'Industry examples and recommendations for asset intake.',
+    valueSchema: assetIntakeGuidanceConfigSchema,
+  },
   {
     key: HARNESS_WOZ_RECIPE_CONFIG_KEY,
     scope: 'workspace',

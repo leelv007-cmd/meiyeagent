@@ -8,6 +8,7 @@ export * from './editing-context.js';
 export * from './harness.js';
 export * from './context-bundle.js';
 export * from './asset-intake.js';
+export * from './parse-service.js';
 export * from './reuse-memory.js';
 export * from './approval-receipt.js';
 export * from './pending-action.js';

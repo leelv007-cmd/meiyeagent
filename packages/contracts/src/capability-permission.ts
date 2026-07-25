@@ -235,7 +235,11 @@ const assetMemoryCreateActions = new Set([
   'confirm_asset_intake_fact',
   'correct_asset_intake_fact',
   'create_reuse_task',
+  'parse_asset_batch',
+  'parse_single_asset',
   'prepare_assisted_price_intake',
+  'prepare_manual_asset_draft',
+  'promote_asset_draft',
   'propose_preference',
   'propose_reusable_asset',
   'record_asset_intake_batch',
@@ -243,8 +247,11 @@ const assetMemoryCreateActions = new Set([
   'reject_asset_intake_candidate',
 ]);
 const assetMemoryQueryActions = new Set([
+  'asset_draft_view',
+  'asset_intake_experience',
   'asset_intake_missing_fact_keys',
   'asset_intake_view',
+  'parse_task_view',
   'preference_view',
   'reusable_asset_view',
   'reuse_task_seed',

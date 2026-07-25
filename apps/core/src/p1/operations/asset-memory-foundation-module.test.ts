@@ -13,6 +13,13 @@ import {
   ReuseMemoryService,
 } from './reuse-memory-service.js';
 import { MemoryStoreFactLedger } from './store-fact-ledger.js';
+import {
+  FixtureAssetDraftCompiler,
+  FixtureDocumentParseProvider,
+  FixtureVisualAssetClassifier,
+  MemoryParseRepository,
+  ParseService,
+} from './parse-service.js';
 
 const now = '2026-07-18T06:00:00.000Z';
 const context: P1Context = {
@@ -224,6 +231,75 @@ test('batch creation replays after the server clock advances', async () => {
   const firstAssisted = await module.execute(assisted);
   const replayedAssisted = await module.execute(assisted);
   assert.deepEqual(replayedAssisted, firstAssisted);
+});
+
+test('asset-memory exposes queued and refreshed batch progress for the presentation lane', async () => {
+  const submitted: unknown[] = [];
+  const parsing = new ParseService(
+    new MemoryParseRepository(),
+    new FixtureDocumentParseProvider(),
+    new FixtureAssetDraftCompiler(),
+    new FixtureVisualAssetClassifier(),
+    { isAuthorized: async () => true },
+    undefined,
+    {
+      async submit(input) {
+        submitted.push(input);
+        return {} as never;
+      },
+    },
+    () => now,
+  );
+  const module = new AssetMemoryFoundationModule(
+    new AssetIntakeService(
+      new MemoryAssetIntakeRepository(),
+      new MemoryStoreFactLedger(),
+      () => now,
+    ),
+    new MemoryContextBundleRepository(),
+    new ReuseMemoryService(
+      new MemoryReuseMemoryRepository(),
+      { verifyCandidate: async () => {}, verifyRevision: async () => {} },
+      () => now,
+    ),
+    undefined,
+    () => now,
+    parsing,
+  );
+  const queued = (await module.execute({
+    context,
+    idempotencyKey: 'parse-batch',
+    input: {
+      action: 'parse_asset_batch',
+      payload: {
+        taskId: 'parse-batch',
+        sources: ['one', 'two'].map((assetId) => ({
+          assetId,
+          objectKey: `${context.workspaceId}/${assetId}.png`,
+          sha256: 'e'.repeat(64),
+          sizeBytes: 100,
+          contentType: 'image/png',
+          sourceUrl: `https://assets.example.test/${assetId}.png`,
+          inputKind: 'document_image',
+          target: 'price_list',
+          rightsStatus: 'confirmed',
+        })),
+      },
+    },
+  })) as { status: string };
+  assert.equal(queued.status, 'queued');
+  assert.equal(submitted.length, 1);
+  await parsing.runBatchTask(context.workspaceId, 'parse-batch');
+  const refreshed = (await module.query({
+    context,
+    input: {
+      action: 'parse_task_view',
+      payload: { taskId: 'parse-batch' },
+    },
+  })) as { status: string; progress: { completed: number; total: number } };
+  assert.equal(refreshed.status, 'completed');
+  assert.equal(refreshed.progress.completed, 2);
+  assert.equal(refreshed.progress.total, 2);
 });
 
 test('asset-memory module creates a content-free reuse Task from an exact AssetRevision', async () => {
