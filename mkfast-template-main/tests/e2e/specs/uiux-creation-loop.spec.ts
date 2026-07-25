@@ -361,23 +361,48 @@ test.describe('S2 cold start and unified creation loop', () => {
       jobs: [],
       works: [],
     });
-    const example = page.getByRole('region', {
-      name: '弥鹿美甲示例店',
-    });
-    await expect(example).toBeHidden();
+    const showcase = page.getByTestId('example-store-showcase');
+    await expect(showcase).toBeHidden();
     await page.getByRole('button', { name: '查看示例' }).click();
+    await expect(showcase).toBeVisible();
+
+    // D-126 / C-5: the cold home offers all three sample industries.
+    const industries = showcase.getByRole('radiogroup', {
+      name: '选择示例门店行业',
+    });
+    await expect(industries.getByRole('radio')).toHaveCount(3);
+    for (const industry of ['护发', '皮肤管理', '生发']) {
+      await expect(industries.getByRole('radio', { name: industry })).toBeVisible();
+    }
+
+    const sampleStores = (await productState(page)).exampleStores;
+    expect(sampleStores.map((store) => store.industry)).toEqual([
+      'hair_care',
+      'skin_management',
+      'hair_growth',
+    ]);
+    expect(
+      sampleStores.every((store) => store.provenance === 'platform_sample')
+    ).toBe(true);
+
+    const hairCare = sampleStores[0]!;
+    const example = page.getByRole('region', { name: hairCare.name });
     await expect(example).toBeVisible();
     await expect(
       example.getByText('只读 · 浏览不消耗额度', { exact: true })
     ).toBeVisible();
-    await expect(example.getByText('猫眼纹理特写')).toBeVisible();
-    await expect(example.getByText('门店自然光环境')).toBeVisible();
-    await expect(example.getByText('技师操作过程')).toBeVisible();
-    await expect(example.getByText('完成效果实拍')).toBeVisible();
+    for (const asset of hairCare.assetPreviews) {
+      await expect(example.getByText(asset.label)).toBeVisible();
+    }
+    for (const fact of hairCare.facts) {
+      await expect(example.getByText(fact.value)).toBeVisible();
+    }
     const exampleContents = example.getByRole('radiogroup', {
       name: '示例内容',
     });
-    await expect(exampleContents.getByRole('radio')).toHaveCount(3);
+    await expect(exampleContents.getByRole('radio')).toHaveCount(
+      hairCare.contentPreviews.length
+    );
     await example.getByRole('button', { name: '复用这条结构' }).click();
     await expect
       .poll(() =>
@@ -389,15 +414,23 @@ test.describe('S2 cold start and unified creation loop', () => {
     await expect(page.getByLabel('描述这次想创作的内容')).toHaveValue(
       /开场钩子/
     );
-    await exampleContents
-      .getByRole('radio', { name: /30 秒看懂猫眼光带/ })
+
+    // Switching industry keeps the surface read-only and re-scopes the remix.
+    await industries.getByRole('radio', { name: '生发' }).click();
+    const hairGrowth = sampleStores[2]!;
+    const growthExample = page.getByRole('region', { name: hairGrowth.name });
+    await expect(growthExample).toBeVisible();
+    const growthContent = hairGrowth.contentPreviews[1]!;
+    await growthExample
+      .getByRole('radiogroup', { name: '示例内容' })
+      .getByRole('radio', { name: new RegExp(growthContent.title) })
       .click();
-    await example.getByRole('button', { name: '复用这条结构' }).click();
+    await growthExample.getByRole('button', { name: '复用这条结构' }).click();
 
     const remixedIntent = page.getByLabel('描述这次想创作的内容');
     await expect(remixedIntent).toBeFocused();
     await expect(remixedIntent).toHaveValue(
-      '做一条抖音美业内容，内容角度围绕“30 秒看懂猫眼光带”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。'
+      `做一条抖音美业内容，内容角度围绕“${growthContent.title}”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。`
     );
     await expect(
       page.getByRole('button', { name: '建立创作记录' })
@@ -408,15 +441,17 @@ test.describe('S2 cold start and unified creation loop', () => {
       jobs: [],
       works: [],
     });
-    expect(await activeStoreFacts(page, 'example-manicure-store')).toEqual([]);
+    for (const store of sampleStores) {
+      expect(await activeStoreFacts(page, store.id)).toEqual([]);
+    }
 
-    await example.getByRole('button', { name: '隐藏示例' }).click();
-    await expect(example).toBeHidden();
-    expect((await productState(page)).exampleStore.hidden).toBe(true);
+    await growthExample.getByRole('button', { name: '隐藏示例' }).click();
+    await expect(showcase).toBeHidden();
+    expect(
+      (await productState(page)).exampleStores.every((store) => store.hidden)
+    ).toBe(true);
     await page.reload();
-    await expect(
-      page.getByRole('region', { name: '弥鹿美甲示例店' })
-    ).toBeHidden();
+    await expect(page.getByTestId('example-store-showcase')).toBeHidden();
     await expect(page.getByRole('button', { name: '查看示例' })).toBeVisible();
     await expect(page.getByLabel('描述这次想创作的内容')).toBeVisible();
     expect(await creativeProjection(page)).toMatchObject({
@@ -425,7 +460,9 @@ test.describe('S2 cold start and unified creation loop', () => {
       jobs: [],
       works: [],
     });
-    expect(await activeStoreFacts(page, 'example-manicure-store')).toEqual([]);
+    for (const store of sampleStores) {
+      expect(await activeStoreFacts(page, store.id)).toEqual([]);
+    }
   });
 
   test('today recommendation follows the persisted fact revision state', async ({
@@ -492,7 +529,9 @@ test.describe('S2 cold start and unified creation loop', () => {
       page.getByRole('heading', { level: 3, name: '本周猫眼项目推荐' })
     ).toBeVisible();
     await expect(page.getByText('换季期的咨询量正在上升')).toBeVisible();
-    await expect(page.getByText('store_fact:offer-price:1')).toBeVisible();
+    // D-116: the merchant sees how many confirmed facts were used, never their ids.
+    await expect(page.getByText('本店 1 条已确认事实')).toBeVisible();
+    await expect(page.getByText('store_fact:offer-price:1')).toBeHidden();
     await expect(page.getByText('私信预约')).toBeVisible();
     await expect(page.getByText('把新团购做一套能发的')).toBeVisible();
     await expect(
@@ -500,9 +539,15 @@ test.describe('S2 cold start and unified creation loop', () => {
     ).toBeVisible();
     await expect(page.getByText('门店本周主推低损伤染发。')).toBeVisible();
     await expect(page.getByText('私信预约发质判断。')).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: '查看完整成品' })
-    ).toHaveAttribute('href', '/dashboard/content?packageId=package-e2e');
+    // D-126: the CTA prefills the Composer draft in place — it does not navigate.
+    await expect(page.getByRole('link', { name: '查看完整成品' })).toHaveCount(0);
+    await page.getByTestId('today-recommendation-use').click();
+    const prefilled = page.getByLabel('描述这次想创作的内容');
+    await expect(prefilled).toBeFocused();
+    await expect(prefilled).toHaveValue(
+      '按今天的主推荐写一条内容：主题围绕“本周猫眼项目推荐”；今天适合发的理由是换季期的咨询量正在上升；希望顾客看完私信预约。'
+    );
+    await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);
 
     state = {
       workspaceId: 'workspace-e2e',
