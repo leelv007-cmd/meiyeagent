@@ -128,7 +128,10 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 			schemaVersion: "creation-execution-snapshot/v1",
 		},
 		task: { id: "task-1" },
-		usageReservation: { id: "usage-reservation-task-1" },
+		usageReservation: {
+			id: "usage-reservation-task-1",
+			units: [{ resource: "copy", quantity: 1 }],
+		},
 		work: { id: "work-1" },
 	});
 	assert.equal(starter.starts.length, 1);

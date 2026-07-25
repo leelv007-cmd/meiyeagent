@@ -94,9 +94,9 @@ export interface ProductQuoteSnapshot {
   minChargeSeconds?: number;
   /** Rounding step (ceil to N seconds). */
   roundingStepSeconds?: number;
-  /** Confirmed product amount / credit units at user accept. */
+  /** Confirmed monetary/product-price amount at user accept. */
   confirmedAmount?: number;
-  /** Max authorized product amount/units at confirm (pre-auth ceiling). */
+  /** Max authorized monetary/product-price amount at confirm. */
   authorizedCeiling?: number;
   /** Reference to frozen RouteSnapshot id (not embedded route truth). */
   routeSnapshotRef?: string;
@@ -109,12 +109,12 @@ export interface ProductQuoteSnapshot {
   billedSeconds?: number;
   settlementStatus?: ProductSettlementStatus;
   lifecycleStatus: ProductQuoteLifecycleStatus;
-  /** Product units finally charged after settle (≤ authorizedCeiling). */
+  /** Monetary/product-price amount finally charged (≤ authorizedCeiling). */
   settledAmount?: number;
-  /** Units refunded when trusted actual < reserved ceiling. */
+  /** Monetary/product-price amount refunded below the authorized ceiling. */
   refundedAmount?: number;
   /**
-   * Platform-absorbed product units when trusted actual would exceed ceiling.
+   * Platform-absorbed monetary amount when trusted actual would exceed ceiling.
    * Never silently surcharged to the workspace.
    */
   platformAbsorbedAmount?: number;
@@ -184,7 +184,8 @@ export interface ProviderCostSnapshot {
 
 /**
  * ProductUsage ledger entry — one task, one idempotent reserve/settle.
- * quantity may be fractional for per_output_second (not limited to 0|1).
+ * Quantities are integer merchant entitlement units: copy items, image points,
+ * or video seconds. Monetary quote amounts remain on ProductQuoteSnapshot.
  */
 export interface ProductUsageRecord {
   id: string;
@@ -192,17 +193,31 @@ export interface ProductUsageRecord {
   workspaceId: string;
   quoteId: string;
   status: 'reserved' | 'committed' | 'refunded' | 'partially_refunded';
-  /** Units reserved at pre-auth (authorized ceiling). */
+  /** Product entitlement units reserved before execution. */
   reservedQuantity: number;
-  /** Units finally charged after settle. */
+  /** Canonical per-bucket reservation; required on new writes. */
+  reservedUnits?: ProductUsageUnit[];
+  /** Product entitlement units finally committed after settlement. */
   settledQuantity: number;
+  /** Canonical per-bucket committed units; required on new writes. */
+  settledUnits?: ProductUsageUnit[];
   /** Units refunded (reserved − settled, when positive). */
   refundedQuantity: number;
+  /** Canonical per-bucket released units; required on new writes. */
+  refundedUnits?: ProductUsageUnit[];
   billingMode: ProductBillingMode;
   settlementStatus: ProductSettlementStatus;
-  resource?: 'copy' | 'image' | 'video' | 'audio';
+  /** Legacy single-bucket projection retained for pre-upgrade rows. */
+  resource?: ProductUsageResource;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ProductUsageResource = 'copy' | 'image' | 'video' | 'audio';
+
+export interface ProductUsageUnit {
+  resource: ProductUsageResource;
+  quantity: number;
 }
 
 /** Input shape shared by quote builders (adapters map existing sources here). */

@@ -6,6 +6,11 @@ import type {
 import { P1DomainError } from '../foundation/domain.js';
 import type { PostgresGrantLotLedger } from '../foundation/postgres-grant-lot.js';
 import type { DurableProductBillingService } from '../product-billing/durable-service.js';
+import {
+  grantLotUsageOperationId,
+  refundedProductUsageUnits,
+  reservedProductUsageUnits,
+} from '../product-billing/product-usage-ledger.js';
 import type {
   HarnessBillingSettlementExecutor,
   HarnessBillingSettlementInput,
@@ -37,12 +42,18 @@ export class HarnessProductBillingSettlementExecutor
       ...(input.trustedUsage ? { trustedUsage: input.trustedUsage } : {}),
     });
     const usage = await this.requireUsage(input);
-    if (usage.refundedQuantity > 0) {
+    const reservedUnits = reservedProductUsageUnits(usage);
+    for (const unit of refundedProductUsageUnits(usage)) {
       await this.grantLots.refundUsageOperation({
         workspaceId: input.workspaceId,
-        usageOperationId: `product-usage:${input.taskId}`,
-        refundOperationId: `product-usage-reconcile:${input.taskId}`,
-        amount: usage.refundedQuantity,
+        usageOperationId: grantLotUsageOperationId(
+          input.taskId,
+          unit.resource,
+          reservedUnits.length,
+        ),
+        refundOperationId:
+          `product-usage-reconcile:${input.taskId}:${unit.resource}`,
+        amount: unit.quantity,
         actorId: 'system-harness',
         correlationId: `harness:${input.taskId}`,
         createdAt: this.clock().toISOString(),
@@ -59,14 +70,24 @@ export class HarnessProductBillingSettlementExecutor
       deploymentId: 'coordinator',
       status: 'failed',
     });
-    await this.grantLots.refundUsageOperation({
-      workspaceId: input.workspaceId,
-      usageOperationId: `product-usage:${input.taskId}`,
-      refundOperationId: `product-usage-refund:${input.taskId}`,
-      actorId: 'system-harness',
-      correlationId: `harness:${input.taskId}`,
-      createdAt: this.clock().toISOString(),
-    });
+    const usage = await this.requireUsage(input);
+    const reservedUnits = reservedProductUsageUnits(usage);
+    for (const unit of refundedProductUsageUnits(usage)) {
+      await this.grantLots.refundUsageOperation({
+        workspaceId: input.workspaceId,
+        usageOperationId: grantLotUsageOperationId(
+          input.taskId,
+          unit.resource,
+          reservedUnits.length,
+        ),
+        refundOperationId:
+          `product-usage-refund:${input.taskId}:${unit.resource}`,
+        amount: unit.quantity,
+        actorId: 'system-harness',
+        correlationId: `harness:${input.taskId}`,
+        createdAt: this.clock().toISOString(),
+      });
+    }
   }
 
   private async assertQuoteRevision(input: HarnessBillingSettlementInput) {

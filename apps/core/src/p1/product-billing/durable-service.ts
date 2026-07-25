@@ -17,6 +17,7 @@ import type {
 } from './postgres-repository.js';
 import {
   ProductQuoteService,
+  productUsageUnitsForQuote,
   type ConfirmQuoteInput,
   type DispatchQuoteInput,
   type FallbackDispatchInput,
@@ -284,7 +285,10 @@ export class DurableProductBillingService
           );
           const result = service.reserve({
             quoteId: quote.quoteId,
-            resource: input.resource,
+            units: productUsageUnitsForQuote(quote).map((unit) => ({
+              ...unit,
+              resource: input.resource,
+            })),
           });
           await this.saveLocal(transaction, input.workspaceId, service, result.quote);
         },

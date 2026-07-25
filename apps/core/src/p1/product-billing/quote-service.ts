@@ -17,12 +17,14 @@ import {
   type ProductQuoteSnapshot,
   type ProductSettlementStatus,
   type ProductUsageRecord,
+  type ProductUsageUnit,
   type ProviderCostSnapshot,
   type TrustedUsageEvidenceKind,
 } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
 import {
   MemoryProductUsageLedger,
+  reservedProductUsageUnits,
   type ProductUsageLedger,
 } from './product-usage-ledger.js';
 import {
@@ -42,8 +44,9 @@ export type ConfirmQuoteInput = {
 
 export type ReserveQuoteInput = {
   quoteId: string;
+  /** Per-bucket product entitlement units, never the monetary quote ceiling. */
+  units: ProductUsageUnit[];
   usageId?: string;
-  resource?: ProductUsageRecord['resource'];
 };
 
 export type DispatchQuoteInput = {
@@ -57,12 +60,19 @@ export type DispatchQuoteInput = {
   >;
 };
 
-export type TrustedUsageEvidence = {
-  kind: TrustedUsageEvidenceKind;
-  /** Actual output seconds from provider usage / media duration. */
-  actualSeconds: number;
-  evidenceRef?: string;
-};
+export type TrustedUsageEvidence =
+  | {
+      kind: TrustedUsageEvidenceKind;
+      /** Actual output seconds from provider usage / media duration. */
+      actualSeconds: number;
+      evidenceRef?: string;
+    }
+  | {
+      kind: 'product_units';
+      /** Actual committed product units from the execution receipt. */
+      units: ProductUsageUnit[];
+      evidenceRef?: string;
+    };
 
 export type SettleQuoteInput = {
   quoteId: string;
@@ -409,15 +419,14 @@ export class ProductQuoteService {
       );
     }
 
-    const quantity = quote.authorizedCeiling ?? quote.confirmedAmount ?? 0;
+    assertProductUsageUnits(input.units);
     const usage = this.usage.reserve({
       id: input.usageId ?? usageIdFor(quote.taskId, quote.quoteId),
       taskId: quote.taskId,
       workspaceId: quote.workspaceId,
       quoteId: quote.quoteId,
-      quantity,
+      units: input.units,
       billingMode: quote.billingMode,
-      ...(input.resource ? { resource: input.resource } : {}),
       createdAt: this.clock().toISOString(),
     });
 
@@ -592,16 +601,38 @@ export class ProductQuoteService {
     let billedSeconds: number | undefined;
     let platformAbsorbedAmount = 0;
     let refundedAmount = 0;
+    const reservedUsage = this.usage.getByTask(quote.taskId);
+    if (!reservedUsage) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `Quote ${input.quoteId} is missing product usage.`,
+      );
+    }
+    let settledUnitQuantity = reservedUsage.reservedQuantity;
+    let settledUnits = reservedProductUsageUnits(reservedUsage);
 
-    const trusted =
+    const trustedUnits =
+      input.trustedUsage?.kind === 'product_units'
+        ? input.trustedUsage.units
+        : undefined;
+    if (trustedUnits) assertProductUsageUnits(trustedUnits);
+    const trustedSeconds =
       input.trustedUsage &&
+      input.trustedUsage.kind !== 'product_units' &&
       isTrustedUsageEvidence(input.trustedUsage.kind) &&
       Number.isFinite(input.trustedUsage.actualSeconds) &&
       input.trustedUsage.actualSeconds >= 0
         ? input.trustedUsage
         : undefined;
 
-    if (!trusted) {
+    if (trustedUnits) {
+      settlementStatus = 'reconciled';
+      settledAmount = Math.min(ceiling, quote.confirmedAmount ?? ceiling);
+      settledUnits = reconcileTrustedProductUsageUnits(
+        settledUnits,
+        trustedUnits,
+      );
+    } else if (!trustedSeconds) {
       // Honest: keep estimated/unknown; do not invent billedSeconds.
       settlementStatus = input.trustedUsage ? 'unknown' : 'estimated';
       settledAmount = ceiling;
@@ -612,11 +643,27 @@ export class ProductQuoteService {
     } else {
       // per_output_second with trusted evidence
       const billableSeconds = applyBillableSecondsRules({
-        rawSeconds: trusted.actualSeconds,
+        rawSeconds: trustedSeconds.actualSeconds,
         minChargeSeconds: quote.minChargeSeconds,
         roundingStepSeconds: quote.roundingStepSeconds,
       });
       billedSeconds = billableSeconds;
+      settledUnitQuantity = Math.min(
+        reservedUsage.reservedQuantity,
+        Math.ceil(billableSeconds),
+      );
+      if (
+        settledUnits.length !== 1 ||
+        settledUnits[0]?.resource !== 'video'
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Per-second settlement requires one video product usage unit.',
+        );
+      }
+      settledUnits = [
+        { resource: 'video', quantity: settledUnitQuantity },
+      ];
       const rawAmount = computeProductAmount({
         billingMode: 'per_output_second',
         unitRate: quote.formula.unitRate,
@@ -650,7 +697,7 @@ export class ProductQuoteService {
 
     const usage = this.usage.settle({
       taskId: quote.taskId,
-      settledQuantity: settledAmount,
+      settledUnits,
       settlementStatus,
       updatedAt: now,
     });
@@ -706,12 +753,35 @@ export class ProductQuoteService {
 
     const now = this.clock().toISOString();
     const ceiling = quote.authorizedCeiling ?? quote.confirmedAmount ?? 0;
+    const reservedUsage = this.usage.getByTask(quote.taskId);
+    if (!reservedUsage) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `Quote ${input.quoteId} is missing product usage.`,
+      );
+    }
 
-    let remaining = 0;
+    let remainingAmount = 0;
+    let remainingUnitQuantity = 0;
+    let remainingUnits: ProductUsageUnit[] = [];
     let billedSeconds: number | undefined;
     let settlementStatus: ProductSettlementStatus = 'reconciled';
 
-    if (
+    if (input.trustedUsage?.kind === 'product_units') {
+      assertProductUsageUnits(input.trustedUsage.units);
+      remainingUnits = reconcileTrustedProductUsageUnits(
+        reservedProductUsageUnits(reservedUsage),
+        input.trustedUsage.units,
+      );
+      remainingUnitQuantity = remainingUnits.reduce(
+        (total, unit) => total + unit.quantity,
+        0,
+      );
+      remainingAmount = Math.min(
+        ceiling,
+        quote.confirmedAmount ?? ceiling,
+      );
+    } else if (
       input.trustedUsage &&
       isTrustedUsageEvidence(input.trustedUsage.kind) &&
       quote.billingMode === 'per_output_second'
@@ -723,7 +793,7 @@ export class ProductQuoteService {
         roundingStepSeconds: quote.roundingStepSeconds,
       });
       billedSeconds = billableSeconds;
-      remaining = Math.min(
+      remainingAmount = Math.min(
         ceiling,
         computeProductAmount({
           billingMode: 'per_output_second',
@@ -731,26 +801,43 @@ export class ProductQuoteService {
           billableSeconds,
         }),
       );
+      remainingUnitQuantity = Math.min(
+        reservedUsage.reservedQuantity,
+        Math.ceil(billableSeconds),
+      );
+      const reservedUnits = reservedProductUsageUnits(reservedUsage);
+      if (
+        reservedUnits.length !== 1 ||
+        reservedUnits[0]?.resource !== 'video'
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Per-second refund requires one video product usage unit.',
+        );
+      }
+      remainingUnits = [
+        { resource: 'video', quantity: remainingUnitQuantity },
+      ];
     } else if (input.trustedUsage && !isTrustedUsageEvidence(input.trustedUsage.kind)) {
       settlementStatus = 'unknown';
-      remaining = 0;
+      remainingAmount = 0;
     } else {
       // Full failure without usable output — full refund.
-      remaining = 0;
+      remainingAmount = 0;
     }
 
     const usage = this.usage.refund({
       taskId: quote.taskId,
-      remainingQuantity: remaining,
+      remainingUnits,
       updatedAt: now,
     });
 
     const next: ProductQuoteSnapshot = {
       ...quote,
-      lifecycleStatus: remaining === 0 ? 'refunded' : 'settled',
+      lifecycleStatus: remainingAmount === 0 ? 'refunded' : 'settled',
       settlementStatus,
-      settledAmount: remaining,
-      refundedAmount: ceiling - remaining,
+      settledAmount: remainingAmount,
+      refundedAmount: ceiling - remainingAmount,
       ...(billedSeconds !== undefined ? { billedSeconds } : {}),
       settledAt: now,
     };
@@ -789,5 +876,85 @@ export class ProductQuoteService {
         `Deployment ${deploymentId} is outside the frozen fallback candidate set.`,
       );
     }
+  }
+}
+
+export function productUsageUnitsForQuote(
+  quote: ProductQuoteSnapshot,
+) {
+  const quantity =
+    quote.billingMode === 'per_output_second'
+      ? (quote.quotedSeconds ?? quote.targetSeconds)
+      : (quote.outputCount ?? 1);
+  assertProductUsageUnitQuantity(quantity, 'quote product usage quantity');
+  return [
+    {
+      resource:
+        quote.billingMode === 'per_output_second'
+          ? ('video' as const)
+          : ('copy' as const),
+      quantity: quantity as number,
+    },
+  ];
+}
+
+function assertProductUsageUnits(units: ProductUsageUnit[]) {
+  if (units.length === 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Product usage reserve requires at least one product resource.',
+    );
+  }
+  const resources = new Set<ProductUsageUnit['resource']>();
+  for (const unit of units) {
+    assertProductUsageUnitQuantity(unit.quantity, `${unit.resource} quantity`);
+    if (resources.has(unit.resource)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Product usage reserve requires one quantity per product resource.',
+      );
+    }
+    resources.add(unit.resource);
+  }
+}
+
+function reconcileTrustedProductUsageUnits(
+  reservedUnits: ProductUsageUnit[],
+  trustedUnits: ProductUsageUnit[],
+) {
+  const trustedByResource = new Map(
+    trustedUnits.map((unit) => [unit.resource, unit.quantity]),
+  );
+  if (
+    trustedUnits.some(
+      (unit) =>
+        !reservedUnits.some(
+          (reserved) => reserved.resource === unit.resource,
+        ),
+    )
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Trusted product usage contains an unreserved resource.',
+    );
+  }
+  return reservedUnits.map((reserved) => ({
+    resource: reserved.resource,
+    quantity: Math.min(
+      reserved.quantity,
+      trustedByResource.get(reserved.resource) ?? reserved.quantity,
+    ),
+  }));
+}
+
+function assertProductUsageUnitQuantity(
+  quantity: number | undefined,
+  field: string,
+) {
+  if (!Number.isSafeInteger(quantity) || (quantity ?? 0) < 1) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      `${field} must be a positive integer product usage quantity.`,
+    );
   }
 }

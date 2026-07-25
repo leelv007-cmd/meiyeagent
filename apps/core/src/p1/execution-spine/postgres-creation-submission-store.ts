@@ -8,11 +8,16 @@ import { buildContentPackage } from "../operations/content-package.js";
 import { insertContentPackageRow } from "../operations/postgres-content-package-write-adapter.js";
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
+import {
+  grantLotUsageOperationId,
+  reservedProductUsageUnits,
+} from "../product-billing/product-usage-ledger.js";
 import { creationExecutionSnapshotSchema } from "./creation-execution-snapshot.js";
 import type {
   CreationSubmissionRecord,
   CreationSubmissionStore,
   CreationSubmissionStoreClaim,
+  CreationSubmissionUsageUnit,
 } from "./submission-coordinator.js";
 
 type HarnessStartState = "reserved" | "starting" | "started";
@@ -97,9 +102,10 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
         `Product quote ${quote.quoteId} is not bound to this submission task.`,
       );
     }
+    const units = storedUsageUnits(submission.usageReservation.units);
     const reserved = await billing.reserve({
       quoteId: quote.quoteId,
-      resource: billingResource(snapshot.lens),
+      units,
       usageId: submission.usageReservation.id,
       workspaceId: snapshot.workspaceId,
     });
@@ -109,12 +115,17 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
         `Product usage for task ${submission.task.id} has a different reservation identity.`,
       );
     }
-    if (reserved.usage.reservedQuantity > 0) {
+    const reservedUnits = reservedProductUsageUnits(reserved.usage);
+    for (const unit of reservedUnits) {
       await this.grantLots.consumeWithClient(client, {
         workspaceId: snapshot.workspaceId,
-        resource: billingResource(snapshot.lens),
-        amount: reserved.usage.reservedQuantity,
-        transactionId: `product-usage:${submission.task.id}`,
+        resource: unit.resource,
+        amount: unit.quantity,
+        transactionId: grantLotUsageOperationId(
+          submission.task.id,
+          unit.resource,
+          reservedUnits.length,
+        ),
         actorId: snapshot.actorId,
         correlationId: `coordinator:${submission.task.id}`,
         createdAt: snapshot.createdAt,
@@ -709,7 +720,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     contentPackage?: { expectedRevision?: unknown; id?: unknown };
     snapshot?: unknown;
     task?: { id?: unknown };
-    usageReservation?: { id?: unknown };
+    usageReservation?: { id?: unknown; units?: unknown };
     work?: { id?: unknown };
   };
   const snapshot = creationExecutionSnapshotSchema.parse(candidate.snapshot);
@@ -722,6 +733,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     candidate.usageReservation?.id,
     "usageReservation.id",
   );
+  const usageUnits = storedUsageUnits(candidate.usageReservation?.units);
   const workId = requiredId(candidate.work?.id, "work.id");
   if (
     typeof candidate.contentPackage?.expectedRevision !== "number" ||
@@ -739,7 +751,10 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     },
     snapshot,
     task: { id: taskId },
-    usageReservation: { id: usageReservationId },
+    usageReservation: {
+      id: usageReservationId,
+      units: usageUnits,
+    },
     work: { id: workId },
   };
 }
@@ -755,6 +770,35 @@ function requiredId(value: unknown, field: string) {
   return value;
 }
 
+function storedUsageUnits(value: unknown): CreationSubmissionUsageUnit[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(
+      "Stored creation submission requires explicit product usage units.",
+    );
+  }
+  const resources = new Set<CreationSubmissionUsageUnit["resource"]>();
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Stored creation submission has invalid usage units.");
+    }
+    const candidate = entry as { quantity?: unknown; resource?: unknown };
+    if (
+      !["copy", "image", "video"].includes(
+        candidate.resource as string,
+      ) ||
+      !Number.isSafeInteger(candidate.quantity) ||
+      (candidate.quantity as number) < 1 ||
+      resources.has(candidate.resource as CreationSubmissionUsageUnit["resource"])
+    ) {
+      throw new Error("Stored creation submission has invalid usage units.");
+    }
+    const resource =
+      candidate.resource as CreationSubmissionUsageUnit["resource"];
+    resources.add(resource);
+    return { resource, quantity: candidate.quantity as number };
+  });
+}
+
 async function databaseNow(client: PoolClient) {
   const result = await client.query<{ now: Date | string }>(
     "SELECT clock_timestamp() AS now",
@@ -762,10 +806,6 @@ async function databaseNow(client: PoolClient) {
   const value = result.rows[0]?.now;
   if (!value) throw new Error("PostgreSQL clock timestamp was unavailable.");
   return new Date(value);
-}
-
-function billingResource(lens: CreationSubmissionRecord["snapshot"]["lens"]) {
-  return lens;
 }
 
 function contentPackageKind(lens: CreationSubmissionRecord["snapshot"]["lens"]) {

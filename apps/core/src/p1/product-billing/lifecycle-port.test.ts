@@ -87,10 +87,13 @@ describe('ProductBillingLifecycle', () => {
         createdAt: usage.getByTask('work-1')!.createdAt,
         id: usage.getByTask('work-1')!.id,
         quoteId: quote.quoteId,
-        refundedQuantity: 2,
-        reservedQuantity: 5,
+        refundedQuantity: 4,
+        refundedUnits: [{ resource: 'video', quantity: 4 }],
+        reservedQuantity: 10,
+        reservedUnits: [{ resource: 'video', quantity: 10 }],
         resource: 'video',
-        settledQuantity: 3,
+        settledQuantity: 6,
+        settledUnits: [{ resource: 'video', quantity: 6 }],
         settlementStatus: 'reconciled',
         status: 'partially_refunded',
         taskId: 'work-1',
@@ -165,7 +168,7 @@ describe('ProductBillingLifecycle', () => {
       trustedUsage: { actualSeconds: 12, kind: 'media_duration' },
       workspaceId: 'workspace-1',
     });
-    assert.equal(high.usage.getByTask('work-1')?.settledQuantity, 5);
+    assert.equal(high.usage.getByTask('work-1')?.settledQuantity, 10);
     assert.equal(high.quotes.getQuoteByTask('work-1')?.platformAbsorbedAmount, 1);
 
     const failed = fixture(20);

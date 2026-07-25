@@ -13,6 +13,7 @@ import {
   creationExecutionSnapshotSchema,
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
+import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type {
   HarnessFrozenPrompts,
@@ -38,6 +39,8 @@ export interface HarnessWorkflowInput {
   reuseSeed?: ReuseTaskSeed;
   /** Present only for new Composer submissions on the execution spine. */
   executionSnapshot?: CreationExecutionSnapshot;
+  /** Canonical product units frozen by the Coordinator for that submission. */
+  usageReservation?: CreationSubmissionRecord['usageReservation'];
   prompts?: HarnessFrozenPrompts;
 }
 
@@ -139,14 +142,14 @@ export class HarnessTaskAdmissionService {
 }
 
 function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
-  const { executionSnapshot, ...request } = input;
+  const { executionSnapshot, usageReservation, ...request } = input;
   const parsed = harnessTaskRequestSchema.parse(request);
   const snapshot = executionSnapshot
     ? creationExecutionSnapshotSchema.parse(executionSnapshot)
     : undefined;
   if (snapshot) {
     assertExecutionSnapshotMatchesRequest(snapshot, parsed);
-    return snapshotWorkflowInput(snapshot);
+    return snapshotWorkflowInput(snapshot, usageReservation);
   }
   return {
     actorId: parsed.actorId,
@@ -164,6 +167,7 @@ function normalizeRequest(input: HarnessTaskRequest): HarnessWorkflowInput {
 
 function snapshotWorkflowInput(
   snapshot: CreationExecutionSnapshot,
+  usageReservation?: CreationSubmissionRecord['usageReservation'],
 ): HarnessWorkflowInput {
   return {
     actorId: snapshot.actorId,
@@ -183,6 +187,7 @@ function snapshotWorkflowInput(
     },
     factScope: { storeId: snapshot.workspaceId },
     executionSnapshot: snapshot,
+    ...(usageReservation ? { usageReservation } : {}),
   };
 }
 

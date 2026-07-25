@@ -27,6 +27,7 @@ import type {
 import { P1DomainError } from '../foundation/domain.js';
 import {
   ProductQuoteService,
+  productUsageUnitsForQuote,
   type SettleQuoteInput,
   type TrustedUsageEvidence,
 } from '../product-billing/quote-service.js';
@@ -593,7 +594,7 @@ export class VideoRegenerationService {
 
     const { quote: reservedQuote, usage } = this.quotes.reserve({
       quoteId: input.quoteId,
-      resource: 'video',
+      units: productUsageUnitsForQuote(confirmed),
     });
 
     let quote = reservedQuote;
