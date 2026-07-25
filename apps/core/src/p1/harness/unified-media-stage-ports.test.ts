@@ -213,6 +213,10 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 		});
 		assert.deepEqual(contentPackage?.generated.assetIds, [`${kind}-asset-1`]);
 		assert.equal(contentPackage?.generated.ownedAssets?.[0]?.id, `${kind}-asset-1`);
+		assert.equal(
+			contentPackage?.generated.ownedAssets?.[0]?.sourceTaskRef,
+			`provider-task-${kind}-1`,
+		);
 		assert.deepEqual(contentPackage?.generated.childRuns[0]?.productUsage, {
 			quantity: 0,
 			status: "committed",
@@ -696,6 +700,7 @@ function completedResult(
 			objectKey: `owned/${kind}-asset-${suffix}`,
 			sha256: `${kind}-sha-${suffix}`,
 			sizeBytes: 1024,
+			sourceTaskRef: `provider-task-${kind}-${suffix}`,
 		},
 		usage: {
 			id: `usage-${kind}-${suffix}`,

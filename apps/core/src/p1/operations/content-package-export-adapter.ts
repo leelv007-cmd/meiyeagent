@@ -172,6 +172,9 @@ export class OperationsContentPackageExportAssetReader
         objectKey: stored.objectKey,
         sha256: stored.sha256,
         sizeBytes: stored.sizeBytes,
+        ...(stored.sourceTaskRef
+          ? { sourceTaskRef: stored.sourceTaskRef }
+          : {}),
       },
       bytes,
     };
@@ -337,10 +340,13 @@ export class ContentPackageZipExportAdapter
     if (videoAsset.contentType !== 'video/mp4') {
       throw new Error('The selected video asset is not an MP4 file.');
     }
+    const delivery = videoAsset.compositionEvidence?.delivery;
+    const nativeSingleCall = isNativeSingleCallVideoExport(input, videoAsset);
     const allowRecordedSynthetic =
       this.options.allowRecordedSyntheticVideoCompliance === true &&
       this.options.appEnv === 'e2e';
     if (
+      !nativeSingleCall &&
       (input.compliance.aigcLabelEnabled ||
         input.compliance.watermarkEnabled) &&
       !hasVerifiedVideoCompliance(
@@ -351,8 +357,6 @@ export class ContentPackageZipExportAdapter
     ) {
       throw new UnverifiedVideoComplianceError();
     }
-    const delivery = videoAsset.compositionEvidence?.delivery;
-    const nativeSingleCall = isNativeSingleCallVideoExport(input, videoAsset);
     let cover:
       | { bytes: Uint8Array; mimeType: 'image/jpeg' | 'image/png' }
       | undefined;
@@ -456,8 +460,15 @@ function isNativeSingleCallVideoExport(
   input: ContentPackageVideoFullExportInput,
   asset: ContentPackageExportAsset,
 ) {
+  const sourceTaskRef = asset.sourceTaskRef?.trim();
+  // Missing composition fields never opt an asset into this branch: a durable
+  // provider task receipt is the positive native-generation marker.
+  // Native provider videos rely on platform upload labeling, so their manifest
+  // records compliance without requiring legacy composition burn-in evidence.
   return (
-    !asset.compositionEvidence?.delivery &&
+    Boolean(sourceTaskRef) &&
+    !sourceTaskRef?.startsWith('recorded-composition:') &&
+    asset.compositionEvidence === undefined &&
     input.videoDeliveryCompositionRevision === undefined &&
     input.videoDeliveryRevision === undefined
   );

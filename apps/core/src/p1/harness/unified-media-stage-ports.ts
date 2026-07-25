@@ -707,6 +707,7 @@ function mediaSelection(
 		objectKey: asset.objectKey,
 		sha256: asset.sha256,
 		sizeBytes: asset.sizeBytes,
+		...(asset.sourceTaskRef ? { sourceTaskRef: asset.sourceTaskRef } : {}),
 		...(asset.compositionEvidence
 			? { compositionEvidence: structuredClone(asset.compositionEvidence) }
 			: {}),

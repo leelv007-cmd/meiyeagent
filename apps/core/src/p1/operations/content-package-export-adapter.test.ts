@@ -552,6 +552,7 @@ it('exports a native single-call video with the shared video manifest builder', 
   const video = await storage.persistGeneratedAsset({
     bytes: videoBytes,
     contentType: 'video/mp4',
+    sourceTaskRef: 'provider-video-native-1',
     workspaceId: 'workspace-video-native',
   });
   const adapter = new ContentPackageZipExportAdapter(storage, {
@@ -564,7 +565,7 @@ it('exports a native single-call video with the shared video manifest builder', 
     },
   });
   const input = {
-    compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+    compliance: { aigcLabelEnabled: true, watermarkEnabled: false },
     contentPackageRevision: 5,
     kind: 'video' as const,
     packageId: 'package-video-native',
@@ -605,6 +606,70 @@ it('exports a native single-call video with the shared video manifest builder', 
     assert.ok(files[file.path]);
   }
   assert.equal(manifest.rightsSummary.state, 'authorized');
+  assert.equal(manifest.rightsSummary.aigcLabelEnabled, true);
+});
+
+it('fails closed for a composition video whose delivery evidence is missing', async () => {
+  const storage = new MemoryModelAssetStorage();
+  const videoBytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
+  const video = await storage.persistGeneratedAsset({
+    bytes: videoBytes,
+    contentType: 'video/mp4',
+    sourceTaskRef: 'recorded-composition:workflow-damaged:composition-damaged',
+    workspaceId: 'workspace-video-damaged-composition',
+  });
+  const adapter = new ContentPackageZipExportAdapter(storage, {
+    async readOwnedAsset({ assetId }) {
+      assert.equal(assetId, video.id);
+      return {
+        asset: {
+          ...video,
+          compositionEvidence: {
+            aigc: {
+              requested: false,
+              visibleLabel: { actual: false, validated: true },
+              implicitMetadata: { actual: false, validated: true },
+              validationMethod: 'composition_manifest' as const,
+            },
+            brandWatermark: {
+              actual: false,
+              requested: false,
+              validated: true,
+              validationMethod: 'composition_manifest' as const,
+            },
+            clipCount: 1,
+            durationSeconds: 15,
+            outputSha256: video.sha256,
+            outputSizeBytes: video.sizeBytes,
+            rendererRevision: 'renderer-damaged',
+            sourceAssetIds: ['clip-damaged'],
+          },
+          contentType: 'video/mp4' as const,
+        },
+        bytes: videoBytes,
+      };
+    },
+  });
+
+  await assert.rejects(
+    adapter.export({
+      compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+      contentPackageRevision: 5,
+      kind: 'video',
+      packageId: 'package-video-damaged-composition',
+      platform: 'douyin',
+      version: {
+        body: '门店护理场景。',
+        createdAt: '2026-07-25T09:00:00.000Z',
+        id: 'version-video-damaged-composition',
+        orderedAssetIds: [video.id],
+        title: '视频成片',
+        topics: [],
+      },
+      workspaceId: 'workspace-video-damaged-composition',
+    }),
+    /delivery evidence is unavailable/i,
+  );
 });
 
 it('exports an unlabeled video package as a full delivery ZIP with manifest revision', async () => {
@@ -1195,6 +1260,7 @@ it('reads a verified owned asset from the current workspace', async () => {
   const receipt = await storage.persistGeneratedAsset({
     bytes: sourceBytes,
     contentType: 'image/png',
+    sourceTaskRef: 'provider-owned-valid-1',
     workspaceId: 'workspace-owned-valid',
   });
   const reader = new OperationsContentPackageExportAssetReader(
