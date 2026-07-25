@@ -110,7 +110,7 @@ test.describe('D-114 Composer conversation container', () => {
     // The merchant's own sentence opens the transcript.
     await expect(page.getByTestId('composer-conversation')).toBeVisible();
     await expect(page.getByTestId('composer-turn-merchant')).toContainText(
-      '写一条周末到店预约文案'
+      '写一条周末皮肤护理到店预约文案'
     );
     await expect(page).not.toHaveURL(/\/dashboard\/results\//u);
 
@@ -172,7 +172,7 @@ test.describe('D-114 Composer conversation container', () => {
       timeout: 60_000,
     });
     await expect(page.getByTestId('composer-turn-merchant')).toContainText(
-      '写一条新客到店体验文案'
+      '写一条新客皮肤护理到店体验文案'
     );
     // The transcript came back from the replayed event log, so the progress
     // the browser never stored is present again.
