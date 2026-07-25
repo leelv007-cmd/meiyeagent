@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 import {
   CoreRequestBoundaryError,
   coreFetch,
@@ -12,6 +13,66 @@ import {
   workspaceHarnessDecisionResource,
   workspaceWorkflowEventResource,
 } from '@/lib/core-request';
+
+const staleAdminSession = {
+  session: { createdAt: new Date(Date.now() - 16 * 60 * 1000) },
+  user: { emailVerified: true, id: 'admin-a', role: 'admin' },
+};
+
+test('workspace Core authorization lets a non-sensitive command continue with cached auth', async () => {
+  const calls: unknown[] = [];
+  const result = await authorizeWorkspaceCoreRequest(
+    new Request('http://localhost/api/core/p1/commands'),
+    'p1/commands',
+    JSON.stringify({
+      action: 'recipe_preview',
+      module: 'creation-experience',
+      payload: {},
+    }),
+    async (options) => {
+      calls.push(options);
+      return staleAdminSession as never;
+    }
+  );
+
+  assert.equal('session' in result, true);
+  assert.deepEqual(calls, [
+    {
+      headers: new Headers(),
+    },
+  ]);
+});
+
+test('workspace Core authorization blocks a stale sensitive command with cache bypassed', async () => {
+  const calls: unknown[] = [];
+  const result = await authorizeWorkspaceCoreRequest(
+    new Request('http://localhost/api/core/p1/commands'),
+    'p1/commands',
+    JSON.stringify({
+      action: 'admin_supply_action',
+      module: 'model-supply',
+      payload: {},
+    }),
+    async (options) => {
+      calls.push(options);
+      return staleAdminSession as never;
+    }
+  );
+
+  assert.equal('response' in result, true);
+  if (!('response' in result)) return;
+  assert.equal(result.response.status, 403);
+  assert.deepEqual(await result.response.json(), {
+    code: 'RECENT_AUTHENTICATION_REQUIRED',
+    error: 'Recent authentication is required.',
+  });
+  assert.deepEqual(calls, [
+    {
+      headers: new Headers(),
+      query: { disableCookieCache: true, disableRefresh: true },
+    },
+  ]);
+});
 
 test('rejects oversized chunked Core proxy bodies before buffering them all', async () => {
   const request = new Request('http://localhost/api/core/p1/commands', {

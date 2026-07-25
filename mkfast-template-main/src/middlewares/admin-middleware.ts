@@ -5,12 +5,9 @@ import { getRequestHeaders } from '@tanstack/react-start/server';
 import { Routes } from '@/lib/routes';
 import { websiteConfig } from '@/config/website';
 import {
-  RecentAuthenticationRequiredError,
-  recentAuthenticationRequiredResponse,
-  requireRecentAuthentication,
-} from '@/auth/recent-authentication';
-
-const ADMIN_ROLE = 'admin';
+  ADMIN_ROLE,
+  requireRecentAdminSession,
+} from '@/auth/recent-admin-session';
 
 function forbiddenResponse() {
   return Response.json(
@@ -80,20 +77,9 @@ export const adminApiMiddleware = createMiddleware().server(
 export const recentAdminApiMiddleware = createMiddleware().server(
   async ({ next }) => {
     const headers = getRequestHeaders();
-    const session = await createAuth().api.getSession({
-      headers,
-      query: { disableCookieCache: true, disableRefresh: true },
-    });
+    const authorization = await requireRecentAdminSession({ headers });
+    if ('response' in authorization) return authorization.response;
 
-    if (!session?.user) return unauthorizedResponse();
-    if (session.user.role !== ADMIN_ROLE) return forbiddenResponse();
-    try {
-      requireRecentAuthentication(session.session);
-    } catch (error) {
-      if (!(error instanceof RecentAuthenticationRequiredError)) throw error;
-      return recentAuthenticationRequiredResponse();
-    }
-
-    return await next({ context: { userId: session.user.id } });
+    return await next({ context: { userId: authorization.session.user.id } });
   }
 );

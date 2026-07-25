@@ -79,11 +79,29 @@ describe('route-level recent authentication', () => {
     }
   });
 
-  it('guards credential, platform configuration and commerce commands by capability', () => {
+  it('guards high-impact governance commands and publication actions', () => {
     for (const [module, action] of [
       ['integrations', 'admin_store_provider_credential'],
       ['admin-config', 'config_apply'],
+      ['admin-config', 'config_rollback'],
+      ['creation-experience', 'recipe_publish'],
+      ['creation-experience', 'recipe_rollback'],
+      ['creation-experience', 'surface_publish'],
+      ['creation-experience', 'surface_rollback'],
+      ['operations', 'admin_publish_template_version'],
+      ['operations', 'admin_enable_template_version'],
+      ['operations', 'admin_retire_template'],
+      ['model-supply', 'catalog_enable'],
+      ['model-supply', 'catalog_publish'],
+      ['model-supply', 'catalog_retire'],
+      ['model-supply', 'catalog_rollback'],
+      ['model-supply', 'prompt_revision_rollback'],
       ['redemptions', 'create'],
+      ['model-supply', 'isolate_deployment'],
+      ['operations', 'force_fail_task'],
+      ['model-supply', 'admin_supply_action'],
+      ['integrations', 'publish_feishu_tool'],
+      ['job-runtime', 'schedule_recurring'],
     ] as const) {
       assert.equal(
         requiresRecentAuthenticationForP1Command(module, action),
@@ -96,6 +114,32 @@ describe('route-level recent authentication', () => {
         ),
         true,
         `${module}.${action} request body`
+      );
+    }
+
+    for (const [module, action] of [
+      ['creation-experience', 'recipe_draft'],
+      ['creation-experience', 'recipe_get'],
+      ['creation-experience', 'recipe_history'],
+      ['creation-experience', 'recipe_preview'],
+      ['creation-experience', 'recipe_validate'],
+      ['creation-experience', 'surface_draft'],
+      ['creation-experience', 'surface_get'],
+      ['creation-experience', 'surface_history'],
+      ['creation-experience', 'surface_preview'],
+      ['creation-experience', 'surface_validate'],
+      ['model-supply', 'catalog_create_draft'],
+      ['model-supply', 'catalog_create_safe_draft'],
+      ['operations', 'admin_create_template'],
+      ['operations', 'admin_create_template_version'],
+      ['admin-config', 'config_get'],
+      ['admin-config', 'config_history'],
+      ['admin-config', 'config_list'],
+    ] as const) {
+      assert.equal(
+        requiresRecentAuthenticationForP1Command(module, action),
+        false,
+        `${module}.${action} remains an iterative or read action`
       );
     }
 

@@ -51,6 +51,8 @@ test('both mail providers log missing field names without field values', async (
   assert.match(serialized, /missingFields/u);
   assert.match(serialized, /to/u);
   assert.match(serialized, /subject/u);
+  assert.doesNotMatch(serialized, /[^\s"]+@[^\s"]+/u);
+  assert.doesNotMatch(serialized, /https?:\/\//u);
   assert.equal(unsafeLogValue(entries), false);
 });
 
@@ -103,5 +105,7 @@ test('both mail providers redact field values from send failure logs', async () 
 
   const serialized = JSON.stringify(entries);
   assert.match(serialized, /MAIL_PROVIDER_SEND_FAILED/u);
+  assert.doesNotMatch(serialized, /[^\s"]+@[^\s"]+/u);
+  assert.doesNotMatch(serialized, /https?:\/\//u);
   assert.equal(unsafeLogValue(entries), false);
 });

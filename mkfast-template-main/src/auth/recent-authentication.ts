@@ -25,8 +25,35 @@ const RECENT_AUTHENTICATION_PATHS = new Set([
 
 const RECENT_AUTHENTICATION_P1_CAPABILITIES = new Set([
   'account.commerce.govern',
-  'config.publish',
+  'channel.lifecycle.manage',
   'credential.govern',
+  'platform.manage',
+  'task.recover',
+]);
+
+/**
+ * These config.publish commands are iterative/read steps, not publication.
+ * Web and Core parse the same p1ModuleRequestSchema; malformed envelopes may
+ * bypass this classifier only because Core rejects that same invalid schema.
+ */
+const CONFIG_PUBLISH_ACTIONS_WITHOUT_STEP_UP = new Set([
+  'admin-config.config_get',
+  'admin-config.config_history',
+  'admin-config.config_list',
+  'creation-experience.recipe_draft',
+  'creation-experience.recipe_get',
+  'creation-experience.recipe_history',
+  'creation-experience.recipe_preview',
+  'creation-experience.recipe_validate',
+  'creation-experience.surface_draft',
+  'creation-experience.surface_get',
+  'creation-experience.surface_history',
+  'creation-experience.surface_preview',
+  'creation-experience.surface_validate',
+  'model-supply.catalog_create_draft',
+  'model-supply.catalog_create_safe_draft',
+  'operations.admin_create_template',
+  'operations.admin_create_template_version',
 ]);
 
 export class RecentAuthenticationRequiredError extends Error {
@@ -47,6 +74,9 @@ export function requiresRecentAuthenticationForP1Command(
   action: string
 ) {
   const capability = requiredP1Capability('command', module, action);
+  if (capability === 'config.publish') {
+    return !CONFIG_PUBLISH_ACTIONS_WITHOUT_STEP_UP.has(`${module}.${action}`);
+  }
   return (
     capability !== null && RECENT_AUTHENTICATION_P1_CAPABILITIES.has(capability)
   );

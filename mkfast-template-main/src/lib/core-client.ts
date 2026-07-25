@@ -21,12 +21,7 @@ import {
   type WorkspaceWorkflowEventResource,
 } from '@/lib/core-request';
 import { normalizeProductRole } from '@meiye/contracts';
-import {
-  RecentAuthenticationRequiredError,
-  recentAuthenticationRequiredResponse,
-  requireRecentAuthentication,
-  requiresRecentAuthenticationForP1RequestBody,
-} from '@/auth/recent-authentication';
+import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 
 export async function forwardAuthenticatedCoreRequest(
   request: Request,
@@ -136,29 +131,14 @@ export async function forwardWorkspaceCoreRequest(
   } catch (error) {
     return coreRequestBoundaryResponse(error);
   }
-  const requiresStepUp =
-    resource === 'p1/commands' &&
-    requiresRecentAuthenticationForP1RequestBody(body);
-  const session = await createAuth().api.getSession({
-    headers: request.headers,
-    ...(requiresStepUp
-      ? { query: { disableCookieCache: true, disableRefresh: true } }
-      : {}),
-  });
-  if (!session?.user?.id || !session.user.emailVerified) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  if (requiresStepUp) {
-    if (session.user.role !== 'admin') {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    try {
-      requireRecentAuthentication(session.session);
-    } catch (error) {
-      if (!(error instanceof RecentAuthenticationRequiredError)) throw error;
-      return recentAuthenticationRequiredResponse();
-    }
-  }
+  const authorization = await authorizeWorkspaceCoreRequest(
+    request,
+    resource,
+    body,
+    (options) => createAuth().api.getSession(options)
+  );
+  if ('response' in authorization) return authorization.response;
+  const { session } = authorization;
 
   const workspace = await resolveActiveWorkspace(session.user.id);
   if (!workspace) {
