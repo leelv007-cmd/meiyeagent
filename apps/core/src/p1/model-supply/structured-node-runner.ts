@@ -21,7 +21,6 @@ export interface StructuredNodeRunnerRequest<Output> {
   schema: ZodType<Output>;
   schemaName: string;
   schemaRevision: string;
-  productUsageQuantity?: 0 | 1;
   abortSignal?: AbortSignal;
   /** Revalidates live execution facts immediately before every provider effect. */
   beforeProviderAttempt?: () => Promise<void>;
@@ -72,7 +71,8 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       actorId: string;
       selection: RequestedSelection;
       dataClass?: DataClass[];
-      productUsageQuantity?: 0 | 1;
+      billingTaskId: string;
+      billingQuoteRevision: string;
     },
   ) {}
 
@@ -116,13 +116,12 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         operation: 'text.respond',
         selection: structuredClone(this.options.selection),
         dataClass: structuredClone(this.options.dataClass ?? []),
+        billingTaskId: this.options.billingTaskId,
+        billingQuoteRevision: this.options.billingQuoteRevision,
         prompt: request.prompt,
         promptRevision: request.schemaRevision,
         exampleSetRevision: request.schemaName,
-        productUsageQuantity:
-          request.productUsageQuantity ??
-          this.options.productUsageQuantity ??
-          1,
+        productUsageQuantity: 0,
       },
       {
         abortSignal: request.abortSignal,
