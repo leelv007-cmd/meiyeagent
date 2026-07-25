@@ -429,8 +429,10 @@ test.describe('S2 cold start and unified creation loop', () => {
 
     const remixedIntent = page.getByLabel('描述这次想创作的内容');
     await expect(remixedIntent).toBeFocused();
+    // The draft says which service it is about — the merchant just picked the
+    // 生发 store, so the chain never has to stop and ask.
     await expect(remixedIntent).toHaveValue(
-      `做一条抖音美业内容，内容角度围绕“${growthContent.title}”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。`
+      `做一条抖音美业内容，主题是养发护理，内容角度围绕“${growthContent.title}”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。`
     );
     // Remixing only fills the draft — submission stays the merchant's own click.
     await expect(page.getByTestId('composer-submit')).toBeVisible();
