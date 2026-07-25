@@ -13,6 +13,7 @@ import type {
 import type {
   ProductBillingRepository,
   ProductBillingTransaction,
+  ProductUsageProjection,
 } from './postgres-repository.js';
 import {
   ProductQuoteService,
@@ -72,6 +73,9 @@ export interface ProductBillingApplicationPort {
     taskId: string,
     workspaceId?: string,
   ): MaybePromise<ProductUsageRecord | null>;
+  getUsageProjection?(
+    workspaceId: string,
+  ): MaybePromise<ProductUsageProjection>;
   getMonthlyOutput?(
     workspaceId: string,
     month: string,
@@ -179,6 +183,10 @@ export class DurableProductBillingService
 
   getUsage(taskId: string, workspaceId?: string) {
     return this.repository.getUsage(this.workspace(workspaceId), taskId);
+  }
+
+  getUsageProjection(workspaceId: string) {
+    return this.repository.getUsageProjection(this.workspace(workspaceId));
   }
 
   getMonthlyOutput(workspaceId: string, month: string) {

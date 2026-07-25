@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   HarnessSnapshotDecisionError,
   runHarnessWorkflow,
+  type HarnessMediaSelectionResult,
   type HarnessMediaStagePorts,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
@@ -195,6 +196,20 @@ test('image and video snapshots use the same five Harness stages with modality-s
       result.recommendation.recommendedCandidateId,
       `${kind}-asset-1`
     );
+    if (kind === 'video') {
+      assert.deepEqual(
+        'billingReceipt' in result ? result.billingReceipt : undefined,
+        {
+          trustedUsage: {
+            kind: 'media_duration',
+            actualSeconds: 6,
+            evidenceRef: 'owned-asset:video-asset-1',
+          },
+        },
+      );
+    } else {
+      assert.equal('billingReceipt' in result, false);
+    }
     assert.deepEqual(
       traces.map(({ stage }) => stage),
       [
@@ -1034,6 +1049,15 @@ function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
           objectKey: `owned/${kind}-asset-1`,
           sha256: `${kind}-sha-1`,
           sizeBytes: 1024,
+          ...(kind === 'video'
+            ? {
+                compositionEvidence: {
+                  durationSeconds: 6,
+                } as NonNullable<
+                  HarnessMediaSelectionResult['asset']['compositionEvidence']
+                >,
+              }
+            : {}),
         },
         childRun: {
           runId: `${kind}-run-1`,

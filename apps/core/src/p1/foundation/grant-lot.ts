@@ -629,6 +629,7 @@ export class MemoryGrantLotLedger {
     workspaceId: string;
     usageTransactionId: string;
     refundTransactionId: string;
+    amount?: number;
     actorId: string;
     correlationId: string;
     createdAt: string;
@@ -655,6 +656,13 @@ export class MemoryGrantLotLedger {
         candidate.workspaceId === input.workspaceId && candidate.id === usage.lotId
     );
     if (!lot) return null;
+    const amount = input.amount ?? usage.amount;
+    if (!Number.isInteger(amount) || amount <= 0 || amount > usage.amount) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Grant lot refund amount must be within the usage transaction.'
+      );
+    }
     const transactionConflict = this.transactions.find(
       (transaction) =>
         transaction.workspaceId === input.workspaceId &&
@@ -671,7 +679,7 @@ export class MemoryGrantLotLedger {
       workspaceId: input.workspaceId,
       resource: usage.resource,
       transactionType: 'REFUND',
-      amount: usage.amount,
+      amount,
       lotId: usage.lotId,
       relatedTransactionId: usage.id,
       operationId: input.refundTransactionId,
@@ -694,10 +702,20 @@ export class MemoryGrantLotLedger {
     workspaceId: string;
     usageOperationId: string;
     refundOperationId: string;
+    amount?: number;
     actorId: string;
     correlationId: string;
     createdAt: string;
   }): GrantLotTransaction[] {
+    if (
+      input.amount !== undefined &&
+      (!Number.isInteger(input.amount) || input.amount <= 0)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Refund amount must be a positive integer.'
+      );
+    }
     const usages = this.transactions.filter(
       (transaction) =>
         transaction.workspaceId === input.workspaceId &&
@@ -705,16 +723,32 @@ export class MemoryGrantLotLedger {
         transaction.operationId === input.usageOperationId
     );
     const refunds: GrantLotTransaction[] = [];
+    let remaining = input.amount;
     for (const [index, usage] of usages.entries()) {
+      if (remaining === 0) break;
+      const amount =
+        remaining === undefined
+          ? usage.amount
+          : Math.min(usage.amount, remaining);
       const refund = this.refundUsage({
         workspaceId: input.workspaceId,
         usageTransactionId: usage.id,
         refundTransactionId: `${input.refundOperationId}:${index}`,
+        amount,
         actorId: input.actorId,
         correlationId: input.correlationId,
         createdAt: input.createdAt,
       });
-      if (refund) refunds.push(refund);
+      if (refund) {
+        refunds.push(refund);
+        if (remaining !== undefined) remaining -= refund.amount;
+      }
+    }
+    if (remaining !== undefined && remaining !== 0) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Refund amount exceeds the usage operation.'
+      );
     }
     return refunds;
   }

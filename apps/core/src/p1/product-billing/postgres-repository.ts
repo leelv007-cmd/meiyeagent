@@ -6,6 +6,17 @@ import type {
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
 
+export type ProductUsageResource = NonNullable<ProductUsageRecord['resource']>;
+export interface ProductUsageBucketProjection {
+  reserved: number;
+  committed: number;
+  released: number;
+}
+export type ProductUsageProjection = Record<
+  ProductUsageResource,
+  ProductUsageBucketProjection
+>;
+
 export interface ProductBillingTransaction {
   getQuote(workspaceId: string, quoteId: string): Promise<ProductQuoteSnapshot | null>;
   getQuoteByTask(
@@ -13,6 +24,7 @@ export interface ProductBillingTransaction {
     taskId: string,
   ): Promise<ProductQuoteSnapshot | null>;
   getUsage(workspaceId: string, taskId: string): Promise<ProductUsageRecord | null>;
+  getUsageProjection(workspaceId: string): Promise<ProductUsageProjection>;
   getMonthlyOutput(
     workspaceId: string,
     month: string,
@@ -172,6 +184,37 @@ export class PostgresProductBillingRepository
       : null;
   }
 
+  async getUsageProjection(workspaceId: string): Promise<ProductUsageProjection> {
+    const result = await this.database.query<{
+      resource: ProductUsageResource;
+      reserved: string;
+      committed: string;
+      released: string;
+    }>(
+      `SELECT payload->>'resource' AS resource,
+              COALESCE(sum(CASE WHEN status = 'reserved'
+                THEN (payload->>'reservedQuantity')::numeric ELSE 0 END), 0)::text AS reserved,
+              COALESCE(sum(CASE WHEN status IN ('committed', 'partially_refunded')
+                THEN (payload->>'settledQuantity')::numeric ELSE 0 END), 0)::text AS committed,
+              COALESCE(sum(CASE WHEN status IN ('refunded', 'partially_refunded')
+                THEN (payload->>'refundedQuantity')::numeric ELSE 0 END), 0)::text AS released
+         FROM p1_product_billing_usage
+        WHERE workspace_id = $1
+          AND payload->>'resource' IN ('copy', 'image', 'video', 'audio')
+        GROUP BY payload->>'resource'`,
+      [workspaceId],
+    );
+    const projection = emptyUsageProjection();
+    for (const row of result.rows) {
+      projection[row.resource] = {
+        reserved: Number(row.reserved),
+        committed: Number(row.committed),
+        released: Number(row.released),
+      };
+    }
+    return projection;
+  }
+
   async getMonthlyOutput(workspaceId: string, month: string) {
     const match = /^(\d{4})-(\d{2})$/u.exec(month);
     const year = Number(match?.[1]);
@@ -201,7 +244,7 @@ export class PostgresProductBillingRepository
        JOIN p1_product_billing_quotes q
          ON q.workspace_id = u.workspace_id AND q.quote_id = u.quote_id
        WHERE u.workspace_id = $1
-         AND u.status = 'committed'
+         AND u.status IN ('committed', 'partially_refunded')
          AND (u.payload->>'updatedAt')::timestamptz >= $2::timestamptz
          AND (u.payload->>'updatedAt')::timestamptz < $3::timestamptz`,
       [workspaceId, startsAt, endsAt],
@@ -289,4 +332,14 @@ export class PostgresProductBillingRepository
       ],
     );
   }
+}
+
+function emptyUsageProjection(): ProductUsageProjection {
+  const empty = () => ({ reserved: 0, committed: 0, released: 0 });
+  return {
+    copy: empty(),
+    image: empty(),
+    video: empty(),
+    audio: empty(),
+  };
 }

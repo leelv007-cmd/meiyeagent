@@ -628,11 +628,15 @@ export class PostgresGrantLotLedger {
     workspaceId: string;
     usageOperationId: string;
     refundOperationId: string;
+    amount?: number;
     actorId: string;
     correlationId: string;
     createdAt: string;
   }): Promise<GrantLotTransaction[]> {
     assertTimestamp(input.createdAt, 'createdAt');
+    if (input.amount !== undefined) {
+      assertPositiveInteger(input.amount, 'Refund amount');
+    }
     return this.transaction(async (client) => {
       await lockOperation(client, input.workspaceId, 'grant-lot-projection');
       await lockOperation(client, input.workspaceId, input.usageOperationId);
@@ -645,16 +649,32 @@ export class PostgresGrantLotLedger {
         [input.workspaceId, input.usageOperationId]
       );
       const refunds: GrantLotTransaction[] = [];
+      let remaining = input.amount;
       for (const [index, usage] of usages.rows.entries()) {
+        if (remaining === 0) break;
+        const amount =
+          remaining === undefined
+            ? Number(usage.amount)
+            : Math.min(Number(usage.amount), remaining);
         const refund = await refundUsageWithClient(client, {
           workspaceId: input.workspaceId,
           usageTransactionId: usage.id,
           refundTransactionId: `${input.refundOperationId}:${index}`,
+          amount,
           actorId: input.actorId,
           correlationId: input.correlationId,
           createdAt: input.createdAt,
         });
-        if (refund) refunds.push(refund);
+        if (refund) {
+          refunds.push(refund);
+          if (remaining !== undefined) remaining -= refund.amount;
+        }
+      }
+      if (remaining !== undefined && remaining !== 0) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Refund amount exceeds the usage operation.'
+        );
       }
       await expireLotsWithClient(client, {
         workspaceId: input.workspaceId,
@@ -932,6 +952,7 @@ async function refundUsageWithClient(
     workspaceId: string;
     usageTransactionId: string;
     refundTransactionId: string;
+    amount?: number;
     actorId: string;
     correlationId: string;
     createdAt: string;
@@ -966,12 +987,19 @@ async function refundUsageWithClient(
   );
   const row = usage.rows[0];
   if (!row) return null;
+  const amount = input.amount ?? Number(row.amount);
+  if (!Number.isInteger(amount) || amount <= 0 || amount > Number(row.amount)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Grant lot refund amount must be within the usage transaction.'
+    );
+  }
   const refund: GrantLotTransaction = {
     id: input.refundTransactionId,
     workspaceId: input.workspaceId,
     resource: row.resource,
     transactionType: 'REFUND',
-    amount: row.amount,
+    amount,
     lotId: row.lot_id,
     relatedTransactionId: row.id,
     operationId: input.refundTransactionId,

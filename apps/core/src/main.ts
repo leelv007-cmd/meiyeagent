@@ -160,10 +160,13 @@ import {
 import { HarnessApplicationService } from './p1/harness/application-service.js';
 import { HarnessDecisionService } from './p1/harness/decision-service.js';
 import { HarnessDbosWorkflowEventReader } from './p1/harness/dbos-workflow-events.js';
+import { HarnessBillingCompensationWorker } from './p1/harness/billing-compensation.js';
 import { HarnessLangfuseOutboxWorker } from './p1/harness/outbox-worker.js';
 import { langfuseSenderFromEnv } from './p1/harness/langfuse-sender.js';
 import { langfusePromptResolverFromEnv } from './p1/harness/langfuse-prompts.js';
 import { PostgresHarnessResumeReconcilerStore } from './p1/harness/postgres-resume-reconciler-store.js';
+import { PostgresHarnessBillingCompensationStore } from './p1/harness/postgres-billing-compensation-store.js';
+import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-billing-settlement.js';
 import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
 import {
   DbosHarnessWorkflowStarter,
@@ -567,7 +570,9 @@ const productEntitlementPolicy = new ProductStateEntitlementPolicy(
 const productEntitlements = new GrantLotAwareProductEntitlementService(
   foundationRepository,
   grantLotLedger,
-  recordedCommerceEnabled ? new RecordedAutoTopUpPaymentPort() : undefined
+  recordedCommerceEnabled ? new RecordedAutoTopUpPaymentPort() : undefined,
+  undefined,
+  productQuoteService
 );
 const executionEntitlementPolicy = new CompositeProductEntitlementPolicy(
   productEntitlementPolicy,
@@ -1575,37 +1580,22 @@ if (harnessRuntimeConfig) {
     () => new Date().toISOString()
   );
   DBOS.setConfig(harnessRuntimeConfig.dbos);
+  const harnessBilling = new HarnessProductBillingSettlementExecutor(
+    productQuoteService,
+    grantLotLedger,
+  );
+  const billingCompensations =
+    new PostgresHarnessBillingCompensationStore(pool);
+  await billingCompensations.migrate();
   const harnessWorkflow = registerHarnessDbosWorkflow(
     harnessStages,
     harnessStore,
     creationSubmissionStore,
     {
-      async commit({ workspaceId, taskId }) {
-        await productQuoteService.settleTask({
-          workspaceId,
-          taskId,
-          attemptId: `harness-receipt:${taskId}`,
-          deploymentId: 'coordinator',
-          status: 'completed',
-        });
-      },
-      async refund({ workspaceId, taskId }) {
-        await productQuoteService.settleTask({
-          workspaceId,
-          taskId,
-          attemptId: `harness-receipt:${taskId}`,
-          deploymentId: 'coordinator',
-          status: 'failed',
-        });
-        const createdAt = new Date().toISOString();
-        await grantLotLedger.refundUsageOperation({
-          workspaceId,
-          usageOperationId: `product-usage:${taskId}`,
-          refundOperationId: `product-usage-refund:${taskId}`,
-          actorId: 'system-harness',
-          correlationId: `harness:${taskId}`,
-          createdAt,
-        });
+      commit: (input) => harnessBilling.commit(input),
+      refund: (input) => harnessBilling.refund(input),
+      async scheduleCompensation(input) {
+        await billingCompensations.enqueue(input);
       },
     },
   );
@@ -1675,6 +1665,10 @@ if (harnessRuntimeConfig) {
     new PostgresHarnessResumeReconcilerStore(pool),
     workflowResumer,
   );
+  const billingCompensationWorker = new HarnessBillingCompensationWorker(
+    billingCompensations,
+    harnessBilling,
+  );
   let compensationRunning = false;
   const runCompensation = async () => {
     if (compensationRunning) return;
@@ -1683,6 +1677,7 @@ if (harnessRuntimeConfig) {
       const results = await Promise.allSettled([
         outboxWorker.runOnce(),
         resumeReconciler.runOnce(),
+        billingCompensationWorker.runOnce(),
       ]);
       for (const result of results) {
         if (result.status === 'rejected') {

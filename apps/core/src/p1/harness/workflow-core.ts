@@ -703,6 +703,17 @@ async function runMediaHarnessWorkflow(
     deliveryLayer: routed.declaration.deliveryLayer,
     recommendation,
     trace: selection.trace,
+    ...(brief.kind === 'video'
+      ? {
+          billingReceipt: {
+            trustedUsage: {
+              kind: 'media_duration' as const,
+              actualSeconds: requireMeasuredVideoDuration(selection.asset),
+              evidenceRef: `owned-asset:${selection.asset.id}`,
+            },
+          },
+        }
+      : {}),
   };
 }
 
@@ -766,6 +777,18 @@ function merchantContextMessage(request: HarnessWorkflowInput) {
   return request.executionSnapshot?.identity.id === 'official-neutral'
     ? `${progress}。${merchantIdentityVoiceNotice()}`
     : progress;
+}
+
+function requireMeasuredVideoDuration(
+  asset: HarnessMediaSelectionResult['asset'],
+) {
+  const duration = asset.compositionEvidence?.durationSeconds;
+  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
+    throw new HarnessMediaScopeError(
+      'Delivered video lacks measured media duration evidence.',
+    );
+  }
+  return duration;
 }
 
 const TASK_TYPE_LABELS: Record<IntentDeclaration['taskType'], string> = {
