@@ -84,23 +84,31 @@ export function compileCopyGenerationRequest(input: {
     platform: string;
   };
   context: Record<string, unknown>;
+  policyFailures?: Array<{ gateId: string; reason: string }>;
 }) {
   const identity =
     input.brief.identityRefs.length > 0
       ? input.brief.identityRefs
       : ['brand_official'];
+  const retrying = Boolean(input.policyFailures?.length);
   return {
-    candidateId: 'c01',
+    candidateId: retrying ? 'c01-retry' : 'c01',
     instructions:
       'Generate the single primary, grounded beauty-business copy result. ' +
       `Follow the ${input.brief.platform} publishing template, express the ` +
       `frozen identity references (${identity.join(', ')}), and use only ` +
-      'supplied fact, asset, and rights references.',
+      'supplied fact, asset, and rights references.' +
+      (retrying
+        ? ' Correct every supplied policy failure; do not repeat the blocked expression.'
+        : ''),
     prompt: JSON.stringify({
-      candidateId: 'c01',
+      candidateId: retrying ? 'c01-retry' : 'c01',
       brief: input.brief,
       context: input.context,
       expressionIdentityRefs: identity,
+      ...(input.policyFailures
+        ? { policyFailures: input.policyFailures }
+        : {}),
       platformTemplate: input.brief.platform,
     }),
   };
@@ -129,6 +137,57 @@ export function buildCopyPlatformVariants(input: {
       versions,
     });
   });
+}
+
+export function assertCopyRevisionAssemblyComplete(input: {
+  marketing?: {
+    contextBundle?: {
+      bundleId?: string;
+      hash?: string;
+      revision?: number;
+    };
+    factRefs?: string[];
+    rightsRefs?: string[];
+  };
+  variants?: ContentPackage['variants'];
+  version: Pick<ContentPackageVersion, 'body' | 'conversionHook' | 'title'>;
+}) {
+  if (
+    !input.marketing?.contextBundle?.bundleId ||
+    !input.marketing.contextBundle.hash ||
+    !input.marketing.contextBundle.revision ||
+    !Array.isArray(input.marketing.factRefs)
+  ) {
+    throw new Error('Copy revision assembly requires frozen evidence.');
+  }
+  if (!input.version.conversionHook?.trim()) {
+    throw new Error('Copy revision assembly requires a conversion CTA.');
+  }
+  if (!Array.isArray(input.marketing.rightsRefs)) {
+    throw new Error('Copy revision assembly requires rights references.');
+  }
+  const expectedPlatforms = ['xiaohongshu', 'douyin', 'video_account'];
+  const actualPlatforms = input.variants?.map(({ platform }) => platform) ?? [];
+  if (
+    !input.variants ||
+    input.variants.length !== expectedPlatforms.length ||
+    new Set(actualPlatforms).size !== expectedPlatforms.length ||
+    expectedPlatforms.some((platform) => !actualPlatforms.includes(platform)) ||
+    input.variants.some(
+      (variant) =>
+        !variant.versions.some(
+          (version) =>
+            version.id === variant.currentVersionId &&
+            Boolean(version.title.trim()) &&
+            Boolean(version.body.trim()) &&
+            Boolean(version.conversionHook?.trim()),
+        ),
+    )
+  ) {
+    throw new Error(
+      'Copy revision assembly requires one complete current variant per platform.',
+    );
+  }
 }
 
 function contract(

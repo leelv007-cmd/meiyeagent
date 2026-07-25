@@ -38,7 +38,10 @@ import type {
 } from './workflow-core.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { projectMarketingPackageEvidence } from './marketing-scene-policy.js';
-import { buildCopyPlatformVariants } from './output-compiler.js';
+import {
+  assertCopyRevisionAssemblyComplete,
+  buildCopyPlatformVariants,
+} from './output-compiler.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
@@ -510,7 +513,7 @@ export function copyContentPackageRevisionWriteInput(
   if (!winner) {
     throw new Error('The Harness winner must be a delivered candidate.');
   }
-  return {
+  const revision: ContentPackageRevisionWriteInput = {
     additionalVersions: versions.filter((candidate) => candidate.id !== winner.id),
     expectedRevision: input.request.expectedRevision,
     generated: { assetIds: [], childRuns: [] },
@@ -546,6 +549,8 @@ export function copyContentPackageRevisionWriteInput(
     workflowRevision: input.request.workflowRevision,
     workspaceId: input.request.workspaceId,
   };
+  assertCopyRevisionAssemblyComplete(revision);
+  return revision;
 }
 
 function copyRevisionVersionId(

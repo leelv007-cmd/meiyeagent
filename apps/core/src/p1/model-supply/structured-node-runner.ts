@@ -21,6 +21,7 @@ export interface StructuredNodeRunnerRequest<Output> {
   schema: ZodType<Output>;
   schemaName: string;
   schemaRevision: string;
+  productUsageQuantity?: 0 | 1;
   abortSignal?: AbortSignal;
   /** Revalidates live execution facts immediately before every provider effect. */
   beforeProviderAttempt?: () => Promise<void>;
@@ -118,7 +119,10 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         prompt: request.prompt,
         promptRevision: request.schemaRevision,
         exampleSetRevision: request.schemaName,
-        productUsageQuantity: this.options.productUsageQuantity ?? 1,
+        productUsageQuantity:
+          request.productUsageQuantity ??
+          this.options.productUsageQuantity ??
+          1,
       },
       {
         abortSignal: request.abortSignal,

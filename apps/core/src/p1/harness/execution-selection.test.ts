@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   candidateBillingDisposition,
   executeCopySelection,
+  HarnessSelectionError,
   type CandidatePolicyValidator,
   type CandidateScorer,
 } from './execution-selection.js';
@@ -33,15 +34,68 @@ test('copy compiler makes one model call and returns one primary candidate', asy
     runner.requests.map((request) => request.effectIdempotencyKey),
     ['wf:workflow-34:s4:copy-primary:c01'],
   );
+  assert.deepEqual(
+    runner.requests.map((request) => request.productUsageQuantity),
+    [1],
+  );
   assert.deepEqual(scorer.effectKeys, []);
   assert.match(runner.requests[0]!.instructions, /single primary/iu);
   assert.match(runner.requests[0]!.prompt, /identity-owner-1/u);
   assert.match(runner.requests[0]!.prompt, /xiaohongshu/u);
 });
 
-test('the single primary candidate still passes the canonical policy gate', async () => {
+test('one policy failure retries once with feedback and delivers the safe result', async () => {
   const runner = new QueueRunner([
     candidate('主推荐', '正文 A', ['asset-withdrawn']),
+    candidate('安全重试', '正文 B', []),
+  ]);
+  const scorer = new FixedScorer({});
+
+  const result = await executeCopySelection(selectionInput(), {
+    runner,
+    scorer,
+    validator: new WithdrawnAssetValidator(),
+  });
+
+  assert.equal(result.winner.candidateId, 'c01-retry');
+  assert.deepEqual(result.blockedCandidates, [
+    {
+      candidateId: 'c01',
+      gateIds: ['subject_asset_rights'],
+      alternativePath: ['换安全素材', '匿名化', '请求授权', '放弃该表达'],
+    },
+  ]);
+  assert.deepEqual(
+    runner.requests.map((request) => request.effectIdempotencyKey),
+    [
+      'wf:workflow-34:s4:copy-primary:c01',
+      'wf:workflow-34:s4:copy-primary:c01-retry',
+    ],
+  );
+  assert.equal(
+    new Set(
+      runner.requests.map((request) => request.effectIdempotencyKey),
+    ).size,
+    2,
+  );
+  assert.deepEqual(
+    runner.requests.map((request) => request.productUsageQuantity),
+    [1, 0],
+  );
+  assert.match(runner.requests[1]!.instructions, /Correct every supplied policy failure/u);
+  assert.deepEqual(JSON.parse(runner.requests[1]!.prompt).policyFailures, [
+    {
+      gateId: 'subject_asset_rights',
+      reason: '素材授权已撤回',
+    },
+  ]);
+  assert.deepEqual(scorer.effectKeys, []);
+});
+
+test('two policy failures stop after one retry with every gate id', async () => {
+  const runner = new QueueRunner([
+    candidate('主推荐', '正文 A', ['asset-withdrawn']),
+    candidate('重试仍不安全', '正文 B', ['asset-medical']),
   ]);
   const scorer = new FixedScorer({});
 
@@ -51,7 +105,20 @@ test('the single primary candidate still passes the canonical policy gate', asyn
       scorer,
       validator: new WithdrawnAssetValidator(),
     }),
-    /Every generated candidate was blocked/u,
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessSelectionError);
+      assert.equal(error.status, 409);
+      assert.deepEqual(error.gateIds, [
+        'subject_asset_rights',
+        'medical_claim',
+      ]);
+      return true;
+    },
+  );
+  assert.equal(runner.requests.length, 2);
+  assert.deepEqual(
+    runner.requests.map((request) => request.productUsageQuantity),
+    [1, 0],
   );
   assert.deepEqual(scorer.effectKeys, []);
 });
@@ -188,6 +255,18 @@ class PassValidator implements CandidatePolicyValidator {
 
 class WithdrawnAssetValidator implements CandidatePolicyValidator {
   validate(candidate: Parameters<CandidatePolicyValidator['validate']>[0]) {
+    if (candidate.assetRefs.includes('asset-medical')) {
+      return {
+        passed: false,
+        failures: [
+          {
+            gateId: 'medical_claim',
+            reason: '文案包含未核验医疗宣称',
+            alternativePath: ['改用生活化体验描述'],
+          },
+        ],
+      };
+    }
     if (!candidate.assetRefs.includes('asset-withdrawn')) {
       return { passed: true, failures: [] };
     }

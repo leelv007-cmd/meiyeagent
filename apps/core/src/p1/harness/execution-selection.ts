@@ -126,27 +126,28 @@ export async function executeCopySelection(
     validator: CandidatePolicyValidator;
   },
 ) {
-  const compiled = compileCopyGenerationRequest({
+  const primaryRequest = compileCopyGenerationRequest({
     brief: input.brief,
     context: input.generationContext,
   });
-  const emitPartial = copyCandidateTokenEmitter(
-    compiled.candidateId,
+  const primaryEmitter = copyCandidateTokenEmitter(
+    primaryRequest.candidateId,
     input.onToken,
   );
-  const generated = await ports.runner.run({
+  const primary = await ports.runner.run({
     effectIdempotencyKey:
-      `wf:${input.workflowId}:s4:${input.unitId}:${compiled.candidateId}`,
+      `wf:${input.workflowId}:s4:${input.unitId}:${primaryRequest.candidateId}`,
     schemaName: 'harness_copy_candidate_v1',
     schemaRevision: 'copy-candidate-v1',
-    instructions: compiled.instructions,
-    prompt: compiled.prompt,
+    instructions: primaryRequest.instructions,
+    prompt: primaryRequest.prompt,
     schema: generatedCandidateSchema,
-    ...(emitPartial ? { onPartialOutput: emitPartial } : {}),
+    productUsageQuantity: 1,
+    ...(primaryEmitter ? { onPartialOutput: primaryEmitter } : {}),
   });
-  const candidate: GeneratedCandidate = {
-    ...generated.output,
-    candidateId: compiled.candidateId,
+  let candidate: GeneratedCandidate = {
+    ...primary.output,
+    candidateId: primaryRequest.candidateId,
     workspaceId: input.workspaceId,
     intendedUse: input.intendedUse,
   };
@@ -155,15 +156,42 @@ export async function executeCopySelection(
     gateIds: string[];
     alternativePath: string[];
   }> = [];
-  const policy = ports.validator.validate(structuredClone(candidate));
+  let policy = ports.validator.validate(structuredClone(candidate));
   if (!policy.passed) {
-    blockedCandidates.push({
-      candidateId: candidate.candidateId,
-      gateIds: policy.failures.map(({ gateId }) => gateId),
-      alternativePath: unique(
-        policy.failures.flatMap(({ alternativePath }) => alternativePath),
-      ),
+    blockedCandidates.push(blockedCandidate(candidate.candidateId, policy.failures));
+    const retryRequest = compileCopyGenerationRequest({
+      brief: input.brief,
+      context: input.generationContext,
+      policyFailures: policy.failures.map(({ gateId, reason }) => ({
+        gateId,
+        reason,
+      })),
     });
+    const retryEmitter = copyCandidateTokenEmitter(
+      retryRequest.candidateId,
+      input.onToken,
+    );
+    const retry = await ports.runner.run({
+      effectIdempotencyKey:
+        `wf:${input.workflowId}:s4:${input.unitId}:${retryRequest.candidateId}`,
+      schemaName: 'harness_copy_candidate_v1',
+      schemaRevision: 'copy-candidate-v1',
+      instructions: retryRequest.instructions,
+      prompt: retryRequest.prompt,
+      schema: generatedCandidateSchema,
+      productUsageQuantity: 0,
+      ...(retryEmitter ? { onPartialOutput: retryEmitter } : {}),
+    });
+    candidate = {
+      ...retry.output,
+      candidateId: retryRequest.candidateId,
+      workspaceId: input.workspaceId,
+      intendedUse: input.intendedUse,
+    };
+    policy = ports.validator.validate(structuredClone(candidate));
+  }
+  if (!policy.passed) {
+    blockedCandidates.push(blockedCandidate(candidate.candidateId, policy.failures));
     throw new HarnessSelectionError(
       unique(blockedCandidates.flatMap(({ gateIds }) => gateIds)),
     );
@@ -199,6 +227,23 @@ export async function executeCopySelection(
     scores,
     blockedCandidates,
     trace,
+  };
+}
+
+function blockedCandidate(
+  candidateId: string,
+  failures: Array<{
+    gateId: string;
+    reason: string;
+    alternativePath: string[];
+  }>,
+) {
+  return {
+    candidateId,
+    gateIds: failures.map(({ gateId }) => gateId),
+    alternativePath: unique(
+      failures.flatMap(({ alternativePath }) => alternativePath),
+    ),
   };
 }
 

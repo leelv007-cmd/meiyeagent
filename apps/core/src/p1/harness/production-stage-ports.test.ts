@@ -410,6 +410,23 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
     executionDelivery,
   );
   const snapshot = composerSnapshot();
+  const context = contextSnapshot();
+  context.policyReferences.sourceRefs = [
+    {
+      id: 'store_fact:service-1:1',
+      workspaceId: 'workspace-1',
+      revision: 1,
+      status: 'current',
+    },
+  ];
+  context.policyReferences.rightsRefs = [
+    {
+      assetId: 'asset-1',
+      workspaceId: 'workspace-1',
+      status: 'authorized',
+      allowedUses: ['public_content'],
+    },
+  ];
 
   const delivery = await ports.assembleAndDeliver({
     workflowId: snapshot.task.id,
@@ -430,13 +447,13 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
       routingSource: 'model',
       implicitConstraints: [],
     },
-    context: contextSnapshot(),
+    context,
     brief: {
       kind: 'copy',
       instructions: 'x'.repeat(80),
       platform: 'douyin',
       cta: '私信预约',
-      factRefs: [],
+      factRefs: ['store_fact:service-1:1'],
       assetRefs: ['asset-1', 'asset-1'],
       identityRefs: [],
       constraints: [],
@@ -494,6 +511,16 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
   assert.deepEqual(executionDelivery.inputs[0]?.harnessSelection, {
     recommendedCandidateId: 'candidate-1',
   });
+  assert.deepEqual(executionDelivery.inputs[0]?.marketing?.factRefs, [
+    'store_fact:service-1:1',
+  ]);
+  assert.deepEqual(executionDelivery.inputs[0]?.marketing?.rightsRefs, [
+    'asset-1',
+  ]);
+  assert.equal(
+    executionDelivery.inputs[0]?.version.conversionHook,
+    '私信预约',
+  );
   assert.deepEqual(executionDelivery.inputs[0]?.version.orderedAssetIds, ['asset-1']);
   assert.deepEqual(
     executionDelivery.inputs[0]?.additionalVersions?.map(
@@ -1431,7 +1458,7 @@ async function assertUnpricedCandidateBlocked(output: CandidateFixture) {
     ),
     /Every generated candidate was blocked/u,
   );
-  assert.equal(runner.requests.length, 1);
+  assert.equal(runner.requests.length, 2);
 }
 
 function unpricedPorts(runner: QueueRunner) {

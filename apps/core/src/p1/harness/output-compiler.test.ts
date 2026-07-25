@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  assertCopyRevisionAssemblyComplete,
   buildCopyPlatformVariants,
   OUTPUT_COMPILER_CONTRACTS,
   OUTPUT_COMPILER_KINDS,
@@ -162,4 +163,69 @@ test('copy assembly prepares one non-empty version for every v1 platform', () =>
     assert.ok(variant.versions[0]?.body);
     assert.ok(variant.versions[0]?.conversionHook);
   }
+});
+
+test('copy assembly rejects revisions missing evidence, CTA, variants, or rights references', () => {
+  const version = {
+    body: '介绍本店护理重点，并说明预约前需要沟通的事项。',
+    conversionHook: '私信预约',
+    createdAt: '2026-07-25T08:00:00.000Z',
+    id: 'version-1',
+    orderedAssetIds: [],
+    source: 'ai_generated' as const,
+    title: '换季护理到店前先看',
+    topics: [],
+  };
+  const complete = {
+    marketing: {
+      contextBundle: {
+        bundleId: 'bundle-1',
+        hash: 'a'.repeat(64),
+        revision: 1,
+      },
+      factRefs: ['store_fact:service-1:1'],
+      rightsRefs: ['asset-1'],
+    },
+    variants: buildCopyPlatformVariants({
+      currentVersionId: version.id,
+      packageId: 'package-1',
+      versions: [version],
+    }),
+    version,
+  };
+  assert.doesNotThrow(() => assertCopyRevisionAssemblyComplete(complete));
+
+  const { marketing: _marketing, ...withoutEvidence } = complete;
+  assert.throws(
+    () => assertCopyRevisionAssemblyComplete(withoutEvidence),
+    /requires frozen evidence/u,
+  );
+
+  const { conversionHook: _conversionHook, ...withoutConversionHook } =
+    complete.version;
+  assert.throws(
+    () =>
+      assertCopyRevisionAssemblyComplete({
+        ...complete,
+        version: withoutConversionHook,
+      }),
+    /requires a conversion CTA/u,
+  );
+
+  const { variants: _variants, ...withoutVariants } = complete;
+  assert.throws(
+    () => assertCopyRevisionAssemblyComplete(withoutVariants),
+    /requires one complete current variant per platform/u,
+  );
+
+  const { rightsRefs: _rightsRefs, ...withoutRightsReferences } =
+    complete.marketing;
+  assert.throws(
+    () =>
+      assertCopyRevisionAssemblyComplete({
+        ...complete,
+        marketing: withoutRightsReferences,
+      }),
+    /requires rights references/u,
+  );
 });
