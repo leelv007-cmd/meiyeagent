@@ -98,6 +98,26 @@ test(
           resumed.push(resumedCommand.questionId);
         },
       });
+      const editing = {
+        ...decisionInput(questionId),
+        idempotencyKey: 'decision-editing',
+        patch: {
+          ...decisionInput(questionId).patch,
+          value: '正在补充团购信息',
+        },
+        decision: {
+          state: 'editing' as const,
+          value: '正在补充团购信息',
+        },
+      };
+      assert.equal(
+        (await decisions.submit(workspaceId, taskId, editing)).replayed,
+        false,
+      );
+      assert.equal(
+        (await store.readPending(workspaceId, taskId))?.questionId,
+        questionId,
+      );
       const command = decisionInput(questionId);
       const concurrent = await Promise.all([
         decisions.submit(workspaceId, taskId, command),
@@ -111,7 +131,7 @@ test(
         (await decisions.submit(otherWorkspaceId, taskId, command)).replayed,
         false,
       );
-      assert.deepEqual(resumed, [questionId, questionId]);
+      assert.deepEqual(resumed, [questionId, questionId, questionId]);
       assert.equal(await store.readPending(workspaceId, taskId), null);
       assert.equal(await store.readPending(otherWorkspaceId, taskId), null);
       assert.equal(
@@ -140,7 +160,7 @@ test(
       const persisted = await pool.query(
         `select
            (select count(*)::int from harness_runtime.decision_events where task_id=$1) as events,
-           (select resume_status from harness_runtime.decision_events where task_id=$1) as resume_status,
+           (select min(resume_status) from harness_runtime.decision_events where task_id=$1) as resume_status,
            (select count(*)::int from harness_runtime.decision_traces where task_id=$1) as traces,
            (select count(*)::int from harness_runtime.audit_events where workflow_id=$1) as audits,
            (select count(*)::int from harness_runtime.langfuse_outbox o
@@ -149,11 +169,11 @@ test(
         [runtimeTaskId],
       );
       assert.deepEqual(persisted.rows[0], {
-        events: 1,
+        events: 2,
         resume_status: 'sent',
-        traces: 2,
-        audits: 2,
-        outbox: 2,
+        traces: 3,
+        audits: 3,
+        outbox: 3,
       });
       const decisionEvidence = await pool.query<{
         audit_payload: {
@@ -172,7 +192,8 @@ test(
                     and audit.event_type='structured_decision_recorded'
                   limit 1) as audit_payload
            from harness_runtime.decision_events events
-          where events.task_id=$1`,
+          where events.task_id=$1
+            and events.payload->'decision'->>'state'='accepted'`,
         [runtimeTaskId],
       );
       assert.equal(
@@ -195,7 +216,7 @@ test(
          order by o.audit_id`,
         [[runtimeTaskId, otherRuntimeTaskId]],
       );
-      assert.equal(ownOutbox.rows.length, 3);
+      assert.equal(ownOutbox.rows.length, 4);
       const ownAuditIds = ownOutbox.rows.map((row) => row.audit_id);
       await pool.query(
         `update harness_runtime.langfuse_outbox
