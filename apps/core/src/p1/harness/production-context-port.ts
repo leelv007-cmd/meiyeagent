@@ -357,6 +357,9 @@ export class LedgerBackedHarnessContextPort
     });
     return {
       bundle,
+      factsRevision: await this.facts.currentRevision(
+        input.request.workspaceId,
+      ),
       activeFactReferences: activeFacts.map((fact) => ({
         key: fact.key,
         sourceRef: factReference(fact.factId, fact.revision),
