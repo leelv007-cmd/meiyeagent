@@ -110,6 +110,12 @@ export async function submitComposerJourney(
   await expect(lens).toBeChecked();
   await expect(lens).toHaveAttribute('data-state', 'checked');
 
+  // Callers must name a 美业 service category in `intent`. D-111 asks a
+  // structured question (`…:s1:industry_category`) when it cannot infer one,
+  // and a run waiting on that question yields no token and no 成品预览卡 — the
+  // journey would be measuring a stalled workflow. Answering is not open to us
+  // either: for Composer-originated runs a substantive answer is rejected
+  // outright (T41 owns that defect), so the signal has to be in the intent.
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(
     page.getByTestId('composer-quote-line'),
@@ -187,7 +193,6 @@ export async function submitComposerJourney(
     page,
     'submitting must not navigate away from the Composer conversation'
   ).not.toHaveURL(/\/dashboard\/results\//u);
-  await answerComposerQuestions(page);
   const deliveryCard = page.getByTestId('composer-delivery-card');
   await expect(deliveryCard).toBeVisible({ timeout: 120_000 });
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);
@@ -204,63 +209,6 @@ export async function submitComposerJourney(
     'result route must carry the exact workId the 202 returned'
   ).toBe(submittedWorkId);
   return submittedWorkId;
-}
-
-/**
- * 只需确认一件事 — answer whatever the run asks, then hand back.
- *
- * A live run suspends on a Harness structured decision whenever D-111 cannot
- * infer a field from the intent (observed: `…:s1:industry_category`, free-text,
- * no options). Until it is answered the DBOS workflow stays PENDING, so no
- * token and no 成品预览卡 ever arrive — a journey that does not answer is not
- * slow, it is stuck. Whether a run asks at all depends on the intent, so this
- * tolerates zero questions and returns how many it actually answered.
- *
- * Not on the D-043 budget path: the counter stops at first token, and a run
- * that asks has not produced one yet. Journeys that assert an activation
- * budget must use an intent the router can resolve on its own.
- */
-export async function answerComposerQuestions(
-  page: Page,
-  { timeoutMs = 120_000 }: { timeoutMs?: number } = {}
-): Promise<number> {
-  const question = page.getByTestId('composer-question-card');
-  const delivery = page.getByTestId('composer-delivery-card');
-  const stream = page.getByTestId('composer-candidate-stream');
-  const deadline = Date.now() + timeoutMs;
-  let answered = 0;
-
-  while (Date.now() < deadline) {
-    if (await delivery.isVisible()) break;
-    // The stream section only exists once the turn is on screen; asking for its
-    // attribute before that would block on the default timeout instead of
-    // falling through to the poll below.
-    const streamed = (await stream.count())
-      ? await stream.getAttribute('data-has-token')
-      : null;
-    if (streamed === 'true') break;
-    if (!(await question.isVisible())) {
-      await page.waitForTimeout(1_000);
-      continue;
-    }
-    // Pin the id so a follow-up question is not mistaken for this one lingering.
-    const questionId = await question.getAttribute('data-question-id');
-    // Skip, never answer. `applyCurrentTaskDecision` (harness/workflow-core.ts)
-    // returns the request untouched for `state === 'ignored'`, but throws
-    // HarnessSnapshotDecisionError for any substantive answer once the run
-    // carries an executionSnapshot — and `creation-stage-port.ts:54` sets one
-    // on every Composer submission. So for Composer-originated runs skipping is
-    // not the lazy path, it is the only one that does not kill the workflow.
-    // Skipping routes to D-111 通用模式, which is what the pre-existing
-    // intent-routing-http-sse spec exercises by ignoring the same question.
-    await page.getByTestId('composer-question-skip').click();
-    await expect(
-      page.locator(`[data-question-id="${questionId}"]`),
-      'the answered question must leave the conversation'
-    ).toHaveCount(0, { timeout: 60_000 });
-    answered += 1;
-  }
-  return answered;
 }
 
 /**

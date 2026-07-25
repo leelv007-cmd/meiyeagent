@@ -214,7 +214,7 @@ test.fixme(
           packageFileName: /朋友圈分段包\.txt$/u,
           resultSurfaceTestId: 'copy-image-text-worksurface',
         },
-        `移动进度真实文案 ${crypto.randomUUID()}`
+        `皮肤护理 移动进度真实文案 ${crypto.randomUUID()}`
       );
       void journey.catch(() => undefined);
 
@@ -481,7 +481,7 @@ test('keeps mobile Progress honest during a slow canonical query and restores a 
         packageFileName: /朋友圈分段包\.txt$/u,
         resultSurfaceTestId: 'copy-image-text-worksurface',
       },
-      `移动返回真实文案 ${crypto.randomUUID()}`
+      `皮肤护理 移动返回真实文案 ${crypto.randomUUID()}`
     );
 
     await page.goto(

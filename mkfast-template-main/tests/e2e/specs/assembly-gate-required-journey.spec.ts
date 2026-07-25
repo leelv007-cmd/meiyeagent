@@ -2,7 +2,6 @@ import { expect, test, type Page } from '@playwright/test';
 import type { ContentPackage } from '@meiye/contracts';
 import { readFile } from 'node:fs/promises';
 
-import { answerComposerQuestions } from '../fixtures/ui-journey';
 import { cleanupE2EUsers } from '../fixtures/auth';
 import { createE2EUser } from '../fixtures/test-data';
 import {
@@ -87,7 +86,6 @@ async function submitFirstCopy(page: Page, intent: string) {
     page,
     'submitting must not navigate away from the Composer conversation'
   ).not.toHaveURL(/\/dashboard\/results\//u);
-  await answerComposerQuestions(page);
   const deliveryCard = page.getByTestId('composer-delivery-card');
   await expect(deliveryCard).toBeVisible({ timeout: 180_000 });
   await deliveryCard.click();

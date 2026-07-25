@@ -86,7 +86,7 @@ test.describe('Z1 / #105 real Playwright three-modal Day-0 journeys', () => {
         const workId = await submitComposerJourney(
           page,
           contract,
-          `Z1 ${intentSeed} ${contract.modality} ${surface.name} ${crypto.randomUUID()}`
+          `Z1 皮肤护理 ${intentSeed} ${contract.modality} ${surface.name} ${crypto.randomUUID()}`
         );
         await waitForResultJourney(page, contract, workId);
         if (surface.name === 'mobile-dark') {
