@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { EventEmitter, once } from "node:events";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import type { ContentPackage, DiagnosticRun } from "@meiye/contracts";
+import {
+	isComposerVariantPlatform,
+	pickComposerSubmissionSignedFields,
+	type ContentPackage,
+	type DiagnosticRun,
+} from "@meiye/contracts";
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
 import { createCoreServer, streamWorkflowEvents } from "../../server.js";
@@ -129,6 +134,22 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.equal(starter.starts.length, 1);
 	assert.equal(starter.starts[0]?.snapshot.lens, "copy");
 	assert.equal(starter.starts[0]?.snapshot.platform.id, "douyin");
+	assert.equal(
+		starter.starts[0]?.snapshot.contentPackagePlatform,
+		submissionPayload().contentPackagePlatform,
+	);
+	assert.equal(
+		starter.starts[0]?.snapshot.distributionTarget,
+		submissionPayload().distributionTarget,
+	);
+	assert.deepEqual(
+		starter.starts[0]?.snapshot.deliverable,
+		submissionPayload().deliverable,
+	);
+	assert.deepEqual(
+		starter.starts[0]?.snapshot.signedSubmission,
+		pickComposerSubmissionSignedFields(submissionPayload()),
+	);
 	assert.deepEqual(starter.starts[0]?.snapshot.deliverables, [
 		{
 			aspectRatio: "3:4",
@@ -161,7 +182,6 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 		deliverables: _deliverables,
 		lens: _lens,
 		modelPolicy: _modelPolicy,
-		platform: _platform,
 		rights: _rights,
 		route: _route,
 		...browserOwnedPayload
@@ -171,7 +191,11 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 		headers,
 		body: JSON.stringify(browserOwnedPayload),
 	});
-	assert.equal(minimalBrowserReplay.status, 202);
+	assert.equal(
+		minimalBrowserReplay.status,
+		202,
+		JSON.stringify(await minimalBrowserReplay.clone().json()),
+	);
 	assert.equal((await minimalBrowserReplay.json()).data.replayed, true);
 	assert.equal(starter.starts.length, 1);
 
@@ -199,16 +223,15 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.equal((await clientRightsChanged.json()).data.replayed, true);
 	assert.equal(starter.starts.length, 1);
 
-	const clientPlatformChanged = await fetch(`${base}/submissions`, {
+	const signedPlatformChanged = await fetch(`${base}/submissions`, {
 		method: "POST",
 		headers,
 		body: JSON.stringify({
 			...submissionPayload(),
-			platform: { id: "xiaohongshu" },
+			contentPackagePlatform: "xiaohongshu",
 		}),
 	});
-	assert.equal(clientPlatformChanged.status, 202);
-	assert.equal((await clientPlatformChanged.json()).data.replayed, true);
+	assert.equal(signedPlatformChanged.status, 409);
 	assert.equal(starter.starts.length, 1);
 
 	const events = await fetch(`${base}/tasks/task-1/events`, {
@@ -278,9 +301,14 @@ test("authenticated Composer HTTP carries copy, image, and video through one sna
 								revision: snapshot.revision,
 								schemaVersion: snapshot.schemaVersion,
 							},
-							...(snapshot.platform.id === "wechat_moments"
-								? {}
-								: { targetPlatform: snapshot.platform.id }),
+							...(isComposerVariantPlatform(
+								snapshot.contentPackagePlatform,
+							)
+								? {
+										targetPlatform:
+											snapshot.contentPackagePlatform,
+									}
+								: {}),
 							workId: snapshot.work.id,
 							workflowId: snapshot.task.id,
 							workflowRevision: snapshot.revision,
@@ -336,7 +364,11 @@ test("authenticated Composer HTTP carries copy, image, and video through one sna
 			headers,
 			body: JSON.stringify(modalitySubmissionPayload(kind)),
 		});
-		assert.equal(submitted.status, 202);
+		assert.equal(
+			submitted.status,
+			202,
+			JSON.stringify(await submitted.clone().json()),
+		);
 		const body = await submitted.json();
 		assert.equal(body.data.replayed, false);
 		assert.equal(body.data.task.id, `task-${kind}`);
@@ -1074,6 +1106,13 @@ function submissionPayload(): ComposerSubmissionBody {
 		briefConfirmation: { id: "brief-confirmation-1", revision: "brief-r2" },
 		briefContext: { id: "brief-context-1", revision: 4 },
 		catalogModel: { id: "catalog-copy-1", revision: "catalog-r4" },
+		contentPackagePlatform: "douyin",
+		distributionTarget: "export",
+		deliverable: {
+			kind: "copy_document",
+			quantity: 1,
+			aspectRatio: "3:4",
+		},
 		contentModules: ["social_cover"],
 		deliverables: [
 			{
@@ -1089,7 +1128,6 @@ function submissionPayload(): ComposerSubmissionBody {
 		intent: "为夏日护理项目写一条预约文案",
 		lens: "copy",
 		modelPolicy: { id: "policy-copy", mode: "fixed", revision: "policy-r1" },
-		platform: { id: "douyin" },
 		quote: { id: "quote-1", revision: "quote-r5" },
 		recipe: { id: "recipe-service-promotion", revision: "recipe-r7" },
 		rights: { revision: "rights-r4", summary: "source assets are authorized" },
@@ -1114,6 +1152,23 @@ function modalitySubmissionPayload(
 	return {
 		...submissionPayload(),
 		catalogModel: { id: `catalog-${kind}-1`, revision: `catalog-${kind}-r1` },
+		contentPackagePlatform:
+			kind === "copy"
+				? "douyin"
+				: kind === "image"
+					? "xiaohongshu"
+					: "video_account",
+		deliverable: {
+			kind:
+				kind === "copy"
+					? "copy_document"
+					: kind === "image"
+						? "image_set"
+						: "video_package",
+			quantity: 1,
+			...(kind === "copy" ? {} : { aspectRatio: "9:16" as const }),
+			...(kind === "video" ? { durationSeconds: 8 } : {}),
+		},
 		deliverables: [
 			{
 				id: `browser-${kind}-main`,
@@ -1127,7 +1182,6 @@ function modalitySubmissionPayload(
 		idempotencyKey: `composer-${kind}-1`,
 		lens: kind,
 		modelPolicy: { id: `browser-policy-${kind}`, mode: "fixed", revision: "browser-r1" },
-		platform: { id: "douyin" },
 		recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
 		route: { id: `route-${kind}-1`, revision: `route-${kind}-r1` },
 	};

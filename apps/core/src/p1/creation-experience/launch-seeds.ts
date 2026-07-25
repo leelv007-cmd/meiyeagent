@@ -83,10 +83,9 @@ export interface LaunchRecipeSeedSpec {
 /**
  * Eight Recipe seeds matching D-082/D-083 field table.
  *
- * Deviations (documented):
+ * Contract notes:
  * - `variantKey` is carried in settingsPatches (contracts have no top-level field).
- * - Friends-circle uses distributionTarget `wechat_moments` (export target, not
- *   auto-publish ContentPackagePlatform — D-082).
+ * - Friends-circle is an assisted handoff, never a ContentPackage variant target.
  * - Reuse variants share presentation title/summary; cold action is
  *   「选择创作形式」rather than lens-specific apply (D-083).
  */
@@ -102,7 +101,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       actionLabel: '选择图文并套用',
     },
     delivery: {
-      platform: 'xiaohongshu',
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'export',
       deliverableKind: 'note',
       quantity: 1,
       aspectRatio: '3:4',
@@ -139,7 +139,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       actionLabel: '选择文案并套用',
     },
     delivery: {
-      platform: 'wechat_moments',
+      contentPackagePlatform: 'wechat_moments',
+      distributionTarget: 'assisted_handoff',
       deliverableKind: 'copy_document',
       quantity: 1,
     },
@@ -168,6 +169,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       actionLabel: '选择图文并套用',
     },
     delivery: {
+      contentPackagePlatform: 'generic',
+      distributionTarget: 'export',
       deliverableKind: 'image_set',
       quantity: 4,
       aspectRatio: '3:4',
@@ -199,6 +202,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       actionLabel: '选择图文并套用',
     },
     delivery: {
+      contentPackagePlatform: 'offline_material',
+      distributionTarget: 'export',
       deliverableKind: 'poster',
       quantity: 1,
       aspectRatio: '3:4',
@@ -232,7 +237,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       actionLabel: '选择视频并套用',
     },
     delivery: {
-      platform: 'douyin',
+      contentPackagePlatform: 'douyin',
+      distributionTarget: 'export',
       deliverableKind: 'video_package',
       quantity: 1,
       aspectRatio: '9:16',
@@ -270,6 +276,8 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       actionLabel: REUSE_CONTENT_ACTION_LABEL,
     },
     delivery: {
+      contentPackagePlatform: 'generic',
+      distributionTarget: 'export',
       deliverableKind: 'copy_document',
       quantity: 1,
     },
@@ -304,8 +312,11 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       actionLabel: REUSE_CONTENT_ACTION_LABEL,
     },
     delivery: {
+      contentPackagePlatform: 'generic',
+      distributionTarget: 'export',
       deliverableKind: 'image_text_package',
       quantity: 1,
+      aspectRatio: '3:4',
     },
     factTypes: [],
     sourceRequirements: [
@@ -338,8 +349,12 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       actionLabel: REUSE_CONTENT_ACTION_LABEL,
     },
     delivery: {
+      contentPackagePlatform: 'generic',
+      distributionTarget: 'export',
       deliverableKind: 'video_package',
       quantity: 1,
+      aspectRatio: '9:16',
+      durationSeconds: 15,
     },
     factTypes: [],
     sourceRequirements: [

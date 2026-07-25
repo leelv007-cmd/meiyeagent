@@ -1,4 +1,7 @@
-import type { BuildProductQuoteInput } from '@meiye/contracts';
+import type {
+  BuildProductQuoteInput,
+  ComposerSubmissionSignedFields,
+} from '@meiye/contracts';
 
 export {
   toPublicProductQuoteSnapshot,
@@ -6,6 +9,7 @@ export {
 } from '@meiye/contracts';
 
 import { P1DomainError } from '../foundation/domain.js';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
 export const publicProductQuoteOperations = [
   'copy.generate',
@@ -23,6 +27,7 @@ export interface PublicProductQuoteIntent {
   operation: PublicProductQuoteOperation;
   quantity?: number;
   quoteId: string;
+  submission?: ComposerSubmissionSignedFields;
   targetSeconds?: number;
   workspaceId: string;
 }
@@ -135,6 +140,9 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
       quoteId: input.quoteId,
       // Product policy is code-owned. Supplier price revision is separate.
       quotePolicyRevision: 'quote.policy@1',
+      ...(input.submission
+        ? { submissionContractHash: fingerprintValue(input.submission) }
+        : {}),
       unitRate: billingMode === 'per_request' ? baseUnitRate * quantity : baseUnitRate,
       workspaceId: input.workspaceId,
     };

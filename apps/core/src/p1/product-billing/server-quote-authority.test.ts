@@ -93,4 +93,42 @@ describe('CatalogProductQuoteAuthority', () => {
       /quantity/,
     );
   });
+
+  it('changes the signed preview when the destination contract changes', async () => {
+    const baseSubmission = {
+      catalogModel: { id: 'image-model', revision: 'catalog-r11' },
+      recipe: { id: 'recipe-image', revision: 'recipe-image@1' },
+      contentPackagePlatform: 'xiaohongshu' as const,
+      distributionTarget: 'export' as const,
+      deliverable: {
+        kind: 'image_set' as const,
+        quantity: 1,
+        aspectRatio: '3:4' as const,
+      },
+    };
+    const xhs = await authority().resolve({
+      catalogModelId: 'image-model',
+      operation: 'image.generate',
+      quoteId: 'quote-xhs',
+      submission: baseSubmission,
+      workspaceId: 'workspace-1',
+    });
+    const moments = await authority().resolve({
+      catalogModelId: 'image-model',
+      operation: 'image.generate',
+      quoteId: 'quote-moments',
+      submission: {
+        ...baseSubmission,
+        contentPackagePlatform: 'wechat_moments',
+        distributionTarget: 'assisted_handoff',
+      },
+      workspaceId: 'workspace-1',
+    });
+
+    assert.match(xhs.submissionContractHash ?? '', /^[a-f0-9]{64}$/u);
+    assert.notEqual(
+      xhs.submissionContractHash,
+      moments.submissionContractHash,
+    );
+  });
 });
