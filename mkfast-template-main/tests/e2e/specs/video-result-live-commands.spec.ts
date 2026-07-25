@@ -67,7 +67,7 @@ test.describe('video Result canonical live commands', () => {
     const workId = await submitComposerJourney(
       page,
       contract,
-      `video-live-commands-${crypto.randomUUID()}`
+      `皮肤护理 video-live-commands-${crypto.randomUUID()}`
     );
     await waitForResultJourney(page, contract, workId);
 

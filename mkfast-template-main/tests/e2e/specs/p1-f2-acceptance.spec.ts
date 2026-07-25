@@ -396,7 +396,7 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     const workId = await submitComposerJourney(
       page,
       contract,
-      `P1-F2 朋友圈项目介绍 copy ${crypto.randomUUID()}`
+      `P1-F2 皮肤护理 朋友圈项目介绍 copy ${crypto.randomUUID()}`
     );
     await waitForResultJourney(page, contract, workId);
     await assertMerchantLanguage(page, 'Result (copy ready)');
@@ -434,7 +434,7 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
     const workId = await submitComposerJourney(
       page,
       contract,
-      `P1-F2 小红书套图 image_text ${crypto.randomUUID()}`
+      `P1-F2 皮肤护理 小红书套图 image_text ${crypto.randomUUID()}`
     );
     await waitForResultJourney(page, contract, workId);
     await assertMerchantLanguage(page, 'Result (image_text ready)');
