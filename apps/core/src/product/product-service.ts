@@ -10,6 +10,11 @@ import {
   type ProductQualityEvent,
   type ProductQualitySink,
 } from './quality-sink.js';
+import {
+  hydrateExampleStores,
+  initialExampleStores,
+  withoutPlatformSamples,
+} from './example-stores.js';
 import { defaultProductPlanConfig, type ProductPlanConfig } from './plans.js';
 import {
   defaultCopyProviderRegistry,
@@ -112,60 +117,7 @@ function initialState(
   const starter = planConfig.starter;
   return {
     workspaceId,
-    exampleStore: {
-      id: 'example-manicure-store',
-      name: '弥鹿美甲示例店',
-      readOnly: true,
-      hidden: true,
-      assets: 4,
-      contentCards: 3,
-      packages: 1,
-      profile: { city: '杭州', project: '透亮猫眼', confirmedPrice: 299 },
-      assetPreviews: [
-        {
-          id: 'example-asset-1',
-          label: '猫眼纹理特写',
-          authorizationStatus: 'authorized',
-        },
-        {
-          id: 'example-asset-2',
-          label: '门店自然光环境',
-          authorizationStatus: 'authorized',
-        },
-        {
-          id: 'example-asset-3',
-          label: '技师操作过程',
-          authorizationStatus: 'authorized',
-        },
-        {
-          id: 'example-asset-4',
-          label: '完成效果实拍',
-          authorizationStatus: 'authorized',
-        },
-      ],
-      contentPreviews: [
-        {
-          id: 'example-content-1',
-          title: '阴天也透亮的显白猫眼',
-          platform: 'xiaohongshu',
-        },
-        {
-          id: 'example-content-2',
-          title: '30 秒看懂猫眼光带',
-          platform: 'douyin',
-        },
-        {
-          id: 'example-content-3',
-          title: '第一次做猫眼怎么选',
-          platform: 'xiaohongshu',
-        },
-      ],
-      handoffPreview: {
-        id: 'example-handoff-1',
-        title: '猫眼项目发布包',
-        platform: 'xiaohongshu',
-      },
-    },
+    exampleStores: initialExampleStores(),
     assets: [],
     contents: [],
     storyboards: [],
@@ -227,10 +179,13 @@ function normalizeState(
   planConfig: ProductPlanConfig
 ): ProductState {
   const defaults = initialState(state.workspaceId, planConfig);
+  const { exampleStore: _legacyExampleStore, ...stored } = state as ProductState & {
+    exampleStore?: unknown;
+  };
   return {
     ...defaults,
-    ...state,
-    exampleStore: { ...defaults.exampleStore, ...state.exampleStore },
+    ...stored,
+    exampleStores: hydrateExampleStores(state),
     enforcement: { ...defaults.enforcement, ...state.enforcement },
     operationalEvidence: {
       ...defaults.operationalEvidence,
@@ -766,9 +721,11 @@ export class ProductService implements ProductApplicationService {
   async bootstrap(context: ProductContext) {
     await this.authorize(context);
     const stored = await this.repository.load(context.workspaceId);
-    const state = stored
-      ? normalizeState(stored, this.planConfig)
-      : initialState(context.workspaceId, this.planConfig);
+    const state = withoutPlatformSamples(
+      stored
+        ? normalizeState(stored, this.planConfig)
+        : initialState(context.workspaceId, this.planConfig)
+    );
     await this.options.searchProjection?.sync(state);
     return state;
   }
@@ -947,7 +904,12 @@ export class ProductService implements ProductApplicationService {
         }
 
         state.updatedAt = nextUpdatedAt(state.updatedAt);
-        const result: CommandResult = { state, output };
+        // D-126: the persisted state is authoritative; the merchant-facing
+        // projection never carries platform-sample material.
+        const result: CommandResult = {
+          state: withoutPlatformSamples(state),
+          output,
+        };
         await repository.save(state, context);
         const success = { kind: 'success' as const, result };
         await repository.saveIdempotent(
@@ -1936,14 +1898,16 @@ export class ProductService implements ProductApplicationService {
   ) {
     switch (command.type) {
       case 'hide_example': {
-        state.exampleStore.hidden = command.hidden;
-        audit(
-          state,
-          context,
-          'example.visibility_changed',
-          'example_store',
-          state.exampleStore.id
-        );
+        for (const example of state.exampleStores) {
+          example.hidden = command.hidden;
+          audit(
+            state,
+            context,
+            'example.visibility_changed',
+            'example_store',
+            example.id
+          );
+        }
         return {};
       }
       case 'save_store_draft': {

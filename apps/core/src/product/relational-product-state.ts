@@ -5,6 +5,7 @@ import type {
   RelationFactKind,
 } from '../p1/foundation/domain.js';
 import { mapLegacyProductState } from '../p1/cutover/legacy-mapper.js';
+import { hydrateExampleStores } from './example-stores.js';
 
 interface ProjectionEntityOrder {
   store?: string;
@@ -34,7 +35,7 @@ interface ProjectionEntityOrder {
 
 interface ProductProjectionMeta {
   workspaceId: string;
-  exampleStore: ProductState['exampleStore'];
+  exampleStores: ProductState['exampleStores'];
   operationalEvidence: ProductState['operationalEvidence'];
   entitlement: ProductState['entitlement'];
   enforcement: ProductState['enforcement'];
@@ -314,7 +315,7 @@ export function createProductRelationRevisionFacts(
     enforcement: structuredClone(state.enforcement),
     entitlement: structuredClone(state.entitlement),
     entityOrder: projectionEntityOrder(state),
-    exampleStore: structuredClone(state.exampleStore),
+    exampleStores: structuredClone(state.exampleStores),
     operationalEvidence: structuredClone(state.operationalEvidence),
     updatedAt: state.updatedAt,
     workspaceId: state.workspaceId,
@@ -436,7 +437,7 @@ export function rebuildProductStateFromRelationFacts(
   });
   return {
     workspaceId: latestMeta.meta.workspaceId,
-    exampleStore: structuredClone(latestMeta.meta.exampleStore),
+    exampleStores: hydrateExampleStores(latestMeta.meta),
     ...(order.storeDraft ? { storeDraft: read(order.storeDraft) } : {}),
     ...(store ? { store } : {}),
     ...(order.qualification
