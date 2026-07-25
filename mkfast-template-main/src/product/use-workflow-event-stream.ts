@@ -1,7 +1,9 @@
 import {
+  contentPackageRevisionDeliverySchema,
   workflowProgressFrameSchema,
   workflowStateFrameSchema,
   workflowTokenFrameSchema,
+  type ContentPackageRevisionDelivery,
   type WorkflowProgressEnvelope,
   type WorkflowProgressFrame,
   type WorkflowStateEnvelope,
@@ -117,6 +119,27 @@ export function videoWorkflowEnvelopeFromState(
   return snapshot as unknown as VideoWorkflowEnvelope;
 }
 
+/**
+ * 成品版本 — the third outbound seam message (D-032 / ADR-0013), read off the
+ * terminal `workflow.state` frame rather than a second fetch: the harness
+ * workflow returns `{ delivery, deliveryLayer, recommendation, trace }` and the
+ * event reader publishes that whole result as the state snapshot
+ * (apps/core/src/p1/harness/dbos-workflow-events.ts readState).
+ *
+ * Returns undefined for any other producer (the video source publishes a
+ * `{ workflow, job }` snapshot) and for a snapshot whose delivery does not
+ * parse — a delivery card must never be bound to a revision we cannot verify.
+ */
+export function harnessDeliveryFromState(
+  state: WorkflowStateEnvelope
+): ContentPackageRevisionDelivery | undefined {
+  if (state.status !== 'success') return undefined;
+  const parsed = contentPackageRevisionDeliverySchema.safeParse(
+    state.snapshot.delivery
+  );
+  return parsed.success ? parsed.data : undefined;
+}
+
 export type WorkflowEventTransportStatus =
   | 'idle'
   | 'connecting'
@@ -143,6 +166,9 @@ export function useWorkflowEventStream(input: {
   const [workflowState, setWorkflowState] = useState<
     WorkflowStateEnvelope['status'] | undefined
   >();
+  const [harnessDelivery, setHarnessDelivery] = useState<
+    ContentPackageRevisionDelivery | undefined
+  >();
   const [transportStatus, setTransportStatus] =
     useState<WorkflowEventTransportStatus>('idle');
 
@@ -151,6 +177,7 @@ export function useWorkflowEventStream(input: {
     setLatestProgress(undefined);
     setCopyCandidates([]);
     setWorkflowState(undefined);
+    setHarnessDelivery(undefined);
     if (!input.enabled || !input.workflowId) {
       setTransportStatus('idle');
       return;
@@ -188,6 +215,8 @@ export function useWorkflowEventStream(input: {
           return;
         }
         setWorkflowState(frame.data.status);
+        const delivery = harnessDeliveryFromState(frame.data);
+        if (delivery) setHarnessDelivery(delivery);
         const envelope = videoWorkflowEnvelopeFromState(frame.data);
         if (envelope) {
           queryClient.setQueryData(input.workflowQueryKey, envelope);
@@ -235,5 +264,11 @@ export function useWorkflowEventStream(input: {
     workflowQueryKeyHash,
   ]);
 
-  return { copyCandidates, latestProgress, transportStatus, workflowState };
+  return {
+    copyCandidates,
+    harnessDelivery,
+    latestProgress,
+    transportStatus,
+    workflowState,
+  };
 }

@@ -1,0 +1,495 @@
+import { expect, test, type Page } from '@playwright/test';
+
+import {
+  cleanupE2EUsers,
+  loginByForm,
+  registerE2EUser,
+} from '../fixtures/auth';
+import { seedConfirmedStore } from '../fixtures/product';
+import { setTheme } from '../fixtures/page-health';
+
+/**
+ * T31 / #225 — 卡片族与确认卡, the presentation layer of the three outbound
+ * seam messages.
+ *
+ * The container journey (不跳转 / 刷新恢复 / 签名提交体) is composer-reshell.spec.ts.
+ * This file covers what the card family itself promises:
+ *  - one creation journey shows 进度宣告卡 → 意图确认卡 → 成品交付卡, in that order;
+ *  - answering the question resumes the run *for real* — the proof is that the
+ *    run reaches a delivered revision, which a workflow suspended on
+ *    pending-structured-decision cannot do;
+ *  - leaving it alone releases it on the D-116 countdown (默认值路径), again
+ *    proven by the run finishing rather than by the card disappearing;
+ *  - the 「采用」 entry is bound to the revision the backend actually delivered;
+ *  - every sentence on all three cards is merchant language (D-116);
+ *  - quota is passive on the main path — no pre-run 额度确认 (D-043).
+ */
+
+/** Mirrors src/product/composer/card-language.ts — the走查断言清单. */
+const FORBIDDEN_LANGUAGE =
+  /workspace\s+id|task\s+id|work\s+id|\bprovider\b|\bdeepseek\b|\bhttp\s*[1-5]\d{2}\b|\bworkflow\b|\brevision\b|\bcandidate\b|\bschema\b|\bdbos\b|\bllm\b|成本价|毛利/iu;
+const FORBIDDEN_IDENTIFIERS =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-|\b[\w-]+:s\d+:[\w-]+|\b(?:store_fact|content_package|task):|[¥$]\s*\d|\d+(?:\.\d+)?\s*元/u;
+
+function assertMerchantLanguage(text: string, internalIds: string[]) {
+  expect(text, `engineering language on a merchant card: ${text}`).not.toMatch(
+    FORBIDDEN_LANGUAGE
+  );
+  expect(text, `internal identifier on a merchant card: ${text}`).not.toMatch(
+    FORBIDDEN_IDENTIFIERS
+  );
+  for (const id of internalIds) {
+    if (id) expect(text).not.toContain(id);
+  }
+}
+
+type SubmissionResult = { taskId: string; workId: string };
+
+/**
+ * `intent` decides whether D-111 asks. An intent naming a beauty category is
+ * routed straight through; one that names none makes the harness ask
+ * `…:s1:industry_category`, which is how this file gets a real question card
+ * instead of a stubbed one.
+ */
+async function startRun(page: Page, intent: string): Promise<SubmissionResult> {
+  await page.goto('/dashboard');
+  await page.getByTestId('composer-lens-option-copy').click();
+  await page.getByTestId('composer-intent-input').fill(intent);
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 30_000,
+  });
+
+  const requestPromise = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' &&
+      request.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await page.getByTestId('composer-submit').click();
+
+  const briefSurface = page.getByTestId('composer-brief-surface');
+  const next = await Promise.race([
+    briefSurface
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'brief' as const)
+      .catch(() => 'submission' as const),
+    requestPromise.then(() => 'submission' as const),
+  ]);
+  if (next === 'brief')
+    await page.getByTestId('composer-brief-confirm').click();
+
+  await requestPromise;
+  const response = await responsePromise;
+  const envelope = (await response.json()) as {
+    data?: { work?: { id?: string }; task?: { id?: string } };
+    error?: { message?: string };
+  };
+  expect(response.ok(), envelope.error?.message).toBeTruthy();
+  return {
+    taskId: envelope.data?.task?.id ?? '',
+    workId: envelope.data?.work?.id ?? '',
+  };
+}
+
+/**
+ * The delivered revision, straight from the seam the card does *not* use — the
+ * card reads the terminal SSE snapshot, this reads the HTTP projection. Two
+ * independent reads agreeing is what makes 「与后端一致」 an assertion rather
+ * than a tautology.
+ */
+async function readDeliveredRevision(page: Page, workId: string) {
+  const projection = await page.evaluate(async (id: string) => {
+    const response = await fetch('/api/core/p1/query', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        module: 'operations',
+        action: 'content_packages',
+        payload: {},
+      }),
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: (await response.json()) as unknown,
+      workId: id,
+    };
+  }, workId);
+  return projection;
+}
+
+test.describe('T31 三类卡与确认卡', () => {
+  test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
+  test.afterAll(async ({ request }) => cleanupE2EUsers(request));
+
+  test('the three cards appear in order and every sentence is merchant language', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(420_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    // No category word, so D-111 asks — which is how one journey gets all
+    // three cards instead of two.
+    const run = await startRun(page, '写一条周末到店的活动文案');
+
+    // ① 进度宣告卡 — one card carrying the 白话进度 announcements, in order.
+    const progressCard = page.getByTestId('composer-progress-card');
+    await expect(progressCard).toBeVisible({ timeout: 180_000 });
+    const stageLines = progressCard.getByTestId('composer-stage-line');
+    expect(await stageLines.count()).toBeGreaterThan(0);
+    assertMerchantLanguage(await progressCard.innerText(), [
+      run.taskId,
+      run.workId,
+    ]);
+
+    // ② 意图确认卡.
+    const questionCard = page.getByTestId('composer-question-card');
+    await expect(questionCard).toBeVisible({ timeout: 240_000 });
+    assertMerchantLanguage(await questionCard.innerText(), [
+      run.taskId,
+      run.workId,
+    ]);
+    // Order: 进度 above 问题, both above the eventual delivery card.
+    const questionOrder = await page.evaluate(() => {
+      const progress = document.querySelector(
+        '[data-testid="composer-progress-card"]'
+      );
+      const question = document.querySelector(
+        '[data-testid="composer-question-card"]'
+      );
+      if (!progress || !question) return null;
+      return progress.compareDocumentPosition(question) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+        ? 'progress-then-question'
+        : 'question-then-progress';
+    });
+    expect(questionOrder).toBe('progress-then-question');
+    // The harness raises this gap with free text and no options, so the answer
+    // path is the text box — see fixtureStructuredOutput / fallbackGuidanceGap.
+    await page.getByTestId('composer-question-answer').fill('皮肤管理');
+    await page.getByTestId('composer-question-submit').click();
+
+    // ③ 成品交付卡 — the run finishes inside the conversation.
+    const deliveryTurn = page.getByTestId('composer-delivery-turn');
+    await expect(deliveryTurn).toBeVisible({ timeout: 300_000 });
+    // Order: the progress card is above the delivery card in the transcript.
+    const order = await page.evaluate(() => {
+      const progress = document.querySelector(
+        '[data-testid="composer-progress-card"]'
+      );
+      const delivery = document.querySelector(
+        '[data-testid="composer-delivery-turn"]'
+      );
+      if (!progress || !delivery) return null;
+      return progress.compareDocumentPosition(delivery) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+        ? 'progress-then-delivery'
+        : 'delivery-then-progress';
+    });
+    expect(order).toBe('progress-then-delivery');
+
+    // 任务总结 is stated on the deliverable it describes (D-116).
+    const statement = page.getByTestId('composer-delivery-statement');
+    await expect(statement).toBeVisible();
+    const statementText = await statement.innerText();
+    expect(statementText).toContain('策略依据');
+    assertMerchantLanguage(await deliveryTurn.innerText(), [
+      run.taskId,
+      run.workId,
+    ]);
+  });
+
+  test('「采用」 is bound to the revision the backend delivered', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(420_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    const run = await startRun(page, '写一条新客皮肤护理到店体验文案');
+
+    const deliveryTurn = page.getByTestId('composer-delivery-turn');
+    await expect(deliveryTurn).toBeVisible({ timeout: 240_000 });
+
+    // What the card bound itself to (read off the terminal SSE snapshot).
+    const packageId = await deliveryTurn.getAttribute('data-package-id');
+    const versionId = await deliveryTurn.getAttribute('data-version-id');
+    const revision = await deliveryTurn.getAttribute('data-revision');
+    expect(packageId, 'the delivery card must bind a package').toBeTruthy();
+    expect(versionId, 'the delivery card must bind a version').toBeTruthy();
+    expect(Number(revision)).toBeGreaterThanOrEqual(0);
+
+    // What the backend says, read through the independent HTTP projection.
+    const projection = await readDeliveredRevision(page, run.workId);
+    expect(projection.ok, JSON.stringify(projection.body)).toBeTruthy();
+    const serialized = JSON.stringify(projection.body);
+    expect(
+      serialized,
+      'the revision the card bound must be the one the backend holds'
+    ).toContain(packageId!);
+    expect(serialized).toContain(versionId!);
+
+    // Clicking 采用 opens the Result Center bound to that same revision.
+    await page.getByTestId('composer-delivery-action-adopt').click();
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboard/results/${encodeURIComponent(run.workId)}`, 'u'),
+      { timeout: 60_000 }
+    );
+    const url = new URL(page.url());
+    expect(url.searchParams.get('contentId')).toBe(packageId);
+    expect(url.searchParams.get('versionId')).toBe(versionId);
+    expect(url.searchParams.get('panel')).toBe('result');
+    await expect(page.getByTestId('result-center-shell')).toBeVisible();
+  });
+
+  test('answering the question card resumes the run for real', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(600_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    // No category word — D-111 asks 「这次内容主要属于哪一类美业服务？」.
+    const run = await startRun(page, '写一条周末到店的活动文案');
+
+    const questionCard = page.getByTestId('composer-question-card');
+    await expect(questionCard).toBeVisible({ timeout: 240_000 });
+    // 建议补充 + 默认值 + 倒计时, all stated before anything is asked of them.
+    await expect(page.getByTestId('composer-question-default')).toContainText(
+      '通用模式'
+    );
+    await expect(page.getByTestId('composer-question-countdown')).toBeVisible();
+    assertMerchantLanguage(await questionCard.innerText(), [
+      run.taskId,
+      run.workId,
+    ]);
+
+    // Typing is what pauses the countdown (D-116 safety edge ①) — the merchant
+    // is mid-sentence, so the card must not release itself out from under them.
+    await page.getByTestId('composer-question-answer').fill('皮肤管理');
+    await expect(questionCard).toHaveAttribute('data-auto-continue', 'false');
+    await expect(page.getByTestId('composer-question-countdown')).toHaveCount(
+      0
+    );
+
+    const decisionPost = page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' && request.url().endsWith('/decision'),
+      { timeout: 60_000 }
+    );
+    await page.getByTestId('composer-question-submit').click();
+
+    // The merchant's answer goes in as an accepted decision, carrying what they
+    // actually chose — not as the default.
+    const posted = (await decisionPost).postDataJSON() as {
+      decision?: { state?: string; value?: string };
+    };
+    expect(posted.decision?.state).toBe('accepted');
+    expect(posted.decision?.value).toBeTruthy();
+
+    // The proof that DBOS left PENDING is that the run *delivered*: a workflow
+    // suspended on pending-structured-decision produces no revision at all.
+    await expect(page.getByTestId('composer-delivery-turn')).toBeVisible({
+      timeout: 300_000,
+    });
+    await expect(page.getByTestId('composer-delivery-turn')).toHaveAttribute(
+      'data-package-id',
+      /.+/u
+    );
+    // And nothing is left pending on the decision seam.
+    const pending = await page.evaluate(async (taskId: string) => {
+      const response = await fetch(
+        `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/decision`,
+        { credentials: 'same-origin' }
+      );
+      if (response.status === 404) return null;
+      const body = (await response.json()) as { data?: { question?: unknown } };
+      return body.data?.question ?? null;
+    }, run.taskId);
+    expect(
+      pending,
+      'no question may remain pending after the answer'
+    ).toBeNull();
+  });
+
+  test('leaving the question alone releases it on the countdown (默认值路径)', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(600_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    const run = await startRun(page, '写一条本周到店的优惠活动文案');
+
+    const questionCard = page.getByTestId('composer-question-card');
+    await expect(questionCard).toBeVisible({ timeout: 240_000 });
+    await expect(questionCard).toHaveAttribute('data-auto-continue', 'true');
+
+    // Nobody touches it. The real D-116 countdown runs out on its own — no fake
+    // timer, no shortened parameter — and the release is a *posted decision*,
+    // which is what separates 自动继续 from a card that merely disappeared.
+    const openedAt = Date.now();
+    const released = await page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' && request.url().endsWith('/decision'),
+      { timeout: 120_000 }
+    );
+    const waited = (Date.now() - openedAt) / 1_000;
+    const posted = released.postDataJSON() as {
+      idempotencyKey?: string;
+      decision?: { state?: string; value?: string };
+      patch?: { value?: string };
+    };
+    // 默认值路径: the ignored route is the harness's own「不补充也继续」.
+    expect(posted.decision?.state).toBe('ignored');
+    // Nobody said anything, so nothing may be recorded as if they had. This
+    // value is not only ledger provenance — core writes it into the workflow's
+    // own intent context as `Merchant decision (<field>): <value>`.
+    expect(posted.decision?.value).toBe('未作答');
+    expect(posted.patch?.value).toBe('未作答');
+    // A countdown release stays separable from an explicit 「继续」.
+    expect(posted.idempotencyKey).toContain('timed_out');
+    // It waited out the countdown rather than firing on mount.
+    expect(waited, `released after ${waited}s`).toBeGreaterThan(15);
+    expect(waited, `released after ${waited}s`).toBeLessThan(90);
+
+    // 自动继续 means the run really continued: it delivers.
+    await expect(page.getByTestId('composer-delivery-turn')).toBeVisible({
+      timeout: 300_000,
+    });
+    await expect(page.getByTestId('composer-delivery-turn')).toHaveAttribute(
+      'data-package-id',
+      /.+/u
+    );
+    const pending = await page.evaluate(async (taskId: string) => {
+      const response = await fetch(
+        `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/decision`,
+        { credentials: 'same-origin' }
+      );
+      if (response.status === 404) return null;
+      const body = (await response.json()) as { data?: { question?: unknown } };
+      return body.data?.question ?? null;
+    }, run.taskId);
+    expect(
+      pending,
+      'the timeout must post a real decision, not just hide the card'
+    ).toBeNull();
+  });
+
+  test('quota is passive on the main path — no pre-run 额度确认', async ({
+    page,
+    request,
+  }) => {
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    await page.goto('/dashboard');
+    await page.getByTestId('composer-lens-option-copy').click();
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('写一条周末皮肤护理到店预约文案');
+    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // 被动展示: the line is there and it is a statement, not a control.
+    const passive = page.getByTestId('composer-quota-passive');
+    await expect(passive).toBeVisible();
+    await expect(passive).toHaveAttribute('data-quota-short', 'false');
+    expect(await passive.locator('button, input, a').count()).toBe(0);
+    // D-123: no cost baseline, no money, no internal id in front of a merchant.
+    assertMerchantLanguage(await passive.innerText(), []);
+
+    // 无冲突路径 0 张阻塞卡 (D-043 决定①) — nothing gates the run.
+    await expect(page.getByTestId('composer-quota-blocking-card')).toHaveCount(
+      0
+    );
+    await expect(page.getByTestId('composer-submit')).toBeEnabled();
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    test(`the card family renders on mobile in the ${theme} theme`, async ({
+      page,
+      request,
+    }) => {
+      test.setTimeout(420_000);
+      const user = await registerE2EUser(request);
+      await loginByForm(page, user);
+      await seedConfirmedStore(page);
+      await setTheme(page, theme);
+      await page.setViewportSize({ width: 390, height: 844 });
+
+      await startRun(page, '写一条周末皮肤护理到店预约文案');
+      await expect(page.locator('html')).toHaveClass(
+        new RegExp(`\\b${theme}\\b`, 'u')
+      );
+      await expect(page.getByTestId('composer-progress-card')).toBeVisible({
+        timeout: 180_000,
+      });
+      await expect(page.getByTestId('composer-delivery-turn')).toBeVisible({
+        timeout: 240_000,
+      });
+      await expect(
+        page.getByTestId('composer-delivery-action-adopt')
+      ).toBeVisible();
+
+      // Nothing may scroll the page sideways on a phone.
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth
+      );
+      expect(overflow).toBeLessThanOrEqual(1);
+
+      await page.screenshot({
+        fullPage: true,
+        path: `../.scratch/t31-card-family-2026-07-26/cards-mobile-${theme}.png`,
+      });
+    });
+
+    test(`the card family renders on desktop in the ${theme} theme`, async ({
+      page,
+      request,
+    }) => {
+      test.setTimeout(420_000);
+      const user = await registerE2EUser(request);
+      await loginByForm(page, user);
+      await seedConfirmedStore(page);
+      await setTheme(page, theme);
+      await page.setViewportSize({ width: 1440, height: 900 });
+
+      await startRun(page, '写一条周末皮肤护理到店预约文案');
+      await expect(page.locator('html')).toHaveClass(
+        new RegExp(`\\b${theme}\\b`, 'u')
+      );
+      await expect(page.getByTestId('composer-progress-card')).toBeVisible({
+        timeout: 180_000,
+      });
+      await expect(page.getByTestId('composer-delivery-turn')).toBeVisible({
+        timeout: 240_000,
+      });
+
+      await page.screenshot({
+        fullPage: true,
+        path: `../.scratch/t31-card-family-2026-07-26/cards-desktop-${theme}.png`,
+      });
+    });
+  }
+});

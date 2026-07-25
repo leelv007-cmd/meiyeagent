@@ -572,3 +572,32 @@ download a real non-empty package for the expected platform (小红书 ZIP、抖
 ZIP、朋友圈分段文本), and preserve the same work/adoption/delivery state after
 reload. Missing wiring is a hard failure; the spec has no fixture-submit or
 soft-skip branch.
+
+## T31 卡片族与确认卡（#225）
+
+`specs/composer-card-family.spec.ts` covers the presentation layer of the three
+outbound seam messages against real core SSE. The container journey itself
+（不跳转／刷新恢复／签名提交体）stays in `composer-reshell.spec.ts`.
+
+- One creation journey shows 进度宣告卡 → 意图确认卡 → 成品交付卡 in DOM order.
+- Answering the question posts an `accepted` decision and the run then delivers
+  a bound revision — a workflow suspended on `pending-structured-decision`
+  produces none, so the binding is the proof it left PENDING.
+- Leaving the card alone posts an `ignored` decision after the real D-116
+  countdown (measured, asserted between 15s and 90s) and that run delivers too.
+  No fake timer and no shortened parameter: this spec waits out the real wall
+  clock, which is why it is the slowest test in the file.
+- That timeout is distinguishable from an explicit 「继续」 in the ledger: the
+  posted value states the absence（`未作答`）rather than quoting a merchant who
+  said nothing, and the idempotency key carries the settlement.
+- Typing pauses the countdown before submit, so the merchant is never released
+  past mid-sentence.
+- 「采用」 carries `contentId`/`versionId` that the `operations.content_packages`
+  projection — a different seam from the SSE snapshot the card read — agrees
+  with.
+- Every visible sentence on all three cards passes the D-116 language gate
+  (mirrors `src/product/composer/card-language.ts`).
+- Quota is a passive line with no controls and no blocking card on the main
+  path (D-043 无冲突路径 0 张阻塞卡). Only behaviour is asserted, never the
+  numbers — those belong to the entitlements projection.
+- Both themes × mobile/desktop render the family and write walkthrough shots.

@@ -7,6 +7,7 @@ import type {
 
 import {
   advanceWorkflowEventCursor,
+  harnessDeliveryFromState,
   parseWorkflowEventFrame,
   reduceWorkflowCopyTokens,
   videoWorkflowEnvelopeFromState,
@@ -183,6 +184,67 @@ test('accepts only a matching video envelope from a state snapshot', () => {
     videoWorkflowEnvelopeFromState({
       ...frame.data,
       snapshot: { packageId: 'package-a' },
+    }),
+    undefined
+  );
+});
+
+test('成品版本 is read off the terminal harness state frame (T31 / #225)', () => {
+  // The harness workflow returns { delivery, deliveryLayer, recommendation,
+  // trace } and the event reader publishes that whole result as the state
+  // snapshot — so the third outbound seam message rides the stream the
+  // conversation is already subscribed to, with no second fetch.
+  const delivered = {
+    occurredAt: '2026-07-25T08:00:00.000Z',
+    snapshot: {
+      delivery: {
+        packageId: 'package-1',
+        versionId: 'version-7',
+        revision: 3,
+      },
+      deliveryLayer: 'copy',
+    },
+    sourceRevision: 3,
+    status: 'success' as const,
+    workflowId: 'task-1',
+  };
+  assert.deepEqual(harnessDeliveryFromState(delivered), {
+    packageId: 'package-1',
+    versionId: 'version-7',
+    revision: 3,
+  });
+
+  // A failed run has no delivered revision to bind an action to.
+  assert.equal(
+    harnessDeliveryFromState({
+      ...delivered,
+      snapshot: { outcome: 'failed' },
+      status: 'failed',
+    }),
+    undefined
+  );
+  // Neither does the video source's own snapshot shape.
+  assert.equal(
+    harnessDeliveryFromState({
+      ...delivered,
+      snapshot: {
+        job: null,
+        workflow: {
+          id: 'video-a',
+          revision: 3,
+          status: 'running',
+          updatedAt: '2026-07-18T08:00:01.000Z',
+        },
+      },
+    }),
+    undefined
+  );
+  // A malformed delivery must not bind either — a card pointed at a revision
+  // we cannot verify is worse than a card with no action.
+  assert.equal(
+    harnessDeliveryFromState({
+      ...delivered,
+      snapshot: { delivery: { packageId: 'package-1' } },
     }),
     undefined
   );

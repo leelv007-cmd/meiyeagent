@@ -166,6 +166,80 @@ export function projectQuotaBlockingView(
 }
 
 /**
+ * 被动展示 — the other half of the quota card (D-043 决定②/③, T31 / #225).
+ *
+ * 「模型/额度从主路径移除…额度按钮旁被动展示，不足才阻塞」: on the main path the
+ * merchant reads what this run will use and what is left, and taps 生成 — that
+ * tap *is* the confirmation (确认与执行合并一击). Nothing here gates anything.
+ *
+ * Deliberately no cost, no unit price and no internal baseline: the merchant
+ * unit is 条数, never money (D-109 / D-123).
+ */
+export const QUOTA_RESOURCE_LABELS = {
+  copy: '文案',
+  image: '图片',
+  video: '视频',
+  audio: '语音',
+} as const;
+
+/**
+ * The merchant-facing unit each bucket is counted in.
+ *
+ * These are not cosmetic. The ledger stores 「copy items, image points, or whole
+ * video seconds」 (product-billing/product-usage-ledger.ts), while the composer
+ * draft's `quantity` counts *deliverables*. For copy and image those coincide;
+ * for video they do not — available is seconds, the cost is clips — so the two
+ * numbers cannot be compared or stated together. INC-t26-mixed-denomination is
+ * the same class of defect one layer down.
+ */
+const QUOTA_COMPARABLE_UNITS = {
+  copy: '条',
+  image: '张',
+} as const;
+
+export type QuotaPassiveView = {
+  visible: boolean;
+  /** e.g. 「本次用 1 条文案额度 · 还剩 4 条」 */
+  notice: string;
+  /** True when this run would exceed what is left — 缺额提醒, not a gate. */
+  short: boolean;
+  shortNotice: string | null;
+};
+
+const HIDDEN: QuotaPassiveView = {
+  visible: false,
+  notice: '',
+  short: false,
+  shortNotice: null,
+};
+
+export function projectQuotaPassiveView(input: {
+  resource: keyof typeof QUOTA_RESOURCE_LABELS;
+  /** Remaining balance from the entitlements projection, in bucket units. */
+  available: number | null | undefined;
+  /** What this run is estimated to use, in deliverables. */
+  cost: number;
+}): QuotaPassiveView {
+  if (input.available === null || input.available === undefined) return HIDDEN;
+  const unit =
+    QUOTA_COMPARABLE_UNITS[
+      input.resource as keyof typeof QUOTA_COMPARABLE_UNITS
+    ];
+  // No shared unit, no sentence. Saying 「本次用 1 条视频额度 · 还剩 30 条」 when
+  // the 30 is seconds would be a passive display of a wrong number, which is
+  // worse than no passive display at all.
+  if (!unit) return HIDDEN;
+  const label = QUOTA_RESOURCE_LABELS[input.resource];
+  const short = input.available < input.cost;
+  return {
+    visible: true,
+    notice: `本次用 ${input.cost} ${unit}${label}额度 · 还剩 ${input.available} ${unit}`,
+    short,
+    shortNotice: short ? `${label}额度不够这次生成了，可以补充后再来` : null,
+  };
+}
+
+/**
  * Build the redemptions CAS command payload used by RedemptionCard.
  * Host wires this into commandP1('redemptions', …, idempotencyKey).
  */

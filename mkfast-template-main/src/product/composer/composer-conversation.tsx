@@ -29,7 +29,16 @@ import { StreamingAiMarkdown } from '@/components/markdown/ai-markdown';
 import { cn } from '@/lib/utils';
 import type { ResultTokenStreamProjection } from '@/product/results/result-token-stream';
 
-import type { ComposerSession, ComposerTurn } from './composer-session';
+import {
+  ComposerDeliveryCard,
+  type ComposerDeliveryOpenInput,
+} from './composer-delivery-card';
+import { ComposerProgressCard } from './composer-progress-card';
+import type {
+  ComposerSession,
+  ComposerStageTurn,
+  ComposerTurn,
+} from './composer-session';
 import type { ComposerSignedPreview } from './composer-signed-preview';
 
 export type ComposerCreationMode = 'customized' | 'free';
@@ -73,16 +82,27 @@ export type ComposerReuseChip = {
   intent: string;
 };
 
-function StageLine({ message, stage }: { message: string; stage: string }) {
-  return (
-    <p
-      className="text-muted px-1 text-xs"
-      data-stage={stage}
-      data-testid="composer-stage-line"
-    >
-      {message}
-    </p>
-  );
+/**
+ * Consecutive 白话进度 announcements read as one 进度宣告卡, not as a run of
+ * loose lines: D-116 makes the stage rail a delivery statement the merchant is
+ * meant to read, and a card is what carries that. Runs of stage turns are
+ * folded at render time so the session model stays an ordered turn list.
+ */
+function foldTurns(turns: ComposerTurn[]) {
+  const folded: (
+    | ComposerTurn
+    | { kind: 'stages'; stages: ComposerStageTurn[] }
+  )[] = [];
+  for (const turn of turns) {
+    if (turn.kind !== 'stage') {
+      folded.push(turn);
+      continue;
+    }
+    const last = folded.at(-1);
+    if (last && last.kind === 'stages') last.stages.push(turn);
+    else folded.push({ kind: 'stages', stages: [turn] });
+  }
+  return folded;
 }
 
 /**
@@ -167,7 +187,7 @@ export type ComposerConversationProps = {
   /** 引导补问卡 (T11 skip UI lives inside this node). */
   questionSlot?: React.ReactNode;
   /** Opens the Result Center for a finished run — the only navigation. */
-  onOpenDelivery: (input: { workId: string; taskId: string }) => void;
+  onOpenDelivery: (input: ComposerDeliveryOpenInput) => void;
 };
 
 export function ComposerConversation({
@@ -191,8 +211,18 @@ export function ComposerConversation({
 
   if (turnCount === 0 && !identitySlot) return null;
 
-  const renderTurn = (turn: ComposerTurn) => {
+  const running = session.phase === 'running' || session.phase === 'submitting';
+
+  const renderTurn = (turn: ReturnType<typeof foldTurns>[number]) => {
     switch (turn.kind) {
+      case 'stages':
+        return (
+          <ComposerProgressCard
+            key={turn.stages[0]!.id}
+            running={running}
+            stages={turn.stages}
+          />
+        );
       case 'merchant':
         return (
           <ChatMessage.User data-testid="composer-turn-merchant" key={turn.id}>
@@ -204,9 +234,8 @@ export function ComposerConversation({
       case 'route_notice':
         return <RouteNotice key={turn.id} message={turn.message} />;
       case 'stage':
-        return (
-          <StageLine key={turn.id} message={turn.message} stage={turn.stage} />
-        );
+        // Folded into a 'stages' group above; unreachable.
+        return null;
       case 'question':
         return questionSlot ? (
           <div data-testid="composer-question-turn" key={turn.id}>
@@ -217,20 +246,19 @@ export function ComposerConversation({
         return <CandidateStream key={turn.id} stream={stream} />;
       case 'delivery':
         return (
-          <button
-            className="meiye-porcelain w-full rounded-2xl p-4 text-left"
-            data-testid="composer-delivery-card"
-            key={turn.id}
-            onClick={() =>
-              onOpenDelivery({ workId: turn.workId, taskId: turn.taskId })
+          <ComposerDeliveryCard
+            excerpt={
+              stream.primary
+                ? { body: stream.primary.body, title: stream.primary.title }
+                : undefined
             }
-            type="button"
-          >
-            <p className="text-foreground text-sm font-medium">成品已就绪</p>
-            <p className="text-muted mt-1 text-xs">
-              点开看完整成品、发布或导出
-            </p>
-          </button>
+            key={turn.id}
+            onOpen={onOpenDelivery}
+            revision={turn.revision}
+            statement={session.deliveryStatement}
+            taskId={turn.taskId}
+            workId={turn.workId}
+          />
         );
     }
   };
@@ -241,8 +269,11 @@ export function ComposerConversation({
       data-phase={session.phase}
       data-testid="composer-conversation"
     >
+      {/* T10's Day-0 identity card leads the flow; the folded turn list
+          follows it. Both, in this order — the identity choice is offered
+          before there is any transcript to fold. */}
       {identitySlot}
-      {session.turns.map(renderTurn)}
+      {foldTurns(session.turns).map(renderTurn)}
       <div ref={endRef} />
     </section>
   );
