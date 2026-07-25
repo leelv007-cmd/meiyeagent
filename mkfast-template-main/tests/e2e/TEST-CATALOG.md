@@ -587,6 +587,9 @@ outbound seam messages against real core SSE. The container journey itself
   countdown (measured, asserted between 15s and 90s) and that run delivers too.
   No fake timer and no shortened parameter: this spec waits out the real wall
   clock, which is why it is the slowest test in the file.
+- That timeout is distinguishable from an explicit 「继续」 in the ledger: the
+  posted value states the absence（`未作答`）rather than quoting a merchant who
+  said nothing, and the idempotency key carries the settlement.
 - Typing pauses the countdown before submit, so the merchant is never released
   past mid-sentence.
 - 「采用」 carries `contentId`/`versionId` that the `operations.content_packages`
