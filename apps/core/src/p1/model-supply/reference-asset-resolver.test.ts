@@ -8,6 +8,7 @@ import type { ProductState } from '@meiye/contracts';
 import type { Pool } from 'pg';
 import {
   CanvasAssetFacade,
+  createCanvasOwnedAssetExportPolicy,
   MemoryCanvasAssetRepository,
   MemoryCanvasObjectStorage,
 } from '../../pro-studio/canvas-asset-facade.js';
@@ -19,9 +20,11 @@ import {
   ProductReferenceAssetResolver,
 } from './reference-asset-resolver.js';
 
+const referenceSha256 =
+  '52367a6622b19f08825e915fad80c542ad4f4c34dbcebad9f5007994b3e39208';
 const authorizedAsset = {
   id: 'asset-store-a',
-  objectKey: 'workspace-a/assets/store-a.png',
+  objectKey: `workspace-a/assets/${referenceSha256}.png`,
   mediaType: 'image' as const,
   sourceType: 'real' as const,
   tags: ['门店'],
@@ -36,6 +39,21 @@ const authorizedAsset = {
   replacementRequired: false,
   createdAt: '2026-07-15T02:00:00.000Z',
 };
+
+function exportPolicy(
+  overrides: Partial<
+    ReturnType<typeof createCanvasOwnedAssetExportPolicy>
+  > = {},
+) {
+  return {
+    ...createCanvasOwnedAssetExportPolicy({
+      ownerId: 'user-a',
+      updatedAt: '2026-07-19T00:00:00.000Z',
+      workspaceId: 'workspace-a',
+    }),
+    ...overrides,
+  };
+}
 
 function repository(assets: ProductState['assets']) {
   return {
@@ -55,12 +73,13 @@ test('owned reference assets are resolved from workspace-scoped durable storage'
         return {
           contentType: 'image/png',
           createdAt: '2026-07-19T00:00:00.000Z',
+          exportPolicy: exportPolicy(),
           fileName: 'owned.png',
           id: assetId,
           objectKey: 'workspace-a/canvas/assets/owned.png',
           sha256,
           sizeBytes: bytes.byteLength,
-          source: { kind: 'product_asset', sourceAssetId: assetId },
+          source: { kind: 'local_import' },
           workspaceId,
         };
       },
@@ -78,6 +97,141 @@ test('owned reference assets are resolved from workspace-scoped durable storage'
   if (!result || result.kind !== 'resolved') return;
   assert.equal(result.sha256, sha256);
   assert.equal(Buffer.from(result.bytes).toString(), 'owned-reference');
+});
+
+test('owned reference assets fail closed for every mutable export-policy field', async () => {
+  const bytes = Uint8Array.from(Buffer.from('owned-reference'));
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const policies = [
+    exportPolicy({ exportAllowed: false }),
+    exportPolicy({ privateRetrievalAllowed: false }),
+    exportPolicy({ revokedAt: '2026-07-19T01:00:00.000Z' }),
+    exportPolicy({ expiresAt: '2026-07-18T23:59:59.000Z' }),
+  ];
+  const resolver = new OwnedAssetReferenceResolver(
+    {
+      async get(workspaceId, assetId) {
+        const index = Number(assetId.slice(-1));
+        return {
+          contentType: 'image/png',
+          createdAt: '2026-07-19T00:00:00.000Z',
+          exportPolicy: policies[index],
+          fileName: 'owned.png',
+          id: assetId,
+          objectKey: `${workspaceId}/canvas/assets/${assetId}.png`,
+          sha256,
+          sizeBytes: bytes.byteLength,
+          source: { kind: 'local_import' as const },
+          workspaceId,
+        };
+      },
+    },
+    { async read() { return bytes; } },
+    { clock: () => new Date('2026-07-19T02:00:00.000Z') },
+  );
+
+  const results = await resolver.resolve('workspace-a', [
+    'owned-0',
+    'owned-1',
+    'owned-2',
+    'owned-3',
+  ]);
+  assert.deepEqual(
+    results.map((result) =>
+      result.kind === 'failure' ? result.reason : 'unexpected-success',
+    ),
+    [
+      'rights_incomplete',
+      'rights_incomplete',
+      'authorization_withdrawn',
+      'rights_incomplete',
+    ],
+  );
+});
+
+test('owned reference resolution rechecks the current policy after reading bytes', async () => {
+  const bytes = Uint8Array.from(Buffer.from('owned-reference'));
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  let policy = exportPolicy();
+  const resolver = new OwnedAssetReferenceResolver(
+    {
+      async get(workspaceId, assetId) {
+        return {
+          contentType: 'image/png',
+          createdAt: '2026-07-19T00:00:00.000Z',
+          exportPolicy: policy,
+          fileName: 'owned.png',
+          id: assetId,
+          objectKey: `${workspaceId}/canvas/assets/${assetId}.png`,
+          sha256,
+          sizeBytes: bytes.byteLength,
+          source: { kind: 'local_import' as const },
+          workspaceId,
+        };
+      },
+    },
+    {
+      async read() {
+        policy = exportPolicy({
+          revokedAt: '2026-07-19T01:00:00.000Z',
+          version: 2,
+        });
+        return bytes;
+      },
+    },
+  );
+
+  assert.deepEqual(await resolver.resolve('workspace-a', ['owned-a']), [
+    {
+      assetId: 'owned-a',
+      kind: 'failure',
+      reason: 'authorization_withdrawn',
+    },
+  ]);
+});
+
+test('owned product-derived assets keep the current server data classification', async () => {
+  const bytes = Uint8Array.from(Buffer.from('owned-reference'));
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const resolver = new OwnedAssetReferenceResolver(
+    {
+      async get(workspaceId, assetId) {
+        return {
+          contentType: 'image/png',
+          createdAt: '2026-07-19T00:00:00.000Z',
+          exportPolicy: exportPolicy(),
+          fileName: 'owned.png',
+          id: assetId,
+          objectKey: `${workspaceId}/canvas/assets/${assetId}.png`,
+          sha256,
+          sizeBytes: bytes.byteLength,
+          source: {
+            kind: 'product_asset' as const,
+            sourceAssetId: 'product-sensitive',
+          },
+          workspaceId,
+        };
+      },
+    },
+    { async read() { return bytes; } },
+    {
+      productPolicyResolver: {
+        async resolve(workspaceId, assetId) {
+          assert.equal(workspaceId, 'workspace-a');
+          assert.equal(assetId, 'product-sensitive');
+          return {
+            dataClass: ['contains_face', 'pii'],
+            rightsRevision: 'product-rights-r1',
+          };
+        },
+      },
+    },
+  );
+
+  const [inspection] = await resolver.inspect('workspace-a', ['owned-a']);
+  assert.equal(inspection?.kind, 'resolved');
+  if (!inspection || inspection.kind !== 'resolved') return;
+  assert.deepEqual(inspection.dataClass, ['contains_face', 'pii']);
 });
 
 test('composite reference resolver falls through not-found results in input order', async () => {
@@ -103,7 +257,10 @@ test('composite reference resolver falls through not-found results in input orde
         return assetIds.map((assetId) => ({
           assetId,
           contentType: 'image/png',
+          dataClass: [],
           kind: 'resolved' as const,
+          rightsRevision: 'rights-a',
+          sha256: 'a'.repeat(64),
         }));
       },
       async resolve(_workspaceId, assetIds) {
@@ -111,8 +268,10 @@ test('composite reference resolver falls through not-found results in input orde
           assetId,
           bytes: Uint8Array.of(1),
           contentType: 'image/png',
+          dataClass: [],
           kind: 'resolved' as const,
           providerReadableUrl: 'data:image/png;base64,AQ==',
+          rightsRevision: 'rights-a',
           sha256: 'sha-a',
         }));
       },
@@ -138,7 +297,7 @@ test('reference asset inspection verifies the private BFF channel without readin
         method = init?.method ?? '';
         assert.equal(
           String(input),
-          'http://app.example.test/api/storage/file?key=workspace-a%2Fassets%2Fstore-a.png',
+          `http://app.example.test/api/storage/file?key=workspace-a%2Fassets%2F${referenceSha256}.png`,
         );
         assert.equal(
           new Headers(init?.headers).get('x-service-token'),
@@ -158,15 +317,54 @@ test('reference asset inspection verifies the private BFF channel without readin
     },
   );
 
-  assert.deepEqual(await resolver.inspect('workspace-a', ['asset-store-a']), [
-    {
-      assetId: 'asset-store-a',
-      contentType: 'image/png',
-      kind: 'resolved',
-      objectKey: 'workspace-a/assets/store-a.png',
-    },
-  ]);
+  const [inspection] = await resolver.inspect('workspace-a', ['asset-store-a']);
+  assert.equal(inspection?.kind, 'resolved');
+  if (!inspection || inspection.kind !== 'resolved') return;
+  assert.deepEqual(inspection.dataClass, []);
+  assert.equal(inspection.sha256, referenceSha256);
+  assert.equal(
+    inspection.objectKey,
+    `workspace-a/assets/${referenceSha256}.png`,
+  );
+  assert.match(inspection.rightsRevision ?? '', /^[a-f0-9]{64}$/u);
   assert.equal(method, 'HEAD');
+});
+
+test('product inspection derives sensitive data classes from current server facts', async () => {
+  const resolver = new ProductReferenceAssetResolver(
+    {
+      async load() {
+        return {
+          assets: [
+            {
+              ...authorizedAsset,
+              containsPerson: true,
+              containsSensitiveData: true,
+              rightsNoFixedExpiry: true,
+              rightsPlatforms: ['xiaohongshu'],
+            },
+          ],
+          store: { regulated: true },
+        } as ProductState;
+      },
+    },
+    {
+      appBaseUrl: 'http://app.example.test',
+      serviceToken: 'service-token-a',
+      fetch: async () =>
+        new Response(null, {
+          headers: {
+            'content-length': '128',
+            'content-type': 'image/png',
+          },
+        }),
+    },
+  );
+
+  const [inspection] = await resolver.inspect('workspace-a', ['asset-store-a']);
+  assert.equal(inspection?.kind, 'resolved');
+  if (!inspection || inspection.kind !== 'resolved') return;
+  assert.deepEqual(inspection.dataClass, ['contains_face', 'medical', 'pii']);
 });
 
 test('reference asset resolution returns bytes, digest and a provider-readable data URL', async () => {
@@ -334,6 +532,7 @@ test('owned asset inspection uses metadata head without reading or materializing
     await assets.insert({
       contentType: 'image/png',
       createdAt: '2026-07-19T00:00:00.000Z',
+      exportPolicy: exportPolicy(),
       fileName: `asset-${index}.png`,
       id: `asset-${index}`,
       objectKey: `workspace-a/canvas/assets/asset-${index}.png`,
@@ -377,7 +576,10 @@ test('composite resolution falls back only for unknown assets', async () => {
       return assetIds.map((assetId) => ({
         assetId,
         contentType: 'image/png',
+        dataClass: [],
         kind: 'resolved' as const,
+        rightsRevision: 'rights-a',
+        sha256: 'a'.repeat(64),
       }));
     },
     async resolve(_workspaceId: string, assetIds: string[]) {
@@ -385,8 +587,10 @@ test('composite resolution falls back only for unknown assets', async () => {
         assetId,
         bytes: Uint8Array.from([1]),
         contentType: 'image/png',
+        dataClass: [],
         kind: 'resolved' as const,
         providerReadableUrl: 'data:image/png;base64,AQ==',
+        rightsRevision: 'rights-a',
         sha256: 'a'.repeat(64),
       }));
     },
@@ -429,6 +633,7 @@ test('production repository and shared filesystem storage resolve the same owned
                   {
                     contentType: 'image/png',
                     createdAt: '2026-07-19T00:00:00.000Z',
+                    exportPolicy: exportPolicy(),
                     fileName: 'asset.png',
                     id: 'asset-pg-1',
                     legacyStorageKey: null,

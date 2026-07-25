@@ -401,7 +401,7 @@ describe('Recipe Studio controlled compiler', () => {
       },
     };
     const gate = new ComposerSubmissionAdmissionGate({
-      assets: { async resolve() { return []; } },
+      assets: { async inspect() { return []; } },
       briefs: { async assertCurrent() {} },
       briefConfirmations: {
         async getBriefConfirmation() {

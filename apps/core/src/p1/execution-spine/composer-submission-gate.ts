@@ -10,6 +10,7 @@ import type { CreationExperienceCatalogRepository } from "../creation-experience
 import { validateRecipeForComposer } from "../creation-experience/recipe-validator.js";
 import { P1DomainError, type RouteSnapshot } from "../foundation/domain.js";
 import type { ReferenceAssetResolverPort } from "../model-supply/reference-asset-resolver.js";
+import type { DataClass } from "../model-supply/supply-contracts.js";
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
 import type { MarketingIdentityRepository } from "../operations/marketing-identity.js";
 import type { ProductBillingApplicationPort } from "../product-billing/durable-service.js";
@@ -47,7 +48,7 @@ export interface ComposerCapabilityReadinessPort {
 }
 
 export interface ComposerSubmissionAdmissionDependencies {
-	assets: Pick<ReferenceAssetResolverPort, "resolve">;
+	assets: Pick<ReferenceAssetResolverPort, "inspect">;
 	briefs: Pick<BriefSubmissionGate, "assertCurrent">;
 	briefConfirmations: Pick<BriefConfirmationRepository, "getBriefConfirmation">;
 	capabilities: ComposerCapabilityReadinessPort;
@@ -253,8 +254,38 @@ export class ComposerSubmissionAdmissionGate
 			);
 		}
 
+		const assetIds = input.sources.assets.map((asset) => asset.id);
+		if (new Set(assetIds).size !== assetIds.length) {
+			throw invalid("Source assets must not be duplicated.");
+		}
+		const inspectedAssets = await this.dependencies.assets.inspect(
+			input.workspaceId,
+			assetIds,
+		);
+		if (inspectedAssets.length !== assetIds.length) {
+			throw invalid("Source asset inspection returned an incomplete result.");
+		}
+		const byAssetId = new Map(
+			inspectedAssets.map((asset) => [asset.assetId, asset]),
+		);
+		const dataClass = new Set<DataClass>();
+		for (const source of input.sources.assets) {
+			const inspected = byAssetId.get(source.id);
+			if (
+				!inspected ||
+				inspected.kind !== "resolved" ||
+				inspected.sha256 !== source.revision
+			) {
+				throw invalid(
+					"A source asset is missing, unreadable, unauthorized, or at a different revision.",
+				);
+			}
+			for (const value of inspected.dataClass ?? []) dataClass.add(value);
+		}
+		const serverDataClass = [...dataClass].sort();
 		const route = await this.dependencies.routeResolver.resolve({
 			catalogModel: input.catalogModel,
+			dataClass: serverDataClass,
 			operation,
 			...(quote.routeSnapshotRef
 				? { routeSnapshotId: quote.routeSnapshotRef }
@@ -268,6 +299,10 @@ export class ComposerSubmissionAdmissionGate
 			route.catalogRevision !== input.catalogModel.revision ||
 			route.requestedCatalogModelId !== input.catalogModel.id ||
 			route.selectionMode !== "fixed" ||
+			JSON.stringify(normalizeRouteDataClass(route.dataClasses)) !==
+				JSON.stringify(
+					serverDataClass.length > 0 ? serverDataClass : ["public"],
+				) ||
 			!route.allowedCandidates.some(
 				(candidate) => candidate.catalogModelId === input.catalogModel.id,
 			)
@@ -318,33 +353,6 @@ export class ComposerSubmissionAdmissionGate
 			identityDecision = input.identityDecision;
 		}
 
-		const assetIds = input.sources.assets.map((asset) => asset.id);
-		if (new Set(assetIds).size !== assetIds.length) {
-			throw invalid("Source assets must not be duplicated.");
-		}
-		const resolvedAssets = await this.dependencies.assets.resolve(
-			input.workspaceId,
-			assetIds,
-		);
-		if (resolvedAssets.length !== assetIds.length) {
-			throw invalid("Source asset resolution returned an incomplete result.");
-		}
-		const byAssetId = new Map(
-			resolvedAssets.map((asset) => [asset.assetId, asset]),
-		);
-		for (const source of input.sources.assets) {
-			const resolved = byAssetId.get(source.id);
-			if (
-				!resolved ||
-				resolved.kind !== "resolved" ||
-				resolved.sha256 !== source.revision
-			) {
-				throw invalid(
-					"A source asset is missing, unreadable, unauthorized, or at a different revision.",
-				);
-			}
-		}
-
 		const rights = await this.dependencies.rights.resolve({
 			assetIds,
 			workspaceId: input.workspaceId,
@@ -383,12 +391,12 @@ export class ComposerSubmissionAdmissionGate
 		}
 
 		assertSourceRequirements({
-			assetContentTypes: resolvedAssets
+			assetContentTypes: inspectedAssets
 				.filter(
 					(
 						asset,
 					): asset is Extract<
-						(typeof resolvedAssets)[number],
+						(typeof inspectedAssets)[number],
 						{ kind: "resolved" }
 					> => asset.kind === "resolved",
 				)
@@ -506,6 +514,10 @@ export class ComposerSubmissionAdmissionGate
 			taskId,
 		};
 	}
+}
+
+function normalizeRouteDataClass(values: string[] | undefined) {
+	return [...new Set(values ?? ["public"])].sort();
 }
 
 function composerLensForRecipe(lens: string) {

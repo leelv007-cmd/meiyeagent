@@ -17,6 +17,7 @@ import {
   ownedAssetRegistrationLifecycle,
   type OwnedAssetRegistrationFailureStage,
 } from './owned-asset-registration-lifecycle.js';
+import { withServerDerivedReferenceDataClass } from './reference-asset-dispatch-guard.js';
 
 
 // S2a: behavior-preserving extracts (re-export for existing import paths)
@@ -1201,7 +1202,12 @@ export class ModelSupplyApplicationService {
         submission.operation === 'audio.speech' ||
         submission.operation === 'audio.sfx')
     ) {
-      return this.mediaRuntime.submit(submission);
+      return this.mediaRuntime.submit(
+        await withServerDerivedReferenceDataClass(
+          submission,
+          this.referenceAssets,
+        ),
+      );
     }
     return this.executeSubmission(submission, this.execution);
   }
@@ -2261,7 +2267,7 @@ export class ModelSupplyApplicationService {
   }
 
   private async executeSubmission(
-    submission: ModelSupplySubmission,
+    inputSubmission: ModelSupplySubmission,
     execution: ProviderExecutionPort,
     options: {
       providerEffectAlreadyGuarded?: boolean;
@@ -2273,6 +2279,10 @@ export class ModelSupplyApplicationService {
       reconcileProviderReceipt?: boolean;
     } = {},
   ): Promise<ModelSupplyResult> {
+    const submission = await withServerDerivedReferenceDataClass(
+      inputSubmission,
+      this.referenceAssets,
+    );
     const productUsageQuantity = modelSupplyProductUsageQuantity(submission);
     if (
       submission.operation !== 'copy.generate' &&

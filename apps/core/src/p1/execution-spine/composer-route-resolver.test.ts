@@ -9,11 +9,13 @@ test("Composer route resolver freezes and replays the quote-selected model", asy
 	const stored = new Map<string, FoundationRouteSnapshot>();
 	let freezes = 0;
 	let inserts = 0;
+	let frozenDataClass: string[] = [];
 	const resolver = new ModelSupplyComposerRouteResolver(
 		{
-			async freezeFixedRouteForExecution() {
+			async freezeFixedRouteForExecution(input) {
 				freezes += 1;
-				return frozenRoute();
+				frozenDataClass = [...input.dataClass];
+				return frozenRoute(input.dataClass);
 			},
 		},
 		{
@@ -32,11 +34,13 @@ test("Composer route resolver freezes and replays the quote-selected model", asy
 
 	const first = await resolver.resolve({
 		catalogModel: { id: "catalog-image-1", revision: "catalog-r4" },
+		dataClass: ["pii", "contains_face"],
 		operation: "image.generate",
 		workspaceId: "workspace-1",
 	});
 	const replay = await resolver.resolve({
 		catalogModel: { id: "catalog-image-1", revision: "catalog-r4" },
+		dataClass: ["contains_face", "pii"],
 		operation: "image.generate",
 		workspaceId: "workspace-1",
 	});
@@ -44,6 +48,8 @@ test("Composer route resolver freezes and replays the quote-selected model", asy
 	assert.equal(first?.selectionMode, "fixed");
 	assert.equal(first?.requestedCatalogModelId, "catalog-image-1");
 	assert.equal(first?.workspaceId, "workspace-1");
+	assert.deepEqual(first?.dataClasses, ["contains_face", "pii"]);
+	assert.deepEqual(frozenDataClass, ["contains_face", "pii"]);
 	assert.deepEqual(replay, first);
 	assert.equal(freezes, 2);
 	assert.equal(inserts, 1);
@@ -69,6 +75,7 @@ test("Composer route resolver rejects a route from a different catalog revision"
 	await assert.rejects(
 		resolver.resolve({
 			catalogModel: { id: "catalog-image-1", revision: "catalog-r5" },
+			dataClass: [],
 			operation: "image.generate",
 			workspaceId: "workspace-1",
 		}),
@@ -76,7 +83,7 @@ test("Composer route resolver rejects a route from a different catalog revision"
 	);
 });
 
-function frozenRoute(): ModelSupplyRouteSnapshot {
+function frozenRoute(dataClass: ModelSupplyRouteSnapshot["dataClass"] = []): ModelSupplyRouteSnapshot {
 	return {
 		actualCatalogModelId: "catalog-image-1",
 		candidateCatalogModelIds: ["catalog-image-1"],
@@ -84,7 +91,7 @@ function frozenRoute(): ModelSupplyRouteSnapshot {
 		createdAt: "2026-07-24T08:00:00.000Z",
 		credentialMode: "platform",
 		credentialVersion: "credential-r1",
-		dataClass: [],
+		dataClass,
 		deploymentId: "deployment-image-1",
 		id: "model-route-image-1",
 		policyRevision: "policy-r1",

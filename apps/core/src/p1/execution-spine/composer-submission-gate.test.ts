@@ -13,18 +13,19 @@ import type { ComposerSubmissionRequest } from "./creation-execution-snapshot.js
 test("Composer admission gate binds server facts before a submission can reserve shells", async () => {
 	let capabilityChecks = 0;
 	const briefChecks: unknown[] = [];
+	const routedDataClasses: string[][] = [];
 	let sourcePackageRights: "authorized" | "revoked" = "authorized";
 	let defaultProjectionEnabled = true;
 	const gate = new ComposerSubmissionAdmissionGate({
 		assets: {
-			async resolve() {
+			async inspect() {
 				return [
 					{
 						assetId: "asset-1",
-						bytes: new Uint8Array([1]),
 						contentType: "image/jpeg",
+						dataClass: ["pii"],
 						kind: "resolved",
-						providerReadableUrl: "data:image/jpeg;base64,AQ==",
+						rightsRevision: "rights-r1",
 						sha256: "asset-r2",
 					},
 				];
@@ -145,12 +146,15 @@ test("Composer admission gate binds server facts before a submission can reserve
 			},
 		},
 		routeResolver: {
-			async resolve() {
+			async resolve(input) {
+				routedDataClasses.push([...input.dataClass]);
 				return {
 					allowedCandidates: [
 						{ catalogModelId: "catalog-copy-1", deploymentId: "deployment-1" },
 					],
 					catalogRevision: "catalog-r4",
+					dataClass: "pii",
+					dataClasses: ["pii"],
 					id: "route-1",
 					requestedCatalogModelId: "catalog-copy-1",
 					selectionMode: "fixed",
@@ -173,6 +177,7 @@ test("Composer admission gate binds server facts before a submission can reserve
 
 	const admitted = await gate.admit(defaultSubmission());
 	assert.match(admitted.taskId, /^composer-task:[a-f0-9]{64}$/u);
+	assert.deepEqual(routedDataClasses, [["pii"]]);
 	assert.deepEqual(admitted.modelPolicy, {
 		id: "recipe-model-policy:recipe-service-promotion",
 		mode: "fixed",
@@ -249,7 +254,7 @@ test("Composer admission gate fails closed for stale quote, rights, and source f
 	let capabilityChecks = 0;
 	const gate = new ComposerSubmissionAdmissionGate({
 		assets: {
-			async resolve() {
+			async inspect() {
 				return [
 					{
 						assetId: "asset-1",
@@ -316,14 +321,14 @@ test("Composer admission derives image and video delivery facts from the publish
 		const recipeLens = kind === "image" ? "image_text" : "video";
 		const gate = new ComposerSubmissionAdmissionGate({
 			assets: {
-				async resolve() {
+				async inspect() {
 					return [
 						{
 							assetId: "asset-1",
-							bytes: new Uint8Array([1]),
 							contentType: kind === "image" ? "image/jpeg" : "video/mp4",
+							dataClass: [],
 							kind: "resolved",
-							providerReadableUrl: "data:application/octet-stream;base64,AQ==",
+							rightsRevision: "rights-r1",
 							sha256: "asset-r2",
 						},
 					];

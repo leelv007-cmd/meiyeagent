@@ -120,6 +120,7 @@ import {
   ProductCopyProviderBridge,
   PostgresModelSupplyRepository,
   PostgresVideoRegenerationRepository,
+  ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
   RecordedFixtureVideoQualityScorer,
   VideoRegenerationApplicationService,
@@ -326,6 +327,11 @@ const ownedReferenceAssets = new OwnedAssetReferenceResolver(
     async read(objectKey) {
       return (await assetStorage.read(objectKey)).bytes;
     },
+  },
+  {
+    productPolicyResolver: new ProductReferenceAssetPolicyResolver(
+      relationalProductRepository,
+    ),
   },
 );
 const productReferenceAssets = new ProductReferenceAssetResolver(
