@@ -43,6 +43,10 @@ test('every admin page renders the template-dashboard shell in both themes', asy
 }) => {
   test.setTimeout(180_000);
   const admin = await registerE2EUser(request, { role: 'admin' });
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) =>
+    pageErrors.push(`${page.url()} :: ${error.stack ?? error.message}`)
+  );
   try {
     await loginByForm(page, admin);
 
@@ -50,8 +54,12 @@ test('every admin page renders the template-dashboard shell in both themes', asy
       await page.goto(path);
 
       // The token bridge keys off this class; without it every HeroUI surface
-      // silently falls back to the library's own palette.
-      await expect(page.locator('.meiye-heroui-glass')).toBeVisible();
+      // silently falls back to the library's own palette. Generous timeout:
+      // the first admin hit compiles the route and the Glass sheet cold.
+      await expect(
+        page.locator('.meiye-heroui-glass'),
+        `${path} lost the shell. Page errors so far:\n${pageErrors.join('\n')}`
+      ).toBeVisible({ timeout: 60_000 });
       await expect(
         page.locator('[data-slot="sidebar-menu-item"]').first()
       ).toBeVisible();
@@ -103,10 +111,18 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
     await copyField.fill(String(target));
 
     const trialForm = copyField.locator('xpath=ancestor::form[1]');
+    // Fail loudly rather than hang: the editor goes read-only when
+    // admin-config carries no revision for the key, and a disabled button
+    // would otherwise just burn the test timeout.
+    const saveButton = trialForm.getByRole('button', {
+      name: '审阅套餐变更',
+    });
+    await expect(saveButton).toBeEnabled({ timeout: 30_000 });
     const revisionLine = trialForm.getByText(/^v\d+ · /);
+    await expect(revisionLine).toBeVisible({ timeout: 30_000 });
     const revisionBefore = await revisionLine.innerText();
 
-    await trialForm.getByRole('button', { name: '审阅套餐变更' }).click();
+    await saveButton.click();
 
     // Every governed write goes through impact review, and the reason is what
     // lands in the audit trail — there is no un-audited path to the number.

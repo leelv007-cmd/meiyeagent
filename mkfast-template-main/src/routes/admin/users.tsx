@@ -1,45 +1,34 @@
 import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
+import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import {
-  admin_title,
   admin_users_description,
   admin_users_title,
 } from '@/locale/paraglide/messages';
 import { createFileRoute } from '@tanstack/react-router';
-import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { AdminUsersContent } from '@/components/admin/users/admin-users-content';
 
 export const Route = createFileRoute('/admin/users')({
   component: AdminUsersPage,
 });
 
+/**
+ * The one admin page that hand-rolled its own header instead of going through
+ * AdminRoutePage: it mounted the merchant shell's DashboardHeader, whose
+ * sidebar trigger reads the shadcn sidebar context. The template-dashboard
+ * shell does not provide that context, so this page now goes through
+ * AdminRoutePage like every other admin surface. Title and description are
+ * unchanged, and so is the h1 the shell-route E2E looks for.
+ */
 function AdminUsersPage() {
-  const breadcrumbs = [
-    { label: admin_title(), isCurrentPage: false },
-    { label: admin_users_title(), isCurrentPage: true },
-  ];
   return (
-    <>
-      <DashboardHeader breadcrumbs={breadcrumbs} />
-      <div className="flex flex-1 flex-col">
-        <div className="@container/main flex flex-1 flex-col gap-2">
-          <div className="flex flex-col gap-4 py-4 lg:gap-6 lg:py-6">
-            <div className="px-4 lg:px-6">
-              <div className="mb-6">
-                <h1 className="text-2xl font-semibold tracking-tight">
-                  {admin_users_title()}
-                </h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {admin_users_description()}
-                </p>
-              </div>
-              <div className="space-y-4">
-                <CapabilityDrilldownBanner pageId="users" />
-                <AdminUsersContent />
-              </div>
-            </div>
-          </div>
-        </div>
+    <AdminRoutePage
+      title={admin_users_title()}
+      description={admin_users_description()}
+    >
+      <div className="space-y-4">
+        <CapabilityDrilldownBanner pageId="users" />
+        <AdminUsersContent />
       </div>
-    </>
+    </AdminRoutePage>
   );
 }
