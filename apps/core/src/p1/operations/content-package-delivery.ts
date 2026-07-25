@@ -828,9 +828,13 @@ export class ContextBundleApprovalPolicyResolver
     const variant = input.contentPackage.variants.find((candidate) =>
       candidate.versions.some((version) => version.id === input.variantVersionId)
     );
-    const version = variant?.versions.find(
-      (candidate) => candidate.id === input.variantVersionId
-    );
+    const version =
+      input.contentPackage.versions.find(
+        (candidate) => candidate.id === input.variantVersionId
+      ) ??
+      variant?.versions.find(
+        (candidate) => candidate.id === input.variantVersionId
+      );
     if (!version) {
       throw new ContentPackageDeliveryError(
         'CONTENT_PACKAGE_VARIANT_NOT_FOUND',
@@ -1230,12 +1234,14 @@ function auditEvent(
 function policyFactKind(key: string) {
   const normalized = key.toLowerCase();
   if (normalized.includes('price')) return 'price' as const;
-  if (normalized.includes('benefit') || normalized.includes('discount')) {
-    return 'benefit' as const;
-  }
-  if (normalized.includes('offer') || normalized.includes('group_buy')) {
+  if (
+    normalized.includes('offer') ||
+    normalized.includes('group_buy') ||
+    normalized.includes('discount')
+  ) {
     return 'offer' as const;
   }
+  if (normalized.includes('benefit')) return 'benefit' as const;
   if (normalized.includes('qualification')) return 'qualification' as const;
   return null;
 }

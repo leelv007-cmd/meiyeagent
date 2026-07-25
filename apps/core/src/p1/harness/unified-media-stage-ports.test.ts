@@ -296,7 +296,7 @@ test("media delivery blocks malicious visible copy before the canonical writer",
 			error instanceof HarnessSelectionError &&
 			error.gateIds.includes("critical_fact_source") &&
 			error.merchantMessage ===
-				"成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。",
+				"成品文案含有未被门店已确认资料支持的资质、价格或优惠、权益承诺，暂不能交付。",
 	);
 	assert.equal(writes, 0);
 });

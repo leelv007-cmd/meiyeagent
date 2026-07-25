@@ -135,7 +135,7 @@ test('delivery blocks malicious visible copy even when reported claims are empty
   assert.equal(result.failures[0]?.gateId, 'critical_fact_source');
   assert.equal(
     result.failures[0]?.reason,
-    '成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。',
+    '成品文案含有未被门店已确认资料支持的资质、价格或优惠、权益承诺，暂不能交付。',
   );
 });
 
@@ -150,14 +150,14 @@ test('visible claim extraction is deterministic for the same delivery fields', (
   const second = extractVisibleClaims(visibleText);
 
   assert.deepEqual(first, second);
-  assert.equal(first.revision, 'visible-claim-extractor-v1');
+  assert.equal(first.revision, 'visible-claim-extractor-v2');
   assert.match(first.inputHash, /^[a-f0-9]{64}$/u);
   assert.deepEqual(
     first.claims.map(({ field, kind }) => ({ field, kind })),
     [
       { field: 'title', kind: 'qualification' },
       { field: 'title', kind: 'qualification' },
-      { field: 'title', kind: 'price' },
+      { field: 'title', kind: 'offer' },
       { field: 'body', kind: 'benefit' },
     ],
   );

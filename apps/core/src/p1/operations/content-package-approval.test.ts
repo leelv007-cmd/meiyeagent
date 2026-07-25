@@ -162,13 +162,19 @@ test('authorize rejects malicious visible copy and reports the triggering claim'
     requestId: seedApprovalRequest(repository),
   });
   const authorization = policyInput();
-  authorization.policy.candidate.visibleText = [
-    { field: 'title', text: '卫健委批准的正规医美机构' },
-  ];
 
   await assert.rejects(
     service.authorize({
       ...authorization,
+      policy: {
+        ...authorization.policy,
+        candidate: {
+          ...authorization.policy.candidate,
+          visibleText: [
+            { field: 'title', text: '卫健委批准的正规医美机构' },
+          ],
+        },
+      },
       receiptId: receipt.id,
     }),
     (error: unknown) => {

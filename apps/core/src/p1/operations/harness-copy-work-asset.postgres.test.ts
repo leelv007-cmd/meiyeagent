@@ -101,7 +101,7 @@ test("Harness Copy delivery lands one deterministic winner text asset atomically
 				},
 			],
 			inputHash: "a".repeat(64),
-			revision: "visible-claim-extractor-v1",
+			revision: "visible-claim-extractor-v2",
 		},
 		expectedRevision: 0,
 		generated: { assetIds: [assetId], childRuns: [] },

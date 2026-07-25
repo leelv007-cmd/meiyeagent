@@ -121,6 +121,11 @@ test(
         [harnessRuntimeId('workspace-1', `trace-${workflowId}-assembly_delivery`)],
       );
       assert.deepEqual(trace.rows[0]?.payload, {
+        claimExtraction: {
+          claims: [],
+          inputHash: 'b'.repeat(64),
+          revision: 'visible-claim-extractor-v2',
+        },
         delivery: delivered,
         recommendation: {
           recommendedCandidateId: 'c01',
@@ -616,6 +621,11 @@ function deliveryInput(
     workflowId,
     workspaceId,
     packageId,
+    claimExtraction: {
+      claims: [],
+      inputHash: 'b'.repeat(64),
+      revision: 'visible-claim-extractor-v2' as const,
+    },
     expectedRevision: 0,
     platform: 'xiaohongshu' as const,
     occurredAt: '2026-07-18T00:01:00.000Z',

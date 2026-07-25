@@ -11,6 +11,7 @@ import {
 import type { Pool, PoolClient } from "pg";
 
 import { harnessRuntimeId } from "../harness/workspace-scope.js";
+import type { VisibleClaimExtraction } from "../harness/policy-gates.js";
 import {
 	HarnessCopyWorkAssetWriteError,
 	type HarnessCopyWorkAsset,
@@ -21,6 +22,7 @@ import type { ContentPackageRightsResolverPort } from "../operations/types.js";
 
 export interface ContentPackageRevisionWriteInput {
 	additionalVersions?: ContentPackageVersion[];
+	claimExtraction?: VisibleClaimExtraction;
 	expectedRevision: number;
 	generated: Pick<
 		ContentPackage["generated"],
@@ -712,6 +714,9 @@ async function writeHarnessDeliveryAuditAndOutbox(
 				workspaceId: input.workspaceId,
 				expectedRevision: input.expectedRevision,
 				requestFingerprint,
+				...(input.claimExtraction
+					? { claimExtraction: input.claimExtraction }
+					: {}),
 				...delivery,
 			}),
 		],

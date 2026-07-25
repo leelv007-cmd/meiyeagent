@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { extractVisibleClaimPatternMatches } from './visible-claim-patterns.js';
+
 export const HARNESS_GATE_IDS = [
   'cross_workspace_lineage',
   'critical_fact_source',
@@ -27,7 +29,7 @@ export type HarnessFactClaim = {
 export interface VisibleClaimExtraction {
   claims: Array<HarnessFactClaim & { field: string }>;
   inputHash: string;
-  revision: 'visible-claim-extractor-v1';
+  revision: 'visible-claim-extractor-v2';
 }
 
 export interface HarnessPolicyInput {
@@ -81,6 +83,7 @@ export interface HarnessGateFailure {
   gateId: HarnessGateId;
   reason: string;
   alternativePath: string[];
+  triggeredClaims?: VisibleClaimExtraction['claims'];
 }
 
 export interface HarnessPolicyResult {
@@ -185,11 +188,22 @@ function criticalFactSourceGate(
       (!claim.sourceRef || !sourceIds.has(claim.sourceRef)),
   );
   if (!ungrounded) return null;
-  return claimExtraction?.claims.length
+  const triggeredClaims = claimExtraction?.claims.filter(
+    (claim) =>
+      !input.candidate.factClaims.some(
+        (candidate) =>
+          candidate.kind === claim.kind &&
+          candidate.value === claim.value &&
+          candidate.sourceRef &&
+          sourceIds.has(candidate.sourceRef),
+      ),
+  );
+  return triggeredClaims?.length
     ? failure(
         'critical_fact_source',
-        '成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。',
+        visibleClaimFailureReason(triggeredClaims),
         ['核对并补充门店已确认资料', '删除或改写无依据内容'],
+        triggeredClaims,
       )
     : failure(
         'critical_fact_source',
@@ -300,8 +314,14 @@ function failure(
   gateId: HarnessGateId,
   reason: string,
   alternativePath: string[],
+  triggeredClaims?: VisibleClaimExtraction['claims'],
 ): HarnessGateFailure {
-  return { gateId, reason, alternativePath };
+  return {
+    gateId,
+    reason,
+    alternativePath,
+    ...(triggeredClaims?.length ? { triggeredClaims } : {}),
+  };
 }
 
 export function extractVisibleClaims(
@@ -319,19 +339,15 @@ export function extractVisibleClaims(
     inputHash: createHash('sha256')
       .update(JSON.stringify(normalizedFields))
       .digest('hex'),
-    revision: 'visible-claim-extractor-v1',
+    revision: 'visible-claim-extractor-v2',
   };
 }
 
 function extractClaimsFromField(field: string, text: string) {
-  const claims: VisibleClaimExtraction['claims'] = [];
-  for (const pattern of VISIBLE_CLAIM_PATTERNS) {
-    for (const match of text.matchAll(pattern.pattern)) {
-      const value = match[0]?.trim();
-      if (value) claims.push({ field, kind: pattern.kind, value });
-    }
-  }
-  return claims;
+  return extractVisibleClaimPatternMatches(text).map((claim) => ({
+    field,
+    ...claim,
+  }));
 }
 
 function withExtractedVisibleClaims(
@@ -363,15 +379,18 @@ function trustedClaimSupports(
   if (
     trusted.kind !== extracted.kind &&
     !(trusted.kind === 'offer' && extracted.kind === 'price') &&
-    !(trusted.kind === 'price' && extracted.kind === 'offer')
+    !(trusted.kind === 'price' && extracted.kind === 'offer') &&
+    !(trusted.kind === 'offer' && extracted.kind === 'benefit') &&
+    !(trusted.kind === 'benefit' && extracted.kind === 'offer')
   ) {
     return false;
   }
   const trustedValue = normalizeClaimValue(trusted.value);
   const extractedValue = normalizeClaimValue(extracted.value);
-  const extractedNumbers = extractedValue.match(/\d+(?:\.\d+)?/gu) ?? [];
-  if (extractedNumbers.length > 0) {
-    return extractedNumbers.every((number) => trustedValue.includes(number));
+  const extractedNumbers = comparableNumericValues(extracted.value);
+  if (extractedNumbers.size > 0) {
+    const trustedNumbers = trustedNumericValues(trusted.value);
+    return [...extractedNumbers].every((number) => trustedNumbers.has(number));
   }
   return (
     trustedValue.includes(extractedValue) ||
@@ -395,28 +414,66 @@ function deduplicateVisibleClaims(
   });
 }
 
-const VISIBLE_CLAIM_PATTERNS: ReadonlyArray<{
-  kind: HarnessFactClaim['kind'];
-  pattern: RegExp;
-}> = [
-  {
-    kind: 'qualification',
-    pattern:
-      /(?:国家(?:级)?(?:认证|资质)|官方认证|五星(?:级)?(?:机构|门店)|专业资质|持证(?:医师|医生|技师))/gu,
-  },
-  {
-    kind: 'price',
-    pattern:
-      /(?:(?:团购价|优惠价|现价|到手价|售价|低至|仅需|只要)\s*)?(?:[¥￥]\s*)?\d+(?:\.\d+)?\s*元/gu,
-  },
-  {
-    kind: 'benefit',
-    pattern:
-      /(?:到店即送|赠送|免费送|全年护理|终身免费)[^，。！？!?\n；;]*/gu,
-  },
-  {
-    kind: 'offer',
-    pattern:
-      /(?:限时优惠|立减|直减|减免|特价|特惠|买\s*\d+\s*送\s*\d+)[^，。！？!?\n；;]*/gu,
-  },
-];
+function visibleClaimFailureReason(
+  claims: VisibleClaimExtraction['claims'],
+) {
+  const kinds = new Set(claims.map(({ kind }) => kind));
+  const labels = [
+    kinds.has('qualification') ? '资质' : null,
+    kinds.has('price') || kinds.has('offer') ? '价格或优惠' : null,
+    kinds.has('benefit') ? '权益承诺' : null,
+  ].filter((label): label is string => label !== null);
+  return `成品文案含有未被门店已确认资料支持的${labels.join('、')}，暂不能交付。`;
+}
+
+function trustedNumericValues(value: string) {
+  try {
+    return numericValuesFromUnknown(JSON.parse(value));
+  } catch {
+    return comparableNumericValues(value);
+  }
+}
+
+function numericValuesFromUnknown(
+  value: unknown,
+  key = '',
+  result = new Set<string>(),
+) {
+  if (TEMPORAL_FACT_KEY.test(key)) return result;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    result.add(canonicalNumericValue(String(value)));
+    return result;
+  }
+  if (typeof value === 'string') {
+    if (!ISO_DATE_VALUE.test(value)) {
+      for (const number of comparableNumericValues(value)) result.add(number);
+    }
+    return result;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) numericValuesFromUnknown(item, key, result);
+    return result;
+  }
+  if (value && typeof value === 'object') {
+    for (const [nestedKey, nestedValue] of Object.entries(value)) {
+      numericValuesFromUnknown(nestedValue, nestedKey, result);
+    }
+  }
+  return result;
+}
+
+function comparableNumericValues(value: string) {
+  return new Set(
+    (value.normalize('NFKC').match(/[-+]?\d+(?:\.\d+)?/gu) ?? []).map(
+      canonicalNumericValue,
+    ),
+  );
+}
+
+function canonicalNumericValue(value: string) {
+  return String(Number(value));
+}
+
+const TEMPORAL_FACT_KEY =
+  /(?:at|date|time|until|from|expires|expired|effective|recorded|captured|valid|revision)$/iu;
+const ISO_DATE_VALUE = /^\d{4}-\d{2}-\d{2}(?:[T\s].*)?$/u;

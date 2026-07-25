@@ -168,7 +168,9 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 				title: input.brief.intent.purpose,
 				topics: [],
 			};
+			const claimExtraction = assertMediaVisibleDelivery(input, version);
 			const revision = {
+				claimExtraction,
 				expectedRevision: input.request.expectedRevision,
 				generated: {
 					assetIds: [input.selection.asset.id],
@@ -205,7 +207,6 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 				workflowRevision: input.request.workflowRevision,
 				workspaceId: input.request.workspaceId,
 			};
-			assertMediaVisibleDelivery(input, version);
 			assertImageRevisionAssemblyComplete(revision);
 			return this.contentPackages.write(revision);
 		}
@@ -237,7 +238,9 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 			title: "视频成品",
 			topics: [],
 		};
+		const claimExtraction = assertMediaVisibleDelivery(input, version);
 		const revision = {
+			claimExtraction,
 			expectedRevision: input.request.expectedRevision,
 			generated: {
 				assetIds: [input.selection.asset.id],
@@ -281,7 +284,6 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 			workflowRevision: input.request.workflowRevision,
 			workspaceId: input.request.workspaceId,
 		};
-		assertMediaVisibleDelivery(input, version);
 		assertVideoRevisionAssemblyComplete(revision);
 		return this.contentPackages.write(revision);
 	}
@@ -305,6 +307,14 @@ function assertMediaVisibleDelivery(
 			{ field: "title", text: version.title },
 			{ field: "body", text: version.body },
 			{ field: "cta", text: version.conversionHook },
+			...(input.brief.kind === "image"
+				? input.brief.intent.exactText
+						.filter(({ treatment }) => treatment === "exact")
+						.map(({ text }, index) => ({
+							field: `image.exactText.${index}`,
+							text,
+						}))
+				: []),
 		],
 		workspaceId: input.request.workspaceId,
 	});
@@ -312,8 +322,10 @@ function assertMediaVisibleDelivery(
 		throw new HarnessSelectionError(
 			[...new Set(result.failures.map(({ gateId }) => gateId))],
 			result.failures[0]?.reason,
+			result.failures.flatMap(({ triggeredClaims }) => triggeredClaims ?? []),
 		);
 	}
+	return result.claimExtraction!;
 }
 
 function mediaPlatform(
