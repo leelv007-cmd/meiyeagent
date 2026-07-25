@@ -7,8 +7,10 @@ import {
 } from './index.js';
 import {
   FixtureAiStreamingRunner,
+  FixtureAiStructuredObjectExecutor,
   OpenAiCompatibleAiSdkRunner,
 } from './ai-sdk-runner.js';
+import { executionBriefSchema } from '../harness/structured-nodes.js';
 
 test('formal non-streaming copy generation uses one structured object request', async () => {
   const requests: Array<Record<string, unknown>> = [];
@@ -262,6 +264,90 @@ test('fixture copy generation stops pending chunks and completion when aborted',
   abortController.abort();
   await assert.rejects(reader.read(), { name: 'AbortError' });
   await assert.rejects(started.result, { name: 'AbortError' });
+});
+
+test('fixture copy brief derives exactly the fact references present in its prompt', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const generate = (storeFacts: Record<string, unknown>) =>
+    executor.generate({
+      instructions: 'Compile one grounded copy brief.',
+      prompt: JSON.stringify({
+        bundle: {
+          dimensions: {
+            store_facts_assets: storeFacts,
+          },
+        },
+      }),
+      schema: executionBriefSchema,
+      schemaName: 'harness_copy_brief_v1',
+    });
+
+  const empty = await generate({});
+  if (empty.output.kind !== 'copy') throw new Error('Expected a copy brief.');
+  assert.deepEqual(empty.output.factRefs, []);
+
+  const grounded = await generate({
+    'offer.price': {
+      sourceRef: 'store_fact:price-1:2',
+      value: { amount: 299, currency: 'CNY' },
+    },
+    'service.name': {
+      sourceRef: 'store_fact:service-1:4',
+      value: '透亮猫眼',
+    },
+    instruction_source_1: {
+      sourceRef: 'task:workflow-1:source:1',
+      value: '商家临时补充',
+    },
+  });
+  if (grounded.output.kind !== 'copy') {
+    throw new Error('Expected a copy brief.');
+  }
+  assert.deepEqual(
+    new Set(grounded.output.factRefs),
+    new Set(['store_fact:price-1:2', 'store_fact:service-1:4']),
+  );
+  assert.equal(grounded.output.factRefs.length, 2);
+});
+
+test('fixture image edit brief derives work-case fact references from its prompt', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const generated = await executor.generate({
+    instructions: 'Compile one grounded image edit brief.',
+    prompt: JSON.stringify({
+      bundle: {
+        dimensions: {
+          store_facts_assets: {
+            work_case_1: {
+              sourceRef: 'store_fact:work-case-1:3',
+              value: '已确认案例',
+            },
+          },
+        },
+      },
+      declaration: {
+        normalizedIntent: '调整这张案例图的版式',
+      },
+      executionContract: {
+        operation: 'image.edit',
+        sources: {
+          assets: [{ id: 'asset-1', revision: 2 }],
+        },
+      },
+    }),
+    schema: executionBriefSchema,
+    schemaName: 'harness_image_brief_v1',
+  });
+
+  if (generated.output.kind !== 'image') {
+    throw new Error('Expected an image brief.');
+  }
+  assert.deepEqual(generated.output.intent.factRefs, [
+    'store_fact:work-case-1:3',
+  ]);
+  assert.deepEqual(generated.output.intent.references[0]?.factRefs, [
+    'store_fact:work-case-1:3',
+  ]);
 });
 
 test('fixture assistant emits safe tool and data parts through an AI SDK UI message stream', async () => {

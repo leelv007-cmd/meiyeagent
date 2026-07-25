@@ -871,7 +871,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
           '请基于当前任务和已确认资料生成一条可直接审核的小红书文案。正文需说明服务价值、适用场景与预约方式，只使用输入中可核对的事实，不编造价格、效果、资格或顾客案例，也不引用未授权素材。',
         platform: 'xiaohongshu',
         cta: '私信了解当前项目并预约',
-        factRefs: [],
+        factRefs: fixturePromptFactRefs(payload),
         assetRefs: [],
         identityRefs: [],
         constraints: ['不得编造价格、效果或顾客案例'],
@@ -879,6 +879,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
     case 'harness_image_brief_v1': {
       const executionContract = fixtureRecord(payload.executionContract);
       const declaration = fixtureRecord(payload.declaration);
+      const factRefs = fixturePromptFactRefs(payload);
       const sources = fixtureRecord(executionContract.sources);
       const sourceAssets = Array.isArray(sources.assets)
         ? sources.assets.map(fixtureRecord)
@@ -910,7 +911,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
           slot,
           mimeType: 'image/png',
           sizeBytes: 1_024,
-          factRefs: slot === 'work_case' ? ['fact:work-case:confirmed'] : [],
+          factRefs: slot === 'work_case' ? factRefs : [],
           rightsRefs: [],
         };
       });
@@ -938,7 +939,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
                 ]
               : [],
           factRefs:
-            operation === 'image.edit' ? ['fact:work-case:confirmed'] : [],
+            operation === 'image.edit' ? factRefs : [],
           rightsRefs: [],
           outputPlan: { kind: 'single' },
         },
@@ -1062,6 +1063,24 @@ function fixtureRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function fixturePromptFactRefs(payload: Record<string, unknown>) {
+  const bundle = fixtureRecord(payload.bundle);
+  const dimensions = fixtureRecord(bundle.dimensions);
+  const facts = fixtureRecord(dimensions.store_facts_assets);
+  return [
+    ...new Set(
+      Object.values(facts)
+        .map(fixtureRecord)
+        .map((fact) => fact.sourceRef)
+        .filter(
+          (reference): reference is string =>
+            typeof reference === 'string' &&
+            reference.startsWith('store_fact:'),
+        ),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
 }
 
 function pacedResponse(

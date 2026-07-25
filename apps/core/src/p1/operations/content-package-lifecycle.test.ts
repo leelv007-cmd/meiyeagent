@@ -6,6 +6,8 @@ import {
   editContentPackageLifecycleVersion,
   rollbackContentPackageLifecycleVersion,
 } from './content-package-lifecycle.js';
+import { FixtureAiStructuredObjectExecutor } from '../model-supply/ai-sdk-runner.js';
+import { executionBriefSchema } from '../harness/structured-nodes.js';
 import {
   buildContentPackage,
   contentPackageReferencesAsset,
@@ -204,6 +206,81 @@ describe('ContentPackage lifecycle module', () => {
       (error: unknown) =>
         error instanceof ContentPackageLifecycleError &&
         error.code === 'CONTENT_PACKAGE_CONTEXT_REFS_CHANGED'
+    );
+  });
+
+  it('rejects a quick edit that drops fact refs reported by the fixture brief', async () => {
+    const brief = await new FixtureAiStructuredObjectExecutor().generate({
+      instructions: 'Compile one grounded copy brief.',
+      prompt: JSON.stringify({
+        bundle: {
+          dimensions: {
+            store_facts_assets: {
+              'offer.price': {
+                sourceRef: 'store_fact:price-1:2',
+                value: { amount: 299, currency: 'CNY' },
+              },
+            },
+          },
+        },
+      }),
+      schema: executionBriefSchema,
+      schemaName: 'harness_copy_brief_v1',
+    });
+    if (brief.output.kind !== 'copy') {
+      throw new Error('Expected a copy brief.');
+    }
+    const original = contentPackageSchema.parse({
+      ...acceptedPackage(),
+      marketing: {
+        scene: 'daily_service_exposure',
+        capabilities: {
+          mainRecommendation: true,
+          platformDeliverables: true,
+          factsAndRights: true,
+          quickEdit: true,
+          publishExport: true,
+          asyncRecovery: true,
+          remix: true,
+        },
+        contextBundle: {
+          bundleId: 'bundle-fixture-brief',
+          revision: 1,
+          hash: 'b'.repeat(64),
+        },
+        factRefs: brief.output.factRefs,
+        rightsRefs: [],
+        identityRefs: [],
+      },
+    });
+
+    assert.throws(
+      () =>
+        editContentPackageLifecycleVersion({
+          baseVersionId: 'package-v1',
+          changes: {
+            body: 'Forged fixture edit',
+            orderedAssetIds: ['package-asset'],
+            title: 'Forged fixture edit',
+            topics: [],
+          },
+          contentPackage: original,
+          intent: {
+            action: 'promotion_weaker',
+            instruction: '促销感弱一点',
+            target: 'package_version',
+            scope: 'current_task',
+            baseVersionId: 'package-v1',
+            preservedFactRefs: [],
+            preservedRightsRefs: [],
+          },
+          target: { kind: 'package' },
+          timestamp: EDITED_AT,
+          userId: 'merchant-user',
+        }),
+      (error: unknown) =>
+        error instanceof ContentPackageLifecycleError &&
+        error.code === 'CONTENT_PACKAGE_CONTEXT_REFS_CHANGED',
     );
   });
 
