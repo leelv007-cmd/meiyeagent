@@ -14,6 +14,7 @@ import {
   runHarnessWorkflow,
   type HarnessContextSnapshot,
 } from './workflow-core.js';
+import { HarnessSelectionError } from './execution-selection.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import type {
   StructuredNodeRunner,
@@ -572,6 +573,78 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
       },
     ],
   );
+});
+
+test('assembly blocks unsupported visible claims before writing a deliverable revision', async () => {
+  const executionDelivery = new RecordingRevisionWriter();
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => new QueueRunner([]) },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    executionDelivery,
+  );
+  const snapshot = composerSnapshot();
+
+  await assert.rejects(
+    ports.assembleAndDeliver({
+      workflowId: snapshot.task.id,
+      request: composerRequest(snapshot),
+      declaration: {
+        normalizedIntent: '宣传本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      context: contextSnapshot(),
+      brief: {
+        kind: 'copy',
+        instructions: 'x'.repeat(80),
+        platform: 'douyin',
+        cta: '立即抢购',
+        factRefs: [],
+        assetRefs: [],
+        identityRefs: [],
+        constraints: [],
+      },
+      selection: {
+        candidates: [
+          {
+            candidateId: 'candidate-redline',
+            title: '国家认证五星机构，团购价398元',
+            body: '到店即送全年护理',
+            conversionHook: '立即抢购',
+            score: 91,
+          },
+        ],
+        winner: {
+          candidateId: 'candidate-redline',
+          title: '国家认证五星机构，团购价398元',
+          body: '到店即送全年护理',
+          conversionHook: '立即抢购',
+        },
+        trace: {} as never,
+      },
+    }),
+    (error: unknown) =>
+      error instanceof HarnessSelectionError &&
+      error.gateIds.includes('critical_fact_source') &&
+      error.merchantMessage ===
+        '成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。',
+  );
+  assert.equal(executionDelivery.inputs.length, 0);
 });
 
 test('a source ContentPackage enters the Copy Brief and fails closed after revocation', async () => {

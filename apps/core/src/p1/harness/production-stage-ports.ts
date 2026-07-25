@@ -22,9 +22,14 @@ import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution
 
 import {
   executeCopySelection,
+  HarnessSelectionError,
   StructuredCandidateScorer,
 } from './execution-selection.js';
-import { createHarnessCandidateValidator } from './policy-gates.js';
+import {
+  createHarnessCandidateValidator,
+  validateHarnessPolicy,
+  type HarnessFactClaim,
+} from './policy-gates.js';
 import {
   compileExecutionBrief,
   InMemoryStructuredNodeMetrics,
@@ -410,6 +415,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         input.brief.assetRefs,
         sourceContentPackage?.assets,
       );
+      assertDeliverableCandidatesPassVisibleRedlines(input);
       return this.executionDelivery.write(
         copyContentPackageRevisionWriteInput(
           input,
@@ -425,6 +431,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       at: occurredAt,
     });
     const platform = publicationPlatform(input.brief.platform);
+    assertDeliverableCandidatesPassVisibleRedlines(input);
     return this.delivery.deliverCopyRevision({
       workflowId: input.workflowId,
       workspaceId: input.request.workspaceId,
@@ -489,6 +496,103 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       source,
     });
   }
+}
+
+function assertDeliverableCandidatesPassVisibleRedlines(
+  input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+) {
+  for (const candidate of input.selection.candidates) {
+    const result = validateHarnessVisibleDelivery({
+      assetRefs: input.brief.assetRefs,
+      brief: input.brief,
+      candidateId: candidate.candidateId,
+      context: input.context,
+      expressionIdentityRef: input.brief.identityRefs[0],
+      visibleText: [
+        { field: 'title', text: candidate.title },
+        { field: 'body', text: candidate.body },
+        { field: 'cta', text: candidate.conversionHook },
+      ],
+      workspaceId: input.request.workspaceId,
+    });
+    if (!result.passed) {
+      throw new HarnessSelectionError(
+        [...new Set(result.failures.map(({ gateId }) => gateId))],
+        result.failures[0]?.reason,
+      );
+    }
+  }
+}
+
+export function validateHarnessVisibleDelivery(input: {
+  assetRefs: string[];
+  brief: Record<string, unknown>;
+  candidateId: string;
+  context: HarnessContextSnapshot;
+  expressionIdentityRef?: string;
+  visibleText: Array<{ field: string; text: string }>;
+  workspaceId: string;
+}) {
+  return validateHarnessPolicy({
+    phase: 'delivery',
+    bundle: {
+      workspaceId: input.workspaceId,
+      revision: input.context.bundle.revision,
+    },
+    brief: structuredClone(input.brief),
+    candidate: {
+      assetRefs: [...input.assetRefs],
+      candidateId: input.candidateId,
+      factClaims: [],
+      intendedUse: 'public_content',
+      ...(input.expressionIdentityRef
+        ? { expressionIdentityRef: input.expressionIdentityRef }
+        : {}),
+      visibleText: structuredClone(input.visibleText),
+      workspaceId: input.workspaceId,
+    },
+    trustedFactClaims: trustedClaimsFromContext(input.context),
+    ...input.context.policyReferences,
+  });
+}
+
+function trustedClaimsFromContext(
+  context: HarnessContextSnapshot,
+): HarnessFactClaim[] {
+  const facts =
+    context.activeFacts ??
+    Object.entries(context.bundle.dimensions.store_facts_assets).map(
+      ([key, value]) => ({
+        key,
+        value: value.value,
+        sourceRef: value.sourceRef,
+      }),
+    );
+  return facts.flatMap(({ key, value, sourceRef }) => {
+    const kind = policyFactKind(key);
+    return kind
+      ? [{ kind, sourceRef, value: JSON.stringify(value) }]
+      : [];
+  });
+}
+
+function policyFactKind(key: string): HarnessFactClaim['kind'] | null {
+  const normalized = key.toLowerCase();
+  if (normalized.includes('price')) return 'price';
+  if (normalized.includes('benefit') || normalized.includes('discount')) {
+    return 'benefit';
+  }
+  if (normalized.includes('offer') || normalized.includes('group_buy')) {
+    return 'offer';
+  }
+  if (
+    normalized.includes('qualification') ||
+    normalized.includes('certification') ||
+    normalized.includes('license')
+  ) {
+    return 'qualification';
+  }
+  return null;
 }
 
 export function copyContentPackageRevisionWriteInput(

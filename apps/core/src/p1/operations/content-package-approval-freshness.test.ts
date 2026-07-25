@@ -7,6 +7,7 @@ import {
   ContentPackageDeliveryError,
   ContextBundleApprovalPolicyResolver,
 } from './content-package-delivery.js';
+import { validateHarnessPolicy } from '../harness/policy-gates.js';
 
 const timestamp = '2026-07-18T00:00:00.000Z';
 
@@ -34,6 +35,27 @@ test('delivery approval rejects an identity head newer than the frozen package',
     }),
     /Facts or identity changed/u,
   );
+});
+
+test('delivery approval policy checks visible fields instead of model-reported claims', async () => {
+  const resolver = createResolver({ identityRevision: 1, factRevision: 1 });
+  const resolved = await resolver.resolve({
+    contentPackage: contentPackage({
+      title: '国家认证五星机构，团购价398元',
+      body: '到店即送全年护理',
+    }),
+    intendedUse: 'public_content',
+    variantVersionId: 'xiaohongshu-v1',
+  });
+
+  const result = validateHarnessPolicy({
+    ...resolved.policy,
+    phase: 'delivery',
+  });
+
+  assert.equal(resolved.policy.candidate.factClaims.length, 0);
+  assert.equal(result.passed, false);
+  assert.equal(result.failures[0]?.gateId, 'critical_fact_source');
 });
 
 function createResolver(input: {
@@ -86,7 +108,12 @@ function createResolver(input: {
   );
 }
 
-function contentPackage() {
+function contentPackage(
+  copy: { title: string; body: string } = {
+    title: 'Title',
+    body: 'Body',
+  },
+) {
   const draft = buildContentPackage({
     id: 'package-1',
     workspaceId: 'workspace-1',
@@ -104,8 +131,8 @@ function contentPackage() {
       versions: [
         {
           id: `${platform}-v1`,
-          title: 'Title',
-          body: 'Body',
+          title: copy.title,
+          body: copy.body,
           orderedAssetIds: [],
           topics: [],
           createdAt: timestamp,

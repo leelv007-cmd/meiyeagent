@@ -11,8 +11,8 @@ import {
 import type { RedlineCase } from './cases.js';
 import { RECORDED_GATE_REASONS } from './recorded-gate-reasons.js';
 
-export const REDLINE_PROMPT_REVISION = 'redline-prompts-v1';
-export const REDLINE_SCORER_REVISION = 'harness-policy-gates-v1';
+export const REDLINE_PROMPT_REVISION = 'redline-prompts-v2';
+export const REDLINE_SCORER_REVISION = 'visible-copy-redlines-v2';
 
 type HarnessValidator = (input: HarnessPolicyInput) => HarnessPolicyResult;
 type EvaluatableRedlineCase = Pick<RedlineCase, 'description' | 'vars'>;
@@ -33,7 +33,8 @@ export function evaluateRedlineCase(
     );
   }
   const observed = policy.failures[0];
-  const expectedReason = RECORDED_GATE_REASONS[expectedGateId];
+  const expectedReason =
+    redlineCase.vars.expectedReason ?? RECORDED_GATE_REASONS[expectedGateId];
   const stable =
     !policy.passed &&
     policy.failures.length === 1 &&

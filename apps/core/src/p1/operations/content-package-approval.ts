@@ -69,6 +69,7 @@ interface ApprovalAuthorizationInput extends ApprovalBinding {
     | 'identityRefs'
     | 'rightsRefs'
     | 'sourceRefs'
+    | 'trustedFactClaims'
   >;
   receiptId?: string;
 }

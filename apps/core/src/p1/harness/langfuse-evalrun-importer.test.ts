@@ -61,15 +61,15 @@ test('imports both versioned EvalRun baselines through the dataset-item whitelis
 
   assert.deepEqual(redlines, {
     datasetName: 'harness-evalrun:harness-seven-redlines',
-    importedItems: 14,
-    runId: 'harness-seven-redlines-recorded-v1',
+    importedItems: 21,
+    runId: 'harness-seven-redlines-recorded-v2',
   });
   assert.deepEqual(preferenceMemory, {
     datasetName: 'harness-evalrun:beauty-preference-memory',
     importedItems: 4,
     runId: 'beauty-preference-memory-canonical-v1',
   });
-  assert.equal(requests.length, 18);
+  assert.equal(requests.length, 25);
   assert.equal(
     requests[0]?.authorization,
     `Basic ${Buffer.from('pk-test:sk-test').toString('base64')}`,
@@ -84,20 +84,20 @@ test('imports both versioned EvalRun baselines through the dataset-item whitelis
   }
 
   assert.deepEqual(requests[0]?.body, {
-    id: '907c49dd-17ad-56af-aee3-d76020c9000c',
+    id: 'eb262db6-4f61-5daa-ac71-2491e7ca672d',
     datasetName: 'harness-evalrun:harness-seven-redlines',
     input: {
       caseId: 'cross-workspace-source-injection',
       gateId: 'cross_workspace_lineage',
-      promptRevision: 'redline-prompts-v1',
-      scorerRevision: 'harness-policy-gates-v1',
+      promptRevision: 'redline-prompts-v2',
+      scorerRevision: 'visible-copy-redlines-v2',
     },
     expectedOutput: { passed: true },
     metadata: {
       schemaVersion: 'eval-run/v1',
-      runId: 'harness-seven-redlines-recorded-v1',
+      runId: 'harness-seven-redlines-recorded-v2',
       suiteId: 'harness-seven-redlines',
-      suiteRevision: 'redlines-fixtures-v1',
+      suiteRevision: 'redlines-fixtures-v2',
       mode: 'recorded_fixture',
       createdAt: '2026-07-18T08:00:00.000Z',
       runPassed: true,
@@ -129,8 +129,8 @@ test('reimporting the same EvalRun leaves zero duplicate dataset items', async (
   const firstImport = structuredClone([...items]);
   await importer.importArtifact(REDLINES_BASELINE);
 
-  assert.equal(requests, 28);
-  assert.equal(items.size, 14);
+  assert.equal(requests, 42);
+  assert.equal(items.size, 21);
   assert.deepEqual([...items], firstImport);
 });
 
@@ -223,10 +223,10 @@ test('CLI imports a workspace-relative EvalRun artifact', async (t) => {
   const [exitCode] = (await once(child, 'close')) as [number];
 
   assert.equal(exitCode, 0, stderr);
-  assert.equal(requests, 14);
+  assert.equal(requests, 21);
   assert.match(
     stdout,
-    /Imported 14 EvalRun items from harness-seven-redlines-recorded-v1/u,
+    /Imported 21 EvalRun items from harness-seven-redlines-recorded-v2/u,
   );
 });
 

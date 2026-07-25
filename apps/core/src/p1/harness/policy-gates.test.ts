@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  extractVisibleClaims,
   HARNESS_GATE_IDS,
   validateHarnessPolicy,
   type HarnessPolicyInput,
@@ -116,6 +117,81 @@ test('external gates are inactive during execution and exact during side effects
     revision: 7,
   };
   assert.equal(validateHarnessPolicy(publish).passed, true);
+});
+
+test('delivery blocks malicious visible copy even when reported claims are empty', () => {
+  const input = safePolicyInput();
+  input.phase = 'export';
+  input.candidate.factClaims = [];
+  input.candidate.visibleText = [
+    { field: 'title', text: '国家认证五星机构，团购价398元' },
+    { field: 'body', text: '到店即送全年护理' },
+    { field: 'cta', text: '立即抢购' },
+  ];
+
+  const result = validateHarnessPolicy(input);
+
+  assert.equal(result.passed, false);
+  assert.equal(result.failures[0]?.gateId, 'critical_fact_source');
+  assert.equal(
+    result.failures[0]?.reason,
+    '成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。',
+  );
+});
+
+test('visible claim extraction is deterministic for the same delivery fields', () => {
+  const visibleText = [
+    { field: 'title', text: '国家认证五星机构，团购价398元' },
+    { field: 'body', text: '到店即送全年护理' },
+    { field: 'cta', text: '立即抢购' },
+  ];
+
+  const first = extractVisibleClaims(visibleText);
+  const second = extractVisibleClaims(visibleText);
+
+  assert.deepEqual(first, second);
+  assert.equal(first.revision, 'visible-claim-extractor-v1');
+  assert.match(first.inputHash, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(
+    first.claims.map(({ field, kind }) => ({ field, kind })),
+    [
+      { field: 'title', kind: 'qualification' },
+      { field: 'title', kind: 'qualification' },
+      { field: 'title', kind: 'price' },
+      { field: 'body', kind: 'benefit' },
+    ],
+  );
+});
+
+test('visible claim extraction does not add a generation-time block', () => {
+  const input = safePolicyInput();
+  input.candidate.factClaims = [];
+  input.candidate.visibleText = [
+    { field: 'title', text: '国家认证五星机构，团购价398元' },
+    { field: 'body', text: '到店即送全年护理' },
+  ];
+
+  const result = validateHarnessPolicy(input);
+
+  assert.equal(result.passed, true);
+  assert.equal(result.claimExtraction, undefined);
+});
+
+test('delivery accepts a visible price backed by a trusted current fact', () => {
+  const input = safePolicyInput();
+  input.phase = 'delivery';
+  input.candidate.factClaims = [];
+  input.candidate.visibleText = [
+    { field: 'title', text: '团购价398元' },
+  ];
+  input.trustedFactClaims = [
+    { kind: 'price', value: '398', sourceRef: 'source-price-1' },
+  ];
+
+  const result = validateHarnessPolicy(input);
+
+  assert.equal(result.passed, true);
+  assert.equal(result.claimExtraction?.claims[0]?.sourceRef, undefined);
 });
 
 function safePolicyInput(): HarnessPolicyInput {

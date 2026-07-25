@@ -244,6 +244,63 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 	}
 });
 
+test("media delivery blocks malicious visible copy before the canonical writer", async () => {
+	const request = harnessInput("image", "package-image-redline");
+	const media = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			return completedResult("image");
+		},
+	});
+	let writes = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{ create() { throw new Error("Media delivery does not compile a copy brief."); } },
+		media,
+		{
+			async write() {
+				writes += 1;
+				throw new Error("The redline gate must run before this writer.");
+			},
+		},
+		() => "2026-07-22T09:00:01.000Z",
+	);
+	const brief = imageBriefFor("image.edit", 1);
+	brief.intent.purpose = "国家认证五星机构，团购价398元";
+	brief.intent.subject = "到店即送全年护理";
+	const selection = await media.execute({
+		brief,
+		context: contextSnapshot(),
+		request,
+		workflowId: request.executionSnapshot!.task.id,
+	});
+
+	await assert.rejects(
+		ports.assembleMediaAndDeliver({
+			workflowId: request.executionSnapshot!.task.id,
+			request,
+			declaration: {
+				normalizedIntent: "制作团购海报",
+				taskType: "promotion_groupbuy_conversion",
+				deliveryLayer: "finished_media",
+				relevantAssetCategories: ["promotion_activity"],
+				usedAssetCategories: ["promotion_activity"],
+				route: "customized",
+				routingSource: "model",
+				implicitConstraints: [],
+			},
+			context: contextSnapshot(),
+			brief,
+			selection,
+		}),
+		(error: unknown) =>
+			error instanceof HarnessSelectionError &&
+			error.gateIds.includes("critical_fact_source") &&
+			error.merchantMessage ===
+				"成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。",
+	);
+	assert.equal(writes, 0);
+});
+
 test("the video-native compiler has no ffmpeg or composition dependency", async () => {
 	const source = await readFile(
 		new URL("./unified-media-stage-ports.ts", import.meta.url),

@@ -15,7 +15,7 @@ redteam:
       apiBaseUrl: '{{ env.VOLCENGINE_API_BASE_URL }}'
       apiKeyEnvar: VOLCENGINE_API_KEY
   language: zh
-  numTests: 1
+  numTests: 3
   plugins:
     - id: policy
       severity: critical

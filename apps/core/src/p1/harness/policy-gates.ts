@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export const HARNESS_GATE_IDS = [
   'cross_workspace_lineage',
   'critical_fact_source',
@@ -11,9 +13,22 @@ export const HARNESS_GATE_IDS = [
 export type HarnessGateId = (typeof HARNESS_GATE_IDS)[number];
 export type HarnessPolicyPhase =
   | 'execution'
+  | 'delivery'
   | 'export'
   | 'publish'
   | 'paid_action';
+
+export type HarnessFactClaim = {
+  kind: 'price' | 'benefit' | 'qualification' | 'offer' | 'other';
+  value: string;
+  sourceRef?: string;
+};
+
+export interface VisibleClaimExtraction {
+  claims: Array<HarnessFactClaim & { field: string }>;
+  inputHash: string;
+  revision: 'visible-claim-extractor-v1';
+}
 
 export interface HarnessPolicyInput {
   phase: HarnessPolicyPhase;
@@ -23,14 +38,12 @@ export interface HarnessPolicyInput {
     candidateId: string;
     workspaceId: string;
     intendedUse: 'internal_draft' | 'public_content' | 'paid_promotion';
-    factClaims: Array<{
-      kind: 'price' | 'benefit' | 'qualification' | 'offer' | 'other';
-      value: string;
-      sourceRef?: string;
-    }>;
+    factClaims: HarnessFactClaim[];
     assetRefs: string[];
     expressionIdentityRef?: string;
+    visibleText?: Array<{ field: string; text: string }>;
   };
+  trustedFactClaims?: HarnessFactClaim[];
   sourceRefs: Array<{
     id: string;
     workspaceId: string;
@@ -73,6 +86,7 @@ export interface HarnessGateFailure {
 export interface HarnessPolicyResult {
   passed: boolean;
   failures: HarnessGateFailure[];
+  claimExtraction?: VisibleClaimExtraction;
 }
 
 export function createHarnessCandidateValidator(
@@ -90,31 +104,47 @@ const CONTENT_PHASE_GATE_IDS = HARNESS_GATE_IDS.slice(0, 5);
 export function validateHarnessPolicy(
   input: HarnessPolicyInput,
 ): HarnessPolicyResult {
+  const claimExtraction =
+    input.phase === 'execution'
+      ? undefined
+      : extractVisibleClaims(input.candidate.visibleText ?? []);
+  const policyInput = claimExtraction
+    ? withExtractedVisibleClaims(input, claimExtraction)
+    : input;
   const failures = CONTENT_PHASE_GATE_IDS.flatMap((gateId) => {
-    const failure = contentGate(gateId, input);
+    const failure = contentGate(gateId, policyInput, claimExtraction);
     return failure ? [failure] : [];
   });
-  if (input.phase !== 'execution') {
-    const revisionFailure = externalRevisionGate(input);
+  if (
+    input.phase === 'export' ||
+    input.phase === 'publish' ||
+    input.phase === 'paid_action'
+  ) {
+    const revisionFailure = externalRevisionGate(policyInput);
     if (revisionFailure) {
       failures.push(revisionFailure);
     } else {
-      const approvalFailure = externalApprovalGate(input);
+      const approvalFailure = externalApprovalGate(policyInput);
       if (approvalFailure) failures.push(approvalFailure);
     }
   }
-  return { passed: failures.length === 0, failures };
+  return {
+    passed: failures.length === 0,
+    failures,
+    ...(claimExtraction ? { claimExtraction } : {}),
+  };
 }
 
 function contentGate(
   gateId: HarnessGateId,
   input: HarnessPolicyInput,
+  claimExtraction?: VisibleClaimExtraction,
 ): HarnessGateFailure | null {
   switch (gateId) {
     case 'cross_workspace_lineage':
       return crossWorkspaceGate(input);
     case 'critical_fact_source':
-      return criticalFactSourceGate(input);
+      return criticalFactSourceGate(input, claimExtraction);
     case 'subject_asset_rights':
       return subjectAssetRightsGate(input);
     case 'expression_identity':
@@ -146,6 +176,7 @@ function crossWorkspaceGate(
 
 function criticalFactSourceGate(
   input: HarnessPolicyInput,
+  claimExtraction?: VisibleClaimExtraction,
 ): HarnessGateFailure | null {
   const sourceIds = new Set(input.sourceRefs.map(({ id }) => id));
   const ungrounded = input.candidate.factClaims.some(
@@ -153,13 +184,18 @@ function criticalFactSourceGate(
       claim.kind !== 'other' &&
       (!claim.sourceRef || !sourceIds.has(claim.sourceRef)),
   );
-  return ungrounded
+  if (!ungrounded) return null;
+  return claimExtraction?.claims.length
     ? failure(
+        'critical_fact_source',
+        '成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。',
+        ['核对并补充门店已确认资料', '删除或改写无依据内容'],
+      )
+    : failure(
         'critical_fact_source',
         '候选中的关键经营事实没有可追溯来源，不能作为真实内容交付。',
         ['补充权威事实来源', '删除无来源主张'],
-      )
-    : null;
+      );
 }
 
 function subjectAssetRightsGate(
@@ -267,3 +303,120 @@ function failure(
 ): HarnessGateFailure {
   return { gateId, reason, alternativePath };
 }
+
+export function extractVisibleClaims(
+  visibleText: Array<{ field: string; text: string }>,
+): VisibleClaimExtraction {
+  const normalizedFields = visibleText.map(({ field, text }) => ({
+    field: field.trim(),
+    text: text.trim(),
+  }));
+  const claims = normalizedFields.flatMap(({ field, text }) =>
+    extractClaimsFromField(field, text),
+  );
+  return {
+    claims: deduplicateVisibleClaims(claims),
+    inputHash: createHash('sha256')
+      .update(JSON.stringify(normalizedFields))
+      .digest('hex'),
+    revision: 'visible-claim-extractor-v1',
+  };
+}
+
+function extractClaimsFromField(field: string, text: string) {
+  const claims: VisibleClaimExtraction['claims'] = [];
+  for (const pattern of VISIBLE_CLAIM_PATTERNS) {
+    for (const match of text.matchAll(pattern.pattern)) {
+      const value = match[0]?.trim();
+      if (value) claims.push({ field, kind: pattern.kind, value });
+    }
+  }
+  return claims;
+}
+
+function withExtractedVisibleClaims(
+  input: HarnessPolicyInput,
+  extraction: VisibleClaimExtraction,
+): HarnessPolicyInput {
+  const extractedClaims = extraction.claims.map(({ field: _field, ...claim }) => {
+    const trusted = input.trustedFactClaims?.find((candidate) =>
+      trustedClaimSupports(candidate, claim),
+    );
+    return {
+      ...claim,
+      ...(trusted?.sourceRef ? { sourceRef: trusted.sourceRef } : {}),
+    };
+  });
+  return {
+    ...input,
+    candidate: {
+      ...input.candidate,
+      factClaims: [...input.candidate.factClaims, ...extractedClaims],
+    },
+  };
+}
+
+function trustedClaimSupports(
+  trusted: HarnessFactClaim,
+  extracted: HarnessFactClaim,
+) {
+  if (
+    trusted.kind !== extracted.kind &&
+    !(trusted.kind === 'offer' && extracted.kind === 'price') &&
+    !(trusted.kind === 'price' && extracted.kind === 'offer')
+  ) {
+    return false;
+  }
+  const trustedValue = normalizeClaimValue(trusted.value);
+  const extractedValue = normalizeClaimValue(extracted.value);
+  const extractedNumbers = extractedValue.match(/\d+(?:\.\d+)?/gu) ?? [];
+  if (extractedNumbers.length > 0) {
+    return extractedNumbers.every((number) => trustedValue.includes(number));
+  }
+  return (
+    trustedValue.includes(extractedValue) ||
+    extractedValue.includes(trustedValue)
+  );
+}
+
+function normalizeClaimValue(value: string) {
+  return value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function deduplicateVisibleClaims(
+  claims: VisibleClaimExtraction['claims'],
+): VisibleClaimExtraction['claims'] {
+  const seen = new Set<string>();
+  return claims.filter((claim) => {
+    const key = JSON.stringify(claim);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+const VISIBLE_CLAIM_PATTERNS: ReadonlyArray<{
+  kind: HarnessFactClaim['kind'];
+  pattern: RegExp;
+}> = [
+  {
+    kind: 'qualification',
+    pattern:
+      /(?:国家(?:级)?(?:认证|资质)|官方认证|五星(?:级)?(?:机构|门店)|专业资质|持证(?:医师|医生|技师))/gu,
+  },
+  {
+    kind: 'price',
+    pattern:
+      /(?:(?:团购价|优惠价|现价|到手价|售价|低至|仅需|只要)\s*)?(?:[¥￥]\s*)?\d+(?:\.\d+)?\s*元/gu,
+  },
+  {
+    kind: 'benefit',
+    pattern:
+      /(?:到店即送|赠送|免费送|全年护理|终身免费)[^，。！？!?\n；;]*/gu,
+  },
+  {
+    kind: 'offer',
+    pattern:
+      /(?:限时优惠|立减|直减|减免|特价|特惠|买\s*\d+\s*送\s*\d+)[^，。！？!?\n；;]*/gu,
+  },
+];

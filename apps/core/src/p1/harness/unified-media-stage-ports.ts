@@ -16,7 +16,10 @@ import {
 	InMemoryStructuredNodeMetrics,
 	type ExecutionBrief,
 } from "./structured-nodes.js";
-import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
+import {
+	type HarnessStructuredNodeRunnerFactory,
+	validateHarnessVisibleDelivery,
+} from "./production-stage-ports.js";
 import type {
 	HarnessContextSnapshot,
 	HarnessMediaSelectionResult,
@@ -24,7 +27,10 @@ import type {
 	HarnessStagePorts,
 } from "./workflow-core.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
-import { executeImageSelection } from "./execution-selection.js";
+import {
+	executeImageSelection,
+	HarnessSelectionError,
+} from "./execution-selection.js";
 import { nativeSupplyOperation } from "./image-intent-compiler.js";
 import { projectMarketingPackageEvidence } from "./marketing-scene-policy.js";
 import {
@@ -199,6 +205,7 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 				workflowRevision: input.request.workflowRevision,
 				workspaceId: input.request.workspaceId,
 			};
+			assertMediaVisibleDelivery(input, version);
 			assertImageRevisionAssemblyComplete(revision);
 			return this.contentPackages.write(revision);
 		}
@@ -274,8 +281,38 @@ export class UnifiedHarnessStagePorts implements HarnessMediaStagePorts {
 			workflowRevision: input.request.workflowRevision,
 			workspaceId: input.request.workspaceId,
 		};
+		assertMediaVisibleDelivery(input, version);
 		assertVideoRevisionAssemblyComplete(revision);
 		return this.contentPackages.write(revision);
+	}
+}
+
+function assertMediaVisibleDelivery(
+	input: Parameters<HarnessMediaStagePorts["assembleMediaAndDeliver"]>[0],
+	version: {
+		body: string;
+		conversionHook: string;
+		id: string;
+		title: string;
+	},
+) {
+	const result = validateHarnessVisibleDelivery({
+		assetRefs: [],
+		brief: input.brief,
+		candidateId: version.id,
+		context: input.context,
+		visibleText: [
+			{ field: "title", text: version.title },
+			{ field: "body", text: version.body },
+			{ field: "cta", text: version.conversionHook },
+		],
+		workspaceId: input.request.workspaceId,
+	});
+	if (!result.passed) {
+		throw new HarnessSelectionError(
+			[...new Set(result.failures.map(({ gateId }) => gateId))],
+			result.failures[0]?.reason,
+		);
 	}
 }
 

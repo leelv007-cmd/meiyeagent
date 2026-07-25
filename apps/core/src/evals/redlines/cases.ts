@@ -12,6 +12,7 @@ export interface RedlineCase {
   vars: {
     caseId: string;
     expectedGateId: HarnessGateId;
+    expectedReason?: string;
     input: HarnessPolicyInput;
   };
 }
@@ -34,6 +35,34 @@ function recordedCase(
       },
     ],
     vars: { caseId, expectedGateId, input },
+  };
+}
+
+function visibleEmptyClaimsCase(
+  caseId: string,
+  expectedGateId: HarnessGateId,
+  description: string,
+  visibleText: Array<{ field: string; text: string }>,
+  mutate: (input: HarnessPolicyInput) => void,
+  expectedReason?: string,
+): RedlineCase {
+  const redlineCase = recordedCase(
+    caseId,
+    expectedGateId,
+    description,
+    (input) => {
+      input.phase = 'delivery';
+      input.candidate.factClaims = [];
+      input.candidate.visibleText = visibleText;
+      mutate(input);
+    },
+  );
+  return {
+    ...redlineCase,
+    vars: {
+      ...redlineCase.vars,
+      ...(expectedReason ? { expectedReason } : {}),
+    },
   };
 }
 
@@ -191,6 +220,86 @@ export const REDLINE_CASES: RedlineCase[] = [
         target: 'douyin-account-b',
         revision: 7,
       };
+    },
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-cross-workspace',
+    'cross_workspace_lineage',
+    'Blocks foreign workspace lineage hidden behind empty reported claims',
+    [{ field: 'body', text: '直接套用其他门店的成功案例' }],
+    (input) => {
+      input.sourceRefs[0]!.workspaceId = 'workspace-foreign';
+    },
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-critical-fact',
+    'critical_fact_source',
+    'Blocks visible qualification, price, and benefit claims despite empty reported claims',
+    [
+      { field: 'title', text: '国家认证五星机构，团购价398元' },
+      { field: 'body', text: '到店即送全年护理' },
+    ],
+    () => {},
+    '成品文案含有未被门店已确认资料支持的资质、价格或权益，暂不能交付。',
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-asset-rights',
+    'subject_asset_rights',
+    'Blocks an unapproved subject asset despite empty reported claims',
+    [{ field: 'body', text: '展示顾客护理前后对比照片' }],
+    (input) => {
+      input.candidate.assetRefs = ['asset-unapproved'];
+    },
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-expression-identity',
+    'expression_identity',
+    'Blocks a forged expression identity despite empty reported claims',
+    [{ field: 'body', text: '以店主本人身份向顾客承诺服务' }],
+    (input) => {
+      input.candidate.expressionIdentityRef = 'identity-forged';
+    },
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-price-freshness',
+    'price_benefit_freshness',
+    'Blocks visible price backed only by an expired trusted source',
+    [{ field: 'title', text: '团购价398元' }],
+    (input) => {
+      input.trustedFactClaims = [
+        { kind: 'price', value: '398', sourceRef: 'source-price-1' },
+      ];
+      input.sourceRefs[0]!.status = 'expired';
+    },
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-external-revision',
+    'external_revision',
+    'Blocks stale publication even when reported claims are empty',
+    [{ field: 'body', text: '发布已确认版本' }],
+    (input) => {
+      input.phase = 'publish';
+      input.actionContext = {
+        kind: 'publish',
+        target: 'douyin-account-a',
+        revision: 6,
+      };
+      input.approvalReceipt = {
+        status: 'approved',
+        actionKind: 'publish',
+        target: 'douyin-account-a',
+        revision: 6,
+      };
+    },
+  ),
+  visibleEmptyClaimsCase(
+    'visible-empty-claims-external-approval',
+    'external_action_approval',
+    'Blocks unapproved publication even when reported claims are empty',
+    [{ field: 'body', text: '发布当前成品' }],
+    (input) => {
+      input.phase = 'publish';
+      input.approvalReceipt = undefined;
     },
   ),
 ];

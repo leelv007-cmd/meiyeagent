@@ -47,6 +47,7 @@ export interface ContentPackageApprovalPolicyPort {
       | 'identityRefs'
       | 'rightsRefs'
       | 'sourceRefs'
+      | 'trustedFactClaims'
     >;
   }>;
 }
@@ -841,6 +842,18 @@ export class ContextBundleApprovalPolicyResolver
       bundle.dimensions.expression_identity
     ).filter((value) => value.sourceRef.startsWith('marketing_identity:'));
     const expressionIdentityRef = identityValues[0]?.sourceRef;
+    const trustedFactClaims = factValues.flatMap(([key, value]) => {
+      const kind = policyFactKind(key);
+      return kind
+        ? [
+            {
+              kind,
+              sourceRef: value.sourceRef,
+              value: JSON.stringify(value.value),
+            },
+          ]
+        : [];
+    });
     return {
       contextBundle: {
         bundleId: bundle.bundleId,
@@ -856,20 +869,16 @@ export class ContextBundleApprovalPolicyResolver
         candidate: {
           assetRefs: [...version.orderedAssetIds],
           candidateId: version.id,
-          factClaims: factValues.flatMap(([key, value]) => {
-            const kind = policyFactKind(key);
-            return kind
-              ? [
-                  {
-                    kind,
-                    sourceRef: value.sourceRef,
-                    value: JSON.stringify(value.value),
-                  },
-                ]
-              : [];
-          }),
+          factClaims: [],
           intendedUse: input.intendedUse,
           ...(expressionIdentityRef ? { expressionIdentityRef } : {}),
+          visibleText: [
+            { field: 'title', text: version.title },
+            { field: 'body', text: version.body },
+            ...(version.conversionHook
+              ? [{ field: 'cta', text: version.conversionHook }]
+              : []),
+          ],
           workspaceId: bundle.workspaceId,
         },
         identityRefs: identityValues.map((value) => ({
@@ -892,6 +901,7 @@ export class ContextBundleApprovalPolicyResolver
           status: 'current' as const,
           workspaceId: bundle.workspaceId,
         })),
+        trustedFactClaims,
       },
     };
   }
