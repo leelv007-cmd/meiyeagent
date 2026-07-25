@@ -263,6 +263,8 @@ export type ComposerPromptBarProps = {
   placeholder: string;
   ariaLabel: string;
   submitLabel: string;
+  /** Host-owned page composition — DESIGN.md 白瓷 Composer 大卡 lands here. */
+  className?: string;
 };
 
 export function ComposerPromptBar({
@@ -286,9 +288,13 @@ export function ComposerPromptBar({
   placeholder,
   ariaLabel,
   submitLabel,
+  className,
 }: ComposerPromptBarProps) {
   return (
-    <div className="flex flex-col gap-3" data-testid="composer-prompt-bar">
+    <div
+      className={cn('flex flex-col gap-3', className)}
+      data-testid="composer-prompt-bar"
+    >
       {/* D-111 双入口自报: 定制 and 自由 are two entries, never one blended control. */}
       <Segment
         aria-label="创作入口"
@@ -351,7 +357,8 @@ export function ComposerPromptBar({
             aria-pressed={destination === option.id}
             className={cn(
               'meiye-glass-piece rounded-full px-3 py-1 text-xs',
-              destination === option.id && 'meiye-chip-active'
+              destination === option.id &&
+                'ring-foreground/20 text-foreground ring-1'
             )}
             data-testid={`composer-destination-option-${option.id}`}
             key={option.id}
