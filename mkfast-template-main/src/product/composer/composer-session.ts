@@ -139,7 +139,11 @@ export function bindComposerTask(
     task,
     turns: [
       ...session.turns,
-      { kind: 'candidate', id: `candidate:${task.taskId}`, taskId: task.taskId },
+      {
+        kind: 'candidate',
+        id: `candidate:${task.taskId}`,
+        taskId: task.taskId,
+      },
     ],
   };
 }
@@ -181,7 +185,9 @@ export function applyComposerProgress(
   };
   if (!frame.message) return next;
   const turn = progressTurn(frame, frame.message);
-  const candidateIndex = next.turns.findIndex((item) => item.kind === 'candidate');
+  const candidateIndex = next.turns.findIndex(
+    (item) => item.kind === 'candidate'
+  );
   const turns = [...next.turns];
   // Stage announcements read above the candidate area they describe.
   if (candidateIndex === -1) turns.push(turn);
@@ -255,9 +261,7 @@ export function applyComposerWorkflowState(
 }
 
 /** Submission rejected before a task existed — the merchant turn survives. */
-export function failComposerSession(
-  session: ComposerSession
-): ComposerSession {
+export function failComposerSession(session: ComposerSession): ComposerSession {
   return { ...session, phase: 'failed' };
 }
 

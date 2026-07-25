@@ -29,10 +29,7 @@ import { StreamingAiMarkdown } from '@/components/markdown/ai-markdown';
 import { cn } from '@/lib/utils';
 import type { ResultTokenStreamProjection } from '@/product/results/result-token-stream';
 
-import type {
-  ComposerSession,
-  ComposerTurn,
-} from './composer-session';
+import type { ComposerSession, ComposerTurn } from './composer-session';
 import type { ComposerSignedPreview } from './composer-signed-preview';
 
 export type ComposerCreationMode = 'customized' | 'free';
@@ -103,11 +100,7 @@ function RouteNotice({ message }: { message: string }) {
   );
 }
 
-function CandidateStream({
-  stream,
-}: {
-  stream: ResultTokenStreamProjection;
-}) {
+function CandidateStream({ stream }: { stream: ResultTokenStreamProjection }) {
   const primary = stream.primary;
   // D-113 / story 15: one primary candidate by default. Alternatives are an
   // opt-in disclosure, never a parallel grid of choices.
@@ -131,13 +124,14 @@ function CandidateStream({
             streaming={stream.streamPhase === 'drafting'}
           />
           {primary.conversionHook ? (
-            <p className="text-muted mt-2 text-xs">
-              {primary.conversionHook}
-            </p>
+            <p className="text-muted mt-2 text-xs">{primary.conversionHook}</p>
           ) : null}
         </div>
       ) : (
-        <div className="flex items-center gap-2" data-testid="composer-candidate-pending">
+        <div
+          className="flex items-center gap-2"
+          data-testid="composer-candidate-pending"
+        >
           <ChatLoader.Dots />
           <span className="text-muted text-xs">正在写第一版…</span>
         </div>
@@ -157,9 +151,9 @@ function CandidateStream({
         </details>
       ) : null}
       {stream.reconnectBanner ? (
-        <p className="text-muted mt-2 text-xs" role="status">
+        <output className="text-muted mt-2 block text-xs">
           {stream.reconnectBanner}
-        </p>
+        </output>
       ) : null}
     </section>
   );
@@ -230,7 +224,9 @@ export function ComposerConversation({
             type="button"
           >
             <p className="text-foreground text-sm font-medium">成品已就绪</p>
-            <p className="text-muted mt-1 text-xs">点开看完整成品、发布或导出</p>
+            <p className="text-muted mt-1 text-xs">
+              点开看完整成品、发布或导出
+            </p>
           </button>
         );
     }
@@ -325,7 +321,10 @@ export function ComposerPromptBar({
         selectedKey={creationMode}
         size="sm"
       >
-        <Segment.Item data-testid="composer-creation-mode-customized" id="customized">
+        <Segment.Item
+          data-testid="composer-creation-mode-customized"
+          id="customized"
+        >
           定制创作
         </Segment.Item>
         <Segment.Item data-testid="composer-creation-mode-free" id="free">
@@ -458,10 +457,7 @@ export function ComposerPromptBar({
           data-testid="composer-signed-preview"
         >
           {signedPreview.rows.map((row) => (
-            <span
-              data-testid={`composer-signed-row-${row.key}`}
-              key={row.key}
-            >
+            <span data-testid={`composer-signed-row-${row.key}`} key={row.key}>
               {row.label}：{row.value}
             </span>
           ))}

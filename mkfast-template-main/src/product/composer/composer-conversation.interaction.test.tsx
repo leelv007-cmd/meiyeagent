@@ -35,7 +35,9 @@ function running(): ComposerSession {
   );
 }
 
-function promptBar(overrides: Partial<Parameters<typeof ComposerPromptBar>[0]> = {}) {
+function promptBar(
+  overrides: Partial<Parameters<typeof ComposerPromptBar>[0]> = {}
+) {
   return (
     <ComposerPromptBar
       ariaLabel="描述这次想创作的内容"

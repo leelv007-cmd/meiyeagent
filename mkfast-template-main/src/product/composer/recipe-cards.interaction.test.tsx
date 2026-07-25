@@ -206,7 +206,9 @@ describe('Reuse content hands off to the conversation (D-031)', () => {
     expect(
       screen.queryByTestId('composer-reuse-content-panel')
     ).not.toBeInTheDocument();
-    expect(screen.queryByTestId('composer-reuse-confirm')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('composer-reuse-confirm')
+    ).not.toBeInTheDocument();
     for (const id of ['copy', 'image_text', 'video']) {
       expect(
         screen.queryByTestId(`composer-reuse-lens-${id}`)

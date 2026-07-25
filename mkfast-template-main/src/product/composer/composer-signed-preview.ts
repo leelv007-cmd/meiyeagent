@@ -14,11 +14,11 @@
  * vocabulary, and no cost figures (D-123 内部成本基准永不进前台).
  */
 
-import {
-  type ComposerContentPackagePlatform,
-  type ComposerDeliverableKind,
-  type ComposerDistributionTarget,
-  type ComposerSubmissionSignedFields,
+import type {
+  ComposerContentPackagePlatform,
+  ComposerDeliverableKind,
+  ComposerDistributionTarget,
+  ComposerSubmissionSignedFields,
 } from '@meiye/contracts';
 
 const PLATFORM_LABELS: Record<ComposerContentPackagePlatform, string> = {
