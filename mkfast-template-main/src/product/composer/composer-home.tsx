@@ -128,6 +128,7 @@ import { submitComposerSubmission } from './composer-submission-client';
 import {
   ComposerConversation,
   ComposerPromptBar,
+  focusComposerIntentInput,
   type ComposerCreationMode,
   type ComposerReuseChip,
 } from './composer-conversation';
@@ -270,7 +271,6 @@ export function ComposerHome({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const product = useProductState();
-  const intentRef = useRef<HTMLTextAreaElement | null>(null);
   const sourcePickerRef = useRef<HTMLElement | null>(null);
   const sourceFactsRef = useRef(new Map<string, ConfirmedAssetFacts>());
   const sourceRevisionRef = useRef(new Map<string, string>());
@@ -1322,7 +1322,7 @@ export function ComposerHome({
           } else {
             setLensState((current) => updateUserText(current, intent));
           }
-          intentRef.current?.focus();
+          focusComposerIntentInput();
         }}
       />
 
@@ -1331,10 +1331,10 @@ export function ComposerHome({
         loading={product.loading}
         onPrefill={(intent) => {
           setLensState((current) => updateUserText(current, intent));
-          intentRef.current?.focus();
+          focusComposerIntentInput();
         }}
         onRefresh={product.refresh}
-        onStart={() => intentRef.current?.focus()}
+        onStart={() => focusComposerIntentInput()}
         state={product.state}
       />
 
@@ -1440,7 +1440,7 @@ export function ComposerHome({
               { platform: chip.id }
             )
           );
-          intentRef.current?.focus();
+          focusComposerIntentInput();
         }}
         modelChannelReadiness={selectedModel?.channelReadiness ?? null}
         onSubmit={() => void attemptSubmit()}
@@ -1450,7 +1450,6 @@ export function ComposerHome({
         running={session.phase === 'running'}
         signedPreview={signedPreview}
         submitLabel={creation_entry_submit()}
-        textAreaRef={intentRef}
         value={userText}
       />
 
@@ -1543,7 +1542,7 @@ export function ComposerHome({
                 current.draft.userText.trim() || COMPOSER_REUSE_CHIPS[0]!.intent
               )
             );
-            intentRef.current?.focus();
+            focusComposerIntentInput();
           }}
           singleColumn={singleColumn}
           useBottomSheet={viewportKind === 'mobile'}
