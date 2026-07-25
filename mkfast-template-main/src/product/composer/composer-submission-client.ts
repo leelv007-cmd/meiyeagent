@@ -27,6 +27,7 @@ export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
       .strict(),
     identity: revisionReferenceSchema.optional(),
     idempotencyKey: identifierSchema,
+    creationMode: z.enum(['customized', 'free']),
     intent: z.string().trim().min(1).max(4_000),
     quote: revisionReferenceSchema,
     sources: z

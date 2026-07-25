@@ -482,6 +482,7 @@ function taskRequest(taskId = 'task-http-1') {
     packageId: 'package-1',
     expectedRevision: 0,
     workflowRevision: 1,
+    creationMode: 'customized' as const,
     rawInput: '把新团购做一套能发的',
     intent: {
       context: {

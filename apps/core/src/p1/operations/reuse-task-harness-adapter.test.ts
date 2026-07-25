@@ -51,6 +51,7 @@ test('reuse adapter submits a new Harness Task with current rights and no prior 
       packageId: 'reuse-task-reuse',
       expectedRevision: 0,
       workflowRevision: 3,
+      creationMode: 'customized',
       rawInput: '按当前价格续写。',
       factScope: { storeId: 'store-a', serviceId: 'scalp-clean' },
       reuseSeed: seed,

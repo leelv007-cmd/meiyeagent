@@ -59,7 +59,7 @@ test('five semantic stages run in order with stable effect keys and a delivery f
   assert.deepEqual(
     progress.map(({ message }) => message),
     [
-      '已确认这次的创作方向',
+      '这次会参考你的活动资料，让内容更贴合本店。',
       '已整理本次创作资料',
       '已整理本次创作要求',
       '已选出本次推荐文案',
@@ -164,8 +164,13 @@ test('one blocking question suspends and resumes before context injection', asyn
   const stages = fixtureStages();
   stages.nameIntent = async () => ({
     declaration: {
+      normalizedIntent: '推广本店团购',
       taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: [],
+      route: 'guidance',
+      routingSource: 'model',
       implicitConstraints: [],
     },
     blockingQuestion: {
@@ -233,6 +238,119 @@ test('one blocking question suspends and resumes before context injection', asyn
       revision: 4,
     },
   ]);
+});
+
+test('intent routing golden cases cover every D-111 quadrant twice', async () => {
+  const cases = [
+    { id: 'useful-store', intent: '按本店已确认的护理项目写朋友圈', initial: 'customized', decision: null, final: 'customized' },
+    { id: 'useful-ip', intent: '用已确认的老板娘口吻介绍开店初心', initial: 'customized', decision: null, final: 'customized' },
+    { id: 'no-gain-promotion', intent: '给新团购写一条推广文案', initial: 'guidance', decision: 'accepted', final: 'free' },
+    { id: 'no-gain-product', intent: '介绍一个还没录入资料的新项目', initial: 'guidance', decision: 'accepted', final: 'free' },
+    { id: 'completed-promotion', intent: '补齐团购项目和价格后生成文案', initial: 'guidance', decision: 'accepted', final: 'customized' },
+    { id: 'completed-ip', intent: '补齐主理人口吻后写开店故事', initial: 'guidance', decision: 'accepted', final: 'customized' },
+    { id: 'skipped-product', intent: '先跳过新品资料直接生成', initial: 'guidance', decision: 'ignored', final: 'free' },
+    { id: 'skipped-industry', intent: '先跳过行业信息直接生成', initial: 'guidance', decision: 'ignored', final: 'free' },
+  ] as const;
+
+  for (const golden of cases) {
+    const stages = fixtureStages();
+    let round = 0;
+    const initialDeclarations: string[] = [];
+    stages.nameIntent = async () => {
+      round += 1;
+      const route =
+        round === 1
+          ? golden.initial
+          : golden.id.startsWith('completed-')
+            ? 'customized'
+            : 'guidance';
+      initialDeclarations.push(route);
+      return {
+        declaration: {
+          normalizedIntent: golden.intent,
+          taskType: golden.intent.includes('口吻') || golden.intent.includes('开店')
+            ? 'brand_personal_ip'
+            : 'promotion_groupbuy_conversion',
+          deliveryLayer: 'copy',
+          relevantAssetCategories: ['promotion_activity'],
+          usedAssetCategories: route === 'customized' ? ['promotion_activity'] : [],
+          route,
+          routingSource: 'model',
+          implicitConstraints: [],
+        },
+        blockingQuestion:
+          route === 'guidance'
+            ? {
+                questionId: `question-${golden.id}`,
+                workflowId: `task-${golden.id}`,
+                workflowRevision: 4,
+                question: '方便补充这次最关键的项目资料吗？',
+                options: [],
+                freeText: { enabled: true },
+                response: {
+                  field: 'project_details',
+                  reason: '让这次内容更贴合你的实际情况',
+                },
+                scope: 'current_task',
+              }
+            : null,
+      };
+    };
+    let finalRoute: string | undefined;
+    const messages: string[] = [];
+    await runHarnessWorkflow(
+      `task-${golden.id}`,
+      {
+        ...taskInput(),
+        rawInput: golden.intent,
+        intent: {
+          ...taskInput().intent,
+          context: { ...taskInput().intent.context, intent: golden.intent },
+        },
+      },
+      stages,
+      {
+        async runStep(_key, operation) {
+          return operation();
+        },
+        async progress(event) {
+          messages.push(event.message);
+        },
+        async token() {},
+        async awaitDecision(question) {
+          assert.notEqual(golden.decision, null);
+          return {
+            idempotencyKey: `decision-${golden.id}`,
+            questionId: question.questionId,
+            workflowRevision: question.workflowRevision,
+            patch: {
+              field: question.response.field,
+              value: '本店当前资料',
+              reason: question.response.reason,
+            },
+            decision: {
+              state: golden.decision ?? 'ignored',
+              value: '本店当前资料',
+            },
+          };
+        },
+        async recordTrace(trace) {
+          if (trace.stage === 'intent_naming') {
+            finalRoute = (
+              trace.payload as { declaration: { route: string } }
+            ).declaration.route;
+          }
+        },
+      },
+    );
+    assert.equal(initialDeclarations[0], golden.initial, golden.id);
+    assert.equal(finalRoute, golden.final, golden.id);
+    const notice = messages.find((message) =>
+      message.includes('更贴合本店') || message.includes('通用模式'),
+    );
+    assert.ok(notice, golden.id);
+    assert.doesNotMatch(notice, /route|schema|asset|id|fallback/iu);
+  }
 });
 
 test('fallback prompt version and hash enter stage traces without prompt content', async () => {
@@ -375,8 +493,13 @@ function fixtureStages(): HarnessStagePorts {
     async nameIntent() {
       return {
         declaration: {
+          normalizedIntent: '推广本店团购',
           taskType: 'promotion_groupbuy_conversion',
           deliveryLayer: 'copy',
+          relevantAssetCategories: ['promotion_activity'],
+          usedAssetCategories: ['promotion_activity'],
+          route: 'customized',
+          routingSource: 'model',
           implicitConstraints: ['不得编造价格'],
         },
         blockingQuestion: null,
@@ -477,6 +600,7 @@ function taskInput() {
     packageId: 'package-1',
     expectedRevision: 2,
     workflowRevision: 4,
+    creationMode: 'customized' as const,
     rawInput: '把新团购做一套能发的',
     intent: {
       context: {
@@ -499,6 +623,7 @@ function mediaTaskInput(kind: 'image' | 'video'): HarnessWorkflowInput {
       workId: 'work-1',
       contentPackageId: 'package-1',
       expectedContentPackageRevision: 2,
+      creationMode: 'customized',
       intent: '把夏日护理项目做成可发布的素材',
       surface: { id: 'surface-1', revision: 'surface-r1' },
       recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
@@ -540,8 +665,13 @@ function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
     async nameIntent() {
       return {
         declaration: {
+          normalizedIntent: '制作团购成片',
           taskType: 'promotion_groupbuy_conversion',
           deliveryLayer: 'finished_media',
+          relevantAssetCategories: ['promotion_activity'],
+          usedAssetCategories: ['promotion_activity'],
+          route: 'customized',
+          routingSource: 'model',
           implicitConstraints: ['不得编造价格'],
         },
         blockingQuestion: null,

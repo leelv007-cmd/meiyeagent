@@ -18,10 +18,18 @@ export type {
   StructuredNodeRunnerRequest,
   StructuredNodeRunnerResult,
 } from '../model-supply/structured-node-runner.js';
-import type {
-  StructuredNodeRunner,
-  StructuredNodeRunnerResult,
+import {
+  StructuredNodeRunError,
+  type StructuredNodeRunner,
+  type StructuredNodeRunnerResult,
 } from '../model-supply/structured-node-runner.js';
+/*
+ * Only model/schema failures may enter the deterministic guidance fallback.
+ * Authorization and source-fence errors must keep failing closed.
+ */
+function isIntentModelFailure(error: unknown) {
+  return error instanceof z.ZodError || error instanceof StructuredNodeRunError;
+}
 
 export const HARNESS_TASK_TYPES = [
   'daily_service_exposure',
@@ -33,6 +41,26 @@ export const HARNESS_TASK_TYPES = [
 
 export const harnessTaskTypeSchema = z.enum(HARNESS_TASK_TYPES);
 export const deliveryLayerSchema = z.enum(['copy', 'finished_media']);
+export const intentRouteSchema = z.enum([
+  'customized',
+  'guidance',
+  'free',
+]);
+
+export const OPERATING_ASSET_CATEGORIES = [
+  'store',
+  'product_service',
+  'promotion_activity',
+  'brand',
+  'personal_ip',
+  'material',
+  'history_preference',
+  'industry_category',
+] as const;
+
+export const operatingAssetCategorySchema = z.enum(
+  OPERATING_ASSET_CATEGORIES,
+);
 
 const blockingGapSchema = z
   .object({
@@ -46,17 +74,63 @@ const blockingGapSchema = z
 
 export const intentNamingOutputSchema = z
   .object({
+    normalizedIntent: z.string().trim().min(1).max(4_000),
     taskType: harnessTaskTypeSchema,
     deliveryLayer: deliveryLayerSchema,
+    relevantAssetCategories: z
+      .array(operatingAssetCategorySchema)
+      .max(OPERATING_ASSET_CATEGORIES.length),
+    usedAssetCategories: z
+      .array(operatingAssetCategorySchema)
+      .max(OPERATING_ASSET_CATEGORIES.length),
+    route: z.enum(['customized', 'guidance']),
     implicitConstraints: z.array(z.string().trim().min(1)).max(30),
     blockingGap: blockingGapSchema.nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((output, context) => {
+    const relevant = new Set(output.relevantAssetCategories);
+    if (
+      output.usedAssetCategories.some((category) => !relevant.has(category))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Used asset categories must also be relevant.',
+        path: ['usedAssetCategories'],
+      });
+    }
+    if (output.route === 'customized') {
+      if (output.usedAssetCategories.length === 0) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Customized routing requires at least one useful category.',
+          path: ['usedAssetCategories'],
+        });
+      }
+      if (output.blockingGap !== null) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Customized routing cannot carry a guidance question.',
+          path: ['blockingGap'],
+        });
+      }
+    }
+    if (output.route === 'guidance' && output.blockingGap === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Guidance routing requires one focused question.',
+        path: ['blockingGap'],
+      });
+    }
+  });
 
 export type IntentDeclaration = Omit<
   z.infer<typeof intentNamingOutputSchema>,
-  'blockingGap'
->;
+  'blockingGap' | 'route'
+> & {
+  route: z.infer<typeof intentRouteSchema>;
+  routingSource: 'entry' | 'model' | 'fallback' | 'decision';
+};
 
 export const briefContextBundleSchema = contextBundleSchema;
 
@@ -191,15 +265,34 @@ export async function nameHarnessIntent(
   input: {
     workflowId: string;
     workflowRevision: number;
+    creationMode?: 'customized' | 'free';
+    deliveryLayer?: 'copy' | 'finished_media';
     intent: TaskIntentInput;
+    round?: number;
     prompt?: HarnessFrozenPrompt;
   },
   runner: StructuredNodeRunner,
   metrics?: StructuredNodeMetrics
 ) {
   const parsedIntent = taskIntentInputSchema.parse(input.intent);
+  if (input.creationMode === 'free') {
+    return {
+      declaration: {
+        normalizedIntent: parsedIntent.context.intent,
+        taskType: fallbackTaskType(parsedIntent.context.intent),
+        deliveryLayer: input.deliveryLayer ?? ('copy' as const),
+        relevantAssetCategories: [],
+        usedAssetCategories: [],
+        route: 'free' as const,
+        routingSource: 'entry' as const,
+        implicitConstraints: [],
+      },
+      blockingQuestion: null,
+      fallbackUsed: false,
+    };
+  }
   const request = {
-    effectIdempotencyKey: `wf:${input.workflowId}:s1:intent:0`,
+    effectIdempotencyKey: `wf:${input.workflowId}:s1:intent:${input.round ?? 0}`,
     schemaName: 'harness_intent_naming_v1',
     schemaRevision: 'intent-naming-v1',
     instructions:
@@ -207,18 +300,38 @@ export async function nameHarnessIntent(
     prompt: canonicalJson(parsedIntent),
     schema: intentNamingOutputSchema,
   };
-  const result = await runMeasured(
-    request,
-    runner,
-    metrics,
-    intentCompletenessShape
-  );
+  let result: StructuredNodeRunnerResult<
+    z.infer<typeof intentNamingOutputSchema>
+  >;
+  let fallbackUsed = false;
+  try {
+    result = await runMeasured(
+      request,
+      runner,
+      metrics,
+      intentCompletenessShape
+    );
+  } catch (error) {
+    if (!isIntentModelFailure(error)) throw error;
+    fallbackUsed = true;
+    result = {
+      output: fallbackIntentOutput(parsedIntent),
+      attempts: 1,
+      providerTaskRef: 'deterministic-guidance-fallback',
+      replayed: false,
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }
   const { blockingGap, ...declaration } = result.output;
   return {
-    declaration,
+    declaration: {
+      ...declaration,
+      routingSource: fallbackUsed ? ('fallback' as const) : ('model' as const),
+    },
     blockingQuestion: blockingGap
       ? toQuestionCard(input.workflowId, input.workflowRevision, blockingGap)
       : null,
+    fallbackUsed,
   };
 }
 
@@ -308,8 +421,12 @@ interface CompletenessRule {
 }
 
 const intentCompletenessShape = {
+  normalizedIntent: {},
   taskType: {},
   deliveryLayer: {},
+  relevantAssetCategories: {},
+  usedAssetCategories: {},
+  route: {},
   implicitConstraints: {},
   blockingGap: {
     optional: true,
@@ -457,10 +574,92 @@ function toQuestionCard(
     freeText: { enabled: gap.allowFreeText },
     response: {
       field: gap.field,
-      reason: '补充当前任务所需的权威事实',
+      reason: '让这次内容更贴合你的实际情况',
     },
     scope: gap.scope,
   });
+}
+
+function fallbackIntentOutput(
+  intent: TaskIntentInput,
+): z.infer<typeof intentNamingOutputSchema> {
+  const text = intent.context.intent;
+  const gap = fallbackGuidanceGap(text);
+  return intentNamingOutputSchema.parse({
+    normalizedIntent: text,
+    taskType: fallbackTaskType(text),
+    deliveryLayer: 'copy',
+    relevantAssetCategories: gap.categories,
+    usedAssetCategories: [],
+    route: 'guidance',
+    implicitConstraints: [],
+    blockingGap: gap.question,
+  });
+}
+
+function fallbackTaskType(text: string) {
+  if (/团购|优惠|套餐|活动/u.test(text)) {
+    return 'promotion_groupbuy_conversion' as const;
+  }
+  if (/老板|主理人|人设|口吻|个人\s*IP|个人ip/iu.test(text)) {
+    return 'brand_personal_ip' as const;
+  }
+  if (/热点|同城|节日|周末/u.test(text)) {
+    return 'traffic_opportunity' as const;
+  }
+  if (/海报|物料|说明卡/u.test(text)) {
+    return 'routine_marketing_materials' as const;
+  }
+  return 'daily_service_exposure' as const;
+}
+
+function fallbackGuidanceGap(text: string) {
+  if (/团购|优惠|套餐|活动/u.test(text)) {
+    return {
+      categories: ['promotion_activity', 'product_service'] as const,
+      question: {
+        field: 'promotion_details',
+        question: '方便补充这次活动的项目和价格档吗？',
+        options: [],
+        allowFreeText: true,
+        scope: 'current_task' as const,
+      },
+    };
+  }
+  if (/老板|主理人|人设|口吻|个人\s*IP|个人ip/iu.test(text)) {
+    return {
+      categories: ['personal_ip'] as const,
+      question: {
+        field: 'personal_ip_details',
+        question: '这次希望由谁来讲，用什么样的口吻？',
+        options: [],
+        allowFreeText: true,
+        scope: 'current_task' as const,
+      },
+    };
+  }
+  if (/新品|新项目|上新/u.test(text)) {
+    return {
+      categories: ['product_service'] as const,
+      question: {
+        field: 'product_details',
+        question: '方便补充新品名称和最想突出的亮点吗？',
+        options: [],
+        allowFreeText: true,
+        scope: 'current_task' as const,
+      },
+    };
+  }
+  return {
+    categories: ['industry_category'] as const,
+    question: {
+      field: 'industry_category',
+      question: '这次内容主要属于哪一类美业服务？',
+      options: ['美发', '美甲', '皮肤管理'],
+      allowFreeText: true,
+      scope: 'current_task' as const,
+    },
+  };
 }
 
 function canonicalJson(value: unknown): string {

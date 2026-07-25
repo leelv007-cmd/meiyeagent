@@ -5,6 +5,7 @@ import {
   HARNESS_STAGES,
   chipsSignalInputSchema,
   contentPackageRevisionDeliverySchema,
+  creationModeSchema,
   firstUsableDraftMetricSchema,
   harnessStageSchema,
   harnessTaskSubmissionSchema,
@@ -36,6 +37,9 @@ test('freezes the five harness stage protocol values', () => {
   ]);
   assert.equal(harnessStageSchema.safeParse('intent_naming').success, true);
   assert.equal(harnessStageSchema.safeParse('上下文注入').success, false);
+  assert.equal(creationModeSchema.safeParse('customized').success, true);
+  assert.equal(creationModeSchema.safeParse('free').success, true);
+  assert.equal(creationModeSchema.safeParse('guidance').success, false);
 });
 
 test('parses and round-trips the three frontend inputs', () => {
@@ -58,6 +62,7 @@ test('parses and round-trips the three frontend inputs', () => {
     packageId: 'package-1',
     expectedRevision: 0,
     workflowRevision: 1,
+    creationMode: 'customized',
     rawInput: intent.context.intent,
     intent,
   };

@@ -71,8 +71,13 @@ test('identity revocation rejects the stale persona, falls back safely, and inva
     workflowId: 'task-identity-revocation',
     request: taskInput(),
     declaration: {
+      normalizedIntent: '用主理人口吻介绍本店服务',
       taskType: 'brand_personal_ip' as const,
       deliveryLayer: 'copy' as const,
+      relevantAssetCategories: ['personal_ip' as const],
+      usedAssetCategories: ['personal_ip' as const],
+      route: 'customized' as const,
+      routingSource: 'model' as const,
       implicitConstraints: ['绝不冒用已撤权身份'],
     },
   };
@@ -252,6 +257,7 @@ function taskInput(): HarnessWorkflowInput {
     packageId: 'package-1',
     expectedRevision: 1,
     workflowRevision: 2,
+    creationMode: 'customized',
     rawInput: '继续用小林老师的口吻写发色选择栏目',
     intent: {
       context: {

@@ -213,7 +213,16 @@ test('material package freezes the four first-release Light Composer specs', () 
 });
 
 function declaration(taskType: IntentDeclaration['taskType']): IntentDeclaration {
-  return { taskType, deliveryLayer: 'copy' as const, implicitConstraints: [] };
+  return {
+    normalizedIntent: '完成本次美业内容创作',
+    taskType,
+    deliveryLayer: 'copy',
+    relevantAssetCategories: ['industry_category'],
+    usedAssetCategories: ['industry_category'],
+    route: 'customized',
+    routingSource: 'model',
+    implicitConstraints: [],
+  };
 }
 
 function request(rawInput: string): HarnessWorkflowInput {
@@ -223,6 +232,7 @@ function request(rawInput: string): HarnessWorkflowInput {
     packageId: 'package-1',
     expectedRevision: 0,
     workflowRevision: 1,
+    creationMode: 'customized',
     rawInput,
     intent: {
       context: { workId: 'work-1', intent: rawInput, sourceSummaries: [] },

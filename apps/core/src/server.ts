@@ -1529,13 +1529,14 @@ export function createCoreServer({
       harnessDecisionMatch
     ) {
       try {
-        const workspaceId = harnessDecisionMatch[1]!;
+        const workspaceId = decodeURIComponent(harnessDecisionMatch[1]!);
+        const taskId = decodeURIComponent(harnessDecisionMatch[2]!);
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
         if (request.method === 'GET') {
           const question = await harnessService.readPendingDecision(
             workspaceId,
-            harnessDecisionMatch![2]!
+            taskId
           );
           sendJson(response, 200, { question }, requestCorrelationId);
         } else {
@@ -1544,7 +1545,7 @@ export function createCoreServer({
           );
           const result = await harnessService.submitDecision(
             workspaceId,
-            harnessDecisionMatch![2]!,
+            taskId,
             decision
           );
           sendJson(response, 200, result, requestCorrelationId);

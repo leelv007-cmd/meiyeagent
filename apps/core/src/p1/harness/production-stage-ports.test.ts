@@ -23,8 +23,12 @@ import type {
 test('production tracer rejects a finished-media intent before execution', async () => {
   const runner = new QueueRunner([
     {
+      normalizedIntent: '制作团购成片',
       taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'finished_media',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
       implicitConstraints: [],
       blockingGap: null,
     },
@@ -54,8 +58,12 @@ test('production tracer rejects a finished-media intent before execution', async
 test('an existing frozen fact suppresses the matching blocking QuestionCard', async () => {
   const runner = new QueueRunner([
     {
+      normalizedIntent: '推广本店团购',
       taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: [],
+      route: 'guidance',
       implicitConstraints: ['价格必须来自事实'],
       blockingGap: {
         field: 'offer_price',
@@ -103,8 +111,12 @@ test('an existing frozen fact suppresses the matching blocking QuestionCard', as
 test('ambiguous service price facts keep the blocking QuestionCard', async () => {
   const runner = new QueueRunner([
     {
+      normalizedIntent: '推广本店团购',
       taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: [],
+      route: 'guidance',
       implicitConstraints: ['价格必须来自当前服务事实'],
       blockingGap: {
         field: 'offer_price',
@@ -154,8 +166,12 @@ test('ambiguous service price facts keep the blocking QuestionCard', async () =>
 test('same-scope facts with the same key keep the blocking QuestionCard before bundle folding', async () => {
   const runner = new QueueRunner([
     {
+      normalizedIntent: '推广本店团购',
       taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: [],
+      route: 'guidance',
       implicitConstraints: ['价格必须唯一'],
       blockingGap: {
         field: 'offer_price',
@@ -244,8 +260,13 @@ test('production Copy stage keeps the frozen structured platform over model outp
       executionSnapshot: snapshot,
     },
     declaration: {
+      normalizedIntent: '介绍日常护理服务',
       taskType: 'daily_service_exposure',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: ['industry_category'],
+      route: 'customized',
+      routingSource: 'model',
       implicitConstraints: [],
     },
     context: contextSnapshot(),
@@ -400,8 +421,13 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
       workflowRevision: snapshot.revision,
     },
     declaration: {
+      normalizedIntent: '介绍日常护理服务',
       taskType: 'daily_service_exposure',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: ['industry_category'],
+      route: 'customized',
+      routingSource: 'model',
       implicitConstraints: [],
     },
     context: contextSnapshot(),
@@ -523,8 +549,13 @@ test('a source ContentPackage enters the Copy Brief and fails closed after revoc
     workflowRevision: snapshot.revision,
   };
   const declaration = {
+    normalizedIntent: '介绍日常护理服务',
     taskType: 'daily_service_exposure' as const,
     deliveryLayer: 'copy' as const,
+    relevantAssetCategories: ['industry_category' as const],
+    usedAssetCategories: ['industry_category' as const],
+    route: 'customized' as const,
+    routingSource: 'model' as const,
     implicitConstraints: [],
   };
 
@@ -629,8 +660,13 @@ test('only selected source-package assets can cross Brief, selection, and delive
   const snapshot = composerSnapshot(source);
   const request = composerRequest(snapshot);
   const declaration = {
+    normalizedIntent: '介绍日常护理服务',
     taskType: 'daily_service_exposure' as const,
     deliveryLayer: 'copy' as const,
+    relevantAssetCategories: ['industry_category' as const],
+    usedAssetCategories: ['industry_category' as const],
+    route: 'customized' as const,
+    routingSource: 'model' as const,
     implicitConstraints: [],
   };
   const context = contextWithSourcePackage();
@@ -717,8 +753,12 @@ test('source revocation after c01 prevents c02 provider work and delivery', asyn
   const source = { id: 'source-package-1', revision: '3' };
   const runner = new QueueRunner([
     {
+      normalizedIntent: '介绍日常护理服务',
       taskType: 'daily_service_exposure',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: ['industry_category'],
+      route: 'customized',
       implicitConstraints: [],
       blockingGap: null,
     },
@@ -820,8 +860,13 @@ test('source revocation between auto fallback attempts stops the second provider
       workflowId: snapshot.task.id,
       request,
       declaration: {
+        normalizedIntent: '介绍日常护理服务',
         taskType: 'daily_service_exposure',
         deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
+        routingSource: 'model',
         implicitConstraints: [],
       },
       context: contextWithSourcePackage(),
@@ -862,8 +907,13 @@ test('a Composer Copy snapshot rejects brief assets outside its frozen sources',
         workflowRevision: snapshot.revision,
       },
       declaration: {
+        normalizedIntent: '介绍日常护理服务',
         taskType: 'daily_service_exposure',
         deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
+        routingSource: 'model',
         implicitConstraints: [],
       },
       context: contextSnapshot(),
@@ -904,8 +954,12 @@ test('a Composer Copy snapshot rejects brief assets outside its frozen sources',
 test('production ports compose #31, canonical gates, N-to-1 and copy delivery', async () => {
   const runner = new QueueRunner([
     {
+      normalizedIntent: '推广本店团购',
       taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
       implicitConstraints: ['不得编造价格'],
       blockingGap: null,
     },
@@ -979,7 +1033,7 @@ test('production ports compose #31, canonical gates, N-to-1 and copy delivery', 
     initial: { calls: 1, schemaValid: 1, schemaInvalid: 0 },
     repair: { status: 'unsupported' },
     retry: { triggered: 0 },
-    nestedCompleteness: { complete: 3, total: 3 },
+    nestedCompleteness: { complete: 7, total: 7 },
   });
   assert.deepEqual(traces.get('brief_compilation')?.metrics, {
     initial: { calls: 1, schemaValid: 1, schemaInvalid: 0 },
@@ -1457,6 +1511,7 @@ function taskInput() {
     packageId: 'package-1',
     expectedRevision: 2,
     workflowRevision: 4,
+    creationMode: 'customized' as const,
     rawInput: '把新团购做一套能发的',
     intent: {
       context: {
@@ -1573,6 +1628,7 @@ function composerSnapshot(
       workId: 'work-1',
       contentPackageId: 'package-1',
       expectedContentPackageRevision: 0,
+      creationMode: 'customized',
       intent: '请为小红书写一条护理预约文案，但结构化平台实际选择抖音。',
       surface: { id: 'surface-1', revision: 'surface-r1' },
       recipe: { id: 'recipe-1', revision: 'recipe-r1' },

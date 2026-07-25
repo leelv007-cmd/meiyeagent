@@ -3,6 +3,7 @@ import {
 	composerDistributionTargetSchema,
 	composerSubmissionDeliverableSchema,
 	composerSubmissionSignedFieldsSchema,
+	creationModeSchema,
 	creativeContentModuleIds,
 } from "@meiye/contracts";
 import { z } from "zod";
@@ -107,6 +108,7 @@ const creationSubmissionCommandBaseSchema = z
 		workId: identifierSchema,
 		contentPackageId: identifierSchema,
 		expectedContentPackageRevision: z.number().int().nonnegative(),
+		creationMode: creationModeSchema,
 		intent: z.string().trim().min(1).max(4_000),
 		surface: revisionReferenceSchema,
 		recipe: revisionReferenceSchema,
@@ -189,6 +191,7 @@ export const creationExecutionSnapshotSchema = z
 				expectedRevision: z.number().int().nonnegative(),
 			})
 			.strict(),
+		creationMode: creationModeSchema,
 		intent: z.object({ text: z.string().trim().min(1).max(4_000) }).strict(),
 		surface: revisionReferenceSchema,
 		recipe: revisionReferenceSchema,
@@ -236,6 +239,7 @@ export function createCreationExecutionSnapshot(
 				id: command.contentPackageId,
 				expectedRevision: command.expectedContentPackageRevision,
 			},
+			creationMode: command.creationMode,
 			intent: { text: command.intent },
 			surface: command.surface,
 			recipe: command.recipe,

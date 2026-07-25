@@ -171,7 +171,15 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       {
         workflowId: input.workflowId,
         workflowRevision: input.request.workflowRevision,
+        // Replay fallback only for durable workflows enqueued before creationMode existed.
+        creationMode: input.request.creationMode ?? 'customized',
+        deliveryLayer:
+          input.request.executionSnapshot?.lens === 'image' ||
+          input.request.executionSnapshot?.lens === 'video'
+            ? 'finished_media'
+            : 'copy',
         intent: input.request.intent,
+        round: input.round,
         prompt: input.request.prompts?.intentNaming,
       },
       runner,
@@ -189,7 +197,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       const snapshot = await this.context.compileAndFreeze({
         workflowId: input.workflowId,
         request: input.request,
-        declaration: result.declaration,
+        declaration: {
+          ...result.declaration,
+          route: 'customized',
+        },
       });
       const factKey = result.blockingQuestion.questionId.split(':s1:')[1];
       const activeFactReferences =
@@ -205,7 +216,19 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           )
         : [];
       if (matchingFacts.length === 1) {
-        return { ...measured, blockingQuestion: null };
+        return {
+          ...measured,
+          declaration: {
+            ...measured.declaration,
+            route: 'customized' as const,
+            routingSource: 'decision' as const,
+            usedAssetCategories:
+              measured.declaration.usedAssetCategories.length > 0
+                ? measured.declaration.usedAssetCategories
+                : ['store' as const],
+          },
+          blockingQuestion: null,
+        };
       }
     }
     return measured;
@@ -654,7 +677,16 @@ function inferDeclarationFromBundle(
   ) {
     throw new Error('Frozen context is missing a supported marketing scene.');
   }
-  return { taskType, deliveryLayer: 'copy', implicitConstraints: [] };
+  return {
+    normalizedIntent: '按已确认资料完成本次创作',
+    taskType,
+    deliveryLayer: 'copy',
+    relevantAssetCategories: ['store'],
+    usedAssetCategories: ['store'],
+    route: 'customized',
+    routingSource: 'model',
+    implicitConstraints: [],
+  };
 }
 
 function containsConcreteOfferCopy(candidate: unknown) {

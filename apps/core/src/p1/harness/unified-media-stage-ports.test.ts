@@ -122,8 +122,13 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 			workflowId: snapshot.task.id,
 			request,
 			declaration: {
+				normalizedIntent: "制作团购成片",
 				taskType: "promotion_groupbuy_conversion" as const,
 				deliveryLayer: "finished_media" as const,
+				relevantAssetCategories: ["promotion_activity" as const],
+				usedAssetCategories: ["promotion_activity" as const],
+				route: "customized" as const,
+				routingSource: "model" as const,
 				implicitConstraints: [],
 			},
 			context: {} as HarnessContextSnapshot,
@@ -198,6 +203,7 @@ function harnessInput(
 			workId: "work-1",
 			contentPackageId: packageId,
 			expectedContentPackageRevision: 0,
+			creationMode: "customized",
 			intent: "把夏日护理项目做成可发布的素材",
 			surface: { id: "surface-1", revision: "surface-r1" },
 			recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
@@ -236,6 +242,7 @@ function harnessInput(
 		packageId,
 		expectedRevision: snapshot.contentPackage.expectedRevision,
 		workflowRevision: snapshot.revision,
+		creationMode: snapshot.creationMode,
 		rawInput: snapshot.intent.text,
 		intent: {
 			context: {

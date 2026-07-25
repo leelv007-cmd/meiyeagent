@@ -541,6 +541,7 @@ function submission(): ComposerSubmissionRequest {
 		contentPackagePlatform: "douyin",
 		distributionTarget: "export",
 		deliverable: { kind: "copy_document", quantity: 1 },
+		creationMode: "customized",
 		contentModules: ["social_cover"],
 		deliverables: [{ id: "copy-main", kind: "copy", order: 1, quantity: 1 }],
 		identity: { id: "identity-brand", revision: "3" },

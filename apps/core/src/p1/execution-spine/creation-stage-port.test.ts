@@ -33,6 +33,7 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 			packageId: "package-1",
 			expectedRevision: 0,
 			workflowRevision: 1,
+			creationMode: "customized",
 			rawInput: "为夏日护理项目写一条预约文案",
 			intent: {
 				context: {
@@ -56,6 +57,7 @@ function command() {
 		workId: "work-1",
 		contentPackageId: "package-1",
 		expectedContentPackageRevision: 0,
+		creationMode: "customized" as const,
 		intent: "为夏日护理项目写一条预约文案",
 		surface: { id: "surface-1", revision: "surface-r1" },
 		recipe: { id: "recipe-1", revision: "recipe-r1" },

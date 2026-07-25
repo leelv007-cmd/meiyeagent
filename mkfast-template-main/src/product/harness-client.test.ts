@@ -37,6 +37,7 @@ test('submits one validated harness task to the collection boundary', async () =
         packageId: 'package-1',
         expectedRevision: 0,
         workflowRevision: 1,
+        creationMode: 'customized',
         rawInput: '把新团购做一套能发的',
         intent: {
           assetReferences: ['asset-1'],

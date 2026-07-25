@@ -14,6 +14,7 @@ function submissionBody() {
     contentPackagePlatform: 'douyin' as const,
     distributionTarget: 'export' as const,
     deliverable: { kind: 'copy_document' as const, quantity: 1 },
+    creationMode: 'customized' as const,
     identity: { id: 'identity-brand', revision: '2' },
     idempotencyKey: 'composer-submit-1',
     intent: '写一条夏日护理预约文案',

@@ -9,6 +9,7 @@ import {
   type StructuredNodeRunnerRequest,
 } from './structured-nodes.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
 
 const taskFixtures = [
   ['daily_service_exposure', '把新项目写成一条朋友圈文案'],
@@ -25,8 +26,12 @@ test('intent naming covers five task types across both delivery layers', async (
     for (const deliveryLayer of deliveryFixtures) {
       const metrics = new InMemoryStructuredNodeMetrics();
       const runner = new FixtureStructuredNodeRunner({
+        normalizedIntent: intent,
         taskType,
         deliveryLayer,
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
         implicitConstraints: ['只使用已确认的本店事实'],
         blockingGap: null,
       });
@@ -60,7 +65,7 @@ test('intent naming covers five task types across both delivery layers', async (
         initial: { calls: 1, schemaValid: 1, schemaInvalid: 0 },
         repair: { status: 'unsupported' },
         retry: { triggered: 0 },
-        nestedCompleteness: { complete: 3, total: 3 },
+        nestedCompleteness: { complete: 7, total: 7 },
       });
     }
   }
@@ -68,8 +73,12 @@ test('intent naming covers five task types across both delivery layers', async (
 
 test('intent naming turns one blocking gap into one QuestionCard', async () => {
   const runner = new FixtureStructuredNodeRunner({
+    normalizedIntent: '推广新团购并带动预约',
     taskType: 'promotion_groupbuy_conversion',
     deliveryLayer: 'copy',
+    relevantAssetCategories: ['promotion_activity', 'product_service'],
+    usedAssetCategories: [],
+    route: 'guidance',
     implicitConstraints: ['价格必须来自当前有效事实'],
     blockingGap: {
       field: 'offer_price',
@@ -108,7 +117,7 @@ test('intent naming turns one blocking gap into one QuestionCard', async () => {
     freeText: { enabled: true },
     response: {
       field: 'offer_price',
-      reason: '补充当前任务所需的权威事实',
+      reason: '让这次内容更贴合你的实际情况',
     },
     scope: 'current_task',
   });
@@ -161,8 +170,13 @@ test('brief compilation produces complete copy, image and video unit briefs', as
         unitId: `${kind}-primary`,
         unitKind: kind,
         declaration: {
+          normalizedIntent: '介绍日常护理服务',
           taskType: 'daily_service_exposure',
           deliveryLayer: kind === 'video' ? 'finished_media' : 'copy',
+          relevantAssetCategories: ['industry_category'],
+          usedAssetCategories: ['industry_category'],
+          route: 'customized',
+          routingSource: 'model',
           implicitConstraints: ['只使用已确认信息'],
         },
         bundle: contextBundleFixture(),
@@ -222,6 +236,7 @@ test('brief compilation receives the frozen structured Composer contract before 
       workId: 'work-1',
       contentPackageId: 'package-1',
       expectedContentPackageRevision: 0,
+      creationMode: 'customized',
       intent: '请写一条小红书护理预约文案',
       surface: { id: 'surface-1', revision: 'surface-r1' },
       recipe: { id: 'recipe-1', revision: 'recipe-r1' },
@@ -250,8 +265,13 @@ test('brief compilation receives the frozen structured Composer contract before 
       unitId: 'copy-primary',
       unitKind: 'copy',
       declaration: {
+        normalizedIntent: '介绍护理服务并邀请预约',
         taskType: 'daily_service_exposure',
         deliveryLayer: 'copy',
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: ['industry_category'],
+        route: 'customized',
+        routingSource: 'model',
         implicitConstraints: [],
       },
       bundle: contextBundleFixture(),
@@ -292,8 +312,12 @@ test('nested completeness reports partial non-empty output independently from sc
       },
     },
     new FixtureStructuredNodeRunner({
+      normalizedIntent: '介绍日常护理',
       taskType: 'daily_service_exposure',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: ['industry_category'],
+      route: 'customized',
       implicitConstraints: [],
       blockingGap: null,
     }),
@@ -311,8 +335,12 @@ test('nested completeness reports partial non-empty output independently from sc
 
 test('structured nodes execute the prompt content frozen at task admission', async () => {
   const runner = new FixtureStructuredNodeRunner({
+    normalizedIntent: '介绍日常护理',
     taskType: 'daily_service_exposure',
     deliveryLayer: 'copy',
+    relevantAssetCategories: ['industry_category'],
+    usedAssetCategories: ['industry_category'],
+    route: 'customized',
     implicitConstraints: [],
     blockingGap: null,
   });
@@ -348,7 +376,7 @@ test('structured nodes execute the prompt content frozen at task admission', asy
   );
 });
 
-test('nested completeness reaches one for recursively full output', async () => {
+test('nested completeness reports an empty optional choice list honestly', async () => {
   const metrics = new InMemoryStructuredNodeMetrics();
   await nameHarnessIntent(
     {
@@ -364,8 +392,12 @@ test('nested completeness reaches one for recursively full output', async () => 
       },
     },
     new FixtureStructuredNodeRunner({
+      normalizedIntent: '推广当前团购',
       taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity', 'product_service'],
+      usedAssetCategories: [],
+      route: 'guidance',
       implicitConstraints: ['只使用当前有效价格'],
       blockingGap: {
         field: 'offer_price',
@@ -379,15 +411,18 @@ test('nested completeness reaches one for recursively full output', async () => 
   );
 
   const completeness = metrics.snapshot().nestedCompleteness;
-  assert.deepEqual(completeness, { complete: 9, total: 9 });
-  assert.equal(completeness.complete / completeness.total, 1);
+  assert.deepEqual(completeness, { complete: 12, total: 13 });
 });
 
 test('intent output rejects more than one blocking gap by construction', () => {
   assert.equal(
     intentNamingOutputSchema.safeParse({
+      normalizedIntent: '介绍日常护理',
       taskType: 'daily_service_exposure',
       deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: [],
+      route: 'guidance',
       implicitConstraints: [],
       blockingGaps: [{ field: 'price' }, { field: 'rights' }],
     }).success,
@@ -395,17 +430,102 @@ test('intent output rejects more than one blocking gap by construction', () => {
   );
 });
 
-test('metrics distinguish invalid initial schema from unsupported repair', async () => {
+test('free entry is declared without asking the model to choose the route', async () => {
+  const runner = new FixtureStructuredNodeRunner({});
+  const named = await nameHarnessIntent(
+    {
+      workflowId: 'workflow-free-entry',
+      workflowRevision: 1,
+      creationMode: 'free',
+      intent: {
+        context: {
+          workId: 'work-free',
+          intent: '随手写一条护理预约文案',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+    },
+    runner,
+  );
+  assert.equal(named.declaration.route, 'free');
+  assert.equal(named.declaration.routingSource, 'entry');
+  assert.equal(named.blockingQuestion, null);
+  assert.equal(runner.requests.length, 0);
+});
+
+test('model failures choose intent-specific conservative guidance', async () => {
+  const cases = [
+    ['推广新团购', 'promotion_details'],
+    ['用老板娘本人风格写开店故事', 'personal_ip_details'],
+    ['介绍刚上的新项目', 'product_details'],
+  ] as const;
+  for (const [intent, expectedField] of cases) {
+    const runner: StructuredNodeRunner = {
+      async run() {
+        throw new StructuredNodeRunError('failed', 'rejected_before_accept');
+      },
+    };
+    const named = await nameHarnessIntent(
+      {
+        workflowId: `workflow-fallback-${expectedField}`,
+        workflowRevision: 1,
+        creationMode: 'customized',
+        intent: {
+          context: { workId: 'work-fallback', intent, sourceSummaries: [] },
+          assetReferences: [],
+        },
+      },
+      runner,
+    );
+    assert.equal(named.declaration.route, 'guidance');
+    assert.equal(named.declaration.routingSource, 'fallback');
+    assert.equal(named.blockingQuestion?.response.field, expectedField);
+    assert.equal(named.blockingQuestion?.freeText.enabled, true);
+  }
+});
+
+test('authorization and source-fence errors never become routing fallback', async () => {
+  const runner: StructuredNodeRunner = {
+    async run() {
+      throw new Error('SOURCE_REFERENCE_UNVERIFIED');
+    },
+  };
+  await assert.rejects(
+    nameHarnessIntent(
+      {
+        workflowId: 'workflow-hard-gate',
+        workflowRevision: 1,
+        creationMode: 'customized',
+        intent: {
+          context: {
+            workId: 'work-hard-gate',
+            intent: '写一条项目文案',
+            sourceSummaries: [],
+          },
+          assetReferences: ['asset-unverified'],
+        },
+      },
+      runner,
+    ),
+    /SOURCE_REFERENCE_UNVERIFIED/u,
+  );
+});
+
+test('invalid model output falls back to conservative guidance', async () => {
   const metrics = new InMemoryStructuredNodeMetrics();
   const runner = new FixtureStructuredNodeRunner({
+    normalizedIntent: '随便做点内容',
     taskType: 'unknown_task',
     deliveryLayer: 'copy',
+    relevantAssetCategories: ['industry_category'],
+    usedAssetCategories: [],
+    route: 'guidance',
     implicitConstraints: [],
     blockingGap: null,
   });
 
-  await assert.rejects(
-    nameHarnessIntent(
+  const named = await nameHarnessIntent(
       {
         workflowId: 'workflow-invalid',
         workflowRevision: 0,
@@ -420,14 +540,16 @@ test('metrics distinguish invalid initial schema from unsupported repair', async
       },
       runner,
       metrics
-    ),
-    /Invalid option/u
-  );
+    );
+  assert.equal(named.declaration.route, 'guidance');
+  assert.equal(named.declaration.routingSource, 'fallback');
+  assert.equal(named.blockingQuestion?.response.field, 'industry_category');
+  assert.equal(named.fallbackUsed, true);
   assert.deepEqual(metrics.snapshot(), {
     initial: { calls: 1, schemaValid: 0, schemaInvalid: 1 },
     repair: { status: 'unsupported' },
     retry: { triggered: 0 },
-    nestedCompleteness: { complete: 0, total: 3 },
+    nestedCompleteness: { complete: 0, total: 7 },
   });
 });
 

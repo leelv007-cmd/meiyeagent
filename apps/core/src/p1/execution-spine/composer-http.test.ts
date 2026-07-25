@@ -1113,6 +1113,7 @@ function submissionPayload(): ComposerSubmissionBody {
 			quantity: 1,
 			aspectRatio: "3:4",
 		},
+		creationMode: "customized",
 		contentModules: ["social_cover"],
 		deliverables: [
 			{

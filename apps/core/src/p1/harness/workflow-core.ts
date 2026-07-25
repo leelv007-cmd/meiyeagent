@@ -74,10 +74,12 @@ export interface HarnessStagePorts {
   nameIntent(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
+    round?: number;
   }): Promise<{
     declaration: IntentDeclaration;
     blockingQuestion: QuestionCard | null;
     metrics?: StructuredNodeMetricsSnapshot;
+    fallbackUsed?: boolean;
   }>;
   injectContext(input: {
     workflowId: string;
@@ -234,17 +236,19 @@ export async function runHarnessWorkflow(
     harnessEffectKey(workflowId, 1, 'intent', '0'),
     () => ports.nameIntent({ workflowId, request }),
   );
-  if (intent.blockingQuestion) {
-    await reportProgress({
-      stage: 'intent_naming',
-      state: 'suspended',
-      message: intent.blockingQuestion.question,
-    });
-    const decision = await runtime.awaitDecision(intent.blockingQuestion);
-    activeRequest = applyCurrentTaskDecision(request, decision);
-  }
+  const routed = await resolveIntentRoute({
+    workflowId,
+    request,
+    intent,
+    ports,
+    runtime,
+    reportProgress,
+  });
+  activeRequest = routed.request;
   await trace(runtime, workflowId, 'intent_naming', {
-    declaration: intent.declaration,
+    // Replay fallback only for durable workflows enqueued before creationMode existed.
+    entryMode: request.creationMode ?? 'customized',
+    declaration: routed.declaration,
     questionId: intent.blockingQuestion?.questionId ?? null,
     ...(request.prompts?.intentNaming
       ? { prompt: promptTraceReference(request.prompts.intentNaming) }
@@ -254,7 +258,7 @@ export async function runHarnessWorkflow(
   await reportProgress({
     stage: 'intent_naming',
     state: 'success',
-    message: '已确认这次的创作方向',
+    message: merchantRouteMessage(routed.declaration),
   });
 
   let bundle = await runtime.runStep(
@@ -263,7 +267,7 @@ export async function runHarnessWorkflow(
       ports.injectContext({
         workflowId,
         request: activeRequest,
-        declaration: intent.declaration,
+        declaration: routed.declaration,
       }),
   );
   await trace(runtime, workflowId, 'context_injection', {
@@ -284,7 +288,7 @@ export async function runHarnessWorkflow(
       ports.compileBrief({
         workflowId,
         request: activeRequest,
-        declaration: intent.declaration,
+        declaration: routed.declaration,
         context: bundle,
       }),
   );
@@ -339,7 +343,7 @@ export async function runHarnessWorkflow(
       ports.fenceContext({
         workflowId,
         request: activeRequest,
-        declaration: intent.declaration,
+        declaration: routed.declaration,
         context: bundle,
       }),
   );
@@ -368,7 +372,7 @@ export async function runHarnessWorkflow(
         ports.compileBrief({
           workflowId,
           request: activeRequest,
-          declaration: intent.declaration,
+          declaration: routed.declaration,
           context: bundle,
         }),
     );
@@ -419,7 +423,7 @@ export async function runHarnessWorkflow(
       ports.assembleAndDeliver({
         workflowId,
         request: activeRequest,
-        declaration: intent.declaration,
+        declaration: routed.declaration,
         context: bundle,
         brief,
         selection,
@@ -445,7 +449,7 @@ export async function runHarnessWorkflow(
 
   return {
     delivery,
-    deliveryLayer: intent.declaration.deliveryLayer,
+    deliveryLayer: routed.declaration.deliveryLayer,
     recommendation,
     trace: selection.trace,
   };
@@ -472,20 +476,20 @@ async function runMediaHarnessWorkflow(
       'A media submission must resolve to the finished_media delivery layer.',
     );
   }
-  if (intent.blockingQuestion) {
-    await reportProgress({
-      stage: 'intent_naming',
-      state: 'suspended',
-      message: intent.blockingQuestion.question,
-    });
-    activeRequest = applyCurrentTaskDecision(
-      request,
-      await runtime.awaitDecision(intent.blockingQuestion),
-    );
-  }
+  const routed = await resolveIntentRoute({
+    workflowId,
+    request,
+    intent,
+    ports,
+    runtime,
+    reportProgress,
+  });
+  activeRequest = routed.request;
   await trace(runtime, workflowId, 'intent_naming', {
     executionRoot: mediaExecutionRoot(request),
-    declaration: intent.declaration,
+    // Replay fallback only for durable workflows enqueued before creationMode existed.
+    entryMode: request.creationMode ?? 'customized',
+    declaration: routed.declaration,
     questionId: intent.blockingQuestion?.questionId ?? null,
     ...(request.prompts?.intentNaming
       ? { prompt: promptTraceReference(request.prompts.intentNaming) }
@@ -495,7 +499,7 @@ async function runMediaHarnessWorkflow(
   await reportProgress({
     stage: 'intent_naming',
     state: 'success',
-    message: '已确认这次的创作方向',
+    message: merchantRouteMessage(routed.declaration),
   });
 
   let bundle = await runtime.runStep(
@@ -504,7 +508,7 @@ async function runMediaHarnessWorkflow(
       ports.injectContext({
         workflowId,
         request: activeRequest,
-        declaration: intent.declaration,
+        declaration: routed.declaration,
       }),
   );
   await trace(runtime, workflowId, 'context_injection', {
@@ -526,7 +530,7 @@ async function runMediaHarnessWorkflow(
       ports.compileMediaBrief({
         workflowId,
         request: activeRequest,
-        declaration: intent.declaration,
+        declaration: routed.declaration,
         context: bundle,
       }),
   );
@@ -571,7 +575,7 @@ async function runMediaHarnessWorkflow(
       ports.fenceContext({
         workflowId,
         request: activeRequest,
-        declaration: intent.declaration,
+        declaration: routed.declaration,
         context: bundle,
       }),
   );
@@ -596,7 +600,7 @@ async function runMediaHarnessWorkflow(
         ports.compileMediaBrief({
           workflowId,
           request: activeRequest,
-          declaration: intent.declaration,
+          declaration: routed.declaration,
           context: bundle,
         }),
     );
@@ -637,7 +641,7 @@ async function runMediaHarnessWorkflow(
       ports.assembleMediaAndDeliver({
         workflowId,
         request: activeRequest,
-        declaration: intent.declaration,
+        declaration: routed.declaration,
         context: bundle,
         brief,
         selection,
@@ -646,7 +650,7 @@ async function runMediaHarnessWorkflow(
   const recommendation = {
     recommendedCandidateId: selection.asset.id,
     decisionTrace: mediaRecommendationDecisionTrace(
-      intent.declaration,
+      routed.declaration,
       brief,
       delivery,
       activeRequest,
@@ -665,7 +669,7 @@ async function runMediaHarnessWorkflow(
 
   return {
     delivery,
-    deliveryLayer: intent.declaration.deliveryLayer,
+    deliveryLayer: routed.declaration.deliveryLayer,
     recommendation,
     trace: selection.trace,
   };
@@ -792,6 +796,101 @@ function applyCurrentTaskDecision(
       },
     ],
   };
+}
+
+async function resolveIntentRoute(input: {
+  workflowId: string;
+  request: HarnessWorkflowInput;
+  intent: Awaited<ReturnType<HarnessStagePorts['nameIntent']>>;
+  ports: HarnessStagePorts;
+  runtime: HarnessWorkflowRuntime;
+  reportProgress: (
+    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
+  ) => Promise<void>;
+}) {
+  if (!input.intent.blockingQuestion) {
+    return {
+      declaration: input.intent.declaration,
+      request: input.request,
+    };
+  }
+
+  await input.reportProgress({
+    stage: 'intent_naming',
+    state: 'suspended',
+    message: input.intent.blockingQuestion.question,
+  });
+  const decision = await input.runtime.awaitDecision(
+    input.intent.blockingQuestion,
+  );
+  const activeRequest = applyCurrentTaskDecision(input.request, decision);
+  if (decision.decision.state === 'ignored') {
+    return {
+      declaration: freeRouteDeclaration(input.intent.declaration),
+      request: activeRequest,
+    };
+  }
+
+  const reassessed = await input.runtime.runStep(
+    harnessEffectKey(input.workflowId, 1, 'intent', '1'),
+    () =>
+      input.ports.nameIntent({
+        workflowId: input.workflowId,
+        request: activeRequest,
+        round: 1,
+      }),
+  );
+  if (
+    reassessed.declaration.route === 'customized' &&
+    reassessed.blockingQuestion === null
+  ) {
+    return {
+      declaration: {
+        ...reassessed.declaration,
+        routingSource: 'decision' as const,
+      },
+      request: activeRequest,
+    };
+  }
+  return {
+    declaration: freeRouteDeclaration(reassessed.declaration),
+    request: activeRequest,
+  };
+}
+
+function freeRouteDeclaration(
+  declaration: IntentDeclaration,
+): IntentDeclaration {
+  return {
+    ...declaration,
+    route: 'free',
+    routingSource: 'decision',
+    usedAssetCategories: [],
+  };
+}
+
+const ASSET_CATEGORY_LABELS: Record<
+  IntentDeclaration['usedAssetCategories'][number],
+  string
+> = {
+  store: '门店资料',
+  product_service: '项目资料',
+  promotion_activity: '活动资料',
+  brand: '品牌表达',
+  personal_ip: '个人风格',
+  material: '参考素材',
+  history_preference: '过往偏好',
+  industry_category: '行业特点',
+};
+
+export function merchantRouteMessage(declaration: IntentDeclaration) {
+  if (declaration.route === 'free') {
+    return '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。';
+  }
+  const labels = declaration.usedAssetCategories.map(
+    (category) => ASSET_CATEGORY_LABELS[category],
+  );
+  return `这次会参考你的${labels.join('、')}，让内容更贴合本店。`;
 }
 
 function recommendationDecisionTrace(
