@@ -120,12 +120,9 @@ export async function submitComposerJourney(
   await expect(lens).toBeChecked();
   await expect(lens).toHaveAttribute('data-state', 'checked');
 
-  // Callers must name a 美业 service category in `intent`. D-111 asks a
-  // structured question (`…:s1:industry_category`) when it cannot infer one,
-  // and a run waiting on that question yields no token and no 成品预览卡 — the
-  // journey would be measuring a stalled workflow. Answering is not open to us
-  // either: for Composer-originated runs a substantive answer is rejected
-  // outright (T41 owns that defect), so the signal has to be in the intent.
+  // Day-0 intent may omit a 美业 service category. D-043 keeps that path moving
+  // in explicit generic mode; later semantic gaps that are required for the
+  // requested result may still surface one question and resume on its answer.
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(
     page.getByTestId('composer-quote-line'),

@@ -16,6 +16,9 @@ const FORBIDDEN_LANGUAGE = [
   { label: 'DeepSeek', pattern: /\bdeepseek\b/iu },
   { label: 'HTTP code', pattern: /\bhttp\s*[1-5]\d{2}\b/iu },
   { label: 'workflow', pattern: /\bworkflow\b/iu },
+  { label: 'industry category', pattern: /\bindustry_category\b/iu },
+  { label: 'intent', pattern: /\bintent\b/iu },
+  { label: 'snapshot', pattern: /\bsnapshot\b/iu },
   { label: 'revision', pattern: /\brevision\b/iu },
   { label: 'candidate', pattern: /\bcandidate\b/iu },
   { label: 'schema', pattern: /\bschema\b/iu },
@@ -37,6 +40,10 @@ export function merchantIdentityVoiceNotice() {
 
 export function merchantConfirmationQuestion(question: string) {
   return `为了让成品更贴合你的想法，想确认一下：${question}`;
+}
+
+export function merchantGenericModeNotice() {
+  return '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。';
 }
 
 export function merchantTaskSummary(input: {

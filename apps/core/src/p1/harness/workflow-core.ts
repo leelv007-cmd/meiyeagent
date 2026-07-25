@@ -17,6 +17,7 @@ import type { HarnessWorkflowInput } from './task-admission.js';
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
 import {
+  merchantGenericModeNotice,
   merchantIdentityVoiceNotice,
   merchantProgressMessage,
   merchantTaskSummary,
@@ -909,6 +910,12 @@ async function resolveIntentRoute(input: {
       request: input.request,
     };
   }
+  if (isDayZeroIndustryGap(input.request, input.intent.blockingQuestion)) {
+    return {
+      declaration: freeRouteDeclaration(input.intent.declaration),
+      request: input.request,
+    };
+  }
 
   await input.reportProgress({
     stage: 'intent_naming',
@@ -974,6 +981,22 @@ function freeRouteDeclaration(
   };
 }
 
+function isDayZeroIndustryGap(
+  request: HarnessWorkflowInput,
+  question: QuestionCard,
+) {
+  const snapshot = request.executionSnapshot;
+  return (
+    request.creationMode === 'customized' &&
+    question.response.field === 'industry_category' &&
+    snapshot !== undefined &&
+    snapshot.contentPackage.expectedRevision === 0 &&
+    request.reuseSeed === undefined &&
+    snapshot.sources.contentPackage === undefined &&
+    snapshot.semanticDecision === undefined
+  );
+}
+
 const ASSET_CATEGORY_LABELS: Record<
   IntentDeclaration['usedAssetCategories'][number],
   string
@@ -990,7 +1013,7 @@ const ASSET_CATEGORY_LABELS: Record<
 
 export function merchantRouteMessage(declaration: IntentDeclaration) {
   if (declaration.route === 'free') {
-    return '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。';
+    return merchantGenericModeNotice();
   }
   const labels = declaration.usedAssetCategories.map(
     (category) => ASSET_CATEGORY_LABELS[category],

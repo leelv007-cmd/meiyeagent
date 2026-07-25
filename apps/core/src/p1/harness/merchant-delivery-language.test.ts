@@ -5,6 +5,7 @@ import {
   merchantAssetRightsSoftPrompt,
   merchantConfirmationQuestion,
   merchantExactTextMismatch,
+  merchantGenericModeNotice,
   merchantIdentityVoiceNotice,
   merchantParseDisclosure,
   merchantParseFallback,
@@ -25,6 +26,7 @@ test('five merchant-facing positions stay free of engineering language', () => {
     merchantProgressMessage('brief_compilation'),
     merchantProgressMessage('execution_selection'),
     merchantIdentityVoiceNotice(),
+    merchantGenericModeNotice(),
     merchantConfirmationQuestion('这次更想突出项目效果还是到店体验？'),
     merchantTaskSummary({
       revision: 3,
@@ -131,4 +133,14 @@ test('sensitive documents and stopped batches explain the honest next step', () 
     ),
     [],
   );
+});
+
+test('generic mode notice names the user benefit without internal routing terms', () => {
+  const notice = merchantGenericModeNotice();
+
+  assert.equal(
+    notice,
+    '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。',
+  );
+  assert.deepEqual(merchantVisibleLanguageIssues(notice), []);
 });

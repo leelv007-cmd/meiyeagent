@@ -307,6 +307,81 @@ test('one blocking question suspends and resumes before context injection', asyn
   ]);
 });
 
+test('Day-0 industry gaps continue in generic mode without waiting for a decision', async () => {
+  const stages = fixtureIndustryGapStages();
+  let injectedRoute: string | undefined;
+  const injectContext = stages.injectContext;
+  stages.injectContext = async (input) => {
+    injectedRoute = input.declaration.route;
+    return injectContext(input);
+  };
+  const messages: string[] = [];
+  const request = snapshotTaskInput();
+  request.intent.context.sourceSummaries = [
+    'Confirmed store: E2E 美业门店',
+  ];
+  request.decisionReferences = [
+    {
+      id: 'decision:store-name:1',
+      field: 'store_name',
+      value: 'E2E 美业门店',
+      revision: 1,
+    },
+  ];
+
+  await runHarnessWorkflow('task-copy', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress(event) {
+      messages.push(event.message);
+    },
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Day-0 industry gaps must not wait for a decision.');
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(injectedRoute, 'free');
+  assert.equal(
+    messages[0],
+    '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。',
+  );
+  assert.doesNotMatch(messages[0] ?? '', /industry_category|intent|snapshot/iu);
+});
+
+test('a later content-package revision can still ask for an industry change', async () => {
+  const stages = fixtureIndustryGapStages();
+  const request = snapshotTaskInput(1);
+  let decisionWaited = false;
+
+  await runHarnessWorkflow('task-copy', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      decisionWaited = true;
+      return {
+        idempotencyKey: 'ignore-industry-change',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: '这次先跳过',
+          reason: question.response.reason,
+        },
+        decision: { state: 'ignored', value: '这次先跳过' },
+      };
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(decisionWaited, true);
+});
+
 test('a snapshot-backed semantic answer resubmits the same task and work before continuing', async () => {
   const originalRequest = {
     ...snapshotTaskInput(),
@@ -324,10 +399,10 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
     return {
       declaration: {
         normalizedIntent: request.rawInput,
-        taskType: 'daily_service_exposure',
+        taskType: 'promotion_groupbuy_conversion',
         deliveryLayer: 'copy',
-        relevantAssetCategories: ['industry_category'],
-        usedAssetCategories: intentRound === 1 ? [] : ['industry_category'],
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: intentRound === 1 ? [] : ['promotion_activity'],
         route: intentRound === 1 ? 'guidance' : 'customized',
         routingSource: 'model',
         implicitConstraints: [],
@@ -335,15 +410,15 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
       blockingQuestion:
         intentRound === 1
           ? {
-              questionId: 'task-copy:s1:industry_category',
+              questionId: 'task-copy:s1:promotion_details',
               workflowId: 'task-copy',
               workflowRevision: 1,
-              question: '这次内容主要属于哪一类美业服务？',
+              question: '方便补充这次活动的项目和价格档吗？',
               options: [],
               freeText: { enabled: true },
               response: {
-                field: 'industry_category',
-                reason: '补充本次内容所属的美业服务类别',
+                field: 'promotion_details',
+                reason: '补充本次活动的项目和价格档',
               },
               scope: 'current_task',
             }
@@ -373,10 +448,10 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
         workflowRevision: question.workflowRevision,
         patch: {
           field: question.response.field,
-          value: '美甲',
+          value: '透亮猫眼 398 元',
           reason: question.response.reason,
         },
-        decision: { state: 'accepted', value: '美甲' },
+        decision: { state: 'accepted', value: '透亮猫眼 398 元' },
       };
     },
     async resubmitSemanticDecision(input) {
@@ -408,7 +483,12 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
   assert.equal(
     (injectedRequest?.intent.context as Record<string, unknown> | undefined)
       ?.industry_category,
-    '美甲'
+    undefined,
+  );
+  assert.equal(
+    (injectedRequest?.intent.context as Record<string, unknown> | undefined)
+      ?.promotion_details,
+    '透亮猫眼 398 元',
   );
   assert.deepEqual(originalRequest.executionSnapshot, originalSnapshot);
   assert.ok(progress.includes('已收到，继续为你生成。'));
@@ -419,24 +499,24 @@ test('directly applying a semantic answer to an existing snapshot remains forbid
   stages.nameIntent = async () => ({
     declaration: {
       normalizedIntent: '给门店写一条日常内容',
-      taskType: 'daily_service_exposure',
+      taskType: 'promotion_groupbuy_conversion',
       deliveryLayer: 'copy',
-      relevantAssetCategories: ['industry_category'],
+      relevantAssetCategories: ['promotion_activity'],
       usedAssetCategories: [],
       route: 'guidance',
       routingSource: 'model',
       implicitConstraints: [],
     },
     blockingQuestion: {
-      questionId: 'task-copy:s1:industry_category',
+      questionId: 'task-copy:s1:promotion_details',
       workflowId: 'task-copy',
       workflowRevision: 1,
-      question: '这次内容主要属于哪一类美业服务？',
+      question: '方便补充这次活动的项目和价格档吗？',
       options: [],
       freeText: { enabled: true },
       response: {
-        field: 'industry_category',
-        reason: '补充本次内容所属的美业服务类别',
+        field: 'promotion_details',
+        reason: '补充本次活动的项目和价格档',
       },
       scope: 'current_task',
     },
@@ -456,10 +536,10 @@ test('directly applying a semantic answer to an existing snapshot remains forbid
           workflowRevision: question.workflowRevision,
           patch: {
             field: question.response.field,
-            value: '美甲',
+            value: '透亮猫眼 398 元',
             reason: question.response.reason,
           },
-          decision: { state: 'accepted', value: '美甲' },
+          decision: { state: 'accepted', value: '透亮猫眼 398 元' },
         };
       },
       async recordTrace() {},
@@ -889,7 +969,7 @@ function taskInput() {
   };
 }
 
-function snapshotTaskInput(): HarnessWorkflowInput {
+function snapshotTaskInput(expectedContentPackageRevision = 0): HarnessWorkflowInput {
   const snapshot = createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
@@ -898,7 +978,7 @@ function snapshotTaskInput(): HarnessWorkflowInput {
       taskId: 'task-copy',
       workId: 'work-copy',
       contentPackageId: 'package-copy',
-      expectedContentPackageRevision: 0,
+      expectedContentPackageRevision,
       creationMode: 'customized',
       intent: '给门店写一条日常内容',
       surface: { id: 'surface-1', revision: 'surface-r1' },
@@ -941,6 +1021,36 @@ function snapshotTaskInput(): HarnessWorkflowInput {
     },
     executionSnapshot: snapshot,
   };
+}
+
+function fixtureIndustryGapStages() {
+  const stages = fixtureStages();
+  stages.nameIntent = async () => ({
+    declaration: {
+      normalizedIntent: '给门店写一条日常内容',
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: [],
+      route: 'guidance',
+      routingSource: 'model',
+      implicitConstraints: [],
+    },
+    blockingQuestion: {
+      questionId: 'task-copy:s1:industry_category',
+      workflowId: 'task-copy',
+      workflowRevision: 1,
+      question: '这次内容主要属于哪一类美业服务？',
+      options: [],
+      freeText: { enabled: true },
+      response: {
+        field: 'industry_category',
+        reason: '补充本次内容所属的美业服务类别',
+      },
+      scope: 'current_task',
+    },
+  });
+  return stages;
 }
 
 function mediaTaskInput(kind: 'image' | 'video'): HarnessWorkflowInput {
