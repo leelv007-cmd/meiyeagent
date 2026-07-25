@@ -400,6 +400,11 @@ test.describe('S2 cold start and unified creation loop', () => {
     const exampleContents = example.getByRole('radiogroup', {
       name: '示例内容',
     });
+    // Independent floor: deriving the count from the same seed the page reads
+    // would make an empty contentPreviews array pass as toHaveCount(0), and
+    // "the cold home actually offers example content" would stop being guarded.
+    // Three per store is the platform sample seed convention.
+    expect(hairCare.contentPreviews.length).toBeGreaterThanOrEqual(3);
     await expect(exampleContents.getByRole('radio')).toHaveCount(
       hairCare.contentPreviews.length
     );
@@ -435,7 +440,9 @@ test.describe('S2 cold start and unified creation loop', () => {
       `做一条抖音美业内容，主题是养发护理，内容角度围绕“${growthContent.title}”；用“开场钩子—项目体验—到店行动”结构，语气真实克制，所有门店与价格事实由我稍后补充。`
     );
     // Remixing only fills the draft — submission stays the merchant's own click.
-    await expect(page.getByTestId('composer-submit')).toBeVisible();
+    // Enabled, not merely present: a submit button that mounts but cannot be
+    // clicked would make reuse a dead end, which is the OI-15 shape.
+    await expect(page.getByTestId('composer-submit')).toBeEnabled();
     expect(await creativeProjection(page)).toMatchObject({
       assets: [],
       contents: [],
