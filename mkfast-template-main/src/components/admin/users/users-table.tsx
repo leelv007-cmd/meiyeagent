@@ -428,7 +428,17 @@ export function UsersTable({
       <div className="relative flex flex-col gap-4 overflow-auto">
         <div className="overflow-hidden rounded-lg border">
           <Table>
-            <TableHeader className="bg-muted sticky top-0 z-10">
+            {/*
+              Not bg-muted: under the admin shell's token bridge --muted is
+              remapped to muted *ink* (HeroUI's meaning) rather than a muted
+              *surface* (shadcn's), so this band rendered as a slab of the wrong
+              polarity in both themes — 3.20:1 in light and 1.90:1 in dark
+              against its own labels, both under WCAG AA. --surface-secondary is
+              the bridge's own secondary surface and is opaque in both themes,
+              which a sticky header needs. See .scratch/…/F-3-diagnosis.md; the
+              same collision elsewhere is tracked as OI-48.
+            */}
+            <TableHeader className="sticky top-0 z-10 bg-[var(--surface-secondary)]">
               {table.getHeaderGroups().map((hg) => (
                 <TableRow key={hg.id}>
                   {hg.headers.map((header) => (

@@ -196,9 +196,17 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
     );
     appliedFrom = stored;
 
-    // The other half of the acceptance: the reason reached the immutable audit
-    // trail, not just the form. Same bar as TEST-CATALOG §31.
-    await page.goto('/admin/audit');
+    // The other half of the acceptance: the reason reached the audit record,
+    // not just the form. /admin/audit is the wrong surface for this — it is fed
+    // by revision_rollback_audits and catalog_revisions, so it carries template
+    // and catalog events only. admin-config keeps its trail per key, readable
+    // through config_history behind the advanced-config disclosure, and that is
+    // where an operator would go looking for who changed an allowance and why.
+    await page.getByText('高级配置与版本历史').click();
+    await page.selectOption(
+      '#admin-runtime-config-key',
+      'plan.allowances.trial'
+    );
     await expect(page.getByText(reason, { exact: true })).toBeVisible({
       timeout: 30_000,
     });
