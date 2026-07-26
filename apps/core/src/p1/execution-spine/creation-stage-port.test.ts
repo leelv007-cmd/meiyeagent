@@ -59,6 +59,60 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 	]);
 });
 
+test("a terminal successor carries the late answer into Harness context and decision references", async () => {
+	const calls: Array<Record<string, unknown>> = [];
+	const stage = new CreationStagePort({
+		async submit(input) {
+			calls.push(structuredClone(input) as unknown as Record<string, unknown>);
+			return { workflowId: input.taskId };
+		},
+	});
+	const source = createCreationExecutionSnapshot(
+		command(),
+		"2026-07-22T09:00:00.000Z",
+	);
+	const snapshot = {
+		...source,
+		id: "snapshot-task-successor",
+		task: { id: "task-successor" },
+		work: { id: "work-successor" },
+		contentPackage: { id: "package-successor", expectedRevision: 0 },
+		quote: { id: "quote-successor", revision: "quote-successor-r1" },
+		semanticDecision: {
+			sourceSnapshotId: source.id,
+			reference: {
+				id: "decision-late-1",
+				field: "offer_price",
+				value: "398 元",
+				revision: 1,
+			},
+		},
+	};
+
+	await stage.start({
+		snapshot,
+		work: snapshot.work,
+		task: snapshot.task,
+		contentPackage: snapshot.contentPackage,
+		usageReservation: {
+			id: "usage-reservation-task-successor",
+			units: [{ resource: "copy", quantity: 1 }],
+		},
+	});
+
+	const request = calls[0] as {
+		decisionReferences?: unknown;
+		intent?: { context?: Record<string, unknown> };
+	};
+	assert.equal(request.intent?.context?.offer_price, "398 元");
+	assert.deepEqual(request.intent?.context?.sourceSummaries, [
+		"Merchant decision (offer_price): 398 元",
+	]);
+	assert.deepEqual(request.decisionReferences, [
+		snapshot.semanticDecision.reference,
+	]);
+});
+
 function command() {
 	return {
 		actorId: "owner-1",

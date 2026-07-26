@@ -741,6 +741,183 @@ test(
 );
 
 test(
+  "Postgres terminal successor creates a fresh quote, reservation, snapshot and Harness run exactly once",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const billing = new DurableProductBillingService(billingRepository);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-late-answer-${suffix}`;
+    const quoteId = `spine-source-quote-${suffix}`;
+    const sourceTaskId = `spine-source-task-${suffix}`;
+    const successorTaskId = `spine-successor-task-${suffix}`;
+    const cleanupSubmission = reserveRecord(workspaceId, quoteId, suffix);
+    const starts: CreationSubmissionRecord[] = [];
+    let workIds = 0;
+    let packageIds = 0;
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      const sourceQuote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+        sourceTaskId,
+      );
+      const coordinator = new CreationSubmissionCoordinator(
+        store,
+        {
+          async start(record) {
+            starts.push(structuredClone(record));
+          },
+        },
+        {
+          createId(prefix) {
+            if (prefix === "work") {
+              workIds += 1;
+              return `spine-work-${workIds}-${suffix}`;
+            }
+            packageIds += 1;
+            return `spine-package-${packageIds}-${suffix}`;
+          },
+          now() {
+            return "2026-07-26T09:00:00.000Z";
+          },
+        },
+        {
+          async admit() {
+            return {
+              identity: { id: "identity-1", revision: "identity-r1" },
+              modelPolicy: {
+                id: "policy-1",
+                mode: "fixed",
+                revision: "policy-r1",
+              },
+              recipeBinding: {
+                contentModules: ["social_cover"],
+                deliverables: [
+                  {
+                    aspectRatio: "3:4",
+                    id: "copy-main",
+                    kind: "copy",
+                    order: 0,
+                    quantity: 1,
+                  },
+                ],
+                lens: "copy",
+              },
+              rights: {
+                revision: "rights-r1",
+                summary: "authorized source assets",
+              },
+              route: { id: "route-1", revision: "route-r1" },
+              taskId: sourceTaskId,
+            };
+          },
+        },
+        billing,
+      );
+      await coordinator.submit(
+        coordinatorRequest({
+          quoteId,
+          quoteRevision: sourceQuote.revision,
+          suffix,
+          workspaceId,
+        }),
+      );
+      const source = starts[0]!;
+      const command = {
+        idempotencyKey: `${sourceTaskId}:offer-price:late_answer`,
+        questionId: `${sourceTaskId}:offer-price`,
+        workflowRevision: 1,
+        patch: {
+          field: "offer_price",
+          value: "398 元",
+          reason: "补充当前任务所需的权威事实",
+        },
+        decision: { state: "accepted" as const, value: "398 元" },
+      };
+      const successorInput = {
+        command,
+        request: toHarnessWorkflowInput(
+          source.snapshot,
+          source.usageReservation,
+        ),
+        sourceTaskId,
+        workflowId: successorTaskId,
+        workspaceId,
+      };
+      const created = await coordinator.submitSemanticSuccessor(successorInput);
+      const replayed = await coordinator.submitSemanticSuccessor(successorInput);
+
+      assert.equal(created.replayed, false);
+      assert.equal(replayed.replayed, true);
+      assert.equal(starts.length, 2);
+      const successor = starts[1]!;
+      assert.equal(successor.task.id, successorTaskId);
+      assert.equal(
+        successor.snapshot.semanticDecision?.sourceSnapshotId,
+        source.snapshot.id,
+      );
+      assert.equal(
+        successor.snapshot.semanticDecision?.reference.value,
+        "398 元",
+      );
+      assert.notEqual(successor.snapshot.quote.id, source.snapshot.quote.id);
+      const persisted = await pool.query<{
+        reservation_count: number;
+        submission_count: number;
+        successor_snapshot: {
+          semanticDecision?: { sourceSnapshotId?: string };
+        };
+      }>(
+        `select
+           (select count(*)::int
+              from execution_spine.creation_submissions
+             where workspace_id=$1) as submission_count,
+           (select count(*)::int
+              from p1_product_billing_usage
+             where workspace_id=$1
+               and task_id=any($2::text[])) as reservation_count,
+           (select submission->'snapshot'
+              from execution_spine.creation_submissions
+             where workspace_id=$1 and task_id=$3) as successor_snapshot`,
+        [workspaceId, [sourceTaskId, successorTaskId], successorTaskId],
+      );
+      assert.deepEqual(
+        {
+          reservation_count: persisted.rows[0]?.reservation_count,
+          submission_count: persisted.rows[0]?.submission_count,
+          sourceSnapshotId:
+            persisted.rows[0]?.successor_snapshot.semanticDecision
+              ?.sourceSnapshotId,
+        },
+        {
+          reservation_count: 2,
+          submission_count: 2,
+          sourceSnapshotId: source.snapshot.id,
+        },
+      );
+    } finally {
+      await cleanup(pool, workspaceId, cleanupSubmission).catch(
+        () => undefined,
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
   "a quoted ProductQuote is never auto-confirmed by a Composer reservation",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {

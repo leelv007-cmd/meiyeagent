@@ -161,7 +161,10 @@ import {
   ModelSupplyStructuredNodeRunner,
 } from './p1/model-supply/structured-node-runner.js';
 import { HarnessApplicationService } from './p1/harness/application-service.js';
-import { HarnessDecisionService } from './p1/harness/decision-service.js';
+import {
+  HarnessDecisionService,
+  type HarnessWorkflowResumer,
+} from './p1/harness/decision-service.js';
 import { HarnessDbosWorkflowEventReader } from './p1/harness/dbos-workflow-events.js';
 import { HarnessBillingCompensationWorker } from './p1/harness/billing-compensation.js';
 import { HarnessLangfuseOutboxWorker } from './p1/harness/outbox-worker.js';
@@ -1626,6 +1629,29 @@ if (harnessRuntimeConfig) {
   const billingCompensations =
     new PostgresHarnessBillingCompensationStore(pool);
   await billingCompensations.migrate();
+  const workflowResumer: HarnessWorkflowResumer = {
+    resume: (
+      workspaceId: string,
+      workflowId: string,
+      command: Parameters<HarnessDecisionService['submit']>[2]
+    ) =>
+      resumeHarnessDbosWorkflow(
+        workspaceId,
+        workflowId,
+        command,
+        harnessStore,
+      ),
+    async startSuccessor(input) {
+      if (!composerSubmissionCoordinator) {
+        throw new Error('Composer semantic successor is unavailable.');
+      }
+      await composerSubmissionCoordinator.submitSemanticSuccessor(input);
+    },
+  };
+  const harnessDecisions = new HarnessDecisionService(
+    harnessStore,
+    workflowResumer,
+  );
   const harnessWorkflow = registerHarnessDbosWorkflow(
     harnessStages,
     harnessStore,
@@ -1638,28 +1664,16 @@ if (harnessRuntimeConfig) {
       },
     },
     adminConfigRepository,
+    harnessDecisions,
   );
   await DBOS.launch();
-  const workflowResumer = {
-    resume: (
-      workspaceId: string,
-      workflowId: string,
-      command: Parameters<HarnessDecisionService['submit']>[2]
-    ) =>
-      resumeHarnessDbosWorkflow(
-        workspaceId,
-        workflowId,
-        command,
-        harnessStore,
-      ),
-  };
   harnessService = new HarnessApplicationService(
     new HarnessTaskAdmissionService(
       harnessStore,
       new DbosHarnessWorkflowStarter(harnessWorkflow),
       langfusePromptResolverFromEnv(process.env),
     ),
-    new HarnessDecisionService(harnessStore, workflowResumer),
+    harnessDecisions,
     harnessStore,
     harnessStore,
     harnessStore,
@@ -1692,7 +1706,8 @@ if (harnessRuntimeConfig) {
         foundationRepository
       ),
       sourcePackages: sourceContentPackageAdmissionReader,
-    })
+    }),
+    productQuoteService,
   );
   await composerSubmissionCoordinator.recoverPendingStarts();
   harnessWorkflowEventSource = new HarnessWorkflowEventSource(

@@ -1,12 +1,20 @@
-import { pickComposerSubmissionSignedFields } from "@meiye/contracts";
+import {
+	pickComposerSubmissionSignedFields,
+	structuredDecisionInputSchema,
+	type StructuredDecisionInput,
+} from "@meiye/contracts";
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
+import type { HarnessWorkflowInput } from "../harness/task-admission.js";
+import { buildTerminalSemanticDecisionSuccessor } from "../harness/semantic-decision-resumption.js";
+import type { ProductBillingApplicationPort } from "../product-billing/durable-service.js";
 
 import {
 	type CreationExecutionSnapshot,
 	type ComposerSubmissionRequest,
 	createCreationExecutionSnapshot,
+	creationExecutionSnapshotSchema,
 	creationSubmissionCommandSchema,
 	composerSubmissionRequestSchema,
 } from "./creation-execution-snapshot.js";
@@ -131,6 +139,10 @@ export class CreationSubmissionCoordinator {
 		private readonly harness: CreationSubmissionHarnessStarter,
 		private readonly ids: CreationSubmissionIdFactory,
 		private readonly admission: CreationSubmissionAdmissionPort,
+		private readonly successorQuotes?: Pick<
+			ProductBillingApplicationPort,
+			"buildQuote" | "confirm" | "getQuote"
+		>,
 	) {}
 
 	async submit(input: ComposerSubmissionRequest) {
@@ -198,6 +210,122 @@ export class CreationSubmissionCoordinator {
 			idempotencyKey: command.idempotencyKey,
 			payloadHash,
 			submission,
+		});
+		if (claimed.kind === "conflict") {
+			throw new CreationSubmissionConflictError();
+		}
+		await this.startHarness(claimed.submission);
+		return submissionResponse(
+			claimed.submission,
+			claimed.kind === "existing",
+		);
+	}
+
+	async submitSemanticSuccessor(input: {
+		command: StructuredDecisionInput;
+		request: HarnessWorkflowInput;
+		sourceTaskId: string;
+		workflowId: string;
+		workspaceId: string;
+	}) {
+		if (!this.successorQuotes || !input.request.executionSnapshot) {
+			throw new Error("Semantic successor submission is unavailable.");
+		}
+		const source = creationExecutionSnapshotSchema.parse(
+			input.request.executionSnapshot,
+		);
+		const command = structuredDecisionInputSchema.parse(input.command);
+		if (
+			source.workspaceId !== input.workspaceId ||
+			source.task.id !== input.sourceTaskId
+		) {
+			throw new Error("Semantic successor source does not match its task.");
+		}
+		const sourceQuote = await this.successorQuotes.getQuote(
+			source.quote.id,
+			source.workspaceId,
+		);
+		if (!sourceQuote) {
+			throw new Error("Semantic successor source quote was not found.");
+		}
+		const quoteId = `quote-${input.workflowId}`;
+		const quote = await this.successorQuotes.buildQuote({
+			authorizedCeiling: sourceQuote.authorizedCeiling,
+			billingMode: sourceQuote.billingMode,
+			catalogModelId: source.catalogModel.id,
+			catalogModelRevision: source.catalogModel.revision,
+			...(sourceQuote.formula.currency
+				? { currency: sourceQuote.formula.currency }
+				: {}),
+			...(sourceQuote.frozenCandidateDeploymentIds
+				? {
+						frozenCandidateDeploymentIds:
+							sourceQuote.frozenCandidateDeploymentIds,
+					}
+				: {}),
+			formulaExpression: sourceQuote.formula.expression,
+			...(sourceQuote.minChargeSeconds !== undefined
+				? { minChargeSeconds: sourceQuote.minChargeSeconds }
+				: {}),
+			...(sourceQuote.outputCount !== undefined
+				? { outputCount: sourceQuote.outputCount }
+				: {}),
+			...(sourceQuote.outputLabel
+				? { outputLabel: sourceQuote.outputLabel }
+				: {}),
+			quoteId,
+			quotePolicyRevision: sourceQuote.quotePolicyRevision,
+			...(sourceQuote.roundingStepSeconds !== undefined
+				? { roundingStepSeconds: sourceQuote.roundingStepSeconds }
+				: {}),
+			...(sourceQuote.routeSnapshotRef
+				? { routeSnapshotRef: sourceQuote.routeSnapshotRef }
+				: {}),
+			submissionContractHash: fingerprintValue(
+				pickComposerSubmissionSignedFields(source),
+			),
+			...(sourceQuote.targetSeconds !== undefined
+				? { targetSeconds: sourceQuote.targetSeconds }
+				: {}),
+			unitRate: sourceQuote.formula.unitRate,
+			workspaceId: source.workspaceId,
+		});
+		const confirmedQuote = await this.successorQuotes.confirm({
+			quoteId: quote.quoteId,
+			taskId: input.workflowId,
+			workspaceId: source.workspaceId,
+		});
+		const snapshot = buildTerminalSemanticDecisionSuccessor({
+			command,
+			contentPackageId: this.ids.createId("content-package"),
+			createdAt: this.ids.now(),
+			quote: {
+				id: confirmedQuote.quoteId,
+				revision: confirmedQuote.revision,
+			},
+			sourceSnapshot: source,
+			workflowId: input.workflowId,
+			workId: this.ids.createId("work"),
+		});
+		const submission: CreationSubmissionRecord = {
+			contentPackage: { ...snapshot.contentPackage },
+			snapshot,
+			task: { id: snapshot.task.id },
+			usageReservation: {
+				id: `usage-reservation-${snapshot.task.id}`,
+				units: productUsageUnits(snapshot),
+			},
+			work: { id: snapshot.work.id },
+		};
+		const idempotencyKey = `${command.questionId}:late_answer`;
+		const claimed = await this.store.claim({
+			idempotencyKey,
+			payloadHash: fingerprintValue({
+				command,
+				sourceSnapshotId: source.id,
+			}),
+			submission,
+			workspaceId: source.workspaceId,
 		});
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();

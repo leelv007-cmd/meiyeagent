@@ -17,6 +17,8 @@ import {
 	type WorkflowEventFrame,
 	type WorkflowEventSource,
 } from "../workflow-events.js";
+import { toHarnessWorkflowInput } from "./creation-stage-port.js";
+import { ProductQuoteService } from "../product-billing/quote-service.js";
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
 	CreationSubmissionCoordinator,
@@ -776,6 +778,95 @@ test("a failed Harness start releases the same submission for an idempotent retr
 	assert.equal(replayed.replayed, true);
 	assert.equal(starts, 2);
 	assert.equal(submissions.count(), 1);
+});
+
+test("a terminal late answer starts one fresh quoted successor from the source snapshot", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const quotes = new ProductQuoteService();
+	quotes.buildQuote({
+		billingMode: "per_request",
+		catalogModelId: "catalog-copy-1",
+		catalogModelRevision: "catalog-r4",
+		quoteId: "quote-1",
+		quotePolicyRevision: "quote.policy@1",
+		unitRate: 1,
+		workspaceId: "workspace-1",
+	});
+	let contentPackages = 0;
+	let works = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		{
+			createId(prefix) {
+				if (prefix === "content-package") {
+					contentPackages += 1;
+					return `package-${contentPackages}`;
+				}
+				works += 1;
+				return `work-${works}`;
+			},
+			now() {
+				return "2026-07-26T09:00:00.000Z";
+			},
+		},
+		fixedAdmission(),
+		quotes,
+	);
+	await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	const result = await coordinator.submitSemanticSuccessor({
+		command: {
+			idempotencyKey: "question-1:late_answer",
+			questionId: "question-1",
+			workflowRevision: 1,
+			patch: {
+				field: "offer_price",
+				reason: "补充当前任务所需的权威事实",
+				value: "398 元",
+			},
+			decision: { state: "accepted", value: "398 元" },
+		},
+		request: toHarnessWorkflowInput(
+			source.snapshot,
+			source.usageReservation,
+		),
+		sourceTaskId: source.task.id,
+		workflowId: "task-late-successor",
+		workspaceId: source.snapshot.workspaceId,
+	});
+
+	assert.equal(result.task.id, "task-late-successor");
+	assert.equal(starter.starts.length, 2);
+	const successor = starter.starts[1]!;
+	assert.notEqual(successor.task.id, source.task.id);
+	assert.notEqual(successor.work.id, source.work.id);
+	assert.notEqual(successor.contentPackage.id, source.contentPackage.id);
+	assert.notEqual(successor.snapshot.quote.id, source.snapshot.quote.id);
+	assert.equal(
+		successor.snapshot.semanticDecision?.sourceSnapshotId,
+		source.snapshot.id,
+	);
+	assert.equal(
+		successor.snapshot.semanticDecision?.reference.value,
+		"398 元",
+	);
+	assert.equal(
+		quotes.getQuote(
+			successor.snapshot.quote.id,
+		)?.taskId,
+		successor.task.id,
+	);
+	assert.equal(
+		successor.usageReservation.id,
+		`usage-reservation-${successor.task.id}`,
+	);
 });
 
 test("a rejected Composer admission does not claim a shell or start Harness", async () => {

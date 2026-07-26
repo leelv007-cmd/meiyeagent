@@ -1469,7 +1469,12 @@ async function resolveIntentRoute(input: {
   );
   if (decision.decision.state === 'ignored') {
     return {
-      declaration: freeRouteDeclaration(input.intent.declaration),
+      declaration: freeRouteDeclaration(
+        input.intent.declaration,
+        decision.idempotencyKey.endsWith(':core_timeout')
+          ? 'policy'
+          : 'decision',
+      ),
       request: activeRequest,
       notice: undefined,
     };
@@ -1533,11 +1538,12 @@ function policyContinuationDeclaration(
 
 function freeRouteDeclaration(
   declaration: IntentDeclaration,
+  routingSource: 'decision' | 'policy' = 'decision',
 ): IntentDeclaration {
   return {
     ...declaration,
     route: 'free',
-    routingSource: 'decision',
+    routingSource,
     usedAssetCategories: [],
   };
 }

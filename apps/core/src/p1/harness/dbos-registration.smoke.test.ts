@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import type { QuestionCard } from '@meiye/contracts';
 
@@ -344,6 +346,7 @@ test(
     });
     let pendingQuestionId: string | null = null;
     let configReads = 0;
+    const persistedTimeouts: string[] = [];
     DBOS.setConfig({
       name: 'beauty-marketing-harness-timeout-smoke',
       systemDatabaseUrl: systemDatabaseUrl!,
@@ -381,29 +384,29 @@ test(
           };
         },
       },
+      {
+        async submitCoreTimeout(_workspaceId, _taskId, command) {
+          persistedTimeouts.push(command.idempotencyKey);
+          return { eventId: 'timeout-event', replayed: false };
+        },
+      },
     );
 
     try {
       await DBOS.launch();
+      const request = snapshotTimeoutRequest(
+        workflowId,
+        'workspace-timeout',
+      );
       const handle = await DBOS.startWorkflow(workflow, {
         workflowID: runtimeWorkflowId,
       })({
         workflowId,
         request: {
-          actorId: 'owner-timeout',
-          workspaceId: 'workspace-timeout',
-          packageId: 'package-timeout',
-          expectedRevision: 0,
-          workflowRevision: 1,
-          creationMode: 'customized',
-          rawInput: '把新团购做一套能发的',
-          intent: {
-            context: {
-              workId: 'work-timeout',
-              intent: '把新团购做一套能发的',
-              sourceSummaries: [],
-            },
-            assetReferences: [],
+          ...request,
+          usageReservation: {
+            id: `usage-reservation-${workflowId}`,
+            units: [{ resource: 'copy', quantity: 1 }],
           },
         },
       });
@@ -422,7 +425,7 @@ test(
       const result = await handle.getResult();
       assert.equal(result.delivery.revision, 1);
       assert.equal(result.trace.winnerCandidateId, 'c01');
-      assert.equal((await handle.getStatus())?.status, 'SUCCESS');
+      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
       assert.equal(
         (
           await DBOS.listWorkflows({
@@ -434,18 +437,397 @@ test(
       );
       assert.equal(pendingQuestionId, `${workflowId}:offer-price`);
       assert.equal(configReads, 1);
-      assert.ok(
-        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some(
-          (step) =>
-            step.name ===
-            `snapshot-confirmation-timeout-${workflowId}:offer-price`,
+      assert.deepEqual(persistedTimeouts, [
+        `${workflowId}:offer-price:r1:core_timeout`,
+      ]);
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          .map((step) => [step.functionID, step.name]),
+        [
+          [
+            3,
+            `persist-pending-${workflowId}:offer-price`,
+          ],
+          [4, 'DBOS.setEvent'],
+          [5, 'DBOS.recv'],
+          [6, 'DBOS.sleep'],
+        ],
+      );
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID === 7)
+          .map((step) => [step.functionID, step.name]),
+        [[7, `persist-core-timeout-${workflowId}:offer-price`]],
+      );
+      assert.equal(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some((step) =>
+          step.name.startsWith('snapshot-confirmation-timeout-'),
         ),
+        false,
       );
     } finally {
       await DBOS.shutdown({ deregister: true });
     }
   },
 );
+
+test(
+  'a pre-T45 pending function-ID layout replays without branching or failure',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-replay-${randomUUID()}`;
+    const workspaceId = 'workspace-replay';
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const questionId = `${workflowId}:offer-price`;
+    const applicationVersion = `harness-replay-layout-${workflowId}`;
+    await createPendingLayoutFixture(workflowId, applicationVersion);
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '推广本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId,
+        workflowId,
+        workflowRevision: 1,
+        question: '当前团购价是多少？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: '补充当前任务所需的权威事实',
+        },
+        scope: 'current_task',
+      },
+    });
+    const persistence = {
+      async registerPending() {},
+      async readPending() {
+        return null;
+      },
+      async recordStageTrace() {},
+      async recordTerminalFailure() {},
+    };
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-replay',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion,
+    });
+    registerHarnessDbosWorkflow(
+      ports,
+      persistence,
+      undefined,
+      undefined,
+      {
+        async get() {
+          return {
+            actorId: 'platform-admin',
+            correlationId: 'replayed-layout',
+            createdAt: '2026-07-26T09:01:00.000Z',
+            key: 'harness.confirmation_card.timeout_seconds',
+            reason: 'Config drift must not fork replay',
+            revision: 2,
+            rolledBackToRevision: null,
+            scope: 'global',
+            status: 'applied',
+            value: 1,
+            workspaceId: '__global__',
+          };
+        },
+      },
+      { async submitCoreTimeout() { throw new Error('Unexpected timeout.'); } },
+    );
+    try {
+      await DBOS.launch();
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          .map((step) => [step.functionID, step.name]),
+        [
+          [3, `persist-pending-${questionId}`],
+          [4, 'DBOS.setEvent'],
+          [6, 'DBOS.sleep'],
+        ],
+      );
+      await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
+        idempotencyKey: `${questionId}:merchant-answer`,
+        questionId,
+        workflowRevision: 1,
+        patch: {
+          field: 'offer_price',
+          value: '这次先跳过',
+          reason: '补充当前任务所需的权威事实',
+        },
+        decision: { state: 'ignored', value: '这次先跳过' },
+      });
+      const recovered = DBOS.retrieveWorkflow<{
+        delivery: { revision: number };
+      }>(runtimeWorkflowId);
+      assert.equal((await recovered.getResult()).delivery.revision, 1);
+      assert.equal(await waitForWorkflowStatus(recovered, 'SUCCESS'), 'SUCCESS');
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          .map((step) => [step.functionID, step.name]),
+        [
+          [3, `persist-pending-${questionId}`],
+          [4, 'DBOS.setEvent'],
+          [5, 'DBOS.recv'],
+          [6, 'DBOS.sleep'],
+        ],
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'a run without a usage reservation never arms core auto-continuation',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-quota-hold-${randomUUID()}`;
+    const workspaceId = 'workspace-quota-hold';
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const questionId = `${workflowId}:offer-price`;
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '推广本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId,
+        workflowId,
+        workflowRevision: 1,
+        question: '当前团购价是多少？',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: '补充当前任务所需的权威事实',
+        },
+        scope: 'current_task',
+      },
+    });
+    let configReads = 0;
+    let coreTimeouts = 0;
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-quota-hold',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion: 'harness-quota-hold-v1',
+    });
+    const workflow = registerHarnessDbosWorkflow(
+      ports,
+      {
+        async registerPending() {},
+        async readPending() {
+          return null;
+        },
+        async recordStageTrace() {},
+        async recordTerminalFailure() {},
+      },
+      undefined,
+      undefined,
+      {
+        async get() {
+          configReads += 1;
+          return {
+            actorId: 'platform-admin',
+            correlationId: 'quota-hold-config',
+            createdAt: '2026-07-26T09:00:00.000Z',
+            key: 'harness.confirmation_card.timeout_seconds',
+            reason: 'Would release if the quota guard failed',
+            revision: 1,
+            rolledBackToRevision: null,
+            scope: 'global',
+            status: 'applied',
+            value: 1,
+            workspaceId: '__global__',
+          };
+        },
+      },
+      {
+        async submitCoreTimeout() {
+          coreTimeouts += 1;
+          return { eventId: 'unexpected', replayed: false };
+        },
+      },
+    );
+
+    try {
+      await DBOS.launch();
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({
+        workflowId,
+        request: snapshotTimeoutRequest(workflowId, workspaceId),
+      });
+      await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
+        timeoutSeconds: 5,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      assert.equal((await handle.getStatus())?.status, 'PENDING');
+      assert.equal(configReads, 0);
+      assert.equal(coreTimeouts, 0);
+
+      await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
+        idempotencyKey: `${questionId}:merchant-answer`,
+        questionId,
+        workflowRevision: 1,
+        patch: {
+          field: 'offer_price',
+          value: '这次先跳过',
+          reason: '补充当前任务所需的权威事实',
+        },
+        decision: { state: 'ignored', value: '这次先跳过' },
+      });
+      assert.equal((await handle.getResult()).delivery.revision, 1);
+      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+      assert.equal(coreTimeouts, 0);
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+function legacyTimeoutRequest(workflowId: string, workspaceId: string) {
+  return {
+    actorId: 'owner-replay',
+    workspaceId,
+    packageId: `package-${workflowId}`,
+    expectedRevision: 0,
+    workflowRevision: 1,
+    creationMode: 'customized' as const,
+    rawInput: '把新团购做一套能发的',
+    intent: {
+      context: {
+        workId: `work-${workflowId}`,
+        intent: '把新团购做一套能发的',
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+  };
+}
+
+function snapshotTimeoutRequest(workflowId: string, workspaceId: string) {
+  return {
+    ...legacyTimeoutRequest(workflowId, workspaceId),
+    executionSnapshot: createCreationExecutionSnapshot(
+      {
+        actorId: 'owner-replay',
+        workspaceId,
+        idempotencyKey: `submission-${workflowId}`,
+        taskId: workflowId,
+        workId: `work-${workflowId}`,
+        contentPackageId: `package-${workflowId}`,
+        expectedContentPackageRevision: 0,
+        creationMode: 'customized',
+        intent: '把新团购做一套能发的',
+        surface: { id: 'surface-smoke', revision: 'surface-r1' },
+        recipe: { id: 'recipe-smoke', revision: 'recipe-r1' },
+        lens: 'copy',
+        platform: { id: 'xiaohongshu' },
+        deliverables: [
+          { id: 'copy-main', kind: 'copy', order: 0, quantity: 1 },
+        ],
+        sources: { assets: [] },
+        rights: { revision: 'rights-r1', summary: 'authorized' },
+        identity: { id: 'identity-smoke', revision: 'identity-r1' },
+        modelPolicy: {
+          id: 'policy-smoke',
+          revision: 'policy-r1',
+          mode: 'auto',
+        },
+        catalogModel: { id: 'model-smoke', revision: 'model-r1' },
+        quote: { id: `quote-${workflowId}`, revision: 'quote-r1' },
+        route: { id: 'route-smoke', revision: 'route-r1' },
+        briefContext: { id: 'brief-smoke', revision: 1 },
+        contentModules: ['social_cover'],
+      },
+      '2026-07-26T09:00:00.000Z',
+    ),
+  };
+}
+
+function createPendingLayoutFixture(
+  workflowId: string,
+  applicationVersion: string,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        fileURLToPath(
+          new URL('./dbos-pending-layout.fixture.ts', import.meta.url),
+        ),
+      ],
+      {
+        env: {
+          ...process.env,
+          T45_REPLAY_APP_VERSION: applicationVersion,
+          T45_REPLAY_WORKFLOW_ID: workflowId,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (code === 0 && stdout.includes('PENDING_READY')) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `Pending-layout fixture failed (${String(code)}): ${stderr || stdout}`,
+        ),
+      );
+    });
+  });
+}
+
+async function waitForWorkflowStatus(
+  handle: {
+    getStatus(): Promise<{ status?: string } | null>;
+  },
+  expected: string,
+) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const status = (await handle.getStatus())?.status;
+    if (status === expected) return status;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return (await handle.getStatus())?.status;
+}
 
 const SMOKE_PRIVATE_INSTRUCTION =
   'F21 private Skill instruction must never enter DBOS step output.';

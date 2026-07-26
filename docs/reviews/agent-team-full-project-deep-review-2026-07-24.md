@@ -55,7 +55,7 @@
 
 **主链与匹配度（A1/A3）**
 - **三进三出在 HTTP+SSE 边界真实成立**：三进=composer 提交 + 结构化决定 + 信号补记；三出=进度事件 + 成品版本 + token 帧（`workflow-events.ts` encodeWorkflowSseFrame 三类帧）。对话流是投影、真相在 ContentPackage。
-- **五段 Harness 真接 DBOS 非 PoC**：`dbos-workflow.ts` 全用真 DBOS 原语（runStep/writeStream/recv/setEvent/closeStream），`workflow-core.ts` 零 DBOS import（D-038"step 纯函数内核"落地），五段与 D-033 逐条对应，awaitDecision 带 48h timeout + 版本围栏。
+- **五段 Harness 真接 DBOS 非 PoC**：`dbos-workflow.ts` 全用真 DBOS 原语（runStep/writeStream/recv/setEvent/closeStream），`workflow-core.ts` 零 DBOS import（D-038"step 纯函数内核"落地），五段与 D-033 逐条对应；awaitDecision 的确认卡等待由 admin-config 配置（默认 30 秒），超时以可审计的 ignored/policy 语义继续。
 - **ADR-0007 token 字级流式端到端接通且逻辑正确**：token 与 progress 共享单调 sequence 计数器无碰撞，web 侧按 title/body/cta 三通道增量累积、cursor 单调去重不丢帧。
 - **D-043 Day-0 ≤2 击有极严格真链 e2e 硬门**：走真实 Web→Core→Harness/DBOS HTTP+SSE 链，用 isTrusted 顶层点击计数断言纯文案路径精确=2 击、0 前置表单、0 阻塞卡。
 

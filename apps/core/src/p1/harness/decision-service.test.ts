@@ -147,6 +147,50 @@ test('rejects a client patch that changes the authoritative question target', as
   );
 });
 
+test('core timeout shares persistence but never sends a decision to its own workflow', async () => {
+  const order: string[] = [];
+  const store = new MemoryDecisionStore(order);
+  store.pending = question();
+  const service = new HarnessDecisionService(store, {
+    async resume() {
+      order.push('unexpected-resume');
+    },
+  });
+
+  const result = await service.submitCoreTimeout(
+    'workspace-1',
+    'task-35',
+    coreTimeoutInput(),
+  );
+
+  assert.equal(result.replayed, false);
+  assert.deepEqual(order, [
+    'persist:event-task-35-question-1-question-1:r4:core_timeout',
+  ]);
+  assert.equal(store.events.length, 1);
+  assert.equal(store.traces.length, 1);
+});
+
+test('a frontend winner makes the concurrent core timeout converge without failing', async () => {
+  const store = new MemoryDecisionStore([]);
+  store.pending = question();
+  store.nextOutcome = 'stale_question';
+  const service = new HarnessDecisionService(store, { async resume() {} });
+
+  assert.deepEqual(
+    await service.submitCoreTimeout(
+      'workspace-1',
+      'task-35',
+      coreTimeoutInput(),
+    ),
+    {
+      consumedByOther: true,
+      eventId: null,
+      replayed: true,
+    },
+  );
+});
+
 class MemoryDecisionStore implements HarnessDecisionStore {
   readonly events: Array<{ id: string }> = [];
   readonly traces: Array<{ id: string }> = [];
@@ -171,9 +215,11 @@ class MemoryDecisionStore implements HarnessDecisionStore {
     }
     return {
       outcome,
+      command: input.command,
       resumeRequired:
         (outcome === 'created' || outcome === 'replayed') &&
-        this.resumeRequired,
+        this.resumeRequired &&
+        input.mode !== 'core_timeout',
     };
   }
 
@@ -216,6 +262,23 @@ function decisionInput() {
     decision: {
       state: 'accepted' as const,
       value: '当前团购价 398 元',
+    },
+  };
+}
+
+function coreTimeoutInput() {
+  return {
+    idempotencyKey: 'question-1:r4:core_timeout',
+    questionId: 'question-1',
+    workflowRevision: 4,
+    patch: {
+      field: 'offer_price',
+      value: '超时未作答，已按通用口径继续',
+      reason: '补充当前任务所需的权威事实',
+    },
+    decision: {
+      state: 'ignored' as const,
+      value: '超时未作答，已按通用口径继续',
     },
   };
 }

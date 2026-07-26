@@ -36,17 +36,17 @@ test('confirmation timeout becomes a legal ignored decision', () => {
       null,
     ),
     {
-      idempotencyKey: 'timeout-question-timeout-r3',
+      idempotencyKey: 'question-timeout:r3:core_timeout',
       questionId: 'question-timeout',
       workflowRevision: 3,
       patch: {
         field: 'industry_category',
-        value: 'Confirmation timed out.',
+        value: '超时未作答，已按通用口径继续',
         reason: 'Ground the content in the merchant service category',
       },
       decision: {
         state: 'ignored',
-        value: 'Confirmation timed out.',
+        value: '超时未作答，已按通用口径继续',
       },
     },
   );

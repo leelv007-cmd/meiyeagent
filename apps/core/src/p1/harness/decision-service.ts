@@ -3,8 +3,10 @@ import {
   type QuestionCard,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
+import { createHash } from 'node:crypto';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
 
 export interface HarnessDecisionEvent {
   id: string;
@@ -35,12 +37,22 @@ export interface HarnessDecisionStore {
     taskId: string,
     options?: { includeResolved?: boolean },
   ): Promise<QuestionCard | null>;
+  readDecisionTarget?(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<{
+    question: QuestionCard;
+    request: HarnessWorkflowInput;
+    resolvedByCoreTimeout: boolean;
+    status: 'pending' | 'resolved';
+  } | null>;
   submit(input: {
     workspaceId: string;
     taskId: string;
     command: StructuredDecisionInput;
     event: HarnessDecisionEvent;
     trace: HarnessDecisionTrace;
+    mode?: 'decision' | 'core_timeout' | 'late_answer';
   }): Promise<{
     outcome:
       | 'created'
@@ -48,6 +60,7 @@ export interface HarnessDecisionStore {
       | 'stale_question'
       | 'stale_revision'
       | 'idempotency_conflict';
+    command?: StructuredDecisionInput;
     resumeRequired: boolean;
   }>;
   claimDecisionResume(
@@ -73,6 +86,13 @@ export interface HarnessWorkflowResumer {
     taskId: string,
     command: StructuredDecisionInput,
   ): Promise<void>;
+  startSuccessor?(input: {
+    command: StructuredDecisionInput;
+    request: HarnessWorkflowInput;
+    sourceTaskId: string;
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<void>;
 }
 
 export class HarnessDecisionError extends Error {
@@ -116,8 +136,66 @@ export class HarnessDecisionService {
     taskId: string,
     input: StructuredDecisionInput,
   ) {
+    const submitted = structuredDecisionInputSchema.parse(input);
+    const target = await this.readTarget(workspaceId, taskId);
+    const lateAnswer =
+      target?.status === 'resolved' && target.resolvedByCoreTimeout;
+    const command = lateAnswer
+      ? structuredDecisionInputSchema.parse({
+          ...submitted,
+          idempotencyKey: `${submitted.questionId}:late_answer`,
+        })
+      : submitted;
+    return this.persistAndDispatch({
+      command,
+      mode: lateAnswer ? 'late_answer' : 'decision',
+      target,
+      taskId,
+      workspaceId,
+    });
+  }
+
+  async submitCoreTimeout(
+    workspaceId: string,
+    taskId: string,
+    input: StructuredDecisionInput,
+  ) {
     const command = structuredDecisionInputSchema.parse(input);
-    const pending = await this.store.readPending(workspaceId, taskId);
+    if (!command.idempotencyKey.endsWith(':core_timeout')) {
+      throw new Error('Core timeout decisions require a :core_timeout suffix.');
+    }
+    try {
+      return await this.persistAndDispatch({
+        command,
+        mode: 'core_timeout',
+        target: await this.readTarget(workspaceId, taskId),
+        taskId,
+        workspaceId,
+      });
+    } catch (error) {
+      if (
+        error instanceof HarnessDecisionError &&
+        error.code === 'STALE_QUESTION'
+      ) {
+        return {
+          consumedByOther: true as const,
+          eventId: null,
+          replayed: true,
+        };
+      }
+      throw error;
+    }
+  }
+
+  private async persistAndDispatch(input: {
+    command: StructuredDecisionInput;
+    mode: 'decision' | 'core_timeout' | 'late_answer';
+    target: Awaited<ReturnType<HarnessDecisionService['readTarget']>>;
+    taskId: string;
+    workspaceId: string;
+  }) {
+    const { command, mode, target, taskId, workspaceId } = input;
+    const pending = target?.question ?? null;
     if (
       pending?.questionId === command.questionId &&
       pending.workflowRevision === command.workflowRevision &&
@@ -156,6 +234,7 @@ export class HarnessDecisionService {
       command,
       event,
       trace,
+      mode,
     });
     if (result.outcome !== 'created' && result.outcome !== 'replayed') {
       throw decisionConflict(result.outcome);
@@ -169,7 +248,24 @@ export class HarnessDecisionService {
       ))
     ) {
       try {
-        await this.workflow.resume(workspaceId, taskId, command);
+        const persistedCommand = result.command ?? command;
+        if (mode === 'late_answer') {
+          if (!target?.request || !this.workflow.startSuccessor) {
+            throw new Error('Late-answer successor workflow is unavailable.');
+          }
+          await this.workflow.startSuccessor({
+            command: persistedCommand,
+            request: target.request,
+            sourceTaskId: taskId,
+            workflowId: lateAnswerSuccessorWorkflowId(
+              taskId,
+              persistedCommand.questionId,
+            ),
+            workspaceId,
+          });
+        } else {
+          await this.workflow.resume(workspaceId, taskId, persistedCommand);
+        }
         await this.store.markDecisionResumed(workspaceId, taskId, event.id);
       } catch (error) {
         await this.store.releaseDecisionResume(
@@ -180,8 +276,53 @@ export class HarnessDecisionService {
         throw new HarnessDecisionResumeError({ cause: error });
       }
     }
-    return { eventId: event.id, replayed: result.outcome === 'replayed' };
+    return {
+      eventId: event.id,
+      replayed: result.outcome === 'replayed',
+      ...(mode === 'late_answer'
+        ? {
+            successor: {
+              snapshotId: `snapshot-${lateAnswerSuccessorWorkflowId(
+                taskId,
+                command.questionId,
+              )}`,
+              workflowId: lateAnswerSuccessorWorkflowId(
+                taskId,
+                command.questionId,
+              ),
+            },
+          }
+        : {}),
+    };
   }
+
+  private async readTarget(workspaceId: string, taskId: string) {
+    if (this.store.readDecisionTarget) {
+      return this.store.readDecisionTarget(workspaceId, taskId);
+    }
+    const question = await this.store.readPending(workspaceId, taskId, {
+      includeResolved: true,
+    });
+    return question
+      ? {
+          question,
+          request: undefined,
+          resolvedByCoreTimeout: false,
+          status: 'pending' as const,
+        }
+      : null;
+  }
+}
+
+export function lateAnswerSuccessorWorkflowId(
+  taskId: string,
+  questionId: string,
+) {
+  const digest = createHash('sha256')
+    .update(`${taskId}:${questionId}:late_answer`)
+    .digest('hex')
+    .slice(0, 24);
+  return `composer-task:late-answer-${digest}`;
 }
 
 function decisionConflict(

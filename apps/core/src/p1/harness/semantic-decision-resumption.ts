@@ -88,6 +88,40 @@ export function buildSemanticDecisionResumption(input: {
   };
 }
 
+export function buildTerminalSemanticDecisionSuccessor(input: {
+  command: StructuredDecisionInput;
+  contentPackageId: string;
+  createdAt: string;
+  quote: { id: string; revision: string };
+  sourceSnapshot: CreationExecutionSnapshot;
+  workflowId: string;
+  workId: string;
+}) {
+  const command = input.command;
+  const reference = {
+    id: decisionReferenceId(input.sourceSnapshot.id, command),
+    field: command.patch.field,
+    value: command.decision.value,
+    revision: command.workflowRevision,
+  };
+  return creationExecutionSnapshotSchema.parse({
+    ...input.sourceSnapshot,
+    id: `snapshot-${input.workflowId}`,
+    createdAt: input.createdAt,
+    task: { id: input.workflowId },
+    work: { id: input.workId },
+    contentPackage: {
+      id: input.contentPackageId,
+      expectedRevision: 0,
+    },
+    quote: input.quote,
+    semanticDecision: {
+      sourceSnapshotId: input.sourceSnapshot.id,
+      reference,
+    },
+  });
+}
+
 function decisionReferenceId(
   sourceSnapshotId: string,
   command: StructuredDecisionInput,

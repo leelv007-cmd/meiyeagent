@@ -17,7 +17,10 @@ import type {
   HarnessWorkflowInput,
   HarnessWorkflowStarter,
 } from './task-admission.js';
-import type { HarnessDecisionStore } from './decision-service.js';
+import type {
+  HarnessDecisionService,
+  HarnessDecisionStore,
+} from './decision-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
@@ -76,6 +79,7 @@ export function registerHarnessDbosWorkflow(
   semanticResumptions?: HarnessSemanticDecisionResumptionStore,
   billing?: HarnessBillingSettlementPort,
   config?: Pick<AdminConfigRepository, 'get'>,
+  decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'>,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -134,36 +138,58 @@ export function registerHarnessDbosWorkflow(
           { name: `persist-pending-${question.questionId}` },
         );
         await DBOS.setEvent('pending-structured-decision', question);
-        const timeoutSeconds = await DBOS.runStep(
-          async () => {
-            const configured = (
-              await config?.get(
-                'global',
-                '__global__',
-                HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
-              )
-            )?.value;
-            if (configured === undefined) {
-              return DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS;
-            }
-            if (
-              typeof configured !== 'number' ||
-              !Number.isSafeInteger(configured) ||
-              configured < 1
-            ) {
-              throw new Error(
-                'Confirmation-card timeout config must be a positive integer.',
-              );
-            }
-            return configured;
-          },
-          { name: `snapshot-confirmation-timeout-${question.questionId}` },
-        );
+        if (!request.usageReservation) {
+          return waitForHeldDecision(question);
+        }
+        // Keep this read outside DBOS.runStep: the durable recv deadline is
+        // persisted on first execution, while recovered workflows must retain
+        // the pre-T45 function-ID layout.
+        const configured = (
+          await config?.get(
+            'global',
+            '__global__',
+            HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+          )
+        )?.value;
+        const timeoutSeconds =
+          configured === undefined
+            ? DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS
+            : configured;
+        if (
+          typeof timeoutSeconds !== 'number' ||
+          !Number.isSafeInteger(timeoutSeconds) ||
+          timeoutSeconds < 1 ||
+          timeoutSeconds > 3_600
+        ) {
+          throw new Error(
+            'Confirmation-card timeout config must be an integer from 1 to 3600.',
+          );
+        }
         const decision = await DBOS.recv<StructuredDecisionInput>(
           decisionTopic(question.questionId),
           { timeoutSeconds },
         );
-        return confirmationCardDecision(question, decision);
+        const command = confirmationCardDecision(question, decision);
+        if (!decision) {
+          if (!decisions) {
+            throw new Error('Core timeout decision persistence is unavailable.');
+          }
+          const persisted = await DBOS.runStep(
+            () =>
+              decisions.submitCoreTimeout(
+                request.workspaceId,
+                workflowId,
+                command,
+              ),
+            {
+              name: `persist-core-timeout-${question.questionId}`,
+            },
+          );
+          if ('consumedByOther' in persisted && persisted.consumedByOther) {
+            return waitForHeldDecision(question);
+          }
+        }
+        return command;
       },
       ...(semanticResumptions
         ? {
@@ -467,17 +493,17 @@ export function confirmationCardDecision(
 ) {
   if (!decision) {
     return structuredDecisionInputSchema.parse({
-      idempotencyKey: `timeout-${question.questionId}-r${question.workflowRevision}`,
+      idempotencyKey: `${question.questionId}:r${question.workflowRevision}:core_timeout`,
       questionId: question.questionId,
       workflowRevision: question.workflowRevision,
       patch: {
         field: question.response.field,
-        value: 'Confirmation timed out.',
+        value: '超时未作答，已按通用口径继续',
         reason: question.response.reason,
       },
       decision: {
         state: 'ignored',
-        value: 'Confirmation timed out.',
+        value: '超时未作答，已按通用口径继续',
       },
     });
   }
@@ -489,6 +515,15 @@ export function confirmationCardDecision(
     throw new Error('Structured decision targets a stale workflow revision.');
   }
   return parsed;
+}
+
+async function waitForHeldDecision(question: QuestionCard) {
+  for (;;) {
+    const decision = await DBOS.recv<StructuredDecisionInput>(
+      decisionTopic(question.questionId),
+    );
+    if (decision) return confirmationCardDecision(question, decision);
+  }
 }
 
 function decisionTopic(questionId: string) {

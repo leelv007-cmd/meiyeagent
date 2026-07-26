@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { DiagnosticRun, QuestionCard } from '@meiye/contracts';
+import type {
+  DiagnosticRun,
+  QuestionCard,
+  StructuredDecisionInput,
+} from '@meiye/contracts';
 
 import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
@@ -16,6 +20,7 @@ import {
 import {
   HarnessTaskAdmissionService,
   type HarnessTaskRequestRegistry,
+  type HarnessWorkflowInput,
 } from './task-admission.js';
 
 const diagnostics: DiagnosticRepository = {
@@ -52,12 +57,19 @@ test('memory harness registry rejects a question while the task has a pending ap
 test('harness HTTP boundary admits, reads and answers one authoritative question', async (t) => {
   const registry = new MemoryHarnessStore();
   const resumed: string[] = [];
+  const successors: Array<{
+    command: StructuredDecisionInput;
+    workflowId: string;
+  }> = [];
   let resumeAttempts = 0;
   const decisions = new HarnessDecisionService(registry, {
     async resume(_workspaceId, _taskId, command) {
       resumeAttempts += 1;
       if (resumeAttempts === 1) throw new Error('DBOS unavailable');
       resumed.push(command.questionId);
+    },
+    async startSuccessor({ command, workflowId }) {
+      successors.push({ command, workflowId });
     },
   });
   const harnessService = new HarnessApplicationService(
@@ -256,6 +268,68 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
   assert.equal((await answered.json()).data.replayed, true);
   assert.deepEqual(resumed, ['question-1']);
 
+  await harnessService.submit({
+    ...taskRequest('task-http-late'),
+    actorId: 'owner-1',
+    workspaceId: 'workspace-1',
+  });
+  await registry.registerPending(
+    'workspace-1',
+    question('task-http-late'),
+  );
+  await decisions.submitCoreTimeout(
+    'workspace-1',
+    'task-http-late',
+    coreTimeoutDecision(),
+  );
+
+  const lateAnswer = await fetch(
+    `${base}/task-http-late/decision`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(decisionInput()),
+    },
+  );
+  assert.equal(lateAnswer.status, 200);
+  const firstLateBody = (await lateAnswer.json()).data;
+  assert.equal(firstLateBody.replayed, false);
+  assert.match(
+    firstLateBody.successor.workflowId,
+    /^composer-task:late-answer-/u,
+  );
+
+  const repeatedLateAnswer = await fetch(
+    `${base}/task-http-late/decision`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...decisionInput(),
+        idempotencyKey: 'decision-http-late-second',
+        patch: {
+          ...decisionInput().patch,
+          value: '当前团购价 428 元',
+        },
+        decision: { state: 'accepted', value: '当前团购价 428 元' },
+      }),
+    },
+  );
+  assert.equal(repeatedLateAnswer.status, 200);
+  const repeatedLateBody = (await repeatedLateAnswer.json()).data;
+  assert.equal(repeatedLateBody.replayed, true);
+  assert.deepEqual(repeatedLateBody.successor, firstLateBody.successor);
+  assert.equal(successors.length, 1);
+  assert.equal(successors[0]?.workflowId, firstLateBody.successor.workflowId);
+  assert.equal(
+    successors[0]?.command.idempotencyKey,
+    'question-1:late_answer',
+  );
+  assert.equal(
+    successors[0]?.command.decision.value,
+    '当前团购价 398 元',
+  );
+
   const recommendation = await fetch(
     `http://127.0.0.1:${port}/v1/workspaces/workspace-1/p1/harness/recommendation`,
     { headers },
@@ -339,12 +413,23 @@ class MemoryHarnessStore
 {
   private readonly tasks = new Map<
     string,
-    { fingerprint: string; workspaceId: string }
+    {
+      fingerprint: string;
+      request: HarnessWorkflowInput;
+      workspaceId: string;
+    }
   >();
-  private readonly decisions = new Map<string, string>();
+  private readonly decisions = new Map<
+    string,
+    {
+      command: StructuredDecisionInput;
+      fingerprint: string;
+    }
+  >();
   private readonly resumedEvents = new Set<string>();
   private readonly resumeClaims = new Set<string>();
   private readonly pending = new Map<string, QuestionCard>();
+  private readonly resolvedByCoreTimeout = new Map<string, QuestionCard>();
   private readonly audits = new Map<
     string,
     {
@@ -372,6 +457,7 @@ class MemoryHarnessStore
     if (!existing) {
       this.tasks.set(identity, {
         fingerprint: input.fingerprint,
+        request: structuredClone(input.request),
         workspaceId: input.request.workspaceId,
       });
       return { kind: 'created' as const };
@@ -417,6 +503,22 @@ class MemoryHarnessStore
     return question ? structuredClone(question) : null;
   }
 
+  async readDecisionTarget(workspaceId: string, taskId: string) {
+    const identity = JSON.stringify([workspaceId, taskId]);
+    const question =
+      this.pending.get(identity) ?? this.resolvedByCoreTimeout.get(identity);
+    const request = this.tasks.get(identity)?.request;
+    if (!question || !request) return null;
+    return {
+      question: structuredClone(question),
+      request: structuredClone(request),
+      resolvedByCoreTimeout: this.resolvedByCoreTimeout.has(identity),
+      status: this.pending.has(identity)
+        ? ('pending' as const)
+        : ('resolved' as const),
+    };
+  }
+
   async submit(input: Parameters<HarnessDecisionStore['submit']>[0]) {
     const identity = JSON.stringify([
       input.workspaceId,
@@ -427,9 +529,11 @@ class MemoryHarnessStore
     if (existing) {
       return {
         outcome:
-          existing === input.event.payloadFingerprint
+          input.mode === 'late_answer' ||
+          existing.fingerprint === input.event.payloadFingerprint
             ? ('replayed' as const)
             : ('idempotency_conflict' as const),
+        command: structuredClone(existing.command),
         resumeRequired: !this.resumedEvents.has(
           JSON.stringify([input.workspaceId, input.event.id]),
         ),
@@ -437,6 +541,21 @@ class MemoryHarnessStore
     }
     const pendingIdentity = JSON.stringify([input.workspaceId, input.taskId]);
     const pending = this.pending.get(pendingIdentity);
+    if (
+      input.mode === 'late_answer' &&
+      this.resolvedByCoreTimeout.get(pendingIdentity)?.questionId ===
+        input.command.questionId
+    ) {
+      this.decisions.set(identity, {
+        command: structuredClone(input.command),
+        fingerprint: input.event.payloadFingerprint,
+      });
+      return {
+        command: structuredClone(input.command),
+        outcome: 'created' as const,
+        resumeRequired: true,
+      };
+    }
     if (
       pending?.questionId !== input.command.questionId ||
       pending.workflowId !== input.taskId
@@ -446,9 +565,21 @@ class MemoryHarnessStore
     if (pending.workflowRevision !== input.command.workflowRevision) {
       return { outcome: 'stale_revision' as const, resumeRequired: false };
     }
-    this.decisions.set(identity, input.event.payloadFingerprint);
+    this.decisions.set(identity, {
+      command: structuredClone(input.command),
+      fingerprint: input.event.payloadFingerprint,
+    });
     this.pending.delete(pendingIdentity);
-    return { outcome: 'created' as const, resumeRequired: true };
+    if (input.mode === 'core_timeout') {
+      this.resolvedByCoreTimeout.set(
+        pendingIdentity,
+        structuredClone(pending),
+      );
+    }
+    return {
+      outcome: 'created' as const,
+      resumeRequired: input.mode !== 'core_timeout',
+    };
   }
 
   async markDecisionResumed(
@@ -522,10 +653,10 @@ function taskRequest(taskId = 'task-http-1') {
   };
 }
 
-function question(): QuestionCard {
+function question(workflowId = 'task-http-1'): QuestionCard {
   return {
     questionId: 'question-1',
-    workflowId: 'task-http-1',
+    workflowId,
     workflowRevision: 1,
     question: '当前团购价是多少？',
     options: [],
@@ -535,6 +666,21 @@ function question(): QuestionCard {
       reason: '补充当前任务所需的权威事实',
     },
     scope: 'current_task',
+  };
+}
+
+function coreTimeoutDecision() {
+  return {
+    ...decisionInput(),
+    idempotencyKey: 'question-1:r1:core_timeout',
+    patch: {
+      ...decisionInput().patch,
+      value: '超时未作答，已按通用口径继续',
+    },
+    decision: {
+      state: 'ignored' as const,
+      value: '超时未作答，已按通用口径继续',
+    },
   };
 }
 

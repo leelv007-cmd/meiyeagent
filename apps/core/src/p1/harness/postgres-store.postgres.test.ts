@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { HarnessDecisionService } from './decision-service.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import { harnessRuntimeId } from './workspace-scope.js';
@@ -276,6 +277,209 @@ test(
 );
 
 test(
+  'Postgres timeout decisions resolve the row and separate browser from core ledger facts',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessStore(pool);
+    await store.applySchema();
+    const suffix = randomUUID();
+    const workspaceId = `timeout-ledger-${suffix}`;
+    const browserTaskId = `browser-timeout-${suffix}`;
+    const coreTaskId = `core-timeout-${suffix}`;
+    const browserRuntimeId = harnessRuntimeId(workspaceId, browserTaskId);
+    const coreRuntimeId = harnessRuntimeId(workspaceId, coreTaskId);
+    const successorStarts: string[] = [];
+    const admission = new HarnessTaskAdmissionService(store, {
+      async start({ workflowId }) {
+        return { workflowId };
+      },
+    });
+    const decisions = new HarnessDecisionService(store, {
+      async resume() {},
+      async startSuccessor({ workflowId }) {
+        successorStarts.push(workflowId);
+      },
+    });
+
+    try {
+      for (const taskId of [browserTaskId, coreTaskId]) {
+        await admission.submit({
+          ...taskRequest(taskId),
+          packageId: `package-${taskId}`,
+          workspaceId,
+        });
+        await store.registerPending(workspaceId, {
+          questionId: `${taskId}:offer-price`,
+          workflowId: taskId,
+          workflowRevision: 4,
+          question: '当前团购价是多少？',
+          options: [],
+          freeText: { enabled: true },
+          response: {
+            field: 'offer_price',
+            reason: '补充当前任务所需的权威事实',
+          },
+          scope: 'current_task',
+        });
+      }
+
+      await decisions.submit(
+        workspaceId,
+        browserTaskId,
+        ignoredDecision(
+          `${browserTaskId}:offer-price`,
+          `${browserTaskId}:offer-price:r4:timed_out`,
+          '前端倒计时结束，按通用口径继续',
+        ),
+      );
+      await decisions.submitCoreTimeout(
+        workspaceId,
+        coreTaskId,
+        ignoredDecision(
+          `${coreTaskId}:offer-price`,
+          `${coreTaskId}:offer-price:r4:core_timeout`,
+          '超时未作答，已按通用口径继续',
+        ),
+      );
+
+      const late = await decisions.submit(
+        workspaceId,
+        coreTaskId,
+        acceptedDecision(`${coreTaskId}:offer-price`, '398 元'),
+      );
+      const replay = await decisions.submit(
+        workspaceId,
+        coreTaskId,
+        acceptedDecision(`${coreTaskId}:offer-price`, '399 元'),
+      );
+      assert.equal(late.replayed, false);
+      assert.equal(replay.replayed, true);
+      assert.equal(late.successor?.workflowId, replay.successor?.workflowId);
+      assert.deepEqual(successorStarts, [late.successor?.workflowId]);
+
+      const evidence = await pool.query<{
+        audits: number;
+        events: number;
+        idempotency_keys: string[];
+        outbox: number;
+        pending_status: string;
+        traces: number;
+      }>(
+        `select requests.workflow_id,
+                questions.status as pending_status,
+                count(distinct events.id)::int as events,
+                array_agg(distinct events.idempotency_key order by events.idempotency_key)
+                  as idempotency_keys,
+                count(distinct traces.id)::int as traces,
+                count(distinct audits.id)::int as audits,
+                count(distinct outbox.audit_id)::int as outbox
+           from harness_runtime.task_requests requests
+           join harness_runtime.pending_questions questions
+             on questions.task_id=requests.task_id
+           join harness_runtime.decision_events events
+             on events.task_id=requests.task_id
+           join harness_runtime.decision_traces traces
+             on traces.task_id=requests.task_id
+           join harness_runtime.audit_events audits
+             on audits.workflow_id=requests.task_id
+            and audits.event_type='structured_decision_recorded'
+           join harness_runtime.langfuse_outbox outbox
+             on outbox.audit_id=audits.id
+          where requests.task_id=any($1::text[])
+          group by requests.workflow_id, questions.status
+          order by requests.workflow_id`,
+        [[browserRuntimeId, coreRuntimeId]],
+      );
+      assert.deepEqual(
+        evidence.rows.map((row) => ({
+          audits: row.audits,
+          events: row.events,
+          idempotency_keys: [...row.idempotency_keys].sort(),
+          outbox: row.outbox,
+          pending_status: row.pending_status,
+          traces: row.traces,
+        })),
+        [
+          {
+            audits: 1,
+            events: 1,
+            idempotency_keys: [
+              `${browserTaskId}:offer-price:r4:timed_out`,
+            ],
+            outbox: 1,
+            pending_status: 'resolved',
+            traces: 1,
+          },
+          {
+            audits: 2,
+            events: 2,
+            idempotency_keys: [
+              `${coreTaskId}:offer-price:late_answer`,
+              `${coreTaskId}:offer-price:r4:core_timeout`,
+            ].sort(),
+            outbox: 2,
+            pending_status: 'resolved',
+            traces: 2,
+          },
+        ],
+      );
+      const coreTimeout = await pool.query<{
+        decision_value: string;
+        resolution_source: string;
+        resume_status: string;
+      }>(
+        `select events.payload->'decision'->>'value' as decision_value,
+                audits.payload->>'resolutionSource' as resolution_source,
+                events.resume_status
+           from harness_runtime.decision_events events
+           join harness_runtime.audit_events audits
+             on audits.workflow_id=events.task_id
+            and audits.payload->>'eventId'=events.payload->>'id'
+          where events.task_id=$1
+            and events.idempotency_key like '%:core_timeout'`,
+        [coreRuntimeId],
+      );
+      assert.deepEqual(coreTimeout.rows[0], {
+        decision_value: '超时未作答，已按通用口径继续',
+        resolution_source: 'core_timeout',
+        resume_status: 'sent',
+      });
+      await assert.doesNotReject(
+        new PostgresOperationsRepository(pool).assertTaskHasNoPendingQuestion(
+          workspaceId,
+          coreTaskId,
+        ),
+      );
+    } finally {
+      await pool.query(
+        `delete from harness_runtime.langfuse_outbox
+          where audit_id in (
+            select id from harness_runtime.audit_events
+             where workflow_id=any($1::text[])
+          )`,
+        [[browserRuntimeId, coreRuntimeId]],
+      );
+      for (const table of [
+        'audit_events',
+        'decision_traces',
+        'decision_events',
+        'pending_questions',
+        'task_requests',
+      ]) {
+        await pool.query(
+          `delete from harness_runtime.${table} where ${
+            table === 'audit_events' ? 'workflow_id' : 'task_id'
+          }=any($1::text[])`,
+          [[browserRuntimeId, coreRuntimeId]],
+        );
+      }
+      await pool.end();
+    }
+  },
+);
+
+test(
   'Postgres harness store resumes migrated legacy runtime identities',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -428,6 +632,38 @@ function taskRequest(taskId: string) {
       },
       assetReferences: [],
     },
+  };
+}
+
+function ignoredDecision(
+  questionId: string,
+  idempotencyKey: string,
+  value: string,
+) {
+  return {
+    idempotencyKey,
+    questionId,
+    workflowRevision: 4,
+    patch: {
+      field: 'offer_price',
+      value,
+      reason: '补充当前任务所需的权威事实',
+    },
+    decision: { state: 'ignored' as const, value },
+  };
+}
+
+function acceptedDecision(questionId: string, value: string) {
+  return {
+    idempotencyKey: `merchant-${randomUUID()}`,
+    questionId,
+    workflowRevision: 4,
+    patch: {
+      field: 'offer_price',
+      value,
+      reason: '补充当前任务所需的权威事实',
+    },
+    decision: { state: 'accepted' as const, value },
   };
 }
 

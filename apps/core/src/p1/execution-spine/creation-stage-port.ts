@@ -39,6 +39,7 @@ export function toHarnessWorkflowInput(
 	snapshot: CreationExecutionSnapshot,
 	usageReservation?: CreationSubmissionRecord["usageReservation"],
 ): HarnessWorkflowInput {
+	const semanticDecision = snapshot.semanticDecision;
 	return {
 		actorId: snapshot.actorId,
 		workspaceId: snapshot.workspaceId,
@@ -51,11 +52,24 @@ export function toHarnessWorkflowInput(
 			context: {
 				workId: snapshot.work.id,
 				intent: snapshot.intent.text,
-				sourceSummaries: [],
+				sourceSummaries: semanticDecision
+					? [
+							`Merchant decision (${semanticDecision.reference.field}): ${semanticDecision.reference.value}`,
+						]
+					: [],
+				...(semanticDecision
+					? {
+							[semanticDecision.reference.field]:
+								semanticDecision.reference.value,
+						}
+					: {}),
 			},
 			assetReferences: snapshot.sources.assets.map((asset) => asset.id),
 		},
 		executionSnapshot: snapshot,
+		...(semanticDecision
+			? { decisionReferences: [semanticDecision.reference] }
+			: {}),
 		...(usageReservation ? { usageReservation } : {}),
 	};
 }

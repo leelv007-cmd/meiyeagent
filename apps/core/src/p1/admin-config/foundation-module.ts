@@ -262,7 +262,7 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     key: HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
     scope: 'global',
     description: 'Confirmation-card wait before generic workflow continuation.',
-    valueSchema: z.number().int().positive(),
+    valueSchema: z.number().int().positive().max(3_600),
   },
   {
     key: 'compliance.regulated_mode.default',

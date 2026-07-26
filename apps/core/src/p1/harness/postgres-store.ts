@@ -1,6 +1,7 @@
 import {
   contentPackageSchema,
   questionCardSchema,
+  structuredDecisionInputSchema,
   type ContentPackageRevisionDelivery,
   type CreativeRecommendationDecisionTrace,
   type MarketingPackageEvidence,
@@ -442,6 +443,43 @@ export class PostgresHarnessStore
       : null;
   }
 
+  async readDecisionTarget(workspaceId: string, taskId: string) {
+    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, taskId);
+    if (!runtimeTaskId) return null;
+    const result = await this.pool.query<{
+      core_timeout: boolean;
+      payload: unknown;
+      request: HarnessWorkflowInput;
+      status: 'pending' | 'resolved';
+    }>(
+      `select questions.payload,
+              questions.status,
+              requests.request,
+              exists (
+                select 1
+                  from harness_runtime.decision_events events
+                 where events.task_id=questions.task_id
+                   and events.question_id=questions.question_id
+                   and events.idempotency_key like '%:core_timeout'
+                   and events.payload->'decision'->>'state'='ignored'
+              ) as core_timeout
+         from harness_runtime.pending_questions questions
+         join harness_runtime.task_requests requests
+           on requests.task_id=questions.task_id
+        where questions.task_id=$1`,
+      [runtimeTaskId],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          question: questionCardSchema.parse(row.payload),
+          request: row.request,
+          resolvedByCoreTimeout: row.core_timeout,
+          status: row.status,
+        }
+      : null;
+  }
+
   async listPendingQuestions(workspaceId: string) {
     const result = await this.pool.query<{
       payload: unknown;
@@ -489,10 +527,11 @@ export class PostgresHarnessStore
         `${runtimeTaskId}:${input.command.idempotencyKey}`,
       ]);
       const existing = await client.query<{
+        payload: unknown;
         payload_fingerprint: string;
         resume_status: string;
       }>(
-        `select payload_fingerprint, resume_status
+        `select payload, payload_fingerprint, resume_status
          from harness_runtime.decision_events
          where task_id=$1 and idempotency_key=$2`,
         [runtimeTaskId, input.command.idempotencyKey],
@@ -501,10 +540,13 @@ export class PostgresHarnessStore
         await client.query('commit');
         return {
           outcome:
-            existing.rows[0].payload_fingerprint ===
-            input.event.payloadFingerprint
+            input.mode === 'late_answer' ||
+            existing.rows[0].payload_fingerprint === input.event.payloadFingerprint
               ? 'replayed'
               : 'idempotency_conflict',
+          ...(input.mode === 'late_answer'
+            ? { command: commandFromDecisionEvent(existing.rows[0].payload) }
+            : {}),
           resumeRequired: existing.rows[0].resume_status !== 'sent',
         };
       }
@@ -520,9 +562,26 @@ export class PostgresHarnessStore
         [runtimeTaskId],
       );
       const node = pending.rows[0];
+      const lateAnswerSource =
+        input.mode === 'late_answer'
+          ? await client.query(
+              `select 1
+                 from harness_runtime.decision_events
+                where task_id=$1
+                  and question_id=$2
+                  and idempotency_key like '%:core_timeout'
+                  and payload->'decision'->>'state'='ignored'
+                limit 1`,
+              [runtimeTaskId, input.command.questionId],
+            )
+          : null;
+      const acceptsLateAnswer =
+        input.mode === 'late_answer' &&
+        node?.status === 'resolved' &&
+        lateAnswerSource?.rowCount === 1;
       if (
         !node ||
-        node.status !== 'pending' ||
+        (node.status !== 'pending' && !acceptsLateAnswer) ||
         node.question_id !== input.command.questionId
       ) {
         await client.query('rollback');
@@ -536,8 +595,8 @@ export class PostgresHarnessStore
       await client.query(
         `insert into harness_runtime.decision_events
           (id, task_id, question_id, workflow_revision, idempotency_key,
-           payload_fingerprint, payload)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
+           payload_fingerprint, payload, resume_status)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [
           runtimeEventId,
           runtimeTaskId,
@@ -546,6 +605,7 @@ export class PostgresHarnessStore
           input.command.idempotencyKey,
           input.event.payloadFingerprint,
           JSON.stringify(input.event),
+          input.mode === 'core_timeout' ? 'sent' : 'pending',
         ],
       );
       await this.writeDecisionTrace(
@@ -563,18 +623,25 @@ export class PostgresHarnessStore
         payload: {
           eventId: input.event.id,
           questionId: input.command.questionId,
+          resolutionSource: input.mode ?? 'decision',
           workflowRevision: input.command.workflowRevision,
         },
       };
       await this.writeAuditAndOutbox(client, audit, runtimeTaskId);
-      await client.query(
-        `update harness_runtime.pending_questions
-         set status='resolved', updated_at=now()
-         where task_id=$1`,
-        [runtimeTaskId],
-      );
+      if (!acceptsLateAnswer) {
+        await client.query(
+          `update harness_runtime.pending_questions
+           set status='resolved', updated_at=now()
+           where task_id=$1`,
+          [runtimeTaskId],
+        );
+      }
       await client.query('commit');
-      return { outcome: 'created', resumeRequired: true };
+      return {
+        outcome: 'created',
+        command: input.command,
+        resumeRequired: input.mode !== 'core_timeout',
+      };
     } catch (error) {
       await client.query('rollback');
       throw error;
@@ -1299,6 +1366,17 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function commandFromDecisionEvent(value: unknown) {
+  const event = record(value);
+  return structuredDecisionInputSchema.parse({
+    idempotencyKey: event?.idempotencyKey,
+    questionId: event?.questionId,
+    workflowRevision: event?.workflowRevision,
+    patch: event?.patch,
+    decision: event?.decision,
+  });
 }
 
 function copyVersionId(

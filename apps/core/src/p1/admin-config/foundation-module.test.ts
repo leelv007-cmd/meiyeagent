@@ -319,6 +319,13 @@ describe('Admin config application seam', () => {
     await apply(30, null);
     await assert.rejects(apply(45, null), /Config head changed/u);
     await apply(45, 1);
+    await assert.rejects(
+      apply(3_601, 2),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'INVALID_STATE',
+    );
     const history = await repository.history(
       'global',
       '__global__',

@@ -814,6 +814,51 @@ test('a runtime without a pending-question lookup fails closed to the decision p
   assert.equal(awaitedQuestion, true);
 });
 
+test('a core timeout labels the generic route as policy, not merchant decision', async () => {
+  const stages = fixtureIndustryGapStages();
+  const nameIntent = stages.nameIntent;
+  stages.nameIntent = async (input) => ({
+    ...(await nameIntent(input)),
+    gapGrounding: {
+      activeConfirmedFactCount: 0,
+      answerableConfirmedFactCount: 0,
+    },
+  });
+  let routingSource: string | undefined;
+  const injectContext = stages.injectContext;
+  stages.injectContext = async (input) => {
+    routingSource = input.declaration.routingSource;
+    return injectContext(input);
+  };
+
+  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      return {
+        idempotencyKey: `${question.questionId}:r${question.workflowRevision}:core_timeout`,
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: '超时未作答，已按通用口径继续',
+          reason: question.response.reason,
+        },
+        decision: {
+          state: 'ignored',
+          value: '超时未作答，已按通用口径继续',
+        },
+      };
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(routingSource, 'policy');
+});
+
 test('a reuse request keeps an industry question reachable and resumes after its answer', async () => {
   const stages = fixtureIndustryGapStages();
   const nameIntent = stages.nameIntent;
