@@ -26,9 +26,6 @@ test('harness settlement rejects a changed quote revision before commit', async 
       async getQuote() {
         return quote({ revision: 'quote-revision-2' });
       },
-      async assertAcceptedQuote() {
-        throw new Error('must reject before lifecycle validation');
-      },
       async settleTask() {
         settleCalls += 1;
       },
@@ -58,9 +55,6 @@ test('harness video commit passes measured duration and reconciles the grant lot
       async getQuote() {
         return quote();
       },
-      async assertAcceptedQuote() {
-        return quote();
-      },
       async settleTask(settlement) {
         trustedUsage = settlement.trustedUsage;
       },
@@ -86,6 +80,99 @@ test('harness video commit passes measured duration and reconciles the grant lot
 
   assert.deepEqual(trustedUsage, input.trustedUsage);
   assert.equal(refundAmount, 9);
+});
+
+test('harness commit settles a dispatched quote without re-running the submission gate', async () => {
+  let settleCalls = 0;
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'dispatched' });
+      },
+      async settleTask() {
+        settleCalls += 1;
+      },
+      async getUsage() {
+        return usage({
+          status: 'committed',
+          settledQuantity: 15,
+        });
+      },
+    },
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+  );
+
+  await executor.commit(input);
+
+  assert.equal(settleCalls, 1);
+});
+
+test('harness settlement rejects a quote before the settlement lifecycle', async () => {
+  let settleCalls = 0;
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'confirmed' });
+      },
+      async settleTask() {
+        settleCalls += 1;
+      },
+      async getUsage() {
+        return null;
+      },
+    },
+    {
+      async refundUsageOperation() {
+        return [];
+      },
+    },
+  );
+
+  await assert.rejects(
+    executor.commit(input),
+    /cannot settle from status confirmed/u,
+  );
+  assert.equal(settleCalls, 0);
+});
+
+test('harness settlement rejects task and workspace quote mismatches', async () => {
+  for (const facts of [
+    { taskId: 'task-other' },
+    { workspaceId: 'workspace-other' },
+  ]) {
+    let settleCalls = 0;
+    const executor = new HarnessProductBillingSettlementExecutor(
+      {
+        async getQuote() {
+          return quote({
+            lifecycleStatus: 'dispatched',
+            ...facts,
+          });
+        },
+        async settleTask() {
+          settleCalls += 1;
+        },
+        async getUsage() {
+          return null;
+        },
+      },
+      {
+        async refundUsageOperation() {
+          return [];
+        },
+      },
+    );
+
+    await assert.rejects(
+      executor.commit(input),
+      /no longer matches the accepted execution contract/u,
+    );
+    assert.equal(settleCalls, 0);
+  }
 });
 
 function quote(

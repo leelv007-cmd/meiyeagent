@@ -22,7 +22,7 @@ export class HarnessProductBillingSettlementExecutor
   constructor(
     private readonly billing: Pick<
       DurableProductBillingService,
-      'assertAcceptedQuote' | 'getQuote' | 'getUsage' | 'settleTask'
+      'getQuote' | 'getUsage' | 'settleTask'
     >,
     private readonly grantLots: Pick<
       PostgresGrantLotLedger,
@@ -99,12 +99,7 @@ export class HarnessProductBillingSettlementExecutor
       );
     }
     assertHarnessQuoteFacts(input, quote);
-    if (
-      quote.lifecycleStatus !== 'settled' &&
-      quote.lifecycleStatus !== 'refunded'
-    ) {
-      await this.billing.assertAcceptedQuote(input);
-    }
+    assertHarnessSettlementLifecycle(quote);
   }
 
   private async requireUsage(
@@ -133,6 +128,19 @@ function assertHarnessQuoteFacts(
     throw new P1DomainError(
       'INVALID_STATE',
       `Product quote ${quote.quoteId} no longer matches the accepted execution contract.`,
+    );
+  }
+}
+
+const HARNESS_SETTLEMENT_LIFECYCLE_STATUSES = new Set<
+  ProductQuoteSnapshot['lifecycleStatus']
+>(['reserved', 'dispatched', 'settled', 'refunded']);
+
+function assertHarnessSettlementLifecycle(quote: ProductQuoteSnapshot) {
+  if (!HARNESS_SETTLEMENT_LIFECYCLE_STATUSES.has(quote.lifecycleStatus)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      `Product quote ${quote.quoteId} cannot settle from status ${quote.lifecycleStatus}.`,
     );
   }
 }
