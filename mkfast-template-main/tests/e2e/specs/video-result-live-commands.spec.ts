@@ -54,16 +54,21 @@ async function seedCanonicalVideoWorkflow(input: {
   const workflowId = `video-workflow-e2e-${crypto.randomUUID()}`;
   const timestamp = new Date().toISOString();
   try {
+    // Anchor on the Work, which is what the submission seam actually writes:
+    // `PostgresCreationSubmissionPersistence.reserve` inserts p1_creative_works
+    // + p1_content_tasks + execution_spine.creation_submissions and no
+    // p1_creative_jobs row at all. The old anchor — "the originating job, the
+    // one without a videoWorkflowId" — described the pre-ContentPackage shape
+    // and can no longer match anything, so this helper failed before it seeded.
     const [owner] = await sql<Array<{ actorId: string; workspaceId: string }>>`
-      SELECT u.id AS "actorId", jobs.workspace_id AS "workspaceId"
-      FROM p1_creative_jobs jobs
+      SELECT u.id AS "actorId", works.workspace_id AS "workspaceId"
+      FROM p1_creative_works works
       INNER JOIN workspace_memberships memberships
-        ON memberships.workspace_id = jobs.workspace_id
+        ON memberships.workspace_id = works.workspace_id
       INNER JOIN "user" u ON u.id = memberships.user_id
-      WHERE jobs.payload->>'workId' = ${input.workId}
-        AND jobs.payload->>'videoWorkflowId' IS NULL
+      WHERE works.id = ${input.workId}
         AND u.email = ${input.email}
-      ORDER BY jobs.updated_at DESC
+      ORDER BY works.updated_at DESC
       LIMIT 1
     `;
     expect(owner).toBeTruthy();
@@ -171,10 +176,49 @@ async function seedCanonicalVideoWorkflow(input: {
           ${transaction.json({
             actorId,
             createdAt: timestamp,
+            // Every Job the runtime writes carries its execution contract, and
+            // `CreativeJob.contract` is not optional — the Result route reads
+            // `job.contract.operation` straight through
+            // (`creative-job-observer.ts`), so a Job seeded without one takes
+            // the whole page to its error boundary. Same fields the runtime
+            // freezes at submission (`creativeExecutionContractSchema`), with
+            // this seed's own storyboard totals.
+            contract: {
+              aigcLabelEnabled: true,
+              aspectRatio: '9:16',
+              catalogModelId: 'seedance-2',
+              catalogRevision: 'e2e-catalog-v1',
+              currency: 'CNY',
+              dataClass: [],
+              durationSeconds: 12,
+              estimatedAmount: 0,
+              operation: 'video.generate',
+              outputCount: 1,
+              outputLabel: '视频',
+              quoteAcceptedAt: timestamp,
+              quoteRevision: 'e2e-quote-v1',
+              watermarkEnabled: false,
+            },
             id: jobId,
             outputAssetIds: assets.map(([assetId]) => assetId),
             outputContentIds: [],
             productUsageQuantity: 1,
+            // COMPENSATION, not alignment — and the reason this spec is still
+            // red. The Result page binds a canonical video run through exactly
+            // one field, `selected.job.providerJobId`
+            // (`results_/$workId.tsx` `selectedVideoWorkflowId`), and the
+            // canonical store never writes it: `storedJob`
+            // (`video-workflow-canonical-postgres.ts`) persists `contract`,
+            // `videoWorkflowId`, `workId` and the rest, but no `providerJobId`.
+            // Before the ContentPackage seam the link came from the *originating*
+            // Job, a row that seam no longer writes at all. Seeding it here gets
+            // the storyboard onto the page for the first load; the first
+            // canonical write then replaces this payload wholesale and the page
+            // loses the run — measured: after `video_workflow_edit` the job comes
+            // back with `providerJobId: null` and the shot candidates are gone.
+            // Reported to the coordinator; whoever owns the video surface should
+            // bind on a field the runtime actually persists.
+            providerJobId: workflowId,
             status: 'recoverable',
             submissionKey: `video:${workflowId}`,
             taskId,
@@ -212,19 +256,6 @@ async function seedCanonicalVideoWorkflow(input: {
           )
         `;
       }
-      await transaction`
-        UPDATE p1_creative_jobs
-        SET payload = jsonb_set(
-              payload,
-              '{providerJobId}',
-              to_jsonb(${workflowId}::text),
-              true
-            ),
-            updated_at = NOW()
-        WHERE workspace_id = ${workspaceId}
-          AND payload->>'workId' = ${input.workId}
-          AND payload->>'videoWorkflowId' IS NULL
-      `;
     });
     return workflowId;
   } finally {
