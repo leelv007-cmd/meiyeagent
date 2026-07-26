@@ -222,10 +222,33 @@ function ResultCenterRoutePage() {
     : null;
   const selected = live?.selected ?? null;
   useCreativeJobObserver(creativeJobObservation(selected?.job ?? undefined));
+  /**
+   * Bind a canonical video run to this Work, reading the field its own owner
+   * writes.
+   *
+   * `storedJob` (`video-workflow-canonical-postgres.ts`) persists
+   * `videoWorkflowId` on every canonical write and never persists
+   * `providerJobId`. Binding on `providerJobId` alone therefore held only until
+   * the first canonical write replaced the payload — after one shot edit the
+   * page lost the run, and a reload showed no storyboard at all. It worked
+   * before the ContentPackage seam because the link lived on the *originating*
+   * Job, a row the canonical store never touched and that seam no longer
+   * writes.
+   *
+   * `videoWorkflowId` is not on `CreativeJob` in @meiye/contracts, so it is read
+   * narrowly here rather than widened across the shared type; the fallback keeps
+   * historical originating rows — never touched by the canonical store, so they
+   * still carry only `providerJobId` — binding exactly as they did.
+   */
+  const canonicalVideoWorkflowId = (
+    selected?.job as { videoWorkflowId?: string } | null | undefined
+  )?.videoWorkflowId;
   const selectedVideoWorkflowId =
-    selected?.workspaceKind === 'video' &&
-    selected.job?.providerJobId?.startsWith('video-workflow-')
-      ? selected.job.providerJobId
+    selected?.workspaceKind === 'video'
+      ? (canonicalVideoWorkflowId ??
+        (selected.job?.providerJobId?.startsWith('video-workflow-')
+          ? selected.job.providerJobId
+          : undefined))
       : undefined;
   const workflowQuery = useQuery({
     enabled: Boolean(selectedVideoWorkflowId),

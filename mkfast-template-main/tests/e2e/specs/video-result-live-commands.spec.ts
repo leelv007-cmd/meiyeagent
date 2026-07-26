@@ -203,22 +203,10 @@ async function seedCanonicalVideoWorkflow(input: {
             outputAssetIds: assets.map(([assetId]) => assetId),
             outputContentIds: [],
             productUsageQuantity: 1,
-            // COMPENSATION, not alignment — and the reason this spec is still
-            // red. The Result page binds a canonical video run through exactly
-            // one field, `selected.job.providerJobId`
-            // (`results_/$workId.tsx` `selectedVideoWorkflowId`), and the
-            // canonical store never writes it: `storedJob`
-            // (`video-workflow-canonical-postgres.ts`) persists `contract`,
-            // `videoWorkflowId`, `workId` and the rest, but no `providerJobId`.
-            // Before the ContentPackage seam the link came from the *originating*
-            // Job, a row that seam no longer writes at all. Seeding it here gets
-            // the storyboard onto the page for the first load; the first
-            // canonical write then replaces this payload wholesale and the page
-            // loses the run — measured: after `video_workflow_edit` the job comes
-            // back with `providerJobId: null` and the shot candidates are gone.
-            // Reported to the coordinator; whoever owns the video surface should
-            // bind on a field the runtime actually persists.
-            providerJobId: workflowId,
+            // No `providerJobId`: the canonical store does not write one
+            // (`storedJob`), so neither does this seed. The Result page binds
+            // through `videoWorkflowId` below — which is exactly what this spec
+            // guards, since seeding the old field would have hidden the unbind.
             status: 'recoverable',
             submissionKey: `video:${workflowId}`,
             taskId,
