@@ -22,6 +22,7 @@ export interface ReferenceAssetResolutionFailure {
 
 export interface ReferenceAssetInspectionSuccess {
   assetId: string;
+  classificationSource?: 'server_fact' | 'unclassified';
   contentType: string;
   dataClass?: DataClass[];
   kind: 'resolved';
@@ -203,6 +204,7 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
         }
         return {
           assetId,
+          classificationSource: receipt.classificationSource,
           contentType: receipt.contentType,
           dataClass: receipt.dataClass,
           kind: 'resolved',
@@ -252,6 +254,7 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
         return {
           assetId,
           bytes,
+          classificationSource: receipt.classificationSource,
           contentType,
           dataClass: receipt.dataClass,
           kind: 'resolved',
@@ -270,6 +273,7 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
   ): Promise<
     | {
         asset: CanvasOwnedAsset;
+        classificationSource: 'server_fact' | 'unclassified';
         contentType: string;
         dataClass: DataClass[];
         rightsRevision: string;
@@ -328,6 +332,7 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
     const dataClass = productPolicy?.dataClass ?? [];
     return {
       asset,
+      classificationSource: productPolicy ? 'server_fact' : 'unclassified',
       contentType,
       dataClass: [...new Set(dataClass)].sort(),
       rightsRevision: createHash('sha256')
@@ -412,8 +417,6 @@ export class ProductReferenceAssetResolver
         if (!asset.objectKey.startsWith(`${workspaceId}/`)) {
           return failure(assetId, 'unreadable');
         }
-        const sha256 = objectKeySha256(asset.objectKey);
-        if (!sha256) return failure(assetId, 'unreadable');
         const dataClass = productAssetDataClass(asset, state?.store?.regulated);
         const rightsRevision = productAssetRightsRevision(asset);
 
@@ -439,8 +442,13 @@ export class ProductReferenceAssetResolver
         );
         if (!contentType) return failure(assetId, 'unreadable');
         if (mode === 'inspect') {
+          const sha256 = response.headers.get('x-content-sha256');
+          if (!sha256 || !/^[a-f0-9]{64}$/u.test(sha256)) {
+            return failure(assetId, 'unreadable');
+          }
           return {
             assetId,
+            classificationSource: 'server_fact' as const,
             contentType,
             dataClass,
             kind: 'resolved' as const,
@@ -460,7 +468,14 @@ export class ProductReferenceAssetResolver
           return failure(assetId, 'oversized');
         }
         const digest = createHash('sha256').update(bytes).digest('hex');
-        if (digest !== sha256) return failure(assetId, 'unreadable');
+        const recordedSha256 = response.headers.get('x-content-sha256');
+        if (
+          recordedSha256 &&
+          (!/^[a-f0-9]{64}$/u.test(recordedSha256) ||
+            recordedSha256 !== digest)
+        ) {
+          return failure(assetId, 'unreadable');
+        }
         const currentState = await this.products.load(workspaceId);
         const currentAsset = currentState?.assets.find(
           (candidate) => candidate.id === assetId,
@@ -489,13 +504,14 @@ export class ProductReferenceAssetResolver
         return {
           assetId,
           bytes,
+          classificationSource: 'server_fact' as const,
           contentType,
           dataClass,
           kind: 'resolved' as const,
           objectKey: asset.objectKey,
           providerReadableUrl: `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`,
           rightsRevision,
-          sha256,
+          sha256: digest,
         };
       }),
     );
@@ -522,10 +538,6 @@ function normalizedContentType(value: string | null) {
 
 function validTimestamp(value: string) {
   return Number.isFinite(new Date(value).getTime());
-}
-
-function objectKeySha256(objectKey: string) {
-  return objectKey.match(/\/([a-f0-9]{64})(?:\.[^/.]+)?$/u)?.[1];
 }
 
 function productAssetDataClass(

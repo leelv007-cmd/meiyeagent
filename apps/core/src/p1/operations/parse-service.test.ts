@@ -6,6 +6,7 @@ import type {
   ParseSourceAssetInput,
   StoreFactCandidateDraft,
 } from '@meiye/contracts';
+import { merchantAssetRightsSoftPrompt } from '../harness/merchant-delivery-language.js';
 
 import {
   FixtureAssetDraftCompiler,
@@ -429,8 +430,7 @@ test('four visual slots include descriptions and a skippable rights soft prompt'
     assert.deepEqual(
       result.draft.visualClassification?.rightsPrompt,
       {
-        message:
-          '如果照片里有顾客，请确认已经获得对方同意；这一步可以稍后补充，不影响继续整理。',
+        message: merchantAssetRightsSoftPrompt(),
         skippable: true,
         blocking: false,
       },

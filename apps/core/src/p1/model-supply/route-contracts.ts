@@ -35,6 +35,11 @@ export interface ModelSupplySubmission {
   operation: ModelOperation;
   selection: RequestedSelection;
   dataClass: DataClass[];
+  /**
+   * Server-derived dispatch predicate for reference assets whose classification
+   * has no current server fact. It narrows routing without inventing a class.
+   */
+  referenceAssetRegionBoundary?: 'domestic';
 	prompt: string;
 	origin?: AdvancedCanvasGenerationOrigin;
 	originRef?: AdvancedCanvasGenerationOriginRef;

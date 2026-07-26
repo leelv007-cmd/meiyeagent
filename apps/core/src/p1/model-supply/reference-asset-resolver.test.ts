@@ -24,7 +24,7 @@ const referenceSha256 =
   '52367a6622b19f08825e915fad80c542ad4f4c34dbcebad9f5007994b3e39208';
 const authorizedAsset = {
   id: 'asset-store-a',
-  objectKey: `workspace-a/assets/${referenceSha256}.png`,
+  objectKey: 'workspace-a/assets/asset-golden-journey.png',
   mediaType: 'image' as const,
   sourceType: 'real' as const,
   tags: ['门店'],
@@ -79,7 +79,7 @@ test('owned reference assets are resolved from workspace-scoped durable storage'
           objectKey: 'workspace-a/canvas/assets/owned.png',
           sha256,
           sizeBytes: bytes.byteLength,
-          source: { kind: 'local_import' },
+          source: { kind: 'product_asset', sourceAssetId: assetId },
           workspaceId,
         };
       },
@@ -88,6 +88,13 @@ test('owned reference assets are resolved from workspace-scoped durable storage'
       async read(objectKey) {
         assert.equal(objectKey, 'workspace-a/canvas/assets/owned.png');
         return bytes;
+      },
+    },
+    {
+      productPolicyResolver: {
+        async resolve() {
+          return { dataClass: [], rightsRevision: 'product-rights-r1' };
+        },
       },
     },
   );
@@ -297,7 +304,7 @@ test('reference asset inspection verifies the private BFF channel without readin
         method = init?.method ?? '';
         assert.equal(
           String(input),
-          `http://app.example.test/api/storage/file?key=workspace-a%2Fassets%2F${referenceSha256}.png`,
+          'http://app.example.test/api/storage/file?key=workspace-a%2Fassets%2Fasset-golden-journey.png',
         );
         assert.equal(
           new Headers(init?.headers).get('x-service-token'),
@@ -311,6 +318,7 @@ test('reference asset inspection verifies the private BFF channel without readin
           headers: {
             'content-length': '128',
             'content-type': 'image/png',
+            'x-content-sha256': referenceSha256,
           },
         });
       },
@@ -324,7 +332,7 @@ test('reference asset inspection verifies the private BFF channel without readin
   assert.equal(inspection.sha256, referenceSha256);
   assert.equal(
     inspection.objectKey,
-    `workspace-a/assets/${referenceSha256}.png`,
+    'workspace-a/assets/asset-golden-journey.png',
   );
   assert.match(inspection.rightsRevision ?? '', /^[a-f0-9]{64}$/u);
   assert.equal(method, 'HEAD');
@@ -356,6 +364,7 @@ test('product inspection derives sensitive data classes from current server fact
           headers: {
             'content-length': '128',
             'content-type': 'image/png',
+            'x-content-sha256': referenceSha256,
           },
         }),
     },

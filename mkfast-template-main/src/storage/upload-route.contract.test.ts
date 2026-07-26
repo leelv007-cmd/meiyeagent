@@ -22,6 +22,9 @@ test('active upload clients use the bounded custom route instead of server funct
   assert.match(fileRoute, /legacyAvatarAccessClaims/u);
   assert.match(fileRoute, /isStrictLegacyAvatarKey/u);
   assert.match(fileRoute, /hasActiveLegacyAvatarClaim/u);
+  assert.match(fileRoute, /userFiles\.description/u);
+  assert.match(fileRoute, /X-Content-SHA256/u);
+  assert.match(fileRoute, /\^product-asset:\(\[a-f0-9\]\{64\}\)\$/u);
   assert.doesNotMatch(fileRoute, /isPublicFolder/u);
   assert.doesNotMatch(userFiles, /createServerFn[\s\S]*uploadUserFile/u);
   assert.match(productAssets, /uploadThroughBoundedRoute/u);

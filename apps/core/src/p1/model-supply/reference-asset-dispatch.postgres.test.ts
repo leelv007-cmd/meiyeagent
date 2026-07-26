@@ -8,12 +8,21 @@ import { createCanvasOwnedAssetExportPolicy } from '../../pro-studio/canvas-asse
 import { PostgresCanvasAssetRepository } from '../../pro-studio/postgres-canvas-asset-repository.js';
 import { PostgresProStudioMigration } from '../../pro-studio/postgres-pro-studio-migration.js';
 import { ModelSupplyComposerRouteResolver } from '../execution-spine/composer-route-resolver.js';
+import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
 import { withServerDerivedReferenceDataClass } from './reference-asset-dispatch-guard.js';
 import {
+  CompositeReferenceAssetResolver,
   OwnedAssetReferenceResolver,
+  ProductReferenceAssetResolver,
   ProductReferenceAssetPolicyResolver,
 } from './reference-asset-resolver.js';
 import type { ModelSupplySubmission } from './route-contracts.js';
+import {
+  ModelSupplyApplicationService,
+  RecordedProviderExecutionPort,
+  type CatalogModel,
+  type ModelDeployment,
+} from './index.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -214,6 +223,314 @@ test(
       await pool.query('DELETE FROM workspaces WHERE id = ANY($1::text[])', [
         [workspaceId, otherWorkspaceId],
       ]);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres composite resolver resolves a real p1_owned_assets row with the server default export policy',
+  { skip: databaseUrl ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString: databaseUrl });
+    const workspaceId = `t15-p1-${randomUUID()}`;
+    const routeSnapshotId = `route-${randomUUID()}`;
+    const jobId = `job-${randomUUID()}`;
+    const attemptId = `attempt-${randomUUID()}`;
+    const assetId = `asset-${randomUUID()}`;
+    const bytes = Uint8Array.from(Buffer.from('p1-owned-reference'));
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS workspaces (
+          id text PRIMARY KEY,
+          name text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      await pool.query(
+        `INSERT INTO workspaces (id, name) VALUES ($1, 'T15 p1 owned')`,
+        [workspaceId],
+      );
+      const foundation = new PostgresFoundationRepository(pool);
+      await foundation.migrate();
+      const client = await pool.connect();
+      try {
+        await new PostgresProStudioMigration().migrate(client);
+      } finally {
+        client.release();
+      }
+      const createdAt = '2026-07-26T00:00:00.000Z';
+      await foundation.insertRouteSnapshot({
+        allowedCandidates: [
+          {
+            catalogModelId: 'image-model',
+            credentialMode: 'platform',
+            credentialVersion: 'credential-r1',
+            deploymentId: 'deployment-domestic',
+            region: 'cn',
+          },
+        ],
+        catalogRevision: 'catalog-r1',
+        createdAt,
+        dataClass: 'public',
+        fallbackConsent: false,
+        id: routeSnapshotId,
+        policyRevision: 'policy-r1',
+        priceRevision: 'price-r1',
+        requestedCatalogModelId: 'image-model',
+        selectionMode: 'fixed',
+        workspaceId,
+      });
+      await foundation.insertGenerationJob({
+        correlationId: `correlation-${jobId}`,
+        createdAt,
+        createdBy: 'user-t15',
+        id: jobId,
+        operation: 'image',
+        routeSnapshotId,
+        status: 'completed',
+        updatedAt: createdAt,
+        usageReservationId: `usage-${jobId}`,
+        workspaceId,
+      });
+      await foundation.insertProviderAttempt({
+        acceptance: 'accepted',
+        createdAt,
+        deploymentId: 'deployment-domestic',
+        id: attemptId,
+        jobId,
+        ordinal: 1,
+        providerTaskRef: `provider-${attemptId}`,
+        status: 'completed',
+        updatedAt: createdAt,
+        workspaceId,
+      });
+      await foundation.insertOwnedAsset({
+        attemptId,
+        createdAt,
+        id: assetId,
+        jobId,
+        mediaType: 'image/png',
+        objectKey: `${workspaceId}/owned/${assetId}.png`,
+        sha256,
+        sizeBytes: bytes.byteLength,
+        workspaceId,
+      });
+
+      const resolver = new CompositeReferenceAssetResolver([
+        new OwnedAssetReferenceResolver(
+          new PostgresCanvasAssetRepository(pool),
+          { async read() { return bytes; } },
+        ),
+      ]);
+      const [resolved] = await resolver.resolve(workspaceId, [assetId]);
+
+      assert.equal(resolved?.kind, 'resolved');
+      if (!resolved || resolved.kind !== 'resolved') return;
+      assert.equal(resolved.sha256, sha256);
+      assert.equal(resolved.classificationSource, 'unclassified');
+      assert.equal(Buffer.from(resolved.bytes).toString(), 'p1-owned-reference');
+    } finally {
+      await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres routing keeps unclassified local imports domestic while a public product asset retains overseas candidates',
+  { skip: databaseUrl ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString: databaseUrl });
+    const workspaceId = `t15-routing-${randomUUID()}`;
+    const assets = new PostgresCanvasAssetRepository(pool);
+    const products = new PostgresProductRepository(pool);
+    const bytes = Uint8Array.from(Buffer.from('routing-reference'));
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const productAssetId = 'product-public';
+    const localAssetId = 'local-unclassified';
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS workspaces (
+          id text PRIMARY KEY,
+          name text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      await pool.query(
+        `INSERT INTO workspaces (id, name) VALUES ($1, 'T15 routing')`,
+        [workspaceId],
+      );
+      await new PostgresFoundationRepository(pool).migrate();
+      const client = await pool.connect();
+      try {
+        await new PostgresProStudioMigration().migrate(client);
+      } finally {
+        client.release();
+      }
+      await products.migrate();
+      await assets.insert({
+        contentType: 'image/png',
+        createdAt: '2026-07-26T00:00:00.000Z',
+        fileName: 'local.png',
+        id: localAssetId,
+        objectKey: `${workspaceId}/canvas/assets/local.png`,
+        sha256,
+        sizeBytes: bytes.byteLength,
+        source: { kind: 'local_import' },
+        workspaceId,
+      });
+      await products.save({
+        assets: [
+          {
+            aigcStatus: 'not_ai',
+            authorizationStatus: 'authorized',
+            consentScope: 'public_marketing',
+            containsPerson: false,
+            containsSensitiveData: false,
+            createdAt: '2026-07-26T00:00:00.000Z',
+            id: productAssetId,
+            mediaType: 'image',
+            minorStatus: 'none',
+            objectKey: `${workspaceId}/assets/asset-golden-journey.png`,
+            replacementRequired: false,
+            rightsEvidence: 'merchant-owned',
+            rightsOwner: 'merchant',
+            sourceType: 'real',
+            tags: [],
+          },
+        ],
+        workspaceId,
+      } as unknown as ProductState);
+
+      const productResolver = new ProductReferenceAssetResolver(products, {
+        appBaseUrl: 'http://app.example.test',
+        serviceToken: 'service-token-t15',
+        fetch: async (_input, init) =>
+          init?.method === 'HEAD'
+            ? new Response(null, {
+                headers: {
+                  'content-length': String(bytes.byteLength),
+                  'content-type': 'image/png',
+                  'x-content-sha256': sha256,
+                },
+              })
+            : new Response(bytes, {
+                headers: { 'content-type': 'image/png' },
+              }),
+      });
+      const resolver = new CompositeReferenceAssetResolver([
+        new OwnedAssetReferenceResolver(
+          assets,
+          {
+            async head() {
+              return {
+                contentType: 'image/png',
+                sizeBytes: bytes.byteLength,
+              };
+            },
+            async read() {
+              return bytes;
+            },
+          },
+          {
+            productPolicyResolver: new ProductReferenceAssetPolicyResolver(
+              products,
+            ),
+          },
+        ),
+        productResolver,
+      ]);
+      const models: CatalogModel[] = [
+        {
+          displayName: 'Image model',
+          id: 'image-model',
+          modality: 'image',
+          operations: ['image.edit'],
+          qualityRank: 10,
+        },
+      ];
+      const deployments: ModelDeployment[] = [
+        {
+          apiFamily: 'image',
+          catalogModelId: 'image-model',
+          channel: 'direct',
+          id: 'image-domestic',
+          region: 'domestic',
+          status: 'active',
+        },
+        {
+          apiFamily: 'image',
+          catalogModelId: 'image-model',
+          channel: 'managed',
+          id: 'image-global',
+          region: 'overseas',
+          status: 'active',
+        },
+      ];
+      const service = new ModelSupplyApplicationService({
+        deployments,
+        execution: new RecordedProviderExecutionPort(),
+        models,
+        referenceAssets: resolver,
+      });
+
+      const localResult = await service.submit({
+        actorId: 'user-t15',
+        dataClass: [],
+        idempotencyKey: 'local-domestic-only',
+        input: {
+          inputAssets: [
+            { assetId: localAssetId, role: 'reference_image' },
+          ],
+        },
+        operation: 'image.edit',
+        prompt: 'Use the local reference.',
+        selection: { catalogModelId: 'image-model', mode: 'fixed' },
+        workspaceId,
+      });
+      assert.equal(localResult.status, 'completed');
+      assert.deepEqual(
+        localResult.snapshot.allowedCandidates?.map(
+          (candidate) => candidate.deploymentId,
+        ),
+        ['image-domestic'],
+      );
+
+      const productResult = await service.submit({
+        actorId: 'user-t15',
+        dataClass: [],
+        idempotencyKey: 'product-global-retained',
+        input: {
+          inputAssets: [
+            { assetId: productAssetId, role: 'reference_image' },
+          ],
+        },
+        operation: 'image.edit',
+        prompt: 'Use the product reference.',
+        selection: { catalogModelId: 'image-model', mode: 'fixed' },
+        workspaceId,
+      });
+      assert.equal(productResult.status, 'completed');
+      assert.deepEqual(
+        productResult.snapshot.allowedCandidates?.map(
+          (candidate) => candidate.deploymentId,
+        ),
+        ['image-domestic', 'image-global'],
+      );
+      const [resolvedProduct] = await resolver.resolve(workspaceId, [
+        productAssetId,
+      ]);
+      assert.equal(resolvedProduct?.kind, 'resolved');
+      if (resolvedProduct?.kind === 'resolved') {
+        assert.equal(resolvedProduct.sha256, sha256);
+      }
+    } finally {
+      await pool.query('DELETE FROM product_states WHERE workspace_id = $1', [
+        workspaceId,
+      ]);
+      await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
       await pool.end();
     }
   },
