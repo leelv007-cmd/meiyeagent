@@ -21,6 +21,7 @@ import type {
 } from '@meiye/contracts';
 import { contentPackageStatusLabel } from '@meiye/contracts';
 
+import { canvasName } from '@/p1/canvas-name';
 import type { RawCanvasWorkSummary } from '@/product/canonical-history-model';
 
 /**
@@ -315,7 +316,9 @@ function canvasListItem(work: RawCanvasWorkSummary): WorkListItem {
       work.revisions.find((revision) => revision.id === work.currentRevisionId)
         ?.revision ?? null,
     statusLabel: '可继续编辑',
-    title: work.name,
+    // Canvas works carry engineering default names ("Blank visual post"); the
+    // shared mapper is what turns them into what a merchant should read.
+    title: canvasName(work.name),
     updatedAt: work.updatedAt,
   };
 }

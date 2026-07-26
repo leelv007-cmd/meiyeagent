@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { PublicContentPackage } from '@meiye/contracts';
+import {
+  DEFAULT_CANVAS_WORK_NAME,
+  type PublicContentPackage,
+} from '@meiye/contracts';
 
 import type { RawCanvasWorkSummary } from '@/product/canonical-history-model';
 
@@ -252,6 +255,14 @@ test('the list carries all four shapes plus 轻编辑 works, newest first', () =
   assert.equal(items[0]?.revision, 3);
   assert.equal(items.at(-1)?.kind, 'canvas');
   assert.equal(items.at(-1)?.revision, 2);
+});
+
+test('a 轻编辑 work shows the merchant name, never the engineering default', () => {
+  const [item] = worksListItems({
+    canvasWorks: [{ ...canvasWork, name: DEFAULT_CANVAS_WORK_NAME }],
+    contentPackages: [],
+  });
+  assert.equal(item?.title, '空白图文作品');
 });
 
 test('a package with no delivered version reports no revision', () => {
