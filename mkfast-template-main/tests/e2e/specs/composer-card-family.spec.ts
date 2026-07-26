@@ -77,14 +77,16 @@ async function applyConfirmationCardTimeout(
     });
     expect(response.ok(), await response.text()).toBeTruthy();
     return (
-      (await response.json()) as {
-        data?: Array<{
-          reason?: string;
-          revision?: number;
-          storedValue?: unknown;
-        }>;
-      }
-    ).data ?? [];
+      (
+        (await response.json()) as {
+          data?: Array<{
+            reason?: string;
+            revision?: number;
+            storedValue?: unknown;
+          }>;
+        }
+      ).data ?? []
+    );
   };
 
   const before = await queryHistory();
