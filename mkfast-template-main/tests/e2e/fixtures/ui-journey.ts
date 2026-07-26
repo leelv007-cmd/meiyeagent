@@ -114,6 +114,14 @@ export async function submitComposerJourney(
      * a caller measuring a C6 click budget stops its counter here.
      */
     onDeliveryCardVisible?: () => void | Promise<void>;
+    /**
+     * Called once the submission is accepted and the merchant is still in the
+     * conversation, before the 成品预览卡 is awaited. This is where an
+     * interruption is a real interruption, so the M-04 hard gate reloads here
+     * to prove the run survives it (fixtures/ui-journey `assertJourneyRestored`
+     * covers the other end, after delivery).
+     */
+    onRunStreaming?: () => void | Promise<void>;
   } = {}
 ) {
   const lens = page.getByTestId(`composer-lens-option-${contract.modality}`);
@@ -201,6 +209,9 @@ export async function submitComposerJourney(
     page,
     'submitting must not navigate away from the Composer conversation'
   ).not.toHaveURL(/\/dashboard\/results\//u);
+
+  await options.onRunStreaming?.();
+
   const deliveryCard = page.getByTestId('composer-delivery-card');
   await expect(deliveryCard).toBeVisible({ timeout: 120_000 });
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);

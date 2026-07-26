@@ -88,9 +88,11 @@ test('the root required gate captures every root command and explicit security a
 });
 
 test('the ordinary PR production journey is fixed to one provider-free candidate path', async () => {
+  // M-04: the browser hard gate rides this job, so the mainline journey spec is
+  // part of the ordinary PR run — not a spec that exists without running.
   assert.deepEqual(await runGate('run-pr-production-journey.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts',
   ]);
 
   const script = await readFile(
@@ -197,6 +199,10 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(
     coreQuality,
     /REQUIRED_E2E_SPEC: tests\/e2e\/specs\/assembly-gate-required-journey\.spec\.ts/,
+  );
+  assert.match(
+    coreQuality,
+    /REQUIRED_BROWSER_HARD_GATE_SPEC: tests\/e2e\/specs\/m04-browser-hard-gate\.spec\.ts/,
   );
   assert.match(coreQuality, /^ {2}required:/m);
   assert.match(coreQuality, /if: \$\{\{ always\(\) \}\}/);
