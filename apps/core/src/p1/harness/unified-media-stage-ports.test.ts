@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { createCreationExecutionSnapshot } from "../execution-spine/creation-execution-snapshot.js";
+import {
+	createCreationExecutionSnapshot,
+	creationExecutionSnapshotSchema,
+} from "../execution-spine/creation-execution-snapshot.js";
 import {
 	MemoryContentPackageRevisionWritePort,
 	type ContentPackageRevisionWriteInput,
@@ -143,7 +146,8 @@ test("image-text note page generation uses the existing image executor without c
 
 	assert.equal(noteSelection.kind, "image");
 	assert.equal(submissions[0]?.operation, "image.generate");
-	assert.equal(submissions[0]?.billingTaskId, "workflow-note:page-1");
+	assert.equal(Object.hasOwn(submissions[0] ?? {}, "billingTaskId"), false);
+	assert.equal(submissions[0]?.productUsageQuantity, 0);
 	assert.equal(
 		submissions[0]?.selection.catalogModelId,
 		"model-image_text_note-1",
@@ -285,8 +289,22 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 
 test("image-text note compiles dual styles, generates selected pages, and writes one complete revision", async () => {
 	const packageId = "package-image-text-note";
-	const request = harnessInput("image_text_note", packageId);
-	const snapshot = request.executionSnapshot!;
+	const originalRequest = harnessInput("image_text_note", packageId);
+	const sourceSnapshot = originalRequest.executionSnapshot!;
+	const snapshot = creationExecutionSnapshotSchema.parse({
+		...sourceSnapshot,
+		id: "snapshot-note-confirmed",
+		semanticDecision: {
+			sourceSnapshotId: sourceSnapshot.id,
+			reference: {
+				field: "note_plan_confirmation",
+				id: "decision-note-confirmation",
+				revision: sourceSnapshot.revision,
+				value: "use-default",
+			},
+		},
+	});
+	const request = { ...originalRequest, executionSnapshot: snapshot };
 	const writer = new MemoryContentPackageRevisionWritePort();
 	writer.seed(
 		buildContentPackage({
@@ -295,9 +313,9 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 			source: {
 				assetIds: [],
 				creationExecutionSnapshot: {
-					id: snapshot.id,
-					revision: snapshot.revision,
-					schemaVersion: snapshot.schemaVersion,
+					id: sourceSnapshot.id,
+					revision: sourceSnapshot.revision,
+					schemaVersion: sourceSnapshot.schemaVersion,
 				},
 				targetPlatform: "douyin",
 				workId: snapshot.work.id,
@@ -673,6 +691,61 @@ test("an unknown media result reconciles the same durable job without resubmissi
 	});
 
 	assert.equal(selection.asset.id, "image-asset-1");
+});
+
+test("note pages keep durable admission single-flight while compiler branches remain parallel", async () => {
+	const events: string[] = [];
+	const first = completedResult("image", "1");
+	const second = completedResult("image", "2");
+	let submissions = 0;
+	let firstReads = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort({
+		async submit() {
+			submissions += 1;
+			events.push(`submit:${submissions}`);
+			if (submissions === 1) {
+				return { ...first, status: "unknown", asset: undefined };
+			}
+			return second;
+		},
+		async getDurableMediaJob(_workspaceId, jobId) {
+			assert.equal(jobId, first.jobId);
+			firstReads += 1;
+			if (firstReads === 1) {
+				events.push("get:1:running");
+				return {
+					result: { ...first, status: "unknown", asset: undefined },
+				};
+			}
+			events.push("get:1:completed");
+			return { result: first };
+		},
+	});
+	const request = harnessInput("image_text_note", "package-note");
+
+	const [firstSelection, secondSelection] = await Promise.all([
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "workflow-note:page-1",
+		}),
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "workflow-note:page-2",
+		}),
+	]);
+
+	assert.equal(firstSelection.asset.id, "image-asset-1");
+	assert.equal(secondSelection.asset.id, "image-asset-2");
+	assert.deepEqual(events, [
+		"submit:1",
+		"get:1:running",
+		"get:1:completed",
+		"submit:2",
+	]);
 });
 
 test("exact text blocks the first image, retries once, and keeps both provider costs without job-side debit flags", async () => {

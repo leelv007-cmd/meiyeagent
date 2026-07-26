@@ -52,7 +52,15 @@ test('selected style generates pages in parallel and records a bounded conflict 
     releaseInitial = resolve;
   });
   const compiler = new NotePlanCompiler(
-    structuredPort(calls, true),
+    structuredPort(calls, true, {
+      ...basePlan(),
+      pages: [
+        ...basePlan().pages,
+        page('page-3', 3, 'solution_show', 'explain_solution', [
+          { pageId: 'page-2', kind: 'text_sequence' },
+        ]),
+      ],
+    }),
     {
       async generate({ page, reason }) {
         calls.push(`image:${reason}:${page.id}`);
@@ -84,6 +92,7 @@ test('selected style generates pages in parallel and records a bounded conflict 
   assert.deepEqual(calls, [
     'image:initial:page-1',
     'image:initial:page-2',
+    'image:initial:page-3',
     'evaluate:initial',
     'image:consistency_conflict:page-2',
     'evaluate:after_regeneration',
@@ -217,11 +226,12 @@ test('style reordering, addition and removal require no compiler code changes', 
 function structuredPort(
   calls: string[],
   conflict = false,
+  plan = basePlan(),
 ): NotePlanStructuredPort {
   return {
     async plan() {
       calls.push('plan');
-      return basePlan();
+      return structuredClone(plan);
     },
     async draftPage({ page, previousTextBlock, style }) {
       calls.push(`text:${style.id}:${page.id}`);

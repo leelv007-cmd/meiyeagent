@@ -489,6 +489,13 @@ export class UnifiedHarnessStagePorts
 				id: snapshot.id,
 				revision: snapshot.revision,
 				schemaVersion: snapshot.schemaVersion,
+				...(snapshot.semanticDecision
+					? {
+							semanticDecision: {
+								sourceSnapshotId: snapshot.semanticDecision.sourceSnapshotId,
+							},
+						}
+					: {}),
 			},
 			...(snapshot.sources.contentPackage
 				? { sourceContentPackage: snapshot.sources.contentPackage }
@@ -758,12 +765,17 @@ export class ModelSupplyHarnessMediaExecutionPort
 		private readonly exactText?: ImageExactTextVerifier,
 	) {}
 
+	private readonly noteAdmissionTails = new Map<string, Promise<void>>();
+
 	async execute(input: {
 		brief: MediaBrief;
 		context: HarnessContextSnapshot;
 		request: HarnessWorkflowInput;
 		workflowId: string;
 	}): Promise<HarnessMediaSelectionResult> {
+		const snapshot = requireSnapshot(input.request);
+		const noteAdmissionKey =
+			snapshot.lens === "image_text_note" ? snapshot.task.id : undefined;
 		if (input.brief.kind === "image") {
 			const expected = input.brief.intent.exactText
 				.filter(({ treatment }) => treatment === "exact")
@@ -788,6 +800,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 							attempt,
 							exactTextFailure?.reason,
 						),
+						noteAdmissionKey,
 					),
 				verify: async (result) => {
 					const completed = requireCompletedMediaResult(result, "image");
@@ -818,30 +831,64 @@ export class ModelSupplyHarnessMediaExecutionPort
 		}
 		const result = await this.submitAndAwait(
 			mediaSubmission(input.workflowId, input.request, input.brief),
+			noteAdmissionKey,
 		);
 		const completed = requireCompletedMediaResult(result, input.brief.kind);
 		return mediaSelection(completed, input.brief.kind, [completed], []);
 	}
 
-	private async submitAndAwait(submission: ModelSupplySubmission) {
-		let result = await this.models.submit(submission);
-		if (
-			result.status === "unknown" &&
-			this.models.getDurableMediaJob
-		) {
-			for (let attempt = 0; attempt < 600; attempt += 1) {
-				const current = await this.models.getDurableMediaJob(
-					submission.workspaceId,
-					result.jobId,
-				);
-				result = current.result;
-				if (result.status === "completed" || result.status === "failed") {
-					break;
+	private async submitAndAwait(
+		submission: ModelSupplySubmission,
+		noteAdmissionKey?: string,
+	) {
+		const releaseAdmission = noteAdmissionKey
+			? await this.acquireNoteAdmission(noteAdmissionKey)
+			: undefined;
+		try {
+			let result = await this.models.submit(submission);
+			if (
+				result.status === "unknown" &&
+				this.models.getDurableMediaJob
+			) {
+				for (let attempt = 0; attempt < 600; attempt += 1) {
+					const current = await this.models.getDurableMediaJob(
+						submission.workspaceId,
+						result.jobId,
+					);
+					result = current.result;
+					if (result.status === "completed" || result.status === "failed") {
+						releaseAdmission?.();
+						break;
+					}
+					await new Promise((resolve) => setTimeout(resolve, 250));
 				}
-				await new Promise((resolve) => setTimeout(resolve, 250));
 			}
+			return result;
+		} finally {
+			releaseAdmission?.();
 		}
-		return result;
+	}
+
+	private async acquireNoteAdmission(key: string) {
+		const previous = this.noteAdmissionTails.get(key) ?? Promise.resolve();
+		let releaseTurn = () => {};
+		const turn = new Promise<void>((resolve) => {
+			releaseTurn = resolve;
+		});
+		const tail = previous.then(() => turn);
+		this.noteAdmissionTails.set(key, tail);
+		await previous;
+		let released = false;
+		return () => {
+			if (released) {
+				return;
+			}
+			released = true;
+			releaseTurn();
+			if (this.noteAdmissionTails.get(key) === tail) {
+				this.noteAdmissionTails.delete(key);
+			}
+		};
 	}
 }
 
@@ -938,8 +985,9 @@ function mediaSubmission(
 	}
 	return {
 		actorId: request.actorId,
-		billingTaskId:
-			snapshot.lens === "image_text_note" ? workflowId : snapshot.task.id,
+		...(snapshot.lens === "image_text_note"
+			? {}
+			: { billingTaskId: snapshot.task.id }),
 		billingQuoteRevision: snapshot.quote.revision,
 		correlationId: workflowId,
 		dataClass: [],
