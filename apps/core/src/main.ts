@@ -32,6 +32,7 @@ import {
   composeRuntimeTruth,
   dbosSystemDbProbe,
   isProtectedAppEnv,
+  objectStorageReadWriteRoundTrip,
   objectStorageProbe,
   outboxBacklogProbe,
   postgresqlProbe,
@@ -1778,34 +1779,34 @@ const dbosSystemPool = harnessRuntimeConfig
   : undefined;
 
 const READINESS_PROBE_WORKSPACE_ID = 'readiness-probe';
-const READINESS_PROBE_OBJECT_KEY = `${READINESS_PROBE_WORKSPACE_ID}/canvas/assets/readiness-probe.png`;
 // A 1x1 PNG: the shared storage seam validates media magic bytes, so the probe
-// has to write a real media payload. Deterministic bytes make the write
-// idempotent against the immutable-object rule.
+// has to write a real media payload.
 const READINESS_PROBE_BYTES = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=',
   'base64',
 );
 
-/** Real read/write round trip through the shared object storage seam. */
-const probeObjectStorageReadWrite = async () => {
-  await assetStorage.putCanvasAsset({
-    bytes: READINESS_PROBE_BYTES,
-    objectKey: READINESS_PROBE_OBJECT_KEY,
-    workspaceId: READINESS_PROBE_WORKSPACE_ID,
-  });
-  try {
-    const stored = await assetStorage.read(READINESS_PROBE_OBJECT_KEY);
-    if (Buffer.compare(Buffer.from(stored.bytes), READINESS_PROBE_BYTES) !== 0) {
-      throw new Error('Object storage returned different bytes than were written.');
-    }
-  } finally {
+const probeObjectStorageReadWrite = objectStorageReadWriteRoundTrip({
+  bytes: READINESS_PROBE_BYTES,
+  createObjectKey: () =>
+    `${READINESS_PROBE_WORKSPACE_ID}/canvas/assets/readiness-probe-${randomUUID()}.png`,
+  async deleteObject(objectKey) {
     await assetStorage.deleteCanvasAsset({
-      objectKey: READINESS_PROBE_OBJECT_KEY,
+      objectKey,
       workspaceId: READINESS_PROBE_WORKSPACE_ID,
     });
-  }
-};
+  },
+  async putObject(objectKey, bytes) {
+    await assetStorage.putCanvasAsset({
+      bytes,
+      objectKey,
+      workspaceId: READINESS_PROBE_WORKSPACE_ID,
+    });
+  },
+  async readObject(objectKey) {
+    return (await assetStorage.read(objectKey)).bytes;
+  },
+});
 
 const readinessProbes = {
   canvas: canvasReachabilityProbe({

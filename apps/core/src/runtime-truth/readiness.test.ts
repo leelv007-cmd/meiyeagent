@@ -13,6 +13,7 @@ import {
 } from './readiness.js';
 import {
   canvasReachabilityProbe,
+  objectStorageReadWriteRoundTrip,
   outboxBacklogProbe,
   workerFreshnessProbe,
 } from './probes.js';
@@ -115,6 +116,37 @@ test('worker freshness fails when heartbeat is missing or stale', async () => {
     staleAfterMs: 30_000,
   })();
   assert.equal(fresh.status, 'pass');
+});
+
+test('concurrent object storage round trips use isolated object keys', async () => {
+  const bytes = Uint8Array.from([1, 2, 3]);
+  const objects = new Map<string, Uint8Array>();
+  const writtenKeys: string[] = [];
+  const deletedKeys: string[] = [];
+  let sequence = 0;
+  const roundTrip = objectStorageReadWriteRoundTrip({
+    bytes,
+    createObjectKey: () => `readiness-probe-${++sequence}`,
+    async deleteObject(objectKey) {
+      deletedKeys.push(objectKey);
+      objects.delete(objectKey);
+    },
+    async putObject(objectKey, value) {
+      writtenKeys.push(objectKey);
+      objects.set(objectKey, value);
+    },
+    async readObject(objectKey) {
+      const value = objects.get(objectKey);
+      if (!value) throw new Error(`Missing ${objectKey}`);
+      return value;
+    },
+  });
+
+  await Promise.all([roundTrip(), roundTrip()]);
+
+  assert.deepEqual(writtenKeys, ['readiness-probe-1', 'readiness-probe-2']);
+  assert.deepEqual(deletedKeys.sort(), writtenKeys);
+  assert.equal(objects.size, 0);
 });
 
 test('outbox backlog and canvas reachability probes report honestly', async () => {

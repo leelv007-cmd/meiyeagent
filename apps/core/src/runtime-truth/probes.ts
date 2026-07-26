@@ -77,6 +77,35 @@ export interface ObjectStorageProbeTarget {
   env?: NodeJS.ProcessEnv;
 }
 
+export interface ObjectStorageReadWriteTarget {
+  bytes: Uint8Array;
+  createObjectKey(): string;
+  deleteObject(objectKey: string): Promise<void>;
+  putObject(objectKey: string, bytes: Uint8Array): Promise<void>;
+  readObject(objectKey: string): Promise<Uint8Array>;
+}
+
+/** Isolated object round trip; each invocation owns and deletes one unique key. */
+export function objectStorageReadWriteRoundTrip(
+  target: ObjectStorageReadWriteTarget,
+): () => Promise<void> {
+  return async () => {
+    const objectKey = target.createObjectKey();
+    await target.putObject(objectKey, target.bytes);
+    try {
+      const stored = await target.readObject(objectKey);
+      if (
+        stored.byteLength !== target.bytes.byteLength ||
+        stored.some((byte, index) => byte !== target.bytes[index])
+      ) {
+        throw new Error('Object storage returned different bytes than were written.');
+      }
+    } finally {
+      await target.deleteObject(objectKey);
+    }
+  };
+}
+
 /** Shared object storage: mode gate + optional live R/W probe. */
 export function objectStorageProbe(
   target: ObjectStorageProbeTarget = {},
