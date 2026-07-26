@@ -22,6 +22,7 @@ Baseline: `980c4899`
 | §3 old content-route helpers/surface | Partially deleted | `-content-library-surface.tsx` and `-content-helpers.tsx` were deleted. `content.tsx` and `content_/$contentId.tsx` are T34 compatibility redirects and were moved out of this batch; their deletion condition is a post-pilot zero-redirect-traffic receipt, which does not exist today. |
 | T34 task-source spec | Deleted | The skipped journey began only at the retired task inbox and has no honest successor journey in this ticket. |
 | OI-72 orphan families | Deleted | Removed the unimported `use-apikeys.ts`, unused `@beehiiv/sdk`, its lock entry, its knip exception, and 233 unreferenced locale keys per language. |
+| T38-R2 orphan cascade | Deleted | Removed four modules orphaned by this batch, the three self-only tests, and exactly three newly orphaned `p1/types.ts` exports; `TrustedReturnId` is now file-internal. |
 | OI-66 works guidance | Updated | Guidance only promises export/handoff when its rendered action exists; `ACTION_WORDS` now covers export, adoption, handoff, and download claims, including missing-`workId` coverage. |
 
 The evidence shape required before either 1B row can be deleted is a zero-difference
@@ -104,6 +105,28 @@ mkfast-template-main/src/product/creative-object-page.tsx
 mkfast-template-main/src/product/canonical-history-page.tsx
 ```
 
+## R2 orphan cascade evidence
+
+The `980c4899` baseline importer search proves that every R2 module was consumed
+only by a file deleted in T38:
+
+```text
+components/product/handoff-qr.tsx
+  <- routes/dashboard/-content-library-surface.tsx (no self-test)
+product/marketing-evidence-chips.tsx
+  <- p1/content-package-detail.tsx (+ its self-test)
+product/output-quota-meter.tsx
+  <- routes/dashboard/-content-library-surface.tsx (+ its self-test)
+product/content-library-model.ts
+  <- routes/dashboard/-content-library-surface.tsx (+ its self-test)
+```
+
+Comparing the baseline and post-T38 knip reports identifies exactly three newly
+orphaned exports in `p1/types.ts`: `FilterOption`, `WeeklyReviewFactView`, and
+`NextWeekCandidateView`. `FilterOption` remains file-internal, while the other
+two declarations were removed. `TrustedReturnId` likewise remains in use only
+inside `trusted-return.tsx`, so only its export was removed.
+
 ## Verification
 
 | Command | Result |
@@ -113,11 +136,23 @@ mkfast-template-main/src/product/canonical-history-page.tsx
 | `pnpm --filter @meiye/web typecheck` | exit 0 |
 | `pnpm --filter @meiye/web locale:check` | exit 0; 3,802 keys |
 | `node --test scripts/uiux/retired-ia-route-mount-guard.test.mjs scripts/uiux/works-canonical-projection-guard.test.mjs scripts/polotno-retirement-gate.test.mjs` | 23 passed, 0 failed |
-| `pnpm --filter @meiye/web test` | 1,263 passed, 0 failed, 0 skipped |
+| `pnpm --filter @meiye/web test` | 1,258 passed, 0 failed, 0 skipped |
 | `pnpm --filter @meiye/core test` | 2,222 passed, 0 failed, 10 live opt-in skipped |
-| `pnpm test` | exit 0: contracts 77/77; web 1,263/1,263; core 2,222 passed, 0 failed, 10 live opt-in skipped; scripts 122 passed, 0 failed, 1 skipped |
-| `pnpm --filter @meiye/web knip` | expected pre-existing exit 1; unused files improved 44→37 and unused exports 344→343; no deleted module remains in the report |
+| `pnpm test` (T38-R1) | exit 0: contracts 77/77; web 1,263/1,263; core 2,222 passed, 0 failed, 10 live opt-in skipped; scripts 122 passed, 0 failed, 1 skipped |
+| `pnpm check` (T38-R2) | exit 0; workspace, secret scan, D-123, decision-ticket, HeroUI mirror, works projection, and retired-IA guards all passed |
+| `pnpm --filter @meiye/web knip` | expected pre-existing exit 1; unused files 44→32, unused exports 344→340, unused exported types 518→510; no R2 orphan remains in the report |
 | `git diff --check` | exit 0 |
+
+The first R2 `pnpm check` attempt ran before the candidate deletions were staged.
+The D-123 scanner obtains its file list from the index and therefore tried to
+read the already-removed `handoff-qr.tsx` from the worktree, producing ENOENT.
+After staging the exact candidate diff, the unchanged guard and full root check
+passed with exit 0.
+
+The first T38 evidence revision selectively reported files and exports but omitted
+the simultaneously available exported-types line. This R2 evidence records all
+three knip sections explicitly; the omission was not an acceptable reporting
+choice.
 
 Ticket-scoped browser run:
 

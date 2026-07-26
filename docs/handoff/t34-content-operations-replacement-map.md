@@ -164,7 +164,7 @@
    `recent.tsx`，以及 `assets_/$assetId.tsx`、`jobs_/$jobId.tsx`、
    `sessions_/$sessionId.tsx` 三条详情路由。T32 works 结果面没有接管这些入口；
    删除前必须先完成 IA 归属判定，T38 不把它们擅自改指 works/Result Center。
-4. **`p1/operations-view-model.ts` 建议移出 1D 删除清单**（§1 末行，10 个活消费者）。
+4. **`p1/operations-view-model.ts` 建议移出 1D 删除清单**（2 个路由挂载消费者，以 §1 末行为准）。
 5. **`p1/canvas-name.ts` 的「作品」词**（§5 末段）。
 6. **发现的既有死代码（本票未删，按纪律只报告）**：
    `components/product/mobile-progress-target.ts` 的 `mobileProgressTarget` 全库仅被自身测试消费，
