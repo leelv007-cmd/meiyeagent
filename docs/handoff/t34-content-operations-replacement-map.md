@@ -110,6 +110,27 @@
 | `scripts/uiux/works-canonical-projection-guard.mjs`（扩容） | 扫描范围并入两条 content 跳转壳（`legacy_projection_*` 零引用 ＋ 不得 bind delete-after-reshell 模块 ＋ operationsQuery 白名单）。白名单未放宽 |
 | `scripts/uiux/retired-ia-route-mount-guard.mjs`（新增，进 `pnpm check` 第 7 门） | 从 107 个生产路由入口走真实 import 图，断言六件旧 IA 模块零可达。`-` 前缀文件与 `.test.` 文件不算路由入口（TanStack 不把 `-` 前缀纳入路由树）。**`operations-view-model` 刻意不在清单内**（见 §1 末行） |
 
+## 6b. `legacy_projection_*` 字面量基数：本票为何没能把 `-content-library-surface` 的 6 处归零
+
+票面预研 §D 写「本票归零点＝`-content-library-surface` 的 6 处」，那是按**新建内容面、旧面随之作废**
+的原案算的。A 案裁决后旧面整壳留给 T38 删，而本票**不许在 RETIRE 桶打补丁**（D-127），
+所以那 6 处只能随文件走，不能就地摘掉。
+
+实测当前基数（`rg -c legacy_projection_`，排除 node_modules 与 locale 产物）：
+
+| 文件 | 命中 | 归属 |
+| --- | --- | --- |
+| `product/creative-object-page.tsx` | 49 | T38 退役面（票面预期残基） |
+| `product/canonical-history-page.tsx` | 48 | T38 退役面（票面预期残基） |
+| `product/legacy-content-package-projection.ts` | 14 | 定义文件（票面预期残基） |
+| `routes/dashboard/-content-library-surface.tsx` | 6 | **本票已使其生产路由零引用**，字面量随文件在 T38 归零 |
+| `components/layout/shell-visual-contract.test.ts` | 2 | 非代码面（票面预期残基） |
+| `project.inlang/messages/{zh,en}.json` | 52 / 52 | 消息目录，随上述文件删除后清理 |
+
+本票真正做到并被静态门锁住的是票面的**语义**目标：**新内容面零 `legacy_projection_*` 引用**
+（`works-canonical-projection-guard` 扫 `product/works` 全目录 ＋ 两条 works 路由 ＋ 两条 content 跳转壳，零命中；
+`works-projection.ts:7` 的唯一字面量出现在文档注释里，不是 `from '…'` 绑定，守卫按设计不判违规）。
+
 ## 7. e2e 处置（Testing decision 8：随删除批清理**或显式降级**）
 
 | spec | 处置 |
