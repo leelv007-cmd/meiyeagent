@@ -48,6 +48,7 @@ import {
   PostgresOperationalTelemetryStore,
   PostgresTracerJobRepository,
   RecordedProductTracerEffect,
+  resolveWorkerId,
   TracerJobApplicationService,
   WorkerOperationalTelemetry,
 } from './p1/job-runtime/index.js';
@@ -614,8 +615,10 @@ operations = new OperationsApplicationService(operationsRepository, {
     },
   },
 });
-const workerId =
-  process.env.P1_JOB_WORKER_ID ?? `${hostname()}:${process.pid}`;
+const workerId = resolveWorkerId(
+  process.env.P1_JOB_WORKER_ID,
+  `${hostname()}:${process.pid}`
+);
 if (assetRegistrationCleanup) {
   await registerS3AssetRegistrationCleanupSchedule(jobRuntime);
 }

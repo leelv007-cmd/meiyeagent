@@ -4,12 +4,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -18,6 +19,7 @@ import {
   verifyProductionRecoveryManifest,
 } from './production-recovery.mjs';
 import {
+  expectedEnvironmentForPath,
   productionRecoveryCliUsage,
   runProductionRecoveryCli,
 } from './production-recovery-cli.mjs';
@@ -795,6 +797,14 @@ test('production recovery CLI exposes a deliberate verify-only seam', () => {
     stdout: '',
     stderr: 'Unknown production recovery action: restore\n',
   });
+  // The drill performs a real restore, so it is only reachable through the async
+  // entrypoint; the synchronous seam must never appear to have run one.
+  assert.deepEqual(runProductionRecoveryCli(['drill']), {
+    exitCode: 1,
+    stdout: '',
+    stderr:
+      'The drill action performs a real restore and must run through runProductionRecoveryCliAsync.\n',
+  });
 });
 
 test('production recovery CLI returns nonzero for explicit partial evidence', () => {
@@ -898,5 +908,167 @@ test('evidence cannot escape through a symlinked parent directory', () => {
     });
   } finally {
     fixture.cleanup();
+  }
+});
+
+const repositoryRoot = resolve(import.meta.dirname, '../..');
+
+/** Every local recovery drill evidence set committed to the repository. */
+function committedLocalDrillManifests() {
+  const directory = join(repositoryRoot, 'docs/evidence/n2-recovery');
+  return readdirSync(directory, { withFileTypes: true })
+    .filter(
+      (entry) => entry.isDirectory() && entry.name.startsWith('local-drill-')
+    )
+    .map((entry) => {
+      const path = `docs/evidence/n2-recovery/${entry.name}/manifest.json`;
+      return {
+        manifest: JSON.parse(readFileSync(join(repositoryRoot, path), 'utf8')),
+        path,
+      };
+    });
+}
+
+test('the recovery contract a manifest must satisfy is decided by its path', () => {
+  // The release rule reads the production manifest path, so what is required
+  // there cannot be renegotiated by the document found there.
+  assert.equal(
+    expectedEnvironmentForPath('docs/evidence/n2-recovery/manifest.json', {
+      environment: 'local',
+    }),
+    'production'
+  );
+  assert.equal(
+    expectedEnvironmentForPath(
+      'docs/evidence/n2-recovery/local-drill-2026-07-26/manifest.json',
+      { environment: 'production' }
+    ),
+    'local'
+  );
+  assert.equal(
+    expectedEnvironmentForPath(
+      'docs/evidence/n2-recovery/drills/drill-2026-07-16/manifest.json',
+      {}
+    ),
+    'production'
+  );
+});
+
+test('local drill evidence can never stand in for production recovery evidence', () => {
+  for (const { manifest } of committedLocalDrillManifests()) {
+    const result = verifyProductionRecoveryManifest(manifest, {
+      expectedEnvironment: 'production',
+      now: manifest.operations.lastDrillAt,
+      root: repositoryRoot,
+    });
+    assertFailedWith(result, [
+      'environment: production evidence is required, manifest declares local',
+      'drill.kind: production-recovery is required',
+      'postgres.method: postgresql-pitr is required',
+      'drill.sourceEnvironment: production is required',
+      'secrets.mode: secretref-kms is required',
+      'operations.onCall: on-call reference is required',
+      'operations.regionFailureIncluded: true is required',
+      'failureScenarios.regional-failure: required scenario is missing',
+    ]);
+  }
+});
+
+test('production evidence cannot declare a reduced scope', () => {
+  const fixture = createCompleteFixture();
+  try {
+    fixture.manifest.scope = {
+      infrastructure: 'local',
+      notProven: ['production point-in-time recovery'],
+      productionOnlyScenarios: ['regional-failure'],
+      schemaSource: 'drill-fixture',
+    };
+    assertFailedWith(verifyFixture(fixture), [
+      'scope: production evidence must not declare a reduced scope',
+    ]);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('committed local drill evidence verifies at local strength', () => {
+  const drills = committedLocalDrillManifests();
+  assert.ok(
+    drills.length > 0,
+    'a local recovery drill evidence set must be committed'
+  );
+  for (const { manifest, path } of drills) {
+    // Verified as of the drill: the evidence proves the recovery path was
+    // exercised then, and the quarterly expiry is a separate operations rule.
+    assert.deepEqual(
+      runProductionRecoveryCli(['verify', path], {
+        now: manifest.operations.lastDrillAt,
+        root: repositoryRoot,
+      }),
+      {
+        exitCode: 0,
+        stdout: `N2 local recovery drill evidence passed: ${path}\n`,
+        stderr: '',
+      }
+    );
+  }
+});
+
+test('local drill evidence must declare what local infrastructure cannot prove', () => {
+  const [drill] = committedLocalDrillManifests();
+  const verifyMutated = (mutate) => {
+    const candidate = structuredClone(drill.manifest);
+    mutate(candidate);
+    return verifyProductionRecoveryManifest(candidate, {
+      expectedEnvironment: 'local',
+      now: drill.manifest.operations.lastDrillAt,
+      root: repositoryRoot,
+    });
+  };
+
+  for (const [mutate, expectedIssue] of [
+    [
+      (manifest) => delete manifest.scope,
+      'scope: local drill evidence must declare its scope',
+    ],
+    [
+      (manifest) => {
+        manifest.scope.notProven = [];
+      },
+      'scope.notProven: a non-empty list of unproven claims is required',
+    ],
+    [
+      (manifest) => {
+        manifest.scope.productionOnlyScenarios = [];
+      },
+      'scope.productionOnlyScenarios: must declare exactly ["regional-failure"]',
+    ],
+    [
+      (manifest) => {
+        manifest.scope.infrastructure = 'production';
+      },
+      'scope.infrastructure: local is required',
+    ],
+    [
+      // Local evidence must not borrow production operations claims.
+      (manifest) => {
+        manifest.operations.onCall = 'oncall://release-engineering';
+      },
+      'operations.onCall: null is required for local drill evidence',
+    ],
+    [
+      (manifest) => {
+        manifest.operations.regionFailureIncluded = true;
+      },
+      'operations.regionFailureIncluded: false is required for local drill evidence',
+    ],
+    [
+      (manifest) => {
+        manifest.environment = 'production';
+      },
+      'environment: local evidence is required, manifest declares production',
+    ],
+  ]) {
+    assertFailedWith(verifyMutated(mutate), [expectedIssue]);
   }
 });

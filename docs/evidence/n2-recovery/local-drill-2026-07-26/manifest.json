@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 1,
+  "environment": "local",
+  "status": "passed",
+  "scope": {
+    "infrastructure": "local",
+    "schemaSource": "drill-fixture",
+    "productionOnlyScenarios": [
+      "regional-failure"
+    ],
+    "notProven": [
+      "Production PostgreSQL point-in-time recovery: this drill restores a full local snapshot instead of replaying WAL to a recovery point.",
+      "Production object-store versioning: local object versions are content-addressed files in a temporary store.",
+      "KMS-backed secret restoration: local secrets are PostgreSQL role passwords rotated in place.",
+      "Regional failure injection and cross-region recovery.",
+      "Production traffic isolation: no production network exists locally, so the isolation claim covers the drill databases only.",
+      "On-call ownership and the quarterly production drill cadence.",
+      "Product schema fidelity: the drill schema is a fixture that mirrors the six invariant identities, not the migrated product schema."
+    ]
+  },
+  "drill": {
+    "id": "local-drill-3107800f",
+    "kind": "local-recovery-drill",
+    "sourceEnvironment": "local",
+    "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+    "startedAt": "2026-07-26T18:31:16.240Z",
+    "verifiedAt": "2026-07-26T18:31:18.286Z",
+    "incidentReferenceTime": "2026-07-26T18:31:16.682Z",
+    "recoveryPoint": "2026-07-26T18:31:16.682Z",
+    "targetsDeclaredAt": "2026-07-26T18:31:16.240Z",
+    "declaredRpoMinutes": 15,
+    "declaredRtoMinutes": 30,
+    "evidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/drill-receipt.json",
+      "sha256": "e2cc25534ef84fa4d1591340fe04e0dba9627c984803d12db23244409815ffd2"
+    }
+  },
+  "postgres": {
+    "method": "postgresql-snapshot-restore",
+    "recoveryPoint": "2026-07-26T18:31:16.682Z",
+    "evidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/postgres-restore-receipt.json",
+      "sha256": "ea647a351146f98f71aeb017b089c548d3225e6c053aef405b14cd279a2b2deb"
+    }
+  },
+  "objects": {
+    "format": "object-hash-version-inventory/v1",
+    "versioningEnabled": true,
+    "recoveryPoint": "2026-07-26T18:31:16.682Z",
+    "sourceCount": 3,
+    "restoredCount": 3,
+    "sourceDigest": "5bb3111ed691377fec40c0f4e8d6ba4a72a76fc05ce5e5e9c0951986a2fd61ce",
+    "restoredDigest": "5bb3111ed691377fec40c0f4e8d6ba4a72a76fc05ce5e5e9c0951986a2fd61ce",
+    "sourceInventory": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/objects-source-inventory.json",
+      "sha256": "71017db372ebf0268b62e5abf4c8e7bd92e035d632dae803183c652d08b2feaf"
+    },
+    "restoredInventory": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/objects-restored-inventory.json",
+      "sha256": "b8038d2c9e4b94b480aa3a2afd101e3f6bedef7068a0302025f7f14cf06e0caa"
+    }
+  },
+  "schema": {
+    "revision": "schema-sha256:111c71aba6b2feeb88218a396d8730a65990fcf81ed2be3c3523b8dfff34aa53",
+    "artifact": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/schema-revision.json",
+      "sha256": "e2ca0aa6ea708c7fc48d90834dc10b52ab9e7511def042c73b7b8e33486e7fe8"
+    }
+  },
+  "configuration": {
+    "revision": "config-sha256:e1be6dc4eec42d19627b095d345fe7220d38b411eb92b86c2994dd7807e5cc04",
+    "artifact": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/configuration-revision.json",
+      "sha256": "7b34eb66cf7545c623fc6e7e8208518cfeadd0fa37bd5e45651954d9c631aa5c"
+    }
+  },
+  "secrets": {
+    "mode": "secretref-local-keyfile",
+    "kmsKeyRef": "localkey://drill/local-drill-3107800f",
+    "secretRefs": [
+      "secretref://local/postgres-role/meiye_drill_rot_3107800f"
+    ],
+    "valuesIncluded": false,
+    "restorationEvidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/secret-restoration-receipt.json",
+      "sha256": "a065ec177f22dcd8808402737d3661c88eac073482c894fecf40961a559f2d53"
+    }
+  },
+  "isolation": {
+    "sourceWriteAccess": "denied",
+    "productionTraffic": "blocked",
+    "restoreEvidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/isolated-restore-receipt.json",
+      "sha256": "840ae903f464cf92d4789f7a38e99ad6d10fda47fbb1f4e731379ab041913991"
+    }
+  },
+  "invariants": {
+    "content-package": {
+      "status": "passed",
+      "sourceCount": 3,
+      "restoredCount": 3,
+      "sourceDigest": "0a00a1c6fccb7c13168a99665935d68d7f0aa5710b998766676de1a1a7c1bd19",
+      "restoredDigest": "0a00a1c6fccb7c13168a99665935d68d7f0aa5710b998766676de1a1a7c1bd19",
+      "evidence": {
+        "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/invariant-content-package.json",
+        "sha256": "148506b1e1d95aaf871a8bdd0cd13daa199efa59495ec95e371fbe99001705f5"
+      }
+    },
+    "generation-job": {
+      "status": "passed",
+      "sourceCount": 3,
+      "restoredCount": 3,
+      "sourceDigest": "2878ddfedf9d40e13580cf23e170f653d44641da8e2860e1410829cd42a7d356",
+      "restoredDigest": "2878ddfedf9d40e13580cf23e170f653d44641da8e2860e1410829cd42a7d356",
+      "evidence": {
+        "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/invariant-generation-job.json",
+        "sha256": "7c1c76ad98b9a26542501d59d9058029733b8c850ca03f39be3f7584c71a857b"
+      }
+    },
+    "asset": {
+      "status": "passed",
+      "sourceCount": 2,
+      "restoredCount": 2,
+      "sourceDigest": "0c4bcaf716c34cddc16ec0896d6fefa7e25788884e704d6b8e9ce59aea2cf5c0",
+      "restoredDigest": "0c4bcaf716c34cddc16ec0896d6fefa7e25788884e704d6b8e9ce59aea2cf5c0",
+      "evidence": {
+        "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/invariant-asset.json",
+        "sha256": "88fe6f62bda87935bf5fbd5027ca798988e30f6c219787bfc642f019be03e808"
+      }
+    },
+    "product-usage-ledger": {
+      "status": "passed",
+      "sourceCount": 2,
+      "restoredCount": 2,
+      "sourceDigest": "461ff3d8aebf0ef0e08a6c17a4c2189040e98d0e5647afb8350d963a58ce2289",
+      "restoredDigest": "461ff3d8aebf0ef0e08a6c17a4c2189040e98d0e5647afb8350d963a58ce2289",
+      "evidence": {
+        "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/invariant-product-usage-ledger.json",
+        "sha256": "45368cca7cd4025a3816c2ae2e2c2fbe22f672dd3da0e287aad7817422a68897"
+      }
+    },
+    "provider-cost-ledger": {
+      "status": "passed",
+      "sourceCount": 2,
+      "restoredCount": 2,
+      "sourceDigest": "ce002331d27062b9b6875c77755578acd0725dfeca56946bea3f37a8d520b6fb",
+      "restoredDigest": "ce002331d27062b9b6875c77755578acd0725dfeca56946bea3f37a8d520b6fb",
+      "evidence": {
+        "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/invariant-provider-cost-ledger.json",
+        "sha256": "760a58bd519710831630bae45c79525e144a9d9a26ece26d66e65117e4e179d6"
+      }
+    },
+    "configuration": {
+      "status": "passed",
+      "sourceCount": 2,
+      "restoredCount": 2,
+      "sourceDigest": "51ac45d7a5887ca71eb949c5990f70c7fe0b7d303abd87d95a311bf64c2d1ae0",
+      "restoredDigest": "51ac45d7a5887ca71eb949c5990f70c7fe0b7d303abd87d95a311bf64c2d1ae0",
+      "evidence": {
+        "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/invariant-configuration.json",
+        "sha256": "a79ae9422b24bacca8fd2530ddb24c9a1dadc9a7189b6c47bcff6db5e5655d1c"
+      }
+    }
+  },
+  "baseline": {
+    "snapshotId": "local-baseline-local-drill-3107800f",
+    "immutable": true,
+    "capturedAt": "2026-07-26T18:31:16.519Z",
+    "postgresSnapshotRef": "snapshot://local/meiye_t40_drill_source_3107800f/72dbc026bed9b206",
+    "schemaRevision": "schema-sha256:111c71aba6b2feeb88218a396d8730a65990fcf81ed2be3c3523b8dfff34aa53",
+    "objectInventoryDigest": "5bb3111ed691377fec40c0f4e8d6ba4a72a76fc05ce5e5e9c0951986a2fd61ce",
+    "evidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/recovery-baseline.json",
+      "sha256": "1d263452e5a4c1eab80b55e550a8796c24456fa35d849c28431c01f34b6091c1"
+    }
+  },
+  "operations": {
+    "owner": "release-engineering",
+    "onCall": null,
+    "cadence": "quarterly",
+    "regionFailureIncluded": false,
+    "lastDrillAt": "2026-07-26T18:31:18.286Z",
+    "nextDrillDueAt": "2026-10-24T18:31:18.286Z",
+    "evidenceRetentionDays": 400,
+    "failedInstanceDeletionHours": 1,
+    "evidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/operations-policy.json",
+      "sha256": "17f6a0fd87850ef671c08880804e01ffe6e9313215fe65a623b5fc337347fa04"
+    }
+  },
+  "credentialInvalidation": {
+    "oldCredentialsRejected": true,
+    "evidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/credential-invalidation-receipt.json",
+      "sha256": "405cbc103e353c90463cdd085b956d03abe566905ab703bc80a8261118f28a8f"
+    }
+  },
+  "failureScenarios": {
+    "scenarios": [
+      {
+        "scenarioId": "missing-orphan-object",
+        "injectedCondition": "deleted object version workspace-1/canvas/assets/cover.png@sha256-c88732ca1022a07d9ec8f8f83e44f0e1 from the restored store",
+        "expectedResult": "blocked",
+        "observedResult": "blocked",
+        "instanceId": "local-objects-3107800f",
+        "injectedAt": "2026-07-26T18:31:17.448Z",
+        "destroyedAt": "2026-07-26T18:31:17.451Z"
+      },
+      {
+        "scenarioId": "db-object-time-skew",
+        "injectedCondition": "object inventory recovery point 2026-07-26T18:33:16.682Z against database recovery point 2026-07-26T18:31:16.682Z",
+        "expectedResult": "blocked",
+        "observedResult": "blocked",
+        "instanceId": "local-skew-3107800f",
+        "injectedAt": "2026-07-26T18:31:17.452Z",
+        "destroyedAt": "2026-07-26T18:31:17.607Z"
+      },
+      {
+        "scenarioId": "schema-incompatibility",
+        "injectedCondition": "dropped content_packages.digest in the recovery instance",
+        "expectedResult": "blocked",
+        "observedResult": "blocked",
+        "instanceId": "local-schema-3107800f",
+        "injectedAt": "2026-07-26T18:31:17.806Z",
+        "destroyedAt": "2026-07-26T18:31:18.037Z"
+      },
+      {
+        "scenarioId": "kms-key-unavailable",
+        "injectedCondition": "restore attempted with the rotated-away secret version",
+        "expectedResult": "blocked",
+        "observedResult": "blocked",
+        "instanceId": "local-secret-3107800f",
+        "injectedAt": "2026-07-26T18:31:18.082Z",
+        "destroyedAt": "2026-07-26T18:31:18.243Z"
+      }
+    ],
+    "evidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/failure-scenarios.json",
+      "sha256": "938d96b6923cc14005d172acf2cedc05c993f6cb286b4a86919c91f362a38e80"
+    }
+  },
+  "failureDisposal": {
+    "injectedFailureInstanceDestroyed": true,
+    "evidence": {
+      "path": "docs/evidence/n2-recovery/local-drill-2026-07-26/failed-instance-destruction-receipt.json",
+      "sha256": "f605902b861b00540cc8ea228d0839f6958ea08afccbbc38583ff587b2a2d4f5"
+    }
+  }
+}

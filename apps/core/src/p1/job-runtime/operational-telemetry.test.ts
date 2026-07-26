@@ -2,8 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MemoryOperationalTelemetryStore,
+  resolveWorkerId,
   WorkerOperationalTelemetry,
 } from './operational-telemetry.js';
+
+test('worker id falls back when optional configuration is blank', () => {
+  assert.equal(resolveWorkerId(undefined, 'host:123'), 'host:123');
+  assert.equal(resolveWorkerId('', 'host:123'), 'host:123');
+  assert.equal(resolveWorkerId('   ', 'host:123'), 'host:123');
+  assert.equal(resolveWorkerId(' worker-a ', 'host:123'), 'worker-a');
+});
 
 test('worker telemetry records windowed process CPU and live handler concurrency', async () => {
   const store = new MemoryOperationalTelemetryStore();

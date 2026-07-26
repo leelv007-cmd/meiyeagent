@@ -28,8 +28,15 @@ import {
 import { createCoreServer } from './server.js';
 import {
   assembleCapabilitiesFromEnv,
+  canvasReachabilityProbe,
   composeRuntimeTruth,
+  dbosSystemDbProbe,
   isProtectedAppEnv,
+  objectStorageProbe,
+  outboxBacklogProbe,
+  postgresqlProbe,
+  schemaCompatibilityProbe,
+  workerFreshnessProbe,
 } from './runtime-truth/index.js';
 import {
   closeHttpServerWithDeadline,
@@ -1758,6 +1765,90 @@ const workflowEvents = new WorkflowEventApplicationService([
   videoWorkflowEventSource,
 ]);
 
+// Readiness probe assembly. Protected environments require all nine checks, so
+// every axis is wired to the real dependency it claims to prove: the probe
+// factories in runtime-truth/probes.ts existed but had no production call site,
+// which left six of nine checks reporting "Required readiness probe is not
+// configured" in staging/production.
+const dbosSystemPool = harnessRuntimeConfig
+  ? new Pool({
+      connectionString: harnessRuntimeConfig.dbos.systemDatabaseUrl,
+      max: 1,
+    })
+  : undefined;
+
+const READINESS_PROBE_WORKSPACE_ID = 'readiness-probe';
+const READINESS_PROBE_OBJECT_KEY = `${READINESS_PROBE_WORKSPACE_ID}/canvas/assets/readiness-probe.png`;
+// A 1x1 PNG: the shared storage seam validates media magic bytes, so the probe
+// has to write a real media payload. Deterministic bytes make the write
+// idempotent against the immutable-object rule.
+const READINESS_PROBE_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=',
+  'base64',
+);
+
+/** Real read/write round trip through the shared object storage seam. */
+const probeObjectStorageReadWrite = async () => {
+  await assetStorage.putCanvasAsset({
+    bytes: READINESS_PROBE_BYTES,
+    objectKey: READINESS_PROBE_OBJECT_KEY,
+    workspaceId: READINESS_PROBE_WORKSPACE_ID,
+  });
+  try {
+    const stored = await assetStorage.read(READINESS_PROBE_OBJECT_KEY);
+    if (Buffer.compare(Buffer.from(stored.bytes), READINESS_PROBE_BYTES) !== 0) {
+      throw new Error('Object storage returned different bytes than were written.');
+    }
+  } finally {
+    await assetStorage.deleteCanvasAsset({
+      objectKey: READINESS_PROBE_OBJECT_KEY,
+      workspaceId: READINESS_PROBE_WORKSPACE_ID,
+    });
+  }
+};
+
+const readinessProbes = {
+  canvas: canvasReachabilityProbe({
+    baseUrl: process.env.CANVAS_SERVICE_URL ?? '',
+    ...(process.env.CANVAS_SERVICE_TOKEN
+      ? { serviceToken: process.env.CANVAS_SERVICE_TOKEN }
+      : {}),
+  }),
+  dbos: dbosSystemPool
+    ? dbosSystemDbProbe(dbosSystemPool)
+    : () => ({
+        name: 'dbos' as const,
+        status: 'fail' as const,
+        detail:
+          'HARNESS_DBOS_SYSTEM_DATABASE_URL is not configured; the DBOS system database cannot be proven.',
+      }),
+  objectStorage: objectStorageProbe({
+    env: process.env,
+    probeReadWrite: probeObjectStorageReadWrite,
+  }),
+  outbox: outboxBacklogProbe({
+    async criticalBacklog() {
+      const result = await pool.query<{ backlog: string }>(
+        `select count(*)::text as backlog
+           from harness_runtime.langfuse_outbox
+          where status in ('queued', 'failed', 'sending')
+            and next_attempt_at <= now()`,
+      );
+      return Number(result.rows[0]?.backlog ?? 0);
+    },
+    maxBacklog: Number(process.env.P1_OUTBOX_CRITICAL_MAX_BACKLOG ?? 500),
+  }),
+  postgresql: postgresqlProbe(pool),
+  schema: schemaCompatibilityProbe(pool),
+  workerFreshness: workerFreshnessProbe({
+    async latestHeartbeatAt() {
+      const sample = await operationalTelemetryStore.latestWorkerSample();
+      return sample?.sampledAt ?? null;
+    },
+    staleAfterMs: Number(process.env.P1_WORKER_HEARTBEAT_STALE_MS ?? 30_000),
+  }),
+};
+
 // Rebuild this lightweight projection for every truth-surface request so an
 // evidence artifact that expires or is replaced cannot stay verified in memory.
 const resolveRuntimeTruth = () => {
@@ -1771,11 +1862,14 @@ const resolveRuntimeTruth = () => {
   return composeRuntimeTruth({
     capabilityRecords: providerEvidence.capabilityRecords,
     env: process.env,
-    probes: providerEvidenceConfigured
-      ? {
-          providerLive: () => providerEvidence.providerLiveReadiness,
-        }
-      : undefined,
+    probes: {
+      ...readinessProbes,
+      ...(providerEvidenceConfigured
+        ? {
+            providerLive: () => providerEvidence.providerLiveReadiness,
+          }
+        : {}),
+    },
     release: providerEvidence.release,
   });
 };
@@ -1828,7 +1922,10 @@ const shutdown = () => {
     shutdownDbos: () =>
       harnessRuntimeConfig ? DBOS.shutdown() : Promise.resolve(),
     stopJobs: () => jobRuntime.stop({ graceful: true }),
-    closePool: () => pool.end(),
+    closePool: async () => {
+      await pool.end();
+      if (dbosSystemPool) await dbosSystemPool.end();
+    },
   }).then(
     () => process.exit(0),
     (error: unknown) => {

@@ -30,12 +30,21 @@ export function dbosSystemDbProbe(
 /**
  * Schema compatibility: critical relations must exist after migration preflight.
  * Defaults cover business + harness markers commonly required for delivery.
+ *
+ * T40/E-01: the owned-asset marker used to read `public.model_owned_assets`, a
+ * relation that exists in no migration and nowhere else in this repository —
+ * `git grep` finds it only here. It survived because this probe was never
+ * wired into the assembly, so nothing ever ran it. Wiring it (T40) turned that
+ * stale constant into a permanent `not_ready` for every protected environment,
+ * since the probe can never find the table. The real P1 owned-asset relation is
+ * `public.p1_owned_assets`; the harness marker `public.p1_worker_metric_samples`
+ * was already correct.
  */
 export function schemaCompatibilityProbe(
   pool: Queryable,
   relations: string[] = [
     'public.p1_worker_metric_samples',
-    'public.model_owned_assets',
+    'public.p1_owned_assets',
   ],
 ): () => Promise<ReadinessCheckResult> {
   return async () => {

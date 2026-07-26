@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "kind": "recovery-failure-scenario-report",
+  "drillId": "local-drill-3107800f",
+  "recoveryPoint": "2026-07-26T18:31:16.682Z",
+  "sourceEnvironment": "local",
+  "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+  "provider": "local-postgresql-16",
+  "receiptId": "local-drill-3107800f-failure-scenarios",
+  "provenance": "local-recovery-drill",
+  "data": {
+    "scenarios": [
+      {
+        "scenarioId": "missing-orphan-object",
+        "injectedCondition": "deleted object version workspace-1/canvas/assets/cover.png@sha256-c88732ca1022a07d9ec8f8f83e44f0e1 from the restored store",
+        "expectedResult": "blocked",
+        "observedResult": "blocked",
+        "instanceId": "local-objects-3107800f",
+        "injectedAt": "2026-07-26T18:31:17.448Z",
+        "destroyedAt": "2026-07-26T18:31:17.451Z"
+      },
+      {
+        "scenarioId": "db-object-time-skew",
+        "injectedCondition": "object inventory recovery point 2026-07-26T18:33:16.682Z against database recovery point 2026-07-26T18:31:16.682Z",
+        "expectedResult": "blocked",
+        "observedResult": "blocked",
+        "instanceId": "local-skew-3107800f",
+        "injectedAt": "2026-07-26T18:31:17.452Z",
+        "destroyedAt": "2026-07-26T18:31:17.607Z"
+      },
+      {
+        "scenarioId": "schema-incompatibility",
+        "injectedCondition": "dropped content_packages.digest in the recovery instance",
+        "expectedResult": "blocked",
+        "observedResult": "blocked",
+        "instanceId": "local-schema-3107800f",
+        "injectedAt": "2026-07-26T18:31:17.806Z",
+        "destroyedAt": "2026-07-26T18:31:18.037Z"
+      },
+      {
+        "scenarioId": "kms-key-unavailable",
+        "injectedCondition": "restore attempted with the rotated-away secret version",
+        "expectedResult": "blocked",
+        "observedResult": "blocked",
+        "instanceId": "local-secret-3107800f",
+        "injectedAt": "2026-07-26T18:31:18.082Z",
+        "destroyedAt": "2026-07-26T18:31:18.243Z"
+      }
+    ]
+  }
+}

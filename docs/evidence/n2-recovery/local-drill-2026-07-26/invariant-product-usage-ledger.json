@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "kind": "recovery-invariant-report",
+  "drillId": "local-drill-3107800f",
+  "recoveryPoint": "2026-07-26T18:31:16.682Z",
+  "sourceEnvironment": "local",
+  "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+  "provider": "local-postgresql-16",
+  "receiptId": "local-drill-3107800f-invariant-product-usage-ledger",
+  "provenance": "local-recovery-drill",
+  "data": {
+    "invariantId": "product-usage-ledger",
+    "sourceRecords": [
+      {
+        "id": "usage-001",
+        "sha256": "e2e9e3b24dce94dc3a0da47683d6c64c4dc2fd73272245b3822d4aebee6354ad"
+      },
+      {
+        "id": "usage-002",
+        "sha256": "1e87be738be464959bf90df130b8643ca6af83515ff35ca14c2c355920acb414"
+      }
+    ],
+    "restoredRecords": [
+      {
+        "id": "usage-001",
+        "sha256": "e2e9e3b24dce94dc3a0da47683d6c64c4dc2fd73272245b3822d4aebee6354ad"
+      },
+      {
+        "id": "usage-002",
+        "sha256": "1e87be738be464959bf90df130b8643ca6af83515ff35ca14c2c355920acb414"
+      }
+    ]
+  }
+}

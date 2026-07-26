@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "kind": "recovery-invariant-report",
+  "drillId": "local-drill-3107800f",
+  "recoveryPoint": "2026-07-26T18:31:16.682Z",
+  "sourceEnvironment": "local",
+  "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+  "provider": "local-postgresql-16",
+  "receiptId": "local-drill-3107800f-invariant-generation-job",
+  "provenance": "local-recovery-drill",
+  "data": {
+    "invariantId": "generation-job",
+    "sourceRecords": [
+      {
+        "id": "job-copy-001",
+        "sha256": "051c1cec67e79ec77e1b7f4e525742e8b4ddbb1a513b25746d7c5646e977ce61"
+      },
+      {
+        "id": "job-image-002",
+        "sha256": "ed6749166f2d1908cb8ccb0ab85ec41424ca42ab92925d7b3336af304563ca41"
+      },
+      {
+        "id": "job-video-003",
+        "sha256": "733d5e0f92a85e31332db8436d9361de38c4ded58715db35f83a4d70275645fe"
+      }
+    ],
+    "restoredRecords": [
+      {
+        "id": "job-copy-001",
+        "sha256": "051c1cec67e79ec77e1b7f4e525742e8b4ddbb1a513b25746d7c5646e977ce61"
+      },
+      {
+        "id": "job-image-002",
+        "sha256": "ed6749166f2d1908cb8ccb0ab85ec41424ca42ab92925d7b3336af304563ca41"
+      },
+      {
+        "id": "job-video-003",
+        "sha256": "733d5e0f92a85e31332db8436d9361de38c4ded58715db35f83a4d70275645fe"
+      }
+    ]
+  }
+}
