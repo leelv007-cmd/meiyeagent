@@ -26,6 +26,37 @@
 promptfoo 配置与 eval cases、`docs/ops/production-dependency-audit-waivers.json`、
 任何 `apps/` 或 `packages/` 源码。
 
+### 0.1 R2 表 · 对抗评审 NEEDS-FIX 后的逐条处置
+
+判词全文：`.scratch/orca-run-2026-07-25/reviews/t39-verdict.md`（308 行）。判决的要害不是某条锚点写错，
+而是**取证方式**：初稿 12 条缺口里 ③ 型（只有测试名／文件名／grep 计数）5 条，错 4 条——口径与
+逐条标注见 §7.0。本轮在冻结 `6cfa4a1e` 之上追加窄改，**只改两处代码，都在矩阵 spec 内，都是净加强**，
+其余全部是报告与注释的口径修正。
+
+| 条 | 判词认定 | 本轮处置 | 落点 |
+|---|---|---|---|
+| **P1-1** | G-5「全仓 e2e 无任何 spec 造过 ApprovalReceipt」是假缺口——e2e 经**点击**间接产生 receipt，不写它的名字 | G-5 收窄为可证形态：产生**已有**浏览器覆盖／未覆盖的是解锁态与一次性链接闭环 | §7 G-5；矩阵 spec `:523-529` 注释 |
+| **P1-2** | G-12 归错渲染面（发布记录行已正确做映射，产不出实测那行） | 重锚到周回顾面板＋结果中心，共 4 处；发布记录行改记为**修法样板**；`?? platform` 兜底降为观察项 O-2 | §4；§7 G-12；§7.2 O-2 |
+| **P2-1** | 协办置灰断言写成 `if (data-enabled === 'false')`，产品回归成 enabled 时整个 if 体跳过、四腿照绿 | **改代码**：无条件 `toBeDisabled()` ＋ `toHaveAttribute('data-enabled','false')`，reason 文案断言保留；注释写清「将来若有腿造批准，按该腿造的 receipt 分岔并两支都断言，不看 DOM 报什么」 | `t39-r-gate-journey-matrix.spec.ts:550-570` |
+| **P2-2** | G-3 结论对、机制错：canonical 页确实渲染「复制」与「已发布」 | 机制改写＋逐个断言的命运分列；**与判词有一处分歧，见下** | §6 P2-2；§7 G-3 |
+| **P2-3** | G-4 锚点被本提交自己推移 | `:132` → `:146`，并注明 base `13562b53` 侧为 `:132` | §6 P2-1；§7 G-4 |
+| **P2-4** | G-8 锚点指错文件行（该文件全文零 `paraglide` 字样） | 改锚 `canonical-write-boundary.contract.test.ts:21-25`（source roots 含 web src）＋ `:27-47`（递归 walk/read），并说明命中的是 walk 期间任意正在被重写的产物 | §7 G-8 |
+| **P2-5** | `worker-done.md:96`「本票核实成立」把 ③ 型升格成核实 | 缺口清单表头加**证据类型列**（①/②/③）逐条如实标注；G-1 撤销并降级为观察项 O-1；G-2 标注为「测试计数＋兄弟 outbox 三形对照」 | §7.0／§7.1／§7.2／§7.3；worker_done §4 |
+| **P3-1** | `expect.poll(...).toBe(1)` 证不了「恰好一条」——读到 1 即过，第二条晚到不会被发现 | **改代码**：poll `>= 1` → 固定窗口 `1s` → 对 `task.id` 去重后断 `=== 1`（两种改法都用上，重投的同一 task 不会被误记成第二次运行） | `t39-r-gate-journey-matrix.spec.ts:701-718` |
+| **P3-2** | `assertMerchantLanguage` 扫描面窄于报告口径 | spec 内加作用域注释；§4 加作用域声明（只覆盖已渲染文本、只覆盖单行内可匹配形态） | spec `:211-221`；§4 |
+| **P3-3** | 「取文件」注释读起来像每腿都验 manifest | 注释按腿分述：`zip`（图文/视频）走 `assertZipDownload` 验 manifest／`text`（文案）走 `assertTextDownload` 无 manifest | spec `:517-522` |
+| **P3-4** | 并入 P1-2（裸键 4 处一条化） | 同 P1-2 | §7 G-12 |
+
+**与判词的一处分歧（明报不默改）**：P2-2 要求把 G-3 的拒收机制写成
+「legacy token 走 `assertNotLegacyHandoffSource` 被拒收」。本轮实查——该函数在**生产路径上零调用者**
+（全仓仅三处引用：定义 `delivery-handoff-canonical.ts:249`、桶导出 `product/results/index.ts:345`、
+它自己的单测 `delivery-handoff-canonical.test.ts:96/102`；`loadCanonicalHandoff` 全文未调用它）。
+真实机制是**查不到那一行**（canonical 表里没有该 token）。结论（`:97` 之后不可达）不变，机制按源码写实，
+详见 §6 P2-2。判词 §四 P2-2 与本票初稿在这一处**记的是同一个错**。
+
+**R2 未动**：任何产品代码（裸平台键修复属语言面属主）、`e2e-hard-gate-contract.test.ts` 登记表、
+`p0-golden-journey.spec.ts`、required 双钉文件、promptfoo/eval/waiver 文件。
+
 ---
 
 ## 1. 全旅程矩阵 spec
@@ -104,11 +135,47 @@ Running 4 tests using 1 worker
 | 1 | 文案腿 `settlementStatus` | 期望 `reconciled`，实得 `estimated` | 断言写错了：`reconciled` 需可信用量证据。→ G-9 |
 | 2 | 图文腿 `settlementStatus` | 期望 `estimated`，实得 `reconciled` | 结算态**按模态分叉**，不是统一值。→ G-9 定稿 |
 | 3 | 图文腿 `settledUnits` | 期望 `['image']`，实得 `['copy','image']` | 图文笔记一单**跨两桶**扣减（文字＋配图），「三桶各自扣减」的正确形态是「回执与额度投影逐桶一致」，不是「一模态一桶」。→ G-10 |
-| 4 | 图文腿刷新恢复后的语言走查 | 三行泄漏，泄漏物是**本 spec 自己**塞进 intent 的 UUID | 反向断言是活的：作品名与发布记录行会原样回显商家自己的输入。改用 8 位短后缀，不放宽断言 |
+| 4 | 图文腿刷新恢复后的语言走查 | 三行泄漏，泄漏物是**本 spec 自己**塞进 intent 的 UUID | 反向断言是活的：Result 面会把商家自己输入的作品名原样回显出来。改用 8 位短后缀，不放宽断言。**R2 更正**：初稿在这一格点名「发布记录行」，本轮未保留那三行的逐行输出、无法确认究竟是哪几个面，故只说到「Result 面」为止（③ 待核实；与 G-12 那行是两个不同的串，归属另见 §7 G-12） |
 | 5 | 视频腿 `billingMode` | 期望 `per_request`（W1 口径），实得 `per_output_second` | W1 的「按条」在**额度单位**上成立（实扣 1 条），但**价格公式**仍是按秒。→ G-11 |
 
 第 6 轮 4/4 全绿，即上方输出。红 1/2/3/5 全部改的是断言口径以对齐产品真实合同，
 红 4 改的是测试数据；**没有一处放宽了旅程本身**。
+
+### 1.2 R2 复跑（P2-1／P3-1 改了断言之后，同一跑法重证）
+
+上方 §1.1 的绿属于 R1 的 spec 版本。R2 把协办置灰改成无条件、把「恰好一条」改成
+「固定窗口 ＋ 按 task id 去重」（§0.1 表 P2-1／P3-1），两处都是**收紧**，因此按同一跑法
+（DROP 双库 → `provision-test-db.sh` → `e2e-lock.sh` → 单 spec 点名）重跑四腿：
+
+```text
+$ .scratch/orca-run-2026-07-25/reports/t39-run-e2e.sh \
+    tests/e2e/specs/t39-r-gate-journey-matrix.spec.ts
+
+Running 4 tests using 1 worker
+
+  ✓  1 [chromium] › tests/e2e/specs/t39-r-gate-journey-matrix.spec.ts:644:5 › T39 R-gate journey matrix ›
+       文案 · 亮色 · 桌面: 注册 → Day-0 冷态 → 首次出活 → 采用 → 三路交付 → 计费对账 → 刷新恢复 (16.9s)
+  ✓  2 [chromium] › tests/e2e/specs/t39-r-gate-journey-matrix.spec.ts:644:5 › T39 R-gate journey matrix ›
+       图文全包 · 暗色 · 桌面: 注册 → Day-0 冷态 → 首次出活 → 采用 → 三路交付 → 计费对账 → 刷新恢复 (1.1m)
+  ✓  3 [chromium] › tests/e2e/specs/t39-r-gate-journey-matrix.spec.ts:644:5 › T39 R-gate journey matrix ›
+       视频 · 亮色 · 移动端: 注册 → Day-0 冷态 → 首次出活 → 采用 → 三路交付 → 计费对账 → 刷新恢复 (18.9s)
+  ✓  4 [chromium] › tests/e2e/specs/t39-r-gate-journey-matrix.spec.ts:644:5 › T39 R-gate journey matrix ›
+       视频 · 暗色 · 移动端: 注册 → Day-0 冷态 → 首次出活 → 采用 → 三路交付 → 计费对账 → 刷新恢复 (19.8s)
+
+  4 passed (2.8m)
+```
+
+锁审计行（`/tmp/meiye-e2e.log:206-207`）：
+
+```text
+2026-07-27T03:45:02+0800 acquire pid=46804 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t39-r-gate-closeout cmd=pnpm --filter
+2026-07-27T03:47:49+0800 release pid=46804 cwd=/Users/bin/orca/workspaces/美业内容2/t39-r-gate-closeout
+```
+
+**这一轮零红**——两处收紧都是一次过。这不奇怪也不构成「改对了」的证明：本腿本来就不造
+ApprovalReceipt（所以无条件置灰与原 `if` 体在**今天的产品行为下**同真），本腿也本来就只投一次
+（所以去重后仍是 1）。收紧的价值不在这一轮变红，而在于**产品回归时它会变红而原写法不会**——
+P2-1 的失败场景（`enabled` 计算回归成无批准也 enabled）在原写法下四腿照绿，改后必红。
 
 ---
 
@@ -391,8 +458,11 @@ $ pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
 不是「这四个面没有泄漏」。上文「逐行比对…命中即红」按此口径理解。
 
 **断言是活的（实证）**：§1.1 红轮 4 里，图文腿刷新恢复后的走查真的红了，泄漏物是**本 spec 自己**
-写进 intent 的 UUID —— 作品名与周回顾条目会原样回显商家输入。修法是把测试数据换成 8 位短后缀，
+写进 intent 的 UUID —— Result 面会把商家自己输入的作品名原样回显出来。修法是把测试数据换成 8 位短后缀，
 **没有放宽断言**。这条红同时说明：商家自己输入什么，产品就原样显示什么，这个面不会替他脱敏。
+（**R2 更正**：初稿在此点名「发布记录行」；本轮未保留那三行的逐行输出，无法确认是哪几个面，
+故收窄到「Result 面」。这三行与下文 G-12 的 `xiaohongshu · 07/26 · r4` 是**两个不同的串**，
+不要合并理解。）
 
 TEST-CATALOG `:493` 口径（Result 面在调整/采用/交付/刷新恢复前后都不得出现 Work/Asset ID、
 裸执行态、provider 文案、模型 slug）由 `ui-journey.ts:329-336` 在 `waitForResultJourney` 内
@@ -411,9 +481,11 @@ TEST-CATALOG `:493` 口径（Result 面在调整/采用/交付/刷新恢复前�
 年+月+日+时+分，产不出 `07/26`。真凶是**周回顾面板的已发布条目**，六个字段按序逐一对上：
 `weekly-review-panel.tsx:76`（`{item.packageTitle} · {item.platform} · {item.publishedAtLabel} ·
 {item.sourceTierLabel} · {item.revisionLabel} · CTA {item.ctaLabel}`）＋
-`weekly-review-model.ts:337`（`platform: p.platform`，无映射）／`:338 formatDay`
-（`:138-146`，只有 month/day 两位 → `07/26`）／`:339`（三元产出 `人工补记`）／
-`:340`（`` `r${...}` `` 裸版本）／`:341 ctaLabel`。详见 G-12。
+`weekly-review-model.ts:336`（`platform: p.platform`，无映射）／`:337`
+（`publishedAtLabel: formatDay(...)`，`formatDay` 在 `:138-145` 只有 month/day 两位 → `07/26`）／
+`:338-339`（三元产出 `人工补记`）／`:340`（`` `r${...}` `` 裸版本）／`:341 ctaLabel`。详见 G-12。
+（**行号说明**：判词与返工令把裸平台键写作 `:337`，本轮逐行核对为 `:336`——`:337` 是
+`publishedAtLabel`。`:340`／`:341`／`:203` 三处判词无误。）
 
 ---
 
@@ -428,6 +500,23 @@ TEST-CATALOG `:493` 口径（Result 面在调整/采用/交付/刷新恢复前�
 | `pnpm eval:redlines` | 11/11 — EXIT=0 |
 | `pnpm eval:redlines:promptfoo` | 21/21 — EXIT=0 |
 | `pnpm audit --prod` ＋ `assert-production-audit.mjs` | critical=0 high=0 moderate=3 low=2 waived=0 unwaived=0 — EXIT=0 |
+
+**R2 复跑（返工令只要求这两条，其余机械门不重跑）**：
+
+| 命令 | 结果 |
+|---|---|
+| `pnpm typecheck` | EXIT=**0**（`run-root-typecheck.sh` → web `build` ＋ `locale:compile && tsc --noEmit`） |
+| `pnpm --filter @meiye/web test`（带 lane.env） | tests **1268** / suites **46** / pass **1268** / fail **0** / skipped **0** — EXIT=**0** |
+
+R1 那一行是 pass 1264 / skip 4，R2 是 pass 1268 / skip 0：**总数未变**，也不是新增测试。
+差别是这次跑之前刚重建过车道库（§1.2 的 DROP ＋ provision）并带上了 `lane.env`，那 4 条
+按库可用性 skip 的用例这次拿到了库——全仓恰好 4 个文件写 `{ skip: !databaseUrl }`
+（`databaseUrl = process.env.TEST_DATABASE_URL`）：`src/lib/auth/workspace-provisioning.postgres.test.ts:8-12`、
+`src/payment/plan-checkout-bindings.postgres.test.ts:12`、
+`src/payment/postgres-webhook-settlement.postgres.test.ts:20`、
+`src/payment/postgres-pro-studio-commerce.postgres.test.ts:12`，各一条测试。
+本轮日志里能逐条看到它们跑过（例：`✔ verified-user trigger creates a pending outbox and lease
+reclaim fences stale workers (118.95ms)`）。
 
 新增测试的门覆盖申报（§4b④）：
 
@@ -507,7 +596,7 @@ routes/dashboard/results_/$workId.tsx:716-718
 `SELECT … FROM p1_assisted_receipts WHERE workspace_id = $1 AND handoff_token = $2`，
 `if (!selected.rows[0]) return { kind: 'not_found' }`。legacy `create_handoff` 写的是产品库的
 `handoffPackages`，那个 token 从未进过 `p1_assisted_receipts.handoff_token`，所以查不中 →
-`not_found` → `$token.tsx:52 resolve = { kind:'not_found' }` → 页面渲染 unavailable 态，
+`not_found` → `$token.tsx:53 resolve = { kind:'not_found' }` → 页面渲染 unavailable 态，
 四段 sections 一个都不渲染。**`:97` 之后整段失败的原因是 token 解析不到，不是「那些元素属于退役页」**
 （见 G-3 的 R2 更正）。
 
@@ -573,7 +662,7 @@ routes/dashboard/results_/$workId.tsx:716-718
 | # | 缺口 | 证据锚点 | 证据类型 | 影响 | 建议属主 |
 |---|---|---|---|---|---|
 | **G-2** | Langfuse 审计 outbox 只有 1 条测试，缺补偿队列该有的三形 | `apps/core/src/p1/harness/outbox-worker.test.ts:9`（`Langfuse failure leaves the audit queued for compensation`）是该文件**唯一**一条测试；兄弟 outbox `apps/core/src/p1/operations/expired-fact-invalidation-outbox.test.ts` 有三形：`:10` 一条失败不阻塞已领批次／`:60` 领取前被取代则不进 sink／`:83` 反复失败在尝试上限成为持久死信 | **①**（R2 打开了两个文件的测试名与体）＋**②**（评审侧实跑 `outbox-worker.test.ts` → tests 1 pass 1 fail 0） | R-05 的验收面点名 outbox，1 条测试撑不住「补偿队列」语义：**无重投、无混批隔离、无死信上限**三形全缺，而兄弟 outbox 证明这三形在本仓是可写的 | R-05 属主票 |
-| **G-3** | `p0-golden-journey.spec.ts` 长期红，且 `:97` 之后整段今天不可达 | 红根因＝OI-58（`seedAcceptedProductContent` → `generate_copy` 对新租户抛 `LEGACY_CONTENT_READ_ONLY`，`fixtures/product.ts:298`）。**不可达的真实机制（R2 更正）**：`:96` 走的 token 是 legacy `create_handoff` 写进产品库 `handoffPackages` 的，而 `/dashboard/handoff/$token` 只查 canonical 表——`assisted-canonical-repository.ts:565-573` `SELECT … FROM p1_assisted_receipts WHERE workspace_id=$1 AND handoff_token=$2`，查不中即 `{kind:'not_found'}` → `$token.tsx:52` → 页面渲染 unavailable，四段 sections 一个都不渲染。逐个断言的命运：`:98` heading（canonical 是「小红书交接包」`delivery-handoff-canonical.ts:126`，≠「小红书发布包」）与 `:122`「暂未发布」（canonical 作「未发布」`canonical-handoff-page.tsx:360`）**即便换 canonical 来源也仍需改断言**；`:101`「复制」（`canonical-handoff-page.tsx:284`）与 `:136`「已发布」（`:351`）**canonical 页确实渲染，可原样存活** | **①**（R2 打开了 canonical 页全渲染树、`$token.tsx`、`loadCanonicalHandoff` 体、仓储 SQL）＋**②**（红态见 `e2e-baseline-2026-07-25.md`） | T37 为它补的「内容详情 →协办交接→ 交付面板」点击链（`:53-70`）**从未被执行过**；这条旅程今天零证明力。**修法不是比对两个页面的元素清单**（那会得出「复制/已发布 两边都有」的困惑），而是让 token 落进 canonical 表，或为 legacy→canonical 建绑定 | e2e 基建 / OI-58 属主 |
+| **G-3** | `p0-golden-journey.spec.ts` 长期红，且 `:97` 之后整段今天不可达 | 红根因＝OI-58（`seedAcceptedProductContent` → `generate_copy` 对新租户抛 `LEGACY_CONTENT_READ_ONLY`，`fixtures/product.ts:298`）。**不可达的真实机制（R2 更正）**：`:96` 走的 token 是 legacy `create_handoff` 写进产品库 `handoffPackages` 的，而 `/dashboard/handoff/$token` 只查 canonical 表——`assisted-canonical-repository.ts:565-573` `SELECT … FROM p1_assisted_receipts WHERE workspace_id=$1 AND handoff_token=$2`，查不中即 `{kind:'not_found'}` → `$token.tsx:53` → 页面渲染 unavailable，四段 sections 一个都不渲染。逐个断言的命运：`:98` heading（canonical 是「小红书交接包」`delivery-handoff-canonical.ts:126`，≠「小红书发布包」）与 `:122`「暂未发布」（canonical 作「未发布」`canonical-handoff-page.tsx:360`）**即便换 canonical 来源也仍需改断言**；`:101`「复制」（`canonical-handoff-page.tsx:284`）与 `:136`「已发布」（`:351`）**canonical 页确实渲染，可原样存活** | **①**（R2 打开了 canonical 页全渲染树、`$token.tsx`、`loadCanonicalHandoff` 体、仓储 SQL）＋**②**（红态见 `e2e-baseline-2026-07-25.md`） | T37 为它补的「内容详情 →协办交接→ 交付面板」点击链（`:53-70`）**从未被执行过**；这条旅程今天零证明力。**修法不是比对两个页面的元素清单**（那会得出「复制/已发布 两边都有」的困惑），而是让 token 落进 canonical 表，或为 legacy→canonical 建绑定 | e2e 基建 / OI-58 属主 |
 | **G-4** | `video-player` 可见性全仓无人守 | 唯一断言 `uiux-day0-contract.spec.ts:146` 位于从未跑到的红腿之后（`e2e-baseline-2026-07-25.md:64-66`：video path `:332` 的 `composer-delivery-card` never arrives）。**行号说明**：base `13562b53` 侧为 `:132`，本票在该文件头加了 14 行 DEMOTED 段推到 `:146`——合入后的 main 上按 `:146` 找 | **①**（打开了该断言与 spec 自己 `:378-380` 承认仍红的注释）＋**②**（`git show 13562b53:… \| grep -n video-player` = 132 vs HEAD = 146） | 「成片能播」没有任何真跑断言；ZIP 里的 `video.mp4` 字节只证明文件在，不证明播放器挂载 | 视频结果面属主票 |
 | **G-5** | 协办交接的**解锁态**与一次性链接闭环零端到端覆盖（**R2 已收窄**） | **已有覆盖的那一半**：ApprovalReceipt 的**产生**有真浏览器覆盖——`pending-actions-inbox.spec.ts:317-324` 在浏览器里填「发布账号／计划发布时间／本次费用（CNY）」并点「确认并发布」，`:325-340` 断言 `approvalRequests[0].status==='consumed'` 且 `deliveryEvents.at(-1).type==='assisted_handoff_prepared'`；而 `content-package-delivery.ts:1029-1041` 里置 `status:'consumed'` 与 `approvalReceipts:[...prev, receipt]` 是**同一个状态转换**，所以观察到 consumed 即意味着一条 receipt 落库，其 `status` 就是 `'approved'`（`content-package-approval.ts:106-120`）。**未覆盖的那一半**：(a) 交付面板 `delivery-action-assisted` 在 `hasExternalSendApproval=true` 下的**解锁态**从未被任何 spec 观察（`$workId.tsx:1475` `Boolean(activeDeliveryApproval \|\| assistedStored)`；注意 `activeDeliveryApproval`（`:704-709`）还要求 receipt 的 `binding.platform` 与 `binding.variantVersionId` 同时匹配当前交付变体，所以「有 receipt」不等于「会解锁」）；(b) 一次性链接 `existingOneShotUrl`（`$workId.tsx:716-718`）→ `/dashboard/handoff/<token>` → 回报 这条链零端到端覆盖 | **①**（R2 逐段打开了 inbox spec 体、两处 core 状态转换、`$workId.tsx` 三处投影）；未覆盖那一半为**①**（读 spec 与投影，无任何 spec 触到解锁分支） | 属主拿初稿的「零覆盖」去补一条造 receipt 的 spec，会发现已经有了；真正缺的解锁态与闭环反而没被点名。**本轮同时修掉了矩阵 spec 里以此为理由的条件式断言**（见 §0 R2 表 P2-1） | 交付面属主票 |
 | **G-6** | T22 两条 deferred 封顶 R-01/R-02 绿门 | `docs/evidence/t22-deferred-policy-findings-2026-07-26.md:16-20`（`assetRefs: []`）与 `:22-26`（冻结事实源恒 `status:'current'`） | **①**（引 T22 文档原文逐句核对） | 媒体收口路径触不到 `subject_asset_rights`/`expression_identity`；`price_benefit_freshness` 看不到过期源。**红线门绿 ≠ 这两个面被覆盖** | T22 指定的后续属主 |
@@ -582,7 +671,7 @@ routes/dashboard/results_/$workId.tsx:716-718
 | **G-9** | `settlementStatus` 按模态分叉，仓内无任何测试守住这条分叉 | `quote-service.ts:599` 默认即 `estimated`；`:628-632` 拿到 `trustedUnits` 才置 `reconciled`；`:636-638` 明写注释 `Honest: keep estimated/unknown; do not invent billedSeconds` 并按 `input.trustedUsage ? 'unknown' : 'estimated'` 分岔；`:639-643`／`:676-682` 是另外两条 `reconciled` 入口。本票实测 fixture 档下 **文案=`estimated`、图文=`reconciled`**（§1.1 红轮 1／2）。`quote-service.test.ts:134/222/360` 三处 `reconciled` 全是自己喂 `trustedUsage` 才断言 | **②**（红轮实测两个值）＋**①**（R2 打开了 settle 分支四处入口与那条注释） | R-06 的「预估=回执」终态在浏览器层只能证到单位级恒等；`reconciled` 与 `estimated` 的模态归属是**无人守的隐性合同**，改动 fixture 或供给侧证据面不会有任何门变红 | R-06 属主票 ／ 计费三桶票（T26） |
 | **G-10** | 图文一单跨 `copy`＋`image` 两桶扣减，「哪些桶该动」无人守 | 本票实测（§1.1 红轮 3）：图文腿 `settledUnits = [{copy,1},{image,N}]`。计费层**完全不认识这个模态**：`grep -rn image_text apps/core/src/p1/product-billing/` → **0 命中**，所以不可能有按模态推导桶的实现或断言。现有单测都是**自己喂** `settledUnits`（`product-usage-ledger.test.ts:24/48/116`、`quote-service.test.ts:280`），断的是账本对给定单位的处理，不是模态→桶的映射 | **②**（红轮实测）＋**①**（R2 打开了计费目录与上述四处测试体）＋**③ 待核实**：「**全仓**无任何测试断言图文该扣哪些桶」这半句仍只有 grep 面支撑——一条测试可以不写 `image_text` 字面量而仍守住该映射，派票第一步应是核实而非直接补测试 | 「三桶各自扣减」的产品真实形态是**一单可跨桶**；任何按「一模态一桶」写的下游逻辑或报表都会算错。矩阵已按「回执与额度投影逐桶一致」守住总量，但**哪些桶该动**仍无人守 | 计费三桶票（T26） |
 | **G-11** | 视频 `billingMode` 仍为 `per_output_second`，与 W1「权威单位=条」口径分叉 | 本票实测（§1.1 红轮 5）：视频腿 quote 的 `billingMode='per_output_second'`，同一腿额度实扣 **1 条**。`quote-service.ts:651-654` 的 per-second settle 分支 `settledUnitQuantity = Math.min(reservedUsage.reservedQuantity, Math.ceil(billableSeconds))` **从秒重算视频单位**——一旦 live 档送来可信秒数，同一条成片就可能扣出 >1 条（今天被 `reservedQuantity` 上限压住） | **②**（红轮实测 `billingMode` 与实扣 1 条）＋**①**（R2 打开了 `:648-656` 的 `Math.min` 体）；**③ 待核实**：「live 档会扣出 >1 条」是源码推演，**未在 live 供给下实证** | 「按条」今天只在**没有可信秒数**时成立（fixture 档），live 档的按条口径**无证据**。这是 W1 裁决与实现之间的真实缺口，不是测试口径问题 | 计费三桶票（T26）／ R-06 属主票 |
-| **G-12** | **周回顾面板与结果中心回执行**的裸平台键（D-116 面，**R2 重锚**，至少 4 处） | 实测可见文本：`… · xiaohongshu · 07/26 · 人工补记 · r4 · CTA …`（图文腿刷新恢复后）。**渲染源逐字段对上**：`weekly-review-panel.tsx:76` 六字段按序直出，其 model `weekly-review-model.ts:337`（`platform: p.platform`，无映射）／`:338 formatDay`（`:138-146`，month/day 两位 → `07/26`）／`:339`（`人工补记`）／`:340`（`` `r${...}` `` 裸版本）／`:341 ctaLabel`。**同族另两处**：`weekly-review-model.ts:203`（`label: ${p.platform} · ${formatDay(...)}`，推荐项证据引用）、`result-center-page.tsx:894`（`{r.label} · {r.platform} · …`，`delivery-action-receipt-row`；其 model `delivery-action-receipt-model.ts:300` `platform: receipt.binding.platform` 无映射——但该处 `:304 revisionLabel` 是「版本 r*」带前缀，只有平台键裸露）。**发布记录行反而是正确的、可作修法样板**：`publication-record-model.ts:133-138` 的 `PLATFORM_LABEL` 经 `:382 platformLabel(...)` → 「小红书」、`:392` → 「版本 r4」、`:384 formatTime`（`:144-157`）年月日时分——它**产不出**上面那行（初稿归错就是归到了这里） | **②**（那行可见文本为浏览器实测）＋**①**（R2 打开了 4 处渲染面与其 model 的字段体，逐字段与实测串比对）；**③ 待核实**：本轮**未**为该行留 DOM 快照，归属靠「六字段按序 + 三个 formatter 唯一自洽」反推——若日后发现别的面也能产出同串，归属需再定（但「发布记录行产不出」这半句是源码可判的，与观测无关） | 平台以英文键而非「小红书」示人、版本以裸 `r4` 示人，是否越过 D-116 拟人化交付语言的线需语言属主判定。本票**未加断言**（加了会红一条本票无权修的产品面）。**注意面比初稿宽**：按初稿去开 `publication-record-panel.tsx` 会看到「小红书／版本 r4」，从而误判「不存在的问题」并关票。另见观察项 O-2（`?? platform` 兜底） | 商家语言／内容运营面属主票 |
+| **G-12** | **周回顾面板与结果中心回执行**的裸平台键（D-116 面，**R2 重锚**，至少 4 处） | 实测可见文本：`… · xiaohongshu · 07/26 · 人工补记 · r4 · CTA …`（图文腿刷新恢复后）。**渲染源逐字段对上**：`weekly-review-panel.tsx:76` 六字段按序直出，其 model `weekly-review-model.ts:336`（`platform: p.platform`，**无映射**）／`:337 publishedAtLabel: formatDay(...)`（`formatDay` `:138-145` 只有 month/day 两位 → `07/26`）／`:338-339`（三元产出 `人工补记`）／`:340`（`` `r${...}` `` 裸版本）／`:341 ctaLabel`（**行号更正**：判词与返工令写的 `:337` 是 `publishedAtLabel`，裸平台键在 `:336`；`:340`／`:341`／`:203` 判词无误）。**同族另两处**：`weekly-review-model.ts:203`（`label: ${p.platform} · ${formatDay(...)}`，推荐项证据引用）、`result-center-page.tsx:894`（`{r.label} · {r.platform} · …`，`delivery-action-receipt-row`；其 model `delivery-action-receipt-model.ts:300` `platform: receipt.binding.platform` 无映射——但该处 `:304 revisionLabel` 是「版本 r*」带前缀，只有平台键裸露）。**发布记录行反而是正确的、可作修法样板**：`publication-record-model.ts:133-138` 的 `PLATFORM_LABEL` 经 `:382 platformLabel(...)` → 「小红书」、`:392` → 「版本 r4」、`:384 formatTime`（`:144-157`）年月日时分——它**产不出**上面那行（初稿归错就是归到了这里） | **②**（那行可见文本为浏览器实测）＋**①**（R2 打开了 4 处渲染面与其 model 的字段体，逐字段与实测串比对）；**③ 待核实**：本轮**未**为该行留 DOM 快照，归属靠「六字段按序 + 三个 formatter 唯一自洽」反推——若日后发现别的面也能产出同串，归属需再定（但「发布记录行产不出」这半句是源码可判的，与观测无关） | 平台以英文键而非「小红书」示人、版本以裸 `r4` 示人，是否越过 D-116 拟人化交付语言的线需语言属主判定。本票**未加断言**（加了会红一条本票无权修的产品面）。**注意面比初稿宽**：按初稿去开 `publication-record-panel.tsx` 会看到「小红书／版本 r4」，从而误判「不存在的问题」并关票。另见观察项 O-2（`?? platform` 兜底） | 商家语言／内容运营面属主票 |
 | **G-13** | 商家语言 promptfoo 门的**本地／票面命令永久红**（R2 新增，来源＝评审判词 §六.6） | `scripts/evals/run-promptfoo-merchant-language.mjs:5-10`：`resolve('node_modules/.bin/promptfoo')` 不存在即 `process.exitCode = 2`，**无回退**；孪生脚本 `run-promptfoo-redlines.mjs:5-9` 有 `pnpm dlx promptfoo@0.121.19` 回退。而 `promptfoo` **在全仓任何 package.json 里都没有声明**（`grep -rn '"promptfoo"' --include=package.json` → 0 命中，已排除 node_modules），所以那个 binary 装不出来 → 该命令恒 EXIT=2、零通过数。**门本身有效**：CI 不走这个 wrapper——`core-quality.yml:25-32` 内联 `pnpm dlx promptfoo@0.121.19 eval -c promptfooconfig.merchant-language.yaml` 绕过它 | **①**（R2 读了两个 wrapper 全文、跑了 package.json 声明检索、读了 CI 内联步骤）；**③ 待核实**：**未实跑**该命令复现 EXIT=2（会下载 promptfoo 并落文件，超出本票只读边界）；双盲侧报过 EXIT=2 零通过数 | 不由本票引入（`13562b53` 之前即如此），CI 门未被削弱。但任何按票面命令本地复核商家语言门的人都会拿到一条**永久红**，且容易误判成回归。修法＝给 wrapper 加同款 dlx 回退，或声明 pinned devDependency | T40（发布门口径）／ eval 基建属主 |
 
 ---
