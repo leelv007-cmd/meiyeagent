@@ -3,7 +3,7 @@
 ## Scope and authority
 
 - Branch: `leelv007-cmd/t45-confirmation-timeout`
-- Rework base: local `main` at `49427f98` (includes T20).
+- Merge-path base: local `main` at `5aee7c5d` (includes T20 and T28).
 - The browser journey input follows T44's promotion-gap behavior; its governed
   admin-config setup only separates answer and timeout timing deterministically.
 - Evidence class: local fixture, real lane PostgreSQL, real lane DBOS, and
@@ -25,7 +25,7 @@
 | --- | --- |
 | F-1 — core timeout bypassed the decision channel | `awaitDecision` calls `HarnessDecisionService.submitCoreTimeout` inside the stable post-recv step `persist-core-timeout-{questionId}`. The PostgreSQL test directly asserts `pending_questions.status=resolved` plus one event, trace, audit and outbox row for the timeout. The event is inserted with `resume_status=sent`, so the workflow never sends the synthetic decision to itself. |
 | F-2 — a late answer disappeared after terminal success | A resolved question whose server-authored consuming source is `core_timeout` or `core_hold_expired` accepts only a real `accepted` merchant answer as `{questionId}:late_answer`. The first answer starts a deterministic new workflow; subsequent answers replay the first persisted command and return the same successor reference without 409 or a second start. |
-| F-3 — config snapshot shifted old DBOS function IDs | The config read is an ordinary `await`, with the durable recv deadline providing replay determinism. A child process persists a pre-T45 PENDING layout, exits without graceful shutdown, and the parent recovers it with the new code. It completes with IDs `3/4/5/6 = persist pending / setEvent / recv / sleep`, without branch or error. This test does not cover a changed config head. |
+| F-3 — config snapshot shifted old DBOS function IDs | The config read is an ordinary `await`, with the durable recv deadline providing replay determinism. A child process persists a pre-T45 PENDING layout, exits without graceful shutdown, and the parent recovers it with the new code. After T28's static intent-skill step, it completes with IDs `4/5/6/7 = persist pending / setEvent / recv / sleep`, without branch or error. This test does not cover a changed config head. |
 | F-4 — timeout looked like a merchant decision | The DBOS carrier passes the server-authored resolution alongside the command; `workflow-core` reads that fact to select `routingSource: policy` and never sniffs an idempotency-key suffix. Merchant ignored decisions remain `routingSource: decision`. |
 | F-5 — reverse controls | A snapshot-backed run without `usageReservation` never reads the timeout config and waits until an explicit decision arrives. A reservation proves quota was already locked. `external_effect` remains the separate `approvalRequests` blocking-node path in `PostgresHarnessStore.registerPending`, so this timeout change does not consume or bypass it. |
 | F-6/F-7 — unsafe config and English ledger value | Config validation is `1..3600`; `3601` is rejected. The synthetic value is `超时未作答，已按通用口径继续`. |
@@ -35,7 +35,7 @@
 | F-11 — leaked recovery baseline | The five coordinator-specified rows are removed before the final gates. The recoverable-start test filters its assertion by the fixture workspace while the production store query remains byte-unchanged. |
 | F-12/F-15 — provenance and fallback | `decision_events.resolution_source` is added for existing databases with an explicit backfill. Target resolution and late-answer admission read this server column, while the optional-store fallback reads pending and resolved views separately instead of hardcoding `pending`. |
 | F-13 — opt-in timeout | `QuestionCard.unattended` is `continue | hold`, missing means hold, and production constructors explicitly declare their policy. Automatic continuation requires both `continue` and a usage reservation. |
-| Hold expiry cancellation | A hold card uses one 48-hour recv. Expiry records `core_hold_expired`, resolves the pending row, refunds through the existing billing compensation port, skips commit and delivery, and returns a successful `outcome=cancelled` snapshot with the honest merchant message `超时未选择，本次任务已取消，额度已退回`. |
+| Hold expiry cancellation | A hold card uses one 48-hour recv. Expiry records `core_hold_expired`, resolves the pending row, refunds through the existing billing compensation port, skips commit and delivery, and writes `outcome=cancelled` plus `超时未选择，本次任务已取消，额度已退回` into the terminal return value. The frontend outlet for that message is not wired and is tracked by OI-69. |
 
 ## Real PostgreSQL ledger and export proof
 
@@ -91,28 +91,32 @@ Command:
 
 ```text
 pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
-  src/p1/harness/dbos-registration.smoke.test.ts \
+  src/p1/harness/dbos-registration.smoke.test.ts
+
+6 passed / 0 failed
+
+pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
   src/p1/harness/decision-service.test.ts
 
-15 passed / 0 failed
+11 passed / 0 failed
 ```
 
 The timeout run records:
 
 ```text
-functionID 3  persist-pending-{questionId}
-functionID 4  DBOS.setEvent
-functionID 5  DBOS.recv
-functionID 6  DBOS.sleep
-functionID 7  persist-core-timeout-{questionId}
+functionID 4  persist-pending-{questionId}
+functionID 5  DBOS.setEvent
+functionID 6  DBOS.recv
+functionID 7  DBOS.sleep
+functionID 8  persist-core-timeout-{questionId}
 terminal      SUCCESS
 ```
 
-The function-ID recovery case uses an independent process to leave IDs 3, 4
-and 6 durable while recv is PENDING, then launches the new code with the same
+The function-ID recovery case uses an independent process to leave IDs 4, 5
+and 7 durable while recv is PENDING, then launches the new code with the same
 application version. DBOS recovers the original deadline, receives the merchant
-answer at ID 5, completes the same workflow, and retains the exact final
-3/4/5/6 layout. The post-recv write is ID 7 only on the timeout branch; it
+answer at ID 6, completes the same workflow, and retains the exact final
+4/5/6/7 layout. The post-recv write is ID 8 only on the timeout branch; it
 cannot shift an already pending recv. This case does not exercise config drift.
 
 The quota negative control supplies no `usageReservation`, sets the config to
@@ -125,7 +129,7 @@ coreTimeoutSubmissions=0
 ```
 
 An explicit ignored decision then completes the run. A declared `hold` card
-uses the same IDs 3/4/5/6 with one 48-hour recv and does not read the 30-second
+uses the same IDs 4/5/6/7 with one 48-hour recv and does not read the 30-second
 config. When that recv expires, the post-recv `core_hold_expired` write consumes
 the pending row; the wrapper refunds, skips commit, and returns success without
 a delivery. Missing reservation means there is nothing to refund; a present
@@ -251,7 +255,17 @@ tests 2298
 pass 2288
 fail 0
 skipped 10
+
+merge-path rebase: /tmp/t45-r3-rebase-core-full.log
+tests 2321
+pass 2311
+fail 0
+skipped 10
 ```
+
+The merge-path sample was taken after the targeted PostgreSQL and DBOS runs,
+with no later browser or other write-producing gate. The final read-only query
+returned `creation_submissions.harness_state=reserved: 0`.
 
 The same run includes the T14 static writer gates:
 
@@ -342,3 +356,17 @@ assembly-gate-required-journey: 1 passed
 intent-routing-http-sse:        3 passed
 combined:                       4 passed (1.6m)
 ```
+
+## Merge-path backlog notes
+
+- OI-69 owns the unwired terminal cancellation message outlet and the narrow
+  double-swallow refund path; neither is represented as completed frontend
+  behavior here.
+- The existing no-reservation 60-second retry loop can grow DBOS function IDs
+  without bound. It is pre-existing and non-blocking for this merge.
+- The late-answer sentinel value comparisons are redundant after the accepted
+  state gate; they remain as defense in depth and are not expanded in T45.
+- The append-only audit stream can retain the r2 invalid late-answer attempt
+  even after the coordinator-authorized mutable-row cleanup. It is historical
+  evidence of the rejected attempt, not current decision truth.
+- The reviewer independently ran the contracts leg at `77 passed / 0 failed`.
