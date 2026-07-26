@@ -79,21 +79,21 @@ neither the legacy projection nor a video budget the product cannot meet.
 
 ## The new required gate, measured (2026-07-26, locked)
 
-`m04-browser-hard-gate.spec.ts`, last run at commit `b7de50dd`, through
-`.scratch/orca-run-2026-07-25/e2e-lock.sh`:
+`m04-browser-hard-gate.spec.ts`, run at commit `51b4f6ce` — rebased onto `main`
+after T23 and T46 merged — through `.scratch/orca-run-2026-07-25/e2e-lock.sh`:
 
 | Case | Result |
 |---|---|
-| `copy → wechat_moments` | **passed, 13.1s** |
-| `image_text → xiaohongshu` | **passed, 59.2s** |
-| `video → douyin` | **skipped (declared `fixme`)** — blocked on two core walls, below |
+| `copy → wechat_moments` | **passed, 10.5s** |
+| `image_text → xiaohongshu` | **passed, 57.1s** |
+| `video → douyin` | **passed, 12.4s** |
 
-Each passing case walks submit → 白话进度 → 首 token (copy) / 两种图文方向
+**3 passed.** Each case walks submit → 白话进度 → 首 token (copy) / 两种图文方向
 (image_text) → 刷新恢复① → T08 双字段 body → Result Center → 采用 → 交付
 (完整发布包) → 刷新恢复②, with the D-098 C6 activation budget asserted (copy 2,
-image_text 3) and the D-111 neutral-identity check.
+image_text 3, video 3) and the D-111 neutral-identity check.
 
-Getting there took six product defects out of the way. They are recorded here
+Getting there took seven product defects out of the way. They are recorded here
 because each one was on the merchant's own Day-0 path and none of them had a
 test that ran:
 
@@ -115,28 +115,37 @@ test that ran:
    `adopt_visual_selection` validates ids against those rows: 409
    `INVALID_VISUAL_ASSET` for every new-seam run. 文案 already had the
    package-native `adopt_harness_candidate` path; 图文 now shares it.
-5. **视频 cannot be submitted on a trial workspace at all.**
+5. **视频 could not be submitted on a trial workspace at all** (`50ada0e0`,
+   fixed under the coordinator's ruling of 2026-07-26).
    `apps/core/src/p1/execution-spine/submission-coordinator.ts`
-   `productUsageUnits` reserves `durationSeconds` units of the `video`
+   `productUsageUnits` reserved `durationSeconds` units of the `video`
    resource. Every other reader counts 成片 — `entitlement-module.ts` grants
    trial 1 / starter 5 / growth 20 / pro 60, and the Composer's own `usageCost`
-   is 1 — so a 抖音成片 is refused `409 INSUFFICIENT_ENTITLEMENT` while the
-   quota card shows no shortfall, because client and server priced the same run
-   differently. **Not fixed here**: which unit is authoritative is a billing
-   decision, not a gate decision.
-6. **Reference-asset media execution is unwired.** With (5) patched locally as
-   a probe (reverted), the video run submitted, streamed and restored, then
-   died in media execution on 「Reference asset resolver is unavailable」
-   (`reference-asset-dispatch-guard.ts:16`). `ModelSupplyApplicationService` is
-   constructed without `referenceAssets` in both `apps/core/src/main.ts:614`
-   and `apps/core/src/job-worker.ts:415`, though both files build the composite
-   resolver for other callers. Any submission carrying a reference asset throws
-   — and 抖音成片 always carries one, it leads with a 案例图. **Not fixed here**:
-   core service wiring, outside this ticket.
+   is 1 — so an 8-second 抖音成片 was billed eight videos and refused `409
+   INSUFFICIENT_ENTITLEMENT`, while the quota card showed no shortfall because
+   the two sides priced the same run in different units. Historical green came
+   from admin second-level supply top-ups covering the gap; the coordinator
+   ruled 成片 authoritative for merchant entitlement, with per-second accounting
+   staying on the supply-side ledger. Pinned in the four-kind Composer HTTP
+   journey, whose video case carries an 8-second deliverable.
+6. **视频 adoption could not record its evidence** (`51b4f6ce`). Both video
+   controls posted `adopt_visual_selection`, and a Harness package cannot
+   become `accepted` without recording its adopted candidate
+   (`content-package-semantic-mutation-policy.ts`) — `409
+   HARNESS_ADOPTION_EVIDENCE_REQUIRED`, defect (4) one modality over.
+7. **The video ZIP contract was the pre-T23 one** (`51b4f6ce`, test-side). The
+   journey demanded `cover.jpg` and subtitles; T23 retired the composition
+   chain, and a native single-call 成片 carries neither unless the export is
+   handed one (`content-package-export-adapter.ts`, `nativeSingleCall`). The
+   gate now requires the video and holds the archive to its own manifest.
 
-(5) and (6) are why `video` is `test.fixme` rather than asserted-and-red: both
-are named inline in the spec, and deleting that one call is the whole change
-once they land.
+**Resolved by the rebase, not by this ticket**: at the original baseline
+(`7ea3de75`, before T23 merged as `fe6869b2`) the video run — with (5) patched
+locally as a probe — died in media execution on 「Reference asset resolver is
+unavailable」, because `ModelSupplyApplicationService` was built without
+`referenceAssets` in both `main.ts` and `job-worker.ts`. T23 r2 wired it into
+both. Recorded so the measurement history reads honestly: that wall was real on
+the baseline commit and is gone on the current one.
 
 ### OI-76 — the composer submission segment, pinned
 
@@ -226,9 +235,14 @@ demoted spec would not add any.
   not claimed green or red here.
 - The `ui-journey-three-modal` failure has no captured error body.
 - The demoted family was not re-measured; see the reasoning above.
-- **视频 has never completed a browser journey in this lane.** Walls (5) and (6)
-  above are the first two; whether more sit behind them is unmeasured, because
-  the probe that lifted (5) stopped at (6).
-- `video-native-compiler.spec.ts` and `video-result-live-commands.spec.ts` sit
-  in the never-run chunks 7–8 and submit video the same way, so wall (5) very
-  likely reds them too. Not measured — stated as an inference, not a result.
+- `video-result-live-commands.spec.ts` is still red, and no longer for the
+  reason it was: it now gets all the way through submit, stream and Result
+  Center, then fails inside its own direct-Postgres seeding helper
+  (`seedCanonicalVideoWorkflow`, `:69`), which looks for a `p1_creative_jobs`
+  row whose payload has no `videoWorkflowId`. That is a legacy-shape
+  precondition, in the same family as defects (2)–(4): the ContentPackage seam
+  does not write what it is looking for. Its sibling
+  `video-native-compiler.spec.ts` — the one that walks Composer → storyboard →
+  one native call → revision → refresh → export — **passes in 18.9s** on a cold
+  trial tenant at `51b4f6ce`, which is the W1 regression evidence the
+  coordinator asked for.
