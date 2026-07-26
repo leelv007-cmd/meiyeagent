@@ -13,6 +13,7 @@ import {
   workCopyText,
   workDetail,
   workEvidence,
+  workExportability,
   workExportIdempotencyKey,
   workHandoffHref,
   workOutputShape,
@@ -412,10 +413,15 @@ test('使用导购 leads with the blocking sentence when rights are revoked', ()
     rights: { revokedAt: '2026-07-25T10:00:00.000Z', state: 'revoked' },
     status: 'needs_replacement',
   });
-  assert.deepEqual(workUsageGuidance(revoked, 'note'), [
-    '这份作品里的素材授权已撤回，先换掉素材再导出。',
-  ]);
-  const guidance = workUsageGuidance(videoPackage, 'video');
+  assert.deepEqual(
+    workUsageGuidance(revoked, 'note', workExportability(revoked)),
+    ['这份作品里的素材授权已撤回，先换掉素材再导出。']
+  );
+  const guidance = workUsageGuidance(
+    videoPackage,
+    'video',
+    workExportability(videoPackage)
+  );
   assert.equal(guidance.length, 2);
   assert.match(guidance[1] ?? '', /成片/u);
 });
@@ -443,7 +449,8 @@ test('导出 and 协办交接 bind the revision the detail is showing', () => {
   assert.equal(detail.platform, 'xiaohongshu');
   assert.equal(
     workExportIdempotencyKey(detail),
-    'works-export:package-note:3:xiaohongshu'
+    // Same namespace Result Center issues, so one revision exports once.
+    'export:package-note:3:xiaohongshu'
   );
   assert.equal(
     workHandoffHref(detail),
@@ -568,6 +575,78 @@ test('导出 is only offered where core would honour it', () => {
     ),
     'text_only'
   );
+  // Video is not exempt: core's video delivery reads the same variant version's
+  // orderedAssetIds for the composed file, so an empty variant is a dead 导出
+  // button there too.
+  assert.equal(
+    exportability(
+      packageFixture({ id: 'p8', kind: 'video', status: 'accepted' })
+    ),
+    'text_only'
+  );
+  assert.equal(
+    exportability(
+      withDeliverableVariant({ id: 'p9', kind: 'video', status: 'accepted' })
+    ),
+    'ready'
+  );
+});
+
+/**
+ * 导购 and the action row must never disagree, because the action row is what
+ * the merchant can actually press. This walks the projection state matrix for
+ * the copy lens — composer's default, so the 文案 主路径 — and holds one rule at
+ * every state: a line may only name an action that the state also renders.
+ *
+ * The dead end this replaces: an un-adopted 文案 作品 read 「先采用这一版」 while
+ * `exportability` was `text_only`, which renders neither 采用 nor 导出.
+ */
+test('文案主路径的导购只说得出动作区真有的动作', () => {
+  const ACTION_WORDS = [
+    { pattern: /导出/u, rendered: (state: string) => state === 'ready' },
+    {
+      pattern: /采用/u,
+      rendered: (state: string) => state === 'needs_adoption',
+    },
+  ];
+  const states: Array<{
+    contentPackage: PublicContentPackage;
+    label: string;
+  }> = [
+    'review_ready',
+    'accepted',
+    'export_failed',
+    'partial',
+    'needs_replacement',
+  ].map((status) => ({
+    contentPackage: packageFixture({
+      id: `copy-${status}`,
+      kind: 'image_text',
+      status: status as PublicContentPackage['status'],
+    }),
+    label: status,
+  }));
+
+  for (const { contentPackage, label } of states) {
+    const exportability = workExportability(contentPackage);
+    const shape = workOutputShape(contentPackage);
+    assert.equal(shape, 'copy', `${label} must stay a 文案 作品`);
+    const guidance = workUsageGuidance(contentPackage, shape, exportability);
+    const text = guidance.join(' ');
+    for (const { pattern, rendered } of ACTION_WORDS) {
+      if (pattern.test(text) && !rendered(exportability)) {
+        assert.fail(
+          `${label}: 导购 "${text}" names ${pattern} but exportability=${exportability} renders no such button`
+        );
+      }
+    }
+    // Whatever the state, the copy path always has a way to use the words.
+    assert.match(
+      text,
+      /复制/u,
+      `${label}: a 文案 作品 must always be told it can be copied`
+    );
+  }
 });
 
 test('使用导购 stops promising 导出 to a 文案 作品', () => {
@@ -576,10 +655,13 @@ test('使用导购 stops promising 导出 to a 文案 作品', () => {
     kind: 'image_text',
     status: 'accepted',
   });
-  assert.deepEqual(workUsageGuidance(copy, workOutputShape(copy)), [
-    '这一版已确认，复制文字就能用，也可以交给同事去发。',
-    '复制正文就能贴到平台或发给顾客。',
-  ]);
+  assert.deepEqual(
+    workUsageGuidance(copy, workOutputShape(copy), workExportability(copy)),
+    [
+      '这一版的文字已经能直接用，复制走或交给同事去发都行。',
+      '复制正文就能贴到平台或发给顾客。',
+    ]
+  );
 });
 
 test('采用 and 协办交接 doorways carry the same revision to Result Center', () => {

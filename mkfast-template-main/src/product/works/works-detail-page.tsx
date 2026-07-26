@@ -25,7 +25,7 @@ import type { PublicContentPackage } from '@meiye/contracts';
 
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { getPathWithLocale } from '@/lib/urls';
-import { commandP1 } from '@/p1/client';
+import { commandP1, p1ErrorCode } from '@/p1/client';
 import { ContentPackageExportCarrier } from '@/p1/content-package-export-carrier';
 
 import { WorksLightEditPage } from './works-light-edit-page';
@@ -134,8 +134,16 @@ function WorkPackageBody({
       );
     },
     // The server sentence is an engineering string with a correlation id; a
-    // merchant card never carries one (D-116).
-    onError: () => setFailure('这次导出没成功，稍后再试一次。'),
+    // merchant card never carries one (D-116). One failure is worth telling
+    // apart, because 稍后再试 is wrong advice for it: core refuses the export
+    // while an approval is still pending on the creation task, and retrying
+    // changes nothing until that confirmation is dealt with.
+    onError: (error) =>
+      setFailure(
+        p1ErrorCode(error) === 'TASK_BLOCKING_NODE_CONFLICT'
+          ? '有一笔待处理的确认，处理完成后再导出。'
+          : '这次导出没成功，稍后再试一次。'
+      ),
     onSuccess: (result) => {
       setFailure(undefined);
       setExported(result);
@@ -162,12 +170,19 @@ function WorkPackageBody({
           >
             {WORK_OUTPUT_SHAPE_LABELS[detail.outputShape]}
           </span>
-          <span className="text-muted-foreground text-xs">
+          {/*
+            These two float on the ambient band, so they take the shell's
+            ambient treatment (--ambient-text + scrim shadow), not the ink
+            gradient. DESIGN.md:251 holds every .meiye-ambient-copy header to
+            ≥4.5:1 measured in both themes, and 60% ink on a darkened photo is
+            not that.
+          */}
+          <span className="meiye-type-aux" data-testid="works-detail-status">
             {detail.statusLabel}
           </span>
           {detail.confirmedRevision ? (
             <span
-              className="text-muted-foreground text-xs"
+              className="meiye-type-aux"
               data-package-id={detail.confirmedRevision.packageId}
               data-revision={detail.confirmedRevision.revision}
               data-testid="works-detail-revision"

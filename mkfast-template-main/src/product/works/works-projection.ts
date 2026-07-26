@@ -238,50 +238,48 @@ export function workEvidence(
 
 /**
  * 使用导购 — the next move, stated as advice rather than as a status readout.
- * Order matters: the blocking sentence (rights revoked) always comes first.
+ *
+ * The action line switches on `exportability`, which is the same key the action
+ * row switches on. That is the point: a merchant read a line telling them to
+ * 先采用 on a 文案 作品 whose 采用 doorway is not rendered, and the page had no
+ * way out. Deriving both from one key makes that state unreachable — a branch
+ * that says 导出 only exists where the 导出 button exists.
  */
 export function workUsageGuidance(
   contentPackage: PublicContentPackage,
-  shape: WorkOutputShape
+  shape: WorkOutputShape,
+  exportability: WorkPackageDetail['exportability']
 ): string[] {
   const lines: string[] = [];
   if (contentPackage.rights.state === 'revoked') {
     lines.push('这份作品里的素材授权已撤回，先换掉素材再导出。');
     return lines;
   }
-  // 文案 作品 never get an export package (see workExportability), so the
-  // guidance must not send a merchant looking for a 导出 button that is not
-  // there.
-  const exportable = shape !== 'copy';
-  switch (contentPackage.status) {
-    case 'accepted':
-      lines.push(
-        exportable
-          ? '这一版已确认，可以直接导出或交给同事去发。'
-          : '这一版已确认，复制文字就能用，也可以交给同事去发。'
-      );
+  if (!currentVersion(contentPackage)) {
+    // Nothing was delivered yet, so no action line would be true.
+    lines.push('这份作品还在流程里，完成后会出现在这里。');
+    return lines;
+  }
+  switch (exportability) {
+    case 'blocked':
+      lines.push('这份作品得先换掉不能用的素材，之后才能接着用。');
       break;
-    case 'review_ready':
-      // Adoption is what unlocks export server-side, so the guidance says so
-      // rather than implying 导出 is one click away.
-      lines.push(
-        exportable
-          ? '成品已就绪，先采用这一版，之后就能导出或交给同事去发。'
-          : '成品已就绪，先采用这一版，之后复制文字就能用。'
-      );
+    case 'needs_adoption':
+      // 采用 is what unlocks export server-side, and the 采用 doorway is on
+      // screen in exactly this branch.
+      lines.push('成品已就绪，先采用这一版，之后就能导出或交给同事去发。');
       break;
-    case 'export_failed':
+    case 'text_only':
+      // There is no delivery package for this 作品 and no 采用 doorway either,
+      // so the line names what the page actually offers: the words themselves.
+      lines.push('这一版的文字已经能直接用，复制走或交给同事去发都行。');
+      break;
+    case 'ready':
       lines.push(
-        exportable
+        contentPackage.status === 'export_failed'
           ? '上次导出没成功，成品还在，重试导出即可。'
-          : '上次导出没成功，正文还在，复制文字照样能用。'
+          : '这一版已确认，可以直接导出或交给同事去发。'
       );
-      break;
-    case 'partial':
-      lines.push('这次只完成了一部分，其余可以在结果面里接着补。');
-      break;
-    default:
-      lines.push('这份作品还在流程里，完成后会出现在这里。');
       break;
   }
   switch (shape) {
@@ -325,10 +323,12 @@ function exportVariantAssetCount(
  *
  * Two rules, both of them core's:
  *  - `assertContentPackageExportAllowed` — only an adopted 成品 exports.
- *  - `buildImageTextDeliveryPackage` — an 图文 delivery package needs at least
- *    one image, so a words-only 作品 has no ZIP to hand over. Core answers that
- *    one by recording an export failure, which a merchant would otherwise meet
- *    as a dead 导出 button.
+ *  - the delivery package builders need the variant's ordered assets. 图文 is
+ *    `buildImageTextDeliveryPackage`, which refuses a package with no image;
+ *    video reads `orderedAssetIds[0]` for the composed file and fails the same
+ *    way. Neither kind is exempt: core answers an empty variant by recording an
+ *    export failure, which a merchant would otherwise meet as a dead 导出
+ *    button.
  */
 export function workExportability(
   contentPackage: PublicContentPackage
@@ -340,11 +340,7 @@ export function workExportability(
     return 'blocked';
   }
   const platform = workDeliveryPlatform(contentPackage);
-  if (
-    !platform ||
-    (contentPackage.kind !== 'video' &&
-      exportVariantAssetCount(contentPackage, platform) === 0)
-  ) {
+  if (!platform || exportVariantAssetCount(contentPackage, platform) === 0) {
     return 'text_only';
   }
   return contentPackage.status === 'accepted' ||
@@ -481,6 +477,8 @@ function packageDetail(
 ): WorkPackageDetail {
   const version = currentVersion(contentPackage);
   const shape = workOutputShape(contentPackage);
+  // One derivation, read by both the action row and the 使用导购 line.
+  const exportability = workExportability(contentPackage);
   return {
     body: version?.body ?? '',
     confirmedRevision:
@@ -492,8 +490,8 @@ function packageDetail(
           }
         : null,
     evidence: workEvidence(contentPackage),
-    exportability: workExportability(contentPackage),
-    guidance: workUsageGuidance(contentPackage, shape),
+    exportability,
+    guidance: workUsageGuidance(contentPackage, shape, exportability),
     kind: 'package',
     media: deliveredMedia(contentPackage),
     outputShape: shape,
@@ -552,11 +550,16 @@ export function workAdoptHref(detail: WorkPackageDetail): string | null {
   return resultCenterHref(detail, 'result');
 }
 
-/** Idempotency key for 导出 — one key per (package, revision, platform). */
+/**
+ * Idempotency key for 导出 — one key per (package, revision, platform), in the
+ * namespace Result Center already uses (`export:{id}:{rev}:{platform}`). Same
+ * canonical command, same key: exporting the same revision from either surface
+ * has to be one operation, not two that each spend a receipt.
+ */
 export function workExportIdempotencyKey(
   detail: WorkPackageDetail
 ): string | null {
   if (!detail.confirmedRevision || !detail.platform) return null;
   const { packageId, revision } = detail.confirmedRevision;
-  return `works-export:${packageId}:${revision}:${detail.platform}`;
+  return `export:${packageId}:${revision}:${detail.platform}`;
 }
