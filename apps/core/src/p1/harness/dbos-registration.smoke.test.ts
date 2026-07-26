@@ -206,6 +206,19 @@ test(
           },
         },
       });
+      // Cancelling between "setEvent recorded" and "recv durably armed" makes the
+      // failure path record refund-product-usage at the fid replay expects for
+      // DBOS.recv (dbosErrorCode 26, ~50% under load). Wait for the persisted
+      // pending pre-state — DBOS.sleep recorded — before forcing the replay.
+      const cancelDeadline = Date.now() + 15_000;
+      for (;;) {
+        const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+        if (steps?.some(({ name }) => name === 'DBOS.sleep')) break;
+        if (Date.now() > cancelDeadline) {
+          throw new Error('DBOS smoke workflow never persisted its pending pre-state.');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       await DBOS.cancelWorkflow(runtimeWorkflowId);
       const recoveredHandle =
         await DBOS.resumeWorkflow<

@@ -370,3 +370,13 @@ combined:                       4 passed (1.6m)
   even after the coordinator-authorized mutable-row cleanup. It is historical
   evidence of the rejected attempt, not current decision truth.
 - The reviewer independently ran the contracts leg at `77 passed / 0 failed`.
+
+## Post-merge coordinator note (2026-07-26)
+
+The full-suite "0 failed" figures above are facts about those sample runs, not a
+property: the independent reviewer's two full runs scored 1 fail / 0 fail, the
+failure being the pre-existing five-stage DBOS smoke (dbosErrorCode 26) whose
+cancel/resume could race the recv arming window — with a pre-T45 precedent on
+the T28 lane (be1_dbos, 06:57:22, same code). That window is test infrastructure,
+not production (no non-test cancelWorkflow/resumeWorkflow callers), and the
+smoke now waits for the persisted pending pre-state before cancelling.
