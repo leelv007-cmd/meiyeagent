@@ -83,6 +83,16 @@ export type WorkPackageDetail = {
   /** 生成依据 — merchant-language provenance, never internal ids. */
   evidence: WorkEvidenceChip[];
   body: string;
+  /**
+   * Whether core will accept a 导出 for this 作品 right now.
+   * `needs_adoption` is the common case straight out of a run: core exports an
+   * adopted 成品 only (assertContentPackageExportAllowed), so offering 导出 there
+   * would hand the merchant a server error instead of a file.
+   * `text_only` is the 文案 case: the delivery package is a ZIP of images plus
+   * the caption, and core refuses to build one without an image — 复制文字 is
+   * how a words-only 作品 gets used.
+   */
+  exportability: 'ready' | 'needs_adoption' | 'text_only' | 'blocked';
   media: WorkMedia[];
   outputShape: WorkOutputShape;
   packageId: string;
@@ -239,15 +249,33 @@ export function workUsageGuidance(
     lines.push('这份作品里的素材授权已撤回，先换掉素材再导出。');
     return lines;
   }
+  // 文案 作品 never get an export package (see workExportability), so the
+  // guidance must not send a merchant looking for a 导出 button that is not
+  // there.
+  const exportable = shape !== 'copy';
   switch (contentPackage.status) {
     case 'accepted':
-      lines.push('这一版已确认，可以直接导出或交给同事去发。');
+      lines.push(
+        exportable
+          ? '这一版已确认，可以直接导出或交给同事去发。'
+          : '这一版已确认，复制文字就能用，也可以交给同事去发。'
+      );
       break;
     case 'review_ready':
-      lines.push('成品已就绪，确认满意后再导出。');
+      // Adoption is what unlocks export server-side, so the guidance says so
+      // rather than implying 导出 is one click away.
+      lines.push(
+        exportable
+          ? '成品已就绪，先采用这一版，之后就能导出或交给同事去发。'
+          : '成品已就绪，先采用这一版，之后复制文字就能用。'
+      );
       break;
     case 'export_failed':
-      lines.push('上次导出没成功，成品还在，重试导出即可。');
+      lines.push(
+        exportable
+          ? '上次导出没成功，成品还在，重试导出即可。'
+          : '上次导出没成功，正文还在，复制文字照样能用。'
+      );
       break;
     case 'partial':
       lines.push('这次只完成了一部分，其余可以在结果面里接着补。');
@@ -271,6 +299,58 @@ export function workUsageGuidance(
       break;
   }
   return lines;
+}
+
+/**
+ * Assets the 导出 would actually package, read the way core reads them: off the
+ * platform variant's current version, not off the package.
+ */
+function exportVariantAssetCount(
+  contentPackage: PublicContentPackage,
+  platform: NonNullable<WorkPackageDetail['platform']>
+): number {
+  const variant = contentPackage.variants.find(
+    (candidate) => candidate.platform === platform
+  );
+  const version = variant?.versions.find(
+    (candidate) => candidate.id === variant.currentVersionId
+  );
+  return (version?.orderedAssetIds ?? []).length;
+}
+
+/**
+ * Mirrors core's export preconditions. Kept as a projection rather than a
+ * try-and-see so the surface can offer the honest next step (采用, or just
+ * 复制文字) instead of a button that is going to fail.
+ *
+ * Two rules, both of them core's:
+ *  - `assertContentPackageExportAllowed` — only an adopted 成品 exports.
+ *  - `buildImageTextDeliveryPackage` — an 图文 delivery package needs at least
+ *    one image, so a words-only 作品 has no ZIP to hand over. Core answers that
+ *    one by recording an export failure, which a merchant would otherwise meet
+ *    as a dead 导出 button.
+ */
+export function workExportability(
+  contentPackage: PublicContentPackage
+): WorkPackageDetail['exportability'] {
+  if (
+    contentPackage.rights.state === 'revoked' ||
+    contentPackage.status === 'needs_replacement'
+  ) {
+    return 'blocked';
+  }
+  const platform = workDeliveryPlatform(contentPackage);
+  if (
+    !platform ||
+    (contentPackage.kind !== 'video' &&
+      exportVariantAssetCount(contentPackage, platform) === 0)
+  ) {
+    return 'text_only';
+  }
+  return contentPackage.status === 'accepted' ||
+    contentPackage.status === 'export_failed'
+    ? 'ready'
+    : 'needs_adoption';
 }
 
 /**
@@ -412,6 +492,7 @@ function packageDetail(
           }
         : null,
     evidence: workEvidence(contentPackage),
+    exportability: workExportability(contentPackage),
     guidance: workUsageGuidance(contentPackage, shape),
     kind: 'package',
     media: deliveredMedia(contentPackage),
@@ -440,19 +521,35 @@ export function workCopyText(detail: WorkPackageDetail): string {
     .join('\n\n');
 }
 
+function resultCenterHref(
+  detail: WorkPackageDetail,
+  panel: 'delivery' | 'result'
+): string | null {
+  if (!detail.workId || !detail.confirmedRevision) return null;
+  const search = new URLSearchParams({
+    contentId: detail.confirmedRevision.packageId,
+    panel,
+    versionId: detail.confirmedRevision.versionId,
+  });
+  return `/dashboard/results/${encodeURIComponent(detail.workId)}?${search}`;
+}
+
 /**
  * 协办交接 doorway. ADR-0014 forbids a second submit truth, so handoff stays
  * one flow: the works surface opens the canonical delivery panel already bound
  * to the revision it was showing.
  */
 export function workHandoffHref(detail: WorkPackageDetail): string | null {
-  if (!detail.workId || !detail.confirmedRevision) return null;
-  const search = new URLSearchParams({
-    contentId: detail.confirmedRevision.packageId,
-    panel: 'delivery',
-    versionId: detail.confirmedRevision.versionId,
-  });
-  return `/dashboard/results/${encodeURIComponent(detail.workId)}?${search}`;
+  return resultCenterHref(detail, 'delivery');
+}
+
+/**
+ * 采用 doorway, for a 作品 core will not export yet. Adoption is the Result
+ * Center's canonical action (the same one the T31 交付卡 opens), so the works
+ * surface points at it bound to this revision rather than growing its own.
+ */
+export function workAdoptHref(detail: WorkPackageDetail): string | null {
+  return resultCenterHref(detail, 'result');
 }
 
 /** Idempotency key for 导出 — one key per (package, revision, platform). */

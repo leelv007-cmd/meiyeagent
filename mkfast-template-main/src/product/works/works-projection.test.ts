@@ -9,6 +9,7 @@ import type { RawCanvasWorkSummary } from '@/product/canonical-history-model';
 
 import {
   deliveredMedia,
+  workAdoptHref,
   workCopyText,
   workDetail,
   workEvidence,
@@ -447,6 +448,150 @@ test('导出 and 协办交接 bind the revision the detail is showing', () => {
   assert.equal(
     workHandoffHref(detail),
     '/dashboard/results/work-note?contentId=package-note&panel=delivery&versionId=version-1'
+  );
+});
+
+test('导出 is only offered where core would honour it', () => {
+  /** A 图文 variant core can actually build a delivery ZIP from. */
+  const withDeliverableVariant = (
+    overrides: Parameters<typeof packageFixture>[0]
+  ) =>
+    packageFixture({
+      generated: {
+        assetIds: ['asset-image'],
+        childRuns: [],
+        ownedAssets: [ownedAsset('asset-image', 'image/png')],
+      },
+      variants: [
+        {
+          currentVersionId: 'variant-version-1',
+          id: 'variant-xhs',
+          platform: 'xiaohongshu',
+          versions: [
+            {
+              body: '变体正文',
+              createdAt: '2026-07-20T08:00:00.000Z',
+              id: 'variant-version-1',
+              orderedAssetIds: ['asset-image'],
+              title: '变体标题',
+              topics: [],
+            },
+          ],
+        },
+      ],
+      ...overrides,
+    });
+  const exportability = (contentPackage: PublicContentPackage) => {
+    const detail = workDetail({
+      contentPackages: [contentPackage],
+      id: contentPackage.id,
+    });
+    return detail.kind === 'package' ? detail.exportability : null;
+  };
+
+  // Straight out of a run the 成品 is delivered but not adopted; core rejects
+  // an export here, so the surface must not offer one.
+  assert.equal(
+    exportability(
+      withDeliverableVariant({
+        id: 'p1',
+        kind: 'image_text',
+        status: 'review_ready',
+      })
+    ),
+    'needs_adoption'
+  );
+  assert.equal(
+    exportability(
+      withDeliverableVariant({
+        id: 'p2',
+        kind: 'image_text',
+        status: 'accepted',
+      })
+    ),
+    'ready'
+  );
+  // A failed export keeps the 成品; only the export is retried.
+  assert.equal(
+    exportability(
+      withDeliverableVariant({
+        id: 'p3',
+        kind: 'image_text',
+        status: 'export_failed',
+      })
+    ),
+    'ready'
+  );
+  assert.equal(
+    exportability(
+      withDeliverableVariant({
+        id: 'p4',
+        kind: 'image_text',
+        rights: { revokedAt: '2026-07-25T10:00:00.000Z', state: 'revoked' },
+        status: 'accepted',
+      })
+    ),
+    'blocked'
+  );
+  assert.equal(
+    exportability(
+      withDeliverableVariant({
+        id: 'p5',
+        kind: 'image_text',
+        status: 'needs_replacement',
+      })
+    ),
+    'blocked'
+  );
+  // 文案: core builds the delivery ZIP out of the variant's images and refuses
+  // to build one without any, so 导出 is not on offer at all — 复制文字 is.
+  assert.equal(
+    exportability(
+      packageFixture({ id: 'p6', kind: 'image_text', status: 'accepted' })
+    ),
+    'text_only'
+  );
+  // Media on the package but not yet on the variant core would export is still
+  // nothing to package.
+  assert.equal(
+    exportability(
+      packageFixture({
+        generated: {
+          assetIds: ['asset-image'],
+          childRuns: [],
+          ownedAssets: [ownedAsset('asset-image', 'image/png')],
+        },
+        id: 'p7',
+        kind: 'image_text',
+        status: 'accepted',
+      })
+    ),
+    'text_only'
+  );
+});
+
+test('使用导购 stops promising 导出 to a 文案 作品', () => {
+  const copy = packageFixture({
+    id: 'p-copy',
+    kind: 'image_text',
+    status: 'accepted',
+  });
+  assert.deepEqual(workUsageGuidance(copy, workOutputShape(copy)), [
+    '这一版已确认，复制文字就能用，也可以交给同事去发。',
+    '复制正文就能贴到平台或发给顾客。',
+  ]);
+});
+
+test('采用 and 协办交接 doorways carry the same revision to Result Center', () => {
+  const detail = workDetail({
+    contentPackages: allPackages,
+    id: 'package-note',
+  });
+  assert.equal(detail.kind, 'package');
+  if (detail.kind !== 'package') return;
+  assert.equal(
+    workAdoptHref(detail),
+    '/dashboard/results/work-note?contentId=package-note&panel=result&versionId=version-1'
   );
 });
 

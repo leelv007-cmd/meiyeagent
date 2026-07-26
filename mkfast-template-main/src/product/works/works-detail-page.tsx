@@ -33,6 +33,7 @@ import { WorksMediaGallery } from './works-media-gallery';
 import { useWorksProjection, WORKS_TITLE } from './works-queries';
 import {
   WORK_OUTPUT_SHAPE_LABELS,
+  workAdoptHref,
   workCopyText,
   workDetail,
   workExportIdempotencyKey,
@@ -103,6 +104,7 @@ function WorkPackageBody({
   const [copied, setCopied] = useState(false);
   const [failure, setFailure] = useState<string>();
   const [exported, setExported] = useState<ExportOutcome>();
+  const adoptHref = workAdoptHref(detail);
   const handoffHref = workHandoffHref(detail);
   const lightComposerDelivery = useMemo(() => {
     const version = contentPackage.versions.find(
@@ -131,8 +133,9 @@ function WorkPackageBody({
         key
       );
     },
-    onError: (error) =>
-      setFailure(error instanceof Error ? error.message : '导出暂时没成功。'),
+    // The server sentence is an engineering string with a correlation id; a
+    // merchant card never carries one (D-116).
+    onError: () => setFailure('这次导出没成功，稍后再试一次。'),
     onSuccess: (result) => {
       setFailure(undefined);
       setExported(result);
@@ -159,10 +162,12 @@ function WorkPackageBody({
           >
             {WORK_OUTPUT_SHAPE_LABELS[detail.outputShape]}
           </span>
-          <span className="text-muted text-xs">{detail.statusLabel}</span>
+          <span className="text-muted-foreground text-xs">
+            {detail.statusLabel}
+          </span>
           {detail.confirmedRevision ? (
             <span
-              className="text-muted text-xs"
+              className="text-muted-foreground text-xs"
               data-package-id={detail.confirmedRevision.packageId}
               data-revision={detail.confirmedRevision.revision}
               data-testid="works-detail-revision"
@@ -188,7 +193,7 @@ function WorkPackageBody({
             {detail.body}
           </p>
           {detail.topics.length > 0 ? (
-            <p className="text-muted mt-3 text-xs">
+            <p className="text-muted-foreground mt-3 text-xs">
               {detail.topics.map((topic) => `#${topic}`).join(' ')}
             </p>
           ) : null}
@@ -202,7 +207,7 @@ function WorkPackageBody({
         <h2 className="meiye-type-body font-semibold">怎么用这份作品</h2>
         <ul className="mt-2 flex flex-col gap-1">
           {detail.guidance.map((line) => (
-            <li className="text-muted text-sm" key={line}>
+            <li className="text-muted-foreground text-sm" key={line}>
               {line}
             </li>
           ))}
@@ -232,13 +237,28 @@ function WorkPackageBody({
         data-testid="works-detail-actions"
       >
         <div className="flex flex-wrap gap-2">
-          <ActionButton
-            busy={exportPackage.isPending || !detail.confirmedRevision}
-            onClick={() => exportPackage.mutate()}
-            testId="works-action-export"
-          >
-            {exportPackage.isPending ? '正在导出…' : '导出使用'}
-          </ActionButton>
+          {detail.exportability === 'ready' ? (
+            <ActionButton
+              busy={exportPackage.isPending || !detail.confirmedRevision}
+              onClick={() => exportPackage.mutate()}
+              testId="works-action-export"
+            >
+              {exportPackage.isPending ? '正在导出…' : '导出使用'}
+            </ActionButton>
+          ) : detail.exportability === 'needs_adoption' && adoptHref ? (
+            // 导出 on an un-adopted 成品 is a server error, not a file. Point at
+            // 采用 — the canonical Result Center action — bound to this revision.
+            // `text_only` falls through to neither: a 文案 作品 has no delivery
+            // package at all, and 复制文字 below is how it gets used.
+            <a
+              className="meiye-glass-piece min-h-touch-target inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm"
+              data-testid="works-action-adopt"
+              href={getPathWithLocale(adoptHref)}
+            >
+              先采用这一版
+              <IconExternalLink aria-hidden="true" className="size-3.5" />
+            </a>
+          ) : null}
           <ActionButton onClick={copy} testId="works-action-copy">
             {copied ? '已复制' : '复制文字'}
           </ActionButton>
@@ -295,7 +315,7 @@ function WorksDetailNotice({
         role="alert"
       >
         <h1 className="meiye-type-body font-semibold">{title}</h1>
-        <p className="text-muted mt-2 text-sm">{description}</p>
+        <p className="text-muted-foreground mt-2 text-sm">{description}</p>
         <Link
           className="mt-4 inline-block text-sm underline underline-offset-4"
           to="/dashboard/works"
@@ -321,7 +341,10 @@ export function WorksDetailPage({ workId }: { workId: string }) {
   if (loading) {
     return (
       <WorksFrame title={WORKS_TITLE}>
-        <p className="text-muted text-sm" data-testid="works-detail-loading">
+        <p
+          className="text-muted-foreground text-sm"
+          data-testid="works-detail-loading"
+        >
           正在打开这份作品…
         </p>
       </WorksFrame>
