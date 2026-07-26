@@ -556,9 +556,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
                       setServerQuote(null);
                     } catch {
                       update(state);
-                      setCommandError(
-                        '视频重生成暂时不可用。费用以报价确认页和账单记录为准，请稍后重试。'
-                      );
+                      setCommandError('视频重生成能力升级中，本次未产生扣费。');
                     } finally {
                       setCommandPending(false);
                     }

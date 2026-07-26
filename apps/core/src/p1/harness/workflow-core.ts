@@ -63,6 +63,7 @@ export interface HarnessMediaSelectionResult {
   asset: NonNullable<ContentPackage['generated']['ownedAssets']>[number];
   childRun: ContentPackage['generated']['childRuns'][number];
   kind: MediaBrief['kind'];
+  measuredDurationSeconds?: number;
   trace: DecisionTraceFragment;
 }
 
@@ -996,7 +997,7 @@ async function runMediaHarnessWorkflow(
           billingReceipt: {
             trustedUsage: {
               kind: 'media_duration' as const,
-              actualSeconds: requireMeasuredVideoDuration(selection.asset),
+              actualSeconds: requireMeasuredVideoDuration(selection),
               evidenceRef: `owned-asset:${selection.asset.id}`,
             },
           },
@@ -1123,9 +1124,9 @@ function merchantContextMessage(request: HarnessWorkflowInput) {
 }
 
 function requireMeasuredVideoDuration(
-  asset: HarnessMediaSelectionResult['asset'],
+  selection: HarnessMediaSelectionResult,
 ) {
-  const duration = asset.compositionEvidence?.durationSeconds;
+  const duration = selection.measuredDurationSeconds;
   if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
     throw new HarnessMediaScopeError(
       'Delivered video lacks measured media duration evidence.',

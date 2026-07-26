@@ -59,6 +59,8 @@ import {
   FoundationModelSupplyLedger,
   MediaActivationProbeExecutor,
   OwnedAssetReferenceResolver,
+  PostgresCanonicalVideoWorkflowSchema,
+  PostgresVideoRegenerationRepository,
   PostgresModelSupplyRepository,
   ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
@@ -242,6 +244,10 @@ const productBillingRepository = new PostgresProductBillingRepository(pool);
 const billingLifecycle = new DurableProductBillingService(
   productBillingRepository,
 );
+const videoRegenerationRepository =
+  new PostgresVideoRegenerationRepository(pool);
+const canonicalVideoWorkflowSchema =
+  new PostgresCanonicalVideoWorkflowSchema(pool);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
 const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
@@ -296,6 +302,8 @@ await migratePostgresSchema(pool, [
   adminConfigRepository,
   operationsRepository,
   productBillingRepository,
+  canonicalVideoWorkflowSchema,
+  videoRegenerationRepository,
   storeFactLedger,
   contextBundleRepository,
   contextSourceRevisions,
@@ -407,6 +415,7 @@ const modelSupplyRuntime = createModelSupplyRuntime({
       },
     ),
     providerAdmission: modelSupplyProviderAdmission,
+    referenceAssets,
     resultSink: modelRepository,
   },
   catalog: runtimeAssembly.assembly,

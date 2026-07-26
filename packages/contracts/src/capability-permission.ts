@@ -134,9 +134,6 @@ const modelExecutionActions = new Set([
   'canvas_generation_submit',
   'record_quality',
   'submit_generation',
-  'video_workflow_cancel',
-  'video_workflow_confirm',
-  'video_workflow_create_draft',
 ]);
 const modelConfigPublishActions = new Set([
   'catalog_create_draft',
@@ -170,9 +167,7 @@ const modelWorkspaceReadQueries = new Set([
   'job',
   'preferences',
   'video_workflow',
-  'video_workflow_latest',
   'video_workflow_public',
-  'video_workflow_public_latest',
   'video_workflows',
 ]);
 const integrationUseActions = new Set([
@@ -551,10 +546,7 @@ export function requiredP1Capability(
       return 'personal.preferences.manage';
     }
     if (action === 'set_workspace_default') return 'workspace.models.manage';
-    if (
-      action === 'video_workflow_select_candidate' ||
-      action === 'video_workflow_edit'
-    ) {
+    if (action === 'video_workflow_edit') {
       return 'content.review';
     }
     if (modelExecutionActions.has(action)) return 'content.create';

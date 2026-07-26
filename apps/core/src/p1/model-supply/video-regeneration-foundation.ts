@@ -22,7 +22,7 @@ const commandEnvelopeSchema = z
 const quoteSchema = z
   .object({
     actorId: z.string().optional(),
-    scope: z.enum(['shot', 'full_compose']),
+    scope: z.literal('shot'),
     shotId: z.string().trim().min(1).optional(),
     sourceRunId: z.string().trim().min(1),
     workspaceId: z.string().optional(),

@@ -94,7 +94,6 @@ const NEW_P1_SIDE_EFFECTS = new Set([
   'model-supply:prompt_revision_rollback',
   'model-supply:quality_evaluation_run',
   'model-supply:submit_generation',
-  'model-supply:video_workflow_confirm',
   'video-regeneration:confirm',
   'video-regeneration:free_action',
   'video-regeneration:quote',

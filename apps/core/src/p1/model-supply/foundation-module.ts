@@ -42,6 +42,9 @@ import {
   type RequestedSelection,
   type RouteCandidateCostEstimate,
   type RouteSimulationFailureScenario,
+  type DurableVideoWorkflow,
+  type EditVideoWorkflowInput,
+  projectVideoWorkflowPublic,
 } from './index.js';
 import type { AiStreamingRunner } from './ai-sdk-runner.js';
 import {
@@ -5720,6 +5723,7 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
     | 'listPendingActions'
     | 'reconcilePendingAction'
   >;
+  private readonly videoWorkflow?: VideoWorkflowReadEditPort;
 
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
@@ -5733,10 +5737,12 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
         | 'listPendingActions'
         | 'reconcilePendingAction'
       >;
+      videoWorkflow?: VideoWorkflowReadEditPort;
     } = {},
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
     this.adminSupply = options.adminSupply;
+    this.videoWorkflow = options.videoWorkflow;
   }
 
   async execute(args: {
@@ -5884,6 +5890,19 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           args.context.workspaceId,
           qualityEvent(payload),
         );
+      case 'video_workflow_edit': {
+        const result = await this.requireVideoWorkflow().edit({
+          actorId: args.context.userId,
+          correlationId: args.context.correlationId,
+          edit: videoWorkflowEdit(payload),
+          expectedRevision: videoWorkflowExpectedRevision(
+            payload.expectedRevision,
+          ),
+          workflowId: requiredString(payload, 'workflowId'),
+          workspaceId: args.context.workspaceId,
+        });
+        return projectVideoWorkflowPublic(result.workflow);
+      }
       case 'quality_evaluation_run':
         return this.controlPlane.runQualityEvaluation(
           args.context,
@@ -6070,6 +6089,26 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
             payload.unavailableDeploymentIds,
           ),
         });
+      case 'video_workflow_public': {
+        const current = await this.requireVideoWorkflow().query({
+          workflowId: requiredString(payload, 'workflowId'),
+          workspaceId: args.context.workspaceId,
+        });
+        if (current.workflow.actorId !== args.context.userId) {
+          throw new P1DomainError(
+            'FORBIDDEN',
+            'This video workflow belongs to another actor.',
+          );
+        }
+        return projectVideoWorkflowPublic(current.workflow);
+      }
+      case 'video_workflows': {
+        const listed = await this.requireVideoWorkflow().list({
+          actorId: args.context.userId,
+          workspaceId: args.context.workspaceId,
+        });
+        return listed.map((item) => projectVideoWorkflowPublic(item.workflow));
+      }
       default:
         throw new P1DomainError('INVALID_STATE', `Unknown model-supply query ${action}.`);
     }
@@ -6084,4 +6123,86 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
     }
     return this.adminSupply;
   }
+
+  private requireVideoWorkflow() {
+    if (!this.videoWorkflow) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Canonical video workflow is not configured.',
+      );
+    }
+    return this.videoWorkflow;
+  }
+}
+
+export interface VideoWorkflowReadEditPort {
+  edit(input: EditVideoWorkflowInput): Promise<{
+    workflow: DurableVideoWorkflow;
+  }>;
+  list(input: {
+    actorId: string;
+    workspaceId: string;
+  }): Promise<Array<{ workflow: DurableVideoWorkflow }>>;
+  query(input: {
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<{ workflow: DurableVideoWorkflow }>;
+}
+
+function videoWorkflowEdit(
+  payload: Record<string, unknown>,
+): EditVideoWorkflowInput['edit'] {
+  const edit = object(payload.edit);
+  const kind = requiredString(edit, 'kind');
+  if (kind === 'select_candidate') {
+    return {
+      candidateIndex: videoCandidateIndex(edit.candidateIndex),
+      kind,
+      shotId: requiredString(edit, 'shotId'),
+    };
+  }
+  if (kind === 'reorder_shots') {
+    if (!Array.isArray(edit.shotIds) || edit.shotIds.length === 0) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'shotIds must be a non-empty array.',
+      );
+    }
+    return {
+      kind,
+      shotIds: edit.shotIds.map((shotId) =>
+        requiredString({ shotId }, 'shotId'),
+      ),
+    };
+  }
+  if (kind === 'set_subtitle') {
+    if (typeof edit.text !== 'string') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'subtitle text must be a string.',
+      );
+    }
+    return { kind, text: edit.text };
+  }
+  throw new P1DomainError('INVALID_STATE', `Unknown video edit ${kind}.`);
+}
+
+function videoWorkflowExpectedRevision(value: unknown) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'expectedRevision must be a non-negative integer.',
+    );
+  }
+  return value;
+}
+
+function videoCandidateIndex(value: unknown) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'candidateIndex must be a non-negative integer.',
+    );
+  }
+  return value;
 }

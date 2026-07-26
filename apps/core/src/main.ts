@@ -114,12 +114,18 @@ import {
   isLiveVerifiedActivationEvidence,
   OwnedAssetReferenceResolver,
   OpenAiCompatibleAiSdkRunner,
+  PostgresCanonicalVideoRunStore,
+  PostgresCanonicalVideoWorkflowSchema,
   ProductCopyProviderBridge,
   PostgresModelSupplyRepository,
+  PostgresVideoRegenerationRepository,
   ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
+  VideoRegenerationApplicationService,
+  VideoRegenerationFoundationModule,
   createModelSupplyRuntime,
   modelMediaExecutionMode,
+  projectDurableVideoWorkflow,
   seedCapabilityHotAssemblyFromCatalog,
   RECORDED_CATALOG_REVISION_ID,
 } from './p1/model-supply/index.js';
@@ -259,6 +265,7 @@ import {
 import { migratePostgresSchema } from './postgres-schema-migration.js';
 import {
   HarnessWorkflowEventSource,
+  VideoWorkflowEventSource,
   WorkflowEventApplicationService,
 } from './p1/workflow-events.js';
 import {
@@ -437,6 +444,10 @@ const providerCredentialSecretBroker = createProviderCredentialSecretBroker(
   integrationSecrets,
 );
 const modelSupplyRepository = new PostgresModelSupplyRepository(pool);
+const videoRegenerationRepository =
+  new PostgresVideoRegenerationRepository(pool);
+const canonicalVideoWorkflowSchema =
+  new PostgresCanonicalVideoWorkflowSchema(pool);
 const cutoverExecution = new P1CutoverExecutionService(pool);
 const legacyInFlightDecisions = new PostgresLegacyInFlightDecisionPort(pool);
 
@@ -598,6 +609,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       },
     ),
     providerAdmission: modelSupplyProviderAdmission,
+    referenceAssets,
     resultSink: modelSupplyRepository,
     submissionGate: streamingModeGate,
   },
@@ -748,6 +760,8 @@ await migratePostgresSchema(pool, [
   contentPackageWriteOwnership,
   contentPackageMigrationRuns,
   modelSupplyRepository,
+  canonicalVideoWorkflowSchema,
+  videoRegenerationRepository,
   integrationRepository,
   cutoverExecution,
   tracerJobRepository,
@@ -782,6 +796,92 @@ let operationsService: OperationsApplicationService;
 const packageRightsPropagation = new OperationsProductPackageRightsAdapter(
   () => operationsService
 );
+const canonicalVideoWorkflow = {
+  async adoptCandidate() {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      '视频重生成能力升级中，本次未产生扣费。',
+    );
+  },
+  async confirmAndSubmit() {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      '视频重生成能力升级中，本次未产生扣费。',
+    );
+  },
+  async createDraft() {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      '视频重生成能力升级中，本次未产生扣费。',
+    );
+  },
+  async edit(input: {
+    actorId: string;
+    correlationId: string;
+    edit: Parameters<PostgresCanonicalVideoRunStore['editRun']>[0]['edit'];
+    expectedRevision: number;
+    workflowId: string;
+    workspaceId: string;
+  }) {
+    const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+    const workflow = projectDurableVideoWorkflow(
+      await store.editRun(input, new Date().toISOString()),
+    );
+    return { workflow };
+  },
+  async list(input: { actorId: string; workspaceId: string }) {
+    const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+    return (await store.listRuns(input.workspaceId, input.actorId)).map(
+      (run) => ({ workflow: projectDurableVideoWorkflow(run) }),
+    );
+  },
+  async query(input: { workflowId: string; workspaceId: string }) {
+    const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+    const run = await store.getRun(input.workflowId);
+    if (!run) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `Video workflow ${input.workflowId} was not found.`,
+      );
+    }
+    return { workflow: projectDurableVideoWorkflow(run) };
+  },
+  async recoverSupplierTask() {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      '视频重生成能力升级中，本次未产生扣费。',
+    );
+  },
+};
+const videoRegeneration = new VideoRegenerationApplicationService({
+  approvalAuthority: {
+    async approve() {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        '视频重生成能力升级中，本次未产生扣费。',
+      );
+    },
+  },
+  billing: productQuoteService,
+  confirmUnavailableReason: '视频重生成能力升级中，本次未产生扣费。',
+  quoteAuthority: productQuoteAuthority,
+  repository: videoRegenerationRepository,
+  workflows: canonicalVideoWorkflow,
+});
+const videoWorkflowEventSource = new VideoWorkflowEventSource({
+  async owns(workspaceId, workflowId) {
+    const result = await pool.query(
+      `SELECT 1 FROM p1_creative_jobs
+        WHERE workspace_id = $1
+          AND payload->>'videoWorkflowId' = $2`,
+      [workspaceId, workflowId],
+    );
+    return result.rowCount === 1;
+  },
+  async readSnapshot(workspaceId, workflowId) {
+    return canonicalVideoWorkflow.query({ workspaceId, workflowId });
+  },
+});
 const feishuMcp = feishuMcpAdapterFromEnv(process.env);
 const integrationService = new IntegrationApplicationService({
   byok: byokRuntime.adapter,
@@ -1350,7 +1450,9 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     new ModelSupplyFoundationModule(modelControlPlane, {
       adminActorIds: modelAdminActorIds,
       adminSupply: adminSupplyControlPlane,
+      videoWorkflow: canonicalVideoWorkflow,
     }),
+    new VideoRegenerationFoundationModule(videoRegeneration),
     new MarketingIdentityFoundationModule(marketingIdentities),
     new AssetMemoryFoundationModule(
       assetIntakeService,
@@ -1617,6 +1719,7 @@ if (harnessRuntimeConfig) {
 }
 const workflowEvents = new WorkflowEventApplicationService([
   ...(harnessWorkflowEventSource ? [harnessWorkflowEventSource] : []),
+  videoWorkflowEventSource,
 ]);
 
 // Rebuild this lightweight projection for every truth-surface request so an
