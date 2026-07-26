@@ -67,19 +67,98 @@ test('every admin page renders the template-dashboard shell in both themes', asy
       // The merchant shell must not wrap 后台 any more (dev spec §56).
       await expect(page.locator('[data-shell-mode="admin"]')).toHaveCount(0);
 
+      // Sample both themes and require them to actually differ. Asserting each
+      // one is merely non-transparent is close to tautological — the shell root
+      // carries bg-background, so it resolves to something whether or not the
+      // Glass sheet loaded and whether or not the token bridge matched. Two
+      // readings that come back equal mean dark mode never took, which is the
+      // failure this assertion exists to catch.
+      const backgrounds: Record<string, string> = {};
       for (const theme of ['light', 'dark'] as const) {
         await setTheme(page, theme);
-        const background = await page
+        backgrounds[theme] = await page
           .locator('.meiye-heroui-glass')
           .evaluate((node) => getComputedStyle(node).backgroundColor);
-        expect(background, `${path} @ ${theme}`).not.toBe('rgba(0, 0, 0, 0)');
+        expect(backgrounds[theme], `${path} @ ${theme}`).not.toBe(
+          'rgba(0, 0, 0, 0)'
+        );
       }
+      expect(
+        backgrounds.light,
+        `${path}: the shell background did not change between themes`
+      ).not.toBe(backgrounds.dark);
       await setTheme(page, 'light');
     }
   } finally {
     await cleanupE2EUsers(request);
   }
 });
+
+/**
+ * Move the trial copy allowance through the governed path an operator uses, and
+ * return once the CAS revision has advanced. Shared by the journey and by its
+ * restore, so putting the shared number back cannot become a back door that
+ * skips impact review.
+ *
+ * `pick` receives the currently stored value so callers can choose a target
+ * relative to it; the stored value is only readable once the editor has settled.
+ */
+async function applyTrialCopyAllowance(
+  page: Page,
+  reason: string,
+  pick: (stored: number) => number
+) {
+  await page.goto('/admin/plans');
+  const copyField = page.locator('#plan-trial-copy');
+  await expect(copyField).toBeVisible({ timeout: 30_000 });
+  const trialForm = copyField.locator('xpath=ancestor::form[1]');
+
+  // Settle the editor before typing. It re-runs form.reset when the
+  // admin-config row lands, so a value entered beforehand is silently reverted
+  // and the submit then writes the unchanged number — a no-op that never
+  // advances the CAS revision, which surfaces 30s later as a product failure
+  // rather than as the race it is. The audit meta line only renders once that
+  // row is in hand, so it is the signal to wait on.
+  const revisionLine = trialForm.getByText(/^v\d+ · /);
+  await expect(revisionLine).toBeVisible({ timeout: 30_000 });
+  const revisionBefore = await revisionLine.innerText();
+
+  const stored = Number(await copyField.inputValue());
+  const target = pick(stored);
+  await copyField.fill(String(target));
+
+  // Fail loudly rather than hang: the editor goes read-only when admin-config
+  // carries no revision for the key, and a disabled button would otherwise just
+  // burn the test timeout.
+  const saveButton = trialForm.getByRole('button', { name: '审阅套餐变更' });
+  await expect(saveButton).toBeEnabled({ timeout: 30_000 });
+  // Last check before the write: whatever we are about to submit is still the
+  // number we typed.
+  await expect(copyField).toHaveValue(String(target));
+
+  await saveButton.click();
+
+  // Every governed write goes through impact review, and the reason is what
+  // lands in the audit trail — there is no un-audited path to the number.
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await page.getByLabel('执行原因（写入审计）').fill(reason);
+  // Plan changes override the dialog's generic confirm label, and the suite
+  // sets no actionTimeout, so assert the button before clicking — otherwise a
+  // label mismatch hangs the click until the test-level timeout instead of
+  // failing here with something readable.
+  const confirmButton = dialog.getByRole('button', { name: '确认配置变更' });
+  await expect(confirmButton).toBeVisible({ timeout: 15_000 });
+  await confirmButton.click();
+  await expect(dialog).toBeHidden();
+
+  // CAS revision advanced: the editor's audit meta line changed.
+  await expect
+    .poll(async () => revisionLine.innerText(), { timeout: 30_000 })
+    .not.toBe(revisionBefore);
+
+  return { stored, target };
+}
 
 /**
  * The governed key `plan.allowances.trial` feeds the catalog
@@ -98,69 +177,31 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
 }) => {
   test.setTimeout(180_000);
   const admin = await registerE2EUser(request, { role: 'admin' });
+  // Unique per run: a fixed string would already be sitting in the audit trail
+  // from an earlier run, so the audit assertion below would pass even if this
+  // run never wrote anything.
+  const reason = `T35 acceptance ${Date.now()}: move the trial copy allowance through admin-config`;
+  let appliedFrom: number | undefined;
   try {
     await loginByForm(page, admin);
-
-    await page.goto('/admin/plans');
-    const copyField = page.locator('#plan-trial-copy');
-    await expect(copyField).toBeVisible({ timeout: 30_000 });
-    const trialForm = copyField.locator('xpath=ancestor::form[1]');
-
-    // Settle the editor before typing. It re-runs form.reset when the
-    // admin-config row lands, so a value entered beforehand is silently
-    // reverted and the submit then writes the unchanged number — a no-op that
-    // never advances the CAS revision, which surfaces 30s later as a product
-    // failure rather than as the race it is. The audit meta line only renders
-    // once that row is in hand, so it is the signal to wait on.
-    const revisionLine = trialForm.getByText(/^v\d+ · /);
-    await expect(revisionLine).toBeVisible({ timeout: 30_000 });
-    const revisionBefore = await revisionLine.innerText();
 
     // 71-79 collides with no seed: the shipped copy allowances are 5/30/100/300
     // and the add-on quantities 20/10, so a stale fallback cannot fake this
     // green. Always move off the stored value — this config is global and
-    // outlives the run, so re-entering it would be that same no-op.
-    const stored = Number(await copyField.inputValue());
-    const target = stored >= 71 && stored < 79 ? stored + 1 : 71;
-    await copyField.fill(String(target));
+    // outlives the run, so re-entering it would be a no-op write.
+    const { stored, target } = await applyTrialCopyAllowance(
+      page,
+      reason,
+      (current) => (current >= 71 && current < 79 ? current + 1 : 71)
+    );
+    appliedFrom = stored;
 
-    // Fail loudly rather than hang: the editor goes read-only when
-    // admin-config carries no revision for the key, and a disabled button
-    // would otherwise just burn the test timeout.
-    const saveButton = trialForm.getByRole('button', {
-      name: '审阅套餐变更',
+    // The other half of the acceptance: the reason reached the immutable audit
+    // trail, not just the form. Same bar as TEST-CATALOG §31.
+    await page.goto('/admin/audit');
+    await expect(page.getByText(reason, { exact: true })).toBeVisible({
+      timeout: 30_000,
     });
-    await expect(saveButton).toBeEnabled({ timeout: 30_000 });
-    // Last check before the write: whatever we are about to submit is still
-    // the number we typed.
-    await expect(copyField).toHaveValue(String(target));
-
-    await saveButton.click();
-
-    // Every governed write goes through impact review, and the reason is what
-    // lands in the audit trail — there is no un-audited path to the number.
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
-    await page
-      .getByLabel('执行原因（写入审计）')
-      .fill(
-        'T35 acceptance: move the trial copy allowance through admin-config'
-      );
-    // Plan changes override the dialog's generic confirm label, and the suite
-    // sets no actionTimeout, so assert the button before clicking — otherwise a
-    // label mismatch hangs the click until the test-level timeout instead of
-    // failing here with something readable.
-    const confirmButton = dialog.getByRole('button', {
-      name: '确认配置变更',
-    });
-    await expect(confirmButton).toBeVisible({ timeout: 15_000 });
-    await confirmButton.click();
-    await expect(dialog).toBeHidden();
-
-    // CAS revision advanced: the editor's audit meta line changed.
-    await expect
-      .poll(async () => revisionLine.innerText(), { timeout: 30_000 })
-      .not.toBe(revisionBefore);
 
     // …and a store registering now is provisioned off the edited catalog, with
     // nothing redeployed. Its own context so the admin session stays intact.
@@ -187,6 +228,19 @@ test('a hand-entered three-bucket number reaches the merchant through governed c
       await merchantContext.close();
     }
   } finally {
+    const restoreTo = appliedFrom;
+    if (restoreTo !== undefined) {
+      // Put the shared number back. This config is workspace-wide and outlives
+      // the run, so without this every run walks the trial allowance upward for
+      // every other lane and for anyone eyeballing the admin surface. Restoring
+      // through the same governed path keeps it audited; its own catch so a
+      // restore failure cannot mask the assertion that actually failed.
+      await applyTrialCopyAllowance(
+        page,
+        `${reason} (restore to ${restoreTo})`,
+        () => restoreTo
+      ).catch(() => undefined);
+    }
     await cleanupE2EUsers(request);
   }
 });

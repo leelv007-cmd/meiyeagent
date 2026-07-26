@@ -73,7 +73,7 @@ function LayerBody({
   if (isError) {
     return (
       <p
-        className="text-danger text-sm"
+        className="text-destructive text-sm"
         data-testid={`${testId}-error`}
         role="alert"
       >
