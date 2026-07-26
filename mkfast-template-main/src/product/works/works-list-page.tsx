@@ -132,13 +132,16 @@ export function WorksListPage() {
               trap that made this surface's own text unreadable, arriving this
               time through a dropped-in component. D-130 is explicit that a
               component library's output is held to the contrast rule too, so
-              the token is mapped back to the ink gradient's lowest body step
-              here, over a glass base per 玻璃有边法则. Per-site on purpose: the
-              shared-layer fix is OI-48.
+              the token is mapped back onto the ink gradient here, over a glass
+              base per 玻璃有边法则. It takes --ink-90, not the lowest body step:
+              the piece-tier glass is 8% white in dark, so the ambient photo
+              still carries the backdrop and --ink-60 measured 4.14:1 there.
+              Selection stays legible through the indicator pill. Per-site on
+              purpose: the shared-layer fix is OI-48.
             */}
             <div
               className="meiye-glass-piece inline-flex rounded-full p-0.5"
-              style={{ '--muted': 'var(--ink-60)' } as CSSProperties}
+              style={{ '--muted': 'var(--ink-90)' } as CSSProperties}
             >
               <Segment
                 aria-label="作品类型"
