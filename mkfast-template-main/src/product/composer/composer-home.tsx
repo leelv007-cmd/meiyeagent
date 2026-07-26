@@ -279,6 +279,8 @@ export type ComposerHomeProps = {
   fixtureSubmit?: boolean;
   initialRecipeRevisionId?: string;
   initialSurfaceRevisionId?: string;
+  /** T33: identity handed over by the identity page for this session only. */
+  initialSessionIdentityId?: string;
   /** Injectable for tests; browser sessionStorage is used by default. */
   sessionStore?: Storage;
 };
@@ -287,6 +289,7 @@ export function ComposerHome({
   viewportWidth,
   fixtureSubmit = false,
   initialRecipeRevisionId,
+  initialSessionIdentityId,
   initialSurfaceRevisionId,
   sessionStore,
 }: ComposerHomeProps = {}) {
@@ -447,6 +450,24 @@ export function ComposerHome({
     },
     onError: () => toast.error('默认身份未能保存，请重试。'),
   });
+  // T33 / #227: the identity page's「本次会话选择」has no session of its own, so
+  // it hands the choice over here. Session-scoped on purpose — this never
+  // touches the remembered default.
+  const handedOverIdentityRef = useRef(false);
+  useEffect(() => {
+    if (handedOverIdentityRef.current || !initialSessionIdentityId) return;
+    const known = identitySelection.identities.some(
+      (candidate) => candidate.id === initialSessionIdentityId
+    );
+    if (!known) return;
+    handedOverIdentityRef.current = true;
+    setSessionIdentityId(initialSessionIdentityId);
+    sessionIdentityDecision.mutate(initialSessionIdentityId);
+  }, [
+    identitySelection.identities,
+    initialSessionIdentityId,
+    sessionIdentityDecision,
+  ]);
   const usageQuery = useQuery({
     queryKey: p1QueryKeys.request('entitlements', 'projection'),
     queryFn: ({ signal }) =>

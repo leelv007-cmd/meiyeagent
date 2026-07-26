@@ -27,8 +27,16 @@ registerHooks({
 const { MarketingIdentityManager } = await import(
   '@/product/marketing-identity-manager'
 );
+// T33 / #227: management moved to /dashboard/identity; the asset page keeps the
+// summary and the way in, so the wizard assertions follow the surface.
+const { MarketingIdentityPage } = await import(
+  '@/product/marketing-identity-page'
+);
 const { CanonicalHistoryNavigation } = await import(
   '@/product/canonical-history-page'
+);
+const { marketingIdentitiesQuery } = await import(
+  '@/product/marketing-identity-queries'
 );
 const { Route: assetsFileRoute } = await import('./assets');
 const AssetLibraryPage = assetsFileRoute.options.component;
@@ -50,13 +58,33 @@ test('asset library route exposes identity management on the asset page', () => 
   );
 });
 
-test('identity registration starts as one generated question instead of a field form', () => {
+test('the asset page identity summary stays a styled card with a way in', () => {
+  // The asset page carries no heroui-glass stylesheet link (T32 owns that file
+  // and it stays byte-identical), so this summary has to survive on global
+  // primitives: a porcelain card, and an entry styled like a button.
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <MarketingIdentityManager />
+    </QueryClientProvider>
+  );
+
+  assert.match(html, /<section[^>]*class="[^"]*\bmeiye-porcelain\b/u);
+  const entry = html.match(/<a class="([^"]*)" href="\/dashboard\/identity">/u);
+  assert.ok(entry, 'identity entry link must point at /dashboard/identity');
+  assert.match(entry[1]!, /\binline-flex\b/u);
+  assert.doesNotMatch(html, /class="[^"]*\bwidget(__|")/u);
+});
+
+test('identity registration starts as one generated question instead of a field form', () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <MarketingIdentityPage />
     </QueryClientProvider>
   );
 
@@ -97,11 +125,11 @@ test('identity cards show merchant status without raw code or primary version', 
     visualPrinciples: [],
     workspaceId: 'workspace-a',
   } satisfies MarketingIdentityAsset;
-  queryClient.setQueryData(['marketing-identities'], [identity]);
+  queryClient.setQueryData(marketingIdentitiesQuery.queryKey, [identity]);
 
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <MarketingIdentityManager />
+      <MarketingIdentityPage />
     </QueryClientProvider>
   );
 

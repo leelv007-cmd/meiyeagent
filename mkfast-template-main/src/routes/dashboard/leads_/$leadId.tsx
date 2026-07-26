@@ -1,6 +1,7 @@
+import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { ObjectEvidence } from '@/components/uiux/object-evidence';
-import { StatePanel } from '@/components/uiux/state-panel';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState, Widget } from '@/components/heroui-pro';
+import { Skeleton } from '@heroui/react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import {
   common_table_bool_false,
@@ -35,9 +36,17 @@ import {
 } from '@/locale/paraglide/messages';
 import { useProductState } from '@/product/client';
 import type { Lead, LeadStatus } from '@meiye/contracts';
+import { IconFolderOff } from '@tabler/icons-react';
 import { createFileRoute } from '@tanstack/react-router';
 
+/**
+ * Lead detail — T33 / #227 reshell along the Composer trunk.
+ *
+ * Same facts as before the reshell (evidence, status, linked content, source,
+ * note); only the shell moves to HeroUI Pro V3 on the Glass sheet.
+ */
 export const Route = createFileRoute('/dashboard/leads_/$leadId')({
+  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   component: LeadDetailRoute,
 });
 
@@ -94,60 +103,78 @@ function LeadDetailRoute() {
       description={dashboard_lead_detail_description()}
       title={dashboard_lead_detail_title()}
     >
-      {product.loading ? (
-        <StatePanel
-          kind="loading"
-          title={dashboard_lead_detail_loading_title()}
-          description={dashboard_lead_detail_loading_description()}
-        />
-      ) : null}
-      {!lead && !product.loading ? (
-        <StatePanel
-          kind="empty"
-          title={dashboard_lead_detail_missing_title()}
-          description={dashboard_lead_detail_missing_description()}
-        />
-      ) : null}
-      {lead ? (
-        <Card>
-          <CardHeader>
-            <ObjectEvidence
-              id={lead.id}
-              kind="Lead"
-              source={dashboard_lead_detail_evidence_source()}
-            />
-            <CardTitle className="mt-3">
-              {content?.variants[0]?.versions.find(
-                (version) => version.id === lead.contentVersionId
-              )?.title ?? dashboard_lead_detail_fallback_title()}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p>
-              {dashboard_lead_detail_status({
-                status: leadStatusLabel(lead.status),
-              })}
+      <div className="meiye-heroui-glass">
+        {product.loading ? (
+          <section
+            aria-busy="true"
+            aria-live="polite"
+            className="meiye-porcelain space-y-3 rounded-2xl p-6"
+          >
+            <p className="text-foreground font-medium">
+              {dashboard_lead_detail_loading_title()}
             </p>
-            <p>
-              {dashboard_lead_detail_linked_content({
-                linked: content
-                  ? common_table_bool_true()
-                  : common_table_bool_false(),
-              })}
+            <p className="text-muted text-sm">
+              {dashboard_lead_detail_loading_description()}
             </p>
-            <p>
-              {dashboard_lead_detail_source({
-                source: leadSourceLabel(lead.source),
-              })}
-            </p>
-            <p>
-              {dashboard_lead_detail_note({
-                note: lead.note || dashboard_lead_no_note(),
-              })}
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
+            <Skeleton className="h-24 rounded-xl" />
+          </section>
+        ) : null}
+        {!lead && !product.loading ? (
+          <EmptyState className="meiye-porcelain rounded-2xl">
+            <EmptyState.Header>
+              <EmptyState.Media variant="icon">
+                <IconFolderOff className="size-6" />
+              </EmptyState.Media>
+              <EmptyState.Title>
+                {dashboard_lead_detail_missing_title()}
+              </EmptyState.Title>
+              <EmptyState.Description>
+                {dashboard_lead_detail_missing_description()}
+              </EmptyState.Description>
+            </EmptyState.Header>
+          </EmptyState>
+        ) : null}
+        {lead ? (
+          <Widget className="meiye-porcelain">
+            <Widget.Header className="flex-col items-start gap-3">
+              <ObjectEvidence
+                id={lead.id}
+                kind="Lead"
+                source={dashboard_lead_detail_evidence_source()}
+              />
+              <Widget.Title className="text-base">
+                {content?.variants[0]?.versions.find(
+                  (version) => version.id === lead.contentVersionId
+                )?.title ?? dashboard_lead_detail_fallback_title()}
+              </Widget.Title>
+            </Widget.Header>
+            <Widget.Content className="space-y-2 text-sm">
+              <p>
+                {dashboard_lead_detail_status({
+                  status: leadStatusLabel(lead.status),
+                })}
+              </p>
+              <p>
+                {dashboard_lead_detail_linked_content({
+                  linked: content
+                    ? common_table_bool_true()
+                    : common_table_bool_false(),
+                })}
+              </p>
+              <p>
+                {dashboard_lead_detail_source({
+                  source: leadSourceLabel(lead.source),
+                })}
+              </p>
+              <p>
+                {dashboard_lead_detail_note({
+                  note: lead.note || dashboard_lead_no_note(),
+                })}
+              </p>
+            </Widget.Content>
+          </Widget>
+        ) : null}
+      </div>
     </DashboardLayout>
   );
 }

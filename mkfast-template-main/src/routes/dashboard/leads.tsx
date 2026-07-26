@@ -1,13 +1,18 @@
+import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
-import { WarmEmptyState } from '@/components/uiux/warm-empty-state';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
+import { EmptyState, Widget } from '@/components/heroui-pro';
+import {
+  Alert,
+  Button,
+  buttonVariants,
+  Input,
+  Label,
+  ListBox,
+  Select,
+  Skeleton,
+  TextArea,
+  TextField,
+} from '@heroui/react';
 import {
   account_usage_retry,
   dashboard_lead_amount_label,
@@ -45,8 +50,8 @@ import {
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
-import { getPathWithLocale } from '@/lib/urls';
 import { useProductState } from '@/product/client';
+import { leadStatusToneClassName } from '@/product/lead-status-tone';
 import type { LeadStatus, ProductCommand } from '@meiye/contracts';
 import {
   IconAlertTriangle,
@@ -59,7 +64,16 @@ import {
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
+/**
+ * Lead ledger — T33 / #227 reshell along the Composer trunk.
+ *
+ * Story 60 scope: the ledger keeps exactly the capabilities it had (view,
+ * manual record, status follow-up, insight notes). Nothing is added — this
+ * ticket only swaps the self-built shadcn old-IA shell for HeroUI Pro V3 on
+ * the Glass sheet, which rides a route-level <link> the way /dashboard does.
+ */
 export const Route = createFileRoute('/dashboard/leads')({
+  head: () => ({ links: [{ rel: 'stylesheet', href: heroUiGlassCss }] }),
   component: LeadLedgerPage,
 });
 
@@ -131,14 +145,14 @@ function LeadLedgerPage() {
 
   if (loading || !state) {
     return (
-      <div className="space-y-4 p-4 lg:p-6">
-        <Skeleton className="h-12" />
-        <Skeleton className="h-96" />
+      <div className="meiye-heroui-glass space-y-4 p-4 lg:p-6">
+        <Skeleton className="h-12 rounded-xl" />
+        <Skeleton className="h-96 rounded-2xl" />
       </div>
     );
   }
 
-  const hasPublishedContent = state.contents.some(
+  const publishedContents = state.contents.filter(
     (item) => item.status === 'published'
   );
 
@@ -149,246 +163,271 @@ function LeadLedgerPage() {
           { label: product_navigation_leads(), isCurrentPage: true },
         ]}
         actions={
-          <Badge variant="outline">{dashboard_lead_manual_record()}</Badge>
+          <span className="meiye-glass-piece text-muted rounded-full px-3 py-1 text-xs">
+            {dashboard_lead_manual_record()}
+          </span>
         }
       />
-      <main className="mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
+      <main className="meiye-heroui-glass mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
         <div className="meiye-ambient-copy mb-6">
           <h1 className="meiye-type-title">{product_navigation_leads()}</h1>
           <p className="meiye-type-aux mt-1">{dashboard_lead_description()}</p>
         </div>
 
         {error && (
-          <Alert variant="destructive" className="mb-4">
-            <IconAlertTriangle />
-            <AlertTitle>{product_client_command_failed()}</AlertTitle>
-            <AlertDescription className="flex items-center justify-between gap-3">
-              {leads_operation_failed_description()}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void refresh()}
-              >
-                <IconRefresh />
-                {account_usage_retry()}
-              </Button>
-            </AlertDescription>
+          <Alert className="mb-4" status="danger">
+            <Alert.Indicator>
+              <IconAlertTriangle className="size-4" />
+            </Alert.Indicator>
+            <Alert.Content>
+              <Alert.Title>{product_client_command_failed()}</Alert.Title>
+              <Alert.Description className="flex flex-wrap items-center justify-between gap-3">
+                {leads_operation_failed_description()}
+                <Button
+                  onPress={() => void refresh()}
+                  size="sm"
+                  variant="outline"
+                >
+                  <IconRefresh className="size-4" />
+                  {account_usage_retry()}
+                </Button>
+              </Alert.Description>
+            </Alert.Content>
           </Alert>
         )}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="min-w-0">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="meiye-type-body font-semibold">
-                {dashboard_lead_progress_title()}
-              </h2>
-              <Badge variant="secondary">{state.leads.length}</Badge>
-            </div>
-            {state.leads.length === 0 ? (
-              <WarmEmptyState
-                action={
-                  hasPublishedContent ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        document.getElementById('lead-content')?.focus()
-                      }
-                    >
-                      {lead_ledger_empty_record_action()}
-                    </Button>
-                  ) : (
-                    <a
-                      className={buttonVariants({
-                        variant: !contentId ? 'default' : 'outline',
-                      })}
-                      href={getPathWithLocale(Routes.Dashboard)}
-                    >
-                      {lead_ledger_empty_create_action()}
-                    </a>
-                  )
-                }
-                description={lead_ledger_empty_description()}
-                media={<IconMessages />}
-                title={dashboard_lead_empty()}
-              />
-            ) : (
-              <div className="divide-y divide-divider overflow-hidden rounded-xl bg-surface-1">
-                {state.leads.map((lead) => {
-                  const content = state.contents.find(
-                    (item) => item.id === lead.contentId
-                  );
-                  const variant = content?.variants[0];
-                  const version = variant?.versions.find(
-                    (item) => item.id === lead.contentVersionId
-                  );
-                  return (
-                    <Card
-                      key={lead.id}
-                      className="rounded-none bg-transparent shadow-none"
-                    >
-                      <CardHeader className="gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <CardTitle className="truncate text-base">
-                            {version?.title ?? dashboard_lead_linked_content()}
-                          </CardTitle>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {dashboard_lead_source_summary({
-                              date: formatLocaleDateTime(lead.createdAt),
-                            })}
-                          </p>
-                        </div>
-                        <Badge>{leadStatusLabel(lead.status)}</Badge>
-                      </CardHeader>
-                      <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                        <div className="meiye-type-body min-w-0 flex-1">
-                          <p>{lead.note || dashboard_lead_no_note()}</p>
-                          {lead.amountCents ? (
-                            <p className="mt-1 text-muted-foreground">
-                              {dashboard_lead_intent_amount({
-                                amount: (lead.amountCents / 100).toFixed(0),
+          <Widget className="meiye-porcelain min-w-0">
+            <Widget.Header>
+              <Widget.Title>{dashboard_lead_progress_title()}</Widget.Title>
+              <span className="meiye-glass-trace text-muted rounded-full px-2.5 py-0.5 text-xs">
+                {state.leads.length}
+              </span>
+            </Widget.Header>
+            <Widget.Content>
+              {state.leads.length === 0 ? (
+                <EmptyState>
+                  <EmptyState.Header>
+                    <EmptyState.Media variant="icon">
+                      <IconMessages className="size-6" />
+                    </EmptyState.Media>
+                    <EmptyState.Title>
+                      {dashboard_lead_empty()}
+                    </EmptyState.Title>
+                    <EmptyState.Description>
+                      {lead_ledger_empty_description()}
+                    </EmptyState.Description>
+                  </EmptyState.Header>
+                  <EmptyState.Content>
+                    {publishedContents.length > 0 ? (
+                      <Button
+                        onPress={() =>
+                          document.getElementById('lead-note')?.focus()
+                        }
+                        variant="outline"
+                      >
+                        {lead_ledger_empty_record_action()}
+                      </Button>
+                    ) : (
+                      <Link
+                        className={buttonVariants({ variant: 'primary' })}
+                        to={Routes.Dashboard}
+                      >
+                        {lead_ledger_empty_create_action()}
+                      </Link>
+                    )}
+                  </EmptyState.Content>
+                </EmptyState>
+              ) : (
+                <ul className="divide-divider divide-y">
+                  {state.leads.map((lead) => {
+                    const content = state.contents.find(
+                      (item) => item.id === lead.contentId
+                    );
+                    const version = content?.variants[0]?.versions.find(
+                      (item) => item.id === lead.contentVersionId
+                    );
+                    return (
+                      <li className="py-4 first:pt-0 last:pb-0" key={lead.id}>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-foreground truncate font-medium">
+                              {version?.title ??
+                                dashboard_lead_linked_content()}
+                            </p>
+                            <p className="text-muted mt-1 text-xs">
+                              {dashboard_lead_source_summary({
+                                date: formatLocaleDateTime(lead.createdAt),
                               })}
                             </p>
-                          ) : null}
+                          </div>
+                          <span
+                            className={leadStatusToneClassName(lead.status)}
+                          >
+                            {leadStatusLabel(lead.status)}
+                          </span>
                         </div>
-                        <Link
-                          className={buttonVariants({
-                            size: 'sm',
-                            variant: 'outline',
-                          })}
-                          to="/dashboard/leads/$leadId"
-                          params={{ leadId: lead.id }}
-                        >
-                          {dashboard_lead_view_details()}
-                        </Link>
-                        <select
-                          aria-label={dashboard_lead_update_status_aria()}
-                          className="h-touch-target rounded-md border border-divider bg-surface-1 px-3 text-sm outline-none transition-colors enabled:hover:bg-surface-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
-                          disabled={pending}
-                          value={lead.status}
-                          onChange={(event) =>
-                            void run({
-                              type: 'update_lead',
-                              leadId: lead.id,
-                              status: event.target.value as LeadStatus,
-                            })
-                          }
-                        >
-                          {statusOrder.map((status) => (
-                            <option key={status} value={status}>
-                              {leadStatusLabel(status)}
-                            </option>
-                          ))}
-                        </select>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <div className="min-w-0 flex-1 text-sm">
+                            <p className="text-foreground">
+                              {lead.note || dashboard_lead_no_note()}
+                            </p>
+                            {lead.amountCents ? (
+                              <p className="text-muted mt-1">
+                                {dashboard_lead_intent_amount({
+                                  amount: (lead.amountCents / 100).toFixed(0),
+                                })}
+                              </p>
+                            ) : null}
+                          </div>
+                          <Link
+                            className={buttonVariants({
+                              size: 'sm',
+                              variant: 'outline',
+                            })}
+                            params={{ leadId: lead.id }}
+                            to="/dashboard/leads/$leadId"
+                          >
+                            {dashboard_lead_view_details()}
+                          </Link>
+                          <Select
+                            isDisabled={pending}
+                            onSelectionChange={(key) =>
+                              void run({
+                                type: 'update_lead',
+                                leadId: lead.id,
+                                status: key as LeadStatus,
+                              })
+                            }
+                            selectedKey={lead.status}
+                          >
+                            {/* A real label, not aria-label: React Aria points
+                                the trigger's aria-labelledby at the label and
+                                the current value, which would otherwise leave
+                                the control named after its own value. */}
+                            <Label className="sr-only">
+                              {dashboard_lead_update_status_aria()}
+                            </Label>
+                            <Select.Trigger className="sm:w-36">
+                              <Select.Value />
+                              <Select.Indicator />
+                            </Select.Trigger>
+                            <Select.Popover>
+                              <ListBox>
+                                {statusOrder.map((status) => (
+                                  <ListBox.Item id={status} key={status}>
+                                    {leadStatusLabel(status)}
+                                  </ListBox.Item>
+                                ))}
+                              </ListBox>
+                            </Select.Popover>
+                          </Select>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Widget.Content>
+          </Widget>
 
           <aside className="space-y-6">
-            <section className="space-y-4 rounded-xl bg-surface-1 p-4">
-              <h2 className="meiye-type-body font-semibold">
-                {dashboard_lead_new_title()}
-              </h2>
-              <div>
-                <Label htmlFor="lead-content">
-                  {dashboard_lead_content_label()}
-                </Label>
-                <select
-                  id="lead-content"
-                  className="mt-2 h-touch-target w-full rounded-lg border border-divider bg-surface-1 px-2.5 text-sm outline-none transition-colors enabled:hover:bg-surface-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
-                  value={contentId}
-                  onChange={(event) => setContentId(event.target.value)}
+            <Widget className="meiye-porcelain">
+              <Widget.Header>
+                <Widget.Title>{dashboard_lead_new_title()}</Widget.Title>
+              </Widget.Header>
+              <Widget.Content className="space-y-4">
+                <Select
+                  onSelectionChange={(key) => setContentId(String(key))}
+                  selectedKey={contentId || null}
                 >
-                  {state.contents
-                    .filter((item) => item.status === 'published')
-                    .map((content) => (
-                      <option key={content.id} value={content.id}>
-                        {content.variants[0]?.versions[0]?.title ??
-                          dashboard_lead_untitled_content()}
-                      </option>
-                    ))}
-                </select>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  <Label>{dashboard_lead_content_label()}</Label>
+                  <Select.Trigger>
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {publishedContents.map((content) => (
+                        <ListBox.Item id={content.id} key={content.id}>
+                          {content.variants[0]?.versions[0]?.title ??
+                            dashboard_lead_untitled_content()}
+                        </ListBox.Item>
+                      ))}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+                <p className="text-muted text-xs leading-5">
                   {lead_ledger_attribution_notice()}
                 </p>
-              </div>
-              <div>
-                <Label htmlFor="lead-amount">
-                  {dashboard_lead_amount_label()}
-                </Label>
-                <Input
-                  id="lead-amount"
-                  className="mt-2"
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="lead-note">{dashboard_lead_note_label()}</Label>
-                <Textarea
-                  id="lead-note"
-                  className="mt-2"
-                  rows={3}
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                />
-              </div>
-              <Button
-                className="w-full disabled:bg-surface-0 disabled:text-muted-foreground disabled:opacity-60"
-                disabled={pending || !contentId}
-                onClick={() => void createLead()}
-                variant={!contentId ? 'outline' : 'default'}
-              >
-                <IconPlus />
-                {dashboard_lead_record()}
-              </Button>
-            </section>
+                <TextField onChange={setAmount} value={amount}>
+                  <Label>{dashboard_lead_amount_label()}</Label>
+                  <Input inputMode="decimal" />
+                </TextField>
+                <TextField onChange={setNote} value={note}>
+                  <Label>{dashboard_lead_note_label()}</Label>
+                  <TextArea id="lead-note" rows={3} />
+                </TextField>
+                <Button
+                  className="w-full"
+                  isDisabled={pending || !contentId}
+                  onPress={() => void createLead()}
+                  variant={contentId ? 'primary' : 'outline'}
+                >
+                  <IconPlus className="size-4" />
+                  {dashboard_lead_record()}
+                </Button>
+              </Widget.Content>
+            </Widget>
 
-            <section className="space-y-4 rounded-xl bg-surface-1 p-4">
-              <h2 className="meiye-type-body flex items-center gap-2 font-semibold">
-                <IconBulb className="size-4" />
-                {dashboard_lead_insights_title()}
-              </h2>
-              <Textarea
-                rows={3}
-                value={insight}
-                onChange={(event) => setInsight(event.target.value)}
-                placeholder={dashboard_lead_insight_placeholder()}
-              />
-              <Button
-                className="w-full"
-                variant="outline"
-                disabled={pending || !insight.trim()}
-                onClick={() => {
-                  void run({
-                    type: 'record_insight',
-                    contentId: contentId || undefined,
-                    kind: 'next_action',
-                    note: insight,
-                  });
-                  setInsight('');
-                }}
-              >
-                <IconCheck />
-                {dashboard_lead_save_insight()}
-              </Button>
-              {state.insights
-                .slice(-3)
-                .reverse()
-                .map((item) => (
-                  <p
-                    key={item.id}
-                    className="border-l-2 border-divider pl-3 text-sm leading-6 text-muted-foreground"
-                  >
-                    {item.note}
-                  </p>
-                ))}
-            </section>
+            <Widget className="meiye-porcelain">
+              <Widget.Header>
+                <Widget.Title className="flex items-center gap-2">
+                  <IconBulb className="size-4" />
+                  {dashboard_lead_insights_title()}
+                </Widget.Title>
+              </Widget.Header>
+              <Widget.Content className="space-y-4">
+                <TextField
+                  aria-label={dashboard_lead_insights_title()}
+                  onChange={setInsight}
+                  value={insight}
+                >
+                  <TextArea
+                    placeholder={dashboard_lead_insight_placeholder()}
+                    rows={3}
+                  />
+                </TextField>
+                <Button
+                  className="w-full"
+                  isDisabled={pending || !insight.trim()}
+                  onPress={() => {
+                    void run({
+                      type: 'record_insight',
+                      contentId: contentId || undefined,
+                      kind: 'next_action',
+                      note: insight,
+                    });
+                    setInsight('');
+                  }}
+                  variant="outline"
+                >
+                  <IconCheck className="size-4" />
+                  {dashboard_lead_save_insight()}
+                </Button>
+                {state.insights
+                  .slice(-3)
+                  .reverse()
+                  .map((item) => (
+                    <p
+                      className="border-divider text-muted border-l-2 pl-3 text-sm leading-6"
+                      key={item.id}
+                    >
+                      {item.note}
+                    </p>
+                  ))}
+              </Widget.Content>
+            </Widget>
           </aside>
         </div>
       </main>

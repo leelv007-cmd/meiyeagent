@@ -36,7 +36,9 @@ test('identity registration stays single-question, editable, and accessible', as
   const user = await registerE2EUser(request);
   try {
     await loginByForm(page, user);
-    await page.goto('/dashboard/assets');
+    // T33 / #227: identity management has its own page now; the asset page
+    // keeps a summary and the way in.
+    await page.goto('/dashboard/identity');
 
     const manager = page.getByRole('region', { name: '表达身份' });
     await expect(manager.locator('form')).toHaveCount(0);
