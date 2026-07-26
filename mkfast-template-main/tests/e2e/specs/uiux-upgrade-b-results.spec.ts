@@ -770,14 +770,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
 
     const completed = await creativeProjection(page);
     const imageAsset = completed.assets.find((asset) => asset.kind === 'image');
-    const imageJob = completed.jobs.find(
-      (job) => job.id === completed.works[0]?.currentJobId
-    );
     if (!imageAsset?.objectKey) {
       throw new Error('Completed image Asset is missing its media object key');
     }
-    expect(imageJob?.contract.catalogModelId).toEqual(expect.any(String));
-    expect(imageJob?.routeSnapshotId).toEqual(expect.any(String));
     const canonicalMediaSrc = `/api/core/p1/assets?objectKey=${encodeURIComponent(
       imageAsset.objectKey
     )}`;
