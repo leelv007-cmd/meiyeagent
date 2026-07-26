@@ -49,7 +49,13 @@ function isTest(path) {
   return /\.(test|spec)\.tsx?$/u.test(path);
 }
 
-/** Production route entries: every route file except the tests beside them. */
+/**
+ * Production route entries. Two kinds of file live under `src/routes` without
+ * being routes: the tests beside them, and TanStack's `-` prefix, which marks a
+ * file the router excludes from the tree. Counting either as an entry would
+ * report a module as 「路由挂载」 when the only thing importing it is a page that
+ * no route renders — exactly the claim this gate exists to get right.
+ */
 export function routeEntryFiles(dir = ROUTES_DIR) {
   const out = [];
   for (const entry of readdirSync(dir)) {
@@ -58,7 +64,9 @@ export function routeEntryFiles(dir = ROUTES_DIR) {
       out.push(...routeEntryFiles(full));
       continue;
     }
-    if (isSource(full) && !isTest(full)) out.push(full);
+    if (isSource(full) && !isTest(full) && !entry.startsWith('-')) {
+      out.push(full);
+    }
   }
   return out;
 }

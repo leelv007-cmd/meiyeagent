@@ -74,6 +74,21 @@ test('the module list stays on the six the ticket retires, without the shared re
   );
 });
 
+test('a `-` prefixed file under routes is not a route entry', () => {
+  const entries = routeEntryFiles();
+  assert.equal(
+    entries.some((path) => path.split('/').pop().startsWith('-')),
+    false
+  );
+  // The retired library surface lives at routes/dashboard/-content-library-surface.
+  // TanStack excludes it from the tree, so counting it as an entry would report
+  // its imports as route-mounted when no route renders it.
+  assert.equal(
+    entries.some((path) => path.includes('-content-library-surface')),
+    false
+  );
+});
+
 test('the walk reaches a real slice of the app, so a clean result is not an empty one', () => {
   const graph = reachableFromRoutes(routeEntryFiles());
   assert.ok(
