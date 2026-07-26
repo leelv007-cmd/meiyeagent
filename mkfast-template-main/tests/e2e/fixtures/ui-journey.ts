@@ -758,10 +758,15 @@ export async function assertJourneyRestored(
   await expect(page.getByTestId('delivery-panel')).toBeVisible();
 
   if (contract.modality === 'copy') {
-    // Adoption survived the reload: the shell still offers 交付 rather than
-    // falling back to 采用. Absence of `copy-adopt-action` used to stand in for
-    // this and proved nothing — it is absent on an unadopted run too.
-    await expect(page.getByTestId('result-primary-action')).toHaveText('交付');
+    // Adoption survived the reload. Assert what is invariant rather than one
+    // label: after a delivery the shell moves on to 基于此再创作, so pinning 交付
+    // here would fail on a journey that delivered. What must never come back is
+    // the request to adopt. (Absence of `copy-adopt-action` alone proved
+    // nothing — it is absent on an unadopted run too.)
+    await expect(page.getByTestId('result-primary-action')).not.toHaveText(
+      '采用此版本'
+    );
+    await expect(page.getByTestId('copy-adopt-action')).toHaveCount(0);
   } else if (contract.modality === 'image_text') {
     await expect(page.getByTestId('image-adopted-badge').first()).toBeVisible();
   } else {

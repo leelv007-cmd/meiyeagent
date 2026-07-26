@@ -34,6 +34,11 @@ Both runs are recorded here as they happened rather than dropped. Everything
 after the warning went through the lock, and `/tmp/meiye-e2e.log` carries the
 acquire/release lines for this worktree.
 
+**Confidence, per the coordinator's ruling**: every number produced by those two
+unlocked runs — including the Day-0 3 passed / 4 failed below — is **low
+confidence and awaits a locked re-measurement**. It is recorded because a
+missing baseline is worse than a caveated one, not because it is settled.
+
 ## What ran
 
 | Chunk | Specs | Result |
@@ -76,10 +81,22 @@ neither the legacy projection nor a video budget the product cannot meet.
 
 `ui-journey-three-modal.spec.ts` `copy:wechat_moments · desktop` failed at 1.6m
 and the remaining seven cases were skipped (the describe is serial). This is the
-closest sibling of the new required gate and shares its fixtures, so it is the
-single most important number in this file. The error body was not captured — the
-chunk was stopped before Playwright printed failure details — and re-running it
-is the first thing the next pass should do.
+closest sibling of the new required gate and shares its fixtures, so it was the
+single most important number in this file.
+
+**Root-caused, from the new gate's first locked run.** The M-04 gate walked
+submit → 白话进度 → first token → mid-run refresh restore → the T08 双字段 body
+assertions → Result Center in 20 seconds, then failed on the same step: the
+shared fixture waited for `copy-adopt-action`, a control the copy worksurface
+renders only while its local lifecycle is still `candidate`. A delivered run has
+already left that state, so the wait could not resolve — while the shell was
+showing 「采用此版本」 the whole time. The fixture now adopts through
+`result-primary-action`, the canonical shell action the required assembly gate
+already clicks, and `assertJourneyRestored` asserts 「交付」 after reload instead
+of the absence of a control that is absent on an unadopted run too.
+
+The three-modal spec has not been re-measured since that fix; it should be the
+first thing the next locked sweep runs.
 
 ### Retired-workbench family — red before anything was touched
 
