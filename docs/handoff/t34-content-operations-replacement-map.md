@@ -159,8 +159,11 @@
    `uiux-upgrade-b-video`（`视频成片工作流`／`成片已完成`）、
    `pending-actions-inbox`（`生成三平台版本`）。对应能力在 Result Center
    （采用／导出／生成变体／视频工作流）可达，把这些旅程重新落到 Result Center 需要旅程决定。
-3. **`/dashboard/?view=works`**：`routes/dashboard/index.tsx:101-102` 桌面端仍以 `search.view` 渲染
-   `CanonicalHistoryPage`——OI-63，T38 属主，本票未动（预研 §E 明定）。
+3. **OI-63（T38 谓词裁决：整行保留）**：canonical 五页壳仍被生产路由直接消费：
+   `dashboard/index.tsx`、`assets.tsx`、`jobs.tsx`、`sessions.tsx`、`search.tsx`、
+   `recent.tsx`，以及 `assets_/$assetId.tsx`、`jobs_/$jobId.tsx`、
+   `sessions_/$sessionId.tsx` 三条详情路由。T32 works 结果面没有接管这些入口；
+   删除前必须先完成 IA 归属判定，T38 不把它们擅自改指 works/Result Center。
 4. **`p1/operations-view-model.ts` 建议移出 1D 删除清单**（§1 末行，10 个活消费者）。
 5. **`p1/canvas-name.ts` 的「作品」词**（§5 末段）。
 6. **发现的既有死代码（本票未删，按纪律只报告）**：
