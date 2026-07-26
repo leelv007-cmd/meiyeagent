@@ -643,13 +643,21 @@ function StoreProfilePage() {
               }
             >
               <Tabs.List>
+                {/*
+                 * The indicator belongs inside each tab: HeroUI wraps it in
+                 * React Aria's SelectionIndicator, which reads isSelected from
+                 * the tab and needs the SharedElementTransition that TabList
+                 * mounts around the collection. As a sibling of the tabs it
+                 * throws at render.
+                 */}
                 <Tabs.Tab id="profile">
                   {dashboard_store_profile_tab()}
+                  <Tabs.Indicator />
                 </Tabs.Tab>
                 <Tabs.Tab id="qualification">
                   {dashboard_store_qualification_tab()}
+                  <Tabs.Indicator />
                 </Tabs.Tab>
-                <Tabs.Indicator />
               </Tabs.List>
 
               <Tabs.Panel className="mt-6 space-y-6" id="profile">

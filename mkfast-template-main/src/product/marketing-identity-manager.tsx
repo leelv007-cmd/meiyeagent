@@ -59,6 +59,8 @@ export function MarketingIdentityManager() {
     <Widget
       aria-labelledby="marketing-identity-manager-title"
       className="meiye-porcelain"
+      // Widget renders a div; the mobile entry points assert a landmark here.
+      role="region"
     >
       <Widget.Header>
         <Widget.Title id="marketing-identity-manager-title">

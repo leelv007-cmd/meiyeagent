@@ -310,7 +310,7 @@ export function MarketingIdentityPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <section aria-label={copy.title} className="space-y-6">
       <Widget className="meiye-porcelain">
         <Widget.Header>
           <Widget.Title>{copy.listTitle}</Widget.Title>
@@ -328,10 +328,10 @@ export function MarketingIdentityPage() {
                   : 'ready'
           }
         >
+          {/* No live region here: the wizard owns the single polite announcer
+              on this page, and a second one would race it. */}
           {identities.isPending ? (
-            <p aria-live="polite" className="text-muted text-sm">
-              {copy.loading}
-            </p>
+            <p className="text-muted text-sm">{copy.loading}</p>
           ) : null}
           {identities.isError ? (
             <div className="flex flex-wrap items-center gap-3">
@@ -519,7 +519,7 @@ export function MarketingIdentityPage() {
           ) : null}
         </Widget.Content>
       </Widget>
-    </div>
+    </section>
   );
 }
 

@@ -4030,7 +4030,7 @@
   "workspace_empty_materials": "还没有上传素材。",
   "workspace_empty_facts": "还没有确认过的门店事实。",
   "workspace_empty_identities": "还没有登记身份，创作会回退为门店官方口吻。",
-  "workspace_sample_isolation_note": "示例店的素材只用于试用演示，不会混进这里。",
+  "workspace_sample_isolation_note": "只显示本店自己上传或沉淀下来的素材。",
   "workspace_open_asset_library": "打开素材库",
   "workspace_open_identity": "管理表达身份",
   "workspace_open_store": "查看门店档案",

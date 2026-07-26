@@ -4030,7 +4030,7 @@
   "workspace_empty_materials": "No materials uploaded yet.",
   "workspace_empty_facts": "No confirmed store facts yet.",
   "workspace_empty_identities": "No identity registered yet — creation falls back to the store official voice.",
-  "workspace_sample_isolation_note": "Sample-store material is demo only and never mixes in here.",
+  "workspace_sample_isolation_note": "Only material this store uploaded or captured.",
   "workspace_open_asset_library": "Open the asset library",
   "workspace_open_identity": "Manage expression identities",
   "workspace_open_store": "View the store profile",
