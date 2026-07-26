@@ -79,23 +79,27 @@ neither the legacy projection nor a video budget the product cannot meet.
 
 ## The new required gate, measured (2026-07-26, locked)
 
-`m04-browser-hard-gate.spec.ts`, run at commit `51b4f6ce` — rebased onto `main`
-after T23 and T46 merged — through `.scratch/orca-run-2026-07-25/e2e-lock.sh`:
+The required gate and both T23 waiver specs, run at commit `1467b5b5` — rebased
+onto `main` after T23 and T46 merged — through
+`.scratch/orca-run-2026-07-25/e2e-lock.sh`:
 
 | Case | Result |
 |---|---|
-| `copy → wechat_moments` | **passed, 10.5s** |
-| `image_text → xiaohongshu` | **passed, 57.1s** |
-| `video → douyin` | **passed, 12.4s** |
+| `copy → wechat_moments` | **passed, 11.0s** |
+| `image_text → xiaohongshu` | **passed, 59.3s** |
+| `video → douyin` | **passed, 14.5s** |
+| `video-native-compiler` (T23 waiver) | **passed, 16.4s** |
+| `video-result-live-commands` (T23 waiver) | **passed, 20.7s** |
 
-**3 passed.** Each case walks submit → 白话进度 → 首 token (copy) / 两种图文方向
+**5 passed**, one locked round at `1467b5b5`. Each case walks submit → 白话进度 → 首 token (copy) / 两种图文方向
 (image_text) → 刷新恢复① → T08 双字段 body → Result Center → 采用 → 交付
 (完整发布包) → 刷新恢复②, with the D-098 C6 activation budget asserted (copy 2,
 image_text 3, video 3) and the D-111 neutral-identity check.
 
-Getting there took seven product defects out of the way. They are recorded here
-because each one was on the merchant's own Day-0 path and none of them had a
-test that ran:
+Getting there took eight product defects out of the way — the eighth has its own
+section below, since it was found by the waiver spec rather than by the gate.
+They are recorded here because each one was on the merchant's own Day-0 path and
+none of them had a test that ran:
 
 1. **An inline-authorized image could not be submitted** (`composer-home.tsx`,
    fixed in `d6912b68`). The submission gate reads `product.state`, which
@@ -146,6 +150,45 @@ unavailable」, because `ModelSupplyApplicationService` was built without
 `referenceAssets` in both `main.ts` and `job-worker.ts`. T23 r2 wired it into
 both. Recorded so the measurement history reads honestly: that wall was real on
 the baseline commit and is gone on the current one.
+
+### The canonical video run came unbound on its first edit
+
+Found by realigning `video-result-live-commands.spec.ts` to the current seam,
+which is the whole reason that seed is worth keeping.
+
+**Symptom.** Seed a canonical video run on a Work, open Result Center, pick a
+different shot candidate — the `video_workflow_edit` command succeeds — then
+reload. The storyboard is gone. Not an error, not an empty state with a reason:
+the page simply no longer knows the run exists. The same trap sits under any
+retained historical work whose canonical run is edited once.
+
+**Root cause.** Two owners write two different fields, and the read side knew
+only one of them. `storedJob`
+(`apps/core/src/p1/model-supply/video-workflow-canonical-postgres.ts`) persists
+`videoWorkflowId` on every canonical write and never persists `providerJobId`;
+`results_/$workId.tsx` bound the run through `providerJobId` alone. Because a
+canonical write replaces the whole job payload, the first edit erased the only
+field the page was looking at. Measured directly: after the edit the projection
+returns that job with `providerJobId: null`, `hasContract: true`.
+
+It held before the ContentPackage seam because the link lived on the
+*originating* Job — written by the old creation path, never touched by the
+canonical store. That seam writes no `p1_creative_jobs` row at all, so the only
+job on a new-seam Work is the canonical one, and its owner does not write the
+field the page wanted.
+
+**The two candidate fixes, and why the read side.** Either the canonical store
+starts persisting `providerJobId` (changing a write shape whose owner
+deliberately excludes it), or the route reads the field that owner does write.
+The coordinator ruled the read side, with a fallback chain: `videoWorkflowId`
+when present, else the old `providerJobId` prefix test. That keeps historical
+originating rows binding exactly as before, invents no field, and moves no
+ownership — only the read learns which owner to ask.
+
+**Pinned by** `video-result-live-commands.spec.ts`, whose seed now carries no
+`providerJobId` at all: it plants only what the canonical store itself writes,
+so the unbind cannot hide behind the seed again. Green at `1467b5b5` — 20.7s,
+edit → reload → aria-pressed → server quote → confirm → derived task.
 
 ### OI-76 — the composer submission segment, pinned
 
@@ -235,14 +278,8 @@ demoted spec would not add any.
   not claimed green or red here.
 - The `ui-journey-three-modal` failure has no captured error body.
 - The demoted family was not re-measured; see the reasoning above.
-- `video-result-live-commands.spec.ts` is still red, and no longer for the
-  reason it was: it now gets all the way through submit, stream and Result
-  Center, then fails inside its own direct-Postgres seeding helper
-  (`seedCanonicalVideoWorkflow`, `:69`), which looks for a `p1_creative_jobs`
-  row whose payload has no `videoWorkflowId`. That is a legacy-shape
-  precondition, in the same family as defects (2)–(4): the ContentPackage seam
-  does not write what it is looking for. Its sibling
-  `video-native-compiler.spec.ts` — the one that walks Composer → storyboard →
-  one native call → revision → refresh → export — **passes in 18.9s** on a cold
-  trial tenant at `51b4f6ce`, which is the W1 regression evidence the
-  coordinator asked for.
+- Both T23 waiver specs are green (table above). `video-result-live-commands`
+  needed its seed realigned to the seam first — it had anchored on "the
+  originating Job", a row the ContentPackage seam does not write, and planted a
+  Job with no `contract`, which took the Result page to its error boundary — and
+  then surfaced the unbind recorded in its own section above.
