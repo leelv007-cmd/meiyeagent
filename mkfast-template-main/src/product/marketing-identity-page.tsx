@@ -6,14 +6,18 @@ import { Button, buttonVariants, Input, TextArea } from '@heroui/react';
 import { getLocale } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
-import { commandP1, queryP1 } from '@/p1/client';
-import { p1QueryKeys } from '@/p1/query-keys';
+import { commandP1 } from '@/p1/client';
 import type {
   MarketingIdentityAsset,
   MarketingIdentityProjection,
 } from '@meiye/contracts';
 import { IconUserPlus } from '@tabler/icons-react';
 
+import {
+  invalidateMarketingIdentity,
+  marketingIdentitiesQuery,
+  marketingIdentityProjectionQuery,
+} from './marketing-identity-queries';
 import {
   answerMarketingIdentityQuestion,
   marketingIdentityFlowState,
@@ -32,8 +36,6 @@ import {
  * The third one belongs to a Composer session, so this page hands the choice
  * to the conversation instead of pretending to hold a session of its own.
  */
-export const IDENTITY_QUERY_KEY = ['marketing-identities'] as const;
-
 const COPY = {
   zh: {
     title: '表达身份',
@@ -190,38 +192,23 @@ export function MarketingIdentityPage() {
     useState<MarketingIdentityQuestionId | null>('kind');
   const [error, setError] = useState(false);
   const initialPanelRef = useRef(true);
-  const identities = useQuery({
-    queryKey: IDENTITY_QUERY_KEY,
-    queryFn: ({ signal }) =>
-      queryP1<MarketingIdentityAsset[]>(
-        'marketing-identity',
-        {
-          action: 'marketing_identities',
-          payload: { includeInactive: true },
-        },
-        signal
-      ),
-  });
+  const identities = useQuery<MarketingIdentityAsset[]>(
+    marketingIdentitiesQuery
+  );
   // D-117: the remembered default is a decision, not a field on the identity,
   // so the explicit「设为默认」action needs the decision revision to fence on.
-  const projection = useQuery({
-    queryKey: p1QueryKeys.request(
-      'marketing-identity',
-      'marketing_identity_projection'
-    ),
-    queryFn: ({ signal }) =>
-      queryP1<MarketingIdentityProjection>(
-        'marketing-identity',
-        { action: 'marketing_identity_projection', payload: {} },
-        signal
-      ),
-  });
+  const projection = useQuery<MarketingIdentityProjection>(
+    marketingIdentityProjectionQuery
+  );
   const command = useMutation({
     mutationFn: (input: { action: string; payload: Record<string, unknown> }) =>
       commandP1('marketing-identity', input),
     onSuccess: async () => {
       setError(false);
-      await queryClient.invalidateQueries({ queryKey: IDENTITY_QUERY_KEY });
+      // Registering and transitioning both move the default decision — a
+      // withdrawn identity kept wearing the default badge until the projection
+      // happened to refetch on its own.
+      await invalidateMarketingIdentity(queryClient);
       setDraft({});
       setActiveQuestionId('kind');
     },
@@ -243,11 +230,15 @@ export function MarketingIdentityPage() {
             reason: 'Remember this voice as the default.',
           },
         },
-        `identity-default:${identity.identityId}:${identity.version}`
+        // The identity and its version repeat when the default moves back to
+        // where it was, but expectedDecisionRevision has moved on — without a
+        // freshness component the third hop of A→B→A replays a spent key and
+        // the ledger can never record A as the default again.
+        `identity-default:${identity.identityId}:${identity.version}:${Date.now()}`
       ),
     onSuccess: async () => {
       setError(false);
-      await projection.refetch();
+      await invalidateMarketingIdentity(queryClient);
     },
     onError: () => setError(true),
   });

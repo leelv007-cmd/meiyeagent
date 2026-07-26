@@ -4034,5 +4034,7 @@
   "workspace_open_asset_library": "打开素材库",
   "workspace_open_identity": "管理表达身份",
   "workspace_open_store": "查看门店档案",
+  "workspace_identities_loading": "正在读取表达身份…",
+  "workspace_identities_failed": "表达身份暂时读不到，稍后再看一次。",
   "workspace_material_count": "{count} 件"
 }

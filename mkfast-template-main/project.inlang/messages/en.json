@@ -4034,5 +4034,7 @@
   "workspace_open_asset_library": "Open the asset library",
   "workspace_open_identity": "Manage expression identities",
   "workspace_open_store": "View the store profile",
+  "workspace_identities_loading": "Loading expression identities…",
+  "workspace_identities_failed": "Expression identities are unavailable right now. Check again shortly.",
   "workspace_material_count": "{count} items"
 }

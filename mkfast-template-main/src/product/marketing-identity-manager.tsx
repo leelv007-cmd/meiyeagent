@@ -1,14 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { Widget } from '@/components/heroui-pro';
-import { buttonVariants } from '@heroui/react';
+import { buttonVariants } from '@/components/ui/button';
 import { getLocale } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
-import { queryP1 } from '@/p1/client';
 import type { MarketingIdentityAsset } from '@meiye/contracts';
 
-import { IDENTITY_QUERY_KEY } from './marketing-identity-page';
+import { marketingIdentitiesQuery } from './marketing-identity-queries';
 
 /**
  * Identity summary on the asset page — T33 / #227.
@@ -17,6 +15,10 @@ import { IDENTITY_QUERY_KEY } from './marketing-identity-page';
  * 「本次会话选择」visibly apart, which needs more room than a panel wedged into
  * the asset library). What stays here is the summary and the way in, so the
  * asset page keeps its identity entry without carrying the whole surface.
+ *
+ * Styled with global primitives on purpose: the only host is /dashboard/assets,
+ * which is T32's file and carries no heroui-glass stylesheet link, so HeroUI
+ * class names would render here as unstyled orphans.
  */
 const COPY = {
   zh: {
@@ -39,37 +41,26 @@ const COPY = {
 
 export function MarketingIdentityManager() {
   const copy = COPY[getLocale()];
-  const identities = useQuery({
-    queryKey: IDENTITY_QUERY_KEY,
-    queryFn: ({ signal }) =>
-      queryP1<MarketingIdentityAsset[]>(
-        'marketing-identity',
-        {
-          action: 'marketing_identities',
-          payload: { includeInactive: true },
-        },
-        signal
-      ),
-  });
+  const identities = useQuery<MarketingIdentityAsset[]>(
+    marketingIdentitiesQuery
+  );
   const activeCount = (identities.data ?? []).filter(
     (identity) => identity.status === 'active'
   ).length;
 
   return (
-    <Widget
+    <section
       aria-labelledby="marketing-identity-manager-title"
-      className="meiye-porcelain"
-      // Widget renders a div; the mobile entry points assert a landmark here.
-      role="region"
+      className="meiye-porcelain space-y-4 rounded-2xl border p-4"
     >
-      <Widget.Header>
-        <Widget.Title id="marketing-identity-manager-title">
+      <div>
+        <h3 className="font-medium" id="marketing-identity-manager-title">
           {copy.title}
-        </Widget.Title>
-        <Widget.Description>{copy.description}</Widget.Description>
-      </Widget.Header>
-      <Widget.Content className="flex flex-wrap items-center justify-between gap-4">
-        <p className="text-muted text-sm">
+        </h3>
+        <p className="text-sm text-muted-foreground">{copy.description}</p>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
           {activeCount > 0
             ? copy.active.replace('{count}', String(activeCount))
             : copy.empty}
@@ -80,7 +71,7 @@ export function MarketingIdentityManager() {
         >
           {copy.manage}
         </a>
-      </Widget.Content>
-    </Widget>
+      </div>
+    </section>
   );
 }

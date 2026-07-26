@@ -291,7 +291,6 @@ function LeadLedgerPage() {
                             {dashboard_lead_view_details()}
                           </Link>
                           <Select
-                            aria-label={dashboard_lead_update_status_aria()}
                             isDisabled={pending}
                             onSelectionChange={(key) =>
                               void run({
@@ -302,6 +301,13 @@ function LeadLedgerPage() {
                             }
                             selectedKey={lead.status}
                           >
+                            {/* A real label, not aria-label: React Aria points
+                                the trigger's aria-labelledby at the label and
+                                the current value, which would otherwise leave
+                                the control named after its own value. */}
+                            <Label className="sr-only">
+                              {dashboard_lead_update_status_aria()}
+                            </Label>
                             <Select.Trigger className="sm:w-36">
                               <Select.Value />
                               <Select.Indicator />

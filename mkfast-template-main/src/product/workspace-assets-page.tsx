@@ -6,12 +6,16 @@ import { Widget } from '@/components/heroui-pro';
 import { buttonVariants } from '@heroui/react';
 import { Routes } from '@/lib/routes';
 import {
+  dashboard_store_facts_failed,
+  dashboard_store_facts_loading,
   product_navigation_identity,
   product_navigation_store,
   workspace_assets_description,
   workspace_empty_facts,
   workspace_empty_identities,
   workspace_empty_materials,
+  workspace_identities_failed,
+  workspace_identities_loading,
   workspace_material_count,
   workspace_open_asset_library,
   workspace_open_identity,
@@ -24,6 +28,7 @@ import {
 import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { useProductState } from '@/product/client';
+import { marketingIdentitiesQuery } from '@/product/marketing-identity-queries';
 import {
   isPlatformSampleId,
   type MarketingIdentityAsset,
@@ -64,18 +69,9 @@ export function WorkspaceAssetsPage() {
         signal
       ),
   });
-  const identities = useQuery({
-    queryKey: ['marketing-identities'] as const,
-    queryFn: ({ signal }) =>
-      queryP1<MarketingIdentityAsset[]>(
-        'marketing-identity',
-        {
-          action: 'marketing_identities',
-          payload: { includeInactive: true },
-        },
-        signal
-      ),
-  });
+  const identities = useQuery<MarketingIdentityAsset[]>(
+    marketingIdentitiesQuery
+  );
   const materials = tenantMaterials(state?.assets ?? []);
   const activeIdentities = (identities.data ?? []).filter(
     (identity) => identity.status === 'active'
@@ -114,10 +110,16 @@ export function WorkspaceAssetsPage() {
           <Widget.Title>{workspace_section_facts()}</Widget.Title>
         </Widget.Header>
         <Widget.Content className="flex flex-wrap items-center justify-between gap-4">
+          {/* A read that has not landed yet, and a read that failed, are not
+              the same thing as an empty store — say which one it is. */}
           <p className="text-muted text-sm">
-            {(facts.data ?? []).length > 0
-              ? workspace_material_count({ count: facts.data?.length ?? 0 })
-              : workspace_empty_facts()}
+            {facts.isPending
+              ? dashboard_store_facts_loading()
+              : facts.isError
+                ? dashboard_store_facts_failed()
+                : facts.data.length > 0
+                  ? workspace_material_count({ count: facts.data.length })
+                  : workspace_empty_facts()}
           </p>
           <Link
             className={buttonVariants({ size: 'sm', variant: 'outline' })}
@@ -133,7 +135,15 @@ export function WorkspaceAssetsPage() {
           <Widget.Title>{workspace_section_identities()}</Widget.Title>
         </Widget.Header>
         <Widget.Content className="space-y-3">
-          {activeIdentities.length > 0 ? (
+          {identities.isPending ? (
+            <p className="text-muted text-sm">
+              {workspace_identities_loading()}
+            </p>
+          ) : identities.isError ? (
+            <p className="text-muted text-sm">
+              {workspace_identities_failed()}
+            </p>
+          ) : activeIdentities.length > 0 ? (
             <ul className="divide-divider divide-y">
               {activeIdentities.map((identity) => (
                 <li
