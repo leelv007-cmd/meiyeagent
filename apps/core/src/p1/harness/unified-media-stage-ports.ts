@@ -54,9 +54,12 @@ import {
 } from "./output-compiler.js";
 import {
 	NotePlanCompiler,
-	noteConfirmationPolicy,
 	type NotePlanSettingsSource,
 } from "./note-plan-compiler.js";
+import type {
+	NoteMediaAdmissionPort,
+	NoteMediaAdmissionToken,
+} from "./note-media-admission.js";
 import { ModelSupplyNotePlanStructuredPort } from "./note-plan-structured-port.js";
 
 type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
@@ -96,16 +99,6 @@ export class UnifiedHarnessStagePorts
 		) {
 			return result;
 		}
-		const settings = await this.requireNoteSettings().read();
-		const policy = noteConfirmationPolicy({
-			timeoutSeconds: settings.confirmationTimeoutSeconds,
-			isEditing: false,
-			exceedsAllowance: false,
-			hasExternalSideEffect:
-				input.request.executionSnapshot.distributionTarget.startsWith(
-					"publish:",
-				),
-		});
 		const language = merchantNoteConfirmationCard();
 		return {
 			...result,
@@ -117,13 +110,6 @@ export class UnifiedHarnessStagePorts
 				options: language.options,
 				freeText: language.freeText,
 				response: language.response,
-				continuation: {
-					autoContinue: policy.autoContinue,
-					timeoutSeconds: policy.timeoutSeconds,
-					defaultValue: language.defaultValue,
-					pauseOnEdit: true,
-					blocker: policy.blocker,
-				},
 				scope: "current_task",
 			}),
 		};
@@ -349,6 +335,7 @@ export class UnifiedHarnessStagePorts
 		input: Parameters<HarnessNoteStagePorts["compileNoteBrief"]>[0],
 	): Promise<HarnessNoteBrief> {
 		const settings = await this.requireNoteSettings().read();
+		const notePageBound = requireNotePageBound(input.request);
 		const compiler = this.noteCompiler(input);
 		return {
 			kind: "image_text_note",
@@ -362,6 +349,7 @@ export class UnifiedHarnessStagePorts
 					({ assetId }) => assetId,
 				),
 				styles: settings.styles,
+				notePageBound,
 			}),
 		};
 	}
@@ -372,6 +360,7 @@ export class UnifiedHarnessStagePorts
 		const selected = await this.noteCompiler(input).selectAndGenerate({
 			candidates: input.brief.candidates,
 			selectedStyleId: input.selectedStyleId,
+			notePageBound: requireNotePageBound(input.request),
 		});
 		return {
 			...selected,
@@ -763,9 +752,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 			"submit" | "getDurableMediaJob"
 		>,
 		private readonly exactText?: ImageExactTextVerifier,
+		private readonly noteAdmission?: NoteMediaAdmissionPort,
 	) {}
-
-	private readonly noteAdmissionTails = new Map<string, Promise<void>>();
 
 	async execute(input: {
 		brief: MediaBrief;
@@ -774,8 +762,14 @@ export class ModelSupplyHarnessMediaExecutionPort
 		workflowId: string;
 	}): Promise<HarnessMediaSelectionResult> {
 		const snapshot = requireSnapshot(input.request);
-		const noteAdmissionKey =
-			snapshot.lens === "image_text_note" ? snapshot.task.id : undefined;
+		const noteAdmissionInput =
+			snapshot.lens === "image_text_note"
+				? {
+						taskId: snapshot.task.id,
+						workflowId: input.workflowId,
+						workspaceId: snapshot.workspaceId,
+					}
+				: undefined;
 		if (input.brief.kind === "image") {
 			const expected = input.brief.intent.exactText
 				.filter(({ treatment }) => treatment === "exact")
@@ -800,7 +794,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 							attempt,
 							exactTextFailure?.reason,
 						),
-						noteAdmissionKey,
+						noteAdmissionInput,
 					),
 				verify: async (result) => {
 					const completed = requireCompletedMediaResult(result, "image");
@@ -831,7 +825,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		}
 		const result = await this.submitAndAwait(
 			mediaSubmission(input.workflowId, input.request, input.brief),
-			noteAdmissionKey,
+			noteAdmissionInput,
 		);
 		const completed = requireCompletedMediaResult(result, input.brief.kind);
 		return mediaSelection(completed, input.brief.kind, [completed], []);
@@ -839,57 +833,92 @@ export class ModelSupplyHarnessMediaExecutionPort
 
 	private async submitAndAwait(
 		submission: ModelSupplySubmission,
-		noteAdmissionKey?: string,
+		noteAdmissionInput?: {
+			taskId: string;
+			workflowId: string;
+			workspaceId: string;
+		},
 	) {
-		const releaseAdmission = noteAdmissionKey
-			? await this.acquireNoteAdmission(noteAdmissionKey)
+		const admissionToken = noteAdmissionInput
+			? await this.acquireNoteAdmission(noteAdmissionInput)
 			: undefined;
-		try {
-			let result = await this.models.submit(submission);
-			if (
-				result.status === "unknown" &&
-				this.models.getDurableMediaJob
-			) {
-				for (let attempt = 0; attempt < 600; attempt += 1) {
-					const current = await this.models.getDurableMediaJob(
-						submission.workspaceId,
-						result.jobId,
-					);
-					result = current.result;
-					if (result.status === "completed" || result.status === "failed") {
-						releaseAdmission?.();
-						break;
-					}
-					await new Promise((resolve) => setTimeout(resolve, 250));
-				}
+		let result =
+			admissionToken?.jobId && this.models.getDurableMediaJob
+				? (
+						await this.models.getDurableMediaJob(
+							submission.workspaceId,
+							admissionToken.jobId,
+						)
+					).result
+				: await this.models.submit(submission);
+		if (admissionToken) {
+			const running = await this.noteAdmission!.markRunning(
+				admissionToken,
+				result.jobId,
+			);
+			if (!running) {
+				throw staleNoteAdmission();
 			}
-			return result;
-		} finally {
-			releaseAdmission?.();
 		}
+		if (result.status === "unknown" && this.models.getDurableMediaJob) {
+			for (let attempt = 0; attempt < 600; attempt += 1) {
+				const current = await this.models.getDurableMediaJob(
+					submission.workspaceId,
+					result.jobId,
+				);
+				result = current.result;
+				if (result.status === "completed" || result.status === "failed") {
+					break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 250));
+			}
+		}
+		if (
+			admissionToken &&
+			(result.status === "completed" || result.status === "failed")
+		) {
+			const terminal = await this.noteAdmission!.markTerminal(
+				admissionToken,
+				result.status,
+			);
+			if (!terminal) {
+				throw staleNoteAdmission();
+			}
+		}
+		return result;
 	}
 
-	private async acquireNoteAdmission(key: string) {
-		const previous = this.noteAdmissionTails.get(key) ?? Promise.resolve();
-		let releaseTurn = () => {};
-		const turn = new Promise<void>((resolve) => {
-			releaseTurn = resolve;
-		});
-		const tail = previous.then(() => turn);
-		this.noteAdmissionTails.set(key, tail);
-		await previous;
-		let released = false;
-		return () => {
-			if (released) {
-				return;
-			}
-			released = true;
-			releaseTurn();
-			if (this.noteAdmissionTails.get(key) === tail) {
-				this.noteAdmissionTails.delete(key);
-			}
-		};
+	private async acquireNoteAdmission(input: {
+		taskId: string;
+		workflowId: string;
+		workspaceId: string;
+	}): Promise<NoteMediaAdmissionToken> {
+		if (!this.noteAdmission) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_RECONCILIATION_PENDING",
+				"图文笔记配图准入状态暂不可用，请稍后重试。",
+				202,
+			);
+		}
+		for (let attempt = 0; attempt < 1_200; attempt += 1) {
+			const claim = await this.noteAdmission.claim(input);
+			if (claim) return claim;
+			await new Promise((resolve) => setTimeout(resolve, 250));
+		}
+		throw new HarnessMediaExecutionError(
+			"MEDIA_RECONCILIATION_PENDING",
+			"图文笔记上一页仍在生成，请稍后继续。",
+			202,
+		);
 	}
+}
+
+function staleNoteAdmission() {
+	return new HarnessMediaExecutionError(
+		"MEDIA_SNAPSHOT_MISMATCH",
+		"图文笔记配图准入已被更新，请按当前任务状态继续。",
+		409,
+	);
 }
 
 function requireCompletedMediaResult(
@@ -956,6 +985,23 @@ function requireSnapshot(request: HarnessWorkflowInput) {
 		);
 	}
 	return snapshot;
+}
+
+function requireNotePageBound(request: HarnessWorkflowInput) {
+	const snapshot = requireSnapshot(request);
+	const deliverable = snapshot.deliverables[0];
+	if (
+		snapshot.lens !== "image_text_note" ||
+		!deliverable ||
+		!Number.isSafeInteger(deliverable.notePageBound)
+	) {
+		throw new HarnessMediaExecutionError(
+			"MEDIA_SNAPSHOT_MISMATCH",
+			"图文笔记配方缺少有效的页数上界，请重新选择配方后再试。",
+			409,
+		);
+	}
+	return deliverable.notePageBound as number;
 }
 
 function mediaKind(request: HarnessWorkflowInput): MediaBrief["kind"] {

@@ -1,5 +1,4 @@
 import {
-	MAX_NOTE_PLAN_PAGE_COUNT,
 	pickComposerSubmissionSignedFields,
 	type CreativeOperation,
 } from "@meiye/contracts";
@@ -184,6 +183,9 @@ export class ComposerSubmissionAdmissionGate
 								durationSeconds:
 									recipeValidation.binding.deliverable.durationSeconds,
 							}
+						: {}),
+					...(recipeValidation.binding.notePageBound
+						? { notePageBound: recipeValidation.binding.notePageBound }
 						: {}),
 				},
 			],
@@ -484,7 +486,7 @@ export class ComposerSubmissionAdmissionGate
 		}
 		const usageUnits =
 			recipeBinding.lens === "image_text_note"
-				? await this.noteUsageUnits()
+				? await this.noteUsageUnits(deliverable.notePageBound)
 				: undefined;
 		return {
 			identity,
@@ -526,16 +528,21 @@ export class ComposerSubmissionAdmissionGate
 		};
 	}
 
-	private async noteUsageUnits() {
+	private async noteUsageUnits(notePageBound: number | undefined) {
 		if (!this.dependencies.noteSettings) {
 			throw invalid(
 				"Image-text note usage settings are unavailable for reservation.",
 			);
 		}
+		if (!Number.isSafeInteger(notePageBound) || (notePageBound as number) <= 0) {
+			throw invalid(
+				"Image-text note page-bound usage is unavailable for reservation.",
+			);
+		}
 		const settings = await this.dependencies.noteSettings.read();
 		return [
 			{ resource: "copy" as const, quantity: settings.styles.styles.length },
-			{ resource: "image" as const, quantity: MAX_NOTE_PLAN_PAGE_COUNT },
+			{ resource: "image" as const, quantity: notePageBound as number },
 		];
 	}
 }

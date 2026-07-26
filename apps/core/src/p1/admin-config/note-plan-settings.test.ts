@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  NOTE_CONFIRMATION_TIMEOUT_CONFIG_KEY,
-  NOTE_STYLE_CONFIG_KEY,
-} from '@meiye/contracts';
+import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
 
 import { MemoryAdminConfigRepository } from './foundation-module.js';
 import { AdminConfigNotePlanSettingsSource } from './note-plan-settings.js';
@@ -18,7 +15,6 @@ test('NotePlan settings use safe defaults and follow admin-config reorder/add/re
     defaults.styles.styles.map(({ name }) => name),
     ['干货科普版', '种草叙事版'],
   );
-  assert.equal(defaults.confirmationTimeoutSeconds, 30);
 
   await repository.apply({
     actorId: 'admin-1',
@@ -47,21 +43,9 @@ test('NotePlan settings use safe defaults and follow admin-config reorder/add/re
     },
     workspaceId: '*',
   });
-  await repository.apply({
-    actorId: 'admin-1',
-    correlationId: 'note-timeout-1',
-    expectedRevision: null,
-    key: NOTE_CONFIRMATION_TIMEOUT_CONFIG_KEY,
-    scope: 'global',
-    reason: 'Update note confirmation timeout',
-    value: 45,
-    workspaceId: '*',
-  });
-
   const configured = await source.read();
   assert.deepEqual(
     configured.styles.styles.map(({ id }) => id),
     ['story', 'local'],
   );
-  assert.equal(configured.confirmationTimeoutSeconds, 45);
 });

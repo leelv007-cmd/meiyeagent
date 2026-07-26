@@ -4,7 +4,6 @@ import test from 'node:test';
 import {
   DEFAULT_NOTE_STYLES,
   NotePlanCompiler,
-  noteConfirmationPolicy,
   passingNoteEvaluation,
   regenerateNotePlanPage,
   type NotePlanStructuredPort,
@@ -22,6 +21,7 @@ test('NotePlan compiles configured styles while keeping text dependencies serial
     intent: '介绍护理项目',
     factRefs: ['fact-1'],
     rightsRefs: ['rights-1'],
+    notePageBound: 3,
   });
 
   assert.deepEqual(
@@ -43,7 +43,7 @@ test('NotePlan compiles configured styles while keeping text dependencies serial
   );
 });
 
-test('selected style generates pages in parallel and records a bounded conflict regeneration', async () => {
+test('selected style requests every page and records a bounded conflict regeneration', async () => {
   const calls: string[] = [];
   let concurrent = 0;
   let peakConcurrent = 0;
@@ -80,15 +80,17 @@ test('selected style generates pages in parallel and records a bounded conflict 
     intent: '介绍护理项目',
     factRefs: [],
     rightsRefs: [],
+    notePageBound: 3,
   });
   calls.length = 0;
 
   const result = await compiler.selectAndGenerate({
     candidates: drafts,
     selectedStyleId: 'story_recommendation',
+    notePageBound: 3,
   });
 
-  assert.equal(peakConcurrent, 2);
+  assert.equal(peakConcurrent, 3);
   assert.deepEqual(calls, [
     'image:initial:page-1',
     'image:initial:page-2',
@@ -150,45 +152,6 @@ test('single-page regeneration changes only the target page and charges one imag
   });
 });
 
-test('confirmation timeout pauses for editing and never bypasses quota or side-effect approval', () => {
-  assert.deepEqual(
-    noteConfirmationPolicy({
-      timeoutSeconds: 30,
-      isEditing: false,
-      exceedsAllowance: false,
-      hasExternalSideEffect: false,
-    }),
-    { autoContinue: true, blocker: null, timeoutSeconds: 30 },
-  );
-  assert.equal(
-    noteConfirmationPolicy({
-      timeoutSeconds: 30,
-      isEditing: true,
-      exceedsAllowance: false,
-      hasExternalSideEffect: false,
-    }).blocker,
-    'editing_paused',
-  );
-  assert.equal(
-    noteConfirmationPolicy({
-      timeoutSeconds: 30,
-      isEditing: false,
-      exceedsAllowance: true,
-      hasExternalSideEffect: false,
-    }).autoContinue,
-    false,
-  );
-  assert.equal(
-    noteConfirmationPolicy({
-      timeoutSeconds: 30,
-      isEditing: false,
-      exceedsAllowance: false,
-      hasExternalSideEffect: true,
-    }).autoContinue,
-    false,
-  );
-});
-
 test('style reordering, addition and removal require no compiler code changes', async () => {
   const calls: string[] = [];
   const compiler = new NotePlanCompiler(
@@ -215,11 +178,37 @@ test('style reordering, addition and removal require no compiler code changes', 
     factRefs: [],
     rightsRefs: [],
     styles,
+    notePageBound: 3,
   });
 
   assert.deepEqual(
     drafts.candidates.map(({ styleId }) => styleId),
     ['story_recommendation', 'local_story'],
+  );
+});
+
+test('NotePlan rejects a plan that exceeds the frozen Recipe page bound', async () => {
+  const compiler = new NotePlanCompiler(
+    structuredPort([], false, {
+      ...basePlan(),
+      pages: [
+        ...basePlan().pages,
+        page('page-3', 3, 'solution_show', 'explain_solution', []),
+        page('page-4', 4, 'work_case', 'prove_with_case', []),
+        page('page-5', 5, 'price_offer', 'present_offer', []),
+      ],
+    }),
+    imagePort([]),
+  );
+
+  await assert.rejects(
+    compiler.compileDrafts({
+      intent: '促销活动五页笔记',
+      factRefs: [],
+      rightsRefs: [],
+      notePageBound: 3,
+    }),
+    /计划为 5 页，超过配方声明的 3 页上界/u,
   );
 });
 

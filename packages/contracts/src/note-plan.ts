@@ -4,8 +4,6 @@ import { imageIntentSchema } from './image-intent.js';
 
 export const NOTE_PLAN_SCHEMA = 'note-plan/v1' as const;
 export const NOTE_STYLE_CONFIG_KEY = 'harness.note.styles';
-export const NOTE_CONFIRMATION_TIMEOUT_CONFIG_KEY =
-  'harness.note.confirmation.timeout_seconds';
 export const MIN_NOTE_PLAN_PAGE_COUNT = 2;
 export const MAX_NOTE_PLAN_PAGE_COUNT = 12;
 
@@ -185,7 +183,6 @@ export const noteStyleConfigSchema = z
     }
   });
 
-export const noteConfirmationTimeoutSchema = z.number().int().min(5).max(300);
 
 const noteStyleCandidateSchema = z
   .object({

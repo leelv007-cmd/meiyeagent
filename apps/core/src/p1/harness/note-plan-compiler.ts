@@ -69,14 +69,11 @@ export interface NotePlanCompilerAuditSignal {
 
 export interface NotePlanSettings {
   styles: NoteStyleConfig;
-  confirmationTimeoutSeconds: number;
 }
 
 export interface NotePlanSettingsSource {
   read(): Promise<NotePlanSettings>;
 }
-
-const NOTE_PAGE_GENERATION_BATCH_SIZE = 2;
 
 export class NotePlanCompiler {
   constructor(
@@ -89,6 +86,7 @@ export class NotePlanCompiler {
     factRefs: string[];
     rightsRefs: string[];
     styles?: NoteStyleConfig;
+    notePageBound: number;
   }) {
     const styles = noteStyleConfigSchema.parse(
       input.styles ?? DEFAULT_NOTE_STYLES,
@@ -100,6 +98,7 @@ export class NotePlanCompiler {
         rightsRefs: input.rightsRefs,
       }),
     );
+    assertNotePlanWithinBound(basePlan, input.notePageBound);
     const candidates = [];
     for (const style of styles.styles) {
       const pages: NotePlan['pages'] = [];
@@ -146,6 +145,7 @@ export class NotePlanCompiler {
   async selectAndGenerate(input: {
     candidates: Awaited<ReturnType<NotePlanCompiler['compileDrafts']>>;
     selectedStyleId: string;
+    notePageBound: number;
   }) {
     const selected = input.candidates.candidates.find(
       ({ styleId }) => styleId === input.selectedStyleId,
@@ -153,30 +153,18 @@ export class NotePlanCompiler {
     if (!selected) {
       throw new Error('The selected NotePlan style is not available.');
     }
+    assertNotePlanWithinBound(selected.plan, input.notePageBound);
     const auditSignals: NotePlanCompilerAuditSignal[] = [
       {
         eventType: 'note_style_selected',
         payload: { styleId: selected.styleId },
       },
     ];
-    const initial: Array<
-      Awaited<ReturnType<NotePlanImagePort['generate']>>
-    > = [];
-    for (
-      let index = 0;
-      index < selected.plan.pages.length;
-      index += NOTE_PAGE_GENERATION_BATCH_SIZE
-    ) {
-      initial.push(
-        ...(await Promise.all(
-          selected.plan.pages
-            .slice(index, index + NOTE_PAGE_GENERATION_BATCH_SIZE)
-            .map((page) =>
-              this.images.generate({ page, reason: 'initial' }),
-            ),
-        )),
-      );
-    }
+    const initial = await Promise.all(
+      selected.plan.pages.map((page) =>
+        this.images.generate({ page, reason: 'initial' }),
+      ),
+    );
     let plan = notePlanSchema.parse({
       ...selected.plan,
       pages: selected.plan.pages.map((page, index) => ({
@@ -184,6 +172,7 @@ export class NotePlanCompiler {
         imageAssetId: initial[index]?.asset.id,
       })),
     });
+    assertNotePlanWithinBound(plan, input.notePageBound);
     const initialEvaluation = notePlanConsistencyEvaluationSchema.parse(
       await this.structured.evaluate({ plan, attempt: 'initial' }),
     );
@@ -230,6 +219,7 @@ export class NotePlanCompiler {
             : candidate,
         ),
       });
+      assertNotePlanWithinBound(plan, input.notePageBound);
       auditSignals.push({
         eventType: 'note_page_regenerated',
         payload: { auditRef, imagePoints: 1, pageId: page.id },
@@ -275,6 +265,17 @@ export class NotePlanCompiler {
   }
 }
 
+function assertNotePlanWithinBound(plan: NotePlan, notePageBound: number) {
+  if (!Number.isSafeInteger(notePageBound) || notePageBound < 1) {
+    throw new Error('图文笔记页数上界无效，请重新选择配方后再试。');
+  }
+  if (plan.pages.length > notePageBound) {
+    throw new Error(
+      `本次图文笔记计划为 ${plan.pages.length} 页，超过配方声明的 ${notePageBound} 页上界，请调整需求后重试。`,
+    );
+  }
+}
+
 export function regenerateNotePlanPage(input: {
   version: ImageTextNoteVersion;
   pageId: string;
@@ -312,29 +313,6 @@ export function regenerateNotePlanPage(input: {
       },
     ],
   });
-}
-
-export function noteConfirmationPolicy(input: {
-  timeoutSeconds: number;
-  isEditing: boolean;
-  exceedsAllowance: boolean;
-  hasExternalSideEffect: boolean;
-}) {
-  if (!Number.isSafeInteger(input.timeoutSeconds) || input.timeoutSeconds <= 0) {
-    throw new Error('Note confirmation timeout must be a positive integer.');
-  }
-  const blocker = input.exceedsAllowance
-    ? 'quota_confirmation_required'
-    : input.hasExternalSideEffect
-      ? 'external_side_effect_confirmation_required'
-      : input.isEditing
-        ? 'editing_paused'
-        : null;
-  return {
-    autoContinue: blocker === null,
-    blocker,
-    timeoutSeconds: input.timeoutSeconds,
-  } as const;
 }
 
 export function passingNoteEvaluation(

@@ -93,6 +93,7 @@ function sampleDefinition(): RecipeStudioCompileInput {
           outputKind: 'image_text_note',
           quantity: 1,
           aspectRatio: '3:4',
+          notePageBound: 3,
         },
       },
       {
@@ -366,6 +367,7 @@ describe('Recipe Studio controlled compiler', () => {
         kind: 'note',
         quantity: 1,
         aspectRatio: '3:4',
+        notePageBound: 3,
       },
     });
     assert.deepEqual(admission.errors, []);
@@ -386,6 +388,7 @@ describe('Recipe Studio controlled compiler', () => {
         kind: 'note',
         quantity: 1,
         aspectRatio: '3:4',
+        notePageBound: 3,
       },
       creationMode: 'customized',
       intent: '生成一篇护发误区科普笔记',
@@ -414,7 +417,6 @@ describe('Recipe Studio controlled compiler', () => {
       noteSettings: {
         async read() {
           return {
-            confirmationTimeoutSeconds: 30,
             styles: {
               styles: [
                 {

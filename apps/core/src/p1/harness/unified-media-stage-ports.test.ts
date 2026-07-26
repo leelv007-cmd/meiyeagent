@@ -31,6 +31,10 @@ import type {
 	HarnessContextSnapshot,
 	HarnessStagePorts,
 } from "./workflow-core.js";
+import type {
+	NoteMediaAdmissionPort,
+	NoteMediaAdmissionToken,
+} from "./note-media-admission.js";
 
 test("image and video use the existing Model Supply path with stable submission facts", async () => {
 	for (const kind of ["image", "video"] as const) {
@@ -124,12 +128,16 @@ test("three canonical image operations map to the two existing provider operatio
 
 test("image-text note page generation uses the existing image executor without changing pure image semantics", async () => {
 	const submissions: ModelSupplySubmission[] = [];
-	const adapter = new ModelSupplyHarnessMediaExecutionPort({
-		async submit(input) {
-			submissions.push(structuredClone(input));
-			return completedResult("image");
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit(input) {
+				submissions.push(structuredClone(input));
+				return completedResult("image");
+			},
 		},
-	});
+		undefined,
+		memoryNoteAdmission(),
+	);
 
 	const noteSelection = await adapter.execute({
 		brief: imageBriefFor("image.generate", 0),
@@ -384,7 +392,6 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 							},
 						],
 					},
-					confirmationTimeoutSeconds: 30,
 				};
 			},
 		},
@@ -404,10 +411,9 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		workflowId: snapshot.task.id,
 		request,
 	});
-	assert.equal(confirmation.blockingQuestion?.continuation?.autoContinue, true);
 	assert.equal(
-		confirmation.blockingQuestion?.continuation?.pauseOnEdit,
-		true,
+		confirmation.blockingQuestion?.response.field,
+		"note_plan_confirmation",
 	);
 
 	const brief = await ports.compileNoteBrief({
@@ -699,28 +705,32 @@ test("note pages keep durable admission single-flight while compiler branches re
 	const second = completedResult("image", "2");
 	let submissions = 0;
 	let firstReads = 0;
-	const adapter = new ModelSupplyHarnessMediaExecutionPort({
-		async submit() {
-			submissions += 1;
-			events.push(`submit:${submissions}`);
-			if (submissions === 1) {
-				return { ...first, status: "unknown", asset: undefined };
-			}
-			return second;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				events.push(`submit:${submissions}`);
+				if (submissions === 1) {
+					return { ...first, status: "unknown", asset: undefined };
+				}
+				return second;
+			},
+			async getDurableMediaJob(_workspaceId, jobId) {
+				assert.equal(jobId, first.jobId);
+				firstReads += 1;
+				if (firstReads === 1) {
+					events.push("get:1:running");
+					return {
+						result: { ...first, status: "unknown", asset: undefined },
+					};
+				}
+				events.push("get:1:completed");
+				return { result: first };
+			},
 		},
-		async getDurableMediaJob(_workspaceId, jobId) {
-			assert.equal(jobId, first.jobId);
-			firstReads += 1;
-			if (firstReads === 1) {
-				events.push("get:1:running");
-				return {
-					result: { ...first, status: "unknown", asset: undefined },
-				};
-			}
-			events.push("get:1:completed");
-			return { result: first };
-		},
-	});
+		undefined,
+		memoryNoteAdmission(events),
+	);
 	const request = harnessInput("image_text_note", "package-note");
 
 	const [firstSelection, secondSelection] = await Promise.all([
@@ -741,10 +751,18 @@ test("note pages keep durable admission single-flight while compiler branches re
 	assert.equal(firstSelection.asset.id, "image-asset-1");
 	assert.equal(secondSelection.asset.id, "image-asset-2");
 	assert.deepEqual(events, [
+		"claim:workflow-note:page-1:g1",
+		"blocked:workflow-note:page-2",
 		"submit:1",
+		"running:g1",
 		"get:1:running",
+		"blocked:workflow-note:page-2",
 		"get:1:completed",
+		"completed:g1",
+		"claim:workflow-note:page-2:g2",
 		"submit:2",
+		"running:g2",
+		"completed:g2",
 	]);
 });
 
@@ -932,6 +950,20 @@ function harnessInput(
 						? imageOperation
 						: "image.generate",
 			platform: { id: "douyin" },
+			contentPackagePlatform: "douyin",
+			distributionTarget: "export",
+			deliverable: {
+				kind:
+					kind === "video"
+						? "video_package"
+						: kind === "image_text_note"
+							? "note"
+							: "image_set",
+				quantity: 1,
+				aspectRatio: "9:16",
+				...(kind === "video" ? { durationSeconds: 8 } : {}),
+				...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
+			},
 			deliverables: [
 				{
 					id: `${kind}-main`,
@@ -940,6 +972,7 @@ function harnessInput(
 					quantity: 1,
 					aspectRatio: "9:16",
 					...(kind === "video" ? { durationSeconds: 8 } : {}),
+					...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 				},
 			],
 			sources: {
@@ -1310,6 +1343,36 @@ function contextSnapshot(): HarnessContextSnapshot {
 			sourceRefs: [],
 			rightsRefs: [],
 			identityRefs: [],
+		},
+	};
+}
+
+function memoryNoteAdmission(events: string[] = []): NoteMediaAdmissionPort {
+	let active: NoteMediaAdmissionToken | undefined;
+	let generation = 0;
+	return {
+		async claim(input) {
+			if (active) {
+				if (active.workflowId === input.workflowId) return active;
+				events.push(`blocked:${input.workflowId}`);
+				return null;
+			}
+			generation += 1;
+			active = { ...input, generation };
+			events.push(`claim:${input.workflowId}:g${generation}`);
+			return active;
+		},
+		async markRunning(token, jobId) {
+			if (active?.generation !== token.generation) return false;
+			active = { ...active, jobId };
+			events.push(`running:g${token.generation}`);
+			return true;
+		},
+		async markTerminal(token, status) {
+			if (active?.generation !== token.generation) return false;
+			events.push(`${status}:g${token.generation}`);
+			active = undefined;
+			return true;
 		},
 	};
 }

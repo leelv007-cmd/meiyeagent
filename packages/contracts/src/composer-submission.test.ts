@@ -28,3 +28,19 @@ test('wechat_moments is a delivery target but not a variant platform', () => {
   assert.equal(isComposerVariantPlatform('wechat_moments'), false);
   assert.equal(isComposerVariantPlatform('xiaohongshu'), true);
 });
+
+test('image-text note page bound is signed only inside the deliverable', () => {
+  const picked = pickComposerSubmissionSignedFields({
+    ...signedFields,
+    notePageBound: 2,
+    deliverable: {
+      kind: 'note',
+      quantity: 1,
+      aspectRatio: '3:4',
+      notePageBound: 3,
+    },
+  });
+
+  assert.equal(picked.deliverable.notePageBound, 3);
+  assert.equal(Object.hasOwn(picked, 'notePageBound'), false);
+});

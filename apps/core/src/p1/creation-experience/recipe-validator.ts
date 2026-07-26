@@ -1,4 +1,6 @@
 import {
+  MAX_NOTE_PLAN_PAGE_COUNT,
+  MIN_NOTE_PLAN_PAGE_COUNT,
   type ComposerSubmissionSignedFields,
   composerSubmissionSignedFieldsSchema,
   creativeContentModuleIds,
@@ -13,6 +15,7 @@ export type ComposerRecipeBinding = {
   deliverable: ComposerSubmissionSignedFields['deliverable'];
   distributionTarget: ComposerSubmissionSignedFields['distributionTarget'];
   lens: 'copy' | 'image' | 'image_text_note' | 'video';
+  notePageBound?: number;
 };
 
 export function validateRecipeForComposer(
@@ -73,6 +76,9 @@ export function validateRecipeForComposer(
         : {}),
       ...(recipe.delivery.durationSeconds
         ? { durationSeconds: recipe.delivery.durationSeconds }
+        : {}),
+      ...(recipe.delivery.notePageBound
+        ? { notePageBound: recipe.delivery.notePageBound }
         : {}),
     },
   };
@@ -143,6 +149,31 @@ export function validateRecipeForComposer(
   if (lens !== 'video' && deliverable.durationSeconds !== undefined) {
     errors.push('durationSeconds is valid only for video deliverables');
   }
+  const notePageBound = recipe.delivery.notePageBound;
+  if (
+    lens === 'image_text_note' &&
+    (!Number.isInteger(notePageBound) ||
+      (notePageBound as number) < MIN_NOTE_PLAN_PAGE_COUNT ||
+      (notePageBound as number) > MAX_NOTE_PLAN_PAGE_COUNT)
+  ) {
+    errors.push(
+      `image-text note delivery requires notePageBound between ${MIN_NOTE_PLAN_PAGE_COUNT} and ${MAX_NOTE_PLAN_PAGE_COUNT}`,
+    );
+  }
+  if (lens !== 'image_text_note' && notePageBound !== undefined) {
+    errors.push('notePageBound is valid only for image-text note delivery');
+  }
+  if (
+    lens === 'image_text_note' &&
+    deliverable.notePageBound !== notePageBound
+  ) {
+    errors.push(
+      'deliverable.notePageBound must match the published Recipe declaration',
+    );
+  }
+  if (lens !== 'image_text_note' && deliverable.notePageBound !== undefined) {
+    errors.push('deliverable.notePageBound is valid only for image-text notes');
+  }
 
   const configuredModules = recipe.contextPatches.contentModules;
   const contentModules =
@@ -180,6 +211,9 @@ export function validateRecipeForComposer(
       deliverable,
       distributionTarget,
       lens,
+      ...(lens === 'image_text_note'
+        ? { notePageBound: deliverable.notePageBound as number }
+        : {}),
     },
   };
 }

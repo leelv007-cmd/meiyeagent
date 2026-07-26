@@ -169,6 +169,7 @@ import { langfusePromptResolverFromEnv } from './p1/harness/langfuse-prompts.js'
 import { PostgresHarnessResumeReconcilerStore } from './p1/harness/postgres-resume-reconciler-store.js';
 import { PostgresHarnessBillingCompensationStore } from './p1/harness/postgres-billing-compensation-store.js';
 import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-billing-settlement.js';
+import { PostgresNoteMediaAdmissionCoordinator } from './p1/harness/note-media-admission.js';
 import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
 import {
   DbosHarnessWorkflowStarter,
@@ -1580,6 +1581,9 @@ if (harnessRuntimeConfig) {
   const notePlanSettings = new AdminConfigNotePlanSettingsSource(
     adminConfigRepository
   );
+  const noteMediaAdmission =
+    new PostgresNoteMediaAdmissionCoordinator(pool);
+  await noteMediaAdmission.migrate();
   const harnessStages = new UnifiedHarnessStagePorts(
     copyHarnessStages,
     structuredNodeRunnerFactory,
@@ -1587,7 +1591,8 @@ if (harnessRuntimeConfig) {
       p1ModelSupplyService,
       modelRuntime.mode === 'fixture'
         ? new FixtureImageExactTextVerifier()
-        : new ModelSupplyImageExactTextVerifier(p1ModelSupplyService)
+        : new ModelSupplyImageExactTextVerifier(p1ModelSupplyService),
+      noteMediaAdmission,
     ),
     contentPackageRevisionWriter,
     () => new Date().toISOString(),

@@ -297,6 +297,60 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
   });
 });
 
+test('image-text note refuses to replace a selected style after context recompile', async () => {
+  const stages = noteStages();
+  const originalBrief = noteBrief();
+  let compileCount = 0;
+  stages.compileNoteBrief = async () => {
+    compileCount += 1;
+    return compileCount === 1
+      ? originalBrief
+      : {
+          ...originalBrief,
+          candidates: {
+            candidates: [originalBrief.candidates.candidates[0]!],
+          },
+        };
+  };
+  stages.fenceContext = async (input) => ({
+    ...input.context,
+    bundle: { ...input.context.bundle, hash: 'b'.repeat(64), revision: 2 },
+  });
+  stages.executeNoteAndSelect = async () => {
+    throw new Error('A missing selected style must fail before execution.');
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow(
+      'task-image-text-note-style-fence',
+      mediaTaskInput('image_text_note'),
+      stages,
+      {
+        async runStep(_key, operation) {
+          return operation();
+        },
+        async progress() {},
+        async token() {},
+        async awaitDecision(question) {
+          return {
+            idempotencyKey: 'choose-story-before-recompile',
+            questionId: question.questionId,
+            workflowRevision: question.workflowRevision,
+            patch: {
+              field: 'note_style',
+              value: '故事版',
+              reason: '选择图文方向',
+            },
+            decision: { state: 'accepted', value: '故事版' },
+          };
+        },
+        async recordTrace() {},
+      },
+    ),
+    /你刚选的图文方向已不在当前配置中，请重新选择后再继续/u,
+  );
+});
+
 test('one blocking question suspends and resumes before context injection', async () => {
   const stages = fixtureStages();
   stages.nameIntent = async () => ({
@@ -1315,6 +1369,20 @@ function mediaTaskInput(
       recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
       lens: kind,
       platform: { id: 'douyin' },
+      contentPackagePlatform: 'douyin',
+      distributionTarget: 'export',
+      deliverable: {
+        kind:
+          kind === 'video'
+            ? 'video_package'
+            : kind === 'image_text_note'
+              ? 'note'
+              : 'image_set',
+        quantity: 1,
+        aspectRatio: '9:16',
+        ...(kind === 'video' ? { durationSeconds: 8 } : {}),
+        ...(kind === 'image_text_note' ? { notePageBound: 3 } : {}),
+      },
       deliverables: [
         {
           id: `${kind}-main`,
@@ -1323,6 +1391,7 @@ function mediaTaskInput(
           quantity: 1,
           aspectRatio: '9:16',
           ...(kind === 'video' ? { durationSeconds: 8 } : {}),
+          ...(kind === 'image_text_note' ? { notePageBound: 3 } : {}),
         },
       ],
       sources: {

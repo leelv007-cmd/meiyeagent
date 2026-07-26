@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	MAX_NOTE_PLAN_PAGE_COUNT,
 	pickComposerSubmissionSignedFields,
 } from "@meiye/contracts";
 
@@ -322,13 +321,14 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 		const briefChecks: unknown[] = [];
 		const input = mediaSubmission(kind);
 		const recipeLens = kind === "video" ? "video" : "image_text";
+		let publishedNotePageBound = 3;
 		const gate = new ComposerSubmissionAdmissionGate({
 			assets: {
 				async inspect() {
 					return [
 						{
 							assetId: "asset-1",
-							contentType: kind === "image" ? "image/jpeg" : "video/mp4",
+							contentType: kind === "video" ? "video/mp4" : "image/jpeg",
 							dataClass: [],
 							kind: "resolved",
 							rightsRevision: "rights-r1",
@@ -380,6 +380,9 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 										: "video_package",
 							...(kind === "video" ? { durationSeconds: 8 } : {}),
 							quantity: 2,
+							...(kind === "image_text_note"
+								? { notePageBound: publishedNotePageBound }
+								: {}),
 						},
 						lensId: recipeLens,
 						modelPolicy:
@@ -426,7 +429,6 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 			noteSettings: {
 				async read() {
 					return {
-						confirmationTimeoutSeconds: 30,
 						styles: {
 							styles: [
 								{
@@ -513,7 +515,7 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 			kind === "image_text_note"
 				? [
 						{ resource: "copy", quantity: 3 },
-						{ resource: "image", quantity: MAX_NOTE_PLAN_PAGE_COUNT },
+						{ resource: "image", quantity: 3 },
 					]
 				: undefined,
 		);
@@ -530,6 +532,7 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 					quantity: 2,
 					aspectRatio: "9:16",
 					...(kind === "video" ? { durationSeconds: 8 } : {}),
+					...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 				},
 			],
 			lens: kind,
@@ -551,6 +554,13 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 				...(kind === "video" ? { durationSeconds: 8 } : {}),
 			},
 		]);
+		if (kind === "image_text_note") {
+			publishedNotePageBound = 4;
+			await assert.rejects(
+				gate.admit(input),
+				/deliverable\.notePageBound must match the published Recipe/u,
+			);
+		}
 	}
 });
 
@@ -679,6 +689,7 @@ function mediaSubmission(
 			quantity: 2,
 			aspectRatio: "9:16",
 			...(kind === "video" ? { durationSeconds: 8 } : {}),
+			...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 		},
 		deliverables: [
 			{

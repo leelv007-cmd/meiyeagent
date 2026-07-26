@@ -106,6 +106,7 @@ describe('buildRecipePatchPreview (D-083)', () => {
       delivery: {
         platform: 'xiaohongshu',
         deliverableKind: 'note',
+        notePageBound: 3,
         quantity: 1,
         aspectRatio: '3:4',
       },

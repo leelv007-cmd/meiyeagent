@@ -23,6 +23,7 @@ import {
   merchantIdentityVoiceNotice,
   merchantNeutralIndustryContinuationNotice,
   merchantNoteProgressMessage,
+  merchantNoteStyleUnavailable,
   merchantNoteStyleQuestion,
   merchantProgressMessage,
   merchantTaskSummary,
@@ -670,7 +671,7 @@ async function runNoteHarnessWorkflow(
         ({ styleId }) => styleId === selectedStyleId,
       )
     ) {
-      selectedStyleId = brief.candidates.candidates[0]!.styleId;
+      throw new HarnessMediaScopeError(merchantNoteStyleUnavailable());
     }
     await trace(runtime, workflowId, 'context_injection', {
       executionRoot: mediaExecutionRoot(activeRequest),

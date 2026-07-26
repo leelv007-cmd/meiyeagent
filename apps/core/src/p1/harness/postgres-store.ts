@@ -567,17 +567,12 @@ export class PostgresHarnessStore
         },
       };
       await this.writeAuditAndOutbox(client, audit, runtimeTaskId);
-      if (
-        input.command.decision.state === 'accepted' ||
-        input.command.decision.state === 'ignored'
-      ) {
-        await client.query(
-          `update harness_runtime.pending_questions
-           set status='resolved', updated_at=now()
-           where task_id=$1`,
-          [runtimeTaskId],
-        );
-      }
+      await client.query(
+        `update harness_runtime.pending_questions
+         set status='resolved', updated_at=now()
+         where task_id=$1`,
+        [runtimeTaskId],
+      );
       await client.query('commit');
       return { outcome: 'created', resumeRequired: true };
     } catch (error) {

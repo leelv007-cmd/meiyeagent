@@ -29,8 +29,6 @@ import type {
   HarnessBillingSettlementExecutor,
   HarnessBillingSettlementInput,
 } from './billing-compensation.js';
-import { fingerprintValue } from '../job-runtime/job-contracts.js';
-
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
   readPending: HarnessDecisionStore['readPending'];
@@ -130,43 +128,11 @@ export function registerHarnessDbosWorkflow(
           { name: `persist-pending-${question.questionId}` },
         );
         await DBOS.setEvent('pending-structured-decision', question);
-        let editing = false;
-        while (true) {
-          const decision = await DBOS.recv<StructuredDecisionInput>(
-            decisionTopic(question.questionId),
-            {
-              timeoutSeconds:
-                !editing && question.continuation?.autoContinue === true
-                  ? question.continuation.timeoutSeconds
-                  : DECISION_TIMEOUT_SECONDS,
-            },
-          );
-          const resolved = assertMatchingDecision(
-            question,
-            decision ??
-              (editing ? null : autoContinuationDecision(question)),
-          );
-          if (
-            resolved.decision.state === 'editing' ||
-            resolved.decision.state === 'pending'
-          ) {
-            editing = true;
-            continue;
-          }
-          if (!decision) {
-            await DBOS.runStep(
-              () =>
-                persistAutoContinuation(
-                  persistence,
-                  request.workspaceId,
-                  workflowId,
-                  resolved,
-                ),
-              { name: `persist-auto-continuation-${question.questionId}` },
-            );
-          }
-          return resolved;
-        }
+        const decision = await DBOS.recv<StructuredDecisionInput>(
+          decisionTopic(question.questionId),
+          { timeoutSeconds: DECISION_TIMEOUT_SECONDS },
+        );
+        return assertMatchingDecision(question, decision);
       },
       ...(semanticResumptions
         ? {
@@ -477,65 +443,6 @@ function assertMatchingDecision(
     throw new Error('Structured decision targets a stale workflow revision.');
   }
   return parsed;
-}
-
-export function autoContinuationDecision(
-  question: QuestionCard,
-): StructuredDecisionInput | null {
-  const continuation = question.continuation;
-  if (!continuation?.autoContinue) return null;
-  return structuredDecisionInputSchema.parse({
-    idempotencyKey: `auto-continue:${question.questionId}`,
-    questionId: question.questionId,
-    workflowRevision: question.workflowRevision,
-    patch: {
-      field: question.response.field,
-      value: continuation.defaultValue,
-      reason: question.response.reason,
-    },
-    decision: {
-      state: 'accepted',
-      value: continuation.defaultValue,
-    },
-  });
-}
-
-async function persistAutoContinuation(
-  persistence: HarnessWorkflowPersistence,
-  workspaceId: string,
-  taskId: string,
-  command: StructuredDecisionInput,
-) {
-  const payloadFingerprint = fingerprintValue(command);
-  const event = {
-    id: `event-${taskId}-${command.questionId}-${command.idempotencyKey}`,
-    taskId,
-    questionId: command.questionId,
-    workflowRevision: command.workflowRevision,
-    idempotencyKey: command.idempotencyKey,
-    payloadFingerprint,
-    patch: command.patch,
-    decision: command.decision,
-  };
-  const result = await persistence.submit({
-    workspaceId,
-    taskId,
-    command,
-    event,
-    trace: {
-      id: `trace-${event.id}`,
-      taskId,
-      stage: 'intent_naming',
-      kind: 'structured_decision',
-      eventId: event.id,
-      questionId: command.questionId,
-      workflowRevision: command.workflowRevision,
-      outcome: command.decision.state,
-    },
-  });
-  if (result.outcome !== 'created' && result.outcome !== 'replayed') {
-    throw new Error('The automatic continuation no longer owns the pending question.');
-  }
 }
 
 function decisionTopic(questionId: string) {

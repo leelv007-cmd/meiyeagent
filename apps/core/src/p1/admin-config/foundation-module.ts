@@ -5,9 +5,7 @@ import {
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import {
-  NOTE_CONFIRMATION_TIMEOUT_CONFIG_KEY,
   NOTE_STYLE_CONFIG_KEY,
-  noteConfirmationTimeoutSchema,
   noteStyleConfigSchema,
 } from '@meiye/contracts';
 
@@ -245,13 +243,6 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Ordered style set used by the ImageTextNote compiler.',
     valueSchema: noteStyleConfigSchema,
-  },
-  {
-    key: NOTE_CONFIRMATION_TIMEOUT_CONFIG_KEY,
-    scope: 'global',
-    description:
-      'Safe auto-continue timeout for ImageTextNote intent confirmation.',
-    valueSchema: noteConfirmationTimeoutSchema,
   },
   {
     key: ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
