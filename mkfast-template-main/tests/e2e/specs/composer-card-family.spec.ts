@@ -1,4 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+} from '@playwright/test';
 
 import {
   cleanupE2EUsers,
@@ -44,6 +49,83 @@ function assertMerchantLanguage(text: string, internalIds: string[]) {
 }
 
 type SubmissionResult = { taskId: string; workId: string };
+
+const CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY =
+  'harness.confirmation_card.timeout_seconds';
+
+/**
+ * Keep answer journeys outside the core timeout race through the same governed
+ * CAS + audit path an operator uses. The browser card still owns its shipped
+ * 30-second countdown; this only controls how long core waits independently.
+ */
+async function applyConfirmationCardTimeout(
+  page: Page,
+  request: APIRequestContext,
+  seconds: number,
+  journey: string
+) {
+  const admin = await registerE2EUser(request, { role: 'admin' });
+  await loginByForm(page, admin);
+
+  const queryHistory = async () => {
+    const response = await page.request.post('/api/core/p1/query', {
+      data: {
+        action: 'config_history',
+        module: 'admin-config',
+        payload: { key: CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY },
+      },
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return (
+      (await response.json()) as {
+        data?: Array<{
+          reason?: string;
+          revision?: number;
+          storedValue?: unknown;
+        }>;
+      }
+    ).data ?? [];
+  };
+
+  const before = await queryHistory();
+  const expectedRevision = before.at(-1)?.revision ?? null;
+  const reason = `T45 e2e ${journey} ${Date.now()}: set confirmation timeout to ${seconds}s`;
+  const applied = await page.request.post('/api/core/p1/commands', {
+    data: {
+      action: 'config_apply',
+      module: 'admin-config',
+      payload: {
+        expectedRevision,
+        key: CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+        reason,
+        value: seconds,
+      },
+    },
+    headers: {
+      'idempotency-key': `t45-e2e-${journey}-${crypto.randomUUID()}`,
+    },
+  });
+  expect(applied.ok(), await applied.text()).toBeTruthy();
+
+  const revision = expectedRevision === null ? 1 : expectedRevision + 1;
+  const audit = (await queryHistory()).at(-1);
+  expect(audit).toMatchObject({
+    reason,
+    revision,
+    storedValue: seconds,
+  });
+
+  const signedOut = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/sign-out', {
+      body: '{}',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    return { body: await response.text(), ok: response.ok };
+  });
+  expect(signedOut.ok, signedOut.body).toBeTruthy();
+}
 
 /**
  * `intent` decides whether D-111 asks. An intent naming a beauty category is
@@ -134,6 +216,7 @@ test.describe('T31 三类卡与确认卡', () => {
     request,
   }) => {
     test.setTimeout(420_000);
+    await applyConfirmationCardTimeout(page, request, 600, 'three-cards');
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
@@ -264,6 +347,7 @@ test.describe('T31 三类卡与确认卡', () => {
     request,
   }) => {
     test.setTimeout(600_000);
+    await applyConfirmationCardTimeout(page, request, 599, 'answer-question');
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
@@ -338,6 +422,7 @@ test.describe('T31 三类卡与确认卡', () => {
     request,
   }) => {
     test.setTimeout(600_000);
+    await applyConfirmationCardTimeout(page, request, 60, 'timeout-question');
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);

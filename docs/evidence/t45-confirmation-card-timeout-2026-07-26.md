@@ -4,6 +4,8 @@
 
 - Branch: `leelv007-cmd/t45-confirmation-timeout`
 - Rework base: local `main` at `62952d5b`
+- Browser journey source synchronized with current local `main` at `f7fcab3f`
+  before the setup-only stabilization.
 - Evidence class: local fixture, real lane PostgreSQL, real lane DBOS, and
   locked fixture-browser gates. No credential or live-provider call is part of
   this acceptance.
@@ -210,42 +212,77 @@ was added. The only production callers remain the quote service and the
 PostgreSQL creation-submission reservation adapter; the only SQL writer remains
 the canonical billing repository.
 
-Final locked browser command:
+The confirmation-card browser journey now uses the normal governed
+admin-config front door in setup:
 
 ```text
 /Users/bin/Desktop/开发/内容无人区/美业内容2/.scratch/orca-run-2026-07-25/e2e-lock.sh \
   pnpm --filter @meiye/web e2e \
-  tests/e2e/specs/assembly-gate-required-journey.spec.ts \
-  tests/e2e/specs/intent-routing-http-sse.spec.ts \
-  tests/e2e/specs/composer-card-family.spec.ts
+  tests/e2e/specs/composer-card-family.spec.ts \
+  --grep 'the three cards appear|answering the question card resumes'
 ```
 
-Playwright original summary:
+Before each affected journey, an E2E administrator reads `config_history`,
+applies `harness.confirmation_card.timeout_seconds` with the current CAS
+revision and a unique idempotency key, then reads the history again and asserts
+the new value, revision and audit reason. The two answer journeys use 600 and
+599 seconds so every repeated suite run advances the revision. The timeout
+journey uses 60 seconds, leaving the card's shipped 30-second countdown and all
+existing assertions byte-unchanged while ensuring the browser `:timed_out`
+decision wins before core's independent fallback.
+
+Answer journeys, consecutive locked run 1:
 
 ```text
-2 failed
-11 passed (15.1m)
+the three cards appear ...                         15.2s
+answering the question card resumes the run ...    11.8s
+2 passed (1.4m)
 ```
 
-The Core-owned smoke portion was green inside that same run:
+Answer journeys, consecutive locked run 2:
+
+```text
+the three cards appear ...                         21.4s
+answering the question card resumes the run ...    13.3s
+2 passed (1.8m)
+```
+
+Timeout journey:
+
+```text
+leaving the question alone releases it on the countdown ... 48.0s
+1 passed (2.1m)
+```
+
+The lane PostgreSQL audit history after those runs:
+
+```text
+revision  value  reason
+3         600    T45 e2e three-cards ... set confirmation timeout to 600s
+4         599    T45 e2e answer-question ... set confirmation timeout to 599s
+5         600    T45 e2e three-cards ... set confirmation timeout to 600s
+6         599    T45 e2e answer-question ... set confirmation timeout to 599s
+7          60    T45 e2e timeout-question ... set confirmation timeout to 60s
+```
+
+Each row also carries its authenticated admin `actor_id` and a distinct
+`correlation_id`. This is a real `admin_config_revisions` audit trail; the E2E
+does not seed or update that table directly.
+
+Lock audit for the three successful commands:
+
+```text
+2026-07-26T13:07:01+0800 acquire pid=41032 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
+2026-07-26T13:08:29+0800 release pid=41032 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
+2026-07-26T13:11:48+0800 acquire pid=44059 waited=190s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
+2026-07-26T13:13:39+0800 release pid=44059 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
+2026-07-26T13:13:53+0800 acquire pid=50748 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
+2026-07-26T13:16:04+0800 release pid=50748 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
+```
+
+The earlier full smoke remains green for the Core-owned browser surfaces:
 
 ```text
 assembly-gate-required-journey: 1 passed
 intent-routing-http-sse:        3 passed
-```
-
-Seven of nine confirmation-card cases also passed, including the default
-countdown release. The two pre-timeout question-card cases did not see the card:
-Core won the configured 30-second race before the slow browser rendered it.
-The first run also recorded a transient P1 worker PostgreSQL connection timeout;
-an isolated locked rerun without that worker failure reproduced the same two
-missing-card outcomes. This is the OI-53 frontend presentation/trigger boundary,
-not a Core late-answer API failure; T45 leaves the frontend unchanged and
-records the red honestly.
-
-Lock audit for the complete three-spec run:
-
-```text
-2026-07-26T12:18:15+0800 acquire pid=77752 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
-2026-07-26T12:33:28+0800 release pid=77752 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
 ```
