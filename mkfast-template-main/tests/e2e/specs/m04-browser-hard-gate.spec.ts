@@ -5,7 +5,10 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { seedConfirmedStore } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 import {
   blockingQuestionLocator,
   briefConfirmButton,
@@ -262,6 +265,16 @@ test.describe('M-04 required browser hard gate', () => {
       await loginByForm(page, user);
       await seedConfirmedStore(page);
       await page.goto('/dashboard');
+
+      // 图文 and 视频 lead with recipes that require a real source — 小红书笔记
+      // asks for a 案例图 (`case_image`), 抖音成片 for `case_media` — and the
+      // submission gate refuses without one, which is the product being honest
+      // rather than a test problem. Seed it through the Composer's own inline
+      // authorization (the Day-0 composer path, never the library form), before
+      // measurement begins so none of its clicks reach the budget.
+      if (contract.modality !== 'copy') {
+        await seedComposerInlineAuthorize(page);
+      }
 
       // All three modalities discoverable on a cold Composer, none preselected.
       await assertThreeModalDiscovery(page);

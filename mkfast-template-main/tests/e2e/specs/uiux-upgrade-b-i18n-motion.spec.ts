@@ -33,6 +33,13 @@ const PNG_FIXTURE = Buffer.from(
  * than through Paraglide, so this row is expected to fail until the reshelled
  * surfaces are put on the message catalogue — the row stays so the gap is
  * visible instead of quietly dropped.
+ *
+ * T37 / M-04 (#231) named the line: `works-queries.ts` exports
+ * `WORKS_TITLE = '内容'` as a module constant, so `/en/dashboard/works` renders
+ * a Chinese `h1` in the English locale and this row fails on both the heading
+ * and `expectNoChineseSystemCopy`. Putting the works surface on the message
+ * catalogue is T32/T34's component work, not this ticket's, so the row is left
+ * failing-with-a-reason rather than weakened to match the defect.
  */
 const CORE_ENGLISH_ROUTES = [
   ['/en/dashboard', 'Turn one idea into a creation you can keep completing'],
