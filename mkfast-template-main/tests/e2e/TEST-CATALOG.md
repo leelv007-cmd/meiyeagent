@@ -632,3 +632,10 @@ copy/image/note/video); this spec proves the shape a live run produces.
 - Both themes × mobile/desktop walk the list and the detail, assert no sideways
   scroll, and write walkthrough shots to
   `.scratch/t32-works-reshell-2026-07-26/`.
+- Contrast is measured, not declared: the 四类输出筛选器 label and the two
+  氛围层页头 items (状态标签, 第 N 版) are sampled by hiding the text, reading the
+  backdrop pixels actually painted there, compositing the text colour over that
+  mean and asserting the WCAG ratio ≥4.5:1 in both themes. DESIGN.md:251 sets
+  the bar for ambient headers and DESIGN.md:259 extends it to vendored
+  components; the ratios are printed as `[contrast] …` lines so a run reports
+  numbers rather than a pass/fail bit.

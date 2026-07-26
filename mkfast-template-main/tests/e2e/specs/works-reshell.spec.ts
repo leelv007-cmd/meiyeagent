@@ -195,6 +195,91 @@ async function adoptDelivered(page: Page, packageId: string) {
   }, packageId);
 }
 
+/**
+ * Measured contrast, not declared contrast. Two reads of the same box: one with
+ * the text hidden gives the backdrop actually painted there — ambient photo,
+ * scrim and glass included, which no computed style can tell you — and the text
+ * colour is composited over that mean before the WCAG ratio is taken.
+ *
+ * The screenshot goes back into the page as a data URL so the browser decodes
+ * the PNG; there is no image decoder on the node side of this repo.
+ */
+async function measureContrast(page: Page, testId: string) {
+  const target = page.getByTestId(testId);
+  await expect(target).toBeVisible({ timeout: 30_000 });
+  const box = await target.boundingBox();
+  if (!box) throw new Error(`${testId} has no box to sample`);
+  const clip = {
+    height: Math.max(1, Math.round(box.height)),
+    width: Math.max(1, Math.round(box.width)),
+    x: Math.round(box.x),
+    y: Math.round(box.y),
+  };
+
+  const color = await target.evaluate(
+    (node) => getComputedStyle(node as Element).color
+  );
+  await target.evaluate((node) => {
+    (node as HTMLElement).style.visibility = 'hidden';
+  });
+  const backdropShot = await page.screenshot({ clip });
+  await target.evaluate((node) => {
+    (node as HTMLElement).style.visibility = '';
+  });
+
+  return page.evaluate(
+    async ([dataUrl, cssColor]) => {
+      const image = new Image();
+      image.src = dataUrl!;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d')!;
+      context.drawImage(image, 0, 0);
+      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+      const backdrop = [0, 1, 2].map((channel) => {
+        let total = 0;
+        for (let index = channel; index < data.length; index += 4)
+          total += data[index]!;
+        return total / (data.length / 4);
+      }) as [number, number, number];
+
+      // Resolve the declared colour, alpha included, through the browser.
+      const probe = document.createElement('span');
+      probe.style.color = cssColor!;
+      document.body.appendChild(probe);
+      const resolved = getComputedStyle(probe).color;
+      probe.remove();
+      const parts = resolved.match(/[\d.]+/gu)!.map(Number);
+      const alpha = parts.length > 3 ? parts[3]! : 1;
+      const foreground = [0, 1, 2].map(
+        (channel) => parts[channel]! * alpha + backdrop[channel]! * (1 - alpha)
+      ) as [number, number, number];
+
+      const luminance = (rgb: [number, number, number]) => {
+        const [r, g, b] = rgb.map((value) => {
+          const channel = value / 255;
+          return channel <= 0.04045
+            ? channel / 12.92
+            : ((channel + 0.055) / 1.055) ** 2.4;
+        }) as [number, number, number];
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const first = luminance(foreground);
+      const second = luminance(backdrop);
+      const ratio =
+        (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+      return {
+        backdrop: backdrop.map(Math.round),
+        foreground: foreground.map(Math.round),
+        ratio: Math.round(ratio * 100) / 100,
+      };
+    },
+    [`data:image/png;base64,${backdropShot.toString('base64')}`, color] as const
+  );
+}
+
 test.describe('T32 作品面换壳', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
@@ -411,6 +496,21 @@ test.describe('T32 作品面换壳', () => {
             `[data-testid="works-card"][data-work-id="${delivered.packageId}"]`
           )
         ).toBeVisible({ timeout: 60_000 });
+
+        // 四类输出筛选器 is a vendored component painted with HeroUI's `--muted`;
+        // measured, not assumed (DESIGN.md:259 holds component output to the
+        // same contrast rule as hand-written markup).
+        const filterContrast = await measureContrast(page, 'works-shape-copy');
+        // eslint-disable-next-line no-console
+        console.log(
+          `[contrast] ${theme}/${viewport.label} works-shape-copy = ${filterContrast.ratio}:1 ` +
+            `fg=${filterContrast.foreground} bg=${filterContrast.backdrop}`
+        );
+        expect(
+          filterContrast.ratio,
+          `${theme}/${viewport.label} 四类输出筛选器 contrast`
+        ).toBeGreaterThanOrEqual(4.5);
+
         await page.screenshot({
           fullPage: true,
           path: `../.scratch/t32-works-reshell-2026-07-26/works-list-${viewport.label}-${theme}.png`,
@@ -420,6 +520,23 @@ test.describe('T32 作品面换壳', () => {
         await expect(page.getByTestId('works-detail-revision')).toBeVisible({
           timeout: 60_000,
         });
+
+        // 氛围层页头 — DESIGN.md:251 requires ≥4.5:1 measured in both themes for
+        // every .meiye-ambient-copy header, and these two are the ticket's
+        // headline binding.
+        for (const testId of ['works-detail-status', 'works-detail-revision']) {
+          const sample = await measureContrast(page, testId);
+          // eslint-disable-next-line no-console
+          console.log(
+            `[contrast] ${theme}/${viewport.label} ${testId} = ${sample.ratio}:1 ` +
+              `fg=${sample.foreground} bg=${sample.backdrop}`
+          );
+          expect(
+            sample.ratio,
+            `${theme}/${viewport.label} ${testId} contrast`
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+
         await page.screenshot({
           fullPage: true,
           path: `../.scratch/t32-works-reshell-2026-07-26/works-detail-${viewport.label}-${theme}.png`,

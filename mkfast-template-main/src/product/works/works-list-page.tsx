@@ -7,7 +7,7 @@
  * projection — no named-legacy projection, no second history ledger (ADR-0011).
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { Link } from '@tanstack/react-router';
 import { IconPhoto, IconSearch } from '@tabler/icons-react';
 
@@ -124,26 +124,43 @@ export function WorksListPage() {
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Segment
-              aria-label="作品类型"
-              data-testid="works-shape-filter"
-              onSelectionChange={(key) => setShape(key as ShapeFilter)}
-              selectedKey={shape}
+            {/*
+              The vendored Segment paints its unselected labels with
+              `color: var(--muted)`. HeroUI means `--muted` as a foreground, but
+              inside .meiye-product-shell that token is the muted *background*
+              (--tint-hover, 4% ink) and the labels all but disappear — the same
+              trap that made this surface's own text unreadable, arriving this
+              time through a dropped-in component. D-130 is explicit that a
+              component library's output is held to the contrast rule too, so
+              the token is mapped back to the ink gradient's lowest body step
+              here, over a glass base per 玻璃有边法则. Per-site on purpose: the
+              shared-layer fix is OI-48.
+            */}
+            <div
+              className="meiye-glass-piece inline-flex rounded-full p-0.5"
+              style={{ '--muted': 'var(--ink-60)' } as CSSProperties}
             >
-              <Segment.Item data-testid="works-shape-all" id="all">
-                全部
-              </Segment.Item>
-              {WORK_OUTPUT_SHAPE_ORDER.map((candidate) => (
-                <Segment.Item
-                  data-testid={`works-shape-${candidate}`}
-                  id={candidate}
-                  key={candidate}
-                >
-                  {WORK_OUTPUT_SHAPE_LABELS[candidate]}
-                  {counts[candidate] > 0 ? ` ${counts[candidate]}` : ''}
+              <Segment
+                aria-label="作品类型"
+                data-testid="works-shape-filter"
+                onSelectionChange={(key) => setShape(key as ShapeFilter)}
+                selectedKey={shape}
+              >
+                <Segment.Item data-testid="works-shape-all" id="all">
+                  全部
                 </Segment.Item>
-              ))}
-            </Segment>
+                {WORK_OUTPUT_SHAPE_ORDER.map((candidate) => (
+                  <Segment.Item
+                    data-testid={`works-shape-${candidate}`}
+                    id={candidate}
+                    key={candidate}
+                  >
+                    {WORK_OUTPUT_SHAPE_LABELS[candidate]}
+                    {counts[candidate] > 0 ? ` ${counts[candidate]}` : ''}
+                  </Segment.Item>
+                ))}
+              </Segment>
+            </div>
 
             <label
               className="meiye-glass-piece flex items-center gap-2 rounded-full px-3 py-2 sm:w-64"
