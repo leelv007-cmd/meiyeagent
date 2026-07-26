@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { QuestionCard } from '@meiye/contracts';
-import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 
 import {
   cleanupE2EUsers,
@@ -81,60 +81,19 @@ type ContentPackageProjection = {
   }>;
 };
 
-async function registerFundedNoteUser(
+async function registerTrialNoteUser(
   page: Page,
   request: Parameters<typeof registerE2EUser>[0]
 ) {
-  const codes = [0, 1].map(
-    () => `NOTE-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`
-  );
-  const admin = await registerE2EUser(request, { role: 'admin' });
-  await loginByForm(page, admin);
-  await page.goto('/admin/redemptions');
-  for (const code of codes) {
-    await page.locator('#redeem-copy').fill('5');
-    await page.locator('#redeem-image').fill('5');
-    await page.locator('#redeem-video').fill('0');
-    await page.locator('#redeem-audio').fill('0');
-    await page.locator('#redeem-code').fill(code);
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/commands')
-    );
-    await page
-      .getByRole('button', { name: /录入兑换码|record code/iu })
-      .click();
-    const response = await responsePromise;
-    expect(response.ok(), await response.text()).toBeTruthy();
-  }
-  await page.evaluate(async () => {
-    await fetch('/api/auth/sign-out', {
-      body: '{}',
-      credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-    });
-  });
-
   const merchant = await registerE2EUser(request);
   await loginByForm(page, merchant);
-  await page.goto('/settings/account');
-  for (const code of codes) {
-    await page.locator('#workspace-redemption-code').fill(code);
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/commands')
-    );
-    await page.getByRole('button', { name: /兑换|redeem/iu }).click();
-    const response = await responsePromise;
-    expect(response.ok(), await response.text()).toBeTruthy();
-  }
   return merchant;
 }
 
-async function submitNoteJourney(page: Page) {
+async function submitNoteJourney(
+  page: Page,
+  expected: 'accepted' | 'insufficient' = 'accepted'
+) {
   await page.goto('/dashboard');
   await seedConfirmedStore(page);
   await page.getByTestId('composer-lens-option-image_text').click();
@@ -180,16 +139,23 @@ async function submitNoteJourney(page: Page) {
       task?: { id?: string };
       work?: { id?: string };
     };
-    error?: { message?: string };
+    error?: { code?: string; message?: string };
   };
   expect(submissionBody.catalogModel?.id).toBe('seedream-5-pro');
-  expect(response.ok(), envelope.error?.message).toBeTruthy();
-  expect(envelope.data?.contentPackage?.id).toBeTruthy();
-  expect(envelope.data?.task?.id).toBeTruthy();
-  expect(envelope.data?.work?.id).toBeTruthy();
+  if (expected === 'accepted') {
+    expect(response.ok(), envelope.error?.message).toBeTruthy();
+    expect(envelope.data?.contentPackage?.id).toBeTruthy();
+    expect(envelope.data?.task?.id).toBeTruthy();
+    expect(envelope.data?.work?.id).toBeTruthy();
+  } else {
+    expect(response.ok()).toBeFalsy();
+    expect(envelope.error?.code).toBe('INSUFFICIENT_ENTITLEMENT');
+  }
   return {
-    packageId: envelope.data!.contentPackage!.id!,
-    taskId: envelope.data!.task!.id!,
+    errorCode: envelope.error?.code,
+    errorMessage: envelope.error?.message,
+    packageId: envelope.data?.contentPackage?.id ?? '',
+    taskId: envelope.data?.task?.id ?? '',
   };
 }
 
@@ -405,7 +371,7 @@ test.describe
       request,
     }) => {
       test.setTimeout(480_000);
-      await registerFundedNoteUser(page, request);
+      await registerTrialNoteUser(page, request);
 
       const submission = await submitNoteJourney(page);
       const streamPromise = collectWorkflowSse(page, submission.taskId);
@@ -556,6 +522,27 @@ test.describe
       );
       const download = await exportFullPackage(page, adopted);
       await assertZipDownload(download, IMAGE_TEXT_CONTRACT, adopted.revision);
+
+      await page.evaluate(() => localStorage.clear());
+      const blocked = await submitNoteJourney(page, 'insufficient');
+      expect(blocked.errorCode).toBe('INSUFFICIENT_ENTITLEMENT');
+      expect(blocked.errorMessage).toBeTruthy();
+      const quotaWall = page.getByTestId('composer-quota-blocking-card');
+      await expect(quotaWall).toBeVisible();
+      await expect(quotaWall).toContainText('额度不足');
+      await expect(quotaWall).toContainText(
+        '当前额度不足，无法继续创作。可在此输入兑换码立即解锁。'
+      );
+      await expect(
+        page.getByTestId('composer-quota-open-plans')
+      ).toHaveText('查看套餐');
+      await page.screenshot({
+        fullPage: true,
+        path: resolve(
+          import.meta.dirname,
+          '../../../../.scratch/orca-run-2026-07-25/t20-r2-trial-quota-wall.png'
+        ),
+      });
     });
 
   });
