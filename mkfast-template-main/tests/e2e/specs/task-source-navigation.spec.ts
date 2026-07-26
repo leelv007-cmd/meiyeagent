@@ -23,6 +23,16 @@ test.describe('task source navigation', () => {
     page,
     request,
   }) => {
+    // T34 / #228 — 显式降级 (ADR-0019 测试纪律 8). Every link this exercises started
+    // on the 旧任务收件箱, which retired with no successor: 待办 moved to the
+    // pending-actions inbox, which reads a different projection and renders no
+    // source-object links. Re-homing the cross-workspace guarantee onto the new
+    // inbox needs a journey decision, so this is parked rather than rewritten —
+    // T38 takes it with the rest of the old task IA.
+    test.skip(
+      true,
+      'T34/#228: 旧任务收件箱路由下线，来源对象链接无替代面；随 T38 删除批处置'
+    );
     test.setTimeout(90_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);

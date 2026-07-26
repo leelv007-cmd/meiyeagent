@@ -115,7 +115,8 @@ test('canonical shell routes survive direct navigation and reload', async ({
   await loginByForm(page, user);
 
   const routes = [
-    ['/dashboard/tasks', '内容任务'],
+    // T34 / #228 — 一级导航「内容」lands here; the old task inbox is a redirect shell.
+    ['/dashboard/works', '内容'],
     ['/dashboard/assets', '资产库'],
     ['/dashboard?view=recent', '最近活动'],
     ['/dashboard?view=works', '作品历史'],
@@ -160,6 +161,8 @@ test('legacy routes redirect through the fixed internal allowlist', async ({
     ['/settings/credits', '/settings/account'],
     ['/settings/integrations', '/settings/connections'],
     ['/dashboard/store?tab=assets', '/dashboard/assets'],
+    ['/dashboard/content', '/dashboard/works'],
+    ['/dashboard/tasks', '/dashboard'],
     ['/admin/p1?tab=templates', '/admin/templates'],
     ['/admin/p1?tab=integrations', '/admin/integrations'],
     ['/admin/p1?return=https://attacker.invalid', '/admin/models'],

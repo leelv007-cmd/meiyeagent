@@ -16,6 +16,7 @@ test('root check defines all required gates in order', () => {
       'decision ticket guard',
       'HeroUI mirror guard',
       'works canonical projection guard',
+      'retired old-IA route mount guard',
     ]
   );
 });

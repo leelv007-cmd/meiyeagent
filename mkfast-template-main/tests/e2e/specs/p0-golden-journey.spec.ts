@@ -44,14 +44,10 @@ test.describe('canonical product golden journey', () => {
     expect(packageId).toBeTruthy();
     expect(handoffToken).toBeTruthy();
 
-    await page.goto(
-      `/dashboard/content?handoffId=${encodeURIComponent(packageId!)}`
-    );
-    await expect(
-      page.getByRole('heading', { name: 'L3 发布包' })
-    ).toBeVisible();
-    await expect(page.getByText('可交接', { exact: true })).toBeVisible();
-    await page.getByRole('link', { name: '手机交接页' }).click();
+    // T34 / #228: the 旧内容库 hosted a 发布包 card whose only job was to open
+    // the handoff page. The library retired; the handoff page is the same page
+    // it always was, so the journey addresses it directly.
+    await page.goto(`/dashboard/handoff/${encodeURIComponent(handoffToken!)}`);
     await expect(
       page.getByRole('heading', { name: /小红书\s*发布包/ })
     ).toBeVisible();

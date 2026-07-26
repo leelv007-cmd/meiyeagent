@@ -239,7 +239,7 @@ test.describe('pending action inbox', () => {
       .toBe('review_ready');
 
     await page.goto(
-      `/dashboard/content/${encodeURIComponent(tasks[0]!.packageId)}`
+      `/dashboard/works/${encodeURIComponent(tasks[0]!.packageId)}`
     );
     const generateVariants = page.getByRole('button', {
       name: /^生成三平台版本/,

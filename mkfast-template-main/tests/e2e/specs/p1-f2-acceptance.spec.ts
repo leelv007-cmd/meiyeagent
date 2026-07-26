@@ -480,7 +480,7 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
 
     for (const theme of ['light', 'dark'] as const satisfies ThemeMode[]) {
       await setTheme(page, theme);
-      await page.goto('/dashboard/content');
+      await page.goto('/dashboard/works');
       await expect(page.locator('body')).toBeVisible();
       await expect(page.locator('html')).toHaveClass(
         new RegExp(`\\b${theme}\\b`)
@@ -493,11 +493,12 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
       await assertMerchantLanguage(page, `Assets (${theme})`);
       await assertAxeClean(page, `Assets (${theme})`);
 
-      // Tasks / weekly operations surface for weekly-review shell presence.
-      await page.goto('/dashboard/tasks');
+      // T34 / #228: 旧任务页与旧周运营条整批下线，待办收敛进工作台的
+      // pending-actions 收件箱抽屉，所以这一屏改测工作台本体。
+      await page.goto('/dashboard');
       await expect(page.locator('body')).toBeVisible();
-      await assertMerchantLanguage(page, `Tasks/Weekly shell (${theme})`);
-      await assertAxeClean(page, `Tasks/Weekly shell (${theme})`);
+      await assertMerchantLanguage(page, `Workbench (${theme})`);
+      await assertAxeClean(page, `Workbench (${theme})`);
     }
 
     // Keep the surface list explicit for catalog/evidence readers.

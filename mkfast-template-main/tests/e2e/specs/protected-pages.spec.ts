@@ -15,7 +15,7 @@ import {
 
 const protectedPages = [
   { path: '/dashboard', name: 'dashboard' },
-  { path: '/dashboard/tasks', name: 'task inbox' },
+  { path: '/dashboard/works', name: 'content surface' },
   { path: '/dashboard/assets', name: 'asset library' },
   { path: '/admin/models', name: 'admin model supply' },
   { path: '/admin/templates', name: 'admin templates' },
