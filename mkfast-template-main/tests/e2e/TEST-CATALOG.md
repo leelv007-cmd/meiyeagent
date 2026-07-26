@@ -102,20 +102,14 @@ workflows depend on it.
 |---|---|---|
 | 1 | User can verify Core service health | Sign in, open `/dashboard`, run the health check, and verify the Core service reports healthy. Content generation is exercised through the ModelSupply product path instead of a second diagnostics runtime. |
 
-## 6. PWA And Mobile Media Primitives
+## 6. PWA And Mobile Media Primitives — retired
 
-**File:** `specs/pwa-media-primitives.spec.ts` | **Priority:** P0
-
-Verifies the isolated mobile proof before product asset and publishing journeys
-depend on browser-specific install, camera, and file handoff behavior.
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | Mobile proof registers the production-shaped service worker | Open `/pwa-proof` at a 390 x 844 touch viewport, verify the manifest and root-scoped `/sw.js` registration become ready, assert the manifest, active-route, and default-root metadata use the product theme color, and assert the page has no horizontal overflow. |
-| 2 | Camera input returns a captured image fixture | Verify the file input requests `image/*` with `capture="environment"`, return a deterministic camera fixture, and verify its preview and file details are visible. |
-| 3 | Camera launch failure explains how to recover | Simulate the browser rejecting the camera picker and verify the page points the user to camera permission settings and the photo-library fallback. |
-| 4 | Image and video fixtures use Web Share with visible downloads | Provide file-capable Web Share, share the generated PNG and MP4 fixtures, verify the handed-off file names and MIME types, and keep both download links visible. |
-| 5 | Share rejection keeps an actionable download fallback | Simulate a denied system share, verify the explanation offers a retry and download path, and confirm the media download remains visible. |
+**Retired 2026-07-26 (T07 / #201).** `src/components/pwa` and `src/routes/pwa-proof.tsx`
+are bucket-matrix §1A delete-now rows (PROD-gated dev-only proof, no production
+surface built on it), so `specs/pwa-media-primitives.spec.ts` was removed with its
+subject. The merchant-facing camera contract stays covered by
+`specs/mobile-product-shell.spec.ts` (§15), which asserts the product surface's
+`capture="environment"` input rather than the retired proof page.
 
 ## 7. P1 Recorded-Provider Journey
 

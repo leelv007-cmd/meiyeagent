@@ -47,16 +47,6 @@ test('the unused starter dashboard data-table demo is removed', () => {
   );
 });
 
-test('the mobile primitive proof is unavailable in production', () => {
-  const source = readFileSync(
-    resolve(process.cwd(), 'src/routes/pwa-proof.tsx'),
-    'utf8'
-  );
-
-  assert.match(source, /import\.meta\.env\.PROD/);
-  assert.match(source, /throw notFound\(\)/);
-});
-
 test('published brand copy and website config contain no starter vendor residue', () => {
   const publishedFiles = [
     'project.inlang/messages/en.json',
