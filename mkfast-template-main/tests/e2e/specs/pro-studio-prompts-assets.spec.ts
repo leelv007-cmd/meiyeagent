@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { unlockProStudio } from '../fixtures/pro-studio';
+import { evidencePath } from '../fixtures/evidence';
 
 // 4x2 opaque PNG reused from the K3 retouch journey: a valid owned image upload.
 const WIDE_PNG_FIXTURE = Buffer.from(
@@ -115,7 +116,7 @@ test.describe('Pro Studio K5 prompt library, @mention and assets (G39-G41)', () 
 
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/k5-prompt-library.png',
+      path: evidencePath('pro-studio/k5-prompt-library.png'),
     });
   });
 
@@ -170,7 +171,7 @@ test.describe('Pro Studio K5 prompt library, @mention and assets (G39-G41)', () 
 
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/k5-assets-mention.png',
+      path: evidencePath('pro-studio/k5-assets-mention.png'),
     });
   });
 });

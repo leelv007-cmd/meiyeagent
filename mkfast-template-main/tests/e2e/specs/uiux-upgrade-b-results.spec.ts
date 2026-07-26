@@ -6,6 +6,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { evidencePath } from '../fixtures/evidence';
 
 const productionCandidate =
   process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE === 'true';
@@ -321,7 +322,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     await expect(submit).toBeHidden();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/03-copy-stream-partial-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/03-copy-stream-partial-desktop.png'
+      ),
     });
 
     const selector = await waitForCopyCandidates(page);
@@ -355,7 +358,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     ).toEqual([0, 1, 2]);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/04-copy-results-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/04-copy-results-desktop.png'
+      ),
     });
   });
 
@@ -586,7 +591,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
       .toBe(true);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/04b-copy-candidates-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/04b-copy-candidates-mobile.png'
+      ),
     });
   });
 
@@ -620,7 +627,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/05a-assistant-rich-stream-partial-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/05a-assistant-rich-stream-partial-desktop.png'
+      ),
     });
     await expect(
       assistant.getByRole('link', { name: '核对门店信息' })
@@ -642,7 +651,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     await expect(record).toContainText('保留原始创作意图，不自动写入助手建议');
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/05-assistant-structured-parts-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/05-assistant-structured-parts-desktop.png'
+      ),
     });
   });
 
@@ -805,7 +816,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     ).toHaveAttribute('src', canonicalMediaSrc);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/06-image-lightbox-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/06-image-lightbox-desktop.png'
+      ),
     });
     if (!(await lightbox.isVisible())) {
       await preview.click();
@@ -838,7 +851,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/06b-canonical-gallery-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/06b-canonical-gallery-desktop.png'
+      ),
     });
     await page.setViewportSize({ height: 844, width: 390 });
     await expect(
@@ -853,7 +868,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
       .toBe(true);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/06c-canonical-gallery-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/06c-canonical-gallery-mobile.png'
+      ),
     });
 
     await page.setViewportSize({ height: 900, width: 1440 });
@@ -884,7 +901,9 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     ).toHaveAttribute('src', canonicalMediaSrc);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/06d-canonical-recent-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/06d-canonical-recent-desktop.png'
+      ),
     });
   });
 

@@ -145,6 +145,25 @@ test('every demoted old UI spec is marked in place and stays out of the required
   }
 });
 
+test('no browser test writes into the tracked evidence tree', () => {
+  // A full local sweep rewrote five committed Pro Studio PNGs before this gate
+  // existed. Evidence that changes as a side effect of running tests is not
+  // evidence — screenshots go through `fixtures/evidence.ts` into untracked
+  // `output/`, and reach `docs/evidence/` only by a deliberate copy.
+  const violations = e2eFiles()
+    .filter((file) => {
+      const source = readFileSync(file, 'utf8');
+      return /path:[^\n]*docs\/evidence/u.test(source);
+    })
+    .map((file) => relative(E2E_ROOT, file));
+
+  assert.deepEqual(
+    violations,
+    [],
+    `these specs write screenshots straight into the tracked evidence tree: ${violations.join(', ')}`
+  );
+});
+
 test('the demotion register is the only place a spec claims to be demoted', () => {
   const registered = new Set<string>(SPECS_WITH_DEMOTED_CASES);
   const unregistered = e2eFiles()

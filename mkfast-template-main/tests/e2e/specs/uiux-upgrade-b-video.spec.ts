@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedAuthorizedGrounding } from '../fixtures/product';
+import { evidencePath } from '../fixtures/evidence';
 
 type VideoWorkflowStatus =
   | 'draft'
@@ -385,7 +386,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(v1WorkflowId).toBeTruthy();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/07-video-workflow-draft-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/07-video-workflow-draft-desktop.png'
+      ),
     });
 
     panel = page.getByLabel('创作助理整理的记录').getByLabel('视频成片工作流');
@@ -438,7 +441,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/09a-video-workflow-running-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/09a-video-workflow-running-mobile.png'
+      ),
     });
 
     const completed = await finishWorkflowAndReviewIfRequired(
@@ -471,7 +476,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(playbackResponse).toEqual({ contentType: 'video/mp4', ok: true });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/09b-video-workflow-completed-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/09b-video-workflow-completed-mobile.png'
+      ),
     });
 
     await page.setViewportSize({ height: 900, width: 1440 });
@@ -488,7 +495,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(recovered?.workflow.status).toBe('completed');
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/08-video-workflow-completed-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/08-video-workflow-completed-desktop.png'
+      ),
     });
 
     const videoPackage = (await contentPackages(page)).find(
@@ -647,7 +656,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     ).toHaveCount(0);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/07c-video-workflow-cancelled-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/07c-video-workflow-cancelled-desktop.png'
+      ),
     });
   });
 });

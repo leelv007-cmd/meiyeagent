@@ -6,6 +6,7 @@ import {
 } from '../fixtures/auth';
 import { productCommand, productState } from '../fixtures/product';
 import { unlockProStudio } from '../fixtures/pro-studio';
+import { evidencePath } from '../fixtures/evidence';
 
 async function p1Command<T>(
   page: Page,
@@ -170,7 +171,7 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     await expect(page.getByRole('link', { name: '查看演示' })).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/ticket14-unpurchased-intro.png',
+      path: evidencePath('pro-studio/ticket14-unpurchased-intro.png'),
     });
 
     await unlockProStudio(page);
@@ -179,7 +180,7 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     await expect(page.getByRole('button', { name: '一键进入' })).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/ticket14-unlocked-entry.png',
+      path: evidencePath('pro-studio/ticket14-unlocked-entry.png'),
     });
   });
 
@@ -215,7 +216,7 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     ).toBeHidden();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/ticket16-prompt-seeds.png',
+      path: evidencePath('pro-studio/ticket16-prompt-seeds.png'),
     });
   });
 
@@ -359,7 +360,7 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/ticket17-template-export.png',
+      path: evidencePath('pro-studio/ticket17-template-export.png'),
     });
     const exportRequestPromise = page.waitForRequest(
       (browserRequest) =>
@@ -427,7 +428,7 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     expect(retiredRuntimeRequests).toEqual([]);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/ticket20-layout-adopted-package.png',
+      path: evidencePath('pro-studio/ticket20-layout-adopted-package.png'),
     });
   });
 
@@ -559,7 +560,7 @@ test.describe('Pro Studio engineering tickets 14/16/17/20/23', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/ticket23-merchant-support.png',
+      path: evidencePath('pro-studio/ticket23-merchant-support.png'),
     });
   });
 });

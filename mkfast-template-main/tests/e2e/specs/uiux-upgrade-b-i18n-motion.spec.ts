@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedAcceptedProductContent } from '../fixtures/product';
+import { evidencePath } from '../fixtures/evidence';
 
 const CJK_PATTERN = /[\u3400-\u9fff]/u;
 const LATIN_PATTERN = /[a-z]/iu;
@@ -321,7 +322,9 @@ test.describe('UI/UX Upgrade B i18n, motion, and mobile contracts', () => {
         ).toBeVisible();
         await page.screenshot({
           fullPage: true,
-          path: '../docs/evidence/uiux-upgrade-b/screenshots/11-english-product-surface.png',
+          path: evidencePath(
+            'uiux-upgrade-b/screenshots/11-english-product-surface.png'
+          ),
         });
       }
     }
@@ -397,7 +400,9 @@ test.describe('UI/UX Upgrade B i18n, motion, and mobile contracts', () => {
     }
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/24-model-cards-sanitized-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/24-model-cards-sanitized-desktop.png'
+      ),
     });
   });
 
@@ -467,7 +472,9 @@ test.describe('UI/UX Upgrade B i18n, motion, and mobile contracts', () => {
       expect(reducedStyle.color).not.toBe('rgba(0, 0, 0, 0)');
       await page.screenshot({
         fullPage: true,
-        path: '../docs/evidence/uiux-upgrade-b/screenshots/24-generation-accent-reduced-motion-desktop.png',
+        path: evidencePath(
+          'uiux-upgrade-b/screenshots/24-generation-accent-reduced-motion-desktop.png'
+        ),
       });
     });
   });
@@ -576,7 +583,9 @@ test.describe('UI/UX Upgrade B real publication transition', () => {
       expect(['none', 'lazy-fallback']).toContain(reducedState.particleDisplay);
       await page.screenshot({
         fullPage: true,
-        path: '../docs/evidence/uiux-upgrade-b/screenshots/24-published-celebration-reduced-motion-mobile.png',
+        path: evidencePath(
+          'uiux-upgrade-b/screenshots/24-published-celebration-reduced-motion-mobile.png'
+        ),
       });
 
       await page.reload();
@@ -635,7 +644,9 @@ for (const viewport of [
                   : 'handoff';
             await page.screenshot({
               fullPage: true,
-              path: `../docs/evidence/uiux-upgrade-b/screenshots/25-mobile-${screenshotStage}-390.png`,
+              path: evidencePath(
+                `uiux-upgrade-b/screenshots/25-mobile-${screenshotStage}-390.png`
+              ),
             });
           }
         }

@@ -6,6 +6,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { evidencePath } from '../fixtures/evidence';
 
 interface P1Call {
   action?: string;
@@ -151,7 +152,9 @@ test.describe.fixme('UI/UX Upgrade B asynchronous job contracts', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/09a-job-submitting-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/09a-job-submitting-desktop.png'
+      ),
     });
 
     let jobId = '';
@@ -195,13 +198,17 @@ test.describe.fixme('UI/UX Upgrade B asynchronous job contracts', () => {
       expect(await panel.innerText()).not.toMatch(/\b\d+(?:\.\d+)?\s*%/);
       await page.screenshot({
         fullPage: true,
-        path: '../docs/evidence/uiux-upgrade-b/screenshots/09b-job-running-desktop.png',
+        path: evidencePath(
+          'uiux-upgrade-b/screenshots/09b-job-running-desktop.png'
+        ),
       });
       await page.setViewportSize({ height: 844, width: 390 });
       await expect(panel).toBeVisible();
       await page.screenshot({
         fullPage: true,
-        path: '../docs/evidence/uiux-upgrade-b/screenshots/09c-job-running-mobile.png',
+        path: evidencePath(
+          'uiux-upgrade-b/screenshots/09c-job-running-mobile.png'
+        ),
       });
       await page.setViewportSize({ height: 900, width: 1440 });
       await taskToggle.click();
@@ -231,7 +238,9 @@ test.describe.fixme('UI/UX Upgrade B asynchronous job contracts', () => {
     await expect(taskToggle).not.toContainText('进行中');
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/10a-task-center-unread-collapsed-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/10a-task-center-unread-collapsed-desktop.png'
+      ),
     });
     await taskToggle.click();
 
@@ -252,13 +261,17 @@ test.describe.fixme('UI/UX Upgrade B asynchronous job contracts', () => {
     expect(await completedPanel.innerText()).not.toMatch(/\b\d+(?:\.\d+)?\s*%/);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/10-async-task-center-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/10-async-task-center-desktop.png'
+      ),
     });
     await page.setViewportSize({ height: 844, width: 390 });
     await expect(completedPanel).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/10b-task-center-completed-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/10b-task-center-completed-mobile.png'
+      ),
     });
     await page.setViewportSize({ height: 900, width: 1440 });
 

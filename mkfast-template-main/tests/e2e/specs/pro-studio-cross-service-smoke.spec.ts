@@ -1,12 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
 import { unlockProStudio } from '../fixtures/pro-studio';
+import { evidencePath } from '../fixtures/evidence';
 
 type CanvasGraph = {
   edges: Array<Record<string, unknown>>;
@@ -336,11 +336,7 @@ test.describe('Pro Studio cross-service smoke', () => {
     console.log(`[pro-studio-cross-service] packageId=${adoption.packageId}`);
     await page.screenshot({
       fullPage: true,
-      path: resolve(
-        process.cwd(),
-        '..',
-        'docs/evidence/pro-studio/ticket25-cross-service-smoke.png'
-      ),
+      path: evidencePath('pro-studio/ticket25-cross-service-smoke.png'),
     });
   });
 });

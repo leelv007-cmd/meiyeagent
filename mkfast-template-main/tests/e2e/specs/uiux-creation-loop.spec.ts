@@ -12,6 +12,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedAuthorizedGrounding } from '../fixtures/product';
+import { evidencePath } from '../fixtures/evidence';
 
 interface CreativeProjection {
   assets: Array<{
@@ -727,7 +728,9 @@ test.describe('S2 cold start and unified creation loop', () => {
 
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/22a-composer-drop-ready-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/22a-composer-drop-ready-desktop.png'
+      ),
     });
     await galleryInput.setInputFiles({
       buffer: imageFixture('gallery'),
@@ -785,7 +788,9 @@ test.describe('S2 cold start and unified creation loop', () => {
     await expect(dropZone).toHaveClass(/border-primary/);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/22b-composer-drop-highlight-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/22b-composer-drop-highlight-desktop.png'
+      ),
     });
     await dropZone.dispatchEvent('drop', { dataTransfer: dropTransfer });
     await dropTransfer.dispose();
@@ -808,7 +813,9 @@ test.describe('S2 cold start and unified creation loop', () => {
     ).toBeVisible({ timeout: 30_000 });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/22c-composer-images-added-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/22c-composer-images-added-desktop.png'
+      ),
     });
 
     const assets = (await productState(page)).assets;
@@ -862,7 +869,9 @@ test.describe('S2 cold start and unified creation loop', () => {
     });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/22d-work-image-references-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/22d-work-image-references-desktop.png'
+      ),
     });
 
     const confirmBrief = page.getByRole('button', { name: '采用并确认 Brief' });
@@ -1511,7 +1520,9 @@ test.describe('S2 cold start and unified creation loop', () => {
     ).toBeDisabled();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/00b-recorded-gate-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/00b-recorded-gate-desktop.png'
+      ),
     });
     const projection = await creativeProjection(page);
     expect(projection.works).toHaveLength(1);

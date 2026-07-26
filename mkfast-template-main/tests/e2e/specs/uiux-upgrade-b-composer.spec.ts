@@ -5,6 +5,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { evidencePath } from '../fixtures/evidence';
 
 interface CreativeProjection {
   jobs: Array<{ id: string }>;
@@ -147,7 +148,9 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
     ).toBeDisabled();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/00-fixture-friendly-error-retry-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/00-fixture-friendly-error-retry-desktop.png'
+      ),
     });
 
     failProjection = false;
@@ -201,7 +204,9 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
     await expect(intent).toHaveValue(/保留人工修改/);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/01-opening-guidance-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/01-opening-guidance-desktop.png'
+      ),
     });
     await page.setViewportSize({ height: 844, width: 390 });
     await expect(
@@ -220,7 +225,9 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
     }
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/01b-opening-guidance-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/01b-opening-guidance-mobile.png'
+      ),
     });
 
     expect(await creativeProjection(page)).toMatchObject({
@@ -277,7 +284,9 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/02b-named-preset-material-path-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/02b-named-preset-material-path-desktop.png'
+      ),
     });
 
     await page.getByRole('button', { name: /^价格卡/ }).click();
@@ -347,11 +356,15 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
     await expect(structure).toContainText(['前后对比', '社媒封面', '好评卡']);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/02a-progressive-composer-default-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/02a-progressive-composer-default-desktop.png'
+      ),
     });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/02d-template-gallery-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/02d-template-gallery-desktop.png'
+      ),
     });
 
     await professional.click();
@@ -374,7 +387,9 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
       .locator('..');
     await expect(summaryBeforeSwitch).toContainText('暂无足够真实样本');
     await modelSection.screenshot({
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/11a-duration-model-before-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/11a-duration-model-before-desktop.png'
+      ),
     });
     const selectableIndex = await models.evaluateAll((nodes) =>
       nodes.findIndex(
@@ -393,11 +408,15 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
     );
     await expect(summaryBeforeSwitch).toContainText('暂无足够真实样本');
     await modelSection.screenshot({
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/11b-duration-model-after-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/11b-duration-model-after-desktop.png'
+      ),
     });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/02-progressive-composer-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/02-progressive-composer-desktop.png'
+      ),
     });
     const beforeReload = await creativeProjection(page);
     expect(beforeReload.works[0]?.sourceReferences).toEqual(
@@ -444,7 +463,9 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
     ).toBeEnabled();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/02c-inheritance-defaults-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/02c-inheritance-defaults-desktop.png'
+      ),
     });
     await page.keyboard.press('Escape');
     await expect(inheritance).toBeHidden();
@@ -497,7 +518,9 @@ test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/13-global-command-palette-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/13-global-command-palette-desktop.png'
+      ),
     });
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();

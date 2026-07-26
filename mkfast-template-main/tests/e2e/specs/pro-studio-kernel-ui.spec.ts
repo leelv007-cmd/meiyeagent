@@ -1,12 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
 import { unlockProStudio } from '../fixtures/pro-studio';
+import { evidencePath } from '../fixtures/evidence';
 
 const WIDE_PNG_FIXTURE = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAYAAAB/qH1jAAAAEklEQVR4nGP4H1DxHxkzoAsAAHjBFjFw6Q5vAAAAAElFTkSuQmCC',
@@ -468,11 +468,7 @@ test.describe('Pro Studio authorized kernel UI', () => {
 
       await activePage.screenshot({
         fullPage: true,
-        path: resolve(
-          process.cwd(),
-          '..',
-          'docs/evidence/pro-studio/kernel-v1-ui-smoke.png'
-        ),
+        path: evidencePath('pro-studio/kernel-v1-ui-smoke.png'),
       });
 
       await adoptionLink.click();
