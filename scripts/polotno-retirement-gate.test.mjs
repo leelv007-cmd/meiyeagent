@@ -54,8 +54,4 @@ test('ticket 20 gate ④: owning canvas entry routes use Light Composer, not Pol
     const source = await text(path);
     assert.doesNotMatch(source, /polotno/iu, path);
   }
-
-  // Creation shelf remains a discovery surface, never a Polotno host.
-  const shelf = await text('mkfast-template-main/src/product/creation-shelf.tsx');
-  assert.doesNotMatch(shelf, /polotno/iu);
 });

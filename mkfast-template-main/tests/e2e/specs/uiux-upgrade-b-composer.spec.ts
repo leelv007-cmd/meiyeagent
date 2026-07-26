@@ -312,11 +312,6 @@ test.describe('UI/UX Upgrade B composer contracts', () => {
     const suite = record.locator(
       'section[aria-labelledby="content-suite-title"]'
     );
-    const templatePreviews = record.locator(
-      'section[aria-labelledby="creation-shelf-title"] svg[role="img"]'
-    );
-    await expect(templatePreviews).toHaveCount(3);
-    await expect(templatePreviews.locator('text').first()).not.toHaveText('');
     await expect(
       suite.locator('[role="checkbox"][aria-label="前后对比"]')
     ).toBeChecked();

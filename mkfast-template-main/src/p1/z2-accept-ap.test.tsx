@@ -10,6 +10,7 @@
  * asserted separately in composer-channel-readiness.static.test.ts.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CAPABILITY_INVENTORY } from '@meiye/contracts';
@@ -40,7 +41,6 @@ import {
   buildSupplyOverviewView,
   projectDualChannelCoverage,
 } from './admin-supply-overview-model';
-import { modelCardView } from '@/product/model-card-picker';
 import {
   model_card_channel_multi,
   model_card_channel_single,
@@ -242,47 +242,29 @@ test('Z2-ACCEPT gate3 UI: admin supply overview SSR surfaces single-channel / mu
 });
 
 test('Z2-ACCEPT gate3 UI: merchant label projection shares single-channel / no-fallback copy', () => {
-  // Shared paraglide keys power model-settings badge + ModelCardPicker view.
+  // Shared paraglide keys power the model-settings merchant badge.
   // The mounted Composer selector is covered by its focused static test.
+  // (Sampled from model-settings.tsx since T07 retired ModelCardPicker.)
   assert.match(model_card_channel_single(), /单渠道|无回退/);
   assert.match(model_card_channel_multi(), /双渠道|multi/i);
 
-  const single = modelCardView({
-    availabilityKind: 'production',
-    available: true,
-    capabilityLabels: ['图片生成'],
-    channelReadiness: 'single_channel',
-    displayName: 'Accept Single Channel Image',
-    id: 'accept-image-single',
-    modality: 'image',
-    qualityRank: 1,
-    unitPrice: {
-      amountMicros: 100_000,
-      currency: 'CNY',
-      revision: 'price-v1',
-      unit: 'image',
-    },
-  });
-  assert.equal(single.channelReadinessLabel, model_card_channel_single());
-  assert.match(single.channelReadinessLabel ?? '', /单渠道|无回退/);
-
-  const multi = modelCardView({
-    availabilityKind: 'production',
-    available: true,
-    capabilityLabels: ['文案生成'],
-    channelReadiness: 'multi_channel_ready',
-    displayName: 'Accept Multi Channel Copy',
-    id: 'accept-copy-multi',
-    modality: 'llm',
-    qualityRank: 1,
-    unitPrice: {
-      amountMicros: 100_000,
-      currency: 'CNY',
-      revision: 'price-v1',
-      unit: 'generation',
-    },
-  });
-  assert.equal(multi.channelReadinessLabel, model_card_channel_multi());
+  const modelSettings = readFileSync(
+    new URL('./model-settings.tsx', import.meta.url),
+    'utf8'
+  );
+  assert.match(
+    modelSettings,
+    /channelReadiness === 'multi_channel_ready'[\s\S]{0,200}?model_card_channel_multi\(\)/u
+  );
+  assert.match(
+    modelSettings,
+    /channelReadiness === 'single_channel'[\s\S]{0,200}?model_card_channel_single\(\)/u
+  );
+  assert.doesNotMatch(
+    modelSettings,
+    /channelReadiness === 'not_verified'/u,
+    'not_verified must stay unlabelled, never fall back to a channel claim'
+  );
 });
 
 // ---------------------------------------------------------------------------

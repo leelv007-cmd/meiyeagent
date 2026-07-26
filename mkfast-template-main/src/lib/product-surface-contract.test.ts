@@ -87,7 +87,6 @@ test('shared product shell copy uses the Chinese-first Paraglide track', () => {
 
 test('creation commands keep localized display strings out of persisted facts', () => {
   const sources = [
-    'src/product/creation-shelf.tsx',
     'src/product/canvas-work-page.tsx',
     'src/product/composer/composer-home.tsx',
     'src/product/results/result-center-page.tsx',

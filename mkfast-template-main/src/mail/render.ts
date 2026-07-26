@@ -95,8 +95,11 @@ export async function getTemplate({
   context: Record<string, unknown>;
 }) {
   const Component = EmailTemplates[template];
+  // Every remaining template declares required props, so the union no longer
+  // structurally overlaps ComponentType<Record<string, unknown>>; the context
+  // shape is guaranteed by each caller's template/context pairing instead.
   const email = React.createElement(
-    Component as React.ComponentType<Record<string, unknown>>,
+    Component as unknown as React.ComponentType<Record<string, unknown>>,
     context
   );
   const html = await renderEmailHtml(email);
