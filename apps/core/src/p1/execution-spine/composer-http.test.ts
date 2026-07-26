@@ -4,7 +4,6 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import {
 	isComposerVariantPlatform,
-	MAX_NOTE_PLAN_PAGE_COUNT,
 	pickComposerSubmissionSignedFields,
 	type ContentPackage,
 	type DiagnosticRun,
@@ -403,6 +402,7 @@ test("authenticated Composer HTTP carries all four output kinds through one snap
 				quantity: 1,
 				...(kind === "copy" ? {} : { aspectRatio: "9:16" }),
 				...(kind === "video" ? { durationSeconds: 8 } : {}),
+				...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 			},
 		]);
 
@@ -1138,6 +1138,7 @@ function modalityAdmission(): CreationSubmissionAdmissionPort {
 							quantity: 1,
 							...(kind === "copy" ? {} : { aspectRatio: "9:16" }),
 							...(kind === "video" ? { durationSeconds: 8 } : {}),
+							...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 						},
 					],
 					lens: kind,
@@ -1165,7 +1166,7 @@ function modalityAdmission(): CreationSubmissionAdmissionPort {
 								{ resource: "copy" as const, quantity: 2 },
 								{
 									resource: "image" as const,
-									quantity: MAX_NOTE_PLAN_PAGE_COUNT,
+									quantity: 3,
 								},
 							],
 						}
@@ -1245,6 +1246,7 @@ function modalitySubmissionPayload(
 			quantity: 1,
 			...(kind === "copy" ? {} : { aspectRatio: "9:16" as const }),
 			...(kind === "video" ? { durationSeconds: 8 } : {}),
+			...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 		},
 		deliverables: [
 			{
@@ -1254,6 +1256,7 @@ function modalitySubmissionPayload(
 				quantity: 1,
 				...(kind === "copy" ? {} : { aspectRatio: "1:1" }),
 				...(kind === "video" ? { durationSeconds: 3 } : {}),
+				...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 			},
 		],
 		idempotencyKey: `composer-${kind}-1`,
