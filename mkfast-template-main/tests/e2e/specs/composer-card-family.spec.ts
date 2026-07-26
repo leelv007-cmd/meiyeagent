@@ -138,9 +138,12 @@ test.describe('T31 三类卡与确认卡', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
-    // No category word, so D-111 asks — which is how one journey gets all
-    // three cards instead of two.
-    const run = await startRun(page, '写一条周末到店的活动文案');
+    // A promotion word without a price, so D-111 asks 「方便补充这次活动的
+    // 项目和价格档吗？」 — which is how one journey gets all three cards
+    // instead of two. (Since T44, a cold tenant's *industry* gap no longer
+    // asks — Day-0 delivers first on the policy route — so the ask journey
+    // must ride a non-industry gap.)
+    const run = await startRun(page, '写一条周末到店的团购活动文案');
 
     // ① 进度宣告卡 — one card carrying the 白话进度 announcements, in order.
     const progressCard = page.getByTestId('composer-progress-card');
@@ -176,7 +179,7 @@ test.describe('T31 三类卡与确认卡', () => {
     expect(questionOrder).toBe('progress-then-question');
     // The harness raises this gap with free text and no options, so the answer
     // path is the text box — see fixtureStructuredOutput / fallbackGuidanceGap.
-    await page.getByTestId('composer-question-answer').fill('皮肤管理');
+    await page.getByTestId('composer-question-answer').fill('皮肤管理套餐 88 元');
     await page.getByTestId('composer-question-submit').click();
 
     // ③ 成品交付卡 — the run finishes inside the conversation.
@@ -263,8 +266,10 @@ test.describe('T31 三类卡与确认卡', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
-    // No category word — D-111 asks 「这次内容主要属于哪一类美业服务？」.
-    const run = await startRun(page, '写一条周末到店的活动文案');
+    // A promotion word without a price — D-111 asks 「方便补充这次活动的项目
+    // 和价格档吗？」. (Cold-tenant industry gaps stopped asking with T44's
+    // Day-0 deliver-first branch, so the ask journey rides a promotion gap.)
+    const run = await startRun(page, '写一条周末到店的团购活动文案');
 
     const questionCard = page.getByTestId('composer-question-card');
     await expect(questionCard).toBeVisible({ timeout: 240_000 });
