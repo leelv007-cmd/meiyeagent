@@ -1,10 +1,19 @@
+# Web (Cloudflare Worker) deployment.
+#
+# T40/E-01: this workflow used to live in `mkfast-template-main/.github/workflows/`,
+# where GitHub never discovered it, and every command assumed the template
+# directory as the working directory. It now lives at the repository root with
+# explicit per-step working directories.
+#
+# The trigger is `workflow_dispatch` only: this workflow deploys production
+# without depending on any quality job, so an unconditional `push: main` trigger
+# would ship code that no required check has cleared. Re-evaluate automating it
+# only after branch protection is live (docs/ops/branch-protection-ruleset.json)
+# and this workflow gates itself on the `required` aggregation job.
 name: Deploy to Cloudflare Workers
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 # Ensure only one deployment runs at a time
 concurrency:
@@ -42,27 +51,38 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'pnpm'
 
+      # Install from the workspace root: the lockfile and pnpm-workspace.yaml
+      # live there and the Web unit depends on workspace packages.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Apply PostgreSQL migrations before release
+        working-directory: mkfast-template-main
         run: |
           test -n "$DATABASE_URL"
           pnpm db:migrate:remote
 
+      # Build only the Web unit: the root `build` script fans out to every
+      # workspace, which is not what a Worker deployment needs.
       - name: Build
+        working-directory: mkfast-template-main
         run: pnpm build
 
+      # wrangler.jsonc lives next to the Web unit, so wrangler must resolve its
+      # configuration from that directory.
       - name: Deploy to Cloudflare Workers
-        run: pnpx wrangler deploy
+        working-directory: mkfast-template-main
+        run: pnpm exec wrangler deploy

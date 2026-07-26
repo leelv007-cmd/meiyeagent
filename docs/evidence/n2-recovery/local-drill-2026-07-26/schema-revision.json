@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "kind": "schema-revision-artifact",
+  "drillId": "local-drill-3107800f",
+  "recoveryPoint": "2026-07-26T18:31:16.682Z",
+  "sourceEnvironment": "local",
+  "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+  "provider": "local-postgresql-16",
+  "receiptId": "local-drill-3107800f-schema-revision",
+  "provenance": "local-recovery-drill",
+  "data": {
+    "revision": "schema-sha256:111c71aba6b2feeb88218a396d8730a65990fcf81ed2be3c3523b8dfff34aa53",
+    "immutableSnapshotRef": "snapshot://local/meiye_t40_drill_source_3107800f/72dbc026bed9b206"
+  }
+}

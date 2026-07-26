@@ -317,6 +317,52 @@ jobs:
           REQUIRED_REDLINE_EVALS_RESULT: ${{ needs.redline-evals.result }}
           REQUIRED_ROOT_QUALITY_RESULT: ${{ needs.root-quality.result }}
 
+  # Mints the four-unit, same-SHA staging release manifest the release-candidate
+  # gate has always required. The manifest is uploaded as an artifact and the RC
+  # job below downloads it, so acceptance reads one immutable document produced by
+  # a build of this exact commit.
+  release-manifest:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+      (contains(github.event.pull_request.labels.*.name, 'release-candidate') ||
+      contains(github.event.pull_request.labels.*.name, 'run-e2e')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei
+      - run: pnpm install --frozen-lockfile
+      - name: Open the release window
+        run: echo "RELEASE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: Build every release unit
+        run: pnpm build
+      - name: Mint the staging release manifest
+        run: node scripts/ci/build-release-manifest.mjs
+        env:
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
+          RELEASE_CONFIG_REVISION: ${{ vars.RELEASE_CONFIG_REVISION }}
+          RELEASE_ENVIRONMENT: staging
+          RELEASE_JOURNEY_EVIDENCE_REF_COPY: ${{ vars.RELEASE_JOURNEY_EVIDENCE_REF_COPY }}
+          RELEASE_JOURNEY_EVIDENCE_REF_IMAGE: ${{ vars.RELEASE_JOURNEY_EVIDENCE_REF_IMAGE }}
+          RELEASE_JOURNEY_EVIDENCE_REF_VIDEO: ${{ vars.RELEASE_JOURNEY_EVIDENCE_REF_VIDEO }}
+          RELEASE_MANIFEST_OUT: output/release/release-manifest.json
+          RELEASE_READINESS_EVIDENCE_REF: ${{ vars.RELEASE_READINESS_EVIDENCE_REF }}
+          RELEASE_RECOVERY_EVIDENCE_REF: ${{ vars.RELEASE_RECOVERY_EVIDENCE_REF }}
+          RELEASE_WORKFLOW_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-release-manifest
+          path: output/release/release-manifest.json
+          if-no-files-found: error
+
   # Release-candidate acceptance builds every workspace, then boots Main, Core,
   # Worker, and Canvas for the real browser harness. Keep the historical run-e2e
   # label as an alias while release-candidate becomes the explicit RC signal.
@@ -326,6 +372,7 @@ jobs:
       (github.event_name == 'pull_request' &&
       (contains(github.event.pull_request.labels.*.name, 'release-candidate') ||
       contains(github.event.pull_request.labels.*.name, 'run-e2e')))
+    needs: release-manifest
     runs-on: ubuntu-latest
     timeout-minutes: 90
     services:
@@ -361,10 +408,16 @@ jobs:
       - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
       - name: Provision E2E business and DBOS databases
         run: ./scripts/ci/provision-test-db.sh
+      - name: Download the staging release manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-release-manifest
+          path: output/release
       - name: Build and run release-candidate acceptance
         run: bash scripts/ci/run-release-candidate-quality.sh
         env:
           RELEASE_COMMIT_SHA: ${{ github.sha }}
+          RELEASE_MANIFEST_PATH: output/release/release-manifest.json
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

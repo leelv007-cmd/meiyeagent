@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "kind": "postgresql-snapshot-restore-receipt",
+  "drillId": "local-drill-3107800f",
+  "recoveryPoint": "2026-07-26T18:31:16.682Z",
+  "sourceEnvironment": "local",
+  "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+  "provider": "local-postgresql-16",
+  "receiptId": "local-drill-3107800f-postgres-restore-receipt",
+  "provenance": "local-recovery-drill",
+  "data": {
+    "restoreId": "local-restore-3107800f",
+    "snapshotRange": "2026-07-26T18:31:16.519Z/2026-07-26T18:31:16.682Z",
+    "sourceDatabase": "meiye_t40_drill_source_3107800f",
+    "restoredDatabase": "meiye_t40_drill_isolated_3107800f",
+    "dumpSha256": "72dbc026bed9b2065f102002ada382863cadcb5eb98e5be54e804462d43d2b4a"
+  }
+}

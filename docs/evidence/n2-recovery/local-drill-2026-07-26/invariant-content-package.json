@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "kind": "recovery-invariant-report",
+  "drillId": "local-drill-3107800f",
+  "recoveryPoint": "2026-07-26T18:31:16.682Z",
+  "sourceEnvironment": "local",
+  "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+  "provider": "local-postgresql-16",
+  "receiptId": "local-drill-3107800f-invariant-content-package",
+  "provenance": "local-recovery-drill",
+  "data": {
+    "invariantId": "content-package",
+    "sourceRecords": [
+      {
+        "id": "pkg-copy-001",
+        "sha256": "1558181540dba35341ee5a3a15c1749d2c5dcb1483fa731ae59b3bf4ddbcf84d"
+      },
+      {
+        "id": "pkg-image-002",
+        "sha256": "0737d276a1b461a05dfc83c141866d2ec956df4a1214eb8594e9554cacc204ba"
+      },
+      {
+        "id": "pkg-video-003",
+        "sha256": "cab2a64ff70e6da00476096adf85631f97cd3a3ff793b8ad528ad8552bbfe2e8"
+      }
+    ],
+    "restoredRecords": [
+      {
+        "id": "pkg-copy-001",
+        "sha256": "1558181540dba35341ee5a3a15c1749d2c5dcb1483fa731ae59b3bf4ddbcf84d"
+      },
+      {
+        "id": "pkg-image-002",
+        "sha256": "0737d276a1b461a05dfc83c141866d2ec956df4a1214eb8594e9554cacc204ba"
+      },
+      {
+        "id": "pkg-video-003",
+        "sha256": "cab2a64ff70e6da00476096adf85631f97cd3a3ff793b8ad528ad8552bbfe2e8"
+      }
+    ]
+  }
+}

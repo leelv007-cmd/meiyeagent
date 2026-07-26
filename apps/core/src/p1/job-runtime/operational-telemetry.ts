@@ -347,6 +347,13 @@ export interface WorkerOperationalTelemetryOptions {
   measureEventLoopLag?: () => Promise<number>;
 }
 
+export function resolveWorkerId(
+  configuredWorkerId: string | undefined,
+  fallbackWorkerId: string
+) {
+  return configuredWorkerId?.trim() || fallbackWorkerId;
+}
+
 export class WorkerOperationalTelemetry {
   private readonly sampleIntervalMs: number;
   private readonly clock: () => Date;

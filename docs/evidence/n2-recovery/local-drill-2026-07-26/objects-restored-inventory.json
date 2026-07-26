@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "kind": "object-version-inventory",
+  "drillId": "local-drill-3107800f",
+  "recoveryPoint": "2026-07-26T18:31:16.682Z",
+  "sourceEnvironment": "local",
+  "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+  "provider": "local-postgresql-16",
+  "receiptId": "local-drill-3107800f-objects-restored-inventory",
+  "provenance": "local-recovery-drill",
+  "data": {
+    "inventoryRole": "restored",
+    "entries": [
+      {
+        "key": "workspace-1/canvas/assets/cover.png",
+        "versionId": "sha256-c88732ca1022a07d9ec8f8f83e44f0e1",
+        "sha256": "c88732ca1022a07d9ec8f8f83e44f0e1319d1d35361804b480ee1c8bc7b7b3c8",
+        "sizeBytes": 25
+      },
+      {
+        "key": "workspace-1/canvas/assets/promo.mp4",
+        "versionId": "sha256-5b0734599050fed33ed4c1333f38adb1",
+        "sha256": "5b0734599050fed33ed4c1333f38adb123466bdc0b4deb73e0bbdc09f99f3bf1",
+        "sizeBytes": 25
+      },
+      {
+        "key": "workspace-2/canvas/assets/story.png",
+        "versionId": "sha256-09413ce696aecf839e564ea899de47ef",
+        "sha256": "09413ce696aecf839e564ea899de47ef428e456cc1fcd4d473aa444cf1746901",
+        "sizeBytes": 25
+      }
+    ]
+  }
+}

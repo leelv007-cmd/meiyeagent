@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -172,12 +173,74 @@ test('the persistence gate uses Node test output before asserting database execu
 });
 
 test('the release-candidate gate fails closed on live evidence before build/E2E', async () => {
-  assert.deepEqual(await runGate('run-release-candidate-quality.sh'), [
-    'node scripts/ci/assert-release-candidate-evidence.mjs',
-    `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm build',
-    'pnpm --filter @meiye/web e2e',
-  ]);
+  assert.deepEqual(
+    await runGate('run-release-candidate-quality.sh', {
+      RELEASE_MANIFEST_PATH: 'output/release/release-manifest.json',
+    }),
+    [
+      'node scripts/ci/assert-release-candidate-evidence.mjs',
+      `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+      'pnpm build',
+      'pnpm --filter @meiye/web e2e',
+    ]
+  );
+
+  // Without the downloaded manifest the gate refuses to run at all.
+  const withoutManifest = spawnSync(
+    '/bin/bash',
+    [join(repositoryRoot, 'scripts/ci/run-release-candidate-quality.sh')],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      env: { ...process.env, RELEASE_COMMIT_SHA: releaseCommitSha, RELEASE_MANIFEST_PATH: '' },
+    }
+  );
+  assert.notEqual(withoutManifest.status, 0);
+  assert.match(withoutManifest.stderr, /RELEASE_MANIFEST_PATH/);
+});
+
+test('the Web deploy workflow is discoverable at the root and runs in the Web directory', async () => {
+  // T40/E-01: GitHub only discovers workflows in the repository-root
+  // .github/workflows, and every command in this file assumes the Web unit's
+  // directory. Nothing guarded either fact before, which is how the workflow
+  // stayed unreachable in a subdirectory.
+  const deploy = await readFile(
+    join(repositoryRoot, '.github/workflows/deploy.yml'),
+    'utf8'
+  );
+  assert.equal(
+    existsSync(join(repositoryRoot, 'mkfast-template-main/.github/workflows')),
+    false,
+    'workflows must not live in a subdirectory GitHub never reads'
+  );
+
+  assert.match(deploy, /^on:\n {2}workflow_dispatch:\n/m);
+  assert.doesNotMatch(deploy, /^ {2}push:/m);
+  assert.match(deploy, /uses: actions\/checkout@v4/);
+  assert.match(deploy, /uses: pnpm\/action-setup@v4\n\s+with:\n\s+version: 10\.30\.3/);
+  assert.match(deploy, /uses: actions\/setup-node@v4/);
+
+  // Install stays at the workspace root; every other command runs in the Web unit.
+  const steps = deploy.split(/^ {6}- name: /m).slice(1);
+  const stepDirectories = new Map(
+    steps.map((step) => [
+      step.split('\n')[0].trim(),
+      /working-directory: (\S+)/.exec(step)?.[1] ?? null,
+    ])
+  );
+  assert.equal(stepDirectories.get('Install dependencies'), null);
+  for (const step of [
+    'Apply PostgreSQL migrations before release',
+    'Build',
+    'Deploy to Cloudflare Workers',
+  ]) {
+    assert.equal(
+      stepDirectories.get(step),
+      'mkfast-template-main',
+      `${step} must run in the Web unit directory`
+    );
+  }
+  assert.match(deploy, /pnpm exec wrangler deploy/);
 });
 
 test('workflows wire fast, release-candidate, SCA, and provider-live gates', async () => {
@@ -235,6 +298,34 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
     /bash scripts\/ci\/run-release-candidate-quality\.sh/
   );
   assert.match(coreQuality, /RELEASE_COMMIT_SHA: \$\{\{ github\.sha \}\}/);
+  // The release manifest is minted by its own job, uploaded, and downloaded by
+  // the release-candidate job, which then names it for the gate.
+  assert.match(coreQuality, /^ {2}release-manifest:/m);
+  assert.match(coreQuality, /node scripts\/ci\/build-release-manifest\.mjs/);
+  assert.match(coreQuality, /name: staging-release-manifest/);
+  assert.match(coreQuality, /uses: actions\/download-artifact@v4/);
+  assert.match(coreQuality, /needs: release-manifest/);
+  assert.match(
+    coreQuality,
+    /RELEASE_MANIFEST_PATH: output\/release\/release-manifest\.json/
+  );
+  assert.match(
+    coreQuality,
+    /RELEASE_WORKFLOW_RUN: \$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\/actions\/runs\/\$\{\{ github\.run_id \}\}/
+  );
+  for (const releaseInput of [
+    'RELEASE_CONFIG_REVISION',
+    'RELEASE_READINESS_EVIDENCE_REF',
+    'RELEASE_RECOVERY_EVIDENCE_REF',
+    'RELEASE_JOURNEY_EVIDENCE_REF_COPY',
+    'RELEASE_JOURNEY_EVIDENCE_REF_IMAGE',
+    'RELEASE_JOURNEY_EVIDENCE_REF_VIDEO',
+  ]) {
+    assert.match(
+      coreQuality,
+      new RegExp(`${releaseInput}: \\$\\{\\{ vars\\.${releaseInput} \\}\\}`)
+    );
+  }
   assert.match(providerLive, /release:\n\s+types: \[published\]/);
   assert.match(providerLive, /workflow_dispatch:/);
   assert.match(providerLive, /schedule:/);

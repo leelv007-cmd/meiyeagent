@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "recovery-operations-policy",
+  "drillId": "local-drill-3107800f",
+  "recoveryPoint": "2026-07-26T18:31:16.682Z",
+  "sourceEnvironment": "local",
+  "isolatedEnvironment": "local-isolated-meiye_t40_drill_isolated_3107800f",
+  "provider": "local-postgresql-16",
+  "receiptId": "local-drill-3107800f-operations-policy",
+  "provenance": "local-recovery-drill",
+  "data": {
+    "owner": "release-engineering",
+    "onCall": null,
+    "cadence": "quarterly",
+    "regionFailureIncluded": false,
+    "lastDrillAt": "2026-07-26T18:31:18.286Z",
+    "nextDrillDueAt": "2026-10-24T18:31:18.286Z",
+    "evidenceRetentionDays": 400,
+    "failedInstanceDeletionHours": 1
+  }
+}

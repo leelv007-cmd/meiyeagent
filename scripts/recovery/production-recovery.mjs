@@ -19,6 +19,85 @@ export const REQUIRED_RECOVERY_FAILURE_SCENARIOS = [
   'regional-failure',
 ];
 
+/**
+ * Locally injectable failure scenarios. A regional failure cannot be injected on
+ * one machine, so local evidence must name it as production-only (scope
+ * .productionOnlyScenarios) instead of silently dropping it.
+ */
+export const LOCAL_RECOVERY_FAILURE_SCENARIOS = [
+  'db-object-time-skew',
+  'missing-orphan-object',
+  'kms-key-unavailable',
+  'schema-incompatibility',
+];
+
+export const LOCAL_PRODUCTION_ONLY_SCENARIOS = ['regional-failure'];
+
+const LOCAL_SCHEMA_SOURCES = ['drill-fixture', 'product-migration'];
+
+/**
+ * Recovery environments verify against the same contract with the same
+ * reconciliation strength. A profile only renames the mechanism that genuinely
+ * differs (PITR vs a full local snapshot restore, KMS vs a local key reference)
+ * and, for local evidence, *adds* the requirement to declare what local
+ * infrastructure cannot prove. Local evidence is never accepted where production
+ * evidence is required, and it never relaxes a reconciliation rule.
+ */
+const RECOVERY_ENVIRONMENT_PROFILES = {
+  local: {
+    drillKind: 'local-recovery-drill',
+    drillReceiptKind: 'local-recovery-drill-receipt',
+    keyRefPrefix: 'localkey://',
+    label: 'local recovery drill evidence',
+    postgresMethod: 'postgresql-snapshot-restore',
+    postgresReceiptFields: [
+      'restoreId',
+      'snapshotRange',
+      'sourceDatabase',
+      'restoredDatabase',
+      'dumpSha256',
+    ],
+    postgresReceiptKind: 'postgresql-snapshot-restore-receipt',
+    provenance: 'local-recovery-drill',
+    requiredScenarios: LOCAL_RECOVERY_FAILURE_SCENARIOS,
+    requiresOnCall: false,
+    requiresRegionFailure: false,
+    requiresScope: true,
+    secretsMode: 'secretref-local-keyfile',
+    sourceEnvironment: 'local',
+  },
+  production: {
+    drillKind: 'production-recovery',
+    drillReceiptKind: 'production-recovery-drill-receipt',
+    keyRefPrefix: 'kms://',
+    label: 'production recovery evidence',
+    postgresMethod: 'postgresql-pitr',
+    postgresReceiptFields: ['restoreId', 'walRange'],
+    postgresReceiptKind: 'postgresql-pitr-receipt',
+    provenance: 'production-recovery-drill',
+    requiredScenarios: REQUIRED_RECOVERY_FAILURE_SCENARIOS,
+    requiresOnCall: true,
+    requiresRegionFailure: true,
+    requiresScope: false,
+    secretsMode: 'secretref-kms',
+    sourceEnvironment: 'production',
+  },
+};
+
+export const RECOVERY_ENVIRONMENTS = Object.keys(RECOVERY_ENVIRONMENT_PROFILES);
+
+/** Declared environment of a manifest; absent means the production contract. */
+export function declaredRecoveryEnvironment(manifest) {
+  return manifest?.environment ?? 'production';
+}
+
+export function recoveryEnvironmentLabel(environment) {
+  return (
+    RECOVERY_ENVIRONMENT_PROFILES[environment]?.label ??
+    RECOVERY_ENVIRONMENT_PROFILES.production.label
+  );
+}
+
 const TYPED_EVIDENCE_DATA_FIELDS = {
   'production-recovery-drill-receipt': [
     'targetsDeclaredAt',
@@ -31,7 +110,25 @@ const TYPED_EVIDENCE_DATA_FIELDS = {
     'observedRpoMinutes',
     'observedRtoMinutes',
   ],
+  'local-recovery-drill-receipt': [
+    'targetsDeclaredAt',
+    'startedAt',
+    'verifiedAt',
+    'incidentReferenceTime',
+    'recoveryPoint',
+    'declaredRpoMinutes',
+    'declaredRtoMinutes',
+    'observedRpoMinutes',
+    'observedRtoMinutes',
+  ],
   'postgresql-pitr-receipt': ['restoreId', 'walRange'],
+  'postgresql-snapshot-restore-receipt': [
+    'restoreId',
+    'snapshotRange',
+    'sourceDatabase',
+    'restoredDatabase',
+    'dumpSha256',
+  ],
   'object-version-inventory': ['inventoryRole', 'entries'],
   'schema-revision-artifact': ['revision', 'immutableSnapshotRef'],
   'configuration-revision-artifact': ['revision'],
@@ -74,23 +171,41 @@ const TYPED_EVIDENCE_DATA_FIELDS = {
 
 export function verifyProductionRecoveryManifest(manifest, options = {}) {
   const issues = [];
+  const declaredEnvironment = declaredRecoveryEnvironment(manifest);
+  const expectedEnvironment = options.expectedEnvironment ?? declaredEnvironment;
+  if (!RECOVERY_ENVIRONMENTS.includes(expectedEnvironment)) {
+    issues.push(
+      `environment: ${String(expectedEnvironment)} is not a supported recovery environment`
+    );
+  }
+  if (declaredEnvironment !== expectedEnvironment) {
+    issues.push(
+      `environment: ${expectedEnvironment} evidence is required, manifest declares ${String(declaredEnvironment)}`
+    );
+  }
+  const profile =
+    RECOVERY_ENVIRONMENT_PROFILES[expectedEnvironment] ??
+    RECOVERY_ENVIRONMENT_PROFILES.production;
   if (manifest?.schemaVersion !== 1) {
     issues.push('schemaVersion: only version 1 is supported');
   }
   if (!['passed', 'partial'].includes(manifest?.status)) {
     issues.push('status: passed or partial is required');
   }
+  issues.push(...validateScope(manifest?.scope, profile));
   if (!isNonEmptyString(manifest?.drill?.id)) {
     issues.push('drill.id: recovery drill identifier is required');
   }
-  if (manifest?.drill?.kind !== 'production-recovery') {
-    issues.push('drill.kind: production-recovery is required');
+  if (manifest?.drill?.kind !== profile.drillKind) {
+    issues.push(`drill.kind: ${profile.drillKind} is required`);
   }
-  if (manifest?.postgres?.method !== 'postgresql-pitr') {
-    issues.push('postgres.method: postgresql-pitr is required');
+  if (manifest?.postgres?.method !== profile.postgresMethod) {
+    issues.push(`postgres.method: ${profile.postgresMethod} is required`);
   }
-  if (manifest?.drill?.sourceEnvironment !== 'production') {
-    issues.push('drill.sourceEnvironment: production is required');
+  if (manifest?.drill?.sourceEnvironment !== profile.sourceEnvironment) {
+    issues.push(
+      `drill.sourceEnvironment: ${profile.sourceEnvironment} is required`
+    );
   }
   if (!isNonEmptyString(manifest?.drill?.isolatedEnvironment)) {
     issues.push('drill.isolatedEnvironment: isolated environment is required');
@@ -225,13 +340,13 @@ export function verifyProductionRecoveryManifest(manifest, options = {}) {
   if (!manifest?.configuration?.revision) {
     issues.push('configuration.revision: configuration revision is required');
   }
-  if (manifest?.secrets?.mode !== 'secretref-kms') {
-    issues.push('secrets.mode: secretref-kms is required');
+  if (manifest?.secrets?.mode !== profile.secretsMode) {
+    issues.push(`secrets.mode: ${profile.secretsMode} is required`);
   }
   if (!manifest?.secrets?.kmsKeyRef) {
     issues.push('secrets.kmsKeyRef: KMS key reference is required');
-  } else if (!manifest.secrets.kmsKeyRef.startsWith('kms://')) {
-    issues.push('secrets.kmsKeyRef: kms:// reference is required');
+  } else if (!manifest.secrets.kmsKeyRef.startsWith(profile.keyRefPrefix)) {
+    issues.push(`secrets.kmsKeyRef: ${profile.keyRefPrefix} reference is required`);
   }
   if (!Array.isArray(manifest?.secrets?.secretRefs)) {
     issues.push('secrets.secretRefs: an array of SecretRef values is required');
@@ -299,14 +414,15 @@ export function verifyProductionRecoveryManifest(manifest, options = {}) {
     );
   }
   issues.push(
-    ...validateOperations(manifest?.operations, manifest?.drill, options)
+    ...validateOperations(manifest?.operations, manifest?.drill, options, profile)
   );
   issues.push(
     ...validateFailureScenarios(
       manifest?.failureScenarios?.scenarios,
       verificationTime,
       manifest?.operations?.failedInstanceDeletionHours,
-      manifest?.drill
+      manifest?.drill,
+      profile
     )
   );
   if ((manifest?.blockers?.length ?? 0) > 0 && manifest?.status === 'passed') {
@@ -320,15 +436,11 @@ export function verifyProductionRecoveryManifest(manifest, options = {}) {
   const root = resolve(options.root ?? process.cwd());
   const typedEvidence = new Map();
   for (const [label, artifact, kind] of [
-    [
-      'drill.evidence',
-      manifest?.drill?.evidence,
-      'production-recovery-drill-receipt',
-    ],
+    ['drill.evidence', manifest?.drill?.evidence, profile.drillReceiptKind],
     [
       'postgres.evidence',
       manifest?.postgres?.evidence,
-      'postgresql-pitr-receipt',
+      profile.postgresReceiptKind,
     ],
     [
       'objects.sourceInventory',
@@ -382,7 +494,7 @@ export function verifyProductionRecoveryManifest(manifest, options = {}) {
       'failed-instance-destruction-receipt',
     ],
   ]) {
-    const result = readTypedArtifact(label, artifact, root, kind, manifest);
+    const result = readTypedArtifact(label, artifact, root, kind, manifest, profile);
     issues.push(...result.issues);
     if (result.document) typedEvidence.set(label, result.document);
   }
@@ -394,12 +506,13 @@ export function verifyProductionRecoveryManifest(manifest, options = {}) {
       manifest?.invariants?.[id]?.evidence,
       root,
       'recovery-invariant-report',
-      manifest
+      manifest,
+      profile
     );
     issues.push(...result.issues);
     if (result.document) typedEvidence.set(label, result.document);
   }
-  issues.push(...validateTypedEvidenceContents(manifest, typedEvidence));
+  issues.push(...validateTypedEvidenceContents(manifest, typedEvidence, profile));
   if (manifest?.status === 'passed' && issues.length === 0) {
     return { status: 'passed', issues };
   }
@@ -407,7 +520,7 @@ export function verifyProductionRecoveryManifest(manifest, options = {}) {
     status: manifest?.status === 'partial' ? 'partial' : 'failed',
     issues:
       manifest?.status === 'partial'
-        ? ['status: production recovery evidence must be passed', ...issues]
+        ? [`status: ${profile.label} must be passed`, ...issues]
         : issues,
   };
 }
@@ -444,21 +557,83 @@ function validateReconciliationFields(label, record) {
   return issues;
 }
 
-function validateOperations(operations, drill, options) {
+/**
+ * Local evidence must state, in the manifest, exactly what local infrastructure
+ * cannot prove. Production evidence may declare no scope at all: it has to prove
+ * everything.
+ */
+function validateScope(scope, profile) {
+  const issues = [];
+  if (!profile.requiresScope) {
+    if (scope !== undefined) {
+      issues.push('scope: production evidence must not declare a reduced scope');
+    }
+    return issues;
+  }
+  if (!scope || typeof scope !== 'object' || Array.isArray(scope)) {
+    issues.push('scope: local drill evidence must declare its scope');
+    return issues;
+  }
+  issues.push(
+    ...validateClosedRecord('scope', scope, [
+      'infrastructure',
+      'schemaSource',
+      'productionOnlyScenarios',
+      'notProven',
+    ])
+  );
+  if (scope.infrastructure !== 'local') {
+    issues.push('scope.infrastructure: local is required');
+  }
+  if (!LOCAL_SCHEMA_SOURCES.includes(scope.schemaSource)) {
+    issues.push(
+      `scope.schemaSource: one of ${LOCAL_SCHEMA_SOURCES.join(', ')} is required`
+    );
+  }
+  if (
+    JSON.stringify(scope.productionOnlyScenarios) !==
+    JSON.stringify(LOCAL_PRODUCTION_ONLY_SCENARIOS)
+  ) {
+    issues.push(
+      `scope.productionOnlyScenarios: must declare exactly ${JSON.stringify(LOCAL_PRODUCTION_ONLY_SCENARIOS)}`
+    );
+  }
+  if (
+    !Array.isArray(scope.notProven) ||
+    scope.notProven.length === 0 ||
+    scope.notProven.some((entry) => !isNonEmptyString(entry))
+  ) {
+    issues.push('scope.notProven: a non-empty list of unproven claims is required');
+  }
+  return issues;
+}
+
+function validateOperations(operations, drill, options, profile) {
   const issues = [];
   if (!isNonEmptyString(operations?.owner)) {
     issues.push('operations.owner: owner is required');
   }
-  if (!isNonEmptyString(operations?.onCall)) {
-    issues.push('operations.onCall: on-call reference is required');
-  } else if (!operations.onCall.startsWith('oncall://')) {
-    issues.push('operations.onCall: oncall:// reference is required');
+  if (profile.requiresOnCall) {
+    if (!isNonEmptyString(operations?.onCall)) {
+      issues.push('operations.onCall: on-call reference is required');
+    } else if (!operations.onCall.startsWith('oncall://')) {
+      issues.push('operations.onCall: oncall:// reference is required');
+    }
+  } else if (operations?.onCall !== null) {
+    // Local evidence must not borrow a production on-call claim.
+    issues.push('operations.onCall: null is required for local drill evidence');
   }
   if (operations?.cadence !== 'quarterly') {
     issues.push('operations.cadence: quarterly is required');
   }
-  if (operations?.regionFailureIncluded !== true) {
-    issues.push('operations.regionFailureIncluded: true is required');
+  if (profile.requiresRegionFailure) {
+    if (operations?.regionFailureIncluded !== true) {
+      issues.push('operations.regionFailureIncluded: true is required');
+    }
+  } else if (operations?.regionFailureIncluded !== false) {
+    issues.push(
+      'operations.regionFailureIncluded: false is required for local drill evidence'
+    );
   }
   if (!isCanonicalIsoTimestamp(operations?.lastDrillAt)) {
     issues.push('operations.lastDrillAt: canonical ISO timestamp is required');
@@ -502,14 +677,15 @@ function validateFailureScenarios(
   scenarios,
   verificationTime,
   failedInstanceDeletionHours,
-  drill
+  drill,
+  profile
 ) {
   if (!Array.isArray(scenarios)) {
     return ['failureScenarios.scenarios: scenario array is required'];
   }
   const issues = [];
   const ids = scenarios.map((scenario) => scenario?.scenarioId);
-  for (const required of REQUIRED_RECOVERY_FAILURE_SCENARIOS) {
+  for (const required of profile.requiredScenarios) {
     if (!ids.includes(required)) {
       issues.push(`failureScenarios.${required}: required scenario is missing`);
     }
@@ -538,7 +714,7 @@ function validateFailureScenarios(
         'destroyedAt',
       ])
     );
-    if (!REQUIRED_RECOVERY_FAILURE_SCENARIOS.includes(scenario?.scenarioId)) {
+    if (!profile.requiredScenarios.includes(scenario?.scenarioId)) {
       issues.push(`${label}.scenarioId: unsupported scenario`);
     }
     if (!isNonEmptyString(scenario?.injectedCondition)) {
@@ -591,7 +767,7 @@ function validateFailureScenarios(
   return issues;
 }
 
-function readTypedArtifact(label, artifact, root, expectedKind, manifest) {
+function readTypedArtifact(label, artifact, root, expectedKind, manifest, profile) {
   const issues = validateArtifact(label, artifact, root);
   if (issues.length > 0) return { issues, document: null };
   let document;
@@ -646,8 +822,8 @@ function readTypedArtifact(label, artifact, root, expectedKind, manifest) {
     ],
     [
       'provenance',
-      'production-recovery-drill',
-      'production-recovery-drill is required',
+      profile.provenance,
+      `${profile.provenance} is required`,
     ],
   ]) {
     if (document[field] !== expected) {
@@ -679,7 +855,7 @@ function readTypedArtifact(label, artifact, root, expectedKind, manifest) {
   return { issues, document };
 }
 
-function validateTypedEvidenceContents(manifest, evidence) {
+function validateTypedEvidenceContents(manifest, evidence, profile) {
   const issues = [];
   for (const field of [
     'targetsDeclaredAt',
@@ -716,10 +892,10 @@ function validateTypedEvidenceContents(manifest, evidence) {
     minutesBetween(manifest?.drill?.startedAt, manifest?.drill?.verifiedAt)
   );
   const postgres = evidence.get('postgres.evidence')?.data;
-  for (const field of ['restoreId', 'walRange']) {
+  for (const field of profile.postgresReceiptFields) {
     if (postgres && !isNonEmptyString(postgres[field])) {
       issues.push(
-        `postgres.evidence.data.${field}: PITR receipt field is required`
+        `postgres.evidence.data.${field}: restore receipt field is required`
       );
     }
   }
@@ -962,6 +1138,20 @@ function validateClosedRecord(label, record, allowedFields) {
   return issues;
 }
 
+/** Canonical count/digest for an object-version inventory. */
+export function objectInventoryDigest(entries) {
+  const sorted = [...entries].sort((a, b) =>
+    `${a.key}\0${a.versionId}`.localeCompare(`${b.key}\0${b.versionId}`)
+  );
+  return { count: sorted.length, digest: sha256Json(sorted) };
+}
+
+/** Canonical count/digest for one invariant's record set. */
+export function invariantRecordsDigest(records) {
+  const sorted = [...records].sort((a, b) => a.id.localeCompare(b.id));
+  return { count: sorted.length, digest: sha256Json(sorted) };
+}
+
 function computeObjectInventory(entries, label, issues) {
   if (!Array.isArray(entries)) {
     issues.push(`${label}.data.entries: object version entries are required`);
@@ -997,10 +1187,7 @@ function computeObjectInventory(entries, label, issues) {
     issues.push(`${label}.data.entries: duplicate object version entry`);
     return null;
   }
-  const sorted = [...entries].sort((a, b) =>
-    `${a.key}\0${a.versionId}`.localeCompare(`${b.key}\0${b.versionId}`)
-  );
-  return { count: sorted.length, digest: sha256Json(sorted) };
+  return objectInventoryDigest(entries);
 }
 
 function computeInvariantRecords(records, label, issues) {
@@ -1033,8 +1220,7 @@ function computeInvariantRecords(records, label, issues) {
     issues.push(`${label}: duplicate invariant record`);
     return null;
   }
-  const sorted = [...records].sort((a, b) => a.id.localeCompare(b.id));
-  return { count: sorted.length, digest: sha256Json(sorted) };
+  return invariantRecordsDigest(records);
 }
 
 function sha256Json(value) {

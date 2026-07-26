@@ -24,6 +24,7 @@ export {
 export {
   canvasReachabilityProbe,
   dbosSystemDbProbe,
+  objectStorageReadWriteRoundTrip,
   objectStorageProbe,
   outboxBacklogProbe,
   postgresqlProbe,
@@ -31,6 +32,7 @@ export {
   schemaCompatibilityProbe,
   workerFreshnessProbe,
   type CanvasReachabilityOptions,
+  type ObjectStorageReadWriteTarget,
   type ObjectStorageProbeTarget,
   type OutboxBacklogSource,
   type Queryable,

@@ -30,12 +30,21 @@ export function dbosSystemDbProbe(
 /**
  * Schema compatibility: critical relations must exist after migration preflight.
  * Defaults cover business + harness markers commonly required for delivery.
+ *
+ * T40/E-01: the owned-asset marker used to read `public.model_owned_assets`, a
+ * relation that exists in no migration and nowhere else in this repository —
+ * `git grep` finds it only here. It survived because this probe was never
+ * wired into the assembly, so nothing ever ran it. Wiring it (T40) turned that
+ * stale constant into a permanent `not_ready` for every protected environment,
+ * since the probe can never find the table. The real P1 owned-asset relation is
+ * `public.p1_owned_assets`; the harness marker `public.p1_worker_metric_samples`
+ * was already correct.
  */
 export function schemaCompatibilityProbe(
   pool: Queryable,
   relations: string[] = [
     'public.p1_worker_metric_samples',
-    'public.model_owned_assets',
+    'public.p1_owned_assets',
   ],
 ): () => Promise<ReadinessCheckResult> {
   return async () => {
@@ -66,6 +75,35 @@ export interface ObjectStorageProbeTarget {
   /** Optional real R/W probe (preferred in production assembly). */
   probeReadWrite?: () => Promise<void>;
   env?: NodeJS.ProcessEnv;
+}
+
+export interface ObjectStorageReadWriteTarget {
+  bytes: Uint8Array;
+  createObjectKey(): string;
+  deleteObject(objectKey: string): Promise<void>;
+  putObject(objectKey: string, bytes: Uint8Array): Promise<void>;
+  readObject(objectKey: string): Promise<Uint8Array>;
+}
+
+/** Isolated object round trip; each invocation owns and deletes one unique key. */
+export function objectStorageReadWriteRoundTrip(
+  target: ObjectStorageReadWriteTarget,
+): () => Promise<void> {
+  return async () => {
+    const objectKey = target.createObjectKey();
+    await target.putObject(objectKey, target.bytes);
+    try {
+      const stored = await target.readObject(objectKey);
+      if (
+        stored.byteLength !== target.bytes.byteLength ||
+        stored.some((byte, index) => byte !== target.bytes[index])
+      ) {
+        throw new Error('Object storage returned different bytes than were written.');
+      }
+    } finally {
+      await target.deleteObject(objectKey);
+    }
+  };
 }
 
 /** Shared object storage: mode gate + optional live R/W probe. */
