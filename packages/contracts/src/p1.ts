@@ -31,6 +31,7 @@ export const p1ModuleRequestSchema = z.object({
     'product-billing',
     'redemptions',
     'result-delivery',
+    'skills',
     'video-regeneration',
   ]),
   action: z.string().min(1),

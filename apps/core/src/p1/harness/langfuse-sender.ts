@@ -19,6 +19,8 @@ export const LANGFUSE_TRACE_BODY_FIELDS = [
   'sessionId',
   'tags',
   'metadata',
+  'skillRevisionRefs',
+  'skillContentHashes',
 ] as const;
 
 export const LANGFUSE_SPAN_BODY_FIELDS = [
@@ -29,6 +31,8 @@ export const LANGFUSE_SPAN_BODY_FIELDS = [
   'input',
   'output',
   'metadata',
+  'skillRevisionRefs',
+  'skillContentHashes',
 ] as const;
 
 export const LANGFUSE_SCORE_BODY_FIELDS = [
@@ -163,12 +167,20 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
   const prompt = projectPromptReference(isRecord(item.decisionTrace)?.prompt);
   const metrics = projectMetrics(isRecord(item.decisionTrace)?.metrics);
   const productMetrics = projectProductMetrics(item.eventType, item.payload);
+  const skillRevisionRefs = stringArray(
+    isRecord(item.decisionTrace)?.skillRevisionRefs,
+  ) ?? [];
+  const skillContentHashes = stringArray(
+    isRecord(item.decisionTrace)?.skillContentHashes,
+  ) ?? [];
   const traceBody = exactFields(LANGFUSE_TRACE_BODY_FIELDS, {
     id: traceId,
     name: 'beauty-marketing-task',
     sessionId: item.workflowId,
     tags: ['harness', item.stage],
     metadata: { taskId, workflowId: item.workflowId },
+    skillRevisionRefs,
+    skillContentHashes,
   });
   const spanMetadata: Record<string, unknown> = {
     auditId: item.auditId,
@@ -190,6 +202,8 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     input: { eventType: item.eventType },
     output: projectStageOutput(item.stage, item.decisionTrace, item.payload),
     metadata: spanMetadata,
+    skillRevisionRefs,
+    skillContentHashes,
   });
   const events: IngestionEvent[] = [
     ingestionEvent(item, 'trace', 'trace-create', traceBody),

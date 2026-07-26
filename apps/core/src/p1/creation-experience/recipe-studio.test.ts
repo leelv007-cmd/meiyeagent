@@ -20,7 +20,7 @@ import {
 } from './recipe-studio.js';
 import { listRecipeStudioSampleDefinitions } from './recipe-studio-samples.js';
 
-function createServices() {
+function createServices(unavailableSkillRefs: string[] = []) {
   const repository = new MemoryCreationExperienceCatalogRepository();
   const catalog = new CreationExperienceCatalogService(
     repository,
@@ -32,6 +32,11 @@ function createServices() {
     studio: new RecipeStudioService(
       catalog,
       () => '2026-07-25T12:00:00.000Z',
+      {
+        async listUnavailableFrozenRevisionRefs() {
+          return unavailableSkillRefs;
+        },
+      },
     ),
   };
 }
@@ -219,6 +224,24 @@ describe('Recipe Studio controlled compiler', () => {
       passed: true,
     });
     assert.equal(compiled.studioRelease?.validation, null);
+  });
+
+  it('fails closed when a versioned Skill dependency does not exist or is not frozen', async () => {
+    const unavailable = 'skill.platform-adaptation@7';
+    const { studio } = createServices([unavailable]);
+    const compiled = await studio.compile(sampleDefinition());
+
+    await assert.rejects(
+      () =>
+        studio.validate({
+          recipeId: compiled.recipeId,
+          expectedRevision: compiled.revision,
+          actorId: 'ops-1',
+          reason: '运行生产同源校验',
+          correlationId: 'corr-recipe-studio-missing-skill',
+        }),
+      new RegExp(`不存在或尚未受理冻结：${unavailable}`, 'u'),
+    );
   });
 
   it('requires a passing EvalRun before recording the internal-test label', async () => {

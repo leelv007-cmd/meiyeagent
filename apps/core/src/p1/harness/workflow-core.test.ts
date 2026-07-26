@@ -110,6 +110,88 @@ test('five semantic stages run in order with stable effect keys and a delivery f
   );
 });
 
+test('selected Skill refs extend only the stage-one effect unit and enter trace lineage without instruction text', async () => {
+  const calls: string[] = [];
+  const traces: Array<{ stage: string; payload: unknown }> = [];
+  const runtime: HarnessWorkflowRuntime = {
+    async runStep(effectIdempotencyKey, operation) {
+      calls.push(effectIdempotencyKey);
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace(input) {
+      traces.push({ stage: input.stage, payload: input.payload });
+    },
+  };
+  const stages = fixtureStages();
+  stages.resolveStageSkills = async () => ({
+    instructions: [
+      {
+        contentHash: 'hash-skill-one',
+        executionMode: 'prompt_materialized',
+        instruction: 'private instruction must not enter trace',
+        skillRevisionRef: 'skill.intent-one@2',
+      },
+    ],
+    receipts: [
+      {
+        childEffectIds: [],
+        createdAt: '2026-07-26T00:00:00.000Z',
+        inputFingerprint: 'fingerprint',
+        invocationId: 'skill-materialized:task-35:intent_naming:skill.intent-one%402',
+        productUsageTaskId: 'task-35',
+        skillRevisionRef: 'skill.intent-one@2',
+        status: 'settled',
+        taskId: 'task-35',
+        totalCostCents: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        workspaceId: 'workspace-1',
+      },
+    ],
+  });
+
+  await runHarnessWorkflow('task-35', taskInput(), stages, runtime);
+
+  assert.equal(
+    calls[0],
+    'wf:task-35:s1:intent:skills=skill.intent-one%402:0',
+  );
+  assert.equal(calls[1], 'wf:task-35:s2:context:0');
+  const intentTrace = traces.find(
+    (trace) => trace.stage === 'intent_naming',
+  )?.payload;
+  assert.deepEqual(
+    intentTrace &&
+      {
+        skillRevisionRefs: (
+          intentTrace as { skillRevisionRefs?: string[] }
+        ).skillRevisionRefs,
+        skillContentHashes: (
+          intentTrace as { skillContentHashes?: string[] }
+        ).skillContentHashes,
+        skillReceiptIds: (
+          intentTrace as { skillReceiptIds?: string[] }
+        ).skillReceiptIds,
+      },
+    {
+      skillRevisionRefs: ['skill.intent-one@2'],
+      skillContentHashes: ['hash-skill-one'],
+      skillReceiptIds: [
+        'skill-materialized:task-35:intent_naming:skill.intent-one%402',
+      ],
+    },
+  );
+  assert.equal(
+    JSON.stringify(intentTrace).includes('private instruction'),
+    false,
+  );
+});
+
 test('official-neutral execution reports a conversational identity reminder without blocking delivery', async () => {
   const request = snapshotTaskInput();
   request.executionSnapshot = {

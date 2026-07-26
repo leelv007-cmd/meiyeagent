@@ -76,7 +76,7 @@ test('imports versioned redline, memory and Skill EvalRuns through the dataset-i
   assert.deepEqual(skills, {
     datasetName: 'harness-evalrun:harness-skills',
     importedItems: 2,
-    runId: 'skills-five-piece-recorded-v1',
+    runId: 'skills-five-piece-recorded-v2',
   });
   assert.equal(requests.length, 27);
   assert.equal(
@@ -118,10 +118,10 @@ test('imports versioned redline, memory and Skill EvalRuns through the dataset-i
   assert.equal(serialized.includes('memoryDiff'), false);
   assert.equal(serialized.includes('signal-temporary'), false);
   assert.deepEqual(requests.at(-1)?.body.input, {
-    caseId: 'disabled-skill-stays-outside-stage-allowlist',
-    gateId: 'skill_binding_allowlist',
+    caseId: 'different-skill-eval-is-rejected',
+    gateId: 'skill_revision_acceptance',
     promptRevision: 'skills/daily-industry@1',
-    scorerRevision: 'skill-routing-scorer@1',
+    scorerRevision: 'skill-routing-scorer@2',
     skillRevisionRef: 'skill.daily-industry@1',
   });
 });

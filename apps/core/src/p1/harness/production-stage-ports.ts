@@ -50,6 +50,10 @@ import {
   buildCopyPlatformVariants,
 } from './output-compiler.js';
 import { containsConcreteOfferText } from './visible-claim-patterns.js';
+import type {
+  ResolvedSkillInstruction,
+  SkillInvocationReceipt,
+} from '../skills/types.js';
 
 export interface ProductionHarnessContextPort {
   compileAndFreeze(input: {
@@ -102,6 +106,20 @@ export interface HarnessStructuredNodeRunnerFactory {
     billingTaskId?: string;
     billingQuoteRevision?: string;
   }): StructuredNodeRunner;
+}
+
+export interface HarnessSkillInstructionResolverPort {
+  resolve(input: {
+    workspaceId: string;
+    workflowId: string;
+    workflowRevision: number;
+    recipeId?: string;
+    recipeRevisionId?: string;
+    stage: 'intent_naming';
+  }): Promise<{
+    instructions: ResolvedSkillInstruction[];
+    receipts: SkillInvocationReceipt[];
+  }>;
 }
 
 export class HarnessCopyScopeError extends Error {
@@ -179,7 +197,31 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     },
     private readonly executionDelivery?: ContentPackageRevisionWritePort,
     private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
+    private readonly skillInstructions?: HarnessSkillInstructionResolverPort,
   ) {}
+
+  async resolveStageSkills(
+    input: Parameters<
+      NonNullable<HarnessStagePorts['resolveStageSkills']>
+    >[0],
+  ) {
+    if (!this.skillInstructions) {
+      return { instructions: [], receipts: [] };
+    }
+    const recipe = input.request.executionSnapshot?.recipe;
+    return this.skillInstructions.resolve({
+      workspaceId: input.request.workspaceId,
+      workflowId: input.workflowId,
+      workflowRevision: input.request.workflowRevision,
+      ...(recipe
+        ? {
+            recipeId: recipe.id,
+            recipeRevisionId: recipe.revision,
+          }
+        : {}),
+      stage: input.stage,
+    });
+  }
 
   async nameIntent(
     input: Parameters<HarnessStagePorts['nameIntent']>[0],
@@ -201,6 +243,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         intent: input.request.intent,
         round: input.round,
         prompt: input.request.prompts?.intentNaming,
+        ...(input.skillInstructions?.length
+          ? { skillInstructions: input.skillInstructions }
+          : {}),
       },
       runner,
       metrics,
