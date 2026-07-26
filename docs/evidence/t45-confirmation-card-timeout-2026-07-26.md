@@ -3,15 +3,15 @@
 ## Scope and authority
 
 - Branch: `leelv007-cmd/t45-confirmation-timeout`
-- Rework base: local `main` at `62952d5b`
-- Browser journey source synchronized with current local `main` at `f7fcab3f`
-  before the setup-only stabilization.
+- Rework base: local `main` at `49427f98` (includes T20).
+- The browser journey input follows T44's promotion-gap behavior; its governed
+  admin-config setup only separates answer and timeout timing deterministically.
 - Evidence class: local fixture, real lane PostgreSQL, real lane DBOS, and
   locked fixture-browser gates. No credential or live-provider call is part of
   this acceptance.
-- The database keeps the existing `pending | resolved` states. Core timeout
-  provenance lives only in `decision_events` through the
-  `:core_timeout` idempotency suffix and `resolution=ignored`.
+- The database keeps the existing `pending | resolved` states. Server-authored
+  provenance lives in `decision_events.resolution_source`; idempotency suffixes
+  are used only for uniqueness.
 - The existing in-workflow `buildSemanticDecisionResumption` implementation is
   byte-unchanged. T45 adds a separate terminal-successor builder below it.
 - No billing ledger writer or `usage.reserve` call was added. A late answer
@@ -24,13 +24,18 @@
 | Finding | Change and proof |
 | --- | --- |
 | F-1 — core timeout bypassed the decision channel | `awaitDecision` calls `HarnessDecisionService.submitCoreTimeout` inside the stable post-recv step `persist-core-timeout-{questionId}`. The PostgreSQL test directly asserts `pending_questions.status=resolved` plus one event, trace, audit and outbox row for the timeout. The event is inserted with `resume_status=sent`, so the workflow never sends the synthetic decision to itself. |
-| F-2 — a late answer disappeared after terminal success | A resolved question whose consuming event ends in `:core_timeout` is accepted as `{questionId}:late_answer`. The first answer starts a deterministic new workflow; subsequent answers replay the first persisted command and return the same successor reference without 409 or a second start. |
-| F-3 — config snapshot shifted old DBOS function IDs | The config read is an ordinary `await`, with the durable recv deadline providing replay determinism. A child process persists a pre-T45 PENDING layout, exits without graceful shutdown, and the parent recovers it with the new code and a changed config head. It completes with IDs `3/4/5/6 = persist pending / setEvent / recv / sleep`, without branch or error. |
-| F-4 — timeout looked like a merchant decision | Only an idempotency key ending in `:core_timeout` selects `routingSource: policy`; merchant ignored decisions remain `routingSource: decision`. |
+| F-2 — a late answer disappeared after terminal success | A resolved question whose server-authored consuming source is `core_timeout` or `core_hold_expired` accepts only a real `accepted` merchant answer as `{questionId}:late_answer`. The first answer starts a deterministic new workflow; subsequent answers replay the first persisted command and return the same successor reference without 409 or a second start. |
+| F-3 — config snapshot shifted old DBOS function IDs | The config read is an ordinary `await`, with the durable recv deadline providing replay determinism. A child process persists a pre-T45 PENDING layout, exits without graceful shutdown, and the parent recovers it with the new code. It completes with IDs `3/4/5/6 = persist pending / setEvent / recv / sleep`, without branch or error. This test does not cover a changed config head. |
+| F-4 — timeout looked like a merchant decision | The DBOS carrier passes the server-authored resolution alongside the command; `workflow-core` reads that fact to select `routingSource: policy` and never sniffs an idempotency-key suffix. Merchant ignored decisions remain `routingSource: decision`. |
 | F-5 — reverse controls | A snapshot-backed run without `usageReservation` never reads the timeout config and waits until an explicit decision arrives. A reservation proves quota was already locked. `external_effect` remains the separate `approvalRequests` blocking-node path in `PostgresHarnessStore.registerPending`, so this timeout change does not consume or bypass it. |
 | F-6/F-7 — unsafe config and English ledger value | Config validation is `1..3600`; `3601` is rejected. The synthetic value is `超时未作答，已按通用口径继续`. |
 | F-8 — smoke terminal race | The smoke polls the workflow terminal state before asserting `SUCCESS`. |
 | F-9 — evidence and stale 48h review text | This report records the commands, SQL facts, replay layout, reverse controls, frontend boundary, and browser lock audit. The old deep-review line now says config default 30 seconds. |
+| F-10 — non-answers created paid successors | Late-answer admission requires `state=accepted` and rejects the sentinels `未作答` and `这次先跳过`. A discarded browser POST returns HTTP 200 with `consumedByOther=true`, omits `replayed` and `successor`, writes no decision event, and creates no quote, usage reservation, or submission. |
+| F-11 — leaked recovery baseline | The five coordinator-specified rows are removed before the final gates. The recoverable-start test filters its assertion by the fixture workspace while the production store query remains byte-unchanged. |
+| F-12/F-15 — provenance and fallback | `decision_events.resolution_source` is added for existing databases with an explicit backfill. Target resolution and late-answer admission read this server column, while the optional-store fallback reads pending and resolved views separately instead of hardcoding `pending`. |
+| F-13 — opt-in timeout | `QuestionCard.unattended` is `continue | hold`, missing means hold, and production constructors explicitly declare their policy. Automatic continuation requires both `continue` and a usage reservation. |
+| Hold expiry cancellation | A hold card uses one 48-hour recv. Expiry records `core_hold_expired`, resolves the pending row, refunds through the existing billing compensation port, skips commit and delivery, and returns a successful `outcome=cancelled` snapshot with the honest merchant message `超时未选择，本次任务已取消，额度已退回`. |
 
 ## Real PostgreSQL ledger and export proof
 
@@ -59,6 +64,11 @@ core task after one late answer:
   core value=超时未作答，已按通用口径继续
   core resolutionSource=core_timeout
   core resume_status=sent
+
+hold-expired task:
+  pending_status=resolved
+  idempotency_keys=[...:core_hold_expired]
+  events=1 traces=1 audits=1 outbox=1
 ```
 
 The same test calls
@@ -69,6 +79,11 @@ the resolved row no longer blocks an export gate.
 The frontend/core race is also fail-safe. If the browser `:timed_out` event wins
 the row first, `submitCoreTimeout` returns `consumedByOther` rather than failing
 the workflow; the DBOS carrier waits for the already-persisted browser command.
+
+The reverse late-answer control sends `ignoredDecision('未作答')` after the core
+timeout. The service returns `consumedByOther=true`; direct PostgreSQL counts
+for `creation_submissions`, quotes and usage reservations remain unchanged, and
+the timeout task still has only its timeout event until a real answer arrives.
 
 ## DBOS replay, timeout, and quota proof
 
@@ -94,11 +109,11 @@ terminal      SUCCESS
 ```
 
 The function-ID recovery case uses an independent process to leave IDs 3, 4
-and 6 durable while recv is PENDING, then changes the config value from 300 to
-1 and launches the new code with the same application version. DBOS recovers
-the original deadline, receives the merchant answer at ID 5, completes the
-same workflow, and retains the exact final 3/4/5/6 layout. The post-recv write
-is ID 7 only on the timeout branch; it cannot shift an already pending recv.
+and 6 durable while recv is PENDING, then launches the new code with the same
+application version. DBOS recovers the original deadline, receives the merchant
+answer at ID 5, completes the same workflow, and retains the exact final
+3/4/5/6 layout. The post-recv write is ID 7 only on the timeout branch; it
+cannot shift an already pending recv. This case does not exercise config drift.
 
 The quota negative control supplies no `usageReservation`, sets the config to
 one second, waits 1.5 seconds, and asserts:
@@ -109,8 +124,13 @@ configReads=0
 coreTimeoutSubmissions=0
 ```
 
-An explicit ignored decision then completes the run. The carrier's hold path
-has no product timeout; it continues receiving until a real decision arrives.
+An explicit ignored decision then completes the run. A declared `hold` card
+uses the same IDs 3/4/5/6 with one 48-hour recv and does not read the 30-second
+config. When that recv expires, the post-recv `core_hold_expired` write consumes
+the pending row; the wrapper refunds, skips commit, and returns success without
+a delivery. Missing reservation means there is nothing to refund; a present
+reservation without a billing port or settlement input is rejected rather than
+claiming a successful refund.
 
 ## Terminal successor, billing, and semantic consistency
 
@@ -180,6 +200,32 @@ is local frontend state, core does not observe it, and an answer arriving after
 core terminal timeout is accepted by the successor endpoint rather than being
 discarded. T31 needs to expose that now-working API truth.
 
+## Lane database cleanup
+
+Before the final browser and Core baselines, the coordinator-authorized cleanup
+removes exactly these leaked r2 rows:
+
+```text
+execution_spine.creation_submissions:
+  snapshot-composer-task:late-answer-4fa4e89fbdabe551e4b81cea
+p1_product_billing_quotes:
+  quote-composer-task:late-answer-4fa4e89fbdabe551e4b81cea
+p1_product_billing_usage:
+  task/quote composer-task:late-answer-4fa4e89fbdabe551e4b81cea
+harness_runtime.decision_events:
+  composer-task:450e1da588d1ae9fce87ebd8c874b976cc6def1f709ccdc3637cd82789181320:s1:promotion_details:late_answer
+p1_content_packages:
+  content-package-c9c54e63-5c00-4bbf-bc42-c84b2e494efd
+workspace:
+  ws_Lkhp0iLaQ8qtM7y9CqBord8DIRY4EjpE
+```
+
+The final query checks that no `creation_submissions.harness_state=reserved`
+row remains, except a row created and cleaned inside a currently running test.
+The cleanup transaction returned one deleted row for each identifier above;
+the post-browser and post-Core query returned
+`reserved_submissions=0` and every target-specific count was zero.
+
 ## Package and browser gates
 
 Core typecheck:
@@ -194,8 +240,15 @@ Final Core baseline:
 ```text
 pnpm --filter @meiye/core test
 
-tests 2273
-pass 2263
+run 1: /tmp/t45-r3-core-full-1.log
+tests 2298
+pass 2288
+fail 0
+skipped 10
+
+run 2: /tmp/t45-r3-core-full-2.log
+tests 2298
+pass 2288
 fail 0
 skipped 10
 ```
@@ -234,50 +287,52 @@ decision wins before core's independent fallback.
 Answer journeys, consecutive locked run 1:
 
 ```text
-the three cards appear ...                         15.2s
-answering the question card resumes the run ...    11.8s
-2 passed (1.4m)
+the three cards appear ...                         17.7s
+answering the question card resumes the run ...    12.8s
+2 passed (1.8m)
 ```
 
 Answer journeys, consecutive locked run 2:
 
 ```text
-the three cards appear ...                         21.4s
-answering the question card resumes the run ...    13.3s
-2 passed (1.8m)
+the three cards appear ...                         17.7s
+answering the question card resumes the run ...    11.9s
+2 passed (1.6m)
 ```
 
 Timeout journey:
 
 ```text
-leaving the question alone releases it on the countdown ... 48.0s
-1 passed (2.1m)
+leaving the question alone releases it on the countdown ... 46.5s
+1 passed (1.9m)
 ```
 
 The lane PostgreSQL audit history after those runs:
 
 ```text
 revision  value  reason
-3         600    T45 e2e three-cards ... set confirmation timeout to 600s
-4         599    T45 e2e answer-question ... set confirmation timeout to 599s
-5         600    T45 e2e three-cards ... set confirmation timeout to 600s
-6         599    T45 e2e answer-question ... set confirmation timeout to 599s
-7          60    T45 e2e timeout-question ... set confirmation timeout to 60s
+8         600    T45 e2e three-cards ... set confirmation timeout to 600s
+9         599    T45 e2e answer-question ... set confirmation timeout to 599s
+10        600    T45 e2e three-cards ... set confirmation timeout to 600s
+11        599    T45 e2e answer-question ... set confirmation timeout to 599s
+12         60    T45 e2e timeout-question ... set confirmation timeout to 60s
 ```
 
 Each row also carries its authenticated admin `actor_id` and a distinct
 `correlation_id`. This is a real `admin_config_revisions` audit trail; the E2E
 does not seed or update that table directly.
 
-Lock audit for the three successful commands:
+Lock audit for the four successful commands:
 
 ```text
-2026-07-26T13:07:01+0800 acquire pid=41032 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
-2026-07-26T13:08:29+0800 release pid=41032 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
-2026-07-26T13:11:48+0800 acquire pid=44059 waited=190s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
-2026-07-26T13:13:39+0800 release pid=44059 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
-2026-07-26T13:13:53+0800 acquire pid=50748 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
-2026-07-26T13:16:04+0800 release pid=50748 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
+2026-07-26T14:38:41+0800 acquire pid=72945 waited=130s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
+2026-07-26T14:40:33+0800 release pid=72945 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
+2026-07-26T14:40:38+0800 acquire pid=79478 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
+2026-07-26T14:42:15+0800 release pid=79478 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
+2026-07-26T14:42:20+0800 acquire pid=82012 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
+2026-07-26T14:44:19+0800 release pid=82012 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
+2026-07-26T14:44:27+0800 acquire pid=85770 waited=0s cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout cmd=pnpm --filter
+2026-07-26T14:46:03+0800 release pid=85770 cwd=/Users/bin/orca/workspaces/美业内容2/t45-confirmation-timeout
 ```
 
 The earlier full smoke remains green for the Core-owned browser surfaces:
@@ -285,4 +340,5 @@ The earlier full smoke remains green for the Core-owned browser surfaces:
 ```text
 assembly-gate-required-journey: 1 passed
 intent-routing-http-sse:        3 passed
+combined:                       4 passed (1.6m)
 ```
