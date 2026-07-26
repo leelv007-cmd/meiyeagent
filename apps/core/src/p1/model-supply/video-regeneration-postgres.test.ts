@@ -36,7 +36,8 @@ describe(
         actorId: 'owner-1',
         createdAt: '2026-07-20T12:00:00.000Z',
         quoteId: 'quote-1',
-        scope: 'full_compose',
+        scope: 'shot',
+        shotId: 'opening',
         sourceRunId: 'source-1',
         targetSeconds: 12,
         workspaceId,
@@ -45,7 +46,8 @@ describe(
         actorId: 'owner-1',
         createdAt: '2026-07-20T12:00:00.000Z',
         quoteId: 'quote-1',
-        scope: 'full_compose',
+        scope: 'shot',
+        shotId: 'opening',
         sourceRunId: 'source-1',
         taskId: 'task-1',
         workspaceId,
@@ -64,7 +66,7 @@ describe(
       const restarted = new PostgresVideoRegenerationRepository(pool);
       assert.equal(
         (await restarted.getQuoteBinding(workspaceId, 'quote-1'))?.scope,
-        'full_compose',
+        'shot',
       );
       assert.equal(
         (await restarted.getTaskBinding(workspaceId, 'task-1'))?.sourceRunId,
@@ -75,7 +77,8 @@ describe(
           actorId: 'another-owner',
           createdAt: '2026-07-20T12:00:00.000Z',
           quoteId: 'quote-1',
-          scope: 'full_compose',
+          scope: 'shot',
+          shotId: 'opening',
           sourceRunId: 'source-1',
           taskId: 'task-1',
           workspaceId,

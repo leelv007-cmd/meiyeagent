@@ -13,7 +13,7 @@ import type {
   ReceiptAwareCanvasObjectStorage,
 } from '../pro-studio/canvas-asset-facade.js';
 import type { ReferenceAssetDeliveryPort } from '../p1/model-supply/reference-asset-delivery.js';
-import { runMediaCommand } from '../video/media-tools.js';
+import { runMediaCommand } from '../p1/model-supply/media-tools.js';
 
 export const AUDIO_ASSET_LIMITS = {
   maxBitRate: 512_000,

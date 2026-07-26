@@ -481,10 +481,7 @@ function aggregateRunnerRows(
       failuresByKind[row.kind] = (failuresByKind[row.kind] ?? 0) + count;
       if (row.recovered) recoveredFailureCount += count;
     }
-    if (
-      row.kind === 'model.media-generation' ||
-      row.kind === 'model.composed-video'
-    ) {
+    if (row.kind === 'model.media-generation') {
       mediaDuration += Number(row.duration_sum_ms);
       mediaCount += count;
     }

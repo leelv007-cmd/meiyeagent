@@ -140,24 +140,13 @@ export function createVideoRegenerationTerminalObserver(options: {
       );
       if (!binding) return null;
       if (
-        workflow.status !== 'completed' &&
         workflow.status !== 'cancelled' &&
         workflow.status !== 'failed'
       ) {
         return null;
       }
       const attempt = workflow.attempts.at(-1);
-      const measured =
-        workflow.composedAsset?.technicalValidation?.evidenceKind === 'measured'
-          ? workflow.composedAsset.technicalValidation.durationSeconds
-          : undefined;
       if (!attempt) {
-        if (workflow.status === 'completed') {
-          throw new P1DomainError(
-            'INVALID_STATE',
-            'A completed regeneration workflow requires real attempt evidence.',
-          );
-        }
         const quote = await options.billing.getQuoteByTask(
           workflow.id,
           workflow.workspaceId,
@@ -180,17 +169,8 @@ export function createVideoRegenerationTerminalObserver(options: {
         await options.billing.settleTask({
           attemptId: attempt.id,
           deploymentId: attempt.deploymentId,
-          status: workflow.status === 'completed' ? 'completed' : 'failed',
+          status: 'failed',
           taskId: workflow.id,
-          ...(measured !== undefined
-            ? {
-                trustedUsage: {
-                  actualSeconds: measured,
-                  evidenceRef: workflow.composedAsset?.id,
-                  kind: 'media_duration' as const,
-                },
-              }
-            : {}),
           workspaceId: workflow.workspaceId,
         });
       }
@@ -218,9 +198,9 @@ export function createVideoRegenerationTerminalObserver(options: {
  * quote-to-scope binding and free-action audit facts.
  */
 export class VideoRegenerationApplicationService {
-  private readonly approvalAuthority: VideoRegenerationApprovalPort;
   private readonly billing: DurableVideoRegenerationBilling;
   private readonly clock: () => Date;
+  private readonly confirmUnavailableReason?: string;
   private readonly quoteAuthority: ProductQuoteAuthority;
   private readonly repository: VideoRegenerationRepository;
   private readonly workflows: VideoRegenerationWorkflowPort;
@@ -229,13 +209,14 @@ export class VideoRegenerationApplicationService {
     approvalAuthority: VideoRegenerationApprovalPort;
     billing: DurableVideoRegenerationBilling;
     clock?: () => Date;
+    confirmUnavailableReason?: string;
     quoteAuthority: ProductQuoteAuthority;
     repository: VideoRegenerationRepository;
     workflows: VideoRegenerationWorkflowPort;
   }) {
-    this.approvalAuthority = options.approvalAuthority;
     this.billing = options.billing;
     this.clock = options.clock ?? (() => new Date());
+    this.confirmUnavailableReason = options.confirmUnavailableReason;
     this.quoteAuthority = options.quoteAuthority;
     this.repository = options.repository;
     this.workflows = options.workflows;
@@ -316,6 +297,12 @@ export class VideoRegenerationApplicationService {
     usage: ProductUsageRecord | null;
     workflow: unknown;
   }> {
+    if (this.confirmUnavailableReason) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        this.confirmUnavailableReason,
+      );
+    }
     const binding = await this.requireBinding(input.workspaceId, input.quoteId);
     const existing = await this.repository.getTaskBinding(
       input.workspaceId,
@@ -358,9 +345,7 @@ export class VideoRegenerationApplicationService {
       );
     }
     const shots = source.shots
-      .filter(
-        (shot) => binding.scope === 'full_compose' || shot.id === binding.shotId,
-      )
+      .filter((shot) => shot.id === binding.shotId)
       .map((shot) => ({
         candidatesPerShot: shot.candidatesPerShot,
         ...(shot.durationSeconds !== undefined
@@ -394,19 +379,7 @@ export class VideoRegenerationApplicationService {
       quoteAcceptedAt: now,
       quoteRevision: quote.revision,
     };
-    const approvalReceiptId =
-      input.approvalReceiptId ??
-      (binding.scope === 'full_compose' && source.workId
-        ? (
-            await this.approvalAuthority.approve({
-              actorId: binding.actorId,
-              approvalKey: `video-regeneration:${input.taskId}:${quote.revision}`,
-              contract: executionContract,
-              workId: source.workId,
-              workspaceId: input.workspaceId,
-            })
-          ).id
-        : undefined);
+    const approvalReceiptId = input.approvalReceiptId;
     const taskBinding: VideoRegenerationTaskBinding =
       existing ?? {
         actorId: binding.actorId,
@@ -431,8 +404,7 @@ export class VideoRegenerationApplicationService {
       catalogModelId: quote.catalogModelId,
       dataClass: [...source.dataClass],
       derivedFromWorkflowId: binding.sourceRunId,
-      deliveryMode:
-        binding.scope === 'shot' ? 'candidate_only' : 'content_package',
+      deliveryMode: 'candidate_only',
       executionContract,
       referenceAssetIds: [...(source.referenceAssetIds ?? [])],
       shots,
@@ -488,14 +460,9 @@ export class VideoRegenerationApplicationService {
     scope: VideoRegenScope,
     shotId?: string,
   ) {
-    const seconds =
-      scope === 'shot'
-        ? source.shots.find((shot) => shot.id === shotId)?.durationSeconds
-        : source.executionContract?.durationSeconds ??
-          source.shots.reduce(
-            (total, shot) => total + (shot.durationSeconds ?? 0),
-            0,
-          );
+    const seconds = source.shots.find(
+      (shot) => shot.id === shotId,
+    )?.durationSeconds;
     if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) {
       throw new P1DomainError(
         'INVALID_STATE',

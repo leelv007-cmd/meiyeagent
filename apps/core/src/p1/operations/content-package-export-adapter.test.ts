@@ -1311,11 +1311,11 @@ it('reads a composed video from its workflow-scoped receipt key', async () => {
   const bytes = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112]);
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   const objectKey =
-    `workspace-composed-video/composed/video-workflow-abc123-${sha256}.mp4`;
+    `workspace-video/composed/video-workflow-abc123-${sha256}.mp4`;
   const reader = new OperationsContentPackageExportAssetReader(
     repositoryWithOwnedAsset({
       contentType: 'video/mp4',
-      id: 'composed-video-artifact',
+      id: 'video-artifact',
       objectKey,
       sha256,
       sizeBytes: bytes.byteLength,
@@ -1329,8 +1329,8 @@ it('reads a composed video from its workflow-scoped receipt key', async () => {
   );
 
   const resolved = await reader.readOwnedAsset({
-    assetId: 'composed-video-artifact',
-    workspaceId: 'workspace-composed-video',
+    assetId: 'video-artifact',
+    workspaceId: 'workspace-video',
   });
 
   assert.deepEqual(resolved.bytes, bytes);

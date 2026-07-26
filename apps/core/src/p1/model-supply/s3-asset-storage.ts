@@ -5,7 +5,6 @@ import {
   sharedAssetReceiptKey,
   type SharedAssetStorageReceipt,
 } from '@meiye/contracts';
-import type { CompositionAssetStoragePort } from './ffmpeg-composition-port.js';
 import {
   FileSystemAssetStorage,
   type FileSystemAssetStorageOptions,
@@ -310,9 +309,7 @@ interface S3CompatibleAssetStorageOptions {
   videoProbe?: FileSystemAssetStorageOptions['videoProbe'];
 }
 
-export class S3CompatibleAssetStorage
-  implements ModelAssetStoragePort, CompositionAssetStoragePort
-{
+export class S3CompatibleAssetStorage implements ModelAssetStoragePort {
   private readonly cache: FileSystemAssetStorage;
   private readonly cacheDirectory: string;
   private readonly publicBaseUrl?: string;

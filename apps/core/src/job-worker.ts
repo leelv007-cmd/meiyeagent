@@ -52,8 +52,6 @@ import {
   WorkerOperationalTelemetry,
 } from './p1/job-runtime/index.js';
 import {
-  COMPOSED_VIDEO_JOB_KIND,
-  ComposedVideoJobEffect,
   CanvasTextGenerationOutboxWorker,
   CompositeReferenceAssetResolver,
   DurableMediaGenerationApplicationService,
@@ -61,27 +59,18 @@ import {
   FoundationModelSupplyLedger,
   MediaActivationProbeExecutor,
   OwnedAssetReferenceResolver,
-  PersistentContentWorkflowRunner,
-  PostgresCanonicalVideoRunStore,
   PostgresCanonicalVideoWorkflowSchema,
   PostgresVideoRegenerationRepository,
   PostgresModelSupplyRepository,
   ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
-  RecordedFixtureVideoQualityScorer,
-  VersionedHumanCalibratedVideoQualityScorer,
   MODEL_MEDIA_GENERATION_JOB_KIND,
   ModelMediaGenerationEffect,
-  createComposedVideoJobHandler,
-  createVideoRegenerationTerminalObserver,
-  createInitialVideoTerminalObserver,
-  composeVideoTerminalObservers,
   createMediaGenerationJobHandler,
   createModelSupplyRuntime,
   modelMediaExecutionMode,
   seedCapabilityHotAssemblyFromCatalog,
   RECORDED_CATALOG_REVISION_ID,
-  videoCompositionRuntimeFromEnv,
 } from './p1/model-supply/index.js';
 import {
   FoundationOwnedAssetReferenceVerifier,
@@ -124,7 +113,6 @@ import {
   OperationsContentPackageExportAssetReader,
   OPERATIONS_TRIGGER_JOB_KIND,
   OperationsApplicationService,
-  OperationsVideoContentPackageAdapter,
   OperationsProductSearchProjection,
   OperationsProductPackageRightsAdapter,
   ProductContentPackageRightsResolver,
@@ -257,8 +245,10 @@ const productBillingRepository = new PostgresProductBillingRepository(pool);
 const billingLifecycle = new DurableProductBillingService(
   productBillingRepository,
 );
-const videoRegenerationRepository = new PostgresVideoRegenerationRepository(pool);
-const canonicalVideoWorkflowSchema = new PostgresCanonicalVideoWorkflowSchema(pool);
+const videoRegenerationRepository =
+  new PostgresVideoRegenerationRepository(pool);
+const canonicalVideoWorkflowSchema =
+  new PostgresCanonicalVideoWorkflowSchema(pool);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
 const contextBundleRepository = new PostgresContextBundleRepository(pool);
 const contextSourceRevisions = new PostgresContextSourceRevisionRepository(pool);
@@ -428,6 +418,7 @@ const modelSupplyRuntime = createModelSupplyRuntime({
       },
     ),
     providerAdmission: modelSupplyProviderAdmission,
+    referenceAssets,
     resultSink: modelRepository,
   },
   catalog: runtimeAssembly.assembly,
@@ -483,26 +474,8 @@ const mediaGeneration = gatedMediaExecution
     })
   : undefined;
 if (mediaGeneration) modelSupply.attachDurableMediaRuntime(mediaGeneration);
-const videoComposition = videoCompositionRuntimeFromEnv(
-  process.env,
-  assetStorage
-);
-const videoRunnerForWorkspace = async (workspaceId: string) => {
-  await modelControlPlane.initialize(workspaceId);
-  return new PersistentContentWorkflowRunner(
-    modelSupply,
-    videoComposition,
-    new PostgresCanonicalVideoRunStore(pool, workspaceId),
-    modelRuntime.mode === 'fixture'
-      ? new RecordedFixtureVideoQualityScorer()
-      : new VersionedHumanCalibratedVideoQualityScorer()
-  );
-};
 let operations: OperationsApplicationService;
 const packageRightsPropagation = new OperationsProductPackageRightsAdapter(
-  () => operations
-);
-const videoContentPackages = new OperationsVideoContentPackageAdapter(
   () => operations
 );
 const tracer = new DurableTracerWorker(
@@ -512,20 +485,6 @@ const tracer = new DurableTracerWorker(
 const parseBatchWorker = new DurableTracerWorker(
   repository,
   new ParseBatchJobEffect(parseService),
-);
-const composedVideo = new DurableTracerWorker(
-  repository,
-  new ComposedVideoJobEffect(
-    videoRunnerForWorkspace,
-    videoContentPackages,
-    composeVideoTerminalObservers(
-      createInitialVideoTerminalObserver({ billing: billingLifecycle }),
-      createVideoRegenerationTerminalObserver({
-        billing: billingLifecycle,
-        repository: videoRegenerationRepository,
-      }),
-    ),
-  )
 );
 const mediaGenerationWorker = gatedMediaExecution
   ? new DurableTracerWorker(
@@ -663,7 +622,6 @@ if (assetRegistrationCleanup) {
 const worker = new P1JobWorkerEntrypoint(
   jobRuntime,
   {
-    [COMPOSED_VIDEO_JOB_KIND]: createComposedVideoJobHandler(composedVideo),
     [DOUYIN_OAUTH_LIFECYCLE_JOB_KIND]:
       createDouyinOAuthLifecycleJobHandler(
         new DouyinOAuthLifecycleBatchRunner(

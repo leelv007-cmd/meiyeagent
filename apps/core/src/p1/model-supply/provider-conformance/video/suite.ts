@@ -4,9 +4,8 @@
  * Same async side-effect contract as MP-04I, plus video-specific checks:
  * - finished duration usage evidence
  * - owned persistence within provider URL TTL
- * - burn-in label chain (consume #102 canonical form; no regression)
  *
- * Does NOT touch composed-video-workflow* or model-supply video segment ownership.
+ * Does not touch retired video assembly or model-supply video segment ownership.
  */
 import assert from 'node:assert/strict';
 import type {
@@ -14,13 +13,6 @@ import type {
   MediaProviderLifecyclePort,
   MediaProviderSubmissionReceipt,
 } from '../../provider-lifecycle.js';
-import type { CanonicalVideoRun } from '../../video-workflow-projection.js';
-import {
-  assertPublicProjectionIsSanitized,
-  liftDurableToCanonical,
-  projectDurableVideoWorkflow,
-  projectVideoWorkflowPublic,
-} from '../../video-workflow-projection.js';
 
 export interface VideoLifecycleConformanceHarness {
   /** Human label, e.g. official_direct / upstream_reseller. */
@@ -85,7 +77,6 @@ export async function runVideoLifecycleConformance(
   await caseCostSettlement(harness, record);
   await caseDurationUsageEvidence(harness, record);
   await caseOwnedPersistWithinUrlTtl(harness, record);
-  await caseBurnInLabelChain(harness, record);
 
   return {
     channelId: harness.channelId,
@@ -527,91 +518,6 @@ async function caseOwnedPersistWithinUrlTtl(
     assert.ok(Date.parse(owned.capturedAt) < Date.parse(owned.sourceExpiresAt));
   }
   record('owned-persist-within-url-ttl');
-}
-
-/**
- * Burn-in authoring switches live on #102 canonical task and survive projection.
- * Public projection stays sanitized (no provider/credential/asset leakage).
- */
-async function caseBurnInLabelChain(
-  harness: VideoLifecycleConformanceHarness,
-  record: (name: string) => void,
-) {
-  const now = new Date().toISOString();
-  const runId = `canonical-${harness.channelId}-burnin`;
-  const shotId = 'shot-1';
-  const canonical: CanonicalVideoRun = {
-    runId,
-    workspaceId: 'workspace-a',
-    actorId: 'actor-a',
-    workId: 'work-a',
-    task: {
-      kind: 'video.composed',
-      storyboardVersion: 1,
-      storyboardRevision: 'sb-burnin-1',
-      catalogModelId: 'seedance-2',
-      dataClass: [],
-      aigcLabelEnabled: true,
-      brandWatermarkText: 'MeiYe-AIGC',
-      shots: [
-        {
-          id: shotId,
-          prompt: 'burn-in conformance shot',
-          candidatesPerShot: 1,
-        },
-      ],
-    },
-    job: {
-      status: 'running',
-      confirmed: true,
-      revision: 1,
-      candidatesByShot: { [shotId]: [] },
-      attempts: [],
-      createdAt: now,
-      updatedAt: now,
-    },
-    assets: {
-      byId: {},
-      clipAssetIds: [],
-    },
-  };
-
-  // Durable projection retains burn-in authoring switches.
-  const durable = projectDurableVideoWorkflow(canonical);
-  assert.equal(durable.aigcLabelEnabled, true);
-  assert.equal(durable.brandWatermarkText, 'MeiYe-AIGC');
-  assert.equal(durable.id, runId);
-
-  // Round-trip through lift must not drop the label chain.
-  const lifted = liftDurableToCanonical(durable);
-  assert.equal(lifted.task.aigcLabelEnabled, true);
-  assert.equal(lifted.task.brandWatermarkText, 'MeiYe-AIGC');
-  assert.equal(lifted.runId, runId);
-
-  // Public projection is sanitized — no provider / asset / credential leakage.
-  const pub = projectVideoWorkflowPublic(canonical);
-  assert.equal(pub.workflowId, runId);
-  assert.equal(pub.status, 'running');
-  assertPublicProjectionIsSanitized(pub);
-  const json = JSON.stringify(pub);
-  assert.equal(json.includes('provider'), false);
-  assert.equal(json.includes('credential'), false);
-  assert.equal(json.includes('composedAsset'), false);
-
-  // Provider effect key follows #102 crash-recovery pattern; lifecycle still works.
-  const effectKey = `${runId}:shot:${shotId}:candidate:0`;
-  const port = harness.createPort();
-  const request = harness.buildRequest({
-    effectIdempotencyKey: effectKey,
-    workspaceId: canonical.workspaceId,
-    durationSeconds: 5,
-  });
-  const receipt = await port.submit(request);
-  assert.equal(receipt.acceptance, 'accepted');
-  assert.ok(receipt.taskRef);
-  const replay = await port.submit(request);
-  assert.equal(replay.taskRef, receipt.taskRef);
-  record('burn-in-label-chain');
 }
 
 export function requireAccepted(

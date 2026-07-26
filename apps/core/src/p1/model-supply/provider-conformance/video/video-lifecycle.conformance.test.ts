@@ -3,7 +3,7 @@
  * Live Ark/Tuzi remain env-gated in live-*-media.integration.test.ts.
  *
  * Consumes #102 canonical video contract (projection/lift) only —
- * does not touch composed-video-workflow* or model-supply video segment ownership.
+ * does not touch retired video assembly or model-supply video segment ownership.
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -22,16 +22,6 @@ import {
   recordedRequest,
 } from '../../adapters.js';
 import type { MediaProviderEffectRequest } from '../../provider-lifecycle.js';
-import {
-  InMemoryCanonicalVideoRunStore,
-  VideoWorkflowCanonicalCommands,
-} from '../../video-workflow-canonical.js';
-import {
-  assertPublicProjectionIsSanitized,
-  liftDurableToCanonical,
-  projectDurableVideoWorkflow,
-  projectVideoWorkflowPublic,
-} from '../../video-workflow-projection.js';
 import {
   createDualChannelHarnesses,
   FakeVideoChannelPort,
@@ -86,7 +76,7 @@ test('MP-04V official_direct fake channel passes full video lifecycle conformanc
 
   const report = await runVideoLifecycleConformance(harness);
   assert.equal(report.channelKind, 'official_direct');
-  assert.ok(report.cases.length >= 13);
+  assert.ok(report.cases.length >= 12);
   assert.ok(report.cases.every((c) => c.ok));
   assert.ok(
     report.cases.some((c) => c.name === 'cross-process-durable-recover'),
@@ -96,7 +86,6 @@ test('MP-04V official_direct fake channel passes full video lifecycle conformanc
   assert.ok(report.cases.some((c) => c.name === 'health-report'));
   assert.ok(report.cases.some((c) => c.name === 'duration-usage-evidence'));
   assert.ok(report.cases.some((c) => c.name === 'owned-persist-within-url-ttl'));
-  assert.ok(report.cases.some((c) => c.name === 'burn-in-label-chain'));
 });
 
 test('MP-04V upstream_reseller fake channel passes full video lifecycle conformance', async () => {
@@ -193,7 +182,6 @@ test('MP-04V recorded dual-channel routers cover health/drain/idempotent video l
     assert.ok(report.cases.some((c) => c.name === 'idempotent-replay'));
     assert.ok(report.cases.some((c) => c.name === 'submit/task-id/acceptance'));
     assert.ok(report.cases.some((c) => c.name === 'duration-usage-evidence'));
-    assert.ok(report.cases.some((c) => c.name === 'burn-in-label-chain'));
   }
 });
 
@@ -465,72 +453,4 @@ test('Ark persists video acceptance_unknown so restart will not resubmit', async
   const replay = await restarted.submit(request);
   assert.equal(replay.acceptance, 'acceptance_unknown');
   assert.equal(calls, 1, 'unknown must not resubmit after restart');
-});
-
-test('canonical #102 command port preserves burn-in label chain under lifecycle effect keys', async () => {
-  const store = new InMemoryCanonicalVideoRunStore();
-  const commands = new VideoWorkflowCanonicalCommands(store);
-  const now = '2026-07-20T12:00:00.000Z';
-
-  const durable = commands.checkpoint({
-    id: 'wf-canonical-burnin',
-    workspaceId: 'ws-a',
-    actorId: 'actor-a',
-    workId: 'work-a',
-    storyboardVersion: 1,
-    dataClass: [],
-    aigcLabelEnabled: true,
-    brandWatermarkText: 'MeiYe-Brand',
-    storyboardRevision: 'sb-1',
-    confirmed: true,
-    catalogModelId: 'seedance-2',
-    shots: [
-      {
-        id: 'shot-1',
-        prompt: 'label chain',
-        candidatesPerShot: 1,
-        candidates: [],
-      },
-    ],
-    attempts: [],
-    clipAssets: [],
-    status: 'running',
-    revision: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  assert.equal(durable.aigcLabelEnabled, true);
-  assert.equal(durable.brandWatermarkText, 'MeiYe-Brand');
-
-  const fromStore = store.get('wf-canonical-burnin');
-  assert.ok(fromStore);
-  assert.equal(fromStore.task.aigcLabelEnabled, true);
-  assert.equal(fromStore.task.brandWatermarkText, 'MeiYe-Brand');
-
-  const projected = projectDurableVideoWorkflow(fromStore);
-  assert.equal(projected.brandWatermarkText, 'MeiYe-Brand');
-  const lifted = liftDurableToCanonical(projected);
-  assert.equal(lifted.task.aigcLabelEnabled, true);
-
-  const pub = projectVideoWorkflowPublic(fromStore);
-  assertPublicProjectionIsSanitized(pub);
-  assert.equal(pub.workflowId, 'wf-canonical-burnin');
-
-  // Effect key pattern from #102 derivation doc — idempotent across fake channel.
-  const effectKey = `${fromStore.runId}:shot:shot-1:candidate:0`;
-  const channel = new FakeVideoChannelPort({
-    channelId: 'channel-canonical-burnin',
-    channelKind: 'official_direct',
-    receiptStore: new MemoryReceiptStore(),
-  });
-  const request = channel.buildRequest({
-    effectIdempotencyKey: effectKey,
-    workspaceId: fromStore.workspaceId,
-    durationSeconds: 5,
-  });
-  const first = await channel.submit(request);
-  const second = await channel.submit(request);
-  assert.equal(first.taskRef, second.taskRef);
-  assert.equal(channel.submitCount, 1);
 });

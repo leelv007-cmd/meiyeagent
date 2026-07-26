@@ -106,7 +106,6 @@ import {
 import {
   type ActivationEvidence,
   CompositeReferenceAssetResolver,
-  DurableComposedVideoApplicationService,
   DurableMediaGenerationApplicationService,
   modelAssetStorageFromEnv,
   FixtureAiStreamingRunner,
@@ -116,7 +115,6 @@ import {
   isLiveVerifiedActivationEvidence,
   OwnedAssetReferenceResolver,
   OpenAiCompatibleAiSdkRunner,
-  PersistentContentWorkflowRunner,
   PostgresCanonicalVideoRunStore,
   PostgresCanonicalVideoWorkflowSchema,
   ProductCopyProviderBridge,
@@ -124,15 +122,13 @@ import {
   PostgresVideoRegenerationRepository,
   ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
-  RecordedFixtureVideoQualityScorer,
   VideoRegenerationApplicationService,
   VideoRegenerationFoundationModule,
-  VersionedHumanCalibratedVideoQualityScorer,
   createModelSupplyRuntime,
   modelMediaExecutionMode,
+  projectDurableVideoWorkflow,
   seedCapabilityHotAssemblyFromCatalog,
   RECORDED_CATALOG_REVISION_ID,
-  videoCompositionRuntimeFromEnv,
 } from './p1/model-supply/index.js';
 import { createPermissionAuthorizer } from './p1/capability-permission/index.js';
 import {
@@ -218,7 +214,6 @@ import {
   AssetMemoryFoundationModule,
   OperationsApplicationService,
   OperationsFoundationModule,
-  OperationsVideoContentPackageAdapter,
   ModelSupplyCreationExecutor,
   ModelSupplyImageGenerationAdapter,
   MediaCustodyStorageAdapter,
@@ -627,6 +622,7 @@ const p1ModelSupplyRuntime = createModelSupplyRuntime({
       },
     ),
     providerAdmission: modelSupplyProviderAdmission,
+    referenceAssets,
     resultSink: modelSupplyRepository,
     submissionGate: streamingModeGate,
   },
@@ -810,73 +806,81 @@ if (gatedMediaExecution) {
     })
   );
 }
-const videoComposition = videoCompositionRuntimeFromEnv(
-  process.env,
-  assetStorage
-);
-const videoRunnerForWorkspace = async (workspaceId: string) => {
-  await modelControlPlane.initialize(workspaceId);
-  return new PersistentContentWorkflowRunner(
-    p1ModelSupplyService,
-    videoComposition,
-    new PostgresCanonicalVideoRunStore(pool, workspaceId),
-    modelRuntime.mode === 'fixture'
-      ? new RecordedFixtureVideoQualityScorer()
-      : new VersionedHumanCalibratedVideoQualityScorer()
-  );
-};
 let operationsService: OperationsApplicationService;
 const packageRightsPropagation = new OperationsProductPackageRightsAdapter(
   () => operationsService
 );
-const videoContentPackages = new OperationsVideoContentPackageAdapter(
-  () => operationsService
-);
-const composedVideo = new DurableComposedVideoApplicationService({
-  contentPackages: videoContentPackages,
-  jobs: tracerJobs,
-  runnerForWorkspace: videoRunnerForWorkspace,
-});
+const canonicalVideoWorkflow = {
+  async adoptCandidate() {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      '视频重生成能力升级中，本次未产生扣费。',
+    );
+  },
+  async confirmAndSubmit() {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      '视频重生成能力升级中，本次未产生扣费。',
+    );
+  },
+  async createDraft() {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      '视频重生成能力升级中，本次未产生扣费。',
+    );
+  },
+  async edit(input: {
+    actorId: string;
+    correlationId: string;
+    edit: Parameters<PostgresCanonicalVideoRunStore['editRun']>[0]['edit'];
+    expectedRevision: number;
+    workflowId: string;
+    workspaceId: string;
+  }) {
+    const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+    const workflow = projectDurableVideoWorkflow(
+      await store.editRun(input, new Date().toISOString()),
+    );
+    return { workflow };
+  },
+  async list(input: { actorId: string; workspaceId: string }) {
+    const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+    return (await store.listRuns(input.workspaceId, input.actorId)).map(
+      (run) => ({ workflow: projectDurableVideoWorkflow(run) }),
+    );
+  },
+  async query(input: { workflowId: string; workspaceId: string }) {
+    const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+    const run = await store.getRun(input.workflowId);
+    if (!run) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `Video workflow ${input.workflowId} was not found.`,
+      );
+    }
+    return { workflow: projectDurableVideoWorkflow(run) };
+  },
+  async recoverSupplierTask() {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      '视频重生成能力升级中，本次未产生扣费。',
+    );
+  },
+};
 const videoRegeneration = new VideoRegenerationApplicationService({
   approvalAuthority: {
-    async approve(input) {
-      const membership = await pool.query<{ role: string }>(
-        `SELECT role
-           FROM workspace_memberships
-          WHERE workspace_id = $1
-            AND user_id = $2`,
-        [input.workspaceId, input.actorId],
-      );
-      const actor = membership.rows[0]?.role;
-      if (
-        actor !== 'admin' &&
-        actor !== 'owner' &&
-        actor !== 'operator' &&
-        actor !== 'reviewer'
-      ) {
-        throw new Error(
-          'Video regeneration approval requires an active workspace membership.',
-        );
-      }
-      return operationsService.approveCreativeGeneration(
-        {
-          actor,
-          correlationId: input.approvalKey,
-          userId: input.actorId,
-          workspaceId: input.workspaceId,
-        },
-        {
-          approvalKey: input.approvalKey,
-          contract: input.contract,
-          workId: input.workId,
-        },
+    async approve() {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        '视频重生成能力升级中，本次未产生扣费。',
       );
     },
   },
   billing: productQuoteService,
+  confirmUnavailableReason: '视频重生成能力升级中，本次未产生扣费。',
   quoteAuthority: productQuoteAuthority,
   repository: videoRegenerationRepository,
-  workflows: composedVideo,
+  workflows: canonicalVideoWorkflow,
 });
 const videoWorkflowEventSource = new VideoWorkflowEventSource({
   async owns(workspaceId, workflowId) {
@@ -884,15 +888,14 @@ const videoWorkflowEventSource = new VideoWorkflowEventSource({
       `SELECT 1 FROM p1_creative_jobs
         WHERE workspace_id = $1
           AND payload->>'videoWorkflowId' = $2`,
-      [workspaceId, workflowId]
+      [workspaceId, workflowId],
     );
     return result.rowCount === 1;
   },
-  readSnapshot(workspaceId, workflowId) {
-    return composedVideo.query({ workspaceId, workflowId });
+  async readSnapshot(workspaceId, workflowId) {
+    return canonicalVideoWorkflow.query({ workspaceId, workflowId });
   },
 });
-
 const feishuMcp = feishuMcpAdapterFromEnv(process.env);
 const integrationService = new IntegrationApplicationService({
   byok: byokRuntime.adapter,
@@ -1115,8 +1118,7 @@ operationsService = new OperationsApplicationService(operationsRepository, {
   creationExecutor: new ModelSupplyCreationExecutor(
     modelControlPlane,
     aiStreamingRunner,
-    referenceAssets,
-    composedVideo
+    referenceAssets
   ),
   groundingResolver: new ProductCreativeGroundingResolver(
     relationalProductRepository
@@ -1470,7 +1472,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     new ModelSupplyFoundationModule(modelControlPlane, {
       adminActorIds: modelAdminActorIds,
       adminSupply: adminSupplyControlPlane,
-      composedVideo,
+      videoWorkflow: canonicalVideoWorkflow,
     }),
     new VideoRegenerationFoundationModule(videoRegeneration),
     new MarketingIdentityFoundationModule(marketingIdentities),

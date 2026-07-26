@@ -12,7 +12,6 @@ import {
 import { modelAssetStorageFromEnv } from './asset-storage-from-env.js';
 import { S3CompatibleAssetStorage } from './s3-asset-storage.js';
 import { RecordedAdapterRouter, recordedRequest } from './adapters.js';
-import { videoCompositionRuntimeFromEnv } from './composition-runtime.js';
 import { MemoryModelAssetStorage } from './index.js';
 
 const png = Buffer.from(
@@ -480,7 +479,7 @@ test('composed output is persisted as a validated playable asset receipt', async
   }
 });
 
-test('recorded video bytes pass ffprobe, materialize, compose with ffmpeg, and persist', async () => {
+test('recorded video bytes pass ffprobe and persist', async () => {
   const rootDirectory = await mkdtemp(join(tmpdir(), 'meiye-ffmpeg-e2e-'));
   try {
     const storage = new FileSystemAssetStorage({ rootDirectory });
@@ -506,19 +505,7 @@ test('recorded video bytes pass ffprobe, materialize, compose with ffmpeg, and p
     });
     assert.equal(clip.technicalValidation?.playable, true);
 
-    const composed = await videoCompositionRuntimeFromEnv({}, storage).compose({
-      aigcLabelEnabled: false,
-      clips: [clip],
-      compositionKey: 'real-ffmpeg-composition',
-      workflowId: 'workflow-real-ffmpeg',
-      workspaceId: 'workspace-a',
-      storyboardRevision: 'storyboard-real-ffmpeg',
-      subtitles: [{ startSeconds: 0, endSeconds: 1, text: '门店介绍' }],
-    });
-    assert.equal(composed.technicalValidation?.playable, true);
-    assert.equal(composed.technicalValidation?.hashVerified, true);
-    assert.match(composed.objectKey, /^workspace-a\/composed\//);
-    assert.ok((await storage.read(composed.objectKey)).bytes.byteLength > 0);
+    assert.ok((await storage.read(clip.objectKey)).bytes.byteLength > 0);
   } finally {
     await rm(rootDirectory, { recursive: true, force: true });
   }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { Pool } from 'pg';
+
 import {
   OperationsApplicationService,
   OperationsVideoContentPackageAdapter,
@@ -11,14 +12,9 @@ import {
 } from '../operations/index.js';
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
-import type {
-  VideoContentPackageConfirmation,
-  VideoContentPackageOutcome,
-} from '../video-content-package-port.js';
+import type { VideoContentPackageConfirmation } from '../video-content-package-port.js';
 import { PostgresVideoRegenerationRepository } from './video-regeneration-postgres.js';
-import {
-  createVideoRegenerationTerminalObserver,
-} from './video-regeneration-runtime.js';
+import { createVideoRegenerationTerminalObserver } from './video-regeneration-runtime.js';
 import type { DurableVideoWorkflow } from './video-workflow-contract.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -64,8 +60,7 @@ describe(
         [actorId, `${actorId}@example.test`],
       );
       await pool.query(
-        `INSERT INTO workspaces (id, name)
-         VALUES ($1, 'Video replay workspace')`,
+        `INSERT INTO workspaces (id, name) VALUES ($1, 'Video replay workspace')`,
         [workspaceId],
       );
       await pool.query(
@@ -99,9 +94,10 @@ describe(
       await pool.end();
     });
 
-    it('persists one billing settlement and one delivery revision after process restart replay', async () => {
+    it('settles billing and retained ContentPackage states exactly once across restart replay', async () => {
       const billingRepository = new PostgresProductBillingRepository(pool);
-      const regenerationRepository = new PostgresVideoRegenerationRepository(pool);
+      const regenerationRepository =
+        new PostgresVideoRegenerationRepository(pool);
       const firstBillingProcess = new DurableProductBillingService(
         billingRepository,
         () => new Date('2026-07-20T12:00:00.000Z'),
@@ -112,7 +108,7 @@ describe(
         frozenCandidateDeploymentIds: ['deployment-a'],
         quoteId: 'quote-replay',
         quotePolicyRevision: 'regen-policy-1',
-        targetSeconds: 10,
+        targetSeconds: 6,
         unitRate: 1,
         workspaceId,
       });
@@ -146,21 +142,23 @@ describe(
         actorId,
         createdAt: '2026-07-20T12:00:00.000Z',
         quoteId: quote.quoteId,
-        scope: 'full_compose',
+        scope: 'shot',
+        shotId: 'opening',
         sourceRunId: 'source-run',
-        targetSeconds: 10,
+        targetSeconds: 6,
         workspaceId,
       });
       await regenerationRepository.saveTaskBinding({
         actorId,
         createdAt: '2026-07-20T12:00:00.000Z',
         quoteId: quote.quoteId,
-        scope: 'full_compose',
+        scope: 'shot',
+        shotId: 'opening',
         sourceRunId: 'source-run',
         taskId: workflowId,
         workspaceId,
       });
-      const terminalWorkflow = {
+      const failedWorkflow = {
         actorId,
         attempts: [
           {
@@ -170,34 +168,19 @@ describe(
             deploymentId: 'deployment-a',
             id: 'attempt-replay',
             jobId: 'job-replay',
-            status: 'completed',
+            status: 'failed',
           },
         ],
         catalogModelId: 'seedance-2',
         clipAssets: [],
-        composedAsset: {
-          compositionEvidence: {},
-          contentType: 'video/mp4',
-          createdAt: '2026-07-20T12:00:01.000Z',
-          dataClass: [],
-          id: 'composed-replay',
-          objectKey: `${workspaceId}/composed-replay.mp4`,
-          sha256: 'a'.repeat(64),
-          sizeBytes: 8,
-          technicalValidation: {
-            durationSeconds: 6,
-            evidenceKind: 'measured',
-            playable: true,
-          },
-          workspaceId,
-        },
         confirmed: true,
         createdAt: '2026-07-20T12:00:00.000Z',
         dataClass: [],
+        failureCode: 'VIDEO_PROVIDER_FAILED',
         id: workflowId,
         revision: 3,
         shots: [],
-        status: 'completed',
+        status: 'failed',
         storyboardRevision: 'storyboard-1',
         storyboardVersion: 1,
         updatedAt: '2026-07-20T12:00:02.000Z',
@@ -207,7 +190,7 @@ describe(
       await createVideoRegenerationTerminalObserver({
         billing: firstBillingProcess,
         repository: regenerationRepository,
-      }).settle(terminalWorkflow);
+      }).settle(failedWorkflow);
       const firstUsage = await firstBillingProcess.getUsage(
         workflowId,
         workspaceId,
@@ -219,14 +202,13 @@ describe(
       await createVideoRegenerationTerminalObserver({
         billing: restartedBillingProcess,
         repository: new PostgresVideoRegenerationRepository(pool),
-      }).settle(terminalWorkflow);
-      const replayedUsage = await restartedBillingProcess.getUsage(
-        workflowId,
-        workspaceId,
+      }).settle(failedWorkflow);
+      assert.deepEqual(
+        await restartedBillingProcess.getUsage(workflowId, workspaceId),
+        firstUsage,
       );
+      assert.equal(firstUsage?.status, 'refunded');
 
-      assert.deepEqual(replayedUsage, firstUsage);
-      assert.equal(replayedUsage?.settledQuantity, 6);
       const billingRows = await pool.query<{
         costs: string;
         quotes: string;
@@ -252,109 +234,10 @@ describe(
         aigcLabelEnabled: true,
         catalogModelId: 'seedance-2',
         dataClass: [],
-        executionContract: {
-          aigcLabelEnabled: true,
-          aspectRatio: '9:16',
-          catalogModelId: 'seedance-2',
-          catalogRevision: 'catalog-1',
-          currency: 'CNY',
-          dataClass: [],
-          durationSeconds: 6,
-          estimatedAmount: 10,
-          operation: 'video.generate',
-          outputCount: 1,
-          outputLabel: '6 second composed video',
-          quoteAcceptedAt: '2026-07-20T12:00:00.000Z',
-          quoteRevision: 'quote-replay',
-          watermarkEnabled: false,
-        },
         referenceAssetIds: [],
         shots: [{ id: 'opening', prompt: 'Store opening' }],
         storyboardRevision: 'storyboard-1',
         storyboardVersion: 1,
-        workflowId,
-        workspaceId,
-      };
-      const completed: VideoContentPackageOutcome = {
-        actorId,
-        clipAssetIds: ['clip-opening'],
-        composedAsset: {
-          compositionEvidence: {
-            aigc: {
-              implicitMetadata: {
-                actual: true,
-                contentId: workflowId,
-                contentType: 'ai_generated',
-                serviceCode: 'ffmpeg-compose-v1',
-                serviceProvider: 'meiye-content-workflow',
-                validated: true,
-              },
-              requested: true,
-              validationMethod: 'ffprobe_metadata',
-              visibleLabel: {
-                actual: true,
-                validated: true,
-                value: '内容由 AI 生成',
-              },
-            },
-            brandWatermark: {
-              actual: false,
-              requested: false,
-              validated: true,
-              validationMethod: 'recorded_synthetic',
-            },
-            clipCount: 1,
-            delivery: {
-              compositionRevision: 'composition-storyboard-1',
-              storyboardRevision: 'storyboard-1',
-              workflowId,
-              outputVideoSha256: 'a'.repeat(64),
-              cover: {
-                id: 'cover-replay',
-                objectKey: `${workspaceId}/owned/${'b'.repeat(64)}.jpg`,
-                sha256: 'b'.repeat(64),
-                sizeBytes: 4,
-                contentType: 'image/jpeg',
-                validationMethod: 'recorded_synthetic',
-              },
-              subtitles: {
-                durationSeconds: 6,
-                format: 'srt',
-                text: '1\n00:00:00,000 --> 00:00:06,000\nStore opening\n',
-                validationMethod: 'composition_manifest',
-              },
-            },
-            durationSeconds: 6,
-            outputSha256: 'a'.repeat(64),
-            outputSizeBytes: 8,
-            rendererRevision: 'renderer-1',
-            sourceAssetIds: ['clip-opening'],
-          },
-          contentType: 'video/mp4',
-          id: 'composed-replay',
-          objectKey: `${workspaceId}/composed-replay.mp4`,
-          sha256: 'a'.repeat(64),
-          sizeBytes: 8,
-        },
-        providerAttempts: [],
-        providerCosts: [],
-        routeSnapshot: {
-          actualCatalogModelId: 'seedance-2',
-          candidateCatalogModelIds: ['seedance-2'],
-          catalogRevisionId: 'catalog-1',
-          createdAt: '2026-07-20T12:00:00.000Z',
-          dataClass: [],
-          deploymentId: 'deployment-a',
-          id: 'route-replay',
-          reason: 'fixed_selection',
-          requestedSelection: {
-            catalogModelId: 'seedance-2',
-            mode: 'fixed',
-          },
-        },
-        shots: confirmation.shots,
-        status: 'completed',
-        storyboardRevision: confirmation.storyboardRevision,
         workflowId,
         workspaceId,
       };
@@ -371,15 +254,18 @@ describe(
         () => firstOperationsProcess,
       );
       await firstDelivery.confirm(confirmation);
-      await firstDelivery.reconcile(completed);
-      const firstPackage = (
-        await firstOperationsProcess.listContentPackages({
-          actor: 'owner',
-          correlationId: 'delivery-first-read',
-          userId: actorId,
-          workspaceId,
-        })
-      )[0];
+      await firstDelivery.reconcile({
+        actorId,
+        status: 'awaiting_quality_review',
+        workflowId,
+        workspaceId,
+      });
+      await firstDelivery.reconcile({
+        actorId,
+        status: 'awaiting_quality_review',
+        workflowId,
+        workspaceId,
+      });
 
       const restartedOperationsProcess = new OperationsApplicationService(
         new PostgresOperationsRepository(pool),
@@ -394,7 +280,16 @@ describe(
         () => restartedOperationsProcess,
       );
       await replayDelivery.confirm(confirmation);
-      await replayDelivery.reconcile(completed);
+      const failure = {
+        actorId,
+        failureCode: 'VIDEO_PROVIDER_FAILED',
+        status: 'failed' as const,
+        workflowId,
+        workspaceId,
+      };
+      await replayDelivery.reconcile(failure);
+      await replayDelivery.reconcile(failure);
+
       const replayedPackage = (
         await restartedOperationsProcess.listContentPackages({
           actor: 'owner',
@@ -403,24 +298,24 @@ describe(
           workspaceId,
         })
       )[0];
-
-      assert.deepEqual(replayedPackage, firstPackage);
-      assert.equal(replayedPackage?.versions.length, 1);
-      const deliveryRows = await pool.query<{
-        count: string;
-        revision: string;
-      }>(
-        `SELECT count(*)::text AS count, max(revision)::text AS revision
+      assert.equal(replayedPackage?.status, 'needs_input');
+      assert.deepEqual(replayedPackage?.versions, []);
+      assert.deepEqual(replayedPackage?.generated.childRuns, [
+        {
+          failureCode: 'VIDEO_PROVIDER_FAILED',
+          runId: workflowId,
+          runType: 'durable_video_workflow',
+          status: 'failed',
+        },
+      ]);
+      const deliveryRows = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count
            FROM p1_content_packages
           WHERE workspace_id = $1
             AND payload->'source'->>'workflowId' = $2`,
         [workspaceId, workflowId],
       );
       assert.equal(deliveryRows.rows[0]?.count, '1');
-      assert.equal(
-        deliveryRows.rows[0]?.revision,
-        String(firstPackage?.revision),
-      );
     });
   },
 );

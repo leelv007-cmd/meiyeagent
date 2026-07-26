@@ -1212,6 +1212,16 @@ function mediaSelection(
 			status: "succeeded",
 		},
 		kind,
+		...(asset.technicalValidation?.playable === true &&
+		asset.technicalValidation.evidenceKind === "measured" &&
+		typeof asset.technicalValidation.durationSeconds === "number" &&
+		Number.isFinite(asset.technicalValidation.durationSeconds) &&
+		asset.technicalValidation.durationSeconds > 0
+			? {
+					measuredDurationSeconds:
+						asset.technicalValidation.durationSeconds,
+				}
+			: {}),
 		trace: {
 			blockedCandidates,
 			candidateScores: [],

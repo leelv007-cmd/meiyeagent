@@ -734,7 +734,7 @@ export class ProductService implements ProductApplicationService {
     if (this.options.legacyVideoPath === 'disabled') {
       throw new DomainError(
         'LEGACY_VIDEO_PATH_RETIRED',
-        'P1 workspaces use the durable composed-video workflow.',
+        'P1 workspaces use the native video workflow.',
         409
       );
     }
@@ -850,7 +850,7 @@ export class ProductService implements ProductApplicationService {
     ) {
       throw new DomainError(
         'LEGACY_VIDEO_PATH_RETIRED',
-        'P1 workspaces use the durable composed-video workflow and its single Foundation ledger.',
+        'P1 workspaces use the native video workflow and its single Foundation ledger.',
         409
       );
     }

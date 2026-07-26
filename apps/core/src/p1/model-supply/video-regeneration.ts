@@ -3,11 +3,10 @@
  *
  * Workbench-internal confirm for:
  * - 重新生成此镜头 (scope: shot)
- * - 重新合成整段 (scope: full_compose)
  *
- * Both scopes reuse the same quote → confirm → reserve → dispatch → settle
- * contract from product-billing (#92); only scope (target seconds / labels)
- * differs. Submit-time Composer confirm is C4 — not this module.
+ * The retained shot scope reuses the quote → confirm → reserve → dispatch →
+ * settle contract from product-billing (#92). Submit-time Composer confirm is
+ * C4 — not this module.
  *
  * Free actions never open a product ledger entry. Retry creates a new derived
  * task + independent quote; recover continues the same supplier task without
@@ -37,7 +36,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Billable regeneration scopes (same contract, different scope). */
-export const videoRegenScopes = ['shot', 'full_compose'] as const;
+export const videoRegenScopes = ['shot'] as const;
 export type VideoRegenScope = (typeof videoRegenScopes)[number];
 
 /**
@@ -134,9 +133,7 @@ export type BuildVideoRegenQuoteInput = {
   unitRate: number;
   currency?: string;
   /**
-   * Target output seconds for this scope:
-   * - shot → that shot's target duration
-   * - full_compose → full clip target duration
+   * Target output seconds for the selected shot.
    */
   targetSeconds: number;
   minChargeSeconds?: number;
@@ -212,15 +209,6 @@ export type CompleteShotRegenInput = {
   assetId: string;
 };
 
-export type AdoptComposedFilmInput = {
-  taskId: string;
-  composedAssetId: string;
-  /** ContentPackage id to revise; created if absent in memory store. */
-  contentPackageId: string;
-  workId?: string;
-  expectedRevision?: number;
-};
-
 // ---------------------------------------------------------------------------
 // Internal records
 // ---------------------------------------------------------------------------
@@ -241,26 +229,14 @@ export type DerivedVideoTask = {
     | 'confirmed'
     | 'running'
     | 'shot_candidates_ready'
-    | 'composed_candidate_ready'
-    | 'adopted'
     | 'failed';
   shotCandidates: Array<{
     shotId: string;
     candidateIndex: number;
     assetId: string;
   }>;
-  composedCandidateAssetId?: string;
   createdAt: string;
   updatedAt: string;
-};
-
-export type ContentPackageRevisionRecord = {
-  contentPackageId: string;
-  workId?: string;
-  revision: number;
-  composedAssetId: string;
-  adoptedFromTaskId: string;
-  adoptedAt: string;
 };
 
 export type FreeActionLedgerEntry = {
@@ -276,7 +252,7 @@ export type FreeActionLedgerEntry = {
 // ---------------------------------------------------------------------------
 
 export function actionLabelForScope(scope: VideoRegenScope): string {
-  return scope === 'shot' ? '重新生成此镜头' : '重新合成整段';
+  return scope === 'shot' ? '重新生成此镜头' : scope;
 }
 
 export function billingModeLabelForQuote(quote: ProductQuoteSnapshot): string {
@@ -423,7 +399,6 @@ export class VideoRegenerationService {
   private readonly quotes: ProductQuoteService;
   private readonly clock: () => Date;
   private readonly tasks = new Map<string, DerivedVideoTask>();
-  private readonly packages = new Map<string, ContentPackageRevisionRecord>();
   private readonly freeLog: FreeActionLedgerEntry[] = [];
   private readonly scopeByQuote = new Map<string, VideoRegenScope>();
   private readonly shotByQuote = new Map<string, string>();
@@ -680,10 +655,7 @@ export class VideoRegenerationService {
       if (task) {
         const next: DerivedVideoTask = {
           ...task,
-          status:
-            task.scope === 'shot'
-              ? 'shot_candidates_ready'
-              : 'composed_candidate_ready',
+          status: 'shot_candidates_ready',
           updatedAt: this.clock().toISOString(),
         };
         this.tasks.set(task.taskId, next);
@@ -891,102 +863,9 @@ export class VideoRegenerationService {
     return structuredClone(next);
   }
 
-  /**
-   * "使用此成片" — only path that writes a ContentPackage revision from
-   * a composed candidate. Shot candidates alone never reach here.
-   */
-  adoptComposedFilm(input: AdoptComposedFilmInput): {
-    task: DerivedVideoTask;
-    contentPackage: ContentPackageRevisionRecord;
-  } {
-    const task = this.requireTask(input.taskId);
-    if (task.scope !== 'full_compose') {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        '使用此成片 requires a full_compose regen task.',
-      );
-    }
-
-    // Prefer explicit composed asset from input; task may already hold one.
-    const composedAssetId =
-      input.composedAssetId || task.composedCandidateAssetId;
-    if (!composedAssetId?.trim()) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'composedAssetId is required to adopt a film.',
-      );
-    }
-
-    const now = this.clock().toISOString();
-    const existing = this.packages.get(input.contentPackageId);
-    if (
-      existing &&
-      input.expectedRevision !== undefined &&
-      existing.revision !== input.expectedRevision
-    ) {
-      throw new P1DomainError(
-        'IDEMPOTENCY_CONFLICT',
-        `ContentPackage ${input.contentPackageId} revision mismatch.`,
-      );
-    }
-
-    const revision = (existing?.revision ?? 0) + 1;
-    const record: ContentPackageRevisionRecord = {
-      contentPackageId: input.contentPackageId,
-      ...(input.workId ? { workId: input.workId } : {}),
-      revision,
-      composedAssetId,
-      adoptedFromTaskId: task.taskId,
-      adoptedAt: now,
-    };
-    this.packages.set(input.contentPackageId, record);
-
-    const next: DerivedVideoTask = {
-      ...task,
-      status: 'adopted',
-      composedCandidateAssetId: composedAssetId,
-      updatedAt: now,
-    };
-    this.tasks.set(task.taskId, next);
-
-    return {
-      task: structuredClone(next),
-      contentPackage: structuredClone(record),
-    };
-  }
-
-  /** Attach composed candidate without adopting (full_compose complete). */
-  completeComposedCandidate(input: {
-    taskId: string;
-    composedAssetId: string;
-  }): DerivedVideoTask {
-    const task = this.requireTask(input.taskId);
-    if (task.scope !== 'full_compose') {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'completeComposedCandidate only applies to full_compose scope.',
-      );
-    }
-    const next: DerivedVideoTask = {
-      ...task,
-      status: 'composed_candidate_ready',
-      composedCandidateAssetId: input.composedAssetId,
-      updatedAt: this.clock().toISOString(),
-    };
-    this.tasks.set(task.taskId, next);
-    return structuredClone(next);
-  }
-
   getTask(taskId: string): DerivedVideoTask | undefined {
     const task = this.tasks.get(taskId);
     return task ? structuredClone(task) : undefined;
-  }
-
-  getContentPackage(
-    contentPackageId: string,
-  ): ContentPackageRevisionRecord | undefined {
-    const record = this.packages.get(contentPackageId);
-    return record ? structuredClone(record) : undefined;
   }
 
   /** Snapshot product usage for negative free-action asserts. */

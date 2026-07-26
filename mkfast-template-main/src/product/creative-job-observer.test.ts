@@ -85,7 +85,7 @@ test('only active image and video jobs with provider ids are observed', () => {
   assert.equal(creativeJobObservation(job({ status: 'completed' })), undefined);
 });
 
-test('recognizes only canonical composed-video workflow observations', () => {
+test('recognizes only canonical video workflow observations', () => {
   assert.equal(
     isComposedVideoObservation({
       creativeJobId: 'creative-job-video-1',
@@ -229,7 +229,7 @@ test('video workflow status changes refresh content packages while unchanged tic
   );
 });
 
-test('the shared composed-video list polls only while a workflow can advance', () => {
+test('the shared video list polls only while a workflow can advance', () => {
   assert.equal(shouldPollVideoWorkflowList(undefined), true);
   assert.equal(
     shouldPollVideoWorkflowList([

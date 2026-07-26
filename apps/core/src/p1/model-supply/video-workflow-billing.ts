@@ -1,16 +1,19 @@
 import { P1DomainError } from '../foundation/domain.js';
-import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import type { ProductBillingApplicationPort } from '../product-billing/durable-service.js';
-import type { ComposedVideoTerminalObserver } from './composed-video-workflow.js';
+import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
 import type { DurableVideoWorkflow } from './video-workflow-contract.js';
 
 export type DurableInitialVideoBilling = ProductBillingApplicationPort &
   BillingLifecyclePort;
 
-/** Settles the parent Operations quote only when the whole composed run is terminal. */
+export interface VideoWorkflowTerminalObserver {
+  settle(workflow: DurableVideoWorkflow): Promise<unknown> | unknown;
+}
+
+/** Settles the parent Operations quote only when the initial video run is terminal. */
 export function createInitialVideoTerminalObserver(options: {
   billing: DurableInitialVideoBilling;
-}): ComposedVideoTerminalObserver {
+}): VideoWorkflowTerminalObserver {
   return {
     async settle(workflow) {
       const taskId = workflow.billingTaskId;
@@ -33,10 +36,16 @@ export function createInitialVideoTerminalObserver(options: {
           `Product quote ${quote.quoteId} revision no longer matches the initial video contract.`,
         );
       }
-      if (quote.lifecycleStatus === 'settled' || quote.lifecycleStatus === 'refunded') {
+      if (
+        quote.lifecycleStatus === 'settled' ||
+        quote.lifecycleStatus === 'refunded'
+      ) {
         return {
           quote,
-          usage: await options.billing.getUsage(taskId, workflow.workspaceId),
+          usage: await options.billing.getUsage(
+            taskId,
+            workflow.workspaceId,
+          ),
         };
       }
 
@@ -58,25 +67,12 @@ export function createInitialVideoTerminalObserver(options: {
         });
       }
 
-      const measured =
-        workflow.composedAsset?.technicalValidation?.evidenceKind === 'measured'
-          ? workflow.composedAsset.technicalValidation.durationSeconds
-          : undefined;
       await options.billing.settleTask({
         attemptId: attempt.id,
         deploymentId: attempt.deploymentId,
         providerCost: initialVideoProviderCost(workflow, attempt.id),
         status: workflow.status === 'completed' ? 'completed' : 'failed',
         taskId,
-        ...(measured !== undefined
-          ? {
-              trustedUsage: {
-                actualSeconds: measured,
-                evidenceRef: workflow.composedAsset?.id,
-                kind: 'media_duration' as const,
-              },
-            }
-          : {}),
         workspaceId: workflow.workspaceId,
       });
       return {
@@ -90,9 +86,10 @@ export function createInitialVideoTerminalObserver(options: {
   };
 }
 
+/** Runs independent terminal observers in order so replay preserves settlement ordering. */
 export function composeVideoTerminalObservers(
-  ...observers: ComposedVideoTerminalObserver[]
-): ComposedVideoTerminalObserver {
+  ...observers: VideoWorkflowTerminalObserver[]
+): VideoWorkflowTerminalObserver {
   return {
     async settle(workflow) {
       const results = [];
@@ -119,16 +116,31 @@ function initialVideoProviderCost(
   return {
     currency: cost.currency,
     ...(cost.status === 'observed'
-      ? { observedCostMicros: Math.max(0, Math.round(cost.amount * 1_000_000)) }
-      : { estimatedCostMicros: Math.max(0, Math.round(cost.amount * 1_000_000)) }),
+      ? {
+          observedCostMicros: Math.max(
+            0,
+            Math.round(cost.amount * 1_000_000),
+          ),
+        }
+      : {
+          estimatedCostMicros: Math.max(
+            0,
+            Math.round(cost.amount * 1_000_000),
+          ),
+        }),
     evidence: `composedVideoProviderCost=${cost.id}`,
-    evidenceKind: cost.status === 'observed' ? ('provider_bill' as const) : ('estimated' as const),
+    evidenceKind:
+      cost.status === 'observed'
+        ? ('provider_bill' as const)
+        : ('estimated' as const),
     payer:
       workflow.routeSnapshot?.credentialMode === 'byok_strict'
         ? ('workspace_byok' as const)
         : ('platform' as const),
     supplierPriceRevision:
-      route?.priceRevision ?? workflow.routeSnapshot?.priceRevision ?? 'unknown',
+      route?.priceRevision ??
+      workflow.routeSnapshot?.priceRevision ??
+      'unknown',
     unit: route?.unit ?? 'request',
     unitPriceMicros: route?.unitPriceMicros ?? 0,
     ...(cost.usage.mediaUnits !== undefined

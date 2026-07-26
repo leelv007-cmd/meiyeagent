@@ -3,8 +3,8 @@ import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { detectMediaTools } from '../../video/media-tools.js';
-import { probeVideoFile } from '../../video/validation.js';
+import { detectMediaTools } from './media-tools.js';
+import { probeVideoFile } from './video-asset-validation.js';
 import { recordedRequest } from './adapters.js';
 import { ArkMediaExecutionPort } from './ark-media-adapter.js';
 
