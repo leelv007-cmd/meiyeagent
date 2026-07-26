@@ -14,15 +14,15 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -413,14 +413,14 @@ export function AdminTemplateControl() {
         </AlertDescription>
       </Alert>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{p1_admin_template_create_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{p1_admin_template_create_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_template_create_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           <form className="grid gap-4 md:grid-cols-3" onSubmit={createTemplate}>
             <div className="space-y-2">
               <Label htmlFor="admin-new-template-name">
@@ -476,18 +476,20 @@ export function AdminTemplateControl() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>{p1_admin_template_catalog_title()}</CardTitle>
-            <CardDescription>
+        <AdminPanel>
+          <AdminPanelHeader>
+            <AdminPanelTitle>
+              {p1_admin_template_catalog_title()}
+            </AdminPanelTitle>
+            <AdminPanelDescription>
               {p1_admin_template_catalog_description()}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+            </AdminPanelDescription>
+          </AdminPanelHeader>
+          <AdminPanelContent>
             {error ? (
               <Alert variant="destructive">
                 <AlertTitle>
@@ -559,11 +561,11 @@ export function AdminTemplateControl() {
                     </TableCell>
                     <TableCell>{template.family}</TableCell>
                     <TableCell>
-                      <Badge
+                      <AdminStatusChip
                         variant={statusVariant(template.publicationStatus)}
                       >
                         {template.publicationStatus}
-                      </Badge>
+                      </AdminStatusChip>
                     </TableCell>
                     <TableCell>
                       {template.enabledVersionId ??
@@ -579,17 +581,19 @@ export function AdminTemplateControl() {
                 {p1_admin_template_catalog_empty()}
               </p>
             ) : null}
-          </CardContent>
-        </Card>
+          </AdminPanelContent>
+        </AdminPanel>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{p1_admin_template_version_actions_title()}</CardTitle>
-            <CardDescription>
+        <AdminPanel>
+          <AdminPanelHeader>
+            <AdminPanelTitle>
+              {p1_admin_template_version_actions_title()}
+            </AdminPanelTitle>
+            <AdminPanelDescription>
               {p1_admin_template_version_actions_description()}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+            </AdminPanelDescription>
+          </AdminPanelHeader>
+          <AdminPanelContent>
             <form className="space-y-4" onSubmit={createDraft}>
               <div className="space-y-2">
                 <Label htmlFor="admin-template-id">
@@ -708,18 +712,18 @@ export function AdminTemplateControl() {
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
+          </AdminPanelContent>
+        </AdminPanel>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{p1_admin_template_history_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{p1_admin_template_history_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_template_history_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           <Table>
             <TableHeader>
               <TableRow>
@@ -759,8 +763,8 @@ export function AdminTemplateControl() {
               {p1_admin_template_history_empty()}
             </p>
           ) : null}
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
       <ImpactReviewDialog
         onOpenChange={(open) => !open && setImpactReview(undefined)}
         open={Boolean(impactReview)}

@@ -7,15 +7,15 @@ import type {
 } from '@meiye/contracts';
 import { useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -310,14 +310,14 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
       className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]"
       data-testid="recipe-editor"
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>Recipe 配置</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>Recipe 配置</AdminPanelTitle>
+          <AdminPanelDescription>
             用表单编辑用户可见入口，不暴露 Prompt 正文。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
               <Label htmlFor="recipe-id">Recipe ID</Label>
@@ -462,21 +462,26 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
               回滚 Recipe
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
       <div className="space-y-4">
-        <Card data-testid="recipe-visual-preview">
-          <CardHeader>
+        <AdminPanel data-testid="recipe-visual-preview">
+          <AdminPanelHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>Recipe 可视预览</CardTitle>
-              <Badge variant="outline" data-testid="recipe-lifecycle-status">
+              <AdminPanelTitle>Recipe 可视预览</AdminPanelTitle>
+              <AdminStatusChip
+                variant="outline"
+                data-testid="recipe-lifecycle-status"
+              >
                 {head ? `${head.status} · r${head.revision}` : '未保存'}
-              </Badge>
+              </AdminStatusChip>
             </div>
-            <CardDescription>{lensLabels[lensId]}入口卡片</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
+            <AdminPanelDescription>
+              {lensLabels[lensId]}入口卡片
+            </AdminPanelDescription>
+          </AdminPanelHeader>
+          <AdminPanelContent className="space-y-2">
             <h3 className="font-semibold">{title || '未填写标题'}</h3>
             <p className="text-sm text-muted-foreground">
               {summary || '未填写摘要'}
@@ -484,8 +489,8 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
             <Button type="button" size="sm" disabled>
               选择{lensLabels[lensId]}并套用
             </Button>
-          </CardContent>
-        </Card>
+          </AdminPanelContent>
+        </AdminPanel>
         <LifecycleHistory history={history} />
       </div>
     </div>
@@ -643,14 +648,14 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
       className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]"
       data-testid="surface-editor"
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>Surface 编排</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>Surface 编排</AdminPanelTitle>
+          <AdminPanelDescription>
             按顺序编排已发布 Recipe；工具区只提供通过能力验收的入口。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
               <Label htmlFor="surface-id">Surface ID</Label>
@@ -845,23 +850,26 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
               回滚 Surface
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
       <div className="space-y-4">
-        <Card data-testid="surface-visual-preview">
-          <CardHeader>
+        <AdminPanel data-testid="surface-visual-preview">
+          <AdminPanelHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>Surface 可视预览</CardTitle>
-              <Badge variant="outline" data-testid="surface-lifecycle-status">
+              <AdminPanelTitle>Surface 可视预览</AdminPanelTitle>
+              <AdminStatusChip
+                variant="outline"
+                data-testid="surface-lifecycle-status"
+              >
                 {head ? `${head.status} · r${head.revision}` : '未保存'}
-              </Badge>
+              </AdminStatusChip>
             </div>
-            <CardDescription>
+            <AdminPanelDescription>
               {surfaceId || '未填写 Surface ID'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+            </AdminPanelDescription>
+          </AdminPanelHeader>
+          <AdminPanelContent className="space-y-3">
             {recipeRefs
               .filter((ref) => ref.visible)
               .map((ref, index) => (
@@ -883,8 +891,8 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
                 Pro Studio 无限画布
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </AdminPanelContent>
+        </AdminPanel>
         <LifecycleHistory history={history} />
       </div>
     </div>
@@ -897,14 +905,14 @@ export function AdminCreationExperienceControl({
   api?: CreationExperienceAdminApi;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>创作入口 Recipe / Surface</CardTitle>
-        <CardDescription>
+    <AdminPanel>
+      <AdminPanelHeader>
+        <AdminPanelTitle>创作入口 Recipe / Surface</AdminPanelTitle>
+        <AdminPanelDescription>
           完成草稿、预览、发布与回滚；发布后只影响新的创作会话。
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </AdminPanelDescription>
+      </AdminPanelHeader>
+      <AdminPanelContent>
         <Tabs defaultValue="recipe">
           <TabsList aria-label="创作入口编辑器">
             <TabsTrigger value="recipe">Recipe 编辑</TabsTrigger>
@@ -917,7 +925,7 @@ export function AdminCreationExperienceControl({
             <SurfaceEditor api={api} />
           </TabsContent>
         </Tabs>
-      </CardContent>
-    </Card>
+      </AdminPanelContent>
+    </AdminPanel>
   );
 }

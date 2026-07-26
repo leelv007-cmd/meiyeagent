@@ -15,15 +15,15 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -507,9 +507,9 @@ function ModelEvidence({
             {model.manufacturer} · {model.stableModelName} · {model.version}
           </p>
         </div>
-        <Badge variant={availabilityVariant(model.availability)}>
+        <AdminStatusChip variant={availabilityVariant(model.availability)}>
           {model.availability}
-        </Badge>
+        </AdminStatusChip>
       </div>
       <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         {apiFamilies.length > 0 ? (
@@ -1065,14 +1065,16 @@ export function AdminModelControl() {
 
       <AdminActivationProbeControl />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{p1_admin_model_catalog_safe_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>
+            {p1_admin_model_catalog_safe_title()}
+          </AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_model_catalog_safe_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-5">
           {error ? (
             <Alert variant="destructive">
               <AlertTitle>
@@ -1099,7 +1101,9 @@ export function AdminModelControl() {
                     (item) => item.id === snapshot.operation
                   )?.label() ?? snapshot.operation}
                 </h3>
-                <Badge variant="outline">{snapshot.stage}</Badge>
+                <AdminStatusChip variant="outline">
+                  {snapshot.stage}
+                </AdminStatusChip>
                 <span className="text-xs text-muted-foreground">
                   revision: {snapshot.revisionId}
                 </span>
@@ -1129,17 +1133,17 @@ export function AdminModelControl() {
               ) : null}
             </section>
           ))}
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Route simulator</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>Route simulator</AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_model_route_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-5">
           <form
             className="grid gap-4 lg:grid-cols-3"
             onSubmit={routeSimulatorForm.handleSubmit(runRouteSimulation, () =>
@@ -1404,7 +1408,7 @@ export function AdminModelControl() {
                           </p>
                         </TableCell>
                         <TableCell>
-                          <Badge
+                          <AdminStatusChip
                             variant={
                               candidate.eligible ? 'secondary' : 'outline'
                             }
@@ -1412,7 +1416,7 @@ export function AdminModelControl() {
                             {candidate.eligible
                               ? p1_admin_model_route_eligible()
                               : p1_admin_model_route_filtered()}
-                          </Badge>
+                          </AdminStatusChip>
                         </TableCell>
                         <TableCell>
                           {candidate.exclusionReasons.length > 0
@@ -1432,17 +1436,17 @@ export function AdminModelControl() {
               {p1_admin_model_route_empty_description()}
             </p>
           )}
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{p1_admin_model_quality_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{p1_admin_model_quality_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_model_quality_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">
@@ -1628,18 +1632,18 @@ export function AdminModelControl() {
                       {qualityRunResultLabel(run)}
                     </span>
                     <span className="flex flex-wrap justify-end gap-1">
-                      <Badge variant="secondary">
+                      <AdminStatusChip variant="secondary">
                         {QUALITY_EVIDENCE_PRESENTATION[
                           run.evidenceKind
                         ].label()}
-                      </Badge>
-                      <Badge
+                      </AdminStatusChip>
+                      <AdminStatusChip
                         variant={
                           run.status === 'completed' ? 'outline' : 'destructive'
                         }
                       >
                         {run.status}
-                      </Badge>
+                      </AdminStatusChip>
                     </span>
                   </span>
                   <span className="mt-1 block text-xs text-muted-foreground">
@@ -1705,7 +1709,7 @@ export function AdminModelControl() {
                         {Math.round(testCase.evaluation.dimensionScore * 100)}%
                       </TableCell>
                       <TableCell>
-                        <Badge
+                        <AdminStatusChip
                           variant={
                             testCase.passed ? 'secondary' : 'destructive'
                           }
@@ -1715,7 +1719,7 @@ export function AdminModelControl() {
                                 testCase.evidenceKind
                               ].casePassLabel()
                             : p1_admin_model_quality_failed()}
-                        </Badge>
+                        </AdminStatusChip>
                         {testCase.evaluation.warnings.length > 0 ? (
                           <p className="mt-1 text-xs text-destructive">
                             {testCase.evaluation.warnings.join(', ')}
@@ -1733,17 +1737,17 @@ export function AdminModelControl() {
               ) : null}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{p1_admin_model_rollback_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{p1_admin_model_rollback_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_model_rollback_card_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           <form className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="revision-rollback-reason">
@@ -1878,18 +1882,20 @@ export function AdminModelControl() {
               ) : null}
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>{p1_admin_model_catalog_editor_title()}</CardTitle>
-            <CardDescription>
+        <AdminPanel>
+          <AdminPanelHeader>
+            <AdminPanelTitle>
+              {p1_admin_model_catalog_editor_title()}
+            </AdminPanelTitle>
+            <AdminPanelDescription>
               {p1_admin_model_catalog_editor_description()}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            </AdminPanelDescription>
+          </AdminPanelHeader>
+          <AdminPanelContent className="space-y-4">
             {catalogControl ? (
               <div className="rounded-lg border bg-muted/20 p-3 text-sm">
                 <p className="font-medium">
@@ -1899,24 +1905,24 @@ export function AdminModelControl() {
                   })}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <Badge variant="outline">
+                  <AdminStatusChip variant="outline">
                     Provider {catalogControl.catalog.providerProfiles.length}
-                  </Badge>
-                  <Badge variant="outline">
+                  </AdminStatusChip>
+                  <AdminStatusChip variant="outline">
                     Channel {catalogControl.catalog.executionChannels.length}
-                  </Badge>
-                  <Badge variant="outline">
+                  </AdminStatusChip>
+                  <AdminStatusChip variant="outline">
                     Deployment {catalogControl.catalog.deployments.length}
-                  </Badge>
-                  <Badge variant="outline">
+                  </AdminStatusChip>
+                  <AdminStatusChip variant="outline">
                     Capability {catalogControl.catalog.capabilities.length}
-                  </Badge>
-                  <Badge variant="outline">
+                  </AdminStatusChip>
+                  <AdminStatusChip variant="outline">
                     Price {catalogControl.catalog.prices.length}
-                  </Badge>
-                  <Badge variant="outline">
+                  </AdminStatusChip>
+                  <AdminStatusChip variant="outline">
                     Route {catalogControl.catalog.routes.length}
-                  </Badge>
+                  </AdminStatusChip>
                 </div>
               </div>
             ) : null}
@@ -1956,17 +1962,19 @@ export function AdminModelControl() {
                 </Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
+          </AdminPanelContent>
+        </AdminPanel>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{p1_admin_model_lifecycle_title()}</CardTitle>
-            <CardDescription>
+        <AdminPanel>
+          <AdminPanelHeader>
+            <AdminPanelTitle>
+              {p1_admin_model_lifecycle_title()}
+            </AdminPanelTitle>
+            <AdminPanelDescription>
               {p1_admin_model_lifecycle_description()}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+            </AdminPanelDescription>
+          </AdminPanelHeader>
+          <AdminPanelContent>
             <form className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="admin-model-revision-id">Revision ID</Label>
@@ -2033,18 +2041,18 @@ export function AdminModelControl() {
                 </AlertDescription>
               </Alert>
             </form>
-          </CardContent>
-        </Card>
+          </AdminPanelContent>
+        </AdminPanel>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{p1_admin_model_activity_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{p1_admin_model_activity_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {p1_admin_model_activity_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           <Table>
             <TableHeader>
               <TableRow>
@@ -2062,7 +2070,9 @@ export function AdminModelControl() {
                   <TableCell>{activity.number}</TableCell>
                   <TableCell>{activity.id}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{activity.stage}</Badge>
+                    <AdminStatusChip variant="outline">
+                      {activity.stage}
+                    </AdminStatusChip>
                   </TableCell>
                   <TableCell>{activity.previousRevisionId ?? '—'}</TableCell>
                 </TableRow>
@@ -2074,8 +2084,8 @@ export function AdminModelControl() {
               {p1_admin_model_activity_empty()}
             </p>
           ) : null}
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
       <ImpactReviewDialog
         onOpenChange={(open) => !open && setImpactReview(undefined)}
         open={Boolean(impactReview)}

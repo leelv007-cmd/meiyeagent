@@ -12,7 +12,7 @@ import {
   ImpactReviewDialog,
   type ImpactReviewRequest,
 } from '@/components/admin/impact-review-dialog';
-import { Badge } from '@/components/ui/badge';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -509,10 +509,12 @@ export function SupplyGovernedActionsPanel({
       </header>
 
       <div className="flex flex-wrap gap-2">
-        <Badge variant="outline">禁止密钥回显</Badge>
-        <Badge variant="outline">禁止直写库</Badge>
-        <Badge variant="outline">禁止绕发布门</Badge>
-        <Badge variant="outline">禁止盲目重试 accepted/unknown</Badge>
+        <AdminStatusChip variant="outline">禁止密钥回显</AdminStatusChip>
+        <AdminStatusChip variant="outline">禁止直写库</AdminStatusChip>
+        <AdminStatusChip variant="outline">禁止绕发布门</AdminStatusChip>
+        <AdminStatusChip variant="outline">
+          禁止盲目重试 accepted/unknown
+        </AdminStatusChip>
       </div>
 
       <div className="overflow-hidden rounded-lg border">

@@ -451,6 +451,21 @@ operator path is complete.
 | 2 | Governed channel isolation requires impact review and reaches audit evidence | On `/admin/supply`, select a real fixture channel target from the `channel_isolate` governed action, require impact scope/reversibility plus a concrete reason before confirmation, confirm through the typed action UI, follow the resulting audit link, and find the exact unique reason on `/admin/audit`. |
 | 3 | Daily operator surfaces expose no technical editors or exception ownership workflow | Walk `/admin`, `/admin/capabilities`, `/admin/supply`, and `/admin/audit`; require successful documents and visible main surfaces, then reject any code, SQL, env, raw JSON, CLI, shell, or terminal editor/control and any acknowledge/assign/owner control. |
 
+## 31b. Admin Dashboard Shell (D-130 template-dashboard)
+
+**File:** `specs/admin-dashboard-shell.spec.ts` | **Priority:** P0 | **Tickets:** T35 / #229
+
+Locks 运营后台 on the template-dashboard shell and the hand-entry seam behind the
+three-bucket numbers. Every assertion runs against the live stack: the admin
+surfaces read the real admin-config / model-supply / job-runtime projections, so
+none of these can pass on fixture data (ADR-0019 / D-131).
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Every admin page renders the template-dashboard shell in both themes | Sign in as an administrator and walk `/admin`, `/admin/models`, `/admin/templates`, `/admin/integrations`, `/admin/plans`, `/admin/users` and `/admin/audit`; require the Glass token-bridge host class and a HeroUI sidebar item on each, require the merchant shell no longer wraps 后台, and require a resolved background in both light and dark. |
+| 2 | A hand-entered three-bucket number reaches the merchant through governed config | Hand-enter the trial copy bucket on `/admin/plans`, pass impact review with an audit reason, require the editor's CAS revision line to advance, then register a store and require its `/settings/account` to read that number with nothing redeployed. The governed key feeds the catalog and provisioning materialises it at activation, so the number reaches stores provisioned after the change — an already-provisioned workspace is not rewritten, by design. |
+| 3 | Model assembly separates the catalog layer from the channel layer | On `/admin/models`, require the CatalogModel and ExecutionChannel layers to render as separate panels and require each to carry only its own governed keys. |
+
 ## 32. LIKEPAGE Marketing Landing Page
 
 **File:** `specs/landing-page.spec.ts` | **Priority:** P0

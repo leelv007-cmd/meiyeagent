@@ -3,14 +3,14 @@
  * Metadata / binding / version / 3-state + tested gate + draining /
  * probe results / rotate-drain notes. Secrets never rendered.
  */
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import type { CredentialUiPanelView } from '@/p1/admin-supply-credential-model';
 
 export function SupplyCredentialPanel({
@@ -58,7 +58,7 @@ export function SupplyCredentialPanel({
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {view.accounts.map((account) => (
-          <Card
+          <AdminPanel
             key={account.id}
             data-testid="supply-credential-card"
             data-credential-id={account.id}
@@ -67,18 +67,22 @@ export function SupplyCredentialPanel({
             data-source={account.source}
             data-env-fallback-risk={String(account.envFallbackRisk)}
           >
-            <CardHeader className="space-y-2 pb-2">
+            <AdminPanelHeader className="space-y-2 pb-2">
               <div className="flex items-start justify-between gap-2">
-                <CardTitle className="text-sm">{account.label}</CardTitle>
-                <Badge variant="outline">{account.statusLabel}</Badge>
+                <AdminPanelTitle className="text-sm">
+                  {account.label}
+                </AdminPanelTitle>
+                <AdminStatusChip variant="outline">
+                  {account.statusLabel}
+                </AdminStatusChip>
               </div>
-              <CardDescription className="font-mono text-xs">
+              <AdminPanelDescription className="font-mono text-xs">
                 {account.id} · v{account.version}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs">
+              </AdminPanelDescription>
+            </AdminPanelHeader>
+            <AdminPanelContent className="space-y-2 text-xs">
               <div className="flex flex-wrap gap-1">
-                <Badge
+                <AdminStatusChip
                   variant={
                     account.source === 'env_fallback'
                       ? 'destructive'
@@ -86,9 +90,11 @@ export function SupplyCredentialPanel({
                   }
                 >
                   {account.sourceLabel}
-                </Badge>
-                <Badge variant="outline">{account.drainLabel}</Badge>
-                <Badge
+                </AdminStatusChip>
+                <AdminStatusChip variant="outline">
+                  {account.drainLabel}
+                </AdminStatusChip>
+                <AdminStatusChip
                   variant={
                     account.activationGate.satisfied ? 'secondary' : 'outline'
                   }
@@ -97,7 +103,7 @@ export function SupplyCredentialPanel({
                 >
                   激活门：
                   {account.activationGate.satisfied ? '满足' : '未满足'}
-                </Badge>
+                </AdminStatusChip>
               </div>
 
               <p>
@@ -162,8 +168,8 @@ export function SupplyCredentialPanel({
                   {String(account.rotateDrainFlow.canRevoke)}
                 </p>
               </div>
-            </CardContent>
-          </Card>
+            </AdminPanelContent>
+          </AdminPanel>
         ))}
       </div>
     </section>

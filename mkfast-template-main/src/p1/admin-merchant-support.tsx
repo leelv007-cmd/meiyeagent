@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import {
   Table,
   TableBody,
@@ -55,13 +55,13 @@ export function MerchantSupportDiagnosticTable({
 }) {
   return (
     <div className="space-y-4">
-      <Badge
+      <AdminStatusChip
         variant={diagnostic.ledgerConsistent ? 'secondary' : 'destructive'}
       >
         {diagnostic.ledgerConsistent
           ? merchant_support_ledger_consistent()
           : merchant_support_ledger_mismatch()}
-      </Badge>
+      </AdminStatusChip>
       <section className="space-y-2">
         <h3 className="font-medium">{merchant_support_quota()}</h3>
         <ul className="space-y-1 text-sm text-muted-foreground">
@@ -140,12 +140,14 @@ export function AdminMerchantSupport() {
     },
   });
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{merchant_support_title()}</CardTitle>
-        <CardDescription>{merchant_support_description()}</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <AdminPanel>
+      <AdminPanelHeader>
+        <AdminPanelTitle>{merchant_support_title()}</AdminPanelTitle>
+        <AdminPanelDescription>
+          {merchant_support_description()}
+        </AdminPanelDescription>
+      </AdminPanelHeader>
+      <AdminPanelContent>
         {query.isPending ? (
           <p className="text-sm text-muted-foreground">
             {merchant_support_loading()}
@@ -157,7 +159,7 @@ export function AdminMerchantSupport() {
         ) : (
           <MerchantSupportDiagnosticTable diagnostic={query.data} />
         )}
-      </CardContent>
-    </Card>
+      </AdminPanelContent>
+    </AdminPanel>
   );
 }

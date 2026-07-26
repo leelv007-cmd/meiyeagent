@@ -9,14 +9,14 @@ import {
   InstrumentStatusBadge,
 } from '@/components/admin/capability/capability-status-badge';
 import { MetricEnvelopeView } from '@/components/admin/capability/metric-envelope-view';
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import type { CapabilitySixQuestionProjection } from '@/p1/admin-capability-registry-model';
 
 const QUESTION_TITLES: Record<
@@ -38,33 +38,33 @@ function CompletenessMark({
 }) {
   if (status === 'complete') {
     return (
-      <Badge variant="secondary" data-completeness="complete">
+      <AdminStatusChip variant="secondary" data-completeness="complete">
         完整
-      </Badge>
+      </AdminStatusChip>
     );
   }
   if (status === 'not_instrumented') {
     return (
-      <Badge
+      <AdminStatusChip
         variant="outline"
         data-completeness="not_instrumented"
         data-testid="not-instrumented-mark"
       >
         未插桩
-      </Badge>
+      </AdminStatusChip>
     );
   }
   if (status === 'not_verified') {
     return (
-      <Badge variant="outline" data-completeness="not_verified">
+      <AdminStatusChip variant="outline" data-completeness="not_verified">
         未核验
-      </Badge>
+      </AdminStatusChip>
     );
   }
   return (
-    <Badge variant="destructive" data-completeness="missing">
+    <AdminStatusChip variant="destructive" data-completeness="missing">
       缺失
-    </Badge>
+    </AdminStatusChip>
   );
 }
 
@@ -86,14 +86,17 @@ export function CapabilityDetailCard({
     entry.instrumentStatus === 'instrumented' && facts != null;
 
   return (
-    <Card data-testid="capability-detail-card" data-capability-id={entry.id}>
-      <CardHeader className="space-y-3">
+    <AdminPanel
+      data-testid="capability-detail-card"
+      data-capability-id={entry.id}
+    >
+      <AdminPanelHeader className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-base">{item.name}</CardTitle>
+          <AdminPanelTitle className="text-base">{item.name}</AdminPanelTitle>
           <AvailabilityStatusBadge status={entry.availability} />
           <InstrumentStatusBadge status={entry.instrumentStatus} />
         </div>
-        <CardDescription className="space-y-1">
+        <AdminPanelDescription className="space-y-1">
           <p>{entry.purpose}</p>
           <p className="font-mono text-xs">
             id={entry.id} · owner={entry.owner} · drilldown={entry.drilldownKey}
@@ -106,9 +109,9 @@ export function CapabilityDetailCard({
                 : ''}
             </p>
           ) : null}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </AdminPanelDescription>
+      </AdminPanelHeader>
+      <AdminPanelContent className="space-y-6">
         <section
           className="space-y-3"
           data-testid="six-question-projection"
@@ -255,9 +258,9 @@ export function CapabilityDetailCard({
             <ul className="flex flex-wrap gap-2">
               {entry.allowedSafeActions.map((action) => (
                 <li key={action}>
-                  <Badge variant="outline" className="font-mono">
+                  <AdminStatusChip variant="outline" className="font-mono">
                     {action}
-                  </Badge>
+                  </AdminStatusChip>
                 </li>
               ))}
             </ul>
@@ -295,7 +298,7 @@ export function CapabilityDetailCard({
             ) : null}
           </section>
         ) : null}
-      </CardContent>
-    </Card>
+      </AdminPanelContent>
+    </AdminPanel>
   );
 }

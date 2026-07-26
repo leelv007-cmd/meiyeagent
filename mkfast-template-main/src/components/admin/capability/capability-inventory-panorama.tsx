@@ -1,14 +1,14 @@
 import type { CapabilityInventoryItem } from '@meiye/contracts';
 
 import { InventoryStatusBadge } from '@/components/admin/capability/capability-status-badge';
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import {
   groupInventoryByDomain,
   type CapabilityRegistryView,
@@ -31,16 +31,16 @@ export function CapabilityInventoryPanorama({
   const stubCount = view.inventory.items.length - instrumentedCount;
 
   return (
-    <Card data-testid="capability-inventory-panorama">
-      <CardHeader>
-        <CardTitle className="text-base">能力清单全景</CardTitle>
-        <CardDescription>
+    <AdminPanel data-testid="capability-inventory-panorama">
+      <AdminPanelHeader>
+        <AdminPanelTitle className="text-base">能力清单全景</AdminPanelTitle>
+        <AdminPanelDescription>
           revision {view.inventory.revision} · 捕获 {view.inventory.capturedAt}{' '}
           · 共 {view.inventory.items.length} 项（已插桩 {instrumentedCount} /
           存根及其他 {stubCount}）
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </AdminPanelDescription>
+      </AdminPanelHeader>
+      <AdminPanelContent className="space-y-6">
         {sections.map((section) => (
           <section
             key={section.group}
@@ -60,8 +60,8 @@ export function CapabilityInventoryPanorama({
             </ul>
           </section>
         ))}
-      </CardContent>
-    </Card>
+      </AdminPanelContent>
+    </AdminPanel>
   );
 }
 
@@ -99,13 +99,13 @@ function InventoryItemButton({
       {item.criticalDependencies.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-1">
           {item.criticalDependencies.map((dep) => (
-            <Badge
+            <AdminStatusChip
               key={dep}
               variant="outline"
               className="font-mono text-[10px]"
             >
               {dep}
-            </Badge>
+            </AdminStatusChip>
           ))}
         </div>
       ) : null}

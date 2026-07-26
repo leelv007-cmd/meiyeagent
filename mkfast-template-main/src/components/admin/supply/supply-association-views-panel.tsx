@@ -1,7 +1,7 @@
 /**
  * Five association views panel (J4 / D-058) — forward + reverse.
  */
-import { Badge } from '@/components/ui/badge';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import {
   ASSOCIATION_VIEW_IDS,
   ASSOCIATION_VIEW_PATHS,
@@ -24,7 +24,9 @@ function ProjectionBlock({
       className="rounded-md border p-3 text-xs"
     >
       <div className="mb-2 flex items-center gap-2">
-        <Badge variant="outline">{projection.direction}</Badge>
+        <AdminStatusChip variant="outline">
+          {projection.direction}
+        </AdminStatusChip>
         <span className="font-medium">{projection.view}</span>
       </div>
       <pre

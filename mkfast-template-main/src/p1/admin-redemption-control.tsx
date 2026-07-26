@@ -1,19 +1,19 @@
 /**
  * Td-4: platform admin redemption code management.
- * Uses existing admin Card/Button patterns; calls redemptions P1 module.
+ * Uses existing admin AdminPanel/Button patterns; calls redemptions P1 module.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+} from '@/components/admin/shell/admin-panel';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -177,14 +177,14 @@ export function AdminRedemptionControl() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{admin_redemption_create_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{admin_redemption_create_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {admin_redemption_create_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {(Object.keys(RESOURCE_LABELS) as GrantResource[]).map((resource) => (
             <div className="grid gap-2" key={resource}>
               <Label htmlFor={`redeem-${resource}`}>
@@ -235,19 +235,19 @@ export function AdminRedemptionControl() {
           >
             {admin_redemption_create()}
           </Button>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{admin_redemption_codes_title()}</CardTitle>
-          <CardDescription>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{admin_redemption_codes_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {listQuery.isError
               ? admin_redemption_load_failed()
               : admin_redemption_codes_count({ count: rows.length })}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left">
@@ -310,8 +310,8 @@ export function AdminRedemptionControl() {
               ) : null}
             </tbody>
           </table>
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
     </div>
   );
 }

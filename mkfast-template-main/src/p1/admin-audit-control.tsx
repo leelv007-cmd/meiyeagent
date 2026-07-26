@@ -1,6 +1,11 @@
-import { Badge } from '@/components/ui/badge';
+import {
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   admin_audit_action,
   admin_audit_actor_correlation,
@@ -153,10 +158,10 @@ export function AdminAuditControl() {
     ]);
 
   return (
-    <Card>
-      <CardHeader>
+    <AdminPanel>
+      <AdminPanelHeader>
         <div className="flex items-center justify-between gap-3">
-          <CardTitle>{admin_audit_title()}</CardTitle>
+          <AdminPanelTitle>{admin_audit_title()}</AdminPanelTitle>
           <Button
             disabled={
               templateQuery.isFetching ||
@@ -170,8 +175,8 @@ export function AdminAuditControl() {
             {admin_audit_refresh()}
           </Button>
         </div>
-      </CardHeader>
-      <CardContent>
+      </AdminPanelHeader>
+      <AdminPanelContent>
         <Table>
           <TableHeader>
             <TableRow>
@@ -193,7 +198,9 @@ export function AdminAuditControl() {
               events.map((event) => (
                 <TableRow key={event.id}>
                   <TableCell>
-                    <Badge variant="outline">{event.action}</Badge>
+                    <AdminStatusChip variant="outline">
+                      {event.action}
+                    </AdminStatusChip>
                   </TableCell>
                   <TableCell className="max-w-64 break-words">
                     {event.scope}
@@ -217,7 +224,7 @@ export function AdminAuditControl() {
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+      </AdminPanelContent>
+    </AdminPanel>
   );
 }

@@ -52,7 +52,7 @@ import {
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import { formatDate, formatDateTime } from '@/lib/formatter';
 import { cn } from '@/lib/utils';
 function TableRowSkeleton({ columns }: { columns: number }) {
@@ -156,7 +156,7 @@ export function UsersTable({
           const u = row.original;
           return (
             <div className="flex items-center gap-2">
-              <Badge
+              <AdminStatusChip
                 variant="outline"
                 className="text-sm border-transparent px-1.5 py-2 hover:cursor-pointer hover:underline hover:underline-offset-4"
                 onClick={() => {
@@ -170,7 +170,7 @@ export function UsersTable({
                   <IconMailQuestion className="stroke-red-500 dark:stroke-red-400" />
                 )}
                 {u.email}
-              </Badge>
+              </AdminStatusChip>
             </div>
           );
         },
@@ -192,7 +192,7 @@ export function UsersTable({
         cell: ({ row }) => {
           const r = row.original.role ?? 'user';
           return (
-            <Badge
+            <AdminStatusChip
               variant="outline"
               className={cn(
                 'px-1.5 border-transparent',
@@ -202,7 +202,7 @@ export function UsersTable({
               )}
             >
               {r === 'admin' ? admin_users_admin() : admin_users_user()}
-            </Badge>
+            </AdminStatusChip>
           );
         },
         meta: { label: admin_users_columns_role() },
@@ -259,7 +259,7 @@ export function UsersTable({
         cell: ({ row }) => {
           const banned = row.original.banned;
           return (
-            <Badge
+            <AdminStatusChip
               variant="outline"
               className={cn(
                 'px-1.5 border-transparent',
@@ -279,7 +279,7 @@ export function UsersTable({
                   {admin_users_active()}
                 </>
               )}
-            </Badge>
+            </AdminStatusChip>
           );
         },
         meta: { label: admin_users_columns_status() },
@@ -428,7 +428,17 @@ export function UsersTable({
       <div className="relative flex flex-col gap-4 overflow-auto">
         <div className="overflow-hidden rounded-lg border">
           <Table>
-            <TableHeader className="bg-muted sticky top-0 z-10">
+            {/*
+              Not bg-muted: under the admin shell's token bridge --muted is
+              remapped to muted *ink* (HeroUI's meaning) rather than a muted
+              *surface* (shadcn's), so this band rendered as a slab of the wrong
+              polarity in both themes — 3.20:1 in light and 1.90:1 in dark
+              against its own labels, both under WCAG AA. --surface-secondary is
+              the bridge's own secondary surface and is opaque in both themes,
+              which a sticky header needs. See .scratch/…/F-3-diagnosis.md; the
+              same collision elsewhere is tracked as OI-48.
+            */}
+            <TableHeader className="sticky top-0 z-10 bg-[var(--surface-secondary)]">
               {table.getHeaderGroups().map((hg) => (
                 <TableRow key={hg.id}>
                   {hg.headers.map((header) => (

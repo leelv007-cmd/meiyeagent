@@ -1,13 +1,13 @@
 import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
-import { Badge } from '@/components/ui/badge';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
 import {
   admin_douyin_status_integrated,
   admin_douyin_status_live_description,
@@ -60,31 +60,33 @@ function DouyinIntegrationEvidence() {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2">
+    <AdminPanel>
+      <AdminPanelHeader>
+        <AdminPanelTitle className="flex flex-wrap items-center gap-2">
           {admin_douyin_status_title()}
           {status.data ? (
-            <Badge variant={status.data.integrated ? 'secondary' : 'outline'}>
+            <AdminStatusChip
+              variant={status.data.integrated ? 'secondary' : 'outline'}
+            >
               {status.data.integrated
                 ? admin_douyin_status_integrated()
                 : admin_douyin_status_not_integrated()}
-            </Badge>
+            </AdminStatusChip>
           ) : null}
-        </CardTitle>
-        <CardDescription>
+        </AdminPanelTitle>
+        <AdminPanelDescription>
           {status.data?.integrated
             ? admin_douyin_status_live_description()
             : status.data
               ? admin_douyin_status_recorded_description()
               : admin_douyin_status_unavailable()}
-        </CardDescription>
-      </CardHeader>
+        </AdminPanelDescription>
+      </AdminPanelHeader>
       {status.data ? (
-        <CardContent className="text-sm text-muted-foreground">
+        <AdminPanelContent className="text-sm text-muted-foreground">
           {admin_douyin_status_mode({ mode: status.data.executionMode })}
-        </CardContent>
+        </AdminPanelContent>
       ) : null}
-    </Card>
+    </AdminPanel>
   );
 }

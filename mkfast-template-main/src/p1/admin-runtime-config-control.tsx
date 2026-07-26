@@ -8,15 +8,15 @@ import {
   type ImpactReviewRequest,
 } from '@/components/admin/impact-review-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  AdminPanel,
+  AdminPanelContent,
+  AdminPanelDescription,
+  AdminPanelHeader,
+  AdminPanelTitle,
+  AdminStatusChip,
+} from '@/components/admin/shell/admin-panel';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -576,13 +576,13 @@ export function AdminRuntimeConfigControl({
             {hasCommerceConfig ? (
               <p>{admin_runtime_config_legacy_fallback_notice()}</p>
             ) : null}
-            <Badge variant="outline">
+            <AdminStatusChip variant="outline">
               {admin_runtime_config_activation({
                 status: activationEvidenceLabel(
                   items[0]?.activationEvidenceStatus
                 ),
               })}
-            </Badge>
+            </AdminStatusChip>
           </div>
         </AlertDescription>
       </Alert>
@@ -601,8 +601,8 @@ export function AdminRuntimeConfigControl({
           {admin_runtime_config_refresh()}
         </Button>
       </div>
-      <Card>
-        <CardContent className="pt-6">
+      <AdminPanel>
+        <AdminPanelContent className="pt-6">
           <Table>
             <TableHeader>
               <TableRow>
@@ -631,20 +631,20 @@ export function AdminRuntimeConfigControl({
                             className="flex flex-wrap items-center gap-1"
                             key={snapshot.processKind}
                           >
-                            <Badge variant="outline">
+                            <AdminStatusChip variant="outline">
                               {processLabel(snapshot.processKind)}
-                            </Badge>
+                            </AdminStatusChip>
                             <span className="font-mono">
                               {displayValue(snapshot.effectiveValue)}
                             </span>
-                            <Badge variant="secondary">
+                            <AdminStatusChip variant="secondary">
                               {runtimeSnapshotStatus(
                                 item.storedValue,
                                 snapshot.effectiveValue
                               ) === 'current'
                                 ? admin_runtime_config_current_effective()
                                 : admin_runtime_config_restart_pending()}
-                            </Badge>
+                            </AdminStatusChip>
                             {snapshot.fallbackReason ? (
                               <span className="whitespace-normal text-destructive">
                                 {snapshot.fallbackReason}
@@ -660,10 +660,12 @@ export function AdminRuntimeConfigControl({
                   <TableCell>
                     <div className="flex flex-col items-start gap-1">
                       <span>{item.revision ?? '—'}</span>
-                      <Badge variant="outline">
+                      <AdminStatusChip variant="outline">
                         {statusLabel(item.status)}
-                      </Badge>
-                      <Badge variant="secondary">{wiringLabel(item)}</Badge>
+                      </AdminStatusChip>
+                      <AdminStatusChip variant="secondary">
+                        {wiringLabel(item)}
+                      </AdminStatusChip>
                     </div>
                   </TableCell>
                   <TableCell>{item.actorId ?? '—'}</TableCell>
@@ -672,16 +674,16 @@ export function AdminRuntimeConfigControl({
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>{admin_runtime_config_edit_title()}</CardTitle>
-          <CardDescription>
+        </AdminPanelContent>
+      </AdminPanel>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{admin_runtime_config_edit_title()}</AdminPanelTitle>
+          <AdminPanelDescription>
             {admin_runtime_config_edit_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </AdminPanelDescription>
+        </AdminPanelHeader>
+        <AdminPanelContent className="space-y-4">
           {selectableItems.length > 0 ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {selectableItems.map((item) => {
@@ -745,18 +747,18 @@ export function AdminRuntimeConfigControl({
                               <span className="flex flex-wrap items-center gap-2 font-medium">
                                 {option.label}
                                 {isEffective ? (
-                                  <Badge variant="secondary">
+                                  <AdminStatusChip variant="secondary">
                                     {admin_runtime_config_current_effective()}
-                                  </Badge>
+                                  </AdminStatusChip>
                                 ) : null}
                                 {effectiveProcesses.map((snapshot) => (
-                                  <Badge
+                                  <AdminStatusChip
                                     key={snapshot.processKind}
                                     variant="secondary"
                                   >
                                     {processLabel(snapshot.processKind)} ·{' '}
                                     {admin_runtime_config_current_effective()}
-                                  </Badge>
+                                  </AdminStatusChip>
                                 ))}
                               </span>
                               <span className="mt-1 block text-xs text-muted-foreground">
@@ -829,13 +831,13 @@ export function AdminRuntimeConfigControl({
           <Button disabled={!activeItem} onClick={reviewApply}>
             {admin_runtime_config_save()}
           </Button>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>{admin_runtime_config_history()}</CardTitle>
-        </CardHeader>
-        <CardContent>
+        </AdminPanelContent>
+      </AdminPanel>
+      <AdminPanel>
+        <AdminPanelHeader>
+          <AdminPanelTitle>{admin_runtime_config_history()}</AdminPanelTitle>
+        </AdminPanelHeader>
+        <AdminPanelContent>
           {(historyQuery.data?.length ?? 0) === 0 ? (
             <p className="text-sm text-muted-foreground">
               {admin_runtime_config_history_empty()}
@@ -859,9 +861,9 @@ export function AdminRuntimeConfigControl({
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span>{item.revision}</span>
-                        <Badge variant="outline">
+                        <AdminStatusChip variant="outline">
                           {statusLabel(item.status)}
-                        </Badge>
+                        </AdminStatusChip>
                         {item.rolledBackToRevision ? (
                           <span className="text-xs text-muted-foreground">
                             {admin_runtime_config_rollback_source({
@@ -899,8 +901,8 @@ export function AdminRuntimeConfigControl({
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+        </AdminPanelContent>
+      </AdminPanel>
       <ImpactReviewDialog
         onOpenChange={(open) => !open && setImpactReview(undefined)}
         open={Boolean(impactReview)}

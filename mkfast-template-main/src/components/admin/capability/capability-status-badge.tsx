@@ -4,7 +4,7 @@ import type {
   CapabilityInventoryItemStatus,
 } from '@meiye/contracts';
 
-import { Badge } from '@/components/ui/badge';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import {
   availabilityLabel,
   inventoryStatusLabel,
@@ -53,13 +53,13 @@ export function InventoryStatusBadge({
   status: CapabilityInventoryItemStatus;
 }) {
   return (
-    <Badge
+    <AdminStatusChip
       variant={inventoryVariant(status)}
       data-testid="inventory-status-badge"
       data-status={status}
     >
       {inventoryStatusLabel(status)}
-    </Badge>
+    </AdminStatusChip>
   );
 }
 
@@ -70,13 +70,13 @@ export function AvailabilityStatusBadge({
   status: CapabilityAvailabilityStatus;
 }) {
   return (
-    <Badge
+    <AdminStatusChip
       variant={availabilityVariant(status)}
       data-testid="availability-status-badge"
       data-status={status}
     >
       {availabilityLabel(status)}
-    </Badge>
+    </AdminStatusChip>
   );
 }
 
@@ -99,12 +99,12 @@ export function InstrumentStatusBadge({
               : status;
 
   return (
-    <Badge
+    <AdminStatusChip
       variant={status === 'instrumented' ? 'secondary' : 'outline'}
       data-testid="instrument-status-badge"
       data-status={status}
     >
       {label}
-    </Badge>
+    </AdminStatusChip>
   );
 }
