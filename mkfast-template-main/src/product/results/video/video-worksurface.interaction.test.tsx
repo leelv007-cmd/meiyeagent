@@ -47,9 +47,10 @@ describe('video result worksurface', () => {
     );
   });
 
-  it('keeps independent subtitle proof free and opens confirmation for burned-in edits', async () => {
+  it('keeps independent subtitles free and marks burned-in changes unavailable', async () => {
     const user = userEvent.setup();
     const onSubtitleChange = vi.fn();
+    const onRequestRegenerationQuote = vi.fn();
     const { rerender } = render(
       <VideoWorksurface
         initialState={{
@@ -57,6 +58,7 @@ describe('video result worksurface', () => {
           workflowStatus: 'awaiting_quality_review',
         }}
         onSubtitleChange={onSubtitleChange}
+        onRequestRegenerationQuote={onRequestRegenerationQuote}
       />
     );
 
@@ -73,13 +75,22 @@ describe('video result worksurface', () => {
         initialState={videoWorksurfaceFixture({
           subtitleMode: 'burned_in',
         })}
+        onRequestRegenerationQuote={onRequestRegenerationQuote}
       />
     );
     const burnedInput = screen.getByTestId('video-subtitle-input');
     await user.clear(burnedInput);
     await user.type(burnedInput, '烧录字幕改动');
-    expect(screen.getByTestId('video-regen-confirm')).toHaveTextContent(
-      '重新合成整段'
+    expect(screen.queryByTestId('video-regen-confirm')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '整段视频重新合成已下线，本次未产生扣费。'
+    );
+    expect(onRequestRegenerationQuote).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('video-subtitle-toggle'));
+    expect(onRequestRegenerationQuote).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '整段视频重新合成已下线，本次未产生扣费。'
     );
   });
 
@@ -160,30 +171,9 @@ describe('video result worksurface', () => {
     expect(screen.queryByTestId('video-regen-confirm')).not.toBeInTheDocument();
   });
 
-  it('cancels a server quote without creating a derived task', async () => {
+  it('reports full recomposition as unavailable without requesting a quote', async () => {
     const user = userEvent.setup();
-    const onRequestRegenerationQuote = vi.fn().mockResolvedValue({
-      confirm: {
-        actionLabel: '重新合成整段',
-        authorizedCeiling: 1.5,
-        billingModeLabel: '按生成成片 24 秒计费',
-        createsNewTaskAndIndependentQuote: true,
-        createsNewTaskNotice: '确认后创建新任务',
-        estimatedCredits: 1.44,
-        eta: {
-          estimatedCompletionAt: null,
-          honestyNote: '实际完成时间以供应商为准',
-          status: 'unknown',
-        },
-        formulaExpression: '24 × 0.06',
-        quoteId: 'quote-server-2',
-        quoteRevision: 'quote-rev-2',
-        scope: 'full_compose',
-        targetSeconds: 24,
-      },
-      quote: { formula: { currency: 'CNY' } },
-      scope: 'full_compose',
-    });
+    const onRequestRegenerationQuote = vi.fn();
     const onConfirmRegeneration = vi.fn();
     render(
       <VideoWorksurface
@@ -194,36 +184,38 @@ describe('video result worksurface', () => {
     );
 
     await user.click(screen.getByTestId('video-full-recompose'));
-    await screen.findByTestId('video-regen-confirm');
-    await user.click(screen.getByTestId('video-regen-cancel-action'));
 
+    expect(onRequestRegenerationQuote).not.toHaveBeenCalled();
     expect(onConfirmRegeneration).not.toHaveBeenCalled();
     expect(screen.queryByTestId('video-regen-confirm')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '整段视频重新合成已下线，本次未产生扣费。'
+    );
   });
 
   it('reuses the same derived task id when confirmation is retried', async () => {
     const user = userEvent.setup();
     const onRequestRegenerationQuote = vi.fn().mockResolvedValue({
       confirm: {
-        actionLabel: '重新合成整段',
-        authorizedCeiling: 1.5,
-        billingModeLabel: '按生成成片 24 秒计费',
+        actionLabel: '重新生成此镜头',
+        authorizedCeiling: 0.32,
+        billingModeLabel: '按生成成片 4 秒计费',
         createsNewTaskAndIndependentQuote: true,
         createsNewTaskNotice: '确认后创建新任务',
-        estimatedCredits: 1.44,
+        estimatedCredits: 0.24,
         eta: {
           estimatedCompletionAt: null,
           honestyNote: '实际完成时间以供应商为准',
           status: 'unknown',
         },
-        formulaExpression: '24 × 0.06',
+        formulaExpression: 'max(4s, actual) × 0.06',
         quoteId: 'quote-retry',
         quoteRevision: 'quote-rev-retry',
-        scope: 'full_compose',
-        targetSeconds: 24,
+        scope: 'shot',
+        targetSeconds: 4,
       },
       quote: { formula: { currency: 'CNY' } },
-      scope: 'full_compose',
+      scope: 'shot',
     });
     const onConfirmRegeneration = vi
       .fn()
@@ -237,11 +229,11 @@ describe('video result worksurface', () => {
       />
     );
 
-    await user.click(screen.getByTestId('video-full-recompose'));
+    await user.click(screen.getAllByTestId('video-shot-regenerate')[0]!);
     await screen.findByTestId('video-regen-confirm-action');
     await user.click(screen.getByTestId('video-regen-confirm-action'));
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '视频重生成暂时不可用。费用以报价确认页和账单记录为准，请稍后重试。'
+      '视频重生成能力升级中，本次未产生扣费。'
     );
     await user.click(screen.getByTestId('video-regen-confirm-action'));
 

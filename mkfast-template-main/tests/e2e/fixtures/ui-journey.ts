@@ -1,5 +1,6 @@
 import {
   expect,
+  test,
   type Download,
   type Locator,
   type Page,
@@ -393,6 +394,13 @@ export async function adjustResult(
 ): Promise<{ instruction: string; workId?: string }> {
   const instruction = `e2e-${modality}-adjust-${crypto.randomUUID()}`;
   if (modality === 'video') {
+    // D-133 (2026-07-26): keep the retired full-compose assertions intact as
+    // historical coverage; the native video editing surface stays dark with
+    // no rebuild commitment pending demand validation.
+    test.skip(
+      true,
+      'D-133: full video recomposition is retired with no rebuild planned.'
+    );
     const worksurface = page.getByTestId('video-worksurface');
     await expect(worksurface).toBeVisible();
     await expect(page.getByTestId('video-subtitle-save')).toBeDisabled();

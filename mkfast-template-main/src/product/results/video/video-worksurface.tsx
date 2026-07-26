@@ -11,7 +11,6 @@ import {
   merchantShotLabel,
   projectVideoMobileP0Actions,
   reorderShots,
-  requestFullRecompose,
   requestShotRegen,
   selectShotCandidate,
   setCoverFromFrame,
@@ -21,6 +20,10 @@ import {
   type VideoProStudioRefineHandoff,
   type VideoWorksurfaceState,
 } from './video-worksurface-model';
+
+// D-133: whole-film recomposition stays dark with no rebuild commitment.
+const FULL_COMPOSE_UNAVAILABLE = '整段视频重新合成已下线，本次未产生扣费。';
+const VIDEO_REGENERATION_UNAVAILABLE = '视频重生成能力升级中，本次未产生扣费。';
 
 export type VideoRegenerationQuoteRequest = {
   scope: 'shot' | 'full_compose';
@@ -144,6 +147,13 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
     } finally {
       setQuotePending(false);
     }
+  };
+  const showFullComposeUnavailable = (next?: VideoWorksurfaceState) => {
+    if (next) {
+      update({ ...next, pendingQuote: null });
+    }
+    setServerQuote(null);
+    setCommandError(FULL_COMPOSE_UNAVAILABLE);
   };
   const persistCanonicalEdit = async (
     command: VideoCanonicalEditCommand,
@@ -283,18 +293,12 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
           data-testid="video-subtitle-input"
           onChange={(event) => {
             const result = editSubtitleText(state, event.target.value);
-            update(result.state);
             props.onSubtitleChange?.(event.target.value, result.fee);
-            if (
-              result.fee.fee === 'billable' &&
-              !quotePending &&
-              !serverQuote
-            ) {
-              void requestServerQuote({
-                scope: 'full_compose',
-                sourceRunId: state.workflowId,
-              });
+            if (result.fee.fee === 'billable') {
+              showFullComposeUnavailable(result.state);
+              return;
             }
+            update(result.state);
           }}
         />
         <Button
@@ -331,11 +335,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
           onClick={() => {
             const result = toggleSubtitleEnabled(state);
             if (result.fee.fee === 'billable') {
-              update(result.state);
-              void requestServerQuote({
-                scope: 'full_compose',
-                sourceRunId: state.workflowId,
-              });
+              showFullComposeUnavailable(result.state);
               return;
             }
             update(result.state);
@@ -486,14 +486,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
           variant="outline"
           disabled={quotePending || commandPending}
           data-testid="video-full-recompose"
-          onClick={() => {
-            const result = requestFullRecompose(state);
-            update(result.state);
-            void requestServerQuote({
-              scope: 'full_compose',
-              sourceRunId: state.workflowId,
-            });
-          }}
+          onClick={() => showFullComposeUnavailable()}
         >
           重新合成整段
         </Button>
@@ -556,7 +549,7 @@ export function VideoWorksurface(props: VideoWorksurfaceProps) {
                       setServerQuote(null);
                     } catch {
                       update(state);
-                      setCommandError('视频重生成能力升级中，本次未产生扣费。');
+                      setCommandError(VIDEO_REGENERATION_UNAVAILABLE);
                     } finally {
                       setCommandPending(false);
                     }
