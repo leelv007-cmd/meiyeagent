@@ -106,11 +106,128 @@ test('an existing frozen fact suppresses the matching blocking QuestionCard', as
   const input = { workflowId: 'task-fact-present', request: taskInput() };
   const named = await ports.nameIntent(input);
   assert.equal(named.blockingQuestion, null);
+  assert.equal(named.declaration.route, 'customized');
+  assert.equal(named.declaration.routingSource, 'policy');
+  assert.deepEqual(named.declaration.usedAssetCategories, ['store']);
   assert.equal(
     await ports.injectContext({ ...input, declaration: named.declaration }),
     snapshot,
   );
   assert.equal(contextRequests, 2);
+});
+
+test('an unanswered industry gap reports the confirmed grounding surface to the workflow', async () => {
+  const runner = new QueueRunner([
+    {
+      normalizedIntent: '介绍本店日常服务',
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: [],
+      route: 'guidance',
+      implicitConstraints: [],
+      blockingGap: {
+        field: 'industry_category',
+        question: '这次内容主要属于哪一类美业服务？',
+        options: [],
+        allowFreeText: true,
+        scope: 'current_task',
+      },
+    },
+  ]);
+  const snapshot = contextSnapshot();
+  snapshot.activeFactReferences = [
+    { key: 'store.name', sourceRef: 'store_fact:store-name:1' },
+    { key: 'service.name', sourceRef: 'store_fact:service-name:1' },
+  ];
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return snapshot;
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+  );
+
+  const named = await ports.nameIntent({
+    workflowId: 'task-unanswered-industry',
+    request: taskInput(),
+  });
+
+  assert.equal(
+    named.blockingQuestion?.questionId,
+    'task-unanswered-industry:s1:industry_category',
+  );
+  assert.deepEqual(named.gapGrounding, {
+    activeConfirmedFactCount: 2,
+    answerableConfirmedFactCount: 0,
+  });
+});
+
+test('the production reuse path keeps an unanswered industry QuestionCard reachable', async () => {
+  const runner = new QueueRunner([
+    {
+      normalizedIntent: '沿用已有结构介绍本店服务',
+      taskType: 'daily_service_exposure',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['industry_category'],
+      usedAssetCategories: [],
+      route: 'guidance',
+      implicitConstraints: [],
+      blockingGap: {
+        field: 'industry_category',
+        question: '这次内容主要属于哪一类美业服务？',
+        options: [],
+        allowFreeText: true,
+        scope: 'current_task',
+      },
+    },
+  ]);
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+  );
+  const request = {
+    ...taskInput(),
+    reuseSeed: {
+      assetId: 'series-a',
+      assetRevision: 2,
+      sourcePackageId: 'package-source',
+      sourceVersionId: 'version-source',
+      sourcePackageRevision: 4,
+      assetRevisionId: 'series-a:2',
+      fixedItemKeys: ['structure.opening'],
+      variableSlotKeys: ['industry_category'],
+    },
+  };
+
+  const named = await ports.nameIntent({
+    workflowId: 'task-reuse-industry',
+    request,
+  });
+
+  assert.equal(
+    named.blockingQuestion?.questionId,
+    'task-reuse-industry:s1:industry_category',
+  );
+  assert.deepEqual(named.gapGrounding, {
+    activeConfirmedFactCount: 0,
+    answerableConfirmedFactCount: 0,
+  });
 });
 
 test('ambiguous service price facts keep the blocking QuestionCard', async () => {

@@ -131,7 +131,9 @@ export type IntentDeclaration = Omit<
   'blockingGap' | 'route'
 > & {
   route: z.infer<typeof intentRouteSchema>;
-  routingSource: 'entry' | 'model' | 'fallback' | 'decision';
+  // `policy` records a server-side routing rule, without claiming that the
+  // merchant submitted a decision.
+  routingSource: 'entry' | 'model' | 'fallback' | 'decision' | 'policy';
 };
 
 export const briefContextBundleSchema = contextBundleSchema;

@@ -17,8 +17,10 @@ import type { HarnessWorkflowInput } from './task-admission.js';
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
 import {
+  merchantConfirmedMaterialsContinuationNotice,
   merchantGenericModeNotice,
   merchantIdentityVoiceNotice,
+  merchantNeutralIndustryContinuationNotice,
   merchantProgressMessage,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
@@ -87,6 +89,10 @@ export interface HarnessStagePorts {
     blockingQuestion: QuestionCard | null;
     metrics?: StructuredNodeMetricsSnapshot;
     fallbackUsed?: boolean;
+    gapGrounding?: {
+      activeConfirmedFactCount: number;
+      answerableConfirmedFactCount: number;
+    };
   }>;
   injectContext(input: {
     workflowId: string;
@@ -171,6 +177,7 @@ export interface HarnessWorkflowRuntime {
     channel: 'copy.title' | 'copy.body' | 'copy.cta';
     delta: string;
   }): Promise<void>;
+  hasRegisteredPendingQuestion?(question: QuestionCard): Promise<boolean>;
   awaitDecision(question: QuestionCard): Promise<StructuredDecisionInput>;
   /**
    * Creates the immutable successor submission used after a semantic answer.
@@ -277,7 +284,7 @@ export async function runHarnessWorkflow(
   await reportProgress({
     stage: 'intent_naming',
     state: 'success',
-    message: merchantRouteMessage(routed.declaration),
+    message: merchantRouteMessage(routed.declaration, routed.notice),
   });
 
   let bundle = await runtime.runStep(
@@ -523,7 +530,7 @@ async function runMediaHarnessWorkflow(
   await reportProgress({
     stage: 'intent_naming',
     state: 'success',
-    message: merchantRouteMessage(routed.declaration),
+    message: merchantRouteMessage(routed.declaration, routed.notice),
   });
 
   let bundle = await runtime.runStep(
@@ -908,12 +915,29 @@ async function resolveIntentRoute(input: {
     return {
       declaration: input.intent.declaration,
       request: input.request,
+      notice: undefined,
     };
   }
-  if (isDayZeroIndustryGap(input.request, input.intent.blockingQuestion)) {
+  const pendingQuestionRegistered =
+    (await input.runtime.hasRegisteredPendingQuestion?.(
+      input.intent.blockingQuestion,
+    )) ?? false;
+  const gapGrounding = input.intent.gapGrounding;
+  if (
+    !pendingQuestionRegistered &&
+    isUnansweredIndustryGap(
+      input.request,
+      input.intent.blockingQuestion,
+      gapGrounding,
+    )
+  ) {
     return {
-      declaration: freeRouteDeclaration(input.intent.declaration),
+      declaration: policyContinuationDeclaration(input.intent.declaration),
       request: input.request,
+      notice:
+        (gapGrounding?.activeConfirmedFactCount ?? 0) > 0
+          ? ('confirmed_materials' as const)
+          : ('neutral_fallback' as const),
     };
   }
 
@@ -935,6 +959,7 @@ async function resolveIntentRoute(input: {
     return {
       declaration: freeRouteDeclaration(input.intent.declaration),
       request: activeRequest,
+      notice: undefined,
     };
   }
   await input.reportProgress({
@@ -962,11 +987,27 @@ async function resolveIntentRoute(input: {
         routingSource: 'decision' as const,
       },
       request: activeRequest,
+      notice: undefined,
     };
   }
   return {
     declaration: freeRouteDeclaration(reassessed.declaration),
     request: activeRequest,
+    notice: undefined,
+  };
+}
+
+function policyContinuationDeclaration(
+  declaration: IntentDeclaration,
+): IntentDeclaration {
+  return {
+    ...declaration,
+    route: 'customized',
+    routingSource: 'policy',
+    usedAssetCategories:
+      declaration.usedAssetCategories.length > 0
+        ? declaration.usedAssetCategories
+        : ['store'],
   };
 }
 
@@ -981,19 +1022,21 @@ function freeRouteDeclaration(
   };
 }
 
-function isDayZeroIndustryGap(
+function isUnansweredIndustryGap(
   request: HarnessWorkflowInput,
   question: QuestionCard,
+  grounding:
+    | {
+        activeConfirmedFactCount: number;
+        answerableConfirmedFactCount: number;
+      }
+    | undefined,
 ) {
-  const snapshot = request.executionSnapshot;
   return (
     request.creationMode === 'customized' &&
     question.response.field === 'industry_category' &&
-    snapshot !== undefined &&
-    snapshot.contentPackage.expectedRevision === 0 &&
     request.reuseSeed === undefined &&
-    snapshot.sources.contentPackage === undefined &&
-    snapshot.semanticDecision === undefined
+    grounding?.answerableConfirmedFactCount === 0
   );
 }
 
@@ -1011,7 +1054,16 @@ const ASSET_CATEGORY_LABELS: Record<
   industry_category: '行业特点',
 };
 
-export function merchantRouteMessage(declaration: IntentDeclaration) {
+export function merchantRouteMessage(
+  declaration: IntentDeclaration,
+  notice?: 'confirmed_materials' | 'neutral_fallback',
+) {
+  if (notice === 'confirmed_materials') {
+    return merchantConfirmedMaterialsContinuationNotice();
+  }
+  if (notice === 'neutral_fallback') {
+    return merchantNeutralIndustryContinuationNotice();
+  }
   if (declaration.route === 'free') {
     return merchantGenericModeNotice();
   }

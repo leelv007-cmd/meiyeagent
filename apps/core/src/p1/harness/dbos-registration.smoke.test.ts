@@ -92,6 +92,9 @@ test(
       smokePorts(),
       {
         async registerPending() {},
+        async readPending() {
+          return null;
+        },
         async recordStageTrace(input) {
           traces.push(input.stage);
         },

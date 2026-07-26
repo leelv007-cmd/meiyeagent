@@ -307,29 +307,27 @@ test('one blocking question suspends and resumes before context injection', asyn
   ]);
 });
 
-test('Day-0 industry gaps continue in generic mode without waiting for a decision', async () => {
+test('an unanswered industry gap keeps the customized route and uses confirmed materials', async () => {
   const stages = fixtureIndustryGapStages();
-  let injectedRoute: string | undefined;
+  const nameIntent = stages.nameIntent;
+  stages.nameIntent = async (input) => ({
+    ...(await nameIntent(input)),
+    gapGrounding: {
+      activeConfirmedFactCount: 2,
+      answerableConfirmedFactCount: 0,
+    },
+  });
+  let injectedDeclaration:
+    | Awaited<ReturnType<HarnessStagePorts['nameIntent']>>['declaration']
+    | undefined;
   const injectContext = stages.injectContext;
   stages.injectContext = async (input) => {
-    injectedRoute = input.declaration.route;
+    injectedDeclaration = input.declaration;
     return injectContext(input);
   };
   const messages: string[] = [];
-  const request = snapshotTaskInput();
-  request.intent.context.sourceSummaries = [
-    'Confirmed store: E2E 美业门店',
-  ];
-  request.decisionReferences = [
-    {
-      id: 'decision:store-name:1',
-      field: 'store_name',
-      value: 'E2E 美业门店',
-      revision: 1,
-    },
-  ];
 
-  await runHarnessWorkflow('task-copy', request, stages, {
+  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
     async runStep(_key, operation) {
       return operation();
     },
@@ -343,29 +341,87 @@ test('Day-0 industry gaps continue in generic mode without waiting for a decisio
     async recordTrace() {},
   });
 
-  assert.equal(injectedRoute, 'free');
+  assert.deepEqual(
+    {
+      route: injectedDeclaration?.route,
+      routingSource: injectedDeclaration?.routingSource,
+      usedAssetCategories: injectedDeclaration?.usedAssetCategories,
+    },
+    {
+      route: 'customized',
+      routingSource: 'policy',
+      usedAssetCategories: ['store'],
+    },
+  );
   assert.equal(
     messages[0],
-    '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。',
+    '这次会参考你已确认的资料，直接继续生成。',
   );
   assert.doesNotMatch(messages[0] ?? '', /industry_category|intent|snapshot/iu);
 });
 
-test('a later content-package revision can still ask for an industry change', async () => {
+test('an unanswered industry gap without confirmed materials uses a neutral fallback notice', async () => {
   const stages = fixtureIndustryGapStages();
-  const request = snapshotTaskInput(1);
-  let decisionWaited = false;
+  const nameIntent = stages.nameIntent;
+  stages.nameIntent = async (input) => ({
+    ...(await nameIntent(input)),
+    gapGrounding: {
+      activeConfirmedFactCount: 0,
+      answerableConfirmedFactCount: 0,
+    },
+  });
+  const messages: string[] = [];
 
-  await runHarnessWorkflow('task-copy', request, stages, {
+  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
     async runStep(_key, operation) {
       return operation();
     },
-    async progress() {},
+    async progress(event) {
+      messages.push(event.message);
+    },
+    async token() {},
+    async awaitDecision() {
+      throw new Error('An unanswered Day-0 gap must not register a decision.');
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(
+    messages[0],
+    '这次先按通用方式继续生成，不需要补充行业信息。',
+  );
+});
+
+test('an existing pending industry question replays the original decision sequence', async () => {
+  const stages = fixtureIndustryGapStages();
+  const nameIntent = stages.nameIntent;
+  stages.nameIntent = async (input) => ({
+    ...(await nameIntent(input)),
+    gapGrounding: {
+      activeConfirmedFactCount: 1,
+      answerableConfirmedFactCount: 0,
+    },
+  });
+  const runSteps: string[] = [];
+  const order: string[] = [];
+
+  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
+    async runStep(key, operation) {
+      runSteps.push(key);
+      return operation();
+    },
+    async hasRegisteredPendingQuestion(question) {
+      order.push(`pending-check:${question.questionId}`);
+      return true;
+    },
+    async progress(event) {
+      order.push(`${event.stage}:${event.state}`);
+    },
     async token() {},
     async awaitDecision(question) {
-      decisionWaited = true;
+      order.push(`decision:${question.questionId}`);
       return {
-        idempotencyKey: 'ignore-industry-change',
+        idempotencyKey: 'ignore-replayed-industry-question',
         questionId: question.questionId,
         workflowRevision: question.workflowRevision,
         patch: {
@@ -379,7 +435,86 @@ test('a later content-package revision can still ask for an industry change', as
     async recordTrace() {},
   });
 
-  assert.equal(decisionWaited, true);
+  assert.deepEqual(order.slice(0, 3), [
+    'pending-check:task-copy:s1:industry_category',
+    'intent_naming:suspended',
+    'decision:task-copy:s1:industry_category',
+  ]);
+  assert.deepEqual(runSteps, [
+    'wf:task-copy:s1:intent:0',
+    'wf:task-copy:s2:context:0',
+    'wf:task-copy:s3:copy:0',
+    'wf:task-copy:s4:copy:selection',
+    'wf:task-copy:s2:fence:r1',
+    'wf:task-copy:s5:package:0',
+  ]);
+});
+
+test('a reuse request keeps an industry question reachable and resumes after its answer', async () => {
+  const stages = fixtureIndustryGapStages();
+  const nameIntent = stages.nameIntent;
+  stages.nameIntent = async (input) => {
+    const named = await nameIntent(input);
+    if (input.round === 1) {
+      return {
+        ...named,
+        declaration: {
+          ...named.declaration,
+          route: 'customized',
+          routingSource: 'model',
+          usedAssetCategories: ['store'],
+        },
+        blockingQuestion: null,
+      };
+    }
+    return {
+      ...named,
+      gapGrounding: {
+        activeConfirmedFactCount: 0,
+        answerableConfirmedFactCount: 0,
+      },
+    };
+  };
+  const request: HarnessWorkflowInput = taskInput();
+  request.reuseSeed = {
+    assetId: 'series-a',
+    assetRevision: 2,
+    sourcePackageId: 'package-source',
+    sourceVersionId: 'version-source',
+    sourcePackageRevision: 4,
+    assetRevisionId: 'series-a:2',
+    fixedItemKeys: ['structure.opening'],
+    variableSlotKeys: ['industry_category'],
+  };
+  let answeredField: string | undefined;
+
+  await runHarnessWorkflow('task-copy', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async hasRegisteredPendingQuestion() {
+      return false;
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      answeredField = question.response.field;
+      return {
+        idempotencyKey: 'answer-reuse-industry-question',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: '美甲',
+          reason: question.response.reason,
+        },
+        decision: { state: 'accepted', value: '美甲' },
+      };
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(answeredField, 'industry_category');
 });
 
 test('a snapshot-backed semantic answer resubmits the same task and work before continuing', async () => {

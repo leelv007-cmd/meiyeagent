@@ -6,10 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
-import {
-  blockingQuestionLocator,
-  installUserActivationCounter,
-} from '../fixtures/user-activation';
+import { installUserActivationCounter } from '../fixtures/user-activation';
 
 type QuestionCard = {
   questionId: string;
@@ -77,6 +74,85 @@ async function waitForQuestion(page: Page, taskId: string) {
   return question!;
 }
 
+async function ignoreThroughHttpAndCollectSse(
+  page: Page,
+  input: { question: QuestionCard; taskId: string }
+) {
+  return page.evaluate(
+    ({ currentQuestion, currentTaskId }) =>
+      new Promise<{ messages: string[]; status: string }>((resolve, reject) => {
+        const messages: string[] = [];
+        const stream = new EventSource(
+          `/api/core/p1/workflows/${encodeURIComponent(currentTaskId)}/events`
+        );
+        const timeout = window.setTimeout(() => {
+          stream.close();
+          reject(new Error('Workflow SSE did not reach a terminal state.'));
+        }, 120_000);
+        stream.addEventListener('workflow.progress', (event) => {
+          const data = JSON.parse((event as MessageEvent<string>).data) as {
+            message: string;
+          };
+          messages.push(data.message);
+        });
+        stream.addEventListener('workflow.state', (event) => {
+          const data = JSON.parse((event as MessageEvent<string>).data) as {
+            status: string;
+          };
+          if (data.status === 'success' || data.status === 'failed') {
+            window.clearTimeout(timeout);
+            stream.close();
+            resolve({ messages, status: data.status });
+          }
+        });
+        stream.onerror = () => {
+          if (stream.readyState === EventSource.CLOSED) {
+            window.clearTimeout(timeout);
+            reject(new Error('Workflow SSE closed before terminal state.'));
+          }
+        };
+        stream.onopen = () => {
+          const idempotencyKey = `skip-${currentQuestion.questionId}`;
+          void fetch(
+            `/api/core/p1/harness/tasks/${encodeURIComponent(currentTaskId)}/decision`,
+            {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'content-type': 'application/json',
+                'idempotency-key': idempotencyKey,
+              },
+              body: JSON.stringify({
+                idempotencyKey,
+                questionId: currentQuestion.questionId,
+                workflowRevision: currentQuestion.workflowRevision,
+                patch: {
+                  field: currentQuestion.response.field,
+                  value: '这次先跳过',
+                  reason: currentQuestion.response.reason,
+                },
+                decision: { state: 'ignored', value: '这次先跳过' },
+              }),
+            }
+          )
+            .then(async (response) => {
+              if (!response.ok) {
+                throw new Error(
+                  `Decision HTTP failed: ${await response.text()}`
+                );
+              }
+            })
+            .catch((error: unknown) => {
+              window.clearTimeout(timeout);
+              stream.close();
+              reject(error);
+            });
+        };
+      }),
+    { currentQuestion: input.question, currentTaskId: input.taskId }
+  );
+}
+
 test.describe('D-111 intent routing over real HTTP and SSE', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
@@ -99,9 +175,9 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
       activations,
       `Day-0 generic mode must reach its first token in exactly two activations; events=${JSON.stringify(counter.events())}`
     ).toBe(2);
-    await expect(blockingQuestionLocator(page)).toHaveCount(0);
+    await expect(page.getByTestId('composer-question-turn')).toHaveCount(0);
     await expect(page.getByTestId('composer-route-notice')).toHaveText(
-      '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。',
+      '这次先按通用方式继续生成，不需要补充行业信息。',
       { timeout: 60_000 }
     );
     await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
@@ -204,5 +280,29 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
     expect(stream.messages.join('\n')).not.toMatch(/生成失败|支持编号/u);
     expect(submission.taskId).toBe(question.questionId.split(':s1:')[0]);
     expect(submission.workId).toBeTruthy();
+  });
+
+  test('ignoring a reachable guidance question through HTTP resumes SSE to success', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    const submission = await submitCustomizedCopy(
+      page,
+      '给护理套餐写一条推广文案'
+    );
+    const question = await waitForQuestion(page, submission.taskId);
+    expect(question.response.field).toBe('promotion_details');
+
+    const stream = await ignoreThroughHttpAndCollectSse(page, {
+      question,
+      taskId: submission.taskId,
+    });
+
+    expect(stream.status).toBe('success');
+    expect(stream.messages.join('\n')).not.toMatch(/生成失败|支持编号/u);
+    expect(submission.taskId).toBe(question.questionId.split(':s1:')[0]);
   });
 });

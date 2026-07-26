@@ -3,10 +3,12 @@ import test from 'node:test';
 
 import {
   merchantAssetRightsSoftPrompt,
+  merchantConfirmedMaterialsContinuationNotice,
   merchantConfirmationQuestion,
   merchantExactTextMismatch,
   merchantGenericModeNotice,
   merchantIdentityVoiceNotice,
+  merchantNeutralIndustryContinuationNotice,
   merchantParseDisclosure,
   merchantParseFallback,
   merchantParseProgress,
@@ -27,6 +29,8 @@ test('five merchant-facing positions stay free of engineering language', () => {
     merchantProgressMessage('execution_selection'),
     merchantIdentityVoiceNotice(),
     merchantGenericModeNotice(),
+    merchantConfirmedMaterialsContinuationNotice(),
+    merchantNeutralIndustryContinuationNotice(),
     merchantConfirmationQuestion('这次更想突出项目效果还是到店体验？'),
     merchantTaskSummary({
       revision: 3,
@@ -143,4 +147,21 @@ test('generic mode notice names the user benefit without internal routing terms'
     '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。',
   );
   assert.deepEqual(merchantVisibleLanguageIssues(notice), []);
+});
+
+test('industry continuation notices reflect whether confirmed materials are used', () => {
+  assert.equal(
+    merchantConfirmedMaterialsContinuationNotice(),
+    '这次会参考你已确认的资料，直接继续生成。',
+  );
+  assert.equal(
+    merchantNeutralIndustryContinuationNotice(),
+    '这次先按通用方式继续生成，不需要补充行业信息。',
+  );
+  assert.deepEqual(
+    merchantVisibleLanguageIssues(
+      `${merchantConfirmedMaterialsContinuationNotice()} ${merchantNeutralIndustryContinuationNotice()}`,
+    ),
+    [],
+  );
 });

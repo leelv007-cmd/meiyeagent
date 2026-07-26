@@ -46,6 +46,14 @@ export function merchantGenericModeNotice() {
   return '这次先按通用模式生成；以后补充门店、项目或风格资料，内容会更像你的店。';
 }
 
+export function merchantConfirmedMaterialsContinuationNotice() {
+  return '这次会参考你已确认的资料，直接继续生成。';
+}
+
+export function merchantNeutralIndustryContinuationNotice() {
+  return '这次先按通用方式继续生成，不需要补充行业信息。';
+}
+
 export function merchantTaskSummary(input: {
   revision: number;
   strategyBasis: string;

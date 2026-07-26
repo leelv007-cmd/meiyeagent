@@ -181,7 +181,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
   ) {}
 
-  async nameIntent(input: Parameters<HarnessStagePorts['nameIntent']>[0]) {
+  async nameIntent(
+    input: Parameters<HarnessStagePorts['nameIntent']>[0],
+  ): ReturnType<HarnessStagePorts['nameIntent']> {
     await this.resolveLiveSourceContentPackage(input.request);
     const runner = this.runnerWithSourceFence(input.request);
     const metrics = new InMemoryStructuredNodeMetrics();
@@ -226,11 +228,12 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         Object.entries(snapshot.bundle.dimensions.store_facts_assets).map(
           ([key, item]) => ({ key, sourceRef: item.sourceRef }),
         );
+      const activeConfirmedFacts = activeFactReferences.filter(({ sourceRef }) =>
+        sourceRef.startsWith('store_fact:'),
+      );
       const matchingFacts = factKey
-        ? activeFactReferences.filter(
-            ({ key, sourceRef }) =>
-              factKeysMatch(key, factKey) &&
-              sourceRef.startsWith('store_fact:'),
+        ? activeConfirmedFacts.filter(
+            ({ key }) => factKeysMatch(key, factKey),
           )
         : [];
       if (matchingFacts.length === 1) {
@@ -239,7 +242,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           declaration: {
             ...measured.declaration,
             route: 'customized' as const,
-            routingSource: 'decision' as const,
+            routingSource: 'policy' as const,
             usedAssetCategories:
               measured.declaration.usedAssetCategories.length > 0
                 ? measured.declaration.usedAssetCategories
@@ -248,6 +251,13 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           blockingQuestion: null,
         };
       }
+      return {
+        ...measured,
+        gapGrounding: {
+          activeConfirmedFactCount: activeConfirmedFacts.length,
+          answerableConfirmedFactCount: matchingFacts.length,
+        },
+      };
     }
     return measured;
   }

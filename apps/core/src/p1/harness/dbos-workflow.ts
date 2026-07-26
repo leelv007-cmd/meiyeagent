@@ -32,6 +32,7 @@ import type {
 
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
+  readPending: HarnessDecisionStore['readPending'];
   recordStageTrace(input: {
     workspaceId: string;
     id: string;
@@ -108,6 +109,18 @@ export function registerHarnessDbosWorkflow(
           occurredAt,
         });
         await DBOS.writeStream(PROGRESS_STREAM, envelope);
+      },
+      async hasRegisteredPendingQuestion(question) {
+        // Keep this read outside DBOS.runStep: recovered PENDING workflows must
+        // not gain a function ID before their original suspend/recv sequence.
+        const pending = await persistence.readPending(
+          request.workspaceId,
+          workflowId,
+        );
+        return (
+          pending?.questionId === question.questionId &&
+          pending.workflowRevision === question.workflowRevision
+        );
       },
       async awaitDecision(question) {
         await DBOS.runStep(
