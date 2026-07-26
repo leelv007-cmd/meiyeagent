@@ -29,6 +29,11 @@ import type {
   HarnessBillingSettlementExecutor,
   HarnessBillingSettlementInput,
 } from './billing-compensation.js';
+import {
+  HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+  type AdminConfigRepository,
+} from '../admin-config/foundation-module.js';
+
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
   readPending: HarnessDecisionStore['readPending'];
@@ -63,13 +68,14 @@ export interface HarnessBillingSettlementPort
 }
 
 const PROGRESS_STREAM = 'progress';
-const DECISION_TIMEOUT_SECONDS = 48 * 60 * 60;
+export const DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS = 30;
 
 export function registerHarnessDbosWorkflow(
   ports: HarnessStagePorts,
   persistence: HarnessWorkflowPersistence,
   semanticResumptions?: HarnessSemanticDecisionResumptionStore,
   billing?: HarnessBillingSettlementPort,
+  config?: Pick<AdminConfigRepository, 'get'>,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -128,11 +134,36 @@ export function registerHarnessDbosWorkflow(
           { name: `persist-pending-${question.questionId}` },
         );
         await DBOS.setEvent('pending-structured-decision', question);
+        const timeoutSeconds = await DBOS.runStep(
+          async () => {
+            const configured = (
+              await config?.get(
+                'global',
+                '__global__',
+                HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+              )
+            )?.value;
+            if (configured === undefined) {
+              return DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS;
+            }
+            if (
+              typeof configured !== 'number' ||
+              !Number.isSafeInteger(configured) ||
+              configured < 1
+            ) {
+              throw new Error(
+                'Confirmation-card timeout config must be a positive integer.',
+              );
+            }
+            return configured;
+          },
+          { name: `snapshot-confirmation-timeout-${question.questionId}` },
+        );
         const decision = await DBOS.recv<StructuredDecisionInput>(
           decisionTopic(question.questionId),
-          { timeoutSeconds: DECISION_TIMEOUT_SECONDS },
+          { timeoutSeconds },
         );
-        return assertMatchingDecision(question, decision);
+        return confirmationCardDecision(question, decision);
       },
       ...(semanticResumptions
         ? {
@@ -430,11 +461,26 @@ export function normalizeHarnessDbosWorkflowInput(
     : { workflowId: runtimeWorkflowId, request: input };
 }
 
-function assertMatchingDecision(
+export function confirmationCardDecision(
   question: QuestionCard,
   decision: StructuredDecisionInput | null,
 ) {
-  if (!decision) throw new Error('Structured decision timed out.');
+  if (!decision) {
+    return structuredDecisionInputSchema.parse({
+      idempotencyKey: `timeout-${question.questionId}-r${question.workflowRevision}`,
+      questionId: question.questionId,
+      workflowRevision: question.workflowRevision,
+      patch: {
+        field: question.response.field,
+        value: 'Confirmation timed out.',
+        reason: question.response.reason,
+      },
+      decision: {
+        state: 'ignored',
+        value: 'Confirmation timed out.',
+      },
+    });
+  }
   const parsed = structuredDecisionInputSchema.parse(decision);
   if (parsed.questionId !== question.questionId) {
     throw new Error('Structured decision does not match the pending question.');

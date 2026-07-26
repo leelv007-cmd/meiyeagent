@@ -39,6 +39,7 @@ import {
   AdminConfigFoundationModule,
   AdminConfigEntitlementCatalogSource,
   AdminConfigNotePlanSettingsSource,
+  HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   ModeGateExecutionPort,
   ModeGateMediaLifecyclePort,
@@ -172,6 +173,7 @@ import { HarnessProductBillingSettlementExecutor } from './p1/harness/product-bi
 import { PostgresNoteMediaAdmissionCoordinator } from './p1/harness/note-media-admission.js';
 import { HarnessResumeReconciler } from './p1/harness/resume-reconciler.js';
 import {
+  DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   DbosHarnessWorkflowStarter,
   registerHarnessDbosWorkflow,
   resumeHarnessDbosWorkflow,
@@ -557,6 +559,8 @@ const adminConfigRuntime = {
   'douyin.adapter.assembly': 'recorded',
   'model.execution.mode': modelRuntime.mode,
   'model.media.execution.mode': mediaExecutionMode,
+  [HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY]:
+    DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   ...Object.fromEntries(
     Object.entries(e2ePlatformModelDefaults).map(([operation, modelId]) => [
       `platform.defaultModel.${operation}`,
@@ -1297,6 +1301,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ),
       hotReadKeys: [
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+        HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         'plan.addons',
         'plan.trial.enabled',
@@ -1314,6 +1319,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ],
       wiredKeys: [
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+        HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         'byok.adapter.assembly',
         'douyin.adapter.assembly',
@@ -1631,6 +1637,7 @@ if (harnessRuntimeConfig) {
         await billingCompensations.enqueue(input);
       },
     },
+    adminConfigRepository,
   );
   await DBOS.launch();
   const workflowResumer = {

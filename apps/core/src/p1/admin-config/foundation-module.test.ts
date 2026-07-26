@@ -11,6 +11,7 @@ import type { PermissionAuthorizerPort } from '../capability-permission/port.js'
 import { createDefaultDeployments } from '../model-supply/catalog.js';
 import {
   AdminConfigFoundationModule,
+  HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   MemoryAdminConfigRepository,
 } from './foundation-module.js';
@@ -124,8 +125,9 @@ describe('Admin config application seam', () => {
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
         'douyin.adapter.assembly',
-        NOTE_STYLE_CONFIG_KEY,
+        HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        NOTE_STYLE_CONFIG_KEY,
         ...createDefaultDeployments()
           .map(
             (deployment) =>
@@ -289,6 +291,48 @@ describe('Admin config application seam', () => {
       [
         { actorId: 'platform-admin', revision: 1, value: false },
         { actorId: 'platform-admin', revision: 2, value: true },
+      ],
+    );
+  });
+
+  it('governs confirmation-card timeout with CAS and audited history', async () => {
+    const repository = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [new AdminConfigFoundationModule(repository)],
+    });
+    const apply = (value: number, expectedRevision: number | null) =>
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+            value,
+            expectedRevision,
+            reason: `Set confirmation-card timeout to ${String(value)} seconds`,
+          },
+        },
+        `confirmation-timeout-${String(value)}-${String(expectedRevision)}`,
+      );
+
+    await apply(30, null);
+    await assert.rejects(apply(45, null), /Config head changed/u);
+    await apply(45, 1);
+    const history = await repository.history(
+      'global',
+      '__global__',
+      HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+    );
+    assert.deepEqual(
+      history.map(({ actorId, revision, value }) => ({
+        actorId,
+        revision,
+        value,
+      })),
+      [
+        { actorId: 'platform-admin', revision: 1, value: 30 },
+        { actorId: 'platform-admin', revision: 2, value: 45 },
       ],
     );
   });

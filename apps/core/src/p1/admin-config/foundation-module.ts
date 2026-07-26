@@ -205,6 +205,8 @@ const MAX_ADD_ON_QUANTITY = 1_000_000;
 const MAX_ADD_ON_AMOUNT_MICROS = 1_000_000_000_000;
 const MAX_ADD_ON_OFFERS = 100;
 export const HARNESS_WOZ_RECIPE_CONFIG_KEY = 'harness.woz.recipe';
+export const HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY =
+  'harness.confirmation_card.timeout_seconds';
 const planAllowanceSchema = z
   .object({
     allowance: z.object({
@@ -255,6 +257,12 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'workspace',
     description: 'Free-form WOZ recipe consumed by ContextBundle compilation.',
     valueSchema: z.json(),
+  },
+  {
+    key: HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+    scope: 'global',
+    description: 'Confirmation-card wait before generic workflow continuation.',
+    valueSchema: z.number().int().positive(),
   },
   {
     key: 'compliance.regulated_mode.default',

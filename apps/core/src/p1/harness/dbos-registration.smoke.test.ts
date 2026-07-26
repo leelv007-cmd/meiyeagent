@@ -306,6 +306,147 @@ test(
   },
 );
 
+test(
+  'confirmation timeout exits DBOS pending state and delivers the generic route',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-timeout-${randomUUID()}`;
+    const runtimeWorkflowId = harnessRuntimeId(
+      'workspace-timeout',
+      workflowId,
+    );
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '推广本店团购',
+        taskType: 'promotion_groupbuy_conversion',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['promotion_activity'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId: `${workflowId}:offer-price`,
+        workflowId,
+        workflowRevision: 1,
+        question: 'What is the current offer price?',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'offer_price',
+          reason: 'Ground the promotion in the current merchant offer',
+        },
+        scope: 'current_task',
+      },
+    });
+    let pendingQuestionId: string | null = null;
+    let configReads = 0;
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-timeout-smoke',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion: 'harness-timeout-smoke-v1',
+    });
+    const workflow = registerHarnessDbosWorkflow(
+      ports,
+      {
+        async registerPending(_workspaceId, question) {
+          pendingQuestionId = question.questionId;
+        },
+        async readPending() {
+          return null;
+        },
+        async recordStageTrace() {},
+        async recordTerminalFailure() {},
+      },
+      undefined,
+      undefined,
+      {
+        async get() {
+          configReads += 1;
+          return {
+            actorId: 'platform-admin',
+            correlationId: 'timeout-smoke-config',
+            createdAt: '2026-07-26T09:00:00.000Z',
+            key: 'harness.confirmation_card.timeout_seconds',
+            reason: 'Exercise durable timeout',
+            revision: 1,
+            rolledBackToRevision: null,
+            scope: 'global',
+            status: 'applied',
+            value: 2,
+            workspaceId: '__global__',
+          };
+        },
+      },
+    );
+
+    try {
+      await DBOS.launch();
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({
+        workflowId,
+        request: {
+          actorId: 'owner-timeout',
+          workspaceId: 'workspace-timeout',
+          packageId: 'package-timeout',
+          expectedRevision: 0,
+          workflowRevision: 1,
+          creationMode: 'customized',
+          rawInput: '把新团购做一套能发的',
+          intent: {
+            context: {
+              workId: 'work-timeout',
+              intent: '把新团购做一套能发的',
+              sourceSummaries: [],
+            },
+            assetReferences: [],
+          },
+        },
+      });
+
+      const pending = await DBOS.getEvent(
+        runtimeWorkflowId,
+        'pending-structured-decision',
+        { timeoutSeconds: 5 },
+      );
+      assert.equal(
+        (pending as { questionId?: string } | null)?.questionId,
+        `${workflowId}:offer-price`,
+      );
+      assert.equal((await handle.getStatus())?.status, 'PENDING');
+
+      const result = await handle.getResult();
+      assert.equal(result.delivery.revision, 1);
+      assert.equal(result.trace.winnerCandidateId, 'c01');
+      assert.equal((await handle.getStatus())?.status, 'SUCCESS');
+      assert.equal(
+        (
+          await DBOS.listWorkflows({
+            workflowIDs: [runtimeWorkflowId],
+            status: 'PENDING',
+          })
+        ).length,
+        0,
+      );
+      assert.equal(pendingQuestionId, `${workflowId}:offer-price`);
+      assert.equal(configReads, 1);
+      assert.ok(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some(
+          (step) =>
+            step.name ===
+            `snapshot-confirmation-timeout-${workflowId}:offer-price`,
+        ),
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
 const SMOKE_PRIVATE_INSTRUCTION =
   'F21 private Skill instruction must never enter DBOS step output.';
 

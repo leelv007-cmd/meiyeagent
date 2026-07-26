@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   commitHarnessBillingOrSchedule,
+  confirmationCardDecision,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
   type HarnessBillingSettlementPort,
@@ -15,6 +16,41 @@ const settlement = {
   quoteId: 'quote-billing-failure',
   quoteRevision: 'quote-revision-1',
 };
+
+test('confirmation timeout becomes a legal ignored decision', () => {
+  assert.deepEqual(
+    confirmationCardDecision(
+      {
+        questionId: 'question-timeout',
+        workflowId: 'task-timeout',
+        workflowRevision: 3,
+        question: 'What service should this content feature?',
+        options: [],
+        freeText: { enabled: true },
+        response: {
+          field: 'industry_category',
+          reason: 'Ground the content in the merchant service category',
+        },
+        scope: 'current_task',
+      },
+      null,
+    ),
+    {
+      idempotencyKey: 'timeout-question-timeout-r3',
+      questionId: 'question-timeout',
+      workflowRevision: 3,
+      patch: {
+        field: 'industry_category',
+        value: 'Confirmation timed out.',
+        reason: 'Ground the content in the merchant service category',
+      },
+      decision: {
+        state: 'ignored',
+        value: 'Confirmation timed out.',
+      },
+    },
+  );
+});
 
 test('commit failure schedules durable compensation without rejecting delivery', async () => {
   const events: string[] = [];
