@@ -145,7 +145,8 @@ async function p1Query<T>(
       };
       if (!response.ok || envelope.data === undefined) {
         throw new Error(
-          envelope.error?.message ?? `${queryModule}.${queryAction} query failed`
+          envelope.error?.message ??
+            `${queryModule}.${queryAction} query failed`
         );
       }
       return envelope.data;
@@ -196,9 +197,8 @@ async function assertStreamingCandidate(page: Page, contract: JourneyContract) {
   ).toHaveAttribute('data-has-token', 'true', { timeout: 180_000 });
   await expect(page.getByTestId('composer-candidate-primary')).toHaveCount(1);
   expect(
-    (
-      await page.getByTestId('composer-candidate-primary').innerText()
-    ).trim().length,
+    (await page.getByTestId('composer-candidate-primary').innerText()).trim()
+      .length,
     'the streamed candidate must carry real text'
   ).toBeGreaterThan(0);
 }
@@ -228,7 +228,9 @@ async function assertConversationRestored(page: Page, intent: string) {
   await expect(page.getByTestId('composer-conversation')).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByTestId('composer-turn-merchant')).toContainText(intent);
+  await expect(page.getByTestId('composer-turn-merchant')).toContainText(
+    intent
+  );
   await expect(
     page.getByTestId('composer-stage-line').first(),
     'the replayed event log must bring back progress the browser never stored'

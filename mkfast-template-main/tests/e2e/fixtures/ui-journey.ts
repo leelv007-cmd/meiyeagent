@@ -142,6 +142,8 @@ export async function submitComposerJourney(
   // on `/api/core/p1/commands`) — `composer/z1-cutover-retirement.static.test.ts`
   // asserts those actions are never emitted again — so waiting for them could
   // only ever time out. One POST now carries the whole submission.
+  // M-04-RETIRED-ACTION-ALLOWED: naming the retired pair here is the record of
+  // why the old wait was deleted, not a listener (src/lib/e2e-hard-gate-contract).
   const submissionResponsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&

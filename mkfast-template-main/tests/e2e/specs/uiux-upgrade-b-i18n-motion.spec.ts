@@ -401,7 +401,18 @@ test.describe('UI/UX Upgrade B i18n, motion, and mobile contracts', () => {
     });
   });
 
-  test.describe('reduced motion', () => {
+  /**
+   * M-04 DEMOTED (T37 / #231) — this case only.
+   *
+   * The reduced-motion contract itself is live and still matters; what died is
+   * the surface this case walks to reach a pending request: 「建立创作记录」 →
+   * 「快速起步预设」 → `execute-tool-action`, all removed from `src` by the Z1
+   * cutover. Relanding it means reaching a pending run through the Composer
+   * conversation instead. The sibling reduced-motion case in
+   * `landing-page.spec.ts` and the `accent-motion.test.ts` unit still cover the
+   * static-accent rule meanwhile.
+   */
+  test.describe.fixme('reduced motion', () => {
     test('generation accent remains readable and static while a real request is pending', async ({
       page,
       request,
@@ -426,59 +437,38 @@ test.describe('UI/UX Upgrade B i18n, motion, and mobile contracts', () => {
       await expect(contract).toBeEnabled();
       await contract.click();
 
-      let releaseSubmit: (() => void) | undefined;
-      const submitGate = new Promise<void>((resolve) => {
-        releaseSubmit = resolve;
-      });
-      const commandRoute = '**/api/core/p1/commands';
-      await page.route(commandRoute, async (route) => {
-        const payload = route.request().postDataJSON() as {
-          action?: string;
-          module?: string;
+      // T37 / M-04: a submit hold used to sit here, keyed on a command the
+      // Composer no longer emits — it held nothing, so these pending-state
+      // assertions were racing a live request rather than reading a frozen one.
+      const submit = record.getByTestId('execute-tool-action');
+      await expect(submit).toBeEnabled();
+      await expect(submit).toBeInViewport();
+      await submit.click();
+
+      const accent = record
+        .locator('output')
+        .filter({ hasText: '正在提交生成请求…' });
+      await expect(accent).toBeVisible();
+      await expect(accent).toContainText('正在提交生成请求…');
+      await expect(accent.locator('span')).toHaveCount(2);
+      const reducedStyle = await accent.evaluate((element) => {
+        const [dot, label] = element.querySelectorAll('span');
+        if (!dot || !label) throw new Error('Generation accent is incomplete');
+        const dotStyle = getComputedStyle(dot);
+        const labelStyle = getComputedStyle(label);
+        return {
+          animationName: dotStyle.animationName,
+          backgroundImage: labelStyle.backgroundImage,
+          color: labelStyle.color,
         };
-        if (
-          payload.module === 'operations' &&
-          payload.action === 'submit_creative_work'
-        ) {
-          await submitGate;
-        }
-        await route.continue();
       });
-
-      try {
-        const submit = record.getByTestId('execute-tool-action');
-        await expect(submit).toBeEnabled();
-        await expect(submit).toBeInViewport();
-        await submit.click();
-
-        const accent = record
-          .locator('output')
-          .filter({ hasText: '正在提交生成请求…' });
-        await expect(accent).toBeVisible();
-        await expect(accent).toContainText('正在提交生成请求…');
-        await expect(accent.locator('span')).toHaveCount(2);
-        const reducedStyle = await accent.evaluate((element) => {
-          const [dot, label] = element.querySelectorAll('span');
-          if (!dot || !label)
-            throw new Error('Generation accent is incomplete');
-          const dotStyle = getComputedStyle(dot);
-          const labelStyle = getComputedStyle(label);
-          return {
-            animationName: dotStyle.animationName,
-            backgroundImage: labelStyle.backgroundImage,
-            color: labelStyle.color,
-          };
-        });
-        expect(reducedStyle.animationName).toBe('none');
-        expect(reducedStyle.backgroundImage).toBe('none');
-        expect(reducedStyle.color).not.toBe('rgba(0, 0, 0, 0)');
-        await page.screenshot({
-          fullPage: true,
-          path: '../docs/evidence/uiux-upgrade-b/screenshots/24-generation-accent-reduced-motion-desktop.png',
-        });
-      } finally {
-        releaseSubmit?.();
-      }
+      expect(reducedStyle.animationName).toBe('none');
+      expect(reducedStyle.backgroundImage).toBe('none');
+      expect(reducedStyle.color).not.toBe('rgba(0, 0, 0, 0)');
+      await page.screenshot({
+        fullPage: true,
+        path: '../docs/evidence/uiux-upgrade-b/screenshots/24-generation-accent-reduced-motion-desktop.png',
+      });
     });
   });
 });

@@ -260,7 +260,24 @@ async function waitForCopyCandidates(page: Page) {
   return selector;
 }
 
-test.describe('UI/UX Upgrade B result contracts', () => {
+/**
+ * M-04 DEMOTED (T37 / #231).
+ *
+ * Every case here reaches the product through the retired unified creation
+ * workbench (`建立创作记录` → `快速起步预设` → `execute-tool-action` →
+ * `workbench-result-hero`), which the Z1 cutover removed from `src`. The T07
+ * pre-change baseline recorded it 8/8 red for that reason, before that ticket
+ * touched anything — so this file has not been evidence of anything for a
+ * while.
+ *
+ * Demoted rather than deleted: no approved disposition batch covers these
+ * specs, and the contracts they describe (stream start/stop boundaries, paid
+ * reroll vs free quality retry, image lightbox to the canonical Asset,
+ * single-choice on mobile, English chrome) still need relanding on the
+ * conversation container and the Result Center. The required browser gate is
+ * `m04-browser-hard-gate.spec.ts`.
+ */
+test.describe.fixme('UI/UX Upgrade B result contracts', () => {
   test.beforeAll(async ({ request }) => {
     await cleanupE2EUsers(request);
   });
@@ -382,16 +399,12 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     await expect(selectedWorkbenchInput).toHaveValue(selectedModelId);
 
     const submit = await acceptContract(page);
-    const submissionResponse = page.waitForResponse((response) => {
-      if (!response.url().includes('/api/core/p1/commands')) return false;
-      const requestBody = response.request().postDataJSON() as {
-        action?: string;
-      };
-      return requestBody.action === 'submit_creative_work';
-    });
+    // T37 / M-04: the wait that used to sit here keyed on a command the
+    // Composer no longer emits, so it could only ever time out. The result hero
+    // below is the observable this case actually needs; when this journey is
+    // relanded on the conversation container it waits on
+    // `/api/core/p1/composer/submissions` instead.
     await submit.click();
-    const submitted = await submissionResponse;
-    expect(submitted.ok(), await submitted.text()).toBeTruthy();
     await expect(record.getByTestId('workbench-result-hero')).toBeVisible({
       timeout: 60_000,
     });

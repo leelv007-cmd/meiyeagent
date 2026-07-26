@@ -39,7 +39,22 @@ async function creativeProjection(page: Page) {
   });
 }
 
-test.describe('UI/UX Upgrade B composer contracts', () => {
+/**
+ * M-04 DEMOTED (T37 / #231).
+ *
+ * These are the pre-submit contracts of the retired unified creation workbench
+ * — its empty state, its scene chips, its named presets, its shelf inheritance
+ * confirmation — and the Z1 cutover removed that surface from `src`. The T07
+ * pre-change baseline recorded this file 8/8 red before that ticket changed
+ * anything.
+ *
+ * Demoted rather than deleted: no approved disposition batch covers it, and the
+ * intents underneath (one editable request and one primary action, prefill
+ * without writes, a sanitized projection failure that recovers only on an
+ * explicit retry) still deserve relanding on the Composer conversation. The
+ * required browser gate is `m04-browser-hard-gate.spec.ts`.
+ */
+test.describe.fixme('UI/UX Upgrade B composer contracts', () => {
   test.setTimeout(60_000);
 
   test.beforeAll(async ({ request }) => {

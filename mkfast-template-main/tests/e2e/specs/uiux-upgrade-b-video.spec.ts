@@ -499,6 +499,12 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(videoPackage?.source.workId).toBe(workId);
     expect(videoPackage).toBeTruthy();
     if (!videoPackage) throw new Error('Completed video has no ContentPackage');
+    // M-04 DEMOTED (T37 / #231) — 成片 leg of the retired ContentPackageDetail.
+    // These three lines are one of the old detail page's three capability
+    // assertions (成片 / 海报 / 三平台版本); T34 replaced that page with the works
+    // face, and relanding the journey on it is T38's call. The delivered-video
+    // contract itself is not uncovered meanwhile: `video-native-compiler.spec.ts`
+    // asserts it at the core level, and the M-04 hard gate walks 视频 end to end.
     await page.goto(`/dashboard/works/${encodeURIComponent(videoPackage.id)}`);
     const detailWorkflow = page.getByLabel('视频成片工作流');
     await expect(
@@ -552,6 +558,10 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
           action === 'video_workflow_select_candidate'
       )
     ).toHaveLength(completed.reviewSelections);
+    // M-04-RETIRED-ACTION-ALLOWED: the polarity here is already correct — this
+    // asserts the durable video chain never emits the retired command, so it is
+    // a guard against resurrection rather than a wait that can only time out
+    // (src/lib/e2e-hard-gate-contract.test.ts).
     expect(
       commandActions.some(
         ({ action, module }) =>

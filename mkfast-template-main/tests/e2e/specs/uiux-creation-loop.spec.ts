@@ -1122,6 +1122,11 @@ test.describe('S2 cold start and unified creation loop', () => {
       /\/api\/core\/p1\/assets\?objectKey=/
     );
 
+    // M-04 DEMOTED (T37 / #231) — 三平台版本 leg of the retired
+    // ContentPackageDetail. T34 replaced that page with the works face and this
+    // control moved with it; relanding the journey is T38's call. The contract
+    // is not uncovered meanwhile: `assembly-gate-required-journey.spec.ts`
+    // asserts the three platform variants on the delivered ContentPackage.
     const generateVariants = page.getByRole('button', {
       name: /^生成三平台版本/,
     });
@@ -1289,6 +1294,10 @@ test.describe('S2 cold start and unified creation loop', () => {
       source: 'weekly_review',
     });
 
+    // M-04 DEMOTED (T37 / #231) — 海报 leg of the retired ContentPackageDetail,
+    // same disposition as the 三平台版本 block above: T34 replaced the page,
+    // T38 owns relanding the journey. Core-level equivalents stay in
+    // `image-intent-service-journeys.spec.ts` and `image-text-note-compiler.spec.ts`.
     await page.goto(`/dashboard/works/${encodeURIComponent(packageId)}`);
     await page.getByRole('button', { exact: true, name: '海报' }).click();
     const openPoster = page.getByRole('button', { name: '去做宣传海报' });
