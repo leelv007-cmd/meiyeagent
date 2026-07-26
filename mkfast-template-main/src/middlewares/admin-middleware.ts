@@ -5,26 +5,11 @@ import { getRequestHeaders } from '@tanstack/react-start/server';
 import { Routes } from '@/lib/routes';
 import { websiteConfig } from '@/config/website';
 import {
-  RecentAuthenticationRequiredError,
-  recentAuthenticationRequiredResponse,
-  requireRecentAuthentication,
-} from '@/auth/recent-authentication';
-
-const ADMIN_ROLE = 'admin';
-
-function forbiddenResponse() {
-  return Response.json(
-    { success: false, error: 'Forbidden' },
-    { status: 403, headers: { 'Content-Type': 'application/json' } }
-  );
-}
-
-function unauthorizedResponse() {
-  return Response.json(
-    { success: false, error: 'Unauthorized' },
-    { status: 401, headers: { 'Content-Type': 'application/json' } }
-  );
-}
+  ADMIN_ROLE,
+  adminForbiddenResponse,
+  adminUnauthorizedResponse,
+  requireRecentAdminSession,
+} from '@/auth/recent-admin-session';
 
 /**
  * Admin Route middleware: requires authenticated user with role === 'admin'.
@@ -62,10 +47,10 @@ export const adminApiMiddleware = createMiddleware().server(
     const session = await createAuth().api.getSession({ headers });
 
     if (!session?.user) {
-      return unauthorizedResponse();
+      return adminUnauthorizedResponse();
     }
     if (session.user.role !== ADMIN_ROLE) {
-      return forbiddenResponse();
+      return adminForbiddenResponse();
     }
 
     return await next({
@@ -80,20 +65,9 @@ export const adminApiMiddleware = createMiddleware().server(
 export const recentAdminApiMiddleware = createMiddleware().server(
   async ({ next }) => {
     const headers = getRequestHeaders();
-    const session = await createAuth().api.getSession({
-      headers,
-      query: { disableCookieCache: true, disableRefresh: true },
-    });
+    const authorization = await requireRecentAdminSession({ headers });
+    if (!authorization.ok) return authorization.response;
 
-    if (!session?.user) return unauthorizedResponse();
-    if (session.user.role !== ADMIN_ROLE) return forbiddenResponse();
-    try {
-      requireRecentAuthentication(session.session);
-    } catch (error) {
-      if (!(error instanceof RecentAuthenticationRequiredError)) throw error;
-      return recentAuthenticationRequiredResponse();
-    }
-
-    return await next({ context: { userId: session.user.id } });
+    return await next({ context: { userId: authorization.session.user.id } });
   }
 );

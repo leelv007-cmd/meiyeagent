@@ -10,6 +10,7 @@ import { ResendProvider } from './provider/resend';
 import { CloudflareProvider } from './provider/cloudflare';
 import { LogMailProvider } from './provider/log';
 import { serverEnv } from '@/env/server';
+import { logMailError } from './safe-log';
 
 let mailProvider: MailProvider | null = null;
 
@@ -57,11 +58,15 @@ export async function sendEmail(
         ? await provider.sendTemplate(params)
         : await provider.sendRawEmail(params);
     if (!result.success) {
-      console.error('[mail] Send failed:', result.error);
+      logMailError(
+        provider.getProviderName(),
+        'MAIL_SEND_FAILED',
+        result.error
+      );
     }
     return result;
   } catch (error) {
-    console.error('[mail] Unexpected error:', error);
+    logMailError('unknown', 'MAIL_UNEXPECTED_ERROR', error);
     return { success: false, error };
   }
 }

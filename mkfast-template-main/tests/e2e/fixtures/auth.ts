@@ -87,6 +87,19 @@ export async function updateE2EUser(
   expect(response.ok(), await response.text()).toBeTruthy();
 }
 
+export async function ageE2EUserSessions(
+  request: APIRequestContext,
+  email: string,
+  createdAt: string
+) {
+  const response = await request.patch(`${authOrigin()}/api/e2e/users`, {
+    headers: e2eHeaders,
+    data: { email, sessionCreatedAt: createdAt },
+  });
+
+  expect(response.ok(), await response.text()).toBeTruthy();
+}
+
 export async function loginByForm(page: Page, user: E2EUser) {
   const targetOrigin = applicationOrigin();
   await page.goto(`${targetOrigin}/auth/login`);

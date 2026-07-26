@@ -118,6 +118,7 @@ export const Route = createFileRoute('/api/e2e/users')({
           email?: unknown;
           emailVerified?: unknown;
           role?: unknown;
+          sessionCreatedAt?: unknown;
         };
         const email = typeof body.email === 'string' ? body.email : '';
 
@@ -158,6 +159,26 @@ export const Route = createFileRoute('/api/e2e/users')({
 
         if (!updatedUser) {
           return Response.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        if (body.sessionCreatedAt !== undefined) {
+          if (typeof body.sessionCreatedAt !== 'string') {
+            return Response.json(
+              { error: 'Invalid session createdAt' },
+              { status: 400 }
+            );
+          }
+          const createdAt = new Date(body.sessionCreatedAt);
+          if (!Number.isFinite(createdAt.getTime())) {
+            return Response.json(
+              { error: 'Invalid session createdAt' },
+              { status: 400 }
+            );
+          }
+          await getDb()
+            .update(session)
+            .set({ createdAt })
+            .where(eq(session.userId, updatedUser.id));
         }
 
         return Response.json({ user: updatedUser });

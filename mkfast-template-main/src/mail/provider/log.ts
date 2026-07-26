@@ -10,7 +10,6 @@ type MailLogEntry = {
   event: 'MAIL_LOG_DELIVERY';
   messageId: string;
   recipientHash: string;
-  subject: string;
 };
 
 export class LogMailProvider implements MailProvider {
@@ -45,7 +44,6 @@ export class LogMailProvider implements MailProvider {
       recipientHash: createHash('sha256')
         .update(params.to.trim().toLowerCase())
         .digest('hex'),
-      subject: params.subject,
     });
     return { messageId, success: true };
   }

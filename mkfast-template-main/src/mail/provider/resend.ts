@@ -8,6 +8,7 @@ import type {
   SendTemplateParams,
 } from '@/mail/types';
 import { Resend } from 'resend';
+import { logMailError, logMissingMailFields } from '../safe-log';
 
 /**
  * Resend mail provider implementation.
@@ -41,7 +42,7 @@ export class ResendProvider implements MailProvider {
         text: mailTemplate.text,
       });
     } catch (error) {
-      console.error('Error sending template email:', error);
+      logMailError('resend', 'MAIL_TEMPLATE_SEND_FAILED', error);
       return { success: false, error };
     }
   }
@@ -49,7 +50,7 @@ export class ResendProvider implements MailProvider {
   async sendRawEmail(params: SendRawEmailParams): Promise<SendEmailResult> {
     const { to, subject, html, text } = params;
     if (!this.from || !to || !subject || !html) {
-      console.warn('Missing required fields for email send', {
+      logMissingMailFields('resend', {
         from: this.from,
         to,
         subject,
@@ -66,12 +67,12 @@ export class ResendProvider implements MailProvider {
         text,
       });
       if (error) {
-        console.error('Error sending email', error);
+        logMailError('resend', 'MAIL_PROVIDER_SEND_FAILED', error);
         return { success: false, error };
       }
       return { success: true, messageId: data?.id };
     } catch (error) {
-      console.error('Error sending email:', error);
+      logMailError('resend', 'MAIL_PROVIDER_SEND_FAILED', error);
       return { success: false, error };
     }
   }

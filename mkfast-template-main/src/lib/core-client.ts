@@ -21,6 +21,7 @@ import {
   type WorkspaceWorkflowEventResource,
 } from '@/lib/core-request';
 import { normalizeProductRole } from '@meiye/contracts';
+import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 
 export async function forwardAuthenticatedCoreRequest(
   request: Request,
@@ -123,12 +124,21 @@ export async function forwardWorkspaceCoreRequest(
     | WorkspaceHarnessProductMetricResource
     | WorkspaceWorkflowEventResource
 ) {
-  const session = await createAuth().api.getSession({
-    headers: request.headers,
-  });
-  if (!session?.user?.id || !session.user.emailVerified) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  let body: string | undefined;
+  try {
+    body =
+      request.method === 'GET' ? undefined : await readRequestText(request);
+  } catch (error) {
+    return coreRequestBoundaryResponse(error);
   }
+  const authorization = await authorizeWorkspaceCoreRequest(
+    request,
+    resource,
+    body,
+    (options) => createAuth().api.getSession(options)
+  );
+  if (!authorization.ok) return authorization.response;
+  const { session } = authorization;
 
   const workspace = await resolveActiveWorkspace(session.user.id);
   if (!workspace) {
@@ -175,13 +185,6 @@ export async function forwardWorkspaceCoreRequest(
   const contentType = request.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
 
-  let body: string | undefined;
-  try {
-    body =
-      request.method === 'GET' ? undefined : await readRequestText(request);
-  } catch (error) {
-    return coreRequestBoundaryResponse(error);
-  }
   let upstream: Response;
   try {
     upstream = await coreFetch(

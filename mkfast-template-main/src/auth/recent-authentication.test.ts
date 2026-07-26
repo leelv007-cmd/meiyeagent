@@ -5,6 +5,8 @@ import {
   RecentAuthenticationRequiredError,
   recentAuthenticationRequiredResponse,
   requireRecentAuthentication,
+  requiresRecentAuthenticationForP1Command,
+  requiresRecentAuthenticationForP1RequestBody,
   requiresRecentAuthentication,
 } from './recent-authentication';
 import { createRecentAuthenticationHook } from './recent-authentication-hook';
@@ -77,6 +79,84 @@ describe('route-level recent authentication', () => {
     }
   });
 
+  it('guards high-impact governance commands and publication actions', () => {
+    for (const [module, action] of [
+      ['integrations', 'admin_store_provider_credential'],
+      ['admin-config', 'config_apply'],
+      ['admin-config', 'config_rollback'],
+      ['creation-experience', 'recipe_publish'],
+      ['creation-experience', 'recipe_rollback'],
+      ['creation-experience', 'surface_publish'],
+      ['creation-experience', 'surface_rollback'],
+      ['operations', 'admin_publish_template_version'],
+      ['operations', 'admin_enable_template_version'],
+      ['operations', 'admin_retire_template'],
+      ['model-supply', 'catalog_enable'],
+      ['model-supply', 'catalog_publish'],
+      ['model-supply', 'catalog_retire'],
+      ['model-supply', 'catalog_rollback'],
+      ['model-supply', 'prompt_revision_rollback'],
+      ['redemptions', 'create'],
+      ['model-supply', 'isolate_deployment'],
+      ['operations', 'force_fail_task'],
+      ['model-supply', 'admin_supply_action'],
+      ['integrations', 'publish_feishu_tool'],
+      ['job-runtime', 'schedule_recurring'],
+    ] as const) {
+      assert.equal(
+        requiresRecentAuthenticationForP1Command(module, action),
+        true,
+        `${module}.${action}`
+      );
+      assert.equal(
+        requiresRecentAuthenticationForP1RequestBody(
+          JSON.stringify({ action, module, payload: {} })
+        ),
+        true,
+        `${module}.${action} request body`
+      );
+    }
+
+    for (const [module, action] of [
+      ['creation-experience', 'recipe_draft'],
+      ['creation-experience', 'recipe_get'],
+      ['creation-experience', 'recipe_history'],
+      ['creation-experience', 'recipe_preview'],
+      ['creation-experience', 'recipe_validate'],
+      ['creation-experience', 'surface_draft'],
+      ['creation-experience', 'surface_get'],
+      ['creation-experience', 'surface_history'],
+      ['creation-experience', 'surface_preview'],
+      ['creation-experience', 'surface_validate'],
+      ['model-supply', 'catalog_create_draft'],
+      ['model-supply', 'catalog_create_safe_draft'],
+      ['operations', 'admin_create_template'],
+      ['operations', 'admin_create_template_version'],
+      ['admin-config', 'config_get'],
+      ['admin-config', 'config_history'],
+      ['admin-config', 'config_list'],
+    ] as const) {
+      assert.equal(
+        requiresRecentAuthenticationForP1Command(module, action),
+        false,
+        `${module}.${action} remains an iterative or read action`
+      );
+    }
+
+    for (const [module, action] of [
+      ['integrations', 'create_connection'],
+      ['admin-config', 'config_defaults'],
+      ['redemptions', 'redeem'],
+    ] as const) {
+      assert.equal(
+        requiresRecentAuthenticationForP1Command(module, action),
+        false,
+        `${module}.${action}`
+      );
+    }
+    assert.equal(requiresRecentAuthenticationForP1RequestBody('{'), false);
+  });
+
   it('returns a stable 403 contract that clients can route to reauthentication', async () => {
     const response = recentAuthenticationRequiredResponse();
 
@@ -102,7 +182,13 @@ describe('route-level recent authentication', () => {
       } as never;
     });
 
-    for (const path of ['/api-key/create', '/delete-user']) {
+    for (const path of [
+      '/api-key/create',
+      '/delete-user',
+      '/admin/set-role',
+      '/admin/ban-user',
+      '/admin/revoke-user-session',
+    ]) {
       await assert.rejects(hook({ path } as never), (error: unknown) => {
         assert.equal((error as { statusCode?: number }).statusCode, 403);
         assert.equal(
@@ -120,6 +206,18 @@ describe('route-level recent authentication', () => {
       },
       {
         path: '/delete-user',
+        options: { disableCookieCache: true },
+      },
+      {
+        path: '/admin/set-role',
+        options: { disableCookieCache: true },
+      },
+      {
+        path: '/admin/ban-user',
+        options: { disableCookieCache: true },
+      },
+      {
+        path: '/admin/revoke-user-session',
         options: { disableCookieCache: true },
       },
     ]);

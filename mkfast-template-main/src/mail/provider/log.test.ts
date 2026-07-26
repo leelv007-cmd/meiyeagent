@@ -17,9 +17,9 @@ test('mail log fallback records delivery without recipient or token content', as
   assert.match(result.messageId ?? '', /^mail-log-/u);
   assert.equal(entries.length, 1);
   assert.equal(entries[0]?.event, 'MAIL_LOG_DELIVERY');
-  assert.equal(entries[0]?.subject, 'Verify your account');
   const serialized = JSON.stringify(entries[0]);
   assert.equal(serialized.includes('owner@example.test'), false);
+  assert.equal(serialized.includes('Verify your account'), false);
   assert.equal(serialized.includes('secret-token'), false);
   assert.equal(serialized.includes('<a href='), false);
 });

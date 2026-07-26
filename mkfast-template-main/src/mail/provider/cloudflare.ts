@@ -7,6 +7,7 @@ import type {
   SendRawEmailParams,
   SendTemplateParams,
 } from '@/mail/types';
+import { logMailError, logMissingMailFields } from '../safe-log';
 
 /**
  * Cloudflare Email Service provider implementation.
@@ -49,7 +50,7 @@ export class CloudflareProvider implements MailProvider {
         text: mailTemplate.text,
       });
     } catch (error) {
-      console.error('Error sending template email:', error);
+      logMailError('cloudflare', 'MAIL_TEMPLATE_SEND_FAILED', error);
       return { success: false, error };
     }
   }
@@ -57,7 +58,7 @@ export class CloudflareProvider implements MailProvider {
   async sendRawEmail(params: SendRawEmailParams): Promise<SendEmailResult> {
     const { to, subject, html, text } = params;
     if (!this.from || !to || !subject || !html) {
-      console.warn('Missing required fields for email send', {
+      logMissingMailFields('cloudflare', {
         from: this.from,
         to,
         subject,
@@ -91,14 +92,18 @@ export class CloudflareProvider implements MailProvider {
         const errorMsg =
           data.errors?.map((e) => `${e.code}: ${e.message}`).join(', ') ||
           'Unknown error';
-        console.error('Error sending email via Cloudflare:', errorMsg);
+        logMailError(
+          'cloudflare',
+          'MAIL_PROVIDER_SEND_FAILED',
+          new Error('Cloudflare email API rejected the request')
+        );
         return { success: false, error: errorMsg };
       }
 
       const messageId = data.result?.delivered?.[0];
       return { success: true, messageId };
     } catch (error) {
-      console.error('Error sending email via Cloudflare:', error);
+      logMailError('cloudflare', 'MAIL_PROVIDER_SEND_FAILED', error);
       return { success: false, error };
     }
   }

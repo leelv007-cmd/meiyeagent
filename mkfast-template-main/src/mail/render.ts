@@ -10,6 +10,7 @@ import ContactMessage from './templates/contact-message';
 import ForgotPassword from './templates/forgot-password';
 import SubscribeNewsletter from './templates/subscribe-newsletter';
 import VerifyEmail from './templates/verify-email';
+import { logMailError } from './safe-log';
 
 const EmailTemplates = {
   forgotPassword: ForgotPassword,
@@ -44,7 +45,7 @@ export async function renderEmailHtml(email: ReactElement): Promise<string> {
       return reactDomServer.renderToString(email);
     }
   } catch (error) {
-    console.error('[mail] Email rendering failed:', error);
+    logMailError('renderer', 'MAIL_RENDER_FAILED', error);
     throw error;
   }
   throw new Error('No suitable React DOM server renderer available');
