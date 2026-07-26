@@ -938,6 +938,19 @@ export function ComposerHome({
     );
   };
 
+  /**
+   * The submission gate reads `product.state`, and `useProductState` only
+   * fetches on mount — so an asset written straight through
+   * `executeProductCommand` never enters the state the gate consults, and
+   * `missingCreativeGrounding` keeps reporting `real_authorized_asset` missing
+   * for a source the server has already authorized. Every inline asset write
+   * ends here, the same way the ProgressiveFactCard confirm below does.
+   */
+  const refreshAfterAssetWrite = async () => {
+    setSubmissionGroundingBlocked(null);
+    await product.refresh();
+  };
+
   const uploadComposerImage = async (
     file: File,
     facts: ConfirmedAssetFacts,
@@ -973,6 +986,7 @@ export function ComposerHome({
     sourceRevisionRef.current.set(identity.assetId, receipt.contentHash);
     sourceFactsRef.current.set(identity.assetId, facts);
     if (facts.consentScope === 'internal_only') {
+      await refreshAfterAssetWrite();
       return { attached: false };
     }
     const authorization = {
@@ -988,6 +1002,7 @@ export function ComposerHome({
       authorization,
       await assetAuthorizationIdempotencyKey(authorization)
     );
+    await refreshAfterAssetWrite();
     return { attached: true };
   };
 
@@ -1010,6 +1025,7 @@ export function ComposerHome({
       await assetAuthorizationIdempotencyKey(authorization)
     );
     sourceFactsRef.current.set(assetId, facts);
+    await refreshAfterAssetWrite();
   };
 
   const createWork = useMutation({
