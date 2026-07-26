@@ -40,7 +40,9 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     deliveryTarget: 'xiaohongshu',
     modality: 'image_text',
     workspace: 'image',
-    expectedActivations: 2,
+    // 镜头 + 提交 + 图文方向. The third is the merchant's own choice between the
+    // two directions the note plan compiles — see `chooseImageTextDirection`.
+    expectedActivations: 3,
     packageFormat: 'zip',
     packageButtonName: /完整发布包（小红书）/u,
     // Fixture export may use content hash filename; zh/en product names also ok.
@@ -101,6 +103,47 @@ export async function assertThreeModalDiscovery(page: Page) {
   }
 }
 
+/**
+ * 图文's one real mid-run question.
+ *
+ * The note plan compiles two directions and the harness marks that card
+ * `unattended: 'hold'` (`apps/core/src/p1/harness/workflow-core.ts`
+ * `noteStyleQuestion`) — it carries no default, so nothing releases it but a
+ * merchant choice, and the run stays suspended until one lands. Answering it is
+ * part of the 图文 mainline, not a test convenience, and it is the third
+ * activation this modality's contract budgets.
+ *
+ * The plan-confirmation card that precedes it is *not* answered here: it does
+ * carry a default, so D-116 releases it on the countdown, which is exactly what
+ * a merchant who does nothing experiences.
+ */
+export async function chooseImageTextDirection(page: Page) {
+  const card = page.getByTestId('composer-question-card');
+  await expect(
+    card,
+    'the 图文 run must reach its direction question'
+  ).toBeVisible({ timeout: 180_000 });
+  // Both mid-run cards render under this testid and both say 两种图文方向: the
+  // plan card asks 「再给你两种图文方向选择…可以吗?」 and carries a default, so
+  // D-116 releases it on its own. Wait for the direction card's own sentence,
+  // not the substring they share.
+  await expect(card).toContainText('两种图文方向都已准备好', {
+    timeout: 180_000,
+  });
+  const directions = card.locator('[data-testid^="composer-question-option-"]');
+  await expect(
+    directions,
+    'the card says 两种图文方向 — it must offer exactly that many'
+  ).toHaveCount(2);
+  await directions.first().click();
+  await expect(
+    page
+      .getByTestId('composer-stage-line')
+      .filter({ hasText: '已按你选的方向继续准备整套图文' }),
+    'the chosen direction must reach the ledger and resume the run'
+  ).toBeVisible({ timeout: 120_000 });
+}
+
 export async function submitComposerJourney(
   page: Page,
   contract: JourneyContract,
@@ -136,7 +179,25 @@ export async function submitComposerJourney(
   await expect(
     page.getByTestId('composer-quote-line'),
     'submit must bind the server quote before creation'
-  ).toBeVisible({ timeout: 30_000 });
+  ).toBeVisible({ timeout: 60_000 });
+
+  // OI-76 determinism. The send control is a HeroUI `PromptInput.Send` taking
+  // `isDisabled`, and a click on a disabled one is swallowed silently — so a
+  // click that lands one tick early produces no POST at all and the wait below
+  // burns its whole budget on a request that was never going to exist (T46 saw
+  // exactly that on main, and its mirror — a quote line that never appeared —
+  // on fe2). `submitDisabled` in composer-home is the single condition under
+  // which the click can create anything: it folds in the bound quote, upload
+  // readiness (图文/视频 attach a source first), quota and the frozen phase.
+  // Assert it here so a missing precondition is named at its own step instead
+  // of surfacing as a submission timeout.
+  const submit = page.getByTestId('composer-submit');
+  await expect(
+    submit,
+    'the composer must be ready to submit before the journey clicks send'
+  ).toBeEnabled({ timeout: 60_000 });
+  await expect(submit).not.toHaveAttribute('aria-disabled', 'true');
+
   // T08 new seam. The client no longer emits the old two-command dance
   // (`operations.create_creative_work` then `operations.submit_creative_work`
   // on `/api/core/p1/commands`) — `composer/z1-cutover-retirement.static.test.ts`
@@ -150,7 +211,7 @@ export async function submitComposerJourney(
       response.url().includes('/api/core/p1/composer/submissions'),
     { timeout: 60_000 }
   );
-  await page.getByTestId('composer-submit').click();
+  await submit.click();
 
   if (contract.modality === 'video') {
     const brief = page.getByTestId('composer-brief-surface');
@@ -211,6 +272,10 @@ export async function submitComposerJourney(
     page,
     'submitting must not navigate away from the Composer conversation'
   ).not.toHaveURL(/\/dashboard\/results\//u);
+
+  if (contract.modality === 'image_text') {
+    await chooseImageTextDirection(page);
+  }
 
   await options.onRunStreaming?.();
 
@@ -529,36 +594,49 @@ export async function adjustResult(
   return { instruction, workId: decodeURIComponent(adjustedWorkId!) };
 }
 
+/** The shell primary action's adopt label, per workspace (`result-shell-model`). */
+const ADOPT_LABEL: Record<JourneyModality, string> = {
+  copy: '采用此版本',
+  image_text: '采用这组',
+  video: '使用此成片',
+};
+
 function adoptLocator(page: Page, modality: JourneyModality): Locator {
-  // 文案 adopts through the Result shell's canonical primary action
-  // (`result-shell-model` `adopt_candidate` → 「采用此版本」), which is the same
-  // control the required assembly gate clicks. The worksurface's own
-  // `copy-adopt-action` renders only while its local lifecycle is still
-  // `candidate`, so waiting for that one is waiting for a state a delivered run
-  // has usually already left — that stale locator is why the shared three-modal
-  // journey failed on its first case (T37 / M-04).
-  if (modality === 'copy') return page.getByTestId('result-primary-action');
-  if (modality === 'image_text') return page.getByTestId('image-role-primary');
-  return page.getByTestId('video-adopt-action');
+  // 文案 and 图文 both adopt through the Result shell's canonical primary
+  // action (`result-shell-model` `adopt_candidate`), which is the same control
+  // the required assembly gate clicks. Each worksurface also carries its own
+  // adopt control — `copy-adopt-action`, `image-role-primary` — but those render
+  // only while the local lifecycle is still `candidate`, so waiting for one is
+  // waiting for a state a delivered run has usually already left; that stale
+  // locator is why the shared three-modal journey failed on its first case
+  // (T37 / M-04). 图文's worksurface control is also the *visual set* adoption,
+  // a different operation from taking the delivered version.
+  if (modality === 'video') return page.getByTestId('video-adopt-action');
+  return page.getByTestId('result-primary-action');
 }
 
 export async function adoptResult(page: Page, contract: JourneyContract) {
   const adopt = adoptLocator(page, contract.modality);
   await expect(adopt).toBeVisible();
-  if (contract.modality === 'copy') {
+  if (contract.modality !== 'video') {
     // The shell's primary action changes label with the lifecycle; adopting
     // means clicking it while it still offers 采用, never after it becomes 交付.
-    await expect(adopt).toHaveText('采用此版本');
+    await expect(adopt).toHaveText(ADOPT_LABEL[contract.modality]);
   }
   const responsePromise = mutationResponse(page, /adopt/u);
   await adopt.click();
   const response = await responsePromise;
   expect(response.ok(), await response.text()).toBeTruthy();
 
-  if (contract.modality === 'copy') {
+  if (contract.modality !== 'video') {
+    // Adoption is what turns the one primary action from 采用 into 交付; 图文
+    // additionally marks every adopted page on its own worksurface.
     await expect(page.getByTestId('result-primary-action')).toHaveText('交付');
-  } else if (contract.modality === 'image_text') {
-    await expect(page.getByTestId('image-adopted-badge').first()).toBeVisible();
+    if (contract.modality === 'image_text') {
+      await expect(
+        page.getByTestId('image-adopted-badge').first()
+      ).toBeVisible();
+    }
   } else {
     await expect(page.getByTestId('video-result-status')).toContainText(
       '已采用，待交付'
