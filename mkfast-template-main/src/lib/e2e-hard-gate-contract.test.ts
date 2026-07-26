@@ -68,6 +68,7 @@ const RETIRED_ACTION_ALLOWLIST = new Map([
 const DEMOTION_MARKER = 'M-04 DEMOTED';
 const SPECS_WITH_DEMOTED_CASES = [
   'specs/uiux-creation-loop.spec.ts',
+  'specs/uiux-day0-contract.spec.ts',
   'specs/uiux-upgrade-b-async.spec.ts',
   'specs/uiux-upgrade-b-composer.spec.ts',
   'specs/uiux-upgrade-b-i18n-motion.spec.ts',

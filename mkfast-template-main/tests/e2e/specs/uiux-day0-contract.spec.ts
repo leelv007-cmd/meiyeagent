@@ -26,6 +26,20 @@ import {
 /**
  * V1 Day-0 experience contract hard gate — D-098 C6 rebaseline (#85 / #60).
  *
+ * M-04 DEMOTED (T39 / #233). These strict Day-0 assertions were never on a
+ * required job, and 4 of this file's 7 cases were already red on the fixture
+ * 模型档 before any reshell touched them
+ * (`docs/evidence/e2e-baseline-2026-07-25.md`: template path `:210`, pure text
+ * path `:266` on a legacy projection the new seam does not feed, video path
+ * `:332` whose `composer-delivery-card` never arrives inside its own 180s
+ * budget, T5 inline authorize `:539`). The assertions worth keeping —
+ * isTrusted 点击预算 / 零前置表单 / 首 token — were copied onto the shipped seam
+ * in `specs/m04-browser-hard-gate.spec.ts`, which the ordinary PR gate runs.
+ *
+ * The file is kept rather than deleted (no approved disposition batch covers
+ * it) and must not re-enter the required set; `src/lib/e2e-hard-gate-contract`
+ * holds the register that enforces both halves of that statement.
+ *
  * Click budget (isTrusted real-count via installUserActivationCounter):
  *   1. Template / scenario card path: card(1 dual-purpose lens+apply) + start(2) = 2
  *   2. Pure free-text path: select lens(1) + start(2) = 2

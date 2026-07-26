@@ -49,8 +49,8 @@ test.describe('canonical product golden journey', () => {
     // from inside the product. Addressing the page by URL proves it renders,
     // not that anyone can get there. The surviving doorway is 内容详情 →
     // 「协办交接」 → the Result Center delivery panel bound to this revision
-    // (`works-projection.ts` `workHandoffHref`), whose share payload carries the
-    // `/dashboard/handoff/<token>` path this journey then walks.
+    // (`works-projection.ts` `workHandoffHref`). Where that panel's share
+    // payload goes is a separate question — see the note before the goto below.
     await page.goto(`/dashboard/works/${encodeURIComponent(contentId)}`);
     const handoffDoorway = page.getByTestId('works-action-handoff');
     await expect(
@@ -69,7 +69,31 @@ test.describe('canonical product golden journey', () => {
       timeout: 60_000,
     });
 
-    await page.goto(`/dashboard/handoff/${encodeURIComponent(handoffToken!)}`);
+    // OI-78 P2-2 (T39 / #233): the address walked below must come from the
+    // product rather than from a local variable a command handed the test.
+    // `create_handoff` persists the token on the HandoffPackage it wrote, so
+    // read it back keyed by that package id and walk that.
+    //
+    // The delivery panel's share payload cannot supply it, and the comment
+    // above overstated the chain: the panel's one-shot link is
+    // `/dashboard/handoff/<token>` built from the **canonical** assisted
+    // receipt (`routes/dashboard/results_/$workId.tsx`, `existingOneShotUrl`
+    // ← `assisted_list`), while `create_handoff` writes a legacy
+    // `L3_HANDOFF_PACKAGE` that the canonical resolver refuses on purpose
+    // (`product/results/delivery-handoff-canonical.ts`,
+    // `assertNotLegacyHandoffSource`). Binding the two is a product change,
+    // not a test change — recorded as a T39 gap, not asserted away here.
+    await expect(page.getByTestId('delivery-share-strategy')).toBeVisible();
+    const persistedHandoff = (await productState(page)).handoffPackages.find(
+      (handoff) => handoff.id === packageId
+    );
+    expect(
+      persistedHandoff?.token,
+      'the handoff address must be the token the server persisted for this package'
+    ).toBe(handoffToken);
+    await page.goto(
+      `/dashboard/handoff/${encodeURIComponent(persistedHandoff!.token)}`
+    );
     await expect(
       page.getByRole('heading', { name: /小红书\s*发布包/ })
     ).toBeVisible();
