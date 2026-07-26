@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "eval-run/v1",
+  "runId": "skills-five-piece-recorded-v1",
+  "suiteId": "harness-skills",
+  "suiteRevision": "harness-skills-fixtures-v1",
+  "mode": "recorded_fixture",
+  "createdAt": "2026-07-26T02:30:00.000Z",
+  "passed": true,
+  "results": [
+    {
+      "caseId": "accepted-required-skill-changes-intent-judgment",
+      "gateId": "skill_revision_acceptance",
+      "promptRevision": "skills/daily-industry@1",
+      "skillRevisionRef": "skill.daily-industry@1",
+      "scorerRevision": "skill-routing-scorer@1",
+      "passed": true,
+      "reason": "The accepted required Skill changes only the declared intent stage.",
+      "memoryDiff": null
+    },
+    {
+      "caseId": "disabled-skill-stays-outside-stage-allowlist",
+      "gateId": "skill_binding_allowlist",
+      "promptRevision": "skills/daily-industry@1",
+      "skillRevisionRef": "skill.daily-industry@1",
+      "scorerRevision": "skill-routing-scorer@1",
+      "passed": true,
+      "reason": "A disabled binding does not enter the controller allowlist.",
+      "memoryDiff": null
+    }
+  ]
+}

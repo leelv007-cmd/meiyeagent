@@ -24,6 +24,7 @@ export const evalCaseResultSchema = z
     caseId: evalIdSchema,
     gateId: evalIdSchema.nullable(),
     promptRevision: evalRevisionSchema,
+    skillRevisionRef: evalRevisionSchema.optional(),
     scorerRevision: evalRevisionSchema,
     passed: z.boolean(),
     reason: z.string().trim().min(1),

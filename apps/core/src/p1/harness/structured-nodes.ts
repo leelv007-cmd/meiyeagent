@@ -13,6 +13,10 @@ import {
   type HarnessFrozenPrompt,
 } from './langfuse-prompts.js';
 import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import {
+  materializeSkillInstructions,
+} from '../skills/stage-injection.js';
+import type { ResolvedSkillInstruction } from '../skills/types.js';
 
 export type {
   StructuredNodeRunner,
@@ -275,6 +279,7 @@ export async function nameHarnessIntent(
     intent: TaskIntentInput;
     round?: number;
     prompt?: HarnessFrozenPrompt;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   },
   runner: StructuredNodeRunner,
   metrics?: StructuredNodeMetrics
@@ -300,8 +305,10 @@ export async function nameHarnessIntent(
     effectIdempotencyKey: `wf:${input.workflowId}:s1:intent:${input.round ?? 0}`,
     schemaName: 'harness_intent_naming_v1',
     schemaRevision: 'intent-naming-v1',
-    instructions:
+    instructions: materializeSkillInstructions(
       input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.intentNaming,
+      input.skillInstructions,
+    ),
     prompt: canonicalJson(parsedIntent),
     schema: intentNamingOutputSchema,
   };
@@ -352,6 +359,7 @@ export async function compileExecutionBrief(
     bundle: z.infer<typeof briefContextBundleSchema>;
     executionSnapshot?: CreationExecutionSnapshot;
     prompt?: HarnessFrozenPrompt;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   },
   runner: StructuredNodeRunner,
   metrics?: StructuredNodeMetrics
@@ -362,8 +370,10 @@ export async function compileExecutionBrief(
       effectIdempotencyKey: `wf:${input.workflowId}:s3:${input.unitId}:0`,
       schemaName: `harness_${input.unitKind}_brief_v1`,
       schemaRevision: `${input.unitKind}-brief-v1`,
-      instructions:
+      instructions: materializeSkillInstructions(
         input.prompt?.content ?? briefInstructions[input.unitKind],
+        input.skillInstructions,
+      ),
       prompt: canonicalJson({
         unitId: input.unitId,
         unitKind: input.unitKind,

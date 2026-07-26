@@ -129,6 +129,9 @@ function projectDatasetItem(
       caseId: result.caseId,
       gateId: result.gateId,
       promptRevision: result.promptRevision,
+      ...(result.skillRevisionRef
+        ? { skillRevisionRef: result.skillRevisionRef }
+        : {}),
       scorerRevision: result.scorerRevision,
     },
     expectedOutput: { passed: result.passed },
