@@ -22,6 +22,10 @@ export interface SkillRepository {
   getRevision(skillRevisionRef: string): Promise<SkillRevision | null>;
   getRevisionHead(skillId: string): Promise<SkillRevision | null>;
   putBinding(binding: SkillBinding): Promise<SkillBinding>;
+  supersedeBinding(
+    sourceBindingId: string,
+    replacement: SkillBinding,
+  ): Promise<SkillBinding>;
   getBinding(bindingId: string): Promise<SkillBinding | null>;
   listBindings(
     workflowRevisionRef: string,
@@ -30,6 +34,7 @@ export interface SkillRepository {
   putDeployment(deployment: SkillDeployment): Promise<SkillDeployment>;
   getDeployment(deploymentId: string): Promise<SkillDeployment | null>;
   putChildEffect(effect: SkillChildEffect): Promise<SkillChildEffect>;
+  updateChildEffect(effect: SkillChildEffect): Promise<SkillChildEffect>;
   getChildEffect(effectId: string): Promise<SkillChildEffect | null>;
   putInvocationReceipt(
     receipt: SkillInvocationReceipt,
@@ -128,12 +133,39 @@ export class MemorySkillRepository implements SkillRepository {
   }
 
   async putBinding(binding: SkillBinding) {
+    this.assertBindingSlotAvailable(binding);
     return putOnce(
       this.bindings,
       binding.bindingId,
       binding,
       'Skill binding',
     );
+  }
+
+  async supersedeBinding(
+    sourceBindingId: string,
+    replacement: SkillBinding,
+  ) {
+    const source = this.bindings.get(sourceBindingId);
+    if (!source || source.status !== 'active') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Only an active Skill binding can be superseded.',
+      );
+    }
+    const superseded: SkillBinding = {
+      ...source,
+      status: 'superseded',
+      supersededAt: replacement.createdAt,
+      supersededByBindingId: replacement.bindingId,
+    };
+    this.bindings.set(sourceBindingId, clone(superseded));
+    try {
+      return await this.putBinding(replacement);
+    } catch (error) {
+      this.bindings.set(sourceBindingId, source);
+      throw error;
+    }
   }
 
   async getBinding(bindingId: string) {
@@ -146,9 +178,26 @@ export class MemorySkillRepository implements SkillRepository {
       .filter(
         (binding) =>
           binding.workflowRevisionRef === workflowRevisionRef &&
-          binding.stage === stage,
+          binding.stage === stage &&
+          binding.status === 'active',
       )
       .map(clone);
+  }
+
+  private assertBindingSlotAvailable(binding: SkillBinding) {
+    const conflict = [...this.bindings.values()].find(
+      (candidate) =>
+        candidate.status === 'active' &&
+        candidate.workflowRevisionRef === binding.workflowRevisionRef &&
+        candidate.stage === binding.stage &&
+        candidate.skillId === binding.skillId,
+    );
+    if (conflict && conflict.bindingId !== binding.bindingId) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Workflow stage already has an active binding for this Skill.',
+      );
+    }
   }
 
   async putDeployment(deployment: SkillDeployment) {
@@ -167,6 +216,18 @@ export class MemorySkillRepository implements SkillRepository {
 
   async putChildEffect(effect: SkillChildEffect) {
     return putOnce(this.effects, effect.effectId, effect, 'Skill child effect');
+  }
+
+  async updateChildEffect(effect: SkillChildEffect) {
+    const existing = this.effects.get(effect.effectId);
+    if (!existing || existing.fingerprint !== effect.fingerprint) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Only the matching Skill child effect can advance its retry state.',
+      );
+    }
+    this.effects.set(effect.effectId, clone(effect));
+    return clone(effect);
   }
 
   async getChildEffect(effectId: string) {

@@ -1,30 +1,30 @@
 {
   "schemaVersion": "eval-run/v1",
-  "runId": "skills-five-piece-recorded-v1",
+  "runId": "skills-five-piece-recorded-v2",
   "suiteId": "harness-skills",
-  "suiteRevision": "harness-skills-fixtures-v1",
+  "suiteRevision": "harness-skills-fixtures-v2",
   "mode": "recorded_fixture",
   "createdAt": "2026-07-26T02:30:00.000Z",
   "passed": true,
   "results": [
     {
-      "caseId": "accepted-required-skill-changes-intent-judgment",
+      "caseId": "exact-frozen-skill-eval-is-accepted",
       "gateId": "skill_revision_acceptance",
       "promptRevision": "skills/daily-industry@1",
       "skillRevisionRef": "skill.daily-industry@1",
-      "scorerRevision": "skill-routing-scorer@1",
+      "scorerRevision": "skill-routing-scorer@2",
       "passed": true,
-      "reason": "The accepted required Skill changes only the declared intent stage.",
+      "reason": "Accepts the exact frozen prompt and Skill revision evidence.",
       "memoryDiff": null
     },
     {
-      "caseId": "disabled-skill-stays-outside-stage-allowlist",
-      "gateId": "skill_binding_allowlist",
+      "caseId": "different-skill-eval-is-rejected",
+      "gateId": "skill_revision_acceptance",
       "promptRevision": "skills/daily-industry@1",
       "skillRevisionRef": "skill.daily-industry@1",
-      "scorerRevision": "skill-routing-scorer@1",
+      "scorerRevision": "skill-routing-scorer@2",
       "passed": true,
-      "reason": "A disabled binding does not enter the controller allowlist.",
+      "reason": "Rejects evaluation evidence bound to another Skill revision.",
       "memoryDiff": null
     }
   ]

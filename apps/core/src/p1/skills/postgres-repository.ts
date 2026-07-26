@@ -44,12 +44,48 @@ export class PostgresSkillRepository implements SkillRepository {
         binding_id text PRIMARY KEY,
         workflow_revision_ref text NOT NULL,
         stage text NOT NULL,
+        skill_id text NOT NULL,
         skill_revision_ref text NOT NULL,
+        status text NOT NULL DEFAULT 'active'
+          CHECK (status IN ('active', 'superseded')),
+        superseded_at timestamptz,
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL
       );
+      ALTER TABLE p1_skill_bindings
+        ADD COLUMN IF NOT EXISTS skill_id text,
+        ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active',
+        ADD COLUMN IF NOT EXISTS superseded_at timestamptz;
+      UPDATE p1_skill_bindings
+         SET skill_id = regexp_replace(skill_revision_ref, '@[^@]+$', '')
+       WHERE skill_id IS NULL;
+      ALTER TABLE p1_skill_bindings
+        ALTER COLUMN skill_id SET NOT NULL;
+      WITH ranked AS (
+        SELECT binding_id,
+               row_number() OVER (
+                 PARTITION BY workflow_revision_ref, stage, skill_id
+                 ORDER BY created_at DESC, binding_id DESC
+               ) AS position
+          FROM p1_skill_bindings
+         WHERE status = 'active'
+      )
+      UPDATE p1_skill_bindings bindings
+         SET status = 'superseded',
+             superseded_at = COALESCE(bindings.superseded_at, now()),
+             payload = jsonb_set(
+               jsonb_set(bindings.payload, '{status}', '"superseded"'),
+               '{supersededAt}',
+               to_jsonb(COALESCE(bindings.superseded_at, now())::text)
+             )
+        FROM ranked
+       WHERE bindings.binding_id = ranked.binding_id
+         AND ranked.position > 1;
       CREATE INDEX IF NOT EXISTS p1_skill_bindings_stage_idx
         ON p1_skill_bindings (workflow_revision_ref, stage, created_at, binding_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS p1_skill_bindings_active_slot_uq
+        ON p1_skill_bindings (workflow_revision_ref, stage, skill_id)
+        WHERE status = 'active';
       CREATE TABLE IF NOT EXISTS p1_skill_deployments (
         deployment_id text PRIMARY KEY,
         skill_revision_ref text NOT NULL,
@@ -203,15 +239,83 @@ export class PostgresSkillRepository implements SkillRepository {
       'binding_id',
       binding.bindingId,
       binding,
-      ['workflow_revision_ref', 'stage', 'skill_revision_ref', 'created_at'],
+      [
+        'workflow_revision_ref',
+        'stage',
+        'skill_id',
+        'skill_revision_ref',
+        'status',
+        'superseded_at',
+        'created_at',
+      ],
       [
         binding.workflowRevisionRef,
         binding.stage,
+        binding.skillId,
         binding.skillRevisionRef,
+        binding.status,
+        binding.supersededAt,
         binding.createdAt,
       ],
       'Skill binding',
     );
+  }
+
+  async supersedeBinding(
+    sourceBindingId: string,
+    replacement: SkillBinding,
+  ) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const superseded = await client.query(
+        `UPDATE p1_skill_bindings
+            SET status = 'superseded',
+                superseded_at = $2::timestamptz,
+                payload = jsonb_set(
+                  jsonb_set(
+                    jsonb_set(payload, '{status}', '"superseded"'),
+                    '{supersededAt}',
+                    to_jsonb($2::text)
+                  ),
+                  '{supersededByBindingId}',
+                  to_jsonb($3::text)
+                )
+          WHERE binding_id = $1
+            AND status = 'active'`,
+        [sourceBindingId, replacement.createdAt, replacement.bindingId],
+      );
+      if (superseded.rowCount !== 1) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Only an active Skill binding can be superseded.',
+        );
+      }
+      await client.query(
+        `INSERT INTO p1_skill_bindings
+           (binding_id, workflow_revision_ref, stage, skill_id,
+            skill_revision_ref, status, superseded_at, payload, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::jsonb, $9::timestamptz)`,
+        [
+          replacement.bindingId,
+          replacement.workflowRevisionRef,
+          replacement.stage,
+          replacement.skillId,
+          replacement.skillRevisionRef,
+          replacement.status,
+          replacement.supersededAt,
+          JSON.stringify(replacement),
+          replacement.createdAt,
+        ],
+      );
+      await client.query('COMMIT');
+      return structuredClone(replacement);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   getBinding(bindingId: string) {
@@ -226,7 +330,7 @@ export class PostgresSkillRepository implements SkillRepository {
     const result = await this.pool.query<PayloadRow<SkillBinding>>(
       `SELECT payload
          FROM p1_skill_bindings
-        WHERE workflow_revision_ref = $1 AND stage = $2
+        WHERE workflow_revision_ref = $1 AND stage = $2 AND status = 'active'
         ORDER BY created_at, binding_id`,
       [workflowRevisionRef, stage],
     );
@@ -273,6 +377,24 @@ export class PostgresSkillRepository implements SkillRepository {
       ],
       'Skill child effect',
     );
+  }
+
+  async updateChildEffect(effect: SkillChildEffect) {
+    const result = await this.pool.query<PayloadRow<SkillChildEffect>>(
+      `UPDATE p1_skill_child_effects
+          SET payload = $3::jsonb
+        WHERE effect_id = $1
+          AND fingerprint = $2
+       RETURNING payload`,
+      [effect.effectId, effect.fingerprint, JSON.stringify(effect)],
+    );
+    if (!result.rows[0]) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Only the matching Skill child effect can advance its retry state.',
+      );
+    }
+    return cloneRow(result.rows[0]);
   }
 
   getChildEffect(effectId: string) {

@@ -13,6 +13,7 @@ import {
   type SkillChildEffect,
   type SkillChildEffectExecutor,
   type SkillDeployment,
+  type SkillDeploymentArtifactType,
   type SkillExecutionMode,
   type SkillInvocationReceipt,
   type SkillOutputValidator,
@@ -79,7 +80,7 @@ export class SkillService {
       revision,
       skillRevisionRef: skillRevisionRef(catalog.skillId, revision),
       contentHash: sha256(
-        JSON.stringify({
+        canonicalJson({
           instruction: input.instruction,
           manifest: input.manifest,
           prompt: input.prompt,
@@ -106,24 +107,8 @@ export class SkillService {
     const revision = await this.requireRevision(input.skillRevisionRef);
     if (revision.status === 'accepted_frozen') return revision;
     const run = evalRunSchema.parse(input.evalRun);
-    if (
-      !run.passed ||
-      run.results.some(
-        (result) =>
-          result.skillRevisionRef !== revision.skillRevisionRef ||
-          result.promptRevision !==
-            `${revision.prompt.name}@${revision.prompt.version}`,
-      )
-    ) {
-      fail('Skill revision must pass its exact prompt and Skill eval gate.');
-    }
-    if (
-      revision.prompt.source !== 'langfuse' ||
-      revision.prompt.isFallback ||
-      revision.prompt.label !== 'production'
-    ) {
-      fail('Prompt Skill acceptance requires a frozen Langfuse production revision.');
-    }
+    const gateFailure = skillAcceptanceGateFailure(revision, run);
+    if (gateFailure) fail(gateFailure);
     const next: SkillRevision = {
       ...revision,
       status: 'accepted_frozen',
@@ -150,7 +135,17 @@ export class SkillService {
     skillRevisionRef: string;
     mode: SkillBindingMode;
   }) {
-    await this.requireRevision(input.skillRevisionRef);
+    const revision = await this.requireRevision(input.skillRevisionRef);
+    const catalog = await this.repository.getCatalog(revision.skillId);
+    if (!catalog) {
+      throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
+    }
+    if (
+      input.mode === 'user_selected' &&
+      catalog.presentationPolicy !== 'user_selectable'
+    ) {
+      fail('后台专用 Skill 不能由用户选择；只有用户可选 Skill 支持该模式。');
+    }
     const binding: SkillBinding = {
       bindingId: required(input.bindingId, 'Binding ID'),
       workflowRevisionRef: required(
@@ -158,10 +153,15 @@ export class SkillService {
         'Workflow revision',
       ),
       stage: input.stage,
+      skillId: revision.skillId,
       skillRevisionRef: input.skillRevisionRef,
       mode: input.mode,
+      status: 'active',
+      supersededAt: null,
+      supersededByBindingId: null,
       createdAt: this.now(),
     };
+    await this.assertBindingSlotAvailable(binding);
     return this.repository.putBinding(binding);
   }
 
@@ -175,6 +175,9 @@ export class SkillService {
     if (!source) {
       throw new P1DomainError('NOT_FOUND', 'Source Skill binding was not found.');
     }
+    if (source.status !== 'active') {
+      fail('只能回滚当前仍生效的 Skill 绑定。');
+    }
     const sourceRevision = await this.requireRevision(source.skillRevisionRef);
     const targetRevision = await this.requireRevision(
       input.targetSkillRevisionRef,
@@ -185,17 +188,32 @@ export class SkillService {
     ) {
       fail('Skill rollback requires a frozen revision of the same Skill.');
     }
-    return this.repository.putBinding({
+    if (targetRevision.skillRevisionRef === sourceRevision.skillRevisionRef) {
+      fail('回滚目标版本必须不同于当前版本。');
+    }
+    const replacement: SkillBinding = {
       bindingId: required(input.bindingId, 'Binding ID'),
       workflowRevisionRef: required(
         input.workflowRevisionRef,
         'Workflow revision',
       ),
       stage: source.stage,
+      skillId: sourceRevision.skillId,
       skillRevisionRef: targetRevision.skillRevisionRef,
       mode: source.mode,
+      status: 'active',
+      supersededAt: null,
+      supersededByBindingId: null,
       createdAt: this.now(),
-    });
+    };
+    if (replacement.workflowRevisionRef === source.workflowRevisionRef) {
+      return this.repository.supersedeBinding(
+        source.bindingId,
+        replacement,
+      );
+    }
+    await this.assertBindingSlotAvailable(replacement);
+    return this.repository.putBinding(replacement);
   }
 
   async registerDeployment(input: {
@@ -206,10 +224,34 @@ export class SkillService {
     nativeSkillId: string;
     nativeVersion: string;
     executionMode: SkillExecutionMode;
+    artifactType: SkillDeploymentArtifactType;
+    experimentalGate?: {
+      enabled: boolean;
+      evidenceRef: string;
+    };
   }) {
     const revision = await this.requireRevision(input.skillRevisionRef);
     if (revision.status !== 'accepted_frozen') {
       fail('Only an accepted and frozen Skill revision can be deployed.');
+    }
+    const firstReleaseArtifact =
+      input.artifactType === 'instruction' ||
+      input.artifactType === 'reference';
+    const firstReleaseMode = input.executionMode === 'prompt_materialized';
+    if (!firstReleaseArtifact || !firstReleaseMode) {
+      if (
+        !input.experimentalGate?.enabled ||
+        !input.experimentalGate.evidenceRef.trim()
+      ) {
+        if (
+          input.executionMode === 'provider_native' ||
+          input.artifactType === 'scripts' ||
+          input.artifactType === 'sandbox'
+        ) {
+          fail('Provider 原生、脚本或沙箱部署必须提供显式开关和证据引用。');
+        }
+        fail('首发部署只开放 prompt_materialized 的 instruction/reference Skill。');
+      }
     }
     if (input.executionMode !== revision.manifest.executionMode) {
       fail('Skill deployment execution mode must match the canonical revision.');
@@ -222,6 +264,8 @@ export class SkillService {
       nativeSkillId: required(input.nativeSkillId, 'Native Skill ID'),
       nativeVersion: required(input.nativeVersion, 'Native Skill version'),
       executionMode: input.executionMode,
+      artifactType: input.artifactType,
+      rolloutEvidenceRef: input.experimentalGate?.evidenceRef.trim() || null,
       createdAt: this.now(),
     };
     return this.repository.putDeployment(deployment);
@@ -281,6 +325,70 @@ export class SkillService {
     return { allowlist, selected };
   }
 
+  async recordPromptMaterializationReceipts(input: {
+    workspaceId: string;
+    taskId: string;
+    workflowRevisionRef: string;
+    stage: SkillStage;
+    instructions: readonly ResolvedSkillInstruction[];
+  }) {
+    const receipts: SkillInvocationReceipt[] = [];
+    for (const instruction of input.instructions) {
+      const revision = await this.requireRevision(
+        instruction.skillRevisionRef,
+      );
+      if (
+        revision.status !== 'accepted_frozen' ||
+        revision.manifest.executionMode !== 'prompt_materialized'
+      ) {
+        fail('生产判断位只能物化已受理冻结的 prompt_materialized Skill。');
+      }
+      const invocationId = [
+        'skill-materialized',
+        input.taskId,
+        input.stage,
+        encodeURIComponent(revision.skillRevisionRef),
+      ].join(':');
+      const facts = {
+        stage: input.stage,
+        workflowRevisionRef: input.workflowRevisionRef,
+        skillRevisionRef: revision.skillRevisionRef,
+        contentHash: revision.contentHash,
+      };
+      const inputFingerprint = sha256(canonicalJson(facts));
+      const existing = await this.repository.getInvocationReceipt(
+        invocationId,
+      );
+      if (existing) {
+        if (existing.inputFingerprint !== inputFingerprint) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'Skill 物化回执已绑定到不同事实。',
+          );
+        }
+        receipts.push(existing);
+        continue;
+      }
+      receipts.push(
+        await this.repository.putInvocationReceipt({
+          invocationId,
+          workspaceId: required(input.workspaceId, 'Workspace ID'),
+          taskId: required(input.taskId, 'Task ID'),
+          productUsageTaskId: input.taskId,
+          skillRevisionRef: revision.skillRevisionRef,
+          childEffectIds: [],
+          totalCostCents: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          status: 'settled',
+          createdAt: this.now(),
+          inputFingerprint,
+        }),
+      );
+    }
+    return receipts;
+  }
+
   async invoke(
     input: {
       invocationId: string;
@@ -292,7 +400,7 @@ export class SkillService {
         callId: string;
         toolId: string;
         contextRefs: string[];
-        budgetReservationCents: number;
+        declaredBudgetCapCents: number;
         payload: unknown;
       }>;
       output: {
@@ -305,7 +413,7 @@ export class SkillService {
     outputValidator: SkillOutputValidator,
   ): Promise<SkillInvocationReceipt> {
     const invocationId = required(input.invocationId, 'Invocation ID');
-    const fingerprint = sha256(JSON.stringify(input));
+    const fingerprint = sha256(canonicalJson(input));
     const existingReceipt =
       await this.repository.getInvocationReceipt(invocationId);
     if (existingReceipt) {
@@ -314,6 +422,15 @@ export class SkillService {
           'IDEMPOTENCY_CONFLICT',
           'Skill invocation ID is already bound to different facts.',
         );
+      }
+      for (const effectId of existingReceipt.childEffectIds) {
+        const effect = await this.repository.getChildEffect(effectId);
+        if (effect && effect.retryStatus !== 'replayed') {
+          await this.repository.updateChildEffect({
+            ...effect,
+            retryStatus: 'replayed',
+          });
+        }
       }
       return existingReceipt;
     }
@@ -341,17 +458,17 @@ export class SkillService {
     ) {
       fail('Skill child effects exceed the frozen call budget.');
     }
-    const reservedCost = input.calls.reduce(
-      (total, call) => total + call.budgetReservationCents,
+    const declaredCostCap = input.calls.reduce(
+      (total, call) => total + call.declaredBudgetCapCents,
       0,
     );
     if (
       input.calls.some(
         (call) =>
-          !Number.isFinite(call.budgetReservationCents) ||
-          call.budgetReservationCents < 0,
+          !Number.isFinite(call.declaredBudgetCapCents) ||
+          call.declaredBudgetCapCents < 0,
       ) ||
-      reservedCost > revision.manifest.budget.maxCostCents
+      declaredCostCap > revision.manifest.budget.maxCostCents
     ) {
       fail('Skill child effects exceed the frozen cost budget.');
     }
@@ -362,7 +479,7 @@ export class SkillService {
       const effectId = `${invocationId}:${call.callId}`;
       const idempotencyKey = `skill:${invocationId}:${call.callId}`;
       const effectFingerprint = sha256(
-        JSON.stringify({
+        canonicalJson({
           invocationId,
           skillRevisionRef: revision.skillRevisionRef,
           call,
@@ -376,7 +493,17 @@ export class SkillService {
             'Skill child effect ID is already bound to different facts.',
           );
         }
-        effects.push(existing);
+        const replayed =
+          existing.retryStatus === 'replayed'
+            ? existing
+            : await this.repository.updateChildEffect({
+                ...existing,
+                retryStatus: 'replayed',
+              });
+        if (replayed.settlementStatus === 'over_budget') {
+          fail('Skill 子调用实际成本超过声明的预算上限。');
+        }
+        effects.push(replayed);
         continue;
       }
       const result = await executor.execute({
@@ -386,13 +513,10 @@ export class SkillService {
         contextRefs: structuredClone(call.contextRefs),
         payload: structuredClone(call.payload),
       });
-      if (
+      const overBudget =
         !Number.isFinite(result.costCents) ||
         result.costCents < 0 ||
-        result.costCents > call.budgetReservationCents
-      ) {
-        fail('Skill child effect cost exceeds its own budget reservation.');
-      }
+        result.costCents > call.declaredBudgetCapCents;
       const effect: SkillChildEffect = {
         effectId,
         invocationId,
@@ -400,16 +524,20 @@ export class SkillService {
         fingerprint: effectFingerprint,
         toolId: call.toolId,
         contextRefs: structuredClone(call.contextRefs),
-        budgetReservationCents: call.budgetReservationCents,
+        declaredBudgetCapCents: call.declaredBudgetCapCents,
         providerReceipt: structuredClone(result.providerReceipt),
         usage: structuredClone(result.usage),
         costCents: result.costCents,
-        settlementStatus: 'settled',
+        settlementStatus: overBudget ? 'over_budget' : 'settled',
         retryStatus: 'first_attempt',
-        acceptanceStatus: result.acceptanceStatus,
+        acceptanceStatus: overBudget ? 'rejected' : result.acceptanceStatus,
         createdAt: this.now(),
       };
-      effects.push(await this.repository.putChildEffect(effect));
+      const persisted = await this.repository.putChildEffect(effect);
+      if (overBudget) {
+        fail('Skill 子调用实际成本超过声明的预算上限。');
+      }
+      effects.push(persisted);
     }
 
     return this.repository.putInvocationReceipt({
@@ -447,6 +575,22 @@ export class SkillService {
     }
     return revision;
   }
+
+  private async assertBindingSlotAvailable(binding: SkillBinding) {
+    const bindings = await this.repository.listBindings(
+      binding.workflowRevisionRef,
+      binding.stage,
+    );
+    if (
+      bindings.some(
+        (candidate) =>
+          candidate.skillId === binding.skillId &&
+          candidate.bindingId !== binding.bindingId,
+      )
+    ) {
+      fail('该 Workflow 阶段已经绑定了这个 Skill；请先回滚或取代现有绑定。');
+    }
+  }
 }
 
 function toResolved(revision: SkillRevision): ResolvedSkillInstruction {
@@ -467,6 +611,31 @@ function validatePrompt(prompt: HarnessFrozenPrompt, instruction: string) {
   ) {
     fail('Prompt Skill must bind one exact prompt version and content hash.');
   }
+}
+
+export function skillAcceptanceGateFailure(
+  revision: SkillRevision,
+  run: EvalRun,
+) {
+  if (
+    !run.passed ||
+    run.results.some(
+      (result) =>
+        result.skillRevisionRef !== revision.skillRevisionRef ||
+        result.promptRevision !==
+          `${revision.prompt.name}@${revision.prompt.version}`,
+    )
+  ) {
+    return 'Skill revision must pass its exact prompt and Skill eval gate.';
+  }
+  if (
+    revision.prompt.source !== 'langfuse' ||
+    revision.prompt.isFallback ||
+    revision.prompt.label !== 'production'
+  ) {
+    return 'Prompt Skill acceptance requires a frozen Langfuse production revision.';
+  }
+  return null;
 }
 
 function validateManifest(manifest: SkillRevisionManifest) {
@@ -511,4 +680,15 @@ function validateChildEffect(
 
 function sha256(value: string) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object)
+    .filter((key) => object[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`)
+    .join(',')}}`;
 }

@@ -21,6 +21,11 @@ export type SkillExecutionMode =
   | 'provider_native'
   | 'harness_native'
   | 'prompt_materialized';
+export type SkillDeploymentArtifactType =
+  | 'instruction'
+  | 'reference'
+  | 'scripts'
+  | 'sandbox';
 
 export interface SkillCatalog {
   skillId: string;
@@ -72,8 +77,12 @@ export interface SkillBinding {
   bindingId: string;
   workflowRevisionRef: string;
   stage: SkillStage;
+  skillId: string;
   skillRevisionRef: string;
   mode: SkillBindingMode;
+  status: 'active' | 'superseded';
+  supersededAt: string | null;
+  supersededByBindingId: string | null;
   createdAt: string;
 }
 
@@ -85,6 +94,8 @@ export interface SkillDeployment {
   nativeSkillId: string;
   nativeVersion: string;
   executionMode: SkillExecutionMode;
+  artifactType: SkillDeploymentArtifactType;
+  rolloutEvidenceRef: string | null;
   createdAt: string;
 }
 
@@ -117,7 +128,11 @@ export interface SkillChildEffect {
   fingerprint: string;
   toolId: string;
   contextRefs: string[];
-  budgetReservationCents: number;
+  /**
+   * Validation ceiling declared by the caller. This is not a billing
+   * reservation; a real reservation awaits the first billed production caller.
+   */
+  declaredBudgetCapCents: number;
   providerReceipt: {
     providerTaskRef: string;
     accepted: boolean;
@@ -127,9 +142,9 @@ export interface SkillChildEffect {
     outputTokens: number;
   };
   costCents: number;
-  settlementStatus: 'settled';
+  settlementStatus: 'settled' | 'over_budget';
   retryStatus: 'first_attempt' | 'replayed';
-  acceptanceStatus: 'accepted' | 'rejected_before_accept';
+  acceptanceStatus: 'accepted' | 'rejected_before_accept' | 'rejected';
   createdAt: string;
 }
 
