@@ -20,6 +20,7 @@ import {
   workUsageGuidance,
   worksListItems,
   worksShapeCounts,
+  type WorkDetail,
 } from './works-projection';
 
 function ownedAsset(id: string, contentType: string) {
@@ -603,10 +604,23 @@ test('导出 is only offered where core would honour it', () => {
  */
 test('文案主路径的导购只说得出动作区真有的动作', () => {
   const ACTION_WORDS = [
-    { pattern: /导出/u, rendered: (state: string) => state === 'ready' },
+    {
+      pattern: /导出/u,
+      rendered: (state: string, _detail: WorkDetail) => state === 'ready',
+    },
     {
       pattern: /采用/u,
-      rendered: (state: string) => state === 'needs_adoption',
+      rendered: (state: string, _detail: WorkDetail) =>
+        state === 'needs_adoption',
+    },
+    {
+      pattern: /交给同事|协办/u,
+      rendered: (_state: string, detail: WorkDetail) =>
+        detail.kind === 'package' && workHandoffHref(detail) !== null,
+    },
+    {
+      pattern: /下载/u,
+      rendered: (_state: string, _detail: WorkDetail) => false,
     },
   ];
   const states: Array<{
@@ -633,8 +647,12 @@ test('文案主路径的导购只说得出动作区真有的动作', () => {
     assert.equal(shape, 'copy', `${label} must stay a 文案 作品`);
     const guidance = workUsageGuidance(contentPackage, shape, exportability);
     const text = guidance.join(' ');
+    const detail = workDetail({
+      contentPackages: [contentPackage],
+      id: contentPackage.id,
+    });
     for (const { pattern, rendered } of ACTION_WORDS) {
-      if (pattern.test(text) && !rendered(exportability)) {
+      if (pattern.test(text) && !rendered(exportability, detail)) {
         assert.fail(
           `${label}: 导购 "${text}" names ${pattern} but exportability=${exportability} renders no such button`
         );
@@ -658,7 +676,7 @@ test('使用导购 stops promising 导出 to a 文案 作品', () => {
   assert.deepEqual(
     workUsageGuidance(copy, workOutputShape(copy), workExportability(copy)),
     [
-      '这一版的文字已经能直接用，复制走或交给同事去发都行。',
+      '这一版的文字已经能直接用，可以复制文字或协办交接。',
       '复制正文就能贴到平台或发给顾客。',
     ]
   );
@@ -694,4 +712,21 @@ test('with no confirmed revision there is nothing to export or hand over', () =>
   assert.equal(detail.confirmedRevision, null);
   assert.equal(workExportIdempotencyKey(detail), null);
   assert.equal(workHandoffHref(detail), null);
+});
+
+test('with no source work there is no handoff doorway or handoff promise', () => {
+  const detached = packageFixture({
+    id: 'package-detached',
+    kind: 'image_text',
+    source: { assetIds: [] },
+    status: 'accepted',
+  });
+  const detail = workDetail({
+    contentPackages: [detached],
+    id: detached.id,
+  });
+  assert.equal(detail.kind, 'package');
+  if (detail.kind !== 'package') return;
+  assert.equal(workHandoffHref(detail), null);
+  assert.doesNotMatch(detail.guidance.join(' '), /交给同事|协办/u);
 });

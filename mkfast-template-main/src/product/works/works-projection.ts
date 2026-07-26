@@ -260,6 +260,7 @@ export function workUsageGuidance(
     lines.push('这份内容还在流程里，完成后会出现在这里。');
     return lines;
   }
+  const canHandoff = Boolean(contentPackage.source.workId);
   switch (exportability) {
     case 'blocked':
       lines.push('这份内容得先换掉不能用的素材，之后才能接着用。');
@@ -267,18 +268,28 @@ export function workUsageGuidance(
     case 'needs_adoption':
       // 采用 is what unlocks export server-side, and the 采用 doorway is on
       // screen in exactly this branch.
-      lines.push('成品已就绪，先采用这一版，之后就能导出或交给同事去发。');
+      lines.push(
+        canHandoff
+          ? '成品已就绪，先采用这一版，之后就能导出或协办交接。'
+          : '成品已就绪，先采用这一版，之后就能导出。'
+      );
       break;
     case 'text_only':
       // There is no delivery package for this 作品 and no 采用 doorway either,
       // so the line names what the page actually offers: the words themselves.
-      lines.push('这一版的文字已经能直接用，复制走或交给同事去发都行。');
+      lines.push(
+        canHandoff
+          ? '这一版的文字已经能直接用，可以复制文字或协办交接。'
+          : '这一版的文字已经能直接用，可以复制文字。'
+      );
       break;
     case 'ready':
       lines.push(
         contentPackage.status === 'export_failed'
           ? '上次导出没成功，成品还在，重试导出即可。'
-          : '这一版已确认，可以直接导出或交给同事去发。'
+          : canHandoff
+            ? '这一版已确认，可以直接导出或协办交接。'
+            : '这一版已确认，可以直接导出。'
       );
       break;
   }
@@ -287,13 +298,21 @@ export function workUsageGuidance(
       lines.push('复制正文就能贴到平台或发给顾客。');
       break;
     case 'image':
-      lines.push('图片可以直接下载去发，也可以进轻编辑改字改版式。');
+      lines.push(
+        exportability === 'ready'
+          ? '图片可以导出使用，也可以进轻编辑改字改版式。'
+          : '图片可以进轻编辑改字改版式。'
+      );
       break;
     case 'note':
       lines.push('图和文是一整份，导出时会一起带走。');
       break;
     case 'video':
-      lines.push('成片可以直接下载发布，封面与字幕一并交付。');
+      lines.push(
+        exportability === 'ready'
+          ? '成片可以导出使用，封面与字幕一并交付。'
+          : '成片与封面、字幕会作为一整份内容交付。'
+      );
       break;
   }
   return lines;
