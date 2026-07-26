@@ -736,20 +736,24 @@ export async function assertZipDownload(
   expect(manifestPaths.has('platform-checklist.md')).toBe(true);
   if (contract.modality === 'video') {
     expect(files['video.mp4']?.byteLength ?? 0).toBeGreaterThan(0);
-    expect(files['cover.jpg']?.byteLength ?? 0).toBeGreaterThan(0);
-    const subtitlePath = files['subtitles.srt']
-      ? 'subtitles.srt'
-      : files['subtitles.vtt']
-        ? 'subtitles.vtt'
-        : undefined;
-    expect(
-      subtitlePath,
-      'video ZIP must contain SRT or VTT subtitles'
-    ).toBeTruthy();
-    expect(files[subtitlePath!]?.byteLength ?? 0).toBeGreaterThan(0);
     expect(manifestPaths.has('video.mp4')).toBe(true);
-    expect(manifestPaths.has('cover.jpg')).toBe(true);
-    expect(manifestPaths.has(subtitlePath!)).toBe(true);
+    // Cover and subtitles are the composed-video package's, and T23 retired
+    // that chain: a native single-call 成片 carries neither unless the export
+    // is handed one (`content-package-export-adapter.ts`, `nativeSingleCall`).
+    // Demanding them demanded the pre-T23 shape. What must still hold is that
+    // the archive and its manifest agree — declared means present, with real
+    // bytes, under whichever name the mime type gave it
+    // (`buildVideoFullDeliveryPackage`).
+    for (const role of ['cover', 'subtitles'] as const) {
+      const declared = (manifest.files ?? []).find(
+        (entry) => entry.role === role
+      );
+      if (!declared) continue;
+      expect(
+        files[declared.path!]?.byteLength ?? 0,
+        `a declared ${role} must carry real bytes`
+      ).toBeGreaterThan(0);
+    }
   } else {
     expect(Object.keys(files).some((name) => name.startsWith('images/'))).toBe(
       true

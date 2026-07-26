@@ -857,12 +857,25 @@ function ResultCenterRoutePage() {
       }
       return;
     }
-    if (workspaceKind === 'video' && videoWorksurface?.composedCandidate) {
-      await adopt({
-        kind: 'video',
-        videoAssetId: videoWorksurface.composedCandidate.assetId,
-      });
+    if (workspaceKind === 'video') {
+      await adoptComposedVideo();
     }
+  };
+  /**
+   * 视频 adoption, from either control: the worksurface's 使用此成片 and the
+   * shell's primary action both land here. A Harness package must record its
+   * adopted candidate to become `accepted`
+   * (`content-package-semantic-mutation-policy.ts`), so the visual command
+   * alone is a 409 HARNESS_ADOPTION_EVIDENCE_REQUIRED for a new-seam run — the
+   * same shape 图文 hit, one modality over.
+   */
+  const adoptComposedVideo = async () => {
+    if (await adoptHarnessCandidate()) return;
+    if (!videoWorksurface?.composedCandidate) return;
+    await adopt({
+      kind: 'video',
+      videoAssetId: videoWorksurface.composedCandidate.assetId,
+    });
   };
   const createFromCurrent = async () => {
     if (!selected) return;
@@ -1266,14 +1279,7 @@ function ResultCenterRoutePage() {
         }
       }}
       onVideoAdopt={
-        videoWorksurface?.composedCandidate
-          ? async () => {
-              await adopt({
-                kind: 'video',
-                videoAssetId: videoWorksurface.composedCandidate!.assetId,
-              });
-            }
-          : undefined
+        videoWorksurface?.composedCandidate ? adoptComposedVideo : undefined
       }
       onVideoDeliver={() =>
         navigate({
