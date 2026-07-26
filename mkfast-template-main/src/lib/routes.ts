@@ -31,6 +31,8 @@ export const Routes = {
   ContentLibrary: '/dashboard/content',
   LeadLedger: '/dashboard/leads',
   StoreProfile: '/dashboard/store',
+  ContentWorkspace: '/dashboard/workspace',
+  MarketingIdentity: '/dashboard/identity',
 
   // Settings routes
   Settings: '/settings',

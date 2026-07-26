@@ -39,6 +39,7 @@ import { Route as SettingsApikeysRouteImport } from './routes/settings/apikeys'
 import { Route as SettingsAccountRouteImport } from './routes/settings/account'
 import { Route as HerouiSpikeDashboardRouteImport } from './routes/heroui-spike/dashboard'
 import { Route as HerouiSpikeChatRouteImport } from './routes/heroui-spike/chat'
+import { Route as DashboardWorkspaceRouteImport } from './routes/dashboard/workspace'
 import { Route as DashboardWorksRouteImport } from './routes/dashboard/works'
 import { Route as DashboardTasksRouteImport } from './routes/dashboard/tasks'
 import { Route as DashboardStoreRouteImport } from './routes/dashboard/store'
@@ -47,6 +48,7 @@ import { Route as DashboardSearchRouteImport } from './routes/dashboard/search'
 import { Route as DashboardRecentRouteImport } from './routes/dashboard/recent'
 import { Route as DashboardLeadsRouteImport } from './routes/dashboard/leads'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard/jobs'
+import { Route as DashboardIdentityRouteImport } from './routes/dashboard/identity'
 import { Route as DashboardContentRouteImport } from './routes/dashboard/content'
 import { Route as DashboardCatalogRouteImport } from './routes/dashboard/catalog'
 import { Route as DashboardAssetsRouteImport } from './routes/dashboard/assets'
@@ -264,6 +266,11 @@ const HerouiSpikeChatRoute = HerouiSpikeChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => HerouiSpikeRoute,
 } as any)
+const DashboardWorkspaceRoute = DashboardWorkspaceRouteImport.update({
+  id: '/workspace',
+  path: '/workspace',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardWorksRoute = DashboardWorksRouteImport.update({
   id: '/works',
   path: '/works',
@@ -302,6 +309,11 @@ const DashboardLeadsRoute = DashboardLeadsRouteImport.update({
 const DashboardJobsRoute = DashboardJobsRouteImport.update({
   id: '/jobs',
   path: '/jobs',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardIdentityRoute = DashboardIdentityRouteImport.update({
+  id: '/identity',
+  path: '/identity',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardContentRoute = DashboardContentRouteImport.update({
@@ -686,6 +698,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/assets': typeof DashboardAssetsRoute
   '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/content': typeof DashboardContentRoute
+  '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
@@ -694,6 +707,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/store': typeof DashboardStoreRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
+  '/dashboard/workspace': typeof DashboardWorkspaceRoute
   '/heroui-spike/chat': typeof HerouiSpikeChatRoute
   '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
@@ -788,6 +802,7 @@ export interface FileRoutesByTo {
   '/dashboard/assets': typeof DashboardAssetsRoute
   '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/content': typeof DashboardContentRoute
+  '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
@@ -796,6 +811,7 @@ export interface FileRoutesByTo {
   '/dashboard/store': typeof DashboardStoreRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
+  '/dashboard/workspace': typeof DashboardWorkspaceRoute
   '/heroui-spike/chat': typeof HerouiSpikeChatRoute
   '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
@@ -895,6 +911,7 @@ export interface FileRoutesById {
   '/dashboard/assets': typeof DashboardAssetsRoute
   '/dashboard/catalog': typeof DashboardCatalogRoute
   '/dashboard/content': typeof DashboardContentRoute
+  '/dashboard/identity': typeof DashboardIdentityRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/leads': typeof DashboardLeadsRoute
   '/dashboard/recent': typeof DashboardRecentRoute
@@ -903,6 +920,7 @@ export interface FileRoutesById {
   '/dashboard/store': typeof DashboardStoreRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/works': typeof DashboardWorksRoute
+  '/dashboard/workspace': typeof DashboardWorkspaceRoute
   '/heroui-spike/chat': typeof HerouiSpikeChatRoute
   '/heroui-spike/dashboard': typeof HerouiSpikeDashboardRoute
   '/settings/account': typeof SettingsAccountRoute
@@ -1003,6 +1021,7 @@ export interface FileRouteTypes {
     | '/dashboard/assets'
     | '/dashboard/catalog'
     | '/dashboard/content'
+    | '/dashboard/identity'
     | '/dashboard/jobs'
     | '/dashboard/leads'
     | '/dashboard/recent'
@@ -1011,6 +1030,7 @@ export interface FileRouteTypes {
     | '/dashboard/store'
     | '/dashboard/tasks'
     | '/dashboard/works'
+    | '/dashboard/workspace'
     | '/heroui-spike/chat'
     | '/heroui-spike/dashboard'
     | '/settings/account'
@@ -1105,6 +1125,7 @@ export interface FileRouteTypes {
     | '/dashboard/assets'
     | '/dashboard/catalog'
     | '/dashboard/content'
+    | '/dashboard/identity'
     | '/dashboard/jobs'
     | '/dashboard/leads'
     | '/dashboard/recent'
@@ -1113,6 +1134,7 @@ export interface FileRouteTypes {
     | '/dashboard/store'
     | '/dashboard/tasks'
     | '/dashboard/works'
+    | '/dashboard/workspace'
     | '/heroui-spike/chat'
     | '/heroui-spike/dashboard'
     | '/settings/account'
@@ -1211,6 +1233,7 @@ export interface FileRouteTypes {
     | '/dashboard/assets'
     | '/dashboard/catalog'
     | '/dashboard/content'
+    | '/dashboard/identity'
     | '/dashboard/jobs'
     | '/dashboard/leads'
     | '/dashboard/recent'
@@ -1219,6 +1242,7 @@ export interface FileRouteTypes {
     | '/dashboard/store'
     | '/dashboard/tasks'
     | '/dashboard/works'
+    | '/dashboard/workspace'
     | '/heroui-spike/chat'
     | '/heroui-spike/dashboard'
     | '/settings/account'
@@ -1536,6 +1560,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HerouiSpikeChatRouteImport
       parentRoute: typeof HerouiSpikeRoute
     }
+    '/dashboard/workspace': {
+      id: '/dashboard/workspace'
+      path: '/workspace'
+      fullPath: '/dashboard/workspace'
+      preLoaderRoute: typeof DashboardWorkspaceRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/works': {
       id: '/dashboard/works'
       path: '/works'
@@ -1590,6 +1621,13 @@ declare module '@tanstack/react-router' {
       path: '/jobs'
       fullPath: '/dashboard/jobs'
       preLoaderRoute: typeof DashboardJobsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/identity': {
+      id: '/dashboard/identity'
+      path: '/identity'
+      fullPath: '/dashboard/identity'
+      preLoaderRoute: typeof DashboardIdentityRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/content': {
@@ -2125,6 +2163,7 @@ interface DashboardRouteChildren {
   DashboardAssetsRoute: typeof DashboardAssetsRoute
   DashboardCatalogRoute: typeof DashboardCatalogRoute
   DashboardContentRoute: typeof DashboardContentRoute
+  DashboardIdentityRoute: typeof DashboardIdentityRoute
   DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLeadsRoute: typeof DashboardLeadsRoute
   DashboardRecentRoute: typeof DashboardRecentRoute
@@ -2133,6 +2172,7 @@ interface DashboardRouteChildren {
   DashboardStoreRoute: typeof DashboardStoreRoute
   DashboardTasksRoute: typeof DashboardTasksRoute
   DashboardWorksRoute: typeof DashboardWorksRoute
+  DashboardWorkspaceRoute: typeof DashboardWorkspaceRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardAssetsAssetIdRoute: typeof DashboardAssetsAssetIdRoute
   DashboardContentContentIdRoute: typeof DashboardContentContentIdRoute
@@ -2150,6 +2190,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAssetsRoute: DashboardAssetsRoute,
   DashboardCatalogRoute: DashboardCatalogRoute,
   DashboardContentRoute: DashboardContentRoute,
+  DashboardIdentityRoute: DashboardIdentityRoute,
   DashboardJobsRoute: DashboardJobsRoute,
   DashboardLeadsRoute: DashboardLeadsRoute,
   DashboardRecentRoute: DashboardRecentRoute,
@@ -2158,6 +2199,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardStoreRoute: DashboardStoreRoute,
   DashboardTasksRoute: DashboardTasksRoute,
   DashboardWorksRoute: DashboardWorksRoute,
+  DashboardWorkspaceRoute: DashboardWorkspaceRoute,
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardAssetsAssetIdRoute: DashboardAssetsAssetIdRoute,
   DashboardContentContentIdRoute: DashboardContentContentIdRoute,

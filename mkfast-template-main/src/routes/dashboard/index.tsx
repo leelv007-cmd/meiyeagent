@@ -22,6 +22,8 @@ interface DashboardSearch {
   catalogRecipeRevisionId?: string;
   catalogSurfaceRevisionId?: string;
   entry?: 'feishu' | 'notification';
+  /** T33 / #227: identity handed over for this Composer session only. */
+  identity?: string;
   packageId?: string;
   stage?: 'action' | 'progress' | 'handoff';
   view?: 'recent' | 'works';
@@ -42,6 +44,9 @@ export const Route = createFileRoute('/dashboard/')({
       : {}),
     ...(search.entry === 'feishu' || search.entry === 'notification'
       ? { entry: search.entry }
+      : {}),
+    ...(typeof search.identity === 'string' && search.identity.length > 0
+      ? { identity: search.identity }
       : {}),
     ...(typeof search.packageId === 'string' && search.packageId.length > 0
       ? { packageId: search.packageId }
@@ -104,6 +109,7 @@ function DashboardHome() {
   return (
     <ComposerHome
       initialRecipeRevisionId={search.catalogRecipeRevisionId}
+      initialSessionIdentityId={search.identity}
       initialSurfaceRevisionId={search.catalogSurfaceRevisionId}
     />
   );

@@ -27,6 +27,11 @@ registerHooks({
 const { MarketingIdentityManager } = await import(
   '@/product/marketing-identity-manager'
 );
+// T33 / #227: management moved to /dashboard/identity; the asset page keeps the
+// summary and the way in, so the wizard assertions follow the surface.
+const { MarketingIdentityPage } = await import(
+  '@/product/marketing-identity-page'
+);
 const { CanonicalHistoryNavigation } = await import(
   '@/product/canonical-history-page'
 );
@@ -56,7 +61,7 @@ test('identity registration starts as one generated question instead of a field 
   });
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <MarketingIdentityManager />
+      <MarketingIdentityPage />
     </QueryClientProvider>
   );
 
@@ -101,7 +106,7 @@ test('identity cards show merchant status without raw code or primary version', 
 
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <MarketingIdentityManager />
+      <MarketingIdentityPage />
     </QueryClientProvider>
   );
 
