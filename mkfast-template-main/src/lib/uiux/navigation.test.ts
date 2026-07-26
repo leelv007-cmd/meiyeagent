@@ -19,18 +19,22 @@ test('merchant navigation exposes only creation, content, assets, and store', ()
     BUSINESS_NAVIGATION.map(({ href, label }) => ({ href, label })),
     [
       { href: '/dashboard', label: '创作' },
-      { href: '/dashboard/content', label: '内容' },
+      // 内容 keeps its label and its place; the surface underneath it is the
+      // reshelled one (T34 / #228). `/dashboard/content` is a redirect shell.
+      { href: '/dashboard/works', label: '内容' },
       { href: '/dashboard/assets', label: '素材' },
       { href: '/dashboard/store', label: '门店' },
     ]
   );
 });
 
-test('tasks and leads keep stable secondary routes after leaving navigation', () => {
-  assert.equal(Routes.TaskInbox, '/dashboard/tasks');
+test('the retired task inbox has no route constant left to point at', () => {
+  assert.equal('TaskInbox' in Routes, false);
+});
+
+test('leads keeps a stable secondary route after leaving navigation', () => {
   assert.equal(Routes.LeadLedger, '/dashboard/leads');
   const firstLevelHrefs = BUSINESS_NAVIGATION.map(({ href }) => String(href));
-  assert.equal(firstLevelHrefs.includes(Routes.TaskInbox), false);
   assert.equal(firstLevelHrefs.includes(Routes.LeadLedger), false);
 });
 
@@ -68,6 +72,9 @@ test('legacy locations redirect only through the frozen internal table', () => {
   assert.equal(resolveAdminP1Redirect('integrations'), '/admin/integrations');
   assert.equal(resolveAdminP1Redirect('unknown'), '/admin/models');
   assert.equal(resolveLegacyRedirect('/dashboard#new-content'), '/dashboard');
+  // T34 / #228 — 旧内容库与旧任务页整批下线，两条旧地址显式跳转新面。
+  assert.equal(resolveLegacyRedirect('/dashboard/content'), '/dashboard/works');
+  assert.equal(resolveLegacyRedirect('/dashboard/tasks'), '/dashboard');
   assert.equal(resolveLegacyRedirect('https://evil.example/steal'), undefined);
   assert.equal(resolveLegacyRedirect('/not-legacy'), undefined);
 });
@@ -87,7 +94,16 @@ test('trusted return anchors are typed object locations rather than open URLs', 
       objectId: 'content:42',
       objectType: 'content',
     }),
-    '/dashboard/content/content%3A42?focus=publish'
+    '/dashboard/works/content%3A42?focus=publish'
+  );
+  // 任务 no longer has a page to return to (T34 / #228).
+  assert.equal(
+    resolveTrustedReturnAnchor({
+      action: 'publish',
+      objectId: 'task-1',
+      objectType: 'task',
+    }),
+    undefined
   );
   assert.equal(
     resolveTrustedReturnAnchor({

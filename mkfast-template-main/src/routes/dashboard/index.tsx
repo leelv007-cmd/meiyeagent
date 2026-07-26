@@ -82,15 +82,17 @@ function DashboardHome() {
     });
   }, [navigate, search.workId]);
 
-  // Desktop package relay landing still goes to content detail.
+  // Desktop package relay landing goes to the content detail page, which is the
+  // reshelled one since T34 / #228 — the relay carries a ContentPackage id and
+  // that route resolves one directly.
   const relayLanding = isMobile ? undefined : desktopRelayLanding(search);
   const relayContentId = relayLanding?.contentId;
   useEffect(() => {
     if (!relayContentId) return;
     void navigate({
-      params: { contentId: relayContentId },
+      params: { workId: relayContentId },
       replace: true,
-      to: '/dashboard/content/$contentId',
+      to: '/dashboard/works/$workId',
     });
   }, [navigate, relayContentId]);
 

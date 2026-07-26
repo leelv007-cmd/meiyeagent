@@ -7,20 +7,23 @@ import {
   product_navigation_content,
   product_navigation_store,
   product_navigation_workbench,
-  product_navigation_tasks,
   trusted_return_anchor,
 } from '@/locale/paraglide/messages';
 
 /**
  * Trusted return destinations for detail pages.
  * Only enum ids are accepted — never raw URLs or free-form paths (no open redirect).
+ *
+ * `tasks` left the list with T34 / #228: the 旧任务页 retired and its successor,
+ * the pending-actions inbox, is a workbench drawer with no location of its own.
+ * A return anchor has to land somewhere real, so the id is gone rather than
+ * pointed at a redirect.
  */
 export const TRUSTED_RETURN_IDS = [
   'workbench',
   'content',
   'assets',
   'store',
-  'tasks',
 ] as const;
 
 export type TrustedReturnId = (typeof TRUSTED_RETURN_IDS)[number];
@@ -46,10 +49,6 @@ export const TRUSTED_RETURN_TARGETS: Record<
   store: {
     path: Routes.StoreProfile,
     label: () => product_navigation_store(),
-  },
-  tasks: {
-    path: Routes.TaskInbox,
-    label: () => product_navigation_tasks(),
   },
 };
 

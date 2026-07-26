@@ -26,9 +26,13 @@ export const Routes = {
 
   // Dashboard routes
   Dashboard: '/dashboard',
-  TaskInbox: '/dashboard/tasks',
   AssetLibrary: '/dashboard/assets',
-  ContentLibrary: '/dashboard/content',
+  /**
+   * 一级导航「内容」(T34 / #228). The merchant's content surface is the reshelled
+   * one under `/dashboard/works`; `/dashboard/content` survives only as a
+   * redirect shell for old links. There is no second content surface.
+   */
+  ContentLibrary: '/dashboard/works',
   LeadLedger: '/dashboard/leads',
   StoreProfile: '/dashboard/store',
   ContentWorkspace: '/dashboard/workspace',

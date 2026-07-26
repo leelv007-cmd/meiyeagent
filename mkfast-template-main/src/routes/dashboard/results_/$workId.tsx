@@ -1119,15 +1119,11 @@ function ResultCenterRoutePage() {
           });
       }}
       onBack={() => {
-        if (returnState?.kind === 'task-inbox') {
-          const destination = resultReturnDestination(returnState);
-          void navigate({
-            to: '/dashboard/tasks',
-            search: destination.search,
-          });
-          return;
-        }
-        void navigate({ to: '/dashboard', search: {} });
+        // 旧任务收件箱下线后，返回只有工作台一个落点（T34 / #228）。
+        const destination = resultReturnDestination(
+          returnState ?? { kind: 'dashboard' }
+        );
+        void navigate({ to: destination.to, search: destination.search });
       }}
       onDriftChoice={(choice) => returnRestore.applyDriftChoice(choice)}
       onCopyAdopt={copyAsset ? adoptCopyCandidate : undefined}
