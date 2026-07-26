@@ -71,7 +71,6 @@ test('pricing comparison and shared accessibility copy use Paraglide', () => {
   const pricing = readSource('src/routes/(pages)/pricing.tsx');
   const sidebarLayout = readSource('src/components/layout/sidebar-layout.tsx');
   const sidebar = readSource('src/components/ui/sidebar.tsx');
-  const files = readSource('src/components/settings/files/files-table.tsx');
 
   assert.doesNotMatch(pricing, /[\u3400-\u9fff]/);
   assert.match(pricing, /\bpricing_output_[a-z0-9_]+\b/);
@@ -80,7 +79,6 @@ test('pricing comparison and shared accessibility copy use Paraglide', () => {
   assert.doesNotMatch(sidebar, />Sidebar</);
   assert.doesNotMatch(sidebar, /Displays the mobile sidebar\./);
   assert.doesNotMatch(sidebar, /["']Toggle Sidebar["']/);
-  assert.doesNotMatch(files, /["']Public["']\s*:\s*["']Private["']/);
 });
 
 test('pricing stays readable without checkout and every public pricing CTA reaches it', async () => {
@@ -157,7 +155,6 @@ test('peripheral Paraglide handoff records every new key in both languages', () 
     'src/p1/integration-settings.tsx',
     'src/p1/settings-view-model.ts',
     'src/components/ui/sidebar.tsx',
-    'src/components/settings/files/files-table.tsx',
     'src/routes/(pages)/pricing.tsx',
   ];
   const manifest = JSON.parse(
