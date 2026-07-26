@@ -154,7 +154,7 @@ export function deliveredMedia(
     ...ordered,
     ...contentPackage.generated.assetIds.filter((id) => !ordered.includes(id)),
   ];
-  const title = version?.title?.trim() || '作品';
+  const title = version?.title?.trim() || '内容';
   const media: WorkMedia[] = [];
   for (const id of ids) {
     const asset = owned.get(id);
@@ -252,17 +252,17 @@ export function workUsageGuidance(
 ): string[] {
   const lines: string[] = [];
   if (contentPackage.rights.state === 'revoked') {
-    lines.push('这份作品里的素材授权已撤回，先换掉素材再导出。');
+    lines.push('这份内容里的素材授权已撤回，先换掉素材再导出。');
     return lines;
   }
   if (!currentVersion(contentPackage)) {
     // Nothing was delivered yet, so no action line would be true.
-    lines.push('这份作品还在流程里，完成后会出现在这里。');
+    lines.push('这份内容还在流程里，完成后会出现在这里。');
     return lines;
   }
   switch (exportability) {
     case 'blocked':
-      lines.push('这份作品得先换掉不能用的素材，之后才能接着用。');
+      lines.push('这份内容得先换掉不能用的素材，之后才能接着用。');
       break;
     case 'needs_adoption':
       // 采用 is what unlocks export server-side, and the 采用 doorway is on
@@ -384,7 +384,7 @@ function packageListItem(contentPackage: PublicContentPackage): WorkListItem {
 function canvasListItem(work: RawCanvasWorkSummary): WorkListItem {
   return {
     detailId: work.id,
-    excerpt: '在轻编辑里做的图文作品',
+    excerpt: '在轻编辑里做的图文内容',
     kind: 'canvas',
     media: [],
     outputShape: 'image',

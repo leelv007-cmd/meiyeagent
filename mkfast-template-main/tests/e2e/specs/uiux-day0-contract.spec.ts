@@ -468,11 +468,11 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     await page.evaluate(() => {
       document.body.insertAdjacentHTML(
         'beforeend',
-        '<a data-activation-navigation="content" href="/dashboard/content">activation navigation content</a>'
+        '<a data-activation-navigation="content" href="/dashboard/works">activation navigation content</a>'
       );
     });
     await page.locator('[data-activation-navigation="content"]').click();
-    await expect(page).toHaveURL(/\/dashboard\/content$/);
+    await expect(page).toHaveURL(/\/dashboard\/works$/);
     counter.stop();
 
     expect(counter.count()).toBe(2);

@@ -21,6 +21,7 @@ import {
   pending_actions_count,
 } from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
+import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 import { operationsQuery } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -480,7 +481,7 @@ export function AsyncTaskCenter({
               </div>
               <a
                 className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-primary"
-                href={getPathWithLocale('/dashboard/content')}
+                href={getPathWithLocale(Routes.ContentLibrary)}
               >
                 {async_task_view_all()}
                 <IconExternalLink aria-hidden="true" className="size-4" />

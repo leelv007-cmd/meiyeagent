@@ -325,8 +325,13 @@ test.describe('Pro Studio cross-service smoke', () => {
     await page.goto(
       `${mainOrigin}/dashboard/content?packageId=${encodeURIComponent(adoption.packageId)}`
     );
+    // T34 / #228: the address forwards to the reshelled content detail, which
+    // identifies the package by the revision it is bound to.
+    await expect(page.getByTestId('works-detail-surface')).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(
-      page.locator(`[data-content-package-id="${adoption.packageId}"]`)
+      page.locator(`[data-package-id="${adoption.packageId}"]`)
     ).toBeVisible({ timeout: 20_000 });
     console.log(`[pro-studio-cross-service] packageId=${adoption.packageId}`);
     await page.screenshot({

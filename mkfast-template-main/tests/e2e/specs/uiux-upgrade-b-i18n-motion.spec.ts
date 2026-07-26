@@ -25,11 +25,18 @@ const PNG_FIXTURE = Buffer.from(
   'base64'
 );
 
+/**
+ * T34 / #228 — `/en/dashboard/tasks` left this table because the route retired.
+ * `/en/dashboard/content` became `/en/dashboard/works`: 一级导航「内容」now lands
+ * on the reshelled surface. That surface writes its merchant copy inline rather
+ * than through Paraglide, so this row is expected to fail until the reshelled
+ * surfaces are put on the message catalogue — the row stays so the gap is
+ * visible instead of quietly dropped.
+ */
 const CORE_ENGLISH_ROUTES = [
   ['/en/dashboard', 'Turn one idea into a creation you can keep completing'],
-  ['/en/dashboard/tasks', 'Content tasks'],
   ['/en/dashboard/assets', 'Asset library'],
-  ['/en/dashboard/content', 'Content library'],
+  ['/en/dashboard/works', 'Content'],
   ['/en/dashboard/leads', 'Lead ledger'],
   ['/en/dashboard/store', 'Store profile'],
 ] as const;

@@ -47,8 +47,9 @@ test('result route quotes and confirms adjustment before canonical submit', () =
 
 test('result route consumes a trusted typed return anchor instead of browser history', () => {
   assert.match(route, /parseResultReturnState\(search\)/u);
-  assert.match(route, /resultReturnDestination\(returnState\)/u);
-  assert.match(route, /to: '\/dashboard\/tasks'/u);
+  assert.match(route, /resultReturnDestination\(/u);
+  // T34 / #228 — the retired task inbox is no longer a return destination.
+  assert.doesNotMatch(route, /to: '\/dashboard\/tasks'/u);
   assert.doesNotMatch(route, /window\.history\.back\(\)/u);
 });
 

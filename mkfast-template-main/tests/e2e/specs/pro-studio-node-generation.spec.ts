@@ -66,7 +66,7 @@ async function enterCanvas(page: Page, request: APIRequestContext) {
   // models (image.generate=gpt-image-2, …) before we reach the canvas catalog.
   await page.goto('/dashboard');
   await page.waitForLoadState('networkidle').catch(() => undefined);
-  await page.goto('/dashboard/content').catch(() => undefined);
+  await page.goto('/dashboard/works').catch(() => undefined);
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await page.goto('/pro-studio');
   await unlockProStudio(page);

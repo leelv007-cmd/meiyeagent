@@ -58,8 +58,12 @@ function findAction(node: ReactNode, label: string): ActionElement | undefined {
   return undefined;
 }
 
-test('content route retains the extracted library surface', () => {
-  assert.equal(typeof contentFileRoute.options.component, 'function');
+test('the content route forwards to the reshelled surface and mounts nothing', () => {
+  // T34 / #228: 一级导航「内容」lands on the reshelled surface; this path is a
+  // redirect shell. The old library surface is kept alive only by this file
+  // until T38's delete batch takes both.
+  assert.equal(contentFileRoute.options.component, undefined);
+  assert.equal(typeof contentFileRoute.options.beforeLoad, 'function');
   assert.equal(typeof ContentLibrarySurface, 'function');
 });
 

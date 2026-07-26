@@ -115,7 +115,8 @@ describe('global command model', () => {
       entries.slice(0, 4).map((entry) => entry.href),
       [
         '/dashboard',
-        '/dashboard/content',
+        // 内容 lands on the reshelled surface since T34 / #228.
+        '/dashboard/works',
         '/dashboard/assets',
         '/dashboard/store',
       ]

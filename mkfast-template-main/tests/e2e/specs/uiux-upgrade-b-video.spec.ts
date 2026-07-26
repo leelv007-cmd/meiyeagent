@@ -499,9 +499,7 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(videoPackage?.source.workId).toBe(workId);
     expect(videoPackage).toBeTruthy();
     if (!videoPackage) throw new Error('Completed video has no ContentPackage');
-    await page.goto(
-      `/dashboard/content?packageId=${encodeURIComponent(videoPackage.id)}`
-    );
+    await page.goto(`/dashboard/works/${encodeURIComponent(videoPackage.id)}`);
     const detailWorkflow = page.getByLabel('视频成片工作流');
     await expect(
       detailWorkflow.getByRole('heading', { name: '成片已完成' })

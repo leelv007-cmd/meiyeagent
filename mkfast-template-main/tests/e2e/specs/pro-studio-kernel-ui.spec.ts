@@ -476,14 +476,14 @@ test.describe('Pro Studio authorized kernel UI', () => {
       });
 
       await adoptionLink.click();
+      // T34 / #228: the canvas adoption link still addresses the old content
+      // path; it forwards to the reshelled detail page for the same package.
       await expect(activePage).toHaveURL(
-        (url) =>
-          url.pathname === '/dashboard/content' &&
-          url.searchParams.get('packageId') === packageId,
+        (url) => url.pathname === `/dashboard/works/${packageId}`,
         { timeout: 20_000 }
       );
       await expect(
-        activePage.locator(`[data-content-package-id="${packageId}"]`)
+        activePage.locator(`[data-package-id="${packageId}"]`)
       ).toBeVisible({ timeout: 20_000 });
     });
 

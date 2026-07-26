@@ -1,30 +1,18 @@
-import { ContentLibrarySurface } from '@/routes/dashboard/-content-library-surface';
-import { parseTrustedReturn } from '@/product/trusted-return';
-import { createFileRoute } from '@tanstack/react-router';
-import { stableContentPackageSelection } from '../-content-helpers';
+/**
+ * 旧内容详情路由壳 — T34 / #228.
+ *
+ * The path parameter here has always been a ContentPackage id, and the new
+ * detail route resolves one directly (`workDetail` matches by package id before
+ * work id), so this is a one-to-one forward rather than a drop to the list.
+ */
+
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/dashboard/content_/$contentId')({
-  validateSearch: (search: Record<string, unknown>) => {
-    const from = parseTrustedReturn(search.from);
-    return from ? { from } : {};
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: '/dashboard/works/$workId',
+      params: { workId: params.contentId },
+    });
   },
-  component: ContentDetailRoute,
 });
-
-function ContentDetailRoute() {
-  const selection = stableContentPackageSelection(Route.useParams().contentId);
-  const search = Route.useSearch();
-  const navigate = Route.useNavigate();
-  return (
-    <ContentLibrarySurface
-      onOpenPackage={(contentId) => {
-        void navigate({
-          params: { contentId },
-          search,
-          to: '/dashboard/content/$contentId',
-        });
-      }}
-      selection={{ ...selection, from: search.from }}
-    />
-  );
-}

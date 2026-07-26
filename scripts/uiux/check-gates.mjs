@@ -32,6 +32,11 @@ export const CHECK_GATES = [
     command: 'node',
     args: ['scripts/uiux/works-canonical-projection-guard.mjs'],
   },
+  {
+    name: 'retired old-IA route mount guard',
+    command: 'node',
+    args: ['scripts/uiux/retired-ia-route-mount-guard.mjs'],
+  },
 ];
 
 export function runGates(

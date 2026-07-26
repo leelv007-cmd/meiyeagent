@@ -1104,7 +1104,7 @@ test.describe('S2 cold start and unified creation loop', () => {
 
     await page.getByRole('link', { name: '查看当前成品' }).click();
     await expect(page).toHaveURL(
-      new RegExp(`/dashboard/content/${encodeURIComponent(packageId)}(?:\\?|$)`)
+      new RegExp(`/dashboard/works/${encodeURIComponent(packageId)}(?:\\?|$)`)
     );
     await expect(
       page.getByText('视觉顺序：2 张', { exact: true }).first()
@@ -1289,7 +1289,7 @@ test.describe('S2 cold start and unified creation loop', () => {
       source: 'weekly_review',
     });
 
-    await page.goto(`/dashboard/content/${encodeURIComponent(packageId)}`);
+    await page.goto(`/dashboard/works/${encodeURIComponent(packageId)}`);
     await page.getByRole('button', { exact: true, name: '海报' }).click();
     const openPoster = page.getByRole('button', { name: '去做宣传海报' });
     await expect(openPoster).toBeVisible();

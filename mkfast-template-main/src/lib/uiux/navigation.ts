@@ -41,6 +41,12 @@ export const BUSINESS_NAVIGATION = [
 const legacyRedirects = new Map<string, string>([
   ['/dashboard#new-content', Routes.Dashboard],
   ['/dashboard/store?tab=assets', Routes.AssetLibrary],
+  // T34 / #228 — the old content library and the old task page retire in one
+  // batch (D-127, no dual-track period). Content folds into the reshelled
+  // content surface; to-dos and approvals live only in the pending-actions
+  // inbox, which is the workbench's own drawer rather than a route of its own.
+  ['/dashboard/content', Routes.ContentLibrary],
+  ['/dashboard/tasks', Routes.Dashboard],
   ['/settings/profile', `${Routes.SettingsAccount}?section=profile`],
   ['/settings/security', `${Routes.SettingsAccount}?section=security`],
   ['/settings/billing', `${Routes.SettingsAccount}?section=usage`],
@@ -90,12 +96,18 @@ export function resolveAdminP1Redirect(tab: unknown) {
   return target;
 }
 
+/**
+ * Object types that still have a page to return to. `task` left the table with
+ * T34 / #228: the old task page retired and to-dos now live in the
+ * pending-actions inbox, a drawer on the workbench that owns no per-task
+ * location — so a task anchor resolves to nothing rather than to a route that
+ * redirects away.
+ */
 const returnObjectPaths = {
   asset: '/dashboard/assets',
-  content: '/dashboard/content',
+  content: '/dashboard/works',
   job: '/dashboard/jobs',
   session: '/dashboard/sessions',
-  task: '/dashboard/tasks',
   work: '/dashboard/works',
 } as const;
 const returnActions = new Set([

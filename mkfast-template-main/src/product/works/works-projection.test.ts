@@ -415,7 +415,7 @@ test('使用导购 leads with the blocking sentence when rights are revoked', ()
   });
   assert.deepEqual(
     workUsageGuidance(revoked, 'note', workExportability(revoked)),
-    ['这份作品里的素材授权已撤回，先换掉素材再导出。']
+    ['这份内容里的素材授权已撤回，先换掉素材再导出。']
   );
   const guidance = workUsageGuidance(
     videoPackage,

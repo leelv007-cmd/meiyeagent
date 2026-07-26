@@ -118,7 +118,7 @@ function WorkPackageBody({
     mutationFn: async () => {
       const key = workExportIdempotencyKey(detail);
       if (!detail.confirmedRevision || !detail.platform || !key) {
-        throw new Error('这份作品还没有可导出的成品版本。');
+        throw new Error('这份内容还没有可导出的成品版本。');
       }
       return commandP1<ExportOutcome>(
         'result-delivery',
@@ -219,7 +219,7 @@ function WorkPackageBody({
         className="meiye-porcelain rounded-2xl p-4"
         data-testid="works-detail-guidance"
       >
-        <h2 className="meiye-type-body font-semibold">怎么用这份作品</h2>
+        <h2 className="meiye-type-body font-semibold">怎么用这份内容</h2>
         <ul className="mt-2 flex flex-col gap-1">
           {detail.guidance.map((line) => (
             <li className="text-muted-foreground text-sm" key={line}>
@@ -335,7 +335,7 @@ function WorksDetailNotice({
           className="mt-4 inline-block text-sm underline underline-offset-4"
           to="/dashboard/works"
         >
-          回到作品列表
+          回到内容列表
         </Link>
       </div>
     </WorksFrame>
@@ -360,7 +360,7 @@ export function WorksDetailPage({ workId }: { workId: string }) {
           className="text-muted-foreground text-sm"
           data-testid="works-detail-loading"
         >
-          正在打开这份作品…
+          正在打开这份内容…
         </p>
       </WorksFrame>
     );
@@ -373,7 +373,7 @@ export function WorksDetailPage({ workId }: { workId: string }) {
       <WorksDetailNotice
         description="刷新一下再打开。"
         testId="works-detail-unavailable"
-        title="这份作品暂时没能取回来"
+        title="这份内容暂时没能取回来"
       />
     );
   }
@@ -387,7 +387,7 @@ export function WorksDetailPage({ workId }: { workId: string }) {
       <WorksDetailNotice
         description="它可能还没生成完，或者已经被换成了新的一版。"
         testId="works-detail-missing"
-        title="没找到这份作品"
+        title="没找到这份内容"
       />
     );
   }

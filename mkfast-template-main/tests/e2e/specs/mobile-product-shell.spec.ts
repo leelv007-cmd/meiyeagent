@@ -290,9 +290,9 @@ test.fixme(
         await route.fallback();
       });
 
-      await page.goto(
-        '/dashboard/tasks?date=all&mode=inbox&relatedKind=all&risk=all&source=manual&status=all'
-      );
+      // T34 / #228: the 旧任务收件箱 route retired; the workbench is where the
+      // mobile shell now hosts this journey.
+      await page.goto('/dashboard');
       await expect
         .poll(() => {
           const work = observedWorkbenchProjection?.works.find(
@@ -442,9 +442,8 @@ test('keeps mobile identity and assets reachable during a slow canonical query',
     });
 
     await loginByForm(page, user);
-    await page.goto(
-      '/dashboard/tasks?date=all&mode=inbox&relatedKind=all&risk=all&source=manual&status=all'
-    );
+    // T34 / #228: 旧任务收件箱 retired — host this on the workbench instead.
+    await page.goto('/dashboard');
     const mobileNav = page.getByRole('navigation', { name: '移动端导航' });
     const identityAssetsEntry = mobileNav.getByTestId(
       'mobile-identity-assets-entry'

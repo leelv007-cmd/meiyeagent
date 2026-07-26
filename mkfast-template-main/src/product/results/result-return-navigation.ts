@@ -141,28 +141,17 @@ export function taskInboxReturnState(input: {
   };
 }
 
-export function resultReturnDestination(
-  state: Extract<ResultReturnState, { kind: 'dashboard' }>
-): { to: typeof Routes.Dashboard; search: Record<string, never> };
-export function resultReturnDestination(
-  state: Extract<ResultReturnState, { kind: 'task-inbox' }>
-): { to: typeof Routes.TaskInbox; search: TaskInboxRestoreSearch };
-export function resultReturnDestination(
-  state: ResultReturnState
-):
-  | { to: typeof Routes.Dashboard; search: Record<string, never> }
-  | { to: typeof Routes.TaskInbox; search: TaskInboxRestoreSearch } {
-  if (state.kind === 'dashboard') {
-    return { to: Routes.Dashboard, search: {} };
-  }
-
-  return {
-    to: Routes.TaskInbox,
-    search: {
-      ...state.filters,
-      mode: state.panel,
-      restoreScrollY: state.scrollY,
-      ...(state.focusKey ? { restoreFocusKey: state.focusKey } : {}),
-    },
-  };
+/**
+ * Where 返回 lands. Every return goes to the workbench since T34 / #228: the
+ * 旧任务收件箱 route retired, so a `task-inbox` state no longer has a page to
+ * restore. The state itself is still parsed and serialised — old links carrying
+ * `returnTo=task-inbox` must resolve to something rather than throw — it simply
+ * has one destination now. The filter/scroll payload it carries goes with the
+ * old page in T38's delete batch.
+ */
+export function resultReturnDestination(_state: ResultReturnState): {
+  to: typeof Routes.Dashboard;
+  search: Record<string, never>;
+} {
+  return { to: Routes.Dashboard, search: {} };
 }

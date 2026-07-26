@@ -144,7 +144,7 @@ export function WorksListPage() {
               style={{ '--muted': 'var(--ink-90)' } as CSSProperties}
             >
               <Segment
-                aria-label="作品类型"
+                aria-label="内容类型"
                 data-testid="works-shape-filter"
                 onSelectionChange={(key) => setShape(key as ShapeFilter)}
                 selectedKey={shape}
@@ -170,13 +170,13 @@ export function WorksListPage() {
               htmlFor="works-search"
             >
               <IconSearch aria-hidden="true" className="size-4 shrink-0" />
-              <span className="sr-only">搜索作品</span>
+              <span className="sr-only">搜索内容</span>
               <input
                 className="w-full bg-transparent text-sm outline-none"
                 data-testid="works-search"
                 id="works-search"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜作品标题或正文"
+                placeholder="搜内容标题或正文"
                 type="search"
                 value={query}
               />
@@ -188,16 +188,16 @@ export function WorksListPage() {
               className="text-muted-foreground text-sm"
               data-testid="works-loading"
             >
-              正在整理你的作品…
+              正在整理你的内容…
             </p>
           ) : failed ? (
-            // A failed read must never read as 「你还没有作品」.
+            // A failed read must never read as 「你还没有内容」.
             <p
               className="meiye-porcelain rounded-2xl p-4 text-sm"
               data-testid="works-unavailable"
               role="alert"
             >
-              作品暂时没能取回来，刷新一下再看。
+              内容暂时没能取回来，刷新一下再看。
             </p>
           ) : items.length === 0 ? (
             <EmptyState data-testid="works-empty">
@@ -205,7 +205,7 @@ export function WorksListPage() {
                 <EmptyState.Media variant="icon">
                   <IconPhoto aria-hidden="true" />
                 </EmptyState.Media>
-                <EmptyState.Title>还没有作品</EmptyState.Title>
+                <EmptyState.Title>还没有内容</EmptyState.Title>
                 <EmptyState.Description>
                   去创作一条内容，做出来的成品会自动进到这里。
                 </EmptyState.Description>

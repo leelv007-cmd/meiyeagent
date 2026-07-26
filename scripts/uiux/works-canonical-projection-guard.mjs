@@ -35,6 +35,19 @@ const WORKS_ROUTES = [
   'mkfast-template-main/src/routes/dashboard/works.tsx',
   'mkfast-template-main/src/routes/dashboard/works_/$workId.tsx',
 ];
+/**
+ * 一级导航「内容」lands on the works surface since T34 / #228, and the two old
+ * content addresses survive as redirect shells. They carry no UI, but they are
+ * on the same journey, so the same projection rules hold: a shell that reached
+ * for the named-legacy projection or bound a retiring module to decide where to
+ * forward would put the old IA back in the path. Scanned for claims 1 and 2 —
+ * not for claim 3, which is about rendering the surface, and a redirect renders
+ * nothing.
+ */
+const CONTENT_REDIRECT_ROUTES = [
+  'mkfast-template-main/src/routes/dashboard/content.tsx',
+  'mkfast-template-main/src/routes/dashboard/content_/$contentId.tsx',
+];
 const ROUTE_TREE = 'mkfast-template-main/src/routeTree.gen.ts';
 
 /** Modules the 归桶矩阵 marks delete-after-reshell — the new面 must not bind them. */
@@ -152,8 +165,13 @@ function read(path) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const surface = walk(WORKS_SURFACE_DIR).map(read);
   const routes = WORKS_ROUTES.map(read);
+  const contentRedirects = CONTENT_REDIRECT_ROUTES.map(read);
   const findings = [
-    ...findWorksProjectionViolations([...surface, ...routes]),
+    ...findWorksProjectionViolations([
+      ...surface,
+      ...routes,
+      ...contentRedirects,
+    ]),
     ...findWorksRouteViolations(routes, readFileSync(ROUTE_TREE, 'utf8')),
   ].map((finding) => ({
     ...finding,
@@ -161,7 +179,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }));
   process.stdout.write(
     `${JSON.stringify(
-      { filesScanned: surface.length + routes.length, findings },
+      {
+        filesScanned:
+          surface.length + routes.length + contentRedirects.length,
+        findings,
+      },
       null,
       2
     )}\n`

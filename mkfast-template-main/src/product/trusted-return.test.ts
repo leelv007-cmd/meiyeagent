@@ -47,10 +47,15 @@ test('parseTrustedReturn rejects open-redirect and free-form values', () => {
 
 test('trusted return paths stay inside the product shell', () => {
   assert.equal(trustedReturnPath('workbench'), '/dashboard');
-  assert.equal(trustedReturnPath('content'), '/dashboard/content');
+  // 内容 returns to the reshelled surface, not the retired library (T34 / #228).
+  assert.equal(trustedReturnPath('content'), '/dashboard/works');
   assert.equal(trustedReturnPath('assets'), '/dashboard/assets');
   assert.equal(trustedReturnPath('store'), '/dashboard/store');
-  assert.equal(trustedReturnPath('tasks'), '/dashboard/tasks');
+});
+
+test('the retired task inbox is no longer a trusted return destination', () => {
+  assert.equal(TRUSTED_RETURN_IDS.includes('tasks' as never), false);
+  assert.equal(parseTrustedReturn('tasks'), undefined);
 });
 
 test('withTrustedReturn only appends the allowlisted id', () => {
