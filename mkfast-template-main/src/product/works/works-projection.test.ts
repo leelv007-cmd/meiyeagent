@@ -682,6 +682,20 @@ test('使用导购 stops promising 导出 to a 文案 作品', () => {
   );
 });
 
+test('non-ready image guidance does not promise export', () => {
+  assert.equal(
+    workUsageGuidance(imagePackage, 'image', 'text_only').at(-1),
+    '图片可以进轻编辑改字改版式。'
+  );
+});
+
+test('non-ready video guidance does not promise export', () => {
+  assert.equal(
+    workUsageGuidance(videoPackage, 'video', 'text_only').at(-1),
+    '成片与封面、字幕会作为一整份内容交付。'
+  );
+});
+
 test('采用 and 协办交接 doorways carry the same revision to Result Center', () => {
   const detail = workDetail({
     contentPackages: allPackages,

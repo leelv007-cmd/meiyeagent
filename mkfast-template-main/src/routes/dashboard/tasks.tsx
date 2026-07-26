@@ -10,9 +10,9 @@
  * batch.
  *
  * The old filter query has no successor — the inbox reads a different
- * projection — so it is dropped on the way out rather than translated. Its
- * validator stays until T38 removes the page, because the retiring page still
- * types its own navigation against this route's search contract.
+ * projection — so it is dropped on the way out rather than translated. The
+ * validator remains only to normalize old links before this compatibility
+ * route redirects them; no retired page consumes its search contract.
  */
 
 import { createFileRoute, redirect } from '@tanstack/react-router';

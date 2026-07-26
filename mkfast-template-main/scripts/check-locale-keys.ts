@@ -42,6 +42,7 @@ const RETIRED_NAVIGATION_KEYS = [
   'dashboard_sidebar_profile',
   'dashboard_sidebar_security',
   'dashboard_sidebar_settings',
+  'product_navigation_tasks',
 ] as const;
 
 const PRODUCT_SHELL_SOURCES = [

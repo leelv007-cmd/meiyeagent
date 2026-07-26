@@ -26,7 +26,7 @@ export const TRUSTED_RETURN_IDS = [
   'store',
 ] as const;
 
-export type TrustedReturnId = (typeof TRUSTED_RETURN_IDS)[number];
+type TrustedReturnId = (typeof TRUSTED_RETURN_IDS)[number];
 
 const TRUSTED_RETURN_SET = new Set<string>(TRUSTED_RETURN_IDS);
 

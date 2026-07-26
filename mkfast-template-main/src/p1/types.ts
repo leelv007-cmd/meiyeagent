@@ -58,7 +58,7 @@ export interface TaskInboxFiltersValue {
   risk: string;
 }
 
-export interface FilterOption {
+interface FilterOption {
   value: string;
   label: string;
   count?: number;
@@ -113,21 +113,6 @@ export type WeeklyBatchAction =
   | 'revise'
   | 'apply_template'
   | 'prepare_draft';
-
-export interface WeeklyReviewFactView {
-  id: string;
-  label: string;
-  value: string | number | null;
-  evidenceLabel?: string;
-  unknownReason?: string;
-}
-
-export interface NextWeekCandidateView {
-  id: string;
-  title: string;
-  rationale: string;
-  status: 'pending' | 'confirmed' | 'dismissed';
-}
 
 export type TemplateOwnerKind = 'official' | 'user';
 
