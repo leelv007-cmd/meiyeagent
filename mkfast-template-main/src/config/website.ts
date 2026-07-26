@@ -74,11 +74,6 @@ export const websiteConfig: WebsiteConfig = {
     provider: 'resend',
     fromEmail: 'onboarding@resend.dev',
   },
-  newsletter: {
-    enable: false,
-    provider: 'resend',
-    autoSubscribeAfterSignUp: false,
-  },
   notification: {
     enable: true,
     provider: 'discord',

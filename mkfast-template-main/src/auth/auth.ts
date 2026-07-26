@@ -3,7 +3,6 @@ import { betterAuth } from 'better-auth/minimal';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { getDb } from '@/db';
 import { sendEmail } from '@/mail';
-import { subscribe } from '@/newsletter';
 import { getBaseUrl } from '@/lib/urls';
 import { serverEnv } from '@/env/server';
 import { websiteConfig } from '@/config/website';
@@ -130,7 +129,7 @@ export function createAuth() {
             return { data: { ...user, emailVerified: true } };
           },
           after: async (user) => {
-            await onCreateUser(user);
+            await assembleUser(user);
           },
         },
       },
@@ -170,38 +169,3 @@ async function assembleUser(user: User) {
   });
 }
 
-/**
- * Runs after a new user is created. Auto-subscribes to newsletter when enabled.
- */
-async function onCreateUser(user: User) {
-  await assembleUser(user);
-  const newsletterConfig = websiteConfig.newsletter;
-  if (
-    !user.email ||
-    !newsletterConfig?.enable ||
-    !newsletterConfig.autoSubscribeAfterSignUp
-  ) {
-    return;
-  }
-
-  try {
-    const subscribed = await subscribe(user.email);
-    if (!subscribed) {
-      console.error('newsletter subscription failed', {
-        event: 'NEWSLETTER_SUBSCRIPTION_FAILED',
-        userId: user.id,
-      });
-    } else {
-      console.info('newsletter subscription completed', {
-        event: 'NEWSLETTER_SUBSCRIPTION_COMPLETED',
-        userId: user.id,
-      });
-    }
-  } catch (error) {
-    console.error('newsletter subscription error', {
-      event: 'NEWSLETTER_SUBSCRIPTION_ERROR',
-      userId: user.id,
-      ...safeErrorFields(error),
-    });
-  }
-}

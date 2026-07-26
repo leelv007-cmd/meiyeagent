@@ -32,7 +32,6 @@ const readSource = (file: string) =>
 test('merchant-facing forms never render raw upstream error messages', () => {
   const clientFiles = [
     'src/components/contact/contact-form-card.tsx',
-    'src/components/settings/notification/newsletter-form-card.tsx',
     'src/components/admin/users/user-detail-viewer.tsx',
   ];
 
@@ -40,9 +39,9 @@ test('merchant-facing forms never render raw upstream error messages', () => {
     assert.doesNotMatch(readSource(file), /(?:err|error)\.message/, file);
   }
 
-  const newsletterApi = readSource('src/api/newsletter.ts');
+  const contactApi = readSource('src/api/contact.ts');
   assert.doesNotMatch(
-    newsletterApi,
+    contactApi,
     /error\s+instanceof\s+Error\s*\?\s*error\.message/
   );
 

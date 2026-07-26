@@ -1,8 +1,8 @@
 # Mail module
 
-Transactional email (verification, password reset, contact form, subscription welcome). **Resend** and **Cloudflare Email Service** are the built-in providers. Design allows adding other providers via a provider registry without changing callers.
+Transactional email (verification, password reset, contact form). **Resend** and **Cloudflare Email Service** are the built-in providers. Design allows adding other providers via a provider registry without changing callers.
 
-**Consumers:** Auth (`sendVerificationEmail`, `sendResetPassword`), contact form (`sendContactMessage` in `src/api/contact.ts`), newsletter subscribe — all use `sendEmail(...)` only.
+**Consumers:** Auth (`sendVerificationEmail`, `sendResetPassword`), contact form (`sendContactMessage` in `src/api/contact.ts`) — all use `sendEmail(...)` only.
 
 ---
 
@@ -19,7 +19,6 @@ src/mail/
 ├── templates/
 │   ├── verify-email.tsx
 │   ├── forgot-password.tsx
-│   ├── subscribe-newsletter.tsx
 │   └── contact-message.tsx
 └── components/
     ├── email-layout.tsx
@@ -105,7 +104,6 @@ mail: {
 |----------|---------|---------------------------|
 | forgotPassword | `{ url, name }` | Reset your password |
 | verifyEmail | `{ url, name }` | Verify your email |
-| subscribeNewsletter | `{ email? }` | Thanks for subscribing |
 | contactMessage | `{ name, email, message }` | Contact Message from Website |
 
 **Adding a template:** extend `EmailTemplate` in `types.ts` → add to `EmailTemplates` and `subjectByTemplate` in `render.ts` → add React component under `templates/`.

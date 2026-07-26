@@ -28,12 +28,6 @@ registerHooks({
         url: 'data:text/javascript,export const getBaseUrl = () => "http://localhost:3000"',
       };
     }
-    if (specifier === '@/newsletter') {
-      return {
-        shortCircuit: true,
-        url: 'data:text/javascript,export const subscribe = async () => true',
-      };
-    }
     return nextResolve(specifier, context);
   },
 });

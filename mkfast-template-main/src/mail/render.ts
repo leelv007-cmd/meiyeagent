@@ -1,21 +1,18 @@
 import {
   mail_contact_message_subject,
   mail_forgot_password_subject,
-  mail_subscribe_newsletter_subject,
   mail_verify_email_subject,
 } from '@/locale/paraglide/messages';
 import React, { type ReactElement } from 'react';
 import type { EmailTemplate } from './types';
 import ContactMessage from './templates/contact-message';
 import ForgotPassword from './templates/forgot-password';
-import SubscribeNewsletter from './templates/subscribe-newsletter';
 import VerifyEmail from './templates/verify-email';
 import { logMailError } from './safe-log';
 
 const EmailTemplates = {
   forgotPassword: ForgotPassword,
   verifyEmail: VerifyEmail,
-  subscribeNewsletter: SubscribeNewsletter,
   contactMessage: ContactMessage,
 } as const;
 
@@ -23,7 +20,6 @@ const en = { locale: 'en' as const };
 const EmailSubjects: Record<EmailTemplate, string> = {
   forgotPassword: mail_forgot_password_subject(undefined, en),
   verifyEmail: mail_verify_email_subject(undefined, en),
-  subscribeNewsletter: mail_subscribe_newsletter_subject(undefined, en),
   contactMessage: mail_contact_message_subject(undefined, en),
 };
 

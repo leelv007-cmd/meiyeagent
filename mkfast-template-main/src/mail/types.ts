@@ -13,7 +13,6 @@ export type MailProviderName = NonNullable<
 export type EmailTemplate =
   | 'forgotPassword'
   | 'verifyEmail'
-  | 'subscribeNewsletter'
   | 'contactMessage';
 
 export interface SendEmailResult {
