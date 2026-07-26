@@ -463,6 +463,7 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
   );
 
   assert.deepEqual(keys, [
+    'skill:resolve:intent',
     'wf:task-image-text-note:s1:intent:0',
     'wf:task-image-text-note:s2:context:0',
     'wf:task-image-text-note:s3:image_text_note:0',

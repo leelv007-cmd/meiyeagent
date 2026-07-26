@@ -674,9 +674,27 @@ async function runNoteHarnessWorkflow(
   const reportProgress = (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: eventSequence++ });
+  const intentSkills = await resolveIntentStageSkills(
+    workflowId,
+    request,
+    ports,
+    runtime,
+  );
   const intent = await runtime.runStep(
-    harnessEffectKey(workflowId, 1, 'intent', '0'),
-    () => ports.nameIntent({ workflowId, request }),
+    harnessEffectKey(
+      workflowId,
+      1,
+      skillEffectUnit('intent', intentSkills.instructions),
+      '0',
+    ),
+    () =>
+      ports.nameIntent({
+        workflowId,
+        request,
+        ...(intentSkills.instructions.length > 0
+          ? { skillInstructions: intentSkills.instructions }
+          : {}),
+      }),
   );
   if (intent.declaration.deliveryLayer !== 'finished_media') {
     throw new HarnessMediaScopeError(
@@ -690,6 +708,7 @@ async function runNoteHarnessWorkflow(
     ports,
     runtime,
     reportProgress,
+    skills: intentSkills,
   });
   let activeRequest = routed.request;
   await trace(runtime, workflowId, 'intent_naming', {
