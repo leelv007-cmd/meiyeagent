@@ -1,6 +1,4 @@
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig } from 'vite';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import viteReact from '@vitejs/plugin-react';
@@ -11,55 +9,6 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import contentCollections from '@content-collections/vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { paraglideCompilerOptions } from './paraglide.config';
-
-const serviceWorkerTemplatePath = fileURLToPath(
-  new URL('./src/components/pwa/service-worker.js', import.meta.url)
-);
-
-function renderServiceWorker(cacheVersion: string) {
-  return readFileSync(serviceWorkerTemplatePath, 'utf8').replace(
-    '__PWA_CACHE_VERSION__',
-    cacheVersion
-  );
-}
-
-function pwaServiceWorker(): Plugin {
-  return {
-    name: 'pwa-service-worker',
-    configureServer(server) {
-      server.middlewares.use((request, response, next) => {
-        const pathname = new URL(request.url ?? '/', 'http://localhost')
-          .pathname;
-        if (pathname !== '/sw.js') {
-          next();
-          return;
-        }
-
-        response.statusCode = 200;
-        response.setHeader('Content-Type', 'application/javascript');
-        response.setHeader('Cache-Control', 'no-store');
-        response.setHeader('Service-Worker-Allowed', '/');
-        response.end(renderServiceWorker('development'));
-      });
-    },
-    generateBundle(_options, bundle) {
-      if (this.environment.name !== 'client') {
-        return;
-      }
-
-      const cacheVersion = createHash('sha256')
-        .update(Object.keys(bundle).sort().join('|'))
-        .digest('hex')
-        .slice(0, 12);
-
-      this.emitFile({
-        type: 'asset',
-        fileName: 'sw.js',
-        source: renderServiceWorker(cacheVersion),
-      });
-    },
-  };
-}
 
 /**
  * Vite configuration
@@ -75,7 +24,6 @@ const config = defineConfig(({ command }) => ({
     },
   },
   plugins: [
-    pwaServiceWorker(),
     devtools({
       eventBusConfig: {
         port: 0,

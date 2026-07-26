@@ -57,7 +57,7 @@ Incoming request → Cloudflare Worker (`src/server.ts`) → TanStack Start hand
 
 - **Server functions**: Defined with `createServerFn()` from `@tanstack/react-start`. Located in `src/api/`. Support `.inputValidator()` (Zod) and `.middleware()` chains. Called directly from client code.
 
-- **Provider pattern**: Mail, storage, newsletter, notification, and payment each use a provider abstraction (`src/*/provider/`) so implementations can be swapped (e.g., `src/mail/provider/resend.ts`, `src/storage/provider/r2.ts`).
+- **Provider pattern**: Mail, storage, notification, and payment each use a provider abstraction (`src/*/provider/`) so implementations can be swapped (e.g., `src/mail/provider/resend.ts`, `src/storage/provider/r2.ts`).
 
 - **Middleware**: `src/middlewares/auth-middleware.ts` (requires login) and `src/middlewares/admin-middleware.ts` (requires admin role) used with server functions.
 
@@ -68,13 +68,12 @@ Incoming request → Cloudflare Worker (`src/server.ts`) → TanStack Start hand
 | Directory | Purpose |
 |-----------|---------|
 | `src/routes/` | File-based routes (pages, API handlers, webhooks) |
-| `src/api/` | Server functions (payment, users, contact, newsletter, files) |
+| `src/api/` | Server functions (payment, users, contact, files) |
 | `src/auth/` | Better Auth config (`auth.ts` server, `client.ts` client) |
 | `src/db/` | Drizzle schemas (`auth.schema.ts` auto-generated, `app.schema.ts` app tables), migrations, types |
 | `src/payment/` | Stripe / Creem integration (checkout, portal, webhooks) |
 | `src/mail/` | Resend / Cloudflare Email — provider, templates (React components), rendering |
 | `src/storage/` | Cloudflare R2 file storage |
-| `src/newsletter/` | Resend and Beehiiv newsletter via API |
 | `src/notification/` | Discord/Feishu webhook notifications |
 | `src/components/ui/` | shadcn/ui components (auto-generated, excluded from linting) |
 | `src/config/` | Site configuration (website.ts is the main config for features, pricing, metadata) |

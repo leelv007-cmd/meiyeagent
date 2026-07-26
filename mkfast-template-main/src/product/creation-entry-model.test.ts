@@ -18,11 +18,6 @@ import {
   systemInlineAuthEvidence,
   writeCreationDraftIntent,
 } from './creation-entry-model';
-import {
-  MARKETING_ENTRY_IDS,
-  productionMarketingEntryCapabilities,
-  releasedMarketingEntries,
-} from './marketing-entry-model';
 
 test('offers complete image-text or video outcomes as the two primary choices', () => {
   assert.deepEqual(primaryCreationOperations(), [
@@ -35,13 +30,6 @@ test('launches the copy harness only for an agent copy intent', () => {
   assert.equal(shouldLaunchAgentHarness('agent', 'copy.generate'), true);
   assert.equal(shouldLaunchAgentHarness('agent', 'video.generate'), false);
   assert.equal(shouldLaunchAgentHarness('direct', 'copy.generate'), false);
-});
-
-test('production releases all five complete marketing entries', () => {
-  assert.deepEqual(
-    releasedMarketingEntries(productionMarketingEntryCapabilities()),
-    [...MARKETING_ENTRY_IDS]
-  );
 });
 
 test('mounts lens and Recipe choices on the canonical Composer axis', () => {

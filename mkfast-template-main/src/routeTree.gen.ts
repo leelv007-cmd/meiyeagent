@@ -12,8 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
-import { Route as PwaProofRouteImport } from './routes/pwa-proof'
-import { Route as PrototypeMarketingHomeRouteImport } from './routes/prototype-marketing-home'
 import { Route as ProStudioRouteImport } from './routes/pro-studio'
 import { Route as ManifestDotjsonRouteImport } from './routes/manifest[.]json'
 import { Route as HerouiSpikeRouteImport } from './routes/heroui-spike'
@@ -129,16 +127,6 @@ const SettingsRoute = SettingsRouteImport.update({
 const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
   id: '/robots.txt',
   path: '/robots.txt',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PwaProofRoute = PwaProofRouteImport.update({
-  id: '/pwa-proof',
-  path: '/pwa-proof',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrototypeMarketingHomeRoute = PrototypeMarketingHomeRouteImport.update({
-  id: '/prototype-marketing-home',
-  path: '/prototype-marketing-home',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProStudioRoute = ProStudioRouteImport.update({
@@ -666,8 +654,6 @@ export interface FileRoutesByFullPath {
   '/heroui-spike': typeof HerouiSpikeRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
   '/pro-studio': typeof ProStudioRoute
-  '/prototype-marketing-home': typeof PrototypeMarketingHomeRoute
-  '/pwa-proof': typeof PwaProofRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -771,8 +757,6 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
   '/pro-studio': typeof ProStudioRoute
-  '/prototype-marketing-home': typeof PrototypeMarketingHomeRoute
-  '/pwa-proof': typeof PwaProofRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/cookie': typeof legalsCookieRoute
@@ -879,8 +863,6 @@ export interface FileRoutesById {
   '/heroui-spike': typeof HerouiSpikeRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
   '/pro-studio': typeof ProStudioRoute
-  '/prototype-marketing-home': typeof PrototypeMarketingHomeRoute
-  '/pwa-proof': typeof PwaProofRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -989,8 +971,6 @@ export interface FileRouteTypes {
     | '/heroui-spike'
     | '/manifest.json'
     | '/pro-studio'
-    | '/prototype-marketing-home'
-    | '/pwa-proof'
     | '/robots.txt'
     | '/settings'
     | '/sitemap.xml'
@@ -1094,8 +1074,6 @@ export interface FileRouteTypes {
     | '/auth'
     | '/manifest.json'
     | '/pro-studio'
-    | '/prototype-marketing-home'
-    | '/pwa-proof'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/cookie'
@@ -1201,8 +1179,6 @@ export interface FileRouteTypes {
     | '/heroui-spike'
     | '/manifest.json'
     | '/pro-studio'
-    | '/prototype-marketing-home'
-    | '/pwa-proof'
     | '/robots.txt'
     | '/settings'
     | '/sitemap.xml'
@@ -1310,8 +1286,6 @@ export interface RootRouteChildren {
   HerouiSpikeRoute: typeof HerouiSpikeRouteWithChildren
   ManifestDotjsonRoute: typeof ManifestDotjsonRoute
   ProStudioRoute: typeof ProStudioRoute
-  PrototypeMarketingHomeRoute: typeof PrototypeMarketingHomeRoute
-  PwaProofRoute: typeof PwaProofRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -1369,20 +1343,6 @@ declare module '@tanstack/react-router' {
       path: '/robots.txt'
       fullPath: '/robots.txt'
       preLoaderRoute: typeof RobotsDottxtRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pwa-proof': {
-      id: '/pwa-proof'
-      path: '/pwa-proof'
-      fullPath: '/pwa-proof'
-      preLoaderRoute: typeof PwaProofRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/prototype-marketing-home': {
-      id: '/prototype-marketing-home'
-      path: '/prototype-marketing-home'
-      fullPath: '/prototype-marketing-home'
-      preLoaderRoute: typeof PrototypeMarketingHomeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pro-studio': {
@@ -2307,8 +2267,6 @@ const rootRouteChildren: RootRouteChildren = {
   HerouiSpikeRoute: HerouiSpikeRouteWithChildren,
   ManifestDotjsonRoute: ManifestDotjsonRoute,
   ProStudioRoute: ProStudioRoute,
-  PrototypeMarketingHomeRoute: PrototypeMarketingHomeRoute,
-  PwaProofRoute: PwaProofRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SettingsRoute: SettingsRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,

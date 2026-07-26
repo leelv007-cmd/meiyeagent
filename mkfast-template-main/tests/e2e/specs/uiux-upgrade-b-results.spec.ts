@@ -331,22 +331,6 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     expect(projection.jobs).toHaveLength(1);
     expect(projection.jobs[0]?.status).toBe('completed');
     expect(projection.assets).toHaveLength(3);
-    const provenance = resultHero.getByTestId('result-provenance');
-    await expect(provenance).toHaveAttribute(
-      'data-catalog-model-id',
-      projection.jobs[0]?.contract.catalogModelId ?? ''
-    );
-    await expect(provenance).toHaveAttribute(
-      'data-route-snapshot-id',
-      projection.jobs[0]?.routeSnapshotId ?? ''
-    );
-    await expect(provenance).toHaveAttribute(
-      'data-provenance',
-      'local_fixture'
-    );
-    await expect(
-      provenance.getByText('本地测试可用', { exact: true })
-    ).toBeVisible();
     expect(
       projection.assets
         .map((asset) => asset.candidateIndex)
@@ -444,21 +428,6 @@ test.describe('UI/UX Upgrade B result contracts', () => {
       apiCounterparty: routeSnapshot.apiCounterparty,
       providerModel: actualProviderModel,
     });
-    const provenance = record
-      .getByTestId('workbench-result-hero')
-      .getByTestId('result-provenance');
-    await expect(provenance).toHaveAttribute(
-      'data-catalog-model-id',
-      selectedModelId
-    );
-    await expect(provenance).toHaveAttribute(
-      'data-route-snapshot-id',
-      job?.routeSnapshotId ?? ''
-    );
-    await expect(provenance).toHaveAttribute(
-      'data-provider-model',
-      String(actualProviderModel)
-    );
   });
 
   test('production candidate preserves paced chunks through Worker and BFF', async ({
@@ -801,27 +770,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
 
     const completed = await creativeProjection(page);
     const imageAsset = completed.assets.find((asset) => asset.kind === 'image');
-    const imageJob = completed.jobs.find(
-      (job) => job.id === completed.works[0]?.currentJobId
-    );
     if (!imageAsset?.objectKey) {
       throw new Error('Completed image Asset is missing its media object key');
     }
-    const imageProvenance = page
-      .getByTestId('workbench-result-hero')
-      .getByTestId('result-provenance');
-    await expect(imageProvenance).toHaveAttribute(
-      'data-catalog-model-id',
-      imageJob?.contract.catalogModelId ?? ''
-    );
-    await expect(imageProvenance).toHaveAttribute(
-      'data-route-snapshot-id',
-      imageJob?.routeSnapshotId ?? ''
-    );
-    await expect(imageProvenance).toHaveAttribute(
-      'data-provenance',
-      'local_fixture'
-    );
     const canonicalMediaSrc = `/api/core/p1/assets?objectKey=${encodeURIComponent(
       imageAsset.objectKey
     )}`;

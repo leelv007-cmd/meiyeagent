@@ -76,10 +76,6 @@ export const serverEnv = createEnv({
     CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
     CLOUDFLARE_API_TOKEN: z.string().optional(),
 
-    // Newsletter (Beehiiv)
-    BEEHIIV_API_KEY: z.string().optional(),
-    BEEHIIV_PUBLICATION_ID: z.string().optional(),
-
     // Notification (Discord and Feishu)
     DISCORD_WEBHOOK_URL: z.string().optional(),
     FEISHU_WEBHOOK_URL: z.string().optional(),

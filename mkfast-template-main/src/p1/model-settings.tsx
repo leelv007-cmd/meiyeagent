@@ -138,7 +138,7 @@ function ModelStatus({ model }: { model: CatalogModelView }) {
   );
 }
 
-/** Merchant dual-end channel label (F-J-01); same keys as ModelCardPicker. */
+/** Merchant dual-end channel label (F-J-01); shared keys with the Composer. */
 function ModelChannelReadinessBadge({ model }: { model: CatalogModelView }) {
   if (model.channelReadiness === 'multi_channel_ready') {
     return (

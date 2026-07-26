@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+import { PRODUCT_THEME_COLOR } from '@/config/theme';
+import { Route as manifestRoute } from '@/routes/manifest[.]json';
 import { LOCALIZED_PATHS } from './locale';
 import { Routes } from './routes';
 
@@ -47,14 +49,44 @@ test('the unused starter dashboard data-table demo is removed', () => {
   );
 });
 
-test('the mobile primitive proof is unavailable in production', () => {
-  const source = readFileSync(
-    resolve(process.cwd(), 'src/routes/pwa-proof.tsx'),
-    'utf8'
-  );
+test('the manifest and the document head take their theme colour from one source', async () => {
+  const handlers = manifestRoute.options.server?.handlers;
+  assert.ok(handlers, 'the manifest route must declare server handlers');
+  assert.ok(typeof handlers !== 'function');
+  const get = handlers.GET;
+  assert.ok(get, 'the manifest route must serve GET');
+  // The handler ignores its router context, so an empty one is enough here;
+  // building a real one would not make the manifest body any more real.
+  type HandlerCtx = NonNullable<
+    Parameters<NonNullable<typeof handlers.GET>>[0]
+  >;
+  const response = await get({} as HandlerCtx);
+  assert.ok(response instanceof Response);
+  const manifest = (await response.json()) as Record<string, unknown>;
+  const read = (file: string) =>
+    readFileSync(resolve(process.cwd(), file), 'utf8');
+  const root = read('src/routes/__root.tsx');
+  const manifestSource = read('src/routes/manifest[.]json.ts');
 
-  assert.match(source, /import\.meta\.env\.PROD/);
-  assert.match(source, /throw notFound\(\)/);
+  // Same source, not merely the same value today. Both ends must reference the
+  // shared constant: a literal that happens to match it right now is exactly
+  // the drift the "keep in sync" comment failed to prevent, so each end is
+  // checked for the reference AND for the absence of a restated hex literal.
+  assert.equal(
+    response.headers.get('Content-Type'),
+    'application/manifest+json'
+  );
+  assert.equal(manifest.background_color, PRODUCT_THEME_COLOR);
+  assert.equal(manifest.theme_color, PRODUCT_THEME_COLOR);
+  assert.match(manifestSource, /background_color:\s*PRODUCT_THEME_COLOR,/u);
+  assert.match(manifestSource, /theme_color:\s*PRODUCT_THEME_COLOR,/u);
+  assert.doesNotMatch(manifestSource, /_color:\s*['"]#/u);
+  assert.match(
+    root,
+    /\{\s*name:\s*'theme-color',\s*content:\s*PRODUCT_THEME_COLOR\s*\}/u
+  );
+  assert.doesNotMatch(root, /'theme-color',\s*content:\s*['"]#/u);
+  assert.match(root, /rel:\s*'manifest',\s*href:\s*'\/manifest\.json'/u);
 });
 
 test('published brand copy and website config contain no starter vendor residue', () => {
@@ -97,7 +129,6 @@ test('shared product shell copy uses the Chinese-first Paraglide track', () => {
 
 test('creation commands keep localized display strings out of persisted facts', () => {
   const sources = [
-    'src/product/creation-shelf.tsx',
     'src/product/canvas-work-page.tsx',
     'src/product/composer/composer-home.tsx',
     'src/product/results/result-center-page.tsx',

@@ -61,14 +61,11 @@ Read at **Worker request time**. Used for secrets, API keys, and server-only con
 | `BETTER_AUTH_SECRET` | Better Auth session signing | Yes (prod) | Auth; default only for CLI; [Mail](./mail.md) for verification/reset |
 | `GOOGLE_CLIENT_ID` | Google OAuth | No | Auth when Google login enabled |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth | No | Auth when Google login enabled |
-| **Mail & newsletter (Resend)** | | | |
-| `RESEND_API_KEY` | Resend API | No | [Mail](./mail.md), [Newsletter](./newsletter.md) (when using Resend) |
+| **Mail (Resend)** | | | |
+| `RESEND_API_KEY` | Resend API | No | [Mail](./mail.md) (when using Resend) |
 | **Mail (Cloudflare Email)** | | | |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID | No | [Mail](./mail.md); required when using Cloudflare provider |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token | No | [Mail](./mail.md); required when using Cloudflare provider |
-| **Newsletter (Beehiiv)** | | | |
-| `BEEHIIV_API_KEY` | Beehiiv API | No | Newsletter when provider is Beehiiv |
-| `BEEHIIV_PUBLICATION_ID` | Beehiiv publication | No | Newsletter when provider is Beehiiv |
 | **Notification** | | | |
 | `DISCORD_WEBHOOK_URL` | Discord webhook | No | Notification (Discord) |
 | `FEISHU_WEBHOOK_URL` | Feishu webhook | No | Notification (Feishu) |
