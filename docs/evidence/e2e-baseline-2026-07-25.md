@@ -77,6 +77,79 @@ recorded here so the next reader does not rediscover them. (2) and (3) are
 assertion-side and are exactly what the migration fixes: the new gate asserts
 neither the legacy projection nor a video budget the product cannot meet.
 
+## The new required gate, measured (2026-07-26, locked)
+
+`m04-browser-hard-gate.spec.ts`, last run at commit `b7de50dd`, through
+`.scratch/orca-run-2026-07-25/e2e-lock.sh`:
+
+| Case | Result |
+|---|---|
+| `copy → wechat_moments` | **passed, 13.1s** |
+| `image_text → xiaohongshu` | **passed, 59.2s** |
+| `video → douyin` | **skipped (declared `fixme`)** — blocked on two core walls, below |
+
+Each passing case walks submit → 白话进度 → 首 token (copy) / 两种图文方向
+(image_text) → 刷新恢复① → T08 双字段 body → Result Center → 采用 → 交付
+(完整发布包) → 刷新恢复②, with the D-098 C6 activation budget asserted (copy 2,
+image_text 3) and the D-111 neutral-identity check.
+
+Getting there took six product defects out of the way. They are recorded here
+because each one was on the merchant's own Day-0 path and none of them had a
+test that ran:
+
+1. **An inline-authorized image could not be submitted** (`composer-home.tsx`,
+   fixed in `d6912b68`). The submission gate reads `product.state`, which
+   `useProductState` fetches once on mount; every inline asset write goes
+   through the module-level `executeProductCommand`, which never updates it. So
+   the card said 「素材信息已确认」 and the submit button said 「当前素材还未确认
+   可用于宣传」 at the same time, and 图文/视频 — whose recipes require a source —
+   could not start at all. This is also the unexplained day-0 red at
+   `uiux-day0-contract.spec.ts:539`.
+2. **图文 delivered to a dead Result Center** (`39484352`). `imageFacts` reads
+   the legacy `creative_workbench` CreativeAssets, which the ContentPackage
+   seam does not write, so the worksurface stayed on 「等待图片候选…」 while the
+   status read 可发布.
+3. **…with no 采用 action** (same commit). `hasUsableCandidate` counts those
+   same rows, so the shell fell through to 「继续调整」.
+4. **…and adoption that could not succeed** (same commit).
+   `adopt_visual_selection` validates ids against those rows: 409
+   `INVALID_VISUAL_ASSET` for every new-seam run. 文案 already had the
+   package-native `adopt_harness_candidate` path; 图文 now shares it.
+5. **视频 cannot be submitted on a trial workspace at all.**
+   `apps/core/src/p1/execution-spine/submission-coordinator.ts`
+   `productUsageUnits` reserves `durationSeconds` units of the `video`
+   resource. Every other reader counts 成片 — `entitlement-module.ts` grants
+   trial 1 / starter 5 / growth 20 / pro 60, and the Composer's own `usageCost`
+   is 1 — so a 抖音成片 is refused `409 INSUFFICIENT_ENTITLEMENT` while the
+   quota card shows no shortfall, because client and server priced the same run
+   differently. **Not fixed here**: which unit is authoritative is a billing
+   decision, not a gate decision.
+6. **Reference-asset media execution is unwired.** With (5) patched locally as
+   a probe (reverted), the video run submitted, streamed and restored, then
+   died in media execution on 「Reference asset resolver is unavailable」
+   (`reference-asset-dispatch-guard.ts:16`). `ModelSupplyApplicationService` is
+   constructed without `referenceAssets` in both `apps/core/src/main.ts:614`
+   and `apps/core/src/job-worker.ts:415`, though both files build the composite
+   resolver for other callers. Any submission carrying a reference asset throws
+   — and 抖音成片 always carries one, it leads with a 案例图. **Not fixed here**:
+   core service wiring, outside this ticket.
+
+(5) and (6) are why `video` is `test.fixme` rather than asserted-and-red: both
+are named inline in the spec, and deleting that one call is the whole change
+once they land.
+
+### OI-76 — the composer submission segment, pinned
+
+T46 reported complementary environment-level flakes in this same segment: on
+main the click produced no POST and the wait burned 120s twice; on fe2 the same
+spec never saw `composer-quote-line`. The gate now asserts
+`composer-submit` is **enabled** before clicking, which is the single condition
+under which the click can create anything (`submitDisabled` in `composer-home`
+folds in the bound quote, upload readiness, quota and the frozen phase) — a
+disabled HeroUI `PromptInput.Send` swallows the click silently, which is the
+main-side symptom exactly. The quote-line wait went 30s → 60s. Restore② also
+no longer races a run that finished before the reload landed.
+
 ### The shared three-modal journey — red on the first case
 
 `ui-journey-three-modal.spec.ts` `copy:wechat_moments · desktop` failed at 1.6m
@@ -96,7 +169,9 @@ already clicks, and `assertJourneyRestored` asserts 「交付」 after reload in
 of the absence of a control that is absent on an unadopted run too.
 
 The three-modal spec has not been re-measured since that fix; it should be the
-first thing the next locked sweep runs.
+first thing the next locked sweep runs. Its `expectedActivations` for
+`image_text` was 2 and is now 3 — the 图文 direction choice is a real merchant
+click that no one had counted, because those cases had never run.
 
 ### Retired-workbench family — red before anything was touched
 
@@ -151,3 +226,9 @@ demoted spec would not add any.
   not claimed green or red here.
 - The `ui-journey-three-modal` failure has no captured error body.
 - The demoted family was not re-measured; see the reasoning above.
+- **视频 has never completed a browser journey in this lane.** Walls (5) and (6)
+  above are the first two; whether more sit behind them is unmeasured, because
+  the probe that lifted (5) stopped at (6).
+- `video-native-compiler.spec.ts` and `video-result-live-commands.spec.ts` sit
+  in the never-run chunks 7–8 and submit video the same way, so wall (5) very
+  likely reds them too. Not measured — stated as an inference, not a result.
