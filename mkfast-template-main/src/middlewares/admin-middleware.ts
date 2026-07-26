@@ -6,22 +6,10 @@ import { Routes } from '@/lib/routes';
 import { websiteConfig } from '@/config/website';
 import {
   ADMIN_ROLE,
+  adminForbiddenResponse,
+  adminUnauthorizedResponse,
   requireRecentAdminSession,
 } from '@/auth/recent-admin-session';
-
-function forbiddenResponse() {
-  return Response.json(
-    { success: false, error: 'Forbidden' },
-    { status: 403, headers: { 'Content-Type': 'application/json' } }
-  );
-}
-
-function unauthorizedResponse() {
-  return Response.json(
-    { success: false, error: 'Unauthorized' },
-    { status: 401, headers: { 'Content-Type': 'application/json' } }
-  );
-}
 
 /**
  * Admin Route middleware: requires authenticated user with role === 'admin'.
@@ -59,10 +47,10 @@ export const adminApiMiddleware = createMiddleware().server(
     const session = await createAuth().api.getSession({ headers });
 
     if (!session?.user) {
-      return unauthorizedResponse();
+      return adminUnauthorizedResponse();
     }
     if (session.user.role !== ADMIN_ROLE) {
-      return forbiddenResponse();
+      return adminForbiddenResponse();
     }
 
     return await next({
@@ -78,7 +66,7 @@ export const recentAdminApiMiddleware = createMiddleware().server(
   async ({ next }) => {
     const headers = getRequestHeaders();
     const authorization = await requireRecentAdminSession({ headers });
-    if ('response' in authorization) return authorization.response;
+    if (!authorization.ok) return authorization.response;
 
     return await next({ context: { userId: authorization.session.user.id } });
   }

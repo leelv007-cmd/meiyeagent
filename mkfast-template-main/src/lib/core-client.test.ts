@@ -35,7 +35,7 @@ test('workspace Core authorization lets a non-sensitive command continue with ca
     }
   );
 
-  assert.equal('session' in result, true);
+  assert.equal(result.ok, true);
   assert.deepEqual(calls, [
     {
       headers: new Headers(),
@@ -59,8 +59,8 @@ test('workspace Core authorization blocks a stale sensitive command with cache b
     }
   );
 
-  assert.equal('response' in result, true);
-  if (!('response' in result)) return;
+  assert.equal(result.ok, false);
+  if (result.ok) return;
   assert.equal(result.response.status, 403);
   assert.deepEqual(await result.response.json(), {
     code: 'RECENT_AUTHENTICATION_REQUIRED',

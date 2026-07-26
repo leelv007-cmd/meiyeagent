@@ -137,7 +137,7 @@ export async function forwardWorkspaceCoreRequest(
     body,
     (options) => createAuth().api.getSession(options)
   );
-  if ('response' in authorization) return authorization.response;
+  if (!authorization.ok) return authorization.response;
   const { session } = authorization;
 
   const workspace = await resolveActiveWorkspace(session.user.id);

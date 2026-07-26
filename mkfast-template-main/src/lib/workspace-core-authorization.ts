@@ -1,6 +1,7 @@
 import {
   requireRecentAdminSession,
   type AuthSessionGetter,
+  type RecentAdminSessionResult,
 } from '@/auth/recent-admin-session';
 import { requiresRecentAuthenticationForP1RequestBody } from '@/auth/recent-authentication';
 
@@ -9,7 +10,7 @@ export async function authorizeWorkspaceCoreRequest(
   resource: string,
   body: string | undefined,
   getSession: AuthSessionGetter
-) {
+): Promise<RecentAdminSessionResult> {
   if (
     resource === 'p1/commands' &&
     requiresRecentAuthenticationForP1RequestBody(body)
@@ -20,8 +21,9 @@ export async function authorizeWorkspaceCoreRequest(
   const session = await getSession({ headers: request.headers });
   if (!session?.user?.id || !session.user.emailVerified) {
     return {
+      ok: false,
       response: Response.json({ error: 'Unauthorized' }, { status: 401 }),
     };
   }
-  return { session };
+  return { ok: true, session };
 }

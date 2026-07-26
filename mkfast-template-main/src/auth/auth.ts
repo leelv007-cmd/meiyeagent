@@ -23,8 +23,8 @@ import { createAuthPlugins } from '@/auth/plugins';
 export function createAuth() {
   const emailVerificationPolicy = resolveEmailVerificationPolicy({
     appEnv: process.env.APP_ENV,
-    isDev: import.meta.env.DEV === true,
-    mode: import.meta.env.MODE,
+    isDev: import.meta.env?.DEV === true,
+    mode: import.meta.env?.MODE ?? '',
   });
 
   return betterAuth({
