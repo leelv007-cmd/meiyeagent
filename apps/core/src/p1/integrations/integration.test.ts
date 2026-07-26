@@ -126,7 +126,7 @@ describe('IntegrationApplicationService', () => {
             accessToken: 'access-secret',
             refreshToken: 'refresh-secret',
           }),
-          expiresAt: '2026-07-26T00:00:00.000Z',
+          expiresAt: '2030-01-01T00:00:00.000Z',
           scope: ['video.create.bind'],
         },
       },
@@ -1161,7 +1161,7 @@ describe('IntegrationApplicationService', () => {
             refreshToken: 'refresh',
           }),
           scope: ['video.create.bind'],
-          expiresAt: '2026-07-26T00:00:00.000Z',
+          expiresAt: '2030-01-01T00:00:00.000Z',
         },
       },
       'douyin-oauth'
@@ -1739,7 +1739,7 @@ describe('IntegrationApplicationService', () => {
       accessToken: 'access-v2',
       refreshToken: 'refresh-v2',
       scopes: ['video.create.bind', 'observe-current-scope'],
-      accessExpiresAt: '2026-07-26T00:00:00.000Z',
+      accessExpiresAt: '2030-01-01T00:00:00.000Z',
       refreshExpiresAt: '2026-08-10T00:00:00.000Z',
     });
     const refreshed = await service.refreshDouyinOAuth(
