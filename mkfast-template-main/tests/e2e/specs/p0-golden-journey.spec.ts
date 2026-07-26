@@ -106,7 +106,9 @@ test.describe('canonical product golden journey', () => {
     // name ('意向金额（可选）' / '最小备注') were renamed before T33 and never
     // re-synced here, so this step could not pass on the baseline either.
     await page.getByLabel('预计成交金额（可选）').fill('299');
-    await page.getByLabel('客户备注').fill('顾客从私信询问同款，人工关联用于复盘');
+    await page
+      .getByLabel('客户备注')
+      .fill('顾客从私信询问同款，人工关联用于复盘');
     await page.getByRole('button', { name: '记录私信线索' }).click();
     await expect(page.getByText('顾客从私信询问同款')).toBeVisible();
     // T33 / #227: the ledger reshelled onto HeroUI Pro V3, so the follow-up
