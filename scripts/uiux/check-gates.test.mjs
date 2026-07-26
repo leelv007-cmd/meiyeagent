@@ -15,6 +15,7 @@ test('root check defines all required gates in order', () => {
       'D-123 cost boundary',
       'decision ticket guard',
       'HeroUI mirror guard',
+      'works canonical projection guard',
     ]
   );
 });

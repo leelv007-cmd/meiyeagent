@@ -603,3 +603,28 @@ outbound seam messages against real core SSE. The container journey itself
   path (D-043 无冲突路径 0 张阻塞卡). Only behaviour is asserted, never the
   numbers — those belong to the entitlements projection.
 - Both themes × mobile/desktop render the family and write walkthrough shots.
+
+## T32 作品与对象页换壳（#226）
+
+`specs/works-reshell.spec.ts` covers the reshelled 作品 surface against real
+core. The four-shape rendering has a deterministic twin in
+`src/product/works/works-list.interaction.test.tsx` (fixture 产物 for
+copy/image/note/video); this spec proves the shape a live run produces.
+
+- One real creation delivers, and the same 作品 is visible on `/dashboard/works`
+  — the new surface, keyed by the ContentPackage the 交付卡 bound.
+- Every list row links into `/dashboard/works/…`; nothing routes back to a
+  legacy object or content deep link (唯一投影, ADR-0011).
+- 详情 revision 与交付卡一致: the detail's `data-package-id` /
+  `data-version-id` / `data-revision` are read off the canonical
+  `operations.content_packages` projection and must equal what the SSE terminal
+  snapshot bound on the card — two independent seams agreeing.
+- 导出动作成功: clicking 导出 posts the canonical `result-delivery/result_export`
+  command carrying the confirmed package, and a real download link comes back
+  with no error surfaced.
+- 轻编辑入口可达: the canonical `create_work_from_content_package` command makes
+  the 轻编辑 work a 作品 row, and its detail mounts LightComposerCanvas (KEEP
+  capability core) unchanged.
+- Both themes × mobile/desktop walk the list and the detail, assert no sideways
+  scroll, and write walkthrough shots to
+  `.scratch/t32-works-reshell-2026-07-26/`.
