@@ -1,16 +1,29 @@
 /**
  * 唯一投影静态断言 — T32 / #226 (ADR-0011 / D-127).
  *
- * The reshelled 作品 surface reads the canonical projection and nothing else.
- * Two things are asserted here rather than in a unit test, because both are
- * properties of the *file set* and both are what a later ticket would silently
- * break:
+ * Asserted here rather than in a unit test because every one of these is a
+ * property of the *file set*, and each is what a later ticket would silently
+ * break. Exactly three claims, no more:
  *
- *  1. no `legacy_projection_*` reference and no import of a delete-after-reshell
- *     module anywhere under product/works or the works routes;
- *  2. the works routes point at the new surface — that is one half of T38's
- *     delete predicate (换壳全合入 ＋ 旧页零路由引用), so it must fail loudly if
- *     someone routes 作品 back through the old aggregate.
+ *  1. no `legacy_projection_*` reference anywhere under product/works or the
+ *     works routes, and no module specifier that resolves to a
+ *     delete-after-reshell module;
+ *  2. every `operationsQuery` action the surface reads is on the canonical
+ *     allowlist — this is what makes "reads the canonical projection" a checked
+ *     claim rather than a comment;
+ *  3. the works routes point at the new surface — one half of T38's delete
+ *     predicate (换壳全合入 ＋ 旧页零路由引用), so it fails loudly if someone
+ *     routes 作品 back through the old aggregate.
+ *
+ * Specifiers are matched against the whole file text, not line by line. A
+ * line-anchored `^\s*import` test reads as if it covers imports and does not:
+ * a multi-line `import {\n …\n} from '…'` puts the specifier on a line that
+ * starts with `}`, and `await import('…')` never starts with `import` at all.
+ * Both forms bind the module just as hard as the single-line form.
+ *
+ * The match is deliberately not comment-aware: naming a retiring module in a
+ * `from '…'`-shaped string is a reference worth failing on, and rewording a
+ * comment is cheaper than a guard that can be talked around.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -50,6 +63,29 @@ function walk(dir) {
   return out;
 }
 
+/**
+ * Every way a module specifier can be bound: `from '…'` (single or multi-line
+ * import/export), a bare side-effect `import '…'`, `import('…')` including the
+ * split-across-lines form, and `require('…')`.
+ */
+const MODULE_SPECIFIER =
+  /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)['"]([^'"\n]+)['"]/gu;
+
+/** Canonical reads the 作品 surface is allowed to issue (唯一投影, ADR-0011). */
+const CANONICAL_QUERY_ACTIONS = [
+  'canonical_history',
+  'content_packages',
+  'export_receipts',
+  'templates',
+  'work',
+];
+
+const QUERY_ACTION = /\boperationsQuery\s*(?:<[^>]*>)?\s*\(\s*['"]([^'"]+)['"]/gu;
+
+function lineOf(text, index) {
+  return text.slice(0, index).split(/\r?\n/u).length;
+}
+
 export function findWorksProjectionViolations(files) {
   const violations = [];
   for (const file of files) {
@@ -63,18 +99,26 @@ export function findWorksProjectionViolations(files) {
           reason: 'legacy_projection_* reference',
         });
       }
-      const imported = /^\s*(?:import|export)[^'"]*['"]([^'"]+)['"]/u.exec(line);
-      if (!imported) continue;
+    }
+    for (const match of file.text.matchAll(MODULE_SPECIFIER)) {
       const target = RETIRING_MODULES.find((module) =>
-        imported[1].endsWith(`/${module}`)
+        match[1].endsWith(`/${module}`)
       );
       if (target) {
         violations.push({
-          line: index + 1,
+          line: lineOf(file.text, match.index),
           path: file.path,
-          reason: `imports delete-after-reshell module "${target}"`,
+          reason: `binds delete-after-reshell module "${target}"`,
         });
       }
+    }
+    for (const match of file.text.matchAll(QUERY_ACTION)) {
+      if (CANONICAL_QUERY_ACTIONS.includes(match[1])) continue;
+      violations.push({
+        line: lineOf(file.text, match.index),
+        path: file.path,
+        reason: `non-canonical operationsQuery action "${match[1]}"`,
+      });
     }
   }
   return violations;

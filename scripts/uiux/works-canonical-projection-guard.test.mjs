@@ -38,7 +38,90 @@ test('binding a delete-after-reshell module is a violation', () => {
   ]);
   assert.deepEqual(
     findings.map((finding) => finding.reason),
-    ['imports delete-after-reshell module "canonical-media-gallery"']
+    ['binds delete-after-reshell module "canonical-media-gallery"']
+  );
+});
+
+/**
+ * The forms a line-anchored `^\s*import` test walks straight past. Each one
+ * binds the retiring module exactly as hard as the single-line import does, so
+ * each has to be a finding. This is the hole the adversarial review found; it
+ * stays closed because these cases fail if the matcher ever goes back to
+ * reading one line at a time.
+ */
+const MULTILINE_MUTATIONS = [
+  {
+    name: 'a multi-line named import',
+    text: [
+      'import {',
+      '  CanvasWorkPage,',
+      '  type CanvasWorkPageProps,',
+      "} from '@/product/canvas-work-page';",
+    ].join('\n'),
+  },
+  {
+    name: 'a dynamic import()',
+    text: "const page = await import('@/product/creative-object-page');",
+  },
+  {
+    name: 'a dynamic import() split across lines',
+    text: [
+      'const page = await import(',
+      "  '@/product/canonical-object-route-page'",
+      ');',
+    ].join('\n'),
+  },
+  {
+    name: 'a bare side-effect import',
+    text: "import '@/product/canonical-asset-actions';",
+  },
+  {
+    name: 'a multi-line re-export',
+    text: [
+      'export {',
+      '  legacyContentPackageProjection,',
+      "} from '@/product/legacy-content-package-projection';",
+    ].join('\n'),
+  },
+  {
+    name: 'a lazy require()',
+    text: "const card = require('@/product/content-package-card');",
+  },
+  {
+    name: 'an import with the specifier on its own line',
+    text: ['import { CanonicalHistoryPage }', "  from", "  '@/product/canonical-history-page';"].join(
+      '\n'
+    ),
+  },
+];
+
+for (const mutation of MULTILINE_MUTATIONS) {
+  test(`${mutation.name} still binds a delete-after-reshell module`, () => {
+    const findings = findWorksProjectionViolations([
+      { path: 'src/product/works/works-detail-page.tsx', text: mutation.text },
+    ]);
+    assert.equal(
+      findings.length,
+      1,
+      `expected exactly one finding, got ${JSON.stringify(findings)}`
+    );
+    assert.match(findings[0].reason, /binds delete-after-reshell module/u);
+  });
+}
+
+test('an off-allowlist operationsQuery action is a violation', () => {
+  const findings = findWorksProjectionViolations([
+    {
+      path: 'src/product/works/works-queries.ts',
+      text: [
+        "operationsQuery<PublicContentPackage[]>('content_packages', {}, signal),",
+        "operationsQuery<Legacy[]>('legacy_works_aggregate', {}, signal),",
+      ].join('\n'),
+    },
+  ]);
+  assert.deepEqual(
+    findings.map((finding) => finding.reason),
+    ['non-canonical operationsQuery action "legacy_works_aggregate"']
   );
 });
 
