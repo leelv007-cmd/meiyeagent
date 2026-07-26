@@ -208,6 +208,17 @@ async function p1Query<T>(
   ) as Promise<T>;
 }
 
+/**
+ * Reverse assertion on merchant language. Scope, stated so nobody reads a green
+ * run as full coverage:
+ *   - `innerText()` returns **rendered** text only — a leak inside a collapsed
+ *     accordion, a closed dialog, an `aria-hidden` branch or an unopened tab is
+ *     not scanned.
+ *   - matching is **per trimmed line**, so a leak split across a line break
+ *     (a wrapped UUID, a slug broken by the layout) is not matched.
+ * What it does cover: every visible line of the four sampled surfaces, for
+ * leaks that fit on one line.
+ */
 async function assertMerchantLanguage(page: Page, surface: string) {
   const text = await page.locator('body').innerText();
   const leaks = text
@@ -503,14 +514,19 @@ async function assertBillingReconciled(
  * 三路交付.
  *
  * The panel projects three capability groups and the matrix walks all three:
- *   - 取文件 — the real 完整发布包 download, manifest and archive verified by
- *     `downloadFullPackage`.
- *   - 协办交接 — the group is visible and its actions are honestly gated. At
- *     launch there is no approved external-send receipt, so 分享/辅助交接 must
- *     say why rather than present a dead control (OI-78 P2-2: the one-shot
- *     link ↔ handoff token binding is only observable once such a receipt
- *     exists, and no browser path creates one today — recorded as a gap, not
- *     faked here).
+ *   - 取文件 — the real 完整发布包 download, through `downloadFullPackage`. What
+ *     that verifies differs by leg: `packageFormat: 'zip'` (图文/视频) goes to
+ *     `assertZipDownload` — manifest, caption, checklist and the declared file
+ *     bytes; `packageFormat: 'text'` (文案) goes to `assertTextDownload` — file
+ *     name and body only, no manifest (`ui-journey.ts`, the format branch in
+ *     `downloadFullPackage`).
+ *   - 协办交接 — the group is visible and both of its actions are asserted
+ *     unconditionally disabled, because no leg here creates an ApprovalReceipt.
+ *     Note what this does *not* cover: the inbox ApprovalCard does create
+ *     receipts in a real browser (`pending-actions-inbox.spec.ts`), so the
+ *     uncovered half is the *unlocked* state of this panel and the one-shot
+ *     link → `/dashboard/handoff/<token>` → 回报 chain — recorded as a gap
+ *     (报告 §7 G-5), not faked here.
  *   - 直接发布 — hidden at launch (`data-direct-publish-hidden`), asserted by
  *     `openDeliveryPanel`.
  * 发布确认 (人工发布回报) closes the loop after the package is in hand.
@@ -534,16 +550,23 @@ async function assertThreeDeliveryRoutes(
   for (const action of ['system_share', 'assisted'] as const) {
     const control = page.getByTestId(`delivery-action-${action}`);
     await expect(control).toBeVisible();
-    if ((await control.getAttribute('data-enabled')) === 'false') {
-      await expect(
-        control,
-        `a gated ${action} control must be disabled, not merely labelled`
-      ).toBeDisabled();
-      await expect(
-        handoffGroup.getByText('外部发送前需完成一次性批准').first(),
-        'a gated 协办交接 must say why in merchant language'
-      ).toBeVisible();
-    }
+    // Unconditional on purpose. No leg here creates an ApprovalReceipt, so
+    // `hasExternalSendApproval` is false on every leg and both controls must be
+    // disabled. Gating this on `data-enabled === 'false'` would make the check
+    // skip itself exactly when `projectDeliveryCapabilityGroups`
+    // (`delivery-capability-groups.ts`, `shareOk`/`assistedOk`) regresses to
+    // enabled-without-approval — the M-04 病症 this matrix exists to catch.
+    // If a future leg does create a receipt, branch on the receipt that leg
+    // created and assert both sides; never on what the DOM reports.
+    await expect(
+      control,
+      `没有一次性批准时 ${action} 必须置灰，不能只靠文案`
+    ).toBeDisabled();
+    await expect(control).toHaveAttribute('data-enabled', 'false');
+    await expect(
+      handoffGroup.getByText('外部发送前需完成一次性批准').first(),
+      'a gated 协办交接 must say why in merchant language'
+    ).toBeVisible();
   }
 
   await assertMerchantLanguage(page, `交付面板（${contract.deliveryTarget}）`);
@@ -677,10 +700,22 @@ test.describe('T39 R-gate journey matrix', () => {
 
       await expect
         .poll(() => submissions.length, {
-          message: 'the run must have posted exactly one submission',
+          message: 'the run must have posted at least one submission',
           timeout: 30_000,
         })
-        .toBe(1);
+        .toBeGreaterThanOrEqual(1);
+      // Polling for `=== 1` would pass on the first observation and never see a
+      // second submission that arrives after it. Let the network settle, then
+      // require exactly one — counted by distinct task id, so a retried
+      // transport cannot be mistaken for a second run.
+      await page.waitForTimeout(1_000);
+      const submittedTaskIds = new Set(
+        submissions.map((submission) => submission.task?.id)
+      );
+      expect(
+        submittedTaskIds.size,
+        `the run must have posted exactly one submission — saw ${submissions.length} accepted response(s) carrying ${submittedTaskIds.size} distinct task id(s)`
+      ).toBe(1);
       const taskId = submissions[0]?.task?.id;
       expect(
         taskId,
