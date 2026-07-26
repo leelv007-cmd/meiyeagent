@@ -648,3 +648,72 @@ copy/image/note/video); this spec proves the shape a live run produces.
   the bar for ambient headers and DESIGN.md:259 extends it to vendored
   components; the ratios are printed as `[contrast] …` lines so a run reports
   numbers rather than a pass/fail bit.
+
+## M-04 required browser hard gate（T37 / #231）
+
+`specs/m04-browser-hard-gate.spec.ts` is the browser journey the ordinary pull
+request runs. `scripts/ci/run-pr-production-journey.sh` executes it beside the
+assembly gate in the `production-main-journey` job, which the `required`
+aggregation job depends on — so this is the spec that has to be green for a
+branch-protection required check to pass, not a strict file that exists off the
+required path.
+
+Three modalities are locked: copy → 朋友圈, image_text → 小红书, video → 抖音.
+The contract lookup throws if `JOURNEY_CONTRACTS` stops carrying one of them,
+because a gate that greens while 视频 is uncovered is exactly the M-04 finding.
+Per modality, one test walks:
+
+- **提交** on `/api/core/p1/composer/submissions` — a 202 carrying real task /
+  work / contentPackage / snapshot / usageReservation ids, and a body whose T08
+  双字段 pair (`contentPackagePlatform` × `distributionTarget`) matches the
+  platform the delivered package turns out to carry.
+- **流式候选** — 白话进度 announcements in merchant language (no workflow /
+  revision / provider vocabulary), and for copy and image_text a real first
+  token on `composer-candidate-stream` while the run is still going. Video is an
+  ADR-0010 long task with no token stream, so it is held to the announcement.
+- **Day-0 严格断言**, migrated here from `uiux-day0-contract.spec.ts`: exactly
+  `expectedActivations` isTrusted clicks to the first usable result (2, or 3 for
+  video's Brief confirm), zero pre-submit form, and the first-token endpoint.
+  The counter is frozen before the recovery reload so no later click can be
+  laundered into the budget.
+- **刷新恢复 ①** — reload mid-run; the merchant returns to the same conversation
+  with the merchant turn and the replayed progress, and exactly one submission
+  has been posted for the whole journey (a second POST would be the second
+  submit truth ADR-0014 forbids).
+- **采用 → 交付** — the canonical adopt mutation, then the delivery panel and a
+  real non-empty package whose manifest platform is this contract's.
+- **刷新恢复 ②** — `assertJourneyRestored`: the result surface, the delivery
+  panel, and the adopted state all survive a reload.
+
+Identity stays neutral (D-111 / M-03): the tenant registers none, and the run is
+required to have delivered without inventing one. Nothing here needs a
+credential — `MODEL_EXECUTION_MODE=fixture` is injected by the CI script and the
+Playwright config, so a missing provider key cannot redden this gate.
+
+Companion static gate: `src/lib/e2e-hard-gate-contract.test.ts` asserts this
+spec is in the required set, that no browser test listens for the retired
+`create_creative_work` / `submit_creative_work` pair, that every demoted old UI
+spec is marked in place and stays out of the required set, and that no spec
+writes a screenshot into the tracked `docs/evidence/` tree.
+
+### Demoted old UI specs
+
+The Z1 cutover removed the unified creation workbench from `src`, so specs that
+reach the product through 「建立创作记录」/「快速起步预设」/`execute-tool-action`
+cannot pass. They are demoted (`test.describe.fixme` plus an `M-04 DEMOTED`
+header naming what replaced them), not deleted — no disposition batch approves
+deleting them, and the contracts underneath still need relanding:
+
+- `specs/uiux-upgrade-b-composer.spec.ts` — pre-submit contracts (whole file).
+- `specs/uiux-upgrade-b-results.spec.ts` — result contracts (whole file).
+- `specs/uiux-upgrade-b-async.spec.ts` — asynchronous Job contracts (whole file).
+- `specs/uiux-upgrade-b-i18n-motion.spec.ts` — the reduced-motion case only; the
+  locale and mobile cases in that file still run.
+- `specs/uiux-creation-loop.spec.ts` and `specs/uiux-upgrade-b-video.spec.ts` —
+  the 海报 / 三平台版本 / 成片 assertions of the retired ContentPackageDetail,
+  marked at the assertion with their T38 coordinate.
+
+`specs/mobile-product-shell.spec.ts` lost its already-`fixme`d mobile Result
+journey outright: its only mechanism was holding a retired command, and its
+second half addressed `/dashboard/tasks`, which T34 retired. Relanding belongs
+to T38.

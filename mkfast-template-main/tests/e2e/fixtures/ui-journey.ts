@@ -530,7 +530,14 @@ export async function adjustResult(
 }
 
 function adoptLocator(page: Page, modality: JourneyModality): Locator {
-  if (modality === 'copy') return page.getByTestId('copy-adopt-action');
+  // 文案 adopts through the Result shell's canonical primary action
+  // (`result-shell-model` `adopt_candidate` → 「采用此版本」), which is the same
+  // control the required assembly gate clicks. The worksurface's own
+  // `copy-adopt-action` renders only while its local lifecycle is still
+  // `candidate`, so waiting for that one is waiting for a state a delivered run
+  // has usually already left — that stale locator is why the shared three-modal
+  // journey failed on its first case (T37 / M-04).
+  if (modality === 'copy') return page.getByTestId('result-primary-action');
   if (modality === 'image_text') return page.getByTestId('image-role-primary');
   return page.getByTestId('video-adopt-action');
 }
@@ -538,13 +545,18 @@ function adoptLocator(page: Page, modality: JourneyModality): Locator {
 export async function adoptResult(page: Page, contract: JourneyContract) {
   const adopt = adoptLocator(page, contract.modality);
   await expect(adopt).toBeVisible();
+  if (contract.modality === 'copy') {
+    // The shell's primary action changes label with the lifecycle; adopting
+    // means clicking it while it still offers 采用, never after it becomes 交付.
+    await expect(adopt).toHaveText('采用此版本');
+  }
   const responsePromise = mutationResponse(page, /adopt/u);
   await adopt.click();
   const response = await responsePromise;
   expect(response.ok(), await response.text()).toBeTruthy();
 
   if (contract.modality === 'copy') {
-    await expect(page.getByTestId('copy-adopt-action')).toHaveCount(0);
+    await expect(page.getByTestId('result-primary-action')).toHaveText('交付');
   } else if (contract.modality === 'image_text') {
     await expect(page.getByTestId('image-adopted-badge').first()).toBeVisible();
   } else {
@@ -746,7 +758,10 @@ export async function assertJourneyRestored(
   await expect(page.getByTestId('delivery-panel')).toBeVisible();
 
   if (contract.modality === 'copy') {
-    await expect(page.getByTestId('copy-adopt-action')).toHaveCount(0);
+    // Adoption survived the reload: the shell still offers 交付 rather than
+    // falling back to 采用. Absence of `copy-adopt-action` used to stand in for
+    // this and proved nothing — it is absent on an unadopted run too.
+    await expect(page.getByTestId('result-primary-action')).toHaveText('交付');
   } else if (contract.modality === 'image_text') {
     await expect(page.getByTestId('image-adopted-badge').first()).toBeVisible();
   } else {

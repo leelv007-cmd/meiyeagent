@@ -439,8 +439,23 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
       routeSnapshot.providerModel ??
       actualRouteCandidate?.providerModel ??
       actualRouteCandidate?.stableModelName;
-    expect(actualProviderModel).toEqual(expect.any(String));
-    expect(routeSnapshot.apiCounterparty).toEqual(expect.any(String));
+    // T37 / M-04, carrying the T07 F2 ruling: `expect.any(String)` accepted the
+    // empty string, so these two lines asserted a field's type rather than that
+    // it came from anywhere. The contract is 同源对齐 — provenance restates the
+    // frozen RouteSnapshot, and a blank counterparty is exactly the drift that
+    // would slip through a type-shaped check.
+    expect(
+      typeof actualProviderModel === 'string' &&
+        actualProviderModel.trim().length > 0,
+      `frozen route must name a provider model; got ${JSON.stringify(actualProviderModel)}`
+    ).toBe(true);
+    expect(
+      typeof routeSnapshot.apiCounterparty === 'string' &&
+        routeSnapshot.apiCounterparty.trim().length > 0,
+      `frozen route must name an API counterparty; got ${JSON.stringify(routeSnapshot.apiCounterparty)}`
+    ).toBe(true);
+    // Subset match stays right here: `CreativeExecutionProvenance` also carries
+    // modelDisplayName and activationStatus, which this case has no opinion on.
     expect(job?.executionProvenance).toMatchObject({
       actualCatalogModelId: routeSnapshot.actualCatalogModelId,
       apiCounterparty: routeSnapshot.apiCounterparty,
