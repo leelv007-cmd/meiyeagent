@@ -447,23 +447,23 @@ test(
       ]);
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
           .map((step) => [step.functionID, step.name]),
         [
           [
-            3,
+            4,
             `persist-pending-${workflowId}:offer-price`,
           ],
-          [4, 'DBOS.setEvent'],
-          [5, 'DBOS.recv'],
-          [6, 'DBOS.sleep'],
+          [5, 'DBOS.setEvent'],
+          [6, 'DBOS.recv'],
+          [7, 'DBOS.sleep'],
         ],
       );
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID === 7)
+          ?.filter((step) => step.functionID === 8)
           .map((step) => [step.functionID, step.name]),
-        [[7, `persist-core-timeout-${workflowId}:offer-price`]],
+        [[8, `persist-core-timeout-${workflowId}:offer-price`]],
       );
       assert.equal(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some((step) =>
@@ -485,7 +485,8 @@ test(
     const workspaceId = 'workspace-unattended-hold';
     const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
     const questionId = `${workflowId}:note-style`;
-    const ports = smokePorts();
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
     ports.nameIntent = async () => ({
       declaration: {
         normalizedIntent: '制作两版图文笔记',
@@ -599,13 +600,13 @@ test(
       assert.equal(coreTimeouts, 0);
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
           .map((step) => [step.functionID, step.name]),
         [
-          [3, `persist-pending-${questionId}`],
-          [4, 'DBOS.setEvent'],
-          [5, 'DBOS.recv'],
-          [6, 'DBOS.sleep'],
+          [4, `persist-pending-${questionId}`],
+          [5, 'DBOS.setEvent'],
+          [6, 'DBOS.recv'],
+          [7, 'DBOS.sleep'],
         ],
       );
     } finally {
@@ -693,12 +694,12 @@ test(
       await DBOS.launch();
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
           .map((step) => [step.functionID, step.name]),
         [
-          [3, `persist-pending-${questionId}`],
-          [4, 'DBOS.setEvent'],
-          [6, 'DBOS.sleep'],
+          [4, `persist-pending-${questionId}`],
+          [5, 'DBOS.setEvent'],
+          [7, 'DBOS.sleep'],
         ],
       );
       await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
@@ -719,13 +720,13 @@ test(
       assert.equal(await waitForWorkflowStatus(recovered, 'SUCCESS'), 'SUCCESS');
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
           .map((step) => [step.functionID, step.name]),
         [
-          [3, `persist-pending-${questionId}`],
-          [4, 'DBOS.setEvent'],
-          [5, 'DBOS.recv'],
-          [6, 'DBOS.sleep'],
+          [4, `persist-pending-${questionId}`],
+          [5, 'DBOS.setEvent'],
+          [6, 'DBOS.recv'],
+          [7, 'DBOS.sleep'],
         ],
       );
     } finally {
@@ -849,13 +850,13 @@ test(
       assert.equal(coreTimeouts, 0);
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
-          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
           .map((step) => [step.functionID, step.name]),
         [
-          [3, `persist-pending-${questionId}`],
-          [4, 'DBOS.setEvent'],
-          [5, 'DBOS.recv'],
-          [6, 'DBOS.sleep'],
+          [4, `persist-pending-${questionId}`],
+          [5, 'DBOS.setEvent'],
+          [6, 'DBOS.recv'],
+          [7, 'DBOS.sleep'],
         ],
       );
     } finally {

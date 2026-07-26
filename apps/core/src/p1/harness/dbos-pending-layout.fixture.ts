@@ -76,7 +76,11 @@ await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
 });
 for (let attempt = 0; attempt < 100; attempt += 1) {
   const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
-  if (steps?.some((step) => step.functionID === 6 && step.name === 'DBOS.sleep')) {
+  if (
+    steps?.some(
+      (step) => step.functionID === 7 && step.name === 'DBOS.sleep',
+    )
+  ) {
     process.stdout.write('PENDING_READY\n');
     process.exit(0);
   }
