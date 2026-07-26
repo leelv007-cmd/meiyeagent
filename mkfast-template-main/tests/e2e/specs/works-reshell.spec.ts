@@ -24,12 +24,61 @@ import { setTheme } from '../fixtures/page-health';
 
 type SubmissionResult = { taskId: string; workId: string };
 
+/**
+ * 图文 setup — the 促销海报 recipe on a 0-source run, which is the shape the
+ * image-intent journeys prove adopts and `result_export`s end to end. The
+ * recipe takes its facts from the intent, so nothing has to be uploaded: an
+ * upload left half-confirmed only puts `submitDisabled` back on through
+ * `!uploadsReady`.
+ */
+async function applyImageNoteRecipe(page: Page) {
+  await page
+    .getByTestId('composer-recipe-card-recipe.promotion_poster')
+    .click();
+  // The composer asks first only when the recipe would rewrite settings the
+  // merchant can already see (发到哪 / 交付物 / 生成方式); when they already match
+  // it applies straight away. Both endings are correct, so wait for either —
+  // and an unanswered dialog would block every control underneath it.
+  const patchPreview = page.getByTestId('composer-recipe-patch-preview');
+  const applied = page.getByTestId('composer-recipe-apply-undo');
+  await expect(patchPreview.or(applied).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  if (await patchPreview.isVisible()) {
+    await page.getByTestId('composer-patch-confirm').click();
+  }
+  await expect(applied).toBeVisible({ timeout: 30_000 });
+}
+
 /** Same entry the T31 card-family spec uses — one real creation, real core. */
-async function startRun(page: Page, intent: string): Promise<SubmissionResult> {
+async function startRun(
+  page: Page,
+  intent: string,
+  lens: 'copy' | 'image_text' = 'copy'
+): Promise<SubmissionResult> {
   await page.goto('/dashboard');
-  await page.getByTestId('composer-lens-option-copy').click();
+  await page.getByTestId(`composer-lens-option-${lens}`).click();
+  if (lens === 'image_text') await applyImageNoteRecipe(page);
   await page.getByTestId('composer-intent-input').fill(intent);
+  if (lens === 'image_text') {
+    // 促销海报 lands on 线下物料; the 作品 has to be bound to a platform core can
+    // export, and 小红书 is the one the image journeys export. The reshelled
+    // composer asks 发到哪 with chips — the older `#composer-setting-input-
+    // platform` select the image-intent spec still drives is gone.
+    const destination = page.getByTestId(
+      'composer-destination-option-xiaohongshu'
+    );
+    await expect(destination).toBeVisible({ timeout: 30_000 });
+    if ((await destination.getAttribute('aria-pressed')) !== 'true') {
+      await destination.click();
+    }
+    await expect(destination).toHaveAttribute('aria-pressed', 'true');
+  }
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 30_000,
+  });
+  // A disabled 提交 would otherwise surface as a request that never happens.
+  await expect(page.getByTestId('composer-submit')).toBeEnabled({
     timeout: 30_000,
   });
 
@@ -72,8 +121,12 @@ async function startRun(page: Page, intent: string): Promise<SubmissionResult> {
 }
 
 /** Runs the creation and returns what the 交付卡 bound itself to. */
-async function deliverOnce(page: Page, intent: string) {
-  const run = await startRun(page, intent);
+async function deliverOnce(
+  page: Page,
+  intent: string,
+  lens: 'copy' | 'image_text' = 'copy'
+) {
+  const run = await startRun(page, intent, lens);
   const deliveryTurn = page.getByTestId('composer-delivery-turn');
   await expect(deliveryTurn).toBeVisible({ timeout: 300_000 });
   const packageId = await deliveryTurn.getAttribute('data-package-id');
@@ -82,6 +135,64 @@ async function deliverOnce(page: Page, intent: string) {
   expect(packageId, '交付卡 must bind a package').toBeTruthy();
   expect(versionId, '交付卡 must bind a version').toBeTruthy();
   return { packageId: packageId!, revision, run, versionId: versionId! };
+}
+
+/**
+ * 采用 through the canonical `adopt_harness_candidate` command — the same one
+ * Result Center issues for a harness-selected candidate. Adoption is what moves
+ * a ContentPackage to `accepted`, which is core's precondition for any export.
+ */
+async function adoptDelivered(page: Page, packageId: string) {
+  return page.evaluate(async (id: string) => {
+    const read = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        module: 'operations',
+        action: 'content_packages',
+        payload: {},
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const projection = (await read.json()) as {
+      data?: Array<{
+        id: string;
+        currentVersionId?: string;
+        harnessSelection?: { recommendedCandidateId?: string };
+        revision: number;
+        versions: Array<{ id: string; harnessCandidateId?: string }>;
+      }>;
+    };
+    const target = projection.data?.find((item) => item.id === id);
+    const candidateId =
+      target?.harnessSelection?.recommendedCandidateId ??
+      target?.versions.find((version) => version.id === target.currentVersionId)
+        ?.harnessCandidateId;
+    if (!target || !candidateId) {
+      return { message: 'no harness candidate to adopt', ok: false };
+    }
+    const response = await fetch('/api/core/p1/commands', {
+      body: JSON.stringify({
+        module: 'operations',
+        action: 'adopt_harness_candidate',
+        payload: {
+          candidateId,
+          expectedRevision: target.revision,
+          packageId: id,
+        },
+      }),
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `t32-adopt:${id}:${target.revision}`,
+      },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      error?: { message?: string };
+    };
+    return { message: envelope.error?.message ?? '', ok: response.ok };
+  }, packageId);
 }
 
 test.describe('T32 作品面换壳', () => {
@@ -93,11 +204,28 @@ test.describe('T32 作品面换壳', () => {
     request,
   }) => {
     test.setTimeout(600_000);
+    // The surface never shows a merchant a server sentence (D-116), so a failed
+    // canonical command would otherwise be invisible here too.
+    const commandFailures: string[] = [];
+    page.on('response', async (response) => {
+      if (response.ok() || !response.url().includes('/api/core/p1/commands'))
+        return;
+      commandFailures.push(
+        `${response.status()} ${await response.text().catch(() => '')}`
+      );
+    });
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
-    const delivered = await deliverOnce(page, '写一条新客皮肤护理到店体验文案');
+    // 图文, not 文案: core builds the delivery ZIP out of the variant's images
+    // and refuses to build one without any, so 导出动作成功 can only be proven
+    // on a 作品 that carries media.
+    const delivered = await deliverOnce(
+      page,
+      '生成一张门店夏日护理海报',
+      'image_text'
+    );
 
     // ① 新作品面列表可见 — and it is the new surface, not the old aggregate.
     await page.goto('/dashboard/works');
@@ -144,6 +272,18 @@ test.describe('T32 作品面换壳', () => {
     // 生成依据与使用导购 are on the page, in merchant words.
     await expect(page.getByTestId('works-detail-guidance')).toBeVisible();
 
+    // Straight out of a run the 成品 is delivered but not adopted, and core
+    // exports an adopted 成品 only. The surface must say so — 采用 doorway, no
+    // 导出 button that would only produce a server error.
+    await expect(page.getByTestId('works-action-adopt')).toBeVisible();
+    await expect(page.getByTestId('works-action-export')).toHaveCount(0);
+
+    // Adopt through the canonical command (the same one Result Center issues),
+    // then the 作品 is exportable.
+    const adopted = await adoptDelivered(page, delivered.packageId);
+    expect(adopted.ok, adopted.message).toBeTruthy();
+    await page.reload();
+
     // ③ 导出动作成功 — the canonical result_export command, bound to this
     // revision, and a real download handed back.
     const exportRequest = page.waitForRequest(
@@ -164,9 +304,15 @@ test.describe('T32 作品面换壳', () => {
     expect(serialized, '导出 must carry the confirmed package').toContain(
       delivered.packageId
     );
-    await expect(page.getByTestId('works-export-download')).toBeVisible({
-      timeout: 120_000,
-    });
+    await expect(async () => {
+      expect(
+        commandFailures,
+        '导出 must not fail on the canonical seam'
+      ).toEqual([]);
+      await expect(page.getByTestId('works-export-download')).toBeVisible({
+        timeout: 1_000,
+      });
+    }).toPass({ timeout: 120_000 });
     await expect(page.getByTestId('works-action-error')).toHaveCount(0);
   });
 
@@ -258,6 +404,13 @@ test.describe('T32 作品面换壳', () => {
           timeout: 60_000,
         });
         await expect(page.getByTestId('works-shape-filter')).toBeVisible();
+        // Screenshot the loaded 作品 面, not the moment before the rows arrive —
+        // an empty list is no evidence of a walkthrough.
+        await expect(
+          page.locator(
+            `[data-testid="works-card"][data-work-id="${delivered.packageId}"]`
+          )
+        ).toBeVisible({ timeout: 60_000 });
         await page.screenshot({
           fullPage: true,
           path: `../.scratch/t32-works-reshell-2026-07-26/works-list-${viewport.label}-${theme}.png`,

@@ -619,9 +619,13 @@ copy/image/note/video); this spec proves the shape a live run produces.
   `data-version-id` / `data-revision` are read off the canonical
   `operations.content_packages` projection and must equal what the SSE terminal
   snapshot bound on the card — two independent seams agreeing.
-- 导出动作成功: clicking 导出 posts the canonical `result-delivery/result_export`
-  command carrying the confirmed package, and a real download link comes back
-  with no error surfaced.
+- 导出动作成功: straight out of a run the 成品 is not adopted, so the surface
+  offers 采用 and no 导出 at all; after the canonical `adopt_harness_candidate`,
+  clicking 导出 posts `result-delivery/result_export` carrying the confirmed
+  package and a real download link comes back with no failed command on the
+  seam. The headline run is 图文 on purpose — core builds the delivery ZIP out
+  of the variant's images and refuses to build one without any, so a 文案 作品
+  has no 导出 (asserted in `works-projection.test.ts`, not here).
 - 轻编辑入口可达: the canonical `create_work_from_content_package` command makes
   the 轻编辑 work a 作品 row, and its detail mounts LightComposerCanvas (KEEP
   capability core) unchanged.
