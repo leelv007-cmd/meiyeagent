@@ -64,27 +64,28 @@ describe('creation model selection', () => {
     );
   });
 
-  it('falls back to the first executable catalog model for first-time merchants', () => {
-    const unavailable = { ...model('not-executable'), available: false };
-    const unselectedExecutable = model('first-executable');
+  it('uses the explicit platform catalog default instead of the first executable model', () => {
+    const acceptancePending = model('gpt-image-2');
+    const platformDefault = model('seedream-5-pro');
 
     assert.deepEqual(
       resolveCreationModelSelection({
-        catalog: [unavailable, unselectedExecutable],
-        currentSelection: unavailable.id,
+        catalog: [acceptancePending, platformDefault],
+        platformDefault: platformDefault.id,
         userDefault: 'missing-personal-default',
         workspaceDefault: 'missing-workspace-default',
       }),
-      { model: unselectedExecutable, source: 'catalog_recommended' }
+      { model: platformDefault, source: 'platform_default' }
     );
   });
 
-  it('returns undefined only when no executable model exists', () => {
-    const unavailable = { ...model('not-executable'), available: false };
+  it('returns undefined rather than guessing when no configured default is executable', () => {
+    const availableButNotDefault = model('catalog-first');
 
     assert.equal(
       resolveCreationModelSelection({
-        catalog: [unavailable],
+        catalog: [availableButNotDefault],
+        platformDefault: 'missing-platform-default',
       }),
       undefined
     );

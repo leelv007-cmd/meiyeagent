@@ -124,6 +124,7 @@ describe('launch seeds (D-082 / D-083)', () => {
       deliverableKind: 'note',
       quantity: 1,
       aspectRatio: '3:4',
+      notePageBound: 3,
     });
     assert.equal(
       specs['recipe.case_to_xhs_note']?.contextPatches?.reuseCaseImages,

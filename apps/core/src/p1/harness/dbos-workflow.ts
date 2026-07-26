@@ -29,7 +29,6 @@ import type {
   HarnessBillingSettlementExecutor,
   HarnessBillingSettlementInput,
 } from './billing-compensation.js';
-
 export interface HarnessWorkflowPersistence {
   registerPending: HarnessDecisionStore['registerPending'];
   readPending: HarnessDecisionStore['readPending'];

@@ -9,6 +9,7 @@ import {
   pendingApprovalRequestSchema,
 } from './approval-receipt.js';
 import { creativeExecutionContractSchema } from './uiux.js';
+import { imageTextNoteVersionSchema } from './note-plan.js';
 
 const contentPackageIdSchema = z.string().trim().min(1);
 const contentPackageTimestampSchema = z.iso.datetime();
@@ -475,6 +476,7 @@ export const contentPackageVersionSchema = z.object({
     .enum(['ai_generated', 'merchant_edited', 'rollback_restored'])
     .optional(),
   sourceRef: contentPackageVersionSourceRefSchema.optional(),
+  note: imageTextNoteVersionSchema.optional(),
   title: z.string(),
   topics: z.array(z.string().trim().min(1)).default([]),
 });

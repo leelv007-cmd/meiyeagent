@@ -37,8 +37,9 @@ import { commandP1, P1RequestError, p1ErrorCode, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   normalizeCatalog,
-  selectAvailableCatalogModel,
+  normalizePreferences,
 } from '@/p1/settings-view-model';
+import { resolveCreationModelSelection } from '@/p1/model-current-selection';
 import type {
   BriefBoundRevisions,
   BriefSourceSignal,
@@ -122,7 +123,9 @@ import {
   buildLiveBriefInput,
   buildLiveQuoteInput,
   COMPOSER_OPERATION_BY_LENS,
+  COMPOSER_PLATFORM_DEFAULT_MODEL_BY_LENS,
   fetchComposerCatalog,
+  fetchComposerPreferences,
   fetchComposerSurface,
   confirmComposerBrief,
   requestComposerBrief,
@@ -488,6 +491,16 @@ export function ComposerHome({
       return fetchComposerCatalog(lensId, signal);
     },
   });
+  const preferencesQuery = useQuery({
+    enabled: lensId != null,
+    queryKey: p1QueryKeys.request('model-supply', 'preferences', {
+      operation: lensId ? COMPOSER_OPERATION_BY_LENS[lensId] : 'unselected',
+    }),
+    queryFn: ({ signal }) => {
+      if (!lensId) throw new Error('Composer lens is required.');
+      return fetchComposerPreferences(lensId, signal);
+    },
+  });
   const catalog = useMemo(
     () =>
       lensId && catalogQuery.data
@@ -522,19 +535,28 @@ export function ComposerHome({
     );
   }, [lensId, lensState.draft.recipeRevisionId, surfaceQuery.data]);
   const selectedModel = useMemo(() => {
+    if (!lensId || !preferencesQuery.isSuccess) return undefined;
     const explicitId =
-      lensState.draft.settings.catalogModelId ??
-      (submissionRecipe?.modelPolicy.mode === 'fixed'
+      lensState.draft.fieldMeta.catalogModelId?.dirty
+        ? (lensState.draft.settings.catalogModelId ?? undefined)
+        : submissionRecipe?.modelPolicy.mode === 'fixed'
         ? submissionRecipe.modelPolicy.catalogModelId
-        : undefined);
-    return (
-      catalog.models.find(
-        (model) => model.id === explicitId && model.available
-      ) ?? selectAvailableCatalogModel(catalog)
-    );
+        : undefined;
+    const preferences = normalizePreferences(preferencesQuery.data);
+    return resolveCreationModelSelection({
+      catalog: catalog.models,
+      currentSelection: explicitId,
+      platformDefault: COMPOSER_PLATFORM_DEFAULT_MODEL_BY_LENS[lensId],
+      userDefault: preferences.userDefault,
+      workspaceDefault: preferences.workspaceDefault,
+    })?.model;
   }, [
     catalog,
+    lensId,
+    lensState.draft.fieldMeta.catalogModelId?.dirty,
     lensState.draft.settings.catalogModelId,
+    preferencesQuery.data,
+    preferencesQuery.isSuccess,
     submissionRecipe?.modelPolicy,
   ]);
   const catalogRevision = catalogQuery.data?.revisionId ?? 'catalog-current';
@@ -592,6 +614,9 @@ export function ComposerHome({
               : {}),
             ...(submissionDurationSeconds
               ? { durationSeconds: submissionDurationSeconds }
+              : {}),
+            ...(submissionRecipe.delivery.notePageBound
+              ? { notePageBound: submissionRecipe.delivery.notePageBound }
               : {}),
           },
         })
@@ -1588,6 +1613,23 @@ export function ComposerHome({
         session={session}
         stream={tokenStream}
       />
+
+      {preferencesQuery.isError ? (
+        <div
+          className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm"
+          data-testid="composer-model-preferences-error"
+          role="alert"
+        >
+          <p>暂时没能读取你的模型偏好，当前不会提交创作任务。</p>
+          <button
+            className="mt-2 font-medium underline underline-offset-4"
+            onClick={() => void preferencesQuery.refetch()}
+            type="button"
+          >
+            重新读取
+          </button>
+        </div>
+      ) : null}
 
       <ComposerPromptBar
         ariaLabel={creation_entry_intent_aria()}

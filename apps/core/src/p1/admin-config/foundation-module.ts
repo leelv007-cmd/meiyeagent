@@ -4,6 +4,10 @@ import {
 } from '@meiye/contracts';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
+import {
+  NOTE_STYLE_CONFIG_KEY,
+  noteStyleConfigSchema,
+} from '@meiye/contracts';
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
@@ -234,6 +238,12 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     description: `Probe-backed activation evidence for ${deployment.id}.`,
     valueSchema: activationEvidenceConfigSchema,
   })),
+  {
+    key: NOTE_STYLE_CONFIG_KEY,
+    scope: 'global',
+    description: 'Ordered style set used by the ImageTextNote compiler.',
+    valueSchema: noteStyleConfigSchema,
+  },
   {
     key: ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
     scope: 'global',

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import {
+  MAX_NOTE_PLAN_PAGE_COUNT,
+  MIN_NOTE_PLAN_PAGE_COUNT,
   STORE_FACT_KINDS,
   evalRunSchema,
   type ComposerContentPackagePlatform,
@@ -75,6 +77,7 @@ export type RecipeStudioBlock =
         quantity: number;
         aspectRatio?: string;
         durationSeconds?: number;
+        notePageBound?: number;
       };
     }
   | {
@@ -278,6 +281,22 @@ function compileBody(
   ) {
     fail('文案、图片和视频必须使用单主候选策略。');
   }
+  if (
+    output.config.outputKind === 'image_text_note' &&
+    (!Number.isInteger(output.config.notePageBound) ||
+      (output.config.notePageBound as number) < MIN_NOTE_PLAN_PAGE_COUNT ||
+      (output.config.notePageBound as number) > MAX_NOTE_PLAN_PAGE_COUNT)
+  ) {
+    fail(
+      `图文笔记页数上界必须是 ${MIN_NOTE_PLAN_PAGE_COUNT} 到 ${MAX_NOTE_PLAN_PAGE_COUNT} 之间的整数。`,
+    );
+  }
+  if (
+    output.config.outputKind !== 'image_text_note' &&
+    output.config.notePageBound !== undefined
+  ) {
+    fail('只有图文笔记可以声明页数上界。');
+  }
 
   const promptRevisionRef = exactRevision(
     input.dependencies.promptRevisionRef,
@@ -340,6 +359,9 @@ function compileBody(
         : {}),
       ...(output.config.durationSeconds
         ? { durationSeconds: output.config.durationSeconds }
+        : {}),
+      ...(output.config.notePageBound
+        ? { notePageBound: output.config.notePageBound }
         : {}),
     },
     contextPatches: {

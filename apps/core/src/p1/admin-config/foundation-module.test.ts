@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ASSET_INTAKE_GUIDANCE_CONFIG_KEY } from '@meiye/contracts';
+import {
+  ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+  NOTE_STYLE_CONFIG_KEY,
+} from '@meiye/contracts';
 import { z } from 'zod';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
@@ -121,6 +124,7 @@ describe('Admin config application seam', () => {
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
         'douyin.adapter.assembly',
+        NOTE_STYLE_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         ...createDefaultDeployments()
           .map(

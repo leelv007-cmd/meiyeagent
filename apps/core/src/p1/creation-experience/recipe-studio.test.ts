@@ -93,6 +93,7 @@ function sampleDefinition(): RecipeStudioCompileInput {
           outputKind: 'image_text_note',
           quantity: 1,
           aspectRatio: '3:4',
+          notePageBound: 3,
         },
       },
       {
@@ -366,10 +367,11 @@ describe('Recipe Studio controlled compiler', () => {
         kind: 'note',
         quantity: 1,
         aspectRatio: '3:4',
+        notePageBound: 3,
       },
     });
     assert.deepEqual(admission.errors, []);
-    assert.equal(admission.binding?.lens, 'image');
+    assert.equal(admission.binding?.lens, 'image_text_note');
 
     const submission: ComposerSubmissionRequest = {
       actorId: 'merchant-1',
@@ -386,6 +388,7 @@ describe('Recipe Studio controlled compiler', () => {
         kind: 'note',
         quantity: 1,
         aspectRatio: '3:4',
+        notePageBound: 3,
       },
       creationMode: 'customized',
       intent: '生成一篇护发误区科普笔记',
@@ -411,6 +414,30 @@ describe('Recipe Studio controlled compiler', () => {
       capabilities: { async assertReady() {} },
       catalog: repository,
       identities: { async listActive() { return []; } },
+      noteSettings: {
+        async read() {
+          return {
+            styles: {
+              styles: [
+                {
+                  id: 'facts',
+                  name: '干货版',
+                  writingGuide: '解释清楚',
+                  structureTemplate: '结论先行',
+                  platforms: ['xiaohongshu'],
+                },
+                {
+                  id: 'story',
+                  name: '叙事版',
+                  writingGuide: '场景叙事',
+                  structureTemplate: '场景展开',
+                  platforms: ['xiaohongshu'],
+                },
+              ],
+            },
+          };
+        },
+      },
       quotes: {
         async getQuote() {
           return {
@@ -462,7 +489,7 @@ describe('Recipe Studio controlled compiler', () => {
     });
     const admitted = await gate.admit(submission);
     assert.match(admitted.taskId, /^composer-task:[a-f0-9]{64}$/u);
-    assert.equal(admitted.recipeBinding.lens, 'image');
+    assert.equal(admitted.recipeBinding.lens, 'image_text_note');
   });
 
   it('blocks production switching before eval and internal-test gates pass', async () => {

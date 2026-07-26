@@ -59,6 +59,8 @@ export interface RecipeDeliveryDefaults {
   quantity?: number;
   aspectRatio?: string;
   durationSeconds?: number;
+  /** Maximum page count for one image-text note execution. */
+  notePageBound?: number;
 }
 
 export interface RecipeSourceRequirement {

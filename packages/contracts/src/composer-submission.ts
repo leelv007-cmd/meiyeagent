@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  MAX_NOTE_PLAN_PAGE_COUNT,
+  MIN_NOTE_PLAN_PAGE_COUNT,
+} from './note-plan.js';
 
 const identifierSchema = z.string().trim().min(1).max(200);
 const revisionSchema = z.string().trim().min(1).max(200);
@@ -55,6 +59,12 @@ export const composerSubmissionDeliverableSchema = z
     quantity: z.number().int().min(1).max(20),
     aspectRatio: z.enum(['1:1', '3:4', '9:16']).optional(),
     durationSeconds: z.number().int().min(1).max(3_600).optional(),
+    notePageBound: z
+      .number()
+      .int()
+      .min(MIN_NOTE_PLAN_PAGE_COUNT)
+      .max(MAX_NOTE_PLAN_PAGE_COUNT)
+      .optional(),
   })
   .strict();
 

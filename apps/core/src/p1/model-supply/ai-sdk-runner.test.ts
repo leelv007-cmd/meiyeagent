@@ -12,6 +12,7 @@ import {
   OpenAiCompatibleAiSdkRunner,
 } from './ai-sdk-runner.js';
 import { executionBriefSchema } from '../harness/structured-nodes.js';
+import { notePlanSchema } from '@meiye/contracts';
 
 test('fixture structured execution compiles the frozen video delivery into one storyboard', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
@@ -63,6 +64,33 @@ test('fixture structured execution compiles the frozen video delivery into one s
     durationSeconds: 15,
     ratio: '9:16',
   });
+});
+
+test('fixture NotePlan varies page composition with merchant semantics', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const generate = (intent: string) =>
+    executor.generate({
+      instructions: 'Compile a semantic NotePlan.',
+      prompt: JSON.stringify({ intent, factRefs: [], rightsRefs: [] }),
+      schema: notePlanSchema,
+      schemaName: 'harness_note_plan_v1',
+    });
+
+  const service = await generate('介绍本店护理项目');
+  const promotion = await generate('介绍本店 398 元夏日护理团购活动');
+
+  assert.deepEqual(
+    service.output.pages.map(({ pageRole }) => pageRole),
+    ['cover', 'solution_show', 'cta_guide'],
+  );
+  assert.deepEqual(
+    promotion.output.pages.map(({ pageRole }) => pageRole),
+    ['cover', 'pain_scene', 'solution_show', 'price_offer', 'cta_guide'],
+  );
+  assert.deepEqual(
+    promotion.output.pages[3]?.textBlock.exactText,
+    ['398 元'],
+  );
 });
 
 test('formal non-streaming copy generation uses one structured object request', async () => {

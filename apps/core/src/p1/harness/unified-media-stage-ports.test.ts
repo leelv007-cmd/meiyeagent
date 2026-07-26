@@ -2,14 +2,21 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { createCreationExecutionSnapshot } from "../execution-spine/creation-execution-snapshot.js";
+import {
+	createCreationExecutionSnapshot,
+	creationExecutionSnapshotSchema,
+} from "../execution-spine/creation-execution-snapshot.js";
 import {
 	MemoryContentPackageRevisionWritePort,
 	type ContentPackageRevisionWriteInput,
 } from "../execution-spine/content-package-revision-port.js";
 import type { ModelSupplyResult, ModelSupplySubmission } from "../model-supply/index.js";
 import { buildContentPackage } from "../operations/content-package.js";
-import type { ExecutionBrief } from "./structured-nodes.js";
+import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
+import type {
+	ExecutionBrief,
+	StructuredNodeRunnerRequest,
+} from "./structured-nodes.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
 import {
 	HarnessMediaExecutionError,
@@ -24,6 +31,10 @@ import type {
 	HarnessContextSnapshot,
 	HarnessStagePorts,
 } from "./workflow-core.js";
+import type {
+	NoteMediaAdmissionPort,
+	NoteMediaAdmissionToken,
+} from "./note-media-admission.js";
 
 test("image and video use the existing Model Supply path with stable submission facts", async () => {
 	for (const kind of ["image", "video"] as const) {
@@ -113,6 +124,46 @@ test("three canonical image operations map to the two existing provider operatio
 			referenceCount,
 		);
 	}
+});
+
+test("image-text note page generation uses the existing image executor without changing pure image semantics", async () => {
+	const submissions: ModelSupplySubmission[] = [];
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit(input) {
+				submissions.push(structuredClone(input));
+				return completedResult("image");
+			},
+		},
+		undefined,
+		memoryNoteAdmission(),
+	);
+
+	const noteSelection = await adapter.execute({
+		brief: imageBriefFor("image.generate", 0),
+		context: contextSnapshot(),
+		request: harnessInput("image_text_note", "package-note"),
+		workflowId: "workflow-note:page-1",
+	});
+	const imageSelection = await adapter.execute({
+		brief: imageBriefFor("image.edit", 1),
+		context: contextSnapshot(),
+		request: harnessInput("image", "package-image"),
+		workflowId: "workflow-image",
+	});
+
+	assert.equal(noteSelection.kind, "image");
+	assert.equal(submissions[0]?.operation, "image.generate");
+	assert.equal(Object.hasOwn(submissions[0] ?? {}, "billingTaskId"), false);
+	assert.equal(submissions[0]?.productUsageQuantity, 0);
+	assert.equal(
+		submissions[0]?.selection.catalogModelId,
+		"model-image_text_note-1",
+	);
+	assert.equal(imageSelection.kind, "image");
+	assert.equal(submissions[1]?.operation, "image.edit");
+	assert.equal(submissions[1]?.billingTaskId, "task-image");
+	assert.equal(submissions[1]?.selection.catalogModelId, "model-image-1");
 });
 
 test("media delivery writes the shared ContentPackage once with asset, usage, cost, and snapshot lineage", async () => {
@@ -244,6 +295,173 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 	}
 });
 
+test("image-text note compiles dual styles, generates selected pages, and writes one complete revision", async () => {
+	const packageId = "package-image-text-note";
+	const originalRequest = harnessInput("image_text_note", packageId);
+	const sourceSnapshot = originalRequest.executionSnapshot!;
+	const snapshot = creationExecutionSnapshotSchema.parse({
+		...sourceSnapshot,
+		id: "snapshot-note-confirmed",
+		semanticDecision: {
+			sourceSnapshotId: sourceSnapshot.id,
+			reference: {
+				field: "note_plan_confirmation",
+				id: "decision-note-confirmation",
+				revision: sourceSnapshot.revision,
+				value: "use-default",
+			},
+		},
+	});
+	const request = { ...originalRequest, executionSnapshot: snapshot };
+	const writer = new MemoryContentPackageRevisionWritePort();
+	writer.seed(
+		buildContentPackage({
+			id: packageId,
+			kind: "image_text",
+			source: {
+				assetIds: [],
+				creationExecutionSnapshot: {
+					id: sourceSnapshot.id,
+					revision: sourceSnapshot.revision,
+					schemaVersion: sourceSnapshot.schemaVersion,
+				},
+				targetPlatform: "douyin",
+				workId: snapshot.work.id,
+				workflowId: snapshot.task.id,
+				workflowRevision: snapshot.revision,
+			},
+			timestamp: "2026-07-22T09:00:00.000Z",
+			workspaceId: "workspace-1",
+		}),
+	);
+	let generated = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		noteCopyPorts(),
+		noteRunnerFactory(),
+		{
+			async execute() {
+				generated += 1;
+				const selection = completedResult("image", String(generated));
+				return {
+					asset: {
+						contentType: selection.asset!.contentType,
+						id: selection.asset!.id,
+						objectKey: selection.asset!.objectKey,
+						sha256: selection.asset!.sha256,
+						sizeBytes: selection.asset!.sizeBytes,
+					},
+					childRun: {
+						assetIds: [selection.asset!.id],
+						runId: `run-note-${generated}`,
+						runType: "model_job",
+						status: "succeeded",
+						productUsage: { quantity: 1, status: "committed" },
+					},
+					kind: "image",
+					trace: {
+						stage: "execution_selection",
+						winnerCandidateId: selection.asset!.id,
+						candidateScores: [],
+						blockedCandidates: [],
+						rubricVersion: "image-v1",
+						rubricHash: "a".repeat(64),
+					},
+				};
+			},
+		},
+		writer,
+		() => "2026-07-22T09:00:01.000Z",
+		{
+			async read() {
+				return {
+					styles: {
+						styles: [
+							{
+								id: "facts",
+								name: "干货版",
+								writingGuide: "清楚说明",
+								structureTemplate: "结论、依据、行动",
+								platforms: ["xiaohongshu"],
+							},
+							{
+								id: "story",
+								name: "故事版",
+								writingGuide: "场景叙事",
+								structureTemplate: "场景、方案、行动",
+								platforms: ["xiaohongshu"],
+							},
+						],
+					},
+				};
+			},
+		},
+	);
+	const context = contextSnapshot();
+	const declaration = {
+		normalizedIntent: "介绍夏日护理项目",
+		taskType: "daily_service_exposure" as const,
+		deliveryLayer: "finished_media" as const,
+		relevantAssetCategories: ["product_service" as const],
+		usedAssetCategories: ["product_service" as const],
+		route: "customized" as const,
+		routingSource: "model" as const,
+		implicitConstraints: [],
+	};
+	const confirmation = await ports.nameIntent({
+		workflowId: snapshot.task.id,
+		request,
+	});
+	assert.equal(
+		confirmation.blockingQuestion?.response.field,
+		"note_plan_confirmation",
+	);
+
+	const brief = await ports.compileNoteBrief({
+		workflowId: snapshot.task.id,
+		request,
+		declaration,
+		context,
+	});
+	assert.deepEqual(
+		brief.candidates.candidates.map(({ styleId }) => styleId),
+		["facts", "story"],
+	);
+	const selection = await ports.executeNoteAndSelect({
+		workflowId: snapshot.task.id,
+		request,
+		brief,
+		context,
+		selectedStyleId: "story",
+	});
+	const delivery = await ports.assembleNoteAndDeliver({
+		workflowId: snapshot.task.id,
+		request,
+		declaration,
+		context,
+		brief,
+		selection,
+	});
+
+	assert.equal(delivery.revision, 1);
+	assert.equal(generated, 2);
+	const contentPackage = writer.get("workspace-1", packageId);
+	assert.equal(contentPackage?.revision, 1);
+	assert.equal(contentPackage?.versions.length, 2);
+	assert.equal(contentPackage?.variants.length, 3);
+	const selectedVersion = contentPackage?.versions.find(
+		({ harnessCandidateId }) => harnessCandidateId === "story",
+	);
+	assert.equal(selectedVersion?.note?.plan.pages.length, 2);
+	assert.deepEqual(
+		selectedVersion?.note?.plan.pages.map(
+			({ imageAssetId }) => imageAssetId,
+		),
+		["image-asset-1", "image-asset-2"],
+	);
+	assert.ok(contentPackage?.marketing?.contextBundle.bundleId);
+	assert.ok(contentPackage?.marketing?.rightsRefs.length);
+});
+
 test("media delivery blocks malicious visible copy before the canonical writer", async () => {
 	const request = harnessInput("image", "package-image-redline");
 	const media = new ModelSupplyHarnessMediaExecutionPort({
@@ -254,7 +472,11 @@ test("media delivery blocks malicious visible copy before the canonical writer",
 	let writes = 0;
 	const ports = new UnifiedHarnessStagePorts(
 		unsupportedCopyPorts(),
-		{ create() { throw new Error("Media delivery does not compile a copy brief."); } },
+		{
+			create() {
+				throw new Error("Media delivery does not compile a copy brief.");
+			},
+		},
 		media,
 		{
 			async write() {
@@ -330,7 +552,11 @@ test("image exact text is included in the visible-copy delivery gate", async () 
 	let writes = 0;
 	const ports = new UnifiedHarnessStagePorts(
 		unsupportedCopyPorts(),
-		{ create() { throw new Error("Media delivery does not compile a copy brief."); } },
+		{
+			create() {
+				throw new Error("Media delivery does not compile a copy brief.");
+			},
+		},
 		media,
 		{
 			async write(input) {
@@ -473,6 +699,73 @@ test("an unknown media result reconciles the same durable job without resubmissi
 	assert.equal(selection.asset.id, "image-asset-1");
 });
 
+test("note pages keep durable admission single-flight while compiler branches remain parallel", async () => {
+	const events: string[] = [];
+	const first = completedResult("image", "1");
+	const second = completedResult("image", "2");
+	let submissions = 0;
+	let firstReads = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				events.push(`submit:${submissions}`);
+				if (submissions === 1) {
+					return { ...first, status: "unknown", asset: undefined };
+				}
+				return second;
+			},
+			async getDurableMediaJob(_workspaceId, jobId) {
+				assert.equal(jobId, first.jobId);
+				firstReads += 1;
+				if (firstReads === 1) {
+					events.push("get:1:running");
+					return {
+						result: { ...first, status: "unknown", asset: undefined },
+					};
+				}
+				events.push("get:1:completed");
+				return { result: first };
+			},
+		},
+		undefined,
+		memoryNoteAdmission(events),
+	);
+	const request = harnessInput("image_text_note", "package-note");
+
+	const [firstSelection, secondSelection] = await Promise.all([
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "workflow-note:page-1",
+		}),
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "workflow-note:page-2",
+		}),
+	]);
+
+	assert.equal(firstSelection.asset.id, "image-asset-1");
+	assert.equal(secondSelection.asset.id, "image-asset-2");
+	assert.deepEqual(events, [
+		"claim:workflow-note:page-1:g1",
+		"blocked:workflow-note:page-2",
+		"submit:1",
+		"running:g1",
+		"get:1:running",
+		"blocked:workflow-note:page-2",
+		"get:1:completed",
+		"completed:g1",
+		"claim:workflow-note:page-2:g2",
+		"submit:2",
+		"running:g2",
+		"completed:g2",
+	]);
+});
+
 test("exact text blocks the first image, retries once, and keeps both provider costs without job-side debit flags", async () => {
 	const submissions: ModelSupplySubmission[] = [];
 	let generation = 0;
@@ -613,7 +906,7 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 });
 
 function harnessInput(
-	kind: "image" | "video",
+	kind: "image" | "image_text_note" | "video",
 	packageId: string,
 	imageOperation:
 		| "image.generate"
@@ -622,7 +915,14 @@ function harnessInput(
 	imageReferenceCount = 1,
 ): HarnessWorkflowInput {
 	const sourceAssets = Array.from(
-		{ length: kind === "image" ? imageReferenceCount : 1 },
+		{
+			length:
+				kind === "image"
+					? imageReferenceCount
+					: kind === "image_text_note"
+						? 0
+						: 1,
+		},
 		(_, index) => ({
 			id: `asset-${index + 1}`,
 			revision: `asset-r${index + 1}`,
@@ -643,8 +943,27 @@ function harnessInput(
 			surface: { id: "surface-1", revision: "surface-r1" },
 			recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
 			lens: kind,
-			operation: kind === "image" ? imageOperation : "video.generate",
+			operation:
+				kind === "video"
+					? "video.generate"
+					: kind === "image"
+						? imageOperation
+						: "image.generate",
 			platform: { id: "douyin" },
+			contentPackagePlatform: "douyin",
+			distributionTarget: "export",
+			deliverable: {
+				kind:
+					kind === "video"
+						? "video_package"
+						: kind === "image_text_note"
+							? "note"
+							: "image_set",
+				quantity: 1,
+				aspectRatio: "9:16",
+				...(kind === "video" ? { durationSeconds: 8 } : {}),
+				...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
+			},
 			deliverables: [
 				{
 					id: `${kind}-main`,
@@ -653,6 +972,7 @@ function harnessInput(
 					quantity: 1,
 					aspectRatio: "9:16",
 					...(kind === "video" ? { durationSeconds: 8 } : {}),
+					...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 				},
 			],
 			sources: {
@@ -838,6 +1158,140 @@ function completedResult(
 	};
 }
 
+function noteCopyPorts(): HarnessStagePorts {
+	const unsupported = async (): Promise<never> => {
+		throw new Error("Only intent naming is used by the note test.");
+	};
+	return {
+		async nameIntent() {
+			return {
+				declaration: {
+					normalizedIntent: "介绍夏日护理项目",
+					taskType: "daily_service_exposure",
+					deliveryLayer: "finished_media",
+					relevantAssetCategories: ["product_service"],
+					usedAssetCategories: ["product_service"],
+					route: "customized",
+					routingSource: "model",
+					implicitConstraints: [],
+				},
+				blockingQuestion: null,
+			};
+		},
+		injectContext: unsupported,
+		fenceContext: unsupported,
+		compileBrief: unsupported,
+		executeAndSelect: unsupported,
+		assembleAndDeliver: unsupported,
+	};
+}
+
+function noteRunnerFactory(): HarnessStructuredNodeRunnerFactory {
+	return {
+		create() {
+			return {
+				async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
+					const payload = JSON.parse(request.prompt) as Record<string, unknown>;
+					let output: unknown;
+					if (request.schemaName === "harness_note_plan_v1") {
+						output = notePlanOutput();
+					} else if (request.schemaName === "harness_note_text_block_v1") {
+						const page = payload.page as {
+							pageRole: string;
+							textBlock: { exactText: string[] };
+						};
+						const style = payload.style as { name: string };
+						output = {
+							title: `${style.name}-${page.pageRole}`,
+							body: `${style.name}说明${page.pageRole}`,
+							exactText: page.textBlock.exactText,
+						};
+					} else if (
+						request.schemaName === "harness_note_consistency_v1"
+					) {
+						output = {
+							evaluatedAt: "2026-07-22T09:00:01.000Z",
+							dimensions: [
+								"theme_continuity",
+								"visual_consistency",
+								"non_repetition",
+								"role_coverage",
+								"image_text_cross_reference",
+							].map((dimension) => ({
+								dimension,
+								passed: true,
+								reason: `${dimension} passed`,
+								pageIds: [],
+							})),
+							regenerationPageIds: [],
+						};
+					} else {
+						throw new Error(`Unexpected schema ${request.schemaName}.`);
+					}
+					return {
+						output: request.schema.parse(output),
+						attempts: 1,
+						providerTaskRef: `fixture-${request.schemaName}`,
+						replayed: false,
+						usage: { inputTokens: 1, outputTokens: 1 },
+					};
+				},
+			};
+		},
+	};
+}
+
+function notePlanOutput() {
+	const page = (
+		id: string,
+		order: number,
+		pageRole: "cover" | "cta_guide",
+		pagePurpose: "capture_attention" | "drive_action",
+	) => ({
+		id,
+		order,
+		revision: 1,
+		pageRole,
+		pagePurpose,
+		imageIntent: {
+			operation: "image.generate",
+			purpose: `${pageRole}配图`,
+			subject: "夏日护理项目",
+			scene: "真实门店场景",
+			composition: "主体清晰",
+			references: [],
+			exactText: [],
+			changes: [],
+			invariants: [],
+			factRefs: [],
+			rightsRefs: [],
+			outputPlan: { kind: "single" },
+		},
+		textBlock: {
+			title: `${pageRole}标题`,
+			body: `${pageRole}正文`,
+			exactText: [],
+		},
+		dependencies:
+			order === 1
+				? []
+				: [{ pageId: "page-1", kind: "text_sequence" }],
+	});
+	return {
+		schema: "note-plan/v1",
+		themeAnchor: "夏日护理项目",
+		style: {
+			id: "planning",
+			name: "规划中",
+			positioning: "等待风格选择",
+		},
+		pages: [
+			page("page-1", 1, "cover", "capture_attention"),
+			page("page-2", 2, "cta_guide", "drive_action"),
+		],
+	};
+}
+
 function unsupportedCopyPorts(): HarnessStagePorts {
 	const unsupported = async (): Promise<never> => {
 		throw new Error("Copy stage must not run for a frozen media snapshot.");
@@ -889,6 +1343,36 @@ function contextSnapshot(): HarnessContextSnapshot {
 			sourceRefs: [],
 			rightsRefs: [],
 			identityRefs: [],
+		},
+	};
+}
+
+function memoryNoteAdmission(events: string[] = []): NoteMediaAdmissionPort {
+	let active: NoteMediaAdmissionToken | undefined;
+	let generation = 0;
+	return {
+		async claim(input) {
+			if (active) {
+				if (active.workflowId === input.workflowId) return active;
+				events.push(`blocked:${input.workflowId}`);
+				return null;
+			}
+			generation += 1;
+			active = { ...input, generation };
+			events.push(`claim:${input.workflowId}:g${generation}`);
+			return active;
+		},
+		async markRunning(token, jobId) {
+			if (active?.generation !== token.generation) return false;
+			active = { ...active, jobId };
+			events.push(`running:g${token.generation}`);
+			return true;
+		},
+		async markTerminal(token, status) {
+			if (active?.generation !== token.generation) return false;
+			events.push(`${status}:g${token.generation}`);
+			active = undefined;
+			return true;
 		},
 	};
 }

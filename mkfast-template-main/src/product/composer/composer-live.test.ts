@@ -12,6 +12,7 @@ import {
   buildLiveQuoteInput,
   confirmComposerBrief,
   fetchComposerCatalogSource,
+  fetchComposerPreferences,
   fetchComposerSurface,
   requestComposerBrief,
   requestComposerQuote,
@@ -85,6 +86,35 @@ describe('Composer live public contracts', () => {
         undefined,
       ],
       ['creation-experience', { action: 'tool_list', payload: {} }, undefined],
+    ]);
+  });
+
+  it('loads model preferences for the exact Composer operation', async () => {
+    const calls: unknown[] = [];
+    const preferences = {
+      favorites: [],
+      recent: [],
+      workspaceDefault: 'seedream-5-pro',
+    };
+    const result = await fetchComposerPreferences(
+      'image_text',
+      undefined,
+      async (...args) => {
+        calls.push(args);
+        return preferences;
+      }
+    );
+
+    assert.equal(result, preferences);
+    assert.deepEqual(calls, [
+      [
+        'model-supply',
+        {
+          action: 'preferences',
+          payload: { operation: 'image.generate' },
+        },
+        undefined,
+      ],
     ]);
   });
 

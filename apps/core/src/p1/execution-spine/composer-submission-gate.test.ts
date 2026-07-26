@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pickComposerSubmissionSignedFields } from "@meiye/contracts";
+import {
+	pickComposerSubmissionSignedFields,
+} from "@meiye/contracts";
 
 import { briefSourceRevisionId } from "../creation-experience/postgres-brief-revision-context.js";
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
@@ -314,18 +316,19 @@ test("Composer admission gate fails closed for stale quote, rights, and source f
 	assert.equal(capabilityChecks, 0);
 });
 
-test("Composer admission derives image and video delivery facts from the published Recipe before the brief gate", async () => {
-	for (const kind of ["image", "video"] as const) {
+test("Composer admission keeps pure image distinct from the first-class image-text note fork", async () => {
+	for (const kind of ["image", "image_text_note", "video"] as const) {
 		const briefChecks: unknown[] = [];
 		const input = mediaSubmission(kind);
-		const recipeLens = kind === "image" ? "image_text" : "video";
+		const recipeLens = kind === "video" ? "video" : "image_text";
+		let publishedNotePageBound = 3;
 		const gate = new ComposerSubmissionAdmissionGate({
 			assets: {
 				async inspect() {
 					return [
 						{
 							assetId: "asset-1",
-							contentType: kind === "image" ? "image/jpeg" : "video/mp4",
+							contentType: kind === "video" ? "video/mp4" : "image/jpeg",
 							dataClass: [],
 							kind: "resolved",
 							rightsRevision: "rights-r1",
@@ -361,21 +364,29 @@ test("Composer admission derives image and video delivery facts from the publish
 				async getRecipeByRevisionId() {
 					return {
 						contextPatches:
-							kind === "image"
+							kind !== "video"
 								? {}
 								: { contentModules: ["social_cover", "price_card"] },
 						delivery: {
 							aspectRatio: "9:16",
 							contentPackagePlatform:
-								kind === "image" ? "xiaohongshu" : "video_account",
+								kind === "video" ? "video_account" : "xiaohongshu",
 							distributionTarget: "export",
-							deliverableKind: kind === "image" ? "image_set" : "video_package",
+							deliverableKind:
+								kind === "image"
+									? "image_set"
+									: kind === "image_text_note"
+										? "note"
+										: "video_package",
 							...(kind === "video" ? { durationSeconds: 8 } : {}),
 							quantity: 2,
+							...(kind === "image_text_note"
+								? { notePageBound: publishedNotePageBound }
+								: {}),
 						},
 						lensId: recipeLens,
 						modelPolicy:
-							kind === "image"
+							kind !== "video"
 								? { mode: "auto" }
 								: { catalogModelId: `catalog-${kind}-1`, mode: "fixed" },
 						presentation: { title: `${kind} title`, summary: `${kind} summary` },
@@ -383,7 +394,11 @@ test("Composer admission derives image and video delivery facts from the publish
 						recipeId: `recipe-${kind}`,
 						revisionId: `recipe-${kind}@1`,
 						sourceRequirements: [
-							{ kinds: [kind], required: true, slot: "primary_reference" },
+							{
+								kinds: [kind === "image_text_note" ? "image" : kind],
+								required: true,
+								slot: "primary_reference",
+							},
 						],
 						status: "published",
 						targetWorkspaceKind: recipeLens,
@@ -409,6 +424,37 @@ test("Composer admission derives image and video delivery facts from the publish
 			identities: {
 				async listActive() {
 					return [{ identityId: "identity-brand", version: 3 }] as never;
+				},
+			},
+			noteSettings: {
+				async read() {
+					return {
+						styles: {
+							styles: [
+								{
+									id: "facts",
+									name: "干货版",
+									writingGuide: "解释清楚",
+									structureTemplate: "结论先行",
+									platforms: ["xiaohongshu"],
+								},
+								{
+									id: "story",
+									name: "叙事版",
+									writingGuide: "场景叙事",
+									structureTemplate: "场景展开",
+									platforms: ["xiaohongshu"],
+								},
+								{
+									id: "concise",
+									name: "精简版",
+									writingGuide: "短句表达",
+									structureTemplate: "要点列表",
+									platforms: ["xiaohongshu"],
+								},
+							],
+						},
+					};
 				},
 			},
 			quotes: {
@@ -464,9 +510,20 @@ test("Composer admission derives image and video delivery facts from the publish
 		const admitted = await gate.admit(input);
 		assert.match(admitted.taskId, /^composer-task:[a-f0-9]{64}$/u);
 		assert.equal(admitted.modelPolicy.mode, "fixed");
+		assert.deepEqual(
+			admitted.usageUnits,
+			kind === "image_text_note"
+				? [
+						{ resource: "copy", quantity: 3 },
+						{ resource: "image", quantity: 3 },
+					]
+				: undefined,
+		);
 		assert.deepEqual(admitted.recipeBinding, {
 			contentModules:
-				kind === "image" ? ["social_cover"] : ["social_cover", "price_card"],
+				kind === "video"
+					? ["social_cover", "price_card"]
+					: ["social_cover"],
 			deliverables: [
 				{
 					id: `recipe-deliverable:recipe-${kind}@1`,
@@ -475,6 +532,7 @@ test("Composer admission derives image and video delivery facts from the publish
 					quantity: 2,
 					aspectRatio: "9:16",
 					...(kind === "video" ? { durationSeconds: 8 } : {}),
+					...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 				},
 			],
 			lens: kind,
@@ -487,7 +545,7 @@ test("Composer admission derives image and video delivery facts from the publish
 				catalogRevision: `catalog-${kind}-r1`,
 				expectedContextRevision: 4,
 				intent: "为夏日护理项目写一条预约文案",
-				operation: kind === "image" ? "image.edit" : "video.generate",
+				operation: kind === "video" ? "video.generate" : "image.edit",
 				outputCount: 2,
 				quoteRevision: "quote-r5",
 				sourceReferenceIds: ["asset-1"],
@@ -496,6 +554,13 @@ test("Composer admission derives image and video delivery facts from the publish
 				...(kind === "video" ? { durationSeconds: 8 } : {}),
 			},
 		]);
+		if (kind === "image_text_note") {
+			publishedNotePageBound = 4;
+			await assert.rejects(
+				gate.admit(input),
+				/deliverable\.notePageBound must match the published Recipe/u,
+			);
+		}
 	}
 });
 
@@ -605,18 +670,26 @@ function defaultSubmission(): ComposerSubmissionRequest {
 	};
 }
 
-function mediaSubmission(kind: "image" | "video"): ComposerSubmissionRequest {
+function mediaSubmission(
+	kind: "image" | "image_text_note" | "video",
+): ComposerSubmissionRequest {
 	return {
 		...submission(),
 		catalogModel: { id: `catalog-${kind}-1`, revision: `catalog-${kind}-r1` },
 		contentPackagePlatform:
-			kind === "image" ? "xiaohongshu" : "video_account",
+			kind === "video" ? "video_account" : "xiaohongshu",
 		distributionTarget: "export",
 		deliverable: {
-			kind: kind === "image" ? "image_set" : "video_package",
+			kind:
+				kind === "image"
+					? "image_set"
+					: kind === "image_text_note"
+						? "note"
+						: "video_package",
 			quantity: 2,
 			aspectRatio: "9:16",
 			...(kind === "video" ? { durationSeconds: 8 } : {}),
+			...(kind === "image_text_note" ? { notePageBound: 3 } : {}),
 		},
 		deliverables: [
 			{

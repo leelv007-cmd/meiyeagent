@@ -20,6 +20,7 @@ import {
 	type CapabilityHotAssemblyPort,
 } from "../supply-registry/hot-assembly.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
+import type { NotePlanSettingsSource } from "../harness/note-plan-compiler.js";
 
 import type {
 	ComposerSubmissionRequest,
@@ -64,6 +65,7 @@ export interface ComposerSubmissionAdmissionDependencies {
 	routeResolver: ComposerRouteResolverPort;
 	sourcePackages: ComposerSourceContentPackageReader;
 	now?: () => string;
+	noteSettings?: Pick<NotePlanSettingsSource, "read">;
 }
 
 /**
@@ -146,7 +148,10 @@ export class ComposerSubmissionAdmissionGate
 				"Recipe revision is missing, unpublished, or does not match this submission.",
 			);
 		}
-		const recipeLens = composerLensForRecipe(recipe.lensId);
+		const recipeLens = composerLensForRecipe(
+			recipe.lensId,
+			input.deliverable.kind,
+		);
 		if (!recipeLens || recipe.targetWorkspaceKind !== recipe.lensId) {
 			throw invalid(
 				"Recipe is not published for the selected Composer modality.",
@@ -178,6 +183,9 @@ export class ComposerSubmissionAdmissionGate
 								durationSeconds:
 									recipeValidation.binding.deliverable.durationSeconds,
 							}
+						: {}),
+					...(recipeValidation.binding.notePageBound
+						? { notePageBound: recipeValidation.binding.notePageBound }
 						: {}),
 				},
 			],
@@ -476,6 +484,10 @@ export class ComposerSubmissionAdmissionGate
 				"ProductQuote confirmation did not bind the admitted Composer task.",
 			);
 		}
+		const usageUnits =
+			recipeBinding.lens === "image_text_note"
+				? await this.noteUsageUnits(deliverable.notePageBound)
+				: undefined;
 		return {
 			identity,
 			...(identityDecision ? { identityDecision } : {}),
@@ -512,7 +524,26 @@ export class ComposerSubmissionAdmissionGate
 				summary: `Server verified ${assetIds.length} source asset${assetIds.length === 1 ? "" : "s"} in workspace ${input.workspaceId}.`,
 			},
 			taskId,
+			...(usageUnits ? { usageUnits } : {}),
 		};
+	}
+
+	private async noteUsageUnits(notePageBound: number | undefined) {
+		if (!this.dependencies.noteSettings) {
+			throw invalid(
+				"Image-text note usage settings are unavailable for reservation.",
+			);
+		}
+		if (!Number.isSafeInteger(notePageBound) || (notePageBound as number) <= 0) {
+			throw invalid(
+				"Image-text note page-bound usage is unavailable for reservation.",
+			);
+		}
+		const settings = await this.dependencies.noteSettings.read();
+		return [
+			{ resource: "copy" as const, quantity: settings.styles.styles.length },
+			{ resource: "image" as const, quantity: notePageBound as number },
+		];
 	}
 }
 
@@ -520,9 +551,17 @@ function normalizeRouteDataClass(values: string[] | undefined) {
 	return [...new Set(values ?? ["public"])].sort();
 }
 
-function composerLensForRecipe(lens: string) {
+function composerLensForRecipe(
+	lens: string,
+	deliverableKind: ComposerSubmissionRequest["deliverable"]["kind"],
+) {
 	if (lens === "copy") return "copy" as const;
-	if (lens === "image_text") return "image" as const;
+	if (lens === "image_text") {
+		return deliverableKind === "note" ||
+			deliverableKind === "image_text_package"
+			? ("image_text_note" as const)
+			: ("image" as const);
+	}
 	if (lens === "video") return "video" as const;
 	return null;
 }
@@ -532,7 +571,9 @@ function operationForRequest(
 	referenceCount: number,
 ): CreativeOperation {
 	if (lens === "copy") return "copy.generate";
-	if (lens === "image") return selectImageIntentOperation({ referenceCount });
+	if (lens === "image" || lens === "image_text_note") {
+		return selectImageIntentOperation({ referenceCount });
+	}
 	return "video.generate";
 }
 

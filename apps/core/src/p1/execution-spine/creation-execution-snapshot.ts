@@ -6,6 +6,8 @@ import {
 	creationModeSchema,
 	creativeOperationSchema,
 	creativeContentModuleIds,
+	MAX_NOTE_PLAN_PAGE_COUNT,
+	MIN_NOTE_PLAN_PAGE_COUNT,
 } from "@meiye/contracts";
 import { z } from "zod";
 
@@ -18,7 +20,12 @@ const platformSchema = z.enum([
 	"wechat_moments",
 	"offline",
 ]);
-const creationLensSchema = z.enum(["copy", "image", "video"]);
+const creationLensSchema = z.enum([
+	"copy",
+	"image",
+	"image_text_note",
+	"video",
+]);
 
 const revisionReferenceSchema = z
 	.object({
@@ -64,11 +71,17 @@ const sourceReferencesSchema = z
 const deliverableSchema = z
 	.object({
 		id: identifierSchema,
-		kind: z.enum(["copy", "image", "video"]),
+		kind: z.enum(["copy", "image", "image_text_note", "video"]),
 		quantity: z.number().int().positive().max(100),
 		order: z.number().int().nonnegative().max(100),
 		aspectRatio: z.enum(["1:1", "3:4", "9:16"]).optional(),
 		durationSeconds: z.number().int().positive().max(3_600).optional(),
+		notePageBound: z
+			.number()
+			.int()
+			.min(MIN_NOTE_PLAN_PAGE_COUNT)
+			.max(MAX_NOTE_PLAN_PAGE_COUNT)
+			.optional(),
 	})
 	.strict();
 
@@ -304,7 +317,9 @@ export function createCreationExecutionSnapshot(
 
 function operationForLens(lens: z.infer<typeof creationLensSchema>) {
 	if (lens === "copy") return "copy.generate" as const;
-	if (lens === "image") return "image.generate" as const;
+	if (lens === "image" || lens === "image_text_note") {
+		return "image.generate" as const;
+	}
 	return "video.generate" as const;
 }
 
@@ -320,10 +335,11 @@ function validateSubmission(
 			aspectRatio?: string;
 			durationSeconds?: number;
 			kind: string;
+			notePageBound?: number;
 			order: number;
 			quantity: number;
 		}>;
-		lens?: "copy" | "image" | "video";
+		lens?: "copy" | "image" | "image_text_note" | "video";
 	},
 	context: z.RefinementCtx,
 ) {
@@ -350,6 +366,21 @@ function validateSubmission(
 			path: ["deliverables"],
 		});
 	}
+	const notePageBound = command.deliverables[0]?.notePageBound;
+	if (command.lens === "image_text_note" && notePageBound === undefined) {
+		context.addIssue({
+			code: "custom",
+			message: "Image-text note delivery requires a frozen page bound.",
+			path: ["deliverables", 0, "notePageBound"],
+		});
+	}
+	if (command.lens !== "image_text_note" && notePageBound !== undefined) {
+		context.addIssue({
+			code: "custom",
+			message: "Only image-text note delivery may carry a page bound.",
+			path: ["deliverables", 0, "notePageBound"],
+		});
+	}
 	if (new Set(command.contentModules).size !== command.contentModules.length) {
 		context.addIssue({
 			code: "custom",
@@ -364,11 +395,13 @@ function validateFrozenDeliverable(
 		deliverable: {
 			aspectRatio?: string;
 			durationSeconds?: number;
+			notePageBound?: number;
 			quantity: number;
 		};
 		deliverables: Array<{
 			aspectRatio?: string;
 			durationSeconds?: number;
+			notePageBound?: number;
 			quantity: number;
 		}>;
 	},
@@ -380,7 +413,8 @@ function validateFrozenDeliverable(
 		(snapshot.deliverable.quantity !== executionDeliverable.quantity ||
 			snapshot.deliverable.aspectRatio !== executionDeliverable.aspectRatio ||
 			snapshot.deliverable.durationSeconds !==
-				executionDeliverable.durationSeconds)
+				executionDeliverable.durationSeconds ||
+			snapshot.deliverable.notePageBound !== executionDeliverable.notePageBound)
 	) {
 		context.addIssue({
 			code: "custom",

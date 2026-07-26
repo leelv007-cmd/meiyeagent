@@ -106,6 +106,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       deliverableKind: 'note',
       quantity: 1,
       aspectRatio: '3:4',
+      notePageBound: 3,
     },
     factTypes: [],
     sourceRequirements: [
@@ -317,6 +318,7 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
       deliverableKind: 'image_text_package',
       quantity: 1,
       aspectRatio: '3:4',
+      notePageBound: 3,
     },
     factTypes: [],
     sourceRequirements: [

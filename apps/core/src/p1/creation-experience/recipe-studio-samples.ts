@@ -65,6 +65,7 @@ function sample(
           outputKind: 'image_text_note',
           quantity: 1,
           aspectRatio: '3:4',
+          notePageBound: 3,
         },
       },
       {
