@@ -3,6 +3,7 @@ import type { CreativeOperation, SupplyOperation } from "@meiye/contracts";
 import { P1DomainError, type RouteSnapshot } from "../foundation/domain.js";
 import type { FoundationRepository } from "../foundation/ports.js";
 import type { RouteSnapshot as ModelSupplyRouteSnapshot } from "../model-supply/index.js";
+import type { DataClass } from "../model-supply/supply-contracts.js";
 import {
 	fromModelSupplyRouteSnapshot,
 	toFoundationRouteCheckpoint,
@@ -12,6 +13,7 @@ import { nativeSupplyOperation } from "../harness/image-intent-compiler.js";
 export interface ComposerRouteResolverPort {
 	resolve(input: {
 		catalogModel: { id: string; revision: string };
+		dataClass: DataClass[];
 		operation: CreativeOperation;
 		routeSnapshotId?: string;
 		workspaceId: string;
@@ -21,7 +23,7 @@ export interface ComposerRouteResolverPort {
 interface FixedRouteFreezer {
 	freezeFixedRouteForExecution(input: {
 		catalogModelId: string;
-		dataClass: [];
+		dataClass: DataClass[];
 		operation: SupplyOperation;
 		workspaceId: string;
 	}): Promise<ModelSupplyRouteSnapshot>;
@@ -44,6 +46,7 @@ export class ModelSupplyComposerRouteResolver
 
 	async resolve(input: {
 		catalogModel: { id: string; revision: string };
+		dataClass: DataClass[];
 		operation: CreativeOperation;
 		routeSnapshotId?: string;
 		workspaceId: string;
@@ -57,14 +60,16 @@ export class ModelSupplyComposerRouteResolver
 
 		const frozen = await this.freezer.freezeFixedRouteForExecution({
 			catalogModelId: input.catalogModel.id,
-			dataClass: [],
+			dataClass: normalizeDataClass(input.dataClass),
 			operation: nativeSupplyOperation(input.operation),
 			workspaceId: input.workspaceId,
 		});
 		if (
 			frozen.catalogRevisionId !== input.catalogModel.revision ||
 			frozen.actualCatalogModelId !== input.catalogModel.id ||
-			frozen.requestedSelection.mode !== "fixed"
+			frozen.requestedSelection.mode !== "fixed" ||
+			JSON.stringify(normalizeDataClass(frozen.dataClass)) !==
+				JSON.stringify(normalizeDataClass(input.dataClass))
 		) {
 			throw new P1DomainError(
 				"INVALID_STATE",
@@ -72,11 +77,12 @@ export class ModelSupplyComposerRouteResolver
 			);
 		}
 
+		const dataClasses = normalizeDataClass(input.dataClass);
 		const route: RouteSnapshot = {
 			...toFoundationRouteCheckpoint(fromModelSupplyRouteSnapshot(frozen), {
 				catalogRevision: input.catalogModel.revision,
-				dataClass: "public",
-				dataClasses: ["public"],
+				dataClass: dataClasses[0] ?? "public",
+				dataClasses: dataClasses.length > 0 ? dataClasses : ["public"],
 				fallbackConsent: false,
 				requestedCatalogModelId: input.catalogModel.id,
 				selectionMode: "fixed",
@@ -102,4 +108,8 @@ export class ModelSupplyComposerRouteResolver
 			throw error;
 		}
 	}
+}
+
+function normalizeDataClass(dataClass: DataClass[]) {
+	return [...new Set(dataClass)].sort();
 }

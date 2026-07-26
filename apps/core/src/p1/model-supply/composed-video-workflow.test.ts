@@ -365,6 +365,32 @@ function setup(options: {
         return execution.execute(request);
       },
     },
+    referenceAssets: {
+      async inspect(_workspaceId, assetIds) {
+        return assetIds.map((assetId) => ({
+          assetId,
+          classificationSource: 'server_fact' as const,
+          contentType: 'image/png',
+          dataClass: [],
+          kind: 'resolved' as const,
+          rightsRevision: 'rights-r1',
+          sha256: '0'.repeat(64),
+        }));
+      },
+      async resolve(_workspaceId, assetIds) {
+        return assetIds.map((assetId) => ({
+          assetId,
+          bytes: new Uint8Array([1, 2, 3]),
+          classificationSource: 'server_fact' as const,
+          contentType: 'image/png',
+          dataClass: [],
+          kind: 'resolved' as const,
+          providerReadableUrl: 'data:image/png;base64,AQID',
+          rightsRevision: 'rights-r1',
+          sha256: '0'.repeat(64),
+        }));
+      },
+    },
     ...(options.candidatePlayable === undefined
       ? {}
       : {

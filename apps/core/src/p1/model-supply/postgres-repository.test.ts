@@ -632,6 +632,32 @@ describe('Postgres model supply repository', { skip: databaseUrl ? false : 'TEST
       models: createDefaultCatalogModels(),
       deployments,
       execution: new RecordedAdapterRouter(),
+      referenceAssets: {
+        async inspect(_workspaceId, assetIds) {
+          return assetIds.map((assetId) => ({
+            assetId,
+            classificationSource: 'server_fact' as const,
+            contentType: 'image/png',
+            dataClass: [],
+            kind: 'resolved' as const,
+            rightsRevision: 'rights-r1',
+            sha256: '0'.repeat(64),
+          }));
+        },
+        async resolve(_workspaceId, assetIds) {
+          return assetIds.map((assetId) => ({
+            assetId,
+            bytes: new Uint8Array([1, 2, 3]),
+            classificationSource: 'server_fact' as const,
+            contentType: 'image/png',
+            dataClass: [],
+            kind: 'resolved' as const,
+            providerReadableUrl: 'data:image/png;base64,AQID',
+            rightsRevision: 'rights-r1',
+            sha256: '0'.repeat(64),
+          }));
+        },
+      },
     });
     const store = new PostgresCanonicalVideoRunStore(pool, workspaceId);
     const runner = new PersistentContentWorkflowRunner(

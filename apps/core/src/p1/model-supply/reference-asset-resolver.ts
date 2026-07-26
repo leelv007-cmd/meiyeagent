@@ -5,6 +5,7 @@ import type {
   CanvasAssetRepository,
   CanvasOwnedAsset,
 } from '../../pro-studio/canvas-asset-facade.js';
+import type { DataClass } from './supply-contracts.js';
 
 export type ReferenceAssetResolutionFailureReason =
   | 'not_found'
@@ -21,9 +22,13 @@ export interface ReferenceAssetResolutionFailure {
 
 export interface ReferenceAssetInspectionSuccess {
   assetId: string;
+  classificationSource?: 'server_fact' | 'unclassified';
   contentType: string;
+  dataClass?: DataClass[];
   kind: 'resolved';
   objectKey?: string;
+  rightsRevision?: string;
+  sha256?: string;
 }
 
 export interface ResolvedReferenceAsset extends ReferenceAssetInspectionSuccess {
@@ -56,6 +61,33 @@ export interface ProductReferenceAssetResolverOptions {
   maxBytes?: number;
   clock?: () => Date;
   fetch?: typeof fetch;
+}
+
+export class ProductReferenceAssetPolicyResolver {
+  constructor(
+    private readonly products: Pick<ProductRepository, 'load'>,
+    private readonly clock: () => Date = () => new Date(),
+  ) {}
+
+  async resolve(workspaceId: string, assetId: string) {
+    const state = await this.products.load(workspaceId);
+    const asset = state?.assets.find((candidate) => candidate.id === assetId);
+    if (
+      !asset ||
+      asset.authorizationStatus !== 'authorized' ||
+      asset.sourceType !== 'real' ||
+      asset.consentScope === 'internal_only' ||
+      !asset.rightsEvidence?.trim() ||
+      !hasCurrentRestrictedAssetAuthorization(asset, this.clock()) ||
+      !asset.objectKey.startsWith(`${workspaceId}/`)
+    ) {
+      return null;
+    }
+    return {
+      dataClass: productAssetDataClass(asset, state?.store?.regulated),
+      rightsRevision: productAssetRightsRevision(asset),
+    };
+  }
 }
 
 const DEFAULT_MAX_REFERENCE_ASSET_BYTES = 10 * 1024 * 1024;
@@ -113,13 +145,34 @@ export class CompositeReferenceAssetResolver
 }
 
 export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
+  private readonly clock: () => Date;
+  private readonly productPolicyResolver?: {
+    resolve(
+      workspaceId: string,
+      assetId: string,
+    ): Promise<{ dataClass: DataClass[]; rightsRevision: string } | null>;
+  };
   private readonly maxBytes: number;
 
   constructor(
     private readonly assets: Pick<CanvasAssetRepository, 'get'>,
     private readonly storage: OwnedAssetReferenceStorage,
-    options: { maxBytes?: number } = {},
+    options: {
+      clock?: () => Date;
+      productPolicyResolver?: {
+        resolve(
+          workspaceId: string,
+          assetId: string,
+        ): Promise<{
+          dataClass: DataClass[];
+          rightsRevision: string;
+        } | null>;
+      };
+      maxBytes?: number;
+    } = {},
   ) {
+    this.clock = options.clock ?? (() => new Date());
+    this.productPolicyResolver = options.productPolicyResolver;
     this.maxBytes = options.maxBytes ?? DEFAULT_MAX_REFERENCE_ASSET_BYTES;
     if (!Number.isInteger(this.maxBytes) || this.maxBytes <= 0) {
       throw new Error('Reference asset byte limit must be a positive integer.');
@@ -151,9 +204,13 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
         }
         return {
           assetId,
+          classificationSource: receipt.classificationSource,
           contentType: receipt.contentType,
+          dataClass: receipt.dataClass,
           kind: 'resolved',
           objectKey: receipt.asset.objectKey,
+          rightsRevision: receipt.rightsRevision,
+          sha256: receipt.asset.sha256,
         };
       }),
     );
@@ -183,13 +240,27 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
         if (bytes.byteLength !== asset.sizeBytes || sha256 !== asset.sha256) {
           return failure(assetId, 'unreadable');
         }
+        const current = await this.loadReceipt(workspaceId, assetId);
+        if (
+          'kind' in current ||
+          current.rightsRevision !== receipt.rightsRevision ||
+          current.asset.objectKey !== asset.objectKey ||
+          current.asset.sha256 !== asset.sha256
+        ) {
+          return 'kind' in current
+            ? current
+            : failure(assetId, 'authorization_withdrawn');
+        }
         return {
           assetId,
           bytes,
+          classificationSource: receipt.classificationSource,
           contentType,
+          dataClass: receipt.dataClass,
           kind: 'resolved',
           objectKey: asset.objectKey,
           providerReadableUrl: `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`,
+          rightsRevision: receipt.rightsRevision,
           sha256,
         };
       }),
@@ -200,7 +271,13 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
     workspaceId: string,
     assetId: string,
   ): Promise<
-    | { asset: CanvasOwnedAsset; contentType: string }
+    | {
+        asset: CanvasOwnedAsset;
+        classificationSource: 'server_fact' | 'unclassified';
+        contentType: string;
+        dataClass: DataClass[];
+        rightsRevision: string;
+      }
     | ReferenceAssetResolutionFailure
   > {
     let asset;
@@ -210,6 +287,25 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
       return failure(assetId, 'unreadable');
     }
     if (!asset) return failure(assetId, 'not_found');
+    const policy = asset.exportPolicy;
+    if (
+      !policy ||
+      policy.workspaceId !== workspaceId ||
+      policy.exportAllowed !== true ||
+      policy.privateRetrievalAllowed !== true
+    ) {
+      return failure(assetId, 'rights_incomplete');
+    }
+    if (policy.revokedAt !== null) {
+      return failure(assetId, 'authorization_withdrawn');
+    }
+    if (
+      policy.expiresAt !== null &&
+      (!validTimestamp(policy.expiresAt) ||
+        new Date(policy.expiresAt).getTime() <= this.clock().getTime())
+    ) {
+      return failure(assetId, 'rights_incomplete');
+    }
     if (
       !asset.objectKey.startsWith(`${workspaceId}/`) ||
       !Number.isInteger(asset.sizeBytes) ||
@@ -223,7 +319,31 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
     }
     const contentType = normalizedContentType(asset.contentType);
     if (!contentType) return failure(assetId, 'unreadable');
-    return { asset, contentType };
+    const productPolicy =
+      asset.source.kind === 'product_asset'
+        ? await this.productPolicyResolver?.resolve(
+            workspaceId,
+            asset.source.sourceAssetId,
+          )
+        : null;
+    if (asset.source.kind === 'product_asset' && !productPolicy) {
+      return failure(assetId, 'rights_incomplete');
+    }
+    const dataClass = productPolicy?.dataClass ?? [];
+    return {
+      asset,
+      classificationSource: productPolicy ? 'server_fact' : 'unclassified',
+      contentType,
+      dataClass: [...new Set(dataClass)].sort(),
+      rightsRevision: createHash('sha256')
+        .update(
+          JSON.stringify({
+            policy,
+            productRightsRevision: productPolicy?.rightsRevision ?? null,
+          }),
+        )
+        .digest('hex'),
+    };
   }
 }
 
@@ -297,6 +417,8 @@ export class ProductReferenceAssetResolver
         if (!asset.objectKey.startsWith(`${workspaceId}/`)) {
           return failure(assetId, 'unreadable');
         }
+        const dataClass = productAssetDataClass(asset, state?.store?.regulated);
+        const rightsRevision = productAssetRightsRevision(asset);
 
         let response: Response;
         try {
@@ -320,11 +442,19 @@ export class ProductReferenceAssetResolver
         );
         if (!contentType) return failure(assetId, 'unreadable');
         if (mode === 'inspect') {
+          const sha256 = response.headers.get('x-content-sha256');
+          if (!sha256 || !/^[a-f0-9]{64}$/u.test(sha256)) {
+            return failure(assetId, 'unreadable');
+          }
           return {
             assetId,
+            classificationSource: 'server_fact' as const,
             contentType,
+            dataClass,
             kind: 'resolved' as const,
             objectKey: asset.objectKey,
+            rightsRevision,
+            sha256,
           };
         }
 
@@ -337,14 +467,51 @@ export class ProductReferenceAssetResolver
         if (bytes.byteLength > this.maxBytes) {
           return failure(assetId, 'oversized');
         }
+        const digest = createHash('sha256').update(bytes).digest('hex');
+        const recordedSha256 = response.headers.get('x-content-sha256');
+        if (
+          recordedSha256 &&
+          (!/^[a-f0-9]{64}$/u.test(recordedSha256) ||
+            recordedSha256 !== digest)
+        ) {
+          return failure(assetId, 'unreadable');
+        }
+        const currentState = await this.products.load(workspaceId);
+        const currentAsset = currentState?.assets.find(
+          (candidate) => candidate.id === assetId,
+        );
+        if (
+          !currentAsset ||
+          currentAsset.authorizationStatus !== 'authorized' ||
+          currentAsset.sourceType !== 'real' ||
+          currentAsset.consentScope === 'internal_only' ||
+          !currentAsset.rightsEvidence?.trim() ||
+          !hasCurrentRestrictedAssetAuthorization(
+            currentAsset,
+            this.options.clock?.() ?? new Date(),
+          ) ||
+          currentAsset.objectKey !== asset.objectKey ||
+          productAssetRightsRevision(currentAsset) !== rightsRevision ||
+          JSON.stringify(
+            productAssetDataClass(
+              currentAsset,
+              currentState?.store?.regulated,
+            ),
+          ) !== JSON.stringify(dataClass)
+        ) {
+          return failure(assetId, 'authorization_withdrawn');
+        }
         return {
           assetId,
           bytes,
+          classificationSource: 'server_fact' as const,
           contentType,
+          dataClass,
           kind: 'resolved' as const,
           objectKey: asset.objectKey,
           providerReadableUrl: `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`,
-          sha256: createHash('sha256').update(bytes).digest('hex'),
+          rightsRevision,
+          sha256: digest,
         };
       }),
     );
@@ -367,4 +534,46 @@ function normalizedContentType(value: string | null) {
   return contentType && /^(?:image\/(?:jpeg|png|webp)|video\/mp4|audio\/(?:mpeg|wav))$/u.test(contentType)
     ? contentType
     : undefined;
+}
+
+function validTimestamp(value: string) {
+  return Number.isFinite(new Date(value).getTime());
+}
+
+function productAssetDataClass(
+  asset: {
+    containsPerson: boolean;
+    containsSensitiveData: boolean;
+  },
+  regulated = false,
+): DataClass[] {
+  const values = new Set<DataClass>();
+  if (asset.containsPerson) values.add('contains_face');
+  if (asset.containsSensitiveData) values.add('pii');
+  if (regulated) values.add('medical');
+  return [...values].sort();
+}
+
+function productAssetRightsRevision(asset: {
+  authorizationStatus: string;
+  consentScope: string;
+  rightsAuthorizedAt?: string;
+  rightsEvidence?: string;
+  rightsNoFixedExpiry?: boolean;
+  rightsPlatforms?: string[];
+  rightsValidUntil?: string;
+}) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        authorizationStatus: asset.authorizationStatus,
+        consentScope: asset.consentScope,
+        rightsAuthorizedAt: asset.rightsAuthorizedAt ?? null,
+        rightsEvidence: asset.rightsEvidence ?? null,
+        rightsNoFixedExpiry: asset.rightsNoFixedExpiry ?? null,
+        rightsPlatforms: asset.rightsPlatforms ?? [],
+        rightsValidUntil: asset.rightsValidUntil ?? null,
+      }),
+    )
+    .digest('hex');
 }

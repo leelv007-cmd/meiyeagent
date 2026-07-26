@@ -65,6 +65,7 @@ async function serveFile(request: Request, headOnly: boolean) {
     const [fileRecord] = await db
       .select({
         contentType: userFiles.contentType,
+        description: userFiles.description,
         deletedAt: userFiles.deletedAt,
         workspaceId: userFiles.workspaceId,
         isPublic: userFiles.isPublic,
@@ -150,6 +151,15 @@ async function serveFile(request: Request, headOnly: boolean) {
     };
     if (fileRecord) {
       responseHeaders['Content-Length'] = String(fileRecord.size);
+      const productAssetSha256 =
+        fileRecord.purpose === 'product_asset'
+          ? fileRecord.description?.match(
+              /^product-asset:([a-f0-9]{64})$/u
+            )?.[1]
+          : undefined;
+      if (productAssetSha256) {
+        responseHeaders['X-Content-SHA256'] = productAssetSha256;
+      }
     }
     if (!safeInlineTypes.includes(file.contentType)) {
       responseHeaders['Content-Disposition'] = 'attachment';

@@ -144,6 +144,9 @@ function createModels(
   assets: MemoryModelAssetStorage,
   providerAdmission?: ModelSupplyProviderAdmissionPort,
   planningControlPlane?: ModelSupplyPlanningControlPlanePort,
+  referenceAssets?: ConstructorParameters<
+    typeof ModelSupplyApplicationService
+  >[0]['referenceAssets'],
 ) {
   return new ModelSupplyApplicationService({
     assetStorage: assets,
@@ -156,8 +159,36 @@ function createModels(
     models: createDefaultCatalogModels(),
     ...(providerAdmission ? { providerAdmission } : {}),
     ...(planningControlPlane ? { planningControlPlane } : {}),
+    ...(referenceAssets ? { referenceAssets } : {}),
   });
 }
+
+const authorizedSubmissionReferences = {
+  async inspect(_workspaceId: string, assetIds: string[]) {
+    return assetIds.map((assetId) => ({
+      assetId,
+      classificationSource: 'server_fact' as const,
+      contentType: 'image/png',
+      dataClass: [],
+      kind: 'resolved' as const,
+      rightsRevision: 'rights-r1',
+      sha256: 'a'.repeat(64),
+    }));
+  },
+  async resolve(_workspaceId: string, assetIds: string[]) {
+    return assetIds.map((assetId) => ({
+      assetId,
+      bytes: Uint8Array.from(Buffer.from('reference')),
+      classificationSource: 'server_fact' as const,
+      contentType: 'image/png',
+      dataClass: [],
+      kind: 'resolved' as const,
+      providerReadableUrl: 'data:image/png;base64,cmVmZXJlbmNl',
+      rightsRevision: 'rights-r1',
+      sha256: 'a'.repeat(64),
+    }));
+  },
+};
 
 function envelope(record: Awaited<ReturnType<TracerJobApplicationService['get']>>) {
   return {
@@ -1809,7 +1840,13 @@ describe('durable media generation', () => {
       async cancel() {},
     };
     const ledger = new RecoveringLedger();
-    const models = createModels(ledger, new MemoryModelAssetStorage());
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      undefined,
+      undefined,
+      authorizedSubmissionReferences,
+    );
     const repository = new MemoryTracerJobRepository(new MemoryJobPort());
     const jobs = new TracerJobApplicationService(repository);
     const runtime = new DurableMediaGenerationApplicationService({ jobs, models });
@@ -1886,7 +1923,13 @@ describe('durable media generation', () => {
       async cancel() {},
     };
     const ledger = new RecoveringLedger();
-    const models = createModels(ledger, new MemoryModelAssetStorage());
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      undefined,
+      undefined,
+      authorizedSubmissionReferences,
+    );
     const repository = new MemoryTracerJobRepository(new MemoryJobPort());
     const jobs = new TracerJobApplicationService(repository);
     const runtime = new DurableMediaGenerationApplicationService({
@@ -1968,7 +2011,13 @@ describe('durable media generation', () => {
       async cancel() {},
     };
     const ledger = new RecoveringLedger();
-    const models = createModels(ledger, new MemoryModelAssetStorage());
+    const models = createModels(
+      ledger,
+      new MemoryModelAssetStorage(),
+      undefined,
+      undefined,
+      authorizedSubmissionReferences,
+    );
     const repository = new MemoryTracerJobRepository(new MemoryJobPort());
     const jobs = new TracerJobApplicationService(repository);
     const runtime = new DurableMediaGenerationApplicationService({ jobs, models });

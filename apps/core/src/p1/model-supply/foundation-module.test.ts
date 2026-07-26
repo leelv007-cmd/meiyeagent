@@ -2679,7 +2679,7 @@ describe('ModelSupplyFoundationModule', () => {
       },
     });
 
-    const result = (await command(module, owner, 'submit_generation', {
+    await assert.rejects(command(module, owner, 'submit_generation', {
         dataClass: [],
         input: {
           inputAssets: [
@@ -2689,10 +2689,7 @@ describe('ModelSupplyFoundationModule', () => {
         operation: 'text.respond',
         prompt: 'Reverse this image into a prompt.',
         selection: { catalogModelId: 'llm-openai', mode: 'fixed' },
-      })) as { failureCode?: string; status: string; usage: { status: string } };
-    assert.equal(result.status, 'failed');
-    assert.equal(result.failureCode, 'REFERENCE_ASSET_RESOLVER_INACTIVE');
-    assert.equal(result.usage.status, 'refunded');
+      }), /Reference asset resolver is unavailable/u);
     assert.equal(providerCalls, 0);
   });
 
@@ -2708,7 +2705,17 @@ describe('ModelSupplyFoundationModule', () => {
       },
     };
     const referenceAssets: ReferenceAssetResolverPort = {
-      async inspect() { return []; },
+      async inspect(_workspaceId, assetIds) {
+        return assetIds.map((assetId) => ({
+          assetId,
+          classificationSource: 'server_fact' as const,
+          contentType: 'image/png',
+          dataClass: [],
+          kind: 'resolved' as const,
+          rightsRevision: 'rights-r1',
+          sha256: '0'.repeat(64),
+        }));
+      },
       async resolve(_workspaceId, assetIds) {
         resolvedAssetIds = assetIds;
         return assetIds.map((assetId) => ({
@@ -2753,8 +2760,16 @@ describe('ModelSupplyFoundationModule', () => {
       [],
       undefined,
       {
-        async inspect() {
-          return [];
+        async inspect(_workspaceId, assetIds) {
+          return assetIds.map((assetId) => ({
+            assetId,
+            classificationSource: 'server_fact' as const,
+            contentType: 'image/png',
+            dataClass: [],
+            kind: 'resolved' as const,
+            rightsRevision: 'rights-r1',
+            sha256: '0'.repeat(64),
+          }));
         },
         async resolve(_workspaceId, assetIds) {
           return assetIds.map((assetId) => ({

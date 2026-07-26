@@ -6,6 +6,7 @@ import type {
   CanvasOwnedAsset,
   CanvasOwnedAssetExportPolicy,
 } from './canvas-asset-facade.js';
+import { createCanvasOwnedAssetExportPolicy } from './canvas-asset-facade.js';
 
 interface AssetRow extends QueryResultRow {
   contentType: CanvasOwnedAsset['contentType'];
@@ -297,7 +298,7 @@ function combinedAssetSelect() {
                          object_key AS "legacyStorageKey", sha256,
                          size_bytes AS "sizeBytes", media_type AS "contentType",
                          id AS "fileName",
-                         jsonb_build_object('kind', 'product_asset', 'sourceAssetId', id) AS source,
+                         jsonb_build_object('kind', 'generation_job', 'jobId', job_id) AS source,
                          NULL::jsonb AS "exportPolicy",
                          created_at::text AS "createdAt", 1 AS priority
                     FROM p1_owned_assets
@@ -341,10 +342,17 @@ function mapDeletion(row: DeletionRow): CanvasAssetDeletionOutboxRecord {
 }
 
 function mapAsset(row: AssetRow): CanvasOwnedAsset {
+  const exportPolicy =
+    row.exportPolicy ??
+    createCanvasOwnedAssetExportPolicy({
+      ownerId: 'server-owned-asset',
+      updatedAt: row.createdAt,
+      workspaceId: row.workspaceId,
+    });
   return {
     contentType: row.contentType,
     createdAt: row.createdAt,
-    ...(row.exportPolicy ? { exportPolicy: row.exportPolicy } : {}),
+    exportPolicy,
     fileName: row.fileName,
     id: row.id,
     ...(row.legacyStorageKey ? { legacyStorageKey: row.legacyStorageKey } : {}),

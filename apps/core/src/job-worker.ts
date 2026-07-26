@@ -66,6 +66,7 @@ import {
   PostgresCanonicalVideoWorkflowSchema,
   PostgresVideoRegenerationRepository,
   PostgresModelSupplyRepository,
+  ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
   RecordedFixtureVideoQualityScorer,
   VersionedHumanCalibratedVideoQualityScorer,
@@ -211,6 +212,11 @@ const referenceAssets = new CompositeReferenceAssetResolver([
       async read(objectKey) {
         return (await assetStorage.read(objectKey)).bytes;
       },
+    },
+    {
+      productPolicyResolver: new ProductReferenceAssetPolicyResolver(
+        relationalProductRepository,
+      ),
     },
   ),
   new ProductReferenceAssetResolver(relationalProductRepository, {

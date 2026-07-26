@@ -98,6 +98,43 @@ test('authorizes current local imports, generation outputs, and safe derivatives
   }
 });
 
+test('generation outputs require readable lineage while explicit text-only lineage has no parent to reject', async () => {
+  const generation = governedCanvasAsset({
+    id: 'generation-output',
+    source: { jobId: 'job-1', kind: 'generation_job' },
+  });
+  for (const generationJob of [
+    null,
+    { result: undefined },
+    { result: {} },
+  ]) {
+    const denied = await accessService({
+      canvasAsset: generation,
+      generationJob,
+      stored: { bytes, contentType: 'image/png' },
+    }).resolve({
+      assetId: generation.id,
+      contentPackages: [],
+      workspaceId,
+    });
+    assert.deepEqual(denied, {
+      code: 'ASSET_ACCESS_DENIED',
+      kind: 'unavailable',
+    });
+  }
+
+  const textOnly = await accessService({
+    canvasAsset: generation,
+    generationJob: { result: { inputAssets: [] } },
+    stored: { bytes, contentType: 'image/png' },
+  }).resolve({
+    assetId: generation.id,
+    contentPackages: [],
+    workspaceId,
+  });
+  assert.equal(textOnly.kind, 'available');
+});
+
 test('fails closed for cross-workspace, invalid receipts, and missing storage', async () => {
   const cases = [
     {
@@ -360,6 +397,7 @@ test('keeps Product and ContentPackage policy decisions authoritative', async ()
 function accessService(input: {
   canvasAsset: CanvasOwnedAsset | null;
   canvasAssets?: Record<string, CanvasOwnedAsset>;
+  generationJob?: { result?: Record<string, unknown> } | null;
   now?: string;
   onStorageRead?: () => void;
   receiptValid?: boolean;
@@ -402,6 +440,13 @@ function accessService(input: {
     contentPackageRights: {
       async resolve() {
         return { knownAssetIds: [], unauthorizedAssetIds: [] };
+      },
+    },
+    generationJobs: {
+      async getGenerationJob() {
+        return input.generationJob === undefined
+          ? { result: { inputAssets: [] } }
+          : input.generationJob;
       },
     },
     ownedAssetStorage: {
