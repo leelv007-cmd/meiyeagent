@@ -132,7 +132,7 @@ export function WorksLightEditPage({
   if (workQuery.isError || !work || !revision) {
     return frame(
       <div className="meiye-porcelain rounded-2xl p-6">
-        <p className="meiye-type-body font-semibold">没找到这份作品</p>
+        <p className="meiye-type-body font-semibold">没找到这份内容</p>
         <p className="text-muted-foreground mt-2 text-sm">
           它可能已经被替换或删除了。
         </p>
@@ -181,7 +181,7 @@ export function WorksLightEditPage({
         >
           <p className="meiye-type-body font-semibold">这个版式有新版本</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            可以把这份作品换到新版式，也可以另存一份再改。
+            可以把这份内容换到新版式，也可以另存一份再改。
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
