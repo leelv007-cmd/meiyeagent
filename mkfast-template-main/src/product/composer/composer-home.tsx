@@ -536,10 +536,9 @@ export function ComposerHome({
   }, [lensId, lensState.draft.recipeRevisionId, surfaceQuery.data]);
   const selectedModel = useMemo(() => {
     if (!lensId || !preferencesQuery.isSuccess) return undefined;
-    const explicitId =
-      lensState.draft.fieldMeta.catalogModelId?.dirty
-        ? (lensState.draft.settings.catalogModelId ?? undefined)
-        : submissionRecipe?.modelPolicy.mode === 'fixed'
+    const explicitId = lensState.draft.fieldMeta.catalogModelId?.dirty
+      ? (lensState.draft.settings.catalogModelId ?? undefined)
+      : submissionRecipe?.modelPolicy.mode === 'fixed'
         ? submissionRecipe.modelPolicy.catalogModelId
         : undefined;
     const preferences = normalizePreferences(preferencesQuery.data);
