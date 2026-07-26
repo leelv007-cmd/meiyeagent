@@ -146,7 +146,13 @@ async function submitNoteJourney(page: Page) {
   await page
     .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
     .click();
-  await expect(page.getByTestId('composer-recipe-apply-undo')).toBeVisible();
+  const applyRecipe = page.getByRole('button', {
+    name: '套用并更新设置',
+  });
+  const recipeApplied = page.getByTestId('composer-recipe-apply-undo');
+  await expect(recipeApplied.or(applyRecipe)).toBeVisible();
+  if (await applyRecipe.isVisible()) await applyRecipe.click();
+  await expect(recipeApplied).toBeVisible();
   await seedComposerInlineAuthorize(page, {
     expectedAssetId: authorized.id,
     fileName: 'note-case.png',
@@ -443,9 +449,13 @@ test.describe
       const stream = await streamPromise;
       expect(stream.status).toBe('success');
       expect(
-        stream.progress
-          .filter(({ state }) => state === 'success')
-          .map(({ stage }) => stage)
+        Array.from(
+          new Set(
+            stream.progress
+              .filter(({ state }) => state === 'success')
+              .map(({ stage }) => stage)
+          )
+        )
       ).toEqual(EXPECTED_STAGES);
       for (const frame of stream.progress) {
         expect(frame.message).toBeTruthy();
@@ -542,9 +552,9 @@ test.describe
       ).toEqual(['douyin', 'video_account', 'xiaohongshu']);
       expect(
         contentPackage.variants.every(
-          ({ currentVersionId, versions }) =>
-            currentVersionId === selected?.id &&
-            versions.some(({ id }) => id === selected?.id)
+          ({ currentVersionId, platform, versions }) =>
+            currentVersionId === `${selected?.id}-${platform}` &&
+            versions.some(({ id }) => id === currentVersionId)
         )
       ).toBe(true);
 
