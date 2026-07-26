@@ -30,7 +30,11 @@ export interface HarnessDecisionTrace {
 
 export interface HarnessDecisionStore {
   registerPending(workspaceId: string, question: QuestionCard): Promise<void>;
-  readPending(workspaceId: string, taskId: string): Promise<QuestionCard | null>;
+  readPending(
+    workspaceId: string,
+    taskId: string,
+    options?: { includeResolved?: boolean },
+  ): Promise<QuestionCard | null>;
   submit(input: {
     workspaceId: string;
     taskId: string;

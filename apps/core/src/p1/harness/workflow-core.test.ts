@@ -331,6 +331,9 @@ test('an unanswered industry gap keeps the customized route and uses confirmed m
     async runStep(_key, operation) {
       return operation();
     },
+    async hasRegisteredPendingQuestion() {
+      return false;
+    },
     async progress(event) {
       messages.push(event.message);
     },
@@ -375,6 +378,9 @@ test('an unanswered industry gap without confirmed materials uses a neutral fall
   await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
     async runStep(_key, operation) {
       return operation();
+    },
+    async hasRegisteredPendingQuestion() {
+      return false;
     },
     async progress(event) {
       messages.push(event.message);
@@ -448,6 +454,44 @@ test('an existing pending industry question replays the original decision sequen
     'wf:task-copy:s2:fence:r1',
     'wf:task-copy:s5:package:0',
   ]);
+});
+
+test('a runtime without a pending-question lookup fails closed to the decision path', async () => {
+  const stages = fixtureIndustryGapStages();
+  const nameIntent = stages.nameIntent;
+  stages.nameIntent = async (input) => ({
+    ...(await nameIntent(input)),
+    gapGrounding: {
+      activeConfirmedFactCount: 0,
+      answerableConfirmedFactCount: 0,
+    },
+  });
+  let awaitedQuestion = false;
+
+  await runHarnessWorkflow('task-copy', snapshotTaskInput(), stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      awaitedQuestion = true;
+      return {
+        idempotencyKey: 'ignore-question-without-pending-lookup',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: question.response.field,
+          value: '这次先跳过',
+          reason: question.response.reason,
+        },
+        decision: { state: 'ignored', value: '这次先跳过' },
+      };
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(awaitedQuestion, true);
 });
 
 test('a reuse request keeps an industry question reachable and resumes after its answer', async () => {
@@ -534,10 +578,10 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
     return {
       declaration: {
         normalizedIntent: request.rawInput,
-        taskType: 'promotion_groupbuy_conversion',
+        taskType: 'daily_service_exposure',
         deliveryLayer: 'copy',
-        relevantAssetCategories: ['promotion_activity'],
-        usedAssetCategories: intentRound === 1 ? [] : ['promotion_activity'],
+        relevantAssetCategories: ['industry_category'],
+        usedAssetCategories: intentRound === 1 ? [] : ['industry_category'],
         route: intentRound === 1 ? 'guidance' : 'customized',
         routingSource: 'model',
         implicitConstraints: [],
@@ -545,15 +589,15 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
       blockingQuestion:
         intentRound === 1
           ? {
-              questionId: 'task-copy:s1:promotion_details',
+              questionId: 'task-copy:s1:industry_category',
               workflowId: 'task-copy',
               workflowRevision: 1,
-              question: '方便补充这次活动的项目和价格档吗？',
+              question: '这次内容主要属于哪一类美业服务？',
               options: [],
               freeText: { enabled: true },
               response: {
-                field: 'promotion_details',
-                reason: '补充本次活动的项目和价格档',
+                field: 'industry_category',
+                reason: '补充本次内容所属的美业服务类别',
               },
               scope: 'current_task',
             }
@@ -583,10 +627,10 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
         workflowRevision: question.workflowRevision,
         patch: {
           field: question.response.field,
-          value: '透亮猫眼 398 元',
+          value: '美甲',
           reason: question.response.reason,
         },
-        decision: { state: 'accepted', value: '透亮猫眼 398 元' },
+        decision: { state: 'accepted', value: '美甲' },
       };
     },
     async resubmitSemanticDecision(input) {
@@ -618,12 +662,7 @@ test('a snapshot-backed semantic answer resubmits the same task and work before 
   assert.equal(
     (injectedRequest?.intent.context as Record<string, unknown> | undefined)
       ?.industry_category,
-    undefined,
-  );
-  assert.equal(
-    (injectedRequest?.intent.context as Record<string, unknown> | undefined)
-      ?.promotion_details,
-    '透亮猫眼 398 元',
+    '美甲'
   );
   assert.deepEqual(originalRequest.executionSnapshot, originalSnapshot);
   assert.ok(progress.includes('已收到，继续为你生成。'));
@@ -634,24 +673,24 @@ test('directly applying a semantic answer to an existing snapshot remains forbid
   stages.nameIntent = async () => ({
     declaration: {
       normalizedIntent: '给门店写一条日常内容',
-      taskType: 'promotion_groupbuy_conversion',
+      taskType: 'daily_service_exposure',
       deliveryLayer: 'copy',
-      relevantAssetCategories: ['promotion_activity'],
+      relevantAssetCategories: ['industry_category'],
       usedAssetCategories: [],
       route: 'guidance',
       routingSource: 'model',
       implicitConstraints: [],
     },
     blockingQuestion: {
-      questionId: 'task-copy:s1:promotion_details',
+      questionId: 'task-copy:s1:industry_category',
       workflowId: 'task-copy',
       workflowRevision: 1,
-      question: '方便补充这次活动的项目和价格档吗？',
+      question: '这次内容主要属于哪一类美业服务？',
       options: [],
       freeText: { enabled: true },
       response: {
-        field: 'promotion_details',
-        reason: '补充本次活动的项目和价格档',
+        field: 'industry_category',
+        reason: '补充本次内容所属的美业服务类别',
       },
       scope: 'current_task',
     },
@@ -671,10 +710,10 @@ test('directly applying a semantic answer to an existing snapshot remains forbid
           workflowRevision: question.workflowRevision,
           patch: {
             field: question.response.field,
-            value: '透亮猫眼 398 元',
+            value: '美甲',
             reason: question.response.reason,
           },
-          decision: { state: 'accepted', value: '透亮猫眼 398 元' },
+          decision: { state: 'accepted', value: '美甲' },
         };
       },
       async recordTrace() {},
@@ -1104,7 +1143,7 @@ function taskInput() {
   };
 }
 
-function snapshotTaskInput(expectedContentPackageRevision = 0): HarnessWorkflowInput {
+function snapshotTaskInput(): HarnessWorkflowInput {
   const snapshot = createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
@@ -1113,7 +1152,7 @@ function snapshotTaskInput(expectedContentPackageRevision = 0): HarnessWorkflowI
       taskId: 'task-copy',
       workId: 'work-copy',
       contentPackageId: 'package-copy',
-      expectedContentPackageRevision,
+      expectedContentPackageRevision: 0,
       creationMode: 'customized',
       intent: '给门店写一条日常内容',
       surface: { id: 'surface-1', revision: 'surface-r1' },

@@ -425,13 +425,17 @@ export class PostgresHarnessStore
     }
   }
 
-  async readPending(workspaceId: string, taskId: string) {
+  async readPending(
+    workspaceId: string,
+    taskId: string,
+    options?: { includeResolved?: boolean },
+  ) {
     const runtimeTaskId = await this.workflowRuntimeId(workspaceId, taskId);
     if (!runtimeTaskId) return null;
     const result = await this.pool.query<{ payload: unknown }>(
       `select payload from harness_runtime.pending_questions
-       where task_id=$1 and status='pending'`,
-      [runtimeTaskId],
+       where task_id=$1 and ($2::boolean or status='pending')`,
+      [runtimeTaskId, options?.includeResolved === true],
     );
     return result.rows[0]
       ? questionCardSchema.parse(result.rows[0].payload)

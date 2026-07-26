@@ -111,11 +111,12 @@ export function registerHarnessDbosWorkflow(
         await DBOS.writeStream(PROGRESS_STREAM, envelope);
       },
       async hasRegisteredPendingQuestion(question) {
-        // Keep this read outside DBOS.runStep: recovered PENDING workflows must
-        // not gain a function ID before their original suspend/recv sequence.
+        // Keep this read outside DBOS.runStep: recovered registered workflows
+        // must not gain a function ID before their original suspend/recv sequence.
         const pending = await persistence.readPending(
           request.workspaceId,
           workflowId,
+          { includeResolved: true },
         );
         return (
           pending?.questionId === question.questionId &&

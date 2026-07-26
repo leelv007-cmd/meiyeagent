@@ -3,7 +3,7 @@
 ## Scope
 
 - Branch: `leelv007-cmd/t44-day0-no-blocking-question`
-- Final rework base: local `main` at `755396f2`
+- Final rework base: local `main` at `2e4030af`
 - Fixture/local evidence only; no credential or live-provider call was used.
 - No frontend component, visual surface, or original D-043 assertion was changed.
 
@@ -16,10 +16,12 @@ answer that gap; otherwise the workflow continues without registering a new
 question and chooses its merchant notice from whether confirmed materials are
 actually present.
 
-Before taking that new branch, the runtime directly reads the pending-question
-store. An already registered matching PENDING question follows the original
-`awaitDecision` sequence. The read intentionally stays outside `DBOS.runStep`,
-so an old workflow replay does not acquire a new function ID.
+Before taking that new branch, the runtime directly reads the registered
+question row, including a row already marked `resolved`. An already registered
+matching question follows the original `awaitDecision` sequence. The read
+intentionally stays outside `DBOS.runStep`, so an old workflow replay does not
+acquire a new function ID. A runtime without this lookup fails closed by
+assuming the question was registered.
 
 ## Adversarial rework disposition
 
@@ -29,8 +31,8 @@ so an old workflow replay does not acquire a new function ID.
 | F2 — free route lost customized semantics | New continuation returns `route: customized`, `routingSource: policy`, and preserves categories or fills `store`. Workflow and production-port assertions inspect the declaration received by context injection. |
 | F3 — acceptance used a qualitative activation claim | Focused browser proof measured exactly **2 trusted top-level activations** before first token. |
 | F4 — test used merchant copy as the no-question oracle | Focused browser test now asserts `data-testid="composer-question-turn"` count is zero. Original `uiux-day0-contract.spec.ts` is unchanged. |
-| F5 — replay could change the DBOS function-ID sequence | `hasRegisteredPendingQuestion` is checked before the policy branch. The replay test supplies an old PENDING row and asserts the original six `runStep` keys in order; no extra effect key appears. |
-| F6 — reverse control was not production-reachable | Production ports and workflow tests use a `reuseSeed` request whose `industry_category` question is raised, answered, and then resumes. |
+| F5 — replay could change the DBOS function-ID sequence | `hasRegisteredPendingQuestion` is checked before the policy branch. Its store read includes both pending and resolved registration rows; a missing runtime hook assumes registration. The replay test supplies an old PENDING row and asserts the original six `runStep` keys in order; no extra effect key appears. |
+| F6 — reverse control was not production-reachable | Production ports and workflow tests use a `reuseSeed` request whose `industry_category` question is raised, answered, and then resumes. Both snapshot semantic-decision tests also use `industry_category`, restoring the question-plus-snapshot combination. |
 | F7 — test-surface changes were under-reported | Every modified test file is declared below. |
 | F8 — ignored-decision HTTP/SSE coverage was displaced | Restored a focused test that POSTs `state: "ignored"` and observes the same SSE task reach `success`. Accepted-answer continuation is separately covered. |
 | F10 — `"decision"` falsely implied merchant choice | Added `routingSource: "policy"` with a type comment: the server policy chose continuation; the merchant made no decision. |
@@ -43,7 +45,7 @@ pnpm --filter @meiye/core exec tsx --test \
   src/p1/harness/production-stage-ports.test.ts \
   src/p1/harness/merchant-delivery-language.test.ts
 
-95 passed / 0 failed
+96 passed / 0 failed
 ```
 
 The relevant assertions prove:
@@ -54,8 +56,8 @@ The relevant assertions prove:
   the honest “reference confirmed materials” continuation notice;
 - no confirmed grounding selects the neutral continuation notice, which does
   not tell a filled merchant to add store information;
-- a pre-existing PENDING industry question keeps the exact old decision effect
-  sequence;
+- a pre-existing PENDING or resolved registration keeps the exact old decision
+  effect sequence, and a runtime missing the lookup fails closed to that path;
 - a reachable reuse-path industry question is raised, answered, and resumed.
 
 ## Focused HTTP + SSE proof
@@ -78,9 +80,9 @@ The three tests prove:
 3. POST `/decision` with `state: "ignored"` resumes the same task over HTTP +
    SSE to `success`.
 
-The final run created six task requests after `2026-07-26 00:19:00+00`.
-The direct post-run query returned zero PENDING questions; both tasks that
-registered a question were `resolved`:
+The query window after `2026-07-26 00:19:00+00` covered two focused runs and
+six task requests. The direct post-run query returned zero PENDING questions;
+all three tasks that registered a question were `resolved`:
 
 ```sql
 select count(*) as pending_since_final_run
@@ -133,15 +135,19 @@ exit 0
 ## Modified test surface
 
 - `workflow-core.test.ts`: customized policy continuation with and without
-  confirmed material; exact old PENDING replay effect keys; production-reachable
-  reuse question, answer, and resumption; T41 semantic resumption uses the
-  reachable promotion gap.
+  confirmed material; exact old PENDING replay effect keys; missing lookup
+  fail-closed; production-reachable reuse question, answer, and resumption;
+  T41 snapshot semantic resumption and mutation guard use
+  `industry_category`.
 - `production-stage-ports.test.ts`: confirmed matching fact policy declaration,
   grounding counts for non-answering facts, and reuse-path industry question.
 - `merchant-delivery-language.test.ts`: generic and both grounding-sensitive
   notices remain merchant-facing and free of internal routing language.
 - `dbos-registration.smoke.test.ts`: supplies the new read-only pending-store
   seam to the registration smoke fixture.
+- `postgres-store.postgres.test.ts`: proves the replay guard can read a
+  registered question after its row becomes resolved while normal pending
+  reads remain empty.
 - `intent-routing-http-sse.spec.ts`: real question-turn absence, exact activation
   count and delivery; accepted-answer continuation; ignored POST decision plus
   SSE success.
@@ -153,17 +159,23 @@ exit 0
 ## Package gates
 
 ```text
+pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
+  src/p1/harness/postgres-store.postgres.test.ts
+2 passed / 0 failed
+
+pnpm --filter @meiye/core exec tsx --test \
+  src/p1/harness/dbos-registration.smoke.test.ts \
+  src/p1/harness/decision-service.test.ts
+10 passed / 0 failed
+
 pnpm --filter @meiye/core typecheck
 exit 0
 
 pnpm --filter @meiye/web typecheck
 exit 0
-
-pnpm --filter @meiye/core test
-2248 tests / 2238 pass / 0 fail / 10 skipped, 568987ms
 ```
 
-The focused owner tests, full Core suite, both affected-package typechecks,
-HTTP/SSE contract, and DBOS pending-row check are green. The ten skips are the
-existing explicit live-provider or isolated-service opt-ins; T44 added no
-skip.
+The four merge-safe residual changes were followed by the current Core focused
+and persistence tests plus Core typecheck. The Web typecheck, HTTP/SSE
+contract, and DBOS pending-row check remain the preceding rework evidence; the
+residual patch does not touch Web code or rerun a browser suite.

@@ -114,6 +114,14 @@ test(
       assert.deepEqual(resumed, [questionId, questionId]);
       assert.equal(await store.readPending(workspaceId, taskId), null);
       assert.equal(await store.readPending(otherWorkspaceId, taskId), null);
+      assert.equal(
+        (
+          await store.readPending(workspaceId, taskId, {
+            includeResolved: true,
+          })
+        )?.questionId,
+        questionId,
+      );
       await store.recordStageTrace({
         workspaceId,
         id: `trace-${taskId}-execution`,

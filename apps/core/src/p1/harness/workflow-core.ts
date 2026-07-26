@@ -921,7 +921,7 @@ async function resolveIntentRoute(input: {
   const pendingQuestionRegistered =
     (await input.runtime.hasRegisteredPendingQuestion?.(
       input.intent.blockingQuestion,
-    )) ?? false;
+    )) ?? true;
   const gapGrounding = input.intent.gapGrounding;
   if (
     !pendingQuestionRegistered &&
