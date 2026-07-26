@@ -113,7 +113,9 @@ test.describe('canonical product golden journey', () => {
     await expect(page.getByText('顾客从私信询问同款')).toBeVisible();
     // T33 / #227: the ledger reshelled onto HeroUI Pro V3, so the follow-up
     // control is a listbox rather than a native <select>. Same capability.
-    const statusPicker = page.getByLabel('更新线索状态');
+    // Behaviour lives in leads.interaction.test.tsx — this journey cannot reach
+    // the ledger while its content seed is closed.
+    const statusPicker = page.getByRole('button', { name: /更新线索状态/u });
     await statusPicker.click();
     await page.getByRole('option', { name: '已联系' }).click();
     await expect(statusPicker).toHaveText('已联系');

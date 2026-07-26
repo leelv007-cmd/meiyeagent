@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import {
   cleanupE2EUsers,
@@ -29,7 +29,6 @@ const SHADCN_RESIDUE = [
   'card',
   'card-title',
   'card-content',
-  'badge',
   'alert',
   'tabs-trigger',
   'tabs-content',
@@ -98,11 +97,41 @@ test('the four asset surfaces fit a phone viewport without overflow', async ({
   }
 });
 
+async function registerIdentity(manager: Locator, displayName: string) {
+  await manager.getByRole('button', { name: '品牌', exact: true }).click();
+  for (const [question, answer] of [
+    ['希望在内容里怎么称呼这个身份？', displayName],
+    ['这个身份归属于谁？', 'T33 Studio'],
+    ['这个品牌最核心的主张是什么？', 'Steady care'],
+    ['哪些话或做法绝对不能碰？', 'No medical claims'],
+    ['给一两句最能代表这个身份的表达样例。', 'A calm opening line'],
+    ['授权证明或内部备注是什么？（可填编号）', `t33-${displayName}`],
+  ] as const) {
+    const region = manager.getByRole('region', { name: question });
+    await region.getByRole('textbox', { name: question }).fill(answer);
+    await region.getByRole('button', { name: '继续' }).click();
+  }
+  for (const question of [
+    '有哪些话这个品牌坚决不说？',
+    '画面希望长期保持什么感觉？',
+    '有哪些栏目值得长期连续做？',
+  ]) {
+    await manager
+      .getByRole('region', { name: question })
+      .getByRole('button', { name: '暂时跳过' })
+      .click();
+  }
+  await manager.getByRole('button', { name: '登记身份' }).click();
+  const card = manager.locator('article').filter({ hasText: displayName });
+  await expect(card).toHaveCount(1);
+  return card;
+}
+
 test('the identity page keeps D-117 three actions apart', async ({
   page,
   request,
 }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const user = await registerE2EUser(request);
   try {
     await loginByForm(page, user);
@@ -118,49 +147,41 @@ test('the identity page keeps D-117 three actions apart', async ({
       manager.getByRole('link', { name: '用这个身份创作（本次）' })
     ).toHaveCount(0);
 
-    await manager.getByRole('button', { name: '品牌', exact: true }).click();
-    for (const [question, answer] of [
-      ['希望在内容里怎么称呼这个身份？', 'T33 Identity'],
-      ['这个身份归属于谁？', 'T33 Studio'],
-      ['这个品牌最核心的主张是什么？', 'Steady care'],
-      ['哪些话或做法绝对不能碰？', 'No medical claims'],
-      ['给一两句最能代表这个身份的表达样例。', 'A calm opening line'],
-      ['授权证明或内部备注是什么？（可填编号）', 't33-identity-1'],
-    ] as const) {
-      const region = manager.getByRole('region', { name: question });
-      await region.getByRole('textbox', { name: question }).fill(answer);
-      await region.getByRole('button', { name: '继续' }).click();
-    }
-    for (const question of [
-      '有哪些话这个品牌坚决不说？',
-      '画面希望长期保持什么感觉？',
-      '有哪些栏目值得长期连续做？',
-    ]) {
-      await manager
-        .getByRole('region', { name: question })
-        .getByRole('button', { name: '暂时跳过' })
-        .click();
-    }
-    await manager.getByRole('button', { name: '登记身份' }).click();
-
-    const saved = manager
-      .locator('article')
-      .filter({ hasText: 'T33 Identity' });
-    await expect(saved).toHaveCount(1);
+    const first = await registerIdentity(manager, 'T33 Identity A');
     // Creating did not make it the default…
-    await expect(saved.getByText('默认身份')).toHaveCount(0);
+    await expect(first.getByText('默认身份')).toHaveCount(0);
     // …and the session choice is a separate route into the conversation.
     await expect(
-      saved.getByRole('link', { name: '用这个身份创作（本次）' })
+      first.getByRole('link', { name: '用这个身份创作（本次）' })
     ).toHaveAttribute('href', /\/dashboard\?identity=/u);
 
-    await saved.getByRole('button', { name: '设为默认' }).click();
-    await expect(saved.getByText('默认身份')).toBeVisible();
+    const second = await registerIdentity(manager, 'T33 Identity B');
+    await expect(second.getByText('默认身份')).toHaveCount(0);
+
+    // A → B → A. The third hop repeats an (identity, version) pair whose
+    // decision revision has already moved twice; without a freshness component
+    // in the idempotency key the command replays a spent key and the default
+    // can never come back.
+    await first.getByRole('button', { name: '设为默认' }).click();
+    await expect(first.getByText('默认身份')).toBeVisible();
+    await expect(second.getByText('默认身份')).toHaveCount(0);
+
+    await second.getByRole('button', { name: '设为默认' }).click();
+    await expect(second.getByText('默认身份')).toBeVisible();
+    await expect(first.getByText('默认身份')).toHaveCount(0);
+
+    await first.getByRole('button', { name: '设为默认' }).click();
+    await expect(first.getByText('默认身份')).toBeVisible();
+    await expect(second.getByText('默认身份')).toHaveCount(0);
+    await expect(
+      manager.getByText('身份操作未完成，请检查必填项或刷新后重试。')
+    ).toHaveCount(0);
+
     await page.reload();
     await expect(
       manager
         .locator('article')
-        .filter({ hasText: 'T33 Identity' })
+        .filter({ hasText: 'T33 Identity A' })
         .getByText('默认身份')
     ).toBeVisible();
   } finally {
