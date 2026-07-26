@@ -92,12 +92,14 @@ async function registerTrialNoteUser(
 
 async function submitNoteJourney(
   page: Page,
-  expected: 'accepted' | 'insufficient' = 'accepted'
+  expected: 'accepted' | 'insufficient' = 'accepted',
+  authorizedAssetId?: string
 ) {
   await page.goto('/dashboard');
   await seedConfirmedStore(page);
   await page.getByTestId('composer-lens-option-image_text').click();
   const authorized = await seedComposerInlineAuthorize(page, {
+    ...(authorizedAssetId ? { expectedAssetId: authorizedAssetId } : {}),
     fileName: 'note-case.png',
   });
   await page.reload();
@@ -152,6 +154,7 @@ async function submitNoteJourney(
     expect(envelope.error?.code).toBe('INSUFFICIENT_ENTITLEMENT');
   }
   return {
+    authorizedAssetId: authorized.id,
     errorCode: envelope.error?.code,
     errorMessage: envelope.error?.message,
     packageId: envelope.data?.contentPackage?.id ?? '',
@@ -524,7 +527,11 @@ test.describe
       await assertZipDownload(download, IMAGE_TEXT_CONTRACT, adopted.revision);
 
       await page.evaluate(() => localStorage.clear());
-      const blocked = await submitNoteJourney(page, 'insufficient');
+      const blocked = await submitNoteJourney(
+        page,
+        'insufficient',
+        submission.authorizedAssetId
+      );
       expect(blocked.errorCode).toBe('INSUFFICIENT_ENTITLEMENT');
       expect(blocked.errorMessage).toBeTruthy();
       const quotaWall = page.getByTestId('composer-quota-blocking-card');
