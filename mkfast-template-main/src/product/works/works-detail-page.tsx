@@ -18,7 +18,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { IconExternalLink } from '@tabler/icons-react';
 import type { PublicContentPackage } from '@meiye/contracts';
@@ -30,7 +30,7 @@ import { ContentPackageExportCarrier } from '@/p1/content-package-export-carrier
 
 import { WorksLightEditPage } from './works-light-edit-page';
 import { WorksMediaGallery } from './works-media-gallery';
-import { useWorksProjection, WORKS_TITLE } from './works-list-page';
+import { useWorksProjection, WORKS_TITLE } from './works-queries';
 import {
   WORK_OUTPUT_SHAPE_LABELS,
   workCopyText,
@@ -278,20 +278,47 @@ function WorkPackageBody({
   );
 }
 
-export function WorksDetailPage({ workId }: { workId: string }) {
-  const navigate = useNavigate();
-  const { contentPackages, history } = useWorksProjection();
-  const source = useMemo(
-    () => ({
-      canvasWorks: history.data?.canvasWorks ?? [],
-      contentPackages: contentPackages.data ?? [],
-      id: workId,
-    }),
-    [contentPackages.data, history.data, workId]
+function WorksDetailNotice({
+  description,
+  testId,
+  title,
+}: {
+  description: string;
+  testId: string;
+  title: string;
+}) {
+  return (
+    <WorksFrame title={WORKS_TITLE}>
+      <div
+        className="meiye-porcelain rounded-2xl p-6"
+        data-testid={testId}
+        role="alert"
+      >
+        <h1 className="meiye-type-body font-semibold">{title}</h1>
+        <p className="text-muted mt-2 text-sm">{description}</p>
+        <Link
+          className="mt-4 inline-block text-sm underline underline-offset-4"
+          to="/dashboard/works"
+        >
+          回到作品列表
+        </Link>
+      </div>
+    </WorksFrame>
   );
-  const detail = useMemo(() => workDetail(source), [source]);
+}
 
-  if (contentPackages.isLoading || history.isLoading) {
+export function WorksDetailPage({ workId }: { workId: string }) {
+  const { failed, loading, source } = useWorksProjection();
+  const detail = useMemo(
+    () => workDetail({ ...source, id: workId }),
+    [source, workId]
+  );
+  const contentPackage = source.contentPackages.find(
+    (candidate) =>
+      candidate.id === (detail.kind === 'package' ? detail.packageId : '')
+  );
+
+  if (loading) {
     return (
       <WorksFrame title={WORKS_TITLE}>
         <p className="text-muted text-sm" data-testid="works-detail-loading">
@@ -301,67 +328,35 @@ export function WorksDetailPage({ workId }: { workId: string }) {
     );
   }
 
+  if (failed) {
+    // 「取不回来」 and 「不存在」 are different sentences; saying the wrong one
+    // would tell a merchant their 作品 is gone when the read simply failed.
+    return (
+      <WorksDetailNotice
+        description="刷新一下再打开。"
+        testId="works-detail-unavailable"
+        title="这份作品暂时没能取回来"
+      />
+    );
+  }
+
   if (detail.kind === 'canvas') {
     return <WorksLightEditPage workId={detail.workId} />;
   }
 
-  if (detail.kind === 'missing') {
+  if (detail.kind !== 'package' || !contentPackage) {
     return (
-      <WorksFrame title={WORKS_TITLE}>
-        <div
-          className="meiye-porcelain rounded-2xl p-6"
-          data-testid="works-detail-missing"
-        >
-          <h1 className="meiye-type-body font-semibold">没找到这份作品</h1>
-          <p className="text-muted mt-2 text-sm">
-            它可能还没生成完，或者已经被换成了新的一版。
-          </p>
-          <button
-            className="meiye-glass-piece mt-4 rounded-full px-4 py-2 text-sm"
-            onClick={() => void navigate({ to: '/dashboard/works' })}
-            type="button"
-          >
-            回到作品列表
-          </button>
-        </div>
-      </WorksFrame>
+      <WorksDetailNotice
+        description="它可能还没生成完，或者已经被换成了新的一版。"
+        testId="works-detail-missing"
+        title="没找到这份作品"
+      />
     );
   }
 
-  const contentPackage = (contentPackages.data ?? []).find(
-    (candidate) => candidate.id === detail.packageId
-  );
-
   return (
     <WorksFrame title={detail.title}>
-      {contentPackage ? (
-        <WorkPackageBody contentPackage={contentPackage} detail={detail} />
-      ) : (
-        <>
-          <div className="meiye-ambient-copy">
-            <h1 className="meiye-type-title">{detail.title}</h1>
-            <p className="meiye-type-aux mt-1">{detail.statusLabel}</p>
-          </div>
-          <section
-            className="meiye-porcelain rounded-2xl p-4"
-            data-testid="works-detail-guidance"
-          >
-            <ul className="flex flex-col gap-1">
-              {detail.guidance.map((line) => (
-                <li className="text-muted text-sm" key={line}>
-                  {line}
-                </li>
-              ))}
-            </ul>
-          </section>
-          <Link
-            className="text-sm underline underline-offset-4"
-            to="/dashboard/works"
-          >
-            回到作品列表
-          </Link>
-        </>
-      )}
+      <WorkPackageBody contentPackage={contentPackage} detail={detail} />
     </WorksFrame>
   );
 }

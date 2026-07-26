@@ -9,19 +9,19 @@
 
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
 import { IconPhoto, IconSearch } from '@tabler/icons-react';
-import type { PublicContentPackage } from '@meiye/contracts';
 
 import { EmptyState, Segment } from '@/components/heroui-pro';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { getPathWithLocale } from '@/lib/urls';
 import { cn } from '@/lib/utils';
-import type { RawCanonicalHistory } from '@/product/canonical-history-model';
-import { operationsQuery } from '@/p1/client';
-import { p1QueryKeys } from '@/p1/query-keys';
 
 import { WorksMediaGallery } from './works-media-gallery';
+import {
+  WORKS_DESCRIPTION,
+  WORKS_TITLE,
+  useWorksProjection,
+} from './works-queries';
 import {
   WORK_OUTPUT_SHAPE_LABELS,
   WORK_OUTPUT_SHAPE_ORDER,
@@ -31,25 +31,7 @@ import {
   type WorkOutputShape,
 } from './works-projection';
 
-export const WORKS_TITLE = '作品';
-export const WORKS_DESCRIPTION = '你做过的文案、图片、图文和视频都在这里。';
-
 type ShapeFilter = WorkOutputShape | 'all';
-
-export function useWorksProjection() {
-  const contentPackages = useQuery({
-    queryKey: p1QueryKeys.request('operations', 'content_packages'),
-    queryFn: ({ signal }) =>
-      operationsQuery<PublicContentPackage[]>('content_packages', {}, signal),
-    retry: false,
-  });
-  const history = useQuery({
-    queryKey: p1QueryKeys.request('operations', 'canonical_history'),
-    queryFn: ({ signal }) =>
-      operationsQuery<RawCanonicalHistory>('canonical_history', {}, signal),
-  });
-  return { contentPackages, history };
-}
 
 function WorkCard({ item }: { item: WorkListItem }) {
   return (
@@ -103,24 +85,15 @@ function WorkCard({ item }: { item: WorkListItem }) {
 }
 
 export function WorksListPage() {
-  const { contentPackages, history } = useWorksProjection();
+  const { failed, loading, source } = useWorksProjection();
   const [shape, setShape] = useState<ShapeFilter>('all');
   const [query, setQuery] = useState('');
 
-  const source = useMemo(
-    () => ({
-      canvasWorks: history.data?.canvasWorks ?? [],
-      contentPackages: contentPackages.data ?? [],
-    }),
-    [contentPackages.data, history.data]
-  );
   const counts = useMemo(() => worksShapeCounts(source), [source]);
   const items = useMemo(
     () => worksListItems({ ...source, query, shape }),
     [query, shape, source]
   );
-
-  const loading = contentPackages.isLoading || history.isLoading;
 
   return (
     <>
@@ -183,6 +156,15 @@ export function WorksListPage() {
           {loading ? (
             <p className="text-muted text-sm" data-testid="works-loading">
               正在整理你的作品…
+            </p>
+          ) : failed ? (
+            // A failed read must never read as 「你还没有作品」.
+            <p
+              className="meiye-porcelain rounded-2xl p-4 text-sm"
+              data-testid="works-unavailable"
+              role="alert"
+            >
+              作品暂时没能取回来，刷新一下再看。
             </p>
           ) : items.length === 0 ? (
             <EmptyState data-testid="works-empty">

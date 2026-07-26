@@ -33,7 +33,7 @@ import type { parseLightComposerCarrier } from '@/p1/content-package-export-carr
 import { parseLightCanvasDocument } from '@/product/light-composer-document';
 import { PromotionalMaterialReceiptStatus } from '@/product/promotional-material-receipt';
 
-import { WORKS_TITLE } from './works-list-page';
+import { WORKS_TITLE } from './works-queries';
 import { canvasRenderEvidenceMarker } from './works-render-evidence';
 
 type ExportCarrier = ReturnType<typeof parseLightComposerCarrier>;
