@@ -11,6 +11,7 @@ import {
   buildNativeVideoWorksurface,
   contentPackageRefreshToken,
   factSourcesFromGroundingSnapshot,
+  imageWorksurfaceFromContentPackage,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
   resultContentPackageMutationFacts,
@@ -575,4 +576,79 @@ test('refuses a public video workflow that belongs to another work', () => {
     updatedAt: '2026-07-20T09:20:00.000Z',
   });
   assert.equal(state, undefined);
+});
+
+test('a delivered 图文 package carries the worksurface the legacy projection cannot', () => {
+  const facts = imageWorksurfaceFromContentPackage({
+    adopted: true,
+    generated: {
+      assetIds: ['asset-page-1', 'asset-page-2'],
+      ownedAssets: [
+        {
+          id: 'owned-2',
+          objectKey: 'owned/page 2.png',
+          sourceAssetId: 'asset-page-2',
+        },
+        { id: 'asset-page-1', objectKey: 'owned/page-1.png' },
+      ],
+    },
+    version: {
+      id: 'version-1',
+      orderedAssetIds: ['asset-page-1', 'asset-page-2'],
+    },
+    workId: 'work-note',
+  });
+
+  assert.equal(facts?.outputType, 'ordered_image_set');
+  assert.equal(facts?.slot, 'gallery');
+  assert.equal(facts?.lifecycle, 'adopted');
+  assert.equal(facts?.baseRevisionId, 'version-1');
+  assert.equal(facts?.focusedAssetId, 'asset-page-1');
+  assert.equal(facts?.mediaVersionReady, true);
+  assert.deepEqual(facts?.adoptedOrderedAssetIds, [
+    'asset-page-1',
+    'asset-page-2',
+  ]);
+  // Ordered by the version, not by the order the owned assets happen to arrive
+  // in, and matched by `id` as well as `sourceAssetId`.
+  assert.deepEqual(
+    facts?.candidates.map((candidate) => candidate.previewUrl),
+    [
+      '/api/core/p1/assets?objectKey=owned%2Fpage-1.png',
+      '/api/core/p1/assets?objectKey=owned%2Fpage%202.png',
+    ]
+  );
+  assert.deepEqual(
+    facts?.candidates.map((candidate) => candidate.recipeOrder),
+    [1, 2]
+  );
+});
+
+test('an unadopted 图文 package is a candidate, and one with no images stays empty', () => {
+  const candidate = imageWorksurfaceFromContentPackage({
+    adopted: false,
+    generated: { assetIds: ['asset-page-1'] },
+    version: { id: 'version-1', orderedAssetIds: [] },
+    workId: 'work-note',
+  });
+
+  // Falls back to the generated ids when the version adopted none yet.
+  assert.equal(candidate?.lifecycle, 'candidate');
+  assert.equal(candidate?.outputType, 'single_image');
+  assert.equal(candidate?.slot, 'standalone');
+  assert.deepEqual(candidate?.adoptedOrderedAssetIds, []);
+  // No owned asset yet: the card must not claim a durable media version.
+  assert.equal(candidate?.mediaVersionReady, false);
+  assert.equal(candidate?.candidates[0]?.persisted, false);
+  assert.equal(candidate?.candidates[0]?.previewUrl, undefined);
+
+  assert.equal(
+    imageWorksurfaceFromContentPackage({
+      adopted: true,
+      generated: { assetIds: [] },
+      version: { id: 'version-1', orderedAssetIds: [] },
+      workId: 'work-note',
+    }),
+    undefined
+  );
 });

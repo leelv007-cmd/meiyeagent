@@ -29,6 +29,7 @@ import {
   buildNativeVideoWorksurface,
   contentPackageRefreshToken,
   factSourcesFromGroundingSnapshot,
+  imageWorksurfaceFromContentPackage,
   revisionTimelineFactsFromContentPackage,
   latestContentPackageForWork,
   platformPreviewsFromContentPackage,
@@ -514,7 +515,15 @@ function ResultCenterRoutePage() {
           hasContentPackage: true,
           lifecycle: 'adopted' as const,
         }
-      : selected?.imageWorksurface;
+      : (selected?.imageWorksurface ??
+        (currentPackageVersion && contentPackage
+          ? imageWorksurfaceFromContentPackage({
+              adopted: contentPackage.status === 'accepted',
+              generated: contentPackage.generated,
+              version: currentPackageVersion,
+              workId,
+            })
+          : undefined));
 
   const executeIntent = async <T,>(
     fingerprint: string,
@@ -787,23 +796,31 @@ function ResultCenterRoutePage() {
     await refreshCanonicalResult();
     return created;
   };
+  /**
+   * Adoption on the Harness seam: the merchant takes the candidate the package
+   * already carries. Returns null when this result has no Harness selection —
+   * a legacy Job-shaped run — and the visual adoption below owns it instead.
+   */
+  const adoptHarnessCandidate = async () => {
+    const harnessCandidateId = currentPackageVersion?.harnessCandidateId;
+    if (!contentPackage?.harnessSelection || !harnessCandidateId) return null;
+    const adopted = await operationsCommand<PublicContentPackage>(
+      'adopt_harness_candidate',
+      {
+        candidateId: harnessCandidateId,
+        expectedRevision: contentPackage.revision,
+        packageId: contentPackage.id,
+      },
+      `adopt-harness:${contentPackage.id}:${contentPackage.revision}:${harnessCandidateId}`
+    );
+    await refreshCanonicalResult();
+    return adopted;
+  };
   const adoptCopyCandidate = async () => {
     if (!copyAsset) return;
-    const harnessCandidateId = currentPackageVersion?.harnessCandidateId;
-    let adopted: PublicContentPackage;
-    if (contentPackage?.harnessSelection && harnessCandidateId) {
-      adopted = await operationsCommand<PublicContentPackage>(
-        'adopt_harness_candidate',
-        {
-          candidateId: harnessCandidateId,
-          expectedRevision: contentPackage.revision,
-          packageId: contentPackage.id,
-        },
-        `adopt-harness:${contentPackage.id}:${contentPackage.revision}:${harnessCandidateId}`
-      );
-      await refreshCanonicalResult();
-    } else {
-      adopted = await adopt(
+    const adopted =
+      (await adoptHarnessCandidate()) ??
+      (await adopt(
         imageAssetIds.length > 0
           ? {
               copyAssetId: copyAsset.id,
@@ -811,8 +828,7 @@ function ResultCenterRoutePage() {
               orderedAssetIds: imageAssetIds,
             }
           : { copyAssetId: copyAsset.id, kind: 'copy' }
-      );
-    }
+      ));
     try {
       await generateCopyPlatformVariants(adopted);
     } catch (error) {
@@ -828,8 +844,17 @@ function ResultCenterRoutePage() {
       await adoptCopyCandidate();
       return;
     }
-    if (workspaceKind === 'image' && imageAssetIds.length > 0) {
-      await adopt({ kind: 'image', orderedAssetIds: imageAssetIds });
+    if (workspaceKind === 'image') {
+      // 图文 runs come off the same Harness seam as 文案 and their pages are
+      // ContentPackage owned assets, not the per-Job CreativeAssets
+      // `adopt_visual_selection` validates against — sending those ids there
+      // is a 409 (`INVALID_VISUAL_ASSET`) for every new-seam run, which is
+      // where the 图文 mainline used to end. Take the candidate the package
+      // carries, and leave visual adoption to the legacy runs that have it.
+      if (await adoptHarnessCandidate()) return;
+      if (imageAssetIds.length > 0) {
+        await adopt({ kind: 'image', orderedAssetIds: imageAssetIds });
+      }
       return;
     }
     if (workspaceKind === 'video' && videoWorksurface?.composedCandidate) {
@@ -999,11 +1024,18 @@ function ResultCenterRoutePage() {
     }
   };
 
+  // `selected.hasUsableCandidate` counts the per-Job CreativeAssets of the
+  // legacy projection. A 图文 run's pages never become those, so a delivered
+  // package offered no 采用 action at all and the shell fell through to
+  // 「继续调整」. A current ContentPackage version is a usable candidate by
+  // definition — the branch that reads this already requires nothing adopted.
+  const hasUsableCandidate =
+    selected?.hasUsableCandidate || Boolean(currentPackageVersion);
   const shellPhase = projectResultShellPhase({
     target,
     workspaceKind,
     progressState: resultProgressState,
-    hasUsableCandidate: selected?.hasUsableCandidate,
+    hasUsableCandidate,
     ...packageMutationFacts,
   });
   const revisionTimelineFacts =
@@ -1047,7 +1079,7 @@ function ResultCenterRoutePage() {
         workspaceKind,
         requestedPanel: search.panel,
         progressState: resultProgressState,
-        hasUsableCandidate: selected?.hasUsableCandidate,
+        hasUsableCandidate,
         ...packageMutationFacts,
         taskId: search.taskId,
         jobId: selected?.job?.id,

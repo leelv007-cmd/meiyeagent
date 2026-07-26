@@ -487,6 +487,69 @@ function imageFacts(input: {
   };
 }
 
+/**
+ * ContentPackage fallback for the 图文 worksurface.
+ *
+ * `imageFacts` above reads the CreativeAsset rows of
+ * `operations.creative_workbench`, and the ContentPackage seam does not write
+ * them — so a 图文 run delivered through the new seam left Result Center on
+ * 「等待图片候选…」 while its own status already read 可发布, with no way to
+ * reach the pages it had just produced. The copy worksurface has carried a
+ * package-shaped fallback for exactly that reason (`results_/$workId.tsx`);
+ * this is the same fallback for images.
+ *
+ * Undefined when the package names no images: an empty gallery is a state the
+ * surface must keep showing honestly, not one to fabricate around.
+ */
+export function imageWorksurfaceFromContentPackage(input: {
+  adopted: boolean;
+  generated: {
+    assetIds: readonly string[];
+    ownedAssets?: readonly {
+      id: string;
+      objectKey: string;
+      sourceAssetId?: string;
+    }[];
+  };
+  version: { id: string; orderedAssetIds: readonly string[] };
+  workId: string;
+}): ResultCenterLiveSelection['imageWorksurface'] | undefined {
+  const orderedAssetIds =
+    input.version.orderedAssetIds.length > 0
+      ? input.version.orderedAssetIds
+      : input.generated.assetIds;
+  if (orderedAssetIds.length === 0) return undefined;
+  const owned = orderedAssetIds.map((assetId) =>
+    input.generated.ownedAssets?.find(
+      (asset) => asset.sourceAssetId === assetId || asset.id === assetId
+    )
+  );
+  return {
+    workId: input.workId,
+    baseRevisionId: input.version.id,
+    outputType:
+      orderedAssetIds.length >= 2 ? 'ordered_image_set' : 'single_image',
+    slot: orderedAssetIds.length >= 2 ? 'gallery' : 'standalone',
+    lifecycle: input.adopted ? 'adopted' : 'candidate',
+    candidates: orderedAssetIds.map((assetId, index) => ({
+      assetId,
+      ...(owned[index]
+        ? {
+            previewUrl: `/api/core/p1/assets?objectKey=${encodeURIComponent(owned[index].objectKey)}`,
+          }
+        : {}),
+      persisted: Boolean(owned[index]),
+      rightsOk: true,
+      generationOk: true,
+      recipeOrder: index + 1,
+    })),
+    focusedAssetId: orderedAssetIds[0],
+    hasContentPackage: true,
+    adoptedOrderedAssetIds: input.adopted ? [...orderedAssetIds] : [],
+    mediaVersionReady: owned.every(Boolean),
+  };
+}
+
 export function projectResultCenterLiveProjection(
   projection: CreativeWorkbenchProjection,
   workId: string
