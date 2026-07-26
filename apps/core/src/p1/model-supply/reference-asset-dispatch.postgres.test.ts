@@ -9,6 +9,7 @@ import { PostgresCanvasAssetRepository } from '../../pro-studio/postgres-canvas-
 import { PostgresProStudioMigration } from '../../pro-studio/postgres-pro-studio-migration.js';
 import { ModelSupplyComposerRouteResolver } from '../execution-spine/composer-route-resolver.js';
 import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
+import { OperationsCanvasExportAssetAccessService } from '../operations/canvas-export-asset-access.js';
 import { withServerDerivedReferenceDataClass } from './reference-asset-dispatch-guard.js';
 import {
   CompositeReferenceAssetResolver,
@@ -229,7 +230,7 @@ test(
 );
 
 test(
-  'Postgres composite resolver resolves a real p1_owned_assets row with the server default export policy',
+  'Postgres union rechecks generation input lineage before exporting a real p1_owned_assets row',
   { skip: databaseUrl ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
     const pool = new Pool({ connectionString: databaseUrl });
@@ -238,6 +239,7 @@ test(
     const jobId = `job-${randomUUID()}`;
     const attemptId = `attempt-${randomUUID()}`;
     const assetId = `asset-${randomUUID()}`;
+    const parentAssetId = `parent-${randomUUID()}`;
     const bytes = Uint8Array.from(Buffer.from('p1-owned-reference'));
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     try {
@@ -261,6 +263,23 @@ test(
         client.release();
       }
       const createdAt = '2026-07-26T00:00:00.000Z';
+      const canvasAssets = new PostgresCanvasAssetRepository(pool);
+      await canvasAssets.insert({
+        contentType: 'image/png',
+        createdAt,
+        exportPolicy: createCanvasOwnedAssetExportPolicy({
+          ownerId: 'user-t15',
+          updatedAt: createdAt,
+          workspaceId,
+        }),
+        fileName: 'parent.png',
+        id: parentAssetId,
+        objectKey: `${workspaceId}/canvas/assets/${parentAssetId}.png`,
+        sha256,
+        sizeBytes: bytes.byteLength,
+        source: { kind: 'local_import' },
+        workspaceId,
+      });
       await foundation.insertRouteSnapshot({
         allowedCandidates: [
           {
@@ -288,6 +307,11 @@ test(
         createdBy: 'user-t15',
         id: jobId,
         operation: 'image',
+        result: {
+          inputAssets: [
+            { assetId: parentAssetId, role: 'reference_image' },
+          ],
+        },
         routeSnapshotId,
         status: 'completed',
         updatedAt: createdAt,
@@ -320,7 +344,7 @@ test(
 
       const resolver = new CompositeReferenceAssetResolver([
         new OwnedAssetReferenceResolver(
-          new PostgresCanvasAssetRepository(pool),
+          canvasAssets,
           { async read() { return bytes; } },
         ),
       ]);
@@ -331,6 +355,81 @@ test(
       assert.equal(resolved.sha256, sha256);
       assert.equal(resolved.classificationSource, 'unclassified');
       assert.equal(Buffer.from(resolved.bytes).toString(), 'p1-owned-reference');
+
+      const unionAsset = await canvasAssets.get(workspaceId, assetId);
+      assert.deepEqual(unionAsset?.source, {
+        jobId,
+        kind: 'generation_job',
+      });
+      let storageReads = 0;
+      const exportAccess = new OperationsCanvasExportAssetAccessService({
+        canvasAssets,
+        contentPackageAssets: {
+          async readOwnedAsset() {
+            throw new Error('No ContentPackage asset is referenced.');
+          },
+        },
+        contentPackageRights: {
+          async resolve() {
+            return { knownAssetIds: [], unauthorizedAssetIds: [] };
+          },
+        },
+        generationJobs: foundation,
+        ownedAssetStorage: {
+          async read() {
+            storageReads += 1;
+            return { bytes, contentType: 'image/png' };
+          },
+          async verifyCanvasAssetReceipt() {
+            return true;
+          },
+        },
+        productAssets: {
+          async resolve() {
+            return [];
+          },
+        },
+        productPolicy: {
+          async resolveExportPolicy() {
+            return { kind: 'unknown' as const };
+          },
+        },
+      });
+      assert.equal(
+        (
+          await exportAccess.resolve({
+            assetId,
+            contentPackages: [],
+            workspaceId,
+          })
+        ).kind,
+        'available',
+      );
+      assert.equal(storageReads, 1);
+
+      await canvasAssets.updateExportPolicy?.({
+        assetId: parentAssetId,
+        expectedVersion: 1,
+        exportPolicy: {
+          ...createCanvasOwnedAssetExportPolicy({
+            ownerId: 'user-t15',
+            updatedAt: createdAt,
+            workspaceId,
+          }),
+          revokedAt: '2026-07-26T01:00:00.000Z',
+          version: 2,
+        },
+        workspaceId,
+      });
+      assert.deepEqual(
+        await exportAccess.resolve({
+          assetId,
+          contentPackages: [],
+          workspaceId,
+        }),
+        { code: 'ASSET_REVOKED', kind: 'unavailable' },
+      );
+      assert.equal(storageReads, 1);
     } finally {
       await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
       await pool.end();

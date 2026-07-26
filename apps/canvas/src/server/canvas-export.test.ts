@@ -245,6 +245,11 @@ test("exports governed local imports and generated audio through Core into a rea
 					return { knownAssetIds: [], unauthorizedAssetIds: [] };
 				},
 			},
+			generationJobs: {
+				async getGenerationJob() {
+					return { result: { inputAssets: [] } };
+				},
+			},
 			ownedAssetStorage: {
 				async read(objectKey) {
 					storageReads += 1;

@@ -78,6 +78,12 @@ interface OperationsCanvasExportAssetAccessOptions {
   clock?: () => Date;
   contentPackageAssets: ContentPackageExportAssetReader;
   contentPackageRights: ContentPackageRightsResolverPort;
+  generationJobs: {
+    getGenerationJob(
+      workspaceId: string,
+      jobId: string,
+    ): Promise<{ result?: Record<string, unknown> } | null>;
+  };
   ownedAssetStorage: OwnedAssetStorage;
   productAssets: Pick<ReferenceAssetResolverPort, 'resolve'>;
   productPolicy?: ContentPackageAssetExportPolicyPort;
@@ -214,11 +220,32 @@ export class OperationsCanvasExportAssetAccessService
       return this.canvasOwnedAssetPolicy(workspaceId, parent, seen);
     }
     if (asset.source.kind === 'local_import') return undefined;
-    if (
-      asset.source.kind === 'generation_job' &&
-      typeof asset.source.jobId === 'string' &&
-      asset.source.jobId.trim()
-    ) {
+    if (asset.source.kind === 'generation_job') {
+      let job;
+      try {
+        job = await this.options.generationJobs.getGenerationJob(
+          workspaceId,
+          asset.source.jobId,
+        );
+      } catch {
+        return unavailable('ASSET_ACCESS_DENIED');
+      }
+      const inputAssetIds = generationInputAssetIds(job);
+      if (!inputAssetIds) return unavailable('ASSET_ACCESS_DENIED');
+      for (const inputAssetId of inputAssetIds) {
+        const parent = await this.options.canvasAssets.get(
+          workspaceId,
+          inputAssetId,
+        );
+        const parentPolicy = parent
+          ? await this.canvasOwnedAssetPolicy(
+              workspaceId,
+              parent,
+              new Set(seen),
+            )
+          : await this.requireProductExportPolicy(workspaceId, inputAssetId);
+        if (parentPolicy) return parentPolicy;
+      }
       return undefined;
     }
     return unavailable('ASSET_ACCESS_DENIED');
@@ -404,6 +431,27 @@ function available(input: {
 
 function unavailable(code: CanvasExportAssetUnavailableCode): CanvasExportAssetAccessDecision {
   return { code, kind: 'unavailable' };
+}
+
+function generationInputAssetIds(
+  job: { result?: Record<string, unknown> } | null,
+): string[] | null {
+  const inputAssets = job?.result?.inputAssets;
+  if (!Array.isArray(inputAssets)) return null;
+  const assetIds: string[] = [];
+  for (const candidate of inputAssets) {
+    if (
+      typeof candidate !== 'object' ||
+      candidate === null ||
+      !('assetId' in candidate) ||
+      typeof candidate.assetId !== 'string' ||
+      !candidate.assetId.trim()
+    ) {
+      return null;
+    }
+    assetIds.push(candidate.assetId);
+  }
+  return [...new Set(assetIds)];
 }
 
 function policyUnavailableCode(

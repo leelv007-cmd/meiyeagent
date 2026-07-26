@@ -222,6 +222,11 @@ test('receipt-aware Core storage makes a generated audio asset exportable throug
           return { knownAssetIds: [], unauthorizedAssetIds: [] };
         },
       },
+      generationJobs: {
+        async getGenerationJob() {
+          return { result: { inputAssets: [] } };
+        },
+      },
       ownedAssetStorage: {
         async read(objectKey) {
           storageReads += 1;

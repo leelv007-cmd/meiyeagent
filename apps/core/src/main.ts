@@ -1037,6 +1037,7 @@ const canvasExportAssetAccess = new OperationsCanvasExportAssetAccessService({
   canvasAssets: canvasAssetRepository,
   contentPackageAssets: contentPackageExportAssets,
   contentPackageRights: contentPackageRightsResolver,
+  generationJobs: foundationRepository,
   ownedAssetStorage: assetStorage,
   productAssets: productReferenceAssets,
   productPolicy: contentPackageRightsResolver,
