@@ -35,7 +35,9 @@ function MarketingIdentityRoute() {
       />
       <main className="meiye-heroui-glass mx-auto w-full max-w-4xl flex-1 p-4 lg:p-6">
         <div className="meiye-ambient-copy mb-6">
-          <h1 className="meiye-type-title">{product_navigation_identity()}</h1>
+          <h1 className="meiye-type-title" data-testid="identity-ambient-title">
+            {product_navigation_identity()}
+          </h1>
         </div>
         <MarketingIdentityPage />
       </main>

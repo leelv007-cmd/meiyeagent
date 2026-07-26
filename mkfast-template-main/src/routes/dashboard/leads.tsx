@@ -62,7 +62,7 @@ import {
   IconRefresh,
 } from '@tabler/icons-react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 
 /**
  * Lead ledger — T33 / #227 reshell along the Composer trunk.
@@ -170,8 +170,12 @@ function LeadLedgerPage() {
       />
       <main className="meiye-heroui-glass mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">
         <div className="meiye-ambient-copy mb-6">
-          <h1 className="meiye-type-title">{product_navigation_leads()}</h1>
-          <p className="meiye-type-aux mt-1">{dashboard_lead_description()}</p>
+          <h1 className="meiye-type-title" data-testid="leads-ambient-title">
+            {product_navigation_leads()}
+          </h1>
+          <p className="meiye-type-aux mt-1" data-testid="leads-ambient-aux">
+            {dashboard_lead_description()}
+          </p>
         </div>
 
         {error && (
@@ -206,15 +210,24 @@ function LeadLedgerPage() {
             </Widget.Header>
             <Widget.Content>
               {state.leads.length === 0 ? (
-                <EmptyState>
+                /* HeroUI's vendored empty-state.css paints the description with
+                    `color: var(--muted)`, but inside .meiye-product-shell that
+                    token is the muted *background* (--tint-hover, 4% ink / 6%
+                    white) — measured 1.06:1, i.e. the line is invisible. Same
+                    trap as OI-73 on the works surface; mapped back onto the ink
+                    gradient here. Per-site on purpose: the shared-layer fix is
+                    OI-48. */
+                <EmptyState
+                  style={{ '--muted': 'var(--ink-60)' } as CSSProperties}
+                >
                   <EmptyState.Header>
                     <EmptyState.Media variant="icon">
                       <IconMessages className="size-6" />
                     </EmptyState.Media>
-                    <EmptyState.Title>
+                    <EmptyState.Title data-testid="leads-empty-title">
                       {dashboard_lead_empty()}
                     </EmptyState.Title>
-                    <EmptyState.Description>
+                    <EmptyState.Description data-testid="leads-empty-description">
                       {lead_ledger_empty_description()}
                     </EmptyState.Description>
                   </EmptyState.Header>

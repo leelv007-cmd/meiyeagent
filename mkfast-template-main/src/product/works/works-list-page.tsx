@@ -119,8 +119,12 @@ export function WorksListPage() {
       >
         <div className="flex flex-col gap-4 px-4 py-4 lg:gap-6 lg:px-6 lg:py-6">
           <div className="meiye-ambient-copy">
-            <h1 className="meiye-type-title">{WORKS_TITLE}</h1>
-            <p className="meiye-type-aux mt-1">{WORKS_DESCRIPTION}</p>
+            <h1 className="meiye-type-title" data-testid="works-ambient-title">
+              {WORKS_TITLE}
+            </h1>
+            <p className="meiye-type-aux mt-1" data-testid="works-ambient-aux">
+              {WORKS_DESCRIPTION}
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -200,19 +204,50 @@ export function WorksListPage() {
               内容暂时没能取回来，刷新一下再看。
             </p>
           ) : items.length === 0 ? (
-            <EmptyState data-testid="works-empty">
+            /*
+              OI-73. 一级导航「内容」 lands here, so this empty state is the
+              first screen a cold-start merchant sees — and its three lines were
+              floating straight on the shell's 门店橱窗 photo. Both faults were
+              measured, not guessed: the title takes --foreground (ink) and came
+              back 2.27:1 on the photo (light/desktop, drifting with whatever
+              the image is bright or dark under), while the description and the
+              call to action take --muted — the vendored empty-state.css uses it
+              as a foreground, but inside .meiye-product-shell that token is the
+              muted *background* (--tint-hover, 4% ink / 6% white), measuring
+              1.02–1.18:1, i.e. the whole line is invisible. That second trap is
+              the one T32 already wrote up for the Segment above.
+
+              The fix stays inside DESIGN.md's existing vocabulary rather than
+              inventing a new one: the empty state sits on a porcelain base
+              (实体内容区一律白瓷, and the Don't list is explicit that text is
+              never laid straight on media without a scrim), matching its
+              works-unavailable sibling; --muted maps back to --ink-60, the
+              lowest body step. --default is deliberately left alone — the
+              vendored CSS only uses it as the icon medallion's background, the
+              token bridge already gives it a background value, and pointing it
+              at a foreground would turn that medallion into a dark blob.
+              Per-site stops here: the shared-layer --muted fix is OI-48.
+            */
+            <EmptyState
+              className="meiye-porcelain rounded-2xl"
+              data-testid="works-empty"
+              style={{ '--muted': 'var(--ink-60)' } as CSSProperties}
+            >
               <EmptyState.Header>
                 <EmptyState.Media variant="icon">
                   <IconPhoto aria-hidden="true" />
                 </EmptyState.Media>
-                <EmptyState.Title>还没有内容</EmptyState.Title>
-                <EmptyState.Description>
+                <EmptyState.Title data-testid="works-empty-title">
+                  还没有内容
+                </EmptyState.Title>
+                <EmptyState.Description data-testid="works-empty-description">
                   去创作一条内容，做出来的成品会自动进到这里。
                 </EmptyState.Description>
               </EmptyState.Header>
               <EmptyState.Content>
                 <a
                   className="meiye-glass-piece inline-flex rounded-full px-4 py-2 text-sm"
+                  data-testid="works-empty-cta"
                   href={getPathWithLocale('/dashboard')}
                 >
                   去创作

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import { EmptyState, Widget } from '@/components/heroui-pro';
 import { Button, buttonVariants, Input, TextArea } from '@heroui/react';
@@ -337,12 +337,21 @@ export function MarketingIdentityPage() {
             </div>
           ) : null}
           {identities.isSuccess && identities.data.length === 0 ? (
-            <EmptyState>
+            /* HeroUI's vendored empty-state.css paints the description with
+                `color: var(--muted)`, but inside .meiye-product-shell that
+                token is the muted *background* (--tint-hover, 4% ink / 6%
+                white) — measured 1.06:1, i.e. the line is invisible. Same
+                trap as OI-73 on the 内容 surface; mapped back onto the ink
+                gradient here. Per-site on purpose: the shared-layer fix is
+                OI-48. */
+            <EmptyState style={{ '--muted': 'var(--ink-60)' } as CSSProperties}>
               <EmptyState.Header>
                 <EmptyState.Media variant="icon">
                   <IconUserPlus className="size-6" />
                 </EmptyState.Media>
-                <EmptyState.Description>{copy.empty}</EmptyState.Description>
+                <EmptyState.Description data-testid="identity-empty-description">
+                  {copy.empty}
+                </EmptyState.Description>
               </EmptyState.Header>
             </EmptyState>
           ) : null}

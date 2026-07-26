@@ -2,6 +2,7 @@ import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
 import { ObjectEvidence } from '@/components/uiux/object-evidence';
 import { EmptyState, Widget } from '@/components/heroui-pro';
 import { Skeleton } from '@heroui/react';
+import type { CSSProperties } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import {
   common_table_bool_false,
@@ -120,15 +121,24 @@ function LeadDetailRoute() {
           </section>
         ) : null}
         {!lead && !product.loading ? (
-          <EmptyState className="meiye-porcelain rounded-2xl">
+          /* The porcelain base is already here, but the description still
+              takes `color: var(--muted)` from the vendored empty-state.css,
+              and inside .meiye-product-shell that token is the muted
+              *background* (4% ink / 6% white) — measured 1.06:1 even on
+              porcelain. Same trap as OI-73; mapped back onto the ink gradient.
+              Per-site on purpose: the shared-layer fix is OI-48. */
+          <EmptyState
+            className="meiye-porcelain rounded-2xl"
+            style={{ '--muted': 'var(--ink-60)' } as CSSProperties}
+          >
             <EmptyState.Header>
               <EmptyState.Media variant="icon">
                 <IconFolderOff className="size-6" />
               </EmptyState.Media>
-              <EmptyState.Title>
+              <EmptyState.Title data-testid="lead-detail-missing-title">
                 {dashboard_lead_detail_missing_title()}
               </EmptyState.Title>
-              <EmptyState.Description>
+              <EmptyState.Description data-testid="lead-detail-missing-description">
                 {dashboard_lead_detail_missing_description()}
               </EmptyState.Description>
             </EmptyState.Header>
