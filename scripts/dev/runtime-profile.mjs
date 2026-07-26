@@ -48,7 +48,6 @@ export function createDevelopmentRuntimeProfile(input) {
     INTEGRATION_SECRET_STORE_MODE: 'recorded',
     MAIN_APP_ORIGIN: `http://localhost:${webPort}`,
     MODEL_EXECUTION_MODE: 'fixture',
-    P1_VIDEO_COMPOSITION_MODE: 'recorded',
     P1_ASSET_PUBLIC_BASE_URL: `http://localhost:${webPort}/api/core/p1/assets?objectKey=`,
     PORT: webPort,
     VITE_BASE_URL: `http://localhost:${webPort}`,

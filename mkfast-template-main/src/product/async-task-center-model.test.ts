@@ -85,7 +85,7 @@ test('later terminal transitions become unread once and remain recent after read
   );
 });
 
-test('a composed-video review gate becomes one actionable unread transition', () => {
+test('a video review gate becomes one actionable unread transition', () => {
   const baseline = reconcileAsyncTaskReadState(undefined, [
     task('video-workflow', 'running', '2026-07-13T00:01:00.000Z'),
   ]);
@@ -98,7 +98,7 @@ test('a composed-video review gate becomes one actionable unread transition', ()
   ]);
 });
 
-test('composed-video summaries use public projections without exposing internal ids', () => {
+test('video summaries use public projections without exposing internal ids', () => {
   const base = {
     catalogModelId: 'seedance-2',
     confirmed: true,
@@ -154,7 +154,7 @@ test('composed-video summaries use public projections without exposing internal 
   );
   assert.doesNotMatch(
     summaries.map(({ href, label }) => `${label} ${href}`).join(' '),
-    /internal-workflow-id|model\.composed-video/u
+    /internal-workflow-id|model\.video-native/u
   );
 });
 test('read state is isolated by authenticated user', () => {

@@ -6,7 +6,6 @@ import type {
   VideoCompositionEvidence,
 } from '@meiye/contracts';
 import type { ZodType } from 'zod';
-import { VideoLabelValidationError } from '../../video/validation.js';
 import { recordedH264Video } from './recorded-media-adapters.js';
 import type { AiStreamingRunner } from './ai-sdk-runner.js';
 import type {
@@ -3913,6 +3912,12 @@ export function evaluateBeautyOfflineCase(
   };
 }
 
+interface TimedSubtitle {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
 export interface VideoCompositionPort {
   compose(input: {
     workspaceId: string;
@@ -3922,7 +3927,7 @@ export interface VideoCompositionPort {
     aigcLabelEnabled: boolean;
     brandWatermarkText?: string;
     storyboardRevision?: string;
-    subtitles?: import('../../video/composer.js').TimedSubtitle[];
+    subtitles?: TimedSubtitle[];
   }): Promise<OwnedAsset>;
 }
 
@@ -3954,7 +3959,7 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
     aigcLabelEnabled: boolean;
     brandWatermarkText?: string;
     storyboardRevision?: string;
-    subtitles?: import('../../video/composer.js').TimedSubtitle[];
+    subtitles?: TimedSubtitle[];
   }): Promise<OwnedAsset> {
     const durationSeconds =
       input.subtitles?.at(-1)?.endSeconds ?? input.clips.length * 15;
@@ -4051,7 +4056,7 @@ export class RecordedVideoCompositionPort implements VideoCompositionPort {
 }
 
 function serializeRecordedSrt(
-  subtitles: import('../../video/composer.js').TimedSubtitle[],
+  subtitles: TimedSubtitle[],
 ) {
   const time = (seconds: number) =>
     new Date(Math.round(seconds * 1000))
@@ -5138,34 +5143,22 @@ export async function runDurableVideoWorkflow(input: {
     const subtitles = videoWorkflowSubtitles(workflow);
     await guardVideoWorkflowRun(workflow, input.guard);
     let composedAsset: OwnedAsset;
-    try {
-      composedAsset = await input.composer.compose({
-        workspaceId: workflow.workspaceId,
-        workflowId: workflow.id,
-        compositionKey,
-        clips: workflow.clipAssets,
-        aigcLabelEnabled: workflow.aigcLabelEnabled,
-        ...(workflow.brandWatermarkText
-          ? { brandWatermarkText: workflow.brandWatermarkText }
-          : {}),
-        storyboardRevision: workflow.storyboardRevision,
-        subtitles,
-      });
-    } catch (error) {
-      if (error instanceof VideoLabelValidationError) {
-        return failDurableVideoWorkflow(
-          workflow,
-          'COMPOSED_VIDEO_AIGC_VALIDATION_FAILED',
-          input,
-          clock
-        );
-      }
-      throw error;
-    }
+    composedAsset = await input.composer.compose({
+      workspaceId: workflow.workspaceId,
+      workflowId: workflow.id,
+      compositionKey,
+      clips: workflow.clipAssets,
+      aigcLabelEnabled: workflow.aigcLabelEnabled,
+      ...(workflow.brandWatermarkText
+        ? { brandWatermarkText: workflow.brandWatermarkText }
+        : {}),
+      storyboardRevision: workflow.storyboardRevision,
+      subtitles,
+    });
     if (!hasValidComposedVideoTechnicalEvidence(composedAsset)) {
       return failDurableVideoWorkflow(
         workflow,
-        'COMPOSED_VIDEO_TECHNICAL_VALIDATION_FAILED',
+        'VIDEO_ASSET_TECHNICAL_VALIDATION_FAILED',
         input,
         clock
       );
@@ -5173,7 +5166,7 @@ export async function runDurableVideoWorkflow(input: {
     if (!hasValidComposedVideoProvenance(composedAsset, workflow)) {
       return failDurableVideoWorkflow(
         workflow,
-        'COMPOSED_VIDEO_PROVENANCE_VALIDATION_FAILED',
+        'VIDEO_ASSET_PROVENANCE_VALIDATION_FAILED',
         input,
         clock
       );
@@ -5652,22 +5645,19 @@ export * from './asset-storage-from-env.js';
 export * from './ai-sdk-runner.js';
 export * from './audio-activation-gate.js';
 export * from './catalog.js';
-export * from './composed-video-workflow.js';
-export * from './composition-runtime.js';
 export * from './copy-provider-bridge.js';
 export * from './duration-estimate.js';
-export * from './ffmpeg-composition-port.js';
 export * from './foundation-ledger.js';
 export * from './foundation-module.js';
 export * from './filesystem-asset-storage.js';
 export * from './media-generation-workflow.js';
+export * from './media-tools.js';
 export * from './media-tool-paths.js';
 export * from './postgres-repository.js';
 export * from './reference-asset-resolver.js';
 export * from './runtime-config.js';
 export * from './runtime-assembly.js';
 export * from './s3-asset-storage.js';
-export * from './video-workflow-billing.js';
 export * from './tuzi-media-adapter.js';
 export * from './volcengine-tts-adapter.js';
 export * from './volcengine-tts-lifecycle.js';
@@ -5679,3 +5669,4 @@ export * from './video-regeneration-postgres.js';
 export * from './video-regeneration-runtime.js';
 export * from './video-workflow-canonical-postgres.js';
 export * from './video-workflow-canonical.js';
+export * from './video-asset-validation.js';

@@ -185,7 +185,7 @@ test('keeps the portalled panel inside common walkthrough viewports', () => {
   }
 });
 
-test('the collapsed global center includes an active composed-video Job without exposing ids', () => {
+test('the collapsed global center includes an active video Job without exposing ids', () => {
   const projection: VideoWorkflowPublicProjection = {
     catalogModelId: 'seedance-2',
     confirmed: true,
@@ -219,5 +219,5 @@ test('the collapsed global center includes an active composed-video Job without 
   );
 
   assert.match(html, /1 个进行中/u);
-  assert.doesNotMatch(html, /private-workflow-id|model\.composed-video/u);
+  assert.doesNotMatch(html, /private-workflow-id|model\.video-native/u);
 });

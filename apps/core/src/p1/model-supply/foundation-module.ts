@@ -1,8 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  creativeExecutionContractSchema,
-  type DurationEstimate,
-} from '@meiye/contracts';
+import { type DurationEstimate } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import {
@@ -45,10 +42,6 @@ import {
   type RequestedSelection,
   type RouteCandidateCostEstimate,
   type RouteSimulationFailureScenario,
-  type VideoExecutionContract,
-  type EditVideoWorkflowInput,
-  type VideoWorkflowShotInput,
-  projectVideoWorkflowPublic,
 } from './index.js';
 import type { AiStreamingRunner } from './ai-sdk-runner.js';
 import {
@@ -60,7 +53,6 @@ import {
   isAudioGenerationOperation,
   isAudioProductionGenerationAllowed,
 } from './audio-activation-gate.js';
-import type { DurableComposedVideoApplicationService } from './composed-video-workflow.js';
 import {
   DURATION_ESTIMATE_WINDOW_DAYS,
   durationEstimateFromSamples,
@@ -4802,122 +4794,6 @@ function optionalQualityString(
   return input[key] === undefined ? undefined : qualityString(input, key);
 }
 
-function videoWorkflowShots(
-  value: unknown,
-  requireExecutionParameters = false
-): VideoWorkflowShotInput[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new P1DomainError('INVALID_STATE', 'shots must be a non-empty array.');
-  }
-  return value.map((candidate) => {
-    const shot = object(candidate);
-    const candidatesPerShot = shot.candidatesPerShot;
-    if (
-      typeof candidatesPerShot !== 'number' ||
-      !Number.isInteger(candidatesPerShot) ||
-      candidatesPerShot < 1 ||
-      candidatesPerShot > 8
-    ) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'candidatesPerShot must be an integer from 1 through 8.',
-      );
-    }
-    const executionParameters = {
-      durationSeconds: shot.durationSeconds,
-      height: shot.height,
-      width: shot.width,
-    };
-    if (
-      requireExecutionParameters &&
-      Object.values(executionParameters).some(
-        (parameter) =>
-          typeof parameter !== 'number' ||
-          !Number.isInteger(parameter) ||
-          parameter < 1
-      )
-    ) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Every video shot requires positive integer durationSeconds, width, and height.'
-      );
-    }
-    return {
-      id: requiredString(shot, 'id'),
-      prompt: requiredString(shot, 'prompt'),
-      candidatesPerShot,
-      ...(requireExecutionParameters
-        ? (executionParameters as {
-            durationSeconds: number;
-            height: number;
-            width: number;
-          })
-        : {}),
-    };
-  });
-}
-
-function videoWorkflowEdit(
-  payload: Record<string, unknown>,
-): EditVideoWorkflowInput['edit'] {
-  const edit = object(payload.edit);
-  const kind = requiredString(edit, 'kind');
-  if (kind === 'select_candidate') {
-    return {
-      kind,
-      shotId: requiredString(edit, 'shotId'),
-      candidateIndex: videoCandidateIndex(edit.candidateIndex),
-    };
-  }
-  if (kind === 'reorder_shots') {
-    if (!Array.isArray(edit.shotIds) || edit.shotIds.length === 0) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'shotIds must be a non-empty array.',
-      );
-    }
-    return {
-      kind,
-      shotIds: edit.shotIds.map((shotId) =>
-        requiredString({ shotId }, 'shotId'),
-      ),
-    };
-  }
-  if (kind === 'set_subtitle') {
-    if (typeof edit.text !== 'string') {
-      throw new P1DomainError('INVALID_STATE', 'subtitle text must be a string.');
-    }
-    return { kind, text: edit.text };
-  }
-  throw new P1DomainError('INVALID_STATE', `Unknown video edit ${kind}.`);
-}
-
-function videoWorkflowExpectedRevision(value: unknown) {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'expectedRevision must be a non-negative integer.',
-    );
-  }
-  return value;
-}
-
-function videoExecutionContract(value: unknown): VideoExecutionContract {
-  const parsed = creativeExecutionContractSchema.safeParse(value);
-  if (
-    !parsed.success ||
-    parsed.data.operation !== 'video.generate' ||
-    !parsed.data.aspectRatio ||
-    parsed.data.durationSeconds === undefined
-  ) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'A frozen video execution contract with duration and aspect ratio is required.'
-    );
-  }
-  return parsed.data as VideoExecutionContract;
-}
-
 function videoDataClass(value: unknown): DataClass[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
@@ -4936,30 +4812,6 @@ function videoDataClass(value: unknown): DataClass[] {
     );
   }
   return (normalized as DataClass[]).sort();
-}
-
-function videoReferenceAssetIds(value: unknown): string[] {
-  if (value === undefined) return [];
-  if (
-    !Array.isArray(value) ||
-    value.some((item) => typeof item !== 'string' || !item.trim())
-  ) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'referenceAssetIds must be an array of non-empty strings.',
-    );
-  }
-  return [...new Set(value as string[])].sort();
-}
-
-function videoCandidateIndex(value: unknown) {
-  if (!Number.isInteger(value) || (value as number) < 0) {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      'candidateIndex must be a non-negative integer.',
-    );
-  }
-  return value as number;
 }
 
 const CANVAS_GENERATION_REQUEST_KEYS = new Set([
@@ -5868,7 +5720,6 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
     | 'listPendingActions'
     | 'reconcilePendingAction'
   >;
-  private readonly composedVideo?: DurableComposedVideoApplicationService;
 
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
@@ -5882,12 +5733,10 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
         | 'listPendingActions'
         | 'reconcilePendingAction'
       >;
-      composedVideo?: DurableComposedVideoApplicationService;
     } = {},
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
     this.adminSupply = options.adminSupply;
-    this.composedVideo = options.composedVideo;
   }
 
   async execute(args: {
@@ -6045,87 +5894,6 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           },
           args.idempotencyKey,
         );
-      case 'video_workflow_create_draft':
-        return this.requireComposedVideo().createDraft({
-          workspaceId: args.context.workspaceId,
-          actorId: args.context.userId,
-          workId: requiredString(payload, 'workId'),
-          ...(payload.billingTaskId === undefined
-            ? {}
-            : { billingTaskId: requiredString(payload, 'billingTaskId') }),
-          ...(payload.billingQuoteRevision === undefined
-            ? {}
-            : {
-                billingQuoteRevision: requiredString(
-                  payload,
-                  'billingQuoteRevision',
-                ),
-              }),
-          ...(payload.approvalReceiptId === undefined
-            ? {}
-            : {
-                approvalReceiptId: requiredString(
-                  payload,
-                  'approvalReceiptId',
-                ),
-              }),
-          workflowId: requiredString(payload, 'workflowId'),
-          ...(payload.derivedFromWorkflowId === undefined
-            ? {}
-            : {
-                derivedFromWorkflowId: requiredString(
-                  payload,
-                  'derivedFromWorkflowId',
-                ),
-              }),
-          storyboardRevision: requiredString(payload, 'storyboardRevision'),
-          catalogModelId: requiredString(payload, 'catalogModelId'),
-          dataClass: videoDataClass(payload.dataClass),
-          executionContract: videoExecutionContract(
-            payload.executionContract
-          ),
-          referenceAssetIds: videoReferenceAssetIds(
-            payload.referenceAssetIds,
-          ),
-          aigcLabelEnabled: payload.aigcLabelEnabled === true,
-          ...(typeof payload.brandWatermarkText === 'string' &&
-          payload.brandWatermarkText.trim()
-            ? { brandWatermarkText: payload.brandWatermarkText.trim() }
-            : {}),
-          shots: videoWorkflowShots(payload.shots, true),
-        });
-      case 'video_workflow_confirm':
-        return this.requireComposedVideo().confirmAndSubmit({
-          workspaceId: args.context.workspaceId,
-          workflowId: requiredString(payload, 'workflowId'),
-        });
-      case 'video_workflow_select_candidate':
-        return this.requireComposedVideo().selectCandidateAndResume({
-          workspaceId: args.context.workspaceId,
-          actorId: args.context.userId,
-          correlationId: args.context.correlationId,
-          workflowId: requiredString(payload, 'workflowId'),
-          shotId: requiredString(payload, 'shotId'),
-          candidateIndex: videoCandidateIndex(payload.candidateIndex),
-        });
-      case 'video_workflow_edit': {
-        const result = await this.requireComposedVideo().edit({
-          workspaceId: args.context.workspaceId,
-          actorId: args.context.userId,
-          correlationId: args.context.correlationId,
-          workflowId: requiredString(payload, 'workflowId'),
-          expectedRevision: videoWorkflowExpectedRevision(
-            payload.expectedRevision,
-          ),
-          edit: videoWorkflowEdit(payload),
-        });
-        return projectVideoWorkflowPublic(result.workflow);
-      }
-      case 'video_workflow_cancel':
-        return this.requireComposedVideo().cancel({
-          workspaceId: args.context.workspaceId,
-          workflowId: requiredString(payload, 'workflowId'),
-        });
       case 'catalog_create_draft':
         return publicCatalogRevision(await this.controlPlane.createCatalogDraft(
           args.context.workspaceId,
@@ -6302,62 +6070,9 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
             payload.unavailableDeploymentIds,
           ),
         });
-      case 'video_workflow':
-      case 'video_workflow_public': {
-        const current = await this.requireComposedVideo().query({
-          workspaceId: args.context.workspaceId,
-          workflowId: requiredString(payload, 'workflowId'),
-        });
-        if (current.workflow.actorId !== args.context.userId) {
-          throw new P1DomainError(
-            'FORBIDDEN',
-            'This video workflow belongs to another actor.',
-          );
-        }
-        return projectVideoWorkflowPublic(current.workflow);
-      }
-      case 'video_workflow_latest': {
-        const latest = await this.requireComposedVideo().latest({
-          workspaceId: args.context.workspaceId,
-          actorId: args.context.userId,
-          ...(typeof payload.workId === 'string'
-            ? { workId: requiredString(payload, 'workId') }
-            : {}),
-        });
-        return latest
-          ? projectVideoWorkflowPublic(latest.workflow)
-          : null;
-      }
-      case 'video_workflow_public_latest': {
-        const latest = await this.requireComposedVideo().latest({
-          workspaceId: args.context.workspaceId,
-          actorId: args.context.userId,
-          workId: requiredString(payload, 'workId'),
-        });
-        return latest
-          ? projectVideoWorkflowPublic(latest.workflow)
-          : null;
-      }
-      case 'video_workflows': {
-        const listed = await this.requireComposedVideo().list({
-          workspaceId: args.context.workspaceId,
-          actorId: args.context.userId,
-        });
-        return listed.map((item) => projectVideoWorkflowPublic(item.workflow));
-      }
       default:
         throw new P1DomainError('INVALID_STATE', `Unknown model-supply query ${action}.`);
     }
-  }
-
-  private requireComposedVideo() {
-    if (!this.composedVideo) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Durable composed-video workflow is not configured.',
-      );
-    }
-    return this.composedVideo;
   }
 
   private requireAdminSupply() {

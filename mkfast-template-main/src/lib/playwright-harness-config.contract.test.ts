@@ -19,7 +19,6 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
   );
   assert.match(config, /HARNESS_DBOS_SYSTEM_DATABASE_URL/u);
   assert.match(config, /MODEL_EXECUTION_MODE=fixture/u);
-  assert.equal(config.match(/P1_VIDEO_COMPOSITION_MODE=recorded/gu)?.length, 2);
   assert.equal(
     config.match(/JOB_QUEUE_PREFIX=\$\{jobQueuePrefix\}/gu)?.length,
     3

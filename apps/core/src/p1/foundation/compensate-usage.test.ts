@@ -119,7 +119,7 @@ describe('Td-2 compensateCommittedUsage', () => {
       owner,
       {
         jobId: 'job-committed',
-        reason: 'COMPOSED_VIDEO_TECHNICAL_VALIDATION_FAILED',
+        reason: 'VIDEO_ASSET_TECHNICAL_VALIDATION_FAILED',
       },
       'comp-2',
     );
@@ -132,7 +132,7 @@ describe('Td-2 compensateCommittedUsage', () => {
       owner,
       {
         jobId: 'job-committed',
-        reason: 'COMPOSED_VIDEO_TECHNICAL_VALIDATION_FAILED',
+        reason: 'VIDEO_ASSET_TECHNICAL_VALIDATION_FAILED',
       },
       'comp-2',
     );

@@ -23,7 +23,6 @@ test('development runtime activates the four-service fixture stack', () => {
       feishuMode: profile.FEISHU_MCP_MODE,
       integrationMode: profile.INTEGRATION_SECRET_STORE_MODE,
       modelMode: profile.MODEL_EXECUTION_MODE,
-      videoMode: profile.P1_VIDEO_COMPOSITION_MODE,
       webPort: profile.PORT,
     },
     {
@@ -34,7 +33,6 @@ test('development runtime activates the four-service fixture stack', () => {
       feishuMode: 'recorded',
       integrationMode: 'recorded',
       modelMode: 'fixture',
-      videoMode: 'recorded',
       webPort: '3000',
     },
   );

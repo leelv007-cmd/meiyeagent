@@ -11,9 +11,12 @@ export class MediaCommandError extends Error {
     readonly args: readonly string[],
     readonly exitCode: number | null,
     readonly stderr: string,
-    options?: { cause?: unknown }
+    options?: { cause?: unknown },
   ) {
-    super(`${command} exited with ${exitCode ?? 'no exit code'}: ${stderr.trim()}`, options);
+    super(
+      `${command} exited with ${exitCode ?? 'no exit code'}: ${stderr.trim()}`,
+      options,
+    );
     this.name = 'MediaCommandError';
   }
 }
@@ -21,7 +24,7 @@ export class MediaCommandError extends Error {
 export async function runMediaCommand(
   command: string,
   args: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -32,10 +35,16 @@ export async function runMediaCommand(
     let stderr = '';
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => { stdout += chunk; });
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
     child.once('error', (error) => {
-      reject(new MediaCommandError(command, args, null, stderr, { cause: error }));
+      reject(
+        new MediaCommandError(command, args, null, stderr, { cause: error }),
+      );
     });
     child.once('close', (code) => {
       if (code === 0) resolve({ stdout, stderr });
@@ -51,12 +60,15 @@ export interface MediaToolDetection {
   reason: string;
 }
 
-export async function detectMediaTools(options: {
-  ffmpegPath?: string;
-  ffprobePath?: string;
-} = {}): Promise<MediaToolDetection> {
+export async function detectMediaTools(
+  options: {
+    ffmpegPath?: string;
+    ffprobePath?: string;
+  } = {},
+): Promise<MediaToolDetection> {
   const ffmpegPath = options.ffmpegPath ?? process.env.FFMPEG_PATH ?? 'ffmpeg';
-  const ffprobePath = options.ffprobePath ?? process.env.FFPROBE_PATH ?? 'ffprobe';
+  const ffprobePath =
+    options.ffprobePath ?? process.env.FFPROBE_PATH ?? 'ffprobe';
   try {
     await runMediaCommand(ffmpegPath, ['-version']);
   } catch (error) {
@@ -75,24 +87,6 @@ export async function detectMediaTools(options: {
       ffmpegPath,
       ffprobePath,
       reason: `ffprobe unavailable: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-  try {
-    const filters = await runMediaCommand(ffmpegPath, ['-hide_banner', '-filters']);
-    if (!/(^|\s)drawtext\s/m.test(filters.stdout)) {
-      return {
-        available: false,
-        ffmpegPath,
-        ffprobePath,
-        reason: 'ffmpeg unavailable for composition: drawtext filter is missing',
-      };
-    }
-  } catch (error) {
-    return {
-      available: false,
-      ffmpegPath,
-      ffprobePath,
-      reason: `ffmpeg filter detection failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
   return {

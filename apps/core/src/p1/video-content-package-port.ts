@@ -1,10 +1,4 @@
-import type {
-  OwnedAsset,
-  ProviderAttempt,
-  ProviderCost,
-  RouteSnapshot,
-  VideoExecutionContract,
-} from './model-supply/index.js';
+import type { VideoExecutionContract } from './model-supply/index.js';
 
 export interface VideoContentPackageConfirmation {
   approvalReceiptId?: string;
@@ -27,26 +21,6 @@ export type VideoContentPackageOutcome =
   | {
       actorId: string;
       status: 'awaiting_quality_review';
-      workflowId: string;
-      workspaceId: string;
-    }
-  | {
-      actorId: string;
-      clipAssetIds: string[];
-      composedAsset: {
-        contentType: 'video/mp4';
-        id: string;
-        objectKey: string;
-        sha256: string;
-        sizeBytes: number;
-        compositionEvidence: NonNullable<OwnedAsset['compositionEvidence']>;
-      };
-      providerAttempts: ProviderAttempt[];
-      providerCosts: ProviderCost[];
-      routeSnapshot: RouteSnapshot;
-      shots: Array<{ id: string; prompt: string }>;
-      status: 'completed';
-      storyboardRevision: string;
       workflowId: string;
       workspaceId: string;
     }

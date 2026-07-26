@@ -105,7 +105,6 @@ import {
 import {
   type ActivationEvidence,
   CompositeReferenceAssetResolver,
-  DurableComposedVideoApplicationService,
   DurableMediaGenerationApplicationService,
   modelAssetStorageFromEnv,
   FixtureAiStreamingRunner,
@@ -115,23 +114,14 @@ import {
   isLiveVerifiedActivationEvidence,
   OwnedAssetReferenceResolver,
   OpenAiCompatibleAiSdkRunner,
-  PersistentContentWorkflowRunner,
-  PostgresCanonicalVideoRunStore,
-  PostgresCanonicalVideoWorkflowSchema,
   ProductCopyProviderBridge,
   PostgresModelSupplyRepository,
-  PostgresVideoRegenerationRepository,
   ProductReferenceAssetPolicyResolver,
   ProductReferenceAssetResolver,
-  RecordedFixtureVideoQualityScorer,
-  VideoRegenerationApplicationService,
-  VideoRegenerationFoundationModule,
-  VersionedHumanCalibratedVideoQualityScorer,
   createModelSupplyRuntime,
   modelMediaExecutionMode,
   seedCapabilityHotAssemblyFromCatalog,
   RECORDED_CATALOG_REVISION_ID,
-  videoCompositionRuntimeFromEnv,
 } from './p1/model-supply/index.js';
 import { createPermissionAuthorizer } from './p1/capability-permission/index.js';
 import {
@@ -213,7 +203,6 @@ import {
   AssetMemoryFoundationModule,
   OperationsApplicationService,
   OperationsFoundationModule,
-  OperationsVideoContentPackageAdapter,
   ModelSupplyCreationExecutor,
   ModelSupplyImageGenerationAdapter,
   MediaCustodyStorageAdapter,
@@ -270,7 +259,6 @@ import {
 import { migratePostgresSchema } from './postgres-schema-migration.js';
 import {
   HarnessWorkflowEventSource,
-  VideoWorkflowEventSource,
   WorkflowEventApplicationService,
 } from './p1/workflow-events.js';
 import {
@@ -449,10 +437,6 @@ const providerCredentialSecretBroker = createProviderCredentialSecretBroker(
   integrationSecrets,
 );
 const modelSupplyRepository = new PostgresModelSupplyRepository(pool);
-const videoRegenerationRepository =
-  new PostgresVideoRegenerationRepository(pool);
-const canonicalVideoWorkflowSchema =
-  new PostgresCanonicalVideoWorkflowSchema(pool);
 const cutoverExecution = new P1CutoverExecutionService(pool);
 const legacyInFlightDecisions = new PostgresLegacyInFlightDecisionPort(pool);
 
@@ -764,8 +748,6 @@ await migratePostgresSchema(pool, [
   contentPackageWriteOwnership,
   contentPackageMigrationRuns,
   modelSupplyRepository,
-  canonicalVideoWorkflowSchema,
-  videoRegenerationRepository,
   integrationRepository,
   cutoverExecution,
   tracerJobRepository,
@@ -796,89 +778,10 @@ if (gatedMediaExecution) {
     })
   );
 }
-const videoComposition = videoCompositionRuntimeFromEnv(
-  process.env,
-  assetStorage
-);
-const videoRunnerForWorkspace = async (workspaceId: string) => {
-  await modelControlPlane.initialize(workspaceId);
-  return new PersistentContentWorkflowRunner(
-    p1ModelSupplyService,
-    videoComposition,
-    new PostgresCanonicalVideoRunStore(pool, workspaceId),
-    modelRuntime.mode === 'fixture'
-      ? new RecordedFixtureVideoQualityScorer()
-      : new VersionedHumanCalibratedVideoQualityScorer()
-  );
-};
 let operationsService: OperationsApplicationService;
 const packageRightsPropagation = new OperationsProductPackageRightsAdapter(
   () => operationsService
 );
-const videoContentPackages = new OperationsVideoContentPackageAdapter(
-  () => operationsService
-);
-const composedVideo = new DurableComposedVideoApplicationService({
-  contentPackages: videoContentPackages,
-  jobs: tracerJobs,
-  runnerForWorkspace: videoRunnerForWorkspace,
-});
-const videoRegeneration = new VideoRegenerationApplicationService({
-  approvalAuthority: {
-    async approve(input) {
-      const membership = await pool.query<{ role: string }>(
-        `SELECT role
-           FROM workspace_memberships
-          WHERE workspace_id = $1
-            AND user_id = $2`,
-        [input.workspaceId, input.actorId],
-      );
-      const actor = membership.rows[0]?.role;
-      if (
-        actor !== 'admin' &&
-        actor !== 'owner' &&
-        actor !== 'operator' &&
-        actor !== 'reviewer'
-      ) {
-        throw new Error(
-          'Video regeneration approval requires an active workspace membership.',
-        );
-      }
-      return operationsService.approveCreativeGeneration(
-        {
-          actor,
-          correlationId: input.approvalKey,
-          userId: input.actorId,
-          workspaceId: input.workspaceId,
-        },
-        {
-          approvalKey: input.approvalKey,
-          contract: input.contract,
-          workId: input.workId,
-        },
-      );
-    },
-  },
-  billing: productQuoteService,
-  quoteAuthority: productQuoteAuthority,
-  repository: videoRegenerationRepository,
-  workflows: composedVideo,
-});
-const videoWorkflowEventSource = new VideoWorkflowEventSource({
-  async owns(workspaceId, workflowId) {
-    const result = await pool.query(
-      `SELECT 1 FROM p1_creative_jobs
-        WHERE workspace_id = $1
-          AND payload->>'videoWorkflowId' = $2`,
-      [workspaceId, workflowId]
-    );
-    return result.rowCount === 1;
-  },
-  readSnapshot(workspaceId, workflowId) {
-    return composedVideo.query({ workspaceId, workflowId });
-  },
-});
-
 const feishuMcp = feishuMcpAdapterFromEnv(process.env);
 const integrationService = new IntegrationApplicationService({
   byok: byokRuntime.adapter,
@@ -1101,8 +1004,7 @@ operationsService = new OperationsApplicationService(operationsRepository, {
   creationExecutor: new ModelSupplyCreationExecutor(
     modelControlPlane,
     aiStreamingRunner,
-    referenceAssets,
-    composedVideo
+    referenceAssets
   ),
   groundingResolver: new ProductCreativeGroundingResolver(
     relationalProductRepository
@@ -1448,9 +1350,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     new ModelSupplyFoundationModule(modelControlPlane, {
       adminActorIds: modelAdminActorIds,
       adminSupply: adminSupplyControlPlane,
-      composedVideo,
     }),
-    new VideoRegenerationFoundationModule(videoRegeneration),
     new MarketingIdentityFoundationModule(marketingIdentities),
     new AssetMemoryFoundationModule(
       assetIntakeService,
@@ -1717,7 +1617,6 @@ if (harnessRuntimeConfig) {
 }
 const workflowEvents = new WorkflowEventApplicationService([
   ...(harnessWorkflowEventSource ? [harnessWorkflowEventSource] : []),
-  videoWorkflowEventSource,
 ]);
 
 // Rebuild this lightweight projection for every truth-surface request so an

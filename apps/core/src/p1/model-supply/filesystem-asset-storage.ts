@@ -5,7 +5,6 @@ import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { isSharedWorkspaceAssetObjectKey } from '@meiye/contracts';
-import type { CompositionAssetStoragePort } from './ffmpeg-composition-port.js';
 import type {
   CustodyOwnedAssetContentType,
   ModelAssetStoragePort,
@@ -67,10 +66,8 @@ function assertLocalAssetStorageEnvironment(env: NodeJS.ProcessEnv) {
   }
 }
 
-/** Local durable object store used by recorded/dev runtimes and ffmpeg. */
-export class FileSystemAssetStorage
-  implements ModelAssetStoragePort, CompositionAssetStoragePort
-{
+/** Local durable object store used by recorded and development runtimes. */
+export class FileSystemAssetStorage implements ModelAssetStoragePort {
   private readonly rootDirectory: string;
   private readonly publicBaseUrl?: string;
   private readonly videoProbe: (path: string) => Promise<VideoProbeResult>;

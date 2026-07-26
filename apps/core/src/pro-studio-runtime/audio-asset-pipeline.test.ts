@@ -22,7 +22,7 @@ import {
 import {
   detectMediaTools,
   runMediaCommand,
-} from '../video/media-tools.js';
+} from '../p1/model-supply/media-tools.js';
 
 const mp3 = Uint8Array.from([
   0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
