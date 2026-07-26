@@ -236,6 +236,7 @@ test('an unanswered industry gap reports the confirmed grounding surface to the 
     named.blockingQuestion?.questionId,
     'task-unanswered-industry:s1:industry_category',
   );
+  assert.equal(named.blockingQuestion?.unattended, 'continue');
   assert.deepEqual(named.gapGrounding, {
     activeConfirmedFactCount: 2,
     answerableConfirmedFactCount: 0,
@@ -297,6 +298,7 @@ test('the production reuse path keeps an unanswered industry QuestionCard reacha
     named.blockingQuestion?.questionId,
     'task-reuse-industry:s1:industry_category',
   );
+  assert.equal(named.blockingQuestion?.unattended, 'continue');
   assert.deepEqual(named.gapGrounding, {
     activeConfirmedFactCount: 0,
     answerableConfirmedFactCount: 0,
@@ -356,6 +358,7 @@ test('ambiguous service price facts keep the blocking QuestionCard', async () =>
     request: taskInput(),
   });
   assert.equal(named.blockingQuestion?.questionId, 'task-ambiguous-price:s1:offer_price');
+  assert.equal(named.blockingQuestion?.unattended, 'continue');
 });
 
 test('same-scope facts with the same key keep the blocking QuestionCard before bundle folding', async () => {
@@ -414,6 +417,7 @@ test('same-scope facts with the same key keep the blocking QuestionCard before b
     named.blockingQuestion?.questionId,
     'task-conflicting-price-streams:s1:offer_price',
   );
+  assert.equal(named.blockingQuestion?.unattended, 'continue');
 });
 
 test('production Copy stage keeps the frozen structured platform over model output', async () => {

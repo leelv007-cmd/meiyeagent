@@ -142,6 +142,7 @@ function fixturePorts(taskId: string): HarnessStagePorts {
             field: 'offer_price',
             reason: '补充当前任务所需的权威事实',
           },
+          unattended: 'continue',
           scope: 'current_task',
         },
       };

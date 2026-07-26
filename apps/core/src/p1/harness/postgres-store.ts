@@ -106,6 +106,7 @@ export class PostgresHarnessStore
         idempotency_key text not null,
         payload_fingerprint text not null,
         payload jsonb not null,
+        resolution_source text not null default 'decision',
         resume_status text not null default 'pending'
           check (resume_status in ('pending', 'sending', 'sent')),
         created_at timestamptz not null default now(),
@@ -144,6 +145,20 @@ export class PostgresHarnessStore
 
       alter table harness_runtime.decision_events
         add column if not exists resume_status text not null default 'pending';
+      alter table harness_runtime.decision_events
+        add column if not exists resolution_source text;
+      update harness_runtime.decision_events
+        set resolution_source=case
+          when idempotency_key like '%:core_timeout' then 'core_timeout'
+          when idempotency_key like '%:core_hold_expired' then 'core_hold_expired'
+          when idempotency_key like '%:late_answer' then 'late_answer'
+          else 'decision'
+        end
+        where resolution_source is null;
+      alter table harness_runtime.decision_events
+        alter column resolution_source set default 'decision';
+      alter table harness_runtime.decision_events
+        alter column resolution_source set not null;
       alter table harness_runtime.decision_events
         drop constraint if exists decision_events_resume_status_check;
       alter table harness_runtime.decision_events
@@ -447,22 +462,28 @@ export class PostgresHarnessStore
     const runtimeTaskId = await this.workflowRuntimeId(workspaceId, taskId);
     if (!runtimeTaskId) return null;
     const result = await this.pool.query<{
-      core_timeout: boolean;
       payload: unknown;
       request: HarnessWorkflowInput;
+      resolution_source:
+        | 'decision'
+        | 'core_timeout'
+        | 'core_hold_expired'
+        | 'late_answer'
+        | null;
       status: 'pending' | 'resolved';
     }>(
       `select questions.payload,
               questions.status,
               requests.request,
-              exists (
-                select 1
+              (
+                select events.resolution_source
                   from harness_runtime.decision_events events
                  where events.task_id=questions.task_id
                    and events.question_id=questions.question_id
-                   and events.idempotency_key like '%:core_timeout'
-                   and events.payload->'decision'->>'state'='ignored'
-              ) as core_timeout
+                   and events.resolution_source<>'late_answer'
+                 order by events.created_at, events.id
+                 limit 1
+              ) as resolution_source
          from harness_runtime.pending_questions questions
          join harness_runtime.task_requests requests
            on requests.task_id=questions.task_id
@@ -474,7 +495,7 @@ export class PostgresHarnessStore
       ? {
           question: questionCardSchema.parse(row.payload),
           request: row.request,
-          resolvedByCoreTimeout: row.core_timeout,
+          resolutionSource: row.resolution_source,
           status: row.status,
         }
       : null;
@@ -569,7 +590,7 @@ export class PostgresHarnessStore
                  from harness_runtime.decision_events
                 where task_id=$1
                   and question_id=$2
-                  and idempotency_key like '%:core_timeout'
+                  and resolution_source in ('core_timeout','core_hold_expired')
                   and payload->'decision'->>'state'='ignored'
                 limit 1`,
               [runtimeTaskId, input.command.questionId],
@@ -595,8 +616,8 @@ export class PostgresHarnessStore
       await client.query(
         `insert into harness_runtime.decision_events
           (id, task_id, question_id, workflow_revision, idempotency_key,
-           payload_fingerprint, payload, resume_status)
-         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+           payload_fingerprint, payload, resolution_source, resume_status)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [
           runtimeEventId,
           runtimeTaskId,
@@ -605,7 +626,11 @@ export class PostgresHarnessStore
           input.command.idempotencyKey,
           input.event.payloadFingerprint,
           JSON.stringify(input.event),
-          input.mode === 'core_timeout' ? 'sent' : 'pending',
+          input.mode ?? 'decision',
+          input.mode === 'core_timeout' ||
+          input.mode === 'core_hold_expired'
+            ? 'sent'
+            : 'pending',
         ],
       );
       await this.writeDecisionTrace(
@@ -640,7 +665,9 @@ export class PostgresHarnessStore
       return {
         outcome: 'created',
         command: input.command,
-        resumeRequired: input.mode !== 'core_timeout',
+        resumeRequired:
+          input.mode !== 'core_timeout' &&
+          input.mode !== 'core_hold_expired',
       };
     } catch (error) {
       await client.query('rollback');

@@ -223,6 +223,8 @@ test(
         decision: { state: 'ignored', value: '本次跳过' },
       });
       const result = await recoveredHandle.getResult();
+      assert.ok(result.delivery);
+      assert.ok('trace' in result);
       assert.equal(result.delivery.revision, 1);
       assert.equal(result.trace.winnerCandidateId, 'c01');
       assert.deepEqual(traces, [
@@ -341,6 +343,7 @@ test(
           field: 'offer_price',
           reason: 'Ground the promotion in the current merchant offer',
         },
+        unattended: 'continue',
         scope: 'current_task',
       },
     });
@@ -423,6 +426,8 @@ test(
       assert.equal((await handle.getStatus())?.status, 'PENDING');
 
       const result = await handle.getResult();
+      assert.ok(result.delivery);
+      assert.ok('trace' in result);
       assert.equal(result.delivery.revision, 1);
       assert.equal(result.trace.winnerCandidateId, 'c01');
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
@@ -473,6 +478,143 @@ test(
 );
 
 test(
+  'a question without unattended continuation stays pending past the core timeout',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-unattended-hold-${randomUUID()}`;
+    const workspaceId = 'workspace-unattended-hold';
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const questionId = `${workflowId}:note-style`;
+    const ports = smokePorts();
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '制作两版图文笔记',
+        taskType: 'routine_marketing_materials',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['product_service'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: {
+        questionId,
+        workflowId,
+        workflowRevision: 1,
+        question: '这次想采用哪种笔记风格？',
+        options: [
+          { id: 'style-a', label: '克制专业' },
+          { id: 'style-b', label: '轻松种草' },
+        ],
+        freeText: { enabled: false },
+        response: {
+          field: 'note_style',
+          reason: '选择本次图文笔记的表达风格',
+        },
+        scope: 'current_task',
+      },
+    });
+    let configReads = 0;
+    let coreTimeouts = 0;
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-unattended-hold',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion: 'harness-unattended-hold-v1',
+    });
+    const workflow = registerHarnessDbosWorkflow(
+      ports,
+      {
+        async registerPending() {},
+        async readPending() {
+          return null;
+        },
+        async recordStageTrace() {},
+        async recordTerminalFailure() {},
+      },
+      undefined,
+      undefined,
+      {
+        async get() {
+          configReads += 1;
+          return {
+            actorId: 'platform-admin',
+            correlationId: 'unattended-hold-config',
+            createdAt: '2026-07-26T09:00:00.000Z',
+            key: 'harness.confirmation_card.timeout_seconds',
+            reason: 'Must not release a hold-by-default card',
+            revision: 1,
+            rolledBackToRevision: null,
+            scope: 'global',
+            status: 'applied',
+            value: 1,
+            workspaceId: '__global__',
+          };
+        },
+      },
+      {
+        async submitCoreTimeout() {
+          coreTimeouts += 1;
+          return { eventId: 'unexpected', replayed: false };
+        },
+      },
+    );
+
+    try {
+      await DBOS.launch();
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({
+        workflowId,
+        request: {
+          ...snapshotTimeoutRequest(workflowId, workspaceId),
+          usageReservation: {
+            id: `usage-reservation-${workflowId}`,
+            units: [{ resource: 'copy', quantity: 1 }],
+          },
+        },
+      });
+      await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
+        timeoutSeconds: 5,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      assert.equal((await handle.getStatus())?.status, 'PENDING');
+      assert.equal(configReads, 0);
+      assert.equal(coreTimeouts, 0);
+
+      await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
+        idempotencyKey: `${questionId}:merchant-answer`,
+        questionId,
+        workflowRevision: 1,
+        patch: {
+          field: 'note_style',
+          value: 'style-a',
+          reason: '选择本次图文笔记的表达风格',
+        },
+        decision: { state: 'ignored', value: 'style-a' },
+      });
+      const result = await handle.getResult();
+      assert.ok(result.delivery);
+      assert.equal(result.delivery.revision, 1);
+      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+      assert.equal(coreTimeouts, 0);
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          .map((step) => [step.functionID, step.name]),
+        [
+          [3, `persist-pending-${questionId}`],
+          [4, 'DBOS.setEvent'],
+          [5, 'DBOS.recv'],
+          [6, 'DBOS.sleep'],
+        ],
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
   'a pre-T45 pending function-ID layout replays without branching or failure',
   { skip: !systemDatabaseUrl },
   async () => {
@@ -506,6 +648,7 @@ test(
           field: 'offer_price',
           reason: '补充当前任务所需的权威事实',
         },
+        unattended: 'continue',
         scope: 'current_task',
       },
     });
@@ -534,7 +677,7 @@ test(
             correlationId: 'replayed-layout',
             createdAt: '2026-07-26T09:01:00.000Z',
             key: 'harness.confirmation_card.timeout_seconds',
-            reason: 'Config drift must not fork replay',
+            reason: 'Recovered layout must not fork replay',
             revision: 2,
             rolledBackToRevision: null,
             scope: 'global',
@@ -623,6 +766,7 @@ test(
           field: 'offer_price',
           reason: '补充当前任务所需的权威事实',
         },
+        unattended: 'continue',
         scope: 'current_task',
       },
     });
@@ -698,9 +842,22 @@ test(
         },
         decision: { state: 'ignored', value: '这次先跳过' },
       });
-      assert.equal((await handle.getResult()).delivery.revision, 1);
+      const result = await handle.getResult();
+      assert.ok(result.delivery);
+      assert.equal(result.delivery.revision, 1);
       assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
       assert.equal(coreTimeouts, 0);
+      assert.deepEqual(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))
+          ?.filter((step) => step.functionID >= 3 && step.functionID <= 6)
+          .map((step) => [step.functionID, step.name]),
+        [
+          [3, `persist-pending-${questionId}`],
+          [4, 'DBOS.setEvent'],
+          [5, 'DBOS.recv'],
+          [6, 'DBOS.sleep'],
+        ],
+      );
     } finally {
       await DBOS.shutdown({ deregister: true });
     }

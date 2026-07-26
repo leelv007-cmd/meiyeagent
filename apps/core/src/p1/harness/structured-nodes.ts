@@ -613,6 +613,7 @@ function toQuestionCard(
       field: gap.field,
       reason: '让这次内容更贴合你的实际情况',
     },
+    unattended: 'continue',
     scope: gap.scope,
   });
 }

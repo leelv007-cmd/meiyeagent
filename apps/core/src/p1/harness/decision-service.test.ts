@@ -8,6 +8,7 @@ import {
   HarnessDecisionService,
   type HarnessDecisionStore,
 } from './decision-service.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
 
 test('decision is persisted before the workflow is resumed', async () => {
   const order: string[] = [];
@@ -191,6 +192,48 @@ test('a frontend winner makes the concurrent core timeout converge without faili
   );
 });
 
+test('a consumed timeout sentinel never starts or persists a late-answer successor', async () => {
+  const order: string[] = [];
+  const store = new MemoryDecisionStore(order);
+  store.pending = question();
+  store.targetStatus = 'resolved';
+  store.resolutionSource = 'core_timeout';
+  const successorStarts: string[] = [];
+  const service = new HarnessDecisionService(store, {
+    async resume() {},
+    async startSuccessor({ workflowId }) {
+      successorStarts.push(workflowId);
+    },
+  });
+
+  for (const command of [
+    {
+      ...coreTimeoutInput(),
+      idempotencyKey: 'browser-timed-out',
+      decision: { state: 'ignored' as const, value: '未作答' },
+      patch: { ...coreTimeoutInput().patch, value: '未作答' },
+    },
+    {
+      ...decisionInput(),
+      idempotencyKey: 'browser-skipped',
+      decision: { state: 'accepted' as const, value: '这次先跳过' },
+      patch: { ...decisionInput().patch, value: '这次先跳过' },
+    },
+  ]) {
+    assert.deepEqual(
+      await service.submit('workspace-1', 'task-35', command),
+      {
+        consumedByOther: true,
+        eventId: null,
+      },
+    );
+  }
+  assert.deepEqual(successorStarts, []);
+  assert.deepEqual(store.events, []);
+  assert.deepEqual(store.traces, []);
+  assert.deepEqual(order, []);
+});
+
 class MemoryDecisionStore implements HarnessDecisionStore {
   readonly events: Array<{ id: string }> = [];
   readonly traces: Array<{ id: string }> = [];
@@ -202,6 +245,13 @@ class MemoryDecisionStore implements HarnessDecisionStore {
     | 'stale_revision'
     | 'idempotency_conflict' = 'created';
   pending: QuestionCard | null = null;
+  resolutionSource:
+    | 'decision'
+    | 'core_timeout'
+    | 'core_hold_expired'
+    | 'late_answer'
+    | null = null;
+  targetStatus: 'pending' | 'resolved' = 'pending';
 
   constructor(private readonly order: string[]) {}
 
@@ -219,7 +269,8 @@ class MemoryDecisionStore implements HarnessDecisionStore {
       resumeRequired:
         (outcome === 'created' || outcome === 'replayed') &&
         this.resumeRequired &&
-        input.mode !== 'core_timeout',
+        input.mode !== 'core_timeout' &&
+        input.mode !== 'core_hold_expired',
     };
   }
 
@@ -244,6 +295,17 @@ class MemoryDecisionStore implements HarnessDecisionStore {
 
   async readPending() {
     return this.pending;
+  }
+
+  async readDecisionTarget() {
+    return this.pending
+      ? {
+          question: this.pending,
+          request: {} as HarnessWorkflowInput,
+          resolutionSource: this.resolutionSource,
+          status: this.targetStatus,
+        }
+      : null;
   }
 
   async registerPending() {}

@@ -292,6 +292,18 @@ test('question card represents exactly one scoped blocking question', () => {
     questionCardSchema.safeParse({ ...card, scope: 'global' }).success,
     false
   );
+  assert.equal(
+    questionCardSchema.safeParse({ ...card, unattended: 'continue' }).success,
+    true
+  );
+  assert.equal(
+    questionCardSchema.safeParse({ ...card, unattended: 'hold' }).success,
+    true
+  );
+  assert.equal(
+    questionCardSchema.safeParse({ ...card, unattended: 'release' }).success,
+    false
+  );
 });
 
 test('delivery reference keeps aggregate revision separate from event sequence', () => {

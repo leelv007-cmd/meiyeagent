@@ -184,6 +184,8 @@ export const questionCardSchema = z
         reason: z.string().trim().min(1).max(500),
       })
       .strict(),
+    /** Missing means hold; only an explicit continue may auto-release. */
+    unattended: z.enum(['continue', 'hold']).optional(),
     scope: z.enum(['current_task', 'current_series', 'workspace']),
   })
   .strict()

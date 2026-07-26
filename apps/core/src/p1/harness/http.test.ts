@@ -283,6 +283,26 @@ test('harness HTTP boundary admits, reads and answers one authoritative question
     coreTimeoutDecision(),
   );
 
+  const consumedSentinel = await fetch(
+    `${base}/task-http-late/decision`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        ...decisionInput(),
+        idempotencyKey: 'browser-timed-out-after-core',
+        patch: { ...decisionInput().patch, value: '未作答' },
+        decision: { state: 'ignored', value: '未作答' },
+      }),
+    },
+  );
+  assert.equal(consumedSentinel.status, 200);
+  const consumedBody = (await consumedSentinel.json()).data;
+  assert.equal(consumedBody.consumedByOther, true);
+  assert.equal('replayed' in consumedBody, false);
+  assert.equal('successor' in consumedBody, false);
+  assert.equal(successors.length, 0);
+
   const lateAnswer = await fetch(
     `${base}/task-http-late/decision`,
     {
@@ -512,7 +532,9 @@ class MemoryHarnessStore
     return {
       question: structuredClone(question),
       request: structuredClone(request),
-      resolvedByCoreTimeout: this.resolvedByCoreTimeout.has(identity),
+      resolutionSource: this.resolvedByCoreTimeout.has(identity)
+        ? ('core_timeout' as const)
+        : null,
       status: this.pending.has(identity)
         ? ('pending' as const)
         : ('resolved' as const),
@@ -578,7 +600,9 @@ class MemoryHarnessStore
     }
     return {
       outcome: 'created' as const,
-      resumeRequired: input.mode !== 'core_timeout',
+      resumeRequired:
+        input.mode !== 'core_timeout' &&
+        input.mode !== 'core_hold_expired',
     };
   }
 

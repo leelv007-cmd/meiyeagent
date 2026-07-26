@@ -126,8 +126,8 @@ describe('Admin config application seam', () => {
         'compliance.watermark.default',
         'douyin.adapter.assembly',
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
-        HARNESS_WOZ_RECIPE_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
+        HARNESS_WOZ_RECIPE_CONFIG_KEY,
         ...createDefaultDeployments()
           .map(
             (deployment) =>

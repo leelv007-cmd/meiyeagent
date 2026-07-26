@@ -287,8 +287,10 @@ test(
     const workspaceId = `timeout-ledger-${suffix}`;
     const browserTaskId = `browser-timeout-${suffix}`;
     const coreTaskId = `core-timeout-${suffix}`;
+    const holdTaskId = `hold-timeout-${suffix}`;
     const browserRuntimeId = harnessRuntimeId(workspaceId, browserTaskId);
     const coreRuntimeId = harnessRuntimeId(workspaceId, coreTaskId);
+    const holdRuntimeId = harnessRuntimeId(workspaceId, holdTaskId);
     const successorStarts: string[] = [];
     const admission = new HarnessTaskAdmissionService(store, {
       async start({ workflowId }) {
@@ -303,7 +305,7 @@ test(
     });
 
     try {
-      for (const taskId of [browserTaskId, coreTaskId]) {
+      for (const taskId of [browserTaskId, coreTaskId, holdTaskId]) {
         await admission.submit({
           ...taskRequest(taskId),
           packageId: `package-${taskId}`,
@@ -320,6 +322,7 @@ test(
             field: 'offer_price',
             reason: '补充当前任务所需的权威事实',
           },
+          unattended: taskId === holdTaskId ? 'hold' : 'continue',
           scope: 'current_task',
         });
       }
@@ -342,6 +345,31 @@ test(
           '超时未作答，已按通用口径继续',
         ),
       );
+      await decisions.submitCoreHoldExpired(
+        workspaceId,
+        holdTaskId,
+        ignoredDecision(
+          `${holdTaskId}:offer-price`,
+          `${holdTaskId}:offer-price:r4:core_hold_expired`,
+          '超时未选择，本次任务已取消，额度已退回',
+        ),
+      );
+
+      const billingBefore = await successorBillingRows(pool, workspaceId);
+      const consumed = await decisions.submit(
+        workspaceId,
+        coreTaskId,
+        ignoredDecision(
+          `${coreTaskId}:offer-price`,
+          `${coreTaskId}:offer-price:browser-timed-out`,
+          '未作答',
+        ),
+      );
+      assert.equal(consumed.consumedByOther, true);
+      assert.equal(consumed.replayed, undefined);
+      assert.equal(consumed.successor, undefined);
+      assert.deepEqual(await successorBillingRows(pool, workspaceId), billingBefore);
+      assert.deepEqual(successorStarts, []);
 
       const late = await decisions.submit(
         workspaceId,
@@ -389,7 +417,7 @@ test(
           where requests.task_id=any($1::text[])
           group by requests.workflow_id, questions.status
           order by requests.workflow_id`,
-        [[browserRuntimeId, coreRuntimeId]],
+        [[browserRuntimeId, coreRuntimeId, holdRuntimeId]],
       );
       assert.deepEqual(
         evidence.rows.map((row) => ({
@@ -422,14 +450,26 @@ test(
             pending_status: 'resolved',
             traces: 2,
           },
+          {
+            audits: 1,
+            events: 1,
+            idempotency_keys: [
+              `${holdTaskId}:offer-price:r4:core_hold_expired`,
+            ],
+            outbox: 1,
+            pending_status: 'resolved',
+            traces: 1,
+          },
         ],
       );
       const coreTimeout = await pool.query<{
         decision_value: string;
+        event_resolution_source: string;
         resolution_source: string;
         resume_status: string;
       }>(
         `select events.payload->'decision'->>'value' as decision_value,
+                events.resolution_source as event_resolution_source,
                 audits.payload->>'resolutionSource' as resolution_source,
                 events.resume_status
            from harness_runtime.decision_events events
@@ -437,11 +477,12 @@ test(
              on audits.workflow_id=events.task_id
             and audits.payload->>'eventId'=events.payload->>'id'
           where events.task_id=$1
-            and events.idempotency_key like '%:core_timeout'`,
+            and events.resolution_source='core_timeout'`,
         [coreRuntimeId],
       );
       assert.deepEqual(coreTimeout.rows[0], {
         decision_value: '超时未作答，已按通用口径继续',
+        event_resolution_source: 'core_timeout',
         resolution_source: 'core_timeout',
         resume_status: 'sent',
       });
@@ -451,6 +492,12 @@ test(
           coreTaskId,
         ),
       );
+      await assert.doesNotReject(
+        new PostgresOperationsRepository(pool).assertTaskHasNoPendingQuestion(
+          workspaceId,
+          holdTaskId,
+        ),
+      );
     } finally {
       await pool.query(
         `delete from harness_runtime.langfuse_outbox
@@ -458,7 +505,7 @@ test(
             select id from harness_runtime.audit_events
              where workflow_id=any($1::text[])
           )`,
-        [[browserRuntimeId, coreRuntimeId]],
+        [[browserRuntimeId, coreRuntimeId, holdRuntimeId]],
       );
       for (const table of [
         'audit_events',
@@ -471,7 +518,7 @@ test(
           `delete from harness_runtime.${table} where ${
             table === 'audit_events' ? 'workflow_id' : 'task_id'
           }=any($1::text[])`,
-          [[browserRuntimeId, coreRuntimeId]],
+          [[browserRuntimeId, coreRuntimeId, holdRuntimeId]],
         );
       }
       await pool.end();
@@ -665,6 +712,27 @@ function acceptedDecision(questionId: string, value: string) {
     },
     decision: { state: 'accepted' as const, value },
   };
+}
+
+async function successorBillingRows(pool: Pool, workspaceId: string) {
+  const result = await pool.query<{
+    quotes: number;
+    reservations: number;
+    submissions: number;
+  }>(
+    `select
+       (select count(*)::int
+          from execution_spine.creation_submissions
+         where workspace_id=$1) as submissions,
+       (select count(*)::int
+          from p1_product_billing_quotes
+         where workspace_id=$1) as quotes,
+       (select count(*)::int
+          from p1_product_billing_usage
+         where workspace_id=$1) as reservations`,
+    [workspaceId],
+  );
+  return result.rows[0];
 }
 
 function decisionInput(questionId: string) {

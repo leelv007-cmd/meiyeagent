@@ -240,7 +240,20 @@ export interface HarnessWorkflowRuntime {
     delta: string;
   }): Promise<void>;
   hasRegisteredPendingQuestion?(question: QuestionCard): Promise<boolean>;
-  awaitDecision(question: QuestionCard): Promise<StructuredDecisionInput>;
+  awaitDecision(
+    question: QuestionCard,
+  ): Promise<
+    | StructuredDecisionInput
+    | {
+        command: StructuredDecisionInput;
+        resolutionSource: 'decision' | 'core_timeout';
+      }
+    | {
+        cancelled: true;
+        merchantMessage: string;
+        resolutionSource: 'core_hold_expired';
+      }
+  >;
   /**
    * Creates the immutable successor submission used after a semantic answer.
    * Runtimes that cannot persist a new execution snapshot must leave this
@@ -350,6 +363,26 @@ function sameOrderedValues(
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
+}
+
+export class HarnessWorkflowCancellation extends Error {
+  readonly result: {
+    delivery: null;
+    merchantMessage: string;
+    outcome: 'cancelled';
+    resolutionSource: 'core_hold_expired';
+  };
+
+  constructor(merchantMessage: string) {
+    super(merchantMessage);
+    this.name = 'HarnessWorkflowCancellation';
+    this.result = {
+      delivery: null,
+      merchantMessage,
+      outcome: 'cancelled',
+      resolutionSource: 'core_hold_expired',
+    };
+  }
 }
 
 export async function runHarnessWorkflow(
@@ -772,7 +805,10 @@ async function runNoteHarnessWorkflow(
   });
   let selectedStyleId = noteStyleIdFromDecision(
     brief,
-    await runtime.awaitDecision(noteStyleQuestion(workflowId, request, brief)),
+    await awaitResolvedDecision(
+      runtime,
+      noteStyleQuestion(workflowId, request, brief),
+    ),
   );
   await reportProgress({
     stage: 'brief_compilation',
@@ -1222,6 +1258,7 @@ function noteStyleQuestion(
       field: 'note_style',
       reason: language.responseReason,
     },
+    unattended: 'hold',
     scope: 'current_task',
   };
 }
@@ -1458,9 +1495,15 @@ async function resolveIntentRoute(input: {
     state: 'suspended',
     message: input.intent.blockingQuestion.question,
   });
-  const decision = await input.runtime.awaitDecision(
+  const resolved = await input.runtime.awaitDecision(
     input.intent.blockingQuestion,
   );
+  if ('cancelled' in resolved) {
+    throw new HarnessWorkflowCancellation(resolved.merchantMessage);
+  }
+  const decision = 'command' in resolved ? resolved.command : resolved;
+  const resolutionSource =
+    'command' in resolved ? resolved.resolutionSource : 'decision';
   const activeRequest = await applyCurrentTaskDecision(
     input.workflowId,
     input.request,
@@ -1471,9 +1514,7 @@ async function resolveIntentRoute(input: {
     return {
       declaration: freeRouteDeclaration(
         input.intent.declaration,
-        decision.idempotencyKey.endsWith(':core_timeout')
-          ? 'policy'
-          : 'decision',
+        resolutionSource === 'core_timeout' ? 'policy' : 'decision',
       ),
       request: activeRequest,
       notice: undefined,
@@ -1520,6 +1561,17 @@ async function resolveIntentRoute(input: {
     request: activeRequest,
     notice: undefined,
   };
+}
+
+async function awaitResolvedDecision(
+  runtime: HarnessWorkflowRuntime,
+  question: QuestionCard,
+) {
+  const resolved = await runtime.awaitDecision(question);
+  if ('cancelled' in resolved) {
+    throw new HarnessWorkflowCancellation(resolved.merchantMessage);
+  }
+  return 'command' in resolved ? resolved.command : resolved;
 }
 
 function policyContinuationDeclaration(

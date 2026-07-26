@@ -158,6 +158,7 @@ export async function assessRecipeFactSatisfaction(
             field: 'store_facts',
             reason: '补充当前任务所需的权威事实',
           },
+          unattended: 'hold',
           scope: 'current_task',
         }),
         ledgerIntake: {

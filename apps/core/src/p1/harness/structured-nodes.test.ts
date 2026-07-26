@@ -120,6 +120,7 @@ test('intent naming turns one blocking gap into one QuestionCard', async () => {
       field: 'offer_price',
       reason: '让这次内容更贴合你的实际情况',
     },
+    unattended: 'continue',
     scope: 'current_task',
   });
 });
@@ -624,6 +625,7 @@ test('model failures choose intent-specific conservative guidance', async () => 
     assert.equal(named.declaration.routingSource, 'fallback');
     assert.equal(named.blockingQuestion?.response.field, expectedField);
     assert.equal(named.blockingQuestion?.freeText.enabled, true);
+    assert.equal(named.blockingQuestion?.unattended, 'continue');
   }
 });
 

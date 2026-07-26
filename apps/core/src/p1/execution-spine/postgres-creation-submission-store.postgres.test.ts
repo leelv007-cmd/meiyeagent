@@ -677,9 +677,12 @@ test(
         [workspaceId, submission.snapshot.id],
       );
       assert.deepEqual(
-        (await store.listRecoverableHarnessStarts({ limit: 10 })).map(
-          (candidate) => candidate.submission.snapshot.id,
-        ),
+        (await store.listRecoverableHarnessStarts({ limit: 10 }))
+          .filter(
+            (candidate) =>
+              candidate.submission.snapshot.workspaceId === workspaceId,
+          )
+          .map((candidate) => candidate.submission.snapshot.id),
         [submission.snapshot.id],
       );
       if (leaseOne.kind !== "start") {

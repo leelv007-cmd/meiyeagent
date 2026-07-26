@@ -9,6 +9,7 @@ import {
 } from '@meiye/contracts';
 
 import {
+  HarnessWorkflowCancellation,
   runHarnessWorkflow,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
@@ -71,6 +72,7 @@ export interface HarnessBillingSettlementPort
 }
 
 const PROGRESS_STREAM = 'progress';
+const DECISION_TIMEOUT_SECONDS = 48 * 60 * 60;
 export const DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS = 30;
 
 export function registerHarnessDbosWorkflow(
@@ -79,7 +81,8 @@ export function registerHarnessDbosWorkflow(
   semanticResumptions?: HarnessSemanticDecisionResumptionStore,
   billing?: HarnessBillingSettlementPort,
   config?: Pick<AdminConfigRepository, 'get'>,
-  decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'>,
+  decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
+    Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -139,7 +142,47 @@ export function registerHarnessDbosWorkflow(
         );
         await DBOS.setEvent('pending-structured-decision', question);
         if (!request.usageReservation) {
-          return waitForHeldDecision(question);
+          return {
+            command: await waitForDecisionWithoutTimeout(question),
+            resolutionSource: 'decision' as const,
+          };
+        }
+        if (question.unattended !== 'continue') {
+          const decision = await waitForHeldDecision(question);
+          if (decision) {
+            return {
+              command: decision,
+              resolutionSource: 'decision' as const,
+            };
+          }
+          const submitCoreHoldExpired =
+            decisions?.submitCoreHoldExpired?.bind(decisions);
+          if (!submitCoreHoldExpired) {
+            throw new Error('Held decision expiry persistence is unavailable.');
+          }
+          const command = confirmationCardHoldExpired(question);
+          const persisted = await DBOS.runStep(
+            () =>
+              submitCoreHoldExpired(
+                request.workspaceId,
+                workflowId,
+                command,
+              ),
+            {
+              name: `persist-core-hold-expired-${question.questionId}`,
+            },
+          );
+          if ('consumedByOther' in persisted && persisted.consumedByOther) {
+            return {
+              command: await waitForDecisionWithoutTimeout(question),
+              resolutionSource: 'decision' as const,
+            };
+          }
+          return {
+            cancelled: true as const,
+            merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+            resolutionSource: 'core_hold_expired' as const,
+          };
         }
         // Keep this read outside DBOS.runStep: the durable recv deadline is
         // persisted on first execution, while recovered workflows must retain
@@ -186,10 +229,20 @@ export function registerHarnessDbosWorkflow(
             },
           );
           if ('consumedByOther' in persisted && persisted.consumedByOther) {
-            return waitForHeldDecision(question);
+            return {
+              command: await waitForDecisionWithoutTimeout(question),
+              resolutionSource: 'decision' as const,
+            };
           }
+          return {
+            command,
+            resolutionSource: 'core_timeout' as const,
+          };
         }
-        return command;
+        return {
+          command,
+          resolutionSource: 'decision' as const,
+        };
       },
       ...(semanticResumptions
         ? {
@@ -234,6 +287,15 @@ export function registerHarnessDbosWorkflow(
       try {
         result = await runHarnessWorkflow(workflowId, request, ports, runtime);
       } catch (error) {
+        if (error instanceof HarnessWorkflowCancellation) {
+          return settleHarnessCancellation({
+            billing,
+            cancellation: error,
+            request,
+            runStep: dbosBillingStep,
+            workflowId,
+          });
+        }
         const settlement = harnessBillingSettlementInput(
           request,
           workflowId,
@@ -333,6 +395,32 @@ export async function refundHarnessBillingPreservingFailure(input: {
       // precedence when the compensation store is also unavailable.
     }
   }
+}
+
+export async function settleHarnessCancellation(input: {
+  billing?: HarnessBillingSettlementPort;
+  cancellation: HarnessWorkflowCancellation;
+  request: HarnessWorkflowInput;
+  runStep: BillingRunStep;
+  workflowId: string;
+}) {
+  const settlement = harnessBillingSettlementInput(
+    input.request,
+    input.workflowId,
+  );
+  if (input.request.usageReservation && (!input.billing || !settlement)) {
+    throw new Error(
+      'Harness cancellation requires its reserved billing input.',
+    );
+  }
+  if (input.billing && settlement) {
+    await refundHarnessBillingPreservingFailure({
+      billing: input.billing,
+      input: settlement,
+      runStep: input.runStep,
+    });
+  }
+  return input.cancellation.result;
 }
 
 export async function failHarnessWorkflowPreservingExecutionError(input: {
@@ -517,7 +605,32 @@ export function confirmationCardDecision(
   return parsed;
 }
 
+export function confirmationCardHoldExpired(question: QuestionCard) {
+  return structuredDecisionInputSchema.parse({
+    idempotencyKey: `${question.questionId}:r${question.workflowRevision}:core_hold_expired`,
+    questionId: question.questionId,
+    workflowRevision: question.workflowRevision,
+    patch: {
+      field: question.response.field,
+      value: '超时未选择，本次任务已取消，额度已退回',
+      reason: question.response.reason,
+    },
+    decision: {
+      state: 'ignored',
+      value: '超时未选择，本次任务已取消，额度已退回',
+    },
+  });
+}
+
 async function waitForHeldDecision(question: QuestionCard) {
+  const decision = await DBOS.recv<StructuredDecisionInput>(
+    decisionTopic(question.questionId),
+    { timeoutSeconds: DECISION_TIMEOUT_SECONDS },
+  );
+  return decision ? confirmationCardDecision(question, decision) : null;
+}
+
+async function waitForDecisionWithoutTimeout(question: QuestionCard) {
   for (;;) {
     const decision = await DBOS.recv<StructuredDecisionInput>(
       decisionTopic(question.questionId),

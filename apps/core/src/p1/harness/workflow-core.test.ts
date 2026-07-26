@@ -442,6 +442,7 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
       async token() {},
       async awaitDecision(question) {
         assert.equal(question.response.field, 'note_style');
+        assert.equal(question.unattended, 'hold');
         assert.deepEqual(
           question.options.map(({ id }) => id),
           ['facts', 'story'],
@@ -570,6 +571,7 @@ test('one blocking question suspends and resumes before context injection', asyn
         field: 'offer_price',
         reason: '补充当前任务所需的权威事实',
       },
+      unattended: 'continue',
       scope: 'current_task',
     },
   });
@@ -839,18 +841,21 @@ test('a core timeout labels the generic route as policy, not merchant decision',
     async token() {},
     async awaitDecision(question) {
       return {
-        idempotencyKey: `${question.questionId}:r${question.workflowRevision}:core_timeout`,
-        questionId: question.questionId,
-        workflowRevision: question.workflowRevision,
-        patch: {
-          field: question.response.field,
-          value: '超时未作答，已按通用口径继续',
-          reason: question.response.reason,
+        command: {
+          idempotencyKey: 'server-persisted-timeout-event',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: question.response.field,
+            value: '超时未作答，已按通用口径继续',
+            reason: question.response.reason,
+          },
+          decision: {
+            state: 'ignored',
+            value: '超时未作答，已按通用口径继续',
+          },
         },
-        decision: {
-          state: 'ignored',
-          value: '超时未作答，已按通用口径继续',
-        },
+        resolutionSource: 'core_timeout' as const,
       };
     },
     async recordTrace() {},
@@ -1057,6 +1062,7 @@ test('directly applying a semantic answer to an existing snapshot remains forbid
         field: 'industry_category',
         reason: '补充本次内容所属的美业服务类别',
       },
+      unattended: 'continue',
       scope: 'current_task',
     },
   });
@@ -1586,6 +1592,7 @@ function fixtureIndustryGapStages() {
         field: 'industry_category',
         reason: '补充本次内容所属的美业服务类别',
       },
+      unattended: 'continue',
       scope: 'current_task',
     },
   });

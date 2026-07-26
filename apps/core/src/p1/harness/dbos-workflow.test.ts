@@ -6,9 +6,11 @@ import {
   confirmationCardDecision,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
+  settleHarnessCancellation,
   type HarnessBillingSettlementPort,
 } from './dbos-workflow.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { HarnessWorkflowCancellation } from './workflow-core.js';
 
 const settlement = {
   workspaceId: 'workspace-billing-failure',
@@ -119,6 +121,78 @@ test('refund failure still records terminal state and preserves the execution er
     'step:persist-terminal-failure',
     'terminal',
   ]);
+});
+
+test('hold expiry refunds the reservation and returns a successful non-delivery result', async () => {
+  const events: string[] = [];
+  const request = {
+    workspaceId: settlement.workspaceId,
+    executionSnapshot: {
+      quote: { id: settlement.quoteId, revision: settlement.quoteRevision },
+    },
+    usageReservation: { id: 'usage-reservation-hold', units: [] },
+  } as unknown as HarnessWorkflowInput;
+  const result = await settleHarnessCancellation({
+    billing: {
+      async commit() {
+        events.push('unexpected-commit');
+      },
+      async refund() {
+        events.push('refund');
+      },
+      async scheduleCompensation() {
+        events.push('scheduled');
+      },
+    },
+    cancellation: new HarnessWorkflowCancellation(
+      '超时未选择，本次任务已取消，额度已退回',
+    ),
+    request,
+    runStep: async (name, operation) => {
+      events.push(`step:${name}`);
+      return operation();
+    },
+    workflowId: settlement.taskId,
+  });
+
+  assert.deepEqual(events, ['step:refund-product-usage', 'refund']);
+  assert.deepEqual(result, {
+    delivery: null,
+    merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+    outcome: 'cancelled',
+    resolutionSource: 'core_hold_expired',
+  });
+});
+
+test('hold expiry without a reservation has nothing to refund', async () => {
+  const result = await settleHarnessCancellation({
+    cancellation: new HarnessWorkflowCancellation(
+      '超时未选择，本次任务已取消，额度已退回',
+    ),
+    request: { workspaceId: 'workspace-no-reservation' } as HarnessWorkflowInput,
+    runStep: async (_name, operation) => operation(),
+    workflowId: 'task-no-reservation',
+  });
+
+  assert.equal(result.outcome, 'cancelled');
+  assert.equal(result.delivery, null);
+});
+
+test('hold expiry refuses success when a reservation cannot be refunded', async () => {
+  await assert.rejects(
+    settleHarnessCancellation({
+      cancellation: new HarnessWorkflowCancellation(
+        '超时未选择，本次任务已取消，额度已退回',
+      ),
+      request: {
+        usageReservation: { id: 'usage-reservation-missing-billing', units: [] },
+        workspaceId: 'workspace-missing-billing',
+      } as unknown as HarnessWorkflowInput,
+      runStep: async (_name, operation) => operation(),
+      workflowId: 'task-missing-billing',
+    }),
+    /requires its reserved billing input/u,
+  );
 });
 
 test('execution receipt forwards trusted per-bucket product units to settlement', () => {

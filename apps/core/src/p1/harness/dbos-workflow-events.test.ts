@@ -153,6 +153,54 @@ test('DBOS event reader preserves revision conflict details in failed state', as
   );
 });
 
+test('DBOS event reader exposes hold expiry as success without delivery', async () => {
+  const reader = new HarnessDbosWorkflowEventReader(
+    {
+      async taskBelongsToWorkspace() {
+        return true;
+      },
+      async workflowRuntimeId(workspaceId, workflowId) {
+        return harnessRuntimeId(workspaceId, workflowId);
+      },
+      async readTerminalFailure() {
+        return null;
+      },
+    },
+    {
+      async *readStream() {},
+      async getResult() {
+        return {
+          delivery: null,
+          merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+          outcome: 'cancelled',
+          resolutionSource: 'core_hold_expired',
+        };
+      },
+    },
+    () => '2026-07-18T09:00:00.000Z',
+  );
+
+  assert.deepEqual(
+    await reader.readState(
+      'workspace-1',
+      'task-hold-expired',
+      new AbortController().signal,
+    ),
+    {
+      workflowId: 'task-hold-expired',
+      sourceRevision: 0,
+      status: 'success',
+      occurredAt: '2026-07-18T09:00:00.000Z',
+      snapshot: {
+        delivery: null,
+        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        outcome: 'cancelled',
+        resolutionSource: 'core_hold_expired',
+      },
+    },
+  );
+});
+
 test('DBOS event reader does not invent a terminal failure without audit evidence', async () => {
   const reader = new HarnessDbosWorkflowEventReader(
     {

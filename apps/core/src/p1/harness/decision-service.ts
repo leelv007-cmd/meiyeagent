@@ -43,7 +43,12 @@ export interface HarnessDecisionStore {
   ): Promise<{
     question: QuestionCard;
     request: HarnessWorkflowInput;
-    resolvedByCoreTimeout: boolean;
+    resolutionSource:
+      | 'decision'
+      | 'core_timeout'
+      | 'core_hold_expired'
+      | 'late_answer'
+      | null;
     status: 'pending' | 'resolved';
   } | null>;
   submit(input: {
@@ -52,7 +57,11 @@ export interface HarnessDecisionStore {
     command: StructuredDecisionInput;
     event: HarnessDecisionEvent;
     trace: HarnessDecisionTrace;
-    mode?: 'decision' | 'core_timeout' | 'late_answer';
+    mode?:
+      | 'decision'
+      | 'core_timeout'
+      | 'core_hold_expired'
+      | 'late_answer';
   }): Promise<{
     outcome:
       | 'created'
@@ -121,6 +130,24 @@ export class HarnessDecisionResumeError extends Error {
   }
 }
 
+export type HarnessDecisionSubmitResult =
+  | {
+      /**
+       * The core already consumed the question, so this submitted non-answer
+       * was discarded. This is distinct from replaying a decision that won.
+       */
+      consumedByOther: true;
+      eventId: null;
+      replayed?: never;
+      successor?: never;
+    }
+  | {
+      consumedByOther?: never;
+      eventId: string;
+      replayed: boolean;
+      successor?: { snapshotId: string; workflowId: string };
+    };
+
 export class HarnessDecisionService {
   constructor(
     private readonly store: HarnessDecisionStore,
@@ -135,11 +162,19 @@ export class HarnessDecisionService {
     workspaceId: string,
     taskId: string,
     input: StructuredDecisionInput,
-  ) {
+  ): Promise<HarnessDecisionSubmitResult> {
     const submitted = structuredDecisionInputSchema.parse(input);
     const target = await this.readTarget(workspaceId, taskId);
     const lateAnswer =
-      target?.status === 'resolved' && target.resolvedByCoreTimeout;
+      target?.status === 'resolved' &&
+      (target.resolutionSource === 'core_timeout' ||
+        target.resolutionSource === 'core_hold_expired');
+    if (lateAnswer && !isMerchantAnswer(submitted)) {
+      return {
+        consumedByOther: true as const,
+        eventId: null,
+      };
+    }
     const command = lateAnswer
       ? structuredDecisionInputSchema.parse({
           ...submitted,
@@ -161,9 +196,6 @@ export class HarnessDecisionService {
     input: StructuredDecisionInput,
   ) {
     const command = structuredDecisionInputSchema.parse(input);
-    if (!command.idempotencyKey.endsWith(':core_timeout')) {
-      throw new Error('Core timeout decisions require a :core_timeout suffix.');
-    }
     try {
       return await this.persistAndDispatch({
         command,
@@ -187,9 +219,41 @@ export class HarnessDecisionService {
     }
   }
 
+  async submitCoreHoldExpired(
+    workspaceId: string,
+    taskId: string,
+    input: StructuredDecisionInput,
+  ) {
+    const command = structuredDecisionInputSchema.parse(input);
+    try {
+      return await this.persistAndDispatch({
+        command,
+        mode: 'core_hold_expired',
+        target: await this.readTarget(workspaceId, taskId),
+        taskId,
+        workspaceId,
+      });
+    } catch (error) {
+      if (
+        error instanceof HarnessDecisionError &&
+        error.code === 'STALE_QUESTION'
+      ) {
+        return {
+          consumedByOther: true as const,
+          eventId: null,
+        };
+      }
+      throw error;
+    }
+  }
+
   private async persistAndDispatch(input: {
     command: StructuredDecisionInput;
-    mode: 'decision' | 'core_timeout' | 'late_answer';
+    mode:
+      | 'decision'
+      | 'core_timeout'
+      | 'core_hold_expired'
+      | 'late_answer';
     target: Awaited<ReturnType<HarnessDecisionService['readTarget']>>;
     taskId: string;
     workspaceId: string;
@@ -263,7 +327,7 @@ export class HarnessDecisionService {
             ),
             workspaceId,
           });
-        } else {
+        } else if (mode === 'decision') {
           await this.workflow.resume(workspaceId, taskId, persistedCommand);
         }
         await this.store.markDecisionResumed(workspaceId, taskId, event.id);
@@ -300,15 +364,18 @@ export class HarnessDecisionService {
     if (this.store.readDecisionTarget) {
       return this.store.readDecisionTarget(workspaceId, taskId);
     }
-    const question = await this.store.readPending(workspaceId, taskId, {
-      includeResolved: true,
-    });
+    const pending = await this.store.readPending(workspaceId, taskId);
+    const question =
+      pending ??
+      (await this.store.readPending(workspaceId, taskId, {
+        includeResolved: true,
+      }));
     return question
       ? {
           question,
           request: undefined,
-          resolvedByCoreTimeout: false,
-          status: 'pending' as const,
+          resolutionSource: null,
+          status: pending ? ('pending' as const) : ('resolved' as const),
         }
       : null;
   }
@@ -345,4 +412,12 @@ function decisionConflict(
         'The decision idempotency key was reused with another payload.'
       );
   }
+}
+
+function isMerchantAnswer(command: StructuredDecisionInput) {
+  return (
+    command.decision.state === 'accepted' &&
+    command.decision.value !== '未作答' &&
+    command.decision.value !== '这次先跳过'
+  );
 }

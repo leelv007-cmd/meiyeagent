@@ -110,6 +110,7 @@ export class UnifiedHarnessStagePorts
 				options: language.options,
 				freeText: language.freeText,
 				response: language.response,
+				unattended: "continue",
 				scope: "current_task",
 			}),
 		};
