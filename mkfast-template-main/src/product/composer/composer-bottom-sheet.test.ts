@@ -31,11 +31,11 @@ test('only one sheet can be open (mutex replace, never stack)', () => {
 
   // Opening another kind replaces — does not nest.
   state = openComposerSheet(state, {
-    kind: 'reuse_panel',
+    kind: 'tool_confirm',
     scrollY: 200,
-    focusKey: 'reuse-btn',
+    focusKey: 'tool-btn',
   });
-  assert.equal(state.open, 'reuse_panel');
+  assert.equal(state.open, 'tool_confirm');
   assert.equal(state.restore?.scrollY, 200);
   assert.notEqual(state.open, 'conflict');
   assertSingleSheetMutex(state);
@@ -63,9 +63,8 @@ test('dismiss restores scroll/focus snapshot and clears open', () => {
   assert.equal(again.state.open, null);
 });
 
-test('sheetKindForApplyPhase maps confirming/reuse only', () => {
+test('sheetKindForApplyPhase maps confirming only', () => {
   assert.equal(sheetKindForApplyPhase('confirming'), 'conflict');
-  assert.equal(sheetKindForApplyPhase('reuse_panel'), 'reuse_panel');
   assert.equal(sheetKindForApplyPhase('idle'), null);
   assert.equal(sheetKindForApplyPhase('applied'), null);
 });
@@ -77,12 +76,6 @@ test('syncSheetWithApplyPhase opens and dismisses with phase', () => {
     focusKey: 'c1',
   });
   assert.equal(state.open, 'conflict');
-
-  state = syncSheetWithApplyPhase(state, 'reuse_panel', {
-    scrollY: 20,
-    focusKey: 'r1',
-  });
-  assert.equal(state.open, 'reuse_panel');
 
   state = syncSheetWithApplyPhase(state, 'idle');
   assert.equal(state.open, null);

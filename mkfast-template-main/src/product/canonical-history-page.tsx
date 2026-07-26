@@ -88,7 +88,6 @@ import { getLocale, localeConfig } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { getPathWithLocale } from '@/lib/urls';
 import { operationsQuery } from '@/p1/client';
-import type { ContentPackageProjection } from '@/p1/content-package-card';
 import { templateViews } from '@/p1/operations-view-model';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { useProductState } from '@/product/client';
@@ -121,6 +120,7 @@ import {
   contentPackageProjectionState,
   creativeWorkProjectionState,
   legacyRecordProjectionState,
+  type ContentPackageProjection,
   type LegacyContentPackageState,
 } from './legacy-content-package-projection';
 

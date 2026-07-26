@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import test from 'node:test';
-import type { ContentPackageProjection } from '@/p1/content-package-card';
+import type { ContentPackageProjection } from './legacy-content-package-projection';
 import type {
   CreativeWorkbenchProjection,
   CreativeWork,

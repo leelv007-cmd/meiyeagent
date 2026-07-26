@@ -5,6 +5,7 @@ import test from 'node:test';
 import {
   RETIRED_IA_MODULES,
   findRetiredIaMounts,
+  presentRetiredIaFiles,
   reachableFromRoutes,
   routeEntryFiles,
 } from './retired-ia-route-mount-guard.mjs';
@@ -23,7 +24,8 @@ test('a retiring module reached through an intermediate module is a violation', 
       "import { ContentTaskInbox } from '@/p1/content-task-inbox';",
     'src/p1/content-task-inbox.tsx':
       "import { CompactWeekStrip } from './compact-week-strip';",
-    'src/p1/compact-week-strip.tsx': 'export const CompactWeekStrip = () => null;',
+    'src/p1/compact-week-strip.tsx':
+      'export const CompactWeekStrip = () => null;',
   };
   const graph = reachableFromRoutes(['src/routes/dashboard/tasks.tsx'], {
     read: (path) => files[path] ?? '',
@@ -110,5 +112,8 @@ test('the repository currently mounts none of the retired old-IA modules', () =>
     ['scripts/uiux/retired-ia-route-mount-guard.mjs'],
     { encoding: 'utf8' }
   );
-  assert.deepEqual(JSON.parse(output).findings, []);
+  const result = JSON.parse(output);
+  assert.deepEqual(result.findings, []);
+  assert.deepEqual(result.retiredFilesPresent, []);
+  assert.deepEqual(presentRetiredIaFiles(), []);
 });

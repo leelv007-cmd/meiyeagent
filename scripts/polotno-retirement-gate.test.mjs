@@ -55,3 +55,32 @@ test('ticket 20 gate ④: owning canvas entry routes use Light Composer, not Pol
     assert.doesNotMatch(source, /polotno/iu, path);
   }
 });
+
+test('the delete-after-reshell retirement tooling is physically removed', async () => {
+  const corePackage = JSON.parse(await text('apps/core/package.json'));
+  for (const script of [
+    'canvas:retirement-access',
+    'canvas:retirement-inventory',
+    'canvas:renderer-comparison',
+    'canvas:retirement-snapshot',
+  ]) {
+    assert.equal(corePackage.scripts[script], undefined, script);
+  }
+  for (const file of [
+    'polotno-retirement-access-cli.ts',
+    'polotno-retirement-access.ts',
+    'polotno-retirement-inventory-cli.ts',
+    'polotno-retirement-inventory.ts',
+    'polotno-retirement-snapshot-cli-entry.ts',
+    'polotno-retirement-snapshot-cli.ts',
+    'polotno-retirement-snapshot.ts',
+    'renderer-comparison-cli.ts',
+    'renderer-comparison.ts',
+  ]) {
+    assert.equal(
+      existsSync(new URL(`apps/core/src/p1/operations/${file}`, root)),
+      false,
+      file
+    );
+  }
+});

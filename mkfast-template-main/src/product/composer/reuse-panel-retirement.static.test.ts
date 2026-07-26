@@ -11,18 +11,16 @@
  * re-mounts it or reintroduces a slot form under a new name.
  */
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const SRC_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
-/** The retired module and its own tests may still name it. */
-const EXEMPT = new Set([
-  'product/composer/reuse-content-panel.tsx',
-  'product/composer/reuse-panel-retirement.static.test.ts',
-]);
+const RETIRED_PANEL = fileURLToPath(
+  new URL('./reuse-content-panel.tsx', import.meta.url)
+);
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -37,9 +35,12 @@ const runtimeFiles = walk(SRC_ROOT)
     file,
     key: relative(SRC_ROOT, file).replaceAll('\\', '/'),
   }))
-  .filter(({ key }) => !EXEMPT.has(key))
   .filter(({ key }) => !key.includes('.test.'))
   .map(({ file, key }) => ({ key, source: readFileSync(file, 'utf8') }));
+
+test('the retired reuse panel is physically removed', () => {
+  assert.equal(existsSync(RETIRED_PANEL), false);
+});
 
 test('nothing the app mounts imports the retired reuse panel', () => {
   const importers = runtimeFiles

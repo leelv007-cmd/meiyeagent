@@ -50,12 +50,8 @@ test('merchant-facing forms never render raw upstream error messages', () => {
 });
 
 test('merchant-facing integration labels do not fall back to internal ids', () => {
-  const byok = readSource('src/p1/entitlement-byok-panels.tsx');
   const integrations = readSource('src/p1/integration-settings.tsx');
 
-  assert.doesNotMatch(byok, /connection\.subject\s*\?\?\s*connection\.id/);
-  assert.doesNotMatch(byok, /\{candidate\.id\}\s*·/);
-  assert.doesNotMatch(byok, />\s*\{model\}\s*</);
   assert.doesNotMatch(
     integrations,
     /identity:\s*connection\.subject\s*\?\?\s*connection\.id/
@@ -150,7 +146,6 @@ test('pricing stays readable without checkout and every public pricing CTA reach
 
 test('peripheral Paraglide handoff records every new key in both languages', () => {
   const sourceFiles = [
-    'src/p1/entitlement-byok-panels.tsx',
     'src/p1/integration-settings.tsx',
     'src/p1/settings-view-model.ts',
     'src/components/ui/sidebar.tsx',

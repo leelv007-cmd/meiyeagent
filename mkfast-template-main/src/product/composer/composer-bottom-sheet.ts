@@ -3,18 +3,13 @@
  *
  * Mobile may host at most ONE bottom sheet at a time for:
  * 1. RecipePatchPreview conflict confirm
- * 2. 旧内容换平台 source/form/carrier panel
- * 3. One-step narrow tool confirm
+ * 2. One-step narrow tool confirm
  *
  * Nested sheets forbidden. Drawer elsewhere remains admin/user menu only.
  * Dismiss (back / Escape / swipe / cancel) restores draft + scroll + focus.
  */
 
-export const COMPOSER_SHEET_KINDS = [
-  'conflict',
-  'reuse_panel',
-  'tool_confirm',
-] as const;
+export const COMPOSER_SHEET_KINDS = ['conflict', 'tool_confirm'] as const;
 
 export type ComposerSheetKind = (typeof COMPOSER_SHEET_KINDS)[number];
 
@@ -101,13 +96,12 @@ export function isComposerSheetOpen(state: ComposerBottomSheetState): boolean {
 
 /**
  * Map recipe-apply phase → sheet kind.
- * idle/applied → no sheet; confirming → conflict; reuse_panel → reuse.
+ * idle/applied → no sheet; confirming → conflict.
  */
 export function sheetKindForApplyPhase(
-  phase: 'idle' | 'confirming' | 'reuse_panel' | 'applied' | string
+  phase: 'idle' | 'confirming' | 'applied' | string
 ): ComposerSheetKind | null {
   if (phase === 'confirming') return 'conflict';
-  if (phase === 'reuse_panel') return 'reuse_panel';
   return null;
 }
 
@@ -118,7 +112,7 @@ export function sheetKindForApplyPhase(
  */
 export function syncSheetWithApplyPhase(
   state: ComposerBottomSheetState,
-  phase: 'idle' | 'confirming' | 'reuse_panel' | 'applied' | string,
+  phase: 'idle' | 'confirming' | 'applied' | string,
   restoreHints: {
     scrollY?: number;
     focusKey?: string | null;

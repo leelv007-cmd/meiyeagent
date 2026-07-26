@@ -7,7 +7,7 @@ import type {
   CreativeContent,
   CreativeWork,
 } from '@meiye/contracts';
-import type { ContentPackageProjection } from '@/p1/content-package-card';
+import type { ContentPackageProjection } from './legacy-content-package-projection';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {

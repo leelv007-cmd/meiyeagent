@@ -107,8 +107,7 @@ test('composer home submits to Result Center navigation helpers', () => {
   assert.doesNotMatch(home, /\?workId=/);
 });
 
-test('legacy ContentPackage detail is a read-only archive with one Result Center handoff', () => {
-  const detail = readFileSync(CONTENT_PACKAGE_DETAIL, 'utf8');
+test('legacy ContentPackage detail is physically removed after reshell', () => {
   const route = readFileSync(CONTENT_ROUTE, 'utf8');
   const retiredProps = [
     'on' + 'Edit',
@@ -122,12 +121,9 @@ test('legacy ContentPackage detail is a read-only archive with one Result Center
     'on' + 'Rollback',
   ];
 
-  assert.match(detail, /\/dashboard\/results\//u);
-  assert.match(detail, /legacy-read-only/u);
-  assert.doesNotMatch(detail, /<(?:form|Input|Textarea)\b/u);
+  assert.equal(existsSync(CONTENT_PACKAGE_DETAIL), false);
   assert.doesNotMatch(route, /operationsCommand/u);
   for (const prop of retiredProps) {
-    assert.doesNotMatch(detail, new RegExp(`\\b${prop}\\b`, 'u'));
     assert.doesNotMatch(route, new RegExp(`\\b${prop}=`, 'u'));
   }
 });

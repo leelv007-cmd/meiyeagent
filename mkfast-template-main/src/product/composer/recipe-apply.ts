@@ -54,11 +54,7 @@ export type MissingInputFocus = {
   kinds?: string[];
 };
 
-export type RecipeApplyPhase =
-  | 'idle'
-  | 'confirming'
-  | 'reuse_panel'
-  | 'applied';
+export type RecipeApplyPhase = 'idle' | 'confirming' | 'applied';
 
 export type RecipeApplySession = {
   phase: RecipeApplyPhase;
@@ -91,7 +87,6 @@ export type RecipeApplySession = {
 export type RequestApplyResult =
   | { kind: 'applied'; session: RecipeApplySession }
   | { kind: 'confirming'; session: RecipeApplySession }
-  | { kind: 'reuse_panel'; session: RecipeApplySession }
   | { kind: 'unavailable'; session: RecipeApplySession; reason: string };
 
 // ---------------------------------------------------------------------------
@@ -350,100 +345,6 @@ export function requestApplyRecipe(
   };
 }
 
-/** Open reuse-content focus panel (no defaults). */
-export function openReusePanel(
-  session: RecipeApplySession
-): RecipeApplySession {
-  return {
-    ...session,
-    phase: 'reuse_panel',
-    preview: null,
-    pendingRecipe: null,
-    baseline: { lensState: cloneState(session.lensState) },
-    tip: null,
-    announcement: null,
-    focusMissing: null,
-    canUndo: false,
-    sideEffects: [],
-  };
-}
-
-export type ReusePanelSelection = {
-  /** Selected existing content source (required). */
-  source: unknown | null;
-  /** User-picked form — no default. */
-  lensId: CreationLensId | null;
-  /** Target carrier / platform — no default. */
-  carrier: string | null;
-};
-
-export function reusePanelReady(selection: ReusePanelSelection): boolean {
-  return (
-    selection.source != null &&
-    selection.lensId != null &&
-    selection.carrier != null &&
-    selection.carrier.trim().length > 0
-  );
-}
-
-/**
- * Confirm reuse panel → apply matching variant recipe.
- * Selection must include source + lens + carrier (no defaults).
- */
-export function confirmReusePanel(
-  session: RecipeApplySession,
-  selection: ReusePanelSelection,
-  variantRecipe: RecipeCardTarget,
-  options?: { serverPreview?: RecipePatchPreview | null }
-): RequestApplyResult {
-  if (!reusePanelReady(selection)) {
-    return {
-      kind: 'unavailable',
-      reason: '先选择创作形式和目标载体',
-      session,
-    };
-  }
-  if (selection.lensId !== variantRecipe.lensId) {
-    return {
-      kind: 'unavailable',
-      reason: '创作形式与模板不一致',
-      session,
-    };
-  }
-
-  // Attach selected source into draft without wiping text.
-  let lensState = session.lensState;
-  if (selection.source != null) {
-    const sources = [
-      ...lensState.draft.sources,
-      {
-        slot: 'source_content',
-        value: selection.source,
-        carrier: selection.carrier,
-      },
-    ];
-    lensState = {
-      ...lensState,
-      draft: {
-        ...lensState.draft,
-        sources,
-        fieldMeta: {
-          ...lensState.draft.fieldMeta,
-          sources: { ownership: 'user', dirty: true },
-        },
-      },
-    };
-  }
-
-  const nextSession: RecipeApplySession = {
-    ...session,
-    lensState,
-    phase: 'idle',
-    sideEffects: [],
-  };
-  return requestApplyRecipe(nextSession, variantRecipe, options);
-}
-
 export function confirmApply(session: RecipeApplySession): RecipeApplySession {
   if (
     session.phase !== 'confirming' ||
@@ -457,9 +358,7 @@ export function confirmApply(session: RecipeApplySession): RecipeApplySession {
 }
 
 export function cancelApply(session: RecipeApplySession): RecipeApplySession {
-  if (session.phase !== 'confirming' && session.phase !== 'reuse_panel') {
-    return session;
-  }
+  if (session.phase !== 'confirming') return session;
   const restored = session.baseline?.lensState ?? session.lensState;
   return {
     ...session,

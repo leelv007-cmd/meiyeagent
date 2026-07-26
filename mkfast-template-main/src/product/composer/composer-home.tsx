@@ -11,7 +11,7 @@
  *  - The settings grid is gone. Its five controls were exactly the T08 signed
  *    fields, so editing them here was a D-031 槽位填表 over a contract the server
  *    owns. 「发到哪」stays as one chip question; the rest read back read-only.
- *  - reuse_panel 的三段选择表单收进对话流 (chips + one sentence).
+ *  - 旧内容复用的三段选择表单收进对话流 (chips + one sentence).
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

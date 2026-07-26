@@ -14,11 +14,8 @@ import {
   cancelApply,
   confirmApply,
   createRecipeApplySession,
-  openReusePanel,
   requestApplyRecipe,
-  reusePanelReady,
   undoApply,
-  type ReusePanelSelection,
 } from './recipe-apply';
 import {
   createComposerLensState,
@@ -199,53 +196,15 @@ test('undo restores lens/recipe; keeps live user text', () => {
   assertZeroBusinessWrites(session);
 });
 
-test('browse / open reuse panel / cancel never writes business entities', () => {
-  let session = createRecipeApplySession();
-  session = openReusePanel(session);
-  assert.equal(session.phase, 'reuse_panel');
-  assertZeroBusinessWrites(session);
-
-  session = cancelApply(session);
-  assert.equal(session.phase, 'idle');
-  assertZeroBusinessWrites(session);
-
+test('browse / preview / cancel never writes business entities', () => {
   // Preview path without confirm.
   const lens = selectLens(createComposerLensState({ userText: 'x' }), 'copy');
-  session = createRecipeApplySession(lens);
+  let session = createRecipeApplySession(lens);
   const result = requestApplyRecipe(session, seedToRecipeTarget(posterSeed));
   assert.equal(result.kind, 'confirming');
   assertZeroBusinessWrites(result.session);
   session = cancelApply(result.session);
   assertZeroBusinessWrites(session);
-});
-
-test('reuse panel requires source + form + carrier (no defaults)', () => {
-  const empty: ReusePanelSelection = {
-    source: null,
-    lensId: null,
-    carrier: null,
-  };
-  assert.equal(reusePanelReady(empty), false);
-  assert.equal(
-    reusePanelReady({ source: { id: '1' }, lensId: null, carrier: null }),
-    false
-  );
-  assert.equal(
-    reusePanelReady({
-      source: { id: '1' },
-      lensId: 'copy',
-      carrier: null,
-    }),
-    false
-  );
-  assert.equal(
-    reusePanelReady({
-      source: { id: '1' },
-      lensId: 'copy',
-      carrier: 'wechat_moments',
-    }),
-    true
-  );
 });
 
 test('passthrough with existing text/sources still preserves both', () => {

@@ -264,7 +264,6 @@ import {
   p1_admin_audit_byok_action_unknown,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
-import { StrictByokExecutionPanel } from '@/p1/entitlement-byok-panels';
 import {
   createIntegrationConnectionSchema,
   douyinPublishFormSchema,
@@ -2058,10 +2057,6 @@ export function IntegrationSettings({
 
   return (
     <div className="space-y-6">
-      {scope === 'model' && canManage ? (
-        <StrictByokExecutionPanel connections={visibleConnections} />
-      ) : null}
-
       <div className="grid gap-4 md:grid-cols-3">
         {visibleProviders.map((item) => {
           const Icon = item.icon;

@@ -152,20 +152,16 @@ export {
   cancelApply,
   clearAnnouncement,
   confirmApply,
-  confirmReusePanel,
   createRecipeApplySession,
   firstMissingInput,
   listMissingRequiredInputs,
-  openReusePanel,
   requestApplyRecipe,
-  reusePanelReady,
   undoApply,
   type ForbiddenApplySideEffect,
   type MissingInputFocus,
   type RecipeApplyPhase,
   type RecipeApplySession,
   type RequestApplyResult,
-  type ReusePanelSelection,
 } from './recipe-apply';
 
 export {
@@ -179,10 +175,6 @@ export {
   RecipePatchPreviewSurface,
   type RecipePatchPreviewSurfaceProps,
 } from './recipe-patch-preview-surface';
-
-// T30 / #224: the reuse slot panel is unmounted (D-031). It is intentionally
-// not re-exported — reuse is answered in the conversation. The module itself
-// belongs to the delete-after-reshell batch, which is a separate ticket.
 
 export {
   RecipeApplyTip,

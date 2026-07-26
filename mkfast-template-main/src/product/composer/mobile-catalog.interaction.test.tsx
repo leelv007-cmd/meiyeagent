@@ -135,18 +135,18 @@ describe('single bottom sheet mutex + restore', () => {
         <button
           id="trigger-b"
           type="button"
-          data-testid="open-reuse"
+          data-testid="open-tool"
           onClick={() =>
             setState(
               openComposerSheet(state, {
-                kind: 'reuse_panel',
+                kind: 'tool_confirm',
                 scrollY: 12,
                 focusKey: 'trigger-b',
               })
             )
           }
         >
-          open reuse
+          open tool
         </button>
         <button
           type="button"
@@ -188,15 +188,15 @@ describe('single bottom sheet mutex + restore', () => {
       document.activeElement as HTMLElement | null
     );
 
-    // Mutex: opening reuse replaces conflict — still a single sheet root.
-    await user.click(screen.getByTestId('open-reuse'));
+    // Mutex: opening a tool confirmation replaces conflict.
+    await user.click(screen.getByTestId('open-tool'));
     const sheets = screen.getAllByTestId('composer-bottom-sheet');
     expect(sheets).toHaveLength(1);
-    expect(sheets[0]).toHaveAttribute('data-sheet-kind', 'reuse_panel');
+    expect(sheets[0]).toHaveAttribute('data-sheet-kind', 'tool_confirm');
 
     await user.click(screen.getByTestId('composer-bottom-sheet-close'));
     expect(screen.queryByTestId('composer-bottom-sheet')).toBeNull();
-    expect(screen.getByTestId('open-reuse')).toHaveFocus();
+    expect(screen.getByTestId('open-tool')).toHaveFocus();
     const restoreJson = screen.getByTestId('restore-json').textContent ?? '';
     expect(restoreJson).toContain('trigger-b');
     expect(restoreJson).toContain('"scrollY":12');

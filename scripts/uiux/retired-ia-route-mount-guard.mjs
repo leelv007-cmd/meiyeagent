@@ -138,7 +138,10 @@ export function reachableFromRoutes(entries, options = {}) {
   return { importedBy, reachable: seen };
 }
 
-export function findRetiredIaMounts(graph, { modules = RETIRED_IA_MODULES, srcDir = SRC } = {}) {
+export function findRetiredIaMounts(
+  graph,
+  { modules = RETIRED_IA_MODULES, srcDir = SRC } = {}
+) {
   const violations = [];
   for (const module of modules) {
     for (const extension of SOURCE_EXTENSIONS) {
@@ -152,6 +155,17 @@ export function findRetiredIaMounts(graph, { modules = RETIRED_IA_MODULES, srcDi
     }
   }
   return violations;
+}
+
+export function presentRetiredIaFiles({
+  modules = RETIRED_IA_MODULES,
+  srcDir = SRC,
+} = {}) {
+  return modules.flatMap((module) =>
+    SOURCE_EXTENSIONS.map((extension) =>
+      join(srcDir, `${module}${extension}`)
+    ).filter((path) => existsSync(path))
+  );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -168,6 +182,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     `${JSON.stringify(
       {
         modulesChecked: RETIRED_IA_MODULES.length,
+        retiredFilesPresent: presentRetiredIaFiles().map((path) =>
+          relative(process.cwd(), path)
+        ),
         routeEntries: entries.length,
         reachableFiles: graph.reachable.size,
         findings,

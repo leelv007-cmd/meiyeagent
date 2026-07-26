@@ -29,8 +29,6 @@ export * from './postgres-asset-intake-repository.js';
 export * from './postgres-context-bundle-repository.js';
 export * from './postgres-parse-repository.js';
 export * from './postgres-reuse-memory-repository.js';
-export * from './polotno-retirement-access.js';
-export * from './polotno-retirement-inventory.js';
 export * from './product-package-rights-adapter.js';
 export * from './product-search-projection.js';
 export * from './repository.js';

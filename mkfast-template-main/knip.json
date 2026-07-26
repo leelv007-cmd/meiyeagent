@@ -33,7 +33,6 @@
   "ignoreIssues": {
     "src/auth/types.ts": ["types"],
     "src/components/layout/sidebar-layout.tsx": ["exports"],
-    "src/hooks/use-apikeys.ts": ["exports"],
     "src/hooks/use-auth.ts": ["exports"],
     "src/hooks/use-user-files.ts": ["exports"],
     "src/hooks/use-users.ts": ["exports"],

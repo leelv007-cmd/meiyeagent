@@ -175,14 +175,13 @@ test('product controls consume the fixed touch target and readable type tokens',
 });
 
 const localizedDashboardRoutes = [
-  'src/routes/dashboard/-content-library-surface.tsx',
   'src/routes/dashboard/store.tsx',
   'src/routes/dashboard/leads.tsx',
   'src/routes/dashboard/handoff/$token.tsx',
   'src/routes/dashboard/leads_/$leadId.tsx',
 ];
 
-test('dashboard content, store, lead, and handoff routes use Paraglide at the render boundary', () => {
+test('dashboard store, lead, and handoff routes use Paraglide at the render boundary', () => {
   for (const file of localizedDashboardRoutes) {
     const source = readFileSync(resolve(process.cwd(), file), 'utf8');
     const presentationSource = source

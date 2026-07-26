@@ -1,7 +1,7 @@
 /**
  * Single-conflict bottom sheet host (C3 / #97, D-084).
  *
- * Only one sheet at a time. Used for conflict / reuse / tool_confirm.
+ * Only one sheet at a time. Used for conflict / tool_confirm.
  * Does not own business writes — pure presentation + dismiss restore.
  */
 
@@ -35,7 +35,6 @@ export type ComposerBottomSheetProps = {
 
 const SHEET_TITLES: Record<ComposerSheetKind, string> = {
   conflict: '确认套用模板',
-  reuse_panel: '旧内容换平台',
   tool_confirm: '确认使用工具',
 };
 

@@ -7,12 +7,18 @@ import {
   legacy_projection_true_draft,
   legacy_projection_true_draft_description,
 } from '@/locale/paraglide/messages';
-import type { ContentPackageProjection } from '@/p1/content-package-card';
 import {
   contentPackageStatusGroup,
+  type ContentPackage,
+  type ContentPackageStatusGroup,
   type CreativeJob,
   type CreativeWork,
 } from '@meiye/contracts';
+
+export type ContentPackageProjection = ContentPackage & {
+  statusGroup: ContentPackageStatusGroup;
+  statusLabel: string;
+};
 
 export type LegacyContentPackageState =
   | {

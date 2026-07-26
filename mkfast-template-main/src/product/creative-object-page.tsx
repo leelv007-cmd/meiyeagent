@@ -38,7 +38,6 @@ import {
   product_navigation_workbench,
 } from '@/locale/paraglide/messages';
 import { operationsQuery } from '@/p1/client';
-import type { ContentPackageProjection } from '@/p1/content-package-card';
 import { templateViews } from '@/p1/operations-view-model';
 import { p1QueryKeys } from '@/p1/query-keys';
 import type { TemplateCatalogItemView } from '@/p1/types';
@@ -60,6 +59,7 @@ import { creativeOperationLabel, creativeOutputLabel } from './creative-quote';
 import {
   creativeWorkProjectionState,
   legacyRecordProjectionState,
+  type ContentPackageProjection,
   type LegacyContentPackageState,
 } from './legacy-content-package-projection';
 

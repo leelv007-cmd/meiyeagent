@@ -174,9 +174,6 @@ importers:
       '@base-ui/react':
         specifier: ^1.5.0
         version: 1.5.0(@date-fns/tz@1.4.1)(@types/react@19.2.14)(date-fns@4.1.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@beehiiv/sdk':
-        specifier: ^0.1.9
-        version: 0.1.9
       '@better-auth/api-key':
         specifier: ^1.6.23
         version: 1.6.23(0c2396653781bad2df74901c238c39fd)
@@ -973,10 +970,6 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
-
-  '@beehiiv/sdk@0.1.9':
-    resolution: {integrity: sha512-kJdD7ZTFW8cyxPbvjeFU67QiNMC/cCSr23E1Ga7jbMi9jMwUHN3ahlW7plHUwOQGQ0yvYNlqTSJ8v3ywy52Fqg==}
-    engines: {node: '>=18.0.0'}
 
   '@better-auth/api-key@1.6.23':
     resolution: {integrity: sha512-HQMTv1GkY5FzE8BlUXdNhuKPBPUvusBYlAtIQElQjfsmGiPiBie7BdzuhcbXhAqJerunU299yvEge2WlZusp+Q==}
@@ -9189,8 +9182,6 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.4)
     optionalDependencies:
       '@types/react': 19.2.14
-
-  '@beehiiv/sdk@0.1.9': {}
 
   '@better-auth/api-key@1.6.23(0c2396653781bad2df74901c238c39fd)':
     dependencies:
