@@ -72,8 +72,10 @@ path. Its own reds are why "migrate them" and not "make the file required":
 4. **T5 inline authorize** (`:539`) — no `[data-has-token="true"]` after the
    inline-authorized submit.
 
-(1) and (4) are product-side questions this ticket did not chase; they are
-recorded here so the next reader does not rediscover them. (2) and (3) are
+(1) and (4) are product-side. (1) this ticket did not chase — it is recorded
+here so the next reader does not rediscover it. (4) it did: chasing the same
+symptom on the new gate turned it into defect 1 below (`composer-home.tsx`,
+`ae40876d`), so that red is a fixed bug, not an open question. (2) and (3) are
 assertion-side and are exactly what the migration fixes: the new gate asserts
 neither the legacy projection nor a video budget the product cannot meet.
 
@@ -102,14 +104,14 @@ They are recorded here because each one was on the merchant's own Day-0 path and
 none of them had a test that ran:
 
 1. **An inline-authorized image could not be submitted** (`composer-home.tsx`,
-   fixed in `d6912b68`). The submission gate reads `product.state`, which
+   fixed in `ae40876d`). The submission gate reads `product.state`, which
    `useProductState` fetches once on mount; every inline asset write goes
    through the module-level `executeProductCommand`, which never updates it. So
    the card said 「素材信息已确认」 and the submit button said 「当前素材还未确认
    可用于宣传」 at the same time, and 图文/视频 — whose recipes require a source —
    could not start at all. This is also the unexplained day-0 red at
    `uiux-day0-contract.spec.ts:539`.
-2. **图文 delivered to a dead Result Center** (`39484352`). `imageFacts` reads
+2. **图文 delivered to a dead Result Center** (`be6eb382`). `imageFacts` reads
    the legacy `creative_workbench` CreativeAssets, which the ContentPackage
    seam does not write, so the worksurface stayed on 「等待图片候选…」 while the
    status read 可发布.

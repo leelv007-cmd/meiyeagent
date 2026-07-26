@@ -444,6 +444,15 @@ test.describe.fixme('UI/UX Upgrade B result contracts', () => {
     // it came from anywhere. The contract is 同源对齐 — provenance restates the
     // frozen RouteSnapshot, and a blank counterparty is exactly the drift that
     // would slip through a type-shaped check.
+    //
+    // T37-R2: this file is demoted (retired workbench), so these two lines run
+    // on no required job. They now also live where they execute —
+    // `apps/core/src/p1/operations/model-supply-creation-adapter.test.ts`,
+    // 「execution provenance restates the frozen route, never a blank
+    // counterparty」 — asserted against `executionResult`, the seam that builds
+    // provenance out of the snapshot. The browser seam cannot host them: the
+    // ContentPackage submission path writes no `p1_creative_jobs` row, so there
+    // is no `job.executionProvenance` next to a RouteSnapshot to compare with.
     expect(
       typeof actualProviderModel === 'string' &&
         actualProviderModel.trim().length > 0,

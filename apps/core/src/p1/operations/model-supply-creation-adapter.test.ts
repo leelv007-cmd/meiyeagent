@@ -872,3 +872,141 @@ test('forwards zero product usage and records rerolls without changing the fixed
     },
   );
 });
+
+/**
+ * T37-R2 / M-04 provenance 同源对齐.
+ *
+ * Migrated from `uiux-upgrade-b-results.spec.ts:439-458`, which asserts the
+ * same contract but sits in the retired-workbench family — a spec no required
+ * job runs, so those two lines never executed. This is the seam they were
+ * really about: `executionResult` builds `executionProvenance` out of the
+ * frozen RouteSnapshot, so the two must name the same provider model and the
+ * same API counterparty, and neither may be blank. The T07 F2 ruling is the
+ * point: `expect.any(String)` accepted the empty string, which asserts a
+ * field's type rather than that it came from anywhere.
+ */
+test('execution provenance restates the frozen route, never a blank counterparty', async () => {
+  const snapshot = {
+    actualCatalogModelId: 'llm-live',
+    allowedCandidates: [
+      {
+        activationStatus: 'live_verified' as const,
+        catalogModelId: 'llm-live',
+        modelDisplayName: 'Live copy',
+        providerModel: 'live-copy-v2',
+        stableModelName: 'live-copy-stable',
+      },
+    ],
+    apiCounterparty: 'recorded-counterparty',
+    id: 'route-provenance-alignment',
+  };
+  const creation = new ModelSupplyCreationExecutor({
+    async submitGeneration() {
+      return {
+        attempt: { acceptance: 'accepted' },
+        copyCandidates: [{ body: 'Alpha', title: 'A' }],
+        jobId: 'model-job-provenance',
+        providerCost: { amount: 0.001, currency: 'USD', status: 'observed' },
+        routeSnapshotId: snapshot.id,
+        snapshot,
+        status: 'completed',
+        usage: { quantity: 1, status: 'committed' },
+      };
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  const result = await creation.submit({
+    context: {
+      actor: 'owner',
+      correlationId: 'corr-provenance',
+      userId: 'owner-a',
+      workspaceId: 'workspace-a',
+    },
+    contract,
+    idempotencyKey: 'provenance-alignment',
+    intent: '对齐冻结路由与执行留痕',
+    productUsageQuantity: 1,
+  });
+
+  const provenance = result.executionProvenance;
+  assert.ok(
+    typeof provenance?.providerModel === 'string' &&
+      provenance.providerModel.trim().length > 0,
+    `frozen route must name a provider model; got ${JSON.stringify(provenance?.providerModel)}`,
+  );
+  assert.ok(
+    typeof provenance?.apiCounterparty === 'string' &&
+      provenance.apiCounterparty.trim().length > 0,
+    `frozen route must name an API counterparty; got ${JSON.stringify(provenance?.apiCounterparty)}`,
+  );
+  // 同源: both restate the RouteSnapshot this run was frozen against.
+  assert.equal(
+    provenance?.providerModel,
+    snapshot.allowedCandidates[0]?.providerModel,
+  );
+  assert.equal(provenance?.apiCounterparty, snapshot.apiCounterparty);
+  assert.equal(provenance?.actualCatalogModelId, snapshot.actualCatalogModelId);
+  assert.equal(result.routeSnapshotId, snapshot.id);
+});
+
+test('provenance falls back to the stable model name, and still names one', async () => {
+  // Same resolution order the migrated case walked:
+  // snapshot.providerModel ?? candidate.providerModel ?? candidate.stableModelName.
+  const snapshot = {
+    actualCatalogModelId: 'llm-live',
+    allowedCandidates: [
+      {
+        activationStatus: 'recorded' as const,
+        catalogModelId: 'llm-live',
+        modelDisplayName: 'Recorded copy',
+        stableModelName: 'recorded-copy-v1',
+      },
+    ],
+    apiCounterparty: 'recorded-fixture',
+    id: 'route-provenance-fallback',
+  };
+  const creation = new ModelSupplyCreationExecutor({
+    async submitGeneration() {
+      return {
+        attempt: { acceptance: 'accepted' },
+        copyCandidates: [{ body: 'Alpha', title: 'A' }],
+        jobId: 'model-job-provenance-fallback',
+        providerCost: { amount: 0.001, currency: 'USD', status: 'observed' },
+        routeSnapshotId: snapshot.id,
+        snapshot,
+        status: 'completed',
+        usage: { quantity: 1, status: 'committed' },
+      };
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  const result = await creation.submit({
+    context: {
+      actor: 'owner',
+      correlationId: 'corr-provenance-fallback',
+      userId: 'owner-a',
+      workspaceId: 'workspace-a',
+    },
+    contract,
+    idempotencyKey: 'provenance-fallback',
+    intent: '回退到稳定模型名仍要有名字',
+    productUsageQuantity: 1,
+  });
+
+  const provenance = result.executionProvenance;
+  assert.ok(
+    typeof provenance?.providerModel === 'string' &&
+      provenance.providerModel.trim().length > 0,
+    `frozen route must name a provider model; got ${JSON.stringify(provenance?.providerModel)}`,
+  );
+  assert.equal(
+    provenance?.providerModel,
+    snapshot.allowedCandidates[0]?.stableModelName,
+  );
+  assert.ok(
+    typeof provenance?.apiCounterparty === 'string' &&
+      provenance.apiCounterparty.trim().length > 0,
+    `frozen route must name an API counterparty; got ${JSON.stringify(provenance?.apiCounterparty)}`,
+  );
+  assert.equal(provenance?.apiCounterparty, snapshot.apiCounterparty);
+});
