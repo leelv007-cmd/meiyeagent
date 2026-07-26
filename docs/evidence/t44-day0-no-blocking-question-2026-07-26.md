@@ -1,220 +1,169 @@
 # T44 Day-0 no-blocking-question acceptance evidence
 
-## Scope and revisions
+## Scope
 
 - Branch: `leelv007-cmd/t44-day0-no-blocking-question`
-- Tested implementation revision: `8f0d765e`
-- Same-environment comparison revision: local `main` at `30ac4d47`
-- Fixture/local evidence only. No provider credential or live-provider call was used.
-- No frontend component or visual surface was changed.
+- Final rework base: local `main` at `755396f2`
+- Fixture/local evidence only; no credential or live-provider call was used.
+- No frontend component, visual surface, or original D-043 assertion was changed.
 
-The implementation changes only the Harness routing policy seam:
+The revised implementation keeps a new Day-0 industry-gap run on the
+`customized` route, preserves `usedAssetCategories` (or supplies `store` when
+empty), and marks the server-owned continuation as `routingSource: "policy"`.
+It compiles the frozen grounding surface and counts only active confirmed
+`store_fact:` references. A fact suppresses a question only when its key can
+answer that gap; otherwise the workflow continues without registering a new
+question and chooses its merchant notice from whether confirmed materials are
+actually present.
 
-- `workflow-core.ts:890-895,961-974` converts an `industry_category` gap to
-  the existing free route only for a new customized Composer snapshot
-  (`expectedRevision === 0`, no reuse seed/source package/semantic decision).
-- `workflow-core.ts:897-940` remains the blocking-question and T41 resumption
-  path for every other case. `HarnessSnapshotDecisionError`,
-  `applyCurrentTaskDecision`, and `resubmitSemanticDecision` remain intact.
-- `merchant-delivery-language.ts:42-44` owns the exact generic-mode notice;
-  its language gate now also rejects `industry_category`, `intent`, and
-  `snapshot`.
+Before taking that new branch, the runtime directly reads the pending-question
+store. An already registered matching PENDING question follows the original
+`awaitDecision` sequence. The read intentionally stays outside `DBOS.runStep`,
+so an old workflow replay does not acquire a new function ID.
 
-## Serial D-043 comparison
+## Adversarial rework disposition
 
-Both commands ran alone with the same `lane.env`, PostgreSQL instance, ports,
-Playwright configuration, and `--workers=1`. Neither run had SQLSTATE `53300`
-or an unexplained process interruption.
+| Finding | Change and proof |
+| --- | --- |
+| F1 — predicate was effectively Day-0 metadata | Replaced revision/snapshot heuristics with frozen-grounding counts. Production tests cover one matching confirmed fact, active but non-answering facts, and no answering fact. |
+| F2 — free route lost customized semantics | New continuation returns `route: customized`, `routingSource: policy`, and preserves categories or fills `store`. Workflow and production-port assertions inspect the declaration received by context injection. |
+| F3 — acceptance used a qualitative activation claim | Focused browser proof measured exactly **2 trusted top-level activations** before first token. |
+| F4 — test used merchant copy as the no-question oracle | Focused browser test now asserts `data-testid="composer-question-turn"` count is zero. Original `uiux-day0-contract.spec.ts` is unchanged. |
+| F5 — replay could change the DBOS function-ID sequence | `hasRegisteredPendingQuestion` is checked before the policy branch. The replay test supplies an old PENDING row and asserts the original six `runStep` keys in order; no extra effect key appears. |
+| F6 — reverse control was not production-reachable | Production ports and workflow tests use a `reuseSeed` request whose `industry_category` question is raised, answered, and then resumes. |
+| F7 — test-surface changes were under-reported | Every modified test file is declared below. |
+| F8 — ignored-decision HTTP/SSE coverage was displaced | Restored a focused test that POSTs `state: "ignored"` and observes the same SSE task reach `success`. Accepted-answer continuation is separately covered. |
+| F10 — `"decision"` falsely implied merchant choice | Added `routingSource: "policy"` with a type comment: the server policy chose continuation; the merchant made no decision. |
 
-Branch:
+## Focused Core contract
 
 ```text
-pnpm --filter @meiye/web exec playwright test tests/e2e/specs/uiux-day0-contract.spec.ts --workers=1
-2 passed / 5 failed, 9.2m
+pnpm --filter @meiye/core exec tsx --test \
+  src/p1/harness/workflow-core.test.ts \
+  src/p1/harness/production-stage-ports.test.ts \
+  src/p1/harness/merchant-delivery-language.test.ts
+
+95 passed / 0 failed
 ```
 
-Base `main`:
+The relevant assertions prove:
+
+- an answerable confirmed fact removes the question without changing away from
+  `customized`;
+- non-answering confirmed facts do not masquerade as an answer, but do select
+  the honest “reference confirmed materials” continuation notice;
+- no confirmed grounding selects the neutral continuation notice, which does
+  not tell a filled merchant to add store information;
+- a pre-existing PENDING industry question keeps the exact old decision effect
+  sequence;
+- a reachable reuse-path industry question is raised, answered, and resumed.
+
+## Focused HTTP + SSE proof
 
 ```text
-pnpm --filter @meiye/web exec playwright test tests/e2e/specs/uiux-day0-contract.spec.ts --workers=1
-1 passed / 6 failed, 12.6m
+pnpm --filter @meiye/web exec playwright test \
+  tests/e2e/specs/intent-routing-http-sse.spec.ts
+
+3 passed (1.8m)
 ```
 
-| Original test | Branch `8f0d765e` | Base `30ac4d47` | Classification |
-| --- | --- | --- | --- |
-| Template path (`:210`) | First-token timeout at `:76/:242` | Same first-token timeout | Pre-existing; T44 does not own template application |
-| Pure text (`:266`) | Reached first token at exactly 2 activations, then `creativeEventTypes=[]` at `:323` | First-token timeout at `:76/:303` | T44 removes the Day-0 block; the later Operations projection gap is pre-existing |
-| Video (`:332`) | Delivery-card timeout at `:119/:381` | Same delivery-card timeout | Pre-existing video delivery defect |
-| Keyboard submit (`:399`) | PASS at exactly 2 activations | First-token timeout at `:76/:423` | Fixed by T44 |
-| Activation counter persistence (`:440`) | PASS | PASS | Control remains green |
-| High-risk conflict (`:491`) | First-token timeout at `:76/:524` | Same first-token timeout | Pre-existing `promotion_details`/high-risk gate behavior |
-| T5 inline authorization (`:539`) | First-token timeout at `:703` | Same first-token timeout | Pre-existing downstream path |
+The three tests prove:
 
-The `creativeEventTypes=[]` result is not a missing generic-route emission.
-`creativeEventTypes()` at `uiux-day0-contract.spec.ts:135-159` does not
-collect SSE frames. It calls the Operations `creative_workbench` query and
-reads its `events` projection. The Composer submission path is
-`CreationSubmissionCoordinator.submit()` in
-`execution-spine/submission-coordinator.ts:130-200`; it creates the
-snapshot/task/work/package and starts Harness without calling Operations
-`createCreativeWork`. The queried `first_work_created` event is emitted only
-inside `OperationsApplicationService.createCreativeWork()` at
-`operations/application-service.ts:5291,5466`. T44 therefore exposes an
-existing cross-spine Operations projection gap after the formerly blocked
-Composer path reaches its token; it does not own that projection.
+1. A cold start without a category word has zero
+   `composer-question-turn` elements, reaches its first token after exactly
+   **2** trusted top-level activations, shows a delivery card, and has no
+   decision.
+2. A reachable `promotion_details` question accepts an inbox answer and the
+   same task continues over SSE to `success` (T41 control).
+3. POST `/decision` with `state: "ignored"` resumes the same task over HTTP +
+   SSE to `success`.
 
-The persisted frames from the focused generic-mode run provide the direct
-control. The run was selected from
-`meiye_be1_dbos_playwright_4101_41908` by its DBOS `created_at` value:
+The final run created six task requests after `2026-07-26 00:19:00+00`.
+The direct post-run query returned zero PENDING questions; both tasks that
+registered a question were `resolved`:
 
 ```sql
-with run as (
-  select workflow_uuid, status
-  from dbos.workflow_status
-  where created_at = 1785012757028
-),
-frames as (
-  select
-    s.offset as stream_offset,
-    (s.value::jsonb->'json') as frame_json
-  from dbos.streams s
-  join run r using (workflow_uuid)
-  where s.key = 'progress'
-    and s.serialization = 'js_superjson'
-)
-select
-  stream_offset,
-  case
-    when frame_json ? 'delta' then 'workflow.token'
-    else 'workflow.progress'
-  end,
-  coalesce(frame_json->>'stage', frame_json->>'channel'),
-  coalesce(frame_json->>'state', frame_json->>'delta')
-from frames
-union all
-select 999, 'workflow.state', null, status from run
-order by 1;
+select count(*) as pending_since_final_run
+from harness_runtime.pending_questions q
+join harness_runtime.task_requests r on r.task_id = q.task_id
+where r.created_at >= '2026-07-26 00:19:00+00'
+  and q.status = 'pending';
+
+pending_since_final_run = 0
 ```
 
-Actual sequence:
+There are 12 older PENDING rows in this lane database, all predating this run.
+The revised contract explicitly leaves stored cleanup to a separate ticket;
+T44 produced no new ghost row.
+
+## Serial D-043 measurement
+
+The original spec ran alone after the rework:
 
 ```text
-workflow.progress intent_naming success
-workflow.progress context_injection success
-workflow.progress brief_compilation success
-workflow.token copy.title x2
-workflow.token copy.body x7
-workflow.token copy.cta x1
-workflow.progress execution_selection success
-workflow.progress assembly_delivery success
-workflow.state SUCCESS
+pnpm --filter @meiye/web exec playwright test \
+  tests/e2e/specs/uiux-day0-contract.spec.ts --workers=1
+
+3 passed / 4 failed (8.5m)
 ```
 
-The first progress frame contains the exact generic-mode notice. The ten token
-frames contain the delivered title/body/CTA, and the workflow closes
-successfully. A same-workspace query against `public.p1_creation_events` for
-this run's workspace returned `0 rows`, which is why
-`creative_workbench.events` is empty even though the Harness SSE delivery is
-complete. This proves classification **(b)**: the existing spec reads a
-projection populated only by the separate Operations `createCreativeWork`
-path.
+The pure-text case reached first token after its built-in exact
+**2-activation** assertion, then failed only at
+`creativeEventTypes=[]` (`uiux-day0-contract.spec.ts:323`). The other current
+red cases were the template first-token timeout (`:210`), video delivery-card
+timeout (`:332`), and T5 first-token timeout (`:539`). The ticket coordinator
+assigned these D-043 residual failures to other owner issues.
 
-The original D-043 spec and assertions were not changed:
+The pure-text empty array is an Operations projection result, not an SSE frame
+collection. `creativeEventTypes()` queries `creative_workbench.events`.
+The corresponding generic Harness run persisted progress, ten token frames,
+delivery success, and terminal `SUCCESS`, while the workspace had no
+`p1_creation_events` row. That is the previously reported cross-spine
+projection gap: delivery occurred, but the separate Operations
+`createCreativeWork` projection was never populated.
+
+The original spec remains byte-identical to main:
 
 ```text
-git diff --exit-code 30ac4d47..HEAD -- \
+git diff --exit-code main -- \
   mkfast-template-main/tests/e2e/specs/uiux-day0-contract.spec.ts
 exit 0
 ```
 
-## Focused end-to-end proof and reverse control
+## Modified test surface
 
-```text
-pnpm --filter @meiye/web exec playwright test \
-  tests/e2e/specs/intent-routing-http-sse.spec.ts --workers=1
-2 passed (1.1m)
-```
+- `workflow-core.test.ts`: customized policy continuation with and without
+  confirmed material; exact old PENDING replay effect keys; production-reachable
+  reuse question, answer, and resumption; T41 semantic resumption uses the
+  reachable promotion gap.
+- `production-stage-ports.test.ts`: confirmed matching fact policy declaration,
+  grounding counts for non-answering facts, and reuse-path industry question.
+- `merchant-delivery-language.test.ts`: generic and both grounding-sensitive
+  notices remain merchant-facing and free of internal routing language.
+- `dbos-registration.smoke.test.ts`: supplies the new read-only pending-store
+  seam to the registration smoke fixture.
+- `intent-routing-http-sse.spec.ts`: real question-turn absence, exact activation
+  count and delivery; accepted-answer continuation; ignored POST decision plus
+  SSE success.
+- `ui-journey.ts`: documents that the shared journey accepts category-free
+  Day-0 intent while later required gaps may still ask and resume.
 
-The first test uses a confirmed store and a customized cold-start phrase with
-no category word. It asserts:
-
-- no blocking question;
-- the exact merchant-visible generic-mode notice;
-- first token after exactly **2 trusted top-level activations**;
-- visible delivery card;
-- no pending task decision;
-- no internal routing vocabulary in the notice.
-
-The second test is the reverse control. A non-Day-0
-`promotion_details` question is still raised; after the answer, the same task
-continues over SSE to `success`, proving the T41 resumption path remains
-effective.
-
-Focused Core tests covering Day-0, later-revision blocking, resumption, and
-merchant language passed before the browser run:
-
-```text
-pnpm --filter @meiye/core test -- \
-  src/p1/harness/workflow-core.test.ts \
-  src/p1/harness/merchant-delivery-language.test.ts
-17 passed / 0 failed
-```
-
-## Dashboard chain and DBOS check
-
-Branch and base both ran the same single sample-chain test:
-
-```text
-pnpm --filter @meiye/web exec playwright test \
-  tests/e2e/specs/dashboard-home-mount.spec.ts --workers=1 \
-  --grep 'sample task runs on the real chain'
-```
-
-Both runs produced one successful DBOS workflow but remained on `/dashboard`
-instead of navigating to the expected result URL:
-
-- branch: `ui-journey.ts:238`, 1 failed in 1.1m;
-- base: `ui-journey.ts:241`, 1 failed in 1.1m.
-
-The post-run query was:
-
-```sql
-select count(*)
-from dbos.workflow_status s
-where s.status = 'PENDING'
-  and exists (
-    select 1
-    from dbos.workflow_events e
-    where e.workflow_uuid = s.workflow_uuid
-      and e.key = 'pending-structured-decision'
-  );
-```
-
-| Run | Workflow status | Pending structured-decision runs |
-| --- | --- | --- |
-| Branch DB `meiye_be1_dbos_playwright_4101_44373` | `SUCCESS=1` | **0** |
-| Base DB `meiye_be1_dbos_playwright_4101_49207` | `SUCCESS=1` | **0** |
-
-This satisfies the T44 DBOS hard check. The identical result-page navigation
-failure is a pre-existing dashboard projection/navigation defect, not a
-pending semantic decision and not a T44 regression.
+`uiux-day0-contract.spec.ts` was not edited.
 
 ## Package gates
 
 ```text
-pnpm --filter @meiye/core test
-2182 tests / 2172 pass / 0 fail / 10 skipped, 290938ms
-
 pnpm --filter @meiye/core typecheck
 exit 0
 
 pnpm --filter @meiye/web typecheck
 exit 0
 
-git diff --check
-exit 0
+pnpm --filter @meiye/core test
+2248 tests / 2238 pass / 0 fail / 10 skipped, 568987ms
 ```
 
-The skipped tests are explicit live-provider or isolated-service opt-ins; T44
-did not add skips. The working tree after recording this report contains only
-this report plus the pre-existing untracked local `lane.env`.
+The focused owner tests, full Core suite, both affected-package typechecks,
+HTTP/SSE contract, and DBOS pending-row check are green. The ten skips are the
+existing explicit live-provider or isolated-service opt-ins; T44 added no
+skip.
