@@ -176,8 +176,11 @@ test('Langfuse Skill lineage emits only revision refs and hashes through both bo
   const trace = body?.batch.find(({ type }) => type === 'trace-create')?.body;
   const span = body?.batch.find(({ type }) => type === 'span-create')?.body;
   for (const event of [trace, span]) {
-    assert.deepEqual(event?.skillRevisionRefs, ['skill.intent@2']);
-    assert.deepEqual(event?.skillContentHashes, ['hash-intent-two']);
+    assert.equal('skillRevisionRefs' in (event ?? {}), false);
+    assert.equal('skillContentHashes' in (event ?? {}), false);
+    const metadata = event?.metadata as Record<string, unknown>;
+    assert.deepEqual(metadata.skillRevisionRefs, ['skill.intent@2']);
+    assert.deepEqual(metadata.skillContentHashes, ['hash-intent-two']);
   }
   assert.equal(JSON.stringify(body).includes('private instruction body'), false);
 });

@@ -88,6 +88,7 @@ export interface HarnessStagePorts {
     workflowId: string;
     request: HarnessWorkflowInput;
     stage: 'intent_naming';
+    skillRevisionRefs?: readonly string[];
   }): Promise<{
     instructions: ResolvedSkillInstruction[];
     receipts: SkillInvocationReceipt[];
@@ -227,6 +228,82 @@ export class HarnessSnapshotDecisionError extends Error {
   }
 }
 
+const INTENT_SKILL_RESOLUTION_STEP = 'skill:resolve:intent';
+
+async function resolveIntentStageSkills(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+  ports: HarnessStagePorts,
+  runtime: HarnessWorkflowRuntime,
+) {
+  const frozen = await runtime.runStep(
+    INTENT_SKILL_RESOLUTION_STEP,
+    async () => {
+      const resolved =
+        (await ports.resolveStageSkills?.({
+          workflowId,
+          request,
+          stage: 'intent_naming',
+        })) ?? { instructions: [], receipts: [] };
+      return {
+        skillRevisionRefs: resolved.instructions.map(
+          ({ skillRevisionRef }) => skillRevisionRef,
+        ),
+        skillContentHashes: resolved.instructions.map(
+          ({ contentHash }) => contentHash,
+        ),
+        skillReceiptIds: resolved.receipts.map(
+          ({ invocationId }) => invocationId,
+        ),
+      };
+    },
+  );
+  if (frozen.skillRevisionRefs.length === 0) {
+    return { instructions: [], receipts: [] };
+  }
+  if (!ports.resolveStageSkills) {
+    throw new Error('Skill 解析端口不可用，无法恢复已冻结的 Skill。');
+  }
+  const resolved = await ports.resolveStageSkills({
+    workflowId,
+    request,
+    stage: 'intent_naming',
+    skillRevisionRefs: frozen.skillRevisionRefs,
+  });
+  const current = {
+    skillRevisionRefs: resolved.instructions.map(
+      ({ skillRevisionRef }) => skillRevisionRef,
+    ),
+    skillContentHashes: resolved.instructions.map(
+      ({ contentHash }) => contentHash,
+    ),
+    skillReceiptIds: resolved.receipts.map(
+      ({ invocationId }) => invocationId,
+    ),
+  };
+  if (
+    !sameOrderedValues(current.skillRevisionRefs, frozen.skillRevisionRefs) ||
+    !sameOrderedValues(
+      current.skillContentHashes,
+      frozen.skillContentHashes,
+    ) ||
+    !sameOrderedValues(current.skillReceiptIds, frozen.skillReceiptIds)
+  ) {
+    throw new Error('已冻结的 Skill 版本、内容哈希或回执不一致。');
+  }
+  return resolved;
+}
+
+function sameOrderedValues(
+  left: readonly string[],
+  right: readonly string[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 export async function runHarnessWorkflow(
   workflowId: string,
   request: HarnessWorkflowInput,
@@ -271,12 +348,12 @@ export async function runHarnessWorkflow(
     return executed.selection;
   };
   let activeRequest = request;
-  const intentSkills =
-    (await ports.resolveStageSkills?.({
-      workflowId,
-      request,
-      stage: 'intent_naming',
-    })) ?? { instructions: [], receipts: [] };
+  const intentSkills = await resolveIntentStageSkills(
+    workflowId,
+    request,
+    ports,
+    runtime,
+  );
   const intent = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -543,12 +620,12 @@ async function runMediaHarnessWorkflow(
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: eventSequence++ });
   let activeRequest = request;
-  const intentSkills =
-    (await ports.resolveStageSkills?.({
-      workflowId,
-      request,
-      stage: 'intent_naming',
-    })) ?? { instructions: [], receipts: [] };
+  const intentSkills = await resolveIntentStageSkills(
+    workflowId,
+    request,
+    ports,
+    runtime,
+  );
   const intent = await runtime.runStep(
     harnessEffectKey(
       workflowId,

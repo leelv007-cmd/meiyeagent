@@ -196,7 +196,7 @@ test('SkillBinding enforces required, planner-selected, user-selected and disabl
       userSelectedSkillRefs: [],
       workflowRevisionRef: 'workflow.binding-matrix@1',
     }),
-    /outside the current stage allowlist/u,
+    /当前阶段允许列表之外/u,
   );
 
   await service.bindRevision({
@@ -213,7 +213,7 @@ test('SkillBinding enforces required, planner-selected, user-selected and disabl
       userSelectedSkillRefs: [],
       workflowRevisionRef: 'workflow.binding-matrix@2',
     }),
-    /outside the current stage allowlist/u,
+    /当前阶段允许列表之外/u,
   );
 });
 
@@ -444,7 +444,7 @@ test('Skill output cannot write ContentPackage and never reaches a child effect'
         },
       },
     ),
-    /cannot write ContentPackage/u,
+    /不能写入 ContentPackage/u,
   );
   assert.equal(executions, 0);
 });

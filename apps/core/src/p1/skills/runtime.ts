@@ -29,20 +29,24 @@ class DurableSkillInstructionResolver
         workflowRevisionRef = recipe.workflowRevisionRef;
       }
     }
-    const resolved = await this.service.resolveStage({
-      workflowRevisionRef,
-      stage: input.stage,
-      plannerSelectedSkillRefs: [],
-      userSelectedSkillRefs: [],
-    });
+    const instructions = input.skillRevisionRefs
+      ? await this.service.resolveFrozenRevisions(input.skillRevisionRefs)
+      : (
+          await this.service.resolveStage({
+            workflowRevisionRef,
+            stage: input.stage,
+            plannerSelectedSkillRefs: [],
+            userSelectedSkillRefs: [],
+          })
+        ).selected;
     const receipts = await this.service.recordPromptMaterializationReceipts({
       workspaceId: input.workspaceId,
       taskId: input.workflowId,
       workflowRevisionRef,
       stage: input.stage,
-      instructions: resolved.selected,
+      instructions,
     });
-    return { instructions: resolved.selected, receipts };
+    return { instructions, receipts };
   }
 }
 

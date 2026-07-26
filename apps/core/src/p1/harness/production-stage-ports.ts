@@ -116,6 +116,7 @@ export interface HarnessSkillInstructionResolverPort {
     recipeId?: string;
     recipeRevisionId?: string;
     stage: 'intent_naming';
+    skillRevisionRefs?: readonly string[];
   }): Promise<{
     instructions: ResolvedSkillInstruction[];
     receipts: SkillInvocationReceipt[];
@@ -220,6 +221,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
           }
         : {}),
       stage: input.stage,
+      ...(input.skillRevisionRefs
+        ? { skillRevisionRefs: input.skillRevisionRefs }
+        : {}),
     });
   }
 

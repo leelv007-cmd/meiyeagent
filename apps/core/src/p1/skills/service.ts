@@ -70,7 +70,7 @@ export class SkillService {
   }) {
     const catalog = await this.repository.getCatalog(input.skillId);
     if (!catalog) {
-      throw new P1DomainError('NOT_FOUND', 'Skill catalog entry was not found.');
+      throw new P1DomainError('NOT_FOUND', 'Skill 目录项不存在。');
     }
     validateManifest(input.manifest);
     validatePrompt(input.prompt, input.instruction);
@@ -118,7 +118,7 @@ export class SkillService {
     };
     await this.repository.acceptRevision(next);
     const catalog = await this.repository.getCatalog(revision.skillId);
-    if (!catalog) throw new P1DomainError('NOT_FOUND', 'Skill catalog not found.');
+    if (!catalog) throw new P1DomainError('NOT_FOUND', 'Skill 目录不存在。');
     await this.repository.putCatalog({
       ...catalog,
       activeRevisionRef: next.skillRevisionRef,
@@ -173,7 +173,7 @@ export class SkillService {
   }) {
     const source = await this.repository.getBinding(input.sourceBindingId);
     if (!source) {
-      throw new P1DomainError('NOT_FOUND', 'Source Skill binding was not found.');
+      throw new P1DomainError('NOT_FOUND', '源 Skill 绑定不存在。');
     }
     if (source.status !== 'active') {
       fail('只能回滚当前仍生效的 Skill 绑定。');
@@ -186,7 +186,7 @@ export class SkillService {
       targetRevision.status !== 'accepted_frozen' ||
       targetRevision.skillId !== sourceRevision.skillId
     ) {
-      fail('Skill rollback requires a frozen revision of the same Skill.');
+      fail('Skill 回滚必须选择同一 Skill 的已冻结版本。');
     }
     if (targetRevision.skillRevisionRef === sourceRevision.skillRevisionRef) {
       fail('回滚目标版本必须不同于当前版本。');
@@ -232,7 +232,7 @@ export class SkillService {
   }) {
     const revision = await this.requireRevision(input.skillRevisionRef);
     if (revision.status !== 'accepted_frozen') {
-      fail('Only an accepted and frozen Skill revision can be deployed.');
+      fail('只能部署已受理冻结的 Skill 版本。');
     }
     const firstReleaseArtifact =
       input.artifactType === 'instruction' ||
@@ -254,7 +254,7 @@ export class SkillService {
       }
     }
     if (input.executionMode !== revision.manifest.executionMode) {
-      fail('Skill deployment execution mode must match the canonical revision.');
+      fail('Skill 部署执行模式必须与权威版本一致。');
     }
     const deployment: SkillDeployment = {
       deploymentId: required(input.deploymentId, 'Deployment ID'),
@@ -320,9 +320,23 @@ export class SkillService {
       }
     }
     if ([...planner].some((ref) => !allowedPlannerRefs.has(ref))) {
-      fail('Planner selected a Skill outside the current stage allowlist.');
+      fail('规划器选择了当前阶段允许列表之外的 Skill。');
     }
     return { allowlist, selected };
+  }
+
+  async resolveFrozenRevisions(
+    skillRevisionRefs: readonly string[],
+  ): Promise<ResolvedSkillInstruction[]> {
+    const resolved: ResolvedSkillInstruction[] = [];
+    for (const reference of skillRevisionRefs) {
+      const revision = await this.requireRevision(reference);
+      if (revision.status !== 'accepted_frozen') {
+        fail('只能恢复已受理冻结的 Skill 版本。');
+      }
+      resolved.push(toResolved(revision));
+    }
+    return resolved;
   }
 
   async recordPromptMaterializationReceipts(input: {
@@ -436,27 +450,27 @@ export class SkillService {
     }
     const revision = await this.requireRevision(input.skillRevisionRef);
     if (revision.status !== 'accepted_frozen') {
-      fail('Only an accepted and frozen Skill revision can be invoked.');
+      fail('只能调用已受理冻结的 Skill 版本。');
     }
     if (input.output.target === 'content_package') {
-      fail('Skill output cannot write ContentPackage.');
+      fail('Skill 输出不能写入 ContentPackage。');
     }
     if (input.output.schemaRevision !== revision.manifest.outputSchemaRef) {
-      fail('Skill output does not use the frozen output Schema revision.');
+      fail('Skill 输出未使用已冻结的输出 Schema 版本。');
     }
     const validation = outputValidator.validate({
       schemaRevision: input.output.schemaRevision,
       value: input.output.value,
     });
     if (!validation.schemaValid || !validation.qualityPassed) {
-      fail('Skill output failed its Schema or quality gate.');
+      fail('Skill 输出未通过 Schema 或质量门。');
     }
     const callIds = input.calls.map((call) => required(call.callId, 'Call ID'));
     if (
       new Set(callIds).size !== callIds.length ||
       input.calls.length > revision.manifest.budget.maxChildEffects
     ) {
-      fail('Skill child effects exceed the frozen call budget.');
+      fail('Skill 子调用超过已冻结的调用预算。');
     }
     const declaredCostCap = input.calls.reduce(
       (total, call) => total + call.declaredBudgetCapCents,
@@ -470,7 +484,7 @@ export class SkillService {
       ) ||
       declaredCostCap > revision.manifest.budget.maxCostCents
     ) {
-      fail('Skill child effects exceed the frozen cost budget.');
+      fail('Skill 子调用超过已冻结的成本预算。');
     }
 
     const effects: SkillChildEffect[] = [];
@@ -571,7 +585,7 @@ export class SkillService {
   private async requireRevision(skillRevisionRef: string) {
     const revision = await this.repository.getRevision(skillRevisionRef);
     if (!revision) {
-      throw new P1DomainError('NOT_FOUND', 'Skill revision was not found.');
+      throw new P1DomainError('NOT_FOUND', 'Skill 版本不存在。');
     }
     return revision;
   }
@@ -609,7 +623,7 @@ function validatePrompt(prompt: HarnessFrozenPrompt, instruction: string) {
     !prompt.name.trim() ||
     !prompt.version.trim()
   ) {
-    fail('Prompt Skill must bind one exact prompt version and content hash.');
+    fail('Prompt Skill 必须绑定精确的提示词版本与内容哈希。');
   }
 }
 
@@ -654,7 +668,7 @@ function validateManifest(manifest: SkillRevisionManifest) {
     !Number.isInteger(manifest.budget.timeoutMs) ||
     manifest.budget.timeoutMs <= 0
   ) {
-    fail('Skill budget must be finite and non-negative.');
+    fail('Skill 预算必须为有限的非负数。');
   }
 }
 
@@ -674,7 +688,7 @@ function validateChildEffect(
       (reference) => !allowedScopes.has(reference.split(':', 1)[0] ?? ''),
     )
   ) {
-    fail('Skill child effect reads Context outside its declared scope.');
+    fail('Skill 子调用读取了声明范围之外的 Context。');
   }
 }
 
