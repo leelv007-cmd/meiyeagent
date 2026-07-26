@@ -542,9 +542,9 @@ test.describe
       await expect(quotaWall).toContainText(
         '当前额度不足，无法继续创作。可在此输入兑换码立即解锁。'
       );
-      await expect(
-        page.getByTestId('composer-quota-open-plans')
-      ).toHaveText('查看套餐');
+      await expect(page.getByTestId('composer-quota-open-plans')).toHaveText(
+        '查看套餐'
+      );
       await page.screenshot({
         fullPage: true,
         path: resolve(
@@ -553,5 +553,4 @@ test.describe
         ),
       });
     });
-
   });
