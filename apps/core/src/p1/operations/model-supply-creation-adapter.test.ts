@@ -259,6 +259,39 @@ test('forwards the canonical Operations billing task into Model Supply', async (
   });
 });
 
+test('routes native video submission through controlPlane.submitGeneration', async () => {
+  const expectedError = new Error('stop after native video request capture');
+  let capturedOperation: string | undefined;
+  const creation = new ModelSupplyCreationExecutor({
+    async submitGeneration(
+      _context: unknown,
+      request: { operation: string },
+    ) {
+      capturedOperation = request.operation;
+      throw expectedError;
+    },
+  } as unknown as ModelSupplyControlPlaneService);
+
+  await assert.rejects(
+    creation.submit({
+      context: {
+        actor: 'owner',
+        correlationId: 'corr-native-video',
+        userId: 'owner-a',
+        workspaceId: 'workspace-a',
+      },
+      contract: videoContract,
+      idempotencyKey: 'native-video-submit',
+      intent: '生成一条原生门店视频',
+      productUsageQuantity: 1,
+      workId: 'creative-work-video-native',
+    }),
+    expectedError,
+  );
+
+  assert.equal(capturedOperation, 'video.generate');
+});
+
 test('accepts an explicit local-fixture execution flag without live evidence', async () => {
   const creation = new ModelSupplyCreationExecutor({
     async getCatalog() {

@@ -1623,21 +1623,13 @@ function mediaStages(kind: 'image' | 'video'): HarnessMediaStagePorts {
           objectKey: `owned/${kind}-asset-1`,
           sha256: `${kind}-sha-1`,
           sizeBytes: 1024,
-          ...(kind === 'video'
-            ? {
-                compositionEvidence: {
-                  durationSeconds: 6,
-                } as NonNullable<
-                  HarnessMediaSelectionResult['asset']['compositionEvidence']
-                >,
-              }
-            : {}),
         },
         childRun: {
           runId: `${kind}-run-1`,
           runType: 'model_job',
           status: 'succeeded',
         },
+        ...(kind === 'video' ? { measuredDurationSeconds: 6 } : {}),
         trace: {
           stage: 'execution_selection',
           winnerCandidateId: `${kind}-asset-1`,

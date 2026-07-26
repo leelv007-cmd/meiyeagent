@@ -154,7 +154,7 @@ test('video summaries use public projections without exposing internal ids', () 
   );
   assert.doesNotMatch(
     summaries.map(({ href, label }) => `${label} ${href}`).join(' '),
-    /internal-workflow-id|model\.video-native/u
+    /internal-workflow-id|model\.media-generation/u
   );
 });
 test('read state is isolated by authenticated user', () => {

@@ -208,13 +208,13 @@ class WorkflowHarness implements VideoRegenerationWorkflowPort {
 
 function quoteInput(
   quoteId: string,
-  scope: 'shot' | 'full_compose',
+  scope: 'shot',
 ) {
   return {
     actorId: 'owner-1',
     quoteId,
     scope,
-    ...(scope === 'shot' ? { shotId: 'opening' } : {}),
+    shotId: 'opening',
     sourceRunId: 'source-run',
     workspaceId: 'workspace-1',
   };
@@ -264,7 +264,7 @@ function approvalHarness() {
 }
 
 describe('durable video regeneration application', () => {
-  it('uses one quote lifecycle for shot/full scopes and persists canonical derived workflows', async () => {
+  it('uses the shared quote lifecycle for shot regeneration and persists a derived workflow', async () => {
     const approval = approvalHarness();
     const billing = new BillingHarness();
     const repository = new MemoryRegenerationRepository();
@@ -278,51 +278,66 @@ describe('durable video regeneration application', () => {
       clock: () => new Date('2026-07-20T12:00:00.000Z'),
     });
 
-    for (const scope of ['shot', 'full_compose'] as const) {
-      const quoteId = `quote-${scope}`;
-      const quoted = await service.quote(quoteInput(quoteId, scope));
-      const taskId = `regen-${scope}`;
-      const confirmed = await service.confirmAndDispatch({
-        quoteId,
-        taskId,
-        workspaceId: 'workspace-1',
-      });
-      assert.equal(quoted.scope, scope);
-      assert.equal(confirmed.task.taskId, taskId);
-      assert.equal(billing.getUsage(taskId)?.status, 'reserved');
-    }
+    const quoted = await service.quote(quoteInput('quote-shot', 'shot'));
+    const confirmed = await service.confirmAndDispatch({
+      quoteId: 'quote-shot',
+      taskId: 'regen-shot',
+      workspaceId: 'workspace-1',
+    });
+    assert.equal(quoted.scope, 'shot');
+    assert.equal(confirmed.task.taskId, 'regen-shot');
+    assert.equal(billing.getUsage('regen-shot')?.status, 'reserved');
 
     assert.deepEqual(
       workflows.drafts.map((draft) => draft.shots.length),
-      [1, 2],
+      [1],
     );
     assert.deepEqual(
       workflows.drafts.map((draft) => draft.deliveryMode),
-      ['candidate_only', 'content_package'],
+      ['candidate_only'],
     );
     assert.ok(
       workflows.drafts.every(
         (draft) => draft.derivedFromWorkflowId === 'source-run',
       ),
     );
-    assert.equal(approval.approvals.length, 1);
-    const approvalKey = approval.approvals[0]?.approvalKey;
-    assert.match(
-      approvalKey ?? '',
-      /^video-regeneration:regen-full_compose:[a-f0-9]+$/,
-    );
-    assert.equal(
-      workflows.drafts[1]?.approvalReceiptId,
-      `approval:${approvalKey}`,
-    );
-    assert.equal(
-      approval.approvals[0]?.contract.quoteRevision,
-      workflows.drafts[1]?.executionContract?.quoteRevision,
-    );
+    assert.equal(approval.approvals.length, 0);
     assert.equal(workflows.drafts[0]?.approvalReceiptId, undefined);
   });
 
-  it('recovers the same supplier task for free and settles exactly once from trusted media duration', async () => {
+  it('returns an explicit unavailable terminal without confirming or reserving billing', async () => {
+    const billing = new BillingHarness();
+    const repository = new MemoryRegenerationRepository();
+    const workflows = new WorkflowHarness();
+    const service = new VideoRegenerationApplicationService({
+      approvalAuthority: approvalHarness().authority,
+      billing,
+      confirmUnavailableReason: '视频重生成能力升级中，本次未产生扣费。',
+      quoteAuthority,
+      repository,
+      workflows,
+    });
+    await service.quote(quoteInput('quote-unavailable', 'shot'));
+
+    await assert.rejects(
+      service.confirmAndDispatch({
+        quoteId: 'quote-unavailable',
+        taskId: 'regen-unavailable',
+        workspaceId: 'workspace-1',
+      }),
+      /视频重生成能力升级中，本次未产生扣费/u,
+    );
+
+    const quote = billing.getQuote('quote-unavailable');
+    assert.equal(quote?.lifecycleStatus, 'quoted');
+    assert.equal(quote?.taskId, undefined);
+    assert.equal(billing.getUsage('regen-unavailable'), null);
+    assert.deepEqual(billing.listProviderCosts('regen-unavailable'), []);
+    assert.equal(repository.tasks.size, 0);
+    assert.equal(workflows.drafts.length, 0);
+  });
+
+  it('recovers the same supplier task for free and refunds a later failure exactly once', async () => {
     const billing = new BillingHarness();
     const repository = new MemoryRegenerationRepository();
     const workflows = new WorkflowHarness();
@@ -334,7 +349,7 @@ describe('durable video regeneration application', () => {
       workflows,
       clock: () => new Date('2026-07-20T12:00:00.000Z'),
     });
-    await service.quote(quoteInput('quote-recover', 'full_compose'));
+    await service.quote(quoteInput('quote-recover', 'shot'));
     await service.confirmAndDispatch({
       quoteId: 'quote-recover',
       taskId: 'regen-recover',
@@ -368,7 +383,7 @@ describe('durable video regeneration application', () => {
     }
     assert.deepEqual(workflows.adoptions, ['regen-recover']);
 
-    const completed = {
+    const failed = {
       ...workflows.source,
       attempts: [
         {
@@ -382,37 +397,15 @@ describe('durable video regeneration application', () => {
           status: 'completed',
         },
       ],
-      composedAsset: {
-        compositionEvidence: {
-          clipAssetIds: ['clip-1'],
-          composerRevision: 'composer-1',
-          sourceHashes: ['a'.repeat(64)],
-        },
-        contentType: 'video/mp4',
-        createdAt: '2026-07-20T12:00:00.000Z',
-        dataClass: [],
-        id: 'video-1',
-        objectKey: 'workspace-1/video-1.mp4',
-        sha256: 'b'.repeat(64),
-        sizeBytes: 10,
-        technicalValidation: {
-          durationSeconds: 6,
-          evidenceKind: 'measured',
-          playable: true,
-        },
-        workspaceId: 'workspace-1',
-      },
       derivedFromWorkflowId: 'source-run',
       id: 'regen-recover',
-      status: 'completed',
+      status: 'failed',
     } as unknown as DurableVideoWorkflow;
-    await service.settleFromWorkflow(completed);
-    await service.settleFromWorkflow(completed);
+    await service.settleFromWorkflow(failed);
+    await service.settleFromWorkflow(failed);
 
     const settled = billing.getUsage('regen-recover');
-    assert.equal(settled?.status, 'partially_refunded');
-    assert.equal(settled?.settledQuantity, 6);
-    assert.equal(billing.getQuoteByTask('regen-recover')?.billedSeconds, 6);
+    assert.equal(settled?.status, 'refunded');
   });
 
   it('refunds a cancelled derived workflow once and persists its terminal task truth', async () => {

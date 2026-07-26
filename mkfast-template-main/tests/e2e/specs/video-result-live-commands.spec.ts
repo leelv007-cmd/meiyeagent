@@ -1,11 +1,15 @@
 import { expect, test, type Page, type Response } from '@playwright/test';
+import postgres from 'postgres';
 
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { seedConfirmedStore } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 import {
   JOURNEY_CONTRACTS,
   submitComposerJourney,
@@ -39,6 +43,195 @@ function waitForP1Command(
   );
 }
 
+async function seedCanonicalVideoWorkflow(input: {
+  email: string;
+  workId: string;
+}) {
+  const sql = postgres(
+    process.env.DATABASE_URL ?? 'postgres://meiye:meiye@127.0.0.1:54329/meiye',
+    { max: 1 }
+  );
+  const workflowId = `video-workflow-e2e-${crypto.randomUUID()}`;
+  const timestamp = new Date().toISOString();
+  try {
+    const [owner] = await sql<Array<{ actorId: string; workspaceId: string }>>`
+      SELECT u.id AS "actorId", jobs.workspace_id AS "workspaceId"
+      FROM p1_creative_jobs jobs
+      INNER JOIN workspace_memberships memberships
+        ON memberships.workspace_id = jobs.workspace_id
+      INNER JOIN "user" u ON u.id = memberships.user_id
+      WHERE jobs.payload->>'workId' = ${input.workId}
+        AND jobs.payload->>'videoWorkflowId' IS NULL
+        AND u.email = ${input.email}
+      ORDER BY jobs.updated_at DESC
+      LIMIT 1
+    `;
+    expect(owner).toBeTruthy();
+    const workspaceId = owner!.workspaceId;
+    const actorId = owner!.actorId;
+    const assets = [
+      ['opening-a', 'video/mp4'],
+      ['opening-b', 'video/mp4'],
+      ['detail-a', 'video/mp4'],
+    ] as const;
+    const asset = (assetId: string) => ({
+      contentType: 'video/mp4',
+      createdAt: timestamp,
+      dataClass: [],
+      id: assetId,
+      objectKey: `${workspaceId}/e2e/${assetId}.mp4`,
+      sha256: 'a'.repeat(64),
+      sizeBytes: 1,
+      technicalValidation: {
+        durationSeconds: 6,
+        evidenceKind: 'measured',
+        playable: true,
+      },
+      workspaceId,
+    });
+    const candidate = (index: number, assetId: string) => ({
+      assetId,
+      generationKey: `${workflowId}:${assetId}`,
+      index,
+      latencyMs: 1,
+      prompt: 'E2E canonical video candidate',
+      status: 'completed',
+      technicalValidation: asset(assetId).technicalValidation,
+    });
+    const taskId = `video-task:${workflowId}`;
+    const jobId = `video-job:${workflowId}`;
+    const videoTask = {
+      aigcLabelEnabled: true,
+      catalogModelId: 'seedance-2',
+      dataClass: [],
+      kind: 'video.composed',
+      shots: [
+        {
+          candidatesPerShot: 2,
+          durationSeconds: 6,
+          id: 'opening',
+          prompt: '门店开场',
+          selectedCandidateIndex: 0,
+        },
+        {
+          candidatesPerShot: 1,
+          durationSeconds: 6,
+          id: 'detail',
+          prompt: '护理细节',
+          selectedCandidateIndex: 0,
+        },
+      ],
+      storyboardRevision: 'e2e-storyboard-v1',
+      storyboardVersion: 1,
+      subtitleText: 'E2E 初始字幕',
+    };
+    const videoJob = {
+      attempts: [],
+      candidatesByShot: {
+        detail: [candidate(0, 'detail-a')],
+        opening: [candidate(0, 'opening-a'), candidate(1, 'opening-b')],
+      },
+      confirmed: true,
+      createdAt: timestamp,
+      revision: 0,
+      status: 'awaiting_quality_review',
+      updatedAt: timestamp,
+    };
+    await sql.begin(async (transaction) => {
+      await transaction`
+        INSERT INTO p1_content_tasks (workspace_id, id, payload, updated_at)
+        VALUES (
+          ${workspaceId},
+          ${taskId},
+          ${transaction.json({
+            actorId,
+            canonicalWorkId: input.workId,
+            createdAt: timestamp,
+            dueAt: timestamp,
+            executable: true,
+            id: taskId,
+            relatedObject: { id: input.workId, kind: 'work' },
+            risk: 'normal',
+            source: 'manual',
+            status: 'needs_review',
+            title: `Video workflow ${workflowId}`,
+            updatedAt: timestamp,
+            videoTask,
+            videoWorkflowId: workflowId,
+            workspaceId,
+          })},
+          ${timestamp}
+        )
+      `;
+      await transaction`
+        INSERT INTO p1_creative_jobs (workspace_id, id, payload, updated_at)
+        VALUES (
+          ${workspaceId},
+          ${jobId},
+          ${transaction.json({
+            actorId,
+            createdAt: timestamp,
+            id: jobId,
+            outputAssetIds: assets.map(([assetId]) => assetId),
+            outputContentIds: [],
+            productUsageQuantity: 1,
+            status: 'recoverable',
+            submissionKey: `video:${workflowId}`,
+            taskId,
+            updatedAt: timestamp,
+            videoJob,
+            videoWorkflowId: workflowId,
+            workId: input.workId,
+            workspaceId,
+          })},
+          ${timestamp}
+        )
+      `;
+      for (const [assetId] of assets) {
+        const ownedAsset = asset(assetId);
+        await transaction`
+          INSERT INTO p1_creative_assets (workspace_id, id, payload, updated_at)
+          VALUES (
+            ${workspaceId},
+            ${`video-asset:${workflowId}:${assetId}`},
+            ${transaction.json({
+              asset: ownedAsset,
+              assetId,
+              createdAt: timestamp,
+              id: `video-asset:${workflowId}:${assetId}`,
+              objectKey: ownedAsset.objectKey,
+              ownedAssetId: assetId,
+              sha256: ownedAsset.sha256,
+              sizeBytes: ownedAsset.sizeBytes,
+              title: 'Video shot candidate',
+              videoWorkflowId: workflowId,
+              workId: input.workId,
+              workspaceId,
+            })},
+            ${timestamp}
+          )
+        `;
+      }
+      await transaction`
+        UPDATE p1_creative_jobs
+        SET payload = jsonb_set(
+              payload,
+              '{providerJobId}',
+              to_jsonb(${workflowId}::text),
+              true
+            ),
+            updated_at = NOW()
+        WHERE workspace_id = ${workspaceId}
+          AND payload->>'workId' = ${input.workId}
+          AND payload->>'videoWorkflowId' IS NULL
+      `;
+    });
+    return workflowId;
+  } finally {
+    await sql.end();
+  }
+}
+
 test.describe('video Result canonical live commands', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -64,12 +257,24 @@ test.describe('video Result canonical live commands', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
     await page.goto('/dashboard');
+    await page.getByTestId('composer-lens-option-video').click();
+    const authorized = await seedComposerInlineAuthorize(page, {
+      fileName: 'video-live-commands-reference.png',
+    });
+    await page.reload();
+    await page.getByTestId('composer-lens-option-video').click();
+    await seedComposerInlineAuthorize(page, {
+      expectedAssetId: authorized.id,
+      fileName: 'video-live-commands-reference.png',
+    });
     const workId = await submitComposerJourney(
       page,
       contract,
       `皮肤护理 video-live-commands-${crypto.randomUUID()}`
     );
     await waitForResultJourney(page, contract, workId);
+    await seedCanonicalVideoWorkflow({ email: user.email, workId });
+    await page.reload();
 
     const candidate = page
       .locator('[data-testid="video-shot-candidate"][aria-pressed="false"]')
@@ -152,15 +357,14 @@ test.describe('video Result canonical live commands', () => {
     );
     await page.getByTestId('video-regen-confirm-action').click();
     const confirmResponse = await confirmResponsePromise;
-    expect(confirmResponse.ok(), await confirmResponse.text()).toBeTruthy();
+    expect(confirmResponse.ok()).toBeFalsy();
     const confirmRequest = confirmResponse.request().postDataJSON() as {
       payload: { quoteId?: string; taskId?: string };
     };
     expect(confirmRequest.payload.quoteId).toBeTruthy();
     expect(confirmRequest.payload.taskId).toMatch(/^video-regen-/u);
-    await expect(page.getByTestId('video-result-status')).toContainText(
-      /成片生成中|成片待确认/u,
-      { timeout: 60_000 }
-    );
+    await expect(
+      page.getByText('视频重生成能力升级中，本次未产生扣费。')
+    ).toBeVisible({ timeout: 60_000 });
   });
 });

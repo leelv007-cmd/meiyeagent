@@ -280,7 +280,7 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     requiredP1Capability(
       'command',
       'model-supply',
-      'video_workflow_select_candidate',
+      'video_workflow_edit',
     ),
     'content.review',
   );
@@ -296,7 +296,7 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     requiredP1Capability(
       'query',
       'model-supply',
-      'video_workflow_public_latest',
+      'video_workflows',
     ),
     'workspace.read',
   );

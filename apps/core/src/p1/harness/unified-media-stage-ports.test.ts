@@ -90,6 +90,10 @@ test("image and video use the existing Model Supply path with stable submission 
 		assert.equal(selection.childRun.productUsage?.status, "committed");
 		assert.equal(selection.childRun.providerAttempts?.length, 1);
 		assert.equal(selection.childRun.providerCosts?.length, 1);
+		assert.equal(
+			selection.measuredDurationSeconds,
+			kind === "video" ? 8 : undefined,
+		);
 	}
 });
 
@@ -1147,6 +1151,17 @@ function completedResult(
 			sha256: `${kind}-sha-${suffix}`,
 			sizeBytes: 1024,
 			sourceTaskRef: `provider-task-${kind}-${suffix}`,
+			...(kind === "video"
+				? {
+						technicalValidation: {
+							playable: true,
+							codec: "h264" as const,
+							durationSeconds: 8,
+							hashVerified: true,
+							evidenceKind: "measured" as const,
+						},
+					}
+				: {}),
 		},
 		usage: {
 			id: `usage-${kind}-${suffix}`,

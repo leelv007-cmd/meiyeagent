@@ -2,10 +2,10 @@
  * #103 Video regeneration confirm + settle (WT-E / D-088).
  *
  * Acceptance:
- * - shot + full_compose reuse quote→confirm→settle; only scope differs
+ * - shot regeneration reuses quote→confirm→settle
  * - free actions never open/mutate product usage
  * - retry re-quotes; recover same supplier task does not
- * - shot complete → candidates only; 使用此成片 → ContentPackage revision
+ * - shot complete produces candidates only
  */
 
 import assert from 'node:assert/strict';
@@ -65,21 +65,9 @@ function shotQuoteInput(
   };
 }
 
-function fullComposeQuoteInput(
-  overrides: Partial<BuildVideoRegenQuoteInput> = {},
-): BuildVideoRegenQuoteInput {
-  return shotQuoteInput({
-    scope: 'full_compose',
-    targetSeconds: 24,
-    shotId: undefined,
-    ...overrides,
-  });
-}
-
 describe('Video regeneration confirm projectors', () => {
-  it('labels scopes and per-second billing explicitly', () => {
+  it('labels shot regeneration and per-second billing explicitly', () => {
     assert.equal(actionLabelForScope('shot'), '重新生成此镜头');
-    assert.equal(actionLabelForScope('full_compose'), '重新合成整段');
 
     const quotes = new ProductQuoteService({ clock: () => fixedNow });
     const quoted = quotes.buildQuote({
@@ -133,49 +121,28 @@ describe('Video regeneration confirm projectors', () => {
   });
 });
 
-describe('quote→confirm→settle contract (both scopes)', () => {
-  it('shot and full_compose share the same product-billing lifecycle; only scope differs', () => {
+describe('quote→confirm→settle contract', () => {
+  it('settles shot regeneration through the shared product-billing lifecycle', () => {
     const regen = service();
 
     const shot = regen.quoteForRegeneration(
       shotQuoteInput({ quoteId: 'quote-shot-1' }),
     );
-    const full = regen.quoteForRegeneration(
-      fullComposeQuoteInput({ quoteId: 'quote-full-1' }),
-    );
 
     assert.equal(shot.confirm.scope, 'shot');
-    assert.equal(full.confirm.scope, 'full_compose');
     assert.equal(shot.confirm.actionLabel, '重新生成此镜头');
-    assert.equal(full.confirm.actionLabel, '重新合成整段');
-    // Same billing mode + formula path; different target/quoted seconds.
-    assert.equal(shot.quote.billingMode, full.quote.billingMode);
-    assert.equal(shot.quote.formula.unitRate, full.quote.formula.unitRate);
     assert.equal(shot.confirm.targetSeconds, 6);
-    assert.equal(full.confirm.targetSeconds, 24);
     assert.equal(shot.confirm.billingModeLabel, '按生成成片 6 秒计费');
-    assert.equal(full.confirm.billingModeLabel, '按生成成片 24 秒计费');
 
     const shotConfirmed = regen.confirmRegeneration({
       quoteId: 'quote-shot-1',
       taskId: 'task-shot-1',
       deploymentId: 'dep-video-a',
     });
-    const fullConfirmed = regen.confirmRegeneration({
-      quoteId: 'quote-full-1',
-      taskId: 'task-full-1',
-      deploymentId: 'dep-video-a',
-    });
 
     assert.equal(shotConfirmed.quote.lifecycleStatus, 'dispatched');
-    assert.equal(fullConfirmed.quote.lifecycleStatus, 'dispatched');
     assert.equal(shotConfirmed.usage.resource, 'video');
-    assert.equal(fullConfirmed.usage.resource, 'video');
-    // Independent quotes / tasks
-    assert.notEqual(shotConfirmed.task.taskId, fullConfirmed.task.taskId);
-    assert.notEqual(shotConfirmed.quote.quoteId, fullConfirmed.quote.quoteId);
     assert.equal(shotConfirmed.task.scope, 'shot');
-    assert.equal(fullConfirmed.task.scope, 'full_compose');
     assert.equal(shotConfirmed.task.sourceRunId, 'run-parent-1');
 
     const shotSettled = regen.settleRegeneration({
@@ -183,18 +150,9 @@ describe('quote→confirm→settle contract (both scopes)', () => {
       trustedUsage: { kind: 'media_duration', actualSeconds: 6 },
       attemptId: 'attempt-task-shot-1',
     });
-    const fullSettled = regen.settleRegeneration({
-      quoteId: 'quote-full-1',
-      trustedUsage: { kind: 'provider_usage', actualSeconds: 24 },
-      attemptId: 'attempt-task-full-1',
-    });
-
     assert.equal(shotSettled.settle.settlementStatus, 'reconciled');
-    assert.equal(fullSettled.settle.settlementStatus, 'reconciled');
     assert.equal(shotSettled.settle.scope, 'shot');
-    assert.equal(fullSettled.settle.scope, 'full_compose');
     assert.equal(shotSettled.usage.settledQuantity, 6);
-    assert.equal(fullSettled.usage.settledQuantity, 24);
   });
 
   it('each regen creates a new derived task with a new independent quote', () => {
@@ -449,8 +407,8 @@ describe('retry vs recover split', () => {
   });
 });
 
-describe('shot candidates vs 使用此成片 ContentPackage revision', () => {
-  it('single-shot complete only produces shot candidates (no ContentPackage revision)', () => {
+describe('shot candidates', () => {
+  it('single-shot completion produces only shot candidates', () => {
     const regen = service();
     regen.quoteForRegeneration(shotQuoteInput({ quoteId: 'quote-cand' }));
     regen.confirmRegeneration({
@@ -473,80 +431,6 @@ describe('shot candidates vs 使用此成片 ContentPackage revision', () => {
     assert.equal(task.status, 'shot_candidates_ready');
     assert.equal(task.shotCandidates.length, 1);
     assert.equal(task.shotCandidates[0]?.assetId, 'asset-clip-1');
-    assert.equal(task.composedCandidateAssetId, undefined);
-    // No package was written
-    assert.equal(regen.getContentPackage('pkg-any'), undefined);
-
-    // Adopting film from a shot-scope task is rejected
-    assert.throws(
-      () =>
-        regen.adoptComposedFilm({
-          taskId: 'task-cand',
-          composedAssetId: 'asset-clip-1',
-          contentPackageId: 'pkg-1',
-        }),
-      (error: unknown) =>
-        error instanceof P1DomainError && error.code === 'INVALID_STATE',
-    );
-  });
-
-  it('使用此成片 writes a ContentPackage revision from full_compose', () => {
-    const regen = service();
-    regen.quoteForRegeneration(
-      fullComposeQuoteInput({ quoteId: 'quote-film' }),
-    );
-    regen.confirmRegeneration({
-      quoteId: 'quote-film',
-      taskId: 'task-film',
-      deploymentId: 'dep-video-a',
-    });
-    regen.settleRegeneration({
-      quoteId: 'quote-film',
-      trustedUsage: { kind: 'media_duration', actualSeconds: 24 },
-    });
-    regen.completeComposedCandidate({
-      taskId: 'task-film',
-      composedAssetId: 'asset-composed-1',
-    });
-
-    assert.equal(regen.getContentPackage('pkg-video-1'), undefined);
-
-    const adopted = regen.adoptComposedFilm({
-      taskId: 'task-film',
-      composedAssetId: 'asset-composed-1',
-      contentPackageId: 'pkg-video-1',
-      workId: 'work-1',
-      expectedRevision: 0,
-    });
-
-    assert.equal(adopted.task.status, 'adopted');
-    assert.equal(adopted.contentPackage.revision, 1);
-    assert.equal(adopted.contentPackage.composedAssetId, 'asset-composed-1');
-    assert.equal(adopted.contentPackage.adoptedFromTaskId, 'task-film');
-    assert.equal(regen.getContentPackage('pkg-video-1')?.revision, 1);
-
-    // Second adopt advances revision (OCC)
-    const second = regen.adoptComposedFilm({
-      taskId: 'task-film',
-      composedAssetId: 'asset-composed-2',
-      contentPackageId: 'pkg-video-1',
-      expectedRevision: 1,
-    });
-    assert.equal(second.contentPackage.revision, 2);
-    assert.equal(second.contentPackage.composedAssetId, 'asset-composed-2');
-
-    assert.throws(
-      () =>
-        regen.adoptComposedFilm({
-          taskId: 'task-film',
-          composedAssetId: 'asset-composed-3',
-          contentPackageId: 'pkg-video-1',
-          expectedRevision: 1,
-        }),
-      (error: unknown) =>
-        error instanceof P1DomainError &&
-        error.code === 'IDEMPOTENCY_CONFLICT',
-    );
   });
 });
 

@@ -219,5 +219,5 @@ test('the collapsed global center includes an active video Job without exposing 
   );
 
   assert.match(html, /1 个进行中/u);
-  assert.doesNotMatch(html, /private-workflow-id|model\.video-native/u);
+  assert.doesNotMatch(html, /private-workflow-id|model\.media-generation/u);
 });
