@@ -179,7 +179,9 @@ test.describe('T31 三类卡与确认卡', () => {
     expect(questionOrder).toBe('progress-then-question');
     // The harness raises this gap with free text and no options, so the answer
     // path is the text box — see fixtureStructuredOutput / fallbackGuidanceGap.
-    await page.getByTestId('composer-question-answer').fill('皮肤管理套餐 88 元');
+    await page
+      .getByTestId('composer-question-answer')
+      .fill('皮肤管理套餐 88 元');
     await page.getByTestId('composer-question-submit').click();
 
     // ③ 成品交付卡 — the run finishes inside the conversation.
