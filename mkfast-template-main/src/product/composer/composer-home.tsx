@@ -145,7 +145,6 @@ import {
 import {
   ComposerQuestionCard,
   composerQuestionDecision,
-  composerQuestionEditingDecision,
 } from './composer-question-card';
 import {
   composerQuestionHold,
@@ -595,6 +594,9 @@ export function ComposerHome({
             ...(submissionDurationSeconds
               ? { durationSeconds: submissionDurationSeconds }
               : {}),
+            ...(submissionRecipe.delivery.notePageBound
+              ? { notePageBound: submissionRecipe.delivery.notePageBound }
+              : {}),
           },
         })
       : null;
@@ -868,25 +870,6 @@ export function ComposerHome({
       }
     },
     [decisionQuery, pendingQuestion, taskId]
-  );
-
-  const markQuestionEditing = useCallback(
-    async (value: string) => {
-      if (!pendingQuestion || !taskId) return;
-      try {
-        await submitHarnessDecision(
-          taskId,
-          composerQuestionEditingDecision({
-            question: pendingQuestion,
-            idempotencyKey: `composer-decision:${pendingQuestion.questionId}:editing`,
-            value,
-          })
-        );
-      } catch {
-        toast.error(workbench_operation_failed());
-      }
-    },
-    [pendingQuestion, taskId]
   );
 
   const addSource = (assetId: string) => {
@@ -1609,6 +1592,23 @@ export function ComposerHome({
         session={session}
         stream={tokenStream}
       />
+
+      {preferencesQuery.isError ? (
+        <div
+          className="rounded-2xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm"
+          data-testid="composer-model-preferences-error"
+          role="alert"
+        >
+          <p>暂时没能读取你的模型偏好，当前不会提交创作任务。</p>
+          <button
+            className="mt-2 font-medium underline underline-offset-4"
+            onClick={() => void preferencesQuery.refetch()}
+            type="button"
+          >
+            重新读取
+          </button>
+        </div>
+      ) : null}
 
       <ComposerPromptBar
         ariaLabel={creation_entry_intent_aria()}

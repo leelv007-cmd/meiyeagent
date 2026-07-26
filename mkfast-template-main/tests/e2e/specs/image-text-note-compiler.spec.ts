@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { MAX_NOTE_PLAN_PAGE_COUNT, type QuestionCard } from '@meiye/contracts';
+import type { QuestionCard } from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -400,7 +400,7 @@ test.describe
     test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
     test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-    test('Composer confirmation timeout → dual styles → selected pages → full revision and manifest', async ({
+    test('Composer confirmation → dual styles → selected pages → full revision and manifest', async ({
       page,
       request,
     }) => {
@@ -419,14 +419,13 @@ test.describe
         )
         .toBe('note_plan_confirmation');
       const confirmation = await readPendingQuestion(page, submission.taskId);
-      expect(confirmation?.continuation).toMatchObject({
-        autoContinue: true,
-        blocker: null,
-        pauseOnEdit: true,
-      });
-      expect(confirmation?.continuation?.timeoutSeconds).toBeGreaterThan(0);
-      expect(confirmation?.continuation?.defaultValue.trim()).toBeTruthy();
+      expect(confirmation?.options.map(({ id }) => id)).toContain(
+        'continue_default'
+      );
       await expect(page.getByTestId('composer-question-card')).toBeVisible();
+      await page
+        .getByTestId('composer-question-option-continue_default')
+        .click();
 
       await expect
         .poll(
@@ -522,7 +521,7 @@ test.describe
       expect(usage).toMatchObject({
         reservedUnits: [
           { resource: 'copy', quantity: 2 },
-          { resource: 'image', quantity: MAX_NOTE_PLAN_PAGE_COUNT },
+          { resource: 'image', quantity: 3 },
         ],
         settledUnits: [
           { resource: 'copy', quantity: 2 },
@@ -531,15 +530,8 @@ test.describe
             quantity: selected?.note?.plan.pages.length,
           },
         ],
-        refundedUnits: [
-          {
-            resource: 'image',
-            quantity:
-              MAX_NOTE_PLAN_PAGE_COUNT -
-              (selected?.note?.plan.pages.length ?? 0),
-          },
-        ],
-        status: 'partially_refunded',
+        refundedUnits: [],
+        status: 'committed',
       });
       expect(contentPackage.marketing?.contextBundle?.bundleId).toBeTruthy();
       expect(contentPackage.marketing?.factRefs).toEqual(expect.any(Array));
@@ -566,47 +558,4 @@ test.describe
       await assertZipDownload(download, IMAGE_TEXT_CONTRACT, adopted.revision);
     });
 
-    test('editing pauses confirmation timeout until the merchant submits', async ({
-      page,
-      request,
-    }) => {
-      test.setTimeout(360_000);
-      await registerFundedNoteUser(page, request);
-
-      const submission = await submitNoteJourney(page);
-      const streamPromise = collectWorkflowSse(page, submission.taskId);
-      await expect
-        .poll(
-          async () =>
-            (await readPendingQuestion(page, submission.taskId))?.response
-              .field,
-          { timeout: 30_000 }
-        )
-        .toBe('note_plan_confirmation');
-      const confirmation = await readPendingQuestion(page, submission.taskId);
-      const timeoutSeconds = confirmation?.continuation?.timeoutSeconds ?? 0;
-      expect(timeoutSeconds).toBeGreaterThan(0);
-
-      await page
-        .getByTestId('composer-question-answer')
-        .fill('请重点说明夏日护理适合的场景');
-      await page.waitForTimeout((timeoutSeconds + 2) * 1_000);
-      expect(
-        (await readPendingQuestion(page, submission.taskId))?.response.field
-      ).toBe('note_plan_confirmation');
-
-      await page.getByTestId('composer-question-submit').click();
-      await expect
-        .poll(
-          async () =>
-            (await readPendingQuestion(page, submission.taskId))?.response
-              .field,
-          { timeout: 30_000 }
-        )
-        .toBe('note_style');
-      await page
-        .getByTestId('composer-question-option-practical_guide')
-        .click();
-      expect((await streamPromise).status).toBe('success');
-    });
   });

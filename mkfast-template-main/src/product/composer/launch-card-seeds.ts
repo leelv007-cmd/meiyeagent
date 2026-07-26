@@ -98,6 +98,7 @@ export const LAUNCH_CARD_SEEDS: readonly LaunchCardSeedSpec[] = [
       deliverableKind: 'note',
       quantity: 1,
       aspectRatio: '3:4',
+      notePageBound: 3,
     },
     sourceRequirements: [
       { slot: 'case_image', required: true, kinds: ['image'] },
