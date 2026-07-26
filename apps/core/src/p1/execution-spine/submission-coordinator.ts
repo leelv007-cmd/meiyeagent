@@ -390,7 +390,18 @@ function productUsageUnits(
 		if (!Number.isSafeInteger(deliverable.durationSeconds)) {
 			throw new Error("Video submission requires whole duration seconds.");
 		}
-		return [{ resource: "video", quantity: deliverable.durationSeconds as number }];
+		// The merchant's video entitlement counts 成片, not seconds: the plan
+		// offers grant trial 1 / starter 5 / growth 20 / pro 60
+		// (`foundation/entitlement-module.ts`) and the Composer prices the same
+		// run at 1. Reserving `durationSeconds` here charged an 8s 抖音成片 eight
+		// videos, which no trial workspace can ever cover — every video
+		// submission came back 409 INSUFFICIENT_ENTITLEMENT while the quota card
+		// showed no shortfall, because the two sides were pricing in different
+		// units. Per-second accounting belongs to the supply-side ledger (admin
+		// config seconds, D-123 cost surface), not to this allowance.
+		// Duration stays validated above: the snapshot is still required to name
+		// whole seconds, it just no longer sets the price.
+		return [{ resource: "video", quantity: 1 }];
 	}
 	if (snapshot.lens === "image_text_note") {
 		throw new Error(

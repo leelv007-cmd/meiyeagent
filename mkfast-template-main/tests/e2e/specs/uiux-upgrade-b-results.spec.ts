@@ -6,6 +6,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { evidencePath } from '../fixtures/evidence';
 
 const productionCandidate =
   process.env.PLAYWRIGHT_PRODUCTION_CANDIDATE === 'true';
@@ -260,7 +261,24 @@ async function waitForCopyCandidates(page: Page) {
   return selector;
 }
 
-test.describe('UI/UX Upgrade B result contracts', () => {
+/**
+ * M-04 DEMOTED (T37 / #231).
+ *
+ * Every case here reaches the product through the retired unified creation
+ * workbench (`建立创作记录` → `快速起步预设` → `execute-tool-action` →
+ * `workbench-result-hero`), which the Z1 cutover removed from `src`. The T07
+ * pre-change baseline recorded it 8/8 red for that reason, before that ticket
+ * touched anything — so this file has not been evidence of anything for a
+ * while.
+ *
+ * Demoted rather than deleted: no approved disposition batch covers these
+ * specs, and the contracts they describe (stream start/stop boundaries, paid
+ * reroll vs free quality retry, image lightbox to the canonical Asset,
+ * single-choice on mobile, English chrome) still need relanding on the
+ * conversation container and the Result Center. The required browser gate is
+ * `m04-browser-hard-gate.spec.ts`.
+ */
+test.describe.fixme('UI/UX Upgrade B result contracts', () => {
   test.beforeAll(async ({ request }) => {
     await cleanupE2EUsers(request);
   });
@@ -304,7 +322,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     await expect(submit).toBeHidden();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/03-copy-stream-partial-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/03-copy-stream-partial-desktop.png'
+      ),
     });
 
     const selector = await waitForCopyCandidates(page);
@@ -338,7 +358,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     ).toEqual([0, 1, 2]);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/04-copy-results-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/04-copy-results-desktop.png'
+      ),
     });
   });
 
@@ -382,16 +404,12 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     await expect(selectedWorkbenchInput).toHaveValue(selectedModelId);
 
     const submit = await acceptContract(page);
-    const submissionResponse = page.waitForResponse((response) => {
-      if (!response.url().includes('/api/core/p1/commands')) return false;
-      const requestBody = response.request().postDataJSON() as {
-        action?: string;
-      };
-      return requestBody.action === 'submit_creative_work';
-    });
+    // T37 / M-04: the wait that used to sit here keyed on a command the
+    // Composer no longer emits, so it could only ever time out. The result hero
+    // below is the observable this case actually needs; when this journey is
+    // relanded on the conversation container it waits on
+    // `/api/core/p1/composer/submissions` instead.
     await submit.click();
-    const submitted = await submissionResponse;
-    expect(submitted.ok(), await submitted.text()).toBeTruthy();
     await expect(record.getByTestId('workbench-result-hero')).toBeVisible({
       timeout: 60_000,
     });
@@ -421,8 +439,32 @@ test.describe('UI/UX Upgrade B result contracts', () => {
       routeSnapshot.providerModel ??
       actualRouteCandidate?.providerModel ??
       actualRouteCandidate?.stableModelName;
-    expect(actualProviderModel).toEqual(expect.any(String));
-    expect(routeSnapshot.apiCounterparty).toEqual(expect.any(String));
+    // T37 / M-04, carrying the T07 F2 ruling: `expect.any(String)` accepted the
+    // empty string, so these two lines asserted a field's type rather than that
+    // it came from anywhere. The contract is 同源对齐 — provenance restates the
+    // frozen RouteSnapshot, and a blank counterparty is exactly the drift that
+    // would slip through a type-shaped check.
+    //
+    // T37-R2: this file is demoted (retired workbench), so these two lines run
+    // on no required job. They now also live where they execute —
+    // `apps/core/src/p1/operations/model-supply-creation-adapter.test.ts`,
+    // 「execution provenance restates the frozen route, never a blank
+    // counterparty」 — asserted against `executionResult`, the seam that builds
+    // provenance out of the snapshot. The browser seam cannot host them: the
+    // ContentPackage submission path writes no `p1_creative_jobs` row, so there
+    // is no `job.executionProvenance` next to a RouteSnapshot to compare with.
+    expect(
+      typeof actualProviderModel === 'string' &&
+        actualProviderModel.trim().length > 0,
+      `frozen route must name a provider model; got ${JSON.stringify(actualProviderModel)}`
+    ).toBe(true);
+    expect(
+      typeof routeSnapshot.apiCounterparty === 'string' &&
+        routeSnapshot.apiCounterparty.trim().length > 0,
+      `frozen route must name an API counterparty; got ${JSON.stringify(routeSnapshot.apiCounterparty)}`
+    ).toBe(true);
+    // Subset match stays right here: `CreativeExecutionProvenance` also carries
+    // modelDisplayName and activationStatus, which this case has no opinion on.
     expect(job?.executionProvenance).toMatchObject({
       actualCatalogModelId: routeSnapshot.actualCatalogModelId,
       apiCounterparty: routeSnapshot.apiCounterparty,
@@ -573,7 +615,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
       .toBe(true);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/04b-copy-candidates-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/04b-copy-candidates-mobile.png'
+      ),
     });
   });
 
@@ -607,7 +651,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/05a-assistant-rich-stream-partial-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/05a-assistant-rich-stream-partial-desktop.png'
+      ),
     });
     await expect(
       assistant.getByRole('link', { name: '核对门店信息' })
@@ -629,7 +675,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     await expect(record).toContainText('保留原始创作意图，不自动写入助手建议');
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/05-assistant-structured-parts-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/05-assistant-structured-parts-desktop.png'
+      ),
     });
   });
 
@@ -792,7 +840,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     ).toHaveAttribute('src', canonicalMediaSrc);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/06-image-lightbox-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/06-image-lightbox-desktop.png'
+      ),
     });
     if (!(await lightbox.isVisible())) {
       await preview.click();
@@ -825,7 +875,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/06b-canonical-gallery-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/06b-canonical-gallery-desktop.png'
+      ),
     });
     await page.setViewportSize({ height: 844, width: 390 });
     await expect(
@@ -840,7 +892,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
       .toBe(true);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/06c-canonical-gallery-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/06c-canonical-gallery-mobile.png'
+      ),
     });
 
     await page.setViewportSize({ height: 900, width: 1440 });
@@ -871,7 +925,9 @@ test.describe('UI/UX Upgrade B result contracts', () => {
     ).toHaveAttribute('src', canonicalMediaSrc);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/06d-canonical-recent-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/06d-canonical-recent-desktop.png'
+      ),
     });
   });
 

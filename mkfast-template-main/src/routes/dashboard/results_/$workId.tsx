@@ -8,6 +8,7 @@
 
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { StatePanel } from '@/components/uiux/state-panel';
+import { resolveVideoWorkflowBinding } from '@/lib/video-workflow-binding';
 import {
   commandP1,
   operationsCommand,
@@ -29,6 +30,7 @@ import {
   buildNativeVideoWorksurface,
   contentPackageRefreshToken,
   factSourcesFromGroundingSnapshot,
+  imageWorksurfaceFromContentPackage,
   revisionTimelineFactsFromContentPackage,
   latestContentPackageForWork,
   platformPreviewsFromContentPackage,
@@ -221,10 +223,12 @@ function ResultCenterRoutePage() {
     : null;
   const selected = live?.selected ?? null;
   useCreativeJobObserver(creativeJobObservation(selected?.job ?? undefined));
+  // Which canonical run this Work's video surface opens. The two write shapes
+  // it has to reconcile — and why — live in `resolveVideoWorkflowBinding`,
+  // where the three cases are covered by a test that runs.
   const selectedVideoWorkflowId =
-    selected?.workspaceKind === 'video' &&
-    selected.job?.providerJobId?.startsWith('video-workflow-')
-      ? selected.job.providerJobId
+    selected?.workspaceKind === 'video'
+      ? resolveVideoWorkflowBinding(selected.job)
       : undefined;
   const workflowQuery = useQuery({
     enabled: Boolean(selectedVideoWorkflowId),
@@ -514,7 +518,15 @@ function ResultCenterRoutePage() {
           hasContentPackage: true,
           lifecycle: 'adopted' as const,
         }
-      : selected?.imageWorksurface;
+      : (selected?.imageWorksurface ??
+        (currentPackageVersion && contentPackage
+          ? imageWorksurfaceFromContentPackage({
+              adopted: contentPackage.status === 'accepted',
+              generated: contentPackage.generated,
+              version: currentPackageVersion,
+              workId,
+            })
+          : undefined));
 
   const executeIntent = async <T,>(
     fingerprint: string,
@@ -787,23 +799,31 @@ function ResultCenterRoutePage() {
     await refreshCanonicalResult();
     return created;
   };
+  /**
+   * Adoption on the Harness seam: the merchant takes the candidate the package
+   * already carries. Returns null when this result has no Harness selection —
+   * a legacy Job-shaped run — and the visual adoption below owns it instead.
+   */
+  const adoptHarnessCandidate = async () => {
+    const harnessCandidateId = currentPackageVersion?.harnessCandidateId;
+    if (!contentPackage?.harnessSelection || !harnessCandidateId) return null;
+    const adopted = await operationsCommand<PublicContentPackage>(
+      'adopt_harness_candidate',
+      {
+        candidateId: harnessCandidateId,
+        expectedRevision: contentPackage.revision,
+        packageId: contentPackage.id,
+      },
+      `adopt-harness:${contentPackage.id}:${contentPackage.revision}:${harnessCandidateId}`
+    );
+    await refreshCanonicalResult();
+    return adopted;
+  };
   const adoptCopyCandidate = async () => {
     if (!copyAsset) return;
-    const harnessCandidateId = currentPackageVersion?.harnessCandidateId;
-    let adopted: PublicContentPackage;
-    if (contentPackage?.harnessSelection && harnessCandidateId) {
-      adopted = await operationsCommand<PublicContentPackage>(
-        'adopt_harness_candidate',
-        {
-          candidateId: harnessCandidateId,
-          expectedRevision: contentPackage.revision,
-          packageId: contentPackage.id,
-        },
-        `adopt-harness:${contentPackage.id}:${contentPackage.revision}:${harnessCandidateId}`
-      );
-      await refreshCanonicalResult();
-    } else {
-      adopted = await adopt(
+    const adopted =
+      (await adoptHarnessCandidate()) ??
+      (await adopt(
         imageAssetIds.length > 0
           ? {
               copyAssetId: copyAsset.id,
@@ -811,8 +831,7 @@ function ResultCenterRoutePage() {
               orderedAssetIds: imageAssetIds,
             }
           : { copyAssetId: copyAsset.id, kind: 'copy' }
-      );
-    }
+      ));
     try {
       await generateCopyPlatformVariants(adopted);
     } catch (error) {
@@ -828,16 +847,38 @@ function ResultCenterRoutePage() {
       await adoptCopyCandidate();
       return;
     }
-    if (workspaceKind === 'image' && imageAssetIds.length > 0) {
-      await adopt({ kind: 'image', orderedAssetIds: imageAssetIds });
+    if (workspaceKind === 'image') {
+      // 图文 runs come off the same Harness seam as 文案 and their pages are
+      // ContentPackage owned assets, not the per-Job CreativeAssets
+      // `adopt_visual_selection` validates against — sending those ids there
+      // is a 409 (`INVALID_VISUAL_ASSET`) for every new-seam run, which is
+      // where the 图文 mainline used to end. Take the candidate the package
+      // carries, and leave visual adoption to the legacy runs that have it.
+      if (await adoptHarnessCandidate()) return;
+      if (imageAssetIds.length > 0) {
+        await adopt({ kind: 'image', orderedAssetIds: imageAssetIds });
+      }
       return;
     }
-    if (workspaceKind === 'video' && videoWorksurface?.composedCandidate) {
-      await adopt({
-        kind: 'video',
-        videoAssetId: videoWorksurface.composedCandidate.assetId,
-      });
+    if (workspaceKind === 'video') {
+      await adoptComposedVideo();
     }
+  };
+  /**
+   * 视频 adoption, from either control: the worksurface's 使用此成片 and the
+   * shell's primary action both land here. A Harness package must record its
+   * adopted candidate to become `accepted`
+   * (`content-package-semantic-mutation-policy.ts`), so the visual command
+   * alone is a 409 HARNESS_ADOPTION_EVIDENCE_REQUIRED for a new-seam run — the
+   * same shape 图文 hit, one modality over.
+   */
+  const adoptComposedVideo = async () => {
+    if (await adoptHarnessCandidate()) return;
+    if (!videoWorksurface?.composedCandidate) return;
+    await adopt({
+      kind: 'video',
+      videoAssetId: videoWorksurface.composedCandidate.assetId,
+    });
   };
   const createFromCurrent = async () => {
     if (!selected) return;
@@ -999,11 +1040,18 @@ function ResultCenterRoutePage() {
     }
   };
 
+  // `selected.hasUsableCandidate` counts the per-Job CreativeAssets of the
+  // legacy projection. A 图文 run's pages never become those, so a delivered
+  // package offered no 采用 action at all and the shell fell through to
+  // 「继续调整」. A current ContentPackage version is a usable candidate by
+  // definition — the branch that reads this already requires nothing adopted.
+  const hasUsableCandidate =
+    selected?.hasUsableCandidate || Boolean(currentPackageVersion);
   const shellPhase = projectResultShellPhase({
     target,
     workspaceKind,
     progressState: resultProgressState,
-    hasUsableCandidate: selected?.hasUsableCandidate,
+    hasUsableCandidate,
     ...packageMutationFacts,
   });
   const revisionTimelineFacts =
@@ -1047,7 +1095,7 @@ function ResultCenterRoutePage() {
         workspaceKind,
         requestedPanel: search.panel,
         progressState: resultProgressState,
-        hasUsableCandidate: selected?.hasUsableCandidate,
+        hasUsableCandidate,
         ...packageMutationFacts,
         taskId: search.taskId,
         jobId: selected?.job?.id,
@@ -1234,14 +1282,7 @@ function ResultCenterRoutePage() {
         }
       }}
       onVideoAdopt={
-        videoWorksurface?.composedCandidate
-          ? async () => {
-              await adopt({
-                kind: 'video',
-                videoAssetId: videoWorksurface.composedCandidate!.assetId,
-              });
-            }
-          : undefined
+        videoWorksurface?.composedCandidate ? adoptComposedVideo : undefined
       }
       onVideoDeliver={() =>
         navigate({

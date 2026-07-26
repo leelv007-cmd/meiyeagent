@@ -226,9 +226,14 @@ jobs:
           path: output/ci/core-persistence
           if-no-files-found: error
 
+  # Required browser gate. Carries the assembly gate (T04) and, since T37/M-04,
+  # the three-modality mainline journey — copy / image_text / video, each on the
+  # `/api/core/p1/composer/submissions` seam through adoption, delivery, and
+  # refresh recovery. Named in the branch protection required-checks list via
+  # the `required` aggregation job below.
   production-main-journey:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     services:
       postgres:
         image: postgres:16-alpine
@@ -274,11 +279,12 @@ jobs:
           set -o pipefail;
           ./scripts/ci/provision-test-db.sh 2>&1 |
           tee output/ci/production-main-journey/provision.log
-      - name: Run required assembly gate and production-build main journey
+      - name: Run required assembly gate, M-04 browser hard gate, and production-build main journey
         run: bash scripts/ci/run-pr-production-journey.sh
         env:
           CI_EVIDENCE_DIR: output/ci/production-main-journey
           RELEASE_COMMIT_SHA: ${{ github.sha }}
+          REQUIRED_BROWSER_HARD_GATE_SPEC: tests/e2e/specs/m04-browser-hard-gate.spec.ts
           REQUIRED_E2E_SPEC: tests/e2e/specs/assembly-gate-required-journey.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()

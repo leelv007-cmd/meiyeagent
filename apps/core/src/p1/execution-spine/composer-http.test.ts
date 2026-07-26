@@ -383,6 +383,23 @@ test("authenticated Composer HTTP carries all four output kinds through one snap
 		assert.deepEqual(Object.keys(body.data.usageReservation), ['id']);
 		assert.equal(body.data.snapshot.id, `snapshot-task-${kind}`);
 
+		// Merchant entitlement units. `video` reserves one 成片 even though this
+		// deliverable names 8 seconds: the plan offers grant trial 1 / starter 5
+		// / growth 20 / pro 60 videos, so charging by duration made every trial
+		// submission 409 INSUFFICIENT_ENTITLEMENT while the Composer's own quota
+		// card — which prices the run at 1 — showed nothing wrong. Per-second
+		// accounting is the supply-side ledger's, not this allowance's.
+		assert.deepEqual(
+			submissions.reservedUnits("workspace-1", `composer-${kind}-1`),
+			kind === "image_text_note"
+				? [
+						{ resource: "copy", quantity: 2 },
+						{ resource: "image", quantity: 3 },
+					]
+				: [{ resource: kind, quantity: 1 }],
+			`${kind} must reserve merchant allowance in the unit the plan grants`,
+		);
+
 		const replayed = await fetch(`${base}/submissions`, {
 			method: "POST",
 			headers,
@@ -640,6 +657,12 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		string,
 		{ state: "reserved" | "starting" | "started"; leaseId?: string }
 	>();
+
+	/** What the coordinator actually reserved, for allowance-unit assertions. */
+	reservedUnits(workspaceId: string, idempotencyKey: string) {
+		return this.claims.get(`${workspaceId}:${idempotencyKey}`)?.submission
+			.usageReservation.units;
+	}
 
 	async readReceipt(input: {
 		workspaceId: string;

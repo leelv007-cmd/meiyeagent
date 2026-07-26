@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedAuthorizedGrounding } from '../fixtures/product';
+import { evidencePath } from '../fixtures/evidence';
 
 type VideoWorkflowStatus =
   | 'draft'
@@ -385,7 +386,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(v1WorkflowId).toBeTruthy();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/07-video-workflow-draft-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/07-video-workflow-draft-desktop.png'
+      ),
     });
 
     panel = page.getByLabel('创作助理整理的记录').getByLabel('视频成片工作流');
@@ -438,7 +441,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/09a-video-workflow-running-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/09a-video-workflow-running-mobile.png'
+      ),
     });
 
     const completed = await finishWorkflowAndReviewIfRequired(
@@ -471,7 +476,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(playbackResponse).toEqual({ contentType: 'video/mp4', ok: true });
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/09b-video-workflow-completed-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/09b-video-workflow-completed-mobile.png'
+      ),
     });
 
     await page.setViewportSize({ height: 900, width: 1440 });
@@ -488,7 +495,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(recovered?.workflow.status).toBe('completed');
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/08-video-workflow-completed-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/08-video-workflow-completed-desktop.png'
+      ),
     });
 
     const videoPackage = (await contentPackages(page)).find(
@@ -499,6 +508,12 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     expect(videoPackage?.source.workId).toBe(workId);
     expect(videoPackage).toBeTruthy();
     if (!videoPackage) throw new Error('Completed video has no ContentPackage');
+    // M-04 DEMOTED (T37 / #231) — 成片 leg of the retired ContentPackageDetail.
+    // These three lines are one of the old detail page's three capability
+    // assertions (成片 / 海报 / 三平台版本); T34 replaced that page with the works
+    // face, and relanding the journey on it is T38's call. The delivered-video
+    // contract itself is not uncovered meanwhile: `video-native-compiler.spec.ts`
+    // asserts it at the core level, and the M-04 hard gate walks 视频 end to end.
     await page.goto(`/dashboard/works/${encodeURIComponent(videoPackage.id)}`);
     const detailWorkflow = page.getByLabel('视频成片工作流');
     await expect(
@@ -552,6 +567,10 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
           action === 'video_workflow_select_candidate'
       )
     ).toHaveLength(completed.reviewSelections);
+    // M-04-RETIRED-ACTION-ALLOWED: the polarity here is already correct — this
+    // asserts the durable video chain never emits the retired command, so it is
+    // a guard against resurrection rather than a wait that can only time out
+    // (src/lib/e2e-hard-gate-contract.test.ts).
     expect(
       commandActions.some(
         ({ action, module }) =>
@@ -637,7 +656,9 @@ test.describe('UI/UX Upgrade B durable video workflow', () => {
     ).toHaveCount(0);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/07c-video-workflow-cancelled-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/07c-video-workflow-cancelled-desktop.png'
+      ),
     });
   });
 });

@@ -41,10 +41,13 @@ test.describe('live creation catalog capability gate', () => {
     await expect(page).toHaveURL(
       /catalogRecipeRevisionId=recipe\.project_intro/
     );
-    await expect(page.getByTestId('composer-lens-option-copy')).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
+    // The lens options are native radios (`lens-radiogroup.tsx`), so selection
+    // is the `checked` property plus `data-state` — not an `aria-checked`
+    // attribute, which a native radio does not need and does not carry. Same
+    // idiom the shared journey fixture uses.
+    const copyLens = page.getByTestId('composer-lens-option-copy');
+    await expect(copyLens).toBeChecked();
+    await expect(copyLens).toHaveAttribute('data-state', 'checked');
 
     await page.goto('/dashboard/catalog?tab=tools');
     await expect(page.getByText('多尺寸适配', { exact: true })).toHaveCount(0);

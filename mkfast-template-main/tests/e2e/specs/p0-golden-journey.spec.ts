@@ -44,9 +44,31 @@ test.describe('canonical product golden journey', () => {
     expect(packageId).toBeTruthy();
     expect(handoffToken).toBeTruthy();
 
-    // T34 / #228: the 旧内容库 hosted a 发布包 card whose only job was to open
-    // the handoff page. The library retired; the handoff page is the same page
-    // it always was, so the journey addresses it directly.
+    // T37 / M-04 (#231), restoring what T34 dropped: the 旧内容库 card was the
+    // repository's only proof that a merchant can *reach* the handoff surface
+    // from inside the product. Addressing the page by URL proves it renders,
+    // not that anyone can get there. The surviving doorway is 内容详情 →
+    // 「协办交接」 → the Result Center delivery panel bound to this revision
+    // (`works-projection.ts` `workHandoffHref`), whose share payload carries the
+    // `/dashboard/handoff/<token>` path this journey then walks.
+    await page.goto(`/dashboard/works/${encodeURIComponent(contentId)}`);
+    const handoffDoorway = page.getByTestId('works-action-handoff');
+    await expect(
+      handoffDoorway,
+      '内容详情 must offer 协办交接 — it is the only in-product doorway left to the handoff surface'
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(handoffDoorway).toHaveAttribute(
+      'href',
+      /\/dashboard\/results\/[^?#]+\?[^#]*panel=delivery/u
+    );
+    await handoffDoorway.click();
+    await expect(page).toHaveURL(
+      /\/dashboard\/results\/[^?#]+\?[^#]*panel=delivery/u
+    );
+    await expect(page.getByTestId('delivery-panel')).toBeVisible({
+      timeout: 60_000,
+    });
+
     await page.goto(`/dashboard/handoff/${encodeURIComponent(handoffToken!)}`);
     await expect(
       page.getByRole('heading', { name: /小红书\s*发布包/ })

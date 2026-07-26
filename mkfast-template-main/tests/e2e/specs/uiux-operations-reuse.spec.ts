@@ -5,6 +5,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { evidencePath } from '../fixtures/evidence';
 
 async function p1Command<T>(
   page: Page,
@@ -477,7 +478,7 @@ test.describe('S3 operations, reuse, assets, and history', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/pro-studio/ticket17-19-light-composer-runtime.png',
+      path: evidencePath('pro-studio/ticket17-19-light-composer-runtime.png'),
     });
   });
 });

@@ -86,6 +86,14 @@ test('the manifest and the document head take their theme colour from one source
     /\{\s*name:\s*'theme-color',\s*content:\s*PRODUCT_THEME_COLOR\s*\}/u
   );
   assert.doesNotMatch(root, /'theme-color',\s*content:\s*['"]#/u);
+  // Referencing the identifier is not enough — a second module could export a
+  // same-named constant and drift right back. Pin where __root imports it from,
+  // so the shared source is the one both ends actually read.
+  assert.match(
+    root,
+    /import\s*\{[^}]*\bPRODUCT_THEME_COLOR\b[^}]*\}\s*from\s*'@\/config\/theme'/u,
+    '__root must take PRODUCT_THEME_COLOR from @/config/theme, the same module the manifest reads'
+  );
   assert.match(root, /rel:\s*'manifest',\s*href:\s*'\/manifest\.json'/u);
 });
 

@@ -1341,6 +1341,11 @@ function reserveRecord(
     task: { id: taskId },
     usageReservation: {
       id: `spine-usage-${suffix}`,
+      // Arbitrary round-trip data, not a pricing statement: this store test
+      // only checks that whatever units it is handed come back byte-identical,
+      // so video carries a non-1 quantity to keep an always-writes-1 bug
+      // visible. What a video run actually reserves (1 成片) is pinned in
+      // `composer-http.test.ts`.
       units:
         lens === "video"
           ? [{ resource: "video", quantity: 8 }]

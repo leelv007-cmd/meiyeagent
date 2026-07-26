@@ -6,6 +6,7 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { evidencePath } from '../fixtures/evidence';
 
 interface P1Call {
   action?: string;
@@ -43,7 +44,23 @@ async function creativeProjection(page: Page) {
   });
 }
 
-test.describe('UI/UX Upgrade B asynchronous job contracts', () => {
+/**
+ * M-04 DEMOTED (T37 / #231).
+ *
+ * This journey drives the retired unified creation workbench —
+ * 「建立创作记录」, 「快速起步预设」, `execute-tool-action`,
+ * `workbench-result-hero` — which the Z1 cutover removed from `src` (see
+ * `src/product/composer/z1-cutover-retirement.static.test.ts`: the workbench
+ * files are asserted physically absent). It cannot pass, and it must not be
+ * mistaken for coverage of the shipped Composer.
+ *
+ * It is demoted rather than deleted: the disposition matrix approves no
+ * deletion batch for these specs, and the asynchronous-Job contracts it
+ * describes (one Job observable across routes, no fake percentage, no silent
+ * auto-resume) are still worth relanding on the conversation container. The
+ * required browser gate is `m04-browser-hard-gate.spec.ts`.
+ */
+test.describe.fixme('UI/UX Upgrade B asynchronous job contracts', () => {
   test.beforeAll(async ({ request }) => {
     await cleanupE2EUsers(request);
   });
@@ -101,10 +118,6 @@ test.describe('UI/UX Upgrade B asynchronous job contracts', () => {
     });
     let providerPollCount = 0;
     let automaticResumeCount = 0;
-    let releaseSubmit = () => {};
-    const submitGate = new Promise<void>((resolve) => {
-      releaseSubmit = resolve;
-    });
 
     await page.route('**/api/core/p1/query', async (route) => {
       const call = p1Call(route.request());
@@ -114,16 +127,9 @@ test.describe('UI/UX Upgrade B asynchronous job contracts', () => {
       }
       await route.continue().catch(() => undefined);
     });
-    await page.route('**/api/core/p1/commands', async (route) => {
-      const call = p1Call(route.request());
-      if (
-        call?.module === 'operations' &&
-        call.action === 'submit_creative_work'
-      ) {
-        await submitGate;
-      }
-      await route.continue().catch(() => undefined);
-    });
+    // T37 / M-04: the submit hold that used to sit here waited on a command the
+    // Composer no longer emits, so it never held anything — the 「正在提交生成
+    // 请求」 assertion below was passing against an unheld request.
     page.on('request', (outgoing) => {
       if (!outgoing.url().includes('/api/core/p1/commands')) return;
       const call = p1Call(outgoing);
@@ -146,9 +152,10 @@ test.describe('UI/UX Upgrade B asynchronous job contracts', () => {
     ).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/09a-job-submitting-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/09a-job-submitting-desktop.png'
+      ),
     });
-    releaseSubmit();
 
     let jobId = '';
     await expect
@@ -191,13 +198,17 @@ test.describe('UI/UX Upgrade B asynchronous job contracts', () => {
       expect(await panel.innerText()).not.toMatch(/\b\d+(?:\.\d+)?\s*%/);
       await page.screenshot({
         fullPage: true,
-        path: '../docs/evidence/uiux-upgrade-b/screenshots/09b-job-running-desktop.png',
+        path: evidencePath(
+          'uiux-upgrade-b/screenshots/09b-job-running-desktop.png'
+        ),
       });
       await page.setViewportSize({ height: 844, width: 390 });
       await expect(panel).toBeVisible();
       await page.screenshot({
         fullPage: true,
-        path: '../docs/evidence/uiux-upgrade-b/screenshots/09c-job-running-mobile.png',
+        path: evidencePath(
+          'uiux-upgrade-b/screenshots/09c-job-running-mobile.png'
+        ),
       });
       await page.setViewportSize({ height: 900, width: 1440 });
       await taskToggle.click();
@@ -227,7 +238,9 @@ test.describe('UI/UX Upgrade B asynchronous job contracts', () => {
     await expect(taskToggle).not.toContainText('进行中');
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/10a-task-center-unread-collapsed-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/10a-task-center-unread-collapsed-desktop.png'
+      ),
     });
     await taskToggle.click();
 
@@ -248,13 +261,17 @@ test.describe('UI/UX Upgrade B asynchronous job contracts', () => {
     expect(await completedPanel.innerText()).not.toMatch(/\b\d+(?:\.\d+)?\s*%/);
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/10-async-task-center-desktop.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/10-async-task-center-desktop.png'
+      ),
     });
     await page.setViewportSize({ height: 844, width: 390 });
     await expect(completedPanel).toBeVisible();
     await page.screenshot({
       fullPage: true,
-      path: '../docs/evidence/uiux-upgrade-b/screenshots/10b-task-center-completed-mobile.png',
+      path: evidencePath(
+        'uiux-upgrade-b/screenshots/10b-task-center-completed-mobile.png'
+      ),
     });
     await page.setViewportSize({ height: 900, width: 1440 });
 
