@@ -120,7 +120,10 @@ export function WorksLightEditPage({
 
   if (workQuery.isLoading) {
     return frame(
-      <p className="text-muted text-sm" data-testid="works-light-edit-loading">
+      <p
+        className="text-muted-foreground text-sm"
+        data-testid="works-light-edit-loading"
+      >
         正在打开轻编辑…
       </p>,
       WORKS_TITLE
@@ -130,7 +133,9 @@ export function WorksLightEditPage({
     return frame(
       <div className="meiye-porcelain rounded-2xl p-6">
         <p className="meiye-type-body font-semibold">没找到这份作品</p>
-        <p className="text-muted mt-2 text-sm">它可能已经被替换或删除了。</p>
+        <p className="text-muted-foreground mt-2 text-sm">
+          它可能已经被替换或删除了。
+        </p>
       </div>,
       WORKS_TITLE
     );
@@ -159,7 +164,7 @@ export function WorksLightEditPage({
             轻编辑
           </span>
           <span
-            className="text-muted text-xs"
+            className="text-muted-foreground text-xs"
             data-revision={revision.revision}
             data-testid="works-light-edit-revision"
           >
@@ -175,7 +180,7 @@ export function WorksLightEditPage({
           data-testid="works-template-update"
         >
           <p className="meiye-type-body font-semibold">这个版式有新版本</p>
-          <p className="text-muted mt-1 text-sm">
+          <p className="text-muted-foreground mt-1 text-sm">
             可以把这份作品换到新版式，也可以另存一份再改。
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -353,7 +358,7 @@ export function WorksLightEditPage({
           </a>
         ) : null}
         {(receiptsQuery.data ?? []).length > 0 ? (
-          <ol className="text-muted mt-3 space-y-2 text-xs">
+          <ol className="text-muted-foreground mt-3 space-y-2 text-xs">
             {receiptsQuery.data!.slice(0, 5).map((receipt) => (
               <li className="rounded-xl border p-2" key={receipt.id}>
                 {formatLocaleDateTime(receipt.createdAt)} ·{' '}
@@ -367,7 +372,7 @@ export function WorksLightEditPage({
             ))}
           </ol>
         ) : (
-          <p className="text-muted mt-3 text-sm">还没有导出记录。</p>
+          <p className="text-muted-foreground mt-3 text-sm">还没有导出记录。</p>
         )}
       </section>
     </>,

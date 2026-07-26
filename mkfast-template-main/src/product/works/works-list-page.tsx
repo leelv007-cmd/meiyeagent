@@ -46,7 +46,9 @@ function WorkCard({ item }: { item: WorkListItem }) {
       >
         {item.media.length > 0 ? (
           <WorksMediaGallery cover media={item.media} />
-        ) : (
+        ) : item.outputShape === 'copy' ? null : (
+          // 文案 delivered no media on purpose; an empty photo frame there would
+          // read as a picture that failed to load. Every other shape has one.
           <div
             aria-hidden="true"
             className="bg-muted text-muted-foreground flex aspect-5/4 items-center justify-center"
@@ -62,10 +64,12 @@ function WorkCard({ item }: { item: WorkListItem }) {
             >
               {WORK_OUTPUT_SHAPE_LABELS[item.outputShape]}
             </span>
-            <span className="text-muted text-xs">{item.statusLabel}</span>
+            <span className="text-muted-foreground text-xs">
+              {item.statusLabel}
+            </span>
             {item.revision === null ? null : (
               <span
-                className="text-muted ml-auto text-xs"
+                className="text-muted-foreground ml-auto text-xs"
                 data-revision={item.revision}
               >
                 第 {item.revision} 版
@@ -76,7 +80,13 @@ function WorkCard({ item }: { item: WorkListItem }) {
             {item.title}
           </h3>
           {item.excerpt ? (
-            <p className="text-muted line-clamp-2 text-sm">{item.excerpt}</p>
+            <p
+              className={`text-muted-foreground text-sm ${
+                item.outputShape === 'copy' ? 'line-clamp-6' : 'line-clamp-2'
+              }`}
+            >
+              {item.excerpt}
+            </p>
           ) : null}
         </div>
       </Link>
@@ -154,7 +164,10 @@ export function WorksListPage() {
           </div>
 
           {loading ? (
-            <p className="text-muted text-sm" data-testid="works-loading">
+            <p
+              className="text-muted-foreground text-sm"
+              data-testid="works-loading"
+            >
               正在整理你的作品…
             </p>
           ) : failed ? (
