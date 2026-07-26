@@ -618,3 +618,39 @@ outbound seam messages against real core SSE. The container journey itself
   path (D-043 无冲突路径 0 张阻塞卡). Only behaviour is asserted, never the
   numbers — those belong to the entitlements projection.
 - Both themes × mobile/desktop render the family and write walkthrough shots.
+
+## T32 作品与对象页换壳（#226）
+
+`specs/works-reshell.spec.ts` covers the reshelled 作品 surface against real
+core. The four-shape rendering has a deterministic twin in
+`src/product/works/works-list.interaction.test.tsx` (fixture 产物 for
+copy/image/note/video); this spec proves the shape a live run produces.
+
+- One real creation delivers, and the same 作品 is visible on `/dashboard/works`
+  — the new surface, keyed by the ContentPackage the 交付卡 bound.
+- Every list row links into `/dashboard/works/…`; nothing routes back to a
+  legacy object or content deep link (唯一投影, ADR-0011).
+- 详情 revision 与交付卡一致: the detail's `data-package-id` /
+  `data-version-id` / `data-revision` are read off the canonical
+  `operations.content_packages` projection and must equal what the SSE terminal
+  snapshot bound on the card — two independent seams agreeing.
+- 导出动作成功: straight out of a run the 成品 is not adopted, so the surface
+  offers 采用 and no 导出 at all; after the canonical `adopt_harness_candidate`,
+  clicking 导出 posts `result-delivery/result_export` carrying the confirmed
+  package and a real download link comes back with no failed command on the
+  seam. The headline run is 图文 on purpose — core builds the delivery ZIP out
+  of the variant's images and refuses to build one without any, so a 文案 作品
+  has no 导出 (asserted in `works-projection.test.ts`, not here).
+- 轻编辑入口可达: the canonical `create_work_from_content_package` command makes
+  the 轻编辑 work a 作品 row, and its detail mounts LightComposerCanvas (KEEP
+  capability core) unchanged.
+- Both themes × mobile/desktop walk the list and the detail, assert no sideways
+  scroll, and write walkthrough shots to
+  `.scratch/t32-works-reshell-2026-07-26/`.
+- Contrast is measured, not declared: the 四类输出筛选器 label and the two
+  氛围层页头 items (状态标签, 第 N 版) are sampled by hiding the text, reading the
+  backdrop pixels actually painted there, compositing the text colour over that
+  mean and asserting the WCAG ratio ≥4.5:1 in both themes. DESIGN.md:251 sets
+  the bar for ambient headers and DESIGN.md:259 extends it to vendored
+  components; the ratios are printed as `[contrast] …` lines so a run reports
+  numbers rather than a pass/fail bit.

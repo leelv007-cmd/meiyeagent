@@ -27,6 +27,11 @@ export const CHECK_GATES = [
     command: 'node',
     args: ['scripts/uiux/heroui-mirror-guard.mjs'],
   },
+  {
+    name: 'works canonical projection guard',
+    command: 'node',
+    args: ['scripts/uiux/works-canonical-projection-guard.mjs'],
+  },
 ];
 
 export function runGates(
