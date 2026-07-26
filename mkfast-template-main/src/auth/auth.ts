@@ -168,4 +168,3 @@ async function assembleUser(user: User) {
       }),
   });
 }
-
