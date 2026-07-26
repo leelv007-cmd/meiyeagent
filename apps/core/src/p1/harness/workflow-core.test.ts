@@ -44,6 +44,7 @@ test('five semantic stages run in order with stable effect keys and a delivery f
   );
 
   assert.deepEqual(calls, [
+    'skill:resolve:intent',
     'wf:task-35:s1:intent:0',
     'wf:task-35:s2:context:0',
     'wf:task-35:s3:copy:0',
@@ -110,6 +111,198 @@ test('five semantic stages run in order with stable effect keys and a delivery f
     ).sourceRevisions.facts,
     7,
   );
+});
+
+test('selected Skill refs extend only the stage-one effect unit and enter trace lineage without instruction text', async () => {
+  const calls: string[] = [];
+  const traces: Array<{ stage: string; payload: unknown }> = [];
+  const runtime: HarnessWorkflowRuntime = {
+    async runStep(effectIdempotencyKey, operation) {
+      calls.push(effectIdempotencyKey);
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace(input) {
+      traces.push({ stage: input.stage, payload: input.payload });
+    },
+  };
+  const stages = fixtureStages();
+  stages.resolveStageSkills = async () => ({
+    instructions: [
+      {
+        contentHash: 'hash-skill-one',
+        executionMode: 'prompt_materialized',
+        instruction: 'private instruction must not enter trace',
+        skillRevisionRef: 'skill.intent-one@2',
+      },
+    ],
+    receipts: [
+      {
+        childEffectIds: [],
+        createdAt: '2026-07-26T00:00:00.000Z',
+        inputFingerprint: 'fingerprint',
+        invocationId: 'skill-materialized:task-35:intent_naming:skill.intent-one%402',
+        productUsageTaskId: 'task-35',
+        skillRevisionRef: 'skill.intent-one@2',
+        status: 'settled',
+        taskId: 'task-35',
+        totalCostCents: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        workspaceId: 'workspace-1',
+      },
+    ],
+  });
+
+  await runHarnessWorkflow('task-35', taskInput(), stages, runtime);
+
+  assert.equal(
+    calls[0],
+    'skill:resolve:intent',
+  );
+  assert.equal(
+    calls[1],
+    'wf:task-35:s1:intent:skills=skill.intent-one%402:0',
+  );
+  assert.equal(calls[2], 'wf:task-35:s2:context:0');
+  const intentTrace = traces.find(
+    (trace) => trace.stage === 'intent_naming',
+  )?.payload;
+  assert.deepEqual(
+    intentTrace &&
+      {
+        skillRevisionRefs: (
+          intentTrace as { skillRevisionRefs?: string[] }
+        ).skillRevisionRefs,
+        skillContentHashes: (
+          intentTrace as { skillContentHashes?: string[] }
+        ).skillContentHashes,
+        skillReceiptIds: (
+          intentTrace as { skillReceiptIds?: string[] }
+        ).skillReceiptIds,
+      },
+    {
+      skillRevisionRefs: ['skill.intent-one@2'],
+      skillContentHashes: ['hash-skill-one'],
+      skillReceiptIds: [
+        'skill-materialized:task-35:intent_naming:skill.intent-one%402',
+      ],
+    },
+  );
+  assert.equal(
+    JSON.stringify(intentTrace).includes('private instruction'),
+    false,
+  );
+});
+
+test('durable Skill resolution replays frozen refs after the active binding changes', async () => {
+  let activeSkillRevision = 2;
+  let activeResolutionCalls = 0;
+  let frozenMaterializationCalls = 0;
+  let providerEffects = 0;
+  const effectKeys: string[] = [];
+  const traces: Array<{ stage: string; payload: unknown }> = [];
+  const outputs = new Map<string, unknown>();
+  const runtime: HarnessWorkflowRuntime = {
+    async runStep<Output>(effectIdempotencyKey: string, operation: () => Promise<Output>) {
+      effectKeys.push(effectIdempotencyKey);
+      if (outputs.has(effectIdempotencyKey)) {
+        return outputs.get(effectIdempotencyKey) as Output;
+      }
+      const output = await operation();
+      outputs.set(effectIdempotencyKey, output);
+      return output;
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace(input) {
+      traces.push({ stage: input.stage, payload: input.payload });
+    },
+  };
+  const stages = fixtureStages();
+  stages.resolveStageSkills = async (input) => {
+    const revision = input.skillRevisionRefs
+      ? Number(input.skillRevisionRefs[0]?.split('@')[1])
+      : activeSkillRevision;
+    if (input.skillRevisionRefs) {
+      frozenMaterializationCalls += 1;
+    } else {
+      activeResolutionCalls += 1;
+    }
+    const skillRevisionRef = `skill.intent-one@${revision}`;
+    return {
+      instructions: [
+        {
+          contentHash: `hash-skill-${revision}`,
+          executionMode: 'prompt_materialized',
+          instruction: `private instruction ${revision}`,
+          skillRevisionRef,
+        },
+      ],
+      receipts: [
+        {
+          childEffectIds: [],
+          createdAt: '2026-07-26T00:00:00.000Z',
+          inputFingerprint: `fingerprint-${revision}`,
+          invocationId: `skill-materialized:task-35:intent_naming:${skillRevisionRef}`,
+          productUsageTaskId: 'task-35',
+          skillRevisionRef,
+          status: 'settled',
+          taskId: 'task-35',
+          totalCostCents: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          workspaceId: 'workspace-1',
+        },
+      ],
+    };
+  };
+  const nameIntent = stages.nameIntent;
+  stages.nameIntent = async (input) => {
+    providerEffects += 1;
+    return nameIntent(input);
+  };
+
+  await runHarnessWorkflow('task-35', taskInput(), stages, runtime);
+  activeSkillRevision = 1;
+  await runHarnessWorkflow('task-35', taskInput(), stages, runtime);
+
+  assert.equal(activeResolutionCalls, 1);
+  assert.equal(frozenMaterializationCalls, 2);
+  assert.equal(providerEffects, 1);
+  assert.deepEqual(outputs.get('skill:resolve:intent'), {
+    skillRevisionRefs: ['skill.intent-one@2'],
+    skillContentHashes: ['hash-skill-2'],
+    skillReceiptIds: [
+      'skill-materialized:task-35:intent_naming:skill.intent-one@2',
+    ],
+  });
+  assert.equal(
+    JSON.stringify(outputs.get('skill:resolve:intent')).includes(
+      'private instruction',
+    ),
+    false,
+  );
+  assert.deepEqual(
+    effectKeys.filter((key) => key.startsWith('wf:task-35:s1:')),
+    [
+      'wf:task-35:s1:intent:skills=skill.intent-one%402:0',
+      'wf:task-35:s1:intent:skills=skill.intent-one%402:0',
+    ],
+  );
+  const replayedIntentTrace = traces.filter(
+    (trace) => trace.stage === 'intent_naming',
+  ).at(-1)?.payload as { skillRevisionRefs?: string[] };
+  assert.deepEqual(replayedIntentTrace.skillRevisionRefs, [
+    'skill.intent-one@2',
+  ]);
 });
 
 test('official-neutral execution reports a conversational identity reminder without blocking delivery', async () => {
@@ -179,6 +372,7 @@ test('image and video snapshots use the same five Harness stages with modality-s
     );
 
     assert.deepEqual(keys, [
+      'skill:resolve:intent',
       `wf:task-${kind}:s1:intent:0`,
       `wf:task-${kind}:s2:context:0`,
       `wf:task-${kind}:s3:${kind}:0`,
@@ -571,6 +765,7 @@ test('an existing pending industry question replays the original decision sequen
     'decision:task-copy:s1:industry_category',
   ]);
   assert.deepEqual(runSteps, [
+    'skill:resolve:intent',
     'wf:task-copy:s1:intent:0',
     'wf:task-copy:s2:context:0',
     'wf:task-copy:s3:copy:0',

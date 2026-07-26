@@ -143,6 +143,12 @@ export interface RecipeStudioRollbackInput
   targetRevision: number;
 }
 
+export interface RecipeSkillRevisionValidationPort {
+  listUnavailableFrozenRevisionRefs(
+    skillRevisionRefs: readonly string[],
+  ): Promise<string[]>;
+}
+
 const BLOCK_STAGE = {
   intent_type: 'intent_naming',
   fact_slots: 'context_injection',
@@ -446,6 +452,11 @@ export class RecipeStudioService {
   constructor(
     private readonly catalog: CreationExperienceCatalogService,
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly skillRevisions: RecipeSkillRevisionValidationPort = {
+      async listUnavailableFrozenRevisionRefs(skillRevisionRefs) {
+        return [...skillRevisionRefs];
+      },
+    },
   ) {}
 
   async compile(
@@ -465,6 +476,15 @@ export class RecipeStudioService {
     input: RecipeStudioTransitionInput,
   ): Promise<ServerRecipeRecord> {
     const head = await this.requireStudioHead(input);
+    const unavailable =
+      await this.skillRevisions.listUnavailableFrozenRevisionRefs(
+        head.skillRevisionRefs,
+      );
+    if (unavailable.length > 0) {
+      fail(
+        `以下 Skill 版本不存在或尚未受理冻结：${unavailable.join('、')}。`,
+      );
+    }
     const validation = await this.catalog.validateRecipe(
       input.recipeId,
       head.revision,

@@ -61,6 +61,7 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     'creation-experience',
     'product-billing',
     'result-delivery',
+    'skills',
   ] as const) {
     assert.equal(
       p1ModuleRequestSchema.parse({
@@ -107,6 +108,18 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     requiredP1Capability('command', 'creation-experience', 'event_append'),
     'content.create',
   );
+  for (const action of [
+    'skill_define',
+    'skill_accept',
+    'skill_bind',
+    'skill_rollback',
+    'skill_deployment',
+  ]) {
+    assert.equal(
+      requiredP1Capability('command', 'skills', action),
+      'config.publish',
+    );
+  }
   assert.equal(
     requiredP1Capability('command', 'product-billing', 'quote'),
     'content.create',

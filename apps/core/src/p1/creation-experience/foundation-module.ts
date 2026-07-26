@@ -36,6 +36,7 @@ import { buildRecipePatchPreview } from './recipe-patch-preview.js';
 import {
   RecipeStudioService,
   type RecipeStudioCompileInput,
+  type RecipeSkillRevisionValidationPort,
 } from './recipe-studio.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import {
@@ -367,6 +368,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       briefRevisionContexts?: BriefRevisionContextRepository;
       briefRevisionResolver?: BriefRevisionResolver;
       eventAudit?: CreationExperienceEventAuditPort;
+      skillRevisionValidation?: RecipeSkillRevisionValidationPort;
     } = {},
   ) {
     this.service =
@@ -380,7 +382,11 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       options.briefRevisionResolver ?? new MissingBriefRevisionResolver();
     this.eventAudit =
       options.eventAudit ?? new MemoryCreationExperienceEventAudit();
-    this.recipeStudio = new RecipeStudioService(this.service);
+    this.recipeStudio = new RecipeStudioService(
+      this.service,
+      undefined,
+      options.skillRevisionValidation,
+    );
   }
 
   async execute(args: {

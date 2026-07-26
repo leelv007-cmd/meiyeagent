@@ -21,6 +21,7 @@ import {
   type CurrentProductQuoteSource,
 } from './postgres-brief-revision-context.js';
 import { PostgresCreationExperienceCatalogRepository } from './postgres-repository.js';
+import type { RecipeSkillRevisionValidationPort } from './recipe-studio.js';
 import type { ServerRecipeRecord, ServerSurfaceRecord } from './types.js';
 
 async function ensureLaunchCatalogOnce(
@@ -223,6 +224,7 @@ export async function createDurableCreationExperienceRuntime(input: {
   pool: Pool;
   productQuotes: CurrentProductQuoteSource;
   seedLaunchCatalog?: boolean;
+  skillRevisionValidation?: RecipeSkillRevisionValidationPort;
 }) {
   const repository = new PostgresCreationExperienceCatalogRepository(input.pool);
   const audit = new PostgresCreationExperienceAuditRepository(input.pool);
@@ -251,6 +253,7 @@ export async function createDurableCreationExperienceRuntime(input: {
       briefRevisionContexts,
       briefRevisionResolver,
       eventAudit: audit,
+      skillRevisionValidation: input.skillRevisionValidation,
     },
   );
   const briefSubmissionGate = new CreationExperienceBriefSubmissionGate(

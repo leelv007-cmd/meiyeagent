@@ -2,13 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import type { QuestionCard } from '@meiye/contracts';
 
 import { HarnessWorkflowEventSource } from '../workflow-events.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import { SkillFoundationModule } from '../skills/foundation-module.js';
+import { MemorySkillRepository } from '../skills/repository.js';
+import { SkillService } from '../skills/service.js';
+import type { SkillRevision } from '../skills/types.js';
 import { HarnessDbosWorkflowEventReader } from './dbos-workflow-events.js';
 import {
   normalizeHarnessDbosWorkflowInput,
   registerHarnessDbosWorkflow,
+  resumeHarnessDbosWorkflow,
 } from './dbos-workflow.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import type { HarnessStagePorts } from './workflow-core.js';
@@ -83,17 +89,27 @@ test(
     );
     const traces: string[] = [];
     const billingReceipts: string[] = [];
+    const providerSkillRefs: string[][] = [];
+    const skills = await createSmokeSkills(workflowId);
+    let pendingQuestion: QuestionCard | null = null;
+    let signalPendingRegistered = () => {};
+    const pendingRegistered = new Promise<void>((resolve) => {
+      signalPendingRegistered = resolve;
+    });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-smoke',
       systemDatabaseUrl: systemDatabaseUrl!,
       applicationVersion: 'harness-smoke-v1',
     });
     const workflow = registerHarnessDbosWorkflow(
-      smokePorts(),
+      smokePorts(workflowId, skills.service, providerSkillRefs),
       {
-        async registerPending() {},
+        async registerPending(_workspaceId, question) {
+          pendingQuestion = question;
+          signalPendingRegistered();
+        },
         async readPending() {
-          return null;
+          return pendingQuestion;
         },
         async recordStageTrace(input) {
           traces.push(input.stage);
@@ -116,9 +132,11 @@ test(
 
     try {
       await DBOS.launch();
-      const handle = await DBOS.startWorkflow(workflow, {
-        workflowID: harnessRuntimeId('workspace-smoke', workflowId),
-      })({
+      const runtimeWorkflowId = harnessRuntimeId(
+        'workspace-smoke',
+        workflowId,
+      );
+      const workflowInput = {
         workflowId,
         request: {
           actorId: 'owner-smoke',
@@ -126,7 +144,7 @@ test(
           packageId: 'package-smoke',
           expectedRevision: 0,
           workflowRevision: 1,
-          creationMode: 'customized',
+          creationMode: 'customized' as const,
           rawInput: '把新团购做一套能发的',
           intent: {
             context: {
@@ -138,9 +156,71 @@ test(
           },
           executionSnapshot,
         },
-      });
+      };
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })(workflowInput);
 
-      const result = await handle.getResult();
+      let pendingTimeout: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          pendingRegistered,
+          new Promise<never>((_resolve, reject) => {
+            pendingTimeout = setTimeout(
+              () => reject(new Error('DBOS smoke workflow did not suspend.')),
+              15_000,
+            );
+          }),
+        ]);
+      } finally {
+        if (pendingTimeout) clearTimeout(pendingTimeout);
+      }
+      const beforeSteps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+      assert.ok(beforeSteps);
+      const beforeResolutionNames = beforeSteps
+        .filter(({ name }) => name.startsWith('skill-resolve-intent'))
+        .map(({ name }) => name);
+      assert.deepEqual(beforeResolutionNames, ['skill-resolve-intent']);
+      assert.equal(
+        JSON.stringify(beforeSteps).includes(SMOKE_PRIVATE_INSTRUCTION),
+        false,
+      );
+
+      await skills.foundation.execute({
+        context: {
+          actor: 'admin',
+          correlationId: `rollback-${workflowId}`,
+          userId: 'operator-smoke',
+          workspaceId: 'workspace-smoke',
+        },
+        idempotencyKey: `rollback-${workflowId}`,
+        input: {
+          action: 'skill_rollback',
+          payload: {
+            bindingId: `binding.smoke-v1-${workflowId}`,
+            sourceBindingId: `binding.smoke-v2-${workflowId}`,
+            targetSkillRevisionRef: 'skill.intent-one@1',
+            workflowRevisionRef: 'workflow.copy@1',
+          },
+        },
+      });
+      await DBOS.cancelWorkflow(runtimeWorkflowId);
+      const recoveredHandle =
+        await DBOS.resumeWorkflow<
+          Awaited<ReturnType<typeof handle.getResult>>
+        >(runtimeWorkflowId);
+      await resumeHarnessDbosWorkflow('workspace-smoke', workflowId, {
+        idempotencyKey: `ignore-${workflowId}`,
+        questionId: `${workflowId}:s1:offer_price`,
+        workflowRevision: 1,
+        patch: {
+          field: 'offer_price',
+          value: '本次跳过',
+          reason: 'DBOS 恢复测试',
+        },
+        decision: { state: 'ignored', value: '本次跳过' },
+      });
+      const result = await recoveredHandle.getResult();
       assert.equal(result.delivery.revision, 1);
       assert.equal(result.trace.winnerCandidateId, 'c01');
       assert.deepEqual(traces, [
@@ -151,6 +231,41 @@ test(
         'assembly_delivery',
       ]);
       assert.deepEqual(billingReceipts, [`committed:${workflowId}`]);
+      assert.deepEqual(providerSkillRefs, [['skill.intent-one@2']]);
+
+      const afterSteps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+      assert.ok(afterSteps);
+      const afterResolutionSteps = afterSteps.filter(({ name }) =>
+        name.startsWith('skill-resolve-intent'),
+      );
+      assert.deepEqual(
+        afterResolutionSteps.map(({ name }) => name),
+        beforeResolutionNames,
+      );
+      assert.equal(afterResolutionSteps.length, 1);
+      assert.deepEqual(afterResolutionSteps[0]?.output, {
+        skillRevisionRefs: ['skill.intent-one@2'],
+        skillContentHashes: ['hash-skill-2'],
+        skillReceiptIds: [
+          `skill-materialized:${workflowId}:intent_naming:skill.intent-one%402`,
+        ],
+      });
+      assert.equal(
+        JSON.stringify(afterSteps).includes(SMOKE_PRIVATE_INSTRUCTION),
+        false,
+      );
+      assert.equal(
+        afterSteps.filter(({ name }) =>
+          name.includes('s1-intent-skills=skill.intent-one%402-0'),
+        ).length,
+        1,
+      );
+      assert.equal(
+        afterSteps.some(({ name }) =>
+          name.includes('s1-intent-skills=skill.intent-one%401-0'),
+        ),
+        false,
+      );
       const events = [];
       const source = new HarnessWorkflowEventSource(
         new HarnessDbosWorkflowEventReader({
@@ -180,6 +295,7 @@ test(
           'workflow.progress',
           'workflow.progress',
           'workflow.progress',
+          'workflow.progress',
           'workflow.state',
         ],
       );
@@ -190,7 +306,14 @@ test(
   },
 );
 
-function smokePorts(): HarnessStagePorts {
+const SMOKE_PRIVATE_INSTRUCTION =
+  'F21 private Skill instruction must never enter DBOS step output.';
+
+function smokePorts(
+  workflowId: string,
+  skills: SkillService,
+  providerSkillRefs: string[][],
+): HarnessStagePorts {
   const context = {
     bundle: {
       bundleId: 'bundle-smoke',
@@ -225,19 +348,59 @@ function smokePorts(): HarnessStagePorts {
     policyReferences: { sourceRefs: [], rightsRefs: [], identityRefs: [] },
   };
   return {
-      async nameIntent() {
-        return {
-          declaration: {
-            normalizedIntent: '推广本店团购',
-            taskType: 'promotion_groupbuy_conversion',
-            deliveryLayer: 'copy',
-            relevantAssetCategories: ['promotion_activity'],
-            usedAssetCategories: ['promotion_activity'],
-            route: 'customized',
-            routingSource: 'model',
-            implicitConstraints: [],
+    async resolveStageSkills(input) {
+      const instructions = input.skillRevisionRefs
+        ? await skills.resolveFrozenRevisions(input.skillRevisionRefs)
+        : (
+            await skills.resolveStage({
+              plannerSelectedSkillRefs: [],
+              stage: input.stage,
+              userSelectedSkillRefs: [],
+              workflowRevisionRef: 'workflow.copy@1',
+            })
+          ).selected;
+      const receipts = await skills.recordPromptMaterializationReceipts({
+        instructions,
+        stage: input.stage,
+        taskId: workflowId,
+        workflowRevisionRef: 'workflow.copy@1',
+        workspaceId: 'workspace-smoke',
+      });
+      return {
+        instructions,
+        receipts,
+      };
+    },
+    async nameIntent(input) {
+      providerSkillRefs.push(
+        input.skillInstructions?.map(
+          ({ skillRevisionRef }) => skillRevisionRef,
+        ) ?? [],
+      );
+      return {
+        declaration: {
+          normalizedIntent: '推广本店团购',
+          taskType: 'promotion_groupbuy_conversion',
+          deliveryLayer: 'copy',
+          relevantAssetCategories: ['promotion_activity'],
+          usedAssetCategories: ['promotion_activity'],
+          route: 'customized',
+          routingSource: 'model',
+          implicitConstraints: [],
         },
-        blockingQuestion: null,
+        blockingQuestion: {
+          questionId: `${workflowId}:s1:offer_price`,
+          workflowId,
+          workflowRevision: 1,
+          question: '本次团购的当前价格是多少？',
+          options: [],
+          freeText: { enabled: true },
+          response: {
+            field: 'offer_price',
+            reason: '补充当前任务所需的权威事实',
+          },
+          scope: 'current_task',
+        },
       };
     },
     async injectContext() {
@@ -293,5 +456,88 @@ function smokePorts(): HarnessStagePorts {
         revision: 1,
       };
     },
+  };
+}
+
+async function createSmokeSkills(workflowId: string) {
+  const repository = new MemorySkillRepository();
+  const service = new SkillService(
+    repository,
+    () => '2026-07-26T09:00:00.000Z',
+  );
+  await repository.putCatalog({
+    activeRevisionRef: 'skill.intent-one@2',
+    actorId: 'operator-smoke',
+    createdAt: '2026-07-26T09:00:00.000Z',
+    name: 'F21 smoke Skill',
+    presentationPolicy: 'backend_only',
+    skillId: 'skill.intent-one',
+    updatedAt: '2026-07-26T09:00:00.000Z',
+  });
+  await repository.putRevision(
+    smokeSkillRevision(1, 'Earlier private instruction.'),
+    null,
+  );
+  await repository.putRevision(
+    smokeSkillRevision(2, SMOKE_PRIVATE_INSTRUCTION),
+    1,
+  );
+  await service.bindRevision({
+    bindingId: `binding.smoke-v2-${workflowId}`,
+    mode: 'required',
+    skillRevisionRef: 'skill.intent-one@2',
+    stage: 'intent_naming',
+    workflowRevisionRef: 'workflow.copy@1',
+  });
+  return {
+    foundation: new SkillFoundationModule(service),
+    service,
+  };
+}
+
+function smokeSkillRevision(
+  revision: number,
+  instruction: string,
+): SkillRevision {
+  return {
+    acceptedAt: '2026-07-26T09:00:00.000Z',
+    acceptedBy: 'operator-smoke',
+    contentHash: `hash-skill-${revision}`,
+    createdAt: '2026-07-26T09:00:00.000Z',
+    createdBy: 'operator-smoke',
+    evalRunId: `eval-smoke-${revision}`,
+    instruction,
+    manifest: {
+      allowedTools: [],
+      budget: {
+        maxChildEffects: 0,
+        maxCostCents: 0,
+        timeoutMs: 10_000,
+      },
+      compatibility: {
+        workflowRevisionRefs: ['workflow.copy@1'],
+      },
+      contextScopes: [],
+      evalSuiteRef: 'skills-f21-smoke@1',
+      executionMode: 'prompt_materialized',
+      fallback: 'fail_closed',
+      inputSchemaRef: 'skill-input.intent@1',
+      outputSchemaRef: 'skill-output.intent@1',
+      requiredModelCapabilities: ['structured_output'],
+      sideEffectClass: 'none',
+    },
+    prompt: {
+      content: instruction,
+      contentHash: `prompt-hash-${revision}`,
+      isFallback: false,
+      label: 'production',
+      name: 'skills/f21-smoke',
+      source: 'langfuse',
+      version: String(revision),
+    },
+    revision,
+    skillId: 'skill.intent-one',
+    skillRevisionRef: `skill.intent-one@${revision}`,
+    status: 'accepted_frozen',
   };
 }

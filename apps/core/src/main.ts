@@ -277,6 +277,10 @@ import {
   createDurableCreationExperienceRuntime,
 } from './p1/creation-experience/index.js';
 import {
+  createDurableSkillRuntime,
+  PostgresSkillRepository,
+} from './p1/skills/index.js';
+import {
   CatalogProductQuoteAuthority,
   DurableProductBillingService,
   PostgresProductBillingRepository,
@@ -404,6 +408,7 @@ const cloudflareInventory = new CloudflareInventoryAdapter({
   mapping: cloudflareMapping,
 });
 const integrationRepository = new PostgresIntegrationRepository(pool);
+const skillRepository = new PostgresSkillRepository(pool);
 const supplyControlRepository = new PostgresSupplyControlPlaneRepository(pool);
 const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
   pool,
@@ -412,6 +417,7 @@ const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
 await migratePostgresSchema(pool, [
   adminConfigRepository,
   integrationRepository,
+  skillRepository,
   supplyControlRepository,
   new PostgresCapabilityHotAssemblyMigration(),
   new PostgresSupplyPlanningMigration(),
@@ -767,6 +773,7 @@ await migratePostgresSchema(pool, [
   canonicalVideoWorkflowSchema,
   videoRegenerationRepository,
   integrationRepository,
+  skillRepository,
   cutoverExecution,
   tracerJobRepository,
   operationalTelemetryStore,
@@ -1231,11 +1238,16 @@ await operationsService.seedOfficialTemplateFamilies({
 });
 
 // Z1/#105 thin wiring — independent FoundationModules (S1 freeze discipline).
+const skillRuntime = await createDurableSkillRuntime({
+  pool,
+  repository: skillRepository,
+});
 const creationExperienceRuntime =
   await createDurableCreationExperienceRuntime({
     modelCatalog: modelSupplyRepository,
     pool,
     productQuotes: productBillingRepository,
+    skillRevisionValidation: skillRuntime.revisionValidation,
   });
 operationsService.attachBriefSubmissionGate(
   creationExperienceRuntime.briefSubmissionGate,
@@ -1256,6 +1268,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       new PostgresAdvancedCanvasAdoptionService(pool)
     ),
     creationExperienceRuntime.foundationModule,
+    skillRuntime.foundationModule,
     new ProductBillingFoundationModule(
       productQuoteService,
       productQuoteAuthority,
@@ -1574,7 +1587,8 @@ if (harnessRuntimeConfig) {
     () => new Date().toISOString(),
     reuseMemoryService,
     contentPackageRevisionWriter,
-    sourceContentPackages
+    sourceContentPackages,
+    skillRuntime.instructionResolver
   );
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).

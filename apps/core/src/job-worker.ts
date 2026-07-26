@@ -90,6 +90,7 @@ import {
   createS3AssetRegistrationCleanupJobHandler,
   registerS3AssetRegistrationCleanupSchedule,
 } from './p1/model-supply/owned-asset-registration-cleanup.js';
+import { PostgresSkillRepository } from './p1/skills/index.js';
 import { PostgresOwnedAssetCleanupClaimCoordinator } from './p1/model-supply/postgres-owned-asset-cleanup-claim.js';
 import { S3CompatibleAssetStorage } from './p1/model-supply/s3-asset-storage.js';
 import {
@@ -268,6 +269,7 @@ const contentPackageWriteOwnership =
   new PostgresContentPackageWriteOwnership(pool);
 const modelRepository = new PostgresModelSupplyRepository(pool);
 const integrationRepository = new PostgresIntegrationRepository(pool);
+const skillRepository = new PostgresSkillRepository(pool);
 const supplyControlRepository = new PostgresSupplyControlPlaneRepository(pool);
 const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
   pool,
@@ -323,6 +325,7 @@ await migratePostgresSchema(pool, [
   contentPackageWriteOwnership,
   modelRepository,
   integrationRepository,
+  skillRepository,
   supplyControlRepository,
   new PostgresCapabilityHotAssemblyMigration(),
   new PostgresSupplyPlanningMigration(),

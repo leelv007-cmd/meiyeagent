@@ -26,6 +26,9 @@ const PREFERENCE_MEMORY_BASELINE = fileURLToPath(
     import.meta.url,
   ),
 );
+const SKILLS_BASELINE = fileURLToPath(
+  new URL('../../evals/skills/skills.baseline.eval-run.json', import.meta.url),
+);
 const CLI_ENTRY = fileURLToPath(
   new URL('./langfuse-evalrun-importer-cli.ts', import.meta.url),
 );
@@ -34,7 +37,7 @@ const WORKSPACE_DIRECTORY = fileURLToPath(
   new URL('../../../../../', import.meta.url),
 );
 
-test('imports both versioned EvalRun baselines through the dataset-item whitelist', async (t) => {
+test('imports versioned redline, memory and Skill EvalRuns through the dataset-item whitelist', async (t) => {
   const requests: Array<{
     authorization?: string;
     url?: string;
@@ -58,6 +61,7 @@ test('imports both versioned EvalRun baselines through the dataset-item whitelis
   const preferenceMemory = await importer.importArtifact(
     PREFERENCE_MEMORY_BASELINE,
   );
+  const skills = await importer.importArtifact(SKILLS_BASELINE);
 
   assert.deepEqual(redlines, {
     datasetName: 'harness-evalrun:harness-seven-redlines',
@@ -69,7 +73,12 @@ test('imports both versioned EvalRun baselines through the dataset-item whitelis
     importedItems: 4,
     runId: 'beauty-preference-memory-canonical-v1',
   });
-  assert.equal(requests.length, 25);
+  assert.deepEqual(skills, {
+    datasetName: 'harness-evalrun:harness-skills',
+    importedItems: 2,
+    runId: 'skills-five-piece-recorded-v2',
+  });
+  assert.equal(requests.length, 27);
   assert.equal(
     requests[0]?.authorization,
     `Basic ${Buffer.from('pk-test:sk-test').toString('base64')}`,
@@ -108,6 +117,13 @@ test('imports both versioned EvalRun baselines through the dataset-item whitelis
   assert.equal(serialized.includes('reason'), false);
   assert.equal(serialized.includes('memoryDiff'), false);
   assert.equal(serialized.includes('signal-temporary'), false);
+  assert.deepEqual(requests.at(-1)?.body.input, {
+    caseId: 'different-skill-eval-is-rejected',
+    gateId: 'skill_revision_acceptance',
+    promptRevision: 'skills/daily-industry@1',
+    scorerRevision: 'skill-routing-scorer@2',
+    skillRevisionRef: 'skill.daily-industry@1',
+  });
 });
 
 test('reimporting the same EvalRun leaves zero duplicate dataset items', async (t) => {

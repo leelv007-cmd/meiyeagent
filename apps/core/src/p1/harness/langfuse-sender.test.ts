@@ -151,6 +151,40 @@ test('free-form scoring reasons cannot leave Core through Langfuse payloads', as
   });
 });
 
+test('Langfuse Skill lineage emits only revision refs and hashes through both body whitelists', async (t) => {
+  let body:
+    | { batch: Array<{ type: string; body: Record<string, unknown> }> }
+    | undefined;
+  const server = createServer(async (request, response) => {
+    body = await readJson(request);
+    sendJson(response, 200, { successes: [] });
+  });
+  const sender = new LangfuseHttpSender({
+    baseUrl: await listen(t, server),
+    publicKey: 'pk-test',
+    secretKey: 'sk-test',
+  });
+  const item = selectionItem();
+  Object.assign(item.decisionTrace as Record<string, unknown>, {
+    skillRevisionRefs: ['skill.intent@2'],
+    skillContentHashes: ['hash-intent-two'],
+    skillInstructions: ['private instruction body'],
+  });
+
+  await sender.send(item);
+
+  const trace = body?.batch.find(({ type }) => type === 'trace-create')?.body;
+  const span = body?.batch.find(({ type }) => type === 'span-create')?.body;
+  for (const event of [trace, span]) {
+    assert.equal('skillRevisionRefs' in (event ?? {}), false);
+    assert.equal('skillContentHashes' in (event ?? {}), false);
+    const metadata = event?.metadata as Record<string, unknown>;
+    assert.deepEqual(metadata.skillRevisionRefs, ['skill.intent@2']);
+    assert.deepEqual(metadata.skillContentHashes, ['hash-intent-two']);
+  }
+  assert.equal(JSON.stringify(body).includes('private instruction body'), false);
+});
+
 test('same outbox event replay sends identical idempotency and entity ids', async (t) => {
   const bodies: unknown[] = [];
   const server = createServer(async (request, response) => {

@@ -120,6 +120,7 @@ export type P1Module =
   | 'product-billing'
   | 'redemptions'
   | 'result-delivery'
+  | 'skills'
   | 'video-regeneration';
 
 const personalModelActions = new Set([
@@ -340,6 +341,19 @@ export function requiredP1Capability(
       'surface_publish',
       'surface_rollback',
     ]).has(action)
+      ? 'config.publish'
+      : null;
+  }
+
+  if (module === 'skills') {
+    return kind === 'command' &&
+      new Set([
+        'skill_define',
+        'skill_accept',
+        'skill_bind',
+        'skill_rollback',
+        'skill_deployment',
+      ]).has(action)
       ? 'config.publish'
       : null;
   }

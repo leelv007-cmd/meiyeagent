@@ -163,12 +163,22 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
   const prompt = projectPromptReference(isRecord(item.decisionTrace)?.prompt);
   const metrics = projectMetrics(isRecord(item.decisionTrace)?.metrics);
   const productMetrics = projectProductMetrics(item.eventType, item.payload);
+  const skillRevisionRefs = stringArray(
+    isRecord(item.decisionTrace)?.skillRevisionRefs,
+  ) ?? [];
+  const skillContentHashes = stringArray(
+    isRecord(item.decisionTrace)?.skillContentHashes,
+  ) ?? [];
+  const skillLineage =
+    skillRevisionRefs.length > 0 || skillContentHashes.length > 0
+      ? { skillRevisionRefs, skillContentHashes }
+      : {};
   const traceBody = exactFields(LANGFUSE_TRACE_BODY_FIELDS, {
     id: traceId,
     name: 'beauty-marketing-task',
     sessionId: item.workflowId,
     tags: ['harness', item.stage],
-    metadata: { taskId, workflowId: item.workflowId },
+    metadata: { taskId, workflowId: item.workflowId, ...skillLineage },
   });
   const spanMetadata: Record<string, unknown> = {
     auditId: item.auditId,
@@ -181,6 +191,7 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     ...(prompt ? { prompt } : {}),
     ...(metrics ? { metrics } : {}),
     ...(productMetrics ? { productMetrics } : {}),
+    ...skillLineage,
   };
   const spanBody = exactFields(LANGFUSE_SPAN_BODY_FIELDS, {
     id: spanId,

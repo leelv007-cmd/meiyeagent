@@ -15,6 +15,10 @@ import type {
   StructuredNodeMetricsSnapshot,
 } from './structured-nodes.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import type {
+  ResolvedSkillInstruction,
+  SkillInvocationReceipt,
+} from '../skills/types.js';
 import { promptTraceReference } from './langfuse-prompts.js';
 import type { HarnessPolicyInput } from './policy-gates.js';
 import {
@@ -104,10 +108,20 @@ export interface HarnessContextSnapshot {
 }
 
 export interface HarnessStagePorts {
+  resolveStageSkills?(input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    stage: 'intent_naming';
+    skillRevisionRefs?: readonly string[];
+  }): Promise<{
+    instructions: ResolvedSkillInstruction[];
+    receipts: SkillInvocationReceipt[];
+  }>;
   nameIntent(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
     round?: number;
+    skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<{
     declaration: IntentDeclaration;
     blockingQuestion: QuestionCard | null;
@@ -262,6 +276,82 @@ export class HarnessSnapshotDecisionError extends Error {
   }
 }
 
+const INTENT_SKILL_RESOLUTION_STEP = 'skill:resolve:intent';
+
+async function resolveIntentStageSkills(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+  ports: HarnessStagePorts,
+  runtime: HarnessWorkflowRuntime,
+) {
+  const frozen = await runtime.runStep(
+    INTENT_SKILL_RESOLUTION_STEP,
+    async () => {
+      const resolved =
+        (await ports.resolveStageSkills?.({
+          workflowId,
+          request,
+          stage: 'intent_naming',
+        })) ?? { instructions: [], receipts: [] };
+      return {
+        skillRevisionRefs: resolved.instructions.map(
+          ({ skillRevisionRef }) => skillRevisionRef,
+        ),
+        skillContentHashes: resolved.instructions.map(
+          ({ contentHash }) => contentHash,
+        ),
+        skillReceiptIds: resolved.receipts.map(
+          ({ invocationId }) => invocationId,
+        ),
+      };
+    },
+  );
+  if (frozen.skillRevisionRefs.length === 0) {
+    return { instructions: [], receipts: [] };
+  }
+  if (!ports.resolveStageSkills) {
+    throw new Error('Skill 解析端口不可用，无法恢复已冻结的 Skill。');
+  }
+  const resolved = await ports.resolveStageSkills({
+    workflowId,
+    request,
+    stage: 'intent_naming',
+    skillRevisionRefs: frozen.skillRevisionRefs,
+  });
+  const current = {
+    skillRevisionRefs: resolved.instructions.map(
+      ({ skillRevisionRef }) => skillRevisionRef,
+    ),
+    skillContentHashes: resolved.instructions.map(
+      ({ contentHash }) => contentHash,
+    ),
+    skillReceiptIds: resolved.receipts.map(
+      ({ invocationId }) => invocationId,
+    ),
+  };
+  if (
+    !sameOrderedValues(current.skillRevisionRefs, frozen.skillRevisionRefs) ||
+    !sameOrderedValues(
+      current.skillContentHashes,
+      frozen.skillContentHashes,
+    ) ||
+    !sameOrderedValues(current.skillReceiptIds, frozen.skillReceiptIds)
+  ) {
+    throw new Error('已冻结的 Skill 版本、内容哈希或回执不一致。');
+  }
+  return resolved;
+}
+
+function sameOrderedValues(
+  left: readonly string[],
+  right: readonly string[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 export async function runHarnessWorkflow(
   workflowId: string,
   request: HarnessWorkflowInput,
@@ -314,9 +404,27 @@ export async function runHarnessWorkflow(
     return executed.selection;
   };
   let activeRequest = request;
+  const intentSkills = await resolveIntentStageSkills(
+    workflowId,
+    request,
+    ports,
+    runtime,
+  );
   const intent = await runtime.runStep(
-    harnessEffectKey(workflowId, 1, 'intent', '0'),
-    () => ports.nameIntent({ workflowId, request }),
+    harnessEffectKey(
+      workflowId,
+      1,
+      skillEffectUnit('intent', intentSkills.instructions),
+      '0',
+    ),
+    () =>
+      ports.nameIntent({
+        workflowId,
+        request,
+        ...(intentSkills.instructions.length > 0
+          ? { skillInstructions: intentSkills.instructions }
+          : {}),
+      }),
   );
   const routed = await resolveIntentRoute({
     workflowId,
@@ -325,6 +433,7 @@ export async function runHarnessWorkflow(
     ports,
     runtime,
     reportProgress,
+    skills: intentSkills,
   });
   activeRequest = routed.request;
   await trace(runtime, workflowId, 'intent_naming', {
@@ -336,6 +445,19 @@ export async function runHarnessWorkflow(
       ? { prompt: promptTraceReference(request.prompts.intentNaming) }
       : {}),
     ...(intent.metrics ? { metrics: intent.metrics } : {}),
+    ...(intentSkills.instructions.length > 0
+      ? {
+          skillRevisionRefs: intentSkills.instructions.map(
+            (skill) => skill.skillRevisionRef,
+          ),
+          skillContentHashes: intentSkills.instructions.map(
+            (skill) => skill.contentHash,
+          ),
+          skillReceiptIds: intentSkills.receipts.map(
+            (receipt) => receipt.invocationId,
+          ),
+        }
+      : {}),
   });
   await reportProgress({
     stage: 'intent_naming',
@@ -778,9 +900,27 @@ async function runMediaHarnessWorkflow(
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: eventSequence++ });
   let activeRequest = request;
+  const intentSkills = await resolveIntentStageSkills(
+    workflowId,
+    request,
+    ports,
+    runtime,
+  );
   const intent = await runtime.runStep(
-    harnessEffectKey(workflowId, 1, 'intent', '0'),
-    () => ports.nameIntent({ workflowId, request }),
+    harnessEffectKey(
+      workflowId,
+      1,
+      skillEffectUnit('intent', intentSkills.instructions),
+      '0',
+    ),
+    () =>
+      ports.nameIntent({
+        workflowId,
+        request,
+        ...(intentSkills.instructions.length > 0
+          ? { skillInstructions: intentSkills.instructions }
+          : {}),
+      }),
   );
   if (intent.declaration.deliveryLayer !== 'finished_media') {
     throw new HarnessMediaScopeError(
@@ -794,6 +934,7 @@ async function runMediaHarnessWorkflow(
     ports,
     runtime,
     reportProgress,
+    skills: intentSkills,
   });
   activeRequest = routed.request;
   await trace(runtime, workflowId, 'intent_naming', {
@@ -806,6 +947,19 @@ async function runMediaHarnessWorkflow(
       ? { prompt: promptTraceReference(request.prompts.intentNaming) }
       : {}),
     ...(intent.metrics ? { metrics: intent.metrics } : {}),
+    ...(intentSkills.instructions.length > 0
+      ? {
+          skillRevisionRefs: intentSkills.instructions.map(
+            (skill) => skill.skillRevisionRef,
+          ),
+          skillContentHashes: intentSkills.instructions.map(
+            (skill) => skill.contentHash,
+          ),
+          skillReceiptIds: intentSkills.receipts.map(
+            (receipt) => receipt.invocationId,
+          ),
+        }
+      : {}),
   });
   await reportProgress({
     stage: 'intent_naming',
@@ -1245,6 +1399,10 @@ async function resolveIntentRoute(input: {
   reportProgress: (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => Promise<void>;
+  skills: {
+    instructions: ResolvedSkillInstruction[];
+    receipts: SkillInvocationReceipt[];
+  };
 }) {
   if (!input.intent.blockingQuestion) {
     return {
@@ -1304,12 +1462,20 @@ async function resolveIntentRoute(input: {
   });
 
   const reassessed = await input.runtime.runStep(
-    harnessEffectKey(input.workflowId, 1, 'intent', '1'),
+    harnessEffectKey(
+      input.workflowId,
+      1,
+      skillEffectUnit('intent', input.skills.instructions),
+      '1',
+    ),
     () =>
       input.ports.nameIntent({
         workflowId: input.workflowId,
         request: activeRequest,
         round: 1,
+        ...(input.skills.instructions.length > 0
+          ? { skillInstructions: input.skills.instructions }
+          : {}),
       }),
   );
   if (
@@ -1456,4 +1622,14 @@ export function harnessEffectKey(
   candidate: string,
 ) {
   return `wf:${workflowId}:s${stage}:${unit}:${candidate}`;
+}
+
+export function skillEffectUnit(
+  unit: string,
+  skills: readonly Pick<ResolvedSkillInstruction, 'skillRevisionRef'>[],
+) {
+  if (skills.length === 0) return unit;
+  return `${unit}:skills=${skills
+    .map((skill) => encodeURIComponent(skill.skillRevisionRef))
+    .join(',')}`;
 }

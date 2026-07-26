@@ -60,6 +60,79 @@ test('production tracer keeps its server-owned copy delivery layer', async () =>
   assert.equal(delivery.inputs.length, 0);
 });
 
+test('production intent naming receives resolved Skill value objects through the narrow resolver port', async () => {
+  const runner = new QueueRunner([
+    {
+      normalizedIntent: '制作团购文案',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: ['promotion_activity'],
+      route: 'customized',
+      implicitConstraints: [],
+      blockingGap: null,
+    },
+  ]);
+  const resolverInputs: unknown[] = [];
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return contextSnapshot();
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-18T00:01:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    {
+      async resolve(input) {
+        resolverInputs.push(input);
+        return {
+          instructions: [
+            {
+              contentHash: 'hash-intent-skill',
+              executionMode: 'prompt_materialized',
+              instruction: 'Prefer the accepted promotion context.',
+              skillRevisionRef: 'skill.promotion-context@3',
+            },
+          ],
+          receipts: [],
+        };
+      },
+    },
+  );
+  const request = taskInput();
+  const resolved = await ports.resolveStageSkills({
+    workflowId: 'task-skill-port',
+    request,
+    stage: 'intent_naming',
+  });
+
+  await ports.nameIntent({
+    workflowId: 'task-skill-port',
+    request,
+    skillInstructions: resolved.instructions,
+  });
+
+  assert.deepEqual(resolverInputs, [
+    {
+      stage: 'intent_naming',
+      workflowId: 'task-skill-port',
+      workflowRevision: 4,
+      workspaceId: 'workspace-1',
+    },
+  ]);
+  assert.match(
+    runner.requests[0]!.instructions,
+    /\[skill\.promotion-context@3\] Prefer the accepted promotion context\./u,
+  );
+});
+
 test('an existing frozen fact suppresses the matching blocking QuestionCard', async () => {
   const runner = new QueueRunner([
     {
