@@ -138,6 +138,7 @@ async function submitNoteJourney(
   const envelope = (await response.json()) as {
     data?: {
       contentPackage?: { id?: string };
+      replayed?: boolean;
       task?: { id?: string };
       work?: { id?: string };
     };
@@ -147,6 +148,7 @@ async function submitNoteJourney(
   if (expected === 'accepted') {
     expect(response.ok(), envelope.error?.message).toBeTruthy();
     expect(envelope.data?.contentPackage?.id).toBeTruthy();
+    expect(envelope.data?.replayed).toBe(false);
     expect(envelope.data?.task?.id).toBeTruthy();
     expect(envelope.data?.work?.id).toBeTruthy();
   } else {
@@ -526,7 +528,7 @@ test.describe
       const download = await exportFullPackage(page, adopted);
       await assertZipDownload(download, IMAGE_TEXT_CONTRACT, adopted.revision);
 
-      await page.evaluate(() => localStorage.clear());
+      await page.evaluate(() => sessionStorage.clear());
       const blocked = await submitNoteJourney(
         page,
         'insufficient',
