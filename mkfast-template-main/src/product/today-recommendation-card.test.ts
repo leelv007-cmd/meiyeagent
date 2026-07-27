@@ -182,6 +182,8 @@ test('admits only values that look like merchant language', () => {
   const rejected = [
     'fact-price',
     'asset-abc',
+    'factprice',
+    'assetabc',
     '01J8XK2M3N4P5Q6R',
     'SKU_1234',
     'a3f9c2e1b4d6',
@@ -189,6 +191,11 @@ test('admits only values that look like merchant language', () => {
     'ABCDEF',
     'v2/store/name',
     '猫眼加固 01J8XK2M3N4P',
+    '猫眼 J8XK2M3',
+    // 对抗边界：恰好 4 位、中文标点包裹、纯数字邻接字母 token。
+    '猫眼 SKU1',
+    '猫眼（AB12）加固',
+    '猫眼 199，ABCD',
   ];
   for (const value of rejected) {
     assert.deepEqual(
@@ -201,10 +208,19 @@ test('admits only values that look like merchant language', () => {
     );
   }
 
+  // S4 裁决：单 token 纯 Latin 一律退计数；误杀自然词可接受。
+  assert.deepEqual(
+    recommendationFactLabels(
+      ['store_fact:fact-a:1'],
+      [storeFact({ factId: 'fact-a', kind: 'price', value: 'Balayage' })]
+    ),
+    ['价格']
+  );
+
   const admitted: [string, string][] = [
     ['猫眼加固', '价格·猫眼加固'],
     ['199 元洗剪吹', '价格·199 元洗剪吹'],
-    ['Balayage', '价格·Balayage'],
+    ['French Nails', '价格·French Nails'],
   ];
   for (const [value, label] of admitted) {
     assert.deepEqual(

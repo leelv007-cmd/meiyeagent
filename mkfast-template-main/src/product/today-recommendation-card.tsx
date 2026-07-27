@@ -46,10 +46,11 @@ const INTERNAL_NAME_PATTERN =
 const HAN_PATTERN = /\p{Script=Han}/u;
 /** Only machines join words with these — merchant copy never carries them. */
 const MACHINE_PUNCTUATION_PATTERN = /[:_/\\]/u;
-/** `asset-abc`, `01J8XK2M3N4P`, `sku-99`: an id-shaped run inside merchant text. */
-const MACHINE_TOKEN_RUN_PATTERN = /[0-9A-Za-z][0-9A-Za-z-]{7,}/u;
-/** Latin admission: whole words, spaces or apostrophes only — no digits, no glue. */
-const NATURAL_LATIN_NAME_PATTERN = /^[A-Za-z]+(?:[ '][A-Za-z]+)*$/u;
+/** Punctuation and spaces delimit machine-token candidates in Chinese text. */
+const ASCII_ALPHANUMERIC_TOKEN_PATTERN = /[0-9A-Za-z]+/gu;
+const LATIN_LETTER_PATTERN = /[A-Za-z]/u;
+/** Latin admission requires 2+ words separated by spaces or apostrophes. */
+const NATURAL_LATIN_NAME_PATTERN = /^[A-Za-z]+(?:[ '][A-Za-z]+)+$/u;
 /** `deadbeef` reads as a word but is a hex digest; all-caps reads as a code. */
 const HEX_DIGEST_PATTERN = /^[0-9a-f]{6,}$/iu;
 const LOWERCASE_LETTER_PATTERN = /[a-z]/u;
@@ -143,12 +144,15 @@ function readableFactName(value: StoreFact['value']) {
   // No merchant types a colon, underscore or slash into a service name.
   if (MACHINE_PUNCTUATION_PATTERN.test(name)) return undefined;
   if (HAN_PATTERN.test(name)) {
-    // Chinese text is admitted unless an id-shaped run rides along with it.
-    return MACHINE_TOKEN_RUN_PATTERN.test(name) ? undefined : name;
+    // In Chinese text, reject each punctuation/space-delimited ASCII token when
+    // it is 4+ characters and carries a letter. Numeric prices remain readable.
+    const carriesMachineToken = (
+      name.match(ASCII_ALPHANUMERIC_TOKEN_PATTERN) ?? []
+    ).some((token) => token.length >= 4 && LATIN_LETTER_PATTERN.test(token));
+    return carriesMachineToken ? undefined : name;
   }
-  // Latin-only values must be plain words: no digits (kills ULID/base32/hex
-  // ids), no glue characters (kills `fact-price`, `asset-abc`), not all caps
-  // (kills `SKU`, `ABCDEF`), and not a hex digest (kills `deadbeef`).
+  // Latin-only values must contain 2+ plain words: no digits, no glue, no
+  // single-token machine strings, and no all-caps codes.
   return NATURAL_LATIN_NAME_PATTERN.test(name) &&
     LOWERCASE_LETTER_PATTERN.test(name) &&
     !HEX_DIGEST_PATTERN.test(name)
