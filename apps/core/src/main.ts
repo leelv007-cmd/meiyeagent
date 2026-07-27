@@ -281,6 +281,7 @@ import {
   PostgresStoreIntakeFinalizationRepository,
   StoreIntakeFinalizer,
 } from './p1/operations/store-intake-finalizer.js';
+import { StoreProfileImportPreparer } from './p1/operations/store-profile-import.js';
 import {
   migrateProStudioSchema,
   PostgresAdvancedCanvasProjectRepository,
@@ -1229,6 +1230,13 @@ const storeIntakeFinalizer = new StoreIntakeFinalizer(
       ),
   },
 );
+const storeProfileImportPreparer = new StoreProfileImportPreparer(
+  {
+    read: async (context) =>
+      (await productService.bootstrap({ ...context, actor: 'user' })).store,
+  },
+  assetIntakeService
+);
 const reuseMemoryService = new ReuseMemoryService(
   reuseMemoryRepository,
   new OperationsReusableAssetSourceVerifier(
@@ -1556,7 +1564,8 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       reuseTaskHarnessAdapter,
       undefined,
       parseService,
-      storeIntakeFinalizer
+      storeIntakeFinalizer,
+      storeProfileImportPreparer
     ),
     new OperationsFoundationModule(operationsService, {
       adminActorIds: modelAdminActorIds,

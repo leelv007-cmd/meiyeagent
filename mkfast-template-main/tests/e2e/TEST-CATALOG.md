@@ -371,6 +371,17 @@ evidence.
 |---|---|---|
 | 1 | One inline confirmation reaches the customized delivery context without erasing the store profile | Create one legacy StoreProfile with two accounts and two confirmed projects, prove its public active-fact ledger is empty, then use the visible ProgressiveFactCard to explicitly reconfirm the first project name and change its price. Require exactly one `asset-memory.finalize_store_intake` request, two revision-1 merchant-confirmed facts, and preservation of the second project, accounts, compliance flag, prohibitions, and all untouched profile fields. Submit a customized copy journey, read the resulting ContentPackage and its exact public ContextBundle revision, and prove the service and price revisions are frozen as `current_fact` / `store_personal` with matching source, expiry, references, and package fact evidence. |
 
+## 24c. W02 Five-Step Store Intake
+
+**File:** `specs/w02-five-step-intake.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | A price-list photo becomes a confirmed store fact, and its origin is never hidden | Seed a legacy StoreProfile with an empty fact ledger, open the store page wizard, rotate the platform sample, upload a price-list photo through the newly exposed workspace asset `PUT` (objectKey + sha256 + sizeBytes), run `parse_single_asset`, and require the server draft to come back `parsed` with a `photo_extract` field. Prove the extracted price is prefilled, badged "照片识别", and still marked unconfirmed until each field is explicitly confirmed; then require exactly one `asset-memory.finalize_store_intake`, a revision-1 price fact of 239 CNY in the public ledger, a store-name fact, and preservation of the untouched profile fields. |
+| 2 | A failed read hands the merchant the same schema to type in | Inject a single `parse_single_asset` failure, prove the wizard surfaces an honest failure with a one-click switch, then require the real `prepare_manual_asset_draft` round trip to return a `manual` draft whose fields carry the same `store.profile.*` / `service.*` keys the parse lane maps from, every one `user`-provenance and `unconfirmed`. |
+| 3 | A work photo is classified into one of the four contract slots, with a rights reminder that does not block | Switch the intake target to the visual-asset lane, upload a photo without answering the rights prompt, and require `parse_single_asset` to return a `visualClassification` whose slot is a member of `VISUAL_ASSET_SLOTS` and whose `rightsPrompt.blocking` is `false`. Prove the slot badge and the rights reminder are rendered, and that a classification writes nothing to the fact ledger. |
+| 4 | Details entered before the ledger existed are staged for confirmation, never promoted | Seed a two-project legacy profile, open the store page, and require the D-151③ import panel to stage the second project as well as the first while the active-fact ledger stays empty. Confirm the staged candidates and require revision-1 facts whose `source.kind` is `import`, including the fulfillment booking value the progressive card could never reach. |
+
 ## 25. Day-0 Recommendation And Example Store
 
 **File:** `specs/uiux-creation-loop.spec.ts` | **Priority:** P0

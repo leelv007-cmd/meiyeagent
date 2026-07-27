@@ -207,8 +207,12 @@ export async function forwardWorkspaceCoreRequest(
   return coreProxyResponse(upstream);
 }
 
+/** Bytes a merchant may push into their own workspace asset space (W02 ①). */
+const WORKSPACE_ASSET_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+
 export async function forwardWorkspaceAssetRequest(request: Request) {
   const headOnly = request.method === 'HEAD';
+  const writing = request.method === 'PUT';
   const serviceWorkspaceId = request.headers.get('x-workspace-id');
   const serviceAuthorized =
     request.headers.get('x-service-token') === serverEnv.CORE_SERVICE_TOKEN &&
@@ -260,6 +264,37 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
   headers.set('x-workspace-role', workspaceRole);
   headers.set('x-correlation-id', `asset-${crypto.randomUUID()}`);
   const path = objectKey.split('/').map(encodeURIComponent).join('/');
+
+  if (writing) {
+    // Read the body here rather than streaming it: Core enforces its own
+    // 25 MiB ceiling, and a proxy that forwards an unbounded stream would let
+    // a merchant tie up a Core connection for as long as they keep writing.
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (
+      bytes.byteLength === 0 ||
+      bytes.byteLength > WORKSPACE_ASSET_UPLOAD_MAX_BYTES
+    ) {
+      return Response.json(
+        { error: { code: 'ASSET_PAYLOAD_INVALID' } },
+        { status: 413 }
+      );
+    }
+    const contentType = request.headers.get('content-type');
+    if (contentType) headers.set('content-type', contentType);
+    headers.set('content-length', String(bytes.byteLength));
+    let written: Response;
+    try {
+      written = await coreFetch(
+        fetch,
+        `${serverEnv.CORE_SERVICE_URL}/v1/assets/${path}`,
+        { body: bytes, headers, method: 'PUT', signal: request.signal }
+      );
+    } catch {
+      return coreUnavailableResponse();
+    }
+    return coreProxyResponse(written);
+  }
+
   let upstream: Response;
   try {
     upstream = await coreFetch(
