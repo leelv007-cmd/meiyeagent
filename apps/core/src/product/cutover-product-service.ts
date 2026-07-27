@@ -1,6 +1,7 @@
 import type {
   ProductCommand,
   ProductContext,
+  StoreProfilePatch,
 } from '@meiye/contracts';
 import {
   DomainError,
@@ -38,6 +39,70 @@ export class CutoverProductService implements ProductApplicationService {
   async bootstrap(context: ProductContext) {
     const owner = await this.ownership.getFutureWriteOwner(context.workspaceId);
     return (owner === 'p1' ? this.relational : this.legacy).bootstrap(context);
+  }
+
+  async completedStoreProfileMergeRevision(
+    context: ProductContext,
+    patch: StoreProfilePatch,
+    idempotencyKey: string
+  ) {
+    const commandOwner = await this.ownership.getCommandOwner?.(
+      context.workspaceId,
+      idempotencyKey
+    );
+    if (commandOwner) {
+      return (
+        commandOwner === 'p1' ? this.relational : this.legacy
+      ).completedStoreProfileMergeRevision(context, patch, idempotencyKey);
+    }
+    const owner = await this.ownership.getFutureWriteOwner(context.workspaceId);
+    return (owner === 'p1'
+      ? this.relational
+      : this.legacy
+    ).completedStoreProfileMergeRevision(context, patch, idempotencyKey);
+  }
+
+  async mergeStoreProfile(
+    context: ProductContext,
+    patch: StoreProfilePatch,
+    idempotencyKey: string
+  ) {
+    const commandOwner = await this.ownership.getCommandOwner?.(
+      context.workspaceId,
+      idempotencyKey
+    );
+    if (commandOwner) {
+      return (
+        commandOwner === 'p1' ? this.relational : this.legacy
+      ).mergeStoreProfile(context, patch, idempotencyKey);
+    }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const owner = await this.ownership.getFutureWriteOwner(
+        context.workspaceId
+      );
+      const service = owner === 'p1' ? this.relational : this.legacy;
+      try {
+        return await service.mergeStoreProfile(
+          context,
+          patch,
+          idempotencyKey
+        );
+      } catch (error) {
+        if (
+          attempt === 0 &&
+          error instanceof DomainError &&
+          ownershipRaceCodes.has(error.code)
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new DomainError(
+      'WRITE_OWNER_UNSTABLE',
+      'Product write ownership changed repeatedly while routing the store profile patch.',
+      409
+    );
   }
 
   async execute(

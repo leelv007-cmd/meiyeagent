@@ -363,6 +363,14 @@ evidence.
 | 1 | Only complete marketing entries switch the canonical Composer context | Seed one D-023-complete entry and one entry missing any single MarketingPackage capability; open the canonical dashboard, verify only the complete entry is visible, click it, and verify the editable intent plus recommended tools change in place without navigation or a field form. Legacy scene chips appear only as secondary choices under the released parent. |
 | 2 | One server-owned question persists and resumes the harness | Start a Harness task with one missing authoritative fact, follow its stable SSE progress into `suspended`, render exactly one inline QuestionCard, answer it, and require the structured decision to bind the server-declared field, task, question, workflow revision, scope, and idempotency key. Reload to prove the question is no longer pending and follow the same SSE stream through resumed progress to the delivered ContentPackage revision. Replaying the same answer is idempotent; a stale revision and a changed target both return 409. |
 
+## 24b. W01 Store Intake Fact Wiring
+
+**File:** `specs/w01-storefact-wiring.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | One inline confirmation reaches the customized delivery context without erasing the store profile | Create one legacy StoreProfile with two accounts and two confirmed projects, prove its public active-fact ledger is empty, then use the visible ProgressiveFactCard to explicitly reconfirm the first project name and change its price. Require exactly one `asset-memory.finalize_store_intake` request, two revision-1 merchant-confirmed facts, and preservation of the second project, accounts, compliance flag, prohibitions, and all untouched profile fields. Submit a customized copy journey, read the resulting ContentPackage and its exact public ContextBundle revision, and prove the service and price revisions are frozen as `current_fact` / `store_personal` with matching source, expiry, references, and package fact evidence. |
+
 ## 25. Day-0 Recommendation And Example Store
 
 **File:** `specs/uiux-creation-loop.spec.ts` | **Priority:** P0

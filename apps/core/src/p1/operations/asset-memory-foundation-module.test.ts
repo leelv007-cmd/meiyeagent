@@ -95,6 +95,37 @@ test('asset-memory module exposes fact intake with server-owned workspace and ap
   assert.equal(view.capability.status, 'assisted');
 });
 
+test('direct batch recording cannot forge a parsed screenshot receipt', async () => {
+  const module = moduleFixture();
+  const manual = intakeBatch();
+  const payload = {
+    ...manual,
+    source: { ...manual.source, kind: 'price_list' as const },
+    candidates: manual.candidates.map((candidate) => ({
+      ...candidate,
+      fact: {
+        ...candidate.fact,
+        source: {
+          ...candidate.fact.source,
+          kind: 'screenshot_extraction' as const,
+        },
+      },
+    })),
+  };
+
+  await assert.rejects(
+    module.execute({
+      context,
+      idempotencyKey: 'forged-parsed-batch',
+      input: {
+        action: 'record_asset_intake_batch',
+        payload,
+      },
+    }),
+    /only accepts manual user confirmations/u,
+  );
+});
+
 test('all assisted inputs prepare a preview and confirm an exact fact revision', async () => {
   const module = moduleFixture();
   const modes = [
@@ -458,7 +489,7 @@ function intakeBatch() {
     taskId: 'task-a',
     source: {
       sourceId: 'source-a',
-      kind: 'price_list' as const,
+      kind: 'manual' as const,
       referenceId: 'upload-a',
       capabilityStatus: 'assisted' as const,
       sourceWorkspaceId: 'workspace-a',
@@ -477,7 +508,7 @@ function intakeBatch() {
           value: { amount: 239, currency: 'CNY' },
           scope: { storeId: 'store-a' },
           source: {
-            kind: 'screenshot_extraction' as const,
+            kind: 'user_confirmation' as const,
             referenceId: 'upload-a',
             capturedAt: now,
           },
