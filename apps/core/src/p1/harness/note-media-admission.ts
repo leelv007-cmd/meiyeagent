@@ -27,11 +27,16 @@ export interface NoteMediaAdmissionPort {
 }
 
 type ClaimRow = {
+	claim_expired: boolean;
 	generation: string;
 	job_id: string | null;
 	status: "claimed" | "completed" | "failed" | "running";
 	workflow_id: string;
 };
+
+// Two times the 300-second admission polling window gives an abandoned claim
+// enough time to finish before another workflow takes ownership.
+export const NOTE_MEDIA_ADMISSION_CLAIM_TTL_SECONDS = 600;
 
 export class PostgresNoteMediaAdmissionCoordinator
 	implements NoteMediaAdmissionPort
@@ -61,10 +66,11 @@ export class PostgresNoteMediaAdmissionCoordinator
 	}) {
 		return this.locked(input, async (client) => {
 			const current = await client.query<ClaimRow>(
-				`SELECT workflow_id, generation::text, status, job_id
-           FROM harness_runtime.note_media_admission_claims
-          WHERE workspace_id = $1 AND task_id = $2
-          FOR UPDATE`,
+				`SELECT workflow_id, generation::text, status, job_id,
+				        updated_at <= now() - interval '${NOTE_MEDIA_ADMISSION_CLAIM_TTL_SECONDS} seconds' AS claim_expired
+			           FROM harness_runtime.note_media_admission_claims
+			          WHERE workspace_id = $1 AND task_id = $2
+			          FOR UPDATE`,
 				[input.workspaceId, input.taskId],
 			);
 			const row = current.rows[0];
@@ -72,9 +78,10 @@ export class PostgresNoteMediaAdmissionCoordinator
 				row &&
 				(row.status === "claimed" || row.status === "running")
 			) {
-				return row.workflow_id === input.workflowId
-					? token(input, Number(row.generation), row.job_id)
-					: null;
+				if (row.workflow_id === input.workflowId) {
+					return token(input, Number(row.generation), row.job_id);
+				}
+				if (!row.claim_expired) return null;
 			}
 			const generation = row ? Number(row.generation) + 1 : 1;
 			await client.query(
@@ -125,7 +132,7 @@ export class PostgresNoteMediaAdmissionCoordinator
           AND task_id = $2
           AND workflow_id = $3
           AND generation = $4
-          AND status IN ('claimed', 'running')`,
+	          AND (status IN ('claimed', 'running') OR status = $5)`,
 			[
 				token.workspaceId,
 				token.taskId,

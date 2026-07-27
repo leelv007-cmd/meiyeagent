@@ -1103,6 +1103,7 @@ test("note pages keep durable admission single-flight while compiler branches re
 					await new Promise<void>((resolve) => setImmediate(resolve));
 				}
 			},
+			runStep: async (_effectKey, operation) => operation(),
 		}),
 	]);
 
@@ -1176,6 +1177,48 @@ test("a competing note workflow polls inside one durable admission effect", asyn
 		"claim:workflow-note:page-1:g1",
 		"blocked:workflow-note:page-2",
 	]);
+});
+
+test("a busy note admission without a durable step returns 202 immediately", async () => {
+	let claimCalls = 0;
+	let submissions = 0;
+	const blockedAdmission: NoteMediaAdmissionPort = {
+		async claim() {
+			claimCalls += 1;
+			return null;
+		},
+		async markRunning() {
+			throw new Error("markRunning must not run without a claim");
+		},
+		async markTerminal() {
+			throw new Error("markTerminal must not run without a claim");
+		},
+	};
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				return completedResult("image");
+			},
+		},
+		undefined,
+		blockedAdmission,
+	);
+
+	await assert.rejects(
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request: harnessInput("image_text_note", "package-note-fast-202"),
+			workflowId: "workflow-note:busy-fast-202",
+		}),
+		(error: unknown) =>
+			error instanceof HarnessMediaExecutionError &&
+				error.code === "MEDIA_RECONCILIATION_PENDING" &&
+				error.status === 202,
+	);
+	assert.equal(claimCalls, 1);
+	assert.equal(submissions, 0);
 });
 
 test("exact text blocks the first image, retries once, and keeps both provider costs without job-side debit flags", async () => {

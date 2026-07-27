@@ -6,7 +6,6 @@ import {
   confirmationCardDecision,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
-  readConfirmationCardHoldTimeoutSeconds,
   readConfirmationCardTimeoutSeconds,
   settleHarnessCancellation,
   type HarnessBillingSettlementPort,
@@ -22,11 +21,8 @@ const settlement = {
   quoteRevision: 'quote-revision-1',
 };
 
-test('confirmation-card hold and continuation waits share admin-config reads', async () => {
-  const values = new Map([
-    ['harness.confirmation_card.timeout_seconds', 45],
-    ['harness.confirmation_card.hold_timeout_seconds', 172_800],
-  ]);
+test('confirmation-card continuation waits read the admin-config timeout', async () => {
+  const values = new Map([['harness.confirmation_card.timeout_seconds', 45]]);
   const config: Pick<AdminConfigRepository, 'get'> = {
     async get(_scope: 'global', _workspaceId: string, key: string) {
       const value = values.get(key);
@@ -49,8 +45,6 @@ test('confirmation-card hold and continuation waits share admin-config reads', a
   };
 
   assert.equal(await readConfirmationCardTimeoutSeconds(config), 45);
-  assert.equal(await readConfirmationCardHoldTimeoutSeconds(config), 172_800);
-  assert.equal(await readConfirmationCardHoldTimeoutSeconds(), 172_800);
 });
 
 test('confirmation timeout becomes a legal ignored decision', () => {

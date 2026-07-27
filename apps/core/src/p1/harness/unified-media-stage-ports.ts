@@ -944,7 +944,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		const admissionToken = noteAdmissionInput
 			? await this.runEffect(
 					`admission-claim:${submission.idempotencyKey}`,
-					() => this.acquireNoteAdmission(noteAdmissionInput),
+					() => this.acquireNoteAdmission(noteAdmissionInput, runStep),
 					runStep,
 				)
 			: undefined;
@@ -1027,10 +1027,11 @@ export class ModelSupplyHarnessMediaExecutionPort
 
 	private async acquireNoteAdmission(
 		input: {
-		taskId: string;
-		workflowId: string;
-		workspaceId: string;
+			taskId: string;
+			workflowId: string;
+			workspaceId: string;
 		},
+		runStep?: HarnessEffectRunner,
 	): Promise<NoteMediaAdmissionToken> {
 		if (!this.noteAdmission) {
 			throw new HarnessMediaExecutionError(
@@ -1041,6 +1042,15 @@ export class ModelSupplyHarnessMediaExecutionPort
 		}
 		const claim = await this.noteAdmission.claim(input);
 		if (claim) return claim;
+		if (!runStep) {
+			// A non-DBOS caller cannot durably own a 300-second polling loop;
+			// preserve the rapid reconciliation response when the claim is busy.
+			throw new HarnessMediaExecutionError(
+				"MEDIA_RECONCILIATION_PENDING",
+				"图文笔记上一页仍在生成，请稍后继续。",
+				202,
+			);
+		}
 		const attempts = Math.ceil(
 			(NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS * 1000) /
 				NOTE_ADMISSION_POLL_INTERVAL_MS,

@@ -35,7 +35,6 @@ import type {
   HarnessBillingSettlementInput,
 } from './billing-compensation.js';
 import {
-  HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
@@ -104,41 +103,13 @@ export async function readConfirmationCardTimeoutSeconds(
   return timeoutSeconds;
 }
 
-export async function readConfirmationCardHoldTimeoutSeconds(
-  config?: Pick<AdminConfigRepository, 'get'>,
-) {
-  const configured = (
-    await config?.get(
-      'global',
-      '__global__',
-      HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
-    )
-  )?.value;
-  const timeoutSeconds =
-    configured === undefined
-      ? DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS
-      : configured;
-  if (
-    typeof timeoutSeconds !== 'number' ||
-    !Number.isSafeInteger(timeoutSeconds) ||
-    timeoutSeconds < 1 ||
-    timeoutSeconds > DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS
-  ) {
-    throw new Error(
-      'Confirmation-card hold timeout config must be an integer from 1 to 172800.',
-    );
-  }
-  return timeoutSeconds;
-}
-
 export function registerHarnessDbosWorkflow(
   ports: HarnessStagePorts,
   persistence: HarnessWorkflowPersistence,
   semanticResumptions?: HarnessSemanticDecisionResumptionStore,
   billing?: HarnessBillingSettlementPort,
   config?: Pick<AdminConfigRepository, 'get'>,
-  decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
-    Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>,
+  decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'>,
 ) {
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -207,10 +178,6 @@ export function registerHarnessDbosWorkflow(
               question.unattended === 'continue'
                 ? await readConfirmationCardTimeoutSeconds(config)
                 : null;
-            const holdTimeoutSeconds =
-              request.usageReservation && question.unattended !== 'continue'
-                ? await readConfirmationCardHoldTimeoutSeconds(config)
-                : null;
             const registered = await persistence.registerPending(
               request.workspaceId,
               question,
@@ -218,7 +185,6 @@ export function registerHarnessDbosWorkflow(
             );
             return {
               ...(registered ?? { timeoutSeconds }),
-              holdTimeoutSeconds,
             };
           },
           { name: `persist-pending-${question.questionId}` },
@@ -231,51 +197,16 @@ export function registerHarnessDbosWorkflow(
           };
         }
         if (question.unattended !== 'continue') {
-          const decision = await waitForHeldDecision(
-            question,
-            pendingProjection.holdTimeoutSeconds ??
-              DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
-          );
-          if (decision) {
-            return {
-              command: decision,
-              resolutionSource: 'decision' as const,
-            };
-          }
-          const submitCoreHoldExpired =
-            decisions?.submitCoreHoldExpired?.bind(decisions);
-          if (!submitCoreHoldExpired) {
-            throw new Error('Held decision expiry persistence is unavailable.');
-          }
-          const command = confirmationCardHoldExpired(question);
-          const persisted = await DBOS.runStep(
-            () =>
-              submitCoreHoldExpired(
-                request.workspaceId,
-                workflowId,
-                command,
-              ),
-            {
-              name: `persist-core-hold-expired-${question.questionId}`,
-            },
-          );
-          if ('consumedByOther' in persisted && persisted.consumedByOther) {
-            return {
-              command: await waitForDecisionWithoutTimeout(question),
-              resolutionSource: 'decision' as const,
-            };
-          }
           return {
-            cancelled: true as const,
-            merchantMessage: '超时未选择，本次任务已取消，额度已退回',
-            resolutionSource: 'core_hold_expired' as const,
+            command: await waitForDecisionWithoutTimeout(question),
+            resolutionSource: 'decision' as const,
           };
         }
         // Pre-projection workflow records return no value from function ID 4.
-        // Only those legacy records retain the previous live-config fallback.
+        // They use the deterministic default instead of a live config read.
         const timeoutSeconds =
           pendingProjection?.timeoutSeconds ??
-          (await readConfirmationCardTimeoutSeconds(config));
+          DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS;
         const decision = await DBOS.recv<StructuredDecisionInput>(
           decisionTopic(question.questionId),
           { timeoutSeconds },
@@ -740,34 +671,6 @@ export function confirmationCardDecision(
     throw new Error('Structured decision targets a stale workflow revision.');
   }
   return parsed;
-}
-
-export function confirmationCardHoldExpired(question: QuestionCard) {
-  return structuredDecisionInputSchema.parse({
-    idempotencyKey: `${question.questionId}:r${question.workflowRevision}:core_hold_expired`,
-    questionId: question.questionId,
-    workflowRevision: question.workflowRevision,
-    patch: {
-      field: question.response.field,
-      value: '超时未选择，本次任务已取消，额度已退回',
-      reason: question.response.reason,
-    },
-    decision: {
-      state: 'ignored',
-      value: '超时未选择，本次任务已取消，额度已退回',
-    },
-  });
-}
-
-async function waitForHeldDecision(
-  question: QuestionCard,
-  timeoutSeconds: number,
-) {
-  const decision = await DBOS.recv<StructuredDecisionInput>(
-    decisionTopic(question.questionId),
-    { timeoutSeconds },
-  );
-  return decision ? confirmationCardDecision(question, decision) : null;
 }
 
 async function waitForDecisionWithoutTimeout(question: QuestionCard) {
