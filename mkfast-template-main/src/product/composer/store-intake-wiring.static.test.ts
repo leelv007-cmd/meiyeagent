@@ -24,17 +24,34 @@ test('progressive store intake uses one finalizer instead of legacy profile writ
   assert.doesNotMatch(progressiveFact, /confirm_store/u);
 });
 
-test('the store route is read-only after the W01 manual form retirement', () => {
+test('the store profile is read-only after the W01 manual form retirement', () => {
   assert.match(storeRoute, /store_facts_active/u);
   assert.match(storeRoute, /dashboard_store_profile_title/u);
   assert.doesNotMatch(storeRoute, /confirm_store|save_store_draft/u);
-  assert.doesNotMatch(storeRoute, /<details|<TextField|QualificationForm/u);
+  assert.doesNotMatch(storeRoute, /<details/u);
   assert.doesNotMatch(
     storeRoute,
     /dashboard_store_save_failed|store_save_failed_description/u
   );
   assert.match(storeRoute, /search\.tab === 'qualification'/u);
   assert.match(storeRoute, /to:\s*Routes\.StoreProfile,\s*search:\s*\{\}/u);
+});
+
+/*
+ * D-151④ retired the manual *store profile* form. The regulated-category
+ * admission gate is a different mechanism and stayed in scope: this route is the
+ * only web entry for `confirm_qualification`.
+ */
+test('the store route keeps the qualification admission entry', () => {
+  assert.match(storeRoute, /<QualificationForm/u);
+  assert.match(storeRoute, /type: 'confirm_qualification'/u);
+  assert.match(storeRoute, /id="store-qualification"/u);
+});
+
+test('Composer names the qualification gap instead of failing silently', () => {
+  assert.match(composerHome, /confirmed_qualification/u);
+  assert.match(composerHome, /workbench_grounding_qualification_required/u);
+  assert.match(composerHome, /hash="store-qualification"/u);
 });
 
 test('Composer mounts the card and submits exactly one finalizer command', () => {
