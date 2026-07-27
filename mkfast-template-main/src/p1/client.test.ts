@@ -150,6 +150,39 @@ test('the deadline never reaches for AbortSignal.any / .timeout', async () => {
   }
 });
 
+test('a caller that cancels with its own TimeoutError is not relabelled ours', async () => {
+  // Negative control for name-based attribution: a caller watchdog aborting
+  // with `DOMException('…','TimeoutError')` is indistinguishable from our
+  // deadline by exception name. Ownership has to come from our own timer, or
+  // the merchant gets told the server was slow and offered a pointless retry.
+  const restore = stubNeverAnsweringFetch();
+  const controller = new AbortController();
+  try {
+    const pending = commandP1(
+      'product-billing',
+      { action: 'quote', payload: {} },
+      'composer-quote:caller-timeout',
+      { signal: controller.signal, timeoutMs: 10_000 }
+    );
+    controller.abort(
+      new DOMException('Caller gave up on its own.', 'TimeoutError')
+    );
+    await assert.rejects(pending, (error: unknown) => {
+      assert.notEqual(p1ErrorCode(error), P1_COMMAND_TIMEOUT_CODE);
+      assert.equal(p1ErrorCode(error), undefined);
+      assert.equal(error instanceof P1RequestError, false);
+      assert.equal((error as DOMException).name, 'TimeoutError');
+      assert.equal(
+        (error as DOMException).message,
+        'Caller gave up on its own.'
+      );
+      return true;
+    });
+  } finally {
+    restore();
+  }
+});
+
 test('caller cancellation stays a cancellation, not a command failure', async () => {
   const restore = stubNeverAnsweringFetch();
   const controller = new AbortController();

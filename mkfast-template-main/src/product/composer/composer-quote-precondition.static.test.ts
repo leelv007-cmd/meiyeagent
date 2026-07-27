@@ -89,8 +89,16 @@ test('Composer gates render and submission on the current quote, not the bound o
   assert.doesNotMatch(source, /\{quoteView \? \(/u);
   assert.doesNotMatch(source, /lensId != null && !quoteView\b/u);
   assert.doesNotMatch(source, /!quoteQuery\.data \|\| !quoteView\b/u);
-  // The Brief surface is deliberately not on this list: it carries its own
-  // revision-bound staleness contract (`confirmation_invalid` covers 报价已变化)
-  // and only opens from a submission path that already required a fresh view.
-  assert.match(source, /quote: quoteView,/u);
+
+  // The Brief is the fifth gate, not an exception. It renders and confirms
+  // against the same identity check, and its confirm handler no longer asserts
+  // `quoteQuery.data!` — after an edit the new key has no data and reading
+  // `.quoteId` off it would throw.
+  assert.match(
+    source,
+    /quote: currentQuoteView,\s*\n\s*quoteStale: currentQuoteView == null,/u
+  );
+  assert.match(source, /if \(!currentQuoteView \|\| !confirmedQuote\) \{/u);
+  assert.doesNotMatch(source, /quoteQuery\.data!/u);
+  assert.doesNotMatch(source, /quote: quoteView\b/u);
 });

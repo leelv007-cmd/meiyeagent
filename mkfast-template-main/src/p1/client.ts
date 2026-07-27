@@ -115,16 +115,22 @@ export interface P1CommandWait {
  */
 function boundedCommandSignal(wait: P1CommandWait) {
   if (wait.timeoutMs == null) {
-    return { release: () => undefined, signal: wait.signal };
+    return {
+      expired: () => false,
+      release: () => undefined,
+      signal: wait.signal,
+    };
   }
   const controller = new AbortController();
-  const timer = setTimeout(
-    () =>
-      controller.abort(
-        new DOMException('P1 command timed out.', 'TimeoutError')
-      ),
-    wait.timeoutMs
-  );
+  // Ownership is recorded here, not inferred from the error later. A caller is
+  // free to cancel with a `TimeoutError` of its own — its own deadline, a
+  // higher-level watchdog — and reading the exception name would relabel that
+  // as *our* bound and hand the merchant a retry for someone else's decision.
+  let expired = false;
+  const timer = setTimeout(() => {
+    expired = true;
+    controller.abort(new DOMException('P1 command timed out.', 'TimeoutError'));
+  }, wait.timeoutMs);
   const callerSignal = wait.signal;
   const forwardCallerAbort = () => controller.abort(callerSignal?.reason);
   if (callerSignal?.aborted) {
@@ -133,6 +139,7 @@ function boundedCommandSignal(wait: P1CommandWait) {
     callerSignal?.addEventListener('abort', forwardCallerAbort);
   }
   return {
+    expired: () => expired,
     release: () => {
       clearTimeout(timer);
       callerSignal?.removeEventListener('abort', forwardCallerAbort);
@@ -172,7 +179,9 @@ export async function commandP1<T>(
     } catch (error) {
       // Caller cancellation and plain network failures are rethrown untouched;
       // only our own deadline becomes a P1 error.
-      throw commandDeadlineError(module, call, wait, error) ?? error;
+      throw (
+        commandDeadlineError(module, call, wait, bounded.expired()) ?? error
+      );
     }
     if (response.status === 403) {
       emitTelemetry('permission_denied', {
@@ -183,7 +192,12 @@ export async function commandP1<T>(
     try {
       return await readEnvelope<T>(response);
     } catch (error) {
-      const deadline = commandDeadlineError(module, call, wait, error);
+      const deadline = commandDeadlineError(
+        module,
+        call,
+        wait,
+        bounded.expired()
+      );
       if (deadline) throw deadline;
       emitTelemetry('query_error', {
         action: call.action,
@@ -198,19 +212,22 @@ export async function commandP1<T>(
 }
 
 /**
- * Translate our own deadline abort into a retryable P1 failure, or return null
- * when the error is something else (a caller cancellation, a network fault, an
- * error envelope) that the caller must see unchanged.
+ * Translate our own deadline into a retryable P1 failure, or return null so the
+ * caller sees the original error unchanged.
+ *
+ * Keyed on whether *our* timer fired, never on the exception's name: a caller
+ * that cancels with its own `DOMException('…', 'TimeoutError')` is making a
+ * decision about its own request, and dressing that up as `P1_COMMAND_TIMEOUT`
+ * would tell the merchant the server was slow and offer a retry for something
+ * nobody asked to retry.
  */
 function commandDeadlineError(
   module: P1Module,
   call: P1ModuleCall,
   wait: P1CommandWait,
-  error: unknown
+  expired: boolean
 ) {
-  if (!(error instanceof DOMException) || error.name !== 'TimeoutError') {
-    return null;
-  }
+  if (!expired) return null;
   emitTelemetry('query_error', {
     action: call.action,
     errorCode: 'timeout',

@@ -91,6 +91,7 @@ import {
   shouldShowProgressiveFactCard,
 } from './progressive-fact';
 import {
+  BRIEF_STALE_QUOTE_NOTICE,
   cancelBriefSurface,
   confirmBriefSurface,
   createBriefSurfaceState,
@@ -1429,10 +1430,14 @@ export function ComposerHome({
     );
     const briefInput = briefInputRef.current;
     const briefContextRevision = briefContextRevisionRef.current;
+    // `quote` joins the guard rather than staying a `!` assertion: every caller
+    // already checks it, and a run must carry the price it was admitted on.
+    const quote = quoteQuery.data;
     if (
       !submissionRecipe ||
       !briefInput?.briefContextId ||
-      briefContextRevision === null
+      briefContextRevision === null ||
+      !quote
     ) {
       toast.error(workbench_operation_failed());
       return;
@@ -1455,7 +1460,7 @@ export function ComposerHome({
         : {}),
       lensId: selectedLens,
       intent,
-      quote: quoteQuery.data!,
+      quote,
       recipe: submissionRecipe,
       videoConfirmAccepted,
       ...(briefConfirmationId
@@ -1746,6 +1751,17 @@ export function ComposerHome({
 
   const handleBriefConfirm = async () => {
     if (lensState.phase !== 'selected' || !submissionRecipe) return;
+    // The card is already un-confirmable when the identities diverge; this is
+    // the same rule on the handler, so a stale confirm cannot arrive by any
+    // other route (a queued click, a restored card). Narrowing here also
+    // retires the non-null assertions this path used to carry: after an edit
+    // the new query key has no data yet, and reading a field off it would
+    // throw (#240 P1).
+    const confirmedQuote = quoteQuery.data;
+    if (!currentQuoteView || !confirmedQuote) {
+      toast.error(BRIEF_STALE_QUOTE_NOTICE);
+      return;
+    }
     const result = confirmBriefSurface(briefState);
     if (!result.ok) {
       setBriefState(result.state);
@@ -1767,7 +1783,7 @@ export function ComposerHome({
       },
       expectedRevision: briefContextRevisionRef.current,
       lensId: lensState.lensId,
-      quoteId: quoteQuery.data!.quoteId,
+      quoteId: confirmedQuote.quoteId,
       recipeRevisionId: submissionRecipe.revisionId,
       sourceIds: sourceReferences.map((source) => source.id),
       surfaceRevisionId:
@@ -1788,7 +1804,7 @@ export function ComposerHome({
       const refreshedInput = buildLiveBriefInput({
         briefContextId: briefInput.briefContextId,
         lensId: lensState.lensId,
-        quote: quoteQuery.data!,
+        quote: confirmedQuote,
         currentRevisions: refreshedContext.currentRevisions,
         delivery: submissionDelivery,
         imageCount: lensState.lensId === 'image_text' ? submissionQuantity : 0,
@@ -1851,7 +1867,11 @@ export function ComposerHome({
     briefState.phase === 'open'
       ? projectBriefSurfaceView(briefState, {
           lensId,
-          quote: quoteView,
+          // Same judgement as the four Composer gates. Editing the intent while
+          // the Brief is open used to leave it showing the old price with an
+          // enabled confirm button — a second door onto a stale quote (#240 P1).
+          quote: currentQuoteView,
+          quoteStale: currentQuoteView == null,
         })
       : null;
 
