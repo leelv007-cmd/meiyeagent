@@ -247,7 +247,9 @@ test.describe('S3 钱的旅程', () => {
       await page.getByTestId('composer-quota-redemption-code').fill(code);
       await page.getByTestId('composer-quota-redeem-submit').click();
 
-      // Unlocked in place: same page, same draft, submit alive again.
+      // Unlocked in place: same page, same draft, and the quota objection is
+      // gone. Deliberately not asserting 生成 is clickable — that also waits on
+      // the quote, a separate contract this journey does not own.
       await expect(
         page.getByTestId('composer-quota-unlock-success')
       ).toBeVisible({
@@ -257,9 +259,12 @@ test.describe('S3 钱的旅程', () => {
       await expect(page.getByTestId('composer-intent-input')).toHaveValue(
         /护发/u
       );
-      await expect(page.getByTestId('composer-submit')).toBeEnabled({
-        timeout: 60_000,
-      });
+      await expect(page.getByTestId('composer-quota-shortfall')).toHaveCount(
+        0,
+        {
+          timeout: 60_000,
+        }
+      );
     } finally {
       await applyAdminConfig(
         page,
