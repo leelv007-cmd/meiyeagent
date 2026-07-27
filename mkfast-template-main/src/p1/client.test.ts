@@ -61,6 +61,45 @@ test('a command that never answers fails on its own deadline (#240)', async () =
   }
 });
 
+test('the deadline never reaches for AbortSignal.any / .timeout', async () => {
+  // Merchants open this from in-app WebViews whose engines predate both
+  // statics; reaching for them would throw on every command instead of
+  // bounding it, which is strictly worse than the hang this ticket removes.
+  const restoreFetch = stubNeverAnsweringFetch();
+  const staticAny = AbortSignal.any;
+  const staticTimeout = AbortSignal.timeout;
+  Reflect.deleteProperty(AbortSignal, 'any');
+  Reflect.deleteProperty(AbortSignal, 'timeout');
+  try {
+    assert.equal('any' in AbortSignal, false);
+    assert.equal('timeout' in AbortSignal, false);
+    await assert.rejects(
+      commandP1(
+        'product-billing',
+        { action: 'quote', payload: {} },
+        'composer-quote:old-webview',
+        { signal: new AbortController().signal, timeoutMs: 40 }
+      ),
+      (error: unknown) => {
+        assert.equal(p1ErrorCode(error), P1_COMMAND_TIMEOUT_CODE);
+        return true;
+      }
+    );
+  } finally {
+    Object.defineProperty(AbortSignal, 'any', {
+      configurable: true,
+      value: staticAny,
+      writable: true,
+    });
+    Object.defineProperty(AbortSignal, 'timeout', {
+      configurable: true,
+      value: staticTimeout,
+      writable: true,
+    });
+    restoreFetch();
+  }
+});
+
 test('caller cancellation stays a cancellation, not a command failure', async () => {
   const restore = stubNeverAnsweringFetch();
   const controller = new AbortController();

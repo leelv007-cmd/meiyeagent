@@ -103,13 +103,41 @@ export interface P1CommandWait {
  * A command that never returns leaves the caller with no state to render but
  * "still waiting", which is exactly how the Composer quote used to hang
  * forever (#240). A bounded wait turns that into a failure the caller can show
- * and retry. Caller cancellation is left alone — it is not a failure — so only
- * the deadline is translated into a P1 error.
+ * and retry. Caller cancellation is left alone — it is not a failure — so the
+ * caller's own abort reason is forwarded untouched and only the deadline is
+ * translated into a P1 error.
+ *
+ * Built from a plain AbortController rather than `AbortSignal.timeout` +
+ * `AbortSignal.any`: this runs in the merchant's browser, and the in-app
+ * WebViews this product is opened from still ship engines that predate those
+ * two statics — where they would throw on every command instead of bounding it.
  */
 function boundedCommandSignal(wait: P1CommandWait) {
-  if (wait.timeoutMs == null) return wait.signal;
-  const deadline = AbortSignal.timeout(wait.timeoutMs);
-  return wait.signal ? AbortSignal.any([wait.signal, deadline]) : deadline;
+  if (wait.timeoutMs == null) {
+    return { release: () => undefined, signal: wait.signal };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () =>
+      controller.abort(
+        new DOMException('P1 command timed out.', 'TimeoutError')
+      ),
+    wait.timeoutMs
+  );
+  const callerSignal = wait.signal;
+  const forwardCallerAbort = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) {
+    forwardCallerAbort();
+  } else {
+    callerSignal?.addEventListener('abort', forwardCallerAbort);
+  }
+  return {
+    release: () => {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener('abort', forwardCallerAbort);
+    },
+    signal: controller.signal,
+  };
 }
 
 export const P1_COMMAND_TIMEOUT_CODE = 'P1_COMMAND_TIMEOUT';
@@ -122,6 +150,7 @@ export async function commandP1<T>(
 ) {
   const request = moduleRequest(module, call);
   const requestId = idempotencyKey ?? crypto.randomUUID();
+  const bounded = boundedCommandSignal(wait);
   let response: Response;
   try {
     response = await telemetryFetch('/api/core/p1/commands', {
@@ -132,7 +161,7 @@ export async function commandP1<T>(
         'idempotency-key': requestId,
       },
       method: 'POST',
-      signal: boundedCommandSignal(wait),
+      signal: bounded.signal,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'TimeoutError') {
@@ -150,6 +179,10 @@ export async function commandP1<T>(
       );
     }
     throw error;
+  } finally {
+    // The deadline covers the round trip, not the body read — same shape as
+    // `coreFetch`. Releasing here also drops the caller's abort listener.
+    bounded.release();
   }
   if (response.status === 403) {
     emitTelemetry('permission_denied', {
