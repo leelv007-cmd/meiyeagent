@@ -27,7 +27,7 @@ export class WorkspaceAssetUploadError extends Error {
   }
 }
 
-export async function sha256Hex(bytes: ArrayBuffer) {
+export async function sha256Hex(bytes: BufferSource) {
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -35,9 +35,10 @@ export async function sha256Hex(bytes: ArrayBuffer) {
 }
 
 /**
- * Core's writable key space is `<workspace>/canvas/assets/<name>.<ext>`; the
- * digest is the name so the same photo uploaded twice is the same object
- * instead of an orphan per attempt.
+ * The digest is the name, so the same photo uploaded twice is the same object
+ * instead of an orphan per attempt — and the BFF can re-derive it from the
+ * bytes it receives (`workspaceIntakeUploadDigest`), which is what keeps this
+ * write channel from being a way to author arbitrary canvas assets.
  */
 export function workspaceIntakeObjectKey(input: {
   contentType: string;

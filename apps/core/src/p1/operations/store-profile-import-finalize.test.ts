@@ -185,3 +185,138 @@ test('finalize refuses an imported candidate whose profile patch was rewritten',
     /does not match its profile patch/,
   );
 });
+
+/** The service fact a wizard confirmation would have left behind. */
+async function seedServiceFact(facts: MemoryStoreFactLedger) {
+  await facts.append({
+    factId: 'store-project:legacy-primary:service',
+    workspaceId: 'workspace-a',
+    kind: 'service',
+    key: 'service.legacy-primary.name',
+    value: { name: '透亮猫眼护理' },
+    scope: { storeId: 'workspace-a', serviceId: 'legacy-primary' },
+    source: {
+      kind: 'user_confirmation',
+      referenceId: 'wizard-earlier',
+      capturedAt: confirmedAt,
+    },
+    effectiveFrom: confirmedAt,
+    expiresAt: null,
+    recordedAt: confirmedAt,
+    recordedBy: 'owner-a',
+    expectedRevision: 0,
+  });
+}
+
+test('a project whose name is already a fact can still have its price imported', async () => {
+  const facts = new MemoryStoreFactLedger();
+  await seedServiceFact(facts);
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => '2026-07-27T00:00:00.000Z',
+  );
+  const { batch } = await new StoreProfileImportPreparer(
+    { read: async () => store },
+    intake,
+    () => '2026-07-27T00:00:00.000Z',
+  ).prepare(context);
+  assert.deepEqual(
+    batch!.candidates
+      .map((candidate) => candidate.candidateId)
+      .filter((candidateId) => candidateId.includes('legacy-primary')),
+    ['store-project:legacy-primary:price:import'],
+  );
+
+  const finalizer = new StoreIntakeFinalizer(intake, finalizations, {
+    completedRevision: async () => null,
+    currentRevision: async () => 2,
+    merge: async () => ({ ...store, revision: 3 }),
+  });
+  const result = await finalizer.finalize(
+    context,
+    {
+      batch: { batchId: batch!.batchId },
+      confirmations: [
+        {
+          candidateId: 'store-project:legacy-primary:price:import',
+          factId: 'store-project:legacy-primary:price',
+          expectedFactRevision: 0,
+        },
+      ],
+      profilePatch: {
+        expectedRevision: 2,
+        projects: {
+          upsert: [
+            {
+              id: 'legacy-primary',
+              name: '透亮猫眼护理',
+              price: 299,
+              durationMinutes: 75,
+              confirmed: true,
+            },
+          ],
+        },
+      },
+    },
+    'import-finalize-partial',
+  );
+
+  assert.deepEqual(
+    result.facts.map((fact) => fact.factId),
+    ['store-project:legacy-primary:price'],
+  );
+});
+
+test('the unconfirmed half of an upsert still has to match the fact behind it', async () => {
+  const facts = new MemoryStoreFactLedger();
+  await seedServiceFact(facts);
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    facts,
+    () => '2026-07-27T00:00:00.000Z',
+  );
+  const { batch } = await new StoreProfileImportPreparer(
+    { read: async () => store },
+    intake,
+    () => '2026-07-27T00:00:00.000Z',
+  ).prepare(context);
+  const finalizer = new StoreIntakeFinalizer(intake, finalizations, {
+    completedRevision: async () => null,
+    currentRevision: async () => 2,
+    merge: async () => ({ ...store, revision: 3 }),
+  });
+
+  await assert.rejects(
+    finalizer.finalize(
+      context,
+      {
+        batch: { batchId: batch!.batchId },
+        confirmations: [
+          {
+            candidateId: 'store-project:legacy-primary:price:import',
+            factId: 'store-project:legacy-primary:price',
+            expectedFactRevision: 0,
+          },
+        ],
+        profilePatch: {
+          expectedRevision: 2,
+          projects: {
+            upsert: [
+              {
+                id: 'legacy-primary',
+                // Renaming the project is a new statement, not a confirmed one.
+                name: '别人家的项目',
+                price: 299,
+                durationMinutes: 75,
+                confirmed: true,
+              },
+            ],
+          },
+        },
+      },
+      'import-finalize-partial-rename',
+    ),
+    /requires confirmation store-project:legacy-primary:service/,
+  );
+});

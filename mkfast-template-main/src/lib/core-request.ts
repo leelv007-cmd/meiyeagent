@@ -54,11 +54,46 @@ export async function readRequestText(
     bytesRead += value.byteLength;
     if (bytesRead > maxBytes) {
       await reader.cancel();
-      throw requestBodyTooLarge();
+      throw requestBodyTooLarge(maxBytes);
     }
     text += decoder.decode(value, { stream: true });
   }
   return text + decoder.decode();
+}
+
+/**
+ * Binary sibling of `readRequestText`. A chunked upload carries no
+ * `Content-Length`, so the ceiling can only be enforced while the stream is
+ * being consumed: buffering first and checking afterwards means an
+ * authenticated member decides how much Worker memory the proxy spends.
+ */
+export async function readRequestBytes(request: Request, maxBytes: number) {
+  const declaredLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw requestBodyTooLarge(maxBytes);
+  }
+  if (!request.body) return new Uint8Array(0);
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytesRead = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytesRead += value.byteLength;
+    if (bytesRead > maxBytes) {
+      await reader.cancel();
+      throw requestBodyTooLarge(maxBytes);
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(bytesRead);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 export async function readRequestFormData(
@@ -140,11 +175,11 @@ function combinedSignal(
     : deadlineSignal;
 }
 
-function requestBodyTooLarge() {
+function requestBodyTooLarge(maxBytes = MAX_CORE_REQUEST_BYTES) {
   return new CoreRequestBoundaryError(
     413,
     'REQUEST_BODY_TOO_LARGE',
-    'Core proxy request body exceeds 1 MiB.'
+    `Core proxy request body exceeds ${maxBytes} bytes.`
   );
 }
 

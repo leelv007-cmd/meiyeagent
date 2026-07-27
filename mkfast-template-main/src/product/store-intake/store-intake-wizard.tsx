@@ -60,6 +60,7 @@ import {
   store_intake_photo_unsupported,
   store_intake_photo_uploading,
   store_intake_recommendation_hint,
+  store_intake_recommended,
   store_intake_rights_optional,
   store_intake_rights_prompt,
   store_intake_save_failed,
@@ -107,6 +108,7 @@ import type {
   AssetIntakeBatch,
   AssetIntakeExperience,
   StoreFact,
+  StoreProfile,
   VisualAssetSlot,
 } from '@meiye/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -122,12 +124,14 @@ import {
   currentStep,
   goToStep,
   importCandidateGroups,
+  orderedIntakeFields,
   parseSingleAssetRequest,
   prepareManualDraftRequest,
+  recommendedFactIds,
   rotateExample,
   selectedExample,
-  STORE_INTAKE_FIELDS,
   toggleRecommendation,
+  type ImportCandidateGroup,
   type StoreIntakeStepId,
   type StoreIntakeTarget,
 } from './store-intake-wizard-model';
@@ -320,6 +324,12 @@ export function StoreIntakeWizard({
     ? selectedExample(experience.data, state)
     : undefined;
   const recognized = arrangementRecognizedFields(state);
+  // "勾上的我会重点问" is a promise the confirm step has to keep: the ticked
+  // fields lead, and the sentence box carries the same skeleton.
+  const recommended = experience.data
+    ? recommendedFactIds(experience.data, state)
+    : [];
+  const fieldOrder = orderedIntakeFields(recommended);
   // The first patch has to carry the platform's `regulated` call, so Day-0
   // confirmation waits for the admin default rather than guessing it.
   const awaitingRegulatedDefault =
@@ -465,9 +475,11 @@ export function StoreIntakeWizard({
                           recommendation.recommendationId
                         )}
                         id={recommendation.recommendationId}
+                        data-testid={`store-intake-recommendation-${recommendation.recommendationId}`}
                         onCheckedChange={() =>
                           setState((current) =>
                             toggleRecommendation(
+                              experience.data!,
                               current,
                               recommendation.recommendationId
                             )
@@ -687,7 +699,7 @@ export function StoreIntakeWizard({
                   {store_intake_confirm_hint()}
                 </p>
                 <ul className="space-y-3">
-                  {STORE_INTAKE_FIELDS.map((id) => {
+                  {fieldOrder.map((id) => {
                     const provenance = state.draft.provenance[id];
                     const pending = state.draft.unconfirmed.includes(id);
                     const confirmed = state.draft.answered.includes(id);
@@ -697,6 +709,14 @@ export function StoreIntakeWizard({
                           <Label htmlFor={`store-intake-field-${id}`}>
                             {FIELD_LABELS[id]()}
                           </Label>
+                          {recommended.includes(id) ? (
+                            <Badge
+                              data-testid={`store-intake-recommended-${id}`}
+                              variant="default"
+                            >
+                              {store_intake_recommended()}
+                            </Badge>
+                          ) : null}
                           {provenance ? (
                             <Badge
                               data-testid={`store-intake-provenance-${id}`}
@@ -834,6 +854,21 @@ export function StoreIntakeWizard({
 }
 
 /**
+ * A partially staged project only carries the stream that was missing, so the
+ * name or the price can be absent from the candidate itself. The stored profile
+ * supplies the other half for display — it is the same value the confirmation
+ * will project, so the merchant reads the whole row, not a gap.
+ */
+function importProjectLabel(group: ImportCandidateGroup, store: StoreProfile) {
+  const project = store.projects.find(
+    (item) => `project:${item.id}` === group.groupId
+  );
+  const name = group.label || project?.name || '';
+  const price = group.value || (project ? String(project.price) : '');
+  return `${name} ¥${price}`;
+}
+
+/**
  * D-151③ — everything the merchant typed before the ledger existed is staged
  * server-side as *pending* candidates with `source.kind: 'import'`. This panel
  * is where they become facts, one explicit confirmation at a time.
@@ -931,7 +966,7 @@ function StoreIntakeImportPanel({
             <Label htmlFor={`store-intake-import-${group.groupId}`}>
               {group.kind === 'profile'
                 ? `${FIELD_LABELS[group.label as ProgressiveFactId]()}：${group.value}`
-                : `${group.label} ¥${group.value}`}
+                : importProjectLabel(group, store)}
             </Label>
             <Badge variant="outline">{store_intake_origin_import()}</Badge>
           </li>

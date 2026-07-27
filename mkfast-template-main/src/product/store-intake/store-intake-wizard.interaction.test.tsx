@@ -179,6 +179,61 @@ describe('StoreIntakeWizard', () => {
     ).toHaveLength(4);
   });
 
+  it('leaves the wizard asking about every field when nothing is ticked', async () => {
+    renderWizard();
+    await screen.findByTestId('store-intake-steps');
+    for (let index = 0; index < 4; index += 1) {
+      fireEvent.click(screen.getByTestId('store-intake-next'));
+    }
+    const confirm = await screen.findByTestId('store-intake-confirm');
+    expect(
+      [...confirm.querySelectorAll('li[data-field]')].map((item) =>
+        item.getAttribute('data-field')
+      )
+    ).toEqual([
+      'name',
+      'city',
+      'projectName',
+      'projectPrice',
+      'district',
+      'address',
+      'booking',
+    ]);
+    expect(screen.queryByTestId('store-intake-recommended-projectPrice')).toBe(
+      null
+    );
+  });
+
+  it('ticking a recommendation changes what the merchant is asked and offered', async () => {
+    renderWizard();
+    await screen.findByTestId('store-intake-steps');
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    fireEvent.click(
+      await screen.findByTestId('store-intake-recommendation-r1')
+    );
+
+    // 少打字: the sentence box arrives with the ticked items as its skeleton.
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    const sentence = (await screen.findByTestId(
+      'store-intake-sentence'
+    )) as HTMLTextAreaElement;
+    expect(sentence.value).toBe('项目名称：\n日常价：');
+
+    // 重点问: the ticked fields lead the confirm step and say why.
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    const confirm = await screen.findByTestId('store-intake-confirm');
+    const fields = [...confirm.querySelectorAll('li[data-field]')].map((item) =>
+      item.getAttribute('data-field')
+    );
+    expect(fields.slice(0, 2)).toEqual(['projectName', 'projectPrice']);
+    expect(fields).toHaveLength(7);
+    expect(
+      screen.getByTestId('store-intake-recommended-projectPrice')
+    ).toBeTruthy();
+    expect(screen.queryByTestId('store-intake-recommended-booking')).toBe(null);
+  });
+
   it('never writes through a retired direct StoreFact command', async () => {
     renderWizard();
     await screen.findByTestId('store-intake-steps');

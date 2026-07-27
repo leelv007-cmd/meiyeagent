@@ -3574,6 +3574,7 @@
   "store_intake_photo_unsupported": "先用 JPG、PNG 或 WebP 的照片，其他格式我还认不出来。",
   "store_intake_photo_uploading": "照片上传中…",
   "store_intake_recommendation_hint": "勾上的我会重点问，没勾的先放着。",
+  "store_intake_recommended": "重点问",
   "store_intake_rights_optional": "不勾也能继续，只是发布前我会再提醒你一次。",
   "store_intake_rights_prompt": "这张图是你自己拍的，或者你有权使用",
   "store_intake_save_failed": "这次没存上，再点一次试试。",

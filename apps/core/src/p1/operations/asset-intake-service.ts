@@ -400,6 +400,11 @@ export class AssetIntakeService {
     return (await this.facts.history(workspaceId, factId)).at(-1)?.revision ?? 0;
   }
 
+  /** Latest recorded revision of one fact, revocations included. */
+  async currentFact(workspaceId: string, factId: string) {
+    return (await this.facts.history(workspaceId, factId)).at(-1) ?? null;
+  }
+
   async persistedBatch(workspaceId: string, batchId: string) {
     const receipt = await this.repository.getBatchReceipt(workspaceId, batchId);
     if (!receipt) {

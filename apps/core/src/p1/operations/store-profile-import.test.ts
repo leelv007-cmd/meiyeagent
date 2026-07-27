@@ -165,6 +165,47 @@ test('import staging skips fields already present in the ledger', async () => {
   );
 });
 
+test('a project stages the stream that is missing, not nothing at all', async () => {
+  const ledger = new MemoryStoreFactLedger();
+  const intake = new AssetIntakeService(
+    new MemoryAssetIntakeRepository(),
+    ledger,
+    () => '2026-07-27T00:00:00.000Z',
+  );
+  // The merchant already confirmed this project's name through the wizard; the
+  // price never made it into the ledger.
+  await ledger.append({
+    factId: 'store-project:legacy-primary:service',
+    workspaceId: 'workspace-a',
+    kind: 'service',
+    key: 'service.legacy-primary.name',
+    value: { name: '透亮猫眼护理' },
+    scope: { storeId: 'workspace-a', serviceId: 'legacy-primary' },
+    source: {
+      kind: 'user_confirmation',
+      referenceId: 'earlier',
+      capturedAt: confirmedAt,
+    },
+    effectiveFrom: confirmedAt,
+    expiresAt: null,
+    recordedAt: confirmedAt,
+    recordedBy: 'owner-a',
+    expectedRevision: 0,
+  });
+  const subject = new StoreProfileImportPreparer(
+    { read: async () => profile() },
+    intake,
+    () => '2026-07-27T00:00:00.000Z',
+  );
+
+  const { batch } = await subject.prepare(context);
+  const staged = batch!.candidates
+    .map((candidate) => candidate.candidateId)
+    .filter((candidateId) => candidateId.includes('legacy-primary'));
+
+  assert.deepEqual(staged, ['store-project:legacy-primary:price:import']);
+});
+
 test('unconfirmed projects and empty profile fields are not staged', async () => {
   const { subject } = preparer(
     profile({

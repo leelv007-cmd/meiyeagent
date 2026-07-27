@@ -3,13 +3,17 @@ import { getDb } from '@/db';
 import { resolveActiveWorkspace } from '@/db/workspaces';
 import { serverEnv } from '@/env/server';
 import { coreProxyResponse } from '@/lib/core-stream';
-import { isAllowedWorkspaceAssetObjectKey } from '@/lib/core-asset-path';
+import {
+  isAllowedWorkspaceAssetObjectKey,
+  workspaceIntakeUploadDigest,
+} from '@/lib/core-asset-path';
 import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
 import {
   CoreRequestBoundaryError,
   coreFetch,
   forwardedCorrelationId,
   forwardedIdempotencyKey,
+  readRequestBytes,
   readRequestText,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
@@ -22,6 +26,7 @@ import {
   type WorkspaceWorkflowEventResource,
 } from '@/lib/core-request';
 import { normalizeProductRole } from '@meiye/contracts';
+import { sha256Hex } from '@/p1/workspace-asset-upload';
 import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 
 export async function forwardAuthenticatedCoreRequest(
@@ -266,17 +271,40 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
   const path = objectKey.split('/').map(encodeURIComponent).join('/');
 
   if (writing) {
-    // Read the body here rather than streaming it: Core enforces its own
-    // 25 MiB ceiling, and a proxy that forwards an unbounded stream would let
-    // a merchant tie up a Core connection for as long as they keep writing.
-    const bytes = new Uint8Array(await request.arrayBuffer());
-    if (
-      bytes.byteLength === 0 ||
-      bytes.byteLength > WORKSPACE_ASSET_UPLOAD_MAX_BYTES
-    ) {
+    // Writing is narrower than reading twice over. The key has to be an intake
+    // object whose name *is* the digest of its bytes, so a merchant cannot
+    // aim the write at an unrelated canvas asset or store content that does not
+    // match what the key claims. And the body is read bounded rather than
+    // buffered whole: a chunked upload declares no `Content-Length`, so
+    // `arrayBuffer()` first would let an authenticated member decide how much
+    // Worker memory this proxy spends before the 413 is reached.
+    const digest = workspaceIntakeUploadDigest(objectKey);
+    if (!digest) {
+      return Response.json(
+        { error: { code: 'ASSET_WRITE_FORBIDDEN' } },
+        { status: 403 }
+      );
+    }
+    let bytes: Uint8Array<ArrayBuffer>;
+    try {
+      bytes = await readRequestBytes(request, WORKSPACE_ASSET_UPLOAD_MAX_BYTES);
+    } catch (error) {
+      if (!(error instanceof CoreRequestBoundaryError)) throw error;
       return Response.json(
         { error: { code: 'ASSET_PAYLOAD_INVALID' } },
         { status: 413 }
+      );
+    }
+    if (bytes.byteLength === 0) {
+      return Response.json(
+        { error: { code: 'ASSET_PAYLOAD_INVALID' } },
+        { status: 413 }
+      );
+    }
+    if ((await sha256Hex(bytes)) !== digest) {
+      return Response.json(
+        { error: { code: 'ASSET_DIGEST_MISMATCH' } },
+        { status: 400 }
       );
     }
     const contentType = request.headers.get('content-type');

@@ -24,6 +24,7 @@ export type StoreIntakeFinalizationIntakePort = Pick<
   AssetIntakeService,
   | 'confirmFact'
   | 'confirmedFactRevision'
+  | 'currentFact'
   | 'currentFactRevision'
   | 'persistedBatch'
   | 'recordBatch'
@@ -368,11 +369,12 @@ export class StoreIntakeFinalizer {
           throw failure;
         }
         try {
-          assertStoreFactMappings(
+          await assertStoreFactMappings(
             context.workspaceId,
             resolved.batch,
             input.confirmations,
             input.profilePatch,
+            (factId) => this.intake.currentFact(context.workspaceId, factId),
           );
           await this.preflight(
             context,
@@ -705,11 +707,12 @@ const PROJECT_FACT_KINDS = new Set([
   'fulfillment',
 ]);
 
-function assertStoreFactMappings(
+async function assertStoreFactMappings(
   workspaceId: string,
   batch: AssetIntakeBatch,
   confirmations: FinalizeStoreIntakeCommand['confirmations'],
   profilePatch: StoreProfilePatch,
+  currentFact: (factId: string) => Promise<StoreFact | null>,
 ) {
   for (const confirmation of confirmations) {
     const candidate = batch.candidates.find(
@@ -868,7 +871,29 @@ function assertStoreFactMappings(
   for (const project of profilePatch.projects?.upsert ?? []) {
     for (const kind of ['service', 'price'] as const) {
       const factId = `store-project:${project.id}:${kind}`;
-      if (!confirmations.some((confirmation) => confirmation.factId === factId)) {
+      if (confirmations.some((confirmation) => confirmation.factId === factId)) {
+        continue;
+      }
+      // The rule this enforces is "no project value reaches the profile without
+      // a merchant confirmation behind it" — not "two confirmations per
+      // command". A stream already standing in the ledger with exactly this
+      // value carries its own earlier confirmation, and demanding a second one
+      // would make the *other*, still-missing stream unconfirmable forever
+      // (D-151③ partial import).
+      const current = await currentFact(factId);
+      const backed =
+        current !== null &&
+        current.revisionKind !== 'revocation' &&
+        // A fact that expires stops backing the profile the moment it does, so
+        // only an open-ended one may stand in for a confirmation.
+        current.expiresAt === null &&
+        isDeepStrictEqual(
+          current.value,
+          kind === 'service'
+            ? { name: project.name }
+            : { amount: project.price, currency: 'CNY' },
+        );
+      if (!backed) {
         throw new StoreIntakeFinalizationError(
           'STORE_FACT_MAPPING_INVALID',
           `Store project patch ${project.id} requires confirmation ${factId}.`,

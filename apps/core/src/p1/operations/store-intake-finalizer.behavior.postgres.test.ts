@@ -1635,6 +1635,7 @@ test(
         },
         confirmedFactRevision: (...args) =>
           intake.confirmedFactRevision(...args),
+        currentFact: (...args) => intake.currentFact(...args),
         currentFactRevision: (...args) => intake.currentFactRevision(...args),
         persistedBatch: (...args) => intake.persistedBatch(...args),
         recordBatch: (...args) => intake.recordBatch(...args),

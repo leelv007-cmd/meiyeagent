@@ -115,45 +115,56 @@ export class StoreProfileImportPreparer {
       // An unconfirmed project is a draft the merchant never stood behind;
       // importing it would launder a draft into a quotable candidate.
       if (!project.confirmed) continue;
+      const scope = { storeId: context.workspaceId, serviceId: project.id };
+      // Each stream is skipped on its own account. Skipping the whole project
+      // when *either* fact is already recorded leaves the other one permanently
+      // unimportable — a merchant who confirmed the name through the wizard
+      // could never get the price out of their profile and into the ledger.
       const serviceFactId = `store-project:${project.id}:service`;
       const priceFactId = `store-project:${project.id}:price`;
-      if (
-        (await this.hasFact(context.workspaceId, serviceFactId)) ||
-        (await this.hasFact(context.workspaceId, priceFactId))
-      ) {
-        continue;
+      const streams: Array<{
+        candidate: AssetIntakeBatch['candidates'][number];
+        factId: string;
+      }> = [
+        {
+          factId: serviceFactId,
+          candidate: {
+            candidateId: `${serviceFactId}:import`,
+            status: 'pending',
+            objectKind: 'store_fact',
+            fact: {
+              kind: 'service',
+              key: `service.${project.id}.name`,
+              value: { name: project.name },
+              scope,
+              source: { kind: 'import', referenceId, capturedAt },
+              effectiveFrom: capturedAt,
+              expiresAt: null,
+            },
+          },
+        },
+        {
+          factId: priceFactId,
+          candidate: {
+            candidateId: `${priceFactId}:import`,
+            status: 'pending',
+            objectKind: 'store_fact',
+            fact: {
+              kind: 'price',
+              key: `service.${project.id}.price`,
+              value: { amount: project.price, currency: 'CNY' },
+              scope,
+              source: { kind: 'import', referenceId, capturedAt },
+              effectiveFrom: capturedAt,
+              expiresAt: null,
+            },
+          },
+        },
+      ];
+      for (const stream of streams) {
+        if (await this.hasFact(context.workspaceId, stream.factId)) continue;
+        candidates.push(stream.candidate);
       }
-      const scope = { storeId: context.workspaceId, serviceId: project.id };
-      candidates.push(
-        {
-          candidateId: `${serviceFactId}:import`,
-          status: 'pending',
-          objectKind: 'store_fact',
-          fact: {
-            kind: 'service',
-            key: `service.${project.id}.name`,
-            value: { name: project.name },
-            scope,
-            source: { kind: 'import', referenceId, capturedAt },
-            effectiveFrom: capturedAt,
-            expiresAt: null,
-          },
-        },
-        {
-          candidateId: `${priceFactId}:import`,
-          status: 'pending',
-          objectKind: 'store_fact',
-          fact: {
-            kind: 'price',
-            key: `service.${project.id}.price`,
-            value: { amount: project.price, currency: 'CNY' },
-            scope,
-            source: { kind: 'import', referenceId, capturedAt },
-            effectiveFrom: capturedAt,
-            expiresAt: null,
-          },
-        },
-      );
     }
 
     if (candidates.length === 0) return { batch: null, profileRevision };

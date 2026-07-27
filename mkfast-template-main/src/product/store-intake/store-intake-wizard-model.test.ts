@@ -23,10 +23,14 @@ import {
   draftPrefillEntries,
   goToStep,
   importCandidateGroups,
+  orderedIntakeFields,
   parseSingleAssetRequest,
   prepareManualDraftRequest,
+  recommendedFactIds,
   rotateExample,
   selectedExample,
+  statedSentence,
+  STORE_INTAKE_FIELDS,
   toggleRecommendation,
 } from './store-intake-wizard-model';
 
@@ -97,12 +101,70 @@ test('example rotation cycles the platform samples', () => {
 });
 
 test('recommendation selection toggles both ways', () => {
-  let state = toggleRecommendation(wizard(), 'r1');
+  let state = toggleRecommendation(experience, wizard(), 'r1');
   assert.deepEqual(state.selectedRecommendations, ['r1']);
-  state = toggleRecommendation(state, 'r2');
+  state = toggleRecommendation(experience, state, 'r2');
   assert.deepEqual(state.selectedRecommendations, ['r1', 'r2']);
-  state = toggleRecommendation(state, 'r1');
+  state = toggleRecommendation(experience, state, 'r1');
   assert.deepEqual(state.selectedRecommendations, ['r2']);
+});
+
+test('ticking a recommendation changes what the wizard asks and offers', () => {
+  const none = wizard();
+  assert.deepEqual(recommendedFactIds(experience, none), []);
+  // Nothing ticked keeps the wizard's own field order — no hidden narrowing.
+  assert.deepEqual(orderedIntakeFields([]), STORE_INTAKE_FIELDS);
+
+  const ticked = toggleRecommendation(experience, none, 'r1');
+  assert.deepEqual(recommendedFactIds(experience, ticked), [
+    'projectName',
+    'projectPrice',
+  ]);
+  assert.deepEqual(
+    orderedIntakeFields(recommendedFactIds(experience, ticked)),
+    [
+      'projectName',
+      'projectPrice',
+      'name',
+      'city',
+      'district',
+      'address',
+      'booking',
+    ]
+  );
+  // 少打字: the sentence box arrives pre-structured instead of empty.
+  assert.equal(ticked.sentence, '项目名称：\n日常价：');
+
+  const untickedAgain = toggleRecommendation(experience, ticked, 'r1');
+  assert.equal(untickedAgain.sentence, '');
+});
+
+test('a scaffold the merchant typed into is theirs, an empty one is never sent', () => {
+  const ticked = toggleRecommendation(experience, wizard(), 'r1');
+  assert.equal(statedSentence(ticked.sentence), '');
+  assert.equal(canArrange(ticked), false);
+
+  const filled = { ...ticked, sentence: '项目名称：头皮护理\n日常价：239' };
+  assert.equal(statedSentence(filled.sentence), filled.sentence);
+  // Ticking another box must not overwrite what was typed into the scaffold.
+  const alsoR2 = toggleRecommendation(experience, filled, 'r2');
+  assert.equal(alsoR2.sentence, filled.sentence);
+
+  const request = prepareManualDraftRequest({
+    assetId: 'intake-asset:1',
+    draft: createProgressiveFactDraft(),
+    rightsConfirmed: false,
+    sentence: ticked.sentence,
+    target: 'price_list',
+    taskId: 'task-1',
+    upload,
+  });
+  assert.equal(
+    request.payload.fields.some(
+      (field) => field.key === 'store.profile.summary'
+    ),
+    false
+  );
 });
 
 test('arranging needs either a sentence or a photo', () => {
@@ -399,14 +461,33 @@ test('a project import is one confirmable unit, a profile field is its own', () 
   assert.equal(groups[1]!.value, '299');
 });
 
-test('a half-staged project is not offered for confirmation', () => {
+test('a half-staged project stays confirmable for the stream that is missing', () => {
+  // The service fact is already in the ledger, so import only stages the price.
   const batch = importBatch();
   batch.candidates = batch.candidates.filter(
-    (candidate) => !candidate.candidateId.endsWith(':price:import')
+    (candidate) => !candidate.candidateId.endsWith(':service:import')
   );
+  const groups = importCandidateGroups(batch);
   assert.deepEqual(
-    importCandidateGroups(batch).map((group) => group.groupId),
-    ['profile:name']
+    groups.map((group) => group.groupId),
+    ['profile:name', 'project:legacy-primary']
+  );
+  assert.equal(groups[1]!.confirmations.length, 1);
+
+  const request = buildImportFinalizeCommand({
+    batch,
+    selectedGroupIds: ['project:legacy-primary'],
+    store,
+  });
+  // The upsert still travels — Core matches the unconfirmed half against the
+  // fact already standing in the ledger rather than demanding it twice.
+  assert.deepEqual(request?.payload.profilePatch, {
+    expectedRevision: 2,
+    projects: { upsert: [store.projects[0]] },
+  });
+  assert.deepEqual(
+    request?.payload.confirmations.map((confirmation) => confirmation.factId),
+    ['store-project:legacy-primary:price']
   );
 });
 

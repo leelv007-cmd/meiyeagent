@@ -3574,6 +3574,7 @@
   "store_intake_photo_unsupported": "Use a JPG, PNG or WebP photo — I cannot read other formats yet.",
   "store_intake_photo_uploading": "Uploading the photo…",
   "store_intake_recommendation_hint": "I will focus on what you tick and leave the rest for later.",
+  "store_intake_recommended": "Focus",
   "store_intake_rights_optional": "You can continue without ticking this; I will remind you again before publishing.",
   "store_intake_rights_prompt": "I took this photo myself, or I have the right to use it",
   "store_intake_save_failed": "That did not save. Give it another tap.",

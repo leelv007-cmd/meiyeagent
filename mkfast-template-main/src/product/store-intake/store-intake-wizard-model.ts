@@ -172,23 +172,122 @@ export function selectedExample(
   return examples[state.exampleIndex % examples.length];
 }
 
+/**
+ * A recommendation is admin-authored free text ("项目名称、日常价、活动价"), so the
+ * link from a tick to the fields it names is a *reading* of that text, not a
+ * contract. It stays deliberately forgiving: a label nothing matches simply
+ * contributes no fields, and ticking nothing keeps the wizard asking about
+ * everything — the behaviour before the step existed.
+ */
+const RECOMMENDATION_FIELD_HINTS: ReadonlyArray<
+  readonly [RegExp, ProgressiveFactId]
+> = [
+  [/项目名|服务名|品项/u, 'projectName'],
+  [/价/u, 'projectPrice'],
+  [/地址|位置/u, 'address'],
+  [/预约|到店|联系|微信|电话/u, 'booking'],
+  [/城市/u, 'city'],
+  [/商圈|城区|区域/u, 'district'],
+  [/店名|门店名称|品牌名/u, 'name'],
+];
+
+function selectedLabels(
+  experience: AssetIntakeExperience,
+  selectedRecommendations: string[]
+) {
+  const recommendations: AssetIntakeExperience['recommendations'] =
+    experience.recommendations ?? [];
+  return recommendations
+    .filter((recommendation) =>
+      selectedRecommendations.includes(recommendation.recommendationId)
+    )
+    .map((recommendation) => recommendation.label);
+}
+
+/** Fields the ticked recommendations name, in the wizard's own field order. */
+export function recommendedFactIds(
+  experience: AssetIntakeExperience,
+  state: StoreIntakeWizardState
+): ProgressiveFactId[] {
+  const labels = selectedLabels(experience, state.selectedRecommendations);
+  if (labels.length === 0) return [];
+  return STORE_INTAKE_FIELDS.filter((id) =>
+    RECOMMENDATION_FIELD_HINTS.some(
+      ([pattern, target]) =>
+        target === id && labels.some((label) => pattern.test(label))
+    )
+  );
+}
+
+/** Recommended fields first — the rest keep their order behind them. */
+export function orderedIntakeFields(recommended: ProgressiveFactId[]) {
+  return [
+    ...STORE_INTAKE_FIELDS.filter((id) => recommended.includes(id)),
+    ...STORE_INTAKE_FIELDS.filter((id) => !recommended.includes(id)),
+  ];
+}
+
+/**
+ * "少打字" made literal: the ticked labels become the skeleton of the sentence,
+ * so the merchant fills in values instead of composing a description from
+ * nothing. It is a prompt, not an answer — `statedSentence` drops it again if
+ * nothing was written into it.
+ */
+export function recommendationScaffold(
+  experience: AssetIntakeExperience,
+  selectedRecommendations: string[]
+) {
+  return selectedLabels(experience, selectedRecommendations)
+    .flatMap((label) => label.split(/[、,，]/u))
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .map((item) => `${item}：`)
+    .join('\n');
+}
+
 export function toggleRecommendation(
+  experience: AssetIntakeExperience,
   state: StoreIntakeWizardState,
   recommendationId: string
 ): StoreIntakeWizardState {
+  const selectedRecommendations = state.selectedRecommendations.includes(
+    recommendationId
+  )
+    ? state.selectedRecommendations.filter((id) => id !== recommendationId)
+    : [...state.selectedRecommendations, recommendationId];
+  // Only an untouched box is re-scaffolded: whatever the merchant typed is
+  // theirs, and a checkbox must not delete it.
+  const previous = recommendationScaffold(
+    experience,
+    state.selectedRecommendations
+  );
+  const untouched =
+    state.sentence.trim().length === 0 || state.sentence === previous;
   return {
     ...state,
-    selectedRecommendations: state.selectedRecommendations.includes(
-      recommendationId
-    )
-      ? state.selectedRecommendations.filter((id) => id !== recommendationId)
-      : [...state.selectedRecommendations, recommendationId],
+    selectedRecommendations,
+    sentence: untouched
+      ? recommendationScaffold(experience, selectedRecommendations)
+      : state.sentence,
   };
+}
+
+/**
+ * An unfilled scaffold is a form, not a statement — sending it would record
+ * "项目名称：" as something the merchant said about their store.
+ */
+export function statedSentence(sentence: string) {
+  const trimmed = sentence.trim();
+  if (trimmed.length === 0) return '';
+  const unfilled = trimmed
+    .split('\n')
+    .every((line) => /^[^：]*：\s*$/u.test(line.trim()));
+  return unfilled ? '' : trimmed;
 }
 
 /** Step 4 can only run once the merchant gave it something to work from. */
 export function canArrange(state: StoreIntakeWizardState) {
-  return state.upload !== null || state.sentence.trim().length > 0;
+  return state.upload !== null || statedSentence(state.sentence).length > 0;
 }
 
 export function parseSourceInput(input: {
@@ -263,8 +362,13 @@ export function prepareManualDraftRequest(input: {
       }),
       fields: [
         ...fields,
-        ...(input.sentence.trim()
-          ? [{ key: 'store.profile.summary', value: input.sentence.trim() }]
+        ...(statedSentence(input.sentence)
+          ? [
+              {
+                key: 'store.profile.summary',
+                value: statedSentence(input.sentence),
+              },
+            ]
           : []),
       ],
       factCandidates: [],
@@ -399,11 +503,11 @@ export function importCandidateGroups(
       value: typeof value?.[field] === 'string' ? (value[field] as string) : '',
     });
   }
-  // A project only becomes confirmable as a unit: the finalize reverse-mapping
-  // requires the service and price confirmations to travel with the upsert.
-  return [...groups.values()].filter(
-    (group) => group.kind === 'profile' || group.confirmations.length === 2
-  );
+  // A project group carries whichever streams were staged. When only one was —
+  // the merchant already confirmed the other through the wizard — the finalize
+  // reverse-mapping accepts the upsert on the strength of the fact already in
+  // the ledger, so the missing half stays reachable instead of stranded.
+  return [...groups.values()];
 }
 
 /**

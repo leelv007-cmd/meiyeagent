@@ -393,6 +393,64 @@ test.describe('W02 five-step store intake', () => {
     expect(await activeStoreFacts(page, state.workspaceId)).toEqual([]);
   });
 
+  test('the upload channel only accepts an object that names its own bytes', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(360_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await page.goto('/dashboard/store');
+    await expect(page.getByTestId('store-intake-wizard-store')).toBeVisible({
+      timeout: 60_000,
+    });
+    const { workspaceId } = await productState(page);
+
+    const results = await page.evaluate(
+      async (input) => {
+        const bytes = Uint8Array.from(atob(input.png), (character) =>
+          character.charCodeAt(0)
+        );
+        const digest = [
+          ...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+        ]
+          .map((byte) => byte.toString(16).padStart(2, '0'))
+          .join('');
+        const put = async (objectKey: string) => {
+          const response = await fetch(
+            `/api/core/p1/assets?objectKey=${encodeURIComponent(objectKey)}`,
+            {
+              body: bytes,
+              credentials: 'same-origin',
+              headers: { 'content-type': 'image/png' },
+              method: 'PUT',
+            }
+          );
+          return response.status;
+        };
+        return {
+          crossWorkspace: await put(
+            `other-workspace/canvas/assets/intake-${digest}.png`
+          ),
+          // The readable allowlist admits this key; the write channel does not.
+          freeName: await put(`${input.workspaceId}/canvas/assets/cover.png`),
+          honest: await put(
+            `${input.workspaceId}/canvas/assets/intake-${digest}.png`
+          ),
+          lyingDigest: await put(
+            `${input.workspaceId}/canvas/assets/intake-${'a'.repeat(64)}.png`
+          ),
+        };
+      },
+      { png: PRICE_LIST_PHOTO.toString('base64'), workspaceId }
+    );
+
+    expect(results.honest).toBeLessThan(300);
+    expect(results.freeName).toBe(403);
+    expect(results.crossWorkspace).toBe(403);
+    expect(results.lyingDigest).toBe(400);
+  });
+
   test('details entered before the ledger existed are staged for confirmation, never promoted', async ({
     page,
     request,
