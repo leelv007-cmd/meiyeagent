@@ -83,9 +83,13 @@ test.describe('LIKEPAGE marketing landing page', () => {
 
     const pricing = page.locator('#pricing');
     await pricing.scrollIntoViewIfNeeded();
-    await expect(pricing).toContainText('Starter');
+    // D-143 renamed the tiers to merchant Chinese; the landing and /pricing
+    // both say 初级/中级/高级 now, and no public surface says Starter/Growth.
+    await expect(pricing).toContainText('初级');
     await expect(pricing).toContainText('免费');
-    await expect(pricing).toContainText('Growth');
+    await expect(pricing).toContainText('中级');
+    await expect(pricing).not.toContainText('Starter');
+    await expect(pricing).not.toContainText('Growth');
     await expect(pricing).toContainText('¥399');
     await expect(pricing).toContainText('上线特惠');
     await expect(pricing).toContainText('敬请期待');
@@ -93,7 +97,7 @@ test.describe('LIKEPAGE marketing landing page', () => {
     // The paid tier's CTA is exactly the approved label and reaches
     // registration; the lifetime tier is a disabled non-link.
     const paidCta = pricing.locator('a[href="/auth/register"]').last();
-    await expect(paidCta).toHaveText('升级 Growth');
+    await expect(paidCta).toHaveText('升级中级套餐');
 
     const registerLinks = pricing.locator('a[href="/auth/register"]');
     expect(await registerLinks.count()).toBeGreaterThanOrEqual(2);

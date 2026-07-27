@@ -18,7 +18,6 @@ import {
   landing_pricing_growth_name,
   landing_pricing_growth_note,
   landing_pricing_growth_period,
-  landing_pricing_growth_price,
   landing_pricing_lifetime_desc,
   landing_pricing_lifetime_feature_1,
   landing_pricing_lifetime_feature_2,
@@ -34,6 +33,7 @@ import {
   landing_pricing_starter_price,
   landing_pricing_title,
 } from '@/locale/paraglide/messages';
+import { growthMonthlyPriceLabel } from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 
 interface PricingPlan {
@@ -188,7 +188,10 @@ export function Pricing(): ReactNode {
     {
       name: landing_pricing_growth_name(),
       description: landing_pricing_growth_desc(),
-      price: landing_pricing_growth_price(),
+      // D-143: read from the same payment configuration /pricing quotes.
+      // This page used to carry its own price message while /pricing computed
+      // a different one, so the two public pages disagreed about one plan.
+      price: growthMonthlyPriceLabel() ?? landing_pricing_coming_soon(),
       period: landing_pricing_growth_period(),
       note: landing_pricing_growth_note(),
       badge: landing_pricing_growth_badge(),

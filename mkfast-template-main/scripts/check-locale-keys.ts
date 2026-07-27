@@ -81,7 +81,6 @@ const PRODUCT_SHELL_SOURCES = [
   'src/product/canonical-object-route-page.tsx',
   'src/product/canvas-work-page.tsx',
   'src/product/composer-image-input.tsx',
-  'src/product/copy-stream.tsx',
   'src/product/creative-quote.ts',
   'src/product/creative-work-display.ts',
   'src/product/creation-catalog-model.ts',

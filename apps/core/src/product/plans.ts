@@ -16,11 +16,18 @@ export interface ProductPlanConfig {
   pro: PlanAllowances;
 }
 
+/**
+ * P0 ProductState quotas. Kept in step with the D-123 seed the P1 entitlement
+ * catalogue publishes (`DEFAULT_PLAN_OFFERS`) so the two layers never state
+ * different 文案/图片/视频 numbers about the same plan — the merchant-visible
+ * truth is the `plan.allowances.*` admin-config key either way (D-143).
+ * `package`/`storageMb` have no D-123 counterpart and stay as they were.
+ */
 export const defaultProductPlanConfig: ProductPlanConfig = {
   trial: {
-    content: 15,
+    content: 5,
     image: 5,
-    video: 2,
+    video: 1,
     package: 10,
     storageMb: 512,
     concurrencyLimit: 1,
@@ -28,9 +35,9 @@ export const defaultProductPlanConfig: ProductPlanConfig = {
     supportLabel: 'standard',
   },
   starter: {
-    content: 30,
-    image: 10,
-    video: 5,
+    content: 100,
+    image: 40,
+    video: 3,
     package: 20,
     storageMb: 1024,
     concurrencyLimit: 1,
@@ -38,9 +45,9 @@ export const defaultProductPlanConfig: ProductPlanConfig = {
     supportLabel: 'standard',
   },
   growth: {
-    content: 100,
-    image: 40,
-    video: 20,
+    content: 300,
+    image: 100,
+    video: 6,
     package: 80,
     storageMb: 5120,
     concurrencyLimit: 4,
@@ -48,9 +55,9 @@ export const defaultProductPlanConfig: ProductPlanConfig = {
     supportLabel: 'priority',
   },
   pro: {
-    content: 300,
-    image: 120,
-    video: 60,
+    content: 600,
+    image: 180,
+    video: 9,
     package: 240,
     storageMb: 20480,
     concurrencyLimit: 8,

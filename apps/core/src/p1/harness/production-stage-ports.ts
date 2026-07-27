@@ -24,7 +24,6 @@ import { isOfficialNeutralIdentity } from '../execution-spine/creation-execution
 import {
   executeCopySelection,
   HarnessSelectionError,
-  StructuredCandidateScorer,
 } from './execution-selection.js';
 import {
   createHarnessCandidateValidator,
@@ -517,7 +516,6 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       },
       {
         runner,
-        scorer: new StructuredCandidateScorer(runner),
         validator,
       },
     );

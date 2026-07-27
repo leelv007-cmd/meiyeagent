@@ -15,16 +15,19 @@ export const clientEnv = createEnv({
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
+    // D-123 中级 ¥399/月. The landing page and /pricing both read this one
+    // number — the ¥399-vs-¥499 public contradiction came from the landing
+    // hard-coding its own copy of the price (D-143).
     VITE_GROWTH_MONTHLY_AMOUNT_CENTS: z.coerce
       .number()
       .int()
       .positive()
-      .default(49900),
+      .default(39900),
     VITE_GROWTH_YEARLY_AMOUNT_CENTS: z.coerce
       .number()
       .int()
       .positive()
-      .default(499000),
+      .default(399000),
     VITE_LIFETIME_AMOUNT_CENTS: z.coerce
       .number()
       .int()

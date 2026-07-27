@@ -8,6 +8,7 @@ import {
   beginQuotaRedeem,
   buildQuotaRedeemCommand,
   completeQuotaRedeem,
+  composerQuotaRequirements,
   createQuotaBlockingState,
   isQuotaRedeemCodeValid,
   projectQuotaBlockingView,
@@ -83,53 +84,195 @@ describe('GL-23 quota blocking model', () => {
   });
 });
 
+describe('W05 图文双桶预检 (P0-5)', () => {
+  it('mirrors the server: an image-text note debits copy AND image', () => {
+    assert.deepEqual(
+      composerQuotaRequirements({
+        lensId: 'image_text',
+        deliverableKind: 'note',
+        quantity: 1,
+        notePageBound: 6,
+      }),
+      [
+        { resource: 'copy', cost: 1 },
+        { resource: 'image', cost: 6 },
+      ]
+    );
+  });
+
+  it('treats an image_text_package the same way as a note', () => {
+    assert.deepEqual(
+      composerQuotaRequirements({
+        lensId: 'image_text',
+        deliverableKind: 'image_text_package',
+        quantity: 2,
+        notePageBound: null,
+      }),
+      [
+        { resource: 'copy', cost: 1 },
+        { resource: 'image', cost: 2 },
+      ]
+    );
+  });
+
+  it('keeps single-bucket shapes single', () => {
+    assert.deepEqual(
+      composerQuotaRequirements({
+        lensId: 'image_text',
+        deliverableKind: 'image_set',
+        quantity: 3,
+      }),
+      [{ resource: 'image', cost: 3 }]
+    );
+    assert.deepEqual(
+      composerQuotaRequirements({
+        lensId: 'copy',
+        deliverableKind: 'copy_document',
+        quantity: 2,
+      }),
+      [{ resource: 'copy', cost: 2 }]
+    );
+    assert.deepEqual(
+      composerQuotaRequirements({
+        lensId: 'video',
+        deliverableKind: 'video_package',
+        quantity: 1,
+      }),
+      [{ resource: 'video', cost: 1 }]
+    );
+    assert.deepEqual(
+      composerQuotaRequirements({
+        lensId: null,
+        deliverableKind: null,
+        quantity: 1,
+      }),
+      []
+    );
+  });
+
+  it('blocks the copy-short image-rich 图文 run the server would reject', () => {
+    const view = projectQuotaPassiveView({
+      requirements: composerQuotaRequirements({
+        lensId: 'image_text',
+        deliverableKind: 'note',
+        quantity: 1,
+        notePageBound: 4,
+      }),
+      available: { copy: 0, image: 40, video: 3 },
+    });
+    assert.equal(view.short, true);
+    assert.deepEqual(view.shortResources, ['copy']);
+    assert.equal(
+      view.notice,
+      '本次用 1 条文案额度和 4 张图片额度 · 文案还剩 0 条、图片还剩 40 张'
+    );
+    assert.equal(view.shortNotice, '文案额度不够这次生成了，可以补充后再来');
+  });
+
+  it('counts an image_set by the recipe, so 4 pages is not pre-checked as 1', () => {
+    // The fork the signed quantity resolves (S3 P0-1): recipe declares 4, the
+    // untouched draft still says 1. Billing follows the recipe, so the merchant
+    // with 3 images left must be stopped here rather than by the server.
+    const requirements = composerQuotaRequirements({
+      lensId: 'image_text',
+      deliverableKind: 'image_set',
+      quantity: 4,
+    });
+    assert.deepEqual(requirements, [{ resource: 'image', cost: 4 }]);
+    const view = projectQuotaPassiveView({
+      requirements,
+      available: { copy: 5, image: 3, video: 1 },
+    });
+    assert.equal(view.short, true);
+    assert.deepEqual(view.shortResources, ['image']);
+    // Counting the draft's 1 instead would leave 3 images looking like plenty.
+    assert.equal(
+      projectQuotaPassiveView({
+        requirements: composerQuotaRequirements({
+          lensId: 'image_text',
+          deliverableKind: 'image_set',
+          quantity: 1,
+        }),
+        available: { copy: 5, image: 3, video: 1 },
+      }).short,
+      false
+    );
+  });
+
+  it('names both buckets when both fall short', () => {
+    const view = projectQuotaPassiveView({
+      requirements: composerQuotaRequirements({
+        lensId: 'image_text',
+        deliverableKind: 'note',
+        quantity: 1,
+        notePageBound: 4,
+      }),
+      available: { copy: 0, image: 1 },
+    });
+    assert.deepEqual(view.shortResources, ['copy', 'image']);
+    assert.equal(
+      view.shortNotice,
+      '文案额度和图片额度不够这次生成了，可以补充后再来'
+    );
+  });
+});
+
 describe('D-043 quota 被动展示', () => {
   it('states the run and the balance where both count the same thing', () => {
     const view = projectQuotaPassiveView({
-      resource: 'copy',
-      available: 5,
-      cost: 1,
+      requirements: [{ resource: 'copy', cost: 1 }],
+      available: { copy: 5 },
     });
     assert.equal(view.visible, true);
     assert.equal(view.short, false);
     assert.equal(view.notice, '本次用 1 条文案额度 · 还剩 5 条');
     assert.equal(view.shortNotice, null);
+    assert.deepEqual(view.shortResources, []);
   });
 
   it('flags a short balance without gating anything', () => {
     const view = projectQuotaPassiveView({
-      resource: 'image',
-      available: 1,
-      cost: 3,
+      requirements: [{ resource: 'image', cost: 3 }],
+      available: { image: 1 },
     });
     assert.equal(view.short, true);
     assert.equal(view.notice, '本次用 3 张图片额度 · 还剩 1 张');
     assert.equal(view.shortNotice, '图片额度不够这次生成了，可以补充后再来');
   });
 
-  it('says nothing about video: the balance is seconds, the cost is clips', () => {
-    // INC-t26-mixed-denomination one layer up. The ledger settles video as
-    // `{ resource: 'video', quantity: ceil(billableSeconds) }` while the
-    // composer's cost is a deliverable count, so 「本次用 1 条 · 还剩 30 条」
-    // would put a wrong number in front of the merchant. Withhold instead.
+  it('states video in 条 now that the ledger reserves it by clip', () => {
+    // T21/G-11 moved video settlement onto whole clips
+    // (`server-quote-authority.ts` debitUnitsFor → `{ video, quantity }`), so
+    // the seconds-vs-clips split that forced silence here is gone (W05 ③).
     const view = projectQuotaPassiveView({
-      resource: 'video',
-      available: 30,
-      cost: 1,
+      requirements: [{ resource: 'video', cost: 1 }],
+      available: { video: 3 },
     });
-    assert.equal(view.visible, false);
-    assert.equal(view.notice, '');
+    assert.equal(view.visible, true);
+    assert.equal(view.notice, '本次用 1 条视频额度 · 还剩 3 条');
     assert.equal(view.short, false);
   });
 
-  it('says nothing before the balance has loaded', () => {
+  it('says nothing before every touched balance has loaded', () => {
     for (const available of [null, undefined]) {
-      const view = projectQuotaPassiveView({
-        resource: 'copy',
-        available,
-        cost: 1,
-      });
-      assert.equal(view.visible, false);
+      assert.equal(
+        projectQuotaPassiveView({
+          requirements: [{ resource: 'copy', cost: 1 }],
+          available: { copy: available },
+        }).visible,
+        false
+      );
+      // A 图文 run must wait for BOTH buckets — half a sentence reads as whole.
+      assert.equal(
+        projectQuotaPassiveView({
+          requirements: [
+            { resource: 'copy', cost: 1 },
+            { resource: 'image', cost: 4 },
+          ],
+          available: { copy: 5, image: available },
+        }).visible,
+        false
+      );
     }
   });
 });

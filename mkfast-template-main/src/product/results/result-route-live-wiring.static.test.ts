@@ -10,6 +10,14 @@ const route = readFileSync(
   'utf8'
 );
 
+function assertHarnessCopyTokenPairedSeam(source: string) {
+  assert.match(
+    source,
+    /const partialCandidates\s*=\s*streamActive && harnessStreamMatchesResult\s*\?\s*harnessStream\.copyCandidates\s*:\s*undefined;/u
+  );
+  assert.match(source, /partialCandidates=\{partialCandidates\}/u);
+}
+
 test('result route resolves exact lineage on the server before rendering canonical projections', () => {
   assert.match(route, /['"]result-delivery['"]/);
   assert.match(route, /['"]result_target_resolve['"]/);
@@ -90,17 +98,53 @@ test('result route does not ship hard-coded empty works or copy workspace', () =
   assert.doesNotMatch(route, /provisional shell/);
 });
 
-test('result route wires live copy token stream (ADR-0007) for running phase', () => {
-  assert.match(route, /useCopyCandidateStream/);
-  assert.match(route, /partialCandidates=/);
-  assert.match(route, /streamLoading=/);
+test('result route consumes Harness workflow tokens as the only live incremental copy source', () => {
+  assert.match(route, /useWorkflowEventStream/);
   assert.match(
     route,
-    /progressState === ['"]running['"][\s\S]*progressState === ['"]waiting['"]|progressState === ['"]waiting['"][\s\S]*progressState === ['"]running['"]/
+    /const resultWorkflowId = resultWorkflowIdForWork\(\s*contentPackagesQuery\.data,\s*workId\s*\);/u
   );
-  // Must actually submit — hook wiring alone never starts the stream.
-  assert.match(route, /submitCopyCandidateStream/);
-  assert.match(route, /buildCopyStreamRequestFromJob/);
+  assert.doesNotMatch(route, /resultWorkflowIdForWork\([^;]*search\.taskId/u);
+  assert.match(route, /enabled: Boolean\(resultWorkflowId\)/u);
+  assert.match(route, /workflowId: resultWorkflowId/u);
+  assert.match(route, /taskId: resultWorkflowId \|\| undefined/u);
+  assert.doesNotMatch(route, /taskId: search\.taskId/u);
+  assert.match(route, /harnessStream\.copyCandidates/);
+  assert.match(route, /harnessStream\.activeWorkflowId === resultWorkflowId/u);
+  assert.match(
+    route,
+    /const harnessWorkflowState = harnessStreamMatchesResult\s*\?\s*harnessStream\.workflowState\s*:\s*undefined;/u
+  );
+  assert.match(
+    route,
+    /const harnessProgressState = harnessStreamMatchesResult\s*\?\s*harnessStream\.latestProgress\?\.state\s*:\s*undefined;/u
+  );
+  assert.match(route, /resultHarnessStreamLifecycle\(\{/u);
+  assert.match(route, /hasCanonicalVersion: Boolean\(currentPackageVersion\)/u);
+  assert.match(route, /harnessStreamLifecycle\.streamActive/u);
+  assert.doesNotMatch(
+    route,
+    /workflowState\s*\?\?\s*harnessStream\.latestProgress\?\.state/u
+  );
+  assert.doesNotMatch(
+    route,
+    /harnessProgressState === ['"]running['"]\s*\|\|\s*harnessProgressState === ['"]waiting['"]/u
+  );
+  assertHarnessCopyTokenPairedSeam(route);
+  assert.match(route, /streamLoading=/);
+  assert.doesNotMatch(route, /useCopyCandidateStream/);
+  assert.doesNotMatch(route, /submitCopyCandidateStream/);
+  assert.doesNotMatch(route, /buildCopyStreamRequestFromJob/);
+  assert.doesNotMatch(route, /structuredStreamCandidates/);
+});
+
+test('result route paired seam rejects dropping Harness candidates before the Result shell', () => {
+  const mutated = route.replace(
+    /const partialCandidates\s*=\s*streamActive && harnessStreamMatchesResult\s*\?\s*harnessStream\.copyCandidates\s*:\s*undefined;/u,
+    'const partialCandidates = [];'
+  );
+  assert.notEqual(mutated, route);
+  assert.throws(() => assertHarnessCopyTokenPairedSeam(mutated));
 });
 
 test('wechat moments full-package action downloads canonical caption segments', () => {
