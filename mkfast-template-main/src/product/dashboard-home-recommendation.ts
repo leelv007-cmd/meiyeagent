@@ -64,9 +64,6 @@ export function projectDashboardHomeRecommendation(
       versionId: version.id,
       whyNow: '你最近完成了这份内容，今天可以沿着同一主题继续发',
       workspaceId: latest.workspaceId,
-      ...(latest.marketing?.opportunity
-        ? { opportunity: latest.marketing.opportunity }
-        : {}),
     },
     stale: false,
     workspaceId: latest.workspaceId,

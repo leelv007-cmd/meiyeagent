@@ -250,7 +250,7 @@ export function workEvidence(
   }
   if ((marketing?.identityRefs.length ?? 0) > 0) {
     chips.push({ id: 'identity', label: '按已选营销身份的口吻表达' });
-  } else if (marketing?.identityFallback === 'brand_official') {
+  } else if (marketing) {
     // M-03 / D-117: 「未选择」 is stated as the neutral store voice, never as a
     // silently seeded identity.
     chips.push({ id: 'identity-fallback', label: '按门店官方中性口吻表达' });
