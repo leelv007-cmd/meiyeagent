@@ -131,6 +131,42 @@ test('completed stream hides the intermediate panel', () => {
   assert.equal(projection.hasFirstToken, true);
 });
 
+test('a terminal run reports a terminal phase, so its body stops streaming', () => {
+  // The delivered body survives in the projection (the candidate turn keeps
+  // showing it) — what must not survive is the claim that it is still
+  // arriving. Both routes into terminal are covered: the workflow reaching
+  // success/failed, and the session knowing it is delivered first.
+  for (const progressState of ['success', 'failed'] as const) {
+    const terminal = projectResultTokenStream({
+      workspaceKind: 'copy',
+      progressState,
+      partialCandidates: [{ title: '完成', body: '到店立减，先到先得。' }],
+      loading: false,
+    });
+    assert.equal(terminal.streamPhase, 'completed');
+    assert.equal(terminal.primary?.body, '到店立减，先到先得。');
+  }
+
+  const deliveredBeforePoll = projectResultTokenStream({
+    workspaceKind: 'copy',
+    // Last snapshot still says running — the session already knows better.
+    progressState: 'running',
+    partialCandidates: [{ title: '完成', body: '到店立减' }],
+    completed: true,
+    loading: true,
+  });
+  assert.equal(deliveredBeforePoll.streamPhase, 'completed');
+
+  // The live phase is unchanged — this fix must not flatten drafting.
+  const drafting = projectResultTokenStream({
+    workspaceKind: 'copy',
+    progressState: 'running',
+    partialCandidates: [{ title: '写作中', body: '到店' }],
+    loading: true,
+  });
+  assert.equal(drafting.streamPhase, 'drafting');
+});
+
 test('error before first chunk still shows stream panel', () => {
   const projection = projectResultTokenStream({
     workspaceKind: 'copy',

@@ -5,7 +5,7 @@
   "mirrorPath": "references/repos/herouipro-v3",
   "mirrorCommit": "0358aeb2476d580984b2cda10047339592eace8c",
   "theme": "glass",
-  "$rollback": "U05/U06 关票对账后撤下的件（D-150①，理由见 ./index.ts 文件头）：area-chart · line-chart · stepper（三面无时间序列/分步投影，画出来只能是造的）· cell-color-picker（19 个受控配置里没有颜色值）· inline-select（选择器已由 native-select/cell-select 各按稠密度分工）· rich-text-editor（写作要点这类长文按契约是纯文本，富文本会往里塞标记）。",
+  "$rollback": "U05/U06 关票对账后撤下的件（D-150①，理由见 ./index.ts 文件头）：area-chart · line-chart · stepper（三面无时间序列/分步投影，画出来只能是造的）· cell-color-picker（19 个受控配置里没有颜色值）· inline-select（选择器已由 native-select/cell-select 各按稠密度分工）· rich-text-editor（写作要点这类长文按契约是纯文本，富文本会往里塞标记）。U04 关票再撤：trend-chip（对话流半边没有任何「和上一次比」的投影——报价是单次价格、额度是余额、进度是状态；要让它显示一个箭头，得先编一个上期数）。",
   "components": [
     "bar-chart",
     "cell-select",
@@ -33,7 +33,6 @@
     "segment",
     "sidebar",
     "timeline",
-    "trend-chip",
     "widget"
   ]
 }

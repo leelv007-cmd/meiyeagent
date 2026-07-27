@@ -77,9 +77,16 @@ describe('responsive card grid matrix', () => {
     expect(grid).toHaveAttribute('data-columns', '2');
     expect(grid).toHaveAttribute('data-card-count', '6');
 
+    // U04: the grid and its cards are the supply-layer units. `data-slot` is
+    // written by the units themselves, so this goes red if the hand-rolled
+    // grid comes back — and the stack class is what keeps the unit's built-in
+    // ellipsis off the merchant's sentence (D-084).
+    expect(grid.dataset.slot).toBe('item-card-group');
     const buttons = within(grid).getAllByRole('button');
     expect(buttons).toHaveLength(6);
     for (const button of buttons) {
+      expect(button.dataset.slot).toBe('item-card');
+      expect(button.className).toMatch(/meiye-item-card-stack/);
       expect(button).toHaveAttribute('data-no-truncate', 'true');
       expect(button.className).toMatch(/min-h-12/);
       // No line-clamp classes.

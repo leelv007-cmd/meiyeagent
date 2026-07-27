@@ -13,19 +13,25 @@
  * authority.
  */
 
-import { useEffect, useRef } from 'react';
+import { domAnimation, LazyMotion } from 'motion/react';
+import * as m from 'motion/react-m';
 
 import {
+  ChatConversation,
   ChatLoader,
   ChatMessage,
   PromptInput,
+  PromptSuggestion,
   Segment,
 } from '@/components/heroui-pro';
 import {
+  composer_conversation_scroll_to_latest,
+  composer_reuse_suggestion_group,
   model_card_channel_multi,
   model_card_channel_single,
 } from '@/locale/paraglide/messages';
 import { StreamingAiMarkdown } from '@/components/markdown/ai-markdown';
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { cn } from '@/lib/utils';
 import type { ResultTokenStreamProjection } from '@/product/results/result-token-stream';
 
@@ -142,6 +148,12 @@ function CandidateStream({ stream }: { stream: ResultTokenStreamProjection }) {
               {primary.title}
             </p>
           ) : null}
+          {/*
+            Only `drafting` is a live stream. `completed` (terminal run, or a
+            delivered session) and `awaiting_confirmation` render the body as
+            settled text — no caret, no blur-in reveal, and nothing replayed
+            when the merchant reloads a finished run.
+          */}
           <StreamingAiMarkdown
             className="prose prose-sm dark:prose-invert mt-1 max-w-none"
             content={primary.body}
@@ -196,6 +208,41 @@ export type ComposerConversationProps = {
   onRecover?: (input: ComposerRecoveryInput) => void;
 };
 
+/**
+ * A turn's arrival, made visible (U07 Motion 进产品面).
+ *
+ * The transcript is the one place in the product where something appears
+ * without the merchant having done anything — a stage announcement, a question,
+ * the deliverable. A card that materialises with no transition reads as a
+ * repaint; a short rise reads as「刚刚到的」. `initial` only runs on mount and
+ * turns keep stable keys, so existing cards never replay: the motion marks
+ * arrival and nothing else.
+ *
+ * The reduced-motion alternative is not a shorter animation, it is none: the
+ * card is simply there, in its final position, on the first frame.
+ *
+ * Transform only, never opacity: an animation that fails to run must leave the
+ * card eight pixels low, not invisible. The merchant's whole run lives in this
+ * list, and no decoration gets to hide it.
+ */
+function TurnArrival({
+  animate,
+  children,
+}: {
+  animate: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <m.div
+      animate={animate ? { y: 0 } : undefined}
+      initial={animate ? { y: 8 } : false}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
+    >
+      {children}
+    </m.div>
+  );
+}
+
 export function ComposerConversation({
   session,
   stream,
@@ -204,17 +251,12 @@ export function ComposerConversation({
   onOpenDelivery,
   onRecover,
 }: ComposerConversationProps) {
-  const endRef = useRef<HTMLDivElement | null>(null);
   const turnCount = session.turns.length;
-
-  useEffect(() => {
-    // Structured card flow, not a chat log — follow the newest turn without
-    // hijacking the page scroll on first paint.
-    if (turnCount === 0) return;
-    // Optional-call: following the newest turn is a nicety, and jsdom has no
-    // scrollIntoView.
-    endRef.current?.scrollIntoView?.({ block: 'nearest' });
-  }, [turnCount]);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  // `scrollTo({ behavior: 'smooth' })` ignores the `scroll-behavior: auto`
+  // that styles.css forces under prefers-reduced-motion, so the transcript
+  // has to answer the preference itself.
+  const scrollBehavior = prefersReducedMotion ? 'instant' : 'smooth';
 
   if (turnCount === 0 && !identitySlot) return null;
 
@@ -290,18 +332,58 @@ export function ComposerConversation({
   };
 
   return (
-    <section
-      className="flex flex-col gap-3"
+    /*
+      ChatConversation owns「跟住最新一条」— the behaviour the retired
+      `endRef` + `scrollIntoView` pair hand-rolled. It only works inside a
+      bounded pane (the component scrolls itself and fades its own edges), so
+      the transcript gets a height cap here rather than growing the page
+      forever; the prompt bar below therefore stays reachable without scrolling
+      past the whole run.
+
+      `aria-live="off"` on purpose: the component's `role="log"` would make the
+      entire transcript one live region and re-announce whole cards. The
+      announcements are already owned where they are written — 进度宣告卡 and
+      the candidate stream each carry their own polite region.
+    */
+    <ChatConversation
+      aria-live="off"
+      className="meiye-conversation-pane max-h-[min(70svh,44rem)]"
+      data-motion={prefersReducedMotion ? 'off' : 'on'}
       data-phase={session.phase}
       data-testid="composer-conversation"
+      initial={scrollBehavior}
+      resize={scrollBehavior}
     >
-      {/* T10's Day-0 identity card leads the flow; the folded turn list
-          follows it. Both, in this order — the identity choice is offered
-          before there is any transcript to fold. */}
-      {identitySlot}
-      {foldTurns(session.turns).map(renderTurn)}
-      <div ref={endRef} />
-    </section>
+      <ChatConversation.Content className="flex flex-col gap-3">
+        {/* T10's Day-0 identity card leads the flow; the folded turn list
+            follows it. Both, in this order — the identity choice is offered
+            before there is any transcript to fold. */}
+        {identitySlot}
+        {/*
+          `domAnimation` only — the product面 pays for the animation features it
+          actually uses, and this transcript uses opacity and transform.
+        */}
+        <LazyMotion features={domAnimation} strict>
+          {foldTurns(session.turns).map((turn) => {
+            const rendered = renderTurn(turn);
+            if (!rendered) return null;
+            return (
+              <TurnArrival
+                animate={!prefersReducedMotion}
+                key={rendered.key ?? undefined}
+              >
+                {rendered}
+              </TurnArrival>
+            );
+          })}
+        </LazyMotion>
+        <ChatConversation.ScrollAnchor />
+      </ChatConversation.Content>
+      <ChatConversation.ScrollButton
+        aria-label={composer_conversation_scroll_to_latest()}
+        data-testid="composer-conversation-scroll-to-latest"
+      />
+    </ChatConversation>
   );
 }
 
@@ -498,24 +580,29 @@ export function ComposerPromptBar({
         ) : null}
       </div>
 
+      {/*
+        U04: the 旧内容换平台 openers are the supply layer's PromptSuggestion —
+        one-tap sentences that drop into the merchant's own draft. This is the
+        composer's cold surface too: before there is any transcript, these
+        pills and the intent box are the whole offer, so the 空态 is a
+        suggestion rather than an empty panel.
+      */}
       {reuseChips.length > 0 ? (
-        <div
-          className="flex flex-wrap items-center gap-2"
-          data-testid="composer-reuse-chips"
-        >
-          <span className="text-muted text-xs">想把旧内容换个平台再发？</span>
-          {reuseChips.map((chip) => (
-            <button
-              className="meiye-glass-piece rounded-full px-3 py-1 text-xs"
-              data-testid={`composer-reuse-chip-${chip.id}`}
-              key={chip.id}
-              onClick={() => onReuseChip(chip)}
-              type="button"
-            >
-              {chip.label}
-            </button>
-          ))}
-        </div>
+        <PromptSuggestion data-testid="composer-reuse-chips" variant="pill">
+          <PromptSuggestion.Group label={composer_reuse_suggestion_group()}>
+            <PromptSuggestion.Items>
+              {reuseChips.map((chip) => (
+                <PromptSuggestion.Item
+                  data-testid={`composer-reuse-chip-${chip.id}`}
+                  key={chip.id}
+                  onPress={() => onReuseChip(chip)}
+                >
+                  {chip.label}
+                </PromptSuggestion.Item>
+              ))}
+            </PromptSuggestion.Items>
+          </PromptSuggestion.Group>
+        </PromptSuggestion>
       ) : null}
 
       {/* Read-only echo of what the server will sign and freeze (T08). */}

@@ -70,6 +70,79 @@
   --muted: var(--ink-60);
 }
 
+/*
+ * `item-card` upstream is a dense list row: a centred flex row whose title and
+ * description each end in an ellipsis. The composer's card family is the other
+ * shape — a standing card whose merchant sentence must wrap, because D-084
+ * forbids truncation on the narrow / 200%-zoom path. Adapt the unit here rather
+ * than at the call sites: the vendored component sheet is imported without a
+ * layer, so Tailwind utilities (which are layered) cannot reach it.
+ */
+.meiye-item-card-stack {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.meiye-item-card-stack [data-slot="item-card-title"],
+.meiye-item-card-stack [data-slot="item-card-description"] {
+  width: auto;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.meiye-item-card-stack > [data-slot="item-card-action"] {
+  margin-top: calc(var(--spacing, 0.25rem) * 1);
+  margin-left: 0;
+  padding-left: 0;
+}
+
+/*
+ * `chat-conversation` fades its own top and bottom 32px — a soft edge that
+ * reads well when the pane carries chat bubbles you skim. The composer's
+ * transcript carries cards the merchant has to read: the 进度宣告卡, the
+ * 引导补问卡, the 成品交付卡. Whichever card happens to sit at the pane edge
+ * would fade to nothing, which the browser gate caught on both viewports.
+ * The pane keeps its scroll and its follow-the-newest-turn behaviour; only the
+ * decoration that hides content goes.
+ */
+.meiye-conversation-pane {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/*
+ * `chain-of-thought` is upstream's reasoning trace: a thing you glance at and
+ * fold away, so its step labels are `--muted`. The 白话进度 rail reuses the
+ * component but not that premise — D-116 makes those announcements a delivery
+ * statement the merchant is meant to read, and a stage that has already
+ * happened is still worth reading. Adapt it here for the same reason as
+ * `.meiye-item-card-stack`: the vendored sheet is unlayered, so Tailwind
+ * utilities on the call site cannot reach it.
+ */
+.meiye-progress-rail .chain-of-thought__step-label,
+.meiye-progress-rail .chain-of-thought__trigger {
+  color: var(--foreground);
+}
+
+.meiye-progress-rail
+  .chain-of-thought__step:not(:last-child)
+  .chain-of-thought__step-label {
+  opacity: 0.75;
+}
+
+/*
+ * The trigger shimmers while the run moves. Under prefers-reduced-motion the
+ * upstream fallback drops the whole line to 60% opacity, which is a legibility
+ * cost paid by the merchant who asked for *less motion*, not less contrast.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .meiye-progress-rail .text-shimmer {
+    opacity: 1;
+  }
+}
+
 /* DESIGN.md §3 — single family, weight contrast carries the personality. */
 .meiye-heroui-glass {
   font-family:

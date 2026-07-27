@@ -41,6 +41,13 @@ test('the drafting label is reserved for a workflow that is not waiting on the m
   assert.equal(harnessCopyStreamPhase(undefined), 'drafting');
 });
 
+test('a finished workflow is not drafting — its text is already delivered', () => {
+  // 「无假流式」: the renderer keys its caret / reveal off this phase, so
+  // calling a terminal run drafting is what animates delivered copy.
+  assert.equal(harnessCopyStreamPhase('success'), 'completed');
+  assert.equal(harnessCopyStreamPhase('failed'), 'completed');
+});
+
 test('an unexecuted video work restores its persisted creation operation', () => {
   assert.equal(
     restoredCreationOperation({ work: { operation: 'video.generate' } }),

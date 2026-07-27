@@ -87,11 +87,20 @@ export function workbenchGreetingName(
  * label may only appear while the workflow is actually producing tokens. A
  * suspended workflow is waiting on the merchant — material authorization,
  * Brief confirmation, a blocking question — and must say so instead.
+ *
+ * A finished workflow is neither: `success`/`failed` are terminal, so the text
+ * on screen is delivered text. Calling that drafting is what makes an already
+ * finished body render as if it were still arriving — caret, blur-in reveal,
+ * replayed on every mount. 「无假流式」forbids it.
  */
 export function harnessCopyStreamPhase(
   progressState?: 'waiting' | 'running' | 'suspended' | 'success' | 'failed'
-): 'awaiting_confirmation' | 'drafting' {
-  return progressState === 'suspended' ? 'awaiting_confirmation' : 'drafting';
+): 'awaiting_confirmation' | 'completed' | 'drafting' {
+  if (progressState === 'suspended') return 'awaiting_confirmation';
+  if (progressState === 'success' || progressState === 'failed') {
+    return 'completed';
+  }
+  return 'drafting';
 }
 
 interface CopyPackageResultInput {

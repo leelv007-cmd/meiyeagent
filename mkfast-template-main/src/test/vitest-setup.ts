@@ -21,6 +21,17 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
   })) as typeof window.matchMedia;
 }
 
+/**
+ * jsdom implements no scrolling at all, so `Element.prototype.scrollTo` is
+ * missing. `ChatConversation` follows the newest turn through it, and an
+ * unhandled TypeError from inside a requestAnimationFrame callback fails the
+ * whole run. A no-op is the honest stand-in: jsdom has no viewport to scroll,
+ * and the behaviour it stands for belongs to the browser gate.
+ */
+if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = () => {};
+}
+
 afterEach(() => {
   cleanup();
 });

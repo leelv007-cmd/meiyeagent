@@ -12,7 +12,6 @@ import {
   ListView,
   Segment,
   Sidebar,
-  TrendChip,
   Widget,
 } from '@/components/heroui-pro';
 
@@ -86,8 +85,11 @@ function DashboardScaffold() {
         <Widget>
           <Widget.Header>
             <Widget.Title>任务队列</Widget.Title>
-            {/* 五 tone 语义走规范化状态标签, 这里只验证 chip 的中性配色 */}
-            <TrendChip trend="up">占位</TrendChip>
+            {/*
+              A TrendChip stood here until U04 retired the unit: the product has
+              no 「和上一次比」projection to point its arrow at. The scaffold does
+              not get to keep a component the product does not ship.
+            */}
           </Widget.Header>
           <Widget.Content>
             <ListView aria-label="任务队列">
