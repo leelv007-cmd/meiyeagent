@@ -6,9 +6,41 @@ import {
   FixtureAiStreamingRunner,
   FixtureAiStructuredObjectExecutor,
   OpenAiCompatibleAiSdkRunner,
+  fixtureStructuredFirstChunkHoldMs,
 } from './ai-sdk-runner.js';
 import { executionBriefSchema } from '../harness/structured-nodes.js';
 import { notePlanSchema } from '@meiye/contracts';
+
+test('fixture structured chunk pacing accepts bounded E2E-only overrides', () => {
+  assert.equal(
+    fixtureStructuredFirstChunkHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10000',
+    }),
+    10_000,
+  );
+  assert.equal(
+    fixtureStructuredFirstChunkHoldMs({
+      APP_ENV: 'production',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10000',
+    }),
+    40,
+  );
+  assert.equal(
+    fixtureStructuredFirstChunkHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: 'not-a-number',
+    }),
+    40,
+  );
+  assert.equal(
+    fixtureStructuredFirstChunkHoldMs({
+      APP_ENV: 'e2e',
+      E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS: '10001',
+    }),
+    40,
+  );
+});
 
 test('fixture structured execution compiles the frozen video delivery into one storyboard', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
@@ -274,7 +306,10 @@ test('formal platform adaptation returns all three distinct variants in one requ
 
 test('fixture copy brief derives exactly the fact references present in its prompt', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
-  const generate = (storeFacts: Record<string, unknown>) =>
+  const generate = (
+    storeFacts: Record<string, unknown>,
+    normalizedIntent = '介绍本店护理项目',
+  ) =>
     executor.generate({
       instructions: 'Compile one grounded copy brief.',
       prompt: JSON.stringify({
@@ -283,6 +318,7 @@ test('fixture copy brief derives exactly the fact references present in its prom
             store_facts_assets: storeFacts,
           },
         },
+        declaration: { normalizedIntent },
       }),
       schema: executionBriefSchema,
       schemaName: 'harness_copy_brief_v1',
@@ -314,6 +350,46 @@ test('fixture copy brief derives exactly the fact references present in its prom
     new Set(['store_fact:price-1:2', 'store_fact:service-1:4']),
   );
   assert.equal(grounded.output.factRefs.length, 2);
+
+  const lineageMarker = 'M04LINEAGE_A_12345678';
+  const marked = await generate({}, `介绍护理项目 ${lineageMarker}`);
+  if (marked.output.kind !== 'copy') throw new Error('Expected a copy brief.');
+  assert.match(marked.output.instructions, new RegExp(lineageMarker, 'u'));
+});
+
+test('fixture copy candidate streams a trace of the frozen merchant intent', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const partials: unknown[] = [];
+  const lineageMarker = 'M04LINEAGE_B_12345678';
+  const generated = await executor.generate({
+    instructions: 'Generate one grounded copy candidate.',
+    onPartialOutput: (partial) => {
+      partials.push(structuredClone(partial));
+    },
+    prompt: JSON.stringify({
+      brief: {
+        instructions: `介绍护理项目 ${lineageMarker}`,
+      },
+      candidateId: 'c01',
+    }),
+    schema: z
+      .object({
+        assetRefs: z.array(z.string()),
+        body: z.string(),
+        conversionHook: z.string(),
+        factClaims: z.array(z.unknown()),
+        title: z.string(),
+      })
+      .strict(),
+    schemaName: 'harness_copy_candidate_v1',
+  });
+
+  assert.match(generated.output.title, new RegExp(lineageMarker, 'u'));
+  assert.ok(
+    partials.some((partial) =>
+      JSON.stringify(partial).includes(lineageMarker),
+    ),
+  );
 });
 
 test('fixture image edit brief derives work-case fact references from its prompt', async () => {

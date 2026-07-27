@@ -678,6 +678,16 @@ Per modality, one test walks:
   with the merchant turn and the replayed progress, and exactly one submission
   has been posted for the whole journey (a second POST would be the second
   submit truth ADR-0014 forbids).
+- **workId-only Result 重连** — a second tab opens the running copy Result from
+  `/dashboard/results/:workId` with no task query and must render the unique
+  token emitted by that Work's canonical Harness workflow. Playwright holds the
+  first structured fixture copy chunk for 10,000 ms instead of the 40 ms
+  default, an E2E-only cost of +9,960 ms per copy run; non-E2E and invalid
+  overrides remain at 40 ms.
+- **stale taskId 负控** — one user creates two real copy workflows carrying
+  distinct fixture lineage tokens, then opens Work A with workflow B's stale
+  URL `taskId`. A document-lifetime observer proves B's token was never
+  projected, including before the authoritative ContentPackage query settles.
 - **采用 → 交付** — the canonical adopt mutation, then the delivery panel and a
   real non-empty package whose manifest platform is this contract's.
 - **刷新恢复 ②** — `assertJourneyRestored`: the result surface, the delivery

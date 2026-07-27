@@ -31,6 +31,7 @@ import {
   platformPreviewsFromContentPackage,
   projectResultCenterLiveProjection,
   resultContentPackageMutationFacts,
+  resultHarnessStreamLifecycle,
   resultWorkflowIdForWork,
   runDetailFactsFromLiveSelection,
 } from '@/product/results/result-live-projection';
@@ -158,15 +159,14 @@ function ResultCenterRoutePage() {
   });
   // `content_packages` is ordered by updatedAt DESC. Its source binds Work and
   // Harness Task atomically, so canonical workId-only reopens reconnect without
-  // relying on an optional URL taskId. The URL remains a first-load fallback.
+  // trusting an optional URL taskId from another route or a stale browser link.
   const contentPackage = latestContentPackageForWork(
     contentPackagesQuery.data,
     workId
   );
   const resultWorkflowId = resultWorkflowIdForWork(
     contentPackagesQuery.data,
-    workId,
-    search.taskId
+    workId
   );
   const harnessStream = useWorkflowEventStream({
     enabled: Boolean(resultWorkflowId),
@@ -317,35 +317,35 @@ function ResultCenterRoutePage() {
   // Video worksurface simply omits workflow-derived panels instead of hard-failing.
 
   const workspaceKind = selected?.workspaceKind ?? 'copy';
-  const harnessState =
-    harnessStream.workflowState ?? harnessStream.latestProgress?.state;
-  const resultProgressState = currentPackageVersion
-    ? ('success' as const)
-    : harnessState === 'failed'
-      ? ('failed' as const)
-      : harnessState === 'success'
-        ? ('success' as const)
-        : selected?.progressState;
+  const harnessStreamMatchesResult =
+    Boolean(resultWorkflowId) &&
+    harnessStream.activeWorkflowId === resultWorkflowId;
+  const harnessWorkflowState = harnessStreamMatchesResult
+    ? harnessStream.workflowState
+    : undefined;
+  const harnessProgressState = harnessStreamMatchesResult
+    ? harnessStream.latestProgress?.state
+    : undefined;
+  const harnessStreamLifecycle = resultHarnessStreamLifecycle({
+    hasCanonicalVersion: Boolean(currentPackageVersion),
+    latestProgressState: harnessProgressState,
+    projectedProgressState: selected?.progressState,
+    workflowState: harnessWorkflowState,
+  });
+  const resultProgressState = harnessStreamLifecycle.progressState;
   // D-118: lightweight copy stays inside the shared Harness workflow. Its
   // workflow.token projection is the only user-visible incremental source.
   // image.generate / video never feed incremental copy slots — do not mark them
   // streamActive or e2e will wait forever for tokens that cannot arrive.
   const streamActive =
     workspaceKind === 'copy' &&
-    (resultProgressState === 'running' ||
-      resultProgressState === 'waiting' ||
-      harnessState === 'running' ||
-      harnessState === 'waiting') &&
+    harnessStreamLifecycle.streamActive &&
     (!selected?.job || selected.job.contract.operation === 'copy.generate');
-  const partialCandidates = streamActive
-    ? harnessStream.copyCandidates
-    : undefined;
-  const streamLoading = streamActive
-    ? selected?.progressState === 'running' ||
-      selected?.progressState === 'waiting' ||
-      harnessState === 'running' ||
-      harnessState === 'waiting'
-    : false;
+  const partialCandidates =
+    streamActive && harnessStreamMatchesResult
+      ? harnessStream.copyCandidates
+      : undefined;
+  const streamLoading = streamActive && harnessStreamMatchesResult;
   const deliveryTarget = deliveryTargetForIntent(
     workspaceKind,
     selected?.work.intent ?? ''
@@ -395,7 +395,7 @@ function ResultCenterRoutePage() {
     currentPackageVersion &&
     (workspaceKind === 'copy' || workspaceKind === 'image')
       ? calibrateTerminalRevision({
-          streamed: harnessStream.copyCandidates[0],
+          streamed: partialCandidates?.[0],
           terminal: {
             title: currentPackageVersion.title,
             body: currentPackageVersion.body,

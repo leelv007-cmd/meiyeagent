@@ -28,6 +28,20 @@ const FIXTURE_STREAM_CHUNK_INTERVAL_MS = 200;
 const FIXTURE_ASSISTANT_CHUNK_INTERVAL_MS = 120;
 const FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS = 40;
 
+export function fixtureStructuredFirstChunkHoldMs(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+) {
+  if (env.APP_ENV !== 'e2e') return FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS;
+  const raw = env.E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS?.trim();
+  if (!raw || !/^\d+$/u.test(raw)) {
+    return FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS;
+  }
+  const interval = Number(raw);
+  return interval >= 1 && interval <= 10_000
+    ? interval
+    : FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS;
+}
+
 export type LlmApiFamily = 'openai' | 'anthropic' | 'gemini' | 'custom';
 
 export type CustomLlmProtocol =
@@ -541,10 +555,12 @@ export class FixtureAiStructuredObjectExecutor
       input.schemaName === 'harness_copy_candidate_v1' &&
       input.onPartialOutput
     ) {
+      let partialIndex = 0;
       for (const partial of fixtureCopyCandidatePartials(output)) {
         if (input.abortSignal?.aborted) throw createAbortError();
         await input.onPartialOutput(partial);
-        await fixtureStructuredStreamPause();
+        await fixtureStructuredStreamPause(partialIndex === 0);
+        partialIndex += 1;
       }
     }
     return {
@@ -837,11 +853,17 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
             : null,
       };
     }
-    case 'harness_copy_brief_v1':
+    case 'harness_copy_brief_v1': {
+      const declaration = fixtureRecord(payload.declaration);
+      const normalizedIntent =
+        typeof declaration.normalizedIntent === 'string'
+          ? declaration.normalizedIntent
+          : '介绍本店护理项目';
       return {
         kind: 'copy',
         instructions:
-          '请基于当前任务和已确认资料生成一条可直接审核的小红书文案。正文需说明服务价值、适用场景与预约方式，只使用输入中可核对的事实，不编造价格、效果、资格或顾客案例，也不引用未授权素材。',
+          '请基于当前任务和已确认资料生成一条可直接审核的小红书文案。正文需说明服务价值、适用场景与预约方式，只使用输入中可核对的事实，不编造价格、效果、资格或顾客案例，也不引用未授权素材。' +
+          `本次需求：${normalizedIntent}`,
         platform: 'xiaohongshu',
         cta: '私信了解当前项目并预约',
         factRefs: fixturePromptFactRefs(payload),
@@ -849,6 +871,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         identityRefs: [],
         constraints: ['不得编造价格、效果或顾客案例'],
       };
+    }
     case 'harness_image_brief_v1': {
       const executionContract = fixtureRecord(payload.executionContract);
       const declaration = fixtureRecord(payload.declaration);
@@ -1115,6 +1138,11 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       const candidateId =
         typeof payload.candidateId === 'string' ? payload.candidateId : 'c01';
       const index = Math.max(0, Number(candidateId.slice(1)) - 1);
+      const brief = fixtureRecord(payload.brief);
+      const frozenIntent =
+        typeof brief.instructions === 'string'
+          ? brief.instructions.split('本次需求：').at(-1)?.trim()
+          : undefined;
       const candidates = [
         {
           title: '新项目到店前先看这几点',
@@ -1134,6 +1162,11 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       ] as const;
       return {
         ...(candidates[index] ?? candidates[0]),
+        ...(frozenIntent
+          ? {
+              title: `${frozenIntent.slice(0, 120)}｜${(candidates[index] ?? candidates[0]).title}`,
+            }
+          : {}),
         factClaims: [],
         assetRefs: [],
       };
@@ -1286,8 +1319,13 @@ function fixtureStreamPause() {
   );
 }
 
-function fixtureStructuredStreamPause() {
+function fixtureStructuredStreamPause(firstChunk: boolean) {
   return new Promise<void>((resolve) =>
-    setTimeout(resolve, FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS)
+    setTimeout(
+      resolve,
+      firstChunk
+        ? fixtureStructuredFirstChunkHoldMs()
+        : FIXTURE_STRUCTURED_CHUNK_INTERVAL_MS,
+    )
   );
 }

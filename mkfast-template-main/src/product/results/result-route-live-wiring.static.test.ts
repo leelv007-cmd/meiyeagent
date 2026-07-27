@@ -13,7 +13,7 @@ const route = readFileSync(
 function assertHarnessCopyTokenPairedSeam(source: string) {
   assert.match(
     source,
-    /const partialCandidates = streamActive\s*\?\s*harnessStream\.copyCandidates\s*:\s*undefined;/u
+    /const partialCandidates\s*=\s*streamActive && harnessStreamMatchesResult\s*\?\s*harnessStream\.copyCandidates\s*:\s*undefined;/u
   );
   assert.match(source, /partialCandidates=\{partialCandidates\}/u);
 }
@@ -102,17 +102,34 @@ test('result route consumes Harness workflow tokens as the only live incremental
   assert.match(route, /useWorkflowEventStream/);
   assert.match(
     route,
-    /const resultWorkflowId = resultWorkflowIdForWork\(\s*contentPackagesQuery\.data,\s*workId,\s*search\.taskId\s*\);/u
+    /const resultWorkflowId = resultWorkflowIdForWork\(\s*contentPackagesQuery\.data,\s*workId\s*\);/u
   );
+  assert.doesNotMatch(route, /resultWorkflowIdForWork\([^;]*search\.taskId/u);
   assert.match(route, /enabled: Boolean\(resultWorkflowId\)/u);
   assert.match(route, /workflowId: resultWorkflowId/u);
   assert.match(route, /harnessStream\.copyCandidates/);
-  assertHarnessCopyTokenPairedSeam(route);
-  assert.match(route, /streamLoading=/);
+  assert.match(route, /harnessStream\.activeWorkflowId === resultWorkflowId/u);
   assert.match(
     route,
-    /progressState === ['"]running['"][\s\S]*progressState === ['"]waiting['"]|progressState === ['"]waiting['"][\s\S]*progressState === ['"]running['"]/
+    /const harnessWorkflowState = harnessStreamMatchesResult\s*\?\s*harnessStream\.workflowState\s*:\s*undefined;/u
   );
+  assert.match(
+    route,
+    /const harnessProgressState = harnessStreamMatchesResult\s*\?\s*harnessStream\.latestProgress\?\.state\s*:\s*undefined;/u
+  );
+  assert.match(route, /resultHarnessStreamLifecycle\(\{/u);
+  assert.match(route, /hasCanonicalVersion: Boolean\(currentPackageVersion\)/u);
+  assert.match(route, /harnessStreamLifecycle\.streamActive/u);
+  assert.doesNotMatch(
+    route,
+    /workflowState\s*\?\?\s*harnessStream\.latestProgress\?\.state/u
+  );
+  assert.doesNotMatch(
+    route,
+    /harnessProgressState === ['"]running['"]\s*\|\|\s*harnessProgressState === ['"]waiting['"]/u
+  );
+  assertHarnessCopyTokenPairedSeam(route);
+  assert.match(route, /streamLoading=/);
   assert.doesNotMatch(route, /useCopyCandidateStream/);
   assert.doesNotMatch(route, /submitCopyCandidateStream/);
   assert.doesNotMatch(route, /buildCopyStreamRequestFromJob/);
@@ -121,7 +138,7 @@ test('result route consumes Harness workflow tokens as the only live incremental
 
 test('result route paired seam rejects dropping Harness candidates before the Result shell', () => {
   const mutated = route.replace(
-    /const partialCandidates = streamActive\s*\?\s*harnessStream\.copyCandidates\s*:\s*undefined;/u,
+    /const partialCandidates\s*=\s*streamActive && harnessStreamMatchesResult\s*\?\s*harnessStream\.copyCandidates\s*:\s*undefined;/u,
     'const partialCandidates = [];'
   );
   assert.notEqual(mutated, route);

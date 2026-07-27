@@ -14,6 +14,7 @@ import {
   imageWorksurfaceFromContentPackage,
   latestContentPackageForWork,
   projectResultCenterLiveProjection,
+  resultHarnessStreamLifecycle,
   resultWorkflowIdForWork,
   resultContentPackageMutationFacts,
   revisionTimelineFactsFromContentPackage,
@@ -64,13 +65,48 @@ test('resolves a workId-only Result reopen to the authoritative Harness workflow
     resultWorkflowIdForWork(packages, 'work-copy-target'),
     'task-authoritative'
   );
+  assert.equal(resultWorkflowIdForWork(undefined, 'work-copy-target'), '');
+  assert.equal(resultWorkflowIdForWork([], 'work-copy-target'), '');
   assert.equal(
-    resultWorkflowIdForWork(packages, 'work-copy-target', 'task-stale-url'),
-    'task-authoritative'
+    resultWorkflowIdForWork(
+      [
+        {
+          source: {
+            workId: 'work-cached-route',
+            workflowId: 'task-stale-cached-route',
+          },
+        },
+      ],
+      'work-copy-target'
+    ),
+    ''
   );
-  assert.equal(
-    resultWorkflowIdForWork(undefined, 'work-copy-target', 'task-url-fallback'),
-    'task-url-fallback'
+});
+
+test('terminal Harness workflow state overrides stale running progress', () => {
+  assert.deepEqual(
+    resultHarnessStreamLifecycle({
+      hasCanonicalVersion: false,
+      latestProgressState: 'running',
+      projectedProgressState: 'running',
+      workflowState: 'success',
+    }),
+    {
+      progressState: 'success',
+      streamActive: false,
+    }
+  );
+  assert.deepEqual(
+    resultHarnessStreamLifecycle({
+      hasCanonicalVersion: false,
+      latestProgressState: 'running',
+      projectedProgressState: 'running',
+      workflowState: 'failed',
+    }),
+    {
+      progressState: 'failed',
+      streamActive: false,
+    }
   );
 });
 

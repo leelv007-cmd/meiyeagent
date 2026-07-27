@@ -15,6 +15,7 @@ import type {
   PublicContentPackage,
   ResultWorkspaceKind,
   VideoWorkflowPublicProjection,
+  WorkflowState,
 } from '@meiye/contracts';
 
 import type {
@@ -69,12 +70,36 @@ export function latestContentPackageForWork<
 
 export function resultWorkflowIdForWork<
   TPackage extends { source: { workId?: string; workflowId?: string } },
->(packages: TPackage[] | undefined, workId: string, routeTaskId?: string) {
-  return (
-    latestContentPackageForWork(packages, workId)?.source.workflowId ??
-    routeTaskId ??
-    ''
-  );
+>(packages: TPackage[] | undefined, workId: string) {
+  return latestContentPackageForWork(packages, workId)?.source.workflowId ?? '';
+}
+
+export function resultHarnessStreamLifecycle(input: {
+  hasCanonicalVersion: boolean;
+  latestProgressState?: WorkflowState;
+  projectedProgressState?: ResultShellProgressState;
+  workflowState?: WorkflowState;
+}) {
+  const streamTerminal =
+    input.hasCanonicalVersion ||
+    input.workflowState === 'failed' ||
+    input.workflowState === 'success';
+  const progressState = input.hasCanonicalVersion
+    ? ('success' as const)
+    : input.workflowState === 'failed'
+      ? ('failed' as const)
+      : input.workflowState === 'success'
+        ? ('success' as const)
+        : input.projectedProgressState;
+  return {
+    progressState,
+    streamActive:
+      !streamTerminal &&
+      (progressState === 'running' ||
+        progressState === 'waiting' ||
+        input.latestProgressState === 'running' ||
+        input.latestProgressState === 'waiting'),
+  };
 }
 
 /** Stable client-side marker for detecting an asynchronously refreshed package. */
