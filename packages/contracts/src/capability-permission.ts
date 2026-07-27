@@ -231,6 +231,7 @@ const assetMemoryCreateActions = new Set([
   'confirm_asset_intake_fact',
   'correct_asset_intake_fact',
   'create_reuse_task',
+  'finalize_store_intake',
   'parse_asset_batch',
   'parse_single_asset',
   'prepare_assisted_price_intake',

@@ -6,6 +6,7 @@ import {
   prepareAssistedPriceIntakeCommandSchema,
   assetIntakeDecisionEventSchema,
   confirmedFactReferenceSchema,
+  finalizeStoreIntakeCommandSchema,
   recordAssetIntakeBatchCommandSchema,
 } from './asset-intake.js';
 
@@ -222,6 +223,120 @@ test('asset intake commands cannot forge server-owned workspace or creation time
     recordAssetIntakeBatchCommandSchema.parse({
       ...command,
       createdAt: source.capturedAt,
+    }),
+  );
+});
+
+test('store intake finalization rejects two candidates targeting the same fact stream', () => {
+  const candidate = {
+    candidateId: 'candidate-service',
+    objectKind: 'store_fact' as const,
+    status: 'pending' as const,
+    fact: {
+      kind: 'service' as const,
+      key: 'service.scalp-clean.name',
+      value: '头皮清洁',
+      scope: { storeId: 'workspace-a' },
+      source: {
+        kind: 'user_confirmation' as const,
+        referenceId: source.referenceId,
+        capturedAt: source.capturedAt,
+      },
+      effectiveFrom: source.capturedAt,
+      expiresAt: null,
+    },
+  };
+  assert.throws(() =>
+    finalizeStoreIntakeCommandSchema.parse({
+      batch: {
+        batchId: 'batch-finalize-duplicate',
+        taskId: 'task-finalize-duplicate',
+        source,
+        summary: '确认两条候选。',
+        candidates: [
+          candidate,
+          {
+            ...candidate,
+            candidateId: 'candidate-service-duplicate',
+          },
+        ],
+      },
+      confirmations: [
+        {
+          candidateId: candidate.candidateId,
+          factId: 'store-project:scalp-clean:service',
+          expectedFactRevision: 0,
+        },
+        {
+          candidateId: 'candidate-service-duplicate',
+          factId: 'store-project:scalp-clean:service',
+          expectedFactRevision: 0,
+        },
+      ],
+      profilePatch: { expectedRevision: 0 },
+    }),
+  );
+});
+
+test('store intake finalization can reference a server-persisted batch', () => {
+  const parsed = finalizeStoreIntakeCommandSchema.parse({
+    batch: { batchId: 'server-batch-a' },
+    confirmations: [
+      {
+        candidateId: 'candidate-service',
+        factId: 'store-project:scalp-clean:service',
+        expectedFactRevision: 0,
+      },
+    ],
+    profilePatch: { expectedRevision: 1 },
+  });
+
+  assert.deepEqual(parsed.batch, { batchId: 'server-batch-a' });
+});
+
+test('store intake finalization rejects a non-manual inline batch', () => {
+  assert.throws(() =>
+    finalizeStoreIntakeCommandSchema.parse({
+      batch: {
+        batchId: 'forged-screenshot',
+        taskId: 'task-forged-screenshot',
+        source: {
+          ...source,
+          kind: 'group_buy_screenshot',
+        },
+        summary: 'Client asserted screenshot parse.',
+        candidates: [
+          {
+            candidateId: 'candidate-price',
+            objectKind: 'store_fact',
+            status: 'pending',
+            fact: {
+              kind: 'price',
+              key: 'service.scalp-clean.price',
+              value: { amount: 299, currency: 'CNY' },
+              scope: {
+                storeId: 'workspace-a',
+                serviceId: 'scalp-clean',
+              },
+              source: {
+                kind: 'screenshot_extraction',
+                referenceId: source.referenceId,
+                capturedAt: source.capturedAt,
+              },
+              effectiveFrom: source.capturedAt,
+              expiresAt: null,
+            },
+          },
+        ],
+      },
+      confirmations: [
+        {
+          candidateId: 'candidate-price',
+          factId: 'store-project:scalp-clean:price',
+          expectedFactRevision: 0,
+        },
+      ],
+      profilePatch: { expectedRevision: 1 },
     }),
   );
 });

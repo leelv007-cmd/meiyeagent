@@ -19,10 +19,12 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useProStudioEntitlement } from '@/hooks/use-pro-studio-entitlement';
 import { emitTelemetry } from '@/lib/product-telemetry';
 import {
+  account_usage_retry,
   creation_entry_intent_aria,
   creation_entry_intent_placeholder,
   creation_entry_submit,
@@ -51,6 +53,7 @@ import type {
   ProductQuoteSnapshot,
   QuestionCard,
   ResultPanel,
+  StoreFact,
 } from '@meiye/contracts';
 import { composerSubmissionSignedFieldsSchema } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
@@ -83,6 +86,10 @@ import {
 import { BriefSurface } from './brief-surface-panel';
 import { applyCatalogRecipeSelection } from './catalog-selection';
 import { ProgressiveFactCard } from './progressive-fact-card';
+import {
+  hasMissingProgressiveStoreFacts,
+  shouldShowProgressiveFactCard,
+} from './progressive-fact';
 import {
   cancelBriefSurface,
   confirmBriefSurface,
@@ -317,6 +324,72 @@ export function ComposerHome({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const product = useProductState();
+  const storeFacts = useQuery({
+    enabled: Boolean(product.state?.workspaceId),
+    queryKey: p1QueryKeys.request('context', 'store_facts_active', {
+      scope: { storeId: product.state?.workspaceId ?? '' },
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<StoreFact[]>(
+        'context',
+        {
+          action: 'store_facts_active',
+          payload: {
+            scope: { storeId: product.state?.workspaceId ?? '' },
+            at: new Date().toISOString(),
+          },
+        },
+        signal
+      ),
+  });
+  const primaryProjectId = product.state?.store?.projects[0]?.id;
+  const primaryServiceFactId = primaryProjectId
+    ? `store-project:${primaryProjectId}:service`
+    : undefined;
+  const primaryPriceFactId = primaryProjectId
+    ? `store-project:${primaryProjectId}:price`
+    : undefined;
+  const activeStoreFactIds = new Set(
+    (storeFacts.data ?? []).map((fact) => fact.factId)
+  );
+  const needsServiceHistory =
+    storeFacts.isSuccess &&
+    Boolean(
+      primaryServiceFactId && !activeStoreFactIds.has(primaryServiceFactId)
+    );
+  const needsPriceHistory =
+    storeFacts.isSuccess &&
+    Boolean(primaryPriceFactId && !activeStoreFactIds.has(primaryPriceFactId));
+  const serviceFactHistory = useQuery({
+    enabled: needsServiceHistory,
+    queryKey: p1QueryKeys.request('context', 'store_fact_history', {
+      factId: primaryServiceFactId ?? '',
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<StoreFact[]>(
+        'context',
+        {
+          action: 'store_fact_history',
+          payload: { factId: primaryServiceFactId ?? '' },
+        },
+        signal
+      ),
+  });
+  const priceFactHistory = useQuery({
+    enabled: needsPriceHistory,
+    queryKey: p1QueryKeys.request('context', 'store_fact_history', {
+      factId: primaryPriceFactId ?? '',
+    }),
+    queryFn: ({ signal }) =>
+      queryP1<StoreFact[]>(
+        'context',
+        {
+          action: 'store_fact_history',
+          payload: { factId: primaryPriceFactId ?? '' },
+        },
+        signal
+      ),
+  });
   const sourcePickerRef = useRef<HTMLElement | null>(null);
   const sourceFactsRef = useRef(new Map<string, ConfirmedAssetFacts>());
   const sourceRevisionRef = useRef(new Map<string, string>());
@@ -1709,12 +1782,39 @@ export function ComposerHome({
         })
       : null;
 
-  const showProgressiveFact =
-    Boolean(product.state) &&
-    !product.loading &&
-    (submissionGroundingBlocked === 'store' ||
-      missingGrounding.includes('confirmed_store') ||
-      missingGrounding.includes('confirmed_project'));
+  const missingStoreFacts =
+    storeFacts.isSuccess &&
+    hasMissingProgressiveStoreFacts(product.state?.store, storeFacts.data);
+  const storeFactHeads = [
+    ...(storeFacts.data ?? []),
+    ...(serviceFactHistory.data ?? []),
+    ...(priceFactHistory.data ?? []),
+  ];
+  const storeFactHeadRevisionKey = storeFactHeads
+    .map((fact) => `${fact.factId}:${fact.revision}`)
+    .sort()
+    .join('|');
+  const groundingRequested =
+    submissionGroundingBlocked === 'store' ||
+    missingGrounding.includes('confirmed_store') ||
+    missingGrounding.includes('confirmed_project');
+  const storeFactLedgerReady =
+    storeFacts.isSuccess &&
+    (!needsServiceHistory || serviceFactHistory.isSuccess) &&
+    (!needsPriceHistory || priceFactHistory.isSuccess);
+  const storeFactLedgerFailed =
+    Boolean(product.state?.store) &&
+    (storeFacts.isError ||
+      (needsServiceHistory && serviceFactHistory.isError) ||
+      (needsPriceHistory && priceFactHistory.isError));
+  const showProgressiveFact = shouldShowProgressiveFactCard({
+    groundingRequested,
+    hasProductState: Boolean(product.state),
+    hasStore: Boolean(product.state?.store),
+    ledgerReady: storeFactLedgerReady,
+    missingStoreFacts,
+    productLoading: product.loading,
+  });
 
   return (
     <div
@@ -1760,17 +1860,44 @@ export function ComposerHome({
         state={product.state}
       />
 
+      {storeFactLedgerFailed ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3"
+          data-testid="progressive-fact-ledger-error"
+          role="alert"
+        >
+          <p className="text-sm text-destructive">
+            {workbench_operation_failed()}
+          </p>
+          <Button
+            data-testid="progressive-fact-ledger-retry"
+            onClick={() => {
+              void storeFacts.refetch();
+              if (needsServiceHistory) void serviceFactHistory.refetch();
+              if (needsPriceHistory) void priceFactHistory.refetch();
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {account_usage_retry()}
+          </Button>
+        </div>
+      ) : null}
+
       {showProgressiveFact ? (
         <ProgressiveFactCard
-          onConfirm={async (command) => {
-            await executeProductCommand(
-              command,
-              `progressive-fact:${sessionIdRef.current}:${Date.now()}`
-            );
+          activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
+          factHeads={product.state?.store ? storeFactHeads : []}
+          key={`progressive-fact:${product.state?.workspaceId}:${product.state?.store?.revision ?? 0}:${storeFactHeadRevisionKey}`}
+          onConfirm={async (request, idempotencyKey) => {
+            await commandP1('asset-memory', request, idempotencyKey);
             setSubmissionGroundingBlocked(null);
-            await product.refresh();
+            await Promise.all([product.refresh(), storeFacts.refetch()]);
           }}
           pending={product.pending}
+          store={product.state?.store}
+          workspaceId={product.state?.workspaceId ?? ''}
         />
       ) : null}
 
