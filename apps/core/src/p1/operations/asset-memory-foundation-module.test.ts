@@ -286,10 +286,14 @@ test('asset-memory exposes queued and refreshed batch progress for the presentat
         })),
       },
     },
-  })) as { status: string };
+  })) as { status: string; carrierAttempt?: number };
   assert.equal(queued.status, 'queued');
   assert.equal(submitted.length, 1);
-  await parsing.runBatchTask(context.workspaceId, 'parse-batch');
+  await parsing.runBatchTask(
+    context.workspaceId,
+    'parse-batch',
+    queued.carrierAttempt,
+  );
   const refreshed = (await module.query({
     context,
     input: {

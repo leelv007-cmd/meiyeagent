@@ -43,6 +43,17 @@ test('shared navigation labels resolve in the active locale at access time', () 
   assert.equal(BUSINESS_NAVIGATION[0].label, '创作');
   assert.equal(SETTINGS_SIDEBAR_ITEMS[0].label, '账户');
   assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, '模型供应');
+  assert.ok(
+    ADMIN_SIDEBAR_ITEMS.some(
+      (item) =>
+        item.href === Routes.AdminRecipeStudio && item.label === 'Recipe Studio'
+    )
+  );
+  assert.ok(
+    ADMIN_SIDEBAR_ITEMS.some(
+      (item) => item.href === Routes.AdminSkills && item.label === 'Skills'
+    )
+  );
 
   overwriteGetLocale(() => 'en');
   assert.equal(BUSINESS_NAVIGATION[0].label, 'Create');

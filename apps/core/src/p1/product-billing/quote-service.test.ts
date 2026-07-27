@@ -286,6 +286,31 @@ describe('ProductQuoteService lifecycle', () => {
     ]);
   });
 
+  it('rejects a reservation that drifts from the frozen debit preview', () => {
+    const quotes = service();
+    const quoted = quotes.buildQuote({
+      ...perRequestInput('quote-frozen-debit'),
+      debitUnits: [
+        { resource: 'copy', quantity: 1 },
+        { resource: 'image', quantity: 3 },
+      ],
+      outputCount: 1,
+    });
+    quotes.confirm({ quoteId: quoted.quoteId, taskId: 'task-frozen-debit' });
+
+    assert.throws(
+      () =>
+        quotes.reserve({
+          quoteId: quoted.quoteId,
+          units: [
+            { resource: 'copy', quantity: 1 },
+            { resource: 'image', quantity: 2 },
+          ],
+        }),
+      /does not match the frozen debit preview/u,
+    );
+  });
+
   it('high actual seconds does not silent-surcharge (platform absorbs)', async () => {
     const quotes = service();
     const input = perSecondInput('quote-high');

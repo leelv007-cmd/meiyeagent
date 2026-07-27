@@ -5,6 +5,7 @@ import {
   compileExecutionBrief,
   intentNamingOutputSchema,
   nameHarnessIntent,
+  type BriefContextBundle,
   type StructuredNodeRunner,
   type StructuredNodeRunnerRequest,
 } from './structured-nodes.js';
@@ -262,6 +263,62 @@ test('brief compilation produces complete copy, image and video unit briefs', as
       total: expectedTotal,
     });
   }
+});
+
+test('brief compilation exposes only fact refs authorized by satisfaction', async () => {
+  const bundle = contextBundleFixture();
+  bundle.referencedFactRevisions = [
+    { factId: 'service-1', revision: 1 },
+    { factId: 'price-1', revision: 1 },
+  ];
+  bundle.dimensions.store_facts_assets = {
+    service: factContribution('service-1', 'service', '头皮清洁护理'),
+    price: factContribution('price-1', 'price', 398),
+  };
+  const runner = new FixtureStructuredNodeRunner({
+    kind: 'copy',
+    instructions:
+      '介绍已经确认的头皮清洁护理服务，不引用任何未经本次事实满足度判断授权的价格信息，并以私信咨询作为低压力行动建议。'.repeat(
+        2,
+      ),
+    platform: 'xiaohongshu',
+    cta: '私信咨询',
+    factRefs: ['store_fact:service-1:1'],
+    assetRefs: [],
+    identityRefs: [],
+    constraints: ['不得引用未授权价格'],
+  });
+
+  await compileExecutionBrief(
+    {
+      workflowId: 'workflow-authorized-facts',
+      unitId: 'copy-primary',
+      unitKind: 'copy',
+      declaration: {
+        normalizedIntent: '介绍护理服务',
+        taskType: 'daily_service_exposure',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['product_service'],
+        usedAssetCategories: ['product_service'],
+        route: 'customized',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      bundle,
+      allowedFactRefs: ['store_fact:service-1:1'],
+    },
+    runner,
+  );
+
+  const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
+  assert.deepEqual(
+    Object.keys(prompt.bundle.dimensions.store_facts_assets),
+    ['service'],
+  );
+  assert.deepEqual(prompt.bundle.referencedFactRevisions, [
+    { factId: 'service-1', revision: 1 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(prompt), /price-1|398/u);
 });
 
 test('brief compilation receives the frozen structured Composer contract before model output', async () => {
@@ -714,7 +771,7 @@ class FixtureStructuredNodeRunner implements StructuredNodeRunner {
   }
 }
 
-function contextBundleFixture() {
+function contextBundleFixture(): BriefContextBundle {
   return {
     bundleId: 'bundle-1',
     revision: 1,
@@ -743,6 +800,31 @@ function contextBundleFixture() {
       platform_mechanism: {},
       store_facts_assets: {},
       conversion_action: {},
+    },
+  };
+}
+
+function factContribution(
+  factId: string,
+  kind: 'service' | 'price',
+  value: string | number,
+) {
+  return {
+    value,
+    layer: 'current_fact' as const,
+    pool: 'store_personal' as const,
+    sourceRef: `store_fact:${factId}:1`,
+    factSnapshot: {
+      factId,
+      kind,
+      revision: 1,
+      source: {
+        kind: 'user_confirmation' as const,
+        referenceId: `confirmation-${factId}`,
+        capturedAt: '2026-07-18T00:00:00.000Z',
+      },
+      effectiveFrom: '2026-07-18T00:00:00.000Z',
+      expiresAt: null,
     },
   };
 }

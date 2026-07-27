@@ -7,6 +7,7 @@ import type {
 
 import {
   advanceWorkflowEventCursor,
+  harnessCancellationFromState,
   harnessDeliveryFromState,
   parseWorkflowEventFrame,
   reduceWorkflowCopyTokens,
@@ -247,5 +248,27 @@ test('成品版本 is read off the terminal harness state frame (T31 / #225)', (
       snapshot: { delivery: { packageId: 'package-1' } },
     }),
     undefined
+  );
+});
+
+test('hold expiry preserves the Core cancellation and refund message', () => {
+  assert.deepEqual(
+    harnessCancellationFromState({
+      occurredAt: '2026-07-25T08:00:00.000Z',
+      snapshot: {
+        delivery: null,
+        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        outcome: 'cancelled',
+        resolutionSource: 'core_hold_expired',
+      },
+      sourceRevision: 0,
+      status: 'success',
+      workflowId: 'task-hold-expired',
+    }),
+    {
+      merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+      outcome: 'cancelled',
+      resolutionSource: 'core_hold_expired',
+    }
   );
 });

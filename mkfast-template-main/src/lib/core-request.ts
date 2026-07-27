@@ -200,6 +200,8 @@ export function workspaceCoreFetchInit(
 }
 
 export type WorkspaceWorkflowEventResource = `p1/workflows/${string}/events`;
+export type WorkspaceComposerDestinationResource =
+  'p1/composer/destination-map';
 export type WorkspaceComposerSubmissionResource = 'p1/composer/submissions';
 export type WorkspaceHarnessTaskCollectionResource = 'p1/harness/tasks';
 export type WorkspacePendingActionsResource = 'p1/pending-actions';

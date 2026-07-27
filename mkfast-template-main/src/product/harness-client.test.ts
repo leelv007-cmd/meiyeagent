@@ -18,7 +18,13 @@ test('treats an unknown task as absent without inventing a local question', asyn
     )
   );
 
-  assert.deepEqual(snapshot, { exists: false, question: null });
+  assert.deepEqual(snapshot, {
+    exists: false,
+    question: null,
+    resolutionSource: null,
+    status: 'absent',
+    timeoutSeconds: null,
+  });
 });
 
 test('submits one validated harness task to the collection boundary', async () => {
@@ -93,17 +99,60 @@ test('parses the server-owned question target and persisted submit receipt', asy
       field: 'offer_price',
       reason: '补充当前任务所需的权威事实',
     },
+    unattended: 'continue',
     scope: 'current_task',
   };
   const snapshot = await readHarnessDecisionSnapshot(
-    Response.json({ data: { question } })
+    Response.json({
+      data: {
+        question,
+        resolutionSource: null,
+        status: 'pending',
+        timeoutSeconds: 19,
+      },
+    })
   );
-  assert.deepEqual(snapshot, { exists: true, question });
+  assert.deepEqual(snapshot, {
+    exists: true,
+    question,
+    resolutionSource: null,
+    status: 'pending',
+    timeoutSeconds: 19,
+  });
 
   assert.deepEqual(
     await readHarnessSubmitResult(
       Response.json({ data: { eventId: 'event-1', replayed: false } })
     ),
     { eventId: 'event-1', replayed: false }
+  );
+
+  assert.deepEqual(
+    await readHarnessSubmitResult(
+      Response.json({ data: { consumedByOther: true, eventId: null } })
+    ),
+    { consumedByOther: true, eventId: null }
+  );
+  assert.deepEqual(
+    await readHarnessSubmitResult(
+      Response.json({
+        data: {
+          eventId: 'event-late',
+          replayed: false,
+          successor: {
+            snapshotId: 'snapshot-late',
+            workflowId: 'workflow-late',
+          },
+        },
+      })
+    ),
+    {
+      eventId: 'event-late',
+      replayed: false,
+      successor: {
+        snapshotId: 'snapshot-late',
+        workflowId: 'workflow-late',
+      },
+    }
   );
 });

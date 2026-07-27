@@ -23,7 +23,7 @@ import {
   admin_users_updated,
   admin_users_user,
 } from '@/locale/paraglide/messages';
-import type { User } from '@/db/types';
+import type { AdminUserListItem } from '@/api/users';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
@@ -55,7 +55,7 @@ import {
 import { useState } from 'react';
 import { toast } from 'sonner';
 interface UserDetailViewerProps {
-  user: User;
+  user: AdminUserListItem;
 }
 export function UserDetailViewer({ user }: UserDetailViewerProps) {
   const isMobile = useIsMobile();
@@ -208,7 +208,10 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
                 {admin_users_columns_provisioned_by()}:
               </span>
               <span className="font-mono text-xs">
-                {user.provisionedByUserId ?? admin_users_self_registered()}
+                {user.provisioningAttribution.kind === 'admin_assisted'
+                  ? (user.provisioningAttribution.operatorDisplayName ??
+                    admin_users_admin())
+                  : admin_users_self_registered()}
               </span>
             </div>
             <div className="flex items-center justify-between">

@@ -28,6 +28,7 @@ export type ComposerSessionPhase =
   | 'running'
   | 'awaiting_answer'
   | 'delivered'
+  | 'cancelled'
   | 'failed';
 
 /** What the merchant said to start this run. */
@@ -89,13 +90,27 @@ export type ComposerDeliveryTurn = {
   revision: ContentPackageRevisionDelivery | null;
 };
 
+export type ComposerTerminalTurn = {
+  kind: 'terminal';
+  id: string;
+  outcome: 'cancelled';
+  message: string;
+};
+
 export type ComposerTurn =
   | ComposerMerchantTurn
   | ComposerRouteNoticeTurn
   | ComposerStageTurn
   | ComposerQuestionTurn
   | ComposerCandidateTurn
-  | ComposerDeliveryTurn;
+  | ComposerDeliveryTurn
+  | ComposerTerminalTurn;
+
+export type ComposerHarnessTerminal = {
+  merchantMessage: string;
+  outcome: 'cancelled';
+  resolutionSource: 'core_hold_expired';
+};
 
 export type ComposerSessionTask = {
   taskId: string;
@@ -250,7 +265,14 @@ export function applyComposerQuestion(
   };
   if (candidateIndex === -1) turns.push(turn);
   else turns.splice(candidateIndex, 0, turn);
-  return { ...session, phase: 'awaiting_answer', turns };
+  return {
+    ...session,
+    phase:
+      session.phase === 'delivered' || session.phase === 'cancelled'
+        ? session.phase
+        : 'awaiting_answer',
+    turns,
+  };
 }
 
 /**
@@ -260,12 +282,33 @@ export function applyComposerQuestion(
 export function applyComposerWorkflowState(
   session: ComposerSession,
   status: 'waiting' | 'running' | 'suspended' | 'success' | 'failed',
-  delivery?: ContentPackageRevisionDelivery
+  delivery?: ContentPackageRevisionDelivery,
+  terminal?: ComposerHarnessTerminal
 ): ComposerSession {
   if (status === 'failed') return { ...session, phase: 'failed' };
   if (status !== 'success') return session;
   const task = session.task;
   if (!task) return session;
+  if (terminal?.outcome === 'cancelled') {
+    return {
+      ...session,
+      phase: 'cancelled',
+      turns: [
+        ...session.turns.filter(
+          (turn) =>
+            turn.kind !== 'question' &&
+            turn.kind !== 'delivery' &&
+            turn.kind !== 'terminal'
+        ),
+        {
+          id: `terminal:${task.taskId}`,
+          kind: 'terminal',
+          message: terminal.merchantMessage,
+          outcome: 'cancelled',
+        },
+      ],
+    };
+  }
   const revision = delivery ?? null;
   const existing = session.turns.find(
     (turn): turn is ComposerDeliveryTurn => turn.kind === 'delivery'

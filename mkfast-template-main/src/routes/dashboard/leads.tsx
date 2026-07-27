@@ -1,4 +1,5 @@
 import heroUiGlassCss from '@/components/heroui-pro/heroui-glass.css?url';
+import { useQuery } from '@tanstack/react-query';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { EmptyState, Widget } from '@/components/heroui-pro';
 import {
@@ -50,9 +51,15 @@ import {
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
+import { operationsQuery } from '@/p1/client';
+import { p1QueryKeys } from '@/p1/query-keys';
 import { useProductState } from '@/product/client';
 import { leadStatusToneClassName } from '@/product/lead-status-tone';
-import type { LeadStatus, ProductCommand } from '@meiye/contracts';
+import type {
+  LeadStatus,
+  ProductCommand,
+  PublicContentPackage,
+} from '@meiye/contracts';
 import {
   IconAlertTriangle,
   IconBulb,
@@ -103,20 +110,48 @@ function leadStatusLabel(status: LeadStatus) {
   }
 }
 
+function publishedContentPackage(contentPackage: PublicContentPackage) {
+  return (
+    contentPackage.status === 'accepted' &&
+    Boolean(contentPackage.currentVersionId) &&
+    (contentPackage.deliveryEvents ?? []).some(
+      (event) =>
+        (event.type === 'automatic_publish_result' &&
+          event.status === 'published') ||
+        (event.type === 'manual_publish_result' &&
+          event.status === 'published') ||
+        (event.type === 'legacy_handoff_event' &&
+          event.operation === 'published')
+    )
+  );
+}
+
+function contentPackageTitle(contentPackage: PublicContentPackage) {
+  return (
+    contentPackage.versions.find(
+      (version) => version.id === contentPackage.currentVersionId
+    )?.title ?? dashboard_lead_untitled_content()
+  );
+}
+
 function LeadLedgerPage() {
   const { state, error, loading, pending, execute, refresh } =
     useProductState();
+  const contentPackages = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'content_packages'),
+    queryFn: ({ signal }) =>
+      operationsQuery<PublicContentPackage[]>('content_packages', {}, signal),
+    retry: false,
+  });
   const [contentId, setContentId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [insight, setInsight] = useState('');
 
   useEffect(() => {
-    const firstPublished = state?.contents.find(
-      (item) => item.status === 'published'
-    );
+    const firstPublished = contentPackages.data?.find(publishedContentPackage);
     if (!contentId && firstPublished) setContentId(firstPublished.id);
-  }, [contentId, state?.contents]);
+  }, [contentId, contentPackages.data]);
 
   async function run(command: ProductCommand) {
     try {
@@ -127,14 +162,15 @@ function LeadLedgerPage() {
   }
 
   async function createLead() {
-    const content = state?.contents.find((item) => item.id === contentId);
-    if (!content) return;
+    const contentPackage = contentPackages.data?.find(
+      (item) => item.id === contentId && publishedContentPackage(item)
+    );
+    if (!contentPackage) return;
     await run({
       type: 'create_lead',
-      contentId,
+      packageId: contentPackage.id,
       lead: {
         source: 'direct_message',
-        projectId: content.projectId,
         amountCents: amount ? Math.round(Number(amount) * 100) : undefined,
         note: note || undefined,
       },
@@ -152,8 +188,8 @@ function LeadLedgerPage() {
     );
   }
 
-  const publishedContents = state.contents.filter(
-    (item) => item.status === 'published'
+  const publishedContents = (contentPackages.data ?? []).filter(
+    publishedContentPackage
   );
 
   return (
@@ -254,6 +290,10 @@ function LeadLedgerPage() {
               ) : (
                 <ul className="divide-divider divide-y">
                   {state.leads.map((lead) => {
+                    const canonicalContent = contentPackages.data?.find(
+                      (item) =>
+                        item.id === lead.canonicalContentPackage?.packageId
+                    );
                     const content = state.contents.find(
                       (item) => item.id === lead.contentId
                     );
@@ -265,7 +305,9 @@ function LeadLedgerPage() {
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-foreground truncate font-medium">
-                              {version?.title ??
+                              {(canonicalContent
+                                ? contentPackageTitle(canonicalContent)
+                                : version?.title) ??
                                 dashboard_lead_linked_content()}
                             </p>
                             <p className="text-muted mt-1 text-xs">
@@ -363,8 +405,7 @@ function LeadLedgerPage() {
                     <ListBox>
                       {publishedContents.map((content) => (
                         <ListBox.Item id={content.id} key={content.id}>
-                          {content.variants[0]?.versions[0]?.title ??
-                            dashboard_lead_untitled_content()}
+                          {contentPackageTitle(content)}
                         </ListBox.Item>
                       ))}
                     </ListBox>
@@ -417,7 +458,6 @@ function LeadLedgerPage() {
                   onPress={() => {
                     void run({
                       type: 'record_insight',
-                      contentId: contentId || undefined,
                       kind: 'next_action',
                       note: insight,
                     });

@@ -651,7 +651,27 @@ export interface ProductPackageRightsPropagationPort {
   ): Promise<{ revokedPackageIds: string[] }>;
 }
 
+export interface CanonicalLeadContentPackagePort {
+  get(input: {
+    packageId: string;
+    workspaceId: string;
+  }): Promise<{
+    currentVersionId?: string;
+    deliveryEvents?: Array<
+      | { type: 'automatic_publish_result'; status: string }
+      | { type: 'legacy_handoff_event'; operation: string }
+      | { type: 'manual_publish_result'; status: string }
+      | { type: 'assisted_handoff_prepared' }
+    >;
+    id: string;
+    revision: number;
+    source: { workId?: string };
+    status: string;
+  } | null>;
+}
+
 export interface ProductServiceOptions {
+  canonicalLeadContentPackages?: CanonicalLeadContentPackagePort;
   copyExecutionClock?: () => Date;
   copyExecutionLeaseMs?: number;
   copyUsageAuthority?: 'legacy_state' | 'foundation_ledger';
@@ -3317,6 +3337,83 @@ export class ProductService implements ProductApplicationService {
         return { packageId: handoff.id, contentId: handoff.contentId };
       }
       case 'create_lead': {
+        if (command.packageId) {
+          const reader = this.options.canonicalLeadContentPackages;
+          if (!reader) {
+            throw new DomainError(
+              'CANONICAL_LEAD_SOURCE_UNAVAILABLE',
+              'The canonical content package source is unavailable.',
+              503
+            );
+          }
+          const contentPackage = await reader.get({
+            packageId: command.packageId,
+            workspaceId: context.workspaceId,
+          });
+          if (!contentPackage) {
+            throw new DomainError(
+              'NOT_FOUND',
+              'The ContentPackage was not found.',
+              404
+            );
+          }
+          const published = contentPackage.deliveryEvents?.some(
+            (event) =>
+              (event.type === 'automatic_publish_result' &&
+                event.status === 'published') ||
+              (event.type === 'manual_publish_result' &&
+                event.status === 'published') ||
+              (event.type === 'legacy_handoff_event' &&
+                event.operation === 'published')
+          );
+          if (
+            contentPackage.status !== 'accepted' ||
+            !contentPackage.currentVersionId ||
+            !published
+          ) {
+            throw new DomainError(
+              'LEAD_REQUIRES_PUBLISHED_CONTENT',
+              'A lead can be associated only with a published ContentPackage revision.',
+              409
+            );
+          }
+          const timestamp = now();
+          const lead = {
+            ...command.lead,
+            canonicalContentPackage: {
+              packageId: contentPackage.id,
+              revision: contentPackage.revision,
+              versionId: contentPackage.currentVersionId,
+            },
+            contentId: contentPackage.id,
+            contentVersionId: contentPackage.currentVersionId,
+            id: randomUUID(),
+            projectId:
+              command.lead.projectId ??
+              contentPackage.source.workId ??
+              contentPackage.id,
+            status: 'new' as const,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            retentionExpiresAt: new Date(
+              Date.now() + 90 * 24 * 60 * 60_000
+            ).toISOString(),
+          };
+          state.leads.push(lead);
+          state.operationalEvidence.leadAssociationCount += 1;
+          audit(state, context, 'lead.created', 'lead', lead.id, {
+            association: 'manual_non_causal',
+            contentPackageId: contentPackage.id,
+            contentPackageRevision: contentPackage.revision,
+          });
+          return { leadId: lead.id };
+        }
+        if (!command.contentId || !command.lead.projectId) {
+          throw new DomainError(
+            'INVALID_COMMAND',
+            'Legacy contentId and projectId are required together.'
+          );
+        }
         const content = findContent(state, command.contentId);
         const publishedHandoff = state.handoffPackages
           .filter(
@@ -3337,6 +3434,7 @@ export class ProductService implements ProductApplicationService {
           id: randomUUID(),
           contentId: command.contentId,
           contentVersionId: publishedHandoff.contentVersionId,
+          projectId: command.lead.projectId,
           status: 'new' as const,
           createdAt: timestamp,
           updatedAt: timestamp,

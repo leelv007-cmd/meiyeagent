@@ -275,6 +275,36 @@ test('failure keeps the transcript so the merchant can retry in place', () => {
   assert.equal(rejected.task, null);
 });
 
+test('hold expiry is a visible cancelled/refunded terminal, never a delivery', () => {
+  let cancelled = applyComposerWorkflowState(
+    applyComposerQuestion(runningSession(), 'question-1'),
+    'success',
+    undefined,
+    {
+      merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+      outcome: 'cancelled',
+      resolutionSource: 'core_hold_expired',
+    }
+  );
+  assert.equal(cancelled.phase, 'cancelled');
+  assert.equal(
+    cancelled.turns.some((turn) => turn.kind === 'delivery'),
+    false
+  );
+  assert.deepEqual(cancelled.turns.at(-1), {
+    id: 'terminal:task-1',
+    kind: 'terminal',
+    message: '超时未选择，本次任务已取消，额度已退回',
+    outcome: 'cancelled',
+  });
+  cancelled = applyComposerQuestion(cancelled, 'question-1');
+  assert.equal(cancelled.phase, 'cancelled');
+  assert.equal(
+    cancelled.turns.some((turn) => turn.kind === 'question'),
+    true
+  );
+});
+
 test('only the task handle persists — the transcript comes back from replay', () => {
   const session = applyComposerProgress(
     runningSession(),

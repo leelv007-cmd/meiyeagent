@@ -6,9 +6,17 @@
     "src/router.tsx",
     "src/routes/**/*.ts",
     "src/routes/**/*.tsx",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "tests/e2e/**/*.ts",
     "scripts/**/*.ts"
   ],
-  "project": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts"],
+  "project": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/e2e/**/*.ts",
+    "scripts/**/*.ts"
+  ],
   "ignore": [
     "src/components/ui/**",
     "src/components/data-table/**",

@@ -27,7 +27,7 @@ export class PostgresVideoRegenerationRepository
         payload jsonb NOT NULL,
         created_at timestamptz NOT NULL,
         PRIMARY KEY (workspace_id, quote_id),
-        CHECK (scope IN ('shot', 'full_compose')),
+        CHECK (scope = 'shot'),
         CHECK (payload->>'workspaceId' = workspace_id),
         CHECK (payload->>'quoteId' = quote_id)
       );
@@ -64,6 +64,22 @@ export class PostgresVideoRegenerationRepository
       CREATE INDEX IF NOT EXISTS model_video_regeneration_free_actions_task_idx
         ON model_video_regeneration_free_actions
         (workspace_id, task_id, created_at);
+
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+            FROM pg_constraint
+           WHERE conrelid = 'model_video_regeneration_quotes'::regclass
+             AND conname =
+               'model_video_regeneration_quotes_shot_only_check'
+        ) THEN
+          ALTER TABLE model_video_regeneration_quotes
+            ADD CONSTRAINT model_video_regeneration_quotes_shot_only_check
+            CHECK (scope = 'shot') NOT VALID;
+        END IF;
+      END
+      $$;
 
       DROP INDEX IF EXISTS model_video_regeneration_tasks_source_idx;
       ALTER TABLE model_video_regeneration_tasks

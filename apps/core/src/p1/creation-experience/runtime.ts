@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from 'node:util';
 import type { Pool } from 'pg';
 
 import { P1DomainError } from '../foundation/domain.js';
@@ -6,11 +5,10 @@ import { CreationExperienceCatalogService } from './catalog-service.js';
 import { CreationExperienceBriefSubmissionGate } from './brief-submission-gate.js';
 import { CreationExperienceFoundationModule } from './foundation-module.js';
 import {
-  LAUNCH_ACTOR,
   LAUNCH_RECIPE_SPECS,
   LAUNCH_SURFACE_ID,
-  LAUNCH_TOOL_ENTRY_REFS,
-  recipeBodyFromSpec,
+  matchesLaunchRecipeSpec,
+  publishLaunchCatalog,
   type PublishLaunchCatalogResult,
 } from './launch-seeds.js';
 import { PostgresCreationExperienceAuditRepository } from './postgres-audit-repository.js';
@@ -22,10 +20,11 @@ import {
 } from './postgres-brief-revision-context.js';
 import { PostgresCreationExperienceCatalogRepository } from './postgres-repository.js';
 import type { RecipeSkillRevisionValidationPort } from './recipe-studio.js';
-import type { ServerRecipeRecord, ServerSurfaceRecord } from './types.js';
+import type { ServerRecipeRecord } from './types.js';
 
 async function ensureLaunchCatalogOnce(
   service: CreationExperienceCatalogService,
+  skillRevisionValidation?: RecipeSkillRevisionValidationPort,
 ): Promise<PublishLaunchCatalogResult> {
   const existingSurface = await service.getSurfaceHead(LAUNCH_SURFACE_ID);
   if (existingSurface?.status === 'published') {
@@ -44,7 +43,9 @@ async function ensureLaunchCatalogOnce(
     const launchRecipes = LAUNCH_RECIPE_SPECS.map((spec) =>
       recipes.find(
         (recipe) =>
-          recipe.recipeId === spec.recipeId && matchesLaunchRecipe(recipe, spec)
+          recipe.recipeId === spec.recipeId &&
+          recipe.studioRelease?.phase === 'internal_tested' &&
+          matchesLaunchRecipeSpec(recipe, spec)
       )
     );
     if (launchRecipes.every((recipe) => recipe !== undefined)) {
@@ -54,146 +55,21 @@ async function ensureLaunchCatalogOnce(
       };
     }
   }
-
-  const recipes: ServerRecipeRecord[] = [];
-  for (const spec of LAUNCH_RECIPE_SPECS) {
-    let head = await service.getRecipeHead(spec.recipeId);
-    if (!head) {
-      head = await service.draftRecipe({
-        ...LAUNCH_ACTOR,
-        body: recipeBodyFromSpec(spec),
-        expectedRevision: null,
-        recipeId: spec.recipeId,
-      });
-    } else if (
-      head.status === 'published' &&
-      !matchesLaunchRecipe(head, spec)
-    ) {
-      head = await service.draftRecipe({
-        ...LAUNCH_ACTOR,
-        body: recipeBodyFromSpec(spec),
-        expectedRevision: head.revision,
-        recipeId: spec.recipeId,
-      });
-    }
-    if (head.status === 'draft') {
-      head = await service.previewRecipe({
-        ...LAUNCH_ACTOR,
-        expectedRevision: head.revision,
-        recipeId: spec.recipeId,
-      });
-    }
-    if (head.status === 'preview') {
-      head = await service.publishRecipe({
-        ...LAUNCH_ACTOR,
-        expectedRevision: head.revision,
-        recipeId: spec.recipeId,
-      });
-    }
-    if (head.status !== 'published') {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        `Launch Recipe ${spec.recipeId} cannot recover from status ${head.status}.`,
-      );
-    }
-    recipes.push(head);
-  }
-
-  let surface: ServerSurfaceRecord | null = existingSurface;
-  const recipeRefs = LAUNCH_RECIPE_SPECS.map((spec, index) => ({
-    featured: spec.featured,
-    lensId: spec.lensId,
-    order: spec.cardOrder,
-    recipeRevisionId: recipes[index]!.revisionId,
-    visible: true,
-  }));
-  const toolEntryRefs = LAUNCH_TOOL_ENTRY_REFS.map((entry) => ({ ...entry }));
-  if (!surface) {
-    surface = await service.draftSurface({
-      ...LAUNCH_ACTOR,
-      body: {
-        recipeRefs,
-        toolEntryRefs,
-      },
-      expectedRevision: null,
-      surfaceId: LAUNCH_SURFACE_ID,
-    });
-  } else if (
-    surface.status === 'published' &&
-    (!isDeepStrictEqual(surface.recipeRefs, recipeRefs) ||
-      !isDeepStrictEqual(surface.toolEntryRefs, toolEntryRefs))
-  ) {
-    surface = await service.draftSurface({
-      ...LAUNCH_ACTOR,
-      body: { recipeRefs, toolEntryRefs },
-      expectedRevision: surface.revision,
-      surfaceId: LAUNCH_SURFACE_ID,
-    });
-  }
-  if (surface.status === 'draft') {
-    surface = await service.previewSurface({
-      ...LAUNCH_ACTOR,
-      expectedRevision: surface.revision,
-      surfaceId: LAUNCH_SURFACE_ID,
-    });
-  }
-  if (surface.status === 'preview') {
-    surface = await service.publishSurface({
-      ...LAUNCH_ACTOR,
-      expectedRevision: surface.revision,
-      surfaceId: LAUNCH_SURFACE_ID,
-    });
-  }
-  if (surface.status !== 'published') {
-    throw new P1DomainError(
-      'INVALID_STATE',
-      `Launch Surface cannot recover from status ${surface.status}.`,
-    );
-  }
-  return { recipes, surface };
-}
-
-function matchesLaunchRecipe(
-  recipe: ServerRecipeRecord,
-  spec: (typeof LAUNCH_RECIPE_SPECS)[number]
-) {
-  const body = recipeBodyFromSpec(spec);
-  return isDeepStrictEqual(
-    {
-      lensId: recipe.lensId,
-      ...(recipe.familyId ? { familyId: recipe.familyId } : {}),
-      presentation: recipe.presentation,
-      delivery: recipe.delivery,
-      contextPatches: recipe.contextPatches,
-      factTypes: recipe.factTypes,
-      sourceRequirements: recipe.sourceRequirements,
-      modelPolicy: recipe.modelPolicy,
-      settingsPatches: recipe.settingsPatches,
-      ...(recipe.outputContractRef
-        ? { outputContractRef: recipe.outputContractRef }
-        : {}),
-      ...(recipe.quotePolicyRevisionRef
-        ? { quotePolicyRevisionRef: recipe.quotePolicyRevisionRef }
-        : {}),
-      ...(recipe.workflowRevisionRef
-        ? { workflowRevisionRef: recipe.workflowRevisionRef }
-        : {}),
-      promptRevisionRef: recipe.promptRevisionRef,
-      skillRevisionRefs: recipe.skillRevisionRefs,
-      targetWorkspaceKind: recipe.targetWorkspaceKind,
-    },
-    body
-  );
+  return publishLaunchCatalog(service, { skillRevisionValidation });
 }
 
 async function ensureLaunchCatalog(
   service: CreationExperienceCatalogService,
+  skillRevisionValidation?: RecipeSkillRevisionValidationPort,
 ): Promise<PublishLaunchCatalogResult> {
   // Independently booting processes may race on an append. CAS is the source of
   // truth; retry from durable heads instead of holding a pool connection lock.
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
-      return await ensureLaunchCatalogOnce(service);
+      return await ensureLaunchCatalogOnce(
+        service,
+        skillRevisionValidation,
+      );
     } catch (error) {
       if (
         !(
@@ -238,7 +114,7 @@ export async function createDurableCreationExperienceRuntime(input: {
   const launch =
     input.seedLaunchCatalog === false
       ? null
-      : await ensureLaunchCatalog(catalog);
+      : await ensureLaunchCatalog(catalog, input.skillRevisionValidation);
   const briefRevisionResolver = new CompositeBriefRevisionResolver(
     briefRevisionContexts,
     repository,

@@ -1,26 +1,20 @@
 import {
   harnessTaskSubmissionSchema,
+  harnessDecisionSnapshotSchema,
+  harnessDecisionSubmitResultSchema,
   firstUsableDraftMetricSchema,
-  questionCardSchema,
   structuredDecisionInputSchema,
   todayRecommendationStateSchema,
   type ApiEnvelope,
   type HarnessTaskSubmission,
   type FirstUsableDraftMetric,
-  type QuestionCard,
+  type HarnessDecisionSnapshot as HarnessDecisionReadModel,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
 import { z } from 'zod';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
 import { P1RequestError } from '@/p1/client';
-
-const submitResultSchema = z
-  .object({
-    eventId: z.string().trim().min(1),
-    replayed: z.boolean(),
-  })
-  .strict();
 
 const taskHandleSchema = z
   .object({
@@ -29,25 +23,34 @@ const taskHandleSchema = z
   })
   .strict();
 
-export interface HarnessDecisionSnapshot {
+export interface HarnessDecisionSnapshot extends HarnessDecisionReadModel {
   exists: boolean;
-  question: QuestionCard | null;
 }
 
 export async function readHarnessDecisionSnapshot(
   response: Response
 ): Promise<HarnessDecisionSnapshot> {
-  if (response.status === 404) return { exists: false, question: null };
-  const data = await readEnvelope<{ question: unknown }>(response);
+  if (response.status === 404) {
+    return {
+      exists: false,
+      question: null,
+      resolutionSource: null,
+      status: 'absent',
+      timeoutSeconds: null,
+    };
+  }
   return {
     exists: true,
-    question:
-      data.question === null ? null : questionCardSchema.parse(data.question),
+    ...harnessDecisionSnapshotSchema.parse(
+      await readEnvelope<unknown>(response)
+    ),
   };
 }
 
 export async function readHarnessSubmitResult(response: Response) {
-  return submitResultSchema.parse(await readEnvelope<unknown>(response));
+  return harnessDecisionSubmitResultSchema.parse(
+    await readEnvelope<unknown>(response)
+  );
 }
 
 export async function submitHarnessTask(input: HarnessTaskSubmission) {

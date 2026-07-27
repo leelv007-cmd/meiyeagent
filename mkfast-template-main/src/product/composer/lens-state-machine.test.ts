@@ -248,13 +248,39 @@ test('platform + deliverable suggestion never changes lens', () => {
   state = selectLens(state, 'copy');
   state = updateDeliverySuggestion(state, {
     platform: 'douyin',
+    distributionTarget: 'manual_copy',
     deliverableKind: 'short_video',
   });
 
   assert.equal(state.phase, 'selected');
   assert.equal(state.lensId, 'copy'); // still copy despite video-ish suggestion
   assert.equal(state.draft.delivery.platform, 'douyin');
+  assert.equal(state.draft.delivery.distributionTarget, 'manual_copy');
   assert.equal(state.draft.delivery.deliverableKind, 'short_video');
+  assert.deepEqual(state.draft.fieldMeta.deliveryPlatform, {
+    dirty: true,
+    ownership: 'user',
+  });
+});
+
+test('system destination mapping cannot overwrite a user-confirmed pair', () => {
+  let state: ComposerLensState = createComposerLensState();
+  state = selectLens(state, 'copy');
+  state = updateDeliverySuggestion(state, {
+    platform: 'douyin',
+    distributionTarget: 'manual_copy',
+  });
+  state = updateDeliverySuggestion(
+    state,
+    {
+      platform: 'xiaohongshu',
+      distributionTarget: 'publish:xiaohongshu',
+    },
+    'system'
+  );
+
+  assert.equal(state.draft.delivery.platform, 'douyin');
+  assert.equal(state.draft.delivery.distributionTarget, 'manual_copy');
 });
 
 // ---------------------------------------------------------------------------

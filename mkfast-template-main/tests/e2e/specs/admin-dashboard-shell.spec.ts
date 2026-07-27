@@ -24,12 +24,20 @@ import {
 
 const ADMIN_ROUTES = [
   ['/admin', '异常收口'],
+  ['/admin/supply', '供应运行'],
+  ['/admin/supply/views/model', '供应关联视图'],
+  ['/admin/supply/tasks/task-does-not-exist', '供应任务详情'],
+  ['/admin/capabilities', '能力目录'],
+  ['/admin/recipe-studio', 'Recipe Studio'],
+  ['/admin/skills', 'Skills'],
   ['/admin/models', '模型供应'],
   ['/admin/templates', '官方模板'],
   ['/admin/integrations', '集成治理'],
   ['/admin/plans', '套餐治理'],
+  ['/admin/redemptions', '兑换治理'],
   ['/admin/users', '用户管理'],
   ['/admin/audit', '高影响操作审计'],
+  ['/admin/cloudflare', 'Cloudflare 资源'],
 ] as const;
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {

@@ -8,13 +8,13 @@ function fixture(targetSeconds = 10) {
   const usage = new MemoryProductUsageLedger();
   const quotes = new ProductQuoteService({ usageLedger: usage });
   const quote = quotes.buildQuote({
-    billingMode: 'per_output_second',
+    billingMode: 'per_request',
     catalogModelId: 'video-model',
     frozenCandidateDeploymentIds: ['deployment-a', 'deployment-b'],
     quoteId: `quote-${targetSeconds}`,
     quotePolicyRevision: 'policy-1',
-    roundingStepSeconds: 1,
     targetSeconds,
+    debitUnits: [{ resource: 'video', quantity: 1 }],
     unitRate: 0.5,
     workspaceId: 'workspace-1',
   });
@@ -83,26 +83,30 @@ describe('ProductBillingLifecycle', () => {
 
     assert.deepEqual(usage.listByWorkspace('workspace-1'), [
       {
-        billingMode: 'per_output_second',
+        billingMode: 'per_request',
         createdAt: usage.getByTask('work-1')!.createdAt,
         id: usage.getByTask('work-1')!.id,
         quoteId: quote.quoteId,
-        refundedQuantity: 4,
-        refundedUnits: [{ resource: 'video', quantity: 4 }],
-        reservedQuantity: 10,
-        reservedUnits: [{ resource: 'video', quantity: 10 }],
+        refundedQuantity: 0,
+        refundedUnits: [],
+        reservedQuantity: 1,
+        reservedUnits: [{ resource: 'video', quantity: 1 }],
         resource: 'video',
-        settledQuantity: 6,
-        settledUnits: [{ resource: 'video', quantity: 6 }],
+        settledQuantity: 1,
+        settledUnits: [{ resource: 'video', quantity: 1 }],
         settlementStatus: 'reconciled',
-        status: 'partially_refunded',
+        status: 'committed',
         taskId: 'work-1',
         updatedAt: usage.getByTask('work-1')!.updatedAt,
         workspaceId: 'workspace-1',
       },
     ]);
-    assert.equal(quotes.getQuoteByTask('work-1')?.billedSeconds, 6);
+    assert.equal(quotes.getQuoteByTask('work-1')?.billedSeconds, undefined);
     assert.equal(quotes.listProviderCosts('work-1').length, 1);
+    assert.equal(
+      quotes.listProviderCosts('work-1')[0]?.billingMode,
+      'per_output_second',
+    );
     assert.equal(
       quotes.listProviderCosts('work-1')[0]?.observedCostMicros,
       60_000,
@@ -168,8 +172,11 @@ describe('ProductBillingLifecycle', () => {
       trustedUsage: { actualSeconds: 12, kind: 'media_duration' },
       workspaceId: 'workspace-1',
     });
-    assert.equal(high.usage.getByTask('work-1')?.settledQuantity, 10);
-    assert.equal(high.quotes.getQuoteByTask('work-1')?.platformAbsorbedAmount, 1);
+    assert.equal(high.usage.getByTask('work-1')?.settledQuantity, 1);
+    assert.equal(
+      high.quotes.getQuoteByTask('work-1')?.platformAbsorbedAmount,
+      undefined,
+    );
 
     const failed = fixture(20);
     failed.lifecycle.beforeSubmit({
@@ -270,5 +277,36 @@ describe('ProductBillingLifecycle', () => {
       quotes.getQuote(quoted.quoteId)?.lifecycleStatus,
       'quoted',
     );
+  });
+
+  it('reserves the full frozen debit vector for an image-text task', () => {
+    const usage = new MemoryProductUsageLedger();
+    const quotes = new ProductQuoteService({ usageLedger: usage });
+    const quote = quotes.buildQuote({
+      billingMode: 'per_request',
+      catalogModelId: 'image-text-model',
+      debitUnits: [
+        { resource: 'copy', quantity: 1 },
+        { resource: 'image', quantity: 4 },
+      ],
+      quoteId: 'quote-image-text',
+      quotePolicyRevision: 'policy-1',
+      unitRate: 1,
+      workspaceId: 'workspace-1',
+    });
+    quotes.confirm({ quoteId: quote.quoteId, taskId: 'work-image-text' });
+    const lifecycle = new ProductBillingLifecycle(quotes);
+
+    lifecycle.beforeSubmit({
+      quoteRevision: quote.revision,
+      resource: 'image',
+      taskId: 'work-image-text',
+      workspaceId: 'workspace-1',
+    });
+
+    assert.deepEqual(usage.getByTask('work-image-text')?.reservedUnits, [
+      { resource: 'copy', quantity: 1 },
+      { resource: 'image', quantity: 4 },
+    ]);
   });
 });

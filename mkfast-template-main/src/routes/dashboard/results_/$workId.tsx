@@ -751,6 +751,13 @@ function ResultCenterRoutePage() {
     ) {
       throw new Error('Canonical delivery package is unavailable.');
     }
+    if (exactExportReceipt && exactExportDownloadUrl) {
+      return {
+        contentPackage,
+        downloadUrl: exactExportDownloadUrl,
+        receiptId: exactExportReceipt.id,
+      };
+    }
     return executeIntent<{
       contentPackage: PublicContentPackage;
       downloadUrl: string;

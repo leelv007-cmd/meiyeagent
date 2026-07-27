@@ -42,6 +42,70 @@ test('DeepSeek V4 Pro is the default text tier and OpenAI is never the default r
   assert.notEqual(resolved.candidates[0]?.model.id, 'llm-openai');
 });
 
+test('OpenAI stays available only through explicit fixed selection', () => {
+  const models = createDefaultCatalogModels();
+  const deployments = createDefaultDeployments({
+    activatedDeploymentIds: ['openai-direct-recorded'],
+  });
+  const catalog = {
+    modelById: new Map(models.map((model) => [model.id, model])),
+    deployments,
+  };
+
+  for (const operation of [
+    'copy.generate',
+    'copy.adapt',
+    'text.respond',
+  ] as const) {
+    const automatic = planModelSupplyCandidates({
+      catalog,
+      operation,
+      selection: { mode: 'auto', profile: 'quality' },
+      dataClass: [],
+    });
+    assert.deepEqual(
+      automatic.candidates.map((candidate) => candidate.model.id),
+      [],
+    );
+    assert.deepEqual(
+      automatic.candidateEvaluations.find(
+        (candidate) => candidate.catalogModelId === 'llm-openai',
+      )?.exclusionReasons,
+      ['manual_selection_required'],
+    );
+  }
+
+  const fixed = planModelSupplyCandidates({
+    catalog,
+    operation: 'copy.generate',
+    selection: { mode: 'fixed', catalogModelId: 'llm-openai' },
+    dataClass: [],
+  });
+  assert.deepEqual(
+    fixed.candidates.map((candidate) => candidate.model.id),
+    ['llm-openai'],
+  );
+
+  const legacyCatalog = {
+    modelById: new Map(
+      models.map(({ selectionPolicy: _selectionPolicy, ...model }) => [
+        model.id,
+        model,
+      ]),
+    ),
+    deployments,
+  };
+  assert.deepEqual(
+    planModelSupplyCandidates({
+      catalog: legacyCatalog,
+      operation: 'copy.generate',
+      selection: { mode: 'auto', profile: 'quality' },
+      dataClass: [],
+    }).candidates.map((candidate) => candidate.model.id),
+    [],
+  );
+});
+
 test('forward-migrates a pre-upgrade published catalog with new inactive fallback models and runtime identity', () => {
   const fallbackModels = createDefaultCatalogModels();
   const fallbackDeployments = createDefaultDeployments().map((deployment) =>

@@ -59,7 +59,9 @@ import { Route as ApiPingRouteImport } from './routes/api/ping'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminTemplatesRouteImport } from './routes/admin/templates'
 import { Route as AdminSupplyRouteImport } from './routes/admin/supply'
+import { Route as AdminSkillsRouteImport } from './routes/admin/skills'
 import { Route as AdminRedemptionsRouteImport } from './routes/admin/redemptions'
+import { Route as AdminRecipeStudioRouteImport } from './routes/admin/recipe-studio'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
 import { Route as AdminP1RouteImport } from './routes/admin/p1'
 import { Route as AdminModelsRouteImport } from './routes/admin/models'
@@ -107,6 +109,7 @@ import { Route as ApiCoreP1HarnessTasksRouteImport } from './routes/api/core/p1/
 import { Route as ApiCoreP1HarnessRecommendationRouteImport } from './routes/api/core/p1/harness/recommendation'
 import { Route as ApiCoreP1CopyStreamRouteImport } from './routes/api/core/p1/copy/stream'
 import { Route as ApiCoreP1ComposerSubmissionsRouteImport } from './routes/api/core/p1/composer/submissions'
+import { Route as ApiCoreP1ComposerDestinationMapRouteImport } from './routes/api/core/p1/composer/destination-map'
 import { Route as ApiCoreP1AssistantStreamRouteImport } from './routes/api/core/p1/assistant/stream'
 import { Route as ApiCoreDiagnosticsIdResumeRouteImport } from './routes/api/core/diagnostics/$id/resume'
 import { Route as ApiCoreDiagnosticsIdEventsRouteImport } from './routes/api/core/diagnostics/$id/events'
@@ -364,9 +367,19 @@ const AdminSupplyRoute = AdminSupplyRouteImport.update({
   path: '/supply',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminSkillsRoute = AdminSkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminRedemptionsRoute = AdminRedemptionsRouteImport.update({
   id: '/redemptions',
   path: '/redemptions',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRecipeStudioRoute = AdminRecipeStudioRouteImport.update({
+  id: '/recipe-studio',
+  path: '/recipe-studio',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPlansRoute = AdminPlansRouteImport.update({
@@ -609,6 +622,12 @@ const ApiCoreP1ComposerSubmissionsRoute =
     path: '/api/core/p1/composer/submissions',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCoreP1ComposerDestinationMapRoute =
+  ApiCoreP1ComposerDestinationMapRouteImport.update({
+    id: '/api/core/p1/composer/destination-map',
+    path: '/api/core/p1/composer/destination-map',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1AssistantStreamRoute =
   ApiCoreP1AssistantStreamRouteImport.update({
     id: '/api/core/p1/assistant/stream',
@@ -671,7 +690,9 @@ export interface FileRoutesByFullPath {
   '/admin/models': typeof AdminModelsRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/recipe-studio': typeof AdminRecipeStudioRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -744,6 +765,7 @@ export interface FileRoutesByFullPath {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
@@ -773,7 +795,9 @@ export interface FileRoutesByTo {
   '/admin/models': typeof AdminModelsRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/recipe-studio': typeof AdminRecipeStudioRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -846,6 +870,7 @@ export interface FileRoutesByTo {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
@@ -880,7 +905,9 @@ export interface FileRoutesById {
   '/admin/models': typeof AdminModelsRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/recipe-studio': typeof AdminRecipeStudioRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -953,6 +980,7 @@ export interface FileRoutesById {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/copy/stream': typeof ApiCoreP1CopyStreamRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
@@ -988,7 +1016,9 @@ export interface FileRouteTypes {
     | '/admin/models'
     | '/admin/p1'
     | '/admin/plans'
+    | '/admin/recipe-studio'
     | '/admin/redemptions'
+    | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
     | '/admin/users'
@@ -1061,6 +1091,7 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
@@ -1090,7 +1121,9 @@ export interface FileRouteTypes {
     | '/admin/models'
     | '/admin/p1'
     | '/admin/plans'
+    | '/admin/recipe-studio'
     | '/admin/redemptions'
+    | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
     | '/admin/users'
@@ -1163,6 +1196,7 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
@@ -1196,7 +1230,9 @@ export interface FileRouteTypes {
     | '/admin/models'
     | '/admin/p1'
     | '/admin/plans'
+    | '/admin/recipe-studio'
     | '/admin/redemptions'
+    | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
     | '/admin/users'
@@ -1269,6 +1305,7 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/copy/stream'
     | '/api/core/p1/harness/recommendation'
@@ -1315,6 +1352,7 @@ export interface RootRouteChildren {
   ApiCoreProductCommandsRoute: typeof ApiCoreProductCommandsRoute
   ApiCoreProductStateRoute: typeof ApiCoreProductStateRoute
   ApiCoreP1AssistantStreamRoute: typeof ApiCoreP1AssistantStreamRoute
+  ApiCoreP1ComposerDestinationMapRoute: typeof ApiCoreP1ComposerDestinationMapRoute
   ApiCoreP1ComposerSubmissionsRoute: typeof ApiCoreP1ComposerSubmissionsRoute
   ApiCoreP1CopyStreamRoute: typeof ApiCoreP1CopyStreamRoute
   ApiCoreP1HarnessRecommendationRoute: typeof ApiCoreP1HarnessRecommendationRoute
@@ -1674,11 +1712,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSupplyRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/skills': {
+      id: '/admin/skills'
+      path: '/skills'
+      fullPath: '/admin/skills'
+      preLoaderRoute: typeof AdminSkillsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/redemptions': {
       id: '/admin/redemptions'
       path: '/redemptions'
       fullPath: '/admin/redemptions'
       preLoaderRoute: typeof AdminRedemptionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/recipe-studio': {
+      id: '/admin/recipe-studio'
+      path: '/recipe-studio'
+      fullPath: '/admin/recipe-studio'
+      preLoaderRoute: typeof AdminRecipeStudioRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/plans': {
@@ -2010,6 +2062,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1ComposerSubmissionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/core/p1/composer/destination-map': {
+      id: '/api/core/p1/composer/destination-map'
+      path: '/api/core/p1/composer/destination-map'
+      fullPath: '/api/core/p1/composer/destination-map'
+      preLoaderRoute: typeof ApiCoreP1ComposerDestinationMapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/core/p1/assistant/stream': {
       id: '/api/core/p1/assistant/stream'
       path: '/api/core/p1/assistant/stream'
@@ -2077,7 +2136,9 @@ interface AdminRouteChildren {
   AdminModelsRoute: typeof AdminModelsRoute
   AdminP1Route: typeof AdminP1Route
   AdminPlansRoute: typeof AdminPlansRoute
+  AdminRecipeStudioRoute: typeof AdminRecipeStudioRoute
   AdminRedemptionsRoute: typeof AdminRedemptionsRoute
+  AdminSkillsRoute: typeof AdminSkillsRoute
   AdminSupplyRoute: typeof AdminSupplyRouteWithChildren
   AdminTemplatesRoute: typeof AdminTemplatesRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -2092,7 +2153,9 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminModelsRoute: AdminModelsRoute,
   AdminP1Route: AdminP1Route,
   AdminPlansRoute: AdminPlansRoute,
+  AdminRecipeStudioRoute: AdminRecipeStudioRoute,
   AdminRedemptionsRoute: AdminRedemptionsRoute,
+  AdminSkillsRoute: AdminSkillsRoute,
   AdminSupplyRoute: AdminSupplyRouteWithChildren,
   AdminTemplatesRoute: AdminTemplatesRoute,
   AdminUsersRoute: AdminUsersRoute,
@@ -2296,6 +2359,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCoreProductCommandsRoute: ApiCoreProductCommandsRoute,
   ApiCoreProductStateRoute: ApiCoreProductStateRoute,
   ApiCoreP1AssistantStreamRoute: ApiCoreP1AssistantStreamRoute,
+  ApiCoreP1ComposerDestinationMapRoute: ApiCoreP1ComposerDestinationMapRoute,
   ApiCoreP1ComposerSubmissionsRoute: ApiCoreP1ComposerSubmissionsRoute,
   ApiCoreP1CopyStreamRoute: ApiCoreP1CopyStreamRoute,
   ApiCoreP1HarnessRecommendationRoute: ApiCoreP1HarnessRecommendationRoute,

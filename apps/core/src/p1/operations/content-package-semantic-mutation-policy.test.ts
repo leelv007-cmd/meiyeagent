@@ -67,3 +67,32 @@ test('semantic writes enforce one OCC revision step', () => {
       error.status === 409,
   );
 });
+
+test('semantic writes fail closed when revoked rights remain deliverable', () => {
+  const draft = buildContentPackage({
+    id: 'package-1',
+    kind: 'image_text',
+    source: { assetIds: ['asset-1'] },
+    timestamp,
+    workspaceId: 'workspace-1',
+  });
+
+  assert.throws(
+    () =>
+      validateContentPackageSemanticWrite({
+        expectedRevision: 0,
+        next: {
+          ...draft,
+          revision: 1,
+          rights: {
+            revokedAt: timestamp,
+            state: 'revoked',
+          },
+          status: 'accepted',
+        },
+      }),
+    (error: unknown) =>
+      error instanceof ContentPackageSemanticMutationError &&
+      error.code === 'CONTENT_PACKAGE_RIGHTS_STATE_CONFLICT',
+  );
+});

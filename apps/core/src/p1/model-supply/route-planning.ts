@@ -110,6 +110,14 @@ export function planModelSupplyCandidates(input: {
       ) {
         exclusionReasons.push('custom_requires_fixed_selection');
       }
+      if (
+        input.selection.mode === 'auto' &&
+        (model?.selectionPolicy === 'manual_only' ||
+          // Published catalog revisions created before selectionPolicy exist.
+          model?.id === 'llm-openai')
+      ) {
+        exclusionReasons.push('manual_selection_required');
+      }
       if (!deploymentAllowsDataClass(deployment, input.dataClass)) {
         exclusionReasons.push('data_class_disallowed');
       }

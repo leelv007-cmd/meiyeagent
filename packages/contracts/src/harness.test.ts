@@ -7,8 +7,11 @@ import {
   contentPackageRevisionDeliverySchema,
   creationModeSchema,
   firstUsableDraftMetricSchema,
+  harnessDecisionSnapshotSchema,
+  harnessDecisionSubmitResultSchema,
   harnessStageSchema,
   harnessTaskSubmissionSchema,
+  questionCardUnattended,
   questionCardSchema,
   structuredDecisionInputSchema,
   taskIntentInputSchema,
@@ -303,6 +306,83 @@ test('question card represents exactly one scoped blocking question', () => {
   assert.equal(
     questionCardSchema.safeParse({ ...card, unattended: 'release' }).success,
     false
+  );
+  assert.equal(questionCardUnattended(card), 'hold');
+  assert.equal(
+    questionCardUnattended({ ...card, unattended: 'continue' }),
+    'continue'
+  );
+});
+
+test('decision snapshot binds unattended policy to the core-owned timeout', () => {
+  const question = questionCardSchema.parse({
+    questionId: 'question-timeout',
+    workflowId: 'workflow-timeout',
+    workflowRevision: 1,
+    question: '要补充这次活动的重点吗？',
+    options: [{ id: 'option-a', label: '突出体验' }],
+    freeText: { enabled: true },
+    response: {
+      field: 'campaign_focus',
+      reason: '让这次内容更贴合你的实际情况',
+    },
+    unattended: 'continue',
+    scope: 'current_task',
+  });
+  assert.equal(
+    harnessDecisionSnapshotSchema.safeParse({
+      question,
+      resolutionSource: null,
+      status: 'pending',
+      timeoutSeconds: 18,
+    }).success,
+    true
+  );
+  assert.equal(
+    harnessDecisionSnapshotSchema.safeParse({
+      question,
+      resolutionSource: null,
+      status: 'pending',
+      timeoutSeconds: null,
+    }).success,
+    true
+  );
+  assert.equal(
+    harnessDecisionSnapshotSchema.safeParse({
+      question: { ...question, unattended: 'hold' },
+      resolutionSource: null,
+      status: 'pending',
+      timeoutSeconds: 18,
+    }).success,
+    false
+  );
+});
+
+test('decision receipts preserve timeout races and late-answer successors', () => {
+  assert.deepEqual(
+    harnessDecisionSubmitResultSchema.parse({
+      consumedByOther: true,
+      eventId: null,
+    }),
+    { consumedByOther: true, eventId: null }
+  );
+  assert.deepEqual(
+    harnessDecisionSubmitResultSchema.parse({
+      eventId: 'event-late',
+      replayed: false,
+      successor: {
+        snapshotId: 'snapshot-late',
+        workflowId: 'workflow-late',
+      },
+    }),
+    {
+      eventId: 'event-late',
+      replayed: false,
+      successor: {
+        snapshotId: 'snapshot-late',
+        workflowId: 'workflow-late',
+      },
+    }
   );
 });
 

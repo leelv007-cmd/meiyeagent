@@ -260,6 +260,17 @@ export function ComposerConversation({
             workId={turn.workId}
           />
         );
+      case 'terminal':
+        return (
+          <output
+            className="meiye-porcelain rounded-2xl p-4 text-sm"
+            data-outcome={turn.outcome}
+            data-testid="composer-terminal-outcome"
+            key={turn.id}
+          >
+            {turn.message}
+          </output>
+        );
     }
   };
 

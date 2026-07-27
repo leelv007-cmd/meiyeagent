@@ -48,7 +48,6 @@ import type {
   BrowserRecipeProjection,
   CreationLensId,
   MarketingIdentityAsset,
-  MarketingIdentityProjection,
   ProductQuoteSnapshot,
   QuestionCard,
   ResultPanel,
@@ -76,6 +75,10 @@ import { LandingHandoffRestore } from '@/product/landing-handoff-restore';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
 import { projectResultTokenStream } from '@/product/results/result-token-stream';
 import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
+import {
+  invalidateMarketingIdentity,
+  marketingIdentityProjectionQuery,
+} from '@/product/marketing-identity-queries';
 
 import { BriefSurface } from './brief-surface-panel';
 import { applyCatalogRecipeSelection } from './catalog-selection';
@@ -111,6 +114,11 @@ import {
   composerDestinationCapability,
   composerDestinationContract,
 } from './destination-contract';
+import { mapComposerDestination } from './composer-destination-client';
+import {
+  decideComposerDestinationPreflight,
+  type ComposerDestinationPreflightState,
+} from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
 import {
   listColdCardsFromSeeds,
@@ -152,6 +160,12 @@ import {
 } from './composer-question-timeout';
 import type { ComposerDeliveryOpenInput } from './composer-delivery-card';
 import { projectComposerSignedPreview } from './composer-signed-preview';
+import {
+  ComposerImageOperationPicker,
+  imageOperationAttachmentHint,
+  imageOperationCardinality,
+  type ComposerImageOperation,
+} from './image-operation-picker';
 import {
   applyComposerProgress,
   applyComposerQuestion,
@@ -326,10 +340,17 @@ export function ComposerHome({
   // D-111 双入口: the entry declares itself, the server decides the route.
   const [creationMode, setCreationMode] =
     useState<ComposerCreationMode>('customized');
+  const [imageOperation, setImageOperation] =
+    useState<ComposerImageOperation>('image.generate');
   const [session, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
   );
   const [questionPending, setQuestionPending] = useState(false);
+  const [destinationMapPending, setDestinationMapPending] = useState(false);
+  const destinationMapPendingRef = useRef(false);
+  const destinationAutoSubmitIntentRef = useRef<string | null>(null);
+  const [destinationPreflight, setDestinationPreflight] =
+    useState<ComposerDestinationPreflightState | null>(null);
   const [sessionIdentityId, setSessionIdentityId] = useState<
     string | null | undefined
   >(undefined);
@@ -359,18 +380,7 @@ export function ComposerHome({
   });
   // R-08 / #211: the Pro Studio entry states what the gate will decide.
   const proStudioEntitlement = useProStudioEntitlement();
-  const identitiesQuery = useQuery({
-    queryKey: ['marketing-identity-projection'],
-    queryFn: ({ signal }) =>
-      queryP1<MarketingIdentityProjection>(
-        'marketing-identity',
-        {
-          action: 'marketing_identity_projection',
-          payload: {},
-        },
-        signal
-      ),
-  });
+  const identitiesQuery = useQuery(marketingIdentityProjectionQuery);
   const identitySelection = useMemo(
     () =>
       projectIdentitySelection({
@@ -421,6 +431,9 @@ export function ComposerHome({
         `identity-session:${sessionIdRef.current}:${identity?.id ?? 'official-neutral'}`
       );
     },
+    onSuccess: async () => {
+      await invalidateMarketingIdentity(queryClient);
+    },
     onError: () => toast.error('本次身份选择未能记入决策记录，请重试。'),
   });
   const defaultIdentityDecision = useMutation({
@@ -447,9 +460,7 @@ export function ComposerHome({
       );
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['marketing-identity-projection'],
-      });
+      await invalidateMarketingIdentity(queryClient);
     },
     onError: () => toast.error('默认身份未能保存，请重试。'),
   });
@@ -575,7 +586,8 @@ export function ComposerHome({
     undefined;
   const destination = composerDestinationContract(
     lensState.draft.delivery.platform ??
-      submissionRecipe?.delivery.contentPackagePlatform
+      submissionRecipe?.delivery.contentPackagePlatform,
+    lensState.draft.delivery.distributionTarget
   );
   const submissionDelivery = {
     deliverableKind:
@@ -593,9 +605,24 @@ export function ComposerHome({
     durationSeconds: submissionDurationSeconds ?? null,
     quantity: submissionQuantity,
   };
+  const explicitImageOperation =
+    creationMode === 'free' &&
+    lensId === 'image_text' &&
+    (submissionDelivery.deliverableKind === 'image_set' ||
+      submissionDelivery.deliverableKind === 'poster')
+      ? imageOperation
+      : undefined;
+  const imageCardinality = explicitImageOperation
+    ? imageOperationCardinality(explicitImageOperation, sourceReferences.length)
+    : { message: null, valid: true };
   const signedSubmissionParse =
     selectedModel && submissionRecipe && destination
       ? composerSubmissionSignedFieldsSchema.safeParse({
+          creationMode,
+          intent: userText,
+          ...(explicitImageOperation
+            ? { imageOperation: explicitImageOperation }
+            : {}),
           catalogModel: {
             id: selectedModel.id,
             revision: catalogRevision,
@@ -817,10 +844,15 @@ export function ComposerHome({
       applyComposerWorkflowState(
         current,
         workflowStream.workflowState!,
-        workflowStream.harnessDelivery
+        workflowStream.harnessDelivery,
+        workflowStream.harnessCancellation
       )
     );
-  }, [workflowStream.workflowState, workflowStream.harnessDelivery]);
+  }, [
+    workflowStream.workflowState,
+    workflowStream.harnessDelivery,
+    workflowStream.harnessCancellation,
+  ]);
 
   // 需要用户的一个问题 — the third inbound seam message. Polled while the run is
   // live so a suspended workflow surfaces its card without a page action.
@@ -832,12 +864,22 @@ export function ComposerHome({
   });
   const pendingQuestion: QuestionCard | null =
     decisionQuery.data?.question ?? null;
+  const questionResolutionSource =
+    decisionQuery.data?.resolutionSource === 'core_timeout' ||
+    decisionQuery.data?.resolutionSource === 'core_hold_expired'
+      ? decisionQuery.data.resolutionSource
+      : null;
+  const questionTimeoutSeconds = decisionQuery.data?.timeoutSeconds ?? null;
 
   useEffect(() => {
     setSession((current) =>
       applyComposerQuestion(current, pendingQuestion?.questionId ?? null)
     );
-  }, [pendingQuestion?.questionId]);
+  }, [
+    pendingQuestion?.questionId,
+    questionResolutionSource,
+    workflowStream.workflowState,
+  ]);
 
   const tokenStream = useMemo(
     () =>
@@ -866,7 +908,7 @@ export function ComposerHome({
       if (!pendingQuestion || !taskId) return;
       setQuestionPending(true);
       try {
-        await submitHarnessDecision(
+        const result = await submitHarnessDecision(
           taskId,
           composerQuestionDecision({
             question: pendingQuestion,
@@ -878,7 +920,13 @@ export function ComposerHome({
             value: input.value,
           })
         );
+        if ('consumedByOther' in result) {
+          toast.info('系统已先一步处理，正在同步最新状态。');
+        } else if (result.successor) {
+          toast.success('已收到补充，正在生成精修版本。');
+        }
         await decisionQuery.refetch();
+        return result;
       } catch (error) {
         toast.error(workbench_operation_failed());
         // Rethrow: the card claimed a settlement synchronously so the countdown
@@ -1248,7 +1296,19 @@ export function ComposerHome({
 
   const handleIntentChange = (value: string) => {
     setSubmissionGroundingBlocked(null);
-    setLensState(updateUserText(lensState, value));
+    destinationAutoSubmitIntentRef.current = null;
+    setDestinationPreflight(null);
+    setLensState((current) => {
+      const withoutSystemDestination =
+        current.draft.fieldMeta.deliveryPlatform?.ownership === 'system'
+          ? updateDeliverySuggestion(
+              current,
+              { distributionTarget: null, platform: null },
+              'system'
+            )
+          : current;
+      return updateUserText(withoutSystemDestination, value);
+    });
   };
 
   /**
@@ -1281,6 +1341,14 @@ export function ComposerHome({
   };
 
   const attemptSubmit = async () => {
+    if (!imageCardinality.valid) {
+      document
+        .querySelector<HTMLElement>(
+          '[data-testid="composer-image-operation-picker"]'
+        )
+        ?.focus();
+      return;
+    }
     const gate = canSubmit(lensState);
     if (!gate.allowed && gate.reason !== 'video_confirm_required') {
       setShowRequiredHint(true);
@@ -1295,6 +1363,57 @@ export function ComposerHome({
     }
 
     if (lensState.phase !== 'selected') return;
+    const destinationDecision = decideComposerDestinationPreflight({
+      hasExplicitDestination:
+        lensState.draft.fieldMeta.deliveryPlatform?.ownership === 'user' &&
+        lensState.draft.fieldMeta.deliveryPlatform.dirty,
+      intent: lensState.draft.userText,
+      state: destinationPreflight,
+    });
+    if (destinationDecision.kind === 'map') {
+      if (destinationMapPendingRef.current) return;
+      destinationMapPendingRef.current = true;
+      setDestinationMapPending(true);
+      try {
+        const result = await mapComposerDestination(
+          destinationDecision.destination
+        );
+        setDestinationPreflight({
+          intent: destinationDecision.destination,
+          result,
+        });
+        if (result.status === 'mapped') {
+          destinationAutoSubmitIntentRef.current =
+            destinationDecision.destination;
+          setLensState((current) =>
+            current.draft.userText.trim() === destinationDecision.destination
+              ? updateDeliverySuggestion(
+                  current,
+                  {
+                    distributionTarget: result.distributionTarget,
+                    platform: result.contentPackagePlatform,
+                  },
+                  'system'
+                )
+              : current
+          );
+        }
+      } catch {
+        toast.error('暂时无法确认发布去向，请重试或直接选择平台。');
+      } finally {
+        destinationMapPendingRef.current = false;
+        setDestinationMapPending(false);
+      }
+      return;
+    }
+    if (destinationDecision.kind === 'block') {
+      document
+        .querySelector<HTMLElement>(
+          '[data-testid="composer-destination-clarification"]'
+        )
+        ?.focus();
+      return;
+    }
     if (quotaBlocked) {
       setSubmissionQuotaBlocked(true);
       return;
@@ -1326,6 +1445,7 @@ export function ComposerHome({
         briefContextId,
         draft: {
           delivery: submissionDelivery,
+          imageOperation: explicitImageOperation ?? null,
           settings: submissionSettings,
           sources: briefSourcesFromDraft(lensState.draft.sources),
           userText: lensState.draft.userText,
@@ -1410,6 +1530,40 @@ export function ComposerHome({
     runCreate(lensState.lensId);
   };
 
+  useEffect(() => {
+    const pendingIntent = destinationAutoSubmitIntentRef.current;
+    const mapped =
+      destinationPreflight?.result.status === 'mapped'
+        ? destinationPreflight.result
+        : null;
+    if (
+      !pendingIntent ||
+      destinationPreflight?.intent !== pendingIntent ||
+      userText.trim() !== pendingIntent ||
+      !mapped ||
+      lensState.draft.delivery.platform !== mapped.contentPackagePlatform ||
+      lensState.draft.delivery.distributionTarget !==
+        mapped.distributionTarget ||
+      destinationMapPending ||
+      !quoteQuery.data ||
+      !quoteView ||
+      !submissionRecipe
+    ) {
+      return;
+    }
+    destinationAutoSubmitIntentRef.current = null;
+    void attemptSubmit();
+  }, [
+    destinationMapPending,
+    destinationPreflight,
+    lensState.draft.delivery.distributionTarget,
+    lensState.draft.delivery.platform,
+    quoteQuery.data,
+    quoteView,
+    submissionRecipe,
+    userText,
+  ]);
+
   const handleBriefConfirm = async () => {
     if (lensState.phase !== 'selected' || !submissionRecipe) return;
     const result = confirmBriefSurface(briefState);
@@ -1426,6 +1580,7 @@ export function ComposerHome({
       briefContextId: briefInput.briefContextId,
       draft: {
         delivery: submissionDelivery,
+        imageOperation: explicitImageOperation ?? null,
         settings: submissionSettings,
         sources: briefSourcesFromDraft(lensState.draft.sources),
         userText: lensState.draft.userText,
@@ -1622,6 +1777,8 @@ export function ComposerHome({
               onDecide={answerQuestion}
               pending={questionPending}
               question={pendingQuestion}
+              resolutionSource={questionResolutionSource}
+              timeoutSeconds={questionTimeoutSeconds}
             />
           ) : null
         }
@@ -1652,6 +1809,13 @@ export function ComposerHome({
         className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
         attachmentSlot={
           <div data-testid="composer-source-picker">
+            {explicitImageOperation ? (
+              <ComposerImageOperationPicker
+                disabled={createWork.isPending || lensState.phase === 'frozen'}
+                onChange={setImageOperation}
+                value={explicitImageOperation}
+              />
+            ) : null}
             <ComposerImageInput
               focusRef={sourcePickerRef}
               onAssetAdded={addSource}
@@ -1665,9 +1829,20 @@ export function ComposerHome({
               onUpload={uploadComposerImage}
             >
               <p className="text-muted text-xs">
-                可选：上传门店图片、顾客案例或价目素材
+                {explicitImageOperation
+                  ? imageOperationAttachmentHint(explicitImageOperation)
+                  : '可选：上传门店图片、顾客案例或价目素材'}
               </p>
             </ComposerImageInput>
+            {imageCardinality.message ? (
+              <p
+                className="mt-2 text-destructive text-xs"
+                data-testid="composer-image-cardinality"
+                role="alert"
+              >
+                {imageCardinality.message}
+              </p>
+            ) : null}
           </div>
         }
         creationMode={creationMode}
@@ -1681,7 +1856,9 @@ export function ComposerHome({
         submitDisabled={
           createWork.isPending ||
           briefPending ||
+          destinationMapPending ||
           !uploadsReady ||
+          !imageCardinality.valid ||
           lensState.phase === 'frozen' ||
           quotaBlocked ||
           (lensId != null && !quoteView)
@@ -1698,12 +1875,20 @@ export function ComposerHome({
           </>
         }
         onCreationModeChange={setCreationMode}
-        onDestinationChange={(platform) =>
+        onDestinationChange={(platform) => {
+          const next = composerDestinationContract(platform);
+          setDestinationPreflight(null);
+          if (!next) return;
           setLensState((current) =>
-            updateDeliverySuggestion(current, { platform })
-          )
-        }
+            updateDeliverySuggestion(current, {
+              distributionTarget: next.distributionTarget,
+              platform: next.contentPackagePlatform,
+            })
+          );
+        }}
         onReuseChip={(chip) => {
+          const next = composerDestinationContract(chip.id);
+          setDestinationPreflight(null);
           // 旧内容换平台 becomes one sentence in the merchant's own draft.
           setLensState((current) =>
             updateDeliverySuggestion(
@@ -1713,7 +1898,10 @@ export function ComposerHome({
                   ? `${current.draft.userText.trim()}\n${chip.intent}`
                   : chip.intent
               ),
-              { platform: chip.id }
+              {
+                distributionTarget: next?.distributionTarget ?? null,
+                platform: next?.contentPackagePlatform ?? chip.id,
+              }
             )
           );
           focusComposerIntentInput();
@@ -1728,6 +1916,38 @@ export function ComposerHome({
         submitLabel={creation_entry_submit()}
         value={userText}
       />
+
+      {destinationPreflight?.intent === userText.trim() &&
+      destinationPreflight.result.status === 'needs_clarification' ? (
+        <div
+          className="rounded-2xl border border-default-200 bg-content1/80 p-3"
+          data-testid="composer-destination-clarification"
+          role="alert"
+          tabIndex={-1}
+        >
+          <p className="text-sm">{destinationPreflight.result.question}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {destinationPreflight.result.options.map((option) => (
+              <button
+                className="rounded-full border border-default-300 px-3 py-1.5 text-sm"
+                key={`${option.contentPackagePlatform}:${option.distributionTarget}`}
+                onClick={() => {
+                  setDestinationPreflight(null);
+                  setLensState((current) =>
+                    updateDeliverySuggestion(current, {
+                      distributionTarget: option.distributionTarget,
+                      platform: option.contentPackagePlatform,
+                    })
+                  );
+                }}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {quoteView ? (
         <p

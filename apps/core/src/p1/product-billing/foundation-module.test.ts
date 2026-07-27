@@ -108,6 +108,7 @@ describe('ProductBillingFoundationModule', () => {
       { billingMode: 'per_request' },
       { catalogModelRevision: 'attacker-catalog' },
       { authorizedCeiling: 0 },
+      { debitUnits: [{ resource: 'video', quantity: 999 }] },
       { routeSnapshotRef: 'attacker-route' },
       { frozenCandidateDeploymentIds: ['attacker-deployment'] },
     ]) {

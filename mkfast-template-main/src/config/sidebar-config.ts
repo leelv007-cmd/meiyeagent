@@ -6,7 +6,9 @@ import {
   admin_navigation_model_catalog,
   admin_navigation_models,
   admin_navigation_plans,
+  admin_navigation_recipe_studio,
   admin_navigation_redemptions,
+  admin_navigation_skills,
   admin_navigation_templates,
   admin_navigation_users,
   product_navigation_admin,
@@ -107,6 +109,22 @@ export const ADMIN_SIDEBAR_ITEMS = [
       return admin_navigation_capabilities();
     },
     href: Routes.AdminCapabilities,
+    icon: IconListDetails,
+  },
+  {
+    id: 'recipe-studio',
+    get label() {
+      return admin_navigation_recipe_studio();
+    },
+    href: Routes.AdminRecipeStudio,
+    icon: IconSparkles,
+  },
+  {
+    id: 'skills',
+    get label() {
+      return admin_navigation_skills();
+    },
+    href: Routes.AdminSkills,
     icon: IconListDetails,
   },
   {

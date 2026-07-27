@@ -13,6 +13,7 @@ import {
   readRequestText,
   workspaceCoreFetchInit,
   workspaceCoreUpstreamPath,
+  type WorkspaceComposerDestinationResource,
   type WorkspaceComposerSubmissionResource,
   type WorkspaceHarnessTaskCollectionResource,
   type WorkspaceHarnessDecisionResource,
@@ -117,6 +118,7 @@ export async function forwardWorkspaceCoreRequest(
     | 'p1/assistant/stream'
     | 'p1/copy/stream'
     | 'p1/harness/recommendation'
+    | WorkspaceComposerDestinationResource
     | WorkspaceComposerSubmissionResource
     | WorkspacePendingActionsResource
     | WorkspaceHarnessTaskCollectionResource

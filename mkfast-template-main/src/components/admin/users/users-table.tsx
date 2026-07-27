@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { User } from '@/db/types';
+import type { AdminUserListItem } from '@/api/users';
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -93,7 +93,7 @@ function TableRowSkeleton({ columns }: { columns: number }) {
   );
 }
 interface UsersTableProps {
-  data: User[];
+  data: AdminUserListItem[];
   total: number;
   pageIndex: number;
   pageSize: number;
@@ -123,7 +123,7 @@ export function UsersTable({
   onFiltersChange,
 }: UsersTableProps) {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const columns: ColumnDef<User>[] = useMemo(
+  const columns: ColumnDef<AdminUserListItem>[] = useMemo(
     () => [
       {
         id: 'name',
@@ -210,8 +210,8 @@ export function UsersTable({
         size: 120,
       },
       {
-        id: 'provisionedByUserId',
-        accessorKey: 'provisionedByUserId',
+        id: 'provisioningAttribution',
+        accessorKey: 'provisioningAttribution',
         enableHiding: true,
         enableSorting: false,
         header: ({ column }) => (
@@ -222,7 +222,10 @@ export function UsersTable({
         ),
         cell: ({ row }) => (
           <span className="font-mono text-xs text-muted-foreground">
-            {row.original.provisionedByUserId ?? admin_users_self_registered()}
+            {row.original.provisioningAttribution.kind === 'admin_assisted'
+              ? (row.original.provisioningAttribution.operatorDisplayName ??
+                admin_users_admin())
+              : admin_users_self_registered()}
           </span>
         ),
         meta: { label: admin_users_columns_provisioned_by() },

@@ -4,6 +4,7 @@
  */
 import type {
   AdvancedCanvasEditingContext,
+  ImageIntent,
   VideoCompositionEvidence,
 } from '@meiye/contracts';
 
@@ -52,6 +53,12 @@ export type CanvasGenerationInputAssetRole =
 export interface CanvasGenerationInputAsset {
   assetId: string;
   role: CanvasGenerationInputAssetRole;
+  /**
+   * ImageIntent semantics frozen by the selected ImageModelRecipeProfile.
+   * Non-image callers omit both fields.
+   */
+  imageSlot?: ImageIntent['references'][number]['slot'];
+  nativeField?: string;
 }
 export interface CanvasGenerationInputNodeBinding
   extends CanvasGenerationInputAsset {
@@ -98,6 +105,8 @@ export interface CatalogModel {
   operations: ModelOperation[];
   displayName: string;
   qualityRank: number;
+  /** Models marked manual_only are eligible only for an explicit fixed selection. */
+  selectionPolicy?: 'automatic' | 'manual_only';
   /** Frontend-safe business metadata. Legacy fixtures may omit these fields. */
   manufacturer?: string;
   stableModelName?: string;

@@ -514,7 +514,7 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 			admitted.usageUnits,
 			kind === "image_text_note"
 				? [
-						{ resource: "copy", quantity: 3 },
+						{ resource: "copy", quantity: 1 },
 						{ resource: "image", quantity: 3 },
 					]
 				: undefined,
@@ -545,7 +545,12 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 				catalogRevision: `catalog-${kind}-r1`,
 				expectedContextRevision: 4,
 				intent: "为夏日护理项目写一条预约文案",
-				operation: kind === "video" ? "video.generate" : "image.edit",
+				operation:
+					kind === "video"
+						? "video.generate"
+						: kind === "image_text_note"
+							? "image.generate"
+							: "image.edit",
 				outputCount: 2,
 				quoteRevision: "quote-r5",
 				sourceReferenceIds: ["asset-1"],

@@ -14,6 +14,8 @@ import {
 export type BillingResource = NonNullable<ProductUsageRecord['resource']>;
 
 export interface BillingAttemptCost {
+  /** Supplier-side metering mode; independent from merchant ProductUsage. */
+  billingMode?: ProductBillingMode;
   supplierPriceRevision: string;
   unitPriceMicros: number;
   currency: string;
@@ -25,6 +27,14 @@ export interface BillingAttemptCost {
   evidence?: string;
   evidenceKind?: TrustedUsageEvidenceKind | 'estimated' | 'unknown';
   payer?: 'platform' | 'workspace_byok';
+}
+
+export function providerBillingMode(
+  cost: BillingAttemptCost,
+  fallback: ProductBillingMode,
+): ProductBillingMode {
+  if (cost.billingMode) return cost.billingMode;
+  return /second/iu.test(cost.unit) ? 'per_output_second' : fallback;
 }
 
 export interface BillingLifecyclePort {
@@ -147,10 +157,7 @@ export class ProductBillingLifecycle implements BillingLifecyclePort {
     }
     this.quotes.reserve({
       quoteId: quote.quoteId,
-      units: productUsageUnitsForQuote(quote).map((unit) => ({
-        ...unit,
-        resource: input.resource,
-      })),
+      units: productUsageUnitsForQuote(quote, input.resource),
     });
   }
 
@@ -164,7 +171,7 @@ export class ProductBillingLifecycle implements BillingLifecyclePort {
     const quote = this.requireTaskQuote(input.workspaceId, input.taskId);
     const providerCost = {
       ...input.providerCost,
-      billingMode: quote.billingMode,
+      billingMode: providerBillingMode(input.providerCost, quote.billingMode),
     } satisfies BillingAttemptCost & { billingMode: ProductBillingMode };
     const costs = this.quotes.listProviderCosts(input.taskId);
     const existing = costs.find((cost) => cost.attemptId === input.attemptId);

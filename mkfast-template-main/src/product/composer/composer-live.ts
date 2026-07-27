@@ -137,6 +137,7 @@ export function buildLiveQuoteInput(input: {
       input.submission.contentPackagePlatform,
       input.submission.distributionTarget,
       input.submission.deliverable.kind,
+      input.submission.imageOperation ?? 'auto',
     ].join(':'),
     catalogModelId: input.model.id,
     operation,

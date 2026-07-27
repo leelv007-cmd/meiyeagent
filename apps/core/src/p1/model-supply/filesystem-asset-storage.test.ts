@@ -9,7 +9,10 @@ import {
   FileSystemAssetStorage,
   fileSystemAssetStorageFromEnv,
 } from './filesystem-asset-storage.js';
-import { modelAssetStorageFromEnv } from './asset-storage-from-env.js';
+import {
+  modelAssetStorageFromEnv,
+  validateCloudflareR2AssetStorageContract,
+} from './asset-storage-from-env.js';
 import { S3CompatibleAssetStorage } from './s3-asset-storage.js';
 import { RecordedAdapterRouter, recordedRequest } from './adapters.js';
 import { MemoryModelAssetStorage } from './index.js';
@@ -137,6 +140,7 @@ test('production refuses local-only asset storage while explicit test environmen
   );
   const sharedStorageEnv = {
     APP_ENV: 'production',
+    CLOUDFLARE_R2_BUCKET_NAME: 'asset-bucket',
     P1_ASSET_STORAGE_MODE: 's3',
     P1_ASSET_S3_ACCESS_KEY_ID: 'access-key',
     P1_ASSET_S3_BUCKET: 'asset-bucket',
@@ -186,6 +190,50 @@ test('production refuses local-only asset storage while explicit test environmen
       APP_ENV: 'test',
       P1_ASSET_STORAGE_DIR: '/tmp/test-assets',
     }),
+  );
+});
+
+test('Cloudflare R2 provisioning and Core S3 storage share one bucket contract', () => {
+  const shared = validateCloudflareR2AssetStorageContract({
+    APP_ENV: 'production',
+    CLOUDFLARE_R2_BUCKET_NAME: 'meiye-assets',
+    P1_ASSET_S3_BUCKET: 'meiye-assets',
+  });
+  assert.deepEqual(shared, {
+    bucket: 'meiye-assets',
+    provisioningBucket: 'meiye-assets',
+  });
+
+  assert.throws(
+    () =>
+      validateCloudflareR2AssetStorageContract({
+        APP_ENV: 'production',
+        CLOUDFLARE_R2_BUCKET_NAME: 'shell-assets',
+        P1_ASSET_S3_BUCKET: 'core-assets',
+      }),
+    /must match CLOUDFLARE_R2_BUCKET_NAME/,
+  );
+  assert.throws(
+    () =>
+      validateCloudflareR2AssetStorageContract({
+        APP_ENV: 'staging',
+        P1_ASSET_S3_BUCKET: 'core-assets',
+    }),
+    /CLOUDFLARE_R2_BUCKET_NAME is required/,
+  );
+  assert.throws(
+    () =>
+      modelAssetStorageFromEnv({
+        APP_BASE_URL: 'https://app.example.com',
+        APP_ENV: 'production',
+        CLOUDFLARE_R2_BUCKET_NAME: 'shell-assets',
+        P1_ASSET_STORAGE_MODE: 's3',
+        P1_ASSET_S3_ACCESS_KEY_ID: 'access-key',
+        P1_ASSET_S3_BUCKET: 'core-assets',
+        P1_ASSET_S3_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+        P1_ASSET_S3_SECRET_ACCESS_KEY: 'secret-key',
+      }),
+    /must match CLOUDFLARE_R2_BUCKET_NAME/,
   );
 });
 

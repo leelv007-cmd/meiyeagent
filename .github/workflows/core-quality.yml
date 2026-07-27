@@ -25,11 +25,15 @@ jobs:
       - name: Run pinned merchant-language promptfoo gate
         env:
           PROMPTFOO_DISABLE_REMOTE_GENERATION: true
-        run: >-
-          pnpm dlx promptfoo@0.121.19 eval
-          -c promptfooconfig.merchant-language.yaml
-          --no-cache
-          -o output/evals/promptfoo-merchant-language.json
+        run: pnpm eval:merchant-language:promptfoo
+      - name: Prove merchant-language assertions reject false output
+        env:
+          PROMPTFOO_DISABLE_REMOTE_GENERATION: true
+        run: |
+          if pnpm eval:merchant-language:promptfoo:control; then
+            echo "Merchant-language assertion control unexpectedly passed." >&2
+            exit 1
+          fi
       - name: Run BeautyPreferenceMemoryEval
         run: pnpm eval:preference-memory
       - name: Write recorded EvalRun artifact
@@ -323,6 +327,7 @@ jobs:
   # a build of this exact commit.
   release-manifest:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
       (contains(github.event.pull_request.labels.*.name, 'release-candidate') ||
@@ -368,6 +373,7 @@ jobs:
   # label as an alias while release-candidate becomes the explicit RC signal.
   e2e:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
       (contains(github.event.pull_request.labels.*.name, 'release-candidate') ||

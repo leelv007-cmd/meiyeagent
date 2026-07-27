@@ -14,6 +14,10 @@ test('public ProductQuoteSnapshot removes every server-only routing field', () =
     catalogModelRevision: 'catalog-revision-1',
     quotePolicyRevision: 'quote.policy@1',
     billingMode: 'per_request',
+    debitUnits: [
+      { resource: 'copy', quantity: 1 },
+      { resource: 'image', quantity: 4 },
+    ],
     formula: {
       unitRate: 1.5,
       currency: 'CNY',
@@ -31,6 +35,10 @@ test('public ProductQuoteSnapshot removes every server-only routing field', () =
   assert.equal(result.quoteId, 'quote-1');
   assert.equal(result.catalogModelId, 'catalog-model-1');
   assert.equal(result.confirmedAmount, 1.5);
+  assert.deepEqual(result.debitUnits, [
+    { resource: 'copy', quantity: 1 },
+    { resource: 'image', quantity: 4 },
+  ]);
   assert.equal('routeSnapshotRef' in result, false);
   assert.equal('frozenCandidateDeploymentIds' in result, false);
 

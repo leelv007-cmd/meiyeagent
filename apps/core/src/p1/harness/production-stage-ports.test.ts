@@ -111,6 +111,8 @@ test('production intent naming receives resolved Skill value objects through the
     workflowId: 'task-skill-port',
     request,
     stage: 'intent_naming',
+    plannerSelectedSkillRefs: ['skill.planner@2'],
+    userSelectedSkillRefs: ['skill.user@3'],
   });
 
   await ports.nameIntent({
@@ -122,6 +124,8 @@ test('production intent naming receives resolved Skill value objects through the
   assert.deepEqual(resolverInputs, [
     {
       stage: 'intent_naming',
+      plannerSelectedSkillRefs: ['skill.planner@2'],
+      userSelectedSkillRefs: ['skill.user@3'],
       workflowId: 'task-skill-port',
       workflowRevision: 4,
       workspaceId: 'workspace-1',
@@ -187,6 +191,108 @@ test('an existing frozen fact suppresses the matching blocking QuestionCard', as
     snapshot,
   );
   assert.equal(contextRequests, 2);
+});
+
+test('production Recipe fact satisfaction gates the facts visible to the Copy Brief', async () => {
+  const runner = new QueueRunner([
+    {
+      status: 'satisfied',
+      matchedFactRefs: ['store_fact:service-1:1'],
+      missingFactTypes: [],
+    },
+    {
+      kind: 'copy',
+      instructions:
+        '只基于已经确认且本次满足度判断允许使用的服务事实撰写护理介绍，不引用未授权价格，并以低压力私信咨询作为行动建议。'.repeat(
+          2,
+        ),
+      platform: 'xiaohongshu',
+      cta: '私信咨询',
+      factRefs: ['store_fact:service-1:1'],
+      assetRefs: [],
+      identityRefs: [],
+      constraints: ['不得引用未授权价格'],
+    },
+  ]);
+  const context = contextSnapshot();
+  context.bundle.referencedFactRevisions = [
+    { factId: 'service-1', revision: 1 },
+    { factId: 'price-1', revision: 1 },
+  ];
+  context.bundle.dimensions.store_facts_assets = {
+    service: factContribution('service-1', 'service', '头皮清洁护理'),
+    price: factContribution('price-1', 'price', 398),
+  };
+  const ports = new ProductionHarnessStagePorts(
+    { create: () => runner },
+    {
+      async compileAndFreeze() {
+        return context;
+      },
+      async fence(input) {
+        return input.context;
+      },
+    },
+    new RecordingDelivery(),
+    () => '2026-07-22T10:00:00.000Z',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      async getRecipeByRevisionId() {
+        return {
+          recipeId: 'recipe-1',
+          revisionId: 'recipe-r1',
+          factTypes: ['service'],
+        };
+      },
+    },
+    {
+      async isAuthorized({ fact }) {
+        return fact.factId === 'service-1';
+      },
+    },
+  );
+  const snapshot = composerSnapshot();
+  const request = composerRequest(snapshot);
+  const declaration = {
+    normalizedIntent: '介绍护理服务',
+    taskType: 'daily_service_exposure' as const,
+    deliveryLayer: 'copy' as const,
+    relevantAssetCategories: ['product_service' as const],
+    usedAssetCategories: ['product_service' as const],
+    route: 'customized' as const,
+    routingSource: 'model' as const,
+    implicitConstraints: [],
+  };
+
+  const assessment = await ports.assessFacts({
+    workflowId: snapshot.task.id,
+    request,
+    declaration,
+    context,
+  });
+  assert.ok(assessment);
+  await ports.compileBrief({
+    workflowId: snapshot.task.id,
+    request,
+    declaration,
+    context,
+    allowedFactRefs: assessment.factRefs,
+  });
+
+  assert.deepEqual(assessment, {
+    status: 'satisfied',
+    action: 'execute',
+    factRefs: ['store_fact:service-1:1'],
+  });
+  const prompt = JSON.parse(runner.requests[1]?.prompt ?? '{}');
+  assert.deepEqual(
+    Object.keys(prompt.bundle.dimensions.store_facts_assets),
+    ['service'],
+  );
+  assert.doesNotMatch(JSON.stringify(prompt), /price-1|398/u);
 });
 
 test('an unanswered industry gap reports the confirmed grounding surface to the workflow', async () => {
@@ -469,6 +575,14 @@ test('production Copy stage keeps the frozen structured platform over model outp
       implicitConstraints: [],
     },
     context: contextSnapshot(),
+    skillInstructions: [
+      {
+        contentHash: 'hash-brief-skill',
+        executionMode: 'prompt_materialized',
+        instruction: 'Keep the brief grounded and concise.',
+        skillRevisionRef: 'skill.brief-compiler@4',
+      },
+    ],
   });
 
   assert.equal(result.brief.platform, 'douyin');
@@ -477,6 +591,10 @@ test('production Copy stage keeps the frozen structured platform over model outp
   ]);
   const prompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
   assert.equal(prompt.executionContract.platform.id, 'douyin');
+  assert.match(
+    runner.requests[0]!.instructions,
+    /\[skill\.brief-compiler@4\] Keep the brief grounded and concise\./u,
+  );
 });
 
 test('a Composer Copy snapshot rejects a different active identity before provider execution', () => {
@@ -1957,6 +2075,31 @@ function contextSnapshot(): HarnessContextSnapshot {
       },
     },
     policyReferences: { sourceRefs: [], rightsRefs: [], identityRefs: [] },
+  };
+}
+
+function factContribution(
+  factId: string,
+  kind: 'service' | 'price',
+  value: string | number,
+) {
+  return {
+    value,
+    layer: 'current_fact' as const,
+    pool: 'store_personal' as const,
+    sourceRef: `store_fact:${factId}:1`,
+    factSnapshot: {
+      factId,
+      kind,
+      revision: 1,
+      source: {
+        kind: 'user_confirmation' as const,
+        referenceId: `confirmation-${factId}`,
+        capturedAt: '2026-07-18T00:00:00.000Z',
+      },
+      effectiveFrom: '2026-07-18T00:00:00.000Z',
+      expiresAt: null,
+    },
   };
 }
 

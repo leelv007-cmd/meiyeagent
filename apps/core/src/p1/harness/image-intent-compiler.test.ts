@@ -10,6 +10,7 @@ import { MODEL_OPERATIONS } from '../model-supply/supply-contracts.js';
 import {
   IMAGE_OPERATION_PROFILE,
   nativeSupplyOperation,
+  resolveImageIntentOperation,
   selectImageIntentOperation,
 } from './image-intent-compiler.js';
 
@@ -46,4 +47,59 @@ test('reference transform remains product intent and maps to native image editin
     'image.edit',
   );
   assert.equal(nativeSupplyOperation('image.reference_transform'), 'image.edit');
+});
+
+test('free image operation must agree with 0/1/2+ source cardinality', () => {
+  assert.equal(
+    resolveImageIntentOperation({
+      creationMode: 'free',
+      imageOperation: 'image.generate',
+      referenceCount: 0,
+    }),
+    'image.generate',
+  );
+  assert.equal(
+    resolveImageIntentOperation({
+      creationMode: 'free',
+      imageOperation: 'image.edit',
+      referenceCount: 1,
+    }),
+    'image.edit',
+  );
+  assert.equal(
+    resolveImageIntentOperation({
+      creationMode: 'free',
+      imageOperation: 'image.reference_transform',
+      referenceCount: 2,
+    }),
+    'image.reference_transform',
+  );
+  assert.throws(
+    () =>
+      resolveImageIntentOperation({
+        creationMode: 'free',
+        imageOperation: 'image.edit',
+        referenceCount: 0,
+      }),
+    /does not match/u,
+  );
+});
+
+test('customized image creation remains server-selected and rejects a browser override', () => {
+  assert.equal(
+    resolveImageIntentOperation({
+      creationMode: 'customized',
+      referenceCount: 2,
+    }),
+    'image.reference_transform',
+  );
+  assert.throws(
+    () =>
+      resolveImageIntentOperation({
+        creationMode: 'customized',
+        imageOperation: 'image.generate',
+        referenceCount: 2,
+      }),
+    /customized/u,
+  );
 });

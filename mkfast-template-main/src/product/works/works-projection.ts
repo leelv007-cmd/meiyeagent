@@ -538,6 +538,36 @@ export function workCopyText(detail: WorkPackageDetail): string {
     .join('\n\n');
 }
 
+export type WorkTextExport = {
+  contentType: 'text/plain;charset=utf-8';
+  fileName: string;
+  text: string;
+};
+
+/**
+ * Canonical plain-text export for a words-only ContentPackage.
+ *
+ * The file is derived only from the revision displayed on the page. It is not
+ * a parallel sample artifact and it never falls back to a Composer draft.
+ */
+export function workTextExport(
+  detail: WorkPackageDetail
+): WorkTextExport | null {
+  if (!detail.confirmedRevision) return null;
+  const text = workCopyText(detail);
+  if (!text) return null;
+  const safeTitle =
+    detail.title
+      .trim()
+      .replace(/[<>:"/\\|?*]/gu, '-')
+      .replace(/\.+$/u, '') || '内容';
+  return {
+    contentType: 'text/plain;charset=utf-8',
+    fileName: `${safeTitle}-r${detail.confirmedRevision.revision}.txt`,
+    text,
+  };
+}
+
 function resultCenterHref(
   detail: WorkPackageDetail,
   panel: 'delivery' | 'result'

@@ -62,19 +62,23 @@ test(
         true,
       );
 
-      await store.registerPending(workspaceId, {
-        questionId,
-        workflowId: taskId,
-        workflowRevision: 4,
-        question: '当前团购价是多少？',
-        options: [],
-        freeText: { enabled: true },
-        response: {
-          field: 'offer_price',
-          reason: '补充当前任务所需的权威事实',
+      await store.registerPending(
+        workspaceId,
+        {
+          questionId,
+          workflowId: taskId,
+          workflowRevision: 4,
+          question: '当前团购价是多少？',
+          options: [],
+          freeText: { enabled: true },
+          response: {
+            field: 'offer_price',
+            reason: '补充当前任务所需的权威事实',
+          },
+          scope: 'current_task',
         },
-        scope: 'current_task',
-      });
+        { timeoutSeconds: 17 },
+      );
       await store.registerPending(otherWorkspaceId, {
         questionId,
         workflowId: taskId,
@@ -91,6 +95,11 @@ test(
       assert.equal(
         (await store.readPending(workspaceId, taskId))?.questionId,
         questionId,
+      );
+      assert.equal(
+        (await store.readDecisionTarget(workspaceId, taskId))
+          ?.timeoutSeconds,
+        17,
       );
 
       const resumed: string[] = [];
@@ -218,8 +227,10 @@ test(
       );
       const failedItem = claimedByAuditId.get(ownAuditIds[0]!);
       const sentItem = claimedByAuditId.get(ownAuditIds[1]!);
+      const deadLetterItem = claimedByAuditId.get(ownAuditIds[2]!);
       assert.ok(failedItem);
       assert.ok(sentItem);
+      assert.ok(deadLetterItem);
       await store.markLangfuseSent(sentItem.auditId);
       await store.markLangfuseFailed(
         failedItem.auditId,
@@ -238,6 +249,30 @@ test(
         [retriedItem.auditId]
       );
       assert.equal(outbox.rows[0]?.status, 'sent');
+      await store.markLangfuseDeadLetter(
+        deadLetterItem.auditId,
+        'attempt limit reached',
+      );
+      const deadLetter = await pool.query<{
+        status: string;
+        dead_lettered_at: Date | null;
+      }>(
+        `select status, dead_lettered_at
+         from harness_runtime.langfuse_outbox
+         where audit_id=$1`,
+        [deadLetterItem.auditId],
+      );
+      assert.equal(deadLetter.rows[0]?.status, 'failed');
+      assert.ok(deadLetter.rows[0]?.dead_lettered_at);
+      const afterDeadLetter = await store.claimLangfuseBatch(
+        ownAuditIds.length,
+      );
+      assert.equal(
+        afterDeadLetter.some(
+          (item) => item.auditId === deadLetterItem.auditId,
+        ),
+        false,
+      );
       await store.recordTerminalFailure({
         workspaceId,
         workflowId: taskId,

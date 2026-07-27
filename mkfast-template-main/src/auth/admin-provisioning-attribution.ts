@@ -4,6 +4,25 @@ export const ADMIN_ASSISTED_ACCOUNT_POLICY = {
   emailVerified: true,
 } as const;
 
+export type PublicAdminProvisioningAttribution =
+  | { kind: 'self_registered' }
+  | {
+      kind: 'admin_assisted';
+      operatorDisplayName?: string;
+    };
+
+export function publicAdminProvisioningAttribution(input: {
+  provisionedByUserId: string | null;
+  provisionerName: string | null;
+}): PublicAdminProvisioningAttribution {
+  if (!input.provisionedByUserId) return { kind: 'self_registered' };
+  const operatorDisplayName = input.provisionerName?.trim();
+  return {
+    kind: 'admin_assisted',
+    ...(operatorDisplayName ? { operatorDisplayName } : {}),
+  };
+}
+
 export function stripAdminProvisioningAttribution(
   data: Record<string, unknown> | undefined
 ): Record<string, unknown> | undefined {

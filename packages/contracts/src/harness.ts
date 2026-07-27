@@ -206,6 +206,125 @@ export const questionCardSchema = z
     }
   });
 
+export const questionCardUnattendedSchema = z.enum(['continue', 'hold']);
+
+/**
+ * Missing is the backwards-compatible fail-closed value. Producers should
+ * write the field explicitly; consumers must never interpret absence as
+ * permission to continue.
+ */
+export function questionCardUnattended<T extends object>(
+  question: T & { unattended?: QuestionCardUnattended }
+) {
+  return question.unattended ?? 'hold';
+}
+
+export const confirmationCardTimeoutSecondsSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(3_600);
+
+export const harnessDecisionResolutionSourceSchema = z.enum([
+  'decision',
+  'core_timeout',
+  'core_hold_expired',
+  'late_answer',
+]);
+
+/**
+ * Read model for the decision endpoint. The timeout is a Core projection of
+ * the same admin-config value used by the durable recv. A null timeout means
+ * Core did not arm automatic continuation; `hold` never carries a countdown.
+ */
+export const harnessDecisionSnapshotSchema = z
+  .object({
+    question: questionCardSchema.nullable(),
+    resolutionSource: harnessDecisionResolutionSourceSchema.nullable(),
+    status: z.enum(['absent', 'pending', 'resolved']),
+    timeoutSeconds: confirmationCardTimeoutSecondsSchema.nullable(),
+  })
+  .strict()
+  .superRefine((snapshot, context) => {
+    if (snapshot.status === 'absent') {
+      if (
+        snapshot.question !== null ||
+        snapshot.resolutionSource !== null ||
+        snapshot.timeoutSeconds !== null
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'An absent decision snapshot cannot carry decision data.',
+        });
+      }
+      return;
+    }
+
+    if (snapshot.status === 'pending' && snapshot.resolutionSource !== null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A pending decision cannot have a resolution source.',
+        path: ['resolutionSource'],
+      });
+    }
+    if (snapshot.status === 'resolved' && snapshot.resolutionSource === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A resolved decision requires a resolution source.',
+        path: ['resolutionSource'],
+      });
+    }
+
+    if (!snapshot.question) {
+      if (snapshot.status === 'pending') {
+        context.addIssue({
+          code: 'custom',
+          message: 'A pending decision requires its question.',
+          path: ['question'],
+        });
+      }
+      if (snapshot.timeoutSeconds !== null) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A snapshot without a question cannot carry a timeout.',
+          path: ['timeoutSeconds'],
+        });
+      }
+      return;
+    }
+
+    const unattended = questionCardUnattended(snapshot.question);
+    if (unattended === 'hold' && snapshot.timeoutSeconds !== null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A held question cannot carry a browser countdown.',
+        path: ['timeoutSeconds'],
+      });
+    }
+  });
+
+export const harnessDecisionSubmitResultSchema = z.union([
+  z
+    .object({
+      consumedByOther: z.literal(true),
+      eventId: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      eventId: harnessIdSchema,
+      replayed: z.boolean(),
+      successor: z
+        .object({
+          snapshotId: harnessIdSchema,
+          workflowId: harnessIdSchema,
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+]);
+
 export const contentPackageRevisionDeliverySchema = z
   .object({
     packageId: harnessIdSchema,
@@ -297,6 +416,18 @@ export type WorkflowTokenFrame = z.infer<typeof workflowTokenFrameSchema>;
 export type WorkflowStateEnvelope = z.infer<typeof workflowStateEnvelopeSchema>;
 export type WorkflowStateFrame = z.infer<typeof workflowStateFrameSchema>;
 export type QuestionCard = z.infer<typeof questionCardSchema>;
+export type QuestionCardUnattended = z.infer<
+  typeof questionCardUnattendedSchema
+>;
+export type HarnessDecisionResolutionSource = z.infer<
+  typeof harnessDecisionResolutionSourceSchema
+>;
+export type HarnessDecisionSnapshot = z.infer<
+  typeof harnessDecisionSnapshotSchema
+>;
+export type HarnessDecisionSubmitResult = z.infer<
+  typeof harnessDecisionSubmitResultSchema
+>;
 export type ContentPackageRevisionDelivery = z.infer<
   typeof contentPackageRevisionDeliverySchema
 >;

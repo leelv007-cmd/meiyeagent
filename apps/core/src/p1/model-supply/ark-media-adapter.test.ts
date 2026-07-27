@@ -205,14 +205,24 @@ test('Ark Seedream sends resolved reference images through the official image fi
     }>;
   };
   request.submission.operation = 'image.edit';
-  request.submission.input = { referenceAssetIds: ['asset-store-a'] };
-  request.resolvedReferenceAssets = [
+  request.submission.input = {
+    inputAssets: [
+      {
+        assetId: 'asset-store-a',
+        imageSlot: 'store_scene',
+        nativeField: 'image',
+        role: 'reference_image',
+      },
+    ],
+  };
+  request.resolvedInputAssets = [
     {
       assetId: 'asset-store-a',
       bytes: PNG_1X1,
       contentType: 'image/png',
       kind: 'resolved',
       providerReadableUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==',
+      role: 'reference_image',
       sha256: 'sha256-store-a',
     },
   ];

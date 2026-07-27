@@ -17,6 +17,7 @@ export interface HarnessLangfuseOutboxStore {
     error: string,
     retryAt: Date,
   ): Promise<void>;
+  markLangfuseDeadLetter(auditId: string, error: string): Promise<void>;
 }
 
 export interface HarnessLangfuseSender {
@@ -29,6 +30,7 @@ export class HarnessLangfuseOutboxWorker {
     private readonly sender: HarnessLangfuseSender,
     private readonly options: {
       batchSize?: number;
+      maxAttempts?: number;
       now?: () => Date;
       retryDelayMs?: number;
     } = {},
@@ -40,24 +42,32 @@ export class HarnessLangfuseOutboxWorker {
     );
     let sent = 0;
     let failed = 0;
+    let deadLettered = 0;
     for (const item of items) {
       try {
         await this.sender.send(item);
         await this.store.markLangfuseSent(item.auditId);
         sent += 1;
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        failed += 1;
+        if (item.attempts >= (this.options.maxAttempts ?? 8)) {
+          await this.store.markLangfuseDeadLetter(item.auditId, errorMessage);
+          deadLettered += 1;
+          continue;
+        }
         const now = this.options.now?.() ?? new Date();
         const retryAt = new Date(
           now.getTime() + (this.options.retryDelayMs ?? 30_000),
         );
         await this.store.markLangfuseFailed(
           item.auditId,
-          error instanceof Error ? error.message : String(error),
+          errorMessage,
           retryAt,
         );
-        failed += 1;
       }
     }
-    return { sent, failed };
+    return { sent, failed, deadLettered };
   }
 }

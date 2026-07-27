@@ -214,8 +214,10 @@ test('the Web deploy workflow is discoverable at the root and runs in the Web di
     'workflows must not live in a subdirectory GitHub never reads'
   );
 
-  assert.match(deploy, /^on:\n {2}workflow_dispatch:\n/m);
-  assert.doesNotMatch(deploy, /^ {2}push:/m);
+  assert.match(deploy, /^on:\n {2}workflow_run:\n/m);
+  assert.doesNotMatch(deploy, /^ {2}workflow_dispatch:/m);
+  assert.match(deploy, /github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(deploy, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
   assert.match(deploy, /uses: actions\/checkout@v4/);
   assert.match(deploy, /uses: pnpm\/action-setup@v4\n\s+with:\n\s+version: 10\.30\.3/);
   assert.match(deploy, /uses: actions\/setup-node@v4/);

@@ -34,6 +34,7 @@ export interface VisibleClaimExtraction {
 
 export interface HarnessPolicyInput {
   phase: HarnessPolicyPhase;
+  evaluatedAt?: string;
   bundle: { workspaceId: string; revision: number };
   brief: Record<string, unknown>;
   candidate: {
@@ -51,6 +52,7 @@ export interface HarnessPolicyInput {
     workspaceId: string;
     revision: number;
     status: 'current' | 'expired' | 'withdrawn';
+    expiresAt?: string | null;
   }>;
   rightsRefs: Array<{
     assetId: string;
@@ -261,7 +263,13 @@ function priceBenefitFreshnessGate(
     if (!claim.sourceRef) return false;
     const source = sourceById.get(claim.sourceRef);
     if (!source) return false;
-    return source?.status !== 'current';
+    return (
+      source.status !== 'current' ||
+      (source.expiresAt !== undefined &&
+        source.expiresAt !== null &&
+        input.evaluatedAt !== undefined &&
+        Date.parse(source.expiresAt) <= Date.parse(input.evaluatedAt))
+    );
   });
   return stale
     ? failure(

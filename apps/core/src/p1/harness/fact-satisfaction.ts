@@ -158,7 +158,7 @@ export async function assessRecipeFactSatisfaction(
             field: 'store_facts',
             reason: '补充当前任务所需的权威事实',
           },
-          unattended: 'hold',
+          unattended: 'continue',
           scope: 'current_task',
         }),
         ledgerIntake: {
@@ -178,6 +178,10 @@ export async function assessRecipeFactSatisfaction(
     return conservativeGuidance(assessment.missingFactTypes);
   }
 }
+
+export type RecipeFactSatisfaction = Awaited<
+  ReturnType<typeof assessRecipeFactSatisfaction>
+>;
 
 async function eligibleFacts(
   bundle: ContextBundle,

@@ -55,6 +55,8 @@ export const Routes = {
   // Admin routes
   Admin: '/admin',
   AdminCapabilities: '/admin/capabilities',
+  AdminRecipeStudio: '/admin/recipe-studio',
+  AdminSkills: '/admin/skills',
   AdminCloudflare: '/admin/cloudflare',
   AdminSupply: '/admin/supply',
   AdminModels: '/admin/models',

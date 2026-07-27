@@ -53,6 +53,10 @@ import type { OperationContext } from './p1/operations/types.js';
 import type { HarnessApplicationService } from './p1/harness/application-service.js';
 import { composerSubmissionBodySchema } from './p1/execution-spine/creation-execution-snapshot.js';
 import {
+  composerDestinationMappingRequestSchema,
+  type ComposerDestinationMappingPort,
+} from './p1/execution-spine/composer-destination-mapper.js';
+import {
   CreationSubmissionConflictError,
   type CreationSubmissionCoordinator,
 } from './p1/execution-spine/submission-coordinator.js';
@@ -93,6 +97,7 @@ interface CoreServerDependencies {
     OperationsApplicationService,
     'getCreativeWorkbench' | 'startCreativeCopyStream'
   >;
+  composerDestinationMapper?: ComposerDestinationMappingPort;
   composerSubmission?: {
     coordinator: Pick<CreationSubmissionCoordinator, 'submit'>;
   };
@@ -915,6 +920,7 @@ export function createCoreServer({
   p1ApplicationService,
   integrationService,
   operationsService,
+  composerDestinationMapper,
   composerSubmission,
   contentPackageReader,
   harnessService,
@@ -1193,6 +1199,50 @@ export function createCoreServer({
               error instanceof Error
                 ? error.message
                 : 'Pending actions are unavailable.',
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
+
+    const composerDestinationWorkspaceId = workspaceRoute(
+      url.pathname,
+      'p1/composer/destination-map'
+    );
+    if (composerDestinationMapper && composerDestinationWorkspaceId) {
+      if (request.method !== 'POST') {
+        sendError(
+          response,
+          405,
+          {
+            code: 'METHOD_NOT_ALLOWED',
+            message: 'Composer destination mapping requires POST.',
+          },
+          requestCorrelationId
+        );
+        return;
+      }
+      try {
+        const context = p1Identity(
+          request,
+          composerDestinationWorkspaceId,
+          requestCorrelationId
+        );
+        authorizeContentCreation(context);
+        const body = composerDestinationMappingRequestSchema.parse(
+          await readJson(request)
+        );
+        const result = await composerDestinationMapper.map(body);
+        sendJson(response, 200, result, requestCorrelationId);
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'INVALID_COMPOSER_DESTINATION',
+            message: 'Composer destination mapping input is invalid.',
+            status: 400,
           },
           requestCorrelationId
         );
@@ -1534,11 +1584,11 @@ export function createCoreServer({
         const context = p1Identity(request, workspaceId, requestCorrelationId);
         authorizeContentCreation(context);
         if (request.method === 'GET') {
-          const question = await harnessService.readPendingDecision(
+          const snapshot = await harnessService.readPendingDecision(
             workspaceId,
             taskId
           );
-          sendJson(response, 200, { question }, requestCorrelationId);
+          sendJson(response, 200, snapshot, requestCorrelationId);
         } else {
           const decision = structuredDecisionInputSchema.parse(
             await readJson(request)

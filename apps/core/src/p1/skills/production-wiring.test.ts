@@ -26,3 +26,22 @@ test('Skill production runtime owns migration, command registration, and narrow 
   assert.doesNotMatch(stagePorts, /PostgresSkillRepository|new Pool|\bPool\b/u);
   assert.match(stagePorts, /HarnessSkillInstructionResolverPort/u);
 });
+
+test('production resolver forwards planner and user selections instead of forcing both sets empty', async () => {
+  const runtime = await source('./runtime.ts');
+
+  assert.match(runtime, /plannerSelectedSkillRefs\?: readonly string\[\]/u);
+  assert.match(runtime, /userSelectedSkillRefs\?: readonly string\[\]/u);
+  assert.match(
+    runtime,
+    /plannerSelectedSkillRefs:\s*\[\s*\.\.\.\(input\.plannerSelectedSkillRefs \?\? \[\]\),?\s*\]/u,
+  );
+  assert.match(
+    runtime,
+    /userSelectedSkillRefs: \[\.\.\.\(input\.userSelectedSkillRefs \?\? \[\]\)\]/u,
+  );
+  assert.doesNotMatch(
+    runtime,
+    /plannerSelectedSkillRefs: \[\],\s*userSelectedSkillRefs: \[\],/u,
+  );
+});

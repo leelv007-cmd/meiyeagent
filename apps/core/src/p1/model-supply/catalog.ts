@@ -417,6 +417,7 @@ export function createDefaultCatalogModels(): CatalogModel[] {
       operations: ['copy.generate', 'copy.adapt', 'text.respond'],
       capabilities: ['copy.generate', 'copy.adapt', 'text.respond'],
       qualityRank: 95,
+      selectionPolicy: 'manual_only',
     },
     {
       id: 'llm-anthropic',

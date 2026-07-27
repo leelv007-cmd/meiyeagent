@@ -357,6 +357,7 @@ export async function compileExecutionBrief(
     unitKind: ExecutionUnitKind;
     declaration: IntentDeclaration;
     bundle: z.infer<typeof briefContextBundleSchema>;
+    allowedFactRefs?: readonly string[];
     executionSnapshot?: CreationExecutionSnapshot;
     prompt?: HarnessFrozenPrompt;
     skillInstructions?: readonly ResolvedSkillInstruction[];
@@ -364,7 +365,10 @@ export async function compileExecutionBrief(
   runner: StructuredNodeRunner,
   metrics?: StructuredNodeMetrics
 ): Promise<ExecutionBrief> {
-  const bundle = briefContextBundleSchema.parse(input.bundle);
+  const bundle = briefBundleWithAuthorizedFacts(
+    briefContextBundleSchema.parse(input.bundle),
+    input.allowedFactRefs,
+  );
   const result = await runMeasured<ExecutionBrief>(
     {
       effectIdempotencyKey: `wf:${input.workflowId}:s3:${input.unitId}:0`,
@@ -393,9 +397,51 @@ export async function compileExecutionBrief(
     metrics,
     briefCompletenessShapes[input.unitKind]
   );
-  return briefSchemaByKind[input.unitKind].parse(
+  const brief = briefSchemaByKind[input.unitKind].parse(
     result.output
   ) as ExecutionBrief;
+  if (
+    brief.kind === 'copy' &&
+    input.allowedFactRefs &&
+    brief.factRefs.some(
+      (reference) => !input.allowedFactRefs?.includes(reference),
+    )
+  ) {
+    throw new Error(
+      'The copy brief referenced a fact outside the authorized satisfaction result.',
+    );
+  }
+  return brief;
+}
+
+function briefBundleWithAuthorizedFacts(
+  bundle: BriefContextBundle,
+  allowedFactRefs: readonly string[] | undefined,
+): BriefContextBundle {
+  if (!allowedFactRefs) return bundle;
+  const allowed = new Set(allowedFactRefs);
+  const storeFactsAssets = Object.fromEntries(
+    Object.entries(bundle.dimensions.store_facts_assets).filter(
+      ([, contribution]) =>
+        contribution.factSnapshot === undefined ||
+        allowed.has(contribution.sourceRef),
+    ),
+  );
+  const retainedFactIds = new Set(
+    Object.values(storeFactsAssets)
+      .map((contribution) => contribution.factSnapshot?.factId)
+      .filter((factId): factId is string => factId !== undefined),
+  );
+  return {
+    ...bundle,
+    referencedFactRevisions: bundle.referencedFactRevisions.filter(
+      ({ factId }) => retainedFactIds.has(factId),
+    ),
+    dimensions: {
+      ...bundle.dimensions,
+      store_facts_assets: storeFactsAssets,
+    },
+  };
 }
 
 function briefExecutionContract(snapshot: CreationExecutionSnapshot) {
