@@ -149,8 +149,102 @@ test('DBOS event reader preserves revision conflict details in failed state', as
           currentRevision: 2,
         },
       },
+      // P0-2: the same frame that carries the failure carries what the merchant
+      // is told about it, so the copy cannot die in the transport layer.
+      merchantReport: {
+        kind: 'failure',
+        category: 'consistency',
+        message: '这个作品刚才被更新过，这次的结果就没有再保存下来。',
+        nextStep: '按现在的内容再生成一次就好。',
+        actions: ['retry'],
+        quotaRefunded: false,
+      },
     },
   );
+});
+
+test('a refunded media failure states the merchant reason and the refund', async () => {
+  const reader = new HarnessDbosWorkflowEventReader(
+    {
+      async taskBelongsToWorkspace() {
+        return true;
+      },
+      async workflowRuntimeId(workspaceId, workflowId) {
+        return harnessRuntimeId(workspaceId, workflowId);
+      },
+      async readTerminalFailure() {
+        return {
+          code: 'MEDIA_GENERATION_FAILED',
+          merchantMessage:
+            '这次图片没有顺利生成。你可以重新生成，或换一张参考素材再试。',
+          quotaRefunded: true,
+        };
+      },
+    },
+    {
+      async *readStream() {},
+      async getResult() {
+        throw new Error('workflow failed');
+      },
+    },
+    () => '2026-07-18T09:00:00.000Z',
+  );
+
+  const state = await reader.readState(
+    'workspace-1',
+    'task-1',
+    new AbortController().signal,
+  );
+
+  assert.equal(state.status, 'failed');
+  assert.equal(state.merchantReport?.category, 'media_generation');
+  assert.equal(state.merchantReport?.quotaRefunded, true);
+  assert.match(state.merchantReport?.message ?? '', /图片没有顺利生成/u);
+  assert.ok(state.merchantReport?.actions.includes('retry'));
+});
+
+test('a partial delivery rides the terminal success frame', async () => {
+  const reader = new HarnessDbosWorkflowEventReader(
+    {
+      async taskBelongsToWorkspace() {
+        return true;
+      },
+      async workflowRuntimeId(workspaceId, workflowId) {
+        return harnessRuntimeId(workspaceId, workflowId);
+      },
+      async readTerminalFailure() {
+        return null;
+      },
+    },
+    {
+      async *readStream() {},
+      async getResult() {
+        return {
+          delivery: { packageId: 'package-1', versionId: 'v1', revision: 3 },
+          merchantReport: {
+            kind: 'partial',
+            category: 'consistency',
+            message: '整套图文已经生成好了；其中 1 页的画面和文字还没完全对上。',
+            nextStep: '可以先用已经对好的页面，稍后再让我重做那一页。',
+            actions: ['review_partial', 'retry'],
+            quotaRefunded: false,
+          },
+        };
+      },
+    },
+    () => '2026-07-18T09:00:00.000Z',
+  );
+
+  const state = await reader.readState(
+    'workspace-1',
+    'task-1',
+    new AbortController().signal,
+  );
+
+  assert.equal(state.status, 'success');
+  assert.equal(state.sourceRevision, 3);
+  assert.equal(state.merchantReport?.kind, 'partial');
+  assert.ok(state.merchantReport?.actions.includes('review_partial'));
 });
 
 test('DBOS event reader exposes hold expiry as success without delivery', async () => {

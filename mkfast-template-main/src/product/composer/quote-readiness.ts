@@ -23,6 +23,7 @@ export type ComposerQuoteReadinessState =
   | 'no_recipe'
   | 'no_model'
   | 'invalid_submission'
+  | 'settling'
   | 'requesting'
   | 'failed'
   | 'ready';
@@ -44,6 +45,12 @@ export interface ComposerQuoteReadinessInput {
   preferences: ComposerQueryPhase;
   /** `disabled` when the quote input never formed, so the query never fires. */
   quote: ComposerQueryPhase | 'disabled';
+  /**
+   * The billable payload is still moving, so the request is deliberately held
+   * back. Not the same as in flight — nothing has been sent yet, and saying
+   * 正在算 here would be a request state the merchant cannot verify.
+   */
+  settling: boolean;
   hasRecipe: boolean;
   hasModel: boolean;
   /** A destination the merchant picked, or the one the recipe carries. */
@@ -60,6 +67,7 @@ const MESSAGES = {
   needs_destination: '先选一个要发去的平台，才能算这次花多少。',
   needs_more: '还差一点信息才能算这次花多少，补齐后会自动更新。',
   requesting: '正在算这次大概花多少…',
+  settling: '等你改完这句就去算这次花多少。',
 } as const;
 
 /**
@@ -111,6 +119,13 @@ export function resolveComposerQuoteReadiness(
         : MESSAGES.needs_destination,
       retry: null,
     };
+  }
+  if (input.settling) {
+    // Held, not in flight. Every other waiting state here is something the
+    // merchant is waiting *on*; this one is waiting *for them*, and it ends by
+    // itself the moment they stop typing — so no retry, and above all not the
+    // 正在算 line, which would claim a request that was never sent.
+    return { state: 'settling', message: MESSAGES.settling, retry: null };
   }
   // No retry here on purpose: the request is genuinely in flight and is
   // deadline-bounded (`COMPOSER_QUOTE_TIMEOUT_MS`), so a stuck one becomes

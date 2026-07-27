@@ -15,7 +15,9 @@
 
 import type {
   ContentPackageRevisionDelivery,
+  HarnessActiveTask,
   HarnessStage,
+  MerchantReport,
   WorkflowProgressEnvelope,
 } from '@meiye/contracts';
 
@@ -97,6 +99,23 @@ export type ComposerTerminalTurn = {
   message: string;
 };
 
+/**
+ * 申报卡 (P0-2 / D-096 / D-116). A run that failed, or that delivered only part
+ * of what it promised, says so in the conversation — 白话原因, 下一步动作, and a
+ * way back in. Before this turn existed a failure rendered as nothing at all and
+ * the merchant was left with a generic toast.
+ *
+ * `report` comes from Core on the terminal frame; the browser owns only how it
+ * is presented, never what it says.
+ */
+export type ComposerReportTurn = {
+  kind: 'report';
+  id: string;
+  /** The run this 申报 is about; '' only for a report with no task bound. */
+  taskId: string;
+  report: MerchantReport;
+};
+
 export type ComposerTurn =
   | ComposerMerchantTurn
   | ComposerRouteNoticeTurn
@@ -104,6 +123,7 @@ export type ComposerTurn =
   | ComposerQuestionTurn
   | ComposerCandidateTurn
   | ComposerDeliveryTurn
+  | ComposerReportTurn
   | ComposerTerminalTurn;
 
 export type ComposerHarnessTerminal = {
@@ -145,6 +165,44 @@ export function createComposerSession(sessionId: string): ComposerSession {
   };
 }
 
+/**
+ * Move the container onto a new attempt while keeping what was said.
+ *
+ * 报价 and Brief context are idempotent on the session id, so a second attempt
+ * needs a new one. Everything the previous run owned goes with it: its task
+ * handle, its progress cursor, its 任务总结 and its 申报. The handle in
+ * particular is what the event stream keys on — leaving it behind would let the
+ * finished run keep writing into a session that is no longer its own.
+ *
+ * What survives is the conversation: the merchant's sentences stay on screen,
+ * because this is the same conversation continuing, not a new one.
+ */
+export function rebindComposerSession(
+  session: ComposerSession,
+  sessionId: string
+): ComposerSession {
+  if (session.sessionId === sessionId) return session;
+  return {
+    ...session,
+    sessionId,
+    phase: 'idle',
+    task: null,
+    progressSequence: -1,
+    deliveryStatement: null,
+    turns: session.turns.filter(
+      // Turns that cannot function once the handle is gone: the candidate area
+      // has no stream to fill it, the question card has nowhere to post an
+      // answer, and the 申报 describes a run this container no longer holds.
+      // 交付卡 stays — a partial delivery also offers 再生成一次, and throwing
+      // away the part that did land would undo the honesty it was built for.
+      (turn) =>
+        turn.kind !== 'report' &&
+        turn.kind !== 'candidate' &&
+        turn.kind !== 'question'
+    ),
+  };
+}
+
 /** The merchant's sentence opens the run; the send button is the only click. */
 export function openComposerTurn(
   session: ComposerSession,
@@ -172,8 +230,14 @@ export function bindComposerTask(
     ...session,
     phase: 'running',
     task,
+    // Everything below is scoped to the run that produced it, and this is a
+    // different run. The new workflow numbers its frames from zero, so keeping
+    // the previous cursor would silently drop its entire progress stream; the
+    // previous 任务总结 and 申报 likewise describe work this run has not done.
+    progressSequence: -1,
+    deliveryStatement: null,
     turns: [
-      ...session.turns,
+      ...session.turns.filter((turn) => turn.kind !== 'report'),
       {
         kind: 'candidate',
         id: `candidate:${task.taskId}`,
@@ -283,9 +347,24 @@ export function applyComposerWorkflowState(
   session: ComposerSession,
   status: 'waiting' | 'running' | 'suspended' | 'success' | 'failed',
   delivery?: ContentPackageRevisionDelivery,
-  terminal?: ComposerHarnessTerminal
+  terminal?: ComposerHarnessTerminal,
+  report?: MerchantReport
 ): ComposerSession {
-  if (status === 'failed') return { ...session, phase: 'failed' };
+  if (status === 'failed') {
+    // A failed run leaves the transcript standing and adds the 申报 to it. The
+    // candidate area goes: streaming a draft that will never be delivered is
+    // the shell of a result the merchant cannot use.
+    return withReportTurn(
+      {
+        ...session,
+        phase: 'failed',
+        turns: session.turns.filter(
+          (turn) => turn.kind !== 'candidate' && turn.kind !== 'question'
+        ),
+      },
+      report
+    );
+  }
   if (status !== 'success') return session;
   const task = session.task;
   if (!task) return session;
@@ -317,29 +396,64 @@ export function applyComposerWorkflowState(
     // A late state frame may be the one that carries the revision — bind it,
     // but never downgrade a revision already confirmed.
     if (!revision || existing.revision) {
-      return { ...session, phase: 'delivered' };
+      return withReportTurn({ ...session, phase: 'delivered' }, report);
     }
-    return {
+    return withReportTurn(
+      {
+        ...session,
+        phase: 'delivered',
+        turns: session.turns.map((turn) =>
+          turn.kind === 'delivery' ? { ...turn, revision } : turn
+        ),
+      },
+      report
+    );
+  }
+  return withReportTurn(
+    {
       ...session,
       phase: 'delivered',
-      turns: session.turns.map((turn) =>
-        turn.kind === 'delivery' ? { ...turn, revision } : turn
-      ),
-    };
+      turns: [
+        ...session.turns.filter((turn) => turn.kind !== 'question'),
+        {
+          kind: 'delivery',
+          id: `delivery:${task.workId}`,
+          workId: task.workId,
+          taskId: task.taskId,
+          packageId: task.packageId,
+          revision,
+        },
+      ],
+    },
+    report
+  );
+}
+
+/**
+ * Append the 申报 exactly once *per run*. Replay hands the same terminal frame
+ * back on every reconnect, and a transcript that grows a second failure card
+ * each time the browser reconnects would be its own kind of dishonesty — but
+ * the run is part of that identity. Two attempts that fail the same way are two
+ * failures, and showing the first one's report over the second's is the same
+ * lie in the other direction.
+ */
+function withReportTurn(
+  session: ComposerSession,
+  report: MerchantReport | undefined
+): ComposerSession {
+  if (!report) return session;
+  const taskId = session.task?.taskId ?? '';
+  const existing = session.turns.find(
+    (turn): turn is ComposerReportTurn => turn.kind === 'report'
+  );
+  if (existing?.taskId === taskId && existing.report.kind === report.kind) {
+    return session;
   }
   return {
     ...session,
-    phase: 'delivered',
     turns: [
-      ...session.turns.filter((turn) => turn.kind !== 'question'),
-      {
-        kind: 'delivery',
-        id: `delivery:${task.workId}`,
-        workId: task.workId,
-        taskId: task.taskId,
-        packageId: task.packageId,
-        revision,
-      },
+      ...session.turns.filter((turn) => turn.kind !== 'report'),
+      { kind: 'report', id: `report:${taskId}:${report.kind}`, report, taskId },
     ],
   };
 }
@@ -349,10 +463,15 @@ export function failComposerSession(session: ComposerSession): ComposerSession {
   return { ...session, phase: 'failed' };
 }
 
+/**
+ * The sentence the current run is about. A conversation that survived a failure
+ * carries more than one merchant turn (their first ask, then the rewrite), and
+ * the handle this pairs with — persisted or restored — belongs to the latest.
+ */
 export function composerSessionMerchantText(session: ComposerSession): string {
-  const turn = session.turns.find(
-    (item): item is ComposerMerchantTurn => item.kind === 'merchant'
-  );
+  const turn = session.turns
+    .filter((item): item is ComposerMerchantTurn => item.kind === 'merchant')
+    .at(-1);
   return turn?.text ?? '';
 }
 
@@ -403,6 +522,27 @@ function parseTask(value: unknown): ComposerSessionTask | null {
     return null;
   }
   return { taskId, workId, packageId };
+}
+
+/**
+ * 时间桥 (D-145). The same rebuild as the sessionStorage restore, but from the
+ * server's own list of runs still in flight — which is why closing the tab is no
+ * longer a way to lose the conversation. The browser handle was never the truth;
+ * this makes that literal.
+ */
+export function restoreComposerSessionFromActiveTask(input: {
+  sessionId: string;
+  task: HarnessActiveTask;
+}): ComposerSession {
+  const opened = openComposerTurn(
+    createComposerSession(input.sessionId),
+    input.task.merchantText
+  );
+  return bindComposerTask(opened, {
+    taskId: input.task.taskId,
+    workId: input.task.workId,
+    packageId: input.task.packageId,
+  });
 }
 
 export type RestoreComposerSessionResult =

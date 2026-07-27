@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  HarnessMediaScopeError,
   HarnessSnapshotDecisionError,
   runHarnessWorkflow,
   type HarnessMediaSelectionResult,
@@ -11,6 +12,7 @@ import {
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
+import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import { buildSemanticDecisionResumption } from './semantic-decision-resumption.js';
@@ -556,7 +558,21 @@ test('image-text note refuses to replace a selected style after context recompil
         async recordTrace() {},
       },
     ),
-    /你刚选的图文方向已不在当前配置中，请重新选择后再继续/u,
+    // The merchant sentence has to be on `merchantMessage`, not in the Error
+    // message: `normalizeHarnessTerminalFailure` forwards only the former, so
+    // copy written into the message never reaches the 申报卡 (P0-2).
+    (error: unknown) => {
+      assert.ok(error instanceof HarnessMediaScopeError);
+      assert.match(
+        error.merchantMessage ?? '',
+        /你刚选的图文方向已不在当前配置中，请重新选择后再继续/u,
+      );
+      assert.match(
+        normalizeHarnessTerminalFailure(error).merchantMessage as string,
+        /你刚选的图文方向已不在当前配置中，请重新选择后再继续/u,
+      );
+      return true;
+    },
   );
 });
 

@@ -4,6 +4,7 @@ import {
   workflowStateFrameSchema,
   workflowTokenFrameSchema,
   type ContentPackageRevisionDelivery,
+  type MerchantReport,
   type WorkflowProgressEnvelope,
   type WorkflowProgressFrame,
   type WorkflowStateEnvelope,
@@ -194,6 +195,9 @@ export function useWorkflowEventStream(input: {
   const [harnessCancellation, setHarnessCancellation] = useState<
     HarnessCancellationOutcome | undefined
   >();
+  const [merchantReport, setMerchantReport] = useState<
+    MerchantReport | undefined
+  >();
   const [transportStatus, setTransportStatus] =
     useState<WorkflowEventTransportStatus>('idle');
   const [activeWorkflowId, setActiveWorkflowId] = useState('');
@@ -205,6 +209,7 @@ export function useWorkflowEventStream(input: {
     setWorkflowState(undefined);
     setHarnessDelivery(undefined);
     setHarnessCancellation(undefined);
+    setMerchantReport(undefined);
     if (!input.enabled || !input.workflowId) {
       setActiveWorkflowId('');
       setTransportStatus('idle');
@@ -244,6 +249,11 @@ export function useWorkflowEventStream(input: {
           return;
         }
         setWorkflowState(frame.data.status);
+        // 失败/partial 申报 rides the same terminal frame as the status, so the
+        // conversation can state what happened without a second fetch (P0-2).
+        if (frame.data.merchantReport) {
+          setMerchantReport(frame.data.merchantReport);
+        }
         const delivery = harnessDeliveryFromState(frame.data);
         if (delivery) setHarnessDelivery(delivery);
         const cancellation = harnessCancellationFromState(frame.data);
@@ -305,6 +315,10 @@ export function useWorkflowEventStream(input: {
     harnessCancellation: matchesInput ? harnessCancellation : undefined,
     harnessDelivery: matchesInput ? harnessDelivery : undefined,
     latestProgress: matchesInput ? latestProgress : undefined,
+    // Gated like every other field: a 申报 belongs to the run it came from, and
+    // handing it to a surface now watching a different workflow would state one
+    // run's failure over another's (H01).
+    merchantReport: matchesInput ? merchantReport : undefined,
     transportStatus: matchesInput ? transportStatus : 'idle',
     workflowState: matchesInput ? workflowState : undefined,
   };

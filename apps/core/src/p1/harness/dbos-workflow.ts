@@ -320,26 +320,39 @@ export function registerHarnessDbosWorkflow(
           request,
           workflowId,
         );
+        // Whether the reserved 额度 came back is part of what the merchant is
+        // told (D-096 申报). It is known here and nowhere downstream, so it
+        // travels with the persisted failure — and it is the refund's own
+        // result, never the mere fact that a refund was attempted: a scheduled
+        // compensation has not given anything back yet.
         if (billing && settlement) {
           await failHarnessWorkflowPreservingExecutionError({
             billing,
             input: settlement,
             error,
             runStep: dbosBillingStep,
-            recordTerminalFailure: () =>
+            recordTerminalFailure: (quotaRefunded) =>
               persistence.recordTerminalFailure({
                 workspaceId: request.workspaceId,
                 workflowId,
-                failure: normalizeHarnessTerminalFailure(error),
+                failure: {
+                  ...normalizeHarnessTerminalFailure(error),
+                  quotaRefunded,
+                },
               }),
           });
         }
+        // Reached only when there was no reservation to settle, so there is
+        // nothing to give back either.
         await DBOS.runStep(
           () =>
             persistence.recordTerminalFailure({
               workspaceId: request.workspaceId,
               workflowId,
-              failure: normalizeHarnessTerminalFailure(error),
+              failure: {
+                ...normalizeHarnessTerminalFailure(error),
+                quotaRefunded: false,
+              },
             }),
           { name: 'persist-terminal-failure' },
         );
@@ -392,15 +405,22 @@ export async function commitHarnessBillingOrSchedule(input: {
   }
 }
 
+/**
+ * What actually happened to the reservation. `scheduled` and `unavailable` both
+ * mean the 额度 is not back yet — the merchant must not be told it is.
+ */
+export type HarnessRefundOutcome = 'refunded' | 'scheduled' | 'unavailable';
+
 export async function refundHarnessBillingPreservingFailure(input: {
   billing: HarnessBillingSettlementPort;
   input: HarnessBillingSettlementInput;
   runStep: BillingRunStep;
-}) {
+}): Promise<HarnessRefundOutcome> {
   try {
     await input.runStep('refund-product-usage', () =>
       input.billing.refund(input.input),
     );
+    return 'refunded';
   } catch {
     try {
       await input.runStep('schedule-product-usage-refund', () =>
@@ -410,9 +430,11 @@ export async function refundHarnessBillingPreservingFailure(input: {
           ...input.input,
         }),
       );
+      return 'scheduled';
     } catch {
       // Terminal failure persistence and the original execution error take
       // precedence when the compensation store is also unavailable.
+      return 'unavailable';
     }
   }
 }
@@ -448,12 +470,15 @@ export async function failHarnessWorkflowPreservingExecutionError(input: {
   input: HarnessBillingSettlementInput;
   error: unknown;
   runStep: BillingRunStep;
-  recordTerminalFailure: () => Promise<void>;
+  /**
+   * Told whether the reservation is genuinely back, not whether a refund was
+   * attempted — the 申报卡 quotes this to the merchant.
+   */
+  recordTerminalFailure: (quotaRefunded: boolean) => Promise<void>;
 }): Promise<never> {
-  await refundHarnessBillingPreservingFailure(input);
-  await input.runStep(
-    'persist-terminal-failure',
-    input.recordTerminalFailure,
+  const outcome = await refundHarnessBillingPreservingFailure(input);
+  await input.runStep('persist-terminal-failure', () =>
+    input.recordTerminalFailure(outcome === 'refunded'),
   );
   throw input.error;
 }

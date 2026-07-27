@@ -24,6 +24,7 @@ function settled(
     hasDestination: true,
     hasSignedSubmission: true,
     hasQuoteView: false,
+    settling: false,
     ...overrides,
   };
 }

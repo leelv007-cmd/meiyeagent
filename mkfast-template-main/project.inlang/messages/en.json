@@ -622,6 +622,7 @@
   "async_task_elapsed_total_less_than_minute": "Total time under 1 minute",
   "async_task_elapsed_total_minutes": "Total time about {minutes} minutes",
   "async_task_empty": "No running or newly completed image or video tasks.",
+  "async_task_kind_creation": "Creation task",
   "async_task_kind_image": "Image task",
   "async_task_kind_video": "Video task",
   "async_task_load_error": "Tasks are temporarily unavailable. Try again later.",

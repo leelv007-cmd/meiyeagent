@@ -622,6 +622,7 @@
   "async_task_elapsed_total_less_than_minute": "总用时不足 1 分钟",
   "async_task_elapsed_total_minutes": "总用时约 {minutes} 分钟",
   "async_task_empty": "暂无运行中或新完成的图片、视频任务。",
+  "async_task_kind_creation": "创作任务",
   "async_task_kind_image": "图片任务",
   "async_task_kind_video": "视频任务",
   "async_task_load_error": "任务暂时无法读取，请稍后重试。",

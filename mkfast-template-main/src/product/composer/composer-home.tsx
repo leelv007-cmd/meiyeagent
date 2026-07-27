@@ -74,6 +74,7 @@ import {
   type CreativeGroundingRequirement,
 } from '@/product/creative-brief-editor';
 import {
+  readActiveHarnessTasks,
   readPendingHarnessDecision,
   submitHarnessDecision,
 } from '@/product/harness-client';
@@ -108,6 +109,7 @@ import {
   bindQuoteView,
   canSubmit,
   createComposerLensState,
+  reopenComposer,
   selectLens,
   submitComposer,
   updateSettings,
@@ -197,13 +199,17 @@ import {
   applyComposerWorkflowState,
   bindComposerTask,
   COMPOSER_SESSION_STORAGE_KEY,
+  composerSessionMerchantText,
   createComposerSession,
   failComposerSession,
   openComposerTurn,
+  rebindComposerSession,
   restoreComposerSession,
+  restoreComposerSessionFromActiveTask,
   serializeComposerSession,
   type ComposerSession,
 } from './composer-session';
+import type { ComposerRecoveryInput } from './composer-report-card';
 
 /** Which Result Center panel each 成品交付卡 action opens (T31 / #225). */
 const DELIVERY_ACTION_PANELS: Record<
@@ -314,6 +320,18 @@ function sameBriefRevisions(
   );
 }
 
+/**
+ * One id per run. It keys the 报价 and the Brief context, both of which are
+ * idempotent server-side — so a second attempt that reuses it is refused as a
+ * key reused with a different payload, and the composer sits there re-quoting
+ * into 409s. Every fresh attempt therefore gets a fresh id.
+ */
+function newComposerSessionId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `composer-${Date.now()}`;
+}
+
 export type ComposerHomeProps = {
   /** Optional viewport override for tests. */
   viewportWidth?: number;
@@ -323,6 +341,8 @@ export type ComposerHomeProps = {
   initialSurfaceRevisionId?: string;
   /** T33: identity handed over by the identity page for this session only. */
   initialSessionIdentityId?: string;
+  /** D-145 时间桥深链: reopen this in-flight run rather than the newest one. */
+  initialTaskId?: string;
   /** Injectable for tests; browser sessionStorage is used by default. */
   sessionStore?: Storage;
 };
@@ -333,6 +353,7 @@ export function ComposerHome({
   initialRecipeRevisionId,
   initialSessionIdentityId,
   initialSurfaceRevisionId,
+  initialTaskId,
   sessionStore,
 }: ComposerHomeProps = {}) {
   const isMobile = useIsMobile();
@@ -413,11 +434,13 @@ export function ComposerHome({
   const sourceFactsRef = useRef(new Map<string, ConfirmedAssetFacts>());
   const sourceRevisionRef = useRef(new Map<string, string>());
   const catalogSelectionAppliedRef = useRef(false);
-  const sessionIdRef = useRef(
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `composer-${Date.now()}`
-  );
+  const sessionIdRef = useRef(newComposerSessionId());
+  /**
+   * Bumped whenever `sessionIdRef` is replaced. A ref is not reactive, so
+   * without this the 报价 memo below would keep quoting under the id of the run
+   * that already failed.
+   */
+  const [sessionEpoch, setSessionEpoch] = useState(0);
   const briefContextRevisionRef = useRef<number | null>(null);
   const briefInputRef = useRef<BriefTriggerInput | null>(null);
   const [lensState, setLensState] = useState<ComposerLensState>(() =>
@@ -444,6 +467,9 @@ export function ComposerHome({
   const [destinationMapPending, setDestinationMapPending] = useState(false);
   const destinationMapPendingRef = useRef(false);
   const destinationAutoSubmitIntentRef = useRef<string | null>(null);
+  // 「再生成一次」thaws the lens first, so the actual submit has to wait for the
+  // reopened state to land (attemptSubmit reads lensState from the closure).
+  const [retryAfterReport, setRetryAfterReport] = useState(false);
   const [destinationPreflight, setDestinationPreflight] =
     useState<ComposerDestinationPreflightState | null>(null);
   const [sessionIdentityId, setSessionIdentityId] = useState<
@@ -766,13 +792,44 @@ export function ComposerHome({
   }, [
     lensId,
     selectedModel,
+    sessionEpoch,
     signedSubmission,
     submissionAspectRatio,
     submissionDurationSeconds,
     submissionQuantity,
   ]);
+  /**
+   * Quote identity is a digest of the whole billable payload, so every distinct
+   * payload is its own quote — and quoting on each keystroke would leave a
+   * trail of priced-but-never-submitted quotes behind the merchant's typing.
+   * The window holds the request until the sentence stops moving, and asks once
+   * for the version they actually stopped on.
+   *
+   * Held is not in flight: while this is open the composer says so in its own
+   * words (`settling`), and the merchant can end it by pressing send.
+   */
+  const quoteId = quoteInput?.quoteId ?? null;
+  const [settledQuoteId, setSettledQuoteId] = useState<string | null>(null);
+  const quoteSettling = quoteId !== null && settledQuoteId !== quoteId;
+  /**
+   * The sentence the merchant pressed send on. Pressing inside the window ends
+   * it *and* stands as the submit they asked for, so the run starts on the
+   * price that sentence produces — otherwise the first press would only change
+   * a status line and they would have to press again to be heard.
+   */
+  const armedQuoteIdRef = useRef<string | null>(null);
+  const flushQuoteSettle = () => {
+    if (quoteId !== null && settledQuoteId !== quoteId) {
+      setSettledQuoteId(quoteId);
+    }
+  };
+  useEffect(() => {
+    if (quoteId === null) return;
+    const timer = setTimeout(() => setSettledQuoteId(quoteId), 350);
+    return () => clearTimeout(timer);
+  }, [quoteId]);
   const quoteQuery = useQuery({
-    enabled: quoteInput != null,
+    enabled: quoteInput != null && settledQuoteId === quoteId,
     queryKey: p1QueryKeys.request('product-billing', 'quote', quoteInput ?? {}),
     queryFn: ({ signal }) => {
       if (!quoteInput) throw new Error('Composer quote input is required.');
@@ -811,6 +868,7 @@ export function ComposerHome({
     catalog: composerQueryPhase(catalogQuery),
     preferences: composerQueryPhase(preferencesQuery),
     quote: quoteInput == null ? 'disabled' : composerQueryPhase(quoteQuery),
+    settling: quoteSettling,
     hasRecipe: submissionRecipe != null,
     hasModel: selectedModel != null,
     hasDestination: destination != null,
@@ -956,7 +1014,18 @@ export function ComposerHome({
       quoteQuery.data,
       lensState.draft.settings.quantity ?? 1
     );
-    if (lensState.draft.quoteRevisionId === nextView.revision) return;
+    // Revision alone is not identity. The server fingerprints a revision by the
+    // priced facts, so 再生成一次 — same sentence, same model, new session —
+    // comes back on the revision already bound while the quote *id* has moved.
+    // The gate compares ids (`currentComposerQuoteView`), so a bind that only
+    // watches revisions would leave the failed run's id bound forever and the
+    // send button disabled with nothing on screen to explain it (#236 W03).
+    if (
+      lensState.draft.quoteRevisionId === nextView.revision &&
+      lensState.draft.quoteView?.quoteId === nextView.quoteId
+    ) {
+      return;
+    }
     setLensState((current) => bindQuoteView(current, nextView));
   }, [quoteQuery.data, lensState]);
 
@@ -980,6 +1049,12 @@ export function ComposerHome({
       }
       return;
     }
+    // A deep link names the run the merchant asked for. The tab's own handle is
+    // just whatever it held last, so it must not open ahead of that ask — the
+    // server restore below binds the named run instead.
+    if (initialTaskId && restored.session.task?.taskId !== initialTaskId) {
+      return;
+    }
     sessionIdRef.current = restored.session.sessionId;
     setSession(restored.session);
     setLensState((current) =>
@@ -998,9 +1073,64 @@ export function ComposerHome({
       session,
       new Date().toISOString()
     );
-    if (!persisted) return;
+    if (!persisted) {
+      // Nothing to persist means the tab holds no run — after 改一下要求, say.
+      // Leaving the old handle in storage would let the next reload restore the
+      // run the merchant just walked away from, remount its stream and poll,
+      // and put its 申报 back on screen (#236 轮 5 P1-①). The handle is the
+      // tab's memory of a run it holds; when it holds none, it remembers none.
+      store.removeItem(COMPOSER_SESSION_STORAGE_KEY);
+      return;
+    }
     store.setItem(COMPOSER_SESSION_STORAGE_KEY, JSON.stringify(persisted));
   }, [session, store]);
+
+  /**
+   * 时间桥拉回 (D-145). The browser handle lives in sessionStorage, so closing
+   * the tab used to be a permanent way out of a run that was still going. The
+   * server keeps the only truth, so the composer asks it on mount: if something
+   * is still in flight the handle comes back, and the event log replay rebuilds
+   * the transcript exactly as it stood.
+   *
+   * Deliberately never overrides a live session — only a composer with nothing
+   * bound adopts a server-side run.
+   */
+  const activeTasksQuery = useQuery({
+    queryKey: ['harness', 'active-tasks'],
+    queryFn: ({ signal }) => readActiveHarnessTasks(signal),
+    // One shot per mount; the run itself streams over SSE from there on.
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const restoredFromServerRef = useRef(false);
+
+  useEffect(() => {
+    if (restoredFromServerRef.current) return;
+    // Nothing to adopt when the composer already holds the run being asked for
+    // (or holds one and nothing else was asked for). Only an explicit deep link
+    // may displace a bound session, and only in favour of the run it names.
+    if (
+      session.task &&
+      (!initialTaskId || session.task.taskId === initialTaskId)
+    ) {
+      return;
+    }
+    const tasks = activeTasksQuery.data?.tasks ?? [];
+    // A deep link from the task centre names the run it wants reopened; without
+    // one the newest in-flight run is the conversation to come back to.
+    const task = initialTaskId
+      ? tasks.find((candidate) => candidate.taskId === initialTaskId)
+      : tasks[0];
+    if (!task) return;
+    restoredFromServerRef.current = true;
+    const restored = restoreComposerSessionFromActiveTask({
+      sessionId: sessionIdRef.current,
+      task,
+    });
+    setSession(restored);
+    setLensState((current) => updateUserText(current, task.merchantText));
+  }, [activeTasksQuery.data, initialTaskId, session.task]);
 
   const taskId = session.task?.taskId ?? '';
   // Harness tasks are not a P1 query module — the existing harness surfaces key
@@ -1029,20 +1159,33 @@ export function ComposerHome({
   useEffect(() => {
     if (!workflowStream.workflowState) return;
     // 成品版本 rides the same terminal frame as the status, so the delivery card
-    // binds its actions to the revision the server actually delivered.
+    // binds its actions to the revision the server actually delivered — and so
+    // does the 失败/partial 申报 (W03), which is why neither needs a second read.
     setSession((current) =>
       applyComposerWorkflowState(
         current,
         workflowStream.workflowState!,
         workflowStream.harnessDelivery,
-        workflowStream.harnessCancellation
+        workflowStream.harnessCancellation,
+        workflowStream.merchantReport
       )
     );
   }, [
     workflowStream.workflowState,
     workflowStream.harnessDelivery,
     workflowStream.harnessCancellation,
+    workflowStream.merchantReport,
   ]);
+
+  useEffect(() => {
+    // 额度退还可见: a failed run gives the reservation back, so the passive quota
+    // line must stop showing the number from before the run.
+    if (workflowStream.workflowState !== 'failed') return;
+    void queryClient.invalidateQueries({
+      queryKey: ['harness', 'active-tasks'],
+    });
+    void usageQuery.refetch();
+  }, [workflowStream.workflowState]);
 
   // 需要用户的一个问题 — the third inbound seam message. Polled while the run is
   // live so a suspended workflow surfaces its card without a page action.
@@ -1481,6 +1624,9 @@ export function ComposerHome({
   const handleLensChange = (next: CreationLensId) => {
     setShowRequiredHint(false);
     setSubmissionGroundingBlocked(null);
+    // A press was for one form of content at one price. Choosing another form
+    // is a different ask, so the held press does not travel with it.
+    armedQuoteIdRef.current = null;
     setLensState(selectLens(lensState, next));
   };
 
@@ -1518,7 +1664,10 @@ export function ComposerHome({
       params: { workId: input.workId },
       search: {
         ...location.search,
-        taskId: input.taskId,
+        // No taskId: the result route reconnects canonically from the Work
+        // (content_packages binds Work and Task atomically, H01), so a task id
+        // in the URL is a second truth with no reader — and a stale link would
+        // be the one thing able to disagree with the server.
         ...(input.revision
           ? {
               contentId: input.revision.packageId,
@@ -1528,6 +1677,80 @@ export function ComposerHome({
       },
       replace: false,
     });
+  };
+
+  /**
+   * 可恢复入口 (W03). A 申报卡 without a way back in is just a nicer dead end, so
+   * every entry lands the merchant somewhere they can act: back in the composer
+   * with their own sentence, on a different form, or on the part that did land.
+   */
+  const recoverFromReport = (input: ComposerRecoveryInput) => {
+    const merchantText = composerSessionMerchantText(session);
+    // A failed run leaves the lens frozen, which disables the composer and
+    // makes canSubmit refuse — so every entry has to thaw before it can act,
+    // or the button is decoration.
+    if (input.action !== 'review_partial') {
+      setLensState((current) => {
+        const reopened = reopenComposer(current);
+        // Put their sentence back only when the composer lost it — once they
+        // start editing after 改一下要求, the field is theirs.
+        return merchantText && !reopened.draft.userText.trim()
+          ? updateUserText(reopened, merchantText)
+          : reopened;
+      });
+      // Coming back in starts a new attempt, and the session id is what names
+      // an attempt: 报价 and Brief context are both idempotent on it, so the
+      // server refuses the next quote under the id that already ran. Reusing it
+      // would leave the composer editable but unable to submit — the same dead
+      // end through a different door.
+      sessionIdRef.current = newComposerSessionId();
+      setSessionEpoch((current) => current + 1);
+      briefContextRevisionRef.current = null;
+      briefInputRef.current = null;
+      // Rebinding unbinds the finished run, which would otherwise look to the
+      // mount-time restore like a composer with nothing in it and invite some
+      // other in-flight run into the tab mid-edit. The merchant has taken this
+      // conversation over; the restore decision is behind us.
+      restoredFromServerRef.current = true;
+      setSession((current) =>
+        rebindComposerSession(current, sessionIdRef.current)
+      );
+    }
+    switch (input.action) {
+      case 'retry':
+        // The rebind above already handed this conversation to the new attempt.
+        // Replacing it with a fresh session would also throw away the 交付卡 a
+        // partial delivery left standing — the one part that did land, which
+        // 再生成一次 is offered *from* (#236 轮 5 P1-③).
+        //
+        // Deferred: attemptSubmit reads the closure's lensState, which is still
+        // frozen on this tick. The effect below fires it once the thaw lands.
+        setRetryAfterReport(true);
+        return;
+      case 'adjust_intent':
+        focusComposerIntentInput();
+        return;
+      case 'switch_form':
+        // The lens radiogroup is the one place a form is chosen; sending the
+        // merchant there beats inventing a second switch inside the card.
+        document
+          .querySelector<HTMLElement>(
+            '[data-testid="composer-lens-radiogroup"]'
+          )
+          ?.scrollIntoView?.({ block: 'nearest' });
+        focusComposerIntentInput();
+        return;
+      case 'review_partial': {
+        const task = session.task;
+        if (!task) return;
+        openDelivery({
+          action: 'open',
+          revision: null,
+          taskId: task.taskId,
+          workId: task.workId,
+        });
+      }
+    }
   };
 
   const attemptSubmit = async () => {
@@ -1611,6 +1834,16 @@ export function ComposerHome({
     // `currentQuoteView`, not `quoteView`: a run must never be admitted against
     // a price the merchant's current input no longer produces (#240 P1).
     if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) {
+      if (quoteSettling) {
+        // Pressing send *is* the merchant saying the sentence is final. End the
+        // window, ask for the price now, and remember that they asked: the run
+        // starts as soon as that price lands. Flushing without arming would
+        // make the first press change a status line and nothing else — a dead
+        // press, which is the defect this ticket exists to remove.
+        armedQuoteIdRef.current = quoteId;
+        flushQuoteSettle();
+        return;
+      }
       setShowRequiredHint(true);
       return;
     }
@@ -1754,6 +1987,67 @@ export function ComposerHome({
     quoteQuery.data,
     submissionRecipe,
     userText,
+  ]);
+
+  /**
+   * 「再生成一次」second half: once the thaw has landed *and* the run is
+   * submittable again, the same path a merchant would drive by hand runs. The
+   * readiness check is not optional — a reopened lens re-quotes, and firing
+   * before the price is back would be blocked by the submit gate and look
+   * exactly like a button that does nothing.
+   *
+   * `currentQuoteView`, like every other gate (#240 P1): the recovery mints a
+   * new session and therefore a new quote identity, so the bound view is the
+   * *failed* run's price until the re-quote lands. Firing against it would hit
+   * the submit gate, clear the retry flag and leave the merchant with a button
+   * that did nothing.
+   */
+  useEffect(() => {
+    if (!retryAfterReport) return;
+    if (lensState.phase !== 'selected') return;
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) return;
+    setRetryAfterReport(false);
+    void attemptSubmit();
+  }, [
+    currentQuoteView,
+    lensState,
+    quoteQuery.data,
+    retryAfterReport,
+    submissionRecipe,
+  ]);
+
+  /**
+   * The armed press, second half: the merchant pressed send while the quote was
+   * still held, and this is where that press finally reaches Core — against the
+   * price of the exact sentence they pressed on, never a later one.
+   */
+  useEffect(() => {
+    const armed = armedQuoteIdRef.current;
+    if (armed === null) return;
+    if (quoteId !== armed) {
+      // They kept writing, or the quote context went away entirely (a lens
+      // switch, a submission that stopped signing). Either way the sentence
+      // they pressed on is gone, and the press goes with it — held across a
+      // gap it would fire later on a quote id that came back around, which is
+      // a submission the merchant never asked for (#236 轮 5 P1-②).
+      armedQuoteIdRef.current = null;
+      return;
+    }
+    if (quoteQuery.isError) {
+      // The price never came back. The failure line owns the recovery from
+      // here; a press held across it would submit long after they gave up.
+      armedQuoteIdRef.current = null;
+      return;
+    }
+    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) return;
+    armedQuoteIdRef.current = null;
+    void attemptSubmit();
+  }, [
+    currentQuoteView,
+    quoteId,
+    quoteQuery.data,
+    quoteQuery.isError,
+    submissionRecipe,
   ]);
 
   const handleBriefConfirm = async () => {
@@ -2022,6 +2316,7 @@ export function ComposerHome({
           />
         }
         onOpenDelivery={openDelivery}
+        onRecover={recoverFromReport}
         questionSlot={
           pendingQuestion ? (
             <ComposerQuestionCard
@@ -2125,7 +2420,11 @@ export function ComposerHome({
           !imageCardinality.valid ||
           lensState.phase === 'frozen' ||
           quotaBlocked ||
-          (lensId != null && !currentQuoteView)
+          // Every state without a current price disables the button, except the
+          // one that means 「we have not asked yet」: pressing send there ends
+          // the settle window and asks now. Disabling it would make the click
+          // that resolves the wait the one click the merchant cannot make.
+          (lensId != null && !currentQuoteView && !quoteSettling)
         }
         lensSlot={
           <>

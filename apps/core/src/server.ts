@@ -1603,6 +1603,40 @@ export function createCoreServer({
       }
       return;
     }
+    // 时间桥 (D-145): what is still running for this workspace. The browser asks
+    // on mount, which is how a closed tab stops being a lost run.
+    if (
+      harnessService &&
+      request.method === 'GET' &&
+      harnessTaskCollectionWorkspaceId
+    ) {
+      try {
+        const context = p1Identity(
+          request,
+          harnessTaskCollectionWorkspaceId,
+          requestCorrelationId
+        );
+        authorizeContentCreation(context);
+        sendJson(
+          response,
+          200,
+          await harnessService.listActiveTasks(harnessTaskCollectionWorkspaceId),
+          requestCorrelationId
+        );
+      } catch (error) {
+        sendP1HttpError(
+          response,
+          error,
+          {
+            code: 'HARNESS_ACTIVE_TASKS_UNAVAILABLE',
+            message: 'Harness active tasks are unavailable.',
+            status: 503,
+          },
+          requestCorrelationId
+        );
+      }
+      return;
+    }
     if (request.method === 'POST' && harnessTaskCollectionWorkspaceId) {
       try {
         const context = p1Identity(

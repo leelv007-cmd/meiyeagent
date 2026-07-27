@@ -385,6 +385,10 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     );
     const runner = this.runnerWithSourceFence(input.request);
     const metrics = new InMemoryStructuredNodeMetrics();
+    // D-122 ③段兜底: a brief that will not compile degrades to a conservative
+    // one and the run keeps going. The merchant is told it degraded — silently
+    // downgrading is the dishonesty this fallback is not allowed to become.
+    let degraded = false;
     const brief = await compileExecutionBrief(
       {
         workflowId: input.workflowId,
@@ -405,6 +409,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       },
       runner,
       metrics,
+      () => {
+        degraded = true;
+      },
     );
     if (brief.kind !== 'copy') {
       throw new Error('The first production tracer accepts only copy briefs.');
@@ -415,6 +422,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     return {
       brief: boundBrief,
       metrics: metrics.snapshot(),
+      ...(degraded ? { degraded: true } : {}),
     };
   }
 
