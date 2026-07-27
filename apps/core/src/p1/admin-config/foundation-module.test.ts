@@ -11,6 +11,7 @@ import type { PermissionAuthorizerPort } from '../capability-permission/port.js'
 import { createDefaultDeployments } from '../model-supply/catalog.js';
 import {
   AdminConfigFoundationModule,
+  HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   MemoryAdminConfigRepository,
@@ -125,8 +126,10 @@ describe('Admin config application seam', () => {
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
         'douyin.adapter.assembly',
+        HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
         HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
         NOTE_STYLE_CONFIG_KEY,
+        'harness.outbox.langfuse',
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         ...createDefaultDeployments()
           .map(
@@ -341,6 +344,46 @@ describe('Admin config application seam', () => {
         { actorId: 'platform-admin', revision: 1, value: 30 },
         { actorId: 'platform-admin', revision: 2, value: 45 },
       ],
+    );
+  });
+
+  it('accepts the 48-hour hold timeout as a separately governed global value', async () => {
+    const repository = new MemoryAdminConfigRepository();
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [new AdminConfigFoundationModule(repository)],
+    });
+
+    await service.executeModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_apply',
+        payload: {
+          key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+          value: 172_800,
+          expectedRevision: null,
+          reason: 'Set the confirmation hold timeout.',
+        },
+      },
+      'confirmation-hold-timeout-1',
+    );
+    await assert.rejects(
+      service.executeModule(
+        context,
+        'admin-config',
+        {
+          action: 'config_apply',
+          payload: {
+            key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+            value: 172_801,
+            expectedRevision: 1,
+            reason: 'Set an invalid confirmation hold timeout.',
+          },
+        },
+        'confirmation-hold-timeout-2',
+      ),
+      (error: unknown) =>
+        error instanceof Error && 'code' in error && error.code === 'INVALID_STATE',
     );
   });
 

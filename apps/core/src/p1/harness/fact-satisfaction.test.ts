@@ -213,6 +213,285 @@ test('expired, revoked, and unauthorized facts are removed before the model', as
   assert.deepEqual(observedRightsRevisions, [8]);
 });
 
+test('fact satisfaction never treats a non-current_fact contribution as a fact', async () => {
+  const bundle = bundleWithFacts(['price']);
+  bundle.dimensions.store_facts_assets['price.value']!.layer =
+    'current_instruction';
+  const runner = new QueueRunner([
+    {
+      status: 'unsatisfied',
+      matchedFactRefs: [],
+      missingFactTypes: ['price'],
+    },
+  ]);
+
+  const result = await assessRecipeFactSatisfaction(
+    { ...request(['price']), bundle },
+    runner,
+    authorizedRights,
+  );
+
+  assert.equal(result.action, 'conservative_guidance');
+  assert.deepEqual(JSON.parse(runner.requests[0]!.prompt).facts, []);
+});
+
+test('fixed fact satisfaction goldens keep outcomes and model facts aligned', async () => {
+  for (const golden of FACT_SATISFACTION_GOLDENS) {
+    const runner = new QueueRunner([...golden.outputs]);
+    const result = await assessRecipeFactSatisfaction(
+      golden.input,
+      runner,
+      golden.rights,
+    );
+    const satisfactionRequest = runner.requests.find(
+      (request) => request.schemaName === 'harness_fact_satisfaction_v1',
+    );
+
+    assert.ok(satisfactionRequest, golden.name);
+    assert.deepEqual(
+      JSON.parse(satisfactionRequest.prompt).facts,
+      golden.expectedFacts,
+      golden.name,
+    );
+    assert.equal(result.status, golden.expected.status, golden.name);
+    assert.equal(result.action, golden.expected.action, golden.name);
+    assert.deepEqual(result.factRefs, golden.expected.factRefs, golden.name);
+    assert.deepEqual(
+      'missingFactTypes' in result ? result.missingFactTypes : [],
+      golden.expected.missingFactTypes,
+      golden.name,
+    );
+    assert.equal(runner.requests.length, golden.expected.requestCount, golden.name);
+  }
+});
+
+const SERVICE_FACT_FOR_MODEL = {
+  sourceRef: 'store_fact:fact-service:1',
+  kind: 'service',
+  value: { label: 'service' },
+  source: {
+    kind: 'user_confirmation',
+    referenceId: 'confirmation-service',
+    capturedAt: '2026-07-25T00:00:00.000Z',
+  },
+  effectiveFrom: '2026-07-25T00:00:00.000Z',
+  expiresAt: null,
+} as const;
+
+const PRICE_FACT_FOR_MODEL = {
+  sourceRef: 'store_fact:fact-price:1',
+  kind: 'price',
+  value: { label: 'price' },
+  source: {
+    kind: 'user_confirmation',
+    referenceId: 'confirmation-price',
+    capturedAt: '2026-07-25T00:00:00.000Z',
+  },
+  effectiveFrom: '2026-07-25T00:00:00.000Z',
+  expiresAt: null,
+} as const;
+
+const unauthorizedRights: FactRightsAuthorizationPort = {
+  async isAuthorized() {
+    return false;
+  },
+};
+
+const FACT_SATISFACTION_GOLDENS = [
+  {
+    name: 'satisfied current service and price facts',
+    input: {
+      ...request(['service', 'price']),
+      bundle: bundleWithFacts(['service', 'price']),
+    },
+    rights: authorizedRights,
+    outputs: [
+      {
+        status: 'satisfied',
+        matchedFactRefs: [
+          'store_fact:fact-service:1',
+          'store_fact:fact-price:1',
+        ],
+        missingFactTypes: [],
+      },
+    ],
+    expectedFacts: [SERVICE_FACT_FOR_MODEL, PRICE_FACT_FOR_MODEL],
+    expected: {
+      status: 'satisfied',
+      action: 'execute',
+      factRefs: [
+        'store_fact:fact-service:1',
+        'store_fact:fact-price:1',
+      ],
+      missingFactTypes: [],
+      requestCount: 1,
+    },
+  },
+  {
+    name: 'critical price missing asks for confirmation',
+    input: request(['service', 'price']),
+    rights: authorizedRights,
+    outputs: [
+      {
+        status: 'partial',
+        matchedFactRefs: ['store_fact:fact-service:1'],
+        missingFactTypes: ['price'],
+      },
+      { criticality: 'critical' },
+    ],
+    expectedFacts: [SERVICE_FACT_FOR_MODEL],
+    expected: {
+      status: 'partial',
+      action: 'ask_user',
+      factRefs: ['store_fact:fact-service:1'],
+      missingFactTypes: ['price'],
+      requestCount: 2,
+    },
+  },
+  {
+    name: 'optional staff experience missing continues with notice',
+    input: request(['service', 'staff_experience']),
+    rights: authorizedRights,
+    outputs: [
+      {
+        status: 'partial',
+        matchedFactRefs: ['store_fact:fact-service:1'],
+        missingFactTypes: ['staff_experience'],
+      },
+      { criticality: 'optional' },
+    ],
+    expectedFacts: [SERVICE_FACT_FOR_MODEL],
+    expected: {
+      status: 'partial',
+      action: 'execute_with_notice',
+      factRefs: ['store_fact:fact-service:1'],
+      missingFactTypes: ['staff_experience'],
+      requestCount: 2,
+    },
+  },
+  {
+    name: 'expired price is excluded before satisfaction',
+    input: {
+      ...request(['price']),
+      bundle: bundleWithFacts(['price'], {
+        expiresAt: '2026-07-25T01:00:00.000Z',
+      }),
+    },
+    rights: authorizedRights,
+    outputs: [
+      {
+        status: 'unsatisfied',
+        matchedFactRefs: [],
+        missingFactTypes: ['price'],
+      },
+    ],
+    expectedFacts: [],
+    expected: {
+      status: 'unsatisfied',
+      action: 'conservative_guidance',
+      factRefs: [],
+      missingFactTypes: ['price'],
+      requestCount: 1,
+    },
+  },
+  {
+    name: 'revoked price is excluded before satisfaction',
+    input: {
+      ...request(['price']),
+      bundle: bundleWithFacts(['price'], { revisionKind: 'revocation' }),
+    },
+    rights: authorizedRights,
+    outputs: [
+      {
+        status: 'unsatisfied',
+        matchedFactRefs: [],
+        missingFactTypes: ['price'],
+      },
+    ],
+    expectedFacts: [],
+    expected: {
+      status: 'unsatisfied',
+      action: 'conservative_guidance',
+      factRefs: [],
+      missingFactTypes: ['price'],
+      requestCount: 1,
+    },
+  },
+  {
+    name: 'unauthorized price is excluded before satisfaction',
+    input: {
+      ...request(['price']),
+      bundle: bundleWithFacts(['price']),
+    },
+    rights: unauthorizedRights,
+    outputs: [
+      {
+        status: 'unsatisfied',
+        matchedFactRefs: [],
+        missingFactTypes: ['price'],
+      },
+    ],
+    expectedFacts: [],
+    expected: {
+      status: 'unsatisfied',
+      action: 'conservative_guidance',
+      factRefs: [],
+      missingFactTypes: ['price'],
+      requestCount: 1,
+    },
+  },
+  {
+    name: 'forged matched reference falls back conservatively',
+    input: request(['service']),
+    rights: authorizedRights,
+    outputs: [
+      {
+        status: 'satisfied',
+        matchedFactRefs: ['store_fact:forged:99'],
+        missingFactTypes: [],
+      },
+    ],
+    expectedFacts: [SERVICE_FACT_FOR_MODEL],
+    expected: {
+      status: 'unsatisfied',
+      action: 'conservative_guidance',
+      factRefs: [],
+      missingFactTypes: ['service'],
+      requestCount: 1,
+    },
+  },
+  {
+    name: 'invalid satisfied output falls back conservatively',
+    input: request(['service']),
+    rights: authorizedRights,
+    outputs: [
+      { status: 'satisfied', matchedFactRefs: [], missingFactTypes: [] },
+    ],
+    expectedFacts: [SERVICE_FACT_FOR_MODEL],
+    expected: {
+      status: 'unsatisfied',
+      action: 'conservative_guidance',
+      factRefs: [],
+      missingFactTypes: ['service'],
+      requestCount: 1,
+    },
+  },
+  {
+    name: 'model failure falls back conservatively',
+    input: request(['service']),
+    rights: authorizedRights,
+    outputs: [new Error('fixture model failure')],
+    expectedFacts: [SERVICE_FACT_FOR_MODEL],
+    expected: {
+      status: 'unsatisfied',
+      action: 'conservative_guidance',
+      factRefs: [],
+      missingFactTypes: ['service'],
+      requestCount: 1,
+    },
+  },
+] as const;
+
 function request(factTypes: StoreFactKind[]) {
   return {
     workflowId: 'workflow-1',

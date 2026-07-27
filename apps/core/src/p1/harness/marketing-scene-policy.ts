@@ -8,6 +8,7 @@ import {
 import type { HarnessWorkflowInput } from './task-admission.js';
 import type { IntentDeclaration } from './structured-nodes.js';
 import type { HarnessContextSnapshot } from './workflow-core.js';
+import { deriveMarketingPackageCapabilities } from './marketing-capabilities.js';
 
 const URL_PATTERN = /https?:\/\/[^\s]+/iu;
 const PRICE_KEY_PATTERN = /(?:price|amount|cost|fee|价格|价钱|售价|团购价)/iu;
@@ -32,15 +33,7 @@ export function projectMarketingPackageEvidence(input: {
     .map((reference) => reference.id);
   const common = {
     scene,
-    capabilities: {
-      mainRecommendation: true,
-      platformDeliverables: true,
-      factsAndRights: true,
-      quickEdit: true,
-      publishExport: true,
-      asyncRecovery: true,
-      remix: true,
-    } as const,
+    capabilities: deriveMarketingPackageCapabilities(),
     contextBundle: {
       bundleId: input.context.bundle.bundleId,
       revision: input.context.bundle.revision,

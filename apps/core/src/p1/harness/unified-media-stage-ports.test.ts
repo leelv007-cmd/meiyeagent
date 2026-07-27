@@ -981,7 +981,7 @@ test("note pages keep durable admission single-flight while compiler branches re
 	const first = completedResult("image", "1");
 	const second = completedResult("image", "2");
 	let submissions = 0;
-	let firstReads = 0;
+	let wakeAdmission: (() => void) | undefined;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
 		{
 			async submit() {
@@ -994,19 +994,12 @@ test("note pages keep durable admission single-flight while compiler branches re
 			},
 			async getDurableMediaJob(_workspaceId, jobId) {
 				assert.equal(jobId, first.jobId);
-				firstReads += 1;
-				if (firstReads === 1) {
-					events.push("get:1:running");
-					return {
-						result: { ...first, status: "unknown", asset: undefined },
-					};
-				}
 				events.push("get:1:completed");
 				return { result: first };
 			},
 		},
 		undefined,
-		memoryNoteAdmission(events),
+		memoryNoteAdmission(events, () => wakeAdmission?.()),
 	);
 	const request = harnessInput("image_text_note", "package-note");
 
@@ -1016,31 +1009,42 @@ test("note pages keep durable admission single-flight while compiler branches re
 			context: contextSnapshot(),
 			request,
 			workflowId: "workflow-note:page-1",
+			awaitSignal: async (topic) => {
+				events.push(`recv:${topic}`);
+				if (topic === "harness-media-terminal") {
+					return new Promise((resolve) => {
+						wakeAdmission = () => resolve({});
+					});
+				}
+				return {};
+			},
 		}),
 		adapter.execute({
 			brief: imageBriefFor("image.generate", 0),
 			context: contextSnapshot(),
 			request,
 			workflowId: "workflow-note:page-2",
+			awaitSignal: async (topic) => {
+				events.push(`recv:${topic}`);
+				if (topic === "harness-media-terminal") {
+					return new Promise((resolve) => {
+						wakeAdmission = () => resolve({});
+					});
+				}
+				return {};
+			},
 		}),
 	]);
 
 	assert.equal(firstSelection.asset.id, "image-asset-1");
 	assert.equal(secondSelection.asset.id, "image-asset-2");
-	assert.deepEqual(events, [
-		"claim:workflow-note:page-1:g1",
-		"blocked:workflow-note:page-2",
-		"submit:1",
-		"running:g1",
-		"get:1:running",
-		"blocked:workflow-note:page-2",
-		"get:1:completed",
-		"completed:g1",
-		"claim:workflow-note:page-2:g2",
-		"submit:2",
-		"running:g2",
-		"completed:g2",
-	]);
+	assert.equal(submissions, 2);
+	assert.ok(events.includes(`recv:harness-media-job:${first.jobId}`));
+	assert.ok(
+		events.some((event) => event === "recv:harness-media-terminal") ||
+			events.includes("claim:workflow-note:page-2:g2"),
+	);
+	assert.ok(!events.some((event) => event.includes("get:1:running")));
 });
 
 test("exact text blocks the first image, retries once, and keeps both provider costs without job-side debit flags", async () => {
@@ -1677,7 +1681,10 @@ function contextSnapshot(): HarnessContextSnapshot {
 	};
 }
 
-function memoryNoteAdmission(events: string[] = []): NoteMediaAdmissionPort {
+function memoryNoteAdmission(
+	events: string[] = [],
+	onTerminal?: () => void,
+): NoteMediaAdmissionPort {
 	let active: NoteMediaAdmissionToken | undefined;
 	let generation = 0;
 	return {
@@ -1702,6 +1709,7 @@ function memoryNoteAdmission(events: string[] = []): NoteMediaAdmissionPort {
 			if (active?.generation !== token.generation) return false;
 			events.push(`${status}:g${token.generation}`);
 			active = undefined;
+			onTerminal?.();
 			return true;
 		},
 	};

@@ -162,12 +162,35 @@ test(
                     expiresAt: null,
                   },
                 },
+                {
+                  candidateId: 'w01-project-price',
+                  status: 'pending',
+                  objectKind: 'store_fact',
+                  fact: {
+                    kind: 'price',
+                    key: 'service.project-cat-eye.price',
+                    value: { amount: 299, currency: 'CNY' },
+                    scope: { storeId: workspaceId },
+                    source: {
+                      kind: 'user_confirmation',
+                      referenceId: 'w01-progressive-card',
+                      capturedAt: now,
+                    },
+                    effectiveFrom: now,
+                    expiresAt: null,
+                  },
+                },
               ],
             },
             confirmations: [
               {
                 candidateId: 'w01-project-name',
                 factId: 'store-project:project-cat-eye:service',
+                expectedFactRevision: 0,
+              },
+              {
+                candidateId: 'w01-project-price',
+                factId: 'store-project:project-cat-eye:price',
                 expectedFactRevision: 0,
               },
             ],

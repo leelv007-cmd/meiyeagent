@@ -1,4 +1,5 @@
 import { hostname } from 'node:os';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Pool } from 'pg';
 import {
   ModeGateExecutionPort,
@@ -157,9 +158,18 @@ import {
   ProductStateEntitlementPolicy,
 } from './product/p1-model-policy.js';
 import { migratePostgresSchema } from './postgres-schema-migration.js';
+import { readHarnessRuntimeConfig } from './p1/harness/runtime-config.js';
+import { sendHarnessMediaJobTerminal } from './p1/harness/dbos-workflow.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required.');
+const harnessRuntimeConfig = process.env.HARNESS_DBOS_SYSTEM_DATABASE_URL
+  ? readHarnessRuntimeConfig(process.env)
+  : undefined;
+if (harnessRuntimeConfig) {
+  DBOS.setConfig(harnessRuntimeConfig.dbos);
+  await DBOS.launch();
+}
 const serviceToken = process.env.CORE_SERVICE_TOKEN;
 assertStrongSecret('CORE_SERVICE_TOKEN', serviceToken);
 const notificationWebhook =
@@ -187,6 +197,20 @@ const jobRuntime = PgBossJobPort.connect({
     8,
     ...Object.values(productPlans).map((plan) => plan.concurrencyLimit),
   ],
+  ...(harnessRuntimeConfig
+    ? {
+        terminalNotifier: async ({ envelope, status, output }) => {
+          await sendHarnessMediaJobTerminal({
+            workspaceId: envelope.workspaceId,
+            jobId: envelope.jobId,
+            kind: envelope.kind,
+            payload: envelope.payload,
+            status,
+            ...(output ? { output } : {}),
+          });
+        },
+      }
+    : {}),
 });
 const productRepository = new PostgresProductRepository(pool);
 const relationalProductRepository = new PostgresRelationalProductRepository(pool);
@@ -729,6 +753,7 @@ const shutdown = async () => {
   } finally {
     await workerTelemetry.stop();
     await jobRuntime.stop({ graceful: true });
+    if (harnessRuntimeConfig) await DBOS.shutdown();
     await pool.end();
     process.exit(0);
   }

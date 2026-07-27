@@ -59,10 +59,11 @@ test('task admission prompt resolver freezes production versions and content has
   );
   assert.deepEqual(
     requests.map(({ url }) => url).sort(),
-    [
-      '/api/public/v2/prompts/harness%2Fbrief-copy?label=production',
-      '/api/public/v2/prompts/harness%2Fintent-naming?label=production',
-    ],
+    Object.values(HARNESS_LANGFUSE_PROMPT_NAMES)
+      .map((name) =>
+        `/api/public/v2/prompts/${encodeURIComponent(name)}?label=production`,
+      )
+      .sort(),
   );
   assert.ok(
     requests.every(
@@ -71,6 +72,47 @@ test('task admission prompt resolver freezes production versions and content has
         `Basic ${Buffer.from('pk-prompt:sk-prompt').toString('base64')}`,
     ),
   );
+});
+
+test('configured prompt versions are fetched by version and surfaced as immutable references', async (t) => {
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    requests.push(request.url ?? '');
+    sendJson(response, 200, {
+      version: 9,
+      type: 'text',
+      prompt: 'Pinned prompt content with enough detail for the fixture.',
+    });
+  });
+  const resolver = new LangfuseHarnessPromptResolver({
+    baseUrl: await listen(t, server),
+    publicKey: 'pk-prompt',
+    secretKey: 'sk-prompt',
+    versions: { intentNaming: 9 },
+  });
+
+  const frozen = await resolver.resolve();
+
+  assert.ok(
+    requests.includes(
+      '/api/public/v2/prompts/harness%2Fintent-naming?version=9',
+    ),
+  );
+  assert.equal(frozen.intentNaming.version, '9');
+  assert.equal(frozen.intentNaming.isFallback, false);
+});
+
+test('missing Langfuse keeps fixture resolution green but emits one downgrade warning per registered prompt', async () => {
+  const warnings: Array<{ name: string; reason: string }> = [];
+  const resolver = new LangfuseHarnessPromptResolver({
+    warn: (warning) => warnings.push(warning),
+  });
+
+  const frozen = await resolver.resolve();
+
+  assert.equal(warnings.length, Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length);
+  assert.ok(warnings.every(({ reason }) => reason === 'unconfigured'));
+  assert.ok(Object.values(frozen).every((prompt) => prompt.isFallback));
 });
 
 test('Langfuse prompt failure freezes built-in content and an explicit fallback fact', async (t) => {

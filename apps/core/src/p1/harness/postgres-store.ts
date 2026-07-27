@@ -33,6 +33,12 @@ import type {
   HarnessWorkflowInput,
 } from './task-admission.js';
 import type { HarnessLangfuseOutboxItem } from './outbox-worker.js';
+import {
+  DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+  HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
+  harnessTodayRecommendationConfigSchema,
+  type AdminConfigRepository,
+} from '../admin-config/foundation-module.js';
 import { harnessLogicalId, harnessRuntimeId } from './workspace-scope.js';
 import {
   projectTodayRecommendation,
@@ -76,6 +82,7 @@ export class PostgresHarnessStore
       PostgresStoreFactLedger,
       'currentRevision'
     > = new PostgresStoreFactLedger(pool),
+    private readonly adminConfig?: Pick<AdminConfigRepository, 'get'>,
   ) {}
 
   async applySchema() {
@@ -136,7 +143,8 @@ export class PostgresHarnessStore
       create table if not exists harness_runtime.langfuse_outbox (
         audit_id text primary key references harness_runtime.audit_events(id)
           on delete cascade,
-        status text not null check (status in ('queued', 'sending', 'failed', 'sent')),
+        status text not null check (status in
+          ('queued', 'sending', 'failed', 'sent', 'dead_letter', 'discarded')),
         attempts integer not null default 0,
         next_attempt_at timestamptz not null default now(),
         last_error text,
@@ -154,6 +162,12 @@ export class PostgresHarnessStore
           default '{}'::jsonb;
       alter table harness_runtime.langfuse_outbox
         add column if not exists dead_lettered_at timestamptz;
+      alter table harness_runtime.langfuse_outbox
+        drop constraint if exists langfuse_outbox_status_check;
+      alter table harness_runtime.langfuse_outbox
+        add constraint langfuse_outbox_status_check
+        check (status in
+          ('queued', 'sending', 'failed', 'sent', 'dead_letter', 'discarded'));
       alter table harness_runtime.decision_events
         add column if not exists resolution_source text;
       update harness_runtime.decision_events
@@ -363,6 +377,17 @@ export class PostgresHarnessStore
       if (!traces.has(row.stage)) traces.set(row.stage, row.payload);
     }
     const request = record(delivery.request);
+    const recommendationRules = this.adminConfig
+      ? harnessTodayRecommendationConfigSchema.parse(
+          (
+            await this.adminConfig.get(
+              'global',
+              '__global__',
+              HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
+            )
+          )?.value ?? DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+        )
+      : undefined;
     const recommendationRecord: TodayRecommendationRecord = {
       taskId: delivery.task_id,
       rawInput:
@@ -373,6 +398,8 @@ export class PostgresHarnessStore
           : new Date(delivery.delivered_at).toISOString(),
       delivery: delivery.delivery,
       contentPackage: delivery.content_package,
+      intent: request?.intent,
+      ...(recommendationRules ? { recommendationRules } : {}),
       contextTrace: traces.get('context_injection'),
       briefTrace: traces.get('brief_compilation'),
       selectionTrace: traces.get('execution_selection'),
@@ -1185,7 +1212,11 @@ export class PostgresHarnessStore
     );
   }
 
-  async claimLangfuseBatch(limit: number): Promise<HarnessLangfuseOutboxItem[]> {
+  async claimLangfuseBatch(
+    limit: number,
+    leaseSeconds = 300,
+    maxAttempts = 8,
+  ): Promise<HarnessLangfuseOutboxItem[]> {
     const result = await this.pool.query<{
       audit_id: string;
       workflow_id: string;
@@ -1195,11 +1226,21 @@ export class PostgresHarnessStore
       created_at: Date | string;
       attempts: number;
     }>(
-      `with ready as (
+      `with over_limit as (
+         update harness_runtime.langfuse_outbox
+         set status='dead_letter', dead_lettered_at=coalesce(dead_lettered_at, now()),
+             last_error=coalesce(last_error, 'Langfuse outbox attempt limit reached.'),
+             updated_at=now()
+         where status in ('queued','failed','sending')
+           and dead_lettered_at is null
+           and attempts >= $3
+           and next_attempt_at <= now()
+       ), ready as (
          select audit_id
          from harness_runtime.langfuse_outbox
          where status in ('queued','failed','sending')
            and dead_lettered_at is null
+           and attempts < $3
            and next_attempt_at <= now()
          order by next_attempt_at, audit_id
          for update skip locked
@@ -1207,7 +1248,7 @@ export class PostgresHarnessStore
        ), claimed as (
          update harness_runtime.langfuse_outbox o
          set status='sending', attempts=o.attempts+1,
-             next_attempt_at=now()+interval '5 minutes', updated_at=now()
+             next_attempt_at=now()+($2 * interval '1 second'), updated_at=now()
          from ready
          where o.audit_id=ready.audit_id
          returning o.audit_id, o.attempts
@@ -1217,7 +1258,7 @@ export class PostgresHarnessStore
        from claimed c
        join harness_runtime.audit_events a on a.id=c.audit_id
        order by c.audit_id`,
-      [limit],
+      [limit, leaseSeconds, maxAttempts],
     );
     if (result.rows.length === 0) return [];
     const workflowIds = [...new Set(result.rows.map((row) => row.workflow_id))];
@@ -1286,11 +1327,34 @@ export class PostgresHarnessStore
   async markLangfuseDeadLetter(auditId: string, error: string) {
     await this.pool.query(
       `update harness_runtime.langfuse_outbox
-       set status='failed', last_error=$2, dead_lettered_at=now(),
+       set status='dead_letter', last_error=$2, dead_lettered_at=now(),
            updated_at=now()
        where audit_id=$1 and status='sending'`,
       [auditId, error.slice(0, 2_000)],
     );
+  }
+
+  async replayLangfuseDeadLetter(auditId: string) {
+    const result = await this.pool.query(
+      `update harness_runtime.langfuse_outbox
+       set status='queued', attempts=0, next_attempt_at=now(),
+           last_error=null, dead_lettered_at=null, updated_at=now()
+       where audit_id=$1 and status='dead_letter'
+       returning audit_id`,
+      [auditId],
+    );
+    return result.rowCount === 1;
+  }
+
+  async discardLangfuseDeadLetter(auditId: string) {
+    const result = await this.pool.query(
+      `update harness_runtime.langfuse_outbox
+       set status='discarded', updated_at=now()
+       where audit_id=$1 and status='dead_letter'
+       returning audit_id`,
+      [auditId],
+    );
+    return result.rowCount === 1;
   }
 
   private async writeDecisionTrace(

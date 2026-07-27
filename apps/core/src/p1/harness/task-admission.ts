@@ -15,9 +15,11 @@ import {
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { promptRevisionReferences } from './langfuse-prompts.js';
 import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
+  HarnessPromptRevisionReference,
 } from './langfuse-prompts.js';
 
 export interface HarnessWorkflowInput {
@@ -42,9 +44,12 @@ export interface HarnessWorkflowInput {
   /** Canonical product units frozen by the Coordinator for that submission. */
   usageReservation?: CreationSubmissionRecord['usageReservation'];
   prompts?: HarnessFrozenPrompts;
+  /** Explicit prompt lineage copied into the durable task request snapshot. */
+  promptRevisionRefs?: Record<string, HarnessPromptRevisionReference>;
 }
 
-export interface HarnessTaskRequest extends Omit<HarnessWorkflowInput, 'prompts'> {
+export interface HarnessTaskRequest
+  extends Omit<HarnessWorkflowInput, 'prompts' | 'promptRevisionRefs'> {
   taskId: string;
 }
 
@@ -111,9 +116,15 @@ export class HarnessTaskAdmissionService {
 
   async submit(input: HarnessTaskRequest) {
     const normalized = normalizeRequest(input);
-    const request = this.prompts
-      ? { ...normalized, prompts: await this.prompts.resolve() }
-      : normalized;
+    let request = normalized;
+    if (this.prompts) {
+      const prompts = await this.prompts.resolve();
+      request = {
+        ...normalized,
+        prompts,
+        promptRevisionRefs: promptRevisionReferences(prompts),
+      };
+    }
     const claim = await this.registry.claim({
       taskId: input.taskId,
       fingerprint: fingerprintValue(normalized),

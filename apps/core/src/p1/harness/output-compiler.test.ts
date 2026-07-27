@@ -342,6 +342,51 @@ test('image-text note assembly accepts only a complete page-mapped revision', ()
   }
 });
 
+test('image-text note assembly keeps an unresolved page on the explicit partial track', () => {
+  const version = imageTextNoteVersion();
+  const partialVersion = {
+    ...version,
+    body: `${version.body}\n\n【待复核】page-2`,
+    note: {
+      ...version.note,
+      evaluation: {
+        ...version.note.evaluation!,
+        dimensions: version.note.evaluation!.dimensions.map((dimension) =>
+          dimension.dimension === 'visual_consistency'
+            ? { ...dimension, passed: false, pageIds: ['page-2'] }
+            : dimension,
+        ),
+        regenerationPageIds: ['page-2'],
+      },
+    },
+  };
+  const variants = buildImageTextNotePlatformVariants({
+    currentVersionId: partialVersion.id,
+    packageId: 'package-note-partial',
+    versions: [partialVersion],
+  });
+
+  assert.doesNotThrow(() =>
+    assertImageTextNoteRevisionAssemblyComplete({
+      marketing: {
+        contextBundle: {
+          bundleId: 'bundle-note-partial',
+          hash: 'a'.repeat(64),
+          revision: 1,
+        },
+        factRefs: ['fact:service:1'],
+        rightsRefs: ['rights-r1'],
+      },
+      partial: {
+        unresolvedPageIds: ['page-2'],
+        reason: 'consistency_remained_incomplete',
+      },
+      variants,
+      version: partialVersion,
+    }),
+  );
+});
+
 function imageTextNoteVersion() {
   const page = (
     id: string,

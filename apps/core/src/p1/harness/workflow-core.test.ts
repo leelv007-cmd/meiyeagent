@@ -436,6 +436,43 @@ test('image and video snapshots use the same five Harness stages with modality-s
   }
 });
 
+test('DBOS signal path keeps media stage 4 outside runStep', async () => {
+  const keys: string[] = [];
+  const signals: string[] = [];
+  const stages = mediaStages('image');
+  const executeMediaAndSelect = stages.executeMediaAndSelect;
+  stages.executeMediaAndSelect = async (input) => {
+    assert.ok(input.awaitSignal, 'media stage must receive the orchestration receiver');
+    await input.awaitSignal('harness-media-job:test-job', { timeoutSeconds: 150 });
+    return executeMediaAndSelect(input);
+  };
+
+  await runHarnessWorkflow(
+    'task-eventized-media',
+    mediaTaskInput('image'),
+    stages,
+    {
+      async runStep(key, operation) {
+        keys.push(key);
+        return operation();
+      },
+      async awaitSignal(topic) {
+        signals.push(topic);
+        return { status: 'completed' };
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected media decision wait.');
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.ok(signals.includes('harness-media-job:test-job'));
+  assert.equal(keys.some((key) => key.includes(':s4:')), false);
+});
+
 test('image-text note uses the fourth Harness fork and waits for style choice before page generation', async () => {
   const keys: string[] = [];
   const progress: string[] = [];

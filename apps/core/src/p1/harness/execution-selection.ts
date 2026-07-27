@@ -9,6 +9,7 @@ import type { ExecutionBrief } from './structured-nodes.js';
 import { compileCopyGenerationRequest } from './output-compiler.js';
 import { materializeSkillInstructions } from '../skills/stage-injection.js';
 import type { ResolvedSkillInstruction } from '../skills/types.js';
+import { merchantSelectionWhyNow } from './merchant-delivery-language.js';
 
 const generatedCandidateSchema = z
   .object({
@@ -28,11 +29,6 @@ const generatedCandidateSchema = z
     expressionIdentityRef: z.string().trim().min(1).optional(),
   })
   .strict();
-
-const COPY_SINGLE_PRIMARY_RUBRIC = {
-  version: 'copy-single-primary-v1',
-  rule: 'One policy-valid primary result is delivered without comparative scoring.',
-} as const;
 
 type GeneratedCandidate = z.infer<typeof generatedCandidateSchema> & {
   candidateId: string;
@@ -230,10 +226,10 @@ export async function executeCopySelection(
       candidateId: candidate.candidateId,
       score: 0,
       dimensions: { grounding: 0, usefulness: 0, platformFit: 0 },
-      reason: 'Single primary result; comparative scoring was not run.',
+      reason: merchantSelectionWhyNow(),
     },
   ];
-  const rubricHash = sha256(JSON.stringify(COPY_SINGLE_PRIMARY_RUBRIC));
+  const rubricHash = sha256('copy-single-primary-v1');
   const trace: DecisionTraceFragment = {
     stage: 'execution_selection',
     winnerCandidateId: candidate.candidateId,
@@ -247,7 +243,7 @@ export async function executeCopySelection(
       candidateId,
       gateIds,
     })),
-    rubricVersion: COPY_SINGLE_PRIMARY_RUBRIC.version,
+    rubricVersion: 'copy-single-primary-v1',
     rubricHash,
   };
   return {

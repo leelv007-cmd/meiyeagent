@@ -160,6 +160,34 @@ test('authorizer keeps worker bypass and payment grant restriction', () => {
   assert.equal(restricted.reason, 'payment_actor_restricted');
 });
 
+test('StoreFact direct writes are browser-denied but remain available to workers', () => {
+  for (const sample of [
+    { module: 'context' as const, action: 'store_fact_append' },
+    { module: 'asset-memory' as const, action: 'confirm_asset_intake_fact' },
+  ]) {
+    const browser = authorizer.decide({
+      actor: 'owner',
+      kind: 'command',
+      module: sample.module,
+      action: sample.action,
+    });
+    assert.deepEqual(browser, {
+      allow: false,
+      required: null,
+      reason: 'unregistered',
+    });
+    assert.equal(
+      authorizer.decide({
+        actor: 'worker',
+        kind: 'command',
+        module: sample.module,
+        action: sample.action,
+      }).allow,
+      true,
+    );
+  }
+});
+
 test('Cloudflare write verbs remain denied even for admin', () => {
   for (const action of [
     'cloudflare_deploy',

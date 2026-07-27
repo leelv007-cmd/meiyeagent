@@ -1,3 +1,11 @@
+import {
+  DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
+  HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+  harnessLangfuseOutboxConfigSchema,
+  type AdminConfigRepository,
+  type HarnessLangfuseOutboxConfig,
+} from '../admin-config/foundation-module.js';
+
 export interface HarnessLangfuseOutboxItem {
   auditId: string;
   workflowId: string;
@@ -10,7 +18,11 @@ export interface HarnessLangfuseOutboxItem {
 }
 
 export interface HarnessLangfuseOutboxStore {
-  claimLangfuseBatch(limit: number): Promise<HarnessLangfuseOutboxItem[]>;
+  claimLangfuseBatch(
+    limit: number,
+    leaseSeconds?: number,
+    maxAttempts?: number,
+  ): Promise<HarnessLangfuseOutboxItem[]>;
   markLangfuseSent(auditId: string): Promise<void>;
   markLangfuseFailed(
     auditId: string,
@@ -18,6 +30,19 @@ export interface HarnessLangfuseOutboxStore {
     retryAt: Date,
   ): Promise<void>;
   markLangfuseDeadLetter(auditId: string, error: string): Promise<void>;
+  replayLangfuseDeadLetter?(auditId: string): Promise<boolean>;
+  discardLangfuseDeadLetter?(auditId: string): Promise<boolean>;
+}
+
+export async function readHarnessLangfuseOutboxConfig(
+  config?: Pick<AdminConfigRepository, 'get'>,
+): Promise<HarnessLangfuseOutboxConfig> {
+  const configured = (
+    await config?.get('global', '__global__', HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY)
+  )?.value;
+  return harnessLangfuseOutboxConfigSchema.parse(
+    configured ?? DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
+  );
 }
 
 export interface HarnessLangfuseSender {
@@ -33,12 +58,17 @@ export class HarnessLangfuseOutboxWorker {
       maxAttempts?: number;
       now?: () => Date;
       retryDelayMs?: number;
+      leaseSeconds?: number;
+      config?: Pick<AdminConfigRepository, 'get'>;
     } = {},
   ) {}
 
   async runOnce() {
+    const config = await readHarnessLangfuseOutboxConfig(this.options.config);
     const items = await this.store.claimLangfuseBatch(
-      this.options.batchSize ?? 20,
+      this.options.batchSize ?? config.batchSize,
+      this.options.leaseSeconds ?? config.leaseSeconds,
+      this.options.maxAttempts ?? config.maxAttempts,
     );
     let sent = 0;
     let failed = 0;
@@ -52,14 +82,15 @@ export class HarnessLangfuseOutboxWorker {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         failed += 1;
-        if (item.attempts >= (this.options.maxAttempts ?? 8)) {
+        if (item.attempts >= (this.options.maxAttempts ?? config.maxAttempts)) {
           await this.store.markLangfuseDeadLetter(item.auditId, errorMessage);
           deadLettered += 1;
           continue;
         }
         const now = this.options.now?.() ?? new Date();
         const retryAt = new Date(
-          now.getTime() + (this.options.retryDelayMs ?? 30_000),
+          now.getTime() +
+            (this.options.retryDelayMs ?? config.retryDelaySeconds * 1_000),
         );
         await this.store.markLangfuseFailed(
           item.auditId,

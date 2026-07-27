@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { contentPackageSchema } from '@meiye/contracts';
 
+import { compileCopyGenerationRequest } from './output-compiler.js';
 import { projectTodayRecommendation } from './today-recommendation.js';
 
 const NOW = '2026-07-18T12:00:00.000Z';
+const PRIMARY_COPY_SELECTION_REASON =
+  'Single primary result; comparative scoring was not run.';
 
 test('keeps zero facts cold even when an old delivery exists', () => {
   assert.deepEqual(projectTodayRecommendation('workspace-1', 0, record(0)), {
@@ -16,15 +19,99 @@ test('keeps zero facts cold even when an old delivery exists', () => {
 });
 
 test('exposes one persisted recommendation only at its exact fact revision', () => {
-  const state = projectTodayRecommendation('workspace-1', 1, record(1));
+  const state = projectTodayRecommendation('workspace-1', 1, record(1), NOW);
 
   assert.equal(state.recommendation?.factsRevision, 1);
   assert.equal(state.recommendation?.packageId, 'package-1');
   assert.equal(state.recommendation?.versionId, 'version-1');
-  assert.equal(state.recommendation?.whyNow, '适合当前换季场景');
+  assert.equal(state.recommendation?.whyNow, PRIMARY_COPY_SELECTION_REASON);
   assert.deepEqual(state.recommendation?.factReferences, [
     'store_fact:offer-price:1',
   ]);
+  assert.equal(state.stale, false);
+});
+
+test('today fixture uses the production primary copy candidate contract', () => {
+  const compiled = compileCopyGenerationRequest({
+    brief: {
+      assetRefs: [],
+      constraints: [],
+      cta: '私信预约',
+      factRefs: ['store_fact:offer-price:1'],
+      identityRefs: [],
+      instructions: 'Generate one grounded copy result.',
+      platform: 'xiaohongshu',
+    },
+    context: {},
+  });
+  const selection = record(1).selectionTrace;
+
+  assert.equal(compiled.candidateId, 'c01');
+  assert.deepEqual(selection, {
+    winnerCandidateId: compiled.candidateId,
+    candidateScores: [
+      {
+        candidateId: compiled.candidateId,
+        reason: PRIMARY_COPY_SELECTION_REASON,
+      },
+    ],
+  });
+});
+
+test('replays a delivered image or video when media selection has no scores', () => {
+  for (const [kind, expectedWhyNow] of [
+    ['image_text', '这份图文成品今天已经完成，可以从这份成品继续编辑。'],
+    ['video', '这份视频成品今天已经完成，可以从这份成品继续编辑。'],
+  ] as const) {
+    const state = projectTodayRecommendation(
+      'workspace-1',
+      1,
+      mediaRecord(kind),
+      NOW,
+    );
+
+    assert.equal(state.recommendation?.whyNow, expectedWhyNow);
+    assert.equal(state.recommendation?.packageId, 'package-1');
+    assert.equal(state.stale, false);
+  }
+});
+
+test('does not treat a previous UTC calendar-day delivery as today', () => {
+  const justBeforeMidnight = {
+    ...record(1),
+    deliveredAt: '2026-07-18T23:59:59.999Z',
+  };
+
+  assert.deepEqual(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      justBeforeMidnight,
+      '2026-07-19T00:00:00.000Z',
+    ),
+    {
+      workspaceId: 'workspace-1',
+      currentFactsRevision: 1,
+      recommendation: null,
+      stale: false,
+    },
+  );
+});
+
+test('treats a delivery at UTC midnight as the new day recommendation', () => {
+  const atMidnight = {
+    ...record(1),
+    deliveredAt: '2026-07-19T00:00:00.000Z',
+  };
+
+  const state = projectTodayRecommendation(
+    'workspace-1',
+    1,
+    atMidnight,
+    '2026-07-19T00:00:00.000Z',
+  );
+
+  assert.equal(state.recommendation?.createdAt, atMidnight.deliveredAt);
   assert.equal(state.stale, false);
 });
 
@@ -183,10 +270,25 @@ function record(
       ],
     },
     selectionTrace: {
-      winnerCandidateId: 'c02',
+      winnerCandidateId: 'c01',
       candidateScores: [
-        { candidateId: 'c02', reason: '适合当前换季场景' },
+        { candidateId: 'c01', reason: PRIMARY_COPY_SELECTION_REASON },
       ],
+    },
+  };
+}
+
+function mediaRecord(kind: 'image_text' | 'video') {
+  const base = record(1);
+  return {
+    ...base,
+    contentPackage: contentPackageSchema.parse({
+      ...base.contentPackage,
+      kind,
+    }),
+    selectionTrace: {
+      winnerCandidateId: 'media-asset-1',
+      candidateScores: [],
     },
   };
 }

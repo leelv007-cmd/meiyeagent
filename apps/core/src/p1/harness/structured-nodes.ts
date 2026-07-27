@@ -18,17 +18,34 @@ import {
 } from '../skills/stage-injection.js';
 import type { ResolvedSkillInstruction } from '../skills/types.js';
 
-export type {
-  StructuredNodeRunner,
-  StructuredNodeRunnerRequest,
-  StructuredNodeRunnerResult,
-} from '../model-supply/structured-node-runner.js';
+export type { StructuredNodeRunner } from '../model-supply/structured-node-runner.js';
 import {
   StructuredNodeRunError,
   type StructuredNodeRunner,
-  type StructuredNodeRunnerResult,
+  type StructuredNodeRunnerRequest as ModelSupplyStructuredNodeRunnerRequest,
+  type StructuredNodeRunnerResult as ModelSupplyStructuredNodeRunnerResult,
 } from '../model-supply/structured-node-runner.js';
 import { merchantConfirmationQuestion } from './merchant-delivery-language.js';
+
+export interface StructuredNodeRepairEvent {
+  reason: string;
+}
+
+export interface StructuredNodeRepairObservation {
+  count: number;
+  reasons: readonly string[];
+}
+
+/** Optional repair callback/result fields keep old StructuredNodeRunner implementations valid. */
+export type StructuredNodeRunnerRequest<Output> =
+  ModelSupplyStructuredNodeRunnerRequest<Output> & {
+    onRepair?: (event: StructuredNodeRepairEvent) => void;
+  };
+
+export type StructuredNodeRunnerResult<Output> =
+  ModelSupplyStructuredNodeRunnerResult<Output> & {
+    repair?: StructuredNodeRepairObservation;
+  };
 /*
  * Only model/schema failures may enter the deterministic guidance fallback.
  * Authorization and source-fence errors must keep failing closed.
@@ -218,8 +235,12 @@ export type ExecutionUnitKind = ExecutionBrief['kind'];
 export interface StructuredNodeMetricsSnapshot {
   /** Initial means the first schema-validation event for one node effect. */
   initial: { calls: number; schemaValid: number; schemaInvalid: number };
-  /** AI SDK Output.object has no repair hook; no numeric repair rate is claimed. */
-  repair: { status: 'unsupported' };
+  /** Repair is observed only from a runner result or an invoked runner callback. */
+  repair: {
+    status: 'observed';
+    count: number;
+    reasons: string[];
+  };
   /** Retry counts additional provider attempts reported by the model-supply chain. */
   retry: { triggered: number };
   nestedCompleteness: { complete: number; total: number };
@@ -231,6 +252,7 @@ export interface StructuredNodeMetrics {
     attempts: number;
     complete: number;
     total: number;
+    repair?: StructuredNodeRepairObservation;
   }): void;
 }
 
@@ -239,6 +261,8 @@ export class InMemoryStructuredNodeMetrics implements StructuredNodeMetrics {
   private valid = 0;
   private invalid = 0;
   private retries = 0;
+  private repairs = 0;
+  private repairReasons: string[] = [];
   private complete = 0;
   private total = 0;
 
@@ -247,11 +271,14 @@ export class InMemoryStructuredNodeMetrics implements StructuredNodeMetrics {
     attempts: number;
     complete: number;
     total: number;
+    repair?: StructuredNodeRepairObservation;
   }) {
     this.calls += 1;
     this.valid += input.schemaValid ? 1 : 0;
     this.invalid += input.schemaValid ? 0 : 1;
     this.retries += Math.max(0, input.attempts - 1);
+    this.repairs += input.repair?.count ?? 0;
+    this.repairReasons.push(...(input.repair?.reasons ?? []));
     this.complete += input.complete;
     this.total += input.total;
   }
@@ -263,7 +290,11 @@ export class InMemoryStructuredNodeMetrics implements StructuredNodeMetrics {
         schemaValid: this.valid,
         schemaInvalid: this.invalid,
       },
-      repair: { status: 'unsupported' },
+      repair: {
+        status: 'observed',
+        count: this.repairs,
+        reasons: [...this.repairReasons],
+      },
       retry: { triggered: this.retries },
       nestedCompleteness: { complete: this.complete, total: this.total },
     };
@@ -361,6 +392,10 @@ export async function compileExecutionBrief(
     executionSnapshot?: CreationExecutionSnapshot;
     prompt?: HarnessFrozenPrompt;
     skillInstructions?: readonly ResolvedSkillInstruction[];
+    onConservativeFallback?: (input: {
+      unitKind: 'copy';
+      reason: 'structured_brief_unavailable';
+    }) => void;
   },
   runner: StructuredNodeRunner,
   metrics?: StructuredNodeMetrics
@@ -369,62 +404,102 @@ export async function compileExecutionBrief(
     briefContextBundleSchema.parse(input.bundle),
     input.allowedFactRefs,
   );
-  const result = await runMeasured<ExecutionBrief>(
-    {
-      effectIdempotencyKey: `wf:${input.workflowId}:s3:${input.unitId}:0`,
-      schemaName: `harness_${input.unitKind}_brief_v1`,
-      schemaRevision: `${input.unitKind}-brief-v1`,
-      instructions: materializeSkillInstructions(
-        input.prompt?.content ?? briefInstructions[input.unitKind],
-        input.skillInstructions,
-      ),
-      prompt: canonicalJson({
-        unitId: input.unitId,
-        unitKind: input.unitKind,
-        declaration: input.declaration,
-        bundle,
-        ...(input.executionSnapshot
-          ? {
-              executionContract: briefExecutionContract(
-                input.executionSnapshot
-              ),
-            }
-          : {}),
-      }),
-      schema: executionBriefSchema,
-    },
-    runner,
-    metrics,
-    briefCompletenessShapes[input.unitKind]
-  );
-  const brief = briefSchemaByKind[input.unitKind].parse(
-    result.output
-  ) as ExecutionBrief;
-  if (
-    brief.kind === 'copy' &&
-    input.allowedFactRefs &&
-    brief.factRefs.some(
-      (reference) => !input.allowedFactRefs?.includes(reference),
-    )
-  ) {
-    throw new Error(
-      'The copy brief referenced a fact outside the authorized satisfaction result.',
+  try {
+    const result = await runMeasured<ExecutionBrief>(
+      {
+        effectIdempotencyKey: `wf:${input.workflowId}:s3:${input.unitId}:0`,
+        schemaName: `harness_${input.unitKind}_brief_v1`,
+        schemaRevision: `${input.unitKind}-brief-v1`,
+        instructions: materializeSkillInstructions(
+          input.prompt?.content ?? briefInstructions[input.unitKind],
+          input.skillInstructions,
+        ),
+        prompt: canonicalJson({
+          unitId: input.unitId,
+          unitKind: input.unitKind,
+          declaration: input.declaration,
+          bundle,
+          ...(input.executionSnapshot
+            ? {
+                executionContract: briefExecutionContract(
+                  input.executionSnapshot,
+                ),
+              }
+            : {}),
+        }),
+        schema: executionBriefSchema,
+      },
+      runner,
+      metrics,
+      briefCompletenessShapes[input.unitKind],
     );
+    const brief = briefSchemaByKind[input.unitKind].parse(
+      result.output,
+    ) as ExecutionBrief;
+    if (
+      brief.kind === 'copy' &&
+      input.allowedFactRefs &&
+      brief.factRefs.some(
+        (reference) => !input.allowedFactRefs?.includes(reference),
+      )
+    ) {
+      throw new Error(
+        'The copy brief referenced a fact outside the authorized satisfaction result.',
+      );
+    }
+    return brief;
+  } catch (error) {
+    if (input.unitKind !== 'copy' || !isIntentModelFailure(error)) {
+      throw error;
+    }
+    input.onConservativeFallback?.({
+      unitKind: 'copy',
+      reason: 'structured_brief_unavailable',
+    });
+    return conservativeCopyBrief(input);
   }
-  return brief;
+}
+
+function conservativeCopyBrief(input: {
+  declaration: IntentDeclaration;
+  executionSnapshot?: CreationExecutionSnapshot;
+}): Extract<ExecutionBrief, { kind: 'copy' }> {
+  const platform =
+    input.executionSnapshot?.platform.id === 'douyin' ||
+    input.executionSnapshot?.platform.id === 'video_account' ||
+    input.executionSnapshot?.platform.id === 'wechat_moments' ||
+    input.executionSnapshot?.platform.id === 'offline'
+      ? input.executionSnapshot.platform.id
+      : 'xiaohongshu';
+  return {
+    kind: 'copy',
+    instructions:
+      `围绕“${input.declaration.normalizedIntent}”整理一版保守文案。` +
+      '只使用当前已确认的门店资料，不补写价格、效果、资质或顾客个案；先完成可核对的基础表达，发布前由商家确认。',
+    platform,
+    cta: '私信了解详情并确认适合的项目',
+    factRefs: [],
+    assetRefs: [],
+    identityRefs: [],
+    constraints: [
+      '仅使用当前已确认的门店资料',
+      '不得自行补写价格、效果、资质或顾客个案',
+      '发布前由商家核对文案与预约引导',
+    ],
+  };
 }
 
 function briefBundleWithAuthorizedFacts(
   bundle: BriefContextBundle,
   allowedFactRefs: readonly string[] | undefined,
 ): BriefContextBundle {
-  if (!allowedFactRefs) return bundle;
-  const allowed = new Set(allowedFactRefs);
+  const allowed = allowedFactRefs ? new Set(allowedFactRefs) : undefined;
   const storeFactsAssets = Object.fromEntries(
     Object.entries(bundle.dimensions.store_facts_assets).filter(
       ([, contribution]) =>
         contribution.factSnapshot === undefined ||
-        allowed.has(contribution.sourceRef),
+        (contribution.layer === 'current_fact' &&
+          (allowed === undefined || allowed.has(contribution.sourceRef))),
     ),
   );
   const retainedFactIds = new Set(
@@ -560,15 +635,23 @@ const briefCompletenessShapes = {
 } satisfies Record<ExecutionUnitKind, CompletenessShape>;
 
 async function runMeasured<Output>(
-  request: Parameters<StructuredNodeRunner['run']>[0] & {
-    schema: z.ZodType<Output>;
-  },
+  request: StructuredNodeRunnerRequest<Output>,
   runner: StructuredNodeRunner,
   metrics: StructuredNodeMetrics | undefined,
-  completenessShape: CompletenessShape
+  completenessShape: CompletenessShape,
 ): Promise<StructuredNodeRunnerResult<Output>> {
+  const callbackRepairs: StructuredNodeRepairEvent[] = [];
+  const requestWithRepair: StructuredNodeRunnerRequest<Output> = {
+    ...request,
+    onRepair: (event) => {
+      callbackRepairs.push(normalizeRepairEvent(event));
+    },
+  };
   try {
-    const result = await runner.run(request);
+    const result = (await runner.run(
+      requestWithRepair,
+    )) as StructuredNodeRunnerResult<Output>;
+    const repair = observedRepair(result.repair, callbackRepairs);
     const completeness = measureCompleteness(
       result.output,
       completenessShape
@@ -576,6 +659,7 @@ async function runMeasured<Output>(
     metrics?.record({
       schemaValid: true,
       attempts: result.attempts,
+      repair,
       ...completeness,
     });
     return result;
@@ -585,12 +669,65 @@ async function runMeasured<Output>(
       metrics?.record({
         schemaValid: false,
         attempts: 1,
+        repair: observedRepair(undefined, callbackRepairs),
         complete: 0,
         total,
       });
     }
     throw error;
   }
+}
+
+function observedRepair(
+  result: StructuredNodeRepairObservation | undefined,
+  callbackRepairs: readonly StructuredNodeRepairEvent[],
+): StructuredNodeRepairObservation {
+  if (result !== undefined && callbackRepairs.length > 0) {
+    throw new Error(
+      'Structured node repair was reported by both result and callback.',
+    );
+  }
+  if (result !== undefined) return normalizeRepairObservation(result);
+  return {
+    count: callbackRepairs.length,
+    reasons: callbackRepairs.map(({ reason }) => reason),
+  };
+}
+
+function normalizeRepairObservation(
+  input: unknown,
+): StructuredNodeRepairObservation {
+  if (!isRecord(input) || !Array.isArray(input.reasons)) {
+    throw new Error('Invalid structured node repair observation.');
+  }
+  const count = input.count;
+  if (
+    typeof count !== 'number' ||
+    !Number.isInteger(count) ||
+    count < 0 ||
+    input.reasons.length !== count
+  ) {
+    throw new Error('Invalid structured node repair observation.');
+  }
+  return {
+    count,
+    reasons: input.reasons.map((reason) => normalizeRepairReason(reason)),
+  };
+}
+
+function normalizeRepairEvent(input: unknown): StructuredNodeRepairEvent {
+  if (!isRecord(input) || typeof input.reason !== 'string') {
+    throw new Error('Invalid structured node repair event reason.');
+  }
+  return { reason: normalizeRepairReason(input.reason) };
+}
+
+function normalizeRepairReason(reason: string) {
+  const normalized = reason.trim();
+  if (normalized.length === 0 || normalized.length > 200) {
+    throw new Error('Invalid structured node repair event reason.');
+  }
+  return normalized;
 }
 
 function measureCompleteness(

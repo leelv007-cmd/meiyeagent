@@ -99,7 +99,8 @@ export class StoreIntakeFinalizationError extends Error {
       | 'STORE_INTAKE_BATCH_UNTRUSTED'
       | 'STORE_INTAKE_IDEMPOTENCY_CONFLICT'
       | 'STORE_PROJECT_REVOCATION_REQUIRED'
-      | 'STORE_PROFILE_REVISION_CONFLICT',
+      | 'STORE_PROFILE_REVISION_CONFLICT'
+      | 'STORE_INTAKE_FINALIZATION_FAILED',
     message: string,
   ) {
     super(message);
@@ -357,15 +358,14 @@ export class StoreIntakeFinalizer {
         try {
           resolved = await this.resolveBatch(context.workspaceId, input);
         } catch (error) {
-          if (error instanceof StoreIntakeFinalizationError) {
-            await this.finalizations.reject(
-              context.workspaceId,
-              idempotencyKey,
-              fingerprint,
-              error,
-            );
-          }
-          throw error;
+          const failure = finalizationFailure(error);
+          await this.finalizations.reject(
+            context.workspaceId,
+            idempotencyKey,
+            fingerprint,
+            failure,
+          );
+          throw failure;
         }
         try {
           assertStoreFactMappings(
@@ -381,39 +381,49 @@ export class StoreIntakeFinalizer {
             idempotencyKey,
           );
         } catch (error) {
-          if (error instanceof StoreIntakeFinalizationError) {
-            if (
-              await this.hasStagedFactReceipt(
-                context.workspaceId,
-                resolved.batch.batchId,
-                input,
-                idempotencyKey,
-              )
-            ) {
-              await this.finalizations.markNeedsReconciliation(
-                context.workspaceId,
-                idempotencyKey,
-                fingerprint,
-                error,
-              );
-            } else {
-              await this.finalizations.reject(
-                context.workspaceId,
-                idempotencyKey,
-                fingerprint,
-                error,
-              );
-            }
+          const failure = finalizationFailure(error);
+          if (
+            await this.hasStagedFactReceipt(
+              context.workspaceId,
+              resolved.batch.batchId,
+              input,
+              idempotencyKey,
+            )
+          ) {
+            await this.finalizations.markNeedsReconciliation(
+              context.workspaceId,
+              idempotencyKey,
+              fingerprint,
+              failure,
+            );
+          } else {
+            await this.finalizations.reject(
+              context.workspaceId,
+              idempotencyKey,
+              fingerprint,
+              failure,
+            );
           }
-          throw error;
+          throw failure;
         }
 
         const batch = resolved.batch;
-        if (resolved.inline) {
-          await this.intake.recordBatch(
-            batch,
-            fingerprintValue({ action: 'finalize_store_intake', batch }),
+        try {
+          if (resolved.inline) {
+            await this.intake.recordBatch(
+              batch,
+              fingerprintValue({ action: 'finalize_store_intake', batch }),
+            );
+          }
+        } catch (error) {
+          const failure = finalizationFailure(error);
+          await this.finalizations.reject(
+            context.workspaceId,
+            idempotencyKey,
+            fingerprint,
+            failure,
           );
+          throw failure;
         }
         try {
           const facts: StoreFact[] = [];
@@ -441,8 +451,7 @@ export class StoreIntakeFinalizer {
             },
           );
         } catch (error) {
-          const conflict = finalizationConflict(error);
-          if (!conflict) throw error;
+          const failure = finalizationFailure(error);
           if (
             await this.hasStagedFactReceipt(
               context.workspaceId,
@@ -455,17 +464,17 @@ export class StoreIntakeFinalizer {
               context.workspaceId,
               idempotencyKey,
               fingerprint,
-              conflict,
+              failure,
             );
           } else {
             await this.finalizations.reject(
               context.workspaceId,
               idempotencyKey,
               fingerprint,
-              conflict,
+              failure,
             );
           }
-          throw conflict;
+          throw failure;
         }
       },
     );
@@ -845,9 +854,31 @@ function assertStoreFactMappings(
       }
     }
   }
+
+  for (const [factId, mapping] of Object.entries(PROFILE_FACT_MAPPINGS)) {
+    if (profilePatch[mapping.patchField] === undefined) continue;
+    if (!confirmations.some((confirmation) => confirmation.factId === factId)) {
+      throw new StoreIntakeFinalizationError(
+        'STORE_FACT_MAPPING_INVALID',
+        `Store profile patch field ${mapping.patchField} requires confirmation ${factId}.`,
+      );
+    }
+  }
+
+  for (const project of profilePatch.projects?.upsert ?? []) {
+    for (const kind of ['service', 'price'] as const) {
+      const factId = `store-project:${project.id}:${kind}`;
+      if (!confirmations.some((confirmation) => confirmation.factId === factId)) {
+        throw new StoreIntakeFinalizationError(
+          'STORE_FACT_MAPPING_INVALID',
+          `Store project patch ${project.id} requires confirmation ${factId}.`,
+        );
+      }
+    }
+  }
 }
 
-function finalizationConflict(error: unknown) {
+function finalizationFailure(error: unknown) {
   if (error instanceof StoreIntakeFinalizationError) return error;
   if (error instanceof StoreFactRevisionConflictError) {
     return new StoreIntakeFinalizationError(
@@ -877,5 +908,10 @@ function finalizationConflict(error: unknown) {
       error.message,
     );
   }
-  return null;
+  return new StoreIntakeFinalizationError(
+    'STORE_INTAKE_FINALIZATION_FAILED',
+    error instanceof Error
+      ? error.message
+      : 'Store intake finalization failed after the batch was accepted.',
+  );
 }

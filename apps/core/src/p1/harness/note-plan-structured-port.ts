@@ -32,13 +32,16 @@ export class ModelSupplyNotePlanStructuredPort
   async draftPage(
     input: Parameters<NotePlanStructuredPort['draftPage']>[0],
   ) {
-    const result = await this.runner.run({
-      effectIdempotencyKey:
-        `wf:${this.workflowId}:note:text:${input.style.id}:${input.page.id}`,
+		const result = await this.runner.run({
+			effectIdempotencyKey:
+				`wf:${this.workflowId}:note:text:${input.style.id}:${input.page.id}` +
+				(input.consistencyFailure
+					? `:rewrite:r${input.page.revision}`
+					: ""),
       schemaName: 'harness_note_text_block_v1',
       schemaRevision: 'note-text-block-v1',
-      instructions:
-        'Finalize this page text in the configured style. Preserve the theme and prior-page dependency. Return title, body and exactText only.',
+		instructions:
+			'Finalize this page text in the configured style. Preserve the theme and prior-page dependency. If consistencyFailure is present, rewrite only the text-side issue described there. Return title, body and exactText only.',
       prompt: JSON.stringify(input),
       schema: notePlanTextBlockSchema,
     });

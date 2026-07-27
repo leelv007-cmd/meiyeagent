@@ -287,6 +287,8 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
     action: 'execute',
     factRefs: ['store_fact:service-1:1'],
   });
+  const factPrompt = JSON.parse(runner.requests[0]?.prompt ?? '{}');
+  assert.deepEqual(factPrompt.factTypes, ['service']);
   const prompt = JSON.parse(runner.requests[1]?.prompt ?? '{}');
   assert.deepEqual(
     Object.keys(prompt.bundle.dimensions.store_facts_assets),
@@ -1013,6 +1015,9 @@ test('assembly delivers legitimate promotion copy backed by confirmed facts', as
     },
   ];
   context.activeFacts = activeFacts;
+  context.bundle.dimensions.store_facts_assets = {
+    price: factContribution('offer-price', 'price', 398),
+  };
   context.policyReferences.sourceRefs = activeFacts.map(
     ({ sourceRef }) => ({
       id: sourceRef,
@@ -1067,6 +1072,13 @@ test('assembly delivers legitimate promotion copy backed by confirmed facts', as
   });
 
   assert.equal(executionDelivery.inputs.length, 1);
+  assert.equal(
+    executionDelivery.inputs[0]?.marketing?.promotionOffer?.status,
+    'verified',
+  );
+  assert.deepEqual(executionDelivery.inputs[0]?.marketing?.promotionOffer?.sourceRefs, [
+    'store_fact:offer-price:1',
+  ]);
   assert.deepEqual(
     executionDelivery.inputs[0]?.claimExtraction?.claims.map(
       ({ field, kind, value }) => ({ field, kind, value }),

@@ -207,6 +207,56 @@ const MAX_ADD_ON_OFFERS = 100;
 export const HARNESS_WOZ_RECIPE_CONFIG_KEY = 'harness.woz.recipe';
 export const HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY =
   'harness.confirmation_card.timeout_seconds';
+export const HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY =
+  'harness.confirmation_card.hold_timeout_seconds';
+export const HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY =
+  'harness.outbox.langfuse';
+export const HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY =
+  'harness.today_recommendation';
+export const harnessLangfuseOutboxConfigSchema = z
+  .object({
+    batchSize: z.number().int().positive().max(100),
+    maxAttempts: z.number().int().positive().max(100),
+    retryDelaySeconds: z.number().int().positive().max(86_400),
+    leaseSeconds: z.number().int().positive().max(86_400),
+  })
+  .strict();
+export type HarnessLangfuseOutboxConfig = z.infer<
+  typeof harnessLangfuseOutboxConfigSchema
+>;
+export const DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG: HarnessLangfuseOutboxConfig =
+  {
+    batchSize: 20,
+    maxAttempts: 8,
+    retryDelaySeconds: 30,
+    leaseSeconds: 300,
+  };
+export const harnessTodayRecommendationConfigSchema = z
+  .object({
+    weekdayWhyNow: z.record(z.string(), z.string().trim().min(1).max(2_000)),
+    industryWhyNow: z.record(z.string(), z.string().trim().min(1).max(2_000)),
+    platformWhyNow: z.record(z.string(), z.string().trim().min(1).max(2_000)),
+  })
+  .strict();
+export type HarnessTodayRecommendationConfig = z.infer<
+  typeof harnessTodayRecommendationConfigSchema
+>;
+export const DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG: HarnessTodayRecommendationConfig = {
+  weekdayWhyNow: {
+    '1': '新的一周适合把本店主推项目重新介绍给顾客。',
+    '5': '周末前适合提醒顾客安排下一次到店。',
+  },
+  industryWhyNow: {
+    美发: '结合本店发型服务，今天适合把主推项目讲清楚。',
+    美甲: '结合本店美甲服务，今天适合展示本周主推款式。',
+    皮肤管理: '结合本店护理服务，今天适合提醒顾客安排护理。',
+  },
+  platformWhyNow: {
+    xiaohongshu: '今天适合先用一篇实用内容让顾客了解本店项目。',
+    douyin: '今天适合用短内容展示本店项目并引导咨询。',
+    video_account: '今天适合用一条视频提醒顾客预约到店。',
+  },
+};
 const planAllowanceSchema = z
   .object({
     allowance: z.object({
@@ -263,6 +313,26 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Confirmation-card wait before generic workflow continuation.',
     valueSchema: z.number().int().positive().max(3_600),
+  },
+  {
+    key: HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+    scope: 'global',
+    description: 'Decision hold wait before the reserved task expires.',
+    valueSchema: z.number().int().positive().max(172_800),
+  },
+  {
+    key: HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+    scope: 'global',
+    description:
+      'Retry, lease and batch limits for the Harness Langfuse audit outbox.',
+    valueSchema: harnessLangfuseOutboxConfigSchema,
+  },
+  {
+    key: HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
+    scope: 'global',
+    description:
+      'Deterministic weekday, industry and platform basis for the today recommendation.',
+    valueSchema: harnessTodayRecommendationConfigSchema,
   },
   {
     key: 'compliance.regulated_mode.default',

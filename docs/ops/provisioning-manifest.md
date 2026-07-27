@@ -24,7 +24,8 @@
 |---|---|---|---|---|
 | **B-1** `RESEND_API_KEY` ＋发信域名 | 注册邮件与通知（装配门、注册承接票） | Resend API key＋一个能改 DNS 的发信域名（域名验证步骤我可以给） | 邮件落日志不真发（既有） | ☑ `live_verified` 2026-07-25T18:44:36.721Z（`tqai.uk` SPF/DKIM Verified；注册邮件真发至 Resend `delivered` 测试地址并获脱敏回执；DMARC 未配置，不设门；证据：`.scratch/provisioning-live-2026-07-25/resend-live-receipt.json`） |
 | **B-2** `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_R2_BUCKET_NAME` | R2 对象存储（媒体产物持久化，D-038 大产物对象存储）；生产/预发的 `P1_ASSET_S3_BUCKET` 必须与 `CLOUDFLARE_R2_BUCKET_NAME` 完全一致 | CF 账号已有：需建一个 R2 bucket＋签发 token（步骤我可以给） | 本地文件存储档（既有） | ☑ `live_verified` 2026-07-25T17:52:27Z（token 查询唯一 ACCOUNT_ID；目标 bucket 已存在；远端上传/下载哈希一致并删除后不可读；本地两处 env 已回填；证据：`.scratch/provisioning-live-2026-07-25/r2-live-receipt.json`） |
-| **B-3** `LANGFUSE_*` | 提示词版本化/评测（Skills、评估门） | **无需动作**——本地钉扎 compose 自生成 key；生产部署挂 E 门 | 本地 compose（既有） | ☑ 无需 live 核销（本地 compose 自供给；生产挂 E 门） |
+| **B-3** `LANGFUSE_BASE_URL`/`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_PROMPT_LABEL`/`LANGFUSE_PROMPT_VERSIONS`/`LANGFUSE_REQUEST_TIMEOUT_MS` | 提示词版本化/评测（Skills、评估门） | **无需动作**——本地钉扎 compose 自生成 key；生产部署挂 E 门 | 本地 compose（既有） | ☑ 无需 live 核销（本地 compose 自供给；生产挂 E 门） |
+| **B-3a** `LANGFUSE_OUTBOX_MAX_ATTEMPTS`/`LANGFUSE_OUTBOX_RETRY_DELAY_MS`/`HARNESS_COMPENSATION_POLL_MS`/`P1_OUTBOX_CRITICAL_MAX_BACKLOG` | Langfuse outbox 重试、dead-letter 与 readiness 阈值 | **无需动作**——使用 `.env.example` 默认值；生产按告警容量调整 | 本地业务 PostgreSQL | ☑ 配置键与 `.env.example` 对齐；毒消息不自动无限重试 |
 | **B-4** `BETTER_AUTH_SECRET`/`DATABASE_URL`/`HARNESS_DBOS_*` | 认证/持久层/编排 | **无需动作**——本地生成、本地真机 PG（CI 真机 job 既有） | 本地真机 PG | ☑ 无需 live 核销（本地生成＋本车道真机 PG） |
 
 ## C. 运营供给项（数字＝运营参数，开发用种子样例值验收；D-123/D-128 口径）

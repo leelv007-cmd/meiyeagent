@@ -122,6 +122,124 @@ test('selected style requests every page and records a bounded conflict regenera
   );
 });
 
+test('text consistency failure rewrites text with its reason and retains an honest partial result', async () => {
+  let textReason: string | undefined;
+  let afterRegeneration = false;
+  const failingEvaluation = {
+    ...passingNoteEvaluation('2026-07-26T00:00:00.000Z'),
+    dimensions: passingNoteEvaluation('2026-07-26T00:00:00.000Z').dimensions.map(
+      (dimension) =>
+        dimension.dimension === 'theme_continuity'
+          ? {
+              ...dimension,
+              passed: false,
+              reason: '主题衔接不连贯',
+              pageIds: ['page-2'],
+            }
+          : dimension,
+    ),
+    regenerationPageIds: ['page-2'],
+  };
+  const compiler = new NotePlanCompiler(
+    {
+      async plan() {
+        return structuredClone(basePlan());
+      },
+      async draftPage({ page, consistencyFailure }) {
+        if (consistencyFailure) textReason = consistencyFailure;
+        return {
+          ...page.textBlock,
+          body: `${page.textBlock.body}${consistencyFailure ? ' 已按原因回炉' : ''}`,
+        };
+      },
+      async evaluate({ attempt }) {
+        if (attempt === 'after_regeneration') afterRegeneration = true;
+        return structuredClone(failingEvaluation);
+      },
+    },
+    {
+      async generate({ page }) {
+        return generation(`${page.id}-initial`);
+      },
+    },
+  );
+  const drafts = await compiler.compileDrafts({
+    intent: '介绍护理项目',
+    factRefs: [],
+    rightsRefs: [],
+    notePageBound: 3,
+  });
+
+  const result = await compiler.selectAndGenerate({
+    candidates: drafts,
+    selectedStyleId: 'story_recommendation',
+    notePageBound: 3,
+  });
+
+  assert.equal(textReason, '主题衔接不连贯');
+  assert.equal(afterRegeneration, true);
+  assert.deepEqual(result.partial, {
+    unresolvedPageIds: ['page-2'],
+    reason: 'consistency_remained_incomplete',
+  });
+  assert.equal(result.version.plan.pages[1]?.revision, 2);
+});
+
+test('second consistency evaluation failure returns partial instead of throwing', async () => {
+  const initialEvaluation = passingNoteEvaluation('2026-07-26T00:00:00.000Z');
+  const failingEvaluation = {
+    ...initialEvaluation,
+    dimensions: initialEvaluation.dimensions.map((dimension) =>
+      dimension.dimension === 'visual_consistency'
+        ? {
+            ...dimension,
+            passed: false,
+            reason: '画面一致性仍需复核',
+            pageIds: ['page-2'],
+          }
+        : dimension,
+    ),
+    regenerationPageIds: ['page-2'],
+  };
+  const compiler = new NotePlanCompiler(
+    {
+      async plan() {
+        return structuredClone(basePlan());
+      },
+      async draftPage({ page }) {
+        return page.textBlock;
+      },
+      async evaluate({ attempt }) {
+        if (attempt === 'after_regeneration') {
+          throw new Error('evaluator unavailable');
+        }
+        return structuredClone(failingEvaluation);
+      },
+    },
+    imagePort([]),
+  );
+  const drafts = await compiler.compileDrafts({
+    intent: '介绍护理项目',
+    factRefs: [],
+    rightsRefs: [],
+    notePageBound: 3,
+  });
+  const result = await compiler.selectAndGenerate({
+    candidates: drafts,
+    selectedStyleId: 'story_recommendation',
+    notePageBound: 3,
+  });
+
+  assert.deepEqual(result.partial, {
+    unresolvedPageIds: ['page-2'],
+    reason: 'second_evaluation_failed',
+  });
+  assert.equal(
+    result.version.plan.pages[1]?.imageAssetId,
+    'page-2-consistency_conflict',
+  );
+});
+
 test('single-page regeneration changes only the target page and charges one image point', () => {
   const version = {
     schema: 'image-text-note-version/v1' as const,

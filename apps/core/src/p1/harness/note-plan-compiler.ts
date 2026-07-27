@@ -25,8 +25,14 @@ export interface NotePlanStructuredPort {
   draftPage(input: {
     page: NotePlan['pages'][number];
     previousTextBlock?: NotePlan['pages'][number]['textBlock'];
-    style: NoteStyleConfig['styles'][number];
+    style: {
+      id: string;
+      name: string;
+      writingGuide: string;
+      structureTemplate?: string;
+    };
     themeAnchor: string;
+    consistencyFailure?: string;
   }): Promise<NotePlan['pages'][number]['textBlock']>;
   evaluate(input: {
     plan: NotePlan;
@@ -38,10 +44,68 @@ export interface NotePlanImagePort {
   generate(input: {
     page: NotePlan['pages'][number];
     reason: 'initial' | 'consistency_conflict' | 'merchant_request';
+    evaluationReason?: string;
   }): Promise<{
     asset: NonNullable<ContentPackage['generated']['ownedAssets']>[number];
     childRun: ContentPackage['generated']['childRuns'][number];
   }>;
+}
+
+const TEXT_SIDE_CONSISTENCY_DIMENSIONS = new Set([
+  'theme_continuity',
+  'non_repetition',
+  'role_coverage',
+]);
+
+export function notePageRegenerationPlan(
+  evaluation: NotePlanConsistencyEvaluation,
+  pageId: string,
+): {
+  reason: string;
+  side: 'text' | 'image' | 'both';
+  textReason?: string;
+  imageReason?: string;
+} {
+  const failing = evaluation.dimensions.filter(
+    (dimension) =>
+      !dimension.passed &&
+      (dimension.pageIds.length === 0 || dimension.pageIds.includes(pageId)),
+  );
+  const reason =
+    failing.map(({ reason: text }) => text).join('；') ||
+    '整篇一致性仍需调整。';
+  const textFailures = failing.filter(({ dimension }) =>
+    TEXT_SIDE_CONSISTENCY_DIMENSIONS.has(dimension),
+  );
+  const imageFailures = failing.filter(
+    ({ dimension }) => !TEXT_SIDE_CONSISTENCY_DIMENSIONS.has(dimension),
+  );
+  const joinReasons = (
+    dimensions: NotePlanConsistencyEvaluation['dimensions'],
+  ) =>
+    dimensions.length > 0
+      ? dimensions.map(({ reason: text }) => text).join('；')
+      : undefined;
+  return {
+    reason,
+    side:
+      textFailures.length > 0 && imageFailures.length === 0
+        ? 'text'
+        : textFailures.length > 0
+          ? 'both'
+          : 'image',
+    ...(joinReasons(textFailures)
+      ? { textReason: joinReasons(textFailures) }
+      : {}),
+    ...(joinReasons(imageFailures)
+      ? { imageReason: joinReasons(imageFailures) }
+      : {}),
+  };
+}
+
+export interface NotePlanPartialDelivery {
+  unresolvedPageIds: string[];
+  reason: 'consistency_remained_incomplete' | 'second_evaluation_failed';
 }
 
 export interface NotePlanCompilerAuditSignal {
@@ -173,21 +237,68 @@ export class NotePlanCompiler {
     const regenerationReceipts: ImageTextNoteVersion['regenerationReceipts'] =
       [];
     const regenerated = [];
+    let textRewrites = 0;
     for (const pageId of initialEvaluation.regenerationPageIds) {
       const page = plan.pages.find(({ id }) => id === pageId);
       if (!page) {
         throw new Error('Consistency evaluation referenced an unknown page.');
       }
+      const regeneration = notePageRegenerationPlan(initialEvaluation, pageId);
+      if (regeneration.side !== 'image') {
+        const index = plan.pages.findIndex(({ id }) => id === pageId);
+        const previousTextBlock = plan.pages[index - 1]?.textBlock;
+        const rewritten = await this.structured.draftPage({
+          page,
+          ...(previousTextBlock ? { previousTextBlock } : {}),
+          style: {
+            id: selected.plan.style.id,
+            name: selected.plan.style.name,
+            writingGuide: selected.plan.style.positioning,
+          },
+          themeAnchor: plan.themeAnchor,
+          consistencyFailure: regeneration.textReason ?? regeneration.reason,
+        });
+        plan = notePlanSchema.parse({
+          ...plan,
+          pages: plan.pages.map((candidate) =>
+            candidate.id === page.id
+              ? {
+                  ...candidate,
+                  revision: candidate.revision + 1,
+                  textBlock: {
+                    ...rewritten,
+                    exactText: candidate.textBlock.exactText,
+                  },
+                }
+              : candidate,
+          ),
+        });
+        assertNotePlanWithinBound(plan, input.notePageBound);
+        textRewrites += 1;
+        auditSignals.push({
+          eventType: 'note_page_regenerated',
+          payload: {
+            auditRef: `note-page-rewrite:${page.id}:r${page.revision + 1}`,
+            imagePoints: 0,
+            pageId: page.id,
+            reason: regeneration.textReason ?? regeneration.reason,
+            side: 'text',
+          },
+        });
+        if (regeneration.side === 'text') continue;
+      }
+      const target = plan.pages.find(({ id }) => id === pageId) ?? page;
       const generation = await this.images.generate({
-        page,
+        page: target,
         reason: 'consistency_conflict',
+        evaluationReason: regeneration.imageReason ?? regeneration.reason,
       });
       regenerated.push(generation);
-      const auditRef = `note-page-regeneration:${page.id}:r${page.revision + 1}`;
+      const auditRef = `note-page-regeneration:${target.id}:r${target.revision + 1}`;
       regenerationReceipts.push({
-        pageId: page.id,
-        fromRevision: page.revision,
-        toRevision: page.revision + 1,
+        pageId: target.id,
+        fromRevision: target.revision,
+        toRevision: target.revision + 1,
         imagePoints: 1,
         reason: 'consistency_conflict',
         auditRef,
@@ -195,7 +306,7 @@ export class NotePlanCompiler {
       plan = notePlanSchema.parse({
         ...plan,
         pages: plan.pages.map((candidate) =>
-          candidate.id === page.id
+          candidate.id === target.id
             ? {
                 ...candidate,
                 revision: candidate.revision + 1,
@@ -210,36 +321,50 @@ export class NotePlanCompiler {
         payload: { auditRef, imagePoints: 1, pageId: page.id },
       });
     }
-    const evaluation =
-      regenerationReceipts.length === 0
-        ? initialEvaluation
-        : notePlanConsistencyEvaluationSchema.parse(
-            await this.structured.evaluate({
-              plan,
-              attempt: 'after_regeneration',
-            }),
-          );
-    if (regenerationReceipts.length > 0) {
+    const regeneratedAnything =
+      regenerationReceipts.length > 0 || textRewrites > 0;
+    let evaluation = initialEvaluation;
+    let secondEvaluationFailed = false;
+    if (regeneratedAnything) {
+      try {
+        evaluation = notePlanConsistencyEvaluationSchema.parse(
+          await this.structured.evaluate({
+            plan,
+            attempt: 'after_regeneration',
+          }),
+        );
+      } catch {
+        secondEvaluationFailed = true;
+      }
       auditSignals.push({
         eventType: 'note_consistency_evaluated',
         payload: {
           attempt: 'after_regeneration',
           dimensions: evaluation.dimensions,
           regenerationPageIds: evaluation.regenerationPageIds,
+          ...(secondEvaluationFailed
+            ? { evaluationUnavailable: true, reason: 'second_evaluation_failed' }
+            : {}),
         },
       });
     }
-    if (evaluation.regenerationPageIds.length > 0) {
-      throw new Error(
-        'NotePlan consistency remained incomplete after one bounded regeneration.',
-      );
-    }
+    const unresolvedPageIds = evaluation.regenerationPageIds;
+    const partial: NotePlanPartialDelivery | undefined =
+      unresolvedPageIds.length > 0 || secondEvaluationFailed
+        ? {
+            unresolvedPageIds: [...unresolvedPageIds],
+            reason: secondEvaluationFailed
+              ? 'second_evaluation_failed'
+              : 'consistency_remained_incomplete',
+          }
+        : undefined;
 
     return {
       auditSignals,
       childRuns: [...initial, ...regenerated].map(({ childRun }) => childRun),
       ownedAssets: [...initial, ...regenerated].map(({ asset }) => asset),
       selectedStyleId: selected.styleId,
+      ...(partial ? { partial } : {}),
       version: imageTextNoteVersionSchema.parse({
         schema: 'image-text-note-version/v1',
         plan,
