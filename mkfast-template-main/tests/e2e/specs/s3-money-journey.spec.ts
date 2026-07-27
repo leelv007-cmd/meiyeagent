@@ -145,6 +145,28 @@ async function recordRedemptionCode(
   await signOut(page);
 }
 
+/**
+ * The seeds these journeys move away from and must put back.
+ *
+ * admin_config rows outlive a Playwright run — the business database is
+ * migrated, not dropped — so a journey that leaves the trial grant at copy 0
+ * reddens every later spec that expects a usable trial. Restoring is part of
+ * the journey, not cleanup etiquette. Values: D-123 seed / manifest C-3.
+ */
+const TRIAL_SEED = {
+  allowance: { audio: 0, copy: 5, image: 5, video: 1 },
+  concurrencyLimit: 1,
+  queuePriority: 1,
+  supportLabel: 'standard',
+  expireDays: 7,
+};
+const STARTER_SEED = {
+  allowance: { audio: 0, copy: 100, image: 40, video: 3 },
+  concurrencyLimit: 1,
+  queuePriority: 1,
+  supportLabel: 'standard',
+};
+
 test.describe('S3 钱的旅程', () => {
   test.beforeAll(async ({ request }) => {
     await cleanupE2EUsers(request);
@@ -168,73 +190,80 @@ test.describe('S3 钱的旅程', () => {
       request,
       TRIAL_ALLOWANCE_KEY,
       {
+        ...TRIAL_SEED,
         allowance: { audio: 0, copy: 0, image: 20, video: 1 },
-        concurrencyLimit: 1,
-        queuePriority: 1,
-        supportLabel: 'standard',
-        expireDays: 7,
       },
       'copy-empty-trial'
     );
-    await recordRedemptionCode(page, request, code);
+    try {
+      await recordRedemptionCode(page, request, code);
 
-    const merchant = await registerE2EUser(request);
-    await loginByForm(page, merchant);
-    await page.goto('/dashboard');
-    await seedConfirmedStore(page);
+      const merchant = await registerE2EUser(request);
+      await loginByForm(page, merchant);
+      await page.goto('/dashboard');
+      await seedConfirmedStore(page);
 
-    // The two-bucket shape is the 图文笔记 recipe's: it binds a page count, so
-    // the run debits copy 1 + image·pages. Reaching it needs an authorized
-    // source the same way the note compiler journey does.
-    await page.getByTestId('composer-lens-option-image_text').click();
-    await seedComposerInlineAuthorize(page, { fileName: 'note-case.png' });
-    await page.reload();
-    await page.getByTestId('composer-lens-option-image_text').click();
-    await page
-      .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
-      .click();
-    const applyRecipe = page.getByRole('button', { name: '套用并更新设置' });
-    const recipeApplied = page.getByTestId('composer-recipe-apply-undo');
-    await expect(recipeApplied.or(applyRecipe)).toBeVisible();
-    if (await applyRecipe.isVisible()) await applyRecipe.click();
-    await expect(recipeApplied).toBeVisible();
-    await page
-      .getByTestId('composer-intent-input')
-      .fill('把这周的护发案例做成一条小红书图文笔记');
+      // The two-bucket shape is the 图文笔记 recipe's: it binds a page count, so
+      // the run debits copy 1 + image·pages. Reaching it needs an authorized
+      // source the same way the note compiler journey does.
+      await page.getByTestId('composer-lens-option-image_text').click();
+      await seedComposerInlineAuthorize(page, { fileName: 'note-case.png' });
+      await page.reload();
+      await page.getByTestId('composer-lens-option-image_text').click();
+      await page
+        .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
+        .click();
+      const applyRecipe = page.getByRole('button', { name: '套用并更新设置' });
+      const recipeApplied = page.getByTestId('composer-recipe-apply-undo');
+      await expect(recipeApplied.or(applyRecipe)).toBeVisible();
+      if (await applyRecipe.isVisible()) await applyRecipe.click();
+      await expect(recipeApplied).toBeVisible();
+      await page
+        .getByTestId('composer-intent-input')
+        .fill('把这周的护发案例做成一条小红书图文笔记');
 
-    // 缺哪桶说哪桶 — 图片额度 is plentiful, so a card that only says
-    // 「额度不足」 would send the merchant to top up the wrong bucket.
-    const shortfall = page.getByTestId('composer-quota-shortfall');
-    await expect(shortfall).toBeVisible({ timeout: 60_000 });
-    await expect(shortfall).toContainText('文案额度');
-    await expect(shortfall).toHaveAttribute(
-      'data-quota-short-resources',
-      /copy/u
-    );
-    await expect(page.getByTestId('composer-submit')).toBeDisabled();
+      // 缺哪桶说哪桶 — 图片额度 is plentiful, so a card that only says
+      // 「额度不足」 would send the merchant to top up the wrong bucket.
+      const shortfall = page.getByTestId('composer-quota-shortfall');
+      await expect(shortfall).toBeVisible({ timeout: 60_000 });
+      await expect(shortfall).toContainText('文案额度');
+      await expect(shortfall).toHaveAttribute(
+        'data-quota-short-resources',
+        /copy/u
+      );
+      await expect(page.getByTestId('composer-submit')).toBeDisabled();
 
-    // D-141: the exits are the inline code and a human, not a link back to the
-    // read-only usage page the merchant is already looking at.
-    await expect(
-      page.getByTestId('composer-quota-contact-operations')
-    ).toHaveAttribute('href', '/contact');
+      // D-141: the exits are the inline code and a human, not a link back to the
+      // read-only usage page the merchant is already looking at.
+      await expect(
+        page.getByTestId('composer-quota-contact-operations')
+      ).toHaveAttribute('href', '/contact');
 
-    await page.getByTestId('composer-quota-redemption-code').fill(code);
-    await page.getByTestId('composer-quota-redeem-submit').click();
+      await page.getByTestId('composer-quota-redemption-code').fill(code);
+      await page.getByTestId('composer-quota-redeem-submit').click();
 
-    // Unlocked in place: same page, same draft, submit alive again.
-    await expect(page.getByTestId('composer-quota-unlock-success')).toBeVisible(
-      {
+      // Unlocked in place: same page, same draft, submit alive again.
+      await expect(
+        page.getByTestId('composer-quota-unlock-success')
+      ).toBeVisible({
         timeout: 60_000,
-      }
-    );
-    await expect(page).toHaveURL(/\/dashboard/u);
-    await expect(page.getByTestId('composer-intent-input')).toHaveValue(
-      /护发/u
-    );
-    await expect(page.getByTestId('composer-submit')).toBeEnabled({
-      timeout: 60_000,
-    });
+      });
+      await expect(page).toHaveURL(/\/dashboard/u);
+      await expect(page.getByTestId('composer-intent-input')).toHaveValue(
+        /护发/u
+      );
+      await expect(page.getByTestId('composer-submit')).toBeEnabled({
+        timeout: 60_000,
+      });
+    } finally {
+      await applyAdminConfig(
+        page,
+        request,
+        TRIAL_ALLOWANCE_KEY,
+        TRIAL_SEED,
+        'restore-trial-seed'
+      );
+    }
   });
 
   test('changing the 初级 copy allowance changes what the public pricing page quotes', async ({
@@ -254,24 +283,27 @@ test.describe('S3 钱的旅程', () => {
       request,
       STARTER_ALLOWANCE_KEY,
       {
-        allowance: {
-          audio: 0,
-          copy: nextCopyAllowance,
-          image: 40,
-          video: 3,
-        },
-        concurrencyLimit: 1,
-        queuePriority: 1,
-        supportLabel: 'standard',
+        ...STARTER_SEED,
+        allowance: { ...STARTER_SEED.allowance, copy: nextCopyAllowance },
       },
       'starter-copy-allowance'
     );
 
-    // No deploy, no second number to edit: the public page reads the same
-    // revision the grant reads (D-143 单一商品目录).
-    await page.goto('/pricing');
-    await expect(page.getByTestId('pricing-plan-quota-starter')).toContainText(
-      `${nextCopyAllowance} 条`
-    );
+    try {
+      // No deploy, no second number to edit: the public page reads the same
+      // revision the grant reads (D-143 单一商品目录).
+      await page.goto('/pricing');
+      await expect(
+        page.getByTestId('pricing-plan-quota-starter')
+      ).toContainText(`${nextCopyAllowance} 条`);
+    } finally {
+      await applyAdminConfig(
+        page,
+        request,
+        STARTER_ALLOWANCE_KEY,
+        STARTER_SEED,
+        'restore-starter-seed'
+      );
+    }
   });
 });
