@@ -100,7 +100,7 @@ export type ResultShellView =
       shell: ResultShellModel;
       /** Sub-projections composed into the shell (not parallel stores). */
       sub: {
-        streamPhase: 'awaiting_confirmation' | 'drafting' | null;
+        streamPhase: 'awaiting_confirmation' | 'completed' | 'drafting' | null;
         hasFirstToken: boolean;
         candidates: ReturnType<typeof harnessCandidateResultModel>;
         deliveryCapability: ResultShellDeliveryCapability | null;

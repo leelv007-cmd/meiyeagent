@@ -75,8 +75,12 @@ export type ResultTokenStreamSlot = {
 export type ResultTokenStreamProjection = {
   /** Whether this workspace uses token-level streaming at all. */
   tokenStreaming: boolean;
-  /** harnessCopyStreamPhase — drafting vs awaiting_confirmation. */
-  streamPhase: 'awaiting_confirmation' | 'drafting' | null;
+  /**
+   * harnessCopyStreamPhase — drafting vs awaiting_confirmation vs completed.
+   * Renderers key their streaming affordances off this, so a terminal run must
+   * report `completed` even when the last poll snapshot still says running.
+   */
+  streamPhase: 'awaiting_confirmation' | 'completed' | 'drafting' | null;
   /** True once any candidate slot has a non-empty title/body/hook. */
   hasFirstToken: boolean;
   /** Intermediate slots for fixture / e2e assertions. */
@@ -368,7 +372,13 @@ export function projectResultTokenStream(
     };
   }
 
-  const streamPhase = harnessCopyStreamPhase(input.progressState);
+  const completed = Boolean(input.completed);
+  // The session can know it is delivered before the last poll snapshot lands,
+  // so `completed` outranks progressState. Either route reaches the same
+  // terminal phase; neither may leave the body claiming to still be arriving.
+  const streamPhase = completed
+    ? 'completed'
+    : harnessCopyStreamPhase(input.progressState);
   const rawSlots = copyCandidateSlots({
     candidates: input.partialCandidates,
   });
@@ -382,7 +392,6 @@ export function projectResultTokenStream(
     role: index === 0 ? 'primary' : 'alternative',
   }));
   const hasFirstToken = slots.some((slot) => slot.hasToken);
-  const completed = Boolean(input.completed);
   const loading = Boolean(input.loading);
   const hasObject = Boolean(
     input.partialCandidates && input.partialCandidates.length > 0

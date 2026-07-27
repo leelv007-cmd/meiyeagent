@@ -148,6 +148,12 @@ function CandidateStream({ stream }: { stream: ResultTokenStreamProjection }) {
               {primary.title}
             </p>
           ) : null}
+          {/*
+            Only `drafting` is a live stream. `completed` (terminal run, or a
+            delivered session) and `awaiting_confirmation` render the body as
+            settled text — no caret, no blur-in reveal, and nothing replayed
+            when the merchant reloads a finished run.
+          */}
           <StreamingAiMarkdown
             className="prose prose-sm dark:prose-invert mt-1 max-w-none"
             content={primary.body}

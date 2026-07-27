@@ -181,6 +181,21 @@ describe('entry and destination are conversation affordances, not a form', () =>
   });
 });
 
+/**
+ * What the supply-layer markdown unit puts in the DOM while it believes the
+ * body is still arriving: a caret custom property on its container, and a
+ * per-block reveal marker.
+ */
+function candidateBodyIsStreaming() {
+  const primary = screen.getByTestId('composer-candidate-primary');
+  const container = primary.querySelector<HTMLElement>('[data-slot="markdown"]')
+    ?.firstElementChild as HTMLElement | null;
+  return (
+    Boolean(container?.style.getPropertyValue('--streamdown-caret')) ||
+    primary.querySelector('[data-sd-animate="true"]') !== null
+  );
+}
+
 describe('the transcript is a card flow', () => {
   const emptyStream = projectResultTokenStream({ workspaceKind: 'copy' });
 
@@ -343,6 +358,55 @@ describe('the transcript is a card flow', () => {
     expect(alternates.tagName).toBe('DETAILS');
     expect(alternates).not.toHaveAttribute('open');
     expect(alternates).toHaveTextContent('另有 1 个备选');
+  });
+
+  it('stops streaming the candidate body once the run is terminal', () => {
+    // 「无假流式」at the render seam: the same text must read as arriving while
+    // the workflow runs, and as delivered once it does not.
+    const partialCandidates = [
+      { candidateId: 'c1', title: '周末预约', body: '到店立减，先到先得。' },
+    ];
+    const { rerender } = render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={projectResultTokenStream({
+          workspaceKind: 'copy',
+          progressState: 'running',
+          partialCandidates,
+        })}
+      />
+    );
+    expect(candidateBodyIsStreaming()).toBe(true);
+
+    const terminal = projectResultTokenStream({
+      workspaceKind: 'copy',
+      progressState: 'success',
+      partialCandidates,
+    });
+    rerender(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={terminal}
+      />
+    );
+    expect(candidateBodyIsStreaming()).toBe(false);
+    expect(screen.getByTestId('composer-candidate-primary')).toHaveTextContent(
+      '到店立减，先到先得。'
+    );
+
+    // And on a reload of that finished run there is no live → terminal edge to
+    // ride: the fresh mount must be settled from the first frame.
+    cleanup();
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={running()}
+        stream={terminal}
+      />
+    );
+    expect(candidateBodyIsStreaming()).toBe(false);
   });
 
   it('renders the D-111 route notice from the intent_naming frame', () => {

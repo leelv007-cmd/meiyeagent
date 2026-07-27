@@ -37,6 +37,25 @@ describe('模型输出富渲染', () => {
     expect(bold).toEqual(['限时', '立减', '周末']);
   });
 
+  it('keeps CJK strikethrough struck — the other half of that plugin', () => {
+    // The retired dependency set carried remark-cjk-friendly-gfm-strikethrough
+    // alongside the emphasis plugin. Pinning only 强调 would let GFM
+    // strikethrough regress silently, so the awkward CJK shapes are named:
+    // bare CJK, opened by full-width brackets, and glued to CJK on both sides.
+    render(
+      <AiMarkdown
+        content={
+          '~~中文删除线~~\n\n【~~原价~~】现价 99\n\n（~~旧价~~）新价\n\n原价~~199~~现价'
+        }
+      />
+    );
+
+    const struck = Array.from(document.querySelectorAll('del')).map(
+      (node) => node.textContent
+    );
+    expect(struck).toEqual(['中文删除线', '原价', '旧价', '199']);
+  });
+
   it('leaves raw HTML from a model inert', () => {
     render(
       <AiMarkdown
@@ -73,4 +92,42 @@ describe('模型输出富渲染', () => {
     rerender(<StreamingAiMarkdown content={'周末到店立减'} streaming />);
     expect(screen.getByText(/周末到店立减/)).toBeInTheDocument();
   });
+
+  it('drops the streaming affordances the moment the run is terminal', () => {
+    const { rerender } = render(
+      <StreamingAiMarkdown content={'周末到店立减'} streaming />
+    );
+    // While drafting: the reveal runs and the caret trails the last block.
+    expect(streamingAffordances()).toEqual({ caret: true, reveal: true });
+
+    // Same text, run now finished — the merchant is looking at delivered copy.
+    rerender(
+      <StreamingAiMarkdown content={'周末到店立减'} streaming={false} />
+    );
+    expect(streamingAffordances()).toEqual({ caret: false, reveal: false });
+    expect(screen.getByText(/周末到店立减/)).toBeInTheDocument();
+  });
+
+  it('a finished body mounted fresh never replays as a stream', () => {
+    // Reload / remount of a delivered run: there is no true → false edge to
+    // ride, so a phase that still said drafting would animate it all over
+    // again. Nothing here may depend on having seen the stream live.
+    render(<StreamingAiMarkdown content={'周末到店立减'} streaming={false} />);
+    expect(streamingAffordances()).toEqual({ caret: false, reveal: false });
+    expect(screen.getByText(/周末到店立减/)).toBeInTheDocument();
+  });
 });
+
+/**
+ * What the supply-layer renderer actually puts in the DOM when it believes it
+ * is streaming: a per-block reveal marker, and a caret custom property on the
+ * container appended after the last block.
+ */
+function streamingAffordances() {
+  const root = document.querySelector<HTMLElement>('[data-slot="markdown"]');
+  const container = root?.firstElementChild as HTMLElement | null;
+  return {
+    caret: Boolean(container?.style.getPropertyValue('--streamdown-caret')),
+    reveal: document.querySelector('[data-sd-animate="true"]') !== null,
+  };
+}
