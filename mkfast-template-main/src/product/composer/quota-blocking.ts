@@ -278,9 +278,7 @@ function amount(resource: ComposerQuotaResource, value: number) {
 export function projectQuotaPassiveView(input: {
   requirements: QuotaRequirement[];
   /** Remaining balances from the entitlements projection, in bucket units. */
-  available: Partial<
-    Record<ComposerQuotaResource, number | null | undefined>
-  >;
+  available: Partial<Record<ComposerQuotaResource, number | null | undefined>>;
 }): QuotaPassiveView {
   if (input.requirements.length === 0) return HIDDEN;
   const rows = input.requirements.map((requirement) => ({
@@ -314,7 +312,9 @@ export function projectQuotaPassiveView(input: {
     notice: `本次用 ${spend} · ${left}`,
     short: shortRows.length > 0,
     shortNotice:
-      shortRows.length > 0 ? quotaShortNotice(shortRows.map((r) => r.resource)) : null,
+      shortRows.length > 0
+        ? quotaShortNotice(shortRows.map((r) => r.resource))
+        : null,
     shortResources: shortRows.map((row) => row.resource),
   };
 }

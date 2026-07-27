@@ -129,7 +129,9 @@ async function submitNoteJourney(
     // both before letting the merchant press 生成. A doomed submit that comes
     // back INSUFFICIENT_ENTITLEMENT is no longer the honest outcome here: the
     // merchant is stopped in front of the button, told which bucket ran out.
-    await expect(page.getByTestId('composer-quota-blocking-card')).toBeVisible();
+    await expect(
+      page.getByTestId('composer-quota-blocking-card')
+    ).toBeVisible();
     await expect(page.getByTestId('composer-submit')).toBeDisabled();
     return {
       authorizedAssetId: authorized.id,

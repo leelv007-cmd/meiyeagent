@@ -12,7 +12,10 @@
  * seeds are what an unconfigured deployment grants anyway.
  */
 import { serverEnv } from '@/env/server';
-import { publicPlanCatalogSchema, type PublicPlanCatalog } from '@meiye/contracts';
+import {
+  publicPlanCatalogSchema,
+  type PublicPlanCatalog,
+} from '@meiye/contracts';
 import { createServerFn } from '@tanstack/react-start';
 
 export const PLAN_CATALOG_SEED: PublicPlanCatalog = {
