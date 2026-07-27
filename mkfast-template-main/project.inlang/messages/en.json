@@ -3480,6 +3480,8 @@
   "today_recommendation_customer_action": "Desired customer action",
   "today_recommendation_facts": "Store facts used",
   "today_recommendation_facts_count": "{count} confirmed store facts",
+  "today_recommendation_pending_description": "Everything you have made is still here — only today’s pick did not come out. Start the next one whenever you like; your finished pieces are still saved.",
+  "today_recommendation_pending_title": "Today’s main recommendation is not ready yet",
   "today_recommendation_source": "Source task",
   "today_recommendation_stale_description": "Store facts changed, so the previous recommendation is no longer described as right for now. The next completed task will produce a new recommendation.",
   "today_recommendation_stale_title": "Waiting for a recommendation from the new facts",

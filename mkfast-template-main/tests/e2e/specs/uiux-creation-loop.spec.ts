@@ -489,6 +489,40 @@ test.describe('S2 cold start and unified creation loop', () => {
     await page.route('**/api/core/p1/harness/recommendation', async (route) => {
       await route.fulfill({ json: { data: state }, status: 200 });
     });
+    // W04「用了本店什么」: the card names the facts out of the merchant's own
+    // active ledger. Every other p1 query still goes to the real backend.
+    await page.route('**/api/core/p1/query', async (route) => {
+      const body = route.request().postDataJSON() as { action?: string };
+      if (body?.action !== 'store_facts_active') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        json: {
+          data: [
+            {
+              factId: 'offer-price',
+              workspaceId: 'workspace-e2e',
+              kind: 'service',
+              key: 'offer.name',
+              value: { name: '猫眼加固' },
+              scope: { storeId: 'workspace-e2e' },
+              source: {
+                kind: 'user_confirmation',
+                referenceId: 'confirmation-e2e',
+                capturedAt: '2026-07-18T08:00:00.000Z',
+              },
+              effectiveFrom: '2026-07-18T08:00:00.000Z',
+              expiresAt: null,
+              revision: 1,
+              recordedAt: '2026-07-18T08:00:00.000Z',
+              recordedBy: 'user-e2e',
+            },
+          ],
+        },
+        status: 200,
+      });
+    });
 
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
@@ -540,8 +574,11 @@ test.describe('S2 cold start and unified creation loop', () => {
       page.getByRole('heading', { level: 3, name: '本周猫眼项目推荐' })
     ).toBeVisible();
     await expect(page.getByText('换季期的咨询量正在上升')).toBeVisible();
-    // D-116: the merchant sees how many confirmed facts were used, never their ids.
-    await expect(page.getByText('本店 1 条已确认事实')).toBeVisible();
+    // D-116/W04: the merchant reads the fact by name — never its ledger id, and
+    // no longer only its count.
+    const usedFacts = page.getByTestId('today-recommendation-facts');
+    await expect(usedFacts.getByText('服务项目·猫眼加固')).toBeVisible();
+    await expect(usedFacts.getByText('本店 1 条已确认事实')).toBeVisible();
     await expect(page.getByText('store_fact:offer-price:1')).toBeHidden();
     await expect(page.getByText('私信预约', { exact: true })).toBeVisible();
     await expect(page.getByText('把新团购做一套能发的')).toBeVisible();
@@ -1372,6 +1409,17 @@ test.describe('S2 cold start and unified creation loop', () => {
         posterVersion.conversionHook,
       ])
     );
+
+    // W04 旅程硬门：这个账号真的生成过图片（上面 image.generate 的 Asset 已断言），
+    // 回到首页就不许再看到冷启动文案——降级态不得伪装成"你还没生成过东西"。
+    await page.goto('/dashboard');
+    const homeCard = page.getByTestId('today-recommendation');
+    await expect(homeCard).toBeVisible();
+    await expect(homeCard).toHaveAttribute(
+      'data-recommendation-state',
+      /^(?:pending|current)$/u
+    );
+    await expect(homeCard.getByText('还没有基于本店事实的推荐')).toHaveCount(0);
   });
 
   test('reload and derivation preserve the object graph', async ({

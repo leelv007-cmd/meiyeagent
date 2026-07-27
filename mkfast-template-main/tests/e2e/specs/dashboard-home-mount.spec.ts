@@ -383,7 +383,7 @@ test.describe('D-126 dashboard home mount', () => {
     await expect(page.getByTestId('example-store-showcase')).toBeHidden();
   });
 
-  test('a workspace with real work keeps an honest recommendation card', async ({
+  test('a workspace with real work is never told it produced nothing', async ({
     page,
     request,
   }) => {
@@ -402,18 +402,28 @@ test.describe('D-126 dashboard home mount', () => {
     await waitForResultJourney(page, COPY_CONTRACT, workId);
     await assertFinishedPieceBeforeAdopt(page);
 
-    // 这条 fixture 链路今天产不出主推荐（brief 交回的事实引用恒为空），所以首页
-    // 必须诚实地说"还没有"，并把下一步给出来 —— 不是空壳，也不是卡在加载态。
+    // W04 旅程硬门：这个账号已经真的产出过东西，首页就不许再说「还没生成过」。
+    // fixture 链路今天可能仍排不出主推荐（brief 交回的事实引用为空），那时诚实的
+    // 说法是「今天这条没排出来」——降级态不许伪装成冷启动。
     await page.goto('/dashboard');
     const card = page.getByTestId('today-recommendation');
     await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute(
+      'data-recommendation-state',
+      /^(?:pending|current)$/u
+    );
     await expect(
       card.getByRole('heading', {
         level: 3,
         name: '还没有基于本店事实的推荐',
       })
-    ).toBeVisible();
-    await expect(card.getByTestId('today-recommendation-use')).toHaveCount(0);
+    ).toHaveCount(0);
+    // 不是空壳：无论哪种态，下一步入口都在卡里。
+    await expect(
+      card.getByRole('button', {
+        name: /开始下一次任务|用这条推荐开始创作/u,
+      })
+    ).toHaveCount(1);
     expect((await card.innerText()).trim().length).toBeGreaterThan(0);
     await expect(
       card.getByText(/store_fact:|platform-sample|null|undefined/u)

@@ -1,9 +1,13 @@
-import type {
-  TodayRecommendation,
-  TodayRecommendationState,
+import {
+  STORE_FACT_KIND_LABELS,
+  type CreativeWorkbenchProjection,
+  type StoreFact,
+  type TodayRecommendation,
+  type TodayRecommendationState,
 } from '@meiye/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { IconArrowRight, IconSparkles } from '@tabler/icons-react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +18,8 @@ import {
   today_recommendation_customer_action,
   today_recommendation_facts,
   today_recommendation_facts_count,
+  today_recommendation_pending_description,
+  today_recommendation_pending_title,
   today_recommendation_source,
   today_recommendation_start,
   today_recommendation_stale_description,
@@ -23,43 +29,134 @@ import {
   today_recommendation_use_description,
   today_recommendation_why,
 } from '@/locale/paraglide/messages';
+import { operationsQuery, queryP1 } from '@/p1/client';
+import { p1QueryKeys } from '@/p1/query-keys';
 import { todayRecommendationIntent } from '@/product/creation-entry-model';
 import { readTodayRecommendation } from '@/product/harness-client';
 import { HotTopicOpportunityCardView } from './hot-topic-opportunity-card';
 
+/** Fact references are minted as `store_fact:<factId>:<revision>` (core production-context-port.ts:664). */
+const STORE_FACT_REFERENCE_PATTERN = /^store_fact:(.+):\d+$/u;
+/** Ledger keys, ids and slugs are never merchant language (D-116). */
+const INTERNAL_NAME_PATTERN =
+  /(?:^[a-z][a-z0-9_]*:[a-z0-9]|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/iu;
+const READABLE_NAME_KEYS = ['name', 'title', 'label'] as const;
+const MAX_FACT_LABELS = 6;
+const MAX_FACT_NAME_LENGTH = 24;
+
 export type TodayRecommendationView =
   | { kind: 'cold' }
+  | { kind: 'pending' }
   | { kind: 'stale' }
   | { kind: 'current'; recommendation: TodayRecommendation };
 
+/**
+ * W04: a degraded projection must not disguise itself as a cold start. A
+ * workspace that has already produced work is never told it produced nothing —
+ * it is told the recommendation itself did not come out.
+ */
 export function todayRecommendationView(
-  state: TodayRecommendationState | undefined
+  state: TodayRecommendationState | undefined,
+  workspaceHasWork = false
 ): TodayRecommendationView {
   if (!state?.recommendation) {
-    return { kind: state?.stale ? 'stale' : 'cold' };
+    if (state?.stale) return { kind: 'stale' };
+    return { kind: workspaceHasWork ? 'pending' : 'cold' };
   }
   return { kind: 'current', recommendation: state.recommendation };
+}
+
+/**
+ * W04 「用了本店什么」: name the facts instead of counting them. Names come from
+ * the merchant's own active fact ledger, matched by factId; a reference with no
+ * live fact behind it contributes to the count only — internal ids, ledger keys
+ * and values shaped like identifiers never reach the card.
+ */
+export function recommendationFactLabels(
+  references: readonly string[],
+  facts: readonly StoreFact[] | undefined
+): string[] {
+  if (!facts?.length) return [];
+  const byFactId = new Map(facts.map((fact) => [fact.factId, fact]));
+  const labels: string[] = [];
+  for (const reference of references) {
+    const factId = STORE_FACT_REFERENCE_PATTERN.exec(reference)?.[1];
+    const fact = factId ? byFactId.get(factId) : undefined;
+    if (!fact) continue;
+    const name = readableFactName(fact.value);
+    const label = name
+      ? `${STORE_FACT_KIND_LABELS[fact.kind]}·${name}`
+      : STORE_FACT_KIND_LABELS[fact.kind];
+    if (!labels.includes(label)) labels.push(label);
+  }
+  return labels.slice(0, MAX_FACT_LABELS);
+}
+
+function readableFactName(value: StoreFact['value']) {
+  const candidate =
+    typeof value === 'string'
+      ? value
+      : value && typeof value === 'object' && !Array.isArray(value)
+        ? READABLE_NAME_KEYS.map(
+            (key) => (value as Record<string, unknown>)[key]
+          ).find((entry) => typeof entry === 'string')
+        : undefined;
+  const name = typeof candidate === 'string' ? candidate.trim() : '';
+  return name &&
+    name.length <= MAX_FACT_NAME_LENGTH &&
+    !INTERNAL_NAME_PATTERN.test(name)
+    ? name
+    : undefined;
+}
+
+/** Anything already produced in this workspace counts as work in hand. */
+export function workbenchHasWork(
+  workbench: CreativeWorkbenchProjection | undefined
+) {
+  if (!workbench) return false;
+  return (
+    workbench.works.length > 0 ||
+    workbench.jobs.length > 0 ||
+    workbench.assets.length > 0 ||
+    workbench.contents.length > 0
+  );
 }
 
 export function TodayRecommendationCard({
   onStart,
   onUse,
+  workspaceId,
 }: {
   onStart: () => void;
   /** D-126: prefills the Composer draft — never auto-submits, never charges. */
   onUse: (intent: string) => void;
+  workspaceId?: string;
 }) {
   const recommendation = useQuery({
     queryKey: ['harness', 'today-recommendation'],
     queryFn: ({ signal }) => readTodayRecommendation(signal),
     retry: false,
   });
-  const view = todayRecommendationView(recommendation.data);
+  const workbench = useQuery({
+    queryKey: p1QueryKeys.request('operations', 'creative_workbench'),
+    queryFn: ({ signal }) =>
+      operationsQuery<CreativeWorkbenchProjection>(
+        'creative_workbench',
+        {},
+        signal
+      ),
+    retry: false,
+  });
+  const view = todayRecommendationView(
+    recommendation.data,
+    workbenchHasWork(workbench.data)
+  );
 
   return (
     <Card
       className="meiye-porcelain meiye-entry-card meiye-today-recommendation overflow-hidden"
       data-layer="base"
+      data-recommendation-state={view.kind}
       data-testid="today-recommendation"
     >
       <CardHeader className="pb-3">
@@ -79,18 +176,13 @@ export function TodayRecommendationCard({
           <CurrentRecommendation
             onUse={onUse}
             recommendation={view.recommendation}
+            workspaceId={workspaceId}
           />
         ) : (
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold">
-              {view.kind === 'stale'
-                ? today_recommendation_stale_title()
-                : today_recommendation_cold_title()}
-            </h3>
+            <h3 className="text-lg font-semibold">{emptyTitle(view.kind)}</h3>
             <p className="text-sm leading-6 text-muted-foreground">
-              {view.kind === 'stale'
-                ? today_recommendation_stale_description()
-                : today_recommendation_cold_description()}
+              {emptyDescription(view.kind)}
             </p>
             <Button onClick={onStart} size="sm" type="button" variant="outline">
               {today_recommendation_start()}
@@ -102,13 +194,54 @@ export function TodayRecommendationCard({
   );
 }
 
+function emptyTitle(kind: 'cold' | 'pending' | 'stale') {
+  if (kind === 'stale') return today_recommendation_stale_title();
+  return kind === 'pending'
+    ? today_recommendation_pending_title()
+    : today_recommendation_cold_title();
+}
+
+function emptyDescription(kind: 'cold' | 'pending' | 'stale') {
+  if (kind === 'stale') return today_recommendation_stale_description();
+  return kind === 'pending'
+    ? today_recommendation_pending_description()
+    : today_recommendation_cold_description();
+}
+
 function CurrentRecommendation({
   onUse,
   recommendation,
+  workspaceId,
 }: {
   onUse: (intent: string) => void;
   recommendation: TodayRecommendation;
+  workspaceId?: string;
 }) {
+  const [factsAsOf] = useState(() => new Date().toISOString());
+  const factsPayload = {
+    scope: { storeId: workspaceId ?? '' },
+    at: factsAsOf,
+  };
+  const facts = useQuery({
+    enabled: Boolean(workspaceId),
+    queryKey: p1QueryKeys.request(
+      'context',
+      'store_facts_active',
+      factsPayload
+    ),
+    queryFn: ({ signal }) =>
+      queryP1<StoreFact[]>(
+        'context',
+        { action: 'store_facts_active', payload: factsPayload },
+        signal
+      ),
+    retry: false,
+  });
+  const factLabels = recommendationFactLabels(
+    recommendation.factReferences,
+    facts.data
+  );
+
   return (
     <article className="space-y-5">
       <div>
@@ -126,13 +259,26 @@ function CurrentRecommendation({
         </div>
         <div className="rounded-xl bg-muted/70 p-3">
           <dt className="font-medium">{today_recommendation_facts()}</dt>
-          {/* D-116: fact references are internal ids — show the count, not them. */}
-          <dd className="mt-1">
-            <Badge variant="secondary">
+          {/* D-116: fact ids stay internal — the merchant reads the fact names
+              their own ledger carries, and the count when a name is not there. */}
+          <dd
+            className="mt-1 space-y-1.5"
+            data-testid="today-recommendation-facts"
+          >
+            {factLabels.length > 0 ? (
+              <span className="flex flex-wrap gap-1.5">
+                {factLabels.map((label) => (
+                  <Badge className="h-auto" key={label} variant="secondary">
+                    {label}
+                  </Badge>
+                ))}
+              </span>
+            ) : null}
+            <span className="block text-xs text-muted-foreground">
               {today_recommendation_facts_count({
                 count: recommendation.factReferences.length,
               })}
-            </Badge>
+            </span>
           </dd>
         </div>
         <div className="rounded-xl bg-muted/70 p-3">
