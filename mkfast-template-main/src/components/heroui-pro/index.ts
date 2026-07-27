@@ -38,6 +38,7 @@ export { CellSelect } from './vendor/components/cell-select';
 export { CellSlider } from './vendor/components/cell-slider';
 export { CellSwitch } from './vendor/components/cell-switch';
 export { DataGrid } from './vendor/components/data-grid';
+export type { DataGridColumn } from './vendor/components/data-grid';
 export { InlineSelect } from './vendor/components/inline-select';
 export { NativeSelect } from './vendor/components/native-select';
 export { NumberStepper } from './vendor/components/number-stepper';

@@ -263,4 +263,8 @@ test('labels commerce config as hot-read while disclosing the legacy Product fal
   assert.match(html, /旧 Product 兜底仍由部署配置治理/);
   assert.match(html, /admin-runtime-config-value/);
   assert.match(html, /审阅并记录/);
+  // U05：受控配置一律走结构化表单，后台不再留手敲 JSON 的口子（D-107）。
+  assert.match(html, /admin-config-form-plan\.allowances\.growth/);
+  assert.doesNotMatch(html, /<textarea/);
+  assert.match(html, /data-slot="number-stepper"/);
 });

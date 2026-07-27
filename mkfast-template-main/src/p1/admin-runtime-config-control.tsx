@@ -27,7 +27,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
 import {
   admin_runtime_assembly_byok_live_description,
   admin_runtime_assembly_byok_recorded_description,
@@ -108,6 +107,11 @@ import {
   admin_runtime_mode_tuzi_label,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
+import {
+  adminConfigKeyLabel,
+  defaultAdminConfigValue,
+} from '@/p1/admin-config-field-model';
+import { AdminConfigForm } from '@/p1/admin-config-form';
 import {
   formatAdminConfigValue,
   parseAdminConfigDraft,
@@ -315,6 +319,20 @@ function configTitle(key: string) {
     : assemblyMessage('admin_runtime_assembly_douyin_title', '抖音适配器装配');
 }
 
+/**
+ * 编辑器的起点：写过就从写过的那份开始，没写过就从此刻真正在用的那份开始。
+ * 空着起步会让运营以为「现在什么都没有」，那是假的。
+ */
+function startingDraft(
+  item: Pick<AdminConfigItem, 'effectiveValue' | 'key' | 'storedValue'>
+) {
+  const current = item.storedValue ?? item.effectiveValue;
+  if (current !== null && current !== undefined) {
+    return formatAdminConfigValue(current);
+  }
+  return formatAdminConfigValue(defaultAdminConfigValue(item.key));
+}
+
 export function adminConfigApplyRequest(
   item: Pick<AdminConfigItem, 'key' | 'revision'>,
   draft: string,
@@ -443,6 +461,15 @@ export function AdminRuntimeConfigControl({
     : selectableItems.length === 0
       ? (genericItems[0]?.key ?? '')
       : '';
+  // 表单吃结构值，草稿仍以配置契约的规范 JSON 存放：写入路径一点没变。
+  const draftValue = useMemo(() => {
+    if (!activeGenericKey) return undefined;
+    try {
+      return JSON.parse(draft) as unknown;
+    } catch {
+      return defaultAdminConfigValue(activeGenericKey);
+    }
+  }, [activeGenericKey, draft]);
   const hasHotReadConfig = items.some((item) => HOT_READ_KEYS.has(item.key));
   const hasCommerceConfig = items.some((item) => isCommerceKey(item.key));
   const selectedItem = useMemo(
@@ -466,9 +493,7 @@ export function AdminRuntimeConfigControl({
   useEffect(() => {
     if (selectedKey || !items[0]) return;
     setSelectedKey(items[0].key);
-    setDraft(
-      formatAdminConfigValue(items[0].storedValue ?? items[0].effectiveValue)
-    );
+    setDraft(startingDraft(items[0]));
   }, [items, selectedKey]);
 
   const refresh = async () => {
@@ -485,7 +510,7 @@ export function AdminRuntimeConfigControl({
   const selectKey = (key: string) => {
     const item = items.find((candidate) => candidate.key === key);
     setSelectedKey(key);
-    setDraft(formatAdminConfigValue(item?.storedValue ?? item?.effectiveValue));
+    setDraft(item ? startingDraft(item) : '');
     setValidationError(undefined);
   };
 
@@ -799,25 +824,23 @@ export function AdminRuntimeConfigControl({
                   <option disabled value="" />
                   {genericItems.map((item) => (
                     <option key={item.key} value={item.key}>
-                      {item.key}
+                      {adminConfigKeyLabel(item.key)}
                     </option>
                   ))}
                 </select>
               </div>
               {activeGenericKey ? (
-                <div className="space-y-2">
-                  <Label htmlFor="admin-runtime-config-value">
+                <div className="space-y-2" id="admin-runtime-config-value">
+                  <p className="font-medium text-sm">
                     {admin_runtime_config_value()}
-                  </Label>
-                  <Textarea
-                    aria-invalid={Boolean(validationError)}
-                    className="min-h-32 font-mono"
-                    id="admin-runtime-config-value"
-                    onChange={(event) => {
-                      setDraft(event.target.value);
+                  </p>
+                  <AdminConfigForm
+                    configKey={activeGenericKey}
+                    onChange={(next) => {
+                      setDraft(formatAdminConfigValue(next));
                       setValidationError(undefined);
                     }}
-                    value={draft}
+                    value={draftValue}
                   />
                 </div>
               ) : null}

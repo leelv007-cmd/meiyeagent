@@ -263,6 +263,30 @@ export const imageTextNoteVersionSchema = z
 
 export type NotePlan = z.infer<typeof notePlanSchema>;
 export type NoteStyleConfig = z.infer<typeof noteStyleConfigSchema>;
+
+/**
+ * 运营没改过时，图文笔记编译器按这两种风格出候选。
+ * 放在契约里是因为后台的风格编辑器也要拿它当起点——运营打开编辑器时
+ * 看到的必须就是此刻真正在用的那份，而不是一张空表（U05 / D-107）。
+ */
+export const DEFAULT_NOTE_STYLES: NoteStyleConfig = {
+  styles: [
+    {
+      id: 'practical_guide',
+      name: '干货科普版',
+      writingGuide: '用清楚、可信、便于收藏的方式解释项目与选择依据。',
+      structureTemplate: '结论先行，再解释场景、方案、事实与行动建议。',
+      platforms: ['xiaohongshu', 'douyin', 'video_account'],
+    },
+    {
+      id: 'story_recommendation',
+      name: '种草叙事版',
+      writingGuide: '从顾客场景切入，以真实体验路径承接预约行动。',
+      structureTemplate: '场景共鸣、需求展开、方案呈现、行动建议。',
+      platforms: ['xiaohongshu', 'douyin', 'video_account'],
+    },
+  ],
+};
 export type NoteStyleCandidates = z.infer<typeof noteStyleCandidatesSchema>;
 export type NotePlanConsistencyEvaluation = z.infer<
   typeof notePlanConsistencyEvaluationSchema
