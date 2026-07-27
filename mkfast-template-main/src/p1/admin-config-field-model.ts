@@ -57,6 +57,32 @@ import {
   admin_config_option_tier_pro,
   admin_config_option_tier_starter,
   admin_config_unsupported_shape,
+  admin_runtime_assembly_byok_live_description,
+  admin_runtime_assembly_byok_recorded_description,
+  admin_runtime_assembly_byok_title,
+  admin_runtime_assembly_douyin_live_unavailable,
+  admin_runtime_assembly_douyin_recorded_description,
+  admin_runtime_assembly_douyin_title,
+  admin_runtime_assembly_live_label,
+  admin_runtime_assembly_recorded_label,
+  admin_runtime_mode_ark_description,
+  admin_runtime_mode_ark_label,
+  admin_runtime_mode_ark_tuzi_description,
+  admin_runtime_mode_ark_tuzi_label,
+  admin_runtime_mode_direct_description,
+  admin_runtime_mode_direct_label,
+  admin_runtime_mode_disabled_description,
+  admin_runtime_mode_disabled_label,
+  admin_runtime_mode_fixture_description,
+  admin_runtime_mode_fixture_label,
+  admin_runtime_mode_gateway_description,
+  admin_runtime_mode_gateway_label,
+  admin_runtime_mode_media_title,
+  admin_runtime_mode_model_title,
+  admin_runtime_mode_recorded_description,
+  admin_runtime_mode_recorded_label,
+  admin_runtime_mode_tuzi_description,
+  admin_runtime_mode_tuzi_label,
   admin_plan_audio,
   admin_plan_concurrency,
   admin_plan_copy,
@@ -72,6 +98,11 @@ import {
 export type AdminConfigFieldPath = readonly (number | string)[];
 
 export interface AdminConfigFieldOption {
+  /** 这个选项意味着什么；只有需要解释的枚举才有。 */
+  description?: string;
+  /** 契约不接受，但产品要如实说明「还没接」而不是当它不存在。 */
+  disabled?: boolean;
+  disabledReason?: string;
   label: string;
   value: string;
 }
@@ -85,7 +116,15 @@ interface FieldBase {
 
 export type AdminConfigField =
   | (FieldBase & { kind: 'boolean' })
-  | (FieldBase & { kind: 'enum'; options: AdminConfigFieldOption[] })
+  | (FieldBase & {
+      kind: 'enum';
+      options: AdminConfigFieldOption[];
+      /**
+       * 整个配置项就是一个枚举时摊成单选卡片（每个选项要解释自己）；
+       * 嵌在表单/行内的枚举收成下拉。
+       */
+      presentation: 'radio' | 'select';
+    })
   | (FieldBase & {
       kind: 'number';
       /** 有界小量程用滑杆调，开放计数用步进器敲。 */
@@ -228,6 +267,25 @@ function isIntegerSchema(schema: AnySchema) {
 
 /* ── 文案：字段名 → 运营看得懂的说法（D-116） ───────────────────────────── */
 
+/**
+ * 装配那几条文案是后加的 message，编译产物里可能还没有；
+ * 取不到就退回中文原句，不让界面出现空标签。
+ */
+const assemblyMessages = {
+  admin_runtime_assembly_byok_live_description,
+  admin_runtime_assembly_byok_recorded_description,
+  admin_runtime_assembly_byok_title,
+  admin_runtime_assembly_douyin_live_unavailable,
+  admin_runtime_assembly_douyin_recorded_description,
+  admin_runtime_assembly_douyin_title,
+  admin_runtime_assembly_live_label,
+  admin_runtime_assembly_recorded_label,
+} satisfies Record<string, (() => string) | undefined>;
+
+function assemblyMessage(key: keyof typeof assemblyMessages, fallback: string) {
+  return assemblyMessages[key]?.() ?? fallback;
+}
+
 const SEGMENT_LABELS: Record<string, () => string> = {
   amountMicros: admin_config_field_amount_micros,
   audio: admin_plan_audio,
@@ -263,6 +321,12 @@ const TRANSPARENT_GROUPS = new Set(['allowance']);
 const SHORT_TEXT_SEGMENTS = new Set(['id', 'name']);
 
 const KEY_LABELS: Record<string, () => string> = {
+  'byok.adapter.assembly': () =>
+    assemblyMessage('admin_runtime_assembly_byok_title', 'BYOK 适配器装配'),
+  'douyin.adapter.assembly': () =>
+    assemblyMessage('admin_runtime_assembly_douyin_title', '抖音适配器装配'),
+  'model.execution.mode': admin_runtime_mode_model_title,
+  'model.media.execution.mode': admin_runtime_mode_media_title,
   'compliance.aigc_label.default': admin_config_key_aigc_label_default,
   'compliance.regulated_mode.default': admin_config_key_regulated_mode_default,
   'compliance.watermark.default': admin_config_key_watermark_default,
@@ -304,6 +368,114 @@ const FIELD_HINTS: Record<string, () => string> = {
   amountMicros: admin_config_field_amount_micros_hint,
 };
 
+/**
+ * 执行模式与适配装配这几个选项，光看值（`gateway`／`ark,tuzi`）没人知道选了会怎样，
+ * 所以每个值配一句解释。
+ *
+ * 注意这里**只有文案**：能选哪些值仍然只有 `configSchemas` 一个来源。
+ * 契约加了一个值而这里没配文案，选项照样出现，只是没有那句解释——
+ * 不会出现「界面上有、契约不认」的漂移。
+ */
+const OPTION_COPY: Record<
+  string,
+  Record<string, { description: () => string; label: () => string }>
+> = {
+  'byok.adapter.assembly': {
+    live: {
+      description: () =>
+        assemblyMessage(
+          'admin_runtime_assembly_byok_live_description',
+          '使用已配置的真实 BYOK 适配器；保存后需重启生效。'
+        ),
+      label: () => assemblyMessage('admin_runtime_assembly_live_label', 'Live'),
+    },
+    recorded: {
+      description: () =>
+        assemblyMessage(
+          'admin_runtime_assembly_byok_recorded_description',
+          '使用录制适配器，不发起真实供应商调用。'
+        ),
+      label: () =>
+        assemblyMessage('admin_runtime_assembly_recorded_label', 'Recorded'),
+    },
+  },
+  'douyin.adapter.assembly': {
+    recorded: {
+      description: () =>
+        assemblyMessage(
+          'admin_runtime_assembly_douyin_recorded_description',
+          '仅提供录制契约，不代表已接入抖音官方能力。'
+        ),
+      label: () =>
+        assemblyMessage('admin_runtime_assembly_recorded_label', 'Recorded'),
+    },
+  },
+  'model.execution.mode': {
+    direct: {
+      description: admin_runtime_mode_direct_description,
+      label: admin_runtime_mode_direct_label,
+    },
+    disabled: {
+      description: admin_runtime_mode_disabled_description,
+      label: admin_runtime_mode_disabled_label,
+    },
+    fixture: {
+      description: admin_runtime_mode_fixture_description,
+      label: admin_runtime_mode_fixture_label,
+    },
+    gateway: {
+      description: admin_runtime_mode_gateway_description,
+      label: admin_runtime_mode_gateway_label,
+    },
+    recorded: {
+      description: admin_runtime_mode_recorded_description,
+      label: admin_runtime_mode_recorded_label,
+    },
+  },
+  'model.media.execution.mode': {
+    ark: {
+      description: admin_runtime_mode_ark_description,
+      label: admin_runtime_mode_ark_label,
+    },
+    'ark,tuzi': {
+      description: admin_runtime_mode_ark_tuzi_description,
+      label: admin_runtime_mode_ark_tuzi_label,
+    },
+    disabled: {
+      description: admin_runtime_mode_disabled_description,
+      label: admin_runtime_mode_disabled_label,
+    },
+    tuzi: {
+      description: admin_runtime_mode_tuzi_description,
+      label: admin_runtime_mode_tuzi_label,
+    },
+  },
+};
+
+/**
+ * 契约不接受、但产品必须如实说明「还没接」的选项。
+ *
+ * 抖音只允许 `recorded`；把 Live 藏起来会让运营以为平台压根没这个方向，
+ * 所以它以**禁用**的形态留在选项里，并写明原因。它永远不会被提交——
+ * 契约会拒，禁用态也点不动。
+ */
+const UNAVAILABLE_OPTIONS: Record<
+  string,
+  { label: () => string; reason: () => string; value: string }[]
+> = {
+  'douyin.adapter.assembly': [
+    {
+      label: () => assemblyMessage('admin_runtime_assembly_live_label', 'Live'),
+      reason: () =>
+        assemblyMessage(
+          'admin_runtime_assembly_douyin_live_unavailable',
+          '未接入（pilot 前）'
+        ),
+      value: 'live',
+    },
+  ],
+};
+
 /** 配置项本身的说法；没有登记的键退回键名，测试会盯住这条不许出现。 */
 export function adminConfigKeyLabel(key: string) {
   return KEY_LABELS[key]?.() ?? key;
@@ -316,6 +488,33 @@ function segmentLabel(segment: number | string) {
 
 function optionLabel(value: string) {
   return OPTION_LABELS[value]?.() ?? value;
+}
+
+/** 枚举值来自契约；这里只给它配上说法和解释。 */
+function enumOptions(
+  key: string,
+  values: readonly string[],
+  path: AdminConfigFieldPath
+): AdminConfigFieldOption[] {
+  const copy = OPTION_COPY[key];
+  const options = values.map((value) => ({
+    description: copy?.[value]?.description(),
+    label: copy?.[value]?.label() ?? optionLabel(value),
+    value,
+  }));
+  // 「还没接」的选项只在配置项本身就是这个枚举时展示（行内格子放不下解释）。
+  if (path.length > 0) return options;
+  const unavailable = UNAVAILABLE_OPTIONS[key] ?? [];
+  return [
+    ...options,
+    ...unavailable.map((entry) => ({
+      description: entry.reason(),
+      disabled: true,
+      disabledReason: entry.reason(),
+      label: entry.label(),
+      value: entry.value,
+    })),
+  ];
 }
 
 /**
@@ -375,15 +574,15 @@ function buildField(
   if (def.type === 'enum' || def.type === 'literal') {
     const values =
       def.type === 'enum'
-        ? Object.values(def.entries ?? {})
-        : (def.values ?? []).map((value) => String(value));
+        ? Object.values(def.entries ?? {}).map(String)
+        : (def.values ?? []).map(String);
     return {
       ...base,
       kind: 'enum',
-      options: values.map((value) => ({
-        label: optionLabel(String(value)),
-        value: String(value),
-      })),
+      options: enumOptions(key, values, path),
+      // 整个配置项就是一个枚举时，每个选项都要解释自己，摊成单选卡片；
+      // 嵌在表单或行内格子里的枚举收成下拉。
+      presentation: path.length === 0 ? 'radio' : 'select',
     };
   }
 
@@ -554,6 +753,20 @@ export function defaultAdminConfigValue(key: string): unknown {
   const schema = adminConfigSchemaFor(key as AdminConfigKey);
   if (!schema) return null;
   return defaultForSchema(schema as AnySchema);
+}
+
+/**
+ * 这个配置项该不该常驻展开，而不是藏在「先选一项」的下拉后面。
+ *
+ * 判据从字段树来，不是一张硬编码的键名清单：整项就是一个单选枚举时，
+ * 几个选项本来就该并排让人比较（执行模式、适配装配都是这种）。
+ */
+export function isInlineConfigKey(key: string) {
+  const fields = buildAdminConfigFields(key);
+  const [only] = fields;
+  return (
+    fields.length === 1 && only.kind === 'enum' && only.presentation === 'radio'
+  );
 }
 
 /** 列表新增一行时的模板值。 */

@@ -21,9 +21,11 @@ import {
   NativeSelect,
   NumberStepper,
 } from '@/components/heroui-pro';
+import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import {
   admin_config_list_add,
@@ -45,6 +47,17 @@ import {
   writeFieldValue,
 } from '@/p1/admin-config-field-model';
 
+/**
+ * 选项在**当下**的运行时状态：哪个正在生效、哪个因为缺东西装不起来。
+ * 这些不在契约里，由拿着配置行的控制器传进来；表单本身不认识运行时。
+ */
+export interface AdminConfigOptionMeta {
+  /** 装不起来的原因（缺凭据之类），有值即置灰。 */
+  blockedReason?: string;
+  /** 「HTTP · 当前生效」这类小标签。 */
+  chips?: string[];
+}
+
 interface FieldViewProps {
   configKey: string;
   /** 行内格子用更紧的控件，成表单的字段用常规控件。 */
@@ -52,6 +65,7 @@ interface FieldViewProps {
   disabled?: boolean;
   field: AdminConfigField;
   onChange: (next: unknown) => void;
+  optionMeta?: (optionValue: string) => AdminConfigOptionMeta;
   /** 解析后的真实路径（列表把模板里的下标换成行号）。 */
   path: AdminConfigFieldPath;
   root: unknown;
@@ -101,9 +115,71 @@ function BooleanField(props: FieldViewProps) {
 }
 
 function EnumField(props: FieldViewProps) {
-  const { dense, disabled, field, onChange, path, root } = props;
+  const {
+    configKey,
+    dense,
+    disabled,
+    field,
+    onChange,
+    optionMeta,
+    path,
+    root,
+  } = props;
   if (field.kind !== 'enum') return null;
   const current = String(readFieldValue(root, path) ?? '');
+
+  // 整项就是一个枚举：几个选项并排，各自带解释与当下状态，让人能比较着选。
+  if (field.presentation === 'radio' && !dense) {
+    return (
+      <fieldset className="space-y-3" data-testid={domId(props)}>
+        <legend className="px-1 font-medium">{field.label}</legend>
+        <RadioGroup
+          aria-label={field.label}
+          onValueChange={(next) => onChange(writeFieldValue(root, path, next))}
+          value={current}
+        >
+          {field.options.map((option) => {
+            const meta = optionMeta?.(option.value);
+            const blocked = Boolean(option.disabled || meta?.blockedReason);
+            return (
+              <label
+                className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
+                htmlFor={`${configKey}-${option.value}`}
+                key={option.value}
+              >
+                <RadioGroupItem
+                  className="mt-0.5"
+                  disabled={disabled || blocked}
+                  id={`${configKey}-${option.value}`}
+                  value={option.value}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2 font-medium">
+                    {option.label}
+                    {(meta?.chips ?? []).map((chip) => (
+                      <AdminStatusChip key={chip} variant="secondary">
+                        {chip}
+                      </AdminStatusChip>
+                    ))}
+                  </span>
+                  {option.description ? (
+                    <span className="mt-1 block text-muted-foreground text-xs">
+                      {option.description}
+                    </span>
+                  ) : null}
+                  {(meta?.blockedReason ?? option.disabledReason) ? (
+                    <span className="mt-1 block text-destructive text-xs">
+                      {meta?.blockedReason ?? option.disabledReason}
+                    </span>
+                  ) : null}
+                </span>
+              </label>
+            );
+          })}
+        </RadioGroup>
+      </fieldset>
+    );
+  }
 
   if (dense) {
     return (
@@ -254,7 +330,11 @@ function ToggleSetField(props: FieldViewProps) {
   if (field.kind !== 'toggle-set') return null;
   const raw = readFieldValue(root, path);
   const selected = new Set(Array.isArray(raw) ? raw.map(String) : []);
+  // 契约要求至少留几个，就真的关不掉最后那几个——只在下面写句提示、
+  // 让人关掉再被后端打回来，是把校验当成了说明书。
+  const atMin = selected.size <= (field.minItems ?? 0);
   const toggle = (value: string, next: boolean) => {
+    if (!next && atMin && selected.has(value)) return;
     const kept = field.options
       .map((option) => option.value)
       .filter((option) => (option === value ? next : selected.has(option)));
@@ -268,7 +348,7 @@ function ToggleSetField(props: FieldViewProps) {
         {field.options.map((option) => (
           <CellSwitch.Root
             data-testid={`${domId(props)}-${option.value}`}
-            isDisabled={disabled}
+            isDisabled={disabled || (atMin && selected.has(option.value))}
             isSelected={selected.has(option.value)}
             key={option.value}
             onChange={(next) => toggle(option.value, next)}
@@ -491,11 +571,13 @@ export function AdminConfigForm({
   configKey,
   disabled,
   onChange,
+  optionMeta,
   value,
 }: {
   configKey: string;
   disabled?: boolean;
   onChange: (next: unknown) => void;
+  optionMeta?: (optionValue: string) => AdminConfigOptionMeta;
   value: unknown;
 }) {
   const fields = useMemo(() => buildAdminConfigFields(configKey), [configKey]);
@@ -520,6 +602,7 @@ export function AdminConfigForm({
             disabled={disabled}
             field={field}
             onChange={onChange}
+            optionMeta={optionMeta}
             path={field.path}
             root={value}
           />

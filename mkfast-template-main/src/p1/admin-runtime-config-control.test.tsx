@@ -7,6 +7,88 @@ import {
   adminConfigApplyRequest,
   AdminRuntimeConfigControl,
 } from './admin-runtime-config-control';
+import { defaultAdminConfigValue } from './admin-config-field-model';
+import { ADMIN_CONFIG_KEYS } from './admin-config-view-model';
+
+/**
+ * U05 的硬门在这里有一条全量镜像断言，**穿过生产控制器**跑：
+ * 控制器自己决定一个键走常驻单选还是走下拉挑选，所以只有从这里进去，
+ * 才能证明「19 个键全都落在新渲染层上」——直接喂表单组件会绕过这道分流。
+ */
+function renderControlForKey(key: string) {
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
+    {
+      activationEvidenceStatus: 'recorded_only',
+      actorId: 'platform-admin',
+      correlationId: `all-keys-${key}`,
+      createdAt: '2026-07-27T00:00:00.000Z',
+      effectiveValue: defaultAdminConfigValue(key),
+      key,
+      reason: 'coverage',
+      revision: 1,
+      rolledBackToRevision: null,
+      scope: 'global',
+      status: 'applied',
+      storedValue: defaultAdminConfigValue(key),
+      wired: true,
+    },
+  ]);
+  queryClient.setQueryData(
+    p1QueryKeys.request('admin-config', 'config_history', { key }),
+    []
+  );
+  return renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminRuntimeConfigControl keys={[key]} />
+    </QueryClientProvider>
+  );
+}
+
+test('every admin config key reaches the schema renderer through the production control', () => {
+  assert.equal(ADMIN_CONFIG_KEYS.length, 19);
+  for (const key of ADMIN_CONFIG_KEYS) {
+    const html = renderControlForKey(key);
+    assert.match(
+      html,
+      new RegExp(`admin-config-form-${key.replaceAll('.', '\\.')}`),
+      `${key} did not reach the schema renderer`
+    );
+    // 后台任何一个配置项都不该再出现「自己拼一段 JSON」的输入框。
+    assert.doesNotMatch(
+      html,
+      /<textarea[^>]*font-mono/,
+      `${key} kept a code editor`
+    );
+    assert.doesNotMatch(
+      html,
+      /admin_runtime_config_value.*<textarea/,
+      `${key} kept a raw value editor`
+    );
+  }
+});
+
+/** 四个执行模式/装配键必须常驻展开，而不是被塞进「先选一项」的下拉里。 */
+test('mode and assembly keys stay expanded instead of hiding behind the key picker', () => {
+  for (const key of [
+    'model.execution.mode',
+    'model.media.execution.mode',
+    'byok.adapter.assembly',
+    'douyin.adapter.assembly',
+  ]) {
+    const html = renderControlForKey(key);
+    assert.match(
+      html,
+      new RegExp(`admin-runtime-config-inline-${key.replaceAll('.', '\\.')}`),
+      `${key} lost its expanded card`
+    );
+    assert.doesNotMatch(
+      html,
+      /id="admin-runtime-config-key"/,
+      `${key} was pushed behind the key picker`
+    );
+  }
+});
 
 test('shows HTTP and worker effective runtime states independently', () => {
   const queryClient = new QueryClient();

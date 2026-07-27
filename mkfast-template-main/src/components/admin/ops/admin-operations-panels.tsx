@@ -42,10 +42,21 @@ import {
   admin_ops_outcome_deferred,
   admin_ops_outcome_retry,
   admin_ops_outcome_threw,
+  admin_ops_run_status_accepted,
+  admin_ops_run_status_acceptance_unknown,
+  admin_ops_run_status_draining,
+  admin_ops_run_status_failed,
+  admin_ops_run_status_queued,
+  admin_ops_run_status_rejected_before_accept,
+  admin_ops_run_status_running,
+  admin_ops_run_status_succeeded,
   admin_ops_runner_outcomes,
   admin_ops_tasks_description,
   admin_ops_tasks_outcome_empty,
   admin_ops_tasks_outcome_share,
+  admin_ops_tasks_recent,
+  admin_ops_tasks_timeline_empty,
+  admin_ops_tasks_timeline_unknown,
   admin_ops_tasks_title,
   admin_ops_tenants_allocations,
   admin_ops_tenants_description,
@@ -53,8 +64,16 @@ import {
   admin_ops_tenants_pools,
   admin_ops_tenants_recent,
   admin_ops_tenants_title,
+  admin_ops_tenants_trial_grants,
+  admin_ops_tenants_trial_label,
+  admin_ops_tenants_trial_off,
+  admin_ops_tenants_trial_on,
+  admin_ops_tenants_trial_unknown,
   admin_ops_unknown,
+  admin_ops_usage_allowance_title,
   admin_ops_usage_chart_label,
+  admin_ops_usage_consumption_title,
+  admin_ops_usage_consumption_unwired,
   admin_ops_usage_description,
   admin_ops_usage_title,
   admin_plan_copy,
@@ -79,8 +98,11 @@ import {
 } from '@/p1/admin-entitlement-status-model';
 import {
   buildOutcomeSlices,
+  buildTaskTimeline,
   buildTenantTimeline,
+  buildTrialStatus,
   buildUsageBars,
+  PLATFORM_USAGE_CONSUMPTION,
 } from '@/p1/admin-operations-chart-model';
 import {
   normalizeOperationalMetrics,
@@ -218,13 +240,31 @@ function AdminUsagePanel() {
           {admin_ops_usage_description()}
         </AdminPanelDescription>
       </AdminPanelHeader>
-      <AdminPanelContent>
+      <AdminPanelContent className="space-y-4">
+        {/*
+          面板叫「三桶用量」，所以先回答用量：平台级消耗没有投影，就直说
+          「暂无用量数据」。把下面那张额度图当成用量，才是这一面最容易犯的谎。
+          这段不进 PanelBody——套餐目录空不空，都不改变「消耗没接线」这个事实。
+        */}
+        <div className="space-y-1" data-testid="admin-ops-usage-consumption">
+          <p className="font-medium text-sm">
+            {admin_ops_usage_consumption_title()}
+          </p>
+          <p className="text-muted text-sm">
+            {PLATFORM_USAGE_CONSUMPTION.status === 'unknown'
+              ? admin_ops_usage_consumption_unwired()
+              : null}
+          </p>
+        </div>
         <PanelBody
           isEmpty={plans.length === 0}
           isError={Boolean(catalogQuery.error)}
           isLoading={catalogQuery.isPending}
           testId="admin-ops-usage"
         >
+          <p className="mb-2 font-medium text-sm">
+            {admin_ops_usage_allowance_title()}
+          </p>
           {/* 三档四档并排看一眼就知道哪一档给得多，具体数字仍在下面的行里。 */}
           <BarChart.Root
             aria-label={admin_ops_usage_chart_label()}
@@ -276,11 +316,33 @@ function AdminUsagePanel() {
   );
 }
 
+/** 供给运行状态的中文说法；没登记的状态原样显示，不猜。 */
+function runStatusLabel(status: string) {
+  const labels: Record<string, () => string> = {
+    accepted: admin_ops_run_status_accepted,
+    acceptance_unknown: admin_ops_run_status_acceptance_unknown,
+    draining: admin_ops_run_status_draining,
+    failed: admin_ops_run_status_failed,
+    queued: admin_ops_run_status_queued,
+    rejected_before_accept: admin_ops_run_status_rejected_before_accept,
+    running: admin_ops_run_status_running,
+    succeeded: admin_ops_run_status_succeeded,
+  };
+  return labels[status]?.() ?? status;
+}
+
 function AdminTasksPanel() {
   const metricsQuery = useQuery({
     queryKey: adminOperationalMetricsQueryKey,
     queryFn: ({ signal }) => readAdminOperationalMetrics(signal),
   });
+  // 「任务执行」这一面票面要的是任务本身，观测快照只给得出聚合数字，
+  // 逐条执行记录在供给快照里——同一个 query key，与租户面共用一次请求。
+  const snapshotQuery = useAdminSupplyControlSnapshot();
+  const taskTimeline = buildTaskTimeline(
+    snapshotQuery.data?.runPage?.rows ?? snapshotQuery.data?.runs,
+    runStatusLabel
+  );
   const metrics = metricsQuery.data
     ? normalizeOperationalMetrics(metricsQuery.data)
     : null;
@@ -292,25 +354,24 @@ function AdminTasksPanel() {
     retry: admin_ops_outcome_retry(),
     threw: admin_ops_outcome_threw(),
   });
-  const tiles = metrics
-    ? [
-        {
-          id: 'queue-depth',
-          label: p1_admin_health_queue_depth(),
-          value: metricNumber(metrics.queue.queueDepth),
-        },
-        {
-          id: 'active-jobs',
-          label: p1_admin_health_worker_active_jobs(),
-          value: metricNumber(metrics.worker.activeJobs),
-        },
-        {
-          id: 'deferred',
-          label: p1_admin_health_runner_deferred(),
-          value: metricNumber(metrics.runner.deferredCount),
-        },
-      ]
-    : [];
+  // 三块数字始终在位：拿不到就写「未知」。让它整块消失，运营会以为后台没这项。
+  const tiles = [
+    {
+      id: 'queue-depth',
+      label: p1_admin_health_queue_depth(),
+      value: metrics ? metricNumber(metrics.queue.queueDepth) : null,
+    },
+    {
+      id: 'active-jobs',
+      label: p1_admin_health_worker_active_jobs(),
+      value: metrics ? metricNumber(metrics.worker.activeJobs) : null,
+    },
+    {
+      id: 'deferred',
+      label: p1_admin_health_runner_deferred(),
+      value: metrics ? metricNumber(metrics.runner.deferredCount) : null,
+    },
+  ];
   const outcomeSummary =
     outcomes && outcomes.status === 'known'
       ? p1_admin_health_outcomes({
@@ -331,10 +392,19 @@ function AdminTasksPanel() {
         </AdminPanelDescription>
       </AdminPanelHeader>
       <AdminPanelContent>
+        {/*
+          两条投影各答一半：观测快照给聚合数字，供给快照给逐条执行。
+          任何一条到了就该出内容——两条都在飞才算加载中，两条都倒了才算失败。
+        */}
         <PanelBody
-          isEmpty={tiles.length === 0}
-          isError={Boolean(metricsQuery.error)}
-          isLoading={metricsQuery.isPending}
+          isEmpty={
+            tiles.every((tile) => tile.value === null) &&
+            slices === null &&
+            taskTimeline !== null &&
+            taskTimeline.length === 0
+          }
+          isError={Boolean(metricsQuery.error) && Boolean(snapshotQuery.error)}
+          isLoading={metricsQuery.isPending && snapshotQuery.isPending}
           testId="admin-ops-tasks"
         >
           <div className="space-y-4">
@@ -403,6 +473,44 @@ function AdminTasksPanel() {
                 </>
               )}
             </div>
+            {/* 聚合数字回答「现在忙不忙」，逐条记录回答「刚刚跑了什么」。 */}
+            <div className="space-y-2" data-testid="admin-ops-tasks-timeline">
+              <p className="font-medium text-sm">{admin_ops_tasks_recent()}</p>
+              {taskTimeline === null ? (
+                <p className="text-muted text-sm">
+                  {admin_ops_tasks_timeline_unknown()}
+                </p>
+              ) : taskTimeline.length === 0 ? (
+                <p className="text-muted text-sm">
+                  {admin_ops_tasks_timeline_empty()}
+                </p>
+              ) : (
+                <Timeline.Root>
+                  {taskTimeline.map((entry) => (
+                    <Timeline.Item
+                      data-testid="admin-ops-tasks-run"
+                      key={entry.id}
+                    >
+                      <Timeline.Rail>
+                        <Timeline.Marker />
+                        <Timeline.Connector />
+                      </Timeline.Rail>
+                      <Timeline.Content>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-sm">
+                            {entry.title}
+                          </span>
+                          <AdminStatusChip variant="outline">
+                            {entry.status}
+                          </AdminStatusChip>
+                        </div>
+                        <p className="text-muted text-xs">{entry.detail}</p>
+                      </Timeline.Content>
+                    </Timeline.Item>
+                  ))}
+                </Timeline.Root>
+              )}
+            </div>
           </div>
         </PanelBody>
       </AdminPanelContent>
@@ -425,6 +533,20 @@ function AdminTenantsPanel() {
           entitlementPolicyStageLabel(stage as EntitlementPolicyStage),
       })
     : [];
+  // 试用开关在套餐目录里，试用发放在供给快照里——两处各缺各的，缺就是「未知」。
+  const catalogQuery = useQuery({
+    queryKey: p1QueryKeys.request('entitlements', 'catalog'),
+    queryFn: ({ signal }) =>
+      queryP1<{ plans: PlanCatalogOffer[]; trialEnabled?: boolean }>(
+        'entitlements',
+        { action: 'catalog', payload: {} },
+        signal
+      ),
+  });
+  const trial = buildTrialStatus({
+    allocations: snapshotQuery.data?.accountAllocations,
+    trialEnabled: catalogQuery.data?.trialEnabled,
+  });
   const counts = view
     ? [
         {
@@ -454,13 +576,47 @@ function AdminTenantsPanel() {
         </AdminPanelDescription>
       </AdminPanelHeader>
       <AdminPanelContent>
+        {/*
+          空态要把这一面真正展示的东西都算上：供应池也在面上，
+          漏掉它就会出现「明明列着池子，却说暂无记录」。
+        */}
         <PanelBody
-          isEmpty={policies.length === 0 && allocations.length === 0}
+          isEmpty={
+            policies.length === 0 &&
+            allocations.length === 0 &&
+            (view?.pools.length ?? 0) === 0 &&
+            trial.enabled === null
+          }
           isError={Boolean(snapshotQuery.error)}
           isLoading={snapshotQuery.isPending}
           testId="admin-ops-tenants"
         >
           <div className="space-y-4">
+            {/* 「租户与试用」的试用那一半：新店现在到底发不发试用。 */}
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-testid="admin-ops-tenants-trial"
+            >
+              <span className="font-medium text-sm">
+                {admin_ops_tenants_trial_label()}
+              </span>
+              <AdminStatusChip
+                variant={trial.enabled === true ? 'default' : 'outline'}
+              >
+                {trial.enabled === null
+                  ? admin_ops_tenants_trial_unknown()
+                  : trial.enabled
+                    ? admin_ops_tenants_trial_on()
+                    : admin_ops_tenants_trial_off()}
+              </AdminStatusChip>
+              <span className="text-muted text-xs">
+                {trial.activeGrants === null
+                  ? admin_ops_unknown()
+                  : admin_ops_tenants_trial_grants({
+                      count: trial.activeGrants,
+                    })}
+              </span>
+            </div>
             <KPIGroup.Root>
               {counts.map((count) => (
                 <MetricTile

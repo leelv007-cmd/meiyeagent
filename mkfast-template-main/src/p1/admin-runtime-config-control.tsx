@@ -18,7 +18,6 @@ import {
 } from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Table,
   TableBody,
@@ -28,14 +27,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  admin_runtime_assembly_byok_live_description,
-  admin_runtime_assembly_byok_recorded_description,
-  admin_runtime_assembly_byok_title,
-  admin_runtime_assembly_douyin_live_unavailable,
-  admin_runtime_assembly_douyin_recorded_description,
-  admin_runtime_assembly_douyin_title,
-  admin_runtime_assembly_live_label,
-  admin_runtime_assembly_recorded_label,
   admin_runtime_config_activation,
   admin_runtime_config_activation_configured,
   admin_runtime_config_activation_disabled,
@@ -86,30 +77,14 @@ import {
   admin_runtime_config_unwired,
   admin_runtime_config_validation_error,
   admin_runtime_config_value,
-  admin_runtime_mode_ark_description,
-  admin_runtime_mode_ark_label,
-  admin_runtime_mode_ark_tuzi_description,
-  admin_runtime_mode_ark_tuzi_label,
-  admin_runtime_mode_direct_description,
-  admin_runtime_mode_direct_label,
-  admin_runtime_mode_disabled_description,
-  admin_runtime_mode_disabled_label,
-  admin_runtime_mode_fixture_description,
-  admin_runtime_mode_fixture_label,
-  admin_runtime_mode_gateway_description,
-  admin_runtime_mode_gateway_label,
-  admin_runtime_mode_media_title,
   admin_runtime_mode_missing_requirements,
-  admin_runtime_mode_model_title,
-  admin_runtime_mode_recorded_description,
-  admin_runtime_mode_recorded_label,
-  admin_runtime_mode_tuzi_description,
-  admin_runtime_mode_tuzi_label,
 } from '@/locale/paraglide/messages';
+import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
 import { formatLocaleDateTime } from '@/lib/locale';
 import {
   adminConfigKeyLabel,
   defaultAdminConfigValue,
+  isInlineConfigKey,
 } from '@/p1/admin-config-field-model';
 import { AdminConfigForm } from '@/p1/admin-config-form';
 import {
@@ -151,6 +126,9 @@ interface AdminConfigItem {
 }
 
 const HOT_READ_KEYS = new Set([
+  // 笔记风格集合每次编译都现读，保存即生效——这里不登记，界面就会告诉运营
+  // 「重启后生效」，与实际行为相反（D-116）。与 core 的 hotReadKeys 对齐。
+  NOTE_STYLE_CONFIG_KEY,
   'plan.addons',
   'plan.allowances.trial',
   'plan.allowances.starter',
@@ -165,159 +143,6 @@ const HOT_READ_KEYS = new Set([
   'compliance.aigc_label.default',
   'compliance.regulated_mode.default',
 ]);
-
-const MODE_CONFIG_KEYS = new Set([
-  'model.execution.mode',
-  'model.media.execution.mode',
-]);
-
-const ASSEMBLY_CONFIG_KEYS = new Set([
-  'byok.adapter.assembly',
-  'douyin.adapter.assembly',
-]);
-
-interface ConfigOption {
-  description: string;
-  disabled?: boolean;
-  label: string;
-  value: string;
-}
-
-interface AssemblyMessages {
-  admin_runtime_assembly_byok_live_description?: () => string;
-  admin_runtime_assembly_byok_recorded_description?: () => string;
-  admin_runtime_assembly_byok_title?: () => string;
-  admin_runtime_assembly_douyin_live_unavailable?: () => string;
-  admin_runtime_assembly_douyin_recorded_description?: () => string;
-  admin_runtime_assembly_douyin_title?: () => string;
-  admin_runtime_assembly_live_label?: () => string;
-  admin_runtime_assembly_recorded_label?: () => string;
-}
-
-const assemblyMessages = {
-  admin_runtime_assembly_byok_live_description,
-  admin_runtime_assembly_byok_recorded_description,
-  admin_runtime_assembly_byok_title,
-  admin_runtime_assembly_douyin_live_unavailable,
-  admin_runtime_assembly_douyin_recorded_description,
-  admin_runtime_assembly_douyin_title,
-  admin_runtime_assembly_live_label,
-  admin_runtime_assembly_recorded_label,
-} satisfies AssemblyMessages;
-
-function assemblyMessage(key: keyof AssemblyMessages, fallback: string) {
-  return assemblyMessages[key]?.() ?? fallback;
-}
-
-function modeOptions(key: string): ConfigOption[] {
-  const disabled = {
-    description: admin_runtime_mode_disabled_description(),
-    label: admin_runtime_mode_disabled_label(),
-    value: 'disabled',
-  };
-  if (key === 'model.media.execution.mode') {
-    return [
-      disabled,
-      {
-        description: admin_runtime_mode_ark_description(),
-        label: admin_runtime_mode_ark_label(),
-        value: 'ark',
-      },
-      {
-        description: admin_runtime_mode_tuzi_description(),
-        label: admin_runtime_mode_tuzi_label(),
-        value: 'tuzi',
-      },
-      {
-        description: admin_runtime_mode_ark_tuzi_description(),
-        label: admin_runtime_mode_ark_tuzi_label(),
-        value: 'ark,tuzi',
-      },
-    ];
-  }
-  return [
-    disabled,
-    {
-      description: admin_runtime_mode_recorded_description(),
-      label: admin_runtime_mode_recorded_label(),
-      value: 'recorded',
-    },
-    {
-      description: admin_runtime_mode_fixture_description(),
-      label: admin_runtime_mode_fixture_label(),
-      value: 'fixture',
-    },
-    {
-      description: admin_runtime_mode_gateway_description(),
-      label: admin_runtime_mode_gateway_label(),
-      value: 'gateway',
-    },
-    {
-      description: admin_runtime_mode_direct_description(),
-      label: admin_runtime_mode_direct_label(),
-      value: 'direct',
-    },
-  ];
-}
-
-function modeTitle(key: string) {
-  return key === 'model.media.execution.mode'
-    ? admin_runtime_mode_media_title()
-    : admin_runtime_mode_model_title();
-}
-
-function assemblyOptions(key: string): ConfigOption[] {
-  const recorded = {
-    description:
-      key === 'byok.adapter.assembly'
-        ? assemblyMessage(
-            'admin_runtime_assembly_byok_recorded_description',
-            '使用录制适配器，不发起真实供应商调用。'
-          )
-        : assemblyMessage(
-            'admin_runtime_assembly_douyin_recorded_description',
-            '仅提供录制契约，不代表已接入抖音官方能力。'
-          ),
-    label: assemblyMessage('admin_runtime_assembly_recorded_label', 'Recorded'),
-    value: 'recorded',
-  };
-  if (key === 'douyin.adapter.assembly') {
-    return [
-      recorded,
-      {
-        description: assemblyMessage(
-          'admin_runtime_assembly_douyin_live_unavailable',
-          '未接入（pilot 前）'
-        ),
-        disabled: true,
-        label: assemblyMessage('admin_runtime_assembly_live_label', 'Live'),
-        value: 'live',
-      },
-    ];
-  }
-  return [
-    recorded,
-    {
-      description: assemblyMessage(
-        'admin_runtime_assembly_byok_live_description',
-        '使用已配置的真实 BYOK 适配器；保存后需重启生效。'
-      ),
-      label: assemblyMessage('admin_runtime_assembly_live_label', 'Live'),
-      value: 'live',
-    },
-  ];
-}
-
-function configOptions(key: string) {
-  return MODE_CONFIG_KEYS.has(key) ? modeOptions(key) : assemblyOptions(key);
-}
-
-function configTitle(key: string) {
-  if (MODE_CONFIG_KEYS.has(key)) return modeTitle(key);
-  return key === 'byok.adapter.assembly'
-    ? assemblyMessage('admin_runtime_assembly_byok_title', 'BYOK 适配器装配')
-    : assemblyMessage('admin_runtime_assembly_douyin_title', '抖音适配器装配');
-}
 
 /**
  * 编辑器的起点：写过就从写过的那份开始，没写过就从此刻真正在用的那份开始。
@@ -407,6 +232,56 @@ function processLabel(processKind: 'http' | 'job-worker') {
     : admin_runtime_config_process_worker();
 }
 
+/**
+ * 常驻展开那几项的当前值：正在编辑的那一项看草稿，其余看已存的值。
+ * 草稿此刻还不合法（运营刚点开还没选完）就退回已存值，不让界面闪成空。
+ */
+function inlineValueOf(
+  item: AdminConfigItem,
+  selectedKey: string,
+  draft: string
+) {
+  const stored = item.storedValue ?? item.effectiveValue;
+  if (selectedKey !== item.key) return stored;
+  try {
+    return JSON.parse(draft) as unknown;
+  } catch {
+    return stored;
+  }
+}
+
+/**
+ * 选项在当下的运行时状态。契约只说得出「有哪些值」，说不出
+ * 「哪个正在跑」「哪个因为缺凭据装不起来」——那些从配置行上读。
+ */
+function optionMetaOf(item: AdminConfigItem, optionValue: string) {
+  const availability = item.modeAvailability?.find(
+    (candidate) => candidate.value === optionValue
+  );
+  const effectiveProcesses =
+    item.effectiveSnapshots?.filter(
+      (snapshot) => snapshot.effectiveValue === optionValue
+    ) ?? [];
+  const chips =
+    effectiveProcesses.length > 0
+      ? effectiveProcesses.map(
+          (snapshot) =>
+            `${processLabel(snapshot.processKind)} · ${admin_runtime_config_current_effective()}`
+        )
+      : item.effectiveValue === optionValue
+        ? [admin_runtime_config_current_effective()]
+        : [];
+  return {
+    blockedReason:
+      availability?.assemblable === false
+        ? admin_runtime_mode_missing_requirements({
+            requirements: availability.missingRequirements.join(', '),
+          })
+        : undefined,
+    chips,
+  };
+}
+
 function activationEvidenceLabel(status: string | null | undefined) {
   if (status === 'disabled') {
     return admin_runtime_config_activation_disabled();
@@ -448,14 +323,10 @@ export function AdminRuntimeConfigControl({
   const items = (listQuery.data ?? []).filter(
     (item) => !keys || keys.includes(item.key)
   );
-  const selectableItems = items.filter(
-    (item) =>
-      MODE_CONFIG_KEYS.has(item.key) || ASSEMBLY_CONFIG_KEYS.has(item.key)
-  );
-  const genericItems = items.filter(
-    (item) =>
-      !MODE_CONFIG_KEYS.has(item.key) && !ASSEMBLY_CONFIG_KEYS.has(item.key)
-  );
+  // 常驻展开还是藏在下拉后面，由字段树的形态决定（整项就是一个单选枚举的常驻），
+  // 不再是一张硬编码键名清单——两条通道渲染的都是同一个 schema renderer。
+  const selectableItems = items.filter((item) => isInlineConfigKey(item.key));
+  const genericItems = items.filter((item) => !isInlineConfigKey(item.key));
   const activeGenericKey = genericItems.some((item) => item.key === selectedKey)
     ? selectedKey
     : selectableItems.length === 0
@@ -711,102 +582,26 @@ export function AdminRuntimeConfigControl({
         <AdminPanelContent className="space-y-4">
           {selectableItems.length > 0 ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              {selectableItems.map((item) => {
-                const storedMode =
-                  selectedKey === item.key
-                    ? (() => {
-                        try {
-                          return String(parseAdminConfigDraft(item.key, draft));
-                        } catch {
-                          return String(
-                            item.storedValue ?? item.effectiveValue ?? ''
-                          );
-                        }
-                      })()
-                    : String(item.storedValue ?? item.effectiveValue ?? '');
-                return (
-                  <fieldset
-                    className="space-y-3 rounded-lg border p-4"
-                    key={item.key}
-                  >
-                    <legend className="px-1 font-medium">
-                      {configTitle(item.key)}
-                    </legend>
-                    <RadioGroup
-                      aria-label={configTitle(item.key)}
-                      onValueChange={(value) => {
-                        setSelectedKey(item.key);
-                        setDraft(formatAdminConfigValue(value));
-                        setValidationError(undefined);
-                      }}
-                      value={storedMode}
-                    >
-                      {configOptions(item.key).map((option) => {
-                        const availability = item.modeAvailability?.find(
-                          (candidate) => candidate.value === option.value
-                        );
-                        const effectiveProcesses =
-                          item.effectiveSnapshots?.filter(
-                            (snapshot) =>
-                              snapshot.effectiveValue === option.value
-                          ) ?? [];
-                        const isEffective =
-                          effectiveProcesses.length === 0 &&
-                          item.effectiveValue === option.value;
-                        return (
-                          <label
-                            className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
-                            htmlFor={`${item.key}-${option.value}`}
-                            key={option.value}
-                          >
-                            <RadioGroupItem
-                              className="mt-0.5"
-                              disabled={
-                                option.disabled ||
-                                availability?.assemblable === false
-                              }
-                              id={`${item.key}-${option.value}`}
-                              value={option.value}
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="flex flex-wrap items-center gap-2 font-medium">
-                                {option.label}
-                                {isEffective ? (
-                                  <AdminStatusChip variant="secondary">
-                                    {admin_runtime_config_current_effective()}
-                                  </AdminStatusChip>
-                                ) : null}
-                                {effectiveProcesses.map((snapshot) => (
-                                  <AdminStatusChip
-                                    key={snapshot.processKind}
-                                    variant="secondary"
-                                  >
-                                    {processLabel(snapshot.processKind)} ·{' '}
-                                    {admin_runtime_config_current_effective()}
-                                  </AdminStatusChip>
-                                ))}
-                              </span>
-                              <span className="mt-1 block text-xs text-muted-foreground">
-                                {option.description}
-                              </span>
-                              {availability?.assemblable === false ? (
-                                <span className="mt-1 block text-xs text-destructive">
-                                  {admin_runtime_mode_missing_requirements({
-                                    requirements:
-                                      availability.missingRequirements.join(
-                                        ', '
-                                      ),
-                                  })}
-                                </span>
-                              ) : null}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </RadioGroup>
-                  </fieldset>
-                );
-              })}
+              {selectableItems.map((item) => (
+                <div
+                  className="rounded-lg border p-4"
+                  data-testid={`admin-runtime-config-inline-${item.key}`}
+                  key={item.key}
+                >
+                  <AdminConfigForm
+                    configKey={item.key}
+                    onChange={(next) => {
+                      setSelectedKey(item.key);
+                      setDraft(formatAdminConfigValue(next));
+                      setValidationError(undefined);
+                    }}
+                    optionMeta={(optionValue) =>
+                      optionMetaOf(item, optionValue)
+                    }
+                    value={inlineValueOf(item, selectedKey, draft)}
+                  />
+                </div>
+              ))}
             </div>
           ) : null}
           {genericItems.length > 0 ? (

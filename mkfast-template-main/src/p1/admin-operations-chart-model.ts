@@ -21,6 +21,19 @@ export interface UsageBarDatum {
   video: number;
 }
 
+/**
+ * 平台级三桶**消耗**目前没有投影。
+ *
+ * `entitlements/balance` 与 `entitlements/projection` 都是 workspace 作用域，
+ * 拿管理员自己那间店的消耗充当平台大盘，比不显示更糟。所以这里是一个显式的
+ * 「未接线」，面板据此说「暂无用量数据」——而不是把额度上限当成消耗画出来。
+ * 投影建好那天，改这一个常量即可（U06 记账项）。
+ */
+export const PLATFORM_USAGE_CONSUMPTION = {
+  reason: 'platform_usage_consumption_projection_not_wired',
+  status: 'unknown',
+} as const;
+
 /** 三桶＝文案/图/视频（D-123）；音频不在三桶口径内，故不进图。 */
 export function buildUsageBars(
   plans: readonly PlanAllowanceOffer[]
@@ -64,6 +77,71 @@ export function buildOutcomeSlices(
     })
   );
   return slices.some((slice) => slice.value > 0) ? slices : [];
+}
+
+export interface TaskRunRecord {
+  id: string;
+  modality: string;
+  operation: string;
+  startedAt: string;
+  status: string;
+  taskId: string;
+}
+
+export interface TaskTimelineEntry {
+  at: string;
+  detail: string;
+  id: string;
+  status: string;
+  title: string;
+}
+
+/**
+ * 最近的任务执行，按开始时间倒序。
+ * 快照没到＝ `null`（面板说未知），到了但一条没有＝ `[]`（面板说近期没跑过）。
+ */
+export function buildTaskTimeline(
+  runs: readonly TaskRunRecord[] | undefined,
+  statusLabel: (status: string) => string,
+  limit = 6
+): null | TaskTimelineEntry[] {
+  if (!runs) return null;
+  return [...runs]
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+    .slice(0, limit)
+    .map((run) => ({
+      at: run.startedAt,
+      detail: run.taskId,
+      id: run.id,
+      status: statusLabel(run.status),
+      title: `${run.operation} · ${run.modality}`,
+    }));
+}
+
+export interface TrialStatusView {
+  /** 生效中的试用发放笔数；快照没到就是 null。 */
+  activeGrants: null | number;
+  enabled: boolean | null;
+}
+
+/**
+ * 新店试用现在是发还是不发，以及有多少笔试用发放还生效。
+ * 两个来源各自可能缺席，缺席就是 `null`——不折算成「关闭」或「零」。
+ */
+export function buildTrialStatus(input: {
+  allocations?: readonly { kind: string; status: string }[];
+  trialEnabled?: boolean;
+}): TrialStatusView {
+  return {
+    activeGrants: input.allocations
+      ? input.allocations.filter(
+          (allocation) =>
+            allocation.kind === 'grant' && allocation.status === 'active'
+        ).length
+      : null,
+    enabled:
+      typeof input.trialEnabled === 'boolean' ? input.trialEnabled : null,
+  };
 }
 
 export interface TenantTimelineEntry {

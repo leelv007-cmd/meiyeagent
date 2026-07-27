@@ -11,7 +11,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { DEFAULT_NOTE_STYLES } from '@meiye/contracts';
+import { DEFAULT_NOTE_STYLES, NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
 
 import {
   cleanupE2EUsers,
@@ -34,6 +34,44 @@ async function openNoteStyleEditor(page: Page) {
   const form = page.locator(NOTE_STYLE_FORM);
   await expect(form).toBeVisible({ timeout: 30_000 });
   return { form, section };
+}
+
+/** 直接问后端这条键现在的版本号——UI 上读不到，CAS 断言要它当基准。 */
+async function readRevision(page: Page) {
+  const response = await page.request.post('/api/core/p1/query', {
+    data: {
+      action: 'config_list',
+      module: 'admin-config',
+      payload: {},
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json()) as {
+    data?: { key: string; revision: null | number }[];
+  };
+  const row = body.data?.find((item) => item.key === NOTE_STYLE_CONFIG_KEY);
+  return row?.revision ?? null;
+}
+
+/** 版本历史里这条键的全部修订，用来验「原因和操作人真的落库了」。 */
+async function readHistory(page: Page) {
+  const response = await page.request.post('/api/core/p1/query', {
+    data: {
+      action: 'config_history',
+      module: 'admin-config',
+      payload: { key: NOTE_STYLE_CONFIG_KEY },
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json()) as {
+    data?: {
+      actorId: null | string;
+      reason: null | string;
+      revision: null | number;
+      status: null | string;
+    }[];
+  };
+  return body.data ?? [];
 }
 
 /** 表单改完后走一次受控写入，返回写入前的版本号文本。 */
@@ -75,6 +113,8 @@ test('an operator reshapes the note style set without ever touching JSON', async
     const nameField = page.locator(FIRST_STYLE_NAME);
     await expect(nameField).toHaveValue(originalName, { timeout: 30_000 });
 
+    const revisionBefore = await readRevision(page);
+
     // ② 全程只动表单控件：改名字、改写作要点、关掉一个平台。
     await nameField.fill(marker);
     await page.locator(FIRST_STYLE_GUIDE).fill('先说清楚门店当下能接的项目。');
@@ -82,10 +122,8 @@ test('an operator reshapes the note style set without ever touching JSON', async
     await expect(douyin).toBeVisible();
     await douyin.click();
 
-    await recordThroughGovernedReview(
-      page,
-      `U05 硬门：改图文笔记风格集合 ${marker}`
-    );
+    const reason = `U05 硬门：改图文笔记风格集合 ${marker}`;
+    await recordThroughGovernedReview(page, reason);
 
     // 新值确实落到了受控配置上：概览表读得到，重新进页面也还在。
     await expect(section.getByText(marker).first()).toBeVisible({
@@ -95,6 +133,42 @@ test('an operator reshapes the note style set without ever touching JSON', async
     await expect(page.locator(FIRST_STYLE_NAME)).toHaveValue(marker, {
       timeout: 30_000,
     });
+
+    // ③ CAS 真的在管事：版本号推进了。
+    const revisionAfter = await readRevision(page);
+    expect(revisionAfter).not.toBeNull();
+    expect(revisionAfter).toBeGreaterThan(revisionBefore ?? 0);
+
+    // ④ 拿过期的版本号再提交一次，必须被挡下来。若后端退化成
+    //    last-write-wins，这一条会绿着放行——那正是要防的事。
+    const stale = await page.request.post('/api/core/p1/commands', {
+      data: {
+        action: 'config_apply',
+        module: 'admin-config',
+        payload: {
+          expectedRevision: revisionBefore,
+          key: NOTE_STYLE_CONFIG_KEY,
+          reason: 'U05 硬门：用过期版本号提交，应当被拒',
+          value: { styles: [{ ...DEFAULT_NOTE_STYLES.styles[0] }] },
+        },
+      },
+      headers: { 'idempotency-key': `u05-stale-${Date.now()}` },
+    });
+    expect(stale.ok()).toBeFalsy();
+    const staleBody = (await stale.json()) as { error?: { code?: string } };
+    expect(staleBody.error?.code).toBe('IDEMPOTENCY_CONFLICT');
+    // 被拒之后版本号原地不动——没有偷偷写进去。
+    expect(await readRevision(page)).toBe(revisionAfter);
+
+    // ⑤ 写入原因与操作人落进版本历史，可查——界面上看得到，后端也答得出。
+    await expect(section.getByText(reason).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    const history = await readHistory(page);
+    const recorded = history.find((entry) => entry.revision === revisionAfter);
+    expect(recorded?.reason).toBe(reason);
+    expect(recorded?.actorId ?? '').not.toBe('');
+    expect(recorded?.status).toBe('applied');
   } finally {
     // 这是一条全局受控配置，跑完按原样改回去——同样走表单，不走后门。
     try {

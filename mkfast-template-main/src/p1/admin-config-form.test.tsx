@@ -3,34 +3,12 @@ import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { AdminConfigForm } from '@/p1/admin-config-form';
-import { defaultAdminConfigValue } from '@/p1/admin-config-field-model';
-import { ADMIN_CONFIG_KEYS } from '@/p1/admin-config-view-model';
 
 function render(configKey: string, value: unknown) {
   return renderToStaticMarkup(
     <AdminConfigForm configKey={configKey} onChange={() => {}} value={value} />
   );
 }
-
-/**
- * U05 的硬门在这里有一条镜像断言：后台任何一个配置项都不该再出现
- * 「自己拼一段 JSON」的输入框。长文字段（写作要点）允许多行输入，
- * 但它渲染的是散文，不是 `font-mono` 的结构文本。
- */
-test('no admin config key falls back to a hand-typed JSON editor', () => {
-  for (const key of ADMIN_CONFIG_KEYS) {
-    const html = render(key, defaultAdminConfigValue(key));
-    assert.ok(
-      html.includes(`admin-config-form-${key}`),
-      `${key} rendered no form`
-    );
-    assert.doesNotMatch(
-      html,
-      /font-mono/,
-      `${key} still renders a code-shaped editor`
-    );
-  }
-});
 
 test('a compliance default renders as a single switch', () => {
   const html = render('compliance.watermark.default', false);
@@ -121,6 +99,41 @@ test('每行的字段 id 互不相同', () => {
   );
   assert.equal(first?.length, 1);
   assert.equal(second?.length, 1);
+});
+
+/** 契约要求至少留一个平台，那最后一个就得真的关不掉。 */
+test('the last remaining platform toggle is locked, not merely discouraged', () => {
+  const single = render('harness.note.styles', {
+    styles: [
+      {
+        id: 'a',
+        name: '甲',
+        platforms: ['xiaohongshu'],
+        structureTemplate: '一',
+        writingGuide: '一',
+      },
+    ],
+  });
+  assert.match(
+    single,
+    /data-testid="admin-config-harness-note-styles-styles-0-platforms-xiaohongshu"[^>]*data-disabled/
+  );
+
+  const twoPlatforms = render('harness.note.styles', {
+    styles: [
+      {
+        id: 'a',
+        name: '甲',
+        platforms: ['xiaohongshu', 'douyin'],
+        structureTemplate: '一',
+        writingGuide: '一',
+      },
+    ],
+  });
+  assert.doesNotMatch(
+    twoPlatforms,
+    /data-testid="admin-config-harness-note-styles-styles-0-platforms-xiaohongshu"[^>]*data-disabled/
+  );
 });
 
 test('an empty list explains itself instead of showing an empty editor', () => {

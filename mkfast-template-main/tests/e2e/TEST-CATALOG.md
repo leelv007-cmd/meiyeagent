@@ -470,7 +470,7 @@ none of these can pass on fixture data (ADR-0019 / D-131).
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | An operator reshapes the note style set without ever touching JSON | Sign in as an administrator, open `/admin/templates`, require the editor region to contain zero `textarea.font-mono` and zero rich-text hosts, require the form to open on the style set that is actually live, then rename a style, rewrite its guide and switch a platform off using only labelled form controls; pass impact review with an audit reason and require the new name to survive a reload. Restores the shared value through the same governed path in `finally`. |
+| 1 | An operator reshapes the note style set without ever touching JSON | Sign in as an administrator, open `/admin/templates`, require the editor region to contain zero `textarea.font-mono` and zero rich-text hosts, require the form to open on the style set that is actually live, then rename a style, rewrite its guide and switch a platform off using only labelled form controls; pass impact review with an audit reason and require the new name to survive a reload. Then require the CAS revision to advance, require a re-submit carrying the stale `expectedRevision` to be rejected with `IDEMPOTENCY_CONFLICT` and to leave the revision untouched, and require the reason plus a non-empty actor to land in `config_history` under the new revision. Restores the shared value through the same governed path in `finally`. |
 
 ## 32. LIKEPAGE Marketing Landing Page
 

@@ -4,8 +4,11 @@ import test from 'node:test';
 import type { EntitlementStatusView } from '@/p1/admin-entitlement-status-model';
 import {
   buildOutcomeSlices,
+  buildTaskTimeline,
   buildTenantTimeline,
+  buildTrialStatus,
   buildUsageBars,
+  PLATFORM_USAGE_CONSUMPTION,
 } from '@/p1/admin-operations-chart-model';
 
 const OUTCOME_LABELS = {
@@ -82,6 +85,76 @@ test('known outcomes become labelled slices in a stable order', () => {
       ['retry', '重试', 2],
       ['threw', '异常', 0],
     ]
+  );
+});
+
+/**
+ * 平台级三桶消耗至今没有投影。这条断言把「没有」钉成一个显式状态，
+ * 拿额度上限冒充消耗就得先把它改掉——那一步是看得见的。
+ */
+test('platform three-bucket consumption is declared unwired, not silently faked', () => {
+  assert.equal(PLATFORM_USAGE_CONSUMPTION.status, 'unknown');
+  assert.match(PLATFORM_USAGE_CONSUMPTION.reason, /not_wired$/);
+});
+
+test('task runs become a newest-first timeline with human status words', () => {
+  const timeline = buildTaskTimeline(
+    [
+      {
+        id: 'run-old',
+        modality: 'image',
+        operation: 'image.generate',
+        startedAt: '2026-07-26T01:00:00.000Z',
+        status: 'succeeded',
+        taskId: 'task-1',
+      },
+      {
+        id: 'run-new',
+        modality: 'llm',
+        operation: 'llm.copy',
+        startedAt: '2026-07-27T01:00:00.000Z',
+        status: 'running',
+        taskId: 'task-2',
+      },
+    ],
+    (status) => (status === 'running' ? '执行中' : '已完成')
+  );
+  assert.deepEqual(
+    timeline?.map((entry) => [entry.id, entry.status]),
+    [
+      ['run-new', '执行中'],
+      ['run-old', '已完成'],
+    ]
+  );
+});
+
+/** 快照没到 ≠ 近期没跑过：前者未知，后者是一个事实。 */
+test('a missing snapshot yields no timeline, an empty one yields an empty timeline', () => {
+  assert.equal(
+    buildTaskTimeline(undefined, (status) => status),
+    null
+  );
+  assert.deepEqual(
+    buildTaskTimeline([], (status) => status),
+    []
+  );
+});
+
+test('trial status keeps each half unknown on its own', () => {
+  assert.deepEqual(buildTrialStatus({}), {
+    activeGrants: null,
+    enabled: null,
+  });
+  assert.deepEqual(
+    buildTrialStatus({
+      allocations: [
+        { kind: 'grant', status: 'active' },
+        { kind: 'grant', status: 'expired' },
+        { kind: 'restrict', status: 'active' },
+      ],
+      trialEnabled: false,
+    }),
+    { activeGrants: 1, enabled: false }
   );
 });
 
