@@ -124,6 +124,22 @@ async function submitNoteJourney(
     timeout: 30_000,
   });
 
+  if (expected === 'insufficient') {
+    // W05 ① — the 图文 run debits copy AND image, and the composer now checks
+    // both before letting the merchant press 生成. A doomed submit that comes
+    // back INSUFFICIENT_ENTITLEMENT is no longer the honest outcome here: the
+    // merchant is stopped in front of the button, told which bucket ran out.
+    await expect(page.getByTestId('composer-quota-blocking-card')).toBeVisible();
+    await expect(page.getByTestId('composer-submit')).toBeDisabled();
+    return {
+      authorizedAssetId: authorized.id,
+      errorCode: undefined,
+      errorMessage: undefined,
+      packageId: '',
+      taskId: '',
+    };
+  }
+
   const responsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
@@ -145,16 +161,11 @@ async function submitNoteJourney(
     error?: { code?: string; message?: string };
   };
   expect(submissionBody.catalogModel?.id).toBe('seedream-5-pro');
-  if (expected === 'accepted') {
-    expect(response.ok(), envelope.error?.message).toBeTruthy();
-    expect(envelope.data?.contentPackage?.id).toBeTruthy();
-    expect(envelope.data?.replayed).toBe(false);
-    expect(envelope.data?.task?.id).toBeTruthy();
-    expect(envelope.data?.work?.id).toBeTruthy();
-  } else {
-    expect(response.ok()).toBeFalsy();
-    expect(envelope.error?.code).toBe('INSUFFICIENT_ENTITLEMENT');
-  }
+  expect(response.ok(), envelope.error?.message).toBeTruthy();
+  expect(envelope.data?.contentPackage?.id).toBeTruthy();
+  expect(envelope.data?.replayed).toBe(false);
+  expect(envelope.data?.task?.id).toBeTruthy();
+  expect(envelope.data?.work?.id).toBeTruthy();
   return {
     authorizedAssetId: authorized.id,
     errorCode: envelope.error?.code,
@@ -529,22 +540,29 @@ test.describe
       await assertZipDownload(download, IMAGE_TEXT_CONTRACT, adopted.revision);
 
       await page.evaluate(() => sessionStorage.clear());
-      const blocked = await submitNoteJourney(
+      await submitNoteJourney(
         page,
         'insufficient',
         submission.authorizedAssetId
       );
-      expect(blocked.errorCode).toBe('INSUFFICIENT_ENTITLEMENT');
-      expect(blocked.errorMessage).toBeTruthy();
       const quotaWall = page.getByTestId('composer-quota-blocking-card');
       await expect(quotaWall).toBeVisible();
       await expect(quotaWall).toContainText('额度不足');
       await expect(quotaWall).toContainText(
         '当前额度不足，无法继续创作。可在此输入兑换码立即解锁。'
       );
-      await expect(page.getByTestId('composer-quota-open-plans')).toHaveText(
-        '查看套餐'
+      // 缺哪桶要说出来 (W05 ①) — 图文 spends two buckets, so 「额度不足」 alone
+      // leaves the merchant guessing which one to top up.
+      await expect(page.getByTestId('composer-quota-shortfall')).toContainText(
+        '不够这次生成了'
       );
+      // D-141: the only two real exits are the inline code and a human.
+      await expect(
+        page.getByTestId('composer-quota-redemption-code')
+      ).toBeVisible();
+      await expect(
+        page.getByTestId('composer-quota-contact-operations')
+      ).toHaveText('联系运营开通');
       await page.screenshot({
         fullPage: true,
         path: resolve(

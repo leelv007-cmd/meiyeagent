@@ -126,7 +126,10 @@ import {
 } from './recipe-cards';
 import { RecipeCardsPanel } from './recipe-cards-panel';
 import { QuotaBlockingCard } from './quota-blocking-card';
-import { projectQuotaPassiveView } from './quota-blocking';
+import {
+  composerQuotaRequirements,
+  projectQuotaPassiveView,
+} from './quota-blocking';
 import {
   buildLiveBriefInput,
   buildLiveQuoteInput,
@@ -704,15 +707,37 @@ export function ComposerHome({
         : null,
     [selectedModel?.displayName, signedSubmission]
   );
-  const usageResource =
-    lensId === 'image_text' ? 'image' : lensId === 'video' ? 'video' : 'copy';
-  const usageCost = lensState.draft.settings.quantity ?? 1;
-  const quotaInsufficient = Boolean(
-    lensId &&
-      usageQuery.data &&
-      usageQuery.data.usage[usageResource].available < usageCost
+  // 图文 debits two buckets server-side (copy 1 + image·pages). Pre-checking
+  // only the image bucket let an image-rich / copy-empty merchant submit a run
+  // the server was always going to reject (P0-5 / W05 ①).
+  const quotaRequirements = useMemo(
+    () =>
+      composerQuotaRequirements({
+        lensId,
+        deliverableKind: submissionDelivery.deliverableKind,
+        quantity: lensState.draft.settings.quantity ?? 1,
+        notePageBound: submissionRecipe?.delivery.notePageBound ?? null,
+      }),
+    [
+      lensId,
+      lensState.draft.settings.quantity,
+      submissionDelivery.deliverableKind,
+      submissionRecipe?.delivery.notePageBound,
+    ]
   );
-  const quotaBlocked = quotaInsufficient || submissionQuotaBlocked;
+  const quotaPassive = useMemo(
+    () =>
+      projectQuotaPassiveView({
+        requirements: quotaRequirements,
+        available: {
+          copy: usageQuery.data?.usage.copy.available ?? null,
+          image: usageQuery.data?.usage.image.available ?? null,
+          video: usageQuery.data?.usage.video.available ?? null,
+        },
+      }),
+    [quotaRequirements, usageQuery.data]
+  );
+  const quotaBlocked = quotaPassive.short || submissionQuotaBlocked;
 
   useEffect(() => {
     emitTelemetry('identity_state', { state: identitySelection.state });
@@ -2001,11 +2026,7 @@ export function ComposerHome({
           blocking card. */}
       <QuotaBlockingCard
         blocked={quotaBlocked}
-        passive={projectQuotaPassiveView({
-          available: usageQuery.data?.usage[usageResource].available ?? null,
-          cost: usageCost,
-          resource: usageResource,
-        })}
+        passive={quotaPassive}
         onRedeem={async ({ command, idempotencyKey }) => {
           try {
             await commandP1('redemptions', command, idempotencyKey);
