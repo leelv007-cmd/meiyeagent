@@ -1049,6 +1049,10 @@ export const recordContentPackageResultSignalCommandSchema = z.object({
    * When the merchant says it happened — 「这是昨天的」. Absent means now.
    * Backdating moves the signal's own clock only; the package's updatedAt and
    * its audit row still carry the moment the row was written.
+   *
+   * Format only. The window it must land in (no future, at most
+   * RESULT_SIGNAL_BACKDATE_WINDOW_DAYS back) is decided against the write clock
+   * in the core delivery service, which is the only place that clock exists.
    */
   occurredAt: contentPackageTimestampSchema.optional(),
   packageId: contentPackageIdSchema,

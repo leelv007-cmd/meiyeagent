@@ -815,6 +815,89 @@ test('an omitted occurredAt still stamps the signal now', async () => {
   assert.equal(updated.resultSignals?.at(-1)?.occurredAt, updated.updatedAt);
 });
 
+test('the merchant clock is bounded by the write clock, not only by its format', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  // Frozen test clock: 2026-07-18T07:00Z.
+  await assert.rejects(
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'store_visit',
+      occurredAt: '2026-07-18T07:00:00.001Z',
+      packageId: 'package-a',
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'RESULT_SIGNAL_OCCURRED_AT_OUT_OF_RANGE' &&
+      /future/iu.test(error.message)
+  );
+  // 31 days back — one day past the window the weekly review aggregates over.
+  await assert.rejects(
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'store_visit',
+      occurredAt: '2026-06-17T06:59:00.000Z',
+      packageId: 'package-a',
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'RESULT_SIGNAL_OCCURRED_AT_OUT_OF_RANGE' &&
+      error.status === 409
+  );
+  // Neither rejection may have written a row.
+  const untouched = await setup.service.results(context, 'package-a');
+  assert.equal(untouched.signals.merchant.length, 0);
+
+  // 「昨天」 — the case the window exists to keep.
+  const updated = await setup.service.recordResultSignal(context, {
+    expectedRevision: 2,
+    kind: 'store_visit',
+    occurredAt: '2026-07-17T09:30:00.000Z',
+    packageId: 'package-a',
+  });
+  assert.equal(
+    updated.resultSignals?.at(-1)?.occurredAt,
+    '2026-07-17T09:30:00.000Z'
+  );
+});
+
+test('a result note carrying contact details is refused by the server, not only by the panel', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  for (const note of ['微信 13800138000', 'a'.repeat(121), 'lee@store.com']) {
+    await assert.rejects(
+      setup.service.recordResultSignal(context, {
+        expectedRevision: 2,
+        kind: 'store_visit',
+        note,
+        packageId: 'package-a',
+      }),
+      (error: unknown) =>
+        error instanceof ContentPackageDeliveryError &&
+        error.code === 'RESULT_SIGNAL_NOTE_REJECTED'
+    );
+  }
+  const stored = await setup.service.recordResultSignal(context, {
+    expectedRevision: 2,
+    kind: 'store_visit',
+    note: '带朋友一起来的',
+    packageId: 'package-a',
+  });
+  assert.equal(stored.resultSignals?.at(-1)?.note, '带朋友一起来的');
+});
+
 async function createSetup(
   mode: 'assisted' | 'automatic_verified',
   legacy = false,

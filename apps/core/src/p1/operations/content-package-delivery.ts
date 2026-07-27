@@ -83,13 +83,73 @@ export class ContentPackageDeliveryError extends Error {
       | 'CONTENT_PACKAGE_NOT_FOUND'
       | 'CONTENT_PACKAGE_NOT_PUBLISHED'
       | 'CONTENT_PACKAGE_REVISION_CONFLICT'
-      | 'CONTENT_PACKAGE_VARIANT_NOT_FOUND',
+      | 'CONTENT_PACKAGE_VARIANT_NOT_FOUND'
+      | 'RESULT_SIGNAL_NOTE_REJECTED'
+      | 'RESULT_SIGNAL_OCCURRED_AT_OUT_OF_RANGE',
     message: string
   ) {
     super(message);
     this.name = 'ContentPackageDeliveryError';
     this.status = this.code === 'CONTENT_PACKAGE_NOT_FOUND' ? 404 : 409;
   }
+}
+
+/**
+ * How far back 「这是昨天的」 may reach. 30 days covers 昨天 and the merchant who
+ * catches up on a week of walk-ins, and stops there: a signal older than the
+ * weekly review window can only pollute the aggregates it would land in.
+ */
+export const RESULT_SIGNAL_BACKDATE_WINDOW_DAYS = 30;
+
+const RESULT_SIGNAL_NOTE_MAX_LENGTH = 120;
+
+/**
+ * The merchant clock is merchant-supplied, so it is bounded by the write clock
+ * rather than by the schema: the future is not a thing that happened, and a
+ * date older than the review window silently rewrites the weekly aggregates it
+ * should never have entered. Format stays a contracts concern; the window is
+ * only knowable here, where the write clock is.
+ */
+export function assertResultSignalOccurredAtInWindow(
+  occurredAt: string,
+  recordedAt: string
+) {
+  const at = Date.parse(occurredAt);
+  const now = Date.parse(recordedAt);
+  if (Number.isNaN(at)) {
+    throw new ContentPackageDeliveryError(
+      'RESULT_SIGNAL_OCCURRED_AT_OUT_OF_RANGE',
+      'The recorded time is not a valid timestamp.'
+    );
+  }
+  if (at > now) {
+    throw new ContentPackageDeliveryError(
+      'RESULT_SIGNAL_OCCURRED_AT_OUT_OF_RANGE',
+      'A result signal cannot be recorded as happening in the future.'
+    );
+  }
+  if (at < now - RESULT_SIGNAL_BACKDATE_WINDOW_DAYS * 86_400_000) {
+    throw new ContentPackageDeliveryError(
+      'RESULT_SIGNAL_OCCURRED_AT_OUT_OF_RANGE',
+      `A result signal can be backdated by at most ${RESULT_SIGNAL_BACKDATE_WINDOW_DAYS} days.`
+    );
+  }
+}
+
+/**
+ * Same rule the chip panel applies before it sends (results/
+ * outcome-observation-model.ts): a 备注 is a short private reminder, never a
+ * pasted chat body and never a customer's contact details. The browser guard is
+ * a courtesy; this one is the rule, because the command endpoint is reachable
+ * without it.
+ */
+export function isUnsafeResultSignalNote(note: string | undefined): boolean {
+  if (!note) return false;
+  const trimmed = note.trim();
+  if (trimmed.length > RESULT_SIGNAL_NOTE_MAX_LENGTH) return true;
+  if (/(微信|手机|电话|1[3-9]\d{9})/u.test(trimmed)) return true;
+  if (/@/u.test(trimmed) && /\./u.test(trimmed)) return true;
+  return false;
 }
 
 export class ContentPackageDeliveryService implements ContextInvalidationSink {
@@ -402,10 +462,19 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         'Result signals can only be recorded after a published delivery event.'
       );
     }
+    if (isUnsafeResultSignalNote(input.note)) {
+      throw new ContentPackageDeliveryError(
+        'RESULT_SIGNAL_NOTE_REJECTED',
+        'A result note must stay a short reminder and must not carry contact details.'
+      );
+    }
     // 「这是昨天的」 backdates the signal's own clock. The row is still written
     // now, so the package's updatedAt and its audit event keep the write time —
     // a backdated signal must never make the package look older than it is.
     const recordedAt = this.now();
+    if (input.occurredAt) {
+      assertResultSignalOccurredAtInWindow(input.occurredAt, recordedAt);
+    }
     const signal: ContentPackageResultSignal = {
       actorId: context.userId,
       id: this.id(),
