@@ -1,16 +1,9 @@
-import { getMessageList } from '@/lib/locale';
 import {
   pricing_plans_free_description,
-  pricing_plans_free_features,
-  pricing_plans_free_limits,
   pricing_plans_free_name,
   pricing_plans_lifetime_description,
-  pricing_plans_lifetime_features,
-  pricing_plans_lifetime_limits,
   pricing_plans_lifetime_name,
   pricing_plans_pro_description,
-  pricing_plans_pro_features,
-  pricing_plans_pro_limits,
   pricing_plans_pro_name,
   site_description,
   site_name,
@@ -101,12 +94,6 @@ export const websiteConfig: WebsiteConfig = {
           get description() {
             return pricing_plans_free_description();
           },
-          get features() {
-            return [...getMessageList(pricing_plans_free_features())];
-          },
-          get limits() {
-            return [...getMessageList(pricing_plans_free_limits())];
-          },
         },
         pro: {
           id: 'pro',
@@ -135,12 +122,6 @@ export const websiteConfig: WebsiteConfig = {
           get description() {
             return pricing_plans_pro_description();
           },
-          get features() {
-            return [...getMessageList(pricing_plans_pro_features())];
-          },
-          get limits() {
-            return [...getMessageList(pricing_plans_pro_limits())];
-          },
         },
         lifetime: {
           id: 'lifetime',
@@ -161,12 +142,6 @@ export const websiteConfig: WebsiteConfig = {
           },
           get description() {
             return pricing_plans_lifetime_description();
-          },
-          get features() {
-            return [...getMessageList(pricing_plans_lifetime_features())];
-          },
-          get limits() {
-            return [...getMessageList(pricing_plans_lifetime_limits())];
           },
         },
       },

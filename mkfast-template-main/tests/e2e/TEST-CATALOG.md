@@ -647,6 +647,27 @@ copy/image/note/video); this spec proves the shape a live run produces.
   components; the ratios are printed as `[contrast] …` lines so a run reports
   numbers rather than a pass/fail bit.
 
+## S3 钱的旅程（#237 / W05+W06）
+
+`specs/s3-money-journey.spec.ts` covers the two legs the money story has to
+walk end to end. Both drive real backends — the allowance moves through the
+governed admin-config CAS path an operator uses, the shortfall is a real
+ledger state, and the redemption is a real code an admin recorded.
+
+- 缺哪桶说哪桶：an 图文 run debits copy AND image server-side
+  (`server-quote-authority.ts` `debitUnitsFor` /
+  `composer-submission-gate.ts` `noteUsageUnits`). A merchant whose grant has
+  图片 to spare and 文案 at zero is stopped in front of 生成 and told which
+  bucket, not handed an `INSUFFICIENT_ENTITLEMENT` after the fact (P0-5).
+- 原地解锁：the exits on that card are the inline redemption code and the
+  contact form — the old 「查看套餐」 link redirected to the same read-only
+  usage page the merchant was already looking at (D-141). Redeeming keeps the
+  same URL and the same draft, and 生成 comes back.
+- 一个数字一个来源：changing the 初级 文案额度 in the operations console
+  changes what `/pricing` quotes on the next load. No deploy, no second number
+  to edit — the public page reads the same `plan.allowances.*` revision the
+  grant reads (D-143 单一商品目录).
+
 ## M-04 required browser hard gate（T37 / #231）
 
 `specs/m04-browser-hard-gate.spec.ts` is the browser journey the ordinary pull

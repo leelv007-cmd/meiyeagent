@@ -956,9 +956,10 @@ test('lets a trusted payment grant generate when recorded owner checkout is disa
   });
 
   assert.equal(result.status, 'completed');
+  // growth 图 100 (D-123 中级 seed), one image committed by this run.
   assert.deepEqual(await foundation.getUsageProjection(context, 'image'), {
-    allowance: 40,
-    available: 39,
+    allowance: 100,
+    available: 99,
     committed: 1,
     released: 0,
     reserved: 0,

@@ -743,8 +743,8 @@ describe('product golden journey', () => {
     assert.equal(initial.exampleStores.length, 3);
     assert.ok(initial.exampleStores.every((example) => example.readOnly));
     assert.ok(initial.exampleStores.every((example) => example.hidden));
-    assert.equal(initial.entitlement.content.remaining, 30);
-    assert.equal(initial.entitlement.image.remaining, 10);
+    assert.equal(initial.entitlement.content.remaining, 100);
+    assert.equal(initial.entitlement.image.remaining, 40);
     assert.equal(initial.entitlement.concurrencyLimit, 1);
 
     await service.execute(
@@ -825,7 +825,7 @@ describe('product golden journey', () => {
     );
 
     assert.equal(generated.output.candidateIds?.length, 3);
-    assert.equal(generated.state.entitlement.content.remaining, 29);
+    assert.equal(generated.state.entitlement.content.remaining, 99);
     assert.equal(generated.state.agentRuns.at(-1)?.status, 'completed');
     assert.equal(generated.state.toolCalls.at(-1)?.status, 'completed');
     assert.equal(
@@ -852,7 +852,7 @@ describe('product golden journey', () => {
       'copy-before-consent'
     );
     assert.deepEqual(duplicate.output, generated.output);
-    assert.equal(duplicate.state.entitlement.content.remaining, 29);
+    assert.equal(duplicate.state.entitlement.content.remaining, 99);
 
     const contentId = generated.output.candidateIds?.[0];
     assert.ok(contentId);
@@ -884,7 +884,7 @@ describe('product golden journey', () => {
     );
     const storyboardId = storyboardResult.output.storyboardId;
     assert.ok(storyboardId);
-    assert.equal(storyboardResult.state.entitlement.video.remaining, 5);
+    assert.equal(storyboardResult.state.entitlement.video.remaining, 3);
     await service.execute(
       merchant,
       { type: 'confirm_storyboard', storyboardId },
@@ -898,7 +898,7 @@ describe('product golden journey', () => {
     );
     const jobId = started.output.jobId;
     assert.ok(jobId);
-    assert.equal(started.state.entitlement.video.remaining, 4);
+    assert.equal(started.state.entitlement.video.remaining, 2);
     assert.equal(started.state.agentRuns.at(-1)?.workflow, 'video.generate');
     assert.equal(started.state.videoArtifactShells.at(-1)?.jobId, jobId);
     const duplicateStart = await service.execute(
@@ -907,7 +907,7 @@ describe('product golden journey', () => {
       'video-start-business-duplicate'
     );
     assert.equal(duplicateStart.output.jobId, jobId);
-    assert.equal(duplicateStart.state.entitlement.video.remaining, 4);
+    assert.equal(duplicateStart.state.entitlement.video.remaining, 2);
     await service.execute(
       worker,
       { type: 'claim_video', jobId, workerId: 'worker-a', leaseSeconds: 30 },
@@ -1100,9 +1100,9 @@ describe('product golden journey', () => {
       { type: 'retry_video', jobId: retryTwo.output.jobId! },
       'video-quality-retry-3'
     );
-    assert.equal(retryOne.state.entitlement.video.remaining, 4);
-    assert.equal(retryTwo.state.entitlement.video.remaining, 4);
-    assert.equal(retryThree.state.entitlement.video.remaining, 3);
+    assert.equal(retryOne.state.entitlement.video.remaining, 2);
+    assert.equal(retryTwo.state.entitlement.video.remaining, 2);
+    assert.equal(retryThree.state.entitlement.video.remaining, 1);
 
     const packaged = await service.execute(
       merchant,
@@ -1979,7 +1979,7 @@ describe('product golden journey', () => {
         error instanceof DomainError && error.code === 'COPY_PROVIDER_FAILED'
     );
     const state = await service.bootstrap(merchant);
-    assert.equal(state.entitlement.content.remaining, 30);
+    assert.equal(state.entitlement.content.remaining, 100);
     assert.deepEqual(
       state.usageEvents.map((event) => event.status),
       ['reserved', 'refunded']
@@ -2181,7 +2181,7 @@ describe('product golden journey', () => {
       recovered.state.usageEvents.map((event) => event.status),
       ['reserved', 'committed']
     );
-    assert.equal(recovered.state.entitlement.content.remaining, 29);
+    assert.equal(recovered.state.entitlement.content.remaining, 99);
   });
 
   it('persists requested and actual model evidence from the model supply copy bridge', async () => {
