@@ -282,10 +282,12 @@ test.describe('S2 失败与恢复', () => {
     await page.getByTestId('composer-report-action-retry').click();
     const second = await settleSubmission(page, retried);
     expect(second.taskId).not.toBe(run.taskId);
-    await expect(page.getByTestId('composer-turn-merchant')).toContainText(
-      FAILURE_DRILL_INTENT,
-      { timeout: 60_000 }
-    );
+    // `.last()`: 再生成一次 carries the conversation forward rather than wiping
+    // it, so asking again reads as a second ask — the merchant said the same
+    // sentence twice and the transcript says so.
+    await expect(
+      page.getByTestId('composer-turn-merchant').last()
+    ).toContainText(FAILURE_DRILL_INTENT, { timeout: 60_000 });
   });
 
   /**
@@ -313,15 +315,46 @@ test.describe('S2 失败与恢复', () => {
     await expect(intentInput).toBeDisabled();
     await page.getByTestId('composer-report-action-adjust_intent').click();
     await expect(intentInput).toBeEnabled();
+    // Taking the conversation over ends the tab's claim on the failed run. If
+    // the handle stayed in sessionStorage, the next reload would restore that
+    // run — its stream, its poll and its 申报 — on top of the sentence the
+    // merchant is in the middle of rewriting (轮 5 P1-①).
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          (key) => window.sessionStorage.getItem(key),
+          COMPOSER_SESSION_STORAGE_KEY
+        )
+      )
+      .toBeNull();
     // Rewritten to drop the claim that was refused — the point of 改一下要求.
+    // Typed rather than filled: each keystroke moves the billable payload, so
+    // the quote is provably held while this runs and the state below is not a
+    // race the machine happened to win.
     const rewritten = '写一条皮肤护理到店体验文案，只讲服务流程和预约方式';
-    await intentInput.fill(rewritten);
+    const quoteStatus = page.getByTestId('composer-quote-status');
+    // 改一下要求 hands their own sentence back, so the rewrite starts by clearing
+    // what the failed run was asked for.
+    await intentInput.fill('');
+    const typing = intentInput.pressSequentially(rewritten, { delay: 40 });
+    await expect(quoteStatus).toHaveAttribute('data-quote-state', 'settling');
+    await typing;
     await expect(intentInput).toHaveValue(rewritten);
+
+    // The press has to land *inside* the window or this leg proves nothing
+    // about it, so the state is read once more with no retry: held, with no
+    // price on screen, at the moment the merchant presses.
+    expect(await quoteStatus.getAttribute('data-quote-state')).toBe('settling');
+    await expect(page.getByTestId('composer-quote-line')).toHaveCount(0);
 
     // The ordinary send button, not the card: this is the merchant continuing
     // by hand. It re-quotes under the rewritten sentence, which is where a
     // quote id that ignored the intent used to strand them on a 409.
     const resubmitted = submissionResponse(page);
+    // Exactly one press, and no second one anywhere below: a press inside the
+    // window has to carry all the way to Core on its own. If it only flushed
+    // the window the merchant would have to press again, which is the dead
+    // press this leg exists to catch.
     await page.getByTestId('composer-submit').click();
     const second = await settleSubmission(page, resubmitted);
     expect(second.taskId).not.toBe(run.taskId);

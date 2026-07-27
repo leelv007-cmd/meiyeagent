@@ -1073,7 +1073,15 @@ export function ComposerHome({
       session,
       new Date().toISOString()
     );
-    if (!persisted) return;
+    if (!persisted) {
+      // Nothing to persist means the tab holds no run — after 改一下要求, say.
+      // Leaving the old handle in storage would let the next reload restore the
+      // run the merchant just walked away from, remount its stream and poll,
+      // and put its 申报 back on screen (#236 轮 5 P1-①). The handle is the
+      // tab's memory of a run it holds; when it holds none, it remembers none.
+      store.removeItem(COMPOSER_SESSION_STORAGE_KEY);
+      return;
+    }
     store.setItem(COMPOSER_SESSION_STORAGE_KEY, JSON.stringify(persisted));
   }, [session, store]);
 
@@ -1616,6 +1624,9 @@ export function ComposerHome({
   const handleLensChange = (next: CreationLensId) => {
     setShowRequiredHint(false);
     setSubmissionGroundingBlocked(null);
+    // A press was for one form of content at one price. Choosing another form
+    // is a different ask, so the held press does not travel with it.
+    armedQuoteIdRef.current = null;
     setLensState(selectLens(lensState, next));
   };
 
@@ -1707,7 +1718,11 @@ export function ComposerHome({
     }
     switch (input.action) {
       case 'retry':
-        setSession(createComposerSession(sessionIdRef.current));
+        // The rebind above already handed this conversation to the new attempt.
+        // Replacing it with a fresh session would also throw away the 交付卡 a
+        // partial delivery left standing — the one part that did land, which
+        // 再生成一次 is offered *from* (#236 轮 5 P1-③).
+        //
         // Deferred: attemptSubmit reads the closure's lensState, which is still
         // frozen on this tick. The effect below fires it once the thaw lands.
         setRetryAfterReport(true);
@@ -2010,10 +2025,12 @@ export function ComposerHome({
     const armed = armedQuoteIdRef.current;
     if (armed === null) return;
     if (quoteId !== armed) {
-      // They kept writing after pressing. The sentence they sent is not the one
-      // on screen any more, so the press expires with it rather than submitting
-      // something they never asked for.
-      if (quoteId !== null) armedQuoteIdRef.current = null;
+      // They kept writing, or the quote context went away entirely (a lens
+      // switch, a submission that stopped signing). Either way the sentence
+      // they pressed on is gone, and the press goes with it — held across a
+      // gap it would fire later on a quote id that came back around, which is
+      // a submission the merchant never asked for (#236 轮 5 P1-②).
+      armedQuoteIdRef.current = null;
       return;
     }
     if (quoteQuery.isError) {

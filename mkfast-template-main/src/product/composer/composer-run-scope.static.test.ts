@@ -26,9 +26,50 @@ test('the composer only listens to the run its session currently holds', () => {
     home,
     /enabled: Boolean\(taskId\) && session\.phase !== 'delivered'/u
   );
+  // `enabled` only decides whether the poll runs; what it *asks about* is the
+  // queryFn's argument, and a poll enabled on the current handle while reading
+  // a remembered one would keep answering for the finished run.
+  assert.match(
+    home,
+    /queryFn: \(\{ signal \}\) => readPendingHarnessDecision\(taskId, signal\)/u
+  );
+  assert.match(home, /queryKey: decisionQueryKey/u);
+  assert.match(home, /\['harness', 'decision', taskId\] as const/u);
+  assert.match(home, /\['harness', 'workflow', taskId\] as const/u);
   // The stream is never pointed at anything but that handle — no URL taskId, no
   // remembered id from a run that already ended.
   assert.doesNotMatch(home, /workflowId: (?!taskId)[A-Za-z]/u);
+});
+
+/**
+ * The handle is the tab's memory of a run it holds. A recovery unbinds it, and
+ * if sessionStorage kept the old one the next reload would restore the run the
+ * merchant just walked away from — stream, poll and 申报 with it (轮 5 P1-①).
+ */
+test('an unbound composer stops remembering the run it used to hold', () => {
+  assert.match(
+    home,
+    /if \(!persisted\) \{[\s\S]*?store\.removeItem\(COMPOSER_SESSION_STORAGE_KEY\);[\s\S]*?\}/u
+  );
+});
+
+/**
+ * 再生成一次 continues the conversation it recovered from. Overwriting it with a
+ * fresh session would take the 交付卡 of a partial delivery with it — the part
+ * that did land, and the reason that entry is offered at all.
+ */
+test('retry keeps what the recovery deliberately left standing', () => {
+  const recovery = home.slice(
+    home.indexOf('const recoverFromReport'),
+    home.indexOf('const attemptSubmit')
+  );
+  const retryCase = recovery.slice(
+    recovery.indexOf("case 'retry':"),
+    recovery.indexOf("case 'adjust_intent':")
+  );
+  assert.ok(retryCase.length > 0, 'retry case must exist');
+  assert.doesNotMatch(retryCase, /createComposerSession/u);
+  assert.match(retryCase, /setRetryAfterReport\(true\);/u);
 });
 
 /**
@@ -56,7 +97,18 @@ test('send stays pressable while the quote is only being held back', () => {
   // and nothing else, so the first press would be one the merchant has to
   // repeat — a dead press by any other name.
   assert.match(submit, /armedQuoteIdRef\.current = quoteId;/u);
-  assert.match(home, /if \(quoteId !== armed\)/u);
+  // …and it only stands inside the quote context it was made in. Any other id —
+  // including none at all, after a lens switch — expires it, or a press held
+  // across the gap would fire on a quote id that came back around.
+  assert.match(
+    home,
+    /if \(quoteId !== armed\) \{[\s\S]*?armedQuoteIdRef\.current = null;\s*return;\s*\}/u
+  );
+  assert.doesNotMatch(home, /if \(quoteId !== null\) armedQuoteIdRef/u);
+  assert.match(
+    home,
+    /const handleLensChange[\s\S]*?armedQuoteIdRef\.current = null;[\s\S]*?selectLens/u
+  );
 });
 
 /**
