@@ -194,15 +194,32 @@ test('one product key, one source: repointing a tier moves both pages at once', 
   // different key anyway. Every price lookup on this page must go through the
   // display plan's own configPlanId — a literal argument here reintroduces the
   // fork one level down, where the DISPLAY_PLANS assertions above cannot see it.
-  const priceLookupArguments = [
-    ...pricing.matchAll(/findSubscriptionPrice\(\s*([^,]+),/gu),
+  const body = pricing.replace(/^import[\s\S]*?from\s+'[^']+';$/gmu, '');
+
+  // Tolerate whatever sits between the name and its parenthesis; a guard that
+  // only recognises one spelling is a guard you can format your way around.
+  const directCallArguments = [
+    ...body.matchAll(/\bfindSubscriptionPrice\s*\(\s*([^,]+),/gu),
   ].map((match) => match[1]?.trim());
-  assert.ok(
-    priceLookupArguments.length >= 2,
-    'expected the page to still price its cards through findSubscriptionPrice'
+
+  // Every mention of the name, calls and non-calls alike. Routing a lookup
+  // through an alias or a wrapper keeps the mention but loses the direct call,
+  // so the two counts part company — which is the whole point of counting both.
+  const mentions = [...body.matchAll(/\bfindSubscriptionPrice\b/gu)].length;
+
+  const EXPECTED_PRICE_LOOKUPS = 3; // 中级 monthly + 中级 yearly + the CTA's monthly
+  assert.equal(
+    mentions,
+    EXPECTED_PRICE_LOOKUPS,
+    'the page names findSubscriptionPrice somewhere new — is it still a direct call?'
+  );
+  assert.equal(
+    directCallArguments.length,
+    EXPECTED_PRICE_LOOKUPS,
+    'every mention must be a direct call: an alias or wrapper hides the key from this guard'
   );
   assert.deepEqual(
-    [...new Set(priceLookupArguments)],
+    [...new Set(directCallArguments)],
     ['plan.configPlanId'],
     'price every card by its display plan key, never by a literal'
   );
@@ -219,25 +236,40 @@ test('the mapping states exactly which product backs each public tier', () => {
   assert.equal(GROWTH_CONFIG_PLAN_ID, 'pro');
 });
 
-test('the landing prices the paid tier off the pro product, not merely off a helper', () => {
+test('the landing reads the pro product out of the catalogue every time it is asked', () => {
   // Against a catalogue where every product carries a different price, the
-  // number the landing prints identifies which product it read. Comparing it
-  // to PUBLIC_PLAN_CONFIG_IDS.growth would prove nothing — that is the same
-  // expression the helper itself uses — so compare it to the price filed under
-  // the literal key this tier is pinned to above.
-  withStubbedCatalog({ free: 0, pro: 39_900, lifetime: 99_900 }, () => {
-    assert.equal(growthMonthlyPriceLabel(), '¥399');
-    // The catalogue really does discriminate: reading another product here
-    // would have produced a visibly different number, so the assertion above
-    // is load-bearing rather than accidentally true.
-    assert.equal(
-      formatYuan(
-        findSubscriptionPrice('lifetime', PlanIntervals.MONTH)?.amount ?? 0
-      ),
-      '¥999'
-    );
-    assert.notEqual(growthMonthlyPriceLabel(), '¥999');
-  });
+  // number the landing prints says which product it read. Comparing it to
+  // PUBLIC_PLAN_CONFIG_IDS.growth would prove nothing — that is the helper's
+  // own expression — so it is compared to the price filed under the literal
+  // key this tier is pinned to above, computed from the stub rather than
+  // written out, so the expectation cannot drift from the fixture.
+  //
+  // Two sentinel prices in succession, neither of them the real one. One
+  // sentinel is a coin flip: a hard-coded string or a value memoised at module
+  // load can match it. Moving the catalogue and watching the label move with
+  // it is what rules those out.
+  for (const proAmount of [41_700, 53_000]) {
+    withStubbedCatalog({ free: 0, pro: proAmount, lifetime: 99_900 }, () => {
+      const priceFiledUnderPro = formatYuan(
+        findSubscriptionPrice('pro', PlanIntervals.MONTH)?.amount ?? 0
+      );
+      assert.equal(
+        growthMonthlyPriceLabel(),
+        priceFiledUnderPro,
+        `the landing must quote the pro product at ${proAmount} cents`
+      );
+      // The catalogue really does discriminate: another product would have
+      // produced a visibly different number, so the assertion above is
+      // load-bearing rather than accidentally true.
+      assert.equal(
+        formatYuan(
+          findSubscriptionPrice('lifetime', PlanIntervals.MONTH)?.amount ?? 0
+        ),
+        '¥999'
+      );
+      assert.notEqual(growthMonthlyPriceLabel(), '¥999');
+    });
+  }
   // And the stub is fully undone, so the rest of the suite sees real config.
   assert.equal(
     growthMonthlyPriceLabel(),
