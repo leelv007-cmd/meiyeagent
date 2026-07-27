@@ -508,6 +508,86 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
   });
 });
 
+test('image-text note partial selection keeps merchantReport in the workflow result', async () => {
+  const result = await runHarnessWorkflow(
+    'task-image-text-note-partial',
+    mediaTaskInput('image_text_note'),
+    noteStages(true),
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        return {
+          idempotencyKey: 'choose-story-partial',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: 'note_style',
+            value: '故事版',
+            reason: '选择图文方向',
+          },
+          decision: { state: 'accepted', value: '故事版' },
+        };
+      },
+      async recordTrace() {},
+    },
+  );
+
+  const merchantReport =
+    'merchantReport' in result ? result.merchantReport : undefined;
+  assert.equal(merchantReport?.kind, 'partial');
+  assert.equal(merchantReport?.category, 'consistency');
+  assert.ok(merchantReport?.actions.includes('review_partial'));
+});
+
+test('DBOS note selection keeps waiting outside steps and LLM effects under stable keys', async () => {
+  const effectKeys: string[] = [];
+  await runHarnessWorkflow(
+    'task-image-text-note-durable',
+    mediaTaskInput('image_text_note'),
+    noteStages(false, async (input) => {
+      assert.equal(typeof input.sleep, 'function');
+      assert.equal(typeof input.runStep, 'function');
+      await input.runStep?.('note-plan', async () => undefined);
+    }),
+    {
+      async runStep(key, operation) {
+        effectKeys.push(key);
+        return operation();
+      },
+      async awaitSignal() {
+        return null;
+      },
+      async sleep() {},
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        return {
+          idempotencyKey: 'choose-story-durable',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: 'note_style',
+            value: '故事版',
+            reason: '选择图文方向',
+          },
+          decision: { state: 'accepted', value: '故事版' },
+        };
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.ok(
+    effectKeys.includes(
+      'wf:task-image-text-note-durable:s4:image_text_note:note-plan',
+    ),
+  );
+});
+
 test('image-text note refuses to replace a selected style after context recompile', async () => {
   const stages = noteStages();
   const originalBrief = noteBrief();
@@ -1839,7 +1919,12 @@ function mediaTaskInput(
   return { ...taskInput(), executionSnapshot: snapshot };
 }
 
-function noteStages(): HarnessNoteStagePorts {
+function noteStages(
+  partial = false,
+  onExecute?: (
+    input: Parameters<HarnessNoteStagePorts['executeNoteAndSelect']>[0],
+  ) => Promise<void>,
+): HarnessNoteStagePorts {
   const brief = noteBrief();
   return {
     ...fixtureStages(),
@@ -1863,6 +1948,7 @@ function noteStages(): HarnessNoteStagePorts {
     },
     async executeNoteAndSelect(input) {
       assert.equal(input.selectedStyleId, 'story');
+      await onExecute?.(input);
       return {
         auditSignals: [],
         childRuns: [],
@@ -1881,6 +1967,14 @@ function noteStages(): HarnessNoteStagePorts {
           rubricVersion: 'note-style-user-choice-v1',
           rubricHash: 'note-style-rubric',
         },
+        ...(partial
+          ? {
+              partial: {
+                unresolvedPageIds: ['page-2'],
+                reason: 'consistency_remained_incomplete' as const,
+              },
+            }
+          : {}),
       };
     },
     async assembleNoteAndDeliver() {

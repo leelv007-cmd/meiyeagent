@@ -11,7 +11,6 @@ import {
 import {
   HarnessWorkflowCancellation,
   runHarnessWorkflow,
-  HARNESS_MEDIA_TERMINAL_TOPIC,
   harnessMediaJobTopic,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
@@ -163,6 +162,9 @@ export function registerHarnessDbosWorkflow(
         // DBOS.recv is an orchestration operation. It must stay outside every
         // DBOS.runStep so a pending provider job suspends the workflow.
         return DBOS.recv<T>(topic, options);
+      },
+      sleep(durationMs) {
+        return DBOS.sleep(durationMs);
       },
       async progress(event) {
         const occurredAt = new Date(await DBOS.now()).toISOString();
@@ -700,12 +702,6 @@ export async function sendHarnessMediaJobTerminal(
     message,
     harnessMediaJobTopic(input.jobId),
     `harness-media-terminal:${input.workspaceId}:${input.jobId}:${input.status}`,
-  );
-  await DBOS.send(
-    destination,
-    message,
-    HARNESS_MEDIA_TERMINAL_TOPIC,
-    `harness-media-admission:${input.workspaceId}:${input.jobId}:${input.status}`,
   );
   return true;
 }

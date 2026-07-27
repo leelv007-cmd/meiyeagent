@@ -28,10 +28,12 @@ import {
   merchantIdentityVoiceNotice,
   merchantNeutralIndustryContinuationNotice,
   merchantNoteProgressMessage,
+  merchantNotePartialConsistency,
   merchantNoteStyleUnavailable,
   merchantNoteStyleQuestion,
   merchantBriefFallbackNotice,
   merchantPartialFailure,
+  merchantPartialDeliveryReport,
   merchantProgressMessage,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
@@ -99,6 +101,13 @@ export interface HarnessNoteSelectionResult {
   trace: DecisionTraceFragment;
   version: NonNullable<ContentPackage['versions'][number]['note']>;
 }
+
+export type HarnessEffectRunner = <Output>(
+  effectIdempotencyKey: string,
+  operation: () => Promise<Output>,
+) => Promise<Output>;
+
+export type HarnessWorkflowSleep = (durationMs: number) => Promise<void>;
 
 export interface HarnessContextSnapshot {
   bundle: BriefContextBundle;
@@ -208,6 +217,8 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
     context: HarnessContextSnapshot;
     skillInstructions?: readonly ResolvedSkillInstruction[];
     awaitSignal?: HarnessSignalReceiver;
+    sleep?: HarnessWorkflowSleep;
+    runStep?: HarnessEffectRunner;
   }): Promise<HarnessMediaSelectionResult>;
   assembleMediaAndDeliver(input: {
     workflowId: string;
@@ -236,6 +247,8 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     selectedStyleId: string;
     skillInstructions?: readonly ResolvedSkillInstruction[];
     awaitSignal?: HarnessSignalReceiver;
+    sleep?: HarnessWorkflowSleep;
+    runStep?: HarnessEffectRunner;
   }): Promise<HarnessNoteSelectionResult>;
   assembleNoteAndDeliver(input: {
     workflowId: string;
@@ -270,6 +283,7 @@ export interface HarnessWorkflowRuntime {
    * Non-DBOS runtimes omit this hook and retain the synchronous test path.
    */
   awaitSignal?: HarnessSignalReceiver;
+  sleep?: HarnessWorkflowSleep;
   progress(event: {
     sequence: number;
     stage:
@@ -1161,18 +1175,26 @@ async function runNoteHarnessWorkflow(
       ? { skillInstructions: executionSkills.instructions }
       : {}),
     ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
+    ...(runtime.sleep ? { sleep: runtime.sleep } : {}),
+    ...(runtime.awaitSignal
+      ? {
+          runStep: durableSelectionEffectRunner(
+            runtime,
+            workflowId,
+            'image_text_note',
+            executionSkills.instructions,
+          ),
+        }
+      : {}),
   };
-  const selection = runtime.awaitSignal
-    ? await ports.executeNoteAndSelect(noteSelectionInput)
-    : await runtime.runStep(
-        harnessEffectKey(
-          workflowId,
-          4,
-          skillEffectUnit('image_text_note', executionSkills.instructions),
-          'selection',
-        ),
-        () => ports.executeNoteAndSelect(noteSelectionInput),
-      );
+  const selection = await runSelectionStage(
+    runtime,
+    workflowId,
+    'image_text_note',
+    executionSkills.instructions,
+    noteSelectionInput,
+    (input) => ports.executeNoteAndSelect(input),
+  );
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(activeRequest),
     ...selection.trace,
@@ -1237,7 +1259,17 @@ async function runNoteHarnessWorkflow(
       useSuggestion: '建议逐页核对画面、文字和预约引导，确认后再发布',
     }),
   });
+  const partialReport = selection.partial
+    ? merchantPartialDeliveryReport({
+        message: merchantNotePartialConsistency(
+          selection.partial.unresolvedPageIds.length,
+        ),
+        nextStep:
+          '可以先用已经对好的页面发布，或者让我把没对上的那几页重做一次。',
+      })
+    : undefined;
   return {
+    ...(partialReport ? { merchantReport: partialReport } : {}),
     billingReceipt: {
       trustedUsage: {
         kind: 'product_units' as const,
@@ -1258,7 +1290,6 @@ async function runNoteHarnessWorkflow(
     },
     delivery,
     deliveryLayer: routed.declaration.deliveryLayer,
-    ...(selection.partial ? { partial: selection.partial } : {}),
     recommendation,
     trace: selection.trace,
   };
@@ -1421,18 +1452,26 @@ async function runMediaHarnessWorkflow(
       ? { skillInstructions: executionSkills.instructions }
       : {}),
     ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
+    ...(runtime.sleep ? { sleep: runtime.sleep } : {}),
+    ...(runtime.awaitSignal
+      ? {
+          runStep: durableSelectionEffectRunner(
+            runtime,
+            workflowId,
+            kind,
+            executionSkills.instructions,
+          ),
+        }
+      : {}),
   };
-  let selection = runtime.awaitSignal
-    ? await ports.executeMediaAndSelect(mediaSelectionInput)
-    : await runtime.runStep(
-        harnessEffectKey(
-          workflowId,
-          4,
-          skillEffectUnit(kind, executionSkills.instructions),
-          'selection',
-        ),
-        () => ports.executeMediaAndSelect(mediaSelectionInput),
-      );
+  let selection = await runSelectionStage(
+    runtime,
+    workflowId,
+    kind,
+    executionSkills.instructions,
+    mediaSelectionInput,
+    (input) => ports.executeMediaAndSelect(input),
+  );
   await trace(runtime, workflowId, 'execution_selection', {
     executionRoot: mediaExecutionRoot(request),
     ...selection.trace,
@@ -1511,21 +1550,26 @@ async function runMediaHarnessWorkflow(
         ? { skillInstructions: executionSkills.instructions }
         : {}),
       ...(runtime.awaitSignal ? { awaitSignal: runtime.awaitSignal } : {}),
-    };
-    selection = runtime.awaitSignal
-      ? await ports.executeMediaAndSelect(recompiledMediaSelectionInput)
-      : await runtime.runStep(
-          harnessEffectKey(
-            workflowId,
-            4,
-            skillEffectUnit(
+      ...(runtime.sleep ? { sleep: runtime.sleep } : {}),
+      ...(runtime.awaitSignal
+        ? {
+            runStep: durableSelectionEffectRunner(
+              runtime,
+              workflowId,
               `${kind}-r${bundle.bundle.revision}`,
               executionSkills.instructions,
             ),
-            'selection',
-          ),
-          () => ports.executeMediaAndSelect(recompiledMediaSelectionInput),
-        );
+          }
+        : {}),
+    };
+    selection = await runSelectionStage(
+      runtime,
+      workflowId,
+      `${kind}-r${bundle.bundle.revision}`,
+      executionSkills.instructions,
+      recompiledMediaSelectionInput,
+      (input) => ports.executeMediaAndSelect(input),
+    );
     await trace(runtime, workflowId, 'execution_selection', {
       executionRoot: mediaExecutionRoot(request),
       ...selection.trace,
@@ -2237,6 +2281,44 @@ function trace(
     stage,
     payload,
   });
+}
+
+async function runSelectionStage<Input extends { runStep?: HarnessEffectRunner }, Output>(
+  runtime: HarnessWorkflowRuntime,
+  workflowId: string,
+  unit: string,
+  skills: readonly ResolvedSkillInstruction[],
+  input: Input,
+  operation: (input: Input) => Promise<Output>,
+) {
+  if (runtime.awaitSignal) return operation(input);
+  return runtime.runStep(
+    harnessEffectKey(
+      workflowId,
+      4,
+      skillEffectUnit(unit, skills),
+      'selection',
+    ),
+    () => operation(input),
+  );
+}
+
+function durableSelectionEffectRunner(
+  runtime: HarnessWorkflowRuntime,
+  workflowId: string,
+  unit: string,
+  skills: readonly ResolvedSkillInstruction[],
+): HarnessEffectRunner {
+  return (effectIdempotencyKey, operation) =>
+    runtime.runStep(
+      harnessEffectKey(
+        workflowId,
+        4,
+        skillEffectUnit(unit, skills),
+        effectIdempotencyKey,
+      ),
+      operation,
+    );
 }
 
 export function harnessEffectKey(

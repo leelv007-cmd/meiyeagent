@@ -28,6 +28,7 @@ import {
   HARNESS_MEDIA_TERMINAL_TOPIC,
   harnessMediaJobTopic,
   type HarnessContextSnapshot,
+  type HarnessEffectRunner,
   type HarnessMediaSelectionResult,
   type HarnessMediaStagePorts,
   type HarnessNoteBrief,
@@ -35,6 +36,7 @@ import {
   type HarnessNoteStagePorts,
   type HarnessSignalReceiver,
   type HarnessStagePorts,
+  type HarnessWorkflowSleep,
 } from "./workflow-core.js";
 import type { HarnessWorkflowInput } from "./task-admission.js";
 import {
@@ -51,6 +53,7 @@ import {
 	merchantExactTextVerificationUnavailable,
 	merchantImageGenerationFailure,
 	merchantNoteConfirmationCard,
+	merchantNotePartialPageMarker,
 	merchantNoteSelectionReason,
 	merchantVideoGenerationFailure,
 } from "./merchant-delivery-language.js";
@@ -76,6 +79,7 @@ type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
 
 const MEDIA_JOB_WAIT_TIMEOUT_SECONDS = 150;
 const NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS = 300;
+const NOTE_ADMISSION_POLL_INTERVAL_MS = 250;
 
 export interface HarnessMediaExecutionPort {
 	execute(input: {
@@ -86,6 +90,8 @@ export interface HarnessMediaExecutionPort {
 		/** DBOS workflow that owns the wait, distinct from page-level job keys. */
 		orchestrationWorkflowId?: string;
 		awaitSignal?: HarnessSignalReceiver;
+		sleep?: HarnessWorkflowSleep;
+		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult>;
 }
 
@@ -457,7 +463,7 @@ export class UnifiedHarnessStagePorts
 				body: note.plan.pages
 					.map(({ id, textBlock }) =>
 						unresolvedPageIds.has(id)
-							? `${textBlock.body}\n\n【待复核】这一页的一致性评估仍未通过，已保留当前版本；可单独重新生成本页。`
+							? `${merchantNotePartialPageMarker()}\n${textBlock.body}`
 							: textBlock.body,
 					)
 					.join("\n\n"),
@@ -559,6 +565,8 @@ export class UnifiedHarnessStagePorts
 		request: HarnessWorkflowInput;
 		context: HarnessContextSnapshot;
 		awaitSignal?: HarnessSignalReceiver;
+		sleep?: HarnessWorkflowSleep;
+		runStep?: HarnessEffectRunner;
 	}) {
 		const snapshot = requireSnapshot(input.request);
 		const runner = this.runners.create({
@@ -572,6 +580,7 @@ export class UnifiedHarnessStagePorts
 				runner,
 				input.workflowId,
 				this.now,
+				input.runStep,
 			),
 			{
 				generate: async ({ page, reason, evaluationReason }) => {
@@ -585,6 +594,8 @@ export class UnifiedHarnessStagePorts
 						...(input.awaitSignal
 							? { awaitSignal: input.awaitSignal }
 							: {}),
+						...(input.sleep ? { sleep: input.sleep } : {}),
+						...(input.runStep ? { runStep: input.runStep } : {}),
 					});
 					return {
 						asset: result.asset,
@@ -830,6 +841,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 		workflowId: string;
 		orchestrationWorkflowId?: string;
 		awaitSignal?: HarnessSignalReceiver;
+		sleep?: HarnessWorkflowSleep;
+		runStep?: HarnessEffectRunner;
 	}): Promise<HarnessMediaSelectionResult> {
 		const snapshot = requireSnapshot(input.request);
 		assertBriefMatchesSnapshot(input.brief, snapshot);
@@ -872,6 +885,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 						),
 						noteAdmissionInput,
 						input.awaitSignal,
+						input.sleep,
+						input.runStep,
 					),
 				verify: async (result) => {
 					const completed = requireCompletedMediaResult(result, "image");
@@ -883,12 +898,17 @@ export class ModelSupplyHarnessMediaExecutionPort
 							reason: "No exact text was requested.",
 						};
 					}
-					return this.exactText!.verify({
-						assetId: completed.asset!.id,
-						expected,
-						request: input.request,
-						workflowId: input.workflowId,
-					});
+					return this.runEffect(
+						`verify:${completed.asset!.id}`,
+						() =>
+							this.exactText!.verify({
+								assetId: completed.asset!.id,
+								expected,
+								request: input.request,
+								workflowId: input.workflowId,
+							}),
+						input.runStep,
+					);
 				},
 				merchantFailure: merchantExactTextMismatch,
 			});
@@ -912,6 +932,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 			),
 			noteAdmissionInput,
 			input.awaitSignal,
+			input.sleep,
+			input.runStep,
 		);
 		const completed = requireCompletedMediaResult(result, input.brief.kind);
 		return mediaSelection(completed, input.brief.kind, [completed], []);
@@ -925,19 +947,32 @@ export class ModelSupplyHarnessMediaExecutionPort
 			workspaceId: string;
 		},
 		awaitSignal?: HarnessSignalReceiver,
+		sleep?: HarnessWorkflowSleep,
+		runStep?: HarnessEffectRunner,
 	) {
 		const admissionToken = noteAdmissionInput
-			? await this.acquireNoteAdmission(noteAdmissionInput, awaitSignal)
+			? await this.acquireNoteAdmission(noteAdmissionInput, awaitSignal, sleep)
 			: undefined;
+		const admittedJobId = admissionToken?.jobId;
 		let result =
-			admissionToken?.jobId && this.models.getDurableMediaJob
-				? (
-						await this.models.getDurableMediaJob(
-							submission.workspaceId,
-							admissionToken.jobId,
-						)
-					).result
-				: await this.models.submit(submission);
+			admittedJobId && this.models.getDurableMediaJob
+				? await this.runEffect(
+						`admission-reconcile:${admittedJobId}`,
+						async () => {
+							const { result: durableResult } =
+								await this.models.getDurableMediaJob!(
+									submission.workspaceId,
+									admittedJobId,
+								);
+							return durableResult;
+						},
+						runStep,
+					)
+				: await this.runEffect(
+						`submit:${submission.idempotencyKey}`,
+						() => this.models.submit(submission),
+						runStep,
+					);
 		if (admissionToken) {
 			const running = await this.noteAdmission!.markRunning(
 				admissionToken,
@@ -953,12 +988,19 @@ export class ModelSupplyHarnessMediaExecutionPort
 					timeoutSeconds: MEDIA_JOB_WAIT_TIMEOUT_SECONDS,
 				});
 			}
-			result = (
-				await this.models.getDurableMediaJob(
-					submission.workspaceId,
-					result.jobId,
-				)
-			).result;
+			const jobId = result.jobId;
+			result = await this.runEffect(
+				`reconcile:${jobId}`,
+				async () => {
+					const { result: durableResult } =
+						await this.models.getDurableMediaJob!(
+							submission.workspaceId,
+							jobId,
+						);
+					return durableResult;
+				},
+				runStep,
+			);
 		}
 		if (
 			admissionToken &&
@@ -975,6 +1017,16 @@ export class ModelSupplyHarnessMediaExecutionPort
 		return result;
 	}
 
+	private runEffect<Output>(
+		effectIdempotencyKey: string,
+		operation: () => Promise<Output>,
+		runStep?: HarnessEffectRunner,
+	) {
+		return runStep
+			? runStep(effectIdempotencyKey, operation)
+			: operation();
+	}
+
 	private async acquireNoteAdmission(
 		input: {
 		taskId: string;
@@ -982,6 +1034,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 		workspaceId: string;
 		},
 		awaitSignal?: HarnessSignalReceiver,
+		sleep?: HarnessWorkflowSleep,
 	): Promise<NoteMediaAdmissionToken> {
 		if (!this.noteAdmission) {
 			throw new HarnessMediaExecutionError(
@@ -992,7 +1045,17 @@ export class ModelSupplyHarnessMediaExecutionPort
 		}
 		const claim = await this.noteAdmission.claim(input);
 		if (claim) return claim;
-		if (awaitSignal) {
+		if (sleep) {
+			const attempts = Math.ceil(
+				(NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS * 1000) /
+					NOTE_ADMISSION_POLL_INTERVAL_MS,
+			);
+			for (let attempt = 0; attempt < attempts; attempt += 1) {
+				await sleep(NOTE_ADMISSION_POLL_INTERVAL_MS);
+				const retried = await this.noteAdmission.claim(input);
+				if (retried) return retried;
+			}
+		} else if (awaitSignal) {
 			await awaitSignal(HARNESS_MEDIA_TERMINAL_TOPIC, {
 				timeoutSeconds: NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS,
 			});

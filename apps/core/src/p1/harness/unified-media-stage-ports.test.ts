@@ -666,7 +666,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		!partialPages[0]?.includes("还没对上"),
 		"the page that came out right is left alone",
 	);
-	assert.match(partialPages.at(-1) ?? "", /待复核/u);
+	assert.match(partialPages.at(-1) ?? "", /还没对上/u);
 });
 
 test("media delivery blocks malicious visible copy before the canonical writer", async () => {
@@ -1119,6 +1119,62 @@ test("note pages keep durable admission single-flight while compiler branches re
 		"submit:2",
 		"running:g2",
 		"completed:g2",
+	]);
+});
+
+test("a competing note workflow retries the shared claim with durable sleep", async () => {
+	const events: string[] = [];
+	const first = completedResult("image", "1");
+	const second = completedResult("image", "2");
+	let submissions = 0;
+	let sleeps = 0;
+	const adapter = new ModelSupplyHarnessMediaExecutionPort(
+		{
+			async submit() {
+				submissions += 1;
+				if (submissions === 1) {
+					return { ...first, status: "unknown", asset: undefined };
+				}
+				return second;
+			},
+			async getDurableMediaJob(_workspaceId, jobId) {
+				assert.equal(jobId, first.jobId);
+				return { result: first };
+			},
+		},
+		undefined,
+		memoryNoteAdmission(events),
+	);
+	const request = harnessInput("image_text_note", "package-note-durable");
+
+	const [firstSelection, secondSelection] = await Promise.all([
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "workflow-note:page-1",
+		}),
+		adapter.execute({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request,
+			workflowId: "workflow-note:page-2",
+			sleep: async () => {
+				sleeps += 1;
+				await new Promise<void>((resolve) => setImmediate(resolve));
+			},
+			awaitSignal: async () => {
+				throw new Error("competing admission must not wait on a shared topic");
+			},
+		}),
+	]);
+
+	assert.equal(firstSelection.asset.id, "image-asset-1");
+	assert.equal(secondSelection.asset.id, "image-asset-2");
+	assert.ok(sleeps >= 1);
+	assert.deepEqual(events.slice(0, 2), [
+		"claim:workflow-note:page-1:g1",
+		"blocked:workflow-note:page-2",
 	]);
 });
 
