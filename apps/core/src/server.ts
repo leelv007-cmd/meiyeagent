@@ -7,11 +7,11 @@ import {
 import {
   p1ModuleRequestSchema,
   assistantStreamRequestSchema,
-  copyStreamRequestSchema,
   firstUsableDraftMetricSchema,
   structuredDecisionInputSchema,
   hasProductCapability,
   productCommandSchema,
+  publicPlanCatalogSchema,
   requiredP1Capability,
   requiredProductCommandCapability,
   type ApiEnvelope,
@@ -95,7 +95,7 @@ interface CoreServerDependencies {
   executionModeGate?: { blocksNewSubmission(): Promise<boolean> };
   operationsService?: Pick<
     OperationsApplicationService,
-    'getCreativeWorkbench' | 'startCreativeCopyStream'
+    'getCreativeWorkbench'
   >;
   composerDestinationMapper?: ComposerDestinationMappingPort;
   composerSubmission?: {
@@ -106,6 +106,21 @@ interface CoreServerDependencies {
   };
   harnessService?: HarnessApplicationService;
   pendingActions?: Pick<PendingActionsService, 'list'>;
+  /**
+   * Read side of the entitlement catalogue for the public pricing page (D-143).
+   * Same `plan.allowances.*` admin-config source the workspace-scoped
+   * entitlements module reads, so what a visitor is quoted and what a merchant
+   * is granted cannot drift apart.
+   */
+  planCatalog?: {
+    get(): Promise<{
+      plans: Array<{
+        id: string;
+        allowance: { copy: number; image: number; video: number };
+        concurrencyLimit: number;
+      }>;
+    }>;
+  };
   /**
    * Optional runtime-truth port for /health/ready and /capabilities.
    * Live endpoints never consult this port.
@@ -925,6 +940,7 @@ export function createCoreServer({
   contentPackageReader,
   harnessService,
   pendingActions,
+  planCatalog,
   runtimeTruth,
   serviceToken,
   workflowEvents,
@@ -1148,6 +1164,52 @@ export function createCoreServer({
         { code: 'UNAUTHORIZED_SERVICE', message: 'Invalid service identity.' },
         requestCorrelationId
       );
+      return;
+    }
+
+    // D-143 单一商品目录：the public pricing page reads the same
+    // `plan.allowances.*` admin-config revision the entitlement grant reads.
+    // Service-token gated because the browser never talks to core directly —
+    // the Web BFF fetches this for its /pricing loader.
+    if (
+      request.method === 'GET' &&
+      url.pathname === '/public/plan-catalog' &&
+      planCatalog
+    ) {
+      try {
+        const catalog = await planCatalog.get();
+        sendJson(
+          response,
+          200,
+          publicPlanCatalogSchema.parse({
+            plans: catalog.plans
+              .filter((plan) => plan.id !== 'trial')
+              .map((plan) => ({
+                id: plan.id,
+                allowance: {
+                  copy: plan.allowance.copy,
+                  image: plan.allowance.image,
+                  video: plan.allowance.video,
+                },
+                concurrencyLimit: plan.concurrencyLimit,
+              })),
+          }),
+          requestCorrelationId
+        );
+      } catch (error) {
+        sendError(
+          response,
+          500,
+          {
+            code: 'PLAN_CATALOG_UNAVAILABLE',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Plan catalogue projection failed.',
+          },
+          requestCorrelationId
+        );
+      }
       return;
     }
 
@@ -1859,91 +1921,6 @@ export function createCoreServer({
               : new DomainError(
                   'ASSISTANT_STREAM_FAILED',
                   'The assistant stream could not be started.',
-                  502
-                );
-        sendError(
-          response,
-          domainError.status,
-          { code: domainError.code, message: domainError.message },
-          requestCorrelationId
-        );
-      }
-      return;
-    }
-
-    const copyStreamWorkspaceId = workspaceRoute(
-      url.pathname,
-      'p1/copy/stream'
-    );
-    if (request.method === 'POST' && copyStreamWorkspaceId) {
-      try {
-        if (!operationsService || !aiStreamingRunner) {
-          throw new DomainError(
-            'COPY_STREAM_UNAVAILABLE',
-            'Streaming copy generation is unavailable in the current execution mode.',
-            503
-          );
-        }
-        const context = p1Identity(
-          request,
-          copyStreamWorkspaceId,
-          requestCorrelationId
-        );
-        authorizeContentCreation(context);
-        const parsed = copyStreamRequestSchema.safeParse(await readJson(request));
-        if (
-          !parsed.success ||
-          parsed.data.catalogModelId !== parsed.data.contract.catalogModelId ||
-          parsed.data.contract.operation !== 'copy.generate'
-        ) {
-          throw new DomainError(
-            'INVALID_COPY_STREAM_REQUEST',
-            'A fixed-model copy stream request is required.'
-          );
-        }
-        const abortController = new AbortController();
-        response.once('close', () => {
-          if (!response.writableEnded) {
-            abortController.abort(new Error('Client disconnected.'));
-          }
-        });
-        const started = await operationsService.startCreativeCopyStream(
-          context,
-          parsed.data.workId,
-          parsed.data.contract,
-          parsed.data.submissionKey,
-          abortController.signal
-        );
-        const settlement = started.completion.catch((error) => {
-          console.error('[copy-stream] terminal settlement failed', {
-            correlationId: requestCorrelationId,
-            error: error instanceof Error ? error.name : 'unknown',
-            workspaceId: context.workspaceId,
-          });
-          throw error;
-        });
-        await pipeWebResponse(
-          started.response,
-          response,
-          requestCorrelationId,
-          () => settlement.then(() => undefined)
-        );
-      } catch (error) {
-        if (response.headersSent) return;
-        const domainError =
-          error instanceof DomainError
-            ? error
-            : error instanceof P1DomainError
-              ? new DomainError(
-                  error.code,
-                  error.message,
-                  error.code === 'INSUFFICIENT_ENTITLEMENT' ? 409 : 403
-                )
-              : error instanceof OperationsError
-                ? new DomainError(error.code, error.message, error.status)
-              : new DomainError(
-                  'COPY_STREAM_FAILED',
-                  'The copy stream could not be started.',
                   502
                 );
         sendError(

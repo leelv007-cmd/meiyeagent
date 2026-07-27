@@ -92,6 +92,9 @@ export default defineConfig({
         'INTEGRATION_SECRET_STORE_MODE=recorded',
         `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
         'MODEL_EXECUTION_MODE=fixture',
+        // E2E-only observation window: 10,000 ms instead of the 40 ms fixture
+        // default, adding 9,960 ms to each structured copy run.
+        'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
         'E2E_PLATFORM_DEFAULT_MODEL_COPY=deepseek-v4-pro',
         'E2E_PLATFORM_DEFAULT_MODEL_IMAGE=seedream-5-pro',
         'E2E_PLATFORM_DEFAULT_MODEL_VIDEO=seedance-2',
@@ -118,6 +121,8 @@ export default defineConfig({
         'INTEGRATION_SECRET_STORE_MODE=recorded',
         `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
         'MODEL_EXECUTION_MODE=fixture',
+        // Keep the worker on the same E2E-only 10,000 ms first-copy-chunk hold.
+        'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start:worker',
       ].join(' '),
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },

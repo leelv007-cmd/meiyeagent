@@ -126,7 +126,10 @@ import {
 } from './recipe-cards';
 import { RecipeCardsPanel } from './recipe-cards-panel';
 import { QuotaBlockingCard } from './quota-blocking-card';
-import { projectQuotaPassiveView } from './quota-blocking';
+import {
+  composerQuotaRequirements,
+  projectQuotaPassiveView,
+} from './quota-blocking';
 import {
   buildLiveBriefInput,
   buildLiveQuoteInput,
@@ -704,15 +707,46 @@ export function ComposerHome({
         : null,
     [selectedModel?.displayName, signedSubmission]
   );
-  const usageResource =
-    lensId === 'image_text' ? 'image' : lensId === 'video' ? 'video' : 'copy';
-  const usageCost = lensState.draft.settings.quantity ?? 1;
-  const quotaInsufficient = Boolean(
-    lensId &&
-      usageQuery.data &&
-      usageQuery.data.usage[usageResource].available < usageCost
+  // 图文 debits two buckets server-side (copy 1 + image·pages). Pre-checking
+  // only the image bucket let an image-rich / copy-empty merchant submit a run
+  // the server was always going to reject (P0-5 / W05 ①).
+  //
+  // Count from `submissionQuantity` — the same value that becomes
+  // `deliverable.quantity` in the signed submission below, and therefore the
+  // one the server bills off (`server-quote-authority.ts` reads
+  // `submission.deliverable.quantity`). The draft setting is not that number:
+  // until the merchant dirties the field it is the recipe that decides, so an
+  // image_set recipe of 4 against an untouched draft of 1 would pre-check a
+  // quarter of what the run actually debits — the same class of defect this
+  // pre-check exists to kill, in a new shape.
+  const quotaRequirements = useMemo(
+    () =>
+      composerQuotaRequirements({
+        lensId,
+        deliverableKind: submissionDelivery.deliverableKind,
+        quantity: submissionQuantity,
+        notePageBound: submissionRecipe?.delivery.notePageBound ?? null,
+      }),
+    [
+      lensId,
+      submissionQuantity,
+      submissionDelivery.deliverableKind,
+      submissionRecipe?.delivery.notePageBound,
+    ]
   );
-  const quotaBlocked = quotaInsufficient || submissionQuotaBlocked;
+  const quotaPassive = useMemo(
+    () =>
+      projectQuotaPassiveView({
+        requirements: quotaRequirements,
+        available: {
+          copy: usageQuery.data?.usage.copy.available ?? null,
+          image: usageQuery.data?.usage.image.available ?? null,
+          video: usageQuery.data?.usage.video.available ?? null,
+        },
+      }),
+    [quotaRequirements, usageQuery.data]
+  );
+  const quotaBlocked = quotaPassive.short || submissionQuotaBlocked;
 
   useEffect(() => {
     emitTelemetry('identity_state', { state: identitySelection.state });
@@ -2001,17 +2035,22 @@ export function ComposerHome({
           blocking card. */}
       <QuotaBlockingCard
         blocked={quotaBlocked}
-        passive={projectQuotaPassiveView({
-          available: usageQuery.data?.usage[usageResource].available ?? null,
-          cost: usageCost,
-          resource: usageResource,
-        })}
+        passive={quotaPassive}
         onRedeem={async ({ command, idempotencyKey }) => {
           try {
             await commandP1('redemptions', command, idempotencyKey);
-            await queryClient.invalidateQueries({
-              queryKey: p1QueryKeys.request('entitlements', 'projection'),
-            });
+            // Both entitlement reads on this page: the projection behind the
+            // pre-check and the three-bucket balance card above it. Refreshing
+            // one and not the other leaves 创作余额 quoting the old numbers
+            // next to a card that just said it unlocked.
+            await Promise.all([
+              queryClient.invalidateQueries({
+                queryKey: p1QueryKeys.request('entitlements', 'projection'),
+              }),
+              queryClient.invalidateQueries({
+                queryKey: p1QueryKeys.request('entitlements', 'balance'),
+              }),
+            ]);
             return { ok: true };
           } catch (error) {
             return {

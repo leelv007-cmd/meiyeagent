@@ -17,11 +17,12 @@ import {
   createQuotaBlockingState,
   isQuotaRedeemCodeValid,
   projectQuotaBlockingView,
+  quotaShortNotice,
   setQuotaRedeemCode,
   showQuotaBlocking,
   type QuotaBlockingState,
   type QuotaPassiveView,
-  QUOTA_BLOCK_OPEN_PLANS_LABEL,
+  QUOTA_BLOCK_CONTACT_LABEL,
 } from './quota-blocking';
 
 export type QuotaBlockingCardProps = {
@@ -38,8 +39,12 @@ export type QuotaBlockingCardProps = {
   }) => Promise<{ ok: true } | { ok: false; message?: string }>;
   /** Called after successful redeem so host can refresh entitlements + continue. */
   onUnlocked?: () => void;
-  /** Optional plans link href (defaults to settings credits). */
-  plansHref?: string;
+  /**
+   * Where 联系运营 goes (D-141). Defaults to the real contact form; the old
+   * 「查看套餐」→`/settings/credits` link was a redirect back to the same
+   * read-only usage page the merchant is already staring at.
+   */
+  contactHref?: string;
   /**
    * 被动展示 (D-043 决定②/③). Present on the main path, where it states what
    * this run will use and what is left and gates nothing — the merchant's tap
@@ -53,7 +58,7 @@ export function QuotaBlockingCard({
   blocked = true,
   onRedeem,
   onUnlocked,
-  plansHref = '/settings/credits',
+  contactHref = '/contact',
   passive,
   className,
 }: QuotaBlockingCardProps) {
@@ -131,6 +136,16 @@ export function QuotaBlockingCard({
     >
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground">{view.title}</p>
+        {/* Which bucket ran out, not just that one did (W05 ①/D-116). */}
+        {passive?.shortResources.length ? (
+          <p
+            className="text-sm text-muted-foreground"
+            data-quota-short-resources={passive.shortResources.join(',')}
+            data-testid="composer-quota-shortfall"
+          >
+            {quotaShortNotice(passive.shortResources)}
+          </p>
+        ) : null}
         <p className="text-sm text-muted-foreground">{view.description}</p>
       </div>
 
@@ -197,10 +212,10 @@ export function QuotaBlockingCard({
       ) : (
         <a
           className="inline-flex text-sm font-medium underline underline-offset-4"
-          href={plansHref}
-          data-testid="composer-quota-open-plans"
+          href={contactHref}
+          data-testid="composer-quota-contact-operations"
         >
-          {QUOTA_BLOCK_OPEN_PLANS_LABEL}
+          {QUOTA_BLOCK_CONTACT_LABEL}
         </a>
       )}
     </div>

@@ -860,22 +860,6 @@ export interface CreationExecutorPort {
     billingQuoteRevision?: string;
     productUsageQuantity: 0 | 1;
   }): Promise<CreationExecutionResult>;
-  startCopyStream?(input: {
-    context: OperationContext;
-    contract: CreativeExecutionContract;
-    briefSnapshot?: CreativeBrief;
-    groundingSnapshot?: CreativeGroundingSnapshot;
-    inheritanceContext?: CreativeInheritanceContext;
-    intent: string;
-    idempotencyKey: string;
-    billingTaskId?: string;
-    billingQuoteRevision?: string;
-    productUsageQuantity: 0 | 1;
-    abortSignal?: AbortSignal;
-  }): Promise<{
-    response: Response;
-    completion: Promise<CreationExecutionResult>;
-  }>;
   verify(input: {
     context: OperationContext;
     contract: CreativeExecutionContract;

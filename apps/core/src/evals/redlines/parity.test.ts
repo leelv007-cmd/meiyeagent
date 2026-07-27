@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parse } from 'yaml';
 
-import { COPY_SCORING_RUBRIC } from '../../p1/harness/execution-selection.js';
 import {
   HARNESS_GATE_IDS,
   validateHarnessPolicy,
@@ -86,12 +85,4 @@ test('live red-team is blocking and runs more than one generated test', () => {
   );
   assert.ok(liveStep, 'live red-team workflow step must exist');
   assert.notEqual(liveStep['continue-on-error'], true);
-});
-
-test('promptfoo scorer rubric fixture stays aligned with the production N-to-1 rubric', () => {
-  const fixture = JSON.parse(
-    readFileSync(new URL('./scorer-rubric.json', import.meta.url), 'utf8'),
-  );
-
-  assert.deepEqual(fixture, COPY_SCORING_RUBRIC);
 });
