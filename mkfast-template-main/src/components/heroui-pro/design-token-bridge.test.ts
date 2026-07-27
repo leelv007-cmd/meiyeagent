@@ -20,6 +20,11 @@ const bridge = readFileSync(
   'utf8'
 );
 const glassSheet = readFileSync(join(here, 'heroui-glass.css'), 'utf8');
+const materials = readFileSync(join(here, '../../meiye-materials.css'), 'utf8');
+const vendoredGlassTheme = readFileSync(
+  join(here, 'vendor/css/theme-glass.css'),
+  'utf8'
+);
 
 function stripComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -41,10 +46,25 @@ function declarations(body: string): Map<string, string> {
   );
 }
 
-const light = declarations(ruleBody(bridge, 'html:has(.meiye-heroui-glass)'));
-const dark = declarations(
-  ruleBody(bridge, 'html.dark:has(.meiye-heroui-glass)')
+const light = declarations(
+  stripComments(ruleBody(bridge, 'html:has(.meiye-heroui-glass)'))
 );
+const dark = declarations(
+  stripComments(ruleBody(bridge, 'html.dark:has(.meiye-heroui-glass)'))
+);
+
+/** `--x` resolved through the bridge's own var() chain, light rule first. */
+function resolve(name: string, body: Map<string, string>): string | undefined {
+  const seen = new Set<string>();
+  let value = body.get(name) ?? light.get(name);
+  while (value?.startsWith('var(--')) {
+    const reference = value.slice(4, value.indexOf(')'));
+    if (seen.has(reference)) return undefined;
+    seen.add(reference);
+    value = body.get(reference) ?? light.get(reference);
+  }
+  return value;
+}
 
 /** The `colors` block of DESIGN.md frontmatter. */
 function designColors(): Map<string, string> {
@@ -176,6 +196,218 @@ test('一点胭脂法则: 玫瑰金 never becomes a control, link or text colour
       }
     }
   }
+});
+
+/**
+ * 上面九个断言全是 `--meiye-*` 对着 DESIGN.md 自证——把整段 HeroUI remap 删掉，它们
+ * 照样全绿，于是「桥接住了组件库」这件事一行都没有被测过。下面五个测的是另一半：
+ * HeroUI 的 base token 到底有没有指到门店橱窗的值上。删掉 remap 段，它们必须红。
+ */
+
+test('every token the vendored Glass theme declares is re-pointed by the bridge', () => {
+  const upstream = new Set(
+    [
+      ...stripComments(vendoredGlassTheme).matchAll(/^\s+(--[a-z0-9-]+):/gm),
+    ].map(([, name]) => name)
+  );
+  assert.ok(
+    upstream.size >= 20,
+    `failed to parse the vendored Glass theme (${upstream.size} tokens)`
+  );
+  const missed = [...upstream].filter((name) => !light.has(name)).sort();
+  assert.deepEqual(
+    missed,
+    [],
+    'the Glass theme ships these with HeroUI defaults and the bridge never ' +
+      'answers them, so the component library paints itself here'
+  );
+});
+
+test('HeroUI base tokens resolve to the 门店橱窗 values they are supposed to', () => {
+  // Naming the mapping rather than only its shape: a rename upstream, or a
+  // silent revert of one of the three breaches U02 closed, lands here.
+  const expected = new Map([
+    // §4 玻璃三档 — the whole point of the Glass theme's backdrop-filter.
+    ['--surface', 'var(--meiye-glass-80)'],
+    ['--surface-secondary', 'var(--meiye-glass-50)'],
+    ['--surface-tertiary', 'var(--meiye-glass-35)'],
+    ['--glass-blur', 'var(--meiye-blur-piece)'],
+    // §2 全中性控件 + 发丝线是分隔线唯一色.
+    ['--accent', 'var(--meiye-ink)'],
+    ['--accent-hover', 'var(--meiye-ink-hover)'],
+    ['--border', 'var(--meiye-hairline)'],
+    ['--separator', 'var(--meiye-hairline)'],
+    ['--link', 'var(--meiye-ink-90)'],
+    ['--focus', 'var(--meiye-ink)'],
+    // §5 实体面：表单白瓷底、真悬浮层白瓷 + 悬浮影.
+    ['--field-background', 'var(--meiye-paper)'],
+    ['--overlay', 'var(--meiye-paper)'],
+    ['--overlay-shadow', 'var(--meiye-shadow-overlay)'],
+    ['--surface-shadow', 'var(--meiye-shadow-ambient)'],
+    ['--backdrop', 'var(--meiye-mask-scrim)'],
+    // frontmatter rounded.md.
+    ['--radius', 'var(--meiye-radius-md)'],
+    ['--field-radius', 'var(--meiye-radius-md)'],
+  ]);
+  for (const [token, value] of expected) {
+    assert.equal(light.get(token), value, `${token} must map to ${value}`);
+  }
+});
+
+test('the surface family stays 真半透明 so backdrop-filter has something to blur', () => {
+  // 破口 ①: 这三个曾经全指向不透明的白瓷/画布，Glass 主题 ~60 个选择器的
+  // backdrop-filter 于是纯付 GPU、零画面。alpha 是 blur 的前提。
+  for (const [themeName, body] of [
+    ['light', light],
+    ['dark', dark],
+  ] as const) {
+    for (const token of [
+      '--surface',
+      '--surface-secondary',
+      '--surface-tertiary',
+    ]) {
+      const value = resolve(token, body);
+      assert.ok(value, `${token} does not resolve in ${themeName}`);
+      assert.match(
+        value,
+        /\/\s*0?\.\d+\s*\)$/u,
+        `${themeName} ${token} resolved to ${value}, which is fully opaque`
+      );
+    }
+  }
+});
+
+test('玫瑰金 reaches the HeroUI surface as a spark, and only as a spark', () => {
+  // 破口 ②: rose 系 var() 引用曾经是 0——测试只做反向断言，所以「火花没接上」
+  // 和「火花接对了」在测试里长得一模一样。
+  const spark = new Map([
+    ['--spark', 'var(--meiye-rose-gold)'],
+    ['--spark-wash', 'var(--meiye-rose-wash)'],
+    ['--spark-deep', 'var(--meiye-rose-deep)'],
+    ['--shadow-rose-glow', 'var(--meiye-shadow-rose-glow)'],
+  ]);
+  for (const [token, value] of spark) {
+    assert.equal(light.get(token), value, `${token} must map to ${value}`);
+  }
+  // 一点胭脂法则的正面：这四个名字之外，玫瑰金在桥上只允许出现在暗色焦点环。
+  const allowed = new Set([...spark.keys(), '--focus', '--field-border-focus']);
+  for (const body of [light, dark]) {
+    for (const [name, value] of body) {
+      if (name.startsWith('--meiye-') || allowed.has(name)) continue;
+      assert.doesNotMatch(
+        value,
+        /--meiye-rose-|--meiye-focus/u,
+        `${name} is not an AI moment and must not carry 玫瑰金`
+      );
+    }
+  }
+});
+
+test('DESIGN.md rounded / spacing / typography scales are restated verbatim', () => {
+  const frontmatter = designMarkdown.split('---')[1] ?? '';
+  const block = (name: string, next: string) =>
+    frontmatter.slice(
+      frontmatter.indexOf(`${name}:`),
+      frontmatter.indexOf(`\n${next}:`)
+    );
+
+  const rounded = [
+    ...block('rounded', 'spacing').matchAll(/^ {2}([a-z0-9]+):\s*"([^"]+)"/gm),
+  ];
+  assert.equal(rounded.length, 7, 'failed to parse DESIGN.md rounded');
+  for (const [, name, value] of rounded) {
+    assert.equal(
+      light.get(`--meiye-radius-${name}`),
+      value,
+      `--meiye-radius-${name} must equal DESIGN.md rounded.${name}`
+    );
+  }
+
+  const spacing = [
+    ...block('spacing', 'components').matchAll(
+      /^ {2}([a-z0-9]+):\s*"([^"]+)"/gm
+    ),
+  ];
+  assert.equal(spacing.length, 7, 'failed to parse DESIGN.md spacing');
+  for (const [, name, value] of spacing) {
+    assert.equal(
+      light.get(`--meiye-space-${name}`),
+      value,
+      `--meiye-space-${name} must equal DESIGN.md spacing.${name}`
+    );
+  }
+
+  // Display 不在这里：它只服务问候语，由 .meiye-greeting 整条承担。
+  const typography = block('typography', 'rounded');
+  for (const tier of ['headline', 'title', 'body', 'label']) {
+    const section = typography.slice(typography.indexOf(`  ${tier}:`));
+    for (const [property, token] of [
+      ['fontSize', 'size'],
+      ['fontWeight', 'weight'],
+      ['lineHeight', 'leading'],
+    ]) {
+      const value = section
+        .match(new RegExp(`^ {4}${property}:\\s*"?([^"\\n]+)"?`, 'mu'))
+        ?.at(1)
+        ?.trim();
+      assert.ok(
+        value,
+        `failed to parse DESIGN.md typography.${tier}.${property}`
+      );
+      assert.equal(
+        light.get(`--meiye-text-${tier}-${token}`),
+        value,
+        `--meiye-text-${tier}-${token} must equal DESIGN.md typography.${tier}.${property}`
+      );
+    }
+  }
+});
+
+test('the three blur tiers are declared and the sidebar takes the shell one', () => {
+  // DESIGN.md §4: 壳 64 / 件 24 / 痕 20. --glass-blur is a single radius, so the
+  // sidebar — a shell — has to raise it or it renders two tiers too shallow.
+  assert.equal(light.get('--meiye-blur-shell'), '64px');
+  assert.equal(light.get('--meiye-blur-piece'), '24px');
+  assert.equal(light.get('--meiye-blur-trace'), '20px');
+  assert.match(
+    stripComments(glassSheet),
+    /\.sidebar--floating[\s\S]{0,200}--glass-blur:\s*var\(--meiye-blur-shell\)/u,
+    'the Pro Sidebar still blurs at the 件级 radius'
+  );
+});
+
+test('玻璃三档与白瓷各只有一处定义, and 白瓷 keeps its edge', () => {
+  // 破口 ③: 同一批类名以前在 styles.css (@layer components) 与 heroui-glass.css
+  // (无 layer) 各写一遍，无 layer 的那份恒胜而且丢了 border——十条生产路由上的白瓷
+  // 描边就是这么静默消失的。
+  for (const selector of [
+    '.meiye-glass-shell',
+    '.meiye-glass-piece',
+    '.meiye-glass-trace',
+    '.meiye-porcelain',
+  ]) {
+    const declaredIn = [
+      ['src/styles.css', productStyles],
+      ['heroui-pro/heroui-glass.css', glassSheet],
+      ['src/meiye-materials.css', materials],
+    ].filter(([, css]) => stripComments(css).includes(`${selector} {`));
+    assert.deepEqual(
+      declaredIn.map(([name]) => name),
+      ['src/meiye-materials.css'],
+      `${selector} must be declared once, in the shared materials sheet`
+    );
+  }
+  assert.match(
+    stripComments(ruleBody(materials, '.meiye-porcelain')),
+    /border:\s*1px solid/u,
+    'DESIGN.md §4「玻璃有边法则」— 白瓷 keeps a 1px near-white edge'
+  );
+  // Both entry points must keep pulling it in, at the cascade slot each needs.
+  assert.match(
+    productStyles,
+    /@import "\.\/meiye-materials\.css" layer\(components\);/u
+  );
+  assert.match(glassSheet, /@import "\.\.\/\.\.\/meiye-materials\.css";/u);
 });
 
 test('bridge stays rooted at <html> so portalled overlays inherit it', () => {
