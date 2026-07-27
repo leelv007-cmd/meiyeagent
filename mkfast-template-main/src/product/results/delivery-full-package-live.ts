@@ -13,7 +13,10 @@
 
 import type { PublicContentPackage } from '@meiye/contracts';
 
-import type { DeliveryPanelTarget } from './delivery-b3-types';
+import type {
+  DeliveryPanelTarget,
+  DeliveryZipPlatform,
+} from './delivery-b3-types';
 import {
   buildDouyinVideoPackage,
   buildWechatMomentsSegmentsPackage,
@@ -51,13 +54,21 @@ function imageEntries(assets: readonly OwnedAsset[]) {
   }));
 }
 
-function captionOf(
-  contentPackage: PublicContentPackage
-): DeliveryPackageCaption | undefined {
-  const version = contentPackage.versions.find(
-    (candidate) => candidate.id === contentPackage.currentVersionId
+type PackageVersion = PublicContentPackage['versions'][number];
+
+function versionOf(
+  contentPackage: PublicContentPackage,
+  versionId: string
+): PackageVersion | undefined {
+  return (
+    contentPackage.versions.find((candidate) => candidate.id === versionId) ??
+    contentPackage.variants
+      .flatMap((variant) => variant.versions)
+      .find((candidate) => candidate.id === versionId)
   );
-  if (!version) return undefined;
+}
+
+function captionOf(version: PackageVersion): DeliveryPackageCaption {
   return {
     body: version.body,
     title: version.title,
@@ -66,6 +77,33 @@ function captionOf(
       ? { conversionHook: version.conversionHook }
       : {}),
   };
+}
+
+/**
+ * The assets this exact version delivers, in the order it delivers them.
+ *
+ * `generated.ownedAssets` is the package's whole asset history — every image a
+ * superseded draft or another platform's variant ever owned. Reading it whole
+ * put material into the manifest (and into the share payload) that the merchant
+ * had already dropped. `orderedAssetIds` is the version's own selection, and it
+ * is the exact list core's export adapter walks
+ * (apps/core/.../content-package-export-adapter.ts), so a plan built from it
+ * describes the ZIP core will actually emit.
+ */
+function versionAssets(
+  contentPackage: PublicContentPackage,
+  version: PackageVersion
+): OwnedAsset[] {
+  const owned = new Map(
+    (contentPackage.generated.ownedAssets ?? []).map((asset) => [
+      asset.id,
+      asset,
+    ])
+  );
+  return version.orderedAssetIds.flatMap((assetId) => {
+    const asset = owned.get(assetId);
+    return asset ? [asset] : [];
+  });
 }
 
 /**
@@ -80,12 +118,13 @@ export function buildResultFullPackagePlan(input: {
   target: DeliveryPanelTarget;
   variantVersionId?: string;
 }): FullPackagePlan | undefined {
-  const caption = captionOf(input.contentPackage);
-  if (!caption) return undefined;
   const variantVersionId =
     input.variantVersionId ?? input.contentPackage.currentVersionId;
   if (!variantVersionId) return undefined;
-  const assets = input.contentPackage.generated.ownedAssets ?? [];
+  const version = versionOf(input.contentPackage, variantVersionId);
+  if (!version) return undefined;
+  const caption = captionOf(version);
+  const assets = versionAssets(input.contentPackage, version);
   const images = imageEntries(assets);
   const video = assets.find(isVideo);
   const base = {
@@ -106,12 +145,18 @@ export function buildResultFullPackagePlan(input: {
     return buildWechatMomentsSegmentsPackage({ ...base, media: images });
   }
 
+  // The remaining targets are exactly the ZIP platforms. Carrying the real one
+  // through is what stops a 视频号 package from being named and manifested as a
+  // 抖音 one — same layout, different platform, and the merchant reads the name.
+  const platform: DeliveryZipPlatform = input.target;
+
   if (video) {
     return buildDouyinVideoPackage({
       ...base,
       compliance,
       hasCover: images.length > 0,
       hasSubtitles: false,
+      platform,
       rightsState,
       ...(video.sizeBytes !== undefined
         ? { videoSizeBytes: video.sizeBytes }
@@ -125,6 +170,7 @@ export function buildResultFullPackagePlan(input: {
     ...base,
     compliance,
     images,
+    platform,
     rightsState,
   });
 }
