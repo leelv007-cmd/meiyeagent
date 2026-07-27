@@ -705,8 +705,19 @@ export function ComposerHome({
     submissionDurationSeconds,
     submissionQuantity,
   ]);
+  // Every distinct payload is now its own quote, so quoting on each keystroke
+  // would leave a trail of priced-but-never-submitted quotes behind the
+  // merchant's typing. Waiting for the sentence to settle asks once for the
+  // version they actually stopped on.
+  const quoteId = quoteInput?.quoteId ?? null;
+  const [settledQuoteId, setSettledQuoteId] = useState<string | null>(null);
+  useEffect(() => {
+    if (quoteId === null) return;
+    const timer = setTimeout(() => setSettledQuoteId(quoteId), 350);
+    return () => clearTimeout(timer);
+  }, [quoteId]);
   const quoteQuery = useQuery({
-    enabled: quoteInput != null,
+    enabled: quoteInput != null && settledQuoteId === quoteId,
     queryKey: p1QueryKeys.request('product-billing', 'quote', quoteInput ?? {}),
     queryFn: () => {
       if (!quoteInput) throw new Error('Composer quote input is required.');
@@ -1614,6 +1625,9 @@ export function ComposerHome({
       return;
     }
     if (!quoteQuery.data || !quoteView || !submissionRecipe) {
+      // A send click means the sentence is final, so stop waiting on the settle
+      // timer and ask for its price now rather than only complaining.
+      if (quoteId && settledQuoteId !== quoteId) setSettledQuoteId(quoteId);
       setShowRequiredHint(true);
       return;
     }

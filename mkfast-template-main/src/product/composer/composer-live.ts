@@ -111,6 +111,40 @@ export async function fetchComposerPreferences(
   );
 }
 
+/**
+ * A short, stable digest of everything the quote signs.
+ *
+ * The server fingerprints the quote by its `submissionContractHash` and refuses
+ * a quote id that comes back with different facts (quote-service revisionFor).
+ * The id therefore has to move whenever the signed submission moves — the
+ * merchant's sentence included, since it is a signed field. Without this, any
+ * edit after the first quote reuses the key with a different payload and the
+ * composer sits on an IDEMPOTENCY_CONFLICT with no price and no way to submit.
+ *
+ * Not a security hash: it only has to change when the payload changes, so a
+ * synchronous FNV-1a over the canonical JSON beats an async subtle-crypto call
+ * on a render path.
+ */
+export function composerSubmissionDigest(
+  submission: ComposerSubmissionSignedFields
+): string {
+  const canonical = JSON.stringify(submission, (_key, value: unknown) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0
+          )
+        )
+      : value
+  );
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < canonical.length; index += 1) {
+    hash ^= canonical.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
 export function buildLiveQuoteInput(input: {
   sessionId: string;
   lensId: CreationLensId;
@@ -138,6 +172,7 @@ export function buildLiveQuoteInput(input: {
       input.submission.distributionTarget,
       input.submission.deliverable.kind,
       input.submission.imageOperation ?? 'auto',
+      composerSubmissionDigest(input.submission),
     ].join(':'),
     catalogModelId: input.model.id,
     operation,

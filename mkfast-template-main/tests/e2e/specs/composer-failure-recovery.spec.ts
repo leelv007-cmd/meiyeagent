@@ -274,29 +274,76 @@ test.describe('S2 失败与恢复', () => {
     // A blocked draft must not be left on screen as if it were usable.
     await expect(page.getByTestId('composer-delivery-turn')).toHaveCount(0);
 
-    // 改一下要求 must hand the composer back. A failed run leaves the lens
-    // frozen, so this is the assertion that separates a working entry from a
-    // focus() call on a disabled input.
-    const intentInput = page.getByTestId('composer-intent-input');
-    await expect(intentInput).toBeDisabled();
-    await page.getByTestId('composer-report-action-adjust_intent').click();
-    await expect(intentInput).toBeEnabled();
-    const adjusted = `${FAILURE_DRILL_INTENT}｜再来一次`;
-    await intentInput.fill(adjusted);
-    await expect(intentInput).toHaveValue(adjusted);
-
-    // 再生成一次 must reach Core again — and with the merchant's edit intact,
-    // not the sentence that already failed.
+    // 再生成一次, straight from the failure. A failed run leaves the lens frozen,
+    // so this is the assertion that separates a working entry from a button
+    // that renders: the click has to reach Core with a run of its own.
+    await expect(page.getByTestId('composer-intent-input')).toBeDisabled();
     const retried = submissionResponse(page);
     await page.getByTestId('composer-report-action-retry').click();
     const second = await settleSubmission(page, retried);
     expect(second.taskId).not.toBe(run.taskId);
-    // The retry is a new run in the same conversation: the old 申报 is gone and
-    // the transcript is live again.
     await expect(page.getByTestId('composer-turn-merchant')).toContainText(
-      adjusted,
+      FAILURE_DRILL_INTENT,
       { timeout: 60_000 }
     );
+  });
+
+  /**
+   * The other entry, on its own path. 再生成一次 rebuilds the session from
+   * scratch, which would hide everything 改一下要求 leaves standing: the same
+   * conversation carries on with a second run in it, so the quote key, the
+   * progress cursor and the previous 申报 all have to be scoped to the attempt
+   * rather than to the tab.
+   */
+  test('W03: 改一下要求 hands the composer back and the next submit is the merchant own', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(420_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    const run = await startRun(page, FAILURE_DRILL_INTENT);
+    await expect(page.getByTestId('composer-report-card')).toBeVisible({
+      timeout: 300_000,
+    });
+
+    const intentInput = page.getByTestId('composer-intent-input');
+    await expect(intentInput).toBeDisabled();
+    await page.getByTestId('composer-report-action-adjust_intent').click();
+    await expect(intentInput).toBeEnabled();
+    // Rewritten to drop the claim that was refused — the point of 改一下要求.
+    const rewritten = '写一条皮肤护理到店体验文案，只讲服务流程和预约方式';
+    await intentInput.fill(rewritten);
+    await expect(intentInput).toHaveValue(rewritten);
+
+    // The ordinary send button, not the card: this is the merchant continuing
+    // by hand. It re-quotes under the rewritten sentence, which is where a
+    // quote id that ignored the intent used to strand them on a 409.
+    const resubmitted = submissionResponse(page);
+    await page.getByTestId('composer-submit').click();
+    const second = await settleSubmission(page, resubmitted);
+    expect(second.taskId).not.toBe(run.taskId);
+
+    // 新进度帧可见 — the second workflow numbers its frames from zero, so a
+    // cursor left at the first run's high-water mark would drop all of them and
+    // the run would stream into nothing.
+    await expect(page.getByTestId('composer-progress-card')).toBeVisible({
+      timeout: 240_000,
+    });
+    await expect
+      .poll(async () => page.getByTestId('composer-stage-line').count(), {
+        timeout: 120_000,
+      })
+      .toBeGreaterThan(0);
+
+    // 无陈旧报告 — and the run that now succeeds ends on a deliverable.
+    await expect(page.getByTestId('composer-report-card')).toHaveCount(0);
+    await expect(page.getByTestId('composer-delivery-turn')).toBeVisible({
+      timeout: 300_000,
+    });
+    await expect(page.getByTestId('composer-report-card')).toHaveCount(0);
   });
 
   test('W10: closing the tab no longer loses the run — the server brings it back', async ({

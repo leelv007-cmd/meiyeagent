@@ -111,6 +111,8 @@ export type ComposerTerminalTurn = {
 export type ComposerReportTurn = {
   kind: 'report';
   id: string;
+  /** The run this 申报 is about; '' only for a report with no task bound. */
+  taskId: string;
   report: MerchantReport;
 };
 
@@ -204,8 +206,14 @@ export function bindComposerTask(
     ...session,
     phase: 'running',
     task,
+    // Everything below is scoped to the run that produced it, and this is a
+    // different run. The new workflow numbers its frames from zero, so keeping
+    // the previous cursor would silently drop its entire progress stream; the
+    // previous 任务总结 and 申报 likewise describe work this run has not done.
+    progressSequence: -1,
+    deliveryStatement: null,
     turns: [
-      ...session.turns,
+      ...session.turns.filter((turn) => turn.kind !== 'report'),
       {
         kind: 'candidate',
         id: `candidate:${task.taskId}`,
@@ -398,24 +406,30 @@ export function applyComposerWorkflowState(
 }
 
 /**
- * Append the 申报 exactly once. Replay hands the same terminal frame back on
- * every reconnect, and a transcript that grows a second failure card each time
- * the browser reconnects would be its own kind of dishonesty.
+ * Append the 申报 exactly once *per run*. Replay hands the same terminal frame
+ * back on every reconnect, and a transcript that grows a second failure card
+ * each time the browser reconnects would be its own kind of dishonesty — but
+ * the run is part of that identity. Two attempts that fail the same way are two
+ * failures, and showing the first one's report over the second's is the same
+ * lie in the other direction.
  */
 function withReportTurn(
   session: ComposerSession,
   report: MerchantReport | undefined
 ): ComposerSession {
   if (!report) return session;
+  const taskId = session.task?.taskId ?? '';
   const existing = session.turns.find(
     (turn): turn is ComposerReportTurn => turn.kind === 'report'
   );
-  if (existing?.report.kind === report.kind) return session;
+  if (existing?.taskId === taskId && existing.report.kind === report.kind) {
+    return session;
+  }
   return {
     ...session,
     turns: [
       ...session.turns.filter((turn) => turn.kind !== 'report'),
-      { kind: 'report', id: `report:${report.kind}`, report },
+      { kind: 'report', id: `report:${taskId}:${report.kind}`, report, taskId },
     ],
   };
 }
@@ -425,8 +439,13 @@ export function failComposerSession(session: ComposerSession): ComposerSession {
   return { ...session, phase: 'failed' };
 }
 
+/**
+ * The sentence the current run is about. A conversation that survived a failure
+ * carries more than one merchant turn (their first ask, then the rewrite), and
+ * the handle this pairs with — persisted or restored — belongs to the latest.
+ */
 export function composerSessionMerchantText(session: ComposerSession): string {
-  const turn = session.turns.find(
+  const turn = session.turns.findLast(
     (item): item is ComposerMerchantTurn => item.kind === 'merchant'
   );
   return turn?.text ?? '';

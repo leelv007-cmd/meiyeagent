@@ -624,11 +624,17 @@ exist to make true, both against the real Web → Core → Harness/DBOS chain.
   draft is gone from the transcript: a refused candidate must not be left on
   screen as if it were usable. Every visible sentence passes the D-116 language
   gate.
-  - **可恢复入口是按下去有用的**: the entries are clicked, not counted. 改一下要求
-    turns the composer from disabled back to editable and accepts a new
-    sentence; 再生成一次 produces a second submission POST to Core carrying that
-    edit. A failed run leaves the lens frozen, so an entry that only calls
-    `focus()` is a dead button and this is what tells the two apart (D-150).
+  - **可恢复入口是按下去有用的**: the entries are clicked, not counted, and each
+    one is proved on its own path — 再生成一次 rebuilds the session from scratch,
+    which would hide every defect 改一下要求 leaves standing.
+    - 再生成一次 straight from the failure reaches Core with a run of its own,
+      while the composer is still frozen. An entry that only calls `focus()` is
+      a dead button, and this is what tells the two apart (D-150).
+    - 改一下要求 turns the composer from disabled back to editable, accepts a
+      rewritten sentence, and the merchant's **own** send button then delivers:
+      the second run's progress lines are visible (a progress cursor left at the
+      first run's high-water mark would swallow them) and the previous 申报 is
+      gone from the transcript rather than describing work this run never did.
   - **失败档 (fixture failure profile)**: the only deterministic boundary is the
     model provider, the same as every other fixture journey. A merchant intent
     containing 「失败档」 makes the fixture structured runner

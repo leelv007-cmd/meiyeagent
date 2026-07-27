@@ -17,6 +17,7 @@ import {
   createComposerSession,
   failComposerSession,
   openComposerTurn,
+  rebindComposerSession,
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
   serializeComposerSession,
@@ -320,6 +321,82 @@ test('a failed run states its reason, its next step and the refund in the flow',
   assert.equal(
     replayed.turns.filter((item) => item.kind === 'report').length,
     1
+  );
+});
+
+/**
+ * 改一下要求 keeps the conversation and rebinds it to a new attempt, so the
+ * container has to tell what belongs to which run. Everything the previous run
+ * left behind — its progress cursor, its 任务总结, its 申报 — would otherwise be
+ * read as the new run's, and the new stream (numbered from zero) would be
+ * dropped frame by frame against a cursor that outranks all of it.
+ */
+test('a second attempt in the same conversation starts with its own progress and no stale 申报', () => {
+  const report = {
+    kind: 'failure' as const,
+    category: 'content_source' as const,
+    message: '这次的说法在门店资料里找不到依据，所以没有交付。',
+    nextStep: '补一条门店已确认的资料，或者去掉这条没依据的说法后再来一次。',
+    actions: ['adjust_intent' as const, 'retry' as const],
+    quotaRefunded: true,
+  };
+  const failed = applyComposerProgress(
+    applyComposerWorkflowState(
+      applyComposerProgress(runningSession(), progress({ sequence: 7 })),
+      'failed',
+      undefined,
+      undefined,
+      report
+    ),
+    progress({ sequence: 8, message: '第一次的进度' })
+  );
+  assert.equal(failed.progressSequence, 8);
+
+  const rebound = rebindComposerSession(failed, 'session-2');
+  assert.equal(rebound.sessionId, 'session-2');
+  const retried = bindComposerTask(
+    openComposerTurn(rebound, '写一条不提价格的到店体验文案'),
+    { taskId: 'task-2', workId: 'work-2', packageId: 'package-2' }
+  );
+
+  // The previous run's 申报 is not this run's story.
+  assert.equal(
+    retried.turns.filter((turn) => turn.kind === 'report').length,
+    0
+  );
+  // …and its cursor does not swallow the new stream.
+  assert.equal(retried.progressSequence, -1);
+  assert.equal(retried.deliveryStatement, null);
+  const streamed = applyComposerProgress(
+    retried,
+    progress({ sequence: 0, message: '正在读你的门店资料' })
+  );
+  assert.equal(streamed.progressSequence, 0);
+  assert.ok(
+    streamed.turns.some(
+      (turn) => turn.kind === 'stage' && turn.message === '正在读你的门店资料'
+    )
+  );
+
+  // A second failure of the same kind is a second failure, not a replay.
+  const failedAgain = applyComposerWorkflowState(
+    streamed,
+    'failed',
+    undefined,
+    undefined,
+    { ...report, message: '第二次也没能通过门店资料核对。' }
+  );
+  const reports = failedAgain.turns.filter((turn) => turn.kind === 'report');
+  assert.equal(reports.length, 1);
+  assert.equal(
+    reports[0]?.kind === 'report' ? reports[0].report.message : '',
+    '第二次也没能通过门店资料核对。'
+  );
+
+  // The handle that gets persisted names the run it is actually bound to.
+  assert.equal(
+    composerSessionMerchantText(failedAgain),
+    '写一条不提价格的到店体验文案'
   );
 });
 

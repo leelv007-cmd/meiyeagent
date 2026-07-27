@@ -154,8 +154,11 @@ describe('Composer live public contracts', () => {
       },
     });
     assert.deepEqual(input, {
+      // The trailing digest covers the whole signed submission. The server
+      // fingerprints a quote by its submission contract, so an id that did not
+      // move with the payload would come back as IDEMPOTENCY_CONFLICT.
       quoteId:
-        'composer:session-1:video:model-video:catalog-r1:1:15:douyin:export:video_package:auto',
+        'composer:session-1:video:model-video:catalog-r1:1:15:douyin:export:video_package:auto:905d1156',
       catalogModelId: 'model-video',
       operation: 'video.generate',
       quantity: 1,
@@ -252,6 +255,53 @@ describe('Composer live public contracts', () => {
 
     assert.equal(edit.submission.imageOperation, 'image.edit');
     assert.notEqual(generate.quoteId, edit.quoteId);
+  });
+
+  /**
+   * The 改一下要求 path lives or dies here: the merchant rewrites their sentence
+   * inside one session, and the second quote must not land on the first one's
+   * key. The server refuses a quote id whose submission contract changed, and
+   * a composer without a price cannot submit at all.
+   */
+  it('gives an edited sentence its own quote id within the same session', () => {
+    const model = {
+      id: 'model-copy',
+      displayName: '文案模型',
+      modality: 'llm' as const,
+      qualityRank: 1,
+      capabilityLabels: [],
+      available: true,
+      availabilityKind: 'production' as const,
+      unitPrice: {
+        amountMicros: 200_000,
+        currency: 'CNY' as const,
+        revision: 'price-r1',
+        unit: 'request' as const,
+      },
+    };
+    const quoteFor = (intent: string) =>
+      buildLiveQuoteInput({
+        catalogRevision: 'catalog-r1',
+        lensId: 'copy',
+        model,
+        sessionId: 'session-adjust',
+        submission: {
+          creationMode: 'customized' as const,
+          intent,
+          catalogModel: { id: 'model-copy', revision: 'catalog-r1' },
+          recipe: { id: 'recipe-copy', revision: 'recipe-copy@1' },
+          contentPackagePlatform: 'wechat_moments' as const,
+          distributionTarget: 'assisted_handoff' as const,
+          deliverable: { kind: 'copy_document' as const, quantity: 1 },
+        },
+      });
+
+    const first = quoteFor('写一条到店体验文案');
+    const rewritten = quoteFor('写一条到店体验文案｜再来一次');
+
+    assert.notEqual(first.quoteId, rewritten.quoteId);
+    // Same facts, same id: a re-render must not mint a second quote.
+    assert.equal(quoteFor('写一条到店体验文案').quoteId, first.quoteId);
   });
 
   function imageSubmission(
